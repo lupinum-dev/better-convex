@@ -23,6 +23,7 @@ const retiredUnpublishedVersions = Object.freeze({
     '0.1.0-beta.4',
     '0.1.0-beta.5',
     '0.1.0-beta.6',
+    '0.1.0-beta.7',
   ]),
   'better-convex-nuxt': Object.freeze([
     '0.8.0-beta.6',
@@ -37,6 +38,7 @@ const retiredUnpublishedVersions = Object.freeze({
     '0.8.0-beta.16',
     '0.8.0-beta.17',
     '0.8.0-beta.18',
+    '0.8.0-beta.19',
   ]),
   'better-convex-vue': Object.freeze([
     '0.8.0-beta.6',
@@ -51,6 +53,7 @@ const retiredUnpublishedVersions = Object.freeze({
     '0.8.0-beta.16',
     '0.8.0-beta.17',
     '0.8.0-beta.18',
+    '0.8.0-beta.19',
   ]),
 })
 

@@ -10,6 +10,7 @@ export const supportedDependencyTuple = Object.freeze({
   '@better-auth/api-key': requiredDevDependency('@better-auth/api-key'),
   '@better-auth/core': requiredDevDependency('@better-auth/core'),
   '@better-auth/oauth-provider': requiredRuntimeDependency('@better-auth/oauth-provider'),
+  '@nuxt/kit': requiredRuntimeDependency('@nuxt/kit'),
   'better-auth': requiredPeerDependency('better-auth'),
   convex: requiredPeerDependency('convex'),
   'convex-helpers': requiredRuntimeDependency('convex-helpers'),
@@ -82,6 +83,12 @@ function validateTuple() {
     if (packageJson.dependencies?.[name] !== undefined) {
       throw new Error(`${name} must remain consumer-owned and cannot be a runtime dependency.`)
     }
+  }
+
+  if (supportedDependencyTuple['@nuxt/kit'] !== supportedDependencyTuple.nuxt) {
+    throw new Error(
+      `@nuxt/kit@${supportedDependencyTuple['@nuxt/kit']} must match nuxt@${supportedDependencyTuple.nuxt}.`,
+    )
   }
 
   const provider = '@better-auth/oauth-provider'

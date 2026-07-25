@@ -10,6 +10,7 @@ const root = join(import.meta.dirname, '../..')
 describe('supported version alignment', () => {
   it('derives every advertised Nuxt version from the package tuple', () => {
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      dependencies: { '@nuxt/kit': string }
       peerDependencies: { nuxt: string }
     }
     const moduleSource = readFileSync(join(root, 'src/module.ts'), 'utf8')
@@ -17,6 +18,8 @@ describe('supported version alignment', () => {
 
     const nuxtVersion = supportedDependencyTuple.nuxt
     expect(manifest.peerDependencies.nuxt).toBe(nuxtVersion)
+    expect(manifest.dependencies['@nuxt/kit']).toBe(nuxtVersion)
+    expect(supportedDependencyTuple['@nuxt/kit']).toBe(nuxtVersion)
     expect(moduleSource).toContain(`nuxt: '${nuxtVersion}'`)
     expect(securityContract).toContain(`Nuxt \`${nuxtVersion}\``)
   })

@@ -100,6 +100,19 @@ or release path.
 
 Local artifacts are disposable rehearsal outputs. Do not upload one to npm.
 
+For the vNext package family, build and certify the independent MCP lane before
+the Vue/Nuxt candidate set:
+
+```bash
+pnpm release:prepare --package mcp
+pnpm release:prepare:set
+```
+
+The Nuxt maintained-consumer matrix includes the MCP starter and therefore
+requires the exact same-commit MCP companion artifact to exist first. This is
+an ordering rule, not a reason to merge MCP into the closed Vue/Nuxt
+candidate-set schema.
+
 ## Trusted prerelease workflow
 
 The protected `v*-*` tag must point at the reviewed commit and exactly match the

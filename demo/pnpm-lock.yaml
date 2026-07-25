@@ -33,8 +33,8 @@ importers:
         specifier: 1.7.0-rc.1
         version: 1.7.0-rc.1(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(magicast@0.5.3)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(magicast@0.5.3)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.17)(mysql2@3.15.3)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(magicast@0.5.3)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)))(mongodb@7.1.0)(mysql2@3.15.3)(prisma@7.4.2(@types/react@19.2.14)(magicast@0.5.3)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(vitest@4.1.10(@types/node@25.3.3)(vite@7.3.6(@types/node@25.3.3)(jiti@2.7.0)(lightningcss@1.31.1)(terser@5.44.1)(yaml@2.9.0)))(vue@3.5.39(typescript@5.9.3))
       better-convex-nuxt:
-        specifier: 0.8.0-beta.19
-        version: 0.8.0-beta.19(638305b0b367275d400020f621dd7a4d)
+        specifier: 0.8.0-beta.20
+        version: 0.8.0-beta.20(638305b0b367275d400020f621dd7a4d)
       convex:
         specifier: 1.42.2
         version: 1.42.2(react@19.2.3)
@@ -2861,8 +2861,8 @@ packages:
       zod:
         optional: true
 
-  better-convex-nuxt@0.8.0-beta.19:
-    resolution: {integrity: sha512-fLin4FbjMNRKbISnOP36V2Bg5uhTtKaOgpc8iQhmiV50+7NJnHyyTkLEkZWAxi/IhOjNVOoUt4nZTx6P5wR0Mg==}
+  better-convex-nuxt@0.8.0-beta.20:
+    resolution: {integrity: sha512-vnK/4znRqLUpgiDEzZKwl/a54xRKmTsTrIGKiOkPYXMkBqkr18jxcRF2xoZ1qOok7PE1CXHFfxY8dRrnm5/WhQ==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -2871,8 +2871,8 @@ packages:
       kysely: 0.28.17
       nuxt: 4.4.8
 
-  better-convex-vue@0.8.0-beta.19:
-    resolution: {integrity: sha512-cvdR6PiYFS9LJmCVJ1zKHobjg57ZQuB569NihwBwCAnMebKtAeO1Jxcf2a7GlLL0Od0AThhW/mxkY2YLxpGbjg==}
+  better-convex-vue@0.8.0-beta.20:
+    resolution: {integrity: sha512-RlQXM4T/7AVp/JiK2eY8BFiQCpqb8oU2S83mtacXdyBLKnGqIcr2Zavapqy4bQCF1Y2+zuDOxwpfU9gt8nMaDg==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.4
@@ -9111,12 +9111,12 @@ snapshots:
     optionalDependencies:
       zod: 4.3.6
 
-  better-convex-nuxt@0.8.0-beta.19(638305b0b367275d400020f621dd7a4d):
+  better-convex-nuxt@0.8.0-beta.20(638305b0b367275d400020f621dd7a4d):
     dependencies:
       '@better-auth/oauth-provider': 1.7.0-rc.1(ea5f1c785501ba11b34ab37d60c7c748)
       '@nuxt/kit': 4.4.8(magicast@0.5.3)
       better-auth: 1.7.0-rc.1(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(magicast@0.5.3)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(magicast@0.5.3)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.17)(mysql2@3.15.3)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(magicast@0.5.3)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)))(mongodb@7.1.0)(mysql2@3.15.3)(prisma@7.4.2(@types/react@19.2.14)(magicast@0.5.3)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(vitest@4.1.10(@types/node@25.3.3)(vite@7.3.6(@types/node@25.3.3)(jiti@2.7.0)(lightningcss@1.31.1)(terser@5.44.1)(yaml@2.9.0)))(vue@3.5.39(typescript@5.9.3))
-      better-convex-vue: 0.8.0-beta.19(convex@1.42.2(react@19.2.3))(vue@3.5.39(typescript@5.9.3))
+      better-convex-vue: 0.8.0-beta.20(convex@1.42.2(react@19.2.3))(vue@3.5.39(typescript@5.9.3))
       convex: 1.42.2(react@19.2.3)
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2(react@19.2.3))(hono@4.11.4)(react@19.2.3)(typescript@5.9.3)(zod@4.3.6)
       defu: 6.1.7
@@ -9139,7 +9139,7 @@ snapshots:
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.19(convex@1.42.2(react@19.2.3))(vue@3.5.39(typescript@5.9.3)):
+  better-convex-vue@0.8.0-beta.20(convex@1.42.2(react@19.2.3))(vue@3.5.39(typescript@5.9.3)):
     dependencies:
       convex: 1.42.2(react@19.2.3)
       ohash: 2.0.11

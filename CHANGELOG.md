@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## v0.8.0-beta.20
+
+- Pin the package-owned `@nuxt/kit` runtime to the exact certified Nuxt
+  `4.4.8` tuple after the beta.19 clean npm consumer correctly rejected
+  semver drift to an unreviewed transitive dependency graph.
+- Retire beta.19 as immutable failed evidence; it was never published and
+  cannot be rebuilt under the same version.
+
+## v0.1.0-beta.8 (`@better-convex/mcp`)
+
+- Reserve a fresh MCP source identity so the Vue, Nuxt, and MCP candidates are
+  all bound to the corrected clean source commit.
+- Preserve the independently passing beta.7 MCP behavior while retiring that
+  unpublished artifact from new candidate sets.
+
 ## v0.8.0-beta.19
 
 - Retire beta.18 after the dependency graph changed; the old coordinate remains

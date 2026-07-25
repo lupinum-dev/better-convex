@@ -9,9 +9,9 @@ replace the RFC's product decisions.
 | Field                 | Value                                                                                                     |
 | --------------------- | --------------------------------------------------------------------------------------------------------- |
 | Current phase         | Phase 9 exact immutable candidate preparation after documentation completion                              |
-| Current task          | `P9-014`; produce and certify the beta.19/beta.7 package candidate set                                    |
-| Last verified commit  | BCN source identities `91da3d57`; Ginko OAuth hard cut `d038cb55`, evidence `5f346426`                    |
-| Next executable tasks | prepare clean candidates in `P9-014`; verify exact consumers; reconcile final MCP under `EXT-003`         |
+| Current task          | `P9-014`; produce and certify the beta.20/beta.8 package candidate set                                    |
+| Last verified commit  | BCN documentation `6e26f8e1`; Ginko OAuth hard cut `d038cb55`, evidence `5f346426`                        |
+| Next executable tasks | commit the beta.20/beta.8 correction; certify MCP; certify the Vue/Nuxt set                               |
 | Baseline release      | `better-convex-nuxt@0.7.0-beta.1`, tag `v0.7.0-beta.1`, commit `a6e76f1f61a483de5dbd3a19003ab35abcf75fad` |
 | Ledger rule           | At most one task is `in_progress`; `done` requires its named proof                                        |
 
@@ -29,7 +29,7 @@ replace the RFC's product decisions.
 ## Accepted decision records
 
 [`internal/decisions-ledger.md`](./decisions-ledger.md) is the single detailed decision history. The
-current accepted records are `D-001`–`D-052`; final topology certification, Tasks, and repository rename
+current accepted records are `D-001`–`D-053`; final topology certification, Tasks, and repository rename
 remain gated rather than implied stable contracts.
 
 ## Verification log
@@ -164,6 +164,7 @@ remain gated rather than implied stable contracts.
 | 2026-07-25 | `386ba002`; `P9-012` final-tree cleanup | Source/dist owner sentinels; removed-path checks; dependency inventory; contract/packed-export gates; maintained exact-package consumer matrix; clean `pnpm check`; `internal/evidence/vnext-final-tree-cleanup-2026-07-25.md` | One Vue lifecycle and one MCP server owner remain. Superseded runtime paths stay deleted; retained internal/evidence surfaces have explicit owners; documentation is now the sole local pre-candidate task. |
 | 2026-07-25 | `91da3d57`; beta.19/beta.7 source reservation | Static release-coordinate tests, five exact temporary-tarball lock regenerations, frozen lock installs, API docs check, and 21-manifest workspace alignment | Retired beta.18/beta.6 coordinates now fail executable release eligibility; maintained consumers resolve beta.19/beta.7. Temporary lock inputs are not candidate evidence. |
 | 2026-07-25 | `P9-013` documentation boundary | MCP docs tests, generated API surface check, workspace alignment, and production docs build with 348 prerendered routes; `internal/evidence/vnext-documentation-boundaries-2026-07-25.md` | Nuxt, Vue, MCP, MCP Apps, interaction, and Tasks boundaries are truthful; `/docs/get-started/plain-vue` is built; final MCP and stable Apps claims remain gated. |
+| 2026-07-25 | failed Vue/Nuxt beta.19 and MCP beta.7 candidates | Exact package lanes and isolated npm Nuxt consumer; `internal/evidence/vnext-beta19-clean-consumer-failure-2026-07-25.md` | Clean npm resolution drifted package-owned `@nuxt/kit` to 4.5.0 and introduced vulnerable `brace-expansion@2.1.2`; the gate failed closed, all three unpublished coordinates are retired, and beta.20/beta.8 are reserved. |
 
 ## Status vocabulary
 

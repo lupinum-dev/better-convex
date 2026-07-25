@@ -15,7 +15,7 @@ const normalizedGuide = guide.replace(/\s+/gu, ' ')
 describe('MCP package documentation', () => {
   it('states the exact experimental SDK and protocol authority', () => {
     expect(guide).toContain('`@better-convex/mcp`')
-    expect(guide).toContain('`0.1.0-beta.7`')
+    expect(guide).toContain('`0.1.0-beta.8`')
     expect(guide).toContain('`@modelcontextprotocol/server@2.0.0-beta.5`')
     expect(normalizedGuide).toContain('locked MCP `2026-07-28` release candidate')
     expect(normalizedGuide).toContain(

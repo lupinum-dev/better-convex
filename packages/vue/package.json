@@ -1,6 +1,6 @@
 {
   "name": "better-convex-vue",
-  "version": "0.8.0-beta.19",
+  "version": "0.8.0-beta.20",
   "description": "Identity-safe Convex lifecycle primitives for Vue 3 and Vite",
   "license": "MIT",
   "files": [
