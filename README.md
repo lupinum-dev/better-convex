@@ -17,6 +17,22 @@ Convex for Nuxt 4, without the integration glue: SSR-to-realtime queries, Better
 
 Better Convex Nuxt is ESM-only and supports Node `^22.12.0 || ^24.11.0 || >=26.0.0`.
 
+## Better Convex packages
+
+- `better-convex-nuxt` is the full-stack Nuxt integration: SSR/hydration,
+  Nitro calls, Better Auth, the auth proxy, route middleware, uploads, and
+  DevTools.
+- `better-convex-vue` is the shared client lifecycle for plain Vue/Vite and
+  embedded Vue applications. It has no Nuxt, Nitro, H3, or Better Auth
+  dependency.
+- `@better-convex/mcp` is the optional experimental, provider-neutral MCP
+  resource boundary built on the official SDK.
+
+Nuxt consumes the same Vue query, pagination, callable, identity, and disposal
+engine after hydration. MCP and the experimental `better-convex-vue/mcp-app`
+entry remain optional; installing ordinary Vue or Nuxt does not enable an MCP
+server or grant application authority.
+
 ## Why use it
 
 - **One query lifecycle:** render during SSR, reuse the payload during hydration, and continue as a browser subscription.

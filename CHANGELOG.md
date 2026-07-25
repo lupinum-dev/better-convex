@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.8.0-beta.19
+
+- Retire beta.18 after the dependency graph changed; the old coordinate remains
+  immutable historical evidence and cannot be rebuilt or published.
+- Patch current production advisories across the root and maintained consumer
+  locks, retaining one bounded build-tool-only exception for
+  `brace-expansion@1.1.16`.
+- Close the final-tree cleanup with one Vue lifecycle owner, one MCP server
+  owner, and no restored compatibility paths.
+
+## v0.1.0-beta.7 (`@better-convex/mcp`)
+
+- Reserve a fresh MCP source identity after beta.6 was retired with the shared
+  dependency-security review.
+- Preserve the locked release-candidate protocol behavior and public API; final
+  MCP `2026-07-28` support remains gated on the published specification and
+  compatible official SDK evidence.
+
 ## v0.8.0-beta.18
 
 - Canonically format the deployed interaction fixture before source-integrity

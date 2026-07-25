@@ -299,6 +299,6 @@ pnpm build
 ```
 
 The supported tuple is exact: Better Auth and OAuth Provider `1.7.0-rc.1`,
-Convex `1.42.2`, Kysely `0.28.17`, Better Convex Nuxt `0.8.0-beta.18`,
-`@better-convex/mcp@0.1.0-beta.6`, and official MCP server SDK
+Convex `1.42.2`, Kysely `0.28.17`, Better Convex Nuxt `0.8.0-beta.19`,
+`@better-convex/mcp@0.1.0-beta.7`, and official MCP server SDK
 `2.0.0-beta.5`. Kysely `0.29.2` is not compatible with this pinned beta adapter tuple.
