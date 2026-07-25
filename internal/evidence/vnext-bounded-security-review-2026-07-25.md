@@ -68,17 +68,27 @@ After remediation commit `95b930c0`:
 
 ## Newly published advisories
 
-The review found three advisories published on 2026-07-24:
+The review and its final registry recheck found these current advisories:
 
-| Advisory                                  | Resolution                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GHSA-mh99-v99m-4gvg` (`brace-expansion`) | Patched the compatible 5.x graph to `5.0.8`. Versions `1.1.16` and `2.1.2` remain only beneath local Inspector/build/test dependencies. Upstream published no compatible backport; forcing 5.x would break their minimatch callers. Two exact, 30-day exceptions expire 2026-08-24 and document the absence of an application-controlled glob surface. |
-| `GHSA-r28c-9q8g-f849` (`postcss`)         | Overrode vulnerable `<=8.5.17` to patched `8.5.18`.                                                                                                                                                                                                                                                                                                    |
-| `GHSA-r292-9mhp-454m` (`tar`)             | Updated the direct and transitive resolved version to patched `7.5.22`.                                                                                                                                                                                                                                                                                |
+| Advisory                                  | Resolution                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GHSA-mh99-v99m-4gvg` (`brace-expansion`) | Patched the compatible 5.x graph to `5.0.8` and replaced vulnerable minimatch 5/9 callers with compatible minimatch `10.2.5`. Version `1.1.16` remains only beneath the local Inspector CLI and demo build-time checker. Upstream published no compatible 1.x backport; one exact, 30-day exception expires 2026-08-24 and documents the absence of an application-controlled glob surface. |
+| `GHSA-r28c-9q8g-f849` (`postcss`)         | Overrode vulnerable `<=8.5.17` to patched `8.5.18`.                                                                                                                                                                                                                                                                                                                                         |
+| `GHSA-r292-9mhp-454m` (`tar`)             | Updated the direct and transitive resolved version to patched `7.5.22`.                                                                                                                                                                                                                                                                                                                     |
+| `GHSA-2p49-hgcm-8545` (`svgo`)            | Overrode vulnerable `4.0.0`–`4.0.1` to patched `4.0.2` in the root and maintained consumer workspaces.                                                                                                                                                                                                                                                                                      |
+| `GHSA-395f-4hp3-45gv` (`shell-quote`)     | Overrode vulnerable `<=1.8.4` to patched `1.9.0` in the root and maintained consumer workspaces.                                                                                                                                                                                                                                                                                            |
+| `GHSA-g7r4-m6w7-qqqr` (`esbuild`)         | Overrode vulnerable `0.27.3`–`0.28.0` to patched `0.28.1` in the root and maintained consumer workspaces.                                                                                                                                                                                                                                                                                   |
 
-The production dependency audit is clean. The two remaining exception records are development-tool
-debt, not accepted shipped-runtime vulnerabilities, and must be removed or renewed with new evidence
-before their expiry.
+The production dependency audit is clean. The remaining exception record is development-tool debt, not
+an accepted shipped-runtime vulnerability, and must be removed or renewed with new evidence
+before its expiry.
+
+All four standalone starter production audits are clean after the overrides. The exact historical
+Vue/Nuxt/MCP candidate set also passed the maintained-consumer matrix with the new locks: five pnpm
+applications, one isolated npm consumer, and the production Nuxt lifecycle runner. The demo's broader
+development graph still reports upstream Nuxt UI/build-tool advisories, and the internal Agentic SaaS
+laboratory retains one unpatched low-severity AI SDK advisory; neither graph is part of the shipped
+Better Convex runtime, and neither is represented as clean evidence.
 
 ## Candidate consequence
 
@@ -91,5 +101,5 @@ fresh versions and create a new candidate set only after cleanup and documentati
 - Reconcile the final MCP `2026-07-28` specification, SDK, changelog, and conformance behavior after
   publication.
 - Obtain protected staging and real-host evidence using authorized environments.
-- Remove or re-evaluate the two development-tool exceptions no later than 2026-08-24.
+- Remove or re-evaluate the development-tool exception no later than 2026-08-24.
 - Continue deletion/cleanup before producing fresh immutable candidates.
