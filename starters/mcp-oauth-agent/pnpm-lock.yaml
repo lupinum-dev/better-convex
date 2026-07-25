@@ -21,8 +21,8 @@ importers:
         specifier: 1.7.0-rc.1
         version: 1.7.0-rc.1(@better-auth/core@1.7.0-rc.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.0-rc.1(react@19.2.7)(vue@3.5.39(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))
       '@better-convex/mcp':
-        specifier: 0.1.0-beta.8
-        version: 0.1.0-beta.8
+        specifier: 0.1.0-beta.9
+        version: 0.1.0-beta.9
       '@modelcontextprotocol/server':
         specifier: 2.0.0-beta.5
         version: 2.0.0-beta.5
@@ -30,8 +30,8 @@ importers:
         specifier: 1.7.0-rc.1
         version: 1.7.0-rc.1(react@19.2.7)(vue@3.5.39(typescript@5.9.3))
       better-convex-nuxt:
-        specifier: 0.8.0-beta.20
-        version: 0.8.0-beta.20(@better-auth/core@1.7.0-rc.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@standard-schema/spec@1.1.0)(better-auth@1.7.0-rc.1(react@19.2.7)(vue@3.5.39(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))(convex@1.42.2(react@19.2.7))(kysely@0.28.17)(magicast@0.5.3)(nuxt@4.4.8(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@parcel/watcher@2.5.6)(@types/node@22.20.1)(@vue/compiler-sfc@3.5.40)(cac@6.7.14)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.11.1)(magicast@0.5.3)(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(srvx@0.11.22)(terser@5.49.0)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))(vue-tsc@3.3.7(typescript@5.9.3))(yaml@2.9.0))(react@19.2.7)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))(zod@4.4.3)
+        specifier: 0.8.0-beta.21
+        version: 0.8.0-beta.21(@better-auth/core@1.7.0-rc.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@standard-schema/spec@1.1.0)(better-auth@1.7.0-rc.1(react@19.2.7)(vue@3.5.39(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))(convex@1.42.2(react@19.2.7))(kysely@0.28.17)(magicast@0.5.3)(nuxt@4.4.8(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@parcel/watcher@2.5.6)(@types/node@22.20.1)(@vue/compiler-sfc@3.5.40)(cac@6.7.14)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.11.1)(magicast@0.5.3)(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(srvx@0.11.22)(terser@5.49.0)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))(vue-tsc@3.3.7(typescript@5.9.3))(yaml@2.9.0))(react@19.2.7)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))(zod@4.4.3)
       convex:
         specifier: 1.42.2
         version: 1.42.2(react@19.2.7)
@@ -283,8 +283,8 @@ packages:
   '@better-auth/utils@0.4.2':
     resolution: {integrity: sha512-AUxrvu+HaaODsUyzDxFgwd/8RZ1yZaYo42LXKSrU2oGgR38pS1ij8nqQKNgtTWoYGpNevNXtCfgTy6loHveW9A==}
 
-  '@better-convex/mcp@0.1.0-beta.8':
-    resolution: {integrity: sha512-KrlL4tiSayWnTUubzcIhiCuxsij1E242S568McyZ6Ne+8hHU5wxheSS3ei8W10+0EXIt+x7QFEQC7fbOjD84PQ==}
+  '@better-convex/mcp@0.1.0-beta.9':
+    resolution: {integrity: sha512-dVZBc5+aaiiHVL36lsvDHB39MIEHZEsmLdSN1ZIavkL/5G+iz9K+I05vSNilEDmoJtUbFhezKnQLJDohSr3Uaw==}
     engines: {node: '>=22.14.0'}
 
   '@better-fetch/fetch@1.3.1':
@@ -1880,8 +1880,8 @@ packages:
       zod:
         optional: true
 
-  better-convex-nuxt@0.8.0-beta.20:
-    resolution: {integrity: sha512-vnK/4znRqLUpgiDEzZKwl/a54xRKmTsTrIGKiOkPYXMkBqkr18jxcRF2xoZ1qOok7PE1CXHFfxY8dRrnm5/WhQ==}
+  better-convex-nuxt@0.8.0-beta.21:
+    resolution: {integrity: sha512-TVGods745Lm+OMdFzBSH3565vBRtP8XlIcxeBEcZuB9G/GmrhJyxblFwb49qmizlGr783kPg89nH3POJJCqZpA==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -1890,8 +1890,8 @@ packages:
       kysely: 0.28.17
       nuxt: 4.4.8
 
-  better-convex-vue@0.8.0-beta.20:
-    resolution: {integrity: sha512-RlQXM4T/7AVp/JiK2eY8BFiQCpqb8oU2S83mtacXdyBLKnGqIcr2Zavapqy4bQCF1Y2+zuDOxwpfU9gt8nMaDg==}
+  better-convex-vue@0.8.0-beta.21:
+    resolution: {integrity: sha512-nwBcEKGCbEYFwOCVrobtOPE3RUGd1rDj6/0fb2CL0Ed5ZolbQ5qUv37fh40JE/KubJotIUbCpvY6VRU2tKqudg==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.4
@@ -4117,7 +4117,7 @@ snapshots:
     dependencies:
       '@noble/hashes': 2.2.0
 
-  '@better-convex/mcp@0.1.0-beta.8':
+  '@better-convex/mcp@0.1.0-beta.9':
     dependencies:
       '@modelcontextprotocol/server': 2.0.0-beta.5
 
@@ -5509,12 +5509,12 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  better-convex-nuxt@0.8.0-beta.20(@better-auth/core@1.7.0-rc.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@standard-schema/spec@1.1.0)(better-auth@1.7.0-rc.1(react@19.2.7)(vue@3.5.39(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))(convex@1.42.2(react@19.2.7))(kysely@0.28.17)(magicast@0.5.3)(nuxt@4.4.8(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@parcel/watcher@2.5.6)(@types/node@22.20.1)(@vue/compiler-sfc@3.5.40)(cac@6.7.14)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.11.1)(magicast@0.5.3)(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(srvx@0.11.22)(terser@5.49.0)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))(vue-tsc@3.3.7(typescript@5.9.3))(yaml@2.9.0))(react@19.2.7)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))(zod@4.4.3):
+  better-convex-nuxt@0.8.0-beta.21(@better-auth/core@1.7.0-rc.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@standard-schema/spec@1.1.0)(better-auth@1.7.0-rc.1(react@19.2.7)(vue@3.5.39(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))(convex@1.42.2(react@19.2.7))(kysely@0.28.17)(magicast@0.5.3)(nuxt@4.4.8(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@parcel/watcher@2.5.6)(@types/node@22.20.1)(@vue/compiler-sfc@3.5.40)(cac@6.7.14)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.11.1)(magicast@0.5.3)(rollup-plugin-visualizer@7.0.1(rollup@4.62.2))(rollup@4.62.2)(srvx@0.11.22)(terser@5.49.0)(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))(vue-tsc@3.3.7(typescript@5.9.3))(yaml@2.9.0))(react@19.2.7)(typescript@5.9.3)(vue@3.5.39(typescript@5.9.3))(zod@4.4.3):
     dependencies:
       '@better-auth/oauth-provider': 1.7.0-rc.1(@better-auth/core@1.7.0-rc.1(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.0-rc.1(react@19.2.7)(vue@3.5.39(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))
       '@nuxt/kit': 4.4.8(magicast@0.5.3)
       better-auth: 1.7.0-rc.1(react@19.2.7)(vue@3.5.39(typescript@5.9.3))
-      better-convex-vue: 0.8.0-beta.20(convex@1.42.2(react@19.2.7))(vue@3.5.39(typescript@5.9.3))
+      better-convex-vue: 0.8.0-beta.21(convex@1.42.2(react@19.2.7))(vue@3.5.39(typescript@5.9.3))
       convex: 1.42.2(react@19.2.7)
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2(react@19.2.7))(react@19.2.7)(typescript@5.9.3)(zod@4.4.3)
       defu: 6.1.7
@@ -5537,7 +5537,7 @@ snapshots:
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.20(convex@1.42.2(react@19.2.7))(vue@3.5.39(typescript@5.9.3)):
+  better-convex-vue@0.8.0-beta.21(convex@1.42.2(react@19.2.7))(vue@3.5.39(typescript@5.9.3)):
     dependencies:
       convex: 1.42.2(react@19.2.7)
       ohash: 2.0.11

@@ -49,12 +49,13 @@ function parseTimestamp(value, label) {
 export function validateExceptionPolicy(policy, now = Date.now()) {
   if (!isObject(policy)) fail('Exception policy must be an object.')
   exactKeys(policy, ['schemaVersion', 'exceptions'], 'Exception policy')
-  if (policy.schemaVersion !== 1) fail('Exception policy schemaVersion must be 1.')
+  if (policy.schemaVersion !== 2) fail('Exception policy schemaVersion must be 2.')
   if (!Array.isArray(policy.exceptions)) fail('Exception policy exceptions must be an array.')
 
   const keys = [
     'id',
     'source',
+    'auditScope',
     'package',
     'version',
     'owner',
@@ -72,6 +73,9 @@ export function validateExceptionPolicy(policy, now = Date.now()) {
     for (const key of keys) requireString(exception[key], `${label}.${key}`)
     if (!['npm', 'github', 'upstream'].includes(exception.source)) {
       fail(`${label}.source must be npm, github, or upstream.`)
+    }
+    if (!['repository', 'clean-nuxt-consumer'].includes(exception.auditScope)) {
+      fail(`${label}.auditScope must be repository or clean-nuxt-consumer.`)
     }
     let sourceUrl
     try {
@@ -298,8 +302,10 @@ async function main() {
     }
     const findings = runAudit(['--prod'], 'clean OAuth production consumer', directory)
     const findingIdentities = new Set(findings.map(exceptionIdentity))
-    const applicableExceptions = exceptions.filter((exception) =>
-      findingIdentities.has(exceptionIdentity(exception)),
+    const applicableExceptions = exceptions.filter(
+      (exception) =>
+        exception.auditScope === 'clean-nuxt-consumer' &&
+        findingIdentities.has(exceptionIdentity(exception)),
     )
     const result = evaluateFindings(findings, applicableExceptions)
     if (result.applicable.length > 0) {
@@ -322,7 +328,10 @@ async function main() {
     ...runAudit([], 'complete'),
     ...(await collectGitHubFindings(importedCommit)),
   ]
-  const result = evaluateFindings(findings, exceptions)
+  const result = evaluateFindings(
+    findings,
+    exceptions.filter((exception) => exception.auditScope === 'repository'),
+  )
   for (const { finding, exception } of result.excepted) {
     console.warn(
       `[auth-advisories] EXCEPTED ${finding.id} ${finding.package}@${finding.version} until ${exception.expiresAt} (${exception.owner}).`,

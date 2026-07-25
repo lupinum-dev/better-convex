@@ -15,6 +15,7 @@ function exception(overrides: Record<string, string> = {}) {
   return {
     id: 'GHSA-test-test-test',
     source: 'npm',
+    auditScope: 'repository',
     package: 'convex',
     version: CONVEX_VERSION,
     owner: 'Ada Security',
@@ -48,17 +49,33 @@ describe('auth advisory gate', () => {
   })
 
   it('accepts an exact owned exception for no more than 30 days', () => {
-    const exceptions = validateExceptionPolicy({ schemaVersion: 1, exceptions: [exception()] }, NOW)
+    const exceptions = validateExceptionPolicy({ schemaVersion: 2, exceptions: [exception()] }, NOW)
     const result = evaluateFindings([syntheticFinding()], exceptions)
     expect(result.applicable).toEqual([])
     expect(result.excepted).toHaveLength(1)
+  })
+
+  it('does not let one advisory exception cover another affected version', () => {
+    const exceptions = validateExceptionPolicy(
+      {
+        schemaVersion: 2,
+        exceptions: [exception({ package: 'brace-expansion', version: '2.1.2' })],
+      },
+      NOW,
+    )
+    const finding = {
+      ...syntheticFinding(),
+      package: 'brace-expansion',
+      version: '2.1.3',
+    }
+    expect(() => evaluateFindings([finding], exceptions)).toThrow('Stale exceptions')
   })
 
   it('rejects expired, overlong, anonymous, and stale exceptions', () => {
     expect(() =>
       validateExceptionPolicy(
         {
-          schemaVersion: 1,
+          schemaVersion: 2,
           exceptions: [exception({ expiresAt: '2026-07-16T00:00:00.000Z' })],
         },
         NOW,
@@ -67,16 +84,22 @@ describe('auth advisory gate', () => {
     expect(() =>
       validateExceptionPolicy(
         {
-          schemaVersion: 1,
+          schemaVersion: 2,
           exceptions: [exception({ expiresAt: '2026-08-20T00:00:00.000Z' })],
         },
         NOW,
       ),
     ).toThrow('30-day')
     expect(() =>
-      validateExceptionPolicy({ schemaVersion: 1, exceptions: [exception({ owner: '' })] }, NOW),
+      validateExceptionPolicy({ schemaVersion: 2, exceptions: [exception({ owner: '' })] }, NOW),
     ).toThrow('owner')
-    const exceptions = validateExceptionPolicy({ schemaVersion: 1, exceptions: [exception()] }, NOW)
+    expect(() =>
+      validateExceptionPolicy(
+        { schemaVersion: 2, exceptions: [exception({ auditScope: 'all' })] },
+        NOW,
+      ),
+    ).toThrow('auditScope')
+    const exceptions = validateExceptionPolicy({ schemaVersion: 2, exceptions: [exception()] }, NOW)
     expect(() => evaluateFindings([], exceptions)).toThrow('Stale exceptions')
   })
 

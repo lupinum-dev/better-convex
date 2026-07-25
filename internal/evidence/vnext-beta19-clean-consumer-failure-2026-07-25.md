@@ -2,6 +2,11 @@
 
 Date: 2026-07-25
 
+> Follow-up: beta.20 proved that the `@nuxt/kit` drift recorded here was real
+> but not the complete advisory path. The corrected dependency diagnosis and
+> bounded decision are recorded in
+> [`vnext-beta20-nitro-advisory-boundary-2026-07-25.md`](./vnext-beta20-nitro-advisory-boundary-2026-07-25.md).
+
 ## Outcome
 
 The immutable Vue/Nuxt `0.8.0-beta.19` and MCP `0.1.0-beta.7` artifacts are

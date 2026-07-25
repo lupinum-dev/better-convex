@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## v0.8.0-beta.21
+
+- Retire beta.20 after the exact clean npm consumer again failed closed on
+  `brace-expansion@2.1.2` in Nitro's Azure deployment-only `archiver@7`
+  graph.
+- Admit one exact, 30-day advisory exception after source review proved Nitro
+  supplies a constant glob over generated build output and the vulnerable
+  dependency is absent from the application runtime.
+- Preserve the exact `@nuxt/kit@4.4.8` tuple pin added after beta.19; it closes
+  package-owned version drift even though it was not the root cause of the
+  Nitro advisory.
+
+## v0.1.0-beta.9 (`@better-convex/mcp`)
+
+- Reserve a fresh coordinated source identity after beta.8 independently
+  passed its complete lane but could not remain in a candidate set whose
+  Vue/Nuxt companion failed.
+- Preserve the beta.8 package behavior unchanged.
+
 ## v0.8.0-beta.20
 
 - Pin the package-owned `@nuxt/kit` runtime to the exact certified Nuxt
@@ -9,6 +28,9 @@
   semver drift to an unreviewed transitive dependency graph.
 - Retire beta.19 as immutable failed evidence; it was never published and
   cannot be rebuilt under the same version.
+- This correction closed `@nuxt/kit` tuple drift but did not remove Nitro's
+  independent Azure deployment-only `archiver@7` advisory path; beta.20
+  therefore also failed exact clean-consumer certification.
 
 ## v0.1.0-beta.8 (`@better-convex/mcp`)
 
