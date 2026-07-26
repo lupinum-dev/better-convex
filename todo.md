@@ -1754,9 +1754,9 @@ Ledger note (2026-07-26):
 
 ### T5.7 — Remove temporary proof surfaces after final reconciliation
 
-- [ ] Delete `internal/labs/agentic-saas` after extracting a minimal schema-options
+- [x] Delete `internal/labs/agentic-saas` after extracting a minimal schema-options
       fixture only if it still proves a unique schema vector.
-- [ ] Keep `internal/labs/mcp-topology` through final real-host reconciliation; it is an
+- [x] Keep `internal/labs/mcp-topology` through final real-host reconciliation; it is an
       active neutral proof consumer despite its `labs` name.
 - [ ] Archive historical `internal/evidence` after preserving durable ADRs and the final
       release dossier.
@@ -1764,10 +1764,25 @@ Ledger note (2026-07-26):
 
 Acceptance criteria:
 
-- [ ] No maintained test depends on an unmaintained mock application.
-- [ ] Generated-schema coverage remains equivalent.
+- [x] No maintained test depends on an unmaintained mock application.
+- [x] Generated-schema coverage remains equivalent.
 - [ ] Final proof remains reachable without carrying historical intermediate
       narratives as active authority.
+
+Interim ledger note (2026-07-26):
+
+- Deleted the 51-file `internal/labs/agentic-saas` mock application (16,939 lines).
+  Its only maintained external consumers were schema generation and two adapter invariant
+  assertions. The purported schema vector was not unique: the maintained local-component
+  fixture already owns the same default organization member index, while the team starter
+  owns the renamed/team-enabled variant. Tests now use those maintained fixtures directly;
+  no replacement mock was added.
+- Removed the lab from root typecheck and schema generation. All four remaining generated
+  schema targets are current; the focused schema/candidate/adapter suites pass 36/36.
+- Retained `internal/labs/mcp-topology`: neutral-notes and MCP Apps tests import it directly,
+  so deleting or archiving it before final SDK/real-host reconciliation would remove active
+  proof. Historical evidence and private RC interaction deletion remain intentionally open
+  until the final `2026-07-28` protocol/SDK gate in T2.6 can run.
 
 ### T5.8 — Reconcile published and normative documentation
 
