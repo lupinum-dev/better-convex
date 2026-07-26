@@ -486,7 +486,12 @@ try {
   const proxy = await startJwksProxy()
   jwksProxy = proxy.server
   publicOrigin = proxy.origin
-  local = await ensureLocalConvex({ authOrigin: publicOrigin, cwd: fixtureCwd, timeoutMs: 60_000 })
+  local = await ensureLocalConvex({
+    authOrigin: publicOrigin,
+    cwd: fixtureCwd,
+    provisionSigningKey: false,
+    timeoutMs: 60_000,
+  })
   await assertLocalAuthReady({ cwd: fixtureCwd, env: local.env, origin: publicOrigin })
 } catch (error) {
   try {

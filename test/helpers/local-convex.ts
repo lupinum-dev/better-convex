@@ -12,6 +12,7 @@ interface LocalConvexHandle {
   cwd: string
   deploymentEnv: Readonly<Record<string, string>>
   process: ChildProcessWithoutNullStreams
+  provisionSigningKey: boolean
   requireAuthDeployment: boolean
   selectionEnvDirectory: string
   url: string
@@ -39,6 +40,7 @@ export interface EnsureLocalConvexOptions {
   authOrigin?: string
   cwd?: string
   deploymentEnv?: Readonly<Record<string, string>>
+  provisionSigningKey?: boolean
   requireAuthDeployment?: boolean
   timeoutMs?: number
 }
@@ -226,6 +228,7 @@ function spawnConvex(
   cwd: string,
   args: string[],
   overrides: Readonly<Record<string, string>> = {},
+  localDeployment?: string,
 ): ChildProcessWithoutNullStreams {
   const env = Object.fromEntries(
     Object.entries({ ...process.env, ...overrides }).filter(
@@ -236,6 +239,12 @@ function spawnConvex(
   // Empty values block dotenv from reintroducing a cloud/deploy-key selection
   // from .env while still being treated as absent by Convex's selector.
   for (const name of inheritedConvexEnvBlocklist) env[name] = ''
+  if (localDeployment !== undefined) {
+    if (!localConvexSelectionPrefixes.some((prefix) => localDeployment.startsWith(prefix))) {
+      throw new Error('Explicit Convex command selection must be local.')
+    }
+    env.CONVEX_DEPLOYMENT = localDeployment
+  }
   env.CONVEX_AGENT_MODE = 'anonymous'
   env.CONVEX_ALLOW_ANONYMOUS = 'true'
 
@@ -872,6 +881,43 @@ async function waitForLocalAuthDeployment(
   )
 }
 
+async function ensureLocalSigningKey(
+  cwd: string,
+  siteUrl: string,
+  deployment: string,
+): Promise<void> {
+  const jwksUrl = `${siteUrl.replace(/\/$/u, '')}/api/auth/jwks`
+  const before = await fetchWithTimeout(jwksUrl, { method: 'GET' }, 1000)
+  await before.body?.cancel()
+  if (before.status === 200) return
+  if (before.status !== 503) {
+    throw new Error(`Local signing-key preflight returned HTTP ${before.status}.`)
+  }
+
+  const child = spawnConvex(
+    cwd,
+    ['run', 'auth:rotateSigningKey', '{}', '--typecheck', 'disable', '--codegen', 'disable'],
+    {},
+    deployment,
+  )
+  const getOutput = createChildOutputReader(child, [localAuthSecret, localProxyIpSecret])
+  child.stdin.end()
+  await waitForChildExit(child, localConvexCommandTimeoutMs)
+  if (child.exitCode === null && child.signalCode === null) {
+    await terminateChild(child)
+    throw new Error(`Timed out provisioning the local signing key: ${getOutput()}`)
+  }
+  if (child.exitCode !== 0) {
+    throw new Error(`Failed to provision the local signing key: ${getOutput()}`)
+  }
+
+  const after = await fetchWithTimeout(jwksUrl, { method: 'GET' }, 1000)
+  await after.body?.cancel()
+  if (after.status !== 200) {
+    throw new Error(`Provisioned local signing key was not published (HTTP ${after.status}).`)
+  }
+}
+
 function retainLocalConvex(handle: LocalConvexHandle): () => Promise<void> {
   retainers += 1
   let released = false
@@ -899,6 +945,7 @@ async function startLocalConvex(
   authOrigin: string,
   deploymentEnv: Readonly<Record<string, string>>,
   requireAuthDeployment: boolean,
+  provisionSigningKey: boolean,
 ): Promise<LocalConvexHandle> {
   const reviewedBackend = await assertCurrentBackendBinary()
   const configured = await readLocalConvexEnv(cwd)
@@ -975,6 +1022,9 @@ async function startLocalConvex(
         authOrigin,
         getOutput,
       )
+      if (provisionSigningKey) {
+        await ensureLocalSigningKey(cwd, selected.siteUrl, selected.deployment)
+      }
     }
 
     const handle: LocalConvexHandle = {
@@ -982,6 +1032,7 @@ async function startLocalConvex(
       cwd,
       deploymentEnv,
       process: child,
+      provisionSigningKey,
       requireAuthDeployment,
       selectionEnvDirectory: selectionEnv.directory,
       url: selected.url,
@@ -1029,11 +1080,13 @@ export async function ensureLocalConvex(
   const authOrigin = normalizeLocalAuthOrigin(options.authOrigin ?? 'http://localhost:3050')
   const deploymentEnv = normalizeLocalDeploymentEnv(options.deploymentEnv)
   const requireAuthDeployment = options.requireAuthDeployment ?? true
+  const provisionSigningKey = options.provisionSigningKey ?? requireAuthDeployment
 
   if (activeHandle) {
     if (
       activeHandle.cwd !== cwd ||
       activeHandle.authOrigin !== authOrigin ||
+      activeHandle.provisionSigningKey !== provisionSigningKey ||
       activeHandle.requireAuthDeployment !== requireAuthDeployment
     ) {
       throw new Error(
@@ -1069,7 +1122,7 @@ export async function ensureLocalConvex(
     : undefined
   const key = startupKey(
     cwd,
-    `${explicitUrl ?? 'auto'}:${authOrigin}:${requireAuthDeployment ? 'auth' : 'functions'}`,
+    `${explicitUrl ?? 'auto'}:${authOrigin}:${requireAuthDeployment ? 'auth' : 'functions'}:${provisionSigningKey ? 'key' : 'no-key'}`,
     deploymentEnv,
   )
   const previousFailure = startupFailures.get(key)
@@ -1146,6 +1199,7 @@ export async function ensureLocalConvex(
       authOrigin,
       deploymentEnv,
       requireAuthDeployment,
+      provisionSigningKey,
     )
     assertRequiredLocalUrls(cwd, handle.url, handle.siteUrl)
     return {
