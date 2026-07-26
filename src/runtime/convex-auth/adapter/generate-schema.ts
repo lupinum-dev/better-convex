@@ -4,7 +4,7 @@
  * Rewritten to retain logical IDs, canonical nullability, explicit indexes,
  * ordered compound indexes, and a deterministic adapter metadata descriptor.
  */
-import type { BetterAuthDBSchema, DBFieldAttribute } from 'better-auth/db'
+import type { BetterAuthDBSchema, DBFieldAttribute, DBTableIndex } from 'better-auth/db'
 
 import {
   fingerprintAuthSchemaModels,
@@ -23,15 +23,11 @@ export interface GeneratedAuthSchemaArtifacts {
 
 interface AuthIndexDeclaration {
   fields: readonly string[]
+  name?: string
   unique?: true
 }
 
 const explicitIndexes: Readonly<Record<string, readonly AuthIndexDeclaration[]>> = {
-  account: [
-    { fields: ['accountId'] },
-    { fields: ['accountId', 'providerId'], unique: true },
-    { fields: ['providerId', 'userId'] },
-  ],
   invitation: [
     { fields: ['email', 'organizationId', 'status'] },
     { fields: ['organizationId', 'status', 'createdAt'] },
@@ -92,12 +88,13 @@ function descriptorFor(fields: readonly string[]): string {
 function buildIndexes(
   logicalModelName: string,
   fields: Readonly<Record<string, AuthFieldMetadata>>,
+  tableIndexes: readonly DBTableIndex[],
 ): AuthIndexMetadata[] {
   const indexes: AuthIndexMetadata[] = []
   const seenDescriptors = new Set<string>()
   const indexesByFields = new Map<string, AuthIndexMetadata>()
 
-  const add = (logicalFields: readonly string[], unique = false) => {
+  const add = (logicalFields: readonly string[], unique = false, name?: string) => {
     const physicalFields = logicalFields.map((logicalField) => {
       const field = Object.values(fields).find(
         (candidate) => candidate.logicalName === logicalField,
@@ -112,7 +109,7 @@ function buildIndexes(
       if (unique) existing.unique = true
       return
     }
-    const descriptor = descriptorFor(physicalFields)
+    const descriptor = name ?? descriptorFor(physicalFields)
     if (seenDescriptors.has(descriptor)) {
       throw new Error(`AUTH_SCHEMA_INDEX_NAME_COLLISION:${logicalModelName}.${descriptor}`)
     }
@@ -127,8 +124,11 @@ function buildIndexes(
   }
 
   add(['id'], true)
+  for (const declared of tableIndexes) {
+    add(declared.fields, declared.unique === true, declared.name)
+  }
   for (const declared of explicitIndexes[logicalModelName] ?? []) {
-    add(declared.fields, declared.unique === true)
+    add(declared.fields, declared.unique === true, declared.name)
   }
   for (const field of Object.values(fields)) {
     if (
@@ -233,7 +233,7 @@ function buildMetadata(tables: BetterAuthDBSchema): AuthSchemaMetadata {
       logicalName: logicalModelName,
       physicalName: physicalModelName,
       fields,
-      indexes: buildIndexes(logicalModelName, fields),
+      indexes: buildIndexes(logicalModelName, fields, table.indexes ?? []),
     }
   }
   for (const model of Object.values(models)) {

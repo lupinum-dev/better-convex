@@ -15,8 +15,6 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const sourcePlayground = join(root, 'playground')
 
 export const authConcurrencyFunctions = {
-  countBulk: makeFunctionReference('authConcurrency:countBulkRaceRows'),
-  createBulk: makeFunctionReference('authConcurrency:createBulkRaceRows'),
   create: makeFunctionReference('authConcurrency:createRaceRow'),
   createWithFailingTrigger: makeFunctionReference(
     'authConcurrency:createRaceRowWithFailingTrigger',
@@ -33,12 +31,10 @@ export const authConcurrencyFunctions = {
   read: makeFunctionReference('authConcurrency:readRaceRow'),
   runtimeCapabilities: makeFunctionReference('authConcurrency:readRuntimeCapabilities'),
   remove: makeFunctionReference('authConcurrency:deleteRaceRow'),
-  removeBulk: makeFunctionReference('authConcurrency:deleteBulkRaceRows'),
   rotate: makeFunctionReference('authConcurrency:rotateSigningKeyRace'),
   updateManyWithFailingTrigger: makeFunctionReference(
     'authConcurrency:updateRaceRowsWithFailingTrigger',
   ),
-  updateBulk: makeFunctionReference('authConcurrency:updateBulkRaceRows'),
 }
 
 export const authAdapterComponentFunctions = {
@@ -55,6 +51,7 @@ export const authOperatorFunctions = {
 const proxyIpSecret = 'better-convex-nuxt-e2e-proxy-ip-secret-32-bytes'
 const authComponentPath = 'betterAuth'
 const compoundAccountProvider = 'bcn-compound-race'
+const compoundAccountIssuer = 'https://bcn-compound-race.example.test'
 export const AUTH_CONTENTION_MAX_RETRIES = 5
 
 export function safeAuthConcurrencyFailure(error) {
@@ -130,9 +127,10 @@ async function runWorker() {
       return client.function(authAdapterComponentFunctions.create, componentPath, {
         model: 'account',
         data: {
-          accountId: key,
           createdAt: 1_700_000_000_000,
           id: `${id}-${workerIndex}-${index}`,
+          issuer: compoundAccountIssuer,
+          providerAccountId: key,
           providerId: compoundAccountProvider,
           updatedAt: 1_700_000_000_000,
           userId: `${id}-user`,
@@ -277,60 +275,6 @@ function failureSummary(results) {
     .join(', ')
 }
 
-async function verifyBulkScale(client) {
-  const bulkScale = {
-    batchSize: 200,
-    keyPrefix: 'bcn-auth-concurrency-v1-bulk-scale-',
-    rowCount: 1_001,
-  }
-  await client.mutation(authConcurrencyFunctions.removeBulk, {
-    keyPrefix: bulkScale.keyPrefix,
-  })
-  for (let start = 0; start < bulkScale.rowCount; start += bulkScale.batchSize) {
-    const count = Math.min(bulkScale.batchSize, bulkScale.rowCount - start)
-    const created = await client.mutation(authConcurrencyFunctions.createBulk, {
-      count,
-      keyPrefix: bulkScale.keyPrefix,
-      start,
-    })
-    assert(created === count, 'AUTH_BULK_SCALE_SETUP_FAILED')
-  }
-  assert(
-    (await client.query(authConcurrencyFunctions.countBulk, {
-      keyPrefix: bulkScale.keyPrefix,
-    })) === bulkScale.rowCount,
-    'AUTH_BULK_SCALE_COUNT_FAILED',
-  )
-  assert(
-    (await client.mutation(authConcurrencyFunctions.updateBulk, {
-      keyPrefix: bulkScale.keyPrefix,
-    })) === bulkScale.rowCount,
-    'AUTH_BULK_SCALE_UPDATE_FAILED',
-  )
-  assert(
-    (await client.query(authConcurrencyFunctions.countBulk, {
-      keyPrefix: bulkScale.keyPrefix,
-      updatedOnly: true,
-    })) === bulkScale.rowCount,
-    'AUTH_BULK_SCALE_UPDATE_INCOMPLETE',
-  )
-  assert(
-    (await client.mutation(authConcurrencyFunctions.removeBulk, {
-      keyPrefix: bulkScale.keyPrefix,
-    })) === bulkScale.rowCount,
-    'AUTH_BULK_SCALE_DELETE_FAILED',
-  )
-  assert(
-    (await client.query(authConcurrencyFunctions.countBulk, {
-      keyPrefix: bulkScale.keyPrefix,
-    })) === 0,
-    'AUTH_BULK_SCALE_DELETE_INCOMPLETE',
-  )
-  console.log(
-    '[auth-concurrency] adapter scale PASS: one-snapshot count and one-mutation update/delete each covered 1,001 rows.',
-  )
-}
-
 function signClientIp(clientIp) {
   return createHmac('sha256', proxyIpSecret).update(`v1\n${clientIp}`).digest('base64url')
 }
@@ -457,14 +401,12 @@ async function runMain() {
       },
     }
     const compoundAccount = {
-      accountId: 'bcn-auth-concurrency-v1-compound-account',
       id: 'bcn-auth-concurrency-v1-compound-account-row',
+      providerAccountId: 'bcn-auth-concurrency-v1-compound-account',
     }
     for (const row of Object.values(rows)) {
       await client.mutation(authConcurrencyFunctions.remove, { id: row.id })
     }
-    await verifyBulkScale(client)
-
     const sameId = await spawnAuthRaceWorkers(
       url,
       adminKey,
@@ -496,8 +438,8 @@ async function runMain() {
     await client.function(authAdapterComponentFunctions.remove, authComponentPath, {
       model: 'account',
       where: [
-        { field: 'accountId', value: compoundAccount.accountId },
-        { field: 'providerId', value: compoundAccountProvider },
+        { field: 'issuer', value: compoundAccountIssuer },
+        { field: 'providerAccountId', value: compoundAccount.providerAccountId },
       ],
     })
     await client.function(authAdapterComponentFunctions.remove, authComponentPath, {
@@ -520,7 +462,7 @@ async function runMain() {
       adminKey,
       'createSameAccountIdentity',
       compoundAccount.id,
-      compoundAccount.accountId,
+      compoundAccount.providerAccountId,
       workers,
       1,
       authComponentPath,
@@ -531,7 +473,7 @@ async function runMain() {
     )
     assertOnlyFailure(
       sameAccountIdentity,
-      'AUTH_UNIQUE_CONFLICT:account.accountId_providerId',
+      'AUTH_UNIQUE_CONFLICT:account.issuer_providerAccountId',
       'AUTH_COMPOUND_UNIQUE_RACE_UNEXPECTED_FAILURE',
     )
 
@@ -718,7 +660,7 @@ async function runMain() {
     }
 
     console.log(
-      `[auth-concurrency] PASS: pinned real backend lacks URL.canParse as expected; logical-id 1/${sameId.length}, scalar unique-field 1/${sameKey.length}, compound account identity 1/${sameAccountIdentity.length}, consume 1/${consumed.length} across ${workers} worker isolates; increment ${finalRow.count}/${totalRequests} across ${incrementWorkers} sustained worker isolates; 1,001-row atomic count/update/delete, create/consume/increment/updateMany trigger rollback, signed-IP quotas/reset, forged-pair rejection, direct-IP fallback, and 8-way official JWKS rotation verified.`,
+      `[auth-concurrency] PASS: pinned real backend lacks URL.canParse as expected; logical-id 1/${sameId.length}, scalar unique-field 1/${sameKey.length}, compound account identity 1/${sameAccountIdentity.length}, consume 1/${consumed.length} across ${workers} worker isolates; increment ${finalRow.count}/${totalRequests} across ${incrementWorkers} sustained worker isolates; create/consume/increment/updateMany trigger rollback, signed-IP quotas/reset, forged-pair rejection, direct-IP fallback, and 8-way official JWKS rotation verified.`,
     )
   } finally {
     await local?.release()

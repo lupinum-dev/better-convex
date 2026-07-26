@@ -68,7 +68,7 @@ describe('pinned Better Auth adapter contract provenance', () => {
     const contract = adapterProvenance.adapterContractTests
 
     expect(contract.upstreamCommit).toMatch(/^[0-9a-f]{40}$/u)
-    expect(contract.upstreamTag).toBe('v1.7.0-rc.1')
+    expect(contract.upstreamTag).toBe('v1.7.0-rc.2')
     expect(contract.sourceTestPaths).toEqual(
       expect.arrayContaining([
         'packages/core/src/db/adapter/factory.test.ts',
@@ -136,6 +136,46 @@ describe('greenfield Convex auth schema generation', () => {
       'expiresAt',
     ])
     expect(second).toEqual(first)
+  })
+
+  it('uses Better Auth table-level compound indexes as the schema authority', () => {
+    const indexedTables = {
+      tenantCredential: {
+        modelName: 'tenantCredential',
+        fields: {
+          tenant: { type: 'string', fieldName: 'tenantId', required: true },
+          handle: { type: 'string', required: true },
+        },
+        indexes: [
+          {
+            name: 'tenant_handle_identity',
+            fields: ['tenant', 'handle'],
+            unique: true,
+          },
+        ],
+      },
+    } as unknown as BetterAuthDBSchema
+
+    expect(
+      generateAuthSchemaArtifacts(indexedTables).metadata.models.tenantCredential?.indexes,
+    ).toContainEqual({
+      descriptor: 'tenant_handle_identity',
+      fields: ['tenantId', 'handle'],
+      unique: true,
+    })
+  })
+
+  it('uses the RC.2 issuer-scoped account identity without an RC.1 alias', () => {
+    const account = packagedSchemaMetadata.models.account
+
+    expect(account?.fields).toHaveProperty('issuer')
+    expect(account?.fields).toHaveProperty('providerAccountId')
+    expect(account?.fields).not.toHaveProperty('accountId')
+    expect(account?.indexes).toContainEqual({
+      descriptor: 'issuer_providerAccountId',
+      fields: ['issuer', 'providerAccountId'],
+      unique: true,
+    })
   })
 
   it('materializes pinned relationship targets and deletion policies', () => {
@@ -246,7 +286,7 @@ describe('greenfield Convex auth schema generation', () => {
 
     const compoundUniqueTamper = structuredClone(packagedSchemaMetadata) as AuthSchemaMetadata
     const accountCompoundIndex = compoundUniqueTamper.models.account?.indexes.find(
-      (index) => index.descriptor === 'accountId_providerId',
+      (index) => index.descriptor === 'issuer_providerAccountId',
     )
     if (!accountCompoundIndex) throw new Error('Expected generated account compound index.')
     delete (accountCompoundIndex as { unique?: true }).unique
@@ -289,17 +329,16 @@ describe('greenfield Convex auth schema generation', () => {
   })
 
   it('marks only canonical compound identities as unique', () => {
-    expect(
-      packagedSchemaMetadata.models.account?.indexes.find(
-        (index) => index.descriptor === 'accountId_providerId',
-      ),
-    ).toMatchObject({ unique: true })
+    const accountIndexDescriptors: readonly string[] =
+      packagedSchemaMetadata.models.account?.indexes.map((index) => index.descriptor) ?? []
 
     expect(
       packagedSchemaMetadata.models.account?.indexes.find(
-        (index) => index.descriptor === 'providerId_userId',
+        (index) => index.descriptor === 'issuer_providerAccountId',
       ),
-    ).toEqual({ descriptor: 'providerId_userId', fields: ['providerId', 'userId'] })
+    ).toMatchObject({ unique: true })
+
+    expect(accountIndexDescriptors).not.toContain('providerId_userId')
     expect(
       packagedSchemaMetadata.models.oauthConsent?.indexes.find(
         (index) => index.descriptor === 'clientId_userId',

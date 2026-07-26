@@ -14,17 +14,24 @@ import type { ConvexUser } from '../utils/types'
 // Re-export for convenience
 export type { ConvexUser } from '../utils/types'
 
+interface AuthClientNamespaceContract {
+  readonly signIn: unknown
+  readonly signUp: unknown
+}
+
 /** The integrated `signIn` namespace type — structurally the client's own. */
-export type IntegratedSignIn<Client extends BaseAuthClient = BaseAuthClient> = Client['signIn']
+export type IntegratedSignIn<Client extends AuthClientNamespaceContract = BaseAuthClient> =
+  Client['signIn']
 /** The integrated `signUp` namespace type — structurally the client's own. */
-export type IntegratedSignUp<Client extends BaseAuthClient = BaseAuthClient> = Client['signUp']
+export type IntegratedSignUp<Client extends AuthClientNamespaceContract = BaseAuthClient> =
+  Client['signUp']
 
 /**
  * The Convex authentication contract . `status` describes current
  * usable identity; `isPending` describes auth work in flight — deliberately
  * independent.
  */
-export interface UseConvexAuthReturn<Client extends BaseAuthClient = BaseAuthClient> {
+export interface UseConvexAuthReturn<Client extends AuthClientNamespaceContract = BaseAuthClient> {
   status: ComputedRef<ConvexAuthStatus>
   isPending: ComputedRef<boolean>
   isAuthenticated: ComputedRef<boolean>
@@ -123,7 +130,7 @@ function createDisabledAuthResult(): UseConvexAuthReturn {
 export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthClient> {
   const authEnabled = getConvexRuntimeConfig().auth !== false
   if (!authEnabled) {
-    return createDisabledAuthResult() as UseConvexAuthReturn<InferRegisteredConvexAuthClient>
+    return createDisabledAuthResult() as unknown as UseConvexAuthReturn<InferRegisteredConvexAuthClient>
   }
 
   const nuxtApp = useNuxtApp()

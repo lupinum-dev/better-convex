@@ -40,7 +40,8 @@ export const tables = {
     .index('userId', ['userId']),
   account: defineTable({
     id: v.string(),
-    accountId: v.string(),
+    issuer: v.string(),
+    providerAccountId: v.string(),
     providerId: v.string(),
     userId: v.string(),
     accessToken: v.union(v.null(), v.string()),
@@ -54,9 +55,7 @@ export const tables = {
     updatedAt: v.number(),
   })
     .index('id', ['id'])
-    .index('accountId', ['accountId'])
-    .index('accountId_providerId', ['accountId', 'providerId'])
-    .index('providerId_userId', ['providerId', 'userId'])
+    .index('issuer_providerAccountId', ['issuer', 'providerAccountId'])
     .index('userId', ['userId'])
     .index('createdAt', ['createdAt']),
   verification: defineTable({
@@ -168,7 +167,7 @@ export const tables = {
 
 const schema = defineSchema(tables)
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:6a8e7621584c0401',
+  value: 'bcn-auth-schema-v2:d754757a23ebe121',
 })
 
 export default schema

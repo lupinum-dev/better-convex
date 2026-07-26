@@ -147,7 +147,7 @@ interface UrlCanParseTarget {
 
 /**
  * Supply the one modern URL primitive absent from the manifest-pinned Convex
- * isolate but called by @better-auth/oauth-provider@1.7.0-rc.1 while parsing
+ * isolate but called by @better-auth/oauth-provider@1.7.0-rc.2 while parsing
  * RFC 8707 resources. Delete this helper and both call sites as soon as a
  * reviewed dependency tuple supplies the primitive or removes those calls.
  */

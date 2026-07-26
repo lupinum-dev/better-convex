@@ -7,9 +7,9 @@
     "typecheck": "nuxi typecheck"
   },
   "devDependencies": {
-    "@better-auth/api-key": "1.7.0-rc.1",
+    "@better-auth/api-key": "1.7.0-rc.2",
     "@types/node": "22.20.1",
-    "better-auth": "1.7.0-rc.1",
+    "better-auth": "1.7.0-rc.2",
     "convex": "1.42.2",
     "nuxt": "4.4.8",
     "typescript": "5.9.3",

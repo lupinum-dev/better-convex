@@ -242,7 +242,7 @@ export function createConvexAuthAdapter<
     },
     adapter: ({ getFieldName, getModelName, options }) => {
       options.telemetry = { enabled: false }
-      if (options.experimental?.joins) throw new Error('AUTH_JOINS_UNSUPPORTED')
+      if (options.advanced?.database?.joins) throw new Error('AUTH_JOINS_UNSUPPORTED')
       const idTokens = createAccountIdTokenProtector(options)
       const triggerModels = {
         onCreate: configuredTriggerModels(adapterOptions.triggers, 'onCreate').map(getModelName),
