@@ -66,7 +66,7 @@ gate are complete.
       entry point.
 - [x] `vue-lifecycle/VUE-01`: fence initial fail-closed reporting with the generation
       captured before the attempt.
-- [ ] `BAA-01`: stop full-scanning indexed `in` predicates.
+- [x] `BAA-01`: stop full-scanning indexed `in` predicates.
 - [x] `AUTH-01`: make the allowed OAuth provider profile exact and reject unknown
       options.
 - [ ] `BAA-03`: make the shipped CLI and repository schema generator emit identical
@@ -1279,20 +1279,45 @@ Ledger note (2026-07-26):
 
 Source: Claude `BAA-01`.
 
-- [ ] Add a bounded indexed execution path when `in` targets an exact indexed field.
-- [ ] Keep `matchesAuthWhere` as final result authority.
-- [ ] Reject an oversized value fan-out with one fixed private error.
-- [ ] Do not create a second generic query planner.
+- [x] Add a bounded indexed execution path when `in` targets an exact indexed field.
+- [x] Keep `matchesAuthWhere` as final result authority.
+- [x] Reject an oversized value fan-out with one fixed private error.
+- [x] Do not create a second generic query planner.
 
 Acceptance criteria:
 
-- [ ] `findMany`, `count`, `updateMany`, and `deleteMany` with one indexed `in` value
+- [x] `findMany`, `count`, `updateMany`, and `deleteMany` with one indexed `in` value
       read work proportional to values/matches, not table size.
-- [ ] Results equal the equivalent OR-of-equality form over randomized data.
-- [ ] Pagination order/cursors remain stable.
-- [ ] OR, insensitive, `not_in`, contains, starts/ends-with retain safe residual
+- [x] Results equal the equivalent OR-of-equality form over randomized data.
+- [x] Pagination order/cursors remain stable.
+- [x] OR, insensitive, `not_in`, contains, starts/ends-with retain safe residual
       behavior.
-- [ ] The pinned OAuth session-revocation shape no longer full-scans token tables.
+- [x] The pinned OAuth session-revocation shape no longer full-scans token tables.
+
+Ledger note (2026-07-26):
+
+- Added one narrow exact-index `in` path beside the existing planner. One eligible
+  predicate becomes deduplicated equality streams on the model's exact single-field
+  index; `mergedStream` restores default creation order and `matchesAuthWhere` still
+  evaluates every yielded document. OR, case-insensitive, multi-`in`, and sorted
+  shapes remain on the existing safe residual path.
+- Capped the raw fan-out at 64 values before any stream is created and reject 65 with
+  the fixed private `AUTH_IN_FANOUT_LIMIT_EXCEEDED` error. The at-limit case executes
+  successfully, and duplicate values do not duplicate either reads or results.
+- Red proof: after 205 earlier non-matches, the old full scan returned an empty split
+  first page instead of two trailing `id IN [...]` matches; a 65-value exact-index
+  query was also accepted. The green component regression uses the shared selector
+  through `findMany`, `count`, `updateMany`, and `deleteMany`, compares deterministic
+  randomized results to OR-of-equality, walks two-item cursors in creation order, and
+  covers OR, insensitive, `not_in`, contains, starts-with, and ends-with residuals.
+- The installed OAuth provider's back-channel logout uses exact `clientId IN [...]`
+  client lookup and `id IN [...]` access/refresh-token revocation. Those three fields
+  are exact single-field component indexes, so the pinned production shape now uses
+  the bounded path rather than scanning token tables.
+- Proof: the focused Convex suite passes 5 tests, adapter invariants pass 21, the real
+  adapter project passes 34, and OAuth passes 209. The complete configured matrix
+  passes 2,016 tests across 167 files. Canonical format, lint, root/fixture typechecks,
+  all 14 architecture boundaries, and the package build pass.
 
 ### T4.6 — Bound bulk writes and relationship cascades
 

@@ -1,4 +1,4 @@
-import { stream } from 'convex-helpers/server/stream'
+import { mergedStream, stream } from 'convex-helpers/server/stream'
 /*
  * Adapted from get-convex/better-auth at
  * c628916b451a6b4cff0f5464f134475464b1a6da (Apache-2.0).
@@ -153,6 +153,41 @@ interface IndexPlan {
   score: number
 }
 
+const AUTH_IN_FANOUT_LIMIT = 64
+
+interface ExactIndexedIn {
+  clause: AuthWhere & { value: readonly (string | number)[] }
+  index: AuthIndexMetadata
+}
+
+function chooseExactIndexedIn(
+  model: AuthModelMetadata,
+  where: readonly AuthWhere[],
+  sortBy: AuthReadArgs['sortBy'],
+): ExactIndexedIn | undefined {
+  if (
+    sortBy ||
+    where.some((clause) => clause.connector === 'OR' || clause.mode === 'insensitive')
+  ) {
+    return undefined
+  }
+  const clauses = where.filter((clause) => clause.operator === 'in')
+  if (clauses.length !== 1) return undefined
+  const clause = clauses[0]!
+  if (!Array.isArray(clause.value)) return undefined
+  const index = model.indexes.find(
+    (candidate) => candidate.fields.length === 1 && candidate.fields[0] === clause.field,
+  )
+  if (!index) return undefined
+  if (clause.value.length > AUTH_IN_FANOUT_LIMIT) {
+    throw new Error('AUTH_IN_FANOUT_LIMIT_EXCEEDED')
+  }
+  return {
+    clause: clause as ExactIndexedIn['clause'],
+    index,
+  }
+}
+
 function planForIndex(
   index: AuthIndexMetadata,
   where: readonly AuthWhere[],
@@ -275,6 +310,22 @@ function createAuthQuery(
 ) {
   validateAuthReadArgs(metadata, args)
   const model = getAuthModelMetadata(metadata, args.model)
+  const exactIndexedIn = chooseExactIndexedIn(model, args.where ?? [], args.sortBy)
+  if (exactIndexedIn && exactIndexedIn.clause.value.length > 0) {
+    const values = [...new Set(exactIndexedIn.clause.value)]
+    const streams = values.map((value) =>
+      stream(ctx.db as any, schema)
+        .query(args.model as never)
+        .withIndex(exactIndexedIn.index.descriptor as never, (builder: any) =>
+          builder.eq(exactIndexedIn.clause.field, value),
+        ),
+    )
+    // Equality removes the selected field from each stream's effective order,
+    // so merging on creation time preserves the adapter's default pagination order.
+    return mergedStream(streams, ['_creationTime']).filterWith(
+      async (doc: Record<string, unknown>) => matchesAuthWhere(doc, args.where ?? []),
+    )
+  }
   const plan = chooseIndex(model, args.where ?? [])
   let query: any = stream(ctx.db as any, schema).query(args.model as never)
   if (plan) {
