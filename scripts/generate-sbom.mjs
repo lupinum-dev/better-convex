@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 import { getPackageCertificationDescriptor } from './package-certification-manifest.mjs'
 import { productionManifestContractDigest } from './package-check/production-manifest-contract.mjs'
+import { derivePackagePhysicalVersions } from './reviewed-runtime-versions.mjs'
 import {
   requiredPhysicalRuntimeNames,
   requiredStatefulPeerNames,
@@ -102,26 +103,6 @@ function resolveSbomProfile(packageDescriptor) {
     throw new Error(`Package ${packageDescriptor.id} has no reviewed SBOM profile.`)
   }
   return profile
-}
-
-function derivePackagePhysicalVersions(packageId, manifest) {
-  const sources =
-    packageId === 'vue'
-      ? Object.fromEntries(
-          ['convex', 'vue'].map((name) => [name, manifest.devDependencies?.[name]]),
-        )
-      : manifest.dependencies
-  if (
-    !sources ||
-    Object.entries(sources).some(
-      ([, version]) =>
-        typeof version !== 'string' ||
-        !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u.test(version),
-    )
-  ) {
-    throw new Error(`Package ${packageId} physical runtime versions must be exact manifest pins.`)
-  }
-  return Object.freeze({ ...sources })
 }
 
 function purl(name, version) {

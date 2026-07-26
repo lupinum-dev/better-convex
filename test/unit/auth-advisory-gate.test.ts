@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -6,10 +8,17 @@ import {
   parsePnpmAudit,
   validateExceptionPolicy,
 } from '../../scripts/check-auth-advisories.mjs'
+import { reviewedAdvisoryTuple } from '../../scripts/reviewed-runtime-versions.mjs'
 import { supportedDependencyTuple } from '../../scripts/supported-dependency-tuple.mjs'
 
 const NOW = Date.parse('2026-07-16T00:00:00.000Z')
 const CONVEX_VERSION = supportedDependencyTuple.convex
+const vueManifest = JSON.parse(
+  readFileSync(new URL('../../packages/vue/package.json', import.meta.url), 'utf8'),
+)
+const mcpManifest = JSON.parse(
+  readFileSync(new URL('../../packages/mcp/package.json', import.meta.url), 'utf8'),
+)
 
 function exception(overrides: Record<string, string> = {}) {
   return {
@@ -42,6 +51,16 @@ function syntheticFinding() {
 }
 
 describe('auth advisory gate', () => {
+  it('derives exact sibling-package runtime queries from reviewed manifests', () => {
+    expect(reviewedAdvisoryTuple).toMatchObject({
+      '@modelcontextprotocol/ext-apps':
+        vueManifest.devDependencies['@modelcontextprotocol/ext-apps'],
+      '@modelcontextprotocol/server': mcpManifest.dependencies['@modelcontextprotocol/server'],
+      convex: supportedDependencyTuple.convex,
+      vue: vueManifest.devDependencies.vue,
+    })
+  })
+
   it('fails a synthetic high-severity advisory against the exact supported tuple', () => {
     const result = evaluateFindings([syntheticFinding()], [])
     expect(result.applicable).toEqual([syntheticFinding()])

@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
 
-import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
+import { reviewedAdvisoryTuple } from './reviewed-runtime-versions.mjs'
 
 const ROOT = new URL('../', import.meta.url)
 const POLICY_URL = new URL('security/auth-advisory-exceptions.json', ROOT)
@@ -170,7 +170,7 @@ export function parseGitHubAdvisories(advisories, source, importedCommit, expect
       continue
     }
 
-    if (typeof expectedPackage !== 'string' || !(expectedPackage in supportedDependencyTuple)) {
+    if (typeof expectedPackage !== 'string' || !(expectedPackage in reviewedAdvisoryTuple)) {
       fail(`GitHub tuple parsing requires one supported expected package.`)
     }
     if (!Array.isArray(advisory.vulnerabilities) || advisory.vulnerabilities.length === 0) {
@@ -183,7 +183,7 @@ export function parseGitHubAdvisories(advisories, source, importedCommit, expect
       source: 'github',
       id,
       package: expectedPackage,
-      version: supportedDependencyTuple[expectedPackage],
+      version: reviewedAdvisoryTuple[expectedPackage],
       severity: normalizeSeverity(advisory.severity),
       sourceUrl,
       paths: [],
@@ -270,7 +270,7 @@ async function fetchJson(path) {
 async function collectGitHubFindings(importedCommit) {
   const upstreamPath =
     '/repos/get-convex/better-auth/security-advisories?state=published&per_page=100'
-  const tupleQueries = Object.entries(supportedDependencyTuple).map(async ([name, version]) => {
+  const tupleQueries = Object.entries(reviewedAdvisoryTuple).map(async ([name, version]) => {
     const path = `/advisories?ecosystem=npm&type=reviewed&per_page=100&affects=${encodeURIComponent(`${name}@${version}`)}`
     return parseGitHubAdvisories(await fetchJson(path), 'github', importedCommit, name)
   })
@@ -347,7 +347,7 @@ async function main() {
     fail(`Unresolved applicable advisories:\n- ${summary}`)
   }
   console.log(
-    `[auth-advisories] PASS: npm production/full audits, ${Object.keys(supportedDependencyTuple).length} exact GitHub package queries, and imported upstream advisories are clear (${result.excepted.length} active exceptions).`,
+    `[auth-advisories] PASS: npm production/full audits, ${Object.keys(reviewedAdvisoryTuple).length} exact GitHub package queries, and imported upstream advisories are clear (${result.excepted.length} active exceptions).`,
   )
 }
 
