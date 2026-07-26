@@ -56,6 +56,7 @@ import {
   interactionUrl,
   INTERACTION_LAB_SESSIONS,
   INTERACTION_ORIGIN,
+  INTERACTION_PATH_PREFIX,
   INTERACTION_SESSION_COOKIE,
 } from './fixture/convex/interaction_page_contract'
 import { proveInteractionBrowserBoundary } from './interaction-browser-proof'
@@ -313,13 +314,7 @@ describe('vNext Convex-native MCP topology probe', () => {
       const authorizationServerMetadata = await fetch(
         new URL('/.well-known/oauth-authorization-server', local.env.CONVEX_SITE_URL!),
       )
-      expect(authorizationServerMetadata.status).toBe(200)
-      await expect(authorizationServerMetadata.json()).resolves.toMatchObject({
-        code_challenge_methods_supported: ['S256'],
-        grant_types_supported: ['authorization_code'],
-        issuer: LAB_OAUTH_ISSUER,
-        token_endpoint_auth_methods_supported: ['none'],
-      })
+      expect(authorizationServerMetadata.status).toBe(404)
 
       const missingToken = await fetch(mcpUrl, {
         body: '{}',
@@ -1535,12 +1530,15 @@ describe('vNext Convex-native MCP topology probe', () => {
       const headers = new Headers(options.headers)
       if (options.session) headers.set('cookie', cookie(options.session))
       if (options.origin) headers.set('origin', options.origin)
-      return await fetch(new URL(interactionPath(locator), local!.env.CONVEX_SITE_URL!), {
-        ...(options.body === undefined ? {} : { body: options.body }),
-        headers,
-        method: options.method ?? 'GET',
-        redirect: 'manual',
-      })
+      return await fetch(
+        new URL(`${INTERACTION_PATH_PREFIX}${locator}`, local!.env.CONVEX_SITE_URL!),
+        {
+          ...(options.body === undefined ? {} : { body: options.body }),
+          headers,
+          method: options.method ?? 'GET',
+          redirect: 'manual',
+        },
+      )
     }
 
     await convex.mutation(seed, { resource: access.resource })

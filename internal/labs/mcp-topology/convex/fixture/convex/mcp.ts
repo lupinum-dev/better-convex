@@ -292,7 +292,7 @@ function createNotesServer(
       outputSchema: workspaceDeletionCompleteSchema,
     },
     async (input, context) =>
-      runMcpTool<CallToolResult | InputRequiredResult>(async () => {
+      runMcpTool(async (): Promise<CallToolResult | InputRequiredResult> => {
         if (!access.scopes.includes('notes:write')) {
           return projectToolResult({ code: 'ACCESS_DENIED', ok: false }, () => '')
         }
