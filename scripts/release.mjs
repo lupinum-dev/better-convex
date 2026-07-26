@@ -331,11 +331,11 @@ function verifyArtifact(evidenceFile) {
   }
   verifyRuntimeFingerprintBinding(tarballPath, evidence.runtimeFingerprint)
 
-  const { packageDir, scratchDir } = packAndExtract(releasePackageId, tarballPath)
+  const { packageDir, scratchDir, archiveEntries } = packAndExtract(releasePackageId, tarballPath)
   try {
     const candidateManifestPath = requireReviewedCandidateManifest(packageDir)
     const contents = JSON.parse(readFileSync(contentsPath, 'utf8'))
-    const recomputedContents = buildContentManifest(packageDir)
+    const recomputedContents = buildContentManifest(packageDir, archiveEntries)
     if (
       contents.version !== version ||
       !Array.isArray(contents.files) ||

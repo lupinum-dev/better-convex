@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { buildContentManifest, packAndExtract } from './package-check/tarball.mjs'
+import { buildDirectoryContentIdentity, packAndExtract } from './package-check/tarball.mjs'
 
 function contentIdentity({ version, files }) {
   return {
@@ -21,7 +21,7 @@ export function inspectConsumerCandidate({ packageId, packageName, tarballPath }
   }
 
   const extracted = packAndExtract(packageId, tarballPath)
-  const expected = contentIdentity(buildContentManifest(extracted.packageDir))
+  const expected = contentIdentity(buildDirectoryContentIdentity(extracted.packageDir))
   const manifest = JSON.parse(readFileSync(join(extracted.packageDir, 'package.json'), 'utf8'))
   if (manifest.name !== packageName) {
     rmSync(extracted.scratchDir, { force: true, recursive: true })
@@ -32,7 +32,7 @@ export function inspectConsumerCandidate({ packageId, packageName, tarballPath }
     manifest,
     tarballPath,
     assertInstalled(installedDirectory) {
-      const actual = contentIdentity(buildContentManifest(installedDirectory))
+      const actual = contentIdentity(buildDirectoryContentIdentity(installedDirectory))
       if (JSON.stringify(actual) === JSON.stringify(expected)) return
       const actualFiles = new Map(actual.files.map((file) => [file.path, file]))
       const expectedFiles = new Map(expected.files.map((file) => [file.path, file]))

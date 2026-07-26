@@ -20,7 +20,10 @@ import {
   canonicalNpmTarballFilename,
   getPackageArtifactCoordinates,
 } from '../../scripts/package-artifact-coordinates.mjs'
-import { buildContentManifest } from '../../scripts/package-check/tarball.mjs'
+import {
+  buildContentManifest,
+  inspectTarballArchive,
+} from '../../scripts/package-check/tarball.mjs'
 
 const root = resolve(import.meta.dirname, '../..')
 const temporaryDirectories: string[] = []
@@ -48,6 +51,10 @@ function writeFixtureTarball(file: string, packedRoot: string) {
     },
     files.sort(),
   )
+}
+
+function contentManifest(tarballPath: string, packageDir: string) {
+  return buildContentManifest(packageDir, inspectTarballArchive('nuxt', tarballPath))
 }
 
 function sha256(bytes: Buffer | string) {
@@ -109,7 +116,7 @@ function createArtifactFixture() {
   const extractedRoot = join(directory, 'extracted')
   mkdirSync(extractedRoot)
   tar.x({ cwd: extractedRoot, file: join(directory, tarballName), strict: true, sync: true })
-  const contents = `${JSON.stringify(buildContentManifest(join(extractedRoot, 'package')), null, 2)}\n`
+  const contents = `${JSON.stringify(contentManifest(join(directory, tarballName), join(extractedRoot, 'package')), null, 2)}\n`
   const sbom = canonicalProductionSbom()
   writeFileSync(join(directory, contentsName), contents)
   writeFileSync(join(directory, sbomName), sbom)
@@ -181,7 +188,7 @@ function replacePackedManifest(
   fixture.evidence.tarball.sha256 = sha256(tarball)
   fixture.evidence.tarball.integrity = sri(tarball)
 
-  const contents = `${JSON.stringify(buildContentManifest(fixture.packedPackage), null, 2)}\n`
+  const contents = `${JSON.stringify(contentManifest(tarballPath, fixture.packedPackage), null, 2)}\n`
   writeFileSync(join(fixture.directory, fixture.evidence.contents.file), contents)
   fixture.evidence.contents.bytes = Buffer.byteLength(contents)
   fixture.evidence.contents.sha256 = sha256(contents)

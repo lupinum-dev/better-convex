@@ -181,6 +181,9 @@ function createTarballHeaderValidator(packageId) {
       if (!Number.isSafeInteger(entry.size) || entry.size < 0) {
         throw new Error(`Packed artifact archive has invalid size at ${entry.path}`)
       }
+      if (!Number.isSafeInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o7777) {
+        throw new Error(`Packed artifact archive has invalid mode at ${entry.path}`)
+      }
       if (entry.size > profile.archiveLimits.maxFileBytes) {
         throw new Error(
           `Packed artifact archive file exceeds ${profile.archiveLimits.maxFileBytes} bytes: ${entry.path}`,
@@ -244,7 +247,7 @@ export function inspectTarballArchive(packageId, tarballPath) {
   tar.t({
     file: tarballPath,
     onReadEntry(entry) {
-      const header = { path: entry.path, size: entry.size, type: entry.type }
+      const header = { path: entry.path, size: entry.size, mode: entry.mode, type: entry.type }
       validator.add(header)
       entries.push(header)
       entry.resume()
@@ -256,7 +259,7 @@ export function inspectTarballArchive(packageId, tarballPath) {
   return entries
 }
 
-export function buildContentManifest(packageDir) {
+export function buildDirectoryContentIdentity(packageDir) {
   const files = []
 
   function walk(dir) {
@@ -274,7 +277,6 @@ export function buildContentManifest(packageDir) {
       }
       files.push({
         path: relative(packageDir, absolutePath).split('\\').join('/'),
-        mode: (stats.mode & 0o777).toString(8).padStart(3, '0'),
         size: stats.size,
         sha256: createHash('sha256').update(readFileSync(absolutePath)).digest('hex'),
       })
@@ -286,6 +288,36 @@ export function buildContentManifest(packageDir) {
   // This is release-content evidence, so it must describe only reproducible
   // package inputs. Recording wall-clock time would make equal builds differ.
   return { version: packedPackageJson.version, files }
+}
+
+export function buildContentManifest(packageDir, archiveEntries) {
+  if (!Array.isArray(archiveEntries) || archiveEntries.length === 0) {
+    throw new TypeError('Content manifests require validated tarball entry headers.')
+  }
+  const identity = buildDirectoryContentIdentity(packageDir)
+  const extractedFiles = new Map(identity.files.map((file) => [file.path, file]))
+  const files = archiveEntries
+    .map((entry) => {
+      const path = entry.path.slice('package/'.length)
+      const extracted = extractedFiles.get(path)
+      if (!extracted || extracted.size !== entry.size) {
+        throw new Error(`Extracted package does not match archive header: ${entry.path}`)
+      }
+      extractedFiles.delete(path)
+      return {
+        path,
+        mode: (entry.mode & 0o777).toString(8).padStart(3, '0'),
+        size: entry.size,
+        sha256: extracted.sha256,
+      }
+    })
+    .sort((left, right) => left.path.localeCompare(right.path))
+  if (extractedFiles.size > 0) {
+    throw new Error(
+      `Extracted package contains files absent from the archive: ${[...extractedFiles.keys()].join(', ')}`,
+    )
+  }
+  return { version: identity.version, files }
 }
 
 export function checkPackedPathClasses(packageId, manifest, failures) {
@@ -520,7 +552,7 @@ export function requireDistBuilt(packageId) {
   }
 }
 
-/** @returns {{ scratchDir: string, tarballPath: string, packageDir: string }} the scratch directory holding the pack, the tarball's absolute path, and the extracted package directory */
+/** @returns {{ scratchDir: string, tarballPath: string, packageDir: string, archiveEntries: object[] }} the scratch directory holding the pack, the tarball's absolute path, the extracted package directory, and validated archive headers */
 export function packAndExtract(packageId, tarballInput) {
   const { packageRoot } = getPackedArtifactProfile(packageId)
   const scratchDir = mkdtempSync(join(tmpdir(), 'bcn-packed-entry-'))
@@ -558,8 +590,9 @@ export function packAndExtract(packageId, tarballInput) {
     process.exit(1)
   }
 
+  let archiveEntries
   try {
-    inspectTarballArchive(packageId, tarballPath)
+    archiveEntries = inspectTarballArchive(packageId, tarballPath)
   } catch (error) {
     console.error(`Packed tarball archive preflight failed: ${error.message}`)
     process.exit(1)
@@ -591,7 +624,7 @@ export function packAndExtract(packageId, tarballInput) {
     process.exit(1)
   }
 
-  return { scratchDir, tarballPath, packageDir: canonicalPackageDir }
+  return { scratchDir, tarballPath, packageDir: canonicalPackageDir, archiveEntries }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,17 +1,28 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import * as tar from 'tar'
 import { describe, expect, it } from 'vitest'
 
 import buildConfig from '../../build.config'
 import {
   buildContentManifest,
+  buildDirectoryContentIdentity,
   checkPackedPathClasses,
   checkRequiredPackedFiles,
   packAndExtract,
   scanExtractedTarball,
-  validateTarballEntryHeaders,
+  validateTarballEntryHeaders as validateHeaders,
 } from '../../scripts/package-check/tarball.mjs'
 
 const repositoryManifest = JSON.parse(
@@ -34,6 +45,16 @@ function validate(...paths: string[]): string[] {
     failures,
   )
   return failures
+}
+
+function validateTarballEntryHeaders(
+  packageId: string,
+  entries: Array<{ path: string; size: number; type: string; mode?: number }>,
+) {
+  return validateHeaders(
+    packageId,
+    entries.map((entry) => ({ mode: 0o644, ...entry })),
+  )
 }
 
 describe('packed artifact path classes', () => {
@@ -93,6 +114,11 @@ describe('packed artifact path classes', () => {
     expect(() =>
       validateTarballEntryHeaders('nuxt', [{ path: 'evil/index.js', size: 1, type: 'File' }]),
     ).toThrow(/must stay under package/)
+    expect(() =>
+      validateTarballEntryHeaders('nuxt', [
+        { path: 'package/index.js', size: 1, type: 'File', mode: -1 },
+      ]),
+    ).toThrow(/invalid mode/)
     expect(() =>
       validateTarballEntryHeaders('nuxt', [
         { path: 'package/index.js', size: 1, type: 'File' },
@@ -187,6 +213,63 @@ describe('packed artifact path classes', () => {
         })),
       ),
     ).toThrow(/exceeds 4096 file entries/)
+  })
+
+  it('builds identical header-owned manifests under umask 022 and 077', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bcn-content-umask-'))
+    const packedRoot = join(root, 'packed')
+    const packageRoot = join(packedRoot, 'package')
+    const tarballPath = join(root, 'fixture.tgz')
+    let firstScratch: string | undefined
+    let secondScratch: string | undefined
+    const previousUmask = process.umask()
+    try {
+      writeArtifact(
+        packageRoot,
+        'package.json',
+        '{"name":"better-convex-nuxt","version":"1.0.0"}\n',
+      )
+      writeArtifact(packageRoot, 'dist/cli.mjs', '#!/usr/bin/env node\n')
+      chmodSync(join(packageRoot, 'package.json'), 0o644)
+      chmodSync(join(packageRoot, 'dist/cli.mjs'), 0o755)
+      tar.c(
+        {
+          cwd: packedRoot,
+          file: tarballPath,
+          gzip: true,
+          noDirRecurse: true,
+          portable: true,
+          strict: true,
+          sync: true,
+        },
+        ['package/dist/cli.mjs', 'package/package.json'],
+      )
+
+      process.umask(0o022)
+      const first = packAndExtract('nuxt', tarballPath)
+      firstScratch = first.scratchDir
+      const firstManifest = buildContentManifest(first.packageDir, first.archiveEntries)
+
+      process.umask(0o077)
+      const second = packAndExtract('nuxt', tarballPath)
+      secondScratch = second.scratchDir
+      const secondManifest = buildContentManifest(second.packageDir, second.archiveEntries)
+
+      expect(lstatSync(join(first.packageDir, 'package.json')).mode & 0o777).toBe(0o644)
+      expect(lstatSync(join(second.packageDir, 'package.json')).mode & 0o777).toBe(0o600)
+      expect(lstatSync(join(first.packageDir, 'dist/cli.mjs')).mode & 0o777).toBe(0o755)
+      expect(lstatSync(join(second.packageDir, 'dist/cli.mjs')).mode & 0o777).toBe(0o700)
+      expect(secondManifest).toEqual(firstManifest)
+      expect(firstManifest.files).toEqual([
+        expect.objectContaining({ path: 'dist/cli.mjs', mode: '755' }),
+        expect.objectContaining({ path: 'package.json', mode: '644' }),
+      ])
+    } finally {
+      process.umask(previousUmask)
+      if (firstScratch) rmSync(firstScratch, { recursive: true, force: true })
+      if (secondScratch) rmSync(secondScratch, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('rejects an unreviewed package owner instead of applying the Nuxt policy', () => {
@@ -321,7 +404,7 @@ describe('packed artifact path classes', () => {
           '',
         ].join('\n'),
       )
-      const manifest = buildContentManifest(packageRoot)
+      const manifest = buildDirectoryContentIdentity(packageRoot)
       const failures: string[] = []
 
       scanExtractedTarball('nuxt', packageRoot, failures, manifest)

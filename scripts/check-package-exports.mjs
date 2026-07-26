@@ -400,9 +400,12 @@ function main() {
         ? `Extracting the supplied tarball for packed-probe evidence: ${suppliedTarball}`
         : 'Packing and extracting the current tree for packed-probe evidence…',
     )
-    const { scratchDir, tarballPath, packageDir } = packAndExtract(packageId, suppliedTarball)
+    const { scratchDir, tarballPath, packageDir, archiveEntries } = packAndExtract(
+      packageId,
+      suppliedTarball,
+    )
     try {
-      const manifest = buildContentManifest(packageDir)
+      const manifest = buildContentManifest(packageDir, archiveEntries)
       const packedPackageJson = JSON.parse(
         readFileSync(resolve(packageDir, 'package.json'), 'utf8'),
       )
