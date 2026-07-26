@@ -1,6 +1,7 @@
 import { chromium } from 'playwright'
 
 import {
+  interactionUrl,
   INTERACTION_LAB_SESSIONS,
   INTERACTION_ORIGIN,
   INTERACTION_SESSION_COOKIE,
@@ -67,7 +68,7 @@ export async function proveInteractionBrowserBoundary(
   try {
     await context.addCookies([
       {
-        domain: 'notes.example.invalid',
+        domain: new URL(INTERACTION_ORIGIN).hostname,
         httpOnly: true,
         name: INTERACTION_SESSION_COOKIE,
         path: '/',
@@ -123,8 +124,8 @@ export async function proveInteractionBrowserBoundary(
       })
     })
 
-    const interactionUrl = `${INTERACTION_ORIGIN}/interactions/${options.locator}`
-    await page.goto(interactionUrl, { waitUntil: 'domcontentloaded' })
+    const reviewedInteractionUrl = interactionUrl(options.locator)
+    await page.goto(reviewedInteractionUrl, { waitUntil: 'domcontentloaded' })
     assert(
       (await page.evaluate(() => location.origin)) === INTERACTION_ORIGIN,
       'The browser did not retain the fixed application origin',

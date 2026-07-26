@@ -1,6 +1,7 @@
 import { httpRouter } from 'convex/server'
 
 import { getInteractionPage, postInteractionConfirmation } from './interaction_page'
+import { INTERACTION_PATH_PREFIX } from './interaction_page_contract'
 import { handleMcp, handleOAuthMetadata } from './mcp'
 
 const http = httpRouter()
@@ -19,12 +20,12 @@ http.route({
 http.route({
   handler: getInteractionPage,
   method: 'GET',
-  pathPrefix: '/interactions/',
+  pathPrefix: INTERACTION_PATH_PREFIX,
 })
 http.route({
   handler: postInteractionConfirmation,
   method: 'POST',
-  pathPrefix: '/interactions/',
+  pathPrefix: INTERACTION_PATH_PREFIX,
 })
 
 export default http

@@ -1,14 +1,15 @@
 import { internal } from './_generated/api'
 import { httpAction } from './_generated/server'
 import {
+  interactionLocatorFromPath,
   INTERACTION_LAB_SESSIONS,
   INTERACTION_ORIGIN,
   INTERACTION_SESSION_COOKIE,
+  interactionUrl,
 } from './interaction_page_contract'
 import { LAB_OAUTH_ISSUER } from './oauth_fixture'
 
 const MAX_CONFIRMATION_BODY_BYTES = 128
-const LOCATOR_PATH = /^\/interactions\/([\w-]{32,128})$/u
 
 type BrowserActor = {
   issuer: string
@@ -172,9 +173,7 @@ async function readBoundedEmptyBody(request: Request): Promise<boolean> {
 }
 
 function interactionLocator(request: Request): string | null {
-  const url = new URL(request.url)
-  const match = LOCATOR_PATH.exec(url.pathname)
-  return match?.[1] ?? null
+  return interactionLocatorFromPath(new URL(request.url).pathname)
 }
 
 export const getInteractionPage = httpAction(async (ctx, request) => {
@@ -210,6 +209,6 @@ export const postInteractionConfirmation = httpAction(async (ctx, request) => {
   })) as InteractionResult
   if (!result.ok) return textResponse(resultStatus(result), 'Confirmation rejected')
   const headers = responseHeaders()
-  headers.set('location', `${INTERACTION_ORIGIN}/interactions/${locator}`)
+  headers.set('location', interactionUrl(locator))
   return new Response(null, { headers, status: 303 })
 })

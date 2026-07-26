@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 
 import { internalMutation, internalQuery, type QueryCtx } from './_generated/server'
+import { isInteractionLocator } from './interaction_page_contract'
 
 const MAX_ID_LENGTH = 128
 const MAX_NOTE_TITLE_LENGTH = 120
@@ -42,9 +43,7 @@ function boundedId(value: string): string | null {
 }
 
 function boundedOpaqueId(value: string): string | null {
-  return value && value.length >= 32 && value.length <= MAX_ID_LENGTH && /^[\w-]+$/.test(value)
-    ? value
-    : null
+  return isInteractionLocator(value) ? value : null
 }
 
 function boundedIdentity(value: string): string | null {

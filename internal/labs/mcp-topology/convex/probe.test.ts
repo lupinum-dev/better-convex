@@ -51,6 +51,9 @@ import {
 } from '../oauth-fixture'
 import { runOfficialMcpToolProbe } from '../official-tools'
 import {
+  interactionLocatorFromPath,
+  interactionPath,
+  interactionUrl,
   INTERACTION_LAB_SESSIONS,
   INTERACTION_ORIGIN,
   INTERACTION_SESSION_COOKIE,
@@ -1094,11 +1097,11 @@ describe('vNext Convex-native MCP topology probe', () => {
           throw new Error('Expected URL interaction')
         }
         observedReviewUrl = new URL(request.params.url)
-        expect(observedReviewUrl.origin).toBe('https://notes.example.invalid')
-        expect(observedReviewUrl.pathname).toMatch(/^\/interactions\/[\w-]{32,128}$/u)
+        expect(observedReviewUrl.origin).toBe(INTERACTION_ORIGIN)
+        expect(interactionLocatorFromPath(observedReviewUrl.pathname)).not.toBeNull()
         expect(observedReviewUrl.search).toBe('')
         expect(observedReviewUrl.hash).toBe('')
-        const locator = observedReviewUrl.pathname.slice('/interactions/'.length)
+        const locator = interactionLocatorFromPath(observedReviewUrl.pathname)!
         confirmed = (await convex.action(confirmWorkspaceDeletion, {
           actor: { issuer: LAB_OAUTH_ISSUER, subject: 'alice' },
           locator,
@@ -1532,7 +1535,7 @@ describe('vNext Convex-native MCP topology probe', () => {
       const headers = new Headers(options.headers)
       if (options.session) headers.set('cookie', cookie(options.session))
       if (options.origin) headers.set('origin', options.origin)
-      return await fetch(new URL(`/interactions/${locator}`, local!.env.CONVEX_SITE_URL!), {
+      return await fetch(new URL(interactionPath(locator), local!.env.CONVEX_SITE_URL!), {
         ...(options.body === undefined ? {} : { body: options.body }),
         headers,
         method: options.method ?? 'GET',
@@ -1661,7 +1664,7 @@ describe('vNext Convex-native MCP topology probe', () => {
     ])
     for (const response of confirmations) {
       expect(response.status).toBe(303)
-      expect(response.headers.get('location')).toBe(`${INTERACTION_ORIGIN}/interactions/${locator}`)
+      expect(response.headers.get('location')).toBe(interactionUrl(locator))
     }
     const recovered = await convex.action(status, { access, operationKey })
     expect(recovered).toMatchObject({

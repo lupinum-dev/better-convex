@@ -17,6 +17,7 @@ import { z } from 'zod'
 
 import { internal } from './_generated/api'
 import { httpAction, type ActionCtx } from './_generated/server'
+import { interactionUrl } from './interaction_page_contract'
 import { NOTES_DASHBOARD_HTML } from './notes_dashboard'
 import { createLabOAuthVerifier, labOAuthMetadataOptions, labOAuthSubject } from './oauth_fixture'
 
@@ -24,8 +25,6 @@ const BEARER_BOUNDARY_HEADER = 'x-bcn-lab-bearer-boundary'
 const NOTES_DASHBOARD_RESOURCE_URI = 'ui://notes/dashboard.html'
 const NOTES_DASHBOARD_RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app'
 const NOTES_DASHBOARD_MAX_HTML_BYTES = 512 * 1024
-const WORKSPACE_DELETION_REVIEW_ORIGIN = 'https://notes.example.invalid'
-const WORKSPACE_DELETION_REVIEW_PATH = '/interactions/'
 if (
   !NOTES_DASHBOARD_HTML.startsWith('<!doctype html>') ||
   new TextEncoder().encode(NOTES_DASHBOARD_HTML).byteLength > NOTES_DASHBOARD_MAX_HTML_BYTES
@@ -153,9 +152,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function workspaceDeletionReviewUrl(locator: string): string {
-  const url = new URL(WORKSPACE_DELETION_REVIEW_PATH, WORKSPACE_DELETION_REVIEW_ORIGIN)
-  url.pathname += locator
-  return url.href
+  return interactionUrl(locator)
 }
 
 function projectWorkspaceDeletionComplete(

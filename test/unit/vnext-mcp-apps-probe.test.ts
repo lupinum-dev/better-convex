@@ -8,6 +8,12 @@ import { z } from 'zod'
 
 import { proveNotesDashboardBrowserBoundary } from '../../internal/labs/mcp-topology/apps/notes-dashboard/browser-proof'
 import { buildNotesDashboard } from '../../internal/labs/mcp-topology/apps/notes-dashboard/build'
+import {
+  interactionLocatorFromPath,
+  interactionPath,
+  interactionUrl,
+  isInteractionLocator,
+} from '../../internal/labs/mcp-topology/convex/fixture/convex/interaction_page_contract'
 import { NeutralNotesApplication } from '../../internal/labs/mcp-topology/neutral/notes-application'
 import { noteSchema } from '../../internal/labs/mcp-topology/neutral/notes-schemas'
 import { createConvexMcpHandler } from '../../packages/mcp/src/handler'
@@ -168,6 +174,16 @@ function createHandler(appHtml: string, isRevoked: () => boolean, onSearch: () =
 }
 
 describe('vNext MCP Apps private topology probe', () => {
+  it('derives interaction paths, URLs, and locator validation from one contract', () => {
+    const locator = 'a'.repeat(32)
+    expect(isInteractionLocator(locator)).toBe(true)
+    expect(interactionPath(locator)).toBe(`/interactions/${locator}`)
+    expect(interactionUrl(locator)).toBe(`https://notes.example.invalid/interactions/${locator}`)
+    expect(interactionLocatorFromPath(interactionPath(locator))).toBe(locator)
+    expect(interactionLocatorFromPath(`/interactions/${'a'.repeat(31)}`)).toBeNull()
+    expect(() => interactionPath('../outside')).toThrow('INTERACTION_LOCATOR_INVALID')
+  })
+
   it('serves one credential-free Vue App with useful fallback through the selected package', async () => {
     const build = await buildNotesDashboard()
     let revoked = false
