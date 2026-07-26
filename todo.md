@@ -1711,21 +1711,46 @@ Ledger note (2026-07-26):
 
 Sources: Claude `REL-07`, `TE-06`, and `REL-09`.
 
-- [ ] Derive Vue/MCP physical-version expectations from their own reviewed package
+- [x] Derive Vue/MCP physical-version expectations from their own reviewed package
       manifests.
-- [ ] Keep `supportedDependencyTuple` scoped to the Nuxt/auth tuple; do not turn it into
+- [x] Keep `supportedDependencyTuple` scoped to the Nuxt/auth tuple; do not turn it into
       another all-package authority.
-- [ ] Hoist identical lifecycle-script/engines policy used by per-package validators
+- [x] Hoist identical lifecycle-script/engines policy used by per-package validators
       into one private release policy.
-- [ ] Remove copied candidate-set digests only after a downstream-consumer trace proves
+- [x] Remove copied candidate-set digests only after a downstream-consumer trace proves
       they are unread.
 
 Acceptance criteria:
 
-- [ ] Changing a copied package manifest pin makes every SBOM/validator/probe derive or
+- [x] Changing a copied package manifest pin makes every SBOM/validator/probe derive or
       fail from that one source.
-- [ ] Exact installed-byte and SBOM validation remain strict.
-- [ ] No executable script maintains an independent copy of the same version tuple.
+- [x] Exact installed-byte and SBOM validation remain strict.
+- [x] No executable script maintains an independent copy of the same version tuple.
+
+Ledger note (2026-07-26):
+
+- Vue now owns its resolved physical Vue version as the exact
+  `packages/vue/package.json` dev pin; MCP already owns its server SDK pin in
+  `packages/mcp/package.json`. SBOM profiles derive those physical versions from the
+  reviewed manifests and reject non-exact pins. `supportedDependencyTuple` remains limited
+  to the Nuxt/auth runtime tuple.
+- MCP package validation now requires exactly the official server dependency key and relies
+  on the existing candidate-versus-reviewed manifest equality for its version. MCP package,
+  local-fixture, and Vue/MCP App consumers read the candidate or reviewed manifests rather
+  than carrying executable version literals. A scan of executable `.mjs` scripts finds none
+  of the retired Vue/Convex/MCP physical-version copies.
+- The three identical lifecycle allow/deny lists and node-engine checks are one private
+  release policy. Focused production-manifest and candidate-set suites pass 45/45 with a
+  net deletion of 66 lines in that commit.
+- Downstream trace: candidate-set preparation reparses each package's full evidence and
+  invokes `release.mjs verify` per package; the registry consumer reads only set identity
+  and coordinates, then compares registry tarball bytes and exact installed content.
+  Therefore copied set-level `sha256`/`integrity` fields had no consumer and were deleted;
+  per-package digests, SRI, content manifests, and installed-byte checks remain unchanged.
+- Graph-backed SBOM and manifest tests pass 48/48; direct workspace lint and all module,
+  server, and fixture typechecks pass. Pnpm's frozen lockfile command could not complete
+  because its supply-chain policy attempted registry access despite `--offline`; the only
+  lock change is Vue's importer specifier from `^3.5.39` to already-resolved `3.5.39`.
 
 ### T5.7 — Remove temporary proof surfaces after final reconciliation
 
