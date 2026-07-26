@@ -21,7 +21,7 @@ import { useBetterConvexRuntime } from './runtime-context'
 
 export type ConvexAuthMode = 'required' | 'optional' | 'none'
 export type ConvexQuerySkip = 'skip'
-export type ConvexQueryArgs<Args> = Args | ConvexQuerySkip | null | undefined
+export type ConvexQueryArgs<Args> = Args | ConvexQuerySkip
 
 export interface UseConvexQueryOptions<Raw, Data = Raw> {
   subscribe?: boolean

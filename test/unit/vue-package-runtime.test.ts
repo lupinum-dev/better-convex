@@ -67,6 +67,72 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
 }
 
 describe('better-convex-vue package runtime', () => {
+  it('reactively enters and leaves the explicit query skip state', () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ runtime: host.runtime }))
+    const scope = effectScope()
+    const args = ref<{ owner: string } | 'skip'>('skip')
+    const query = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexQuery(
+          makeFunctionReference<'query'>('notes:list') as FunctionReference<
+            'query',
+            'public',
+            { owner: string },
+            string[]
+          >,
+          args,
+        ),
+      ),
+    )!
+
+    expect(query.status.value).toBe('idle')
+    expect(host.subscriptions).toHaveLength(0)
+
+    args.value = { owner: 'alice' }
+    expect(query.status.value).toBe('pending')
+    expect(host.subscriptions).toHaveLength(1)
+
+    args.value = 'skip'
+    expect(query.status.value).toBe('idle')
+    expect(host.subscriptions[0]!.active).toBe(false)
+    scope.stop()
+  })
+
+  it('reactively enters and leaves the explicit pagination skip state', () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ runtime: host.runtime }))
+    const scope = effectScope()
+    const args = ref<{ owner: string } | 'skip'>('skip')
+    const query = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexPaginatedQuery(
+          makeFunctionReference<'query'>('notes:listPaginated') as FunctionReference<
+            'query',
+            'public',
+            { owner: string; paginationOpts: PaginationOptions },
+            PaginationResult<string>
+          >,
+          args,
+        ),
+      ),
+    )!
+
+    expect(query.status.value).toBe('idle')
+    expect(host.subscriptions).toHaveLength(0)
+
+    args.value = { owner: 'alice' }
+    expect(query.status.value).toBe('loading-first-page')
+    expect(host.subscriptions).toHaveLength(1)
+
+    args.value = 'skip'
+    expect(query.status.value).toBe('idle')
+    expect(host.subscriptions[0]!.active).toBe(false)
+    scope.stop()
+  })
+
   it('allows callable setup during SSR without installing a browser runtime', async () => {
     const app = createApp({})
     const scope = effectScope()

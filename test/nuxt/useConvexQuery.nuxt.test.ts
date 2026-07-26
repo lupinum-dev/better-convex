@@ -30,7 +30,7 @@ function useConvexQueryState<
   DataT = FunctionReturnType<Query>,
 >(
   query: Query,
-  args?: MaybeRefOrGetter<Args>,
+  args: MaybeRefOrGetter<Args>,
   options?: UseConvexQueryOptions<FunctionReturnType<Query>, DataT>,
 ) {
   return createConvexQueryState<Query, Args, DataT>(query, args, { auth: 'none', ...options }, true)
@@ -175,7 +175,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
 
   it('exposes refresh/clear but omits execute on query return shape', async () => {
     const query = mockFnRef<'query'>('notes:list:return-shape')
-    const { result } = await captureInNuxt(() => useConvexQueryState(query, null), {
+    const { result } = await captureInNuxt(() => useConvexQueryState(query, 'skip'), {
       convex: new MockConvexClient(),
     })
 

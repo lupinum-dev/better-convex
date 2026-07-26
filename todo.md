@@ -938,16 +938,35 @@ Ledger note (2026-07-26):
 
 Source: Codex `F-008`.
 
-- [ ] Narrow Vue query/pagination arguments to `Args | 'skip'`.
-- [ ] Reject runtime `null`/`undefined` with a clear error.
-- [ ] Add no deprecated overload or nullable compatibility path.
+- [x] Narrow Vue query/pagination arguments to `Args | 'skip'`.
+- [x] Reject runtime `null`/`undefined` with a clear error.
+- [x] Add no deprecated overload or nullable compatibility path.
 
 Acceptance criteria:
 
-- [ ] Source and exact packed type tests reject direct/ref/getter `null` and
+- [x] Source and exact packed type tests reject direct/ref/getter `null` and
       `undefined`.
-- [ ] Explicit `'skip'` transitions remain reactive.
-- [ ] Maintained consumers convert nullable UI state themselves.
+- [x] Explicit `'skip'` transitions remain reactive.
+- [x] Maintained consumers convert nullable UI state themselves.
+
+Ledger note (2026-07-26):
+
+- `better-convex-vue` query and pagination arguments now expose only the argument
+  object or the literal `'skip'`. The shared normalizer no longer invents `{}` for
+  an omitted slot and throws one clear `TypeError` for direct, ref, or getter
+  `null`/`undefined`; skip detection recognizes no implicit disabled state.
+- Nuxt's internal query and pagination state builders now require their argument
+  slot too. The one maintained Nuxt test that still used `null` was converted to
+  the explicit sentinel; repository searches find nullish calls only inside
+  negative type-contract fixtures.
+- Source contracts and the freshly packed anonymous Vue consumer reject direct,
+  ref, and getter nullish values for both query kinds while accepting reactive
+  `'skip'`. Runtime tests prove query and pagination transition from skipped to
+  subscribed and back synchronously, retiring the active subscription.
+- Focused tests pass 18 tests. The complete unit project passes 1,375 and the
+  complete Nuxt project passes 117. Vue/root typechecks, lint, format,
+  architecture boundaries, the exact packed Vue consumer build, and the built
+  Nuxt consumer-smoke typecheck pass.
 
 ### T3.7 — Make pagination ownership and incomplete-page behavior explicit
 

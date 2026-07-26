@@ -6,13 +6,64 @@ import {
   useConvexPaginatedQuery,
   useConvexQuery,
 } from 'better-convex-vue'
-import { makeFunctionReference } from 'convex/server'
-import { createApp, defineComponent, h } from 'vue'
+import {
+  makeFunctionReference,
+  type FunctionReference,
+  type PaginationOptions,
+  type PaginationResult,
+} from 'convex/server'
+import { createApp, defineComponent, h, ref } from 'vue'
 
-const query = makeFunctionReference<'query'>('notes:list')
-const paginatedQuery = makeFunctionReference<'query'>('notes:listPaginated')
+const query = makeFunctionReference<'query'>('notes:list') as FunctionReference<
+  'query',
+  'public',
+  { owner: string },
+  string[]
+>
+const paginatedQuery = makeFunctionReference<'query'>('notes:listPaginated') as FunctionReference<
+  'query',
+  'public',
+  { owner: string; paginationOpts: PaginationOptions },
+  PaginationResult<string>
+>
 const mutation = makeFunctionReference<'mutation'>('notes:rename')
 const action = makeFunctionReference<'action'>('notes:report')
+
+function packedTypeContracts() {
+  void useConvexQuery(query, { owner: 'alice' })
+  void useConvexQuery(query, ref<{ owner: string } | 'skip'>('skip'))
+  void useConvexQuery(query, () => 'skip' as const)
+  // @ts-expect-error null is not a query skip sentinel
+  void useConvexQuery(query, null)
+  // @ts-expect-error undefined is not a query skip sentinel
+  void useConvexQuery(query, undefined)
+  // @ts-expect-error a ref containing null is not a query skip sentinel
+  void useConvexQuery(query, ref(null))
+  // @ts-expect-error a ref containing undefined is not a query skip sentinel
+  void useConvexQuery(query, ref(undefined))
+  // @ts-expect-error a getter returning null is not a query skip sentinel
+  void useConvexQuery(query, () => null)
+  // @ts-expect-error a getter returning undefined is not a query skip sentinel
+  void useConvexQuery(query, () => undefined)
+
+  void useConvexPaginatedQuery(paginatedQuery, { owner: 'alice' })
+  void useConvexPaginatedQuery(paginatedQuery, ref<{ owner: string } | 'skip'>('skip'))
+  void useConvexPaginatedQuery(paginatedQuery, () => 'skip' as const)
+  // @ts-expect-error null is not a paginated query skip sentinel
+  void useConvexPaginatedQuery(paginatedQuery, null)
+  // @ts-expect-error undefined is not a paginated query skip sentinel
+  void useConvexPaginatedQuery(paginatedQuery, undefined)
+  // @ts-expect-error a ref containing null is not a paginated query skip sentinel
+  void useConvexPaginatedQuery(paginatedQuery, ref(null))
+  // @ts-expect-error a ref containing undefined is not a paginated query skip sentinel
+  void useConvexPaginatedQuery(paginatedQuery, ref(undefined))
+  // @ts-expect-error a getter returning null is not a paginated query skip sentinel
+  void useConvexPaginatedQuery(paginatedQuery, () => null)
+  // @ts-expect-error a getter returning undefined is not a paginated query skip sentinel
+  void useConvexPaginatedQuery(paginatedQuery, () => undefined)
+}
+
+void packedTypeContracts
 
 const AnonymousConsumer = defineComponent({
   setup() {

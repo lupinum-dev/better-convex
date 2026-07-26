@@ -48,7 +48,7 @@ export function useConvexPaginatedQuery<
   TransformedItem = PaginatedQueryItem<Query>,
 >(
   query: CheckedPaginatedQuery<Query>,
-  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip' | null | undefined>,
+  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
   options?: UseConvexPaginatedQueryOptions<PaginatedQueryItem<Query>, TransformedItem>,
 ) {
   if (!getCurrentScope()) {

@@ -2,6 +2,7 @@ import { defineConvexAuthClient } from 'better-convex-nuxt/auth-client'
 import type { ConvexAuthClientDefinition } from 'better-convex-nuxt/auth-client'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { ComputedRef, Ref } from 'vue'
+import { ref } from 'vue'
 
 import { api } from '#convex/api'
 
@@ -158,6 +159,14 @@ async function _requiredArgsContracts() {
   void useConvexQuery(api.tasks.list, null)
   // @ts-expect-error undefined is not the skip sentinel
   void useConvexQuery(api.tasks.list, undefined)
+  // @ts-expect-error a ref containing null is not the skip sentinel
+  void useConvexQuery(api.tasks.list, ref(null))
+  // @ts-expect-error a ref containing undefined is not the skip sentinel
+  void useConvexQuery(api.tasks.list, ref(undefined))
+  // @ts-expect-error a getter returning null is not the skip sentinel
+  void useConvexQuery(api.tasks.list, () => null)
+  // @ts-expect-error a getter returning undefined is not the skip sentinel
+  void useConvexQuery(api.tasks.list, () => undefined)
   // Positive: correct required args compile.
   void useConvexQuery(api.files.getUrl, { storageId: 'file_1' })
   // @ts-expect-error required args must not be omittable
@@ -199,8 +208,21 @@ async function _requiredArgsContracts() {
   // --- useConvexPaginatedQuery ---
   // Positive: no extra-args paginated query still requires the explicit `{}`.
   void useConvexPaginatedQuery(api.tasks.listPaginated, {})
+  void useConvexPaginatedQuery(api.tasks.listPaginated, 'skip')
   // @ts-expect-error paginated queries never omit the args slot either
   void useConvexPaginatedQuery(api.tasks.listPaginated)
+  // @ts-expect-error null is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, null)
+  // @ts-expect-error undefined is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, undefined)
+  // @ts-expect-error a ref containing null is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, ref(null))
+  // @ts-expect-error a ref containing undefined is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, ref(undefined))
+  // @ts-expect-error a getter returning null is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, () => null)
+  // @ts-expect-error a getter returning undefined is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, () => undefined)
   // @ts-expect-error options object must not be accepted in the args slot (follow-up)
   void useConvexPaginatedQuery(api.tasks.listPaginated, { initialNumItems: 5 })
   // Positive: correct required extra args compile.

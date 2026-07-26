@@ -120,6 +120,8 @@ async function _arityContracts() {
   void useConvexQuery(noArgQuery)
   // @ts-expect-error null is not the skip sentinel
   void useConvexQuery(noArgQuery, null)
+  // @ts-expect-error undefined is not the skip sentinel
+  void useConvexQuery(noArgQuery, undefined)
   // @ts-expect-error options cannot occupy an exact-empty args slot
   void useConvexQuery(noArgQuery, { server: false })
   // @ts-expect-error shared queries always declare args
@@ -158,8 +160,13 @@ async function _arityContracts() {
 
   // --- useConvexPaginatedQuery -------------------------------------------
   void useConvexPaginatedQuery(noArgPaginated, {})
+  void useConvexPaginatedQuery(noArgPaginated, 'skip')
   // @ts-expect-error no-arg paginated queries still require the args slot
   void useConvexPaginatedQuery(noArgPaginated)
+  // @ts-expect-error null is not the paginated skip sentinel
+  void useConvexPaginatedQuery(noArgPaginated, null)
+  // @ts-expect-error undefined is not the paginated skip sentinel
+  void useConvexPaginatedQuery(noArgPaginated, undefined)
   // @ts-expect-error options object must not be accepted in the args slot
   void useConvexPaginatedQuery(noArgPaginated, { initialNumItems: 5 })
   void useConvexPaginatedQuery(reqArgPaginated, { owner: 'x' })

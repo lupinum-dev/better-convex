@@ -91,7 +91,7 @@ export function createConvexPaginatedQueryState<
   TransformedItem = PaginatedQueryItem<Query>,
 >(
   query: CheckedPaginatedQuery<Query>,
-  args?: MaybeRefOrGetter<Args>,
+  args: MaybeRefOrGetter<Args>,
   options?: UseConvexPaginatedQueryOptions<PaginatedQueryItem<Query>, TransformedItem>,
   resolveImmediately = false,
 ): BuildConvexPaginatedQueryResult<TransformedItem> {
@@ -284,11 +284,7 @@ export async function useConvexPaginatedQuery<
   >
 ): Promise<UseConvexPaginatedQueryData<TransformedItem>> {
   const [args, options] = rest
-  const result = createConvexPaginatedQueryState(
-    query,
-    args as MaybeRefOrGetter<Args> | undefined,
-    options,
-  )
+  const result = createConvexPaginatedQueryState(query, args as MaybeRefOrGetter<Args>, options)
   await result.resolvePromise
   return result.resultData
 }
