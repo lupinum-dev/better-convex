@@ -78,7 +78,6 @@ export function createAuthAdapterIdentityPort(
   adapter: BrowserAuthAdapter,
 ): AuthAdapterIdentityPort {
   let desired = validateSnapshot(adapter.snapshot())
-  let authEpoch = 0
   let identityGeneration = 0
   let disposed = false
   let currentClient: AuthCapableClient | null = null
@@ -89,7 +88,6 @@ export function createAuthAdapterIdentityPort(
     authEnabled: true,
     settled: initialSettled,
     identityKey: clientIdentityKey(desired),
-    authEpoch,
     identityGeneration,
     error: publicError(desired),
   }
@@ -132,7 +130,6 @@ export function createAuthAdapterIdentityPort(
             kind: 'authentication',
             message: 'Convex authentication failed',
           })
-    authEpoch += 1
     identityGeneration += 1
     currentClient = null
     currentClientGeneration = -1
@@ -146,7 +143,6 @@ export function createAuthAdapterIdentityPort(
       authEnabled: true,
       settled: true,
       identityKey: 'anonymous',
-      authEpoch,
       identityGeneration,
       error: publicError(desired),
     })
@@ -246,8 +242,15 @@ export function createAuthAdapterIdentityPort(
   const transition = (nextValue: BrowserAuthSnapshot) => {
     const next = validateSnapshot(nextValue)
     const previous = desired
+    if (
+      previous.status === next.status &&
+      previous.identityKey === next.identityKey &&
+      previous.sessionGeneration === next.sessionGeneration &&
+      previous.error === next.error
+    ) {
+      return
+    }
     desired = next
-    authEpoch += 1
     const crossedIdentity =
       previous.status !== next.status ||
       previous.identityKey !== next.identityKey ||
@@ -267,20 +270,15 @@ export function createAuthAdapterIdentityPort(
         authEnabled: true,
         settled: next.status === 'anonymous' || next.status === 'error',
         identityKey: clientIdentityKey(next),
-        authEpoch,
         identityGeneration,
         error: publicError(next),
       })
       return
     }
 
-    // A same-session provider notification is a token-refresh hint. Keep the
-    // identity generation and ask Convex to refetch through the owned client.
-    const wasSettled = snapshot.settled
-    publish({ ...snapshot, authEpoch, error: publicError(next) })
-    if (wasSettled && next.status === 'authenticated' && currentClient) {
-      void confirm(currentClient, currentClientGeneration).catch(() => {})
-    }
+    // The official Convex client owns same-session token refresh. This branch is
+    // only an observable provider-error change within the current generation.
+    publish({ ...snapshot, error: publicError(next) })
   }
 
   const unsubscribeAdapter = adapter.subscribe(() => {

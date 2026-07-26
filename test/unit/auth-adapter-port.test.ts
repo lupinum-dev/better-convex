@@ -199,7 +199,7 @@ describe('provider-neutral auth adapter identity port', () => {
     port.dispose()
   })
 
-  it('keeps the client for same-session refresh and replaces for same-user new session', async () => {
+  it('ignores identical provider state, preserves explicit refresh, and crosses a new session', async () => {
     const adapter = new FakeAdapter(authSnapshot('alice', 4))
     const client = fakeClient()
     const port = createAuthAdapterIdentityPort(adapter)
@@ -208,20 +208,67 @@ describe('provider-neutral auth adapter identity port', () => {
     await client.confirm(true)
     await initial
     const initialGeneration = port.snapshot().identityGeneration
+    const notify = vi.fn()
+    const stop = port.subscribe(notify)
+    const timer = vi.spyOn(globalThis, 'setTimeout')
 
     adapter.emit(authSnapshot('alice', 4))
+    const timerCalls = timer.mock.calls.length
+    timer.mockRestore()
     expect(port.snapshot().identityGeneration).toBe(initialGeneration)
-    expect(client.setAuthCalls).toBe(2)
+    expect(notify).not.toHaveBeenCalled()
+    expect(client.setAuthCalls).toBe(1)
+    expect(timerCalls).toBe(0)
+    expect(Object.keys(port.snapshot())).not.toContain('authEpoch')
+
     const explicitRefresh = port.refresh()
     expect(client.setAuthCalls).toBe(2)
     await client.confirm(true)
     await explicitRefresh
+    notify.mockClear()
 
     adapter.emit(authSnapshot('alice', 5))
     expect(port.snapshot()).toMatchObject({
       settled: false,
       identityGeneration: initialGeneration + 1,
     })
+    expect(notify).toHaveBeenCalledOnce()
+    expect(client.setAuthCalls).toBe(2)
+    stop()
+    port.dispose()
+  })
+
+  it('replaces the owned client for a same-user new session', async () => {
+    const adapter = new FakeAdapter(authSnapshot('alice', 4))
+    const clients: FakeClient[] = []
+    const owner = createConvexClientOwner({
+      primaryFactory: () => {
+        const client = fakeClient()
+        clients.push(client)
+        return client
+      },
+    })
+    const port = createAuthAdapterIdentityPort(adapter)
+    owner.attachIdentityPort(port)
+    const a = clients[0]!
+    const initial = port.initializePrimary(a as unknown as ConvexClient)
+    await a.confirm(true)
+    await initial
+
+    adapter.emit(authSnapshot('alice', 5))
+    expect(owner.getPrimary()).toBeNull()
+    expect(a.close).toHaveBeenCalledOnce()
+    await settleOwner()
+    const b = clients[1]!
+    expect(b.setAuthCalls).toBe(1)
+    await b.confirm(true)
+    await settleOwner()
+
+    expect(owner.getPrimary()).toMatchObject({
+      client: b,
+      identityGeneration: 1,
+    })
+    await owner.dispose()
     port.dispose()
   })
 

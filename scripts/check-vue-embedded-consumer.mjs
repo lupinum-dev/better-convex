@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { extname, join, resolve } from 'node:path'
@@ -31,6 +31,19 @@ function assertDeepEqual(actual, expected, label) {
     throw new Error(
       `${label} expected ${JSON.stringify(expected)}; received ${JSON.stringify(actual)}`,
     )
+  }
+}
+
+function assertNoRetiredIdentityFields(installedRoot) {
+  const distRoot = join(installedRoot, 'dist')
+  const declarations = readdirSync(distRoot, { recursive: true }).filter((path) =>
+    /\.d\.[cm]?ts$/u.test(path),
+  )
+  if (declarations.length === 0) throw new Error('Packed Vue package emitted no declarations')
+  for (const declaration of declarations) {
+    if (readFileSync(join(distRoot, declaration), 'utf8').includes('authEpoch')) {
+      throw new Error(`Packed Vue declaration retains authEpoch: ${declaration}`)
+    }
   }
 }
 
@@ -92,7 +105,9 @@ try {
     if (installed.version !== candidate.version) {
       throw new Error(`Unexpected installed Vue package version: ${String(installed.version)}`)
     }
-    candidate.assertInstalled(join(consumerRoot, 'node_modules/better-convex-vue'))
+    const installedRoot = join(consumerRoot, 'node_modules/better-convex-vue')
+    candidate.assertInstalled(installedRoot)
+    assertNoRetiredIdentityFields(installedRoot)
   }
 
   run('pnpm', ['run', 'typecheck'], hostRoot)
@@ -144,7 +159,6 @@ try {
       authEnabled: true,
       settled: true,
       identityKey: 'user:alice',
-      authEpoch: 2,
       identityGeneration: 1,
       error: null,
     })
@@ -155,7 +169,6 @@ try {
       authEnabled: true,
       settled: true,
       identityKey: 'user:bob',
-      authEpoch: 3,
       identityGeneration: 2,
       error: null,
     })
@@ -172,7 +185,6 @@ try {
       authEnabled: true,
       settled: true,
       identityKey: 'anonymous',
-      authEpoch: 4,
       identityGeneration: 3,
       error: null,
     })
@@ -214,7 +226,7 @@ try {
   assertDeepEqual(report.embeddedClientKeys, report.clientKeys, 'Embedded stable client')
   assertDeepEqual(
     report.identityKeys,
-    ['authEnabled', 'authEpoch', 'error', 'identityGeneration', 'identityKey', 'settled'],
+    ['authEnabled', 'error', 'identityGeneration', 'identityKey', 'settled'],
     'Projected identity fields',
   )
   assertDeepEqual(report.projectedCause, undefined, 'Projected error cause')

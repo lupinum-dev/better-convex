@@ -37,7 +37,6 @@ const ANONYMOUS_SNAPSHOT: ClientIdentitySnapshot = Object.freeze({
   authEnabled: false,
   settled: true,
   identityKey: 'anonymous',
-  authEpoch: 0,
   identityGeneration: 0,
   error: null,
 })

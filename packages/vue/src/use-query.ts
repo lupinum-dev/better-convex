@@ -205,11 +205,10 @@ export function useConvexQuery<
     }
   }
 
-  const stop = watch(
-    [argsHash, gate, () => identity.value.identityGeneration, () => identity.value.authEpoch],
-    reconcile,
-    { immediate: true, flush: 'sync' },
-  )
+  const stop = watch([argsHash, gate, () => identity.value.identityGeneration], reconcile, {
+    immediate: true,
+    flush: 'sync',
+  })
   onScopeDispose(() => {
     stop()
     loading.value = false

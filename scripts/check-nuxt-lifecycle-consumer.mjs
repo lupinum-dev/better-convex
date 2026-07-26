@@ -237,7 +237,7 @@ try {
   )
   assertDeepEqual(
     attachment.identitySnapshotKeys,
-    ['authEnabled', 'authEpoch', 'error', 'identityGeneration', 'identityKey', 'settled'],
+    ['authEnabled', 'error', 'identityGeneration', 'identityKey', 'settled'],
     'Nuxt host identity snapshot allowlist',
   )
   assertDeepEqual(
@@ -246,7 +246,6 @@ try {
       authEnabled: false,
       settled: true,
       identityKey: 'anonymous',
-      authEpoch: 0,
       identityGeneration: 0,
       error: null,
     },

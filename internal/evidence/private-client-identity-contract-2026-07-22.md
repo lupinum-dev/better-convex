@@ -22,7 +22,7 @@ owner alone receives the control extension needed to confirm a replacement candi
 consumers no longer walk through an authentication implementation to find identity generation.
 
 The snapshot contains no token, cookie, user object, refresh callback, credential-fetch function, role,
-or permission. The enforcing test allowlists its six fields and scans the serialized snapshot for the
+or permission. The enforcing test allowlists its five fields and scans the serialized snapshot for the
 active token.
 
 ## Hard cut and source of truth
@@ -40,15 +40,16 @@ stays in `utils/identity-key.ts`, which re-exports the existing public type/pred
 a second key. This keeps Better Auth user extraction outside the shared lifecycle while preserving the
 root package's public `ConvexIdentityKey` contract.
 
-The Better Auth client engine remains the only publisher of `authEpoch`, `identityGeneration`,
-settlement, identity key, and safe auth error. Neither the observer nor the runtime context allocates or
-derives a competing generation.
+The Better Auth client engine remains the only publisher of `identityGeneration`, settlement, identity
+key, and safe auth error. Neither the observer nor the runtime context allocates or derives a competing
+generation.
 
 ## Preserved semantics
 
 - `identityKey` partitions anonymous, Alice, and Bob state.
 - `identityGeneration` advances exactly once across Alice→anonymous and Alice→Bob.
-- same-Alice credential rotation advances the credential revision but not identity generation.
+- same-Alice credential rotation is owned by the official Convex client's `setAuth` integration and does
+  not create a second lifecycle revision.
 - unsettled identity continues to pause replacement/live dispatch until settlement.
 - failure remains a safe `ConvexCallError` and cannot silently downgrade protected execution.
 - identity consumers subscribe to one observer and retain their existing synchronous masking behavior.

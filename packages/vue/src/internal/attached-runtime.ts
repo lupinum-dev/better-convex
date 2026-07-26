@@ -27,7 +27,6 @@ function projectIdentitySnapshot(snapshot: ClientIdentitySnapshot): ClientIdenti
     authEnabled: snapshot.authEnabled,
     settled: snapshot.settled,
     identityKey: snapshot.identityKey,
-    authEpoch: snapshot.authEpoch,
     identityGeneration: snapshot.identityGeneration,
     error: snapshot.error
       ? new ConvexCallError({

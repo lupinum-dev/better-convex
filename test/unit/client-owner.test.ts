@@ -83,7 +83,6 @@ function fakePort(initial: Partial<ClientIdentitySnapshot> = {}) {
     authEnabled: true,
     settled: true,
     identityKey: 'anonymous',
-    authEpoch: 0,
     identityGeneration: 0,
     error: null,
     ...initial,
@@ -465,7 +464,6 @@ describe('createConvexClientOwner', () => {
           settled: true,
           identityKey: 'user:bob',
           identityGeneration: 1,
-          authEpoch: 1,
         })
 
         await rejection
@@ -492,7 +490,7 @@ describe('createConvexClientOwner', () => {
 
         const pending = rawCall.invoke(o, path)
         expect(rawCall.calls(a)).toHaveLength(0)
-        emit({ settled: true, identityKey: 'anonymous', identityGeneration: 0, authEpoch: 1 })
+        emit({ settled: true, identityKey: 'anonymous', identityGeneration: 0 })
 
         await expect(pending).resolves.toBe('generation-a')
         expect(rawCall.calls(a)).toHaveLength(1)
@@ -508,15 +506,14 @@ describe('createConvexClientOwner', () => {
       await expect(o.handle.query(mockFnRef<'query'>('q'), {})).resolves.toBe('ok')
     })
 
-    it('does not reject same-user rotation (no replacement, generation stable)', async () => {
+    it('does not reject a same-generation notification', async () => {
       resetCounts()
       const { port, emit } = fakePort()
       const o = owner()
       o.attachIdentityPort(port)
       const a = o.getPrimary()!.client as unknown as CountingClient
       a.setQueryHandler('q', () => 'ok')
-      // Same-user token rotation: epoch bumps, generation unchanged.
-      emit({ authEpoch: 1 })
+      emit({})
       await Promise.resolve()
       expect(o.getPrimary()!.client).toBe(a as unknown as OwnedConvexClient)
       expect(CountingClient.created).toBe(1) // no replacement client created
@@ -524,20 +521,20 @@ describe('createConvexClientOwner', () => {
   })
 
   describe('attachIdentityPort reactive replacement', () => {
-    it('replaces the primary exactly on identityGeneration changes, not epoch-only changes', async () => {
+    it('replaces the primary exactly on identityGeneration changes', async () => {
       resetCounts()
       const { port, emit, initializePrimary } = fakePort()
       const o = owner()
       o.attachIdentityPort(port)
 
-      // epoch-only change → no replacement
-      emit({ authEpoch: 1 })
+      // Same-generation notification → no replacement.
+      emit({})
       await Promise.resolve()
       expect(CountingClient.created).toBe(1)
       expect(initializePrimary).not.toHaveBeenCalled()
 
       // identity change → replacement
-      emit({ identityGeneration: 1, authEpoch: 2, identityKey: 'user:alice' })
+      emit({ identityGeneration: 1, identityKey: 'user:alice' })
       await Promise.resolve()
       await Promise.resolve()
       expect(initializePrimary).toHaveBeenCalledTimes(1)
@@ -702,15 +699,15 @@ describe('createConvexClientOwner', () => {
     const o = owner()
     o.attachIdentityPort(port)
 
-    emit({ identityKey: 'user:alice', identityGeneration: 1, authEpoch: 1 })
+    emit({ identityKey: 'user:alice', identityGeneration: 1 })
     await vi.waitFor(() => expect(initializePrimary).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(o.getPrimary()).toBeNull())
     await vi.waitFor(() => expect(failPrimary).toHaveBeenCalledWith(1, expect.any(Error)))
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-    // Epoch-only notifications cannot spin a persistently broken client factory
+    // Same-generation notifications cannot spin a persistently broken client factory
     // or confirmation path. Recovery requires a real new identity generation.
-    emit({ authEpoch: 2 })
+    emit({})
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     expect(initializePrimary).toHaveBeenCalledTimes(1)
     expect(failPrimary).toHaveBeenCalledTimes(1)

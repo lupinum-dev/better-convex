@@ -77,7 +77,7 @@ gate are complete.
 - [ ] `AUTH-03`: stream-bound OAuth form bodies before materialization. This is promoted
       from Claude's P3 to P1 because the executed proof consumed 256 MiB at an
       unauthenticated endpoint with a declared 16 KiB bound.
-- [ ] `vue-lifecycle/VUE-02`: suppress value-identical provider transitions and remove
+- [x] `vue-lifecycle/VUE-02`: suppress value-identical provider transitions and remove
       redundant `authEpoch`.
 - [ ] `vue-lifecycle/VUE-03`: fix the no-op recovery path and explicitly decide, with
       security evidence, whether a transient session transport failure retains or
@@ -289,21 +289,33 @@ Ledger note (2026-07-26):
 
 Sources: Codex `F-011`; Claude `vue-lifecycle/VUE-02`.
 
-- [ ] Return early when provider status, identity key, session generation, and error are
+- [x] Return early when provider status, identity key, session generation, and error are
       value-identical.
-- [ ] Keep explicit user-triggered refresh behavior.
-- [ ] Delete `authEpoch`, its counter, projections, public type field, watcher
+- [x] Keep explicit user-triggered refresh behavior.
+- [x] Delete `authEpoch`, its counter, projections, public type field, watcher
       dependencies, and fixtures.
-- [ ] Let the official client's `setAuth` own same-session token refresh.
+- [x] Let the official client's `setAuth` own same-session token refresh.
 
 Acceptance criteria:
 
-- [ ] Re-emitting an identical provider snapshot publishes no identity notification,
+- [x] Re-emitting an identical provider snapshot publishes no identity notification,
       starts no `setAuth`, arms no fail-closed timer, and resubscribes no query.
-- [ ] A same-user new session still changes `identityGeneration` and replaces the
+- [x] A same-user new session still changes `identityGeneration` and replaces the
       client.
-- [ ] Explicit refresh still confirms and fails closed on a real confirmation failure.
-- [ ] Packed declarations contain no `authEpoch`.
+- [x] Explicit refresh still confirms and fails closed on a real confirmation failure.
+- [x] Packed declarations contain no `authEpoch`.
+
+Ledger note (2026-07-26):
+
+- Deleted the credential-revision counter instead of retaining two lifecycle clocks;
+  `identityGeneration` is now the only replacement boundary.
+- Value-identical provider emissions return before publication, client auth setup, or
+  fail-closed timer creation. Explicit `refresh()` still re-runs `setAuth` and
+  confirmation.
+- Same-user session generation changes still retire and replace the owned client.
+- Proof: 5 focused unit files/68 tests, Vue typecheck, and the packed cross-Vue-copy
+  consumer passed. The packed consumer recursively rejects any declaration containing
+  `authEpoch`.
 
 ### T1.4 — Define transient session failure and make recovery real
 
@@ -910,7 +922,7 @@ Phase 4 exit gate:
 
 ### T5.1 — Complete beta public API hard cuts
 
-- [ ] Remove `authEpoch`.
+- [x] Remove `authEpoch`.
 - [ ] Remove Vue `null`/`undefined` skip types.
 - [ ] Remove MCP `era`/request context.
 - [ ] Remove MCP diagnostic types/options.

@@ -20,9 +20,9 @@ import type { ClientIdentityPort } from './identity-port'
  *   - the connection-state store observed by `useConvexConnectionState`;
  *   - one deterministic disposer that closes every allocated client.
  *
- * The owner allocates NEITHER counter: `authEpoch`/`identityGeneration` are
- * supplied by the auth coordinator through {@link replacePrimary} /
- * {@link attachIdentityPort} (architecture invariant). The owner interprets no tokens.
+ * The owner does not allocate `identityGeneration`; the auth coordinator
+ * supplies it through {@link replacePrimary} / {@link attachIdentityPort}
+ * (architecture invariant). The owner interprets no tokens.
  */
 export interface ConvexClientOwner {
   /** Stable replacement-safe public handle returned by `useConvex()`. */
@@ -42,8 +42,8 @@ export interface ConvexClientOwner {
   replacePrimary(input: ReplacePrimaryInput): Promise<OwnedConvexClient>
   /**
    * Drive replacement reactively from the frozen auth port. On every
-   * `identityGeneration` change the owner replaces the primary; an
-   * `authEpoch`-only change (same-user token rotation) is ignored.
+   * `identityGeneration` change the owner replaces the primary; same-generation
+   * notifications are ignored.
    */
   attachIdentityPort(port: ClientIdentityPort): void
   /** Connection-state observation surface for `useConvexConnectionState`. */
@@ -212,7 +212,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
     connectionUnsubscribe = null
   }
   // On replacement: reset synchronously to the disconnected default, drop the
-  // old subscription (old-epoch callbacks are thereby ignored), and re-subscribe
+  // old subscription (retired-client callbacks are thereby ignored), and re-subscribe
   // to the replacement only when it has consumers (architecture invariant).
   function resetConnectionForReplacement() {
     unsubscribeConnection()
@@ -485,7 +485,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
     // A generation represents one security boundary and receives one candidate
     // attempt. Persistent factory/confirmation failure is terminal for that
     // generation; recovery requires a new coordinator transition/generation,
-    // not an epoch notification that can spin client construction indefinitely.
+    // not a same-generation notification that can spin client construction indefinitely.
     let observedGeneration = port.snapshot().identityGeneration
     let observedSettled = port.snapshot().settled
     const unsubscribe = port.subscribe(() => {
@@ -497,8 +497,8 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
           if (!entry.underlying) subscribeEntry(entry)
         }
       }
-      // Only a stable identity-key change replaces the primary. An epoch-only
-      // change (same-user token rotation) keeps the current client.
+      // Only an identity-generation change replaces the primary. A
+      // same-generation notification keeps the current client.
       if (snapshot.identityGeneration === observedGeneration) return
       const targetGeneration = snapshot.identityGeneration
       observedGeneration = targetGeneration

@@ -24,8 +24,6 @@ export interface ClientIdentitySnapshot {
   readonly authEnabled: boolean
   readonly settled: boolean
   readonly identityKey: ConvexIdentityKey | null
-  /** Monotonic credential revision; same-user credential rotation bumps this. */
-  readonly authEpoch: number
   /** Monotonic credential generation; same-subject session replacement also changes it. */
   readonly identityGeneration: number
   /** Non-null only when initial resolution failed without usable identity. */

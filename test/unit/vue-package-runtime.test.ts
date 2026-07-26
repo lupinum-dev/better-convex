@@ -24,7 +24,6 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
     authEnabled: true,
     settled: true,
     identityKey: `user:${label}`,
-    authEpoch: 1,
     identityGeneration: 1,
     error: null,
   }
@@ -220,7 +219,7 @@ describe('better-convex-vue package runtime', () => {
     expect(host.subscriptions[1]!.active).toBe(false)
   })
 
-  it('does not re-enter pending for an already-settled subscription after an auth epoch change', () => {
+  it('does not re-enter pending for an already-settled subscription after a same-generation notification', () => {
     const host = attachedRuntime('alice')
     const app = createApp({})
     app.use(createBetterConvex({ runtime: host.runtime }))
@@ -235,10 +234,7 @@ describe('better-convex-vue package runtime', () => {
     expect(query.status.value).toBe('success')
     expect(query.pending.value).toBe(false)
 
-    host.emit({
-      ...host.runtime.identity.snapshot(),
-      authEpoch: 2,
-    })
+    host.emit({ ...host.runtime.identity.snapshot() })
 
     expect(host.subscriptions).toHaveLength(1)
     expect(query.status.value).toBe('success')
@@ -362,7 +358,6 @@ describe('better-convex-vue package runtime', () => {
     host.emit({
       ...host.runtime.identity.snapshot(),
       settled: false,
-      authEpoch: 2,
     })
     expect(query.status.value).toBe('loading-first-page')
     expect(query.isLoading.value).toBe(true)
@@ -370,7 +365,6 @@ describe('better-convex-vue package runtime', () => {
     host.emit({
       ...host.runtime.identity.snapshot(),
       settled: true,
-      authEpoch: 3,
       error: normalizeConvexError(new Error('private authentication detail')),
     })
     expect(query.status.value).toBe('error')

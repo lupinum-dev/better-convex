@@ -23,7 +23,6 @@ function createOwnerHarness() {
         authEnabled: true,
         settled: true,
         identityKey: 'user:test',
-        authEpoch: 0,
         identityGeneration: 0,
         error: null,
       }),

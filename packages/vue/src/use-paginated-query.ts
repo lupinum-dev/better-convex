@@ -167,11 +167,10 @@ export function useConvexPaginatedQuery<
     if (live.value) controller.subscribeFirstPage()
     else if (gate.value === 'execute') void refreshBoundary()
   }
-  const stop = watch(
-    [argsHash, gate, live, () => identity.value.identityGeneration, () => identity.value.authEpoch],
-    reconcile,
-    { immediate: true, flush: 'sync' },
-  )
+  const stop = watch([argsHash, gate, live, () => identity.value.identityGeneration], reconcile, {
+    immediate: true,
+    flush: 'sync',
+  })
   onScopeDispose(() => {
     stop()
     controller.dispose()

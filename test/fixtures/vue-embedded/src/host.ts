@@ -14,7 +14,6 @@ let snapshot: BetterConvexIdentitySnapshot & { token: string } = {
   authEnabled: true,
   settled: true,
   identityKey: 'user:alice',
-  authEpoch: 1,
   identityGeneration: 1,
   error: null,
   token: '',

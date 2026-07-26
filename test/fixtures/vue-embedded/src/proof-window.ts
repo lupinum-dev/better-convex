@@ -4,7 +4,6 @@ export interface SafeIdentityInput {
   authEnabled: boolean
   settled: boolean
   identityKey: 'anonymous' | `user:${string}`
-  authEpoch: number
   identityGeneration: number
   error: null
 }
