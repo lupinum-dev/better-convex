@@ -185,16 +185,13 @@ describe('createConvexClientOwner', () => {
       expect(CountingClient.created).toBe(2) // A + B, no anonymous
     })
 
-    it('contains adapter diagnostics when retired client close rejects', async () => {
+    it('contains retired client close rejection', async () => {
       class RejectingCloseClient extends MockConvexClient {
         close = async (): Promise<void> => {
           throw new Error('close failed')
         }
       }
       let factoryCalls = 0
-      const onRetiredClientCloseError = vi.fn(() => {
-        throw new Error('diagnostic observer failed')
-      })
       const o = createConvexClientOwner({
         primaryFactory: () => {
           factoryCalls += 1
@@ -202,7 +199,6 @@ describe('createConvexClientOwner', () => {
             ? new RejectingCloseClient()
             : new CountingClient()) as unknown as OwnedConvexClient
         },
-        onRetiredClientCloseError,
       })
 
       const replacement = await o.replacePrimary({
@@ -211,7 +207,7 @@ describe('createConvexClientOwner', () => {
         initialize: async () => {},
       })
       expect(replacement).toBe(o.getPrimary()?.client)
-      await vi.waitFor(() => expect(onRetiredClientCloseError).toHaveBeenCalledTimes(1))
+      await Promise.resolve()
       await o.dispose()
     })
 

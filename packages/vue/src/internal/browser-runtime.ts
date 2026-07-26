@@ -30,7 +30,6 @@ export interface BetterConvexBrowserRuntime {
 export interface CreateBetterConvexBrowserRuntimeInput {
   clientFactory: () => OwnedConvexClient
   auth?: BrowserAuthAdapter
-  onRetiredClientCloseError?: (cause: unknown) => void
 }
 
 const ANONYMOUS_SNAPSHOT: ClientIdentitySnapshot = Object.freeze({
@@ -62,7 +61,6 @@ export function createBetterConvexBrowserRuntime(
           identityPort: authPort,
         }
       : {}),
-    onRetiredClientCloseError: input.onRetiredClientCloseError,
   })
   const identity = authPort ?? ANONYMOUS_OBSERVER
   let disposed = false

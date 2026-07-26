@@ -118,8 +118,6 @@ export interface CreateConvexClientOwnerInput {
    * build so `getAnonymous()` reuses the already-anonymous primary.
    */
   anonymousFactory?: () => OwnedConvexClient
-  /** Optional adapter-owned observer for a retired client's background close failure. */
-  onRetiredClientCloseError?: (cause: unknown) => void
 }
 
 const DEFAULT_CONNECTION_STATE: ConnectionState = {
@@ -153,7 +151,7 @@ interface PendingCall {
 }
 
 export function createConvexClientOwner(input: CreateConvexClientOwnerInput): ConvexClientOwner {
-  const { primaryFactory, identityPort, anonymousFactory, onRetiredClientCloseError } = input
+  const { primaryFactory, identityPort, anonymousFactory } = input
 
   let primary: OwnedConvexClient | null = identityPort ? null : primaryFactory()
   let currentIdentityGeneration = 0
@@ -181,20 +179,12 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
   }
 
   function closeRetiredPrimary(client: OwnedConvexClient): void {
-    const reportCloseError = (error: unknown) => {
-      try {
-        onRetiredClientCloseError?.(error)
-      } catch {
-        // Adapter diagnostics must never affect client retirement.
-      }
-    }
     try {
-      void client.close().catch(reportCloseError)
-    } catch (error) {
+      void client.close().catch(() => {})
+    } catch {
       // Retirement is the synchronous `primary = null` boundary below. A
       // non-conforming client that throws from close must not reopen that path
       // or prevent the replacement failure from reaching the auth port.
-      reportCloseError(error)
     }
   }
 
