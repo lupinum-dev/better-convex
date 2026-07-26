@@ -53,7 +53,6 @@ function makeHarness(options?: { live?: boolean }) {
   let live = options?.live ?? true
   let idle = false
   let boundaryFirstPage: PaginationResult<Row> | null = null
-  let boundaryPending = false
   let boundaryError: ConvexCallError | null = null
   let boundaryRefreshes = 0
   const fetches: PaginationPageOptions[] = []
@@ -96,7 +95,6 @@ function makeHarness(options?: { live?: boolean }) {
     getIsolationTag: () => tag,
     isIdle: () => idle,
     isLive: () => live,
-    isBoundaryPending: () => boundaryPending,
     getBoundaryFirstPage: () => boundaryFirstPage,
     getBoundaryError: () => boundaryError,
     setBoundaryError: (error) => {
@@ -128,9 +126,6 @@ function makeHarness(options?: { live?: boolean }) {
       },
       setBoundaryFirstPage(value: PaginationResult<Row> | null) {
         boundaryFirstPage = value
-      },
-      setBoundaryPending(value: boolean) {
-        boundaryPending = value
       },
       setLive(value: boolean) {
         live = value

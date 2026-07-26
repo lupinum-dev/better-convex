@@ -128,7 +128,6 @@ export function useConvexPaginatedQuery<
     getIsolationTag: () => tag.value,
     isIdle: () => idle.value,
     isLive: () => live.value,
-    isBoundaryPending: () => false,
     getBoundaryFirstPage: () => boundaryFirstPage.value,
     getBoundaryError: () => identity.value.error ?? boundaryError.value,
     setBoundaryError: (error) => {

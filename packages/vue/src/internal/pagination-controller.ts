@@ -34,7 +34,6 @@ export interface PaginationControllerInput<Item, TransformedItem> {
   getIsolationTag(): QueryIsolationTag
   isIdle(): boolean
   isLive(): boolean
-  isBoundaryPending(): boolean
   getBoundaryFirstPage(): BetterPaginationResult<Item> | null
   getBoundaryError(): ConvexCallError | null
   setBoundaryError(error: ConvexCallError | null, key: string): void
@@ -115,7 +114,6 @@ export function createPaginationController<Item, TransformedItem = Item>(
   const firstPageWithheld = shallowRef(false)
   const manualRefreshPending = shallowRef(false)
   const lastSettledResults = shallowRef<TransformedItem[]>([])
-  const lastSettledArgsHash = shallowRef<string | null>(null)
   let firstPageUnsubscribe: (() => void) | null = null
   let pendingFirstPageSettlement: FirstPageSettlement | null = null
   let stopSettledWatch: (() => void) | null = null
@@ -476,15 +474,8 @@ export function createPaginationController<Item, TransformedItem = Item>(
     }
   }
 
-  const isPreviousDataForCurrentArgs = () =>
-    input.keepPreviousData &&
-    firstPageRealtime.value === null &&
-    lastSettledArgsHash.value !== null &&
-    input.getArgsHash() !== lastSettledArgsHash.value &&
-    input.isBoundaryPending()
-
   const status = computed<PaginationStatus>(() => {
-    const currentFirstPage = isPreviousDataForCurrentArgs() ? null : firstPage()
+    const currentFirstPage = firstPage()
     const lastPage = pages.value.at(-1)
     const firstPageState: PaginationFirstPageState = currentFirstPage
       ? { state: 'ready', isDone: currentFirstPage.isDone }
@@ -505,7 +496,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
   })
 
   const transformedResults = computed<TransformedItem[]>(() => {
-    if (input.isIdle() || isPreviousDataForCurrentArgs()) return transform([])
+    if (input.isIdle()) return transform([])
     const items: Item[] = []
     const currentFirstPage = firstPage()
     if (currentFirstPage) items.push(...currentFirstPage.page)
@@ -548,7 +539,6 @@ export function createPaginationController<Item, TransformedItem = Item>(
       ([nextStatus, nextResults]) => {
         if (input.isIdle() || nextStatus === 'loading-first-page') return
         lastSettledResults.value = nextResults
-        lastSettledArgsHash.value = input.getArgsHash()
       },
       { immediate: true },
     )
@@ -729,7 +719,6 @@ export function createPaginationController<Item, TransformedItem = Item>(
     pages.value = []
     input.setBoundaryError(null, boundary.previousBoundaryKey)
     lastSettledResults.value = []
-    lastSettledArgsHash.value = null
     if (input.isLive()) subscribeFirstPage()
   }
 
