@@ -194,9 +194,38 @@ describe('callable lifecycle: identity-change stale rejection (architecture inva
 
     expect(rejections).toBe(attempts)
     expect(onError).not.toHaveBeenCalled()
-    // No error is committed to visible state for an identity-boundary rejection.
+    // Identity-boundary rejection is masked rather than left indefinitely pending.
     expect(lifecycle.error.value).toBeNull()
+    expect(lifecycle.status.value).toBe('idle')
+  })
+
+  it('does not let an older identity rejection mask a newer in-flight call', async () => {
+    let rejectFirst!: (error: Error) => void
+    let resolveSecond!: (value: string) => void
+    let invocation = 0
+    const lifecycle = makeLifecycle({
+      invoke: () => {
+        invocation += 1
+        return invocation === 1
+          ? new Promise<string>((_resolve, reject) => {
+              rejectFirst = reject
+            })
+          : new Promise<string>((resolve) => {
+              resolveSecond = resolve
+            })
+      },
+    })
+
+    const first = lifecycle.run({})
+    const second = lifecycle.run({})
+    rejectFirst(createIdentityChangedError('mutation'))
+    await expect(first).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
     expect(lifecycle.status.value).toBe('pending')
+
+    resolveSecond('newer')
+    await expect(second).resolves.toBe('newer')
+    expect(lifecycle.status.value).toBe('success')
+    expect(lifecycle.data.value).toBe('newer')
   })
 
   it('commits and reports a genuine (non-identity) failure with one onError call', async () => {

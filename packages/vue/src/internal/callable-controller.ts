@@ -106,6 +106,7 @@ export function createCallableController<Args, Result>(
       const stale = isIdentityChangedError(normalized) || getIdentityGeneration() !== generation
 
       if (stale) {
+        if (callState.isCurrent(requestId)) callState.mask()
         throw isIdentityChangedError(normalized)
           ? normalized
           : createIdentityChangedError(operation)
