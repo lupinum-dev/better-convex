@@ -473,18 +473,19 @@ describe('useConvexPaginatedQuery controller', () => {
     )
 
     const { result, flush, wrapper } = await captureInNuxt(
-      () =>
-        createConvexPaginatedQueryState(query, {}, { auth: 'none', initialNumItems: 2 }, true)
-          .resultData,
+      () => createConvexPaginatedQueryState(query, {}, { auth: 'none', initialNumItems: 2 }),
       {
         owner: makeMockOwner(primary),
         payloadData: { [key]: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
       },
     )
 
-    expect(result.results.value).toEqual(['ssr-a', 'ssr-b'])
-    expect(result.hasNextPage.value).toBe(true)
-    result.loadMore(2)
+    await result.resolvePromise
+    expect(result.resultData.results.value).toEqual(['ssr-a', 'ssr-b'])
+    expect(result.resultData.hasNextPage.value).toBe(true)
+    expect(primary.calls.query).toHaveLength(0)
+    expect(primary.calls.onUpdate).toHaveLength(1)
+    result.resultData.loadMore(2)
     await flush()
     expect(primary.calls.onUpdate).toHaveLength(3)
     expect(primary.calls.onUpdate[1]?.args).toMatchObject({

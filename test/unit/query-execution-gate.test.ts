@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import { ConvexCallError } from '../../packages/vue/src/errors'
+import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
+import { decideQueryExecution } from '../../packages/vue/src/internal/query-execution'
 import type { ConvexAuthMode, ConvexAuthStatus } from '../../src/runtime/utils/auth-status'
 import type { ConvexIdentityKey } from '../../src/runtime/utils/identity-key'
 import {
@@ -15,7 +18,6 @@ function gate(overrides: Partial<QueryExecutionGateInput> = {}) {
     authMode: 'optional',
     identityKey: USER,
     skipped: false,
-    subscribe: true,
   }
   return createQueryExecutionGate({ ...base, ...overrides })
 }
@@ -30,10 +32,7 @@ describe('createQueryExecutionGate', () => {
       for (const authMode of MODES) {
         it(`skip idles for ${authMode}/${authStatus}`, () => {
           const g = gate({ skipped: true, authStatus, authMode })
-          expect(g).toMatchObject({
-            outcome: 'idle',
-            reason: 'explicit-skip',
-          })
+          expect(g).toMatchObject({ outcome: 'idle' })
         })
       }
     }
@@ -48,27 +47,10 @@ describe('createQueryExecutionGate', () => {
         const g = gate({ authMode: 'none', authStatus, identityKey: USER })
         expect(g).toMatchObject({
           outcome: 'execute',
-          subscribe: true,
           cacheIdentity: 'anonymous',
-          reason: 'executing',
         })
-        expect(g.outcome).toBe('execute')
-        if (g.outcome !== 'execute') throw new Error('none must execute')
-        // Uses the dedicated anonymous client only when auth is enabled.
-        expect(g.useAnonymousClient).toBe(authStatus !== 'disabled')
       })
     }
-
-    it('none respects subscribe=false (no live subscription)', () => {
-      expect(gate({ authMode: 'none', subscribe: false })).toMatchObject({
-        outcome: 'execute',
-        subscribe: false,
-      })
-      expect(gate({ authMode: 'none', subscribe: true })).toMatchObject({
-        outcome: 'execute',
-        subscribe: true,
-      })
-    })
 
     it('none never inspects identity — authenticated key still keys anonymous', () => {
       expect(
@@ -93,7 +75,6 @@ describe('createQueryExecutionGate', () => {
       ).toMatchObject({
         outcome: 'idle',
         cacheIdentity: 'anonymous',
-        reason: 'required-idle',
       })
     })
 
@@ -106,9 +87,7 @@ describe('createQueryExecutionGate', () => {
         }),
       ).toMatchObject({
         outcome: 'execute',
-        useAnonymousClient: false,
         cacheIdentity: 'anonymous',
-        reason: 'executing',
       })
     })
   })
@@ -119,7 +98,6 @@ describe('createQueryExecutionGate', () => {
       it(`${authMode} waits under loading`, () => {
         expect(gate({ authStatus: 'loading', authMode, identityKey: null })).toMatchObject({
           outcome: 'wait',
-          reason: 'auth-loading',
         })
       })
     }
@@ -131,7 +109,6 @@ describe('createQueryExecutionGate', () => {
       it(`${authMode} surfaces auth error`, () => {
         expect(gate({ authStatus: 'error', authMode, identityKey: null })).toMatchObject({
           outcome: 'error',
-          reason: 'auth-error',
         })
       })
     }
@@ -149,7 +126,6 @@ describe('createQueryExecutionGate', () => {
       ).toMatchObject({
         outcome: 'idle',
         cacheIdentity: 'anonymous',
-        reason: 'required-idle',
       })
     })
 
@@ -163,8 +139,6 @@ describe('createQueryExecutionGate', () => {
       ).toMatchObject({
         outcome: 'execute',
         cacheIdentity: 'anonymous',
-        useAnonymousClient: false,
-        reason: 'executing',
       })
     })
   })
@@ -175,23 +149,10 @@ describe('createQueryExecutionGate', () => {
       it(`${authMode} executes with the user identity`, () => {
         expect(gate({ authStatus: 'authenticated', authMode, identityKey: USER })).toMatchObject({
           outcome: 'execute',
-          subscribe: true,
-          useAnonymousClient: false,
           cacheIdentity: USER,
-          reason: 'executing',
         })
       })
     }
-
-    it('subscribe=false suppresses the live subscription while still executing', () => {
-      expect(
-        gate({
-          authStatus: 'authenticated',
-          authMode: 'optional',
-          subscribe: false,
-        }),
-      ).toMatchObject({ outcome: 'execute', subscribe: false })
-    })
 
     it('defensively waits when authenticated but the identity key is not a concrete user', () => {
       // Never manufacture user:undefined . A settled-authenticated
@@ -205,7 +166,6 @@ describe('createQueryExecutionGate', () => {
       ).toMatchObject({
         outcome: 'wait',
         cacheIdentity: 'anonymous',
-        reason: 'auth-loading',
       })
       expect(
         gate({
@@ -222,7 +182,7 @@ describe('createQueryExecutionGate', () => {
   // Precedence: skip beats everything, including none/loading/error.
   describe('precedence', () => {
     it('skip beats none', () => {
-      expect(gate({ skipped: true, authMode: 'none' }).reason).toBe('explicit-skip')
+      expect(gate({ skipped: true, authMode: 'none' }).outcome).toBe('idle')
     })
 
     it('none beats loading (does not wait for auth)', () => {
@@ -238,19 +198,60 @@ describe('createQueryExecutionGate', () => {
     })
   })
 
-  // Execution-only transport fields are structurally absent otherwise.
-  it('only execute decisions carry transport fields', () => {
+  it('matches the client package matrix for every representable settled state', () => {
+    const snapshots: Record<ConvexAuthStatus, ClientIdentitySnapshot> = {
+      disabled: {
+        authEnabled: false,
+        settled: true,
+        identityKey: 'anonymous',
+        identityGeneration: 0,
+        error: null,
+      },
+      loading: {
+        authEnabled: true,
+        settled: false,
+        identityKey: 'anonymous',
+        identityGeneration: 0,
+        error: null,
+      },
+      anonymous: {
+        authEnabled: true,
+        settled: true,
+        identityKey: 'anonymous',
+        identityGeneration: 0,
+        error: null,
+      },
+      authenticated: {
+        authEnabled: true,
+        settled: true,
+        identityKey: USER,
+        identityGeneration: 0,
+        error: null,
+      },
+      error: {
+        authEnabled: true,
+        settled: true,
+        identityKey: 'anonymous',
+        identityGeneration: 0,
+        error: new ConvexCallError({ kind: 'authentication', message: 'auth failed' }),
+      },
+    }
     for (const authStatus of STATUSES) {
       for (const authMode of MODES) {
-        const g = gate({
-          authStatus,
-          authMode,
-          subscribe: true,
-          identityKey: USER,
-        })
-        if (g.outcome !== 'execute') {
-          expect('subscribe' in g).toBe(false)
-          expect('useAnonymousClient' in g).toBe(false)
+        for (const skipped of [false, true]) {
+          expect(
+            gate({
+              authStatus,
+              authMode,
+              skipped,
+              identityKey:
+                authStatus === 'authenticated'
+                  ? USER
+                  : authStatus === 'disabled'
+                    ? null
+                    : 'anonymous',
+            }).outcome,
+          ).toBe(decideQueryExecution({ auth: authMode, skipped, identity: snapshots[authStatus] }))
         }
       }
     }

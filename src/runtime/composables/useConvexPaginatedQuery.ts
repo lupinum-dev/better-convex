@@ -121,7 +121,6 @@ export function createConvexPaginatedQueryState<
       authMode: auth,
       identityKey: authContext.identityKey.value,
       skipped: hydratedArgs === 'skip',
-      subscribe: false,
     })
     const hydrationKey =
       hydrationGate.outcome === 'execute'
@@ -220,7 +219,6 @@ export function createConvexPaginatedQueryState<
       authMode: auth,
       identityKey: authContext.identityKey.value,
       skipped: currentArgs.value === 'skip',
-      subscribe: false,
     }),
   )
   const key = computed(() => {

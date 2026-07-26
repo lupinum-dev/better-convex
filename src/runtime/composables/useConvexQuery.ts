@@ -114,7 +114,6 @@ export function createConvexQueryState<
       authMode: auth,
       identityKey: authContext.identityKey.value,
       skipped: hydratedArgs === 'skip',
-      subscribe: false,
     })
     const hydrationKey =
       hydrationGate.outcome === 'execute'
@@ -220,7 +219,6 @@ export function createConvexQueryState<
       authMode: auth,
       identityKey: authContext.identityKey.value,
       skipped: skipped.value,
-      subscribe: false,
     }),
   )
   const key = computed(() => {

@@ -1,4 +1,3 @@
-import type { BetterConvexAttachedRuntime } from 'better-convex-vue/embedded'
 import type { ComputedRef } from 'vue'
 import { computed } from 'vue'
 
@@ -10,7 +9,6 @@ import { useConvexIdentityState } from './auth-identity-state'
 import { useConvexAuthPendingState } from './auth-pending-state'
 import { deriveConvexAuthStatus, type ConvexAuthStatus } from './auth-status'
 import type { ConvexIdentityKey } from './identity-key'
-import type { QueryExecutionGate } from './query-execution-gate'
 import { getConvexRuntimeConfig } from './runtime-config'
 
 /**
@@ -66,24 +64,4 @@ export function createConvexQueryAuthContext(): ConvexQueryAuthContext {
     identityKey,
     error,
   }
-}
-
-/**
- * Select the live/once transport client for a gate decision (architecture invariant).
- *
- * - `none` in an auth-enabled build uses the dedicated anonymous client that
- *   never receives `setAuth` (its identity is never rebound).
- * - `required`/`optional` (and `none` in an auth-disabled build) use the
- *   owner's stable handle. Its live listeners register even while a confirmed
- *   replacement is pending, then rebind to the replacement on publication.
- *
- * Returns `null` when no client owner exists (SSR uses HTTP, never a WS client).
- */
-export function selectLiveQueryClient(
-  runtime: BetterConvexAttachedRuntime | undefined,
-  gate: QueryExecutionGate,
-): Pick<BetterConvexAttachedRuntime['client'], 'query' | 'onUpdate'> | null {
-  if (!runtime || gate.outcome !== 'execute') return null
-  if (gate.useAnonymousClient) return runtime.anonymousClient
-  return runtime.client
 }

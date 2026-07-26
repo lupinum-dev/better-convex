@@ -26,43 +26,22 @@ export interface QueryExecutionGateInput {
   authMode: ConvexAuthMode
   identityKey: ConvexIdentityKey | null
   skipped: boolean
-  subscribe: boolean
 }
 
 /**
  * The terminal query execution decision:
- * - `execute` — issue the network request (live subscription when `subscribe`);
+ * - `execute` — the caller may issue its configured network request;
  * - `idle`    — resolve idle with no request and no error;
  * - `wait`    — wait for initial auth settlement, then re-evaluate;
  * - `error`   — surface the settled auth error with no request.
  */
 export type QueryExecutionOutcome = 'execute' | 'idle' | 'wait' | 'error'
 
-/** Descriptive reason for a non-executing decision (diagnostics / DevTools). */
-export type QueryExecutionReason =
-  | 'executing'
-  | 'explicit-skip'
-  | 'auth-loading'
-  | 'auth-error'
-  | 'required-idle'
-
-interface QueryExecutionDecisionBase {
+export interface QueryExecutionGate {
+  outcome: QueryExecutionOutcome
   /** The identity dimension for the cache / payload / subscription key. */
   cacheIdentity: ConvexIdentityKey
-  reason: QueryExecutionReason
 }
-
-export type QueryExecutionGate =
-  | (QueryExecutionDecisionBase & { outcome: 'idle' })
-  | (QueryExecutionDecisionBase & { outcome: 'wait' })
-  | (QueryExecutionDecisionBase & { outcome: 'error' })
-  | (QueryExecutionDecisionBase & {
-      outcome: 'execute'
-      /** Open a live subscription when the caller requested subscriptions. */
-      subscribe: boolean
-      /** Route through the dedicated never-authenticated client. */
-      useAnonymousClient: boolean
-    })
 
 const IDLE = {
   outcome: 'idle',
@@ -74,14 +53,13 @@ const IDLE = {
  * matrix is trivially unit-testable across all status/mode combinations.
  */
 export function createQueryExecutionGate(input: QueryExecutionGateInput): QueryExecutionGate {
-  const { authStatus, authMode, identityKey, skipped, subscribe } = input
+  const { authStatus, authMode, identityKey, skipped } = input
 
   // 1. Explicit skip resolves idle regardless of auth.
   if (skipped) {
     return {
       ...IDLE,
       cacheIdentity: identityDimension(authMode, identityKey),
-      reason: 'explicit-skip',
     }
   }
 
@@ -91,19 +69,16 @@ export function createQueryExecutionGate(input: QueryExecutionGateInput): QueryE
   if (authMode === 'none') {
     return {
       outcome: 'execute',
-      subscribe,
-      useAnonymousClient: authStatus !== 'disabled',
       cacheIdentity: 'anonymous',
-      reason: 'executing',
     }
   }
 
   // 3. Auth disabled: `required` idles, `optional` executes anonymously now.
   if (authStatus === 'disabled') {
     if (authMode === 'required') {
-      return { ...IDLE, cacheIdentity: 'anonymous', reason: 'required-idle' }
+      return { ...IDLE, cacheIdentity: 'anonymous' }
     }
-    return executeAnonymously(subscribe)
+    return executeAnonymously()
   }
 
   // 4. Loading: both required and optional wait for initial settlement.
@@ -111,7 +86,6 @@ export function createQueryExecutionGate(input: QueryExecutionGateInput): QueryE
     return {
       outcome: 'wait',
       cacheIdentity: identityDimension(authMode, identityKey),
-      reason: 'auth-loading',
     }
   }
 
@@ -120,16 +94,15 @@ export function createQueryExecutionGate(input: QueryExecutionGateInput): QueryE
     return {
       outcome: 'error',
       cacheIdentity: identityDimension(authMode, identityKey),
-      reason: 'auth-error',
     }
   }
 
   // 6. Anonymous: `required` idles, `optional` executes anonymously.
   if (authStatus === 'anonymous') {
     if (authMode === 'required') {
-      return { ...IDLE, cacheIdentity: 'anonymous', reason: 'required-idle' }
+      return { ...IDLE, cacheIdentity: 'anonymous' }
     }
-    return executeAnonymously(subscribe)
+    return executeAnonymously()
   }
 
   // 7. Authenticated: both modes require a concrete matching `user:<id>` key.
@@ -140,26 +113,19 @@ export function createQueryExecutionGate(input: QueryExecutionGateInput): QueryE
     return {
       outcome: 'wait',
       cacheIdentity: 'anonymous',
-      reason: 'auth-loading',
     }
   }
 
   return {
     outcome: 'execute',
-    subscribe,
-    useAnonymousClient: false,
     cacheIdentity: identityKey,
-    reason: 'executing',
   }
 }
 
-function executeAnonymously(subscribe: boolean): QueryExecutionGate {
+function executeAnonymously(): QueryExecutionGate {
   return {
     outcome: 'execute',
-    subscribe,
-    useAnonymousClient: false,
     cacheIdentity: 'anonymous',
-    reason: 'executing',
   }
 }
 
