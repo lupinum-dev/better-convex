@@ -2,8 +2,8 @@ import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resourc
 
 import {
   OAuthSecurityError,
-  assertOAuthAccessTokenClaims,
   installUrlCanParseCompatibility,
+  prepareOAuthAccessTokenVerification,
   type OAuthAccessTokenExpectations,
   type OAuthPrincipal,
 } from './oauth-security'
@@ -12,10 +12,7 @@ export interface VerifyOAuthBearerTokenOptions extends OAuthAccessTokenExpectati
   jwksUrl: string
 }
 
-export type BetterAuthMcpAccessVerifierOptions = Omit<
-  VerifyOAuthBearerTokenOptions,
-  'audience' | 'nowSeconds'
-> & {
+export type BetterAuthMcpAccessVerifierOptions = Omit<VerifyOAuthBearerTokenOptions, 'audience'> & {
   /**
    * Required request-local Better Auth authority check. The callback runs only on the server and
    * must validate the current session, user, client, consent, and resource grant from canonical
@@ -94,6 +91,7 @@ export async function verifyOAuthBearerToken(
   // official verifier succeeds below.
   decodeVerifiedPayload(token)
   const maxLifetimeSeconds = options.maxLifetimeSeconds ?? 600
+  const verification = prepareOAuthAccessTokenVerification(options)
   const verifyBearerToken = oauthProviderResourceClient().getActions().verifyBearerToken
   await verifyBearerToken(token, {
     jwksUrl: options.jwksUrl,
@@ -101,8 +99,7 @@ export async function verifyOAuthBearerToken(
       algorithms: ['RS256'],
       audience: options.audience,
       clockTolerance: 0,
-      currentDate:
-        options.nowSeconds === undefined ? undefined : new Date(options.nowSeconds * 1000),
+      currentDate: verification.currentDate,
       issuer: options.issuer,
       maxTokenAge: `${maxLifetimeSeconds}s`,
       typ: 'at+jwt',
@@ -113,7 +110,7 @@ export async function verifyOAuthBearerToken(
   // returned payload. Re-read the now signature-verified compact bytes so a
   // conflicting signed client_id (or another raw unknown claim) cannot be
   // hidden by that normalization.
-  return assertOAuthAccessTokenClaims(decodeVerifiedPayload(token), options)
+  return verification.assert(decodeVerifiedPayload(token))
 }
 
 /**

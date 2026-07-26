@@ -102,7 +102,6 @@ export interface OAuthAccessTokenExpectations {
   clientId?: string
   issuer: string
   maxLifetimeSeconds?: number
-  nowSeconds?: number
   requiredScopes?: readonly string[]
   subject?: string
 }
@@ -110,7 +109,6 @@ export interface OAuthAccessTokenExpectations {
 export interface OAuthPrincipal {
   clientId: string
   expiresAt: number
-  issuedAt: number
   scopes: readonly string[]
   sessionId: string
   subject: string
@@ -751,13 +749,24 @@ export function assertOAuthAccessTokenClaims(
   payload: unknown,
   expectations: OAuthAccessTokenExpectations,
 ): OAuthPrincipal {
+  return assertOAuthAccessTokenClaimsAt(
+    payload,
+    expectations,
+    Math.floor(new Date().getTime() / 1000),
+  )
+}
+
+function assertOAuthAccessTokenClaimsAt(
+  payload: unknown,
+  expectations: OAuthAccessTokenExpectations,
+  now: number,
+): OAuthPrincipal {
   if (!isRecord(payload)) invalidToken()
   for (const claim of Object.keys(payload)) {
     if (!TOKEN_CLAIMS.has(claim)) invalidToken()
   }
   const maxLifetime = expectations.maxLifetimeSeconds ?? 600
   if (!Number.isSafeInteger(maxLifetime) || maxLifetime <= 0 || maxLifetime > 600) invalidToken()
-  const now = expectations.nowSeconds ?? Math.floor(Date.now() / 1000)
   const issuer = requiredString(payload, 'iss')
   const subject = requiredString(payload, 'sub')
   const audience = requiredString(payload, 'aud')
@@ -793,5 +802,16 @@ export function assertOAuthAccessTokenClaims(
     if (!allowed.has(required) || !scopes.includes(required)) invalidToken()
   }
 
-  return Object.freeze({ clientId, expiresAt, issuedAt, scopes, sessionId, subject })
+  return Object.freeze({ clientId, expiresAt, scopes, sessionId, subject })
+}
+
+export function prepareOAuthAccessTokenVerification(expectations: OAuthAccessTokenExpectations) {
+  const currentDate = new Date()
+  const now = Math.floor(currentDate.getTime() / 1000)
+  return Object.freeze({
+    currentDate,
+    assert(payload: unknown): OAuthPrincipal {
+      return assertOAuthAccessTokenClaimsAt(payload, expectations, now)
+    },
+  })
 }

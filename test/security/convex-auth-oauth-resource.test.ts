@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createBetterAuthMcpAccessVerifier,
@@ -36,6 +36,8 @@ function compactToken(overrides: Record<string, unknown> = {}): string {
 
 describe('official OAuth resource-client integration', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(1_200 * 1_000))
     verifyBearerToken.mockReset()
     verifyBearerToken.mockResolvedValue({
       aud: audience,
@@ -52,6 +54,10 @@ describe('official OAuth resource-client integration', () => {
     })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('delegates JOSE/JWKS verification with exact RS256, at+jwt, issuer and audience', async () => {
     await expect(
       verifyOAuthBearerToken(compactToken(), {
@@ -60,14 +66,12 @@ describe('official OAuth resource-client integration', () => {
         clientId: 'client-1',
         issuer,
         jwksUrl: `${issuer}/jwks`,
-        nowSeconds: 1200,
         requiredScopes: ['mcp:read'],
         subject: 'user-1',
       }),
     ).resolves.toEqual({
       clientId: 'client-1',
       expiresAt: 1600,
-      issuedAt: 1000,
       scopes: ['mcp:read'],
       sessionId: 'session-1',
       subject: 'user-1',
@@ -85,6 +89,24 @@ describe('official OAuth resource-client integration', () => {
         typ: 'at+jwt',
       },
     })
+  })
+
+  it('cannot accept a wall-clock-expired token through a caller-supplied clock', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2_000 * 1_000))
+    try {
+      await expect(
+        verifyOAuthBearerToken(compactToken(), {
+          allowedScopes: ['mcp:read'],
+          audience,
+          issuer,
+          jwksUrl: `${issuer}/jwks`,
+          nowSeconds: 1_200,
+        } as Parameters<typeof verifyOAuthBearerToken>[1] & { nowSeconds: number }),
+      ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('adapts the strict verifier to a resource-bound MCP identity without provider-private state', async () => {
@@ -140,7 +162,7 @@ describe('official OAuth resource-client integration', () => {
         algorithms: ['RS256'],
         audience,
         clockTolerance: 0,
-        currentDate: undefined,
+        currentDate: new Date(1_200 * 1_000),
         issuer,
         maxTokenAge: '600s',
         typ: 'at+jwt',
@@ -297,7 +319,6 @@ describe('official OAuth resource-client integration', () => {
         audience,
         issuer,
         jwksUrl: `${issuer}/jwks`,
-        nowSeconds: 1200,
       })
       expect(URL.canParse).toBeTypeOf('function')
     } finally {
@@ -331,7 +352,6 @@ describe('official OAuth resource-client integration', () => {
         clientId: 'client-1',
         issuer,
         jwksUrl: `${issuer}/jwks`,
-        nowSeconds: 1200,
       }),
     ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
   })
@@ -357,7 +377,6 @@ describe('official OAuth resource-client integration', () => {
           audience,
           issuer,
           jwksUrl,
-          nowSeconds: 1200,
         }),
       ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
       expect(verifyBearerToken).not.toHaveBeenCalled()

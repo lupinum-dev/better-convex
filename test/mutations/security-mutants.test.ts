@@ -2,7 +2,7 @@ import { oauthProvider, type OAuthOptions } from '@better-auth/oauth-provider'
 import { betterAuth } from 'better-auth'
 import { memoryAdapter, type MemoryDB } from 'better-auth/adapters/memory'
 import { jwt } from 'better-auth/plugins'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createConvexAuthAdapter } from '../../src/runtime/convex-auth/adapter/create-adapter'
 import {
@@ -121,16 +121,21 @@ function assertClaims(
   payload: Record<string, unknown>,
   overrides: Partial<Parameters<typeof assertOAuthAccessTokenClaims>[1]> = {},
 ) {
-  return assertOAuthAccessTokenClaims(payload, {
-    allowedScopes: ['mcp:read', 'mcp:write'],
-    audience: RESOURCE,
-    clientId: 'client-1',
-    issuer: ISSUER,
-    nowSeconds: 1_200,
-    requiredScopes: ['mcp:read'],
-    subject: 'user-1',
-    ...overrides,
-  })
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(1_200 * 1_000))
+  try {
+    return assertOAuthAccessTokenClaims(payload, {
+      allowedScopes: ['mcp:read', 'mcp:write'],
+      audience: RESOURCE,
+      clientId: 'client-1',
+      issuer: ISSUER,
+      requiredScopes: ['mcp:read'],
+      subject: 'user-1',
+      ...overrides,
+    })
+  } finally {
+    vi.useRealTimers()
+  }
 }
 
 function baseDatabase(): MemoryDB {

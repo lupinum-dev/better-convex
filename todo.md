@@ -1137,18 +1137,37 @@ Ledger note (2026-07-26):
 
 Source: Codex `F-010`.
 
-- [ ] Remove public `nowSeconds`.
-- [ ] Capture one real `Date` internally and share it between JOSE and local checks.
-- [ ] Use fake system time in tests.
-- [ ] Remove returned `OAuthPrincipal.issuedAt` if the final consumer search remains
+- [x] Remove public `nowSeconds`.
+- [x] Capture one real `Date` internally and share it between JOSE and local checks.
+- [x] Use fake system time in tests.
+- [x] Remove returned `OAuthPrincipal.issuedAt` if the final consumer search remains
       empty; continue validating `iat`.
 
 Acceptance criteria:
 
-- [ ] A wall-clock-expired token cannot be accepted by caller configuration.
-- [ ] Clock tolerance, issuer, audience, subject, lifetime, and token-class checks are
+- [x] A wall-clock-expired token cannot be accepted by caller configuration.
+- [x] Clock tolerance, issuer, audience, subject, lifetime, and token-class checks are
       unchanged.
-- [ ] Packed declarations contain neither the time override nor unused `issuedAt`.
+- [x] Packed declarations contain neither the time override nor unused `issuedAt`.
+
+Ledger note (2026-07-26):
+
+- `VerifyOAuthBearerTokenOptions` and its underlying expectation type no longer accept
+  `nowSeconds`. Verification captures one internal `Date` before the JOSE call; that
+  exact object is passed as `currentDate`, while a seconds projection captured from the
+  same instant drives the local `iat`/`exp` checks.
+- A regression passes a stale `nowSeconds` through an untyped object and proves it
+  cannot admit a token expired by the real wall clock. Clock tolerance remains zero,
+  and the existing issuer, audience, subject, client, maximum-lifetime, token-class,
+  scope, and session binding corpus remains green.
+- The final production caller search found no `OAuthPrincipal.issuedAt` consumer, so
+  the result field was deleted. The signed `iat` claim remains required and continues
+  to enforce future-issue, ordering, and maximum-lifetime invariants. Time-dependent
+  tests now use fake system time rather than a production clock option.
+- The combined unit, security, auth-fuzz, and auth-mutation projects pass 1,754 tests
+  across 138 files. Root/fixture typechecks, the package build, lint, canonical format,
+  and architecture boundaries pass. Fresh packed OAuth declarations contain neither
+  `nowSeconds` nor `issuedAt`.
 
 ### T4.3 — One exact allowed OAuth provider profile
 

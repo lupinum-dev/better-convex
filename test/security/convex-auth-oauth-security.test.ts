@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   assertOAuthAccessTokenClaims,
@@ -439,12 +439,20 @@ describe('OAuth metadata projections', () => {
 })
 
 describe('exact OAuth access-token class and bindings', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(1_200 * 1_000))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   const expectations = {
     allowedScopes: scopes,
     audience: resource,
     clientId: 'client-1',
     issuer,
-    nowSeconds: 1200,
     requiredScopes: ['mcp:write'],
     subject: 'user-1',
   } as const
@@ -453,7 +461,6 @@ describe('exact OAuth access-token class and bindings', () => {
     expect(assertOAuthAccessTokenClaims(validTokenClaims(), expectations)).toEqual({
       clientId: 'client-1',
       expiresAt: 1600,
-      issuedAt: 1000,
       scopes: ['mcp:read', 'mcp:write'],
       sessionId: 'session-1',
       subject: 'user-1',

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { verifyOAuthBearerToken } from '../../src/runtime/convex-auth/oauth-resource'
 import {
@@ -152,7 +152,6 @@ describe('seeded OAuth HTTP input corpus', () => {
       audience: RESOURCE,
       issuer: ISSUER,
       jwksUrl: `${ISSUER}/jwks`,
-      nowSeconds: 1_200,
     }
     for (const token of MALFORMED_BEARER_TOKENS) {
       await expect(verifyOAuthBearerToken(token, verifyOptions), token).rejects.toThrow(
@@ -173,26 +172,31 @@ describe('seeded OAuth HTTP input corpus', () => {
   })
 
   it('rejects generated token-class and exact-binding claim drift', async () => {
-    await runSeededAuthCorpus('oauth-token-claims', 80, (random) => {
-      const mutation = random.pick([
-        { aud: `${RESOURCE}/${random.nextUint32().toString(36)}` },
-        { azp: 'client-2' },
-        { client_id: 'client-2' },
-        { scope: 'mcp:read admin' },
-        { scope: 'mcp:read  mcp:write' },
-        { token_use: 'session' },
-      ])
-      expect(() =>
-        assertOAuthAccessTokenClaims(tokenClaims(mutation), {
-          allowedScopes: ['mcp:read', 'mcp:write'],
-          audience: RESOURCE,
-          clientId: 'client-1',
-          issuer: ISSUER,
-          nowSeconds: 1_200,
-          requiredScopes: ['mcp:read'],
-          subject: 'user-1',
-        }),
-      ).toThrow('AUTH_OAUTH_TOKEN_INVALID')
-    })
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(1_200 * 1_000))
+    try {
+      await runSeededAuthCorpus('oauth-token-claims', 80, (random) => {
+        const mutation = random.pick([
+          { aud: `${RESOURCE}/${random.nextUint32().toString(36)}` },
+          { azp: 'client-2' },
+          { client_id: 'client-2' },
+          { scope: 'mcp:read admin' },
+          { scope: 'mcp:read  mcp:write' },
+          { token_use: 'session' },
+        ])
+        expect(() =>
+          assertOAuthAccessTokenClaims(tokenClaims(mutation), {
+            allowedScopes: ['mcp:read', 'mcp:write'],
+            audience: RESOURCE,
+            clientId: 'client-1',
+            issuer: ISSUER,
+            requiredScopes: ['mcp:read'],
+            subject: 'user-1',
+          }),
+        ).toThrow('AUTH_OAUTH_TOKEN_INVALID')
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
