@@ -13,7 +13,9 @@ interface PlannedAuthRow {
 
 interface RelationshipTriggerHandles {
   onDeleteHandle?: string
+  onDeleteModels?: readonly string[]
   onUpdateHandle?: string
+  onUpdateModels?: readonly string[]
 }
 
 type TriggerRunner = (
@@ -21,6 +23,12 @@ type TriggerRunner = (
   handle: string | undefined,
   payload: Record<string, unknown>,
 ) => Promise<void>
+
+const AUTH_BULK_OPERATION_LIMIT = 128
+
+function rejectOversizedOperation(): never {
+  throw new Error('AUTH_BULK_OPERATION_LIMIT_EXCEEDED')
+}
 
 function plannedRow(model: string, row: Record<string, unknown>): PlannedAuthRow {
   return { key: `${model}:${String(row._id)}`, model, row }
@@ -79,10 +87,27 @@ export function createAuthRelationshipEngine(input: {
     childField: AuthFieldMetadata,
   ): Promise<Record<string, unknown>[]> {
     const parentField = childField.reference!.field
-    return collectAuthRows(ctx, schema, metadata, {
+    return collectOperationRows(ctx, {
       model: childModel,
       where: [{ field: childField.physicalName, value: parent.row[parentField] as never }],
     })
+  }
+
+  async function collectOperationRows(
+    ctx: any,
+    args: Parameters<typeof collectAuthRows>[3],
+  ): Promise<Record<string, unknown>[]> {
+    try {
+      return await collectAuthRows(ctx, schema, metadata, args, AUTH_BULK_OPERATION_LIMIT)
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === `AUTH_QUERY_LIMIT_EXCEEDED:${AUTH_BULK_OPERATION_LIMIT}`
+      ) {
+        rejectOversizedOperation()
+      }
+      throw error
+    }
   }
 
   async function applyDeletion(
@@ -93,9 +118,12 @@ export function createAuthRelationshipEngine(input: {
   ): Promise<void> {
     const visited = new Set<string>()
     const deletionOrder: PlannedAuthRow[] = []
+    const deleteTriggerModels = new Set(handles.onDeleteModels ?? [])
+    const updateTriggerModels = new Set(handles.onUpdateModels ?? [])
 
     const collectCascade = async (candidate: PlannedAuthRow): Promise<void> => {
       if (visited.has(candidate.key)) return
+      if (visited.size === AUTH_BULK_OPERATION_LIMIT) rejectOversizedOperation()
       visited.add(candidate.key)
       for (const inbound of inboundByModel.get(candidate.model) ?? []) {
         if (inbound.field.reference!.onDelete !== 'cascade') continue
@@ -130,6 +158,12 @@ export function createAuthRelationshipEngine(input: {
             )
           }
           const existing = setNullPatches.get(planned.key) ?? { planned, patch: {} }
+          if (
+            !setNullPatches.has(planned.key) &&
+            visited.size + setNullPatches.size === AUTH_BULK_OPERATION_LIMIT
+          ) {
+            rejectOversizedOperation()
+          }
           existing.patch[inbound.field.physicalName] = null
           setNullPatches.set(planned.key, existing)
         }
@@ -138,6 +172,7 @@ export function createAuthRelationshipEngine(input: {
 
     for (const { planned, patch } of setNullPatches.values()) {
       await ctx.db.patch(planned.row._id as never, patch as never)
+      if (!handles.onUpdateHandle || !updateTriggerModels.has(planned.model)) continue
       const updated = await ctx.db.get(planned.row._id as never)
       if (!updated) throw new Error('AUTH_REFERENCE_SET_NULL_READBACK_FAILED')
       await runTrigger(ctx, handles.onUpdateHandle, {
@@ -149,6 +184,7 @@ export function createAuthRelationshipEngine(input: {
 
     for (const candidate of deletionOrder) {
       await ctx.db.delete(candidate.row._id as never)
+      if (!handles.onDeleteHandle || !deleteTriggerModels.has(candidate.model)) continue
       await runTrigger(ctx, handles.onDeleteHandle, {
         model: candidate.model,
         doc: toBetterAuthDocument(candidate.row),
@@ -156,5 +192,5 @@ export function createAuthRelationshipEngine(input: {
     }
   }
 
-  return Object.freeze({ applyDeletion, assertTargets })
+  return Object.freeze({ applyDeletion, assertTargets, collectOperationRows })
 }

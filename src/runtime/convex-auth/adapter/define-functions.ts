@@ -221,6 +221,27 @@ async function assertUniqueConstraints(
   }
 }
 
+function assertBulkUniqueConstraints(
+  metadata: AuthSchemaMetadata,
+  modelName: string,
+  patch: Record<string, unknown>,
+  rows: readonly Record<string, unknown>[],
+): void {
+  const model = getAuthModelMetadata(metadata, modelName)
+  for (const index of model.indexes) {
+    if (index.unique !== true || !index.fields.some((field) => field in patch)) continue
+    const seen = new Set<string>()
+    for (const current of rows) {
+      const candidate = { ...current, ...patch }
+      const values = index.fields.map((field) => candidate[field])
+      if (values.some((value) => value === null || value === undefined)) continue
+      const key = JSON.stringify(values)
+      if (seen.has(key)) throw new Error(`AUTH_UNIQUE_CONFLICT:${modelName}.${index.descriptor}`)
+      seen.add(key)
+    }
+  }
+}
+
 async function runTrigger(
   ctx: any,
   handle: string | undefined,
@@ -352,7 +373,8 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         const patch = normalizeUpdate(metadata, args.model, args.update, {
           allowUnique: false,
         })
-        const rows = await collectAuthRows(ctx, schema, metadata, readShape(args))
+        const rows = await relationships.collectOperationRows(ctx, readShape(args))
+        assertBulkUniqueConstraints(metadata, args.model, patch, rows)
         for (const current of rows) {
           await relationships.assertTargets(
             ctx,
@@ -361,7 +383,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
             new Set(Object.keys(patch)),
           )
           await assertUniqueConstraints(ctx, schema, metadata, args.model, patch, current)
+        }
+        for (const current of rows) {
           await ctx.db.patch(args.model as never, current._id as never, patch as never)
+          if (!args.onUpdateHandle) continue
           const updated = await ctx.db.get(args.model as never, current._id as never)
           if (!updated) throw new Error('AUTH_BULK_UPDATE_READBACK_FAILED')
           await runTrigger(ctx, args.onUpdateHandle, {
@@ -379,7 +404,9 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         model: v.string(),
         where: v.array(whereValidator),
         onDeleteHandle: v.optional(v.string()),
+        onDeleteModels: v.optional(v.array(v.string())),
         onUpdateHandle: v.optional(v.string()),
+        onUpdateModels: v.optional(v.array(v.string())),
       },
       handler: async (ctx, args) => {
         const current = oneOrNull(
@@ -397,10 +424,12 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         model: v.string(),
         where: v.array(whereValidator),
         onDeleteHandle: v.optional(v.string()),
+        onDeleteModels: v.optional(v.array(v.string())),
         onUpdateHandle: v.optional(v.string()),
+        onUpdateModels: v.optional(v.array(v.string())),
       },
       handler: async (ctx, args) => {
-        const rows = await collectAuthRows(ctx, schema, metadata, readShape(args))
+        const rows = await relationships.collectOperationRows(ctx, readShape(args))
         await relationships.applyDeletion(ctx, rows, args.model, args)
         return rows.length
       },
@@ -411,7 +440,9 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         model: v.string(),
         where: v.array(whereValidator),
         onDeleteHandle: v.optional(v.string()),
+        onDeleteModels: v.optional(v.array(v.string())),
         onUpdateHandle: v.optional(v.string()),
+        onUpdateModels: v.optional(v.array(v.string())),
       },
       handler: async (ctx, args) => {
         if (args.where.length === 0) throw new Error('AUTH_CONSUME_REQUIRES_GUARD')

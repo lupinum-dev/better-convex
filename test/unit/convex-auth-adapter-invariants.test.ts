@@ -486,6 +486,46 @@ describe('greenfield Convex auth write contexts', () => {
     })
   })
 
+  it('maps configured relationship trigger models once at the adapter boundary', async () => {
+    const componentCalls: Array<{ args: Record<string, unknown>; reference: unknown }> = []
+    const deleteOneReference = { operation: 'deleteOne' }
+    const ctx = {
+      auth: {},
+      db: {},
+      runQuery: vi.fn(),
+      runMutation: vi.fn(async (reference, args: Record<string, unknown>) => {
+        componentCalls.push({ args, reference })
+        return null
+      }),
+    }
+    const component = { adapter: { deleteOne: deleteOneReference } }
+    const adapter = createConvexAuthAdapter(ctx as never, component as never, {
+      triggers: {
+        user: {
+          onDelete: async () => {},
+        },
+      },
+    })({
+      user: { modelName: 'people' },
+    } as never)
+
+    await adapter.delete({
+      model: 'user',
+      where: [{ field: 'id', value: 'user-1' }],
+    })
+
+    expect(componentCalls).toEqual([
+      {
+        reference: deleteOneReference,
+        args: expect.objectContaining({
+          model: 'people',
+          onDeleteModels: ['people'],
+          onUpdateModels: [],
+        }),
+      },
+    ])
+  })
+
   it('maps logical filters once and delegates count to the component snapshot query', async () => {
     const findManyReference = { operation: 'findMany' }
     const countReference = { operation: 'count' }

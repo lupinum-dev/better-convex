@@ -25,6 +25,17 @@ const deleteWithTriggers = makeFunctionReference<
   { id: string; model: string },
   Record<string, unknown> | null
 >('relationshipHarness:deleteWithTriggers')
+const deleteWithParentTriggerOnly = makeFunctionReference<
+  'mutation',
+  { id: string; model: string },
+  {
+    metrics: Record<
+      'bytesRead' | 'bytesWritten' | 'databaseQueries' | 'documentsRead' | 'documentsWritten',
+      { remaining: number; used: number }
+    >
+    result: Record<string, unknown> | null
+  }
+>('relationshipHarness:deleteWithParentTriggerOnly')
 const listEvents = makeFunctionReference<
   'query',
   Record<string, never>,
@@ -246,25 +257,12 @@ describe('Better Auth relationship enforcement', () => {
         where: [{ field: 'id', value: 'nullable_child' }],
       }),
     ).resolves.toMatchObject({ id: 'nullable_child', parentId: null })
-    await expect(test.query(listEvents, {})).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          event: 'delete',
-          model: 'cascadeChild',
-          rowId: 'cascade_child',
-        }),
-        expect.objectContaining({
-          event: 'delete',
-          model: 'parent',
-          rowId: 'parent_mixed',
-        }),
-        expect.objectContaining({
-          event: 'update',
-          model: 'nullableChild',
-          rowId: 'nullable_child',
-        }),
-      ]),
-    )
+    const events = await test.query(listEvents, {})
+    expect(events.map(({ event, model, rowId }) => ({ event, model, rowId }))).toEqual([
+      { event: 'update', model: 'nullableChild', rowId: 'nullable_child' },
+      { event: 'delete', model: 'cascadeChild', rowId: 'cascade_child' },
+      { event: 'delete', model: 'parent', rowId: 'parent_mixed' },
+    ])
   })
 
   it('deletes cyclic cascade closures exactly once', async () => {
@@ -300,5 +298,114 @@ describe('Better Auth relationship enforcement', () => {
         where: [{ field: 'id', value: 'node_b' }],
       }),
     ).resolves.toBeNull()
+  })
+
+  it('rejects an oversized cascade plan before deleting any row', async () => {
+    const test = initRelationshipTest()
+    await test.mutation(policies.create, {
+      model: 'parent',
+      data: { id: 'parent_oversized' },
+    })
+    for (let index = 0; index < 128; index += 1) {
+      await test.mutation(policies.create, {
+        model: 'cascadeChild',
+        data: { id: `oversized_child_${index}`, parentId: 'parent_oversized' },
+      })
+    }
+
+    await expect(
+      test.mutation(deleteWithTriggers, {
+        id: 'parent_oversized',
+        model: 'parent',
+      }),
+    ).rejects.toThrow('AUTH_BULK_OPERATION_LIMIT_EXCEEDED')
+    await expect(
+      test.query(policies.findOne, {
+        model: 'parent',
+        where: [{ field: 'id', value: 'parent_oversized' }],
+      }),
+    ).resolves.toMatchObject({ id: 'parent_oversized' })
+    await expect(
+      test.query(policies.count, {
+        model: 'cascadeChild',
+        where: [{ field: 'parentId', value: 'parent_oversized' }],
+      }),
+    ).resolves.toBe(128)
+    await expect(test.query(listEvents, {})).resolves.toEqual([])
+  })
+
+  it('accepts an at-limit mixed plan and triggers only configured models', async () => {
+    const test = initRelationshipTest()
+    await test.mutation(policies.create, {
+      model: 'parent',
+      data: { id: 'parent_at_limit' },
+    })
+    for (let index = 0; index < 126; index += 1) {
+      await test.mutation(policies.create, {
+        model: 'cascadeChild',
+        data: { id: `at_limit_child_${index}`, parentId: 'parent_at_limit' },
+      })
+    }
+    await test.mutation(policies.create, {
+      model: 'nullableChild',
+      data: { id: 'at_limit_nullable', parentId: 'parent_at_limit' },
+    })
+
+    const { metrics } = await test.mutation(deleteWithParentTriggerOnly, {
+      id: 'parent_at_limit',
+      model: 'parent',
+    })
+
+    await expect(
+      test.query(policies.count, {
+        model: 'cascadeChild',
+        where: [{ field: 'parentId', value: 'parent_at_limit' }],
+      }),
+    ).resolves.toBe(0)
+    await expect(
+      test.query(policies.findOne, {
+        model: 'nullableChild',
+        where: [{ field: 'id', value: 'at_limit_nullable' }],
+      }),
+    ).resolves.toMatchObject({ parentId: null })
+    const events = await test.query(listEvents, {})
+    expect(events.map(({ event, model, rowId }) => ({ event, model, rowId }))).toEqual([
+      { event: 'delete', model: 'parent', rowId: 'parent_at_limit' },
+    ])
+    for (const metric of Object.values(metrics)) {
+      expect(metric.remaining).toBeGreaterThan(metric.used * 10)
+    }
+  })
+
+  it('rolls back the complete plan when a late configured trigger fails', async () => {
+    const test = initRelationshipTest()
+    await test.mutation(policies.create, {
+      model: 'parent',
+      data: { id: 'parent_trigger_failure' },
+    })
+    await test.mutation(policies.create, {
+      model: 'cascadeChild',
+      data: { id: 'rollback_child', parentId: 'parent_trigger_failure' },
+    })
+
+    await expect(
+      test.mutation(deleteWithParentTriggerOnly, {
+        id: 'parent_trigger_failure',
+        model: 'parent',
+      }),
+    ).rejects.toThrow('EXPECTED_TRIGGER_FAILURE')
+    await expect(
+      test.query(policies.findOne, {
+        model: 'parent',
+        where: [{ field: 'id', value: 'parent_trigger_failure' }],
+      }),
+    ).resolves.toMatchObject({ id: 'parent_trigger_failure' })
+    await expect(
+      test.query(policies.findOne, {
+        model: 'cascadeChild',
+        where: [{ field: 'id', value: 'rollback_child' }],
+      }),
+    ).resolves.toMatchObject({ id: 'rollback_child' })
+    await expect(test.query(listEvents, {})).resolves.toEqual([])
   })
 })

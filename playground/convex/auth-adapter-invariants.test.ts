@@ -266,43 +266,6 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
     ])
   })
 
-  it('updates and deletes every match beyond the former 1,000-row ceiling', async () => {
-    const t = initAuthTest()
-    const rowCount = 1_001
-    await Promise.all(
-      Array.from({ length: rowCount }, (_, index) =>
-        t.mutation(auth.create, {
-          model: 'rateLimit',
-          data: {
-            id: `bulk_scale_${index}`,
-            key: `bulk:scale:${index}`,
-            count: 0,
-            lastRequest: 1,
-          },
-        }),
-      ),
-    )
-
-    await expect(
-      t.mutation(auth.updateMany, {
-        model: 'rateLimit',
-        where: [],
-        update: { count: 7 },
-      }),
-    ).resolves.toBe(rowCount)
-    await expect(
-      t.query(auth.count, {
-        model: 'rateLimit',
-        where: [{ field: 'count', value: 7 }],
-      }),
-    ).resolves.toBe(rowCount)
-
-    await expect(t.mutation(auth.deleteMany, { model: 'rateLimit', where: [] })).resolves.toBe(
-      rowCount,
-    )
-    await expect(t.query(auth.count, { model: 'rateLimit' })).resolves.toBe(0)
-  })
-
   it('applies AND/OR, null, insensitive filters and indexed sorting consistently', async () => {
     const t = initAuthTest()
     await createUser(t, {

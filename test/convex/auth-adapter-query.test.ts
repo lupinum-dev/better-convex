@@ -223,4 +223,52 @@ describe('Convex auth adapter ordered queries', () => {
       }),
     ).rejects.toThrow('AUTH_IN_FANOUT_LIMIT_EXCEEDED')
   })
+
+  it('rejects oversized bulk updates and deletes before effects', async () => {
+    const test = initAuthQueryTest()
+    for (let index = 0; index < 129; index += 1) {
+      await createVerification(test, `bulk-${index}`, 'bulk-operation')
+    }
+    const where = [{ field: 'identifier', value: 'bulk-operation' }]
+
+    await expect(
+      test.mutation(auth.updateMany, {
+        model: 'verification',
+        update: { value: 'updated' },
+        where,
+      }),
+    ).rejects.toThrow('AUTH_BULK_OPERATION_LIMIT_EXCEEDED')
+    await expect(
+      test.query(auth.findOne, {
+        model: 'verification',
+        where: [{ field: 'id', value: 'bulk-0' }],
+      }),
+    ).resolves.toMatchObject({ value: 'value-bulk-0' })
+
+    await expect(
+      test.mutation(auth.deleteMany, {
+        model: 'verification',
+        where,
+      }),
+    ).rejects.toThrow('AUTH_BULK_OPERATION_LIMIT_EXCEEDED')
+    await expect(test.query(auth.count, { model: 'verification', where })).resolves.toBe(129)
+
+    await test.mutation(auth.deleteOne, {
+      model: 'verification',
+      where: [{ field: 'id', value: 'bulk-128' }],
+    })
+    await expect(
+      test.mutation(auth.updateMany, {
+        model: 'verification',
+        update: { value: 'updated' },
+        where,
+      }),
+    ).resolves.toBe(128)
+    await expect(
+      test.mutation(auth.deleteMany, {
+        model: 'verification',
+        where,
+      }),
+    ).resolves.toBe(128)
+  })
 })

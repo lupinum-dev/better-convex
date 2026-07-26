@@ -4,6 +4,7 @@ import { v } from 'convex/values'
 export const onDelete = internalMutationGeneric({
   args: { doc: v.any(), model: v.string() },
   handler: async (ctx, args) => {
+    if (args.doc.id === 'parent_trigger_failure') throw new Error('EXPECTED_TRIGGER_FAILURE')
     await ctx.db.insert('relationshipEvents', {
       event: 'delete',
       model: args.model,

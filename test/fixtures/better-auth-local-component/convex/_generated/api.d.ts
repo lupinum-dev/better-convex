@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as bulkEvidence from "../bulkEvidence.js";
 import type * as http from "../http.js";
 import type * as typeContracts from "../typeContracts.js";
 
@@ -20,6 +21,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  bulkEvidence: typeof bulkEvidence;
   http: typeof http;
   typeContracts: typeof typeContracts;
 }>;

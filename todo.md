@@ -1323,21 +1323,55 @@ Ledger note (2026-07-26):
 
 Sources: Codex `F-005`; Claude unverified `BAA-04`/`BAA-05`.
 
-- [ ] Define one private conservative root/traversal budget.
-- [ ] Complete and validate a bounded plan before executing writes.
-- [ ] Reject oversized `updateMany`/`deleteMany` before effects.
-- [ ] Keep the whole accepted operation atomic.
-- [ ] Derive model trigger allowlists and skip cross-component trigger calls/readback for
+- [x] Define one private conservative root/traversal budget.
+- [x] Complete and validate a bounded plan before executing writes.
+- [x] Reject oversized `updateMany`/`deleteMany` before effects.
+- [x] Keep the whole accepted operation atomic.
+- [x] Derive model trigger allowlists and skip cross-component trigger calls/readback for
       models that have no applicable trigger.
-- [ ] Do not add a projection, queue, background job, or public limit option.
+- [x] Do not add a projection, queue, background job, or public limit option.
 
 Acceptance criteria:
 
-- [ ] At-limit work succeeds; over-limit work produces a fixed safe error.
-- [ ] Over-limit rejection produces zero committed writes/triggers.
-- [ ] Cascades, set-null, cycles, and trigger ordering retain rollback semantics.
-- [ ] Cascaded rows without triggers cause zero irrelevant cross-component trigger calls.
-- [ ] Deployed evidence demonstrates headroom below Convex transaction limits.
+- [x] At-limit work succeeds; over-limit work produces a fixed safe error.
+- [x] Over-limit rejection produces zero committed writes/triggers.
+- [x] Cascades, set-null, cycles, and trigger ordering retain rollback semantics.
+- [x] Cascaded rows without triggers cause zero irrelevant cross-component trigger calls.
+- [x] Deployed evidence demonstrates headroom below Convex transaction limits.
+
+Ledger note (2026-07-26):
+
+- Added one private 128-row operation budget owned by the relationship engine. Root
+  `updateMany`/`deleteMany` collection, each relationship range, the deduplicated
+  cascade closure, and combined cascade/set-null effects all fail with the fixed
+  `AUTH_BULK_OPERATION_LIMIT_EXCEEDED` error before the first write.
+- Bulk updates now validate every reference and database uniqueness constraint before
+  patching. They also compare all merged final candidates against compound unique
+  indexes, closing the collision that an interleaved-write check previously detected
+  only after the first patch. Accepted writes remain in one Convex transaction.
+- Trigger model allowlists are derived once from Better Auth configuration, mapped
+  through the pinned factory's `getModelName`, and sent with the one internal trigger
+  handle. Set-null rows without an update trigger skip both readback and nested
+  mutation; cascade rows without a delete trigger skip the nested mutation. Updated
+  generated contracts cover the curated component and every maintained fixture.
+- Red proof: 129-row update/delete operations and a 129-row cascade committed
+  successfully; generic relationship handles called triggers for every affected model;
+  and moving two compound-unique members to one final tuple passed preflight after the
+  write loop was split. Green tests prove exact-limit success, limit+1 rejection with
+  zero writes/events, set-null → child-delete → parent-delete ordering, cycle handling,
+  selective trigger dispatch, and complete rollback after a late trigger failure.
+- Deleted the superseded “more than 1,000 rows must succeed” test only after its
+  complete-update/delete invariant moved to the explicit at-limit/over-limit
+  regression. The fault-injection rollback tests remain behavioral and green.
+- The existing auth-schema gate now deploys the local component, executes a real
+  128-row update, reads `ctx.meta.getTransactionMetrics()`, requires greater than 10x
+  remaining headroom for bytes read/written, database queries, and documents
+  read/written, then deletes all 128 rows. Fresh codegen and this deployed metric proof
+  pass together.
+- Proof: 30 focused Convex tests and 22 adapter invariants pass; the real adapter
+  project passes 34. The complete configured matrix passes 2,020 tests across 167
+  files. Canonical format, lint, root/fixture typechecks, all 14 architecture
+  boundaries, fresh deployed auth-schema/codegen evidence, and the package build pass.
 
 ### T4.7 — P1: one schema/metadata artifact renderer
 

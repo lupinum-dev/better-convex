@@ -207,20 +207,12 @@ async function collectPages<T>(
   return limit === undefined ? rows : rows.slice(0, limit)
 }
 
-function triggerConfigured<DataModel extends GenericDataModel>(
+function configuredTriggerModels<DataModel extends GenericDataModel>(
   triggers: AuthComponentTriggers<DataModel> | undefined,
-  model: string,
   event: 'onCreate' | 'onUpdate' | 'onDelete',
-): boolean {
-  return typeof triggers?.[model]?.[event] === 'function'
-}
-
-function anyTriggerConfigured<DataModel extends GenericDataModel>(
-  triggers: AuthComponentTriggers<DataModel> | undefined,
-  event: 'onUpdate' | 'onDelete',
-): boolean {
-  return Object.values(triggers ?? {}).some(
-    (configured) => typeof configured?.[event] === 'function',
+): string[] {
+  return Object.entries(triggers ?? {}).flatMap(([model, configured]) =>
+    typeof configured?.[event] === 'function' ? [model] : [],
   )
 }
 
@@ -229,33 +221,6 @@ export function createConvexAuthAdapter<
   Api extends AuthAdapterComponentApi,
 >(ctx: AuthCtx<DataModel>, component: Api, adapterOptions: AdapterOptions<DataModel> = {}) {
   const handleCache = new Map<string, Promise<string | undefined>>()
-  const triggerHandle = (
-    model: string,
-    event: 'onCreate' | 'onUpdate' | 'onDelete',
-  ): Promise<string | undefined> => {
-    const cacheKey = `${event}:${model}`
-    const existing = handleCache.get(cacheKey)
-    if (existing) return existing
-    const reference = adapterOptions.authFunctions?.[event]
-    const value =
-      reference && triggerConfigured(adapterOptions.triggers, model, event)
-        ? createFunctionHandle(reference).then(String)
-        : Promise.resolve(undefined)
-    handleCache.set(cacheKey, value)
-    return value
-  }
-  const relationshipTriggerHandle = (event: 'onUpdate' | 'onDelete') => {
-    const cacheKey = `relationship:${event}`
-    const existing = handleCache.get(cacheKey)
-    if (existing) return existing
-    const reference = adapterOptions.authFunctions?.[event]
-    const value =
-      reference && anyTriggerConfigured(adapterOptions.triggers, event)
-        ? createFunctionHandle(reference).then(String)
-        : Promise.resolve(undefined)
-    handleCache.set(cacheKey, value)
-    return value
-  }
 
   return createAdapterFactory({
     config: {
@@ -275,10 +240,42 @@ export function createConvexAuthAdapter<
       customTransformOutput: ({ data, fieldAttributes }) =>
         fieldAttributes.type === 'date' ? toDate(data) : data,
     },
-    adapter: ({ getFieldName, options }) => {
+    adapter: ({ getFieldName, getModelName, options }) => {
       options.telemetry = { enabled: false }
       if (options.experimental?.joins) throw new Error('AUTH_JOINS_UNSUPPORTED')
       const idTokens = createAccountIdTokenProtector(options)
+      const triggerModels = {
+        onCreate: configuredTriggerModels(adapterOptions.triggers, 'onCreate').map(getModelName),
+        onDelete: configuredTriggerModels(adapterOptions.triggers, 'onDelete').map(getModelName),
+        onUpdate: configuredTriggerModels(adapterOptions.triggers, 'onUpdate').map(getModelName),
+      }
+      const triggerHandle = (
+        model: string,
+        event: 'onCreate' | 'onUpdate' | 'onDelete',
+      ): Promise<string | undefined> => {
+        const cacheKey = `${event}:${model}`
+        const existing = handleCache.get(cacheKey)
+        if (existing) return existing
+        const reference = adapterOptions.authFunctions?.[event]
+        const value =
+          reference && triggerModels[event].includes(model)
+            ? createFunctionHandle(reference).then(String)
+            : Promise.resolve(undefined)
+        handleCache.set(cacheKey, value)
+        return value
+      }
+      const relationshipTriggerHandle = (event: 'onUpdate' | 'onDelete') => {
+        const cacheKey = `relationship:${event}`
+        const existing = handleCache.get(cacheKey)
+        if (existing) return existing
+        const reference = adapterOptions.authFunctions?.[event]
+        const value =
+          reference && triggerModels[event].length > 0
+            ? createFunctionHandle(reference).then(String)
+            : Promise.resolve(undefined)
+        handleCache.set(cacheKey, value)
+        return value
+      }
       const mapSelect = (model: string, select: string[] | undefined) =>
         select?.map((field) => getFieldName({ model, field }))
       const mapSort = (
@@ -389,7 +386,9 @@ export function createConvexAuthAdapter<
             model,
             where: toComponentWhere(where)!,
             onDeleteHandle: await relationshipTriggerHandle('onDelete'),
+            onDeleteModels: triggerModels.onDelete,
             onUpdateHandle: await relationshipTriggerHandle('onUpdate'),
+            onUpdateModels: triggerModels.onUpdate,
           })
         },
         deleteMany: async ({ model, where }) => {
@@ -398,7 +397,9 @@ export function createConvexAuthAdapter<
             model,
             where: toComponentWhere(where)!,
             onDeleteHandle: await relationshipTriggerHandle('onDelete'),
+            onDeleteModels: triggerModels.onDelete,
             onUpdateHandle: await relationshipTriggerHandle('onUpdate'),
+            onUpdateModels: triggerModels.onUpdate,
           })
         },
         consumeOne: async <T>({
@@ -413,7 +414,9 @@ export function createConvexAuthAdapter<
             model,
             where: toComponentWhere(where)!,
             onDeleteHandle: await relationshipTriggerHandle('onDelete'),
+            onDeleteModels: triggerModels.onDelete,
             onUpdateHandle: await relationshipTriggerHandle('onUpdate'),
+            onUpdateModels: triggerModels.onUpdate,
           })
           return idTokens.reveal(model, consumed as T | null)
         },

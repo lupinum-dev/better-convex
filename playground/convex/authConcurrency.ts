@@ -191,6 +191,7 @@ export const consumeRaceRowWithFailingTrigger = internalMutation({
       model: 'rateLimit',
       where: [{ field: 'id', value: args.id }],
       onDeleteHandle: String(await createFunctionHandle(failDeleteTriggerReference)),
+      onDeleteModels: ['rateLimit'],
     }),
 })
 

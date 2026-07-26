@@ -55,7 +55,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         model: string
         where: AuthWhere[]
         onDeleteHandle?: string
+        onDeleteModels?: string[]
         onUpdateHandle?: string
+        onUpdateModels?: string[]
       },
       AuthDocument | null,
       Name
@@ -81,7 +83,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         model: string
         where: AuthWhere[]
         onDeleteHandle?: string
+        onDeleteModels?: string[]
         onUpdateHandle?: string
+        onUpdateModels?: string[]
       },
       number,
       Name
@@ -93,7 +97,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         model: string
         where: AuthWhere[]
         onDeleteHandle?: string
+        onDeleteModels?: string[]
         onUpdateHandle?: string
+        onUpdateModels?: string[]
       },
       AuthDocument | null,
       Name

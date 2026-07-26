@@ -19,6 +19,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { ConvexHttpClient } from 'convex/browser'
+import { makeFunctionReference } from 'convex/server'
 import { createJiti } from 'jiti'
 
 import { assertCurrentBackendBinary } from './check-auth-backend.mjs'
@@ -41,6 +43,11 @@ const excludedDirectoryNames = new Set([
   'node_modules',
   'reports',
 ])
+const bulkEvidence = {
+  cleanup: makeFunctionReference('bulkEvidence:cleanup'),
+  measure: makeFunctionReference('bulkEvidence:measure'),
+  seed: makeFunctionReference('bulkEvidence:seed'),
+}
 
 function fail(message) {
   throw new Error(`[auth-schema] ${message}`)
@@ -142,7 +149,37 @@ function clearConvexEnvironment() {
   }
 }
 
-async function runRealCodegen(cwd, deploymentEnv = undefined) {
+async function verifyBulkBudgetHeadroom(convexUrl) {
+  const client = new ConvexHttpClient(convexUrl)
+  for (let index = 0; index < 128; index += 1) {
+    await client.mutation(bulkEvidence.seed, { index })
+  }
+  const result = await client.mutation(bulkEvidence.measure, {})
+  if (!result || result.updated !== 128 || !result.metrics) {
+    fail('deployed bulk-budget evidence returned an invalid result')
+  }
+  for (const name of [
+    'bytesRead',
+    'bytesWritten',
+    'databaseQueries',
+    'documentsRead',
+    'documentsWritten',
+  ]) {
+    const metric = result.metrics[name]
+    if (
+      !metric ||
+      !Number.isFinite(metric.used) ||
+      !Number.isFinite(metric.remaining) ||
+      metric.remaining <= metric.used * 10
+    ) {
+      fail(`deployed bulk-budget evidence lacks 10x headroom for ${name}`)
+    }
+  }
+  const deleted = await client.mutation(bulkEvidence.cleanup, {})
+  if (deleted !== 128) fail('deployed bulk-budget evidence cleanup was incomplete')
+}
+
+async function runRealCodegen(cwd, deploymentEnv = undefined, verifyBulkBudget = false) {
   const { ensureLocalConvex } = await jiti.import('../test/helpers/local-convex.ts')
   clearConvexEnvironment()
   process.env.BCN_E2E_REQUIRE_LOCAL = 'true'
@@ -169,6 +206,11 @@ async function runRealCodegen(cwd, deploymentEnv = undefined) {
     }
     if (statuses.slice(0, 3).some((status) => status >= 500) || statuses[3] !== 429) {
       fail(`database-backed auth first-write proof failed for ${cwd}: ${statuses.join(', ')}`)
+    }
+    if (verifyBulkBudget) {
+      const convexUrl = handle.env.CONVEX_URL
+      if (!convexUrl) fail(`local backend did not report a Convex URL for ${cwd}`)
+      await verifyBulkBudgetHeadroom(convexUrl)
     }
   } finally {
     await handle.release()
@@ -282,7 +324,11 @@ async function main() {
       GITHUB_CLIENT_ID: 'bcn-auth-schema-inert-github-client',
       GITHUB_CLIENT_SECRET: 'bcn-auth-schema-inert-github-secret',
     })
-    await runRealCodegen(path.join(isolatedRoot, 'test/fixtures/better-auth-local-component'))
+    await runRealCodegen(
+      path.join(isolatedRoot, 'test/fixtures/better-auth-local-component'),
+      undefined,
+      true,
+    )
     assertPathsFresh(isolatedRoot, codegenPaths, 'Convex codegen')
     const packagedDifferences = diffSnapshots(
       snapshot(path.join(root, 'demo/convex/_generated'), ''),
@@ -295,7 +341,7 @@ async function main() {
     }
 
     console.log(
-      '[auth-schema] PASS: curated, Team, Agentic SaaS, local-fixture, and two-factor schema/metadata are deterministic; a clean tarball consumer and local component both deploy, perform database-backed first writes, and produce fresh codegen on the reviewed backend.',
+      '[auth-schema] PASS: curated, Team, Agentic SaaS, local-fixture, and two-factor schema/metadata are deterministic; a clean tarball consumer and local component both deploy, perform database-backed first writes, preserve >10x transaction headroom at the 128-row bulk limit, and produce fresh codegen on the reviewed backend.',
     )
   } finally {
     clearConvexEnvironment()
