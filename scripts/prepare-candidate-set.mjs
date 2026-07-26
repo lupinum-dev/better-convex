@@ -23,10 +23,12 @@ const root = resolve(import.meta.dirname, '..')
 const command = process.argv[2]
 const suppliedManifest = process.argv[3]
 if (
-  !['artifact', 'prepare', 'verify'].includes(command) ||
+  !['artifact', 'family', 'prepare', 'verify'].includes(command) ||
   (command === 'verify' ? process.argv.length !== 4 : process.argv.length !== 3)
 ) {
-  throw new Error('Usage: prepare-candidate-set.mjs artifact|prepare | verify <artifact-set.json>')
+  throw new Error(
+    'Usage: prepare-candidate-set.mjs artifact|family|prepare | verify <artifact-set.json>',
+  )
 }
 
 function run(executable, args, options = {}) {
@@ -100,7 +102,11 @@ function createSet() {
   }
 }
 
-if (command === 'verify') {
+if (command === 'family') {
+  run('node', ['scripts/release.mjs', 'prepare', '--package', 'mcp'])
+  run('node', ['scripts/prepare-candidate-set.mjs', 'prepare'])
+  console.log('\nPrepared the immutable MCP + Vue/Nuxt release family.')
+} else if (command === 'verify') {
   verifySet(suppliedManifest)
 } else {
   const manifest = createSet()

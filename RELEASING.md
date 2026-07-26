@@ -17,14 +17,19 @@ pnpm check:auth-backend --install
 pnpm release:prepare
 ```
 
-The preparation command first builds once and invokes
+The preparation command first builds and certifies the independent MCP package,
+then builds the closed Vue/Nuxt candidate set and verifies Nuxt against both
+retained companions. Each package builds once and invokes
 `npm pack --ignore-scripts` once. Source-integrity and source-runtime gates then
 run from the reviewed checkout; artifact-dependent package, provenance, and
-clean-consumer gates install or inspect the one immutable tarball. The auth gate
-is hybrid and passes that tarball explicitly to its package-aware sub-gates.
-Nothing repacks the candidate. The command writes one immutable,
-package-qualified evidence set at
-`.release-artifacts/nuxt/<package-version>/` containing:
+clean-consumer gates install or inspect the immutable tarballs. The auth gate is
+hybrid and passes the Nuxt and Vue tarballs explicitly to its package-aware
+sub-gates. Nothing repacks a candidate.
+
+The command writes three immutable package-qualified evidence sets under
+`.release-artifacts/{mcp,vue,nuxt}/<package-version>/` and one Vue/Nuxt set
+manifest under `.release-artifacts/set/<package-version>/`. Each package evidence
+set contains:
 
 - the npm tarball;
 - a deterministic path/mode/size/SHA-256 content manifest;
@@ -100,18 +105,10 @@ or release path.
 
 Local artifacts are disposable rehearsal outputs. Do not upload one to npm.
 
-For the vNext package family, build and certify the independent MCP lane before
-the Vue/Nuxt candidate set:
-
-```bash
-pnpm release:prepare --package mcp
-pnpm release:prepare:set
-```
-
-The Nuxt maintained-consumer matrix includes the MCP starter and therefore
-requires the exact same-commit MCP companion artifact to exist first. This is
-an ordering rule, not a reason to merge MCP into the closed Vue/Nuxt
-candidate-set schema.
+`pnpm release:prepare` is the sole clean-checkout preparation command for the
+vNext package family. MCP remains outside the closed Vue/Nuxt candidate-set
+schema; the command owns the ordering because the Nuxt maintained-consumer
+matrix requires the exact same-commit MCP companion artifact.
 
 ## Trusted prerelease workflow
 

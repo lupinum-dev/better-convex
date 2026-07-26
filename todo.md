@@ -62,7 +62,7 @@ gate are complete.
 - [x] `MCPI-01`: recoverable MCP App protocol errors must not brick the App or discard a
       committed result.
 - [ ] `NUXT-01`: preserve same-identity SSR hydration through initial auth settlement.
-- [ ] `REL-01`: replace the unsatisfiable fresh-runner release command with one ordered
+- [x] `REL-01`: replace the unsatisfiable fresh-runner release command with one ordered
       entry point.
 - [x] `vue-lifecycle/VUE-01`: fence initial fail-closed reporting with the generation
       captured before the attempt.
@@ -135,30 +135,43 @@ gate are complete.
 
 Sources: Claude `REL-01`; Codex release ownership review.
 
-- [ ] Choose one canonical command that builds MCP first, then the immutable Vue/Nuxt
+- [x] Choose one canonical command that builds MCP first, then the immutable Vue/Nuxt
       candidate set, then verifies the retained companions.
-- [ ] Make `.github/workflows/ci.yml`, `.github/workflows/package-preview.yml`,
+- [x] Make `.github/workflows/ci.yml`, `.github/workflows/package-preview.yml`,
       `RELEASING.md`, and local rehearsal invoke only that command.
-- [ ] Delete stale `release:prepare`/candidate-set aliases and source-string assertions
+- [x] Delete stale `release:prepare`/candidate-set aliases and source-string assertions
       that preserve the broken order.
-- [ ] Make a missing companion failure name the missing package and the command that
+- [x] Make a missing companion failure name the missing package and the command that
       produces it; do not expose a bare `ENOENT`.
 
 Acceptance criteria:
 
-- [ ] From an empty temporary artifact root, the canonical command reaches pack without
+- [x] From an empty temporary artifact root, the canonical command reaches pack without
       relying on a developer's retained `.release-artifacts`.
-- [ ] MCP is built before any Nuxt maintained-consumer verification.
-- [ ] Each package is packed once; verification never reconstructs the candidate.
-- [ ] Existing immutable-directory refusal still prevents overwrite.
-- [ ] Both workflows use the same canonical entry point, verified by parsed YAML or an
+- [x] MCP is built before any Nuxt maintained-consumer verification.
+- [x] Each package is packed once; verification never reconstructs the candidate.
+- [x] Existing immutable-directory refusal still prevents overwrite.
+- [x] Both workflows use the same canonical entry point, verified by parsed YAML or an
       executed workflow contract rather than indentation/substrings.
 
 Verification:
 
-- [ ] Run the clean-artifact-root release orchestration test.
-- [ ] Run `pnpm exec vitest run test/unit/release-workflow.test.ts`.
-- [ ] Run `pnpm run check:contracts`.
+- [x] Run the clean-artifact-root release orchestration test.
+- [x] Run `pnpm exec vitest run test/unit/release-workflow.test.ts`.
+- [x] Run `pnpm run check:contracts`.
+
+Ledger note (2026-07-26):
+
+- Made `pnpm release:prepare` the sole family entry point. It prepares MCP first and
+  then invokes the existing immutable Vue/Nuxt candidate-set path; the independent
+  artifact schemas remain unchanged.
+- Deleted `release:prepare:set`. CI, package preview, documentation, and local rehearsal
+  now name only the canonical command.
+- Missing retained companions now report the package and canonical recovery command;
+  regular-file and hash/SRI checks remain fail-closed.
+- Proof: the empty-root orchestration and parsed-workflow contracts passed in
+  `release-workflow.test.ts`; the focused release/preview run passed 24 tests, and
+  `pnpm run check:contracts` passed after rerunning with npm-cache access.
 
 ### T0.2 — Make the advisory gate capable of producing evidence
 

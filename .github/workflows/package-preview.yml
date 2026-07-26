@@ -51,7 +51,7 @@ jobs:
       - name: Install and verify reviewed local backend
         run: pnpm check:auth-backend --install
 
-      - name: Build and verify one immutable preview candidate
+      - name: Build and verify the immutable release family
         run: pnpm release:prepare
         env:
           GITHUB_TOKEN: ${{ github.token }}

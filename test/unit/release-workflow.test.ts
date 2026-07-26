@@ -1,13 +1,61 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, dirname, join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 const root = resolve(import.meta.dirname, '../..')
+const releaseControlFixtureFiles = [
+  'package.json',
+  'packages/mcp/package.json',
+  'packages/vue/package.json',
+  'scripts/package-artifact-coordinates.mjs',
+  'scripts/package-artifact-evidence.mjs',
+  'scripts/package-candidate-set.mjs',
+  'scripts/package-certification-manifest.mjs',
+  'scripts/package-runtime-fingerprint-profile.mjs',
+  'scripts/prepare-candidate-set.mjs',
+  'scripts/verify-release.mjs',
+]
+
+interface Workflow {
+  jobs?: Record<string, { steps?: Array<{ run?: unknown }> }>
+}
 
 function read(path: string) {
   return readFileSync(resolve(root, path), 'utf8')
+}
+
+function createReleaseControlFixture() {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'bcn-release-family-'))
+  const repository = join(temporaryDirectory, 'repository')
+  for (const relativePath of releaseControlFixtureFiles) {
+    const destination = join(repository, relativePath)
+    mkdirSync(dirname(destination), { recursive: true })
+    writeFileSync(destination, read(relativePath))
+  }
+  return { repository, temporaryDirectory }
+}
+
+function preparationCommands(workflow: Workflow, jobId: string) {
+  return (workflow.jobs?.[jobId]?.steps ?? [])
+    .map((step) => step.run)
+    .filter((run): run is string => typeof run === 'string')
+    .filter((run) =>
+      /release:prepare|prepare-candidate-set\.mjs (?:family|prepare)|release\.mjs prepare/u.test(
+        run,
+      ),
+    )
 }
 
 describe('trusted prerelease workflow', () => {
@@ -22,6 +70,95 @@ describe('trusted prerelease workflow', () => {
   const registryVueConsumer = read('scripts/check-nuxt-registry-vue-consumer.mjs')
   const releaseBuilder = read('scripts/release.mjs')
   const releaseVerify = read('scripts/verify-release.mjs')
+
+  it('runs one clean-checkout family command from an empty artifact root in dependency order', () => {
+    const packageJson = JSON.parse(read('package.json')) as {
+      scripts?: Record<string, string>
+    }
+    expect(packageJson.scripts?.['release:prepare']).toBe(
+      'node scripts/prepare-candidate-set.mjs family',
+    )
+    expect(packageJson.scripts?.['release:prepare:set']).toBeUndefined()
+
+    const { repository, temporaryDirectory } = createReleaseControlFixture()
+    const fakeBin = join(temporaryDirectory, 'bin')
+    mkdirSync(fakeBin)
+    const fakeNode = join(fakeBin, 'node')
+    const executionLog = join(temporaryDirectory, 'executed.log')
+    writeFileSync(fakeNode, '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$BCN_RELEASE_FAMILY_TEST_LOG"\n')
+    chmodSync(fakeNode, 0o755)
+
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [join(repository, 'scripts/prepare-candidate-set.mjs'), 'family'],
+        {
+          cwd: repository,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            BCN_RELEASE_FAMILY_TEST_LOG: executionLog,
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+          },
+        },
+      )
+      expect(result.status, result.stderr).toBe(0)
+      expect(readFileSync(executionLog, 'utf8').trim().split('\n')).toEqual([
+        'scripts/release.mjs prepare --package mcp',
+        'scripts/prepare-candidate-set.mjs prepare',
+      ])
+      expect(existsSync(join(repository, '.release-artifacts'))).toBe(false)
+    } finally {
+      rmSync(temporaryDirectory, { force: true, recursive: true })
+    }
+  })
+
+  it('names a missing retained companion and the command that produces it', () => {
+    const { repository, temporaryDirectory } = createReleaseControlFixture()
+    const fakeBin = join(temporaryDirectory, 'bin')
+    mkdirSync(fakeBin)
+    const fakeNode = join(fakeBin, 'node')
+    writeFileSync(fakeNode, '#!/bin/sh\nexit 0\n')
+    chmodSync(fakeNode, 0o755)
+    const version = (JSON.parse(read('package.json')) as { version: string }).version
+
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [
+          join(repository, 'scripts/verify-release.mjs'),
+          '--artifact-manifest',
+          `.release-artifacts/nuxt/${version}/artifact.json`,
+        ],
+        {
+          cwd: repository,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+          },
+        },
+      )
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('retained mcp companion artifact is missing')
+      expect(result.stderr).toContain('produce it with `pnpm release:prepare`')
+      expect(result.stderr).not.toContain('ENOENT')
+      expect(existsSync(join(repository, '.release-artifacts'))).toBe(false)
+    } finally {
+      rmSync(temporaryDirectory, { force: true, recursive: true })
+    }
+  })
+
+  it('uses the same canonical preparation command in both parsed workflows', () => {
+    const expected = ['pnpm release:prepare']
+    expect(preparationCommands(parse(ciWorkflow) as Workflow, 'release-gate')).toEqual(expected)
+    expect(
+      preparationCommands(
+        parse(read('.github/workflows/package-preview.yml')) as Workflow,
+        'preview',
+      ),
+    ).toEqual(expected)
+  })
 
   it('builds the closed candidate set and separate MCP artifact exactly once', () => {
     expect(workflow.match(/pnpm release:artifact:set/g)).toHaveLength(1)
@@ -164,7 +301,6 @@ describe('trusted prerelease workflow', () => {
     const releaseGate = ciWorkflow.slice(ciWorkflow.indexOf('  release-gate:'))
     expect(releaseGate).toContain('timeout-minutes: 120')
     expect(releaseGate).toContain('fetch-depth: 0')
-    expect(releaseGate).toContain('run: pnpm release:prepare')
   })
 
   it('builds current package exports before standalone real-backend E2E', () => {

@@ -37,8 +37,7 @@ describe('pkg.pr.new package preview workflow', () => {
     expect(workflow).not.toContain('npm publish')
   })
 
-  it('builds and fully verifies the existing immutable release artifact once', () => {
-    expect(workflow.match(/pnpm release:prepare/g)).toHaveLength(1)
+  it('builds the release family once and selects its verified Nuxt artifact', () => {
     expect(workflow).toContain('pnpm install --frozen-lockfile')
     expect(workflow).toContain('pnpm check:auth-backend --install')
     expect(workflow).toContain(

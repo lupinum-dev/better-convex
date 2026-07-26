@@ -108,7 +108,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: Install and verify reviewed local backend
         run: pnpm check:auth-backend --install
-      - name: Release verification
+      - name: Build and verify the immutable MCP + Vue/Nuxt release family
         run: pnpm release:prepare
         env:
           GITHUB_TOKEN: ${{ github.token }}

@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { lstatSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { getPackageArtifactCoordinates } from './package-artifact-coordinates.mjs'
@@ -24,10 +24,44 @@ function run(command, args, options = {}) {
   })
 }
 
+function failMissingRetainedCompanion(packageId, relativePath) {
+  fail(
+    `retained ${packageId} companion artifact is missing: ${relativePath}; produce it with \`pnpm release:prepare\` from an empty .release-artifacts directory`,
+  )
+}
+
+function readRetainedCompanionFile(packageId, relativePath, file) {
+  let stats
+  try {
+    stats = lstatSync(file)
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      failMissingRetainedCompanion(packageId, relativePath)
+    }
+    throw error
+  }
+  if (!stats.isFile() || stats.isSymbolicLink()) {
+    fail(`retained ${packageId} companion artifact must be a regular file: ${relativePath}`)
+  }
+  try {
+    return { bytes: readFileSync(file), size: stats.size }
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      failMissingRetainedCompanion(packageId, relativePath)
+    }
+    throw error
+  }
+}
+
 function verifyRetainedCompanionArtifact(packageId) {
   const coordinates = getPackageArtifactCoordinates(packageId, { repositoryRoot: root })
+  const evidenceFile = readRetainedCompanionFile(
+    packageId,
+    coordinates.relativePaths.evidence,
+    coordinates.paths.evidence,
+  )
   const evidence = parsePackageArtifactEvidence(
-    JSON.parse(readFileSync(coordinates.paths.evidence, 'utf8')),
+    JSON.parse(evidenceFile.bytes.toString('utf8')),
     coordinates,
   )
   for (const [kind, fileEvidence] of Object.entries({
@@ -36,9 +70,13 @@ function verifyRetainedCompanionArtifact(packageId) {
     tarball: evidence.tarball,
   })) {
     const file = coordinates.paths[kind]
-    const bytes = readFileSync(file)
+    const { bytes, size } = readRetainedCompanionFile(
+      packageId,
+      coordinates.relativePaths[kind],
+      file,
+    )
     if (
-      statSync(file).size !== fileEvidence.bytes ||
+      size !== fileEvidence.bytes ||
       createHash('sha256').update(bytes).digest('hex') !== fileEvidence.sha256
     ) {
       fail(`retained ${packageId} ${kind} bytes do not match immutable evidence`)
