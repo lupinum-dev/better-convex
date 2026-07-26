@@ -1481,26 +1481,56 @@ Ledger note (2026-07-26):
 Sources: Claude unverified `AUTH-04` through `AUTH-07`, independently source-confirmed
 where accepted.
 
-- [ ] Make the package-installed shared JWKS reader a stable internal identity so
+- [x] Make the package-installed shared JWKS reader a stable internal identity so
       constructing auth twice over the same hoisted JWT plugin is idempotent.
-- [ ] Continue rejecting a foreign JWKS adapter.
-- [ ] Reduce the session synchronization API to methods with production callers.
-- [ ] Delete dead, non-exported OAuth guards and the unused `RETRY_BACKOFF_MS` claim only
+- [x] Continue rejecting a foreign JWKS adapter.
+- [x] Reduce the session synchronization API to methods with production callers.
+- [x] Delete dead, non-exported OAuth guards and the unused `RETRY_BACKOFF_MS` claim only
       after a final caller/export search.
-- [ ] Do not invent retry/backoff behavior merely because an unused constant existed.
+- [x] Do not invent retry/backoff behavior merely because an unused constant existed.
 
 Acceptance criteria:
 
-- [ ] Two auth constructions using the same reviewed JWT plugin succeed.
-- [ ] A foreign adapter still fails closed.
-- [ ] Every remaining synchronization/guard method has a production caller and a test
+- [x] Two auth constructions using the same reviewed JWT plugin succeed.
+- [x] A foreign adapter still fails closed.
+- [x] Every remaining synchronization/guard method has a production caller and a test
       for its invariant.
+
+Ledger note (2026-07-26):
+
+- `configureSharedJwks` now installs one module-owned `sharedJwksReader` function.
+  Re-entry accepts only that exact identity; a consumer-supplied reader remains a
+  fixed configuration failure. Red proof reproduced
+  `AUTH_JWKS_CONFIG_INVALID` on the second Better Auth construction over one
+  hoisted reviewed JWT plugin. Green proof constructs twice successfully and
+  separately rejects a foreign `getJwks`.
+- Session synchronization now exposes only `observe`, `createBarrier`, and
+  `dispose`. The revision remains private so a barrier still means “created before
+  this observation,” but callers can no longer carry or inspect an inert revision
+  token. All three methods have production callers and direct tests for later
+  matching observation, disposal cancellation, and fail-closed timeout.
+- Final caller/export search found no production use of `assertPkceS256`,
+  `projectOAuthProtectedResourceMetadata`, or the authorization projection's
+  self-allowlist. Deleted those helpers, their constants, and tests that falsely
+  presented them as runtime controls. PKCE request enforcement remains owned and
+  exercised by the exact pinned provider; Better Convex continues to validate the
+  provider profile requires S256.
+- Deleted the unreferenced `RETRY_BACKOFF_MS` export and replaced its false
+  architecture claim with the actual policy: at most four immediate attempts
+  inside one fixed five-second deadline. No delay, scheduler, option, or second
+  retry owner was added.
+- Proof: focused JWKS/OAuth security passes 161 tests; OAuth provider/profile passes
+  207; auth fuzz passes 11; the remaining reviewed mutation set kills 16/16;
+  synchronization/token-fetcher passes 11; and the Nuxt auth composable passes 4.
+  All typechecks, the package build, and all 29 source/packed provenance records
+  pass. The complete repository gate passes 2,029 tests across 169 files together
+  with canonical format, lint, and all 14 architecture boundaries.
 
 Phase 4 exit gate:
 
-- [ ] Public OAuth bodies, time, profile, and redirect behavior are bounded and
+- [x] Public OAuth bodies, time, profile, and redirect behavior are bounded and
       fail-closed.
-- [ ] Better Auth field mapping, indexed reads, bulk operations, and schema artifacts
+- [x] Better Auth field mapping, indexed reads, bulk operations, and schema artifacts
       each have one owner.
 
 ---
