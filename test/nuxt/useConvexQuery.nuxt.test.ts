@@ -436,10 +436,9 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     const query = mockFnRef<'query'>('files:by-digest')
     const digest = new Uint8Array([0, 127, 255]).buffer
 
-    const { flush, wrapper } = await captureInNuxt(
-      () => useConvexQueryState(query, { digest }),
-      { convex },
-    )
+    const { flush, wrapper } = await captureInNuxt(() => useConvexQueryState(query, { digest }), {
+      convex,
+    })
 
     await flush()
     expect(convex.calls.onUpdate).toHaveLength(1)
@@ -453,11 +452,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     const query = mockFnRef<'query'>('files:hydrated-by-digest')
     const digest = new Uint8Array([1, 2, 3]).buffer
     const otherDigest = new Uint8Array([1, 2, 4]).buffer
-    const key = withAuthDimension(
-      createConvexQueryKey(query, { digest }),
-      'none',
-      'anonymous',
-    )
+    const key = withAuthDimension(createConvexQueryKey(query, { digest }), 'none', 'anonymous')
     const otherKey = withAuthDimension(
       createConvexQueryKey(query, { digest: otherDigest }),
       'none',

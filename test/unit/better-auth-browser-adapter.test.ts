@@ -41,11 +41,9 @@ function source(
 describe('Better Auth browser adapter', () => {
   it('keeps matching SSR identity provenance through initial provider settlement', () => {
     const fixture = source({ isPending: true, data: null, error: null }, [])
-    const adapter = createBetterAuthBrowserAdapter(
-      fixture.client,
-      undefined,
-      { initialIdentityKey: 'alice' },
-    )
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, undefined, {
+      initialIdentityKey: 'alice',
+    })
 
     expect(adapter.snapshot()).toMatchObject({
       status: 'authenticated',
@@ -71,11 +69,9 @@ describe('Better Auth browser adapter', () => {
 
   it('retires mismatched SSR identity provenance before provider confirmation', () => {
     const fixture = source({ isPending: true, data: null, error: null }, [])
-    const adapter = createBetterAuthBrowserAdapter(
-      fixture.client,
-      undefined,
-      { initialIdentityKey: 'alice' },
-    )
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, undefined, {
+      initialIdentityKey: 'alice',
+    })
 
     fixture.session.value = {
       isPending: false,

@@ -8,10 +8,7 @@ import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
 import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 import { makeMockOwner } from '../helpers/mock-client-owner'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
-import {
-  captureInNuxt,
-  createIdentityObserverHarness,
-} from '../helpers/nuxt-runtime-harness'
+import { captureInNuxt, createIdentityObserverHarness } from '../helpers/nuxt-runtime-harness'
 
 afterEach(() => {
   vi.clearAllMocks()
