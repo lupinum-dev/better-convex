@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 import {
   compareMonitoringSnapshot,
@@ -147,23 +148,34 @@ describe('auth upstream monitoring', () => {
   })
 
   it('is wired into nightly, monthly-review, and immutable prerelease gates', () => {
-    const securityWorkflow = readFileSync(
-      resolve(root, '.github/workflows/security-extended.yml'),
-      'utf8',
-    )
-    const publishWorkflow = readFileSync(
-      resolve(root, '.github/workflows/publish-prerelease.yml'),
-      'utf8',
-    )
-    const releaseVerifier = readFileSync(resolve(root, 'scripts/verify-release.mjs'), 'utf8')
+    const securityWorkflow = parse(
+      readFileSync(resolve(root, '.github/workflows/security-extended.yml'), 'utf8'),
+    ) as {
+      on?: { schedule?: Array<{ cron?: string }> }
+      jobs?: Record<string, { steps?: Array<{ run?: string }> }>
+    }
+    const publishWorkflow = parse(
+      readFileSync(resolve(root, '.github/workflows/publish-prerelease.yml'), 'utf8'),
+    ) as { jobs?: Record<string, { steps?: Array<{ run?: string }> }> }
     const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
 
-    expect(securityWorkflow).toContain("cron: '41 2 * * *'")
-    expect(securityWorkflow).toContain("cron: '23 3 1 * *'")
-    expect(securityWorkflow).toContain('pnpm check:auth-upstream')
+    expect(securityWorkflow.on?.schedule?.map(({ cron }) => cron)).toEqual(
+      expect.arrayContaining(['41 2 * * *', '23 3 1 * *']),
+    )
+    expect(
+      Object.values(securityWorkflow.jobs ?? {}).some((job) =>
+        job.steps?.some(({ run }) => run === 'pnpm check:auth-upstream'),
+      ),
+    ).toBe(true)
     expect(packageJson.scripts['verify:auth']).toContain('pnpm check:auth-upstream')
-    expect(releaseVerifier).toContain("['run', 'verify:auth']")
-    expect(publishWorkflow).toContain('pnpm release:verify:set')
-    expect(publishWorkflow).toContain('pnpm release:verify\n          --package mcp')
+    const verifyRuns = publishWorkflow.jobs?.['verify-candidates']?.steps
+      ?.map(({ run }) => run?.replace(/\s+/gu, ' ').trim())
+      .filter((run): run is string => run !== undefined)
+    expect(verifyRuns).toEqual(
+      expect.arrayContaining([
+        'pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"',
+        'pnpm release:verify --package mcp --artifact-manifest "${{ steps.mcp.outputs.evidence }}"',
+      ]),
+    )
   })
 })

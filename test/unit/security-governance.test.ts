@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 import {
   SECURITY_NOTIFICATION_MAX_AGE_MS,
@@ -85,17 +86,21 @@ describe('security governance gate', () => {
   })
 
   it('runs the one gate in prerelease and scheduled security workflows', () => {
-    const publish = readFileSync(resolve(root, '.github/workflows/publish-prerelease.yml'), 'utf8')
-    const security = readFileSync(resolve(root, '.github/workflows/security-extended.yml'), 'utf8')
-
-    expect(publish).toContain('pnpm check:security-governance --prerelease')
-    expect(security).toContain('pnpm check:security-governance')
-    for (const workflow of [publish, security]) {
-      expect(workflow).toContain('BCN_SECURITY_OWNER: ${{ vars.BCN_SECURITY_OWNER }}')
-      expect(workflow).toContain('BCN_SECURITY_DEPUTY: ${{ vars.BCN_SECURITY_DEPUTY }}')
-      expect(workflow).toContain(
-        'BCN_SECURITY_NOTIFICATION_TESTED_AT: ${{ vars.BCN_SECURITY_NOTIFICATION_TESTED_AT }}',
-      )
+    for (const [path, command] of [
+      ['.github/workflows/publish-prerelease.yml', 'pnpm check:security-governance --prerelease'],
+      ['.github/workflows/security-extended.yml', 'pnpm check:security-governance'],
+    ] as const) {
+      const workflow = parse(readFileSync(resolve(root, path), 'utf8')) as {
+        jobs?: Record<string, { steps?: Array<{ env?: Record<string, unknown>; run?: unknown }> }>
+      }
+      const gate = Object.values(workflow.jobs ?? {})
+        .flatMap((job) => job.steps ?? [])
+        .find((step) => step.run === command)
+      expect(gate?.env).toMatchObject({
+        BCN_SECURITY_DEPUTY: '${{ vars.BCN_SECURITY_DEPUTY }}',
+        BCN_SECURITY_NOTIFICATION_TESTED_AT: '${{ vars.BCN_SECURITY_NOTIFICATION_TESTED_AT }}',
+        BCN_SECURITY_OWNER: '${{ vars.BCN_SECURITY_OWNER }}',
+      })
     }
   })
 })

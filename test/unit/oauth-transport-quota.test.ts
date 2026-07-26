@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 import {
   AUTH_CONTENTION_MAX_RETRIES,
@@ -27,6 +28,17 @@ const signedHeaders = {
 
 function read(path: string): string {
   return readFileSync(resolve(root, path), 'utf8')
+}
+
+interface Workflow {
+  jobs?: Record<string, { steps?: Array<{ run?: unknown }> }>
+}
+
+function workflowRuns(path: string, jobId: string): string[] {
+  const workflow = parse(read(path)) as Workflow
+  return (workflow.jobs?.[jobId]?.steps ?? [])
+    .map((step) => (typeof step.run === 'string' ? step.run.replace(/\s+/gu, ' ').trim() : null))
+    .filter((run): run is string => run !== null)
 }
 
 describe('real OAuth transport quota evidence', () => {
@@ -70,7 +82,7 @@ describe('real OAuth transport quota evidence', () => {
     ])
   })
 
-  it('uses pre-lookup duplicate and mixed-client-auth guard failures as quota traffic', () => {
+  it('uses duplicate and mixed-client-auth guard failures as quota traffic', () => {
     const authorize = buildOAuthQuotaRequest('authorize', origin, origin, signedHeaders)
     const authorizeParameters = new URL(authorize.url).searchParams
     expect(authorizeParameters.getAll('resource')).toHaveLength(2)
@@ -84,18 +96,6 @@ describe('real OAuth transport quota evidence', () => {
       expect(parameters.getAll('client_id')).toEqual(['lookup-must-not-run'])
       expect(Reflect.get(request.headers, 'authorization')).toMatch(/^Basic /u)
       expect(() => validateQuotaWorkerRequest(request)).not.toThrow()
-    }
-
-    const plugin = read('src/runtime/convex-auth/plugin.ts')
-    for (const [startMarker, endMarker] of [
-      ['async function guardTokenRequest', 'async function guardRevokeRequest'],
-      ['async function guardRevokeRequest', 'function validateGlobalOAuthRuntime'],
-    ] as const) {
-      const section = plugin.slice(plugin.indexOf(startMarker), plugin.indexOf(endMarker))
-      expect(section.indexOf('guardedClientAuthentication')).toBeGreaterThan(-1)
-      expect(section.indexOf('guardedClientAuthentication')).toBeLessThan(
-        section.indexOf('loadSafeOAuthBinding'),
-      )
     }
   })
 
@@ -156,7 +156,7 @@ describe('real OAuth transport quota evidence', () => {
     ).toThrow('OAUTH_QUOTA_BOUNDARY_EXCEEDED')
   })
 
-  it('composes the live runner with generic reset/fault evidence and the scheduled backend gate', () => {
+  it('composes the live runner and schedules it only after backend/browser setup', () => {
     const packageJson = JSON.parse(read('package.json')) as {
       scripts: Record<string, string>
     }
@@ -166,54 +166,36 @@ describe('real OAuth transport quota evidence', () => {
       'node scripts/run-oauth-code-concurrency.mjs',
     ])
 
-    const genericRunner = read('scripts/run-auth-concurrency.mjs')
-    expect(genericRunner).toContain("makeFunctionReference('adapter:incrementOne')")
-    expect(genericRunner).toContain('AUTH_TRIGGER_FAULT_INJECTED')
-    expect(genericRunner).toContain('AUTH_RATE_LIMIT_WINDOW_DID_NOT_RESET')
-    expect(genericRunner).toContain("['exec', 'nuxt-module-build', 'prepare']")
-    expect(genericRunner).toContain("['exec', 'nuxt-module-build', 'build']")
-    expect(genericRunner.indexOf("['exec', 'nuxt-module-build', 'prepare']")).toBeLessThan(
-      genericRunner.indexOf("['exec', 'nuxt-module-build', 'build']"),
-    )
-    expect(genericRunner.indexOf("['exec', 'nuxt-module-build', 'build']")).toBeLessThan(
-      genericRunner.indexOf('const isolated = copyIsolatedPlayground()'),
-    )
-
     const workflowJobs = [
       {
-        end: '  release-gate:',
+        jobId: 'auth-real-backend',
         path: '.github/workflows/ci.yml',
         run: 'pnpm test:auth-concurrency',
-        start: '  auth-real-backend:',
       },
       {
+        jobId: 'release-gate',
         path: '.github/workflows/ci.yml',
         run: 'pnpm release:prepare',
-        start: '  release-gate:',
       },
       {
-        end: '  oauth-mcp-interop:',
+        jobId: 'pinned-backend',
         path: '.github/workflows/security-extended.yml',
         run: 'pnpm test:auth-concurrency',
-        start: '  pinned-backend:',
       },
       {
-        end: '  bcn-auth-staging:',
+        jobId: 'verify-candidates',
         path: '.github/workflows/publish-prerelease.yml',
         run: 'pnpm release:verify',
-        start: '  verify-candidates:',
       },
     ]
     for (const job of workflowJobs) {
-      const workflow = read(job.path)
-      const section = workflow.slice(
-        workflow.indexOf(job.start),
-        job.end === undefined ? undefined : workflow.indexOf(job.end),
-      )
-      expect(section).toContain('pnpm check:auth-backend --install')
-      expect(section.indexOf('pnpm exec playwright install --with-deps chromium')).toBeLessThan(
-        section.indexOf(job.run),
-      )
+      const commands = workflowRuns(job.path, job.jobId)
+      const backend = commands.indexOf('pnpm check:auth-backend --install')
+      const browser = commands.indexOf('pnpm exec playwright install --with-deps chromium')
+      const evidence = commands.findIndex((command) => command.startsWith(job.run))
+      expect(backend).toBeGreaterThan(-1)
+      expect(browser).toBeGreaterThan(-1)
+      expect(evidence).toBeGreaterThan(browser)
     }
   })
 

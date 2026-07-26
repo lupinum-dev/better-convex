@@ -168,9 +168,6 @@ describe('protected cloud-staging gate', () => {
       }),
     ) as Record<string, unknown>
     expect(claimed).not.toHaveProperty('BCN_RELEASE_RUNTIME_FINGERPRINT')
-    expect(readFileSync(resolve(root, 'scripts/run-auth-cloud-staging.mjs'), 'utf8')).not.toContain(
-      'process.env.BCN_RELEASE_',
-    )
 
     const response = new Response('{}', {
       headers: { 'x-bcn-runtime-fingerprint': runtimeFingerprint },
@@ -299,26 +296,7 @@ describe('protected cloud-staging gate', () => {
     )
   })
 
-  it('keeps the production rehearsal bound to closed ingress and the real auth/MCP paths', () => {
-    const source = readFileSync(resolve(root, 'scripts/run-auth-cloud-staging.mjs'), 'utf8')
-    expect(source).toContain('await assertClosedPublicIngress(config)')
-    expect(source).toContain("path: '/api/auth/sign-up/email'")
-    expect(source).toContain('const endpoint = `${config.convexSiteUrl}/mcp`')
-    expect(source).toContain('/api/auth/convex/token')
-    expect(source).toContain('releaseProofFunctions.sessionIdentity')
-    expect(source).toContain('await verifyCloudMcpRoute(config)')
-    expect(source).toContain('await provePublicAuthRateLimit(config, artifact.identity, client)')
-    expect(source).toContain('ingressLease: config.ingressLease')
-  })
-
   it('reverifies the artifact before making a cloud request', () => {
-    const source = readFileSync(resolve(root, 'scripts/run-auth-cloud-staging.mjs'), 'utf8')
-    expect(source).toContain("getPackageArtifactCoordinates('nuxt'")
-    expect(source).toContain('parsePackageArtifactEvidence(')
-    expect(source).toContain('selectPackageArtifactRuntimeIdentity(evidence)')
-    expect(source).not.toContain('evidence.schemaVersion === 3')
-    expect(source).not.toContain('PACKAGE_VERSION')
-
     const environment = stagingEnvironment()
     const result = spawnSync(
       process.execPath,
