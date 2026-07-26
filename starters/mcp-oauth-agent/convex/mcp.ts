@@ -23,22 +23,6 @@ const SAFE_APPLICATION_CODES = new Set([
 ])
 const idSchema = z.string().min(1).max(128)
 
-function authorizationServerMetadata(issuer: string) {
-  return {
-    authorization_endpoint: `${issuer}/oauth2/authorize`,
-    authorization_response_iss_parameter_supported: true,
-    code_challenge_methods_supported: ['S256'],
-    grant_types_supported: ['authorization_code'],
-    issuer,
-    jwks_uri: `${issuer}/jwks`,
-    response_types_supported: ['code'],
-    revocation_endpoint: `${issuer}/oauth2/revoke`,
-    scopes_supported: [...MCP_SCOPES],
-    token_endpoint: `${issuer}/oauth2/token`,
-    token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'],
-  }
-}
-
 function applicationFailure(error: unknown) {
   const code =
     error instanceof ConvexError &&
@@ -242,7 +226,7 @@ export const handleMcp = httpAction(async (ctx, request) => {
     },
     resource,
     authorization: {
-      metadata: authorizationServerMetadata(issuer),
+      issuer,
       mode: 'oauth',
       resourceName: 'Better Convex Nuxt MCP',
       scopesSupported: MCP_SCOPES,

@@ -35,14 +35,14 @@ export interface McpAccessVerifier {
 }
 
 export const mcp = createConvexMcpHandler({
-  resource: 'https://deployment.example/mcp',
+  resource: new URL('https://deployment.example/mcp'),
   verifier,
   authorization: {
     mode: 'oauth',
-    metadata: oauthMetadata,
+    issuer: 'https://accounts.example.com/',
   },
   serverInfo: { name: 'my-app', version: '0.1.0' },
-  configureServer(ctx, access, _request, server) {
+  configureServer(ctx, access, server) {
     server.registerTool(/* official SDK API */)
   },
 })
@@ -64,8 +64,9 @@ fictional authorization server or relabelling an API key as OAuth would therefor
 Admit one explicit `preconfigured-bearer` authorization profile. It uses the same header-only bearer
 verification, exact resource binding, scope ceiling, sanitized challenge, transport boundary, and access
 context as OAuth mode, but serves no OAuth metadata and emits no `resource_metadata` challenge parameter.
-The application supplies one canonical HTTPS credential issuer for provenance. This is not interactive
-authorization, token exchange, or an OAuth compatibility mode.
+The application supplies one canonical HTTPS credential issuer for provenance (or an exact loopback HTTP
+issuer in reviewed local development). This is not interactive authorization, token exchange, or an OAuth
+compatibility mode.
 
 The two profiles are a discriminated union. OAuth metadata cannot be partially combined with a
 preconfigured credential, and switching modes is an intentional construction-time decision. This adds no

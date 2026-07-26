@@ -5,12 +5,9 @@ const maximumScopeCount = 128
 const maximumScopeLength = 256
 
 export class McpAccessVerificationFailure extends Error {
-  readonly code: 'invalid_result' | 'verification_failed'
-
-  constructor(code: 'invalid_result' | 'verification_failed') {
+  constructor() {
     super('MCP access token verification failed')
     this.name = 'McpAccessVerificationFailure'
-    this.code = code
   }
 }
 
@@ -21,14 +18,14 @@ export async function verifyAndNormalizeMcpAccess(options: {
   expectedResource: URL
   now?: () => number
 }): Promise<VerifiedMcpAccess> {
-  const issuer = canonicalIssuer(options.expectedIssuer)
+  const issuer = canonicalMcpIssuer(options.expectedIssuer)
   const resource = canonicalResource(options.expectedResource)
   let verified: VerifiedMcpAccess
 
   try {
     verified = await options.verifier.verifyAccessToken(options.token, new URL(resource))
   } catch {
-    throw new McpAccessVerificationFailure('verification_failed')
+    throw new McpAccessVerificationFailure()
   }
 
   try {
@@ -39,7 +36,7 @@ export async function verifyAndNormalizeMcpAccess(options: {
       options.now?.() ?? Date.now() / 1_000,
     )
   } catch {
-    throw new McpAccessVerificationFailure('invalid_result')
+    throw new McpAccessVerificationFailure()
   }
 }
 
@@ -60,7 +57,7 @@ function normalizeVerifiedAccess(
     throw new TypeError('Invalid access expiration')
   }
 
-  const issuer = canonicalIssuer(verified.access.issuer)
+  const issuer = canonicalMcpIssuer(verified.access.issuer)
   if (issuer !== expectedIssuer) throw new TypeError('Unexpected access issuer')
   const subject = safeIdentity(verified.access.subject)
   const clientId = safeIdentity(verified.access.clientId)
@@ -78,7 +75,7 @@ function normalizeVerifiedAccess(
   return Object.freeze({ access, expiresAt: verified.expiresAt })
 }
 
-function canonicalIssuer(value: string): string {
+export function canonicalMcpIssuer(value: string): string {
   const issuer = new URL(value)
   if (
     !isSecureResource(issuer) ||

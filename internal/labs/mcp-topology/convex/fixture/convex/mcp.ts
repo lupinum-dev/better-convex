@@ -481,7 +481,7 @@ async function handleRequest(ctx: ActionCtx, request: Request): Promise<Response
     verifier: createVerifier(ctx, resource),
     authorization: {
       mode: 'oauth',
-      metadata: metadata.oauthMetadata,
+      issuer: metadata.oauthMetadata.issuer,
       resourceName: metadata.resourceName,
       requiredScopes: ['notes:read'],
       scopesSupported: metadata.scopesSupported,

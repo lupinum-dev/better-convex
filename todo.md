@@ -677,24 +677,48 @@ Ledger note (2026-07-26):
 
 Sources: Claude `MCP-04`, `MCP-08`, and `MCP-09`; independent consumer trace.
 
-- [ ] Replace the broad resource-server `OAuthMetadata` option with the minimum issuer
+- [x] Replace the broad resource-server `OAuthMetadata` option with the minimum issuer
       input actually consumed; authorization-server discovery remains owned by the
       authorization server.
-- [ ] Use one internal issuer canonicalization rule for OAuth and preconfigured bearer
+- [x] Use one internal issuer canonicalization rule for OAuth and preconfigured bearer
       modes, including exact reviewed loopback development origins.
-- [ ] Delete `McpAccessVerificationFailure.code` if the final consumer search still
+- [x] Delete `McpAccessVerificationFailure.code` if the final consumer search still
       shows only tests; public challenges remain static.
-- [ ] Keep `createBetterAuthMcpAccessVerifier`: Ginko is a real production consumer and
+- [x] Keep `createBetterAuthMcpAccessVerifier`: Ginko is a real production consumer and
       the verifier prevents provider-private session state entering `McpAccessContext`.
 
 Acceptance criteria:
 
-- [ ] Protected-resource GET/HEAD/OPTIONS/CORS behavior remains exact.
-- [ ] The resource handler does not serve an independently authored authorization-server
+- [x] Protected-resource GET/HEAD/OPTIONS/CORS behavior remains exact.
+- [x] The resource handler does not serve an independently authored authorization-server
       metadata document.
-- [ ] Both authorization modes accept/reject the same canonical issuer classes.
-- [ ] Verifier failures still produce the fixed public challenge without an unconsumed
+- [x] Both authorization modes accept/reject the same canonical issuer classes.
+- [x] Verifier failures still produce the fixed public challenge without an unconsumed
       internal discriminant.
+
+Ledger note (2026-07-26):
+
+- Replaced the OAuth mode's full `OAuthMetadata` input with the only authorization
+  server value the resource consumes: canonical `issuer`. The handler still delegates
+  protected-resource document bytes and GET/HEAD/OPTIONS/CORS behavior to the official
+  SDK, but no longer routes or mirrors an authorization-server metadata document.
+- OAuth and preconfigured bearer modes now call the same private issuer canonicalizer.
+  Production remains HTTPS-only; exact `localhost`, `127.0.0.1`, and `[::1]` HTTP
+  origins are accepted for reviewed development in both modes, while remote plaintext,
+  credentials, query, fragment, and noncanonical URL bytes fail closed.
+- Final production/test/export search found no consumer of
+  `McpAccessVerificationFailure.code`; deleted both values and constructor branches.
+  The fixed public bearer challenge remains owned by the handler.
+- Retained `createBetterAuthMcpAccessVerifier` because the maintained production
+  consumer and its provider-private-state boundary remain real.
+- Red proof: the resource served a copied authorization-server document, loopback OAuth
+  construction failed under a stricter rule, and verifier failures exposed `code`.
+- Green proof: four focused handler/access/operation/credential files pass 31 tests;
+  the MCP package typecheck/build pass. Protected-resource GET, HEAD, OPTIONS, reflected
+  preflight headers, CORS, fixed challenge URL, and authorization-server 404 are pinned.
+- The complete MCP project passes 55 tests; root typecheck/lint pass. Exact packed
+  declarations contain the two issuer fields and no `OAuthMetadata`,
+  `McpAccessVerificationFailure`, or failure `code`.
 
 Phase 2 exit gate:
 

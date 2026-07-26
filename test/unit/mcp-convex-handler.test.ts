@@ -48,7 +48,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       verifier: accessVerifier(),
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(context, _access, server) {
         server.registerTool(
           'commit_once',
@@ -119,7 +119,7 @@ describe('Convex-native official MCP handler composition', () => {
       verifier: accessVerifier(),
       authorization: {
         mode: 'oauth',
-        metadata: oauthMetadata,
+        issuer: oauthMetadata.issuer,
         resourceName: 'Neutral notes',
         scopesSupported: ['notes:read', 'notes:write'],
       },
@@ -277,7 +277,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       verifier: accessVerifier(),
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(_context, _access, server) {
         factoryCalls += 1
         void server
@@ -309,7 +309,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       verifier: accessVerifier(),
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(_context, _access, server) {
         server.registerTool('owned-server', { inputSchema: z.object({}) }, () => ({
           content: [{ type: 'text', text: 'owned' }],
@@ -491,7 +491,7 @@ describe('Convex-native official MCP handler composition', () => {
           return accessVerifier().verifyAccessToken(bearer, resource)
         },
       },
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(_context, _access, server) {
         factoryCalls += 1
         void server
@@ -512,7 +512,7 @@ describe('Convex-native official MCP handler composition', () => {
       verifier: accessVerifier(),
       authorization: {
         mode: 'oauth',
-        metadata: oauthMetadata,
+        issuer: oauthMetadata.issuer,
         resourceName: 'Neutral notes',
         scopesSupported: ['notes:read', 'notes:write'],
       },
@@ -525,19 +525,41 @@ describe('Convex-native official MCP handler composition', () => {
     )
     const protectedResponse = await handler.fetch({}, new Request(protectedResourceUrl))
     expect(protectedResponse.status).toBe(200)
+    expect(protectedResponse.headers.get('access-control-allow-origin')).toBe('*')
     await expect(protectedResponse.json()).resolves.toEqual({
       authorization_servers: ['https://issuer.example.test/'],
       resource: resource.href,
       resource_name: 'Neutral notes',
       scopes_supported: ['notes:read', 'notes:write'],
     })
+    const protectedHead = await handler.fetch(
+      {},
+      new Request(protectedResourceUrl, { method: 'HEAD' }),
+    )
+    expect(protectedHead.status).toBe(200)
+    expect(protectedHead.headers.get('access-control-allow-origin')).toBe('*')
+    await expect(protectedHead.text()).resolves.toBe('')
+    const protectedOptions = await handler.fetch(
+      {},
+      new Request(protectedResourceUrl, {
+        headers: { 'access-control-request-headers': 'authorization, mcp-method' },
+        method: 'OPTIONS',
+      }),
+    )
+    expect(protectedOptions.status).toBe(204)
+    expect(protectedOptions.headers.get('access-control-allow-origin')).toBe('*')
+    expect(protectedOptions.headers.get('access-control-allow-methods')).toBe('GET, HEAD, OPTIONS')
+    expect(protectedOptions.headers.get('access-control-allow-headers')).toBe(
+      'authorization, mcp-method',
+    )
+    expect(protectedOptions.headers.get('vary')).toBe('Access-Control-Request-Headers')
 
     const authorizationResponse = await handler.fetch(
       {},
       new Request('https://notes.example.test/.well-known/oauth-authorization-server'),
     )
-    expect(authorizationResponse.status).toBe(200)
-    await expect(authorizationResponse.json()).resolves.toEqual(oauthMetadata)
+    expect(authorizationResponse.status).toBe(404)
+    await expect(authorizationResponse.text()).resolves.toBe('')
 
     const denied = await handler.fetch(
       {},
@@ -566,10 +588,7 @@ describe('Convex-native official MCP handler composition', () => {
         verifier: accessVerifier(),
         authorization: {
           mode: 'oauth',
-          metadata: {
-            ...oauthMetadata,
-            issuer: 'http://issuer.example.test/',
-          },
+          issuer: 'http://issuer.example.test/',
         },
         configureServer(_context, _access, server) {
           void server
@@ -577,6 +596,29 @@ describe('Convex-native official MCP handler composition', () => {
       }),
     ).toThrow()
   })
+
+  it.each(['localhost', '127.0.0.1', '[::1]'])(
+    'accepts the exact reviewed %s loopback issuer in both authorization modes',
+    (host) => {
+      const issuer = `http://${host}:3210/`
+      for (const authorization of [
+        { mode: 'oauth' as const, issuer },
+        { mode: 'preconfigured-bearer' as const, issuer },
+      ]) {
+        expect(() =>
+          createConvexMcpHandler({
+            serverInfo,
+            resource,
+            verifier: accessVerifier(),
+            authorization,
+            configureServer(_context, _access, server) {
+              void server
+            },
+          }),
+        ).not.toThrow()
+      }
+    },
+  )
 
   it('rejects foreign issuers and never accepts a bearer from query or body', async () => {
     let factoryCalls = 0
@@ -598,7 +640,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       verifier: foreignIssuerVerifier,
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(_context, _access, server) {
         factoryCalls += 1
         void server
@@ -621,7 +663,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       verifier: accessVerifier(),
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(_context, _access, server) {
         factoryCalls += 1
         void server
@@ -658,7 +700,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       verifier: accessVerifier(),
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(_context, _access, server) {
         factoryCalls += 1
         void server
@@ -690,7 +732,7 @@ describe('Convex-native official MCP handler composition', () => {
         serverInfo,
         resource,
         verifier: accessVerifier(),
-        authorization: { mode: 'oauth', metadata: oauthMetadata },
+        authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
         async configureServer(_context, _access, server) {
           factoryCalls += 1
           void server
@@ -756,7 +798,7 @@ describe('Convex-native official MCP handler composition', () => {
         serverInfo,
         resource,
         verifier: accessVerifier(),
-        authorization: { mode: 'oauth', metadata: oauthMetadata },
+        authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
         configureServer(_context, _access, server) {
           factoryCalls += 1
           void server
@@ -832,7 +874,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       verifier,
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(context, access, server) {
         for (const tool of ['search_notes', 'rename_note'] as const) {
           server.registerTool(tool, { inputSchema: z.object({}) }, () => {

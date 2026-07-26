@@ -62,7 +62,7 @@ describe('MCP explicit Convex operation mapping', () => {
       serverInfo: { name: 'mapping-proof', version: '0.1.0' },
       resource,
       verifier,
-      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
       configureServer(context, access, server) {
         server.registerTool(
           'search_notes',

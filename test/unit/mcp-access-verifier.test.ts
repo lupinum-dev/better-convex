@@ -207,7 +207,6 @@ describe('provider-neutral MCP access verification boundary', () => {
         }),
       ).rejects.toMatchObject({
         name: 'McpAccessVerificationFailure',
-        code: 'invalid_result',
         message: 'MCP access token verification failed',
       })
     }
@@ -236,7 +235,7 @@ describe('provider-neutral MCP access verification boundary', () => {
     }
 
     expect(failure).toBeInstanceOf(McpAccessVerificationFailure)
-    expect(failure).toMatchObject({ code: 'verification_failed' })
+    expect(failure).not.toHaveProperty('code')
     const serialized = `${JSON.stringify(failure)} ${String(failure)}`
     for (const secret of secrets) expect(serialized).not.toContain(secret)
     expect(failure).not.toHaveProperty('cause')

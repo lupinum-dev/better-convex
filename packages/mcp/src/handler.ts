@@ -11,11 +11,10 @@ import {
   McpServer,
   type AuthInfo,
   type AuthMetadataOptions,
-  type OAuthMetadata,
   type OAuthTokenVerifier,
 } from '@modelcontextprotocol/server'
 
-import { verifyAndNormalizeMcpAccess } from './access.js'
+import { canonicalMcpIssuer, verifyAndNormalizeMcpAccess } from './access.js'
 import type { McpAccessContext, McpAccessVerifier, VerifiedMcpAccess } from './index.js'
 import {
   boundMcpResponse,
@@ -35,7 +34,7 @@ export interface ConvexMcpHandlerOptions<ActionContext> {
   readonly authorization:
     | {
         readonly mode: 'oauth'
-        readonly metadata: OAuthMetadata
+        readonly issuer: string
         readonly resourceName?: string
         readonly requiredScopes?: readonly string[]
         readonly scopesSupported?: readonly string[]
@@ -74,7 +73,11 @@ export function createConvexMcpHandler<ActionContext>(
         return await runMcpRequestDeadline(request.signal, async (signal) => {
           const metadataResponse =
             authorization.mode === 'oauth'
-              ? oauthMetadataResponse(request, authorization.metadataOptions)
+              ? protectedResourceMetadataResponse(
+                  request,
+                  authorization.metadataOptions,
+                  authorization.resourceMetadataUrl,
+                )
               : undefined
           if (metadataResponse) return await boundMcpResponse(metadataResponse, signal)
           const boundaryResponse = requestBoundaryResponse(request, expectedResource)
@@ -138,7 +141,7 @@ function normalizeAuthorization(
   expectedResource: URL,
 ): NormalizedAuthorization {
   if (authorization.mode === 'preconfigured-bearer') {
-    const issuer = canonicalAuthorizationIssuer(authorization.issuer)
+    const issuer = canonicalMcpIssuer(authorization.issuer)
     return Object.freeze({
       mode: authorization.mode,
       issuer,
@@ -149,8 +152,9 @@ function normalizeAuthorization(
     })
   }
 
+  const issuer = canonicalMcpIssuer(authorization.issuer)
   const metadataOptions: AuthMetadataOptions = {
-    oauthMetadata: structuredClone(authorization.metadata),
+    oauthMetadata: { issuer } as AuthMetadataOptions['oauthMetadata'],
     resourceServerUrl: new URL(expectedResource.href),
     ...(authorization.resourceName === undefined
       ? {}
@@ -158,11 +162,12 @@ function normalizeAuthorization(
     ...(authorization.scopesSupported === undefined
       ? {}
       : { scopesSupported: [...authorization.scopesSupported] }),
+    ...(new URL(issuer).protocol === 'http:' ? { dangerouslyAllowInsecureIssuerUrl: true } : {}),
   }
   buildOAuthProtectedResourceMetadata(metadataOptions)
   return Object.freeze({
     mode: authorization.mode,
-    issuer: metadataOptions.oauthMetadata.issuer,
+    issuer,
     metadataOptions,
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(expectedResource),
     ...(authorization.requiredScopes === undefined
@@ -171,19 +176,22 @@ function normalizeAuthorization(
   })
 }
 
-function canonicalAuthorizationIssuer(value: string): string {
-  const issuer = new URL(value)
+function protectedResourceMetadataResponse(
+  request: Request,
+  options: AuthMetadataOptions,
+  resourceMetadataUrl: string,
+): Response | undefined {
+  const actual = new URL(request.url)
+  const expected = new URL(resourceMetadataUrl)
+  const normalizedPath = (value: string) =>
+    value.length > 1 && value.endsWith('/') ? value.slice(0, -1) : value
   if (
-    issuer.protocol !== 'https:' ||
-    issuer.username ||
-    issuer.password ||
-    issuer.search ||
-    issuer.hash ||
-    issuer.href !== value
+    actual.origin !== expected.origin ||
+    normalizedPath(actual.pathname) !== normalizedPath(expected.pathname)
   ) {
-    throw new TypeError('Invalid access issuer')
+    return undefined
   }
-  return value
+  return oauthMetadataResponse(request, options)
 }
 
 function requestBoundaryResponse(request: Request, expectedResource: URL): Response | undefined {
