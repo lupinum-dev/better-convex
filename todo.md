@@ -92,7 +92,7 @@ gate are complete.
       Codex.
 - [ ] Claude `MCP-05`/`NORM-03` are part of deleting the public constant `era` context and
       local MCP method classifier.
-- [ ] Claude `ERR-01` is handled with the broader public-error opacity correction:
+- [x] Claude `ERR-01` is handled with the broader public-error opacity correction:
       unknown causes are opaque everywhere, and structured error data remains intact
       without sending UDF frames through SSR.
 - [ ] Claude `ERR-03` is handled at the diagnostic boundary, where a sink is made
@@ -858,22 +858,44 @@ Ledger note (2026-07-26):
 
 Sources: Codex `F-003`; Claude contested `ERR-01`.
 
-- [ ] Preserve the reviewed message only for an explicitly constructed
+- [x] Preserve the reviewed message only for an explicitly constructed
       `ConvexCallError`; preserve structured application `data`, `code`, `status`, and
       `kind`.
-- [ ] Give raw wire `ConvexError` and every unknown string/object/Error cause a fixed
+- [x] Give raw wire `ConvexError` and every unknown string/object/Error cause a fixed
       opaque display message.
-- [ ] Apply the same rule in browser, SSR, and server boundaries; do not create a
+- [x] Apply the same rule in browser, SSR, and server boundaries; do not create a
       client/SSR asymmetry or serialize Convex/UDF frames and upstream bodies.
-- [ ] Delete the server-only duplicate workaround after the central boundary is correct.
+- [x] Delete the server-only duplicate workaround after the central boundary is correct.
 
 Acceptance criteria:
 
-- [ ] Secret/stack sentinels are absent from state, promises, callbacks, JSON,
+- [x] Secret/stack sentinels are absent from state, promises, callbacks, JSON,
       structured clone, inspection, SSR HTML, DevTools, and packed consumers.
-- [ ] Structured application `data`, `code`, and `status` remain byte/value equivalent.
-- [ ] `cause` remains non-enumerable and non-transferable.
-- [ ] Tests no longer require arbitrary unknown messages to survive.
+- [x] Structured application `data`, `code`, and `status` remain byte/value equivalent.
+- [x] `cause` remains non-enumerable and non-transferable.
+- [x] Tests no longer require arbitrary unknown messages to survive.
+
+Ledger note (2026-07-26):
+
+- Made the framework-free Vue normalizer the single opacity owner. Explicit
+  `ConvexCallError` instances still pass through unchanged; raw recognized application
+  errors now use `Convex application error`, while all unclassified strings, objects,
+  and errors use `Unknown Convex error`. Structured `kind`, `data`, `code`, and `status`
+  are preserved.
+- Deleted the server-only normalize-then-discard workaround. Browser callables and
+  queries, SSR query execution, pagination, Nuxt upload state, and `serverConvex` now
+  share the same rule.
+- Converted only reviewed library-owned queue cancellation/reset and unavailable-runtime
+  conditions to explicit `ConvexCallError`s, retaining actionable product messages
+  without allowing raw upstream text through.
+- Red proofs failed across promise, callback, state, DevTools, server-operation, and
+  serializer paths before the central change. Focused unit tests pass 91 tests; the
+  complete unit project passes 1,369 and the complete Nuxt project passes 115. The real
+  Nuxt SSR/browser fixture passes with a structured 560 error containing a planted
+  secret and UDF frame while preserving application fields through hydration.
+- Vue/root typechecks, lint, format, and architecture boundaries pass. Exact packed
+  `./errors` and production Nitro `./server` consumers pass; the packed server probe
+  checks query, mutation, and action structured-message opacity.
 
 ### T3.5 — Make diagnostics non-authoritative and delete dead controller hooks
 

@@ -9,12 +9,10 @@ import { ConvexCallError } from '../../../../src/runtime/errors'
 // real universal payload plugin reducer/reviver — against a deterministic
 // local HTTP mock standing in for Convex (no live credentials).
 //
-// The mock always answers with an unexpected 500 upstream response whose body
-// carries a sentinel secret. `executeQueryHttp` catches the `$fetch` rejection
-// at the boundary and constructs the `ConvexCallError` itself with a FIXED
-// public message/status and the raw rejection (which contains the sentinel,
-// deep inside the response body) only as `cause`. The composable stores that
-// instance in its own identity-partitioned payload state (never
+// The mock always answers with a structured 560 application failure whose wire
+// message carries a sentinel and UDF frame. Central normalization replaces that
+// message while preserving application-owned data/code/status. The composable
+// stores that instance in its own identity-partitioned payload state (never
 // `asyncData.error`), so it survives SSR -> payload -> hydration as a real
 // `ConvexCallError` instance while the sentinel never reaches a public field.
 //
@@ -42,8 +40,7 @@ onMounted(() => {
     code: (e as { code?: string } | null)?.code ?? null,
     status: (e as { status?: number } | null)?.status ?? null,
     data: (e as { data?: unknown } | null)?.data ?? null,
-    // The runtime `cause` field is never expected to survive a payload
-    // revival — it must be `undefined` on the client-hydrated instance.
+    // Raw causes are never retained and cannot appear after payload revival.
     causeIsUndefined: e ? (e as unknown as { cause?: unknown }).cause === undefined : null,
     jsonString: e ? JSON.stringify(e) : null,
     toJSONString:

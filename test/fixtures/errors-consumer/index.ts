@@ -43,14 +43,14 @@ if (!(normalized instanceof ConvexCallError)) {
 if (normalized.kind !== 'unknown') {
   fail(`expected kind "unknown", got "${String(normalized.kind)}"`)
 }
-if (normalized.message !== 'boom') {
-  fail(`expected message "boom", got "${normalized.message}"`)
+if (normalized.message !== 'Unknown Convex error') {
+  fail(`expected opaque message, got "${normalized.message}"`)
 }
 
 const json = normalized.toJSON()
 if (json.name !== 'ConvexCallError') fail('toJSON().name !== "ConvexCallError"')
 if (json.kind !== 'unknown') fail('toJSON().kind !== "unknown"')
-if (json.message !== 'boom') fail('toJSON().message !== "boom"')
+if (json.message !== 'Unknown Convex error') fail('toJSON().message is not opaque')
 if ('cause' in json) fail('toJSON() must never include "cause"')
 
 if (!isSerializedConvexCallError(json)) {

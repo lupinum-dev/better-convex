@@ -11,7 +11,7 @@ import {
 
 import { useNuxtApp } from '#imports'
 
-import { normalizeConvexError, type CallResult, type ConvexCallError } from '../errors'
+import { ConvexCallError, normalizeConvexError, type CallResult } from '../errors'
 import { readConvexRuntimeContext } from '../runtime-context'
 import { assertConvexComposableScope } from '../utils/composable-scope'
 import { normalizeMaxConcurrent } from '../utils/config-defaults'
@@ -46,6 +46,10 @@ export interface UseConvexUploadQueueOptions<Mutation extends FunctionReference<
   onItemSuccess?: (item: QueueCallbackItem<Mutation>) => void
   onItemError?: (item: QueueCallbackItem<Mutation>) => void
   onQueueIdle?: (items: readonly QueueCallbackItem<Mutation>[]) => void
+}
+
+function createUploadQueueError(message: string): ConvexCallError {
+  return new ConvexCallError({ kind: 'unknown', message })
 }
 
 export interface UseConvexUploadQueueReturn<Mutation extends FunctionReference<'mutation'>> {
@@ -189,7 +193,7 @@ export function useConvexUploadQueue<Mutation extends FunctionReference<'mutatio
     runtime.deferred.reject(error)
   }
 
-  const cancelQueued = (error: Error) => {
+  const cancelQueued = (error: ConvexCallError) => {
     if (!items.value.some((item) => item.status === 'queued')) return
     const now = Date.now()
     items.value = items.value.map((item) => {
@@ -199,7 +203,7 @@ export function useConvexUploadQueue<Mutation extends FunctionReference<'mutatio
     })
   }
 
-  const clearQueue = (error: Error) => {
+  const clearQueue = (error: ConvexCallError) => {
     const runtimes = [...runtimeById.values()]
     runtimeById.clear()
     items.value = []
@@ -249,7 +253,7 @@ export function useConvexUploadQueue<Mutation extends FunctionReference<'mutatio
 
       const item = items.value.find((entry) => entry.id === itemId)
       if (!item) {
-        rejectItemDeferred(itemId, new Error('Upload item no longer exists'))
+        rejectItemDeferred(itemId, createUploadQueueError('Upload item no longer exists'))
         return
       }
 
@@ -312,7 +316,7 @@ export function useConvexUploadQueue<Mutation extends FunctionReference<'mutatio
           error: null,
           finishedAt: now,
         }))
-        rejectItemDeferred(itemId, new Error('Upload cancelled'))
+        rejectItemDeferred(itemId, createUploadQueueError('Upload cancelled'))
       } else {
         const normalizedError = normalizeConvexError(error)
         const erroredItem = mutateItem(itemId, (current) => ({
@@ -328,7 +332,7 @@ export function useConvexUploadQueue<Mutation extends FunctionReference<'mutatio
         if (retireIfStale()) return
 
         if (!continueOnError) {
-          cancelQueued(new Error('Upload queue halted after an upload error'))
+          cancelQueued(createUploadQueueError('Upload queue halted after an upload error'))
           if (retireIfStale()) return
         }
         rejectItemDeferred(itemId, normalizedError)
@@ -438,7 +442,7 @@ export function useConvexUploadQueue<Mutation extends FunctionReference<'mutatio
 
     mutateItem(id, (item) => {
       if (item.status !== 'queued') return item
-      rejectItemDeferred(id, new Error('Upload cancelled'))
+      rejectItemDeferred(id, createUploadQueueError('Upload cancelled'))
       return {
         ...item,
         status: 'cancelled',
@@ -459,7 +463,7 @@ export function useConvexUploadQueue<Mutation extends FunctionReference<'mutatio
     const runtimes = [...runtimeById.entries()]
       .filter(([id]) => cancellableIds.has(id))
       .map(([, runtime]) => runtime)
-    cancelQueued(new Error('Upload cancelled'))
+    cancelQueued(createUploadQueueError('Upload cancelled'))
 
     for (const runtime of runtimes) {
       runtime.controller?.abort()
@@ -474,7 +478,7 @@ export function useConvexUploadQueue<Mutation extends FunctionReference<'mutatio
   }
 
   const reset = (): void => {
-    clearQueue(new Error('Upload queue was reset'))
+    clearQueue(createUploadQueueError('Upload queue was reset'))
     maybeEmitQueueIdle()
   }
 

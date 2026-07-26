@@ -174,17 +174,33 @@ describe('callable lifecycle: identity-change stale rejection (architecture inva
   })
 
   it('commits and reports a genuine (non-identity) failure with one onError call', async () => {
+    const sentinel = 'CALLBACK_STATE_SECRET_2f03'
     const onError = vi.fn()
     const lifecycle = makeLifecycle({
-      invoke: () => Promise.reject(new Error('genuine failure')),
+      invoke: () => Promise.reject(new Error(`${sentinel}\n    at privateFrame (secret.ts:1:1)`)),
       onError,
     })
 
-    await expect(lifecycle.run({})).rejects.toBeInstanceOf(ConvexCallError)
+    let rejected: unknown
+    try {
+      await lifecycle.run({})
+    } catch (error) {
+      rejected = error
+    }
+    expect(rejected).toBeInstanceOf(ConvexCallError)
+    expect((rejected as ConvexCallError).message).toBe('Unknown Convex error')
     expect(onError).toHaveBeenCalledTimes(1)
     expect(onError.mock.calls[0]?.[0]).toBeInstanceOf(ConvexCallError)
+    expect(onError.mock.calls[0]?.[0].message).toBe('Unknown Convex error')
     expect(lifecycle.status.value).toBe('error')
-    expect(lifecycle.error.value?.message).toBe('genuine failure')
+    expect(lifecycle.error.value?.message).toBe('Unknown Convex error')
+    expect(
+      JSON.stringify({
+        rejected,
+        callback: onError.mock.calls[0]?.[0],
+        state: lifecycle.error.value,
+      }),
+    ).not.toContain(sentinel)
   })
 })
 

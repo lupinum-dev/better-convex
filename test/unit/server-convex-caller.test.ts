@@ -410,7 +410,7 @@ describe('serverConvex boundary error sanitization', () => {
       expect(caught).toBeInstanceOf(ConvexCallError)
       const err = caught as ConvexCallError
       expect(err.kind).toBe('unknown')
-      expect(err.message).toBe('Convex server call failed')
+      expect(err.message).toBe('Unknown Convex error')
       expect(err.message).not.toContain(SENTINEL)
       expect(JSON.stringify(err.toJSON())).not.toContain(SENTINEL)
       expect(JSON.stringify(err)).not.toContain(SENTINEL)
@@ -427,15 +427,18 @@ describe('serverConvex boundary error sanitization', () => {
   it.each(serverOperations)(
     'preserves a Convex application error from %s as server with data.code UNAUTHORIZED',
     async (_name, getMock, invoke) => {
-      const appError = Object.assign(new Error('unauthorized'), {
+      const appError = Object.assign(new Error(`unauthorized ${SENTINEL}\n    at privateFrame`), {
         [Symbol.for('ConvexError')]: true,
-        data: { code: 'UNAUTHORIZED' },
+        data: { code: 'UNAUTHORIZED', status: 403, detail: 'public detail' },
       })
       getMock().mockRejectedValue(appError)
 
       await expect(invoke(serverConvex(createEvent(), { auth: 'none' }))).rejects.toMatchObject({
         kind: 'server',
+        message: 'Convex application error',
         code: 'UNAUTHORIZED',
+        status: 403,
+        data: { code: 'UNAUTHORIZED', status: 403, detail: 'public detail' },
       })
     },
   )

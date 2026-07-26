@@ -7,7 +7,7 @@ import type {
 } from 'convex/server'
 import { getCurrentScope, onScopeDispose, type ComputedRef, type Ref } from 'vue'
 
-import type { CallResult, ConvexCallError } from './errors'
+import { ConvexCallError, type CallResult } from './errors'
 import type { ClientCallStatus } from './internal/call-state'
 import { createCallableController } from './internal/callable-controller'
 import { useOptionalBetterConvexRuntime } from './runtime-context'
@@ -57,9 +57,10 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
       settle: () => runtime?.browser.ready() ?? Promise.resolve(),
       invoke: async (args) => {
         if (!runtime) {
-          throw new Error(
-            `[better-convex-vue] useConvex${operation === 'mutation' ? 'Mutation' : 'Action'} cannot execute without an installed browser runtime`,
-          )
+          throw new ConvexCallError({
+            kind: 'unknown',
+            message: `[better-convex-vue] useConvex${operation === 'mutation' ? 'Mutation' : 'Action'} cannot execute without an installed browser runtime`,
+          })
         }
         if (operation === 'mutation') {
           return (await runtime.browser.handle.mutation(reference as never, args as never, {

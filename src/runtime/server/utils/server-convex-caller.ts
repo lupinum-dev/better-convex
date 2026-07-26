@@ -81,33 +81,6 @@ function readCookieHeader(event: H3Event): string | null {
   return typeof raw === 'string' ? raw : null
 }
 
-/**
- * Classify an error thrown by `ConvexHttpClient` into public
- * :
- *
- * - an existing {@link ConvexCallError} (our bounded-fetch `transport`, or a
- *   `authentication` thrown during required token resolution) passes through;
- * - a mechanically recognized Convex application error becomes `server` with its
- *   `data` preserved verbatim, including `data.code === 'UNAUTHORIZED'`;
- * - everything else becomes an OPAQUE `unknown`. `ConvexHttpClient` may place an
- *   arbitrary non-OK upstream body in `Error.message`; that raw object is
- *   discarded and its message/code/status/data are never copied into the public
- *   error.
- */
-function normalizeServerConvexBoundaryError(error: unknown): ConvexCallError {
-  if (error instanceof ConvexCallError) return error
-  // normalizeConvexError returns `server` ONLY for a recognized Convex
-  // application error; anything else it would classify `unknown` while copying
-  // the (untrusted) message. Take its `server` result and discard the rest so
-  // no unstructured client message leaks into the public error.
-  const classified = normalizeConvexError(error)
-  if (classified.kind === 'server') return classified
-  return new ConvexCallError({
-    kind: 'unknown',
-    message: 'Convex server call failed',
-  })
-}
-
 // ---------------------------------------------------------------------------
 // Token resolution ("Cookie resolution").
 // ---------------------------------------------------------------------------
@@ -260,7 +233,7 @@ export function serverConvex(
           args as FunctionArgs<typeof query>,
         )) as FunctionReturnType<typeof query>
       } catch (error) {
-        throw normalizeServerConvexBoundaryError(error)
+        throw normalizeConvexError(error)
       }
     },
     async mutation(mutation, args) {
@@ -271,7 +244,7 @@ export function serverConvex(
           args as FunctionArgs<typeof mutation>,
         )) as FunctionReturnType<typeof mutation>
       } catch (error) {
-        throw normalizeServerConvexBoundaryError(error)
+        throw normalizeConvexError(error)
       }
     },
     async action(action, args) {
@@ -282,7 +255,7 @@ export function serverConvex(
           args as FunctionArgs<typeof action>,
         )) as FunctionReturnType<typeof action>
       } catch (error) {
-        throw normalizeServerConvexBoundaryError(error)
+        throw normalizeConvexError(error)
       }
     },
   }

@@ -75,11 +75,11 @@ describe('CallResult type contracts', () => {
 
   it('does not special-case a LIMIT_* message prefix into a code', () => {
     // The normalizer never classifies from message text. A plain Error that
-    // happens to start with LIMIT_ passes through verbatim as `unknown`, and no
-    // code is synthesized from it.
+    // happens to start with LIMIT_ stays opaque `unknown`, and no code is
+    // synthesized from it.
     const normalized = normalizeConvexError(new Error('LIMIT_ITEMS: Limit reached'))
     expect(normalized.kind).toBe('unknown')
-    expect(normalized.message).toBe('LIMIT_ITEMS: Limit reached')
+    expect(normalized.message).toBe('Unknown Convex error')
     expect(normalized.code).toBeUndefined()
   })
 
@@ -94,13 +94,14 @@ describe('CallResult type contracts', () => {
     plain.data = { message: 'Limit reached', code: 'LIMIT_ITEMS' }
     const plainNormalized = normalizeConvexError(plain)
     expect(plainNormalized.kind).toBe('unknown')
-    expect(plainNormalized.message).toBe('fallback message')
+    expect(plainNormalized.message).toBe('Unknown Convex error')
     expect(plainNormalized.code).toBeUndefined()
 
     const structured = normalizeConvexError(
       new ConvexError({ message: 'Limit reached', code: 'LIMIT_ITEMS' }),
     )
     expect(structured.kind).toBe('server')
+    expect(structured.message).toBe('Convex application error')
     expect(structured.code).toBe('LIMIT_ITEMS')
     expect(structured.data).toEqual({ message: 'Limit reached', code: 'LIMIT_ITEMS' })
   })

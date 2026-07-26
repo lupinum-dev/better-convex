@@ -44,6 +44,8 @@ const CONVEX_CALL_ERROR_KINDS: readonly ConvexCallErrorKind[] = [
   'server',
   'unknown',
 ]
+const CONVEX_APPLICATION_ERROR_MESSAGE = 'Convex application error'
+const UNKNOWN_CONVEX_ERROR_MESSAGE = 'Unknown Convex error'
 
 export interface ConvexCallErrorInput {
   kind: ConvexCallErrorKind
@@ -153,19 +155,6 @@ function isConvexApplicationError(error: unknown): boolean {
   return (error as Record<PropertyKey, unknown>)[Symbol.for('ConvexError')] === true
 }
 
-/**
- * Extract a display message without ever inferring classification from its text.
- */
-function readErrorMessage(error: unknown): string {
-  if (typeof error === 'string') return asNonEmptyString(error) ?? 'Unknown Convex error'
-  if (error instanceof Error) return asNonEmptyString(error.message) ?? 'Unknown Convex error'
-  if (isRecordLike(error)) {
-    const message = asNonEmptyString(error.message)
-    if (message) return message
-  }
-  return 'Unknown Convex error'
-}
-
 /** The Convex application error's structured payload, preserved verbatim. */
 function readStructuredData(error: unknown): unknown {
   return isRecordLike(error) ? error.data : undefined
@@ -198,10 +187,12 @@ function readStatus(error: unknown): number | undefined {
  *   re-normalizing a boundary-classified `transport`/`authentication` instance
  *   never downgrades it.
  * - A Convex application error becomes `server` with its `data` preserved
- *   verbatim.
- * - Everything else becomes `unknown`. The pure normalizer NEVER classifies a
- *   `TypeError` as `transport` (it cannot know whether user code or a network
- *   API created it) and NEVER classifies from message text. Fetch, XHR,
+ *   verbatim and a fixed display message. Convex's wire message may contain UDF
+ *   frames, so it is never copied into the public error.
+ * - Everything else becomes `unknown` with a fixed display message. The pure
+ *   normalizer NEVER classifies a `TypeError` as `transport` (it cannot know
+ *   whether user code or a network API created it) and NEVER classifies from
+ *   message text. Fetch, XHR,
  *   timeout, abort, oversized-, malformed-, and unexpected-upstream-HTTP
  *   boundaries construct `ConvexCallError({ kind: 'transport', ... })`
  *   themselves, while the boundary still knows the source.
@@ -211,7 +202,7 @@ export function normalizeConvexError(error: unknown): ConvexCallError {
   if (isConvexApplicationError(error)) {
     return new ConvexCallError({
       kind: 'server',
-      message: readErrorMessage(error),
+      message: CONVEX_APPLICATION_ERROR_MESSAGE,
       code: readCode(error),
       status: readStatus(error),
       data: readStructuredData(error),
@@ -219,7 +210,7 @@ export function normalizeConvexError(error: unknown): ConvexCallError {
   }
   return new ConvexCallError({
     kind: 'unknown',
-    message: readErrorMessage(error),
+    message: UNKNOWN_CONVEX_ERROR_MESSAGE,
   })
 }
 

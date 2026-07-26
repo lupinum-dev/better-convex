@@ -132,17 +132,24 @@ describe('ConvexCallError golden fixtures ', () => {
   it('6. Convex application error with structured data is server, data verbatim', () => {
     const data = {
       code: 'UNAUTHORIZED',
+      status: 403,
       reason: 'forbidden',
       nested: { a: 1 },
     }
     const appError = new ConvexError(data)
+    Object.defineProperty(appError, 'message', {
+      value: `Uncaught ConvexError: ${SECRET}\n    at handler (../convex/private.ts:1:1)`,
+    })
     const normalized = normalizeConvexError(appError)
 
     expect(normalized.kind).toBe('server')
+    expect(normalized.message).toBe('Convex application error')
     // `data.code === 'UNAUTHORIZED'` remains server, never re-classified as auth.
     expect(normalized.code).toBe('UNAUTHORIZED')
+    expect(normalized.status).toBe(403)
     expect(normalized.data).toEqual(data)
     expect(normalized).toBeInstanceOf(ConvexCallError)
+    expect(inspect(normalized)).not.toContain(SECRET)
   })
 
   it('6b. cross-package ConvexError marker (not instanceof) is still server', () => {
@@ -153,6 +160,7 @@ describe('ConvexCallError golden fixtures ', () => {
     }
     const normalized = normalizeConvexError(markerOnly)
     expect(normalized.kind).toBe('server')
+    expect(normalized.message).toBe('Convex application error')
     expect(normalized.data).toEqual({ code: 'DUPLICATE_COPY' })
   })
 
@@ -167,19 +175,19 @@ describe('ConvexCallError golden fixtures ', () => {
   it('7. plain Error is unknown', () => {
     const normalized = normalizeConvexError(new Error('boom'))
     expect(normalized.kind).toBe('unknown')
-    expect(normalized.message).toBe('boom')
+    expect(normalized.message).toBe('Unknown Convex error')
   })
 
   it('8. string and object unknown errors', () => {
     const fromString = normalizeConvexError('a bare string failure')
     expect(fromString.kind).toBe('unknown')
-    expect(fromString.message).toBe('a bare string failure')
+    expect(fromString.message).toBe('Unknown Convex error')
 
     const fromMessageObject = normalizeConvexError({
       message: 'object with message',
     })
     expect(fromMessageObject.kind).toBe('unknown')
-    expect(fromMessageObject.message).toBe('object with message')
+    expect(fromMessageObject.message).toBe('Unknown Convex error')
 
     const fromOpaqueObject = normalizeConvexError({ unrelated: true })
     expect(fromOpaqueObject.kind).toBe('unknown')
@@ -257,7 +265,7 @@ describe('ConvexCallError class contract: raw causes are not retained ', () => {
     const inspected = inspect(error)
     expect(inspected).not.toContain(SECRET)
     expect(inspected).not.toContain('authorization')
-    expect(inspected).toContain('safe upstream failure')
+    expect(inspected).toContain('Unknown Convex error')
   })
 
   it('keeps raw cause data out of structured clone and MessageChannel transfer', async () => {
@@ -424,8 +432,8 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
       new Response(
         JSON.stringify({
           status: 'error',
-          errorMessage: 'safe application error',
-          errorData: convexToJson({ code: 'FORBIDDEN', reason: 'nope' }),
+          errorMessage: `Uncaught ConvexError: ${SECRET}\n    at handler (../convex/private.ts:1:1)`,
+          errorData: convexToJson({ code: 'FORBIDDEN', status: 403, reason: 'nope' }),
         }),
         { status: 560 },
       ),
@@ -438,7 +446,9 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
 
     await expect(
       executeQueryHttp('https://example.convex.cloud', 'notes:list', {}),
-    ).rejects.toMatchObject({ data: { code: 'FORBIDDEN', reason: 'nope' } })
+    ).rejects.toMatchObject({
+      data: { code: 'FORBIDDEN', status: 403, reason: 'nope' },
+    })
 
     let caught: unknown
     try {

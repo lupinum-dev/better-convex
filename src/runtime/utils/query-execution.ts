@@ -1,8 +1,7 @@
 import { ConvexHttpClient } from 'convex/browser'
 import { makeFunctionReference } from 'convex/server'
-import { ConvexError } from 'convex/values'
 
-import { ConvexCallError } from '../errors'
+import { normalizeConvexError } from '../errors'
 import { createBoundedConvexFetch } from './bounded-convex-fetch'
 
 /**
@@ -31,10 +30,6 @@ export async function executeQueryHttp<T>(
       args,
     )) as T
   } catch (error) {
-    if (error instanceof ConvexCallError || error instanceof ConvexError) throw error
-    throw new ConvexCallError({
-      kind: 'unknown',
-      message: 'Convex server call failed',
-    })
+    throw normalizeConvexError(error)
   }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { createDevtoolsSink } from '../../src/runtime/devtools/sink'
-import { ConvexCallError } from '../../src/runtime/errors'
+import { ConvexCallError, normalizeConvexError } from '../../src/runtime/errors'
 import { createCallableDevtoolsEvents } from '../../src/runtime/utils/callable-devtools'
 
 describe('callable DevTools adapter', () => {
@@ -59,6 +59,23 @@ describe('callable DevTools adapter', () => {
       20,
     )
     expect(sink.getMutations()).toMatchObject([{ state: 'error', error: 'Action failed' }])
+  })
+
+  it('never projects an unknown upstream message into DevTools', () => {
+    const sentinel = 'DEVTOOLS_ERROR_SECRET_5a91'
+    const sink = createDevtoolsSink()
+    const events = createCallableDevtoolsEvents<Record<string, never>, never>({
+      operation: 'action',
+      fnName: 'reports:generate',
+      hasOptimisticUpdate: false,
+      getSink: () => sink,
+    })
+
+    const event = events.startEvent?.({}, 20)
+    events.failEvent?.(event, normalizeConvexError(new Error(sentinel)), 20)
+
+    expect(sink.getMutations()).toMatchObject([{ state: 'error', error: 'Unknown Convex error' }])
+    expect(JSON.stringify(sink.getMutations())).not.toContain(sentinel)
   })
 
   it('is inert when no current sink exists', () => {

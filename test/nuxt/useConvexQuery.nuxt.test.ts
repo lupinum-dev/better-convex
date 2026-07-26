@@ -92,7 +92,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
 
     expect(result.error.value).toBeInstanceOf(ConvexCallError)
     expect(result.error.value?.kind).toBe('unknown')
-    expect(result.error.value?.message).toBe('query exploded')
+    expect(result.error.value?.message).toBe('Unknown Convex error')
     expect(result.status.value).toBe('error')
   })
 

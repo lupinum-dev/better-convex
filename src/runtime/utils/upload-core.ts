@@ -49,12 +49,18 @@ export async function requestUploadUrl<Mutation extends FunctionReference<'mutat
   mutationArgs: FunctionArgs<Mutation>,
 ): Promise<string> {
   if (!client) {
-    throw new Error('ConvexClient not available - file uploads only work on client side')
+    throw new ConvexCallError({
+      kind: 'unknown',
+      message: 'ConvexClient not available - file uploads only work on client side',
+    })
   }
 
   const postUrl = await client.mutation(mutation, mutationArgs)
   if (typeof postUrl !== 'string') {
-    throw new TypeError('generateUploadUrl mutation must return a string URL')
+    throw new ConvexCallError({
+      kind: 'unknown',
+      message: 'generateUploadUrl mutation must return a string URL',
+    })
   }
   return postUrl
 }

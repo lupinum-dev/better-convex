@@ -66,7 +66,7 @@ function startConvexProtocolServer() {
       if (scenario === 'structured') {
         sendJson(response, 560, {
           status: 'error',
-          errorMessage: 'Structured packed server failure',
+          errorMessage: `Structured packed server failure ${UPSTREAM_SENTINEL}\n    at handler (../convex/private.ts:1:1)`,
           errorData: {
             code: 'PACKED_SERVER_STRUCTURED',
             operation,
@@ -142,9 +142,9 @@ async function stopChild(child) {
 function expectedError(scenario) {
   switch (scenario) {
     case 'structured':
-      return { kind: 'server', message: 'Structured packed server failure' }
+      return { kind: 'server', message: 'Convex application error' }
     case 'plain':
-      return { kind: 'unknown', message: 'Convex server call failed' }
+      return { kind: 'unknown', message: 'Unknown Convex error' }
     case 'transport':
       return { kind: 'transport', message: 'Convex HTTP request could not complete' }
     case 'required-auth':
