@@ -107,7 +107,7 @@ export function createConvexMcpHandler<ActionContext>(
             },
             {
               legacy: 'reject',
-              responseMode: 'auto',
+              responseMode: 'json',
             },
           )
           try {

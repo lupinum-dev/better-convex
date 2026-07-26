@@ -58,7 +58,7 @@ gate are complete.
 
 ### Accepted from Claude
 
-- [ ] `MCP-01`: force unary JSON MCP responses.
+- [x] `MCP-01`: force unary JSON MCP responses.
 - [ ] `MCPI-01`: recoverable MCP App protocol errors must not brick the App or discard a
       committed result.
 - [ ] `NUXT-01`: preserve same-identity SSR hydration through initial auth settlement.
@@ -376,19 +376,30 @@ Phase 1 exit gate:
 
 Source: Claude `MCP-01`.
 
-- [ ] Change the official handler configuration from `responseMode: 'auto'` to
+- [x] Change the official handler configuration from `responseMode: 'auto'` to
       `'json'`.
-- [ ] Keep the 64 KiB request cap, 1 MiB response cap, 30-second deadline, JSON content
+- [x] Keep the 64 KiB request cap, 1 MiB response cap, 30-second deadline, JSON content
       type requirement, abort propagation, and per-request disposal.
-- [ ] Do not admit SSE into the Convex HTTP action.
+- [x] Do not admit SSE into the Convex HTTP action.
 
 Acceptance criteria:
 
-- [ ] A tool that records one effect and emits a mid-call progress notification returns
+- [x] A tool that records one effect and emits a mid-call progress notification returns
       HTTP 200 `application/json`.
-- [ ] The client receives the structured result and the effect occurs exactly once.
-- [ ] No committed result is converted into an empty 502.
-- [ ] Ordinary tools retain byte-compatible JSON-RPC responses.
+- [x] The client receives the structured result and the effect occurs exactly once.
+- [x] No committed result is converted into an empty 502.
+- [x] Ordinary tools retain byte-compatible JSON-RPC responses.
+
+Ledger note (2026-07-26):
+
+- Changed only the official per-request response mode; the existing JSON content-type,
+  request/response byte bounds, deadline, abort path, and disposal path are unchanged.
+- Red proof: the real client called a tool that committed once and emitted related
+  progress; `responseMode: 'auto'` upgraded to SSE and the unary boundary returned an
+  empty HTTP 502.
+- Green proof: the same request returns HTTP 200 `application/json` with the structured
+  result and exactly one effect. Four focused MCP suites pass 36 tests, and the MCP
+  package typecheck and build pass.
 
 ### T2.2 — Make recoverable App protocol errors non-terminal
 

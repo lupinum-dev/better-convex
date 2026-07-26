@@ -41,6 +41,70 @@ function accessVerifier(): McpAccessVerifier {
 }
 
 describe('Convex-native official MCP handler composition', () => {
+  it('keeps a committed tool result unary when the tool emits mid-call progress', async () => {
+    const application = { effects: 0 }
+    const toolResponses: Array<{ contentType: string | null; status: number }> = []
+    const handler = createConvexMcpHandler<typeof application>({
+      serverInfo,
+      resource,
+      verifier: accessVerifier(),
+      authorization: { mode: 'oauth', metadata: oauthMetadata },
+      configureServer(context, _access, _request, server) {
+        server.registerTool(
+          'commit_once',
+          { inputSchema: z.object({}) },
+          async (_args, requestContext) => {
+            context.effects += 1
+            const progressToken = requestContext.mcpReq._meta?.progressToken
+            if (progressToken === undefined) throw new Error('missing progress token')
+            await requestContext.mcpReq.notify({
+              method: 'notifications/progress',
+              params: { progress: 1, progressToken, total: 1 },
+            })
+            return {
+              content: [{ type: 'text', text: 'committed once' }],
+              structuredContent: { effects: context.effects },
+            }
+          },
+        )
+      },
+    })
+    const transport = new StreamableHTTPClientTransport(resource, {
+      requestInit: { headers: { authorization: `Bearer ${bearer}` } },
+      fetch: async (input, init) => {
+        const request = new Request(input, init)
+        const response = await handler.fetch(application, request)
+        if (request.headers.get('mcp-method') === 'tools/call') {
+          toolResponses.push({
+            contentType: response.headers.get('content-type'),
+            status: response.status,
+          })
+        }
+        return response
+      },
+    })
+    const client = new Client(
+      { name: 'unary-progress-client', version: '0.1.0' },
+      { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+    )
+
+    try {
+      await client.connect(transport)
+      const progress = vi.fn()
+      await expect(
+        client.callTool({ name: 'commit_once', arguments: {} }, { onprogress: progress }),
+      ).resolves.toMatchObject({
+        content: [{ type: 'text', text: 'committed once' }],
+        structuredContent: { effects: 1 },
+      })
+      expect(application.effects).toBe(1)
+      expect(progress).not.toHaveBeenCalled()
+      expect(toolResponses).toEqual([{ contentType: 'application/json', status: 200 }])
+    } finally {
+      await client.close()
+    }
+  })
+
   it('serves explicit read and write tools while keeping bearer data outside application context', async () => {
     const application = {
       notes: new Map([['note-1', 'Alpha']]),
