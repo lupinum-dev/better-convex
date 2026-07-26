@@ -85,12 +85,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       create: FunctionReference<
         "mutation",
         "internal",
-        {
-          data: any;
-          model: string;
-          onCreateHandle?: string;
-          select?: Array<string>;
-        },
+        { data: any; model: string; onCreateHandle?: string },
         any,
         Name
       >;

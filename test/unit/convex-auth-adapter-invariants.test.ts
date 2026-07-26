@@ -527,6 +527,136 @@ describe('greenfield Convex auth write contexts', () => {
       },
     })
   })
+
+  it('maps logical create, find, select, and sort fields once before the component', async () => {
+    const createReference = { operation: 'create' }
+    const findOneReference = { operation: 'findOne' }
+    const findManyReference = { operation: 'findMany' }
+    const componentCalls: Array<{ args: Record<string, unknown>; reference: unknown }> = []
+    const physicalRows = [
+      {
+        id: 'user-ada',
+        name: 'Ada',
+        email_address: 'ada@example.com',
+        emailVerified: true,
+        image: null,
+        createdAt: 100,
+        updatedAt: 200,
+      },
+      {
+        id: 'user-grace',
+        name: 'Grace',
+        email_address: 'grace@example.com',
+        emailVerified: true,
+        image: null,
+        createdAt: 300,
+        updatedAt: 400,
+      },
+    ]
+    const ctx = {
+      db: {},
+      auth: {},
+      runMutation: vi.fn(async (reference, args: Record<string, unknown>) => {
+        componentCalls.push({ reference, args })
+        return args.data
+      }),
+      runQuery: vi.fn(async (reference, args: Record<string, unknown>) => {
+        componentCalls.push({ reference, args })
+        if (reference === findOneReference) return physicalRows[0]
+        return { continueCursor: '', isDone: true, page: physicalRows }
+      }),
+    }
+    const component = {
+      adapter: {
+        create: createReference,
+        findMany: findManyReference,
+        findOne: findOneReference,
+      },
+    }
+    const adapter = createConvexAuthAdapter(
+      ctx as never,
+      component as never,
+    )({
+      user: { fields: { email: 'email_address' } },
+    } as never)
+
+    const created = await adapter.create({
+      model: 'user',
+      forceAllowId: true,
+      select: ['email'],
+      data: {
+        id: 'user-ada',
+        name: 'Ada',
+        email: 'ada@example.com',
+        emailVerified: true,
+        image: null,
+        createdAt: new Date(100),
+        updatedAt: new Date(200),
+      },
+    })
+    const found = await adapter.findOne({
+      model: 'user',
+      select: ['email'],
+      where: [{ field: 'email', value: 'ada@example.com' }],
+    })
+    const many = (await adapter.findMany({
+      limit: 10,
+      model: 'user',
+      select: ['email'],
+      sortBy: { direction: 'asc', field: 'email' },
+      where: [{ field: 'email', operator: 'in', value: ['ada@example.com', 'grace@example.com'] }],
+    })) as Array<Record<string, unknown>>
+
+    expect(created).toEqual({ email: 'ada@example.com' })
+    expect(found).toEqual({ email: 'ada@example.com' })
+    expect(many.map((row) => row.email)).toEqual(['ada@example.com', 'grace@example.com'])
+    expect(many.every((row) => !Object.hasOwn(row, 'email_address'))).toBe(true)
+    expect(componentCalls).toHaveLength(3)
+    expect(componentCalls[0]).toMatchObject({
+      reference: createReference,
+      args: { data: { email_address: 'ada@example.com' }, model: 'user' },
+    })
+    expect(componentCalls[0]!.args).not.toHaveProperty('select')
+    expect(componentCalls[1]).toMatchObject({
+      reference: findOneReference,
+      args: {
+        model: 'user',
+        select: ['email_address'],
+        where: [{ field: 'email_address', value: 'ada@example.com' }],
+      },
+    })
+    expect(componentCalls[2]).toMatchObject({
+      reference: findManyReference,
+      args: {
+        model: 'user',
+        select: ['email_address'],
+        sortBy: { direction: 'asc', field: 'email_address' },
+        where: [
+          {
+            field: 'email_address',
+            operator: 'in',
+            value: ['ada@example.com', 'grace@example.com'],
+          },
+        ],
+      },
+    })
+
+    await expect(
+      adapter.findOne({
+        model: 'user',
+        select: ['notAField'],
+        where: [{ field: 'email', value: 'ada@example.com' }],
+      }),
+    ).rejects.toThrow('Field notAField not found in model user')
+    await expect(
+      adapter.findMany({
+        limit: 1,
+        model: 'user',
+        sortBy: { direction: 'asc', field: 'notAField' },
+      }),
+    ).rejects.toThrow('Field notAField not found in model user')
+    expect(componentCalls).toHaveLength(3)
+  })
 })
 
 // Compile-time guard: metadata remains serializable data, not schema runtime state.

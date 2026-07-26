@@ -1244,16 +1244,36 @@ Ledger note (2026-07-26, provisioning slice):
 
 Source: Codex `F-004`.
 
-- [ ] Use the pinned factory's `getFieldName` once before the component boundary.
-- [ ] Map `select` and `sortBy` exactly as `where` is mapped.
-- [ ] Delete component-side create-selection behavior the factory never calls.
+- [x] Use the pinned factory's `getFieldName` once before the component boundary.
+- [x] Map `select` and `sortBy` exactly as `where` is mapped.
+- [x] Delete component-side create-selection behavior the factory never calls.
 
 Acceptance criteria:
 
-- [ ] A custom mapping such as `email -> email_address` works for create, findOne,
+- [x] A custom mapping such as `email -> email_address` works for create, findOne,
       findMany, select, and sort.
-- [ ] Returned objects retain Better Auth logical field names.
-- [ ] Unknown physical/logical fields still fail closed.
+- [x] Returned objects retain Better Auth logical field names.
+- [x] Unknown physical/logical fields still fail closed.
+
+Ledger note (2026-07-26):
+
+- The pinned adapter factory's `getFieldName` now maps `select` and `sortBy` at
+  the outer adapter boundary, beside the factory-owned `where` mapping. A paginated
+  find-many resolves the fields once per operation and reuses the physical shape for
+  every component page.
+- Deleted the `select` argument and projection from the component create mutation.
+  The pinned factory never forwards create selection to a custom adapter; it applies
+  the logical selection only after the full physical record returns.
+- Red proof: with `email -> email_address`, create still sent an unreachable
+  `select` property while findOne/findMany sent logical `select` and `sortBy` names to
+  a component that knows only physical metadata.
+- Green proof: one differential adapter test covers create, findOne, findMany,
+  selection, sorting, logical output names, and unknown-field rejection. The focused
+  invariant suite passes 21 tests, the real adapter project passes 34, and the
+  configured matrix passes 2,012 tests across 167 files. Root/fixture typechecks,
+  lint, canonical format, package build, logical-ID and 14-rule boundary checks pass.
+  The isolated auth-schema gate also proves fresh Convex codegen for the curated,
+  Team, Agentic SaaS, local-component, two-factor, and packed-demo consumers.
 
 ### T4.5 — Index-plan bounded `in` predicates
 

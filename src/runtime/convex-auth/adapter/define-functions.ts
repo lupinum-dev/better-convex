@@ -250,7 +250,6 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
       args: {
         model: v.string(),
         data: v.any(),
-        select: v.optional(v.array(v.string())),
         onCreateHandle: v.optional(v.string()),
       },
       handler: async (ctx, args) => {
@@ -266,7 +265,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         })
         const finalRow = await ctx.db.get(args.model as never, storageId as never)
         if (!finalRow) throw new Error('AUTH_CREATE_TRIGGER_DELETED_ROW')
-        return toBetterAuthDocument(finalRow as never, args.select)
+        return toBetterAuthDocument(finalRow as never)
       },
     }),
 

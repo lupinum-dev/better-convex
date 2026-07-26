@@ -275,10 +275,16 @@ export function createConvexAuthAdapter<
       customTransformOutput: ({ data, fieldAttributes }) =>
         fieldAttributes.type === 'date' ? toDate(data) : data,
     },
-    adapter: ({ options }) => {
+    adapter: ({ getFieldName, options }) => {
       options.telemetry = { enabled: false }
       if (options.experimental?.joins) throw new Error('AUTH_JOINS_UNSUPPORTED')
       const idTokens = createAccountIdTokenProtector(options)
+      const mapSelect = (model: string, select: string[] | undefined) =>
+        select?.map((field) => getFieldName({ model, field }))
+      const mapSort = (
+        model: string,
+        sortBy: { direction: 'asc' | 'desc'; field: string } | undefined,
+      ) => (sortBy ? { ...sortBy, field: getFieldName({ model, field: sortBy.field }) } : undefined)
 
       const adapter: CustomAdapter = {
         options: { isRunMutationCtx: isWritableAuthCtx(ctx) },
@@ -286,17 +292,14 @@ export function createConvexAuthAdapter<
         create: async <T extends Record<string, unknown>>({
           model,
           data,
-          select,
         }: {
           data: T
           model: string
-          select?: string[]
         }): Promise<T> => {
           requireWritableAuthCtx(ctx)
           const created = await ctx.runMutation(component.adapter.create, {
             model,
             data: await idTokens.protect(model, data),
-            select,
             onCreateHandle: await triggerHandle(model, 'onCreate'),
           })
           return idTokens.reveal(model, created as T)
@@ -314,7 +317,7 @@ export function createConvexAuthAdapter<
           const found = await ctx.runQuery(component.adapter.findOne, {
             model,
             where: toComponentWhere(where),
-            select,
+            select: mapSelect(model, select),
           })
           return idTokens.reveal(model, found as T | null)
         },
@@ -335,13 +338,15 @@ export function createConvexAuthAdapter<
           where?: CleanedWhere[]
         }): Promise<T[]> => {
           if (offset !== undefined && offset !== 0) throw new Error('AUTH_OFFSET_UNSUPPORTED')
+          const componentSelect = mapSelect(model, select)
+          const componentSortBy = mapSort(model, sortBy)
           const rows = await collectPages<T>(
             (paginationOpts) =>
               ctx.runQuery(component.adapter.findMany, {
                 model,
                 where: toComponentWhere(where),
-                select,
-                sortBy,
+                select: componentSelect,
+                sortBy: componentSortBy,
                 paginationOpts,
               }) as Promise<Page<T>>,
             limit,

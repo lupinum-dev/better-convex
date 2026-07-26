@@ -70,7 +70,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
     create: FunctionReference<
       'mutation',
       'internal',
-      { data: Record<string, unknown>; model: string; select?: string[] } & TriggerArgs,
+      { data: Record<string, unknown>; model: string } & TriggerArgs,
       AuthDocument,
       Name
     >
