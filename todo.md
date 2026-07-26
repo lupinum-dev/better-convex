@@ -1836,24 +1836,24 @@ Ledger note (2026-07-26):
 
 These are verification tasks, not pre-approved implementation:
 
-- [ ] `OWN-02`/`OWN-03`: trace query gate matrices and paginated first-page network
+- [x] `OWN-02`/`OWN-03`: trace query gate matrices and paginated first-page network
       behavior after T3.2.
-- [ ] `RECON-03`: review sibling-package advisory tuple coverage against final SDK
+- [x] `RECON-03`: review sibling-package advisory tuple coverage against final SDK
       bytes; derive any generalization from certification manifests/SBOMs, not another
       list.
-- [ ] `MCP-07`: verify SDK error diagnostics after T2.4 without adding another public
+- [x] `MCP-07`: verify SDK error diagnostics after T2.4 without adding another public
       sink absent a concrete operator consumer.
 - [ ] `MCPI-04`/`MCPI-05`/`MCPI-06`: measure final App payload and re-check interaction
       contracts after RC code deletion.
-- [ ] `REL-05`: verify a monotonic retired-version rule before replacing the growing
+- [x] `REL-05`: verify a monotonic retired-version rule before replacing the growing
       reviewed list.
-- [ ] `TE-04`/`TE-06`/`TE-09`: replace only after showing the present test can pass with
+- [x] `TE-04`/`TE-06`/`TE-09`: replace only after showing the present test can pass with
       broken behavior.
-- [ ] Vue/controller dead-surface candidates: enumerate production callers after Phases
+- [x] Vue/controller dead-surface candidates: enumerate production callers after Phases
       1 and 3, then delete only members with zero callers and zero invariant.
-- [ ] Better Auth `BAA-09`: replace legacy id-only database overloads with table-checked
+- [x] Better Auth `BAA-09`: replace legacy id-only database overloads with table-checked
       overloads opportunistically after relationship tests prove equivalence.
-- [ ] Error cleanup `ERR-04` through `ERR-09`: after diagnostic deletion, bound retained
+- [x] Error cleanup `ERR-04` through `ERR-09`: after diagnostic deletion, bound retained
       sanitization work, consolidate proven duplicate identity errors, reuse `toJSON`,
       remove unused parameters, and delete only controls with no consumer.
 
@@ -1862,6 +1862,64 @@ Tie-break acceptance:
 - [ ] Each candidate ends as either an executed accepted finding with its own
       acceptance test, or a written rejection with production evidence.
 - [ ] No unverified finding is retained as a “maybe” implementation backlog.
+
+Interim ledger note (2026-07-26):
+
+- `OWN-02` accepted only as a parity requirement, not a new helper. Nuxt still owns the
+  SSR/hydration gate and Vue owns the client gate; an exhaustive matrix now proves every
+  representable Nuxt status/auth/skip combination selects the same client decision.
+  Removed the gate's unread `subscribe`, `useAnonymousClient`, and `reason` transport
+  fields and the zero-caller `selectLiveQueryClient`.
+- `OWN-03` was already correct in production. The strongest regression now takes the
+  real awaited hydration path and proves one live subscription plus zero duplicate
+  one-shot first-page queries. Focused query and pagination suites pass 49 tests.
+- `RECON-03` accepted. `scripts/reviewed-runtime-versions.mjs` derives the complete
+  sibling runtime advisory tuple from the certification descriptors and bound manifests;
+  both advisory checking and SBOM generation consume that derivation. The test compares
+  every derived coordinate to its manifest rather than mirroring versions.
+- `MCP-07` accepted without a public diagnostic sink. Server configuration and unary
+  capability hardening now run inside the existing request deadline but before the
+  official SDK's reporting-only error boundary, so Convex's ordinary uncaught-error
+  telemetry observes a configuration failure. A formerly swallowed unsupported
+  capability now rejects with the fixed local code; 27 focused handler/transport tests
+  and the MCP typecheck pass.
+- `MCPI-04`, `MCPI-05`, and `MCPI-06` have executed current-RC remediations, but their
+  grouped checkbox remains open until T2.6 deletes obsolete RC code and repeats the
+  measurement against final SDK bytes. The App fell from 394,258 bytes/50 locale modules
+  to 257,357 bytes/one required English locale, with a 288 KiB build ceiling. Origin,
+  path prefix, locator grammar, parsing, and URL construction now have one interaction
+  contract. The generic `runMcpTool` success type deleted the fixture's duplicate opaque
+  error boundary without exporting RC vocabulary. Focused MCP Apps browser proof and
+  tool-error suites pass.
+- `REL-05` accepted. Replaced 37 enumerated retired versions, including holes, with one
+  SemVer floor per reviewed package. Tests prove lower core/prerelease identities fail,
+  the exact floor and successors pass, stable outranks prerelease, unrelated packages
+  remain unaffected, and all 49 artifact-coordinate cases pass.
+- `TE-04` accepted as behavioral proof: direct HTML-escaping assertions replaced source
+  regex/callsite inspection. `TE-06` accepted by deriving MCP documentation and topology
+  package versions from manifests; the remaining version literals are deliberate
+  synthetic fixtures. `TE-09` accepted: a current identity-rejected call settles idle,
+  while an older stale rejection cannot mask a newer pending or successful call.
+- The Vue/controller caller sweep deleted 52 lines of query controller default/error
+  seams, 19 lines of inert pagination boundary state, the callable's test-only start
+  hook, and the unconsumed retired-client close diagnostic. The eager authenticated
+  primary and per-composable Nuxt identity mirror findings are rejected as stale:
+  `client-owner` is already lazy when an identity port exists and
+  `ConvexQueryAuthContext` contains only the three read fields. The same-key one-shot
+  race is also rejected: `refreshSequence` is the commit authority and the reverse-order
+  regression retains the newer result. A shared query/pagination fence was rejected:
+  subscriptions accept repeated deliveries while pagination additionally fences page
+  generations and splits. `subscribeIdentityChange` remains because `browser.ready()`
+  is a production consumer; replacement remains the private security-boundary engine.
+- `BAA-09` accepted after relationship equivalence tests: patch/get/delete operations
+  use the table-checked Better Auth database overloads. The adapter's 37 tests and Vue
+  typecheck pass.
+- `ERR-04` bounds sanitizer input before escaping; `ERR-06` reconstructs from canonical
+  `toJSON`; `ERR-08` uses structural preconditions rather than message sentinels;
+  `ERR-07` and `ERR-09` were already deleted with diagnostics. Vue auth now uses its one
+  identity-error constructor and disposal no longer claims `IDENTITY_CHANGED`. Nuxt's
+  small upload helper remains private because sharing it would require a new public
+  cross-package contract solely to remove 21 lines.
 
 Phase 5 exit gate:
 
