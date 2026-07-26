@@ -1571,16 +1571,40 @@ Ledger note (2026-07-26):
 
 Sources: Claude `REL-02`, `TE-02`.
 
-- [ ] Delete assertions over indentation, prose, statement order, and substring counts.
-- [ ] Parse workflow structure where structure is the invariant.
-- [ ] Execute release commands where behavior is the invariant.
-- [ ] Assert the exact 64 KiB, 1 MiB, and 30-second MCP magnitudes behaviorally.
+- [x] Delete assertions over indentation, prose, statement order, and substring counts.
+- [x] Parse workflow structure where structure is the invariant.
+- [x] Execute release commands where behavior is the invariant.
+- [x] Assert the exact 64 KiB, 1 MiB, and 30-second MCP magnitudes behaviorally.
 
 Acceptance criteria:
 
-- [ ] Changing formatting cannot fail a release test.
-- [ ] Breaking release ordering, package selection, or a transport magnitude does fail.
-- [ ] Tests do not reimplement the production rule in their expected value.
+- [x] Changing formatting cannot fail a release test.
+- [x] Breaking release ordering, package selection, or a transport magnitude does fail.
+- [x] Tests do not reimplement the production rule in their expected value.
+
+Ledger note (2026-07-26):
+
+- Replaced raw YAML slicing, indentation matches, prose checks, source statement-order
+  assertions, and substring counts across the release, preview, governance, upstream
+  monitoring, OAuth quota, and cloud-staging suites. Parsed workflow objects now prove
+  the exact blocking publication DAG, protected OIDC jobs, action pins, artifact
+  transfers, cloud-staging dependency/report, CI budget, preview triggers, and
+  non-bypass policy independently of YAML formatting.
+- Retained executable proof for the canonical empty-root release family, missing
+  companion diagnostics, and rejection of unreviewed artifact/registry coordinates.
+  Existing behavioral OAuth provider integration remains the authority for pre-lookup
+  client-auth rejection; duplicate source-order assertions were deleted.
+- MCP transport bounds are private implementation constants. Tests now send literal
+  65,536-byte/65,537-byte requests, 1,048,576-byte/1,048,577-byte responses, and advance
+  a literal 29,999/30,000 milliseconds, so changing a production magnitude breaks the
+  proof instead of changing the test's imported expected value.
+- Focused release/security integration passes 135 tests, focused MCP transport/handler
+  passes 32 tests, the combined rewritten surface passes 66 tests, and full workspace
+  typecheck passes. The canonical full pool remains environmentally unhealthy: in the
+  complete run, unrelated subprocess/network suites time out (including 24 token
+  exchange cases at exactly five seconds), while the same token suite passes all 26
+  tests in 328 ms alone. No timeout or assertion was weakened; the final gate remains
+  open for root-cause isolation.
 
 ### T5.3 — Correct the “mutation testing” evidence
 
