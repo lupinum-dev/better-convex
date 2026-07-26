@@ -31,6 +31,9 @@ if (
 ) {
   throw new TypeError(`SBOM root manifest has an invalid package identity: ${rootManifestPath}`)
 }
+const reviewedPackageManifest = JSON.parse(
+  readFileSync(resolve(repositoryRoot, descriptor.packageDirectory, 'package.json'), 'utf8'),
+)
 
 const sbomProfiles = Object.freeze({
   'nuxt-production-dependencies': Object.freeze({
@@ -49,21 +52,17 @@ const sbomProfiles = Object.freeze({
     componentPropertyNamespace: 'better-convex-vue',
     generatorName: 'better-convex-vue-sbom-generator',
     requiredComponents: Object.freeze(['convex', 'ohash', 'vue']),
-    requiredPhysicalVersions: Object.freeze({
-      convex: '1.42.2',
-      vue: '3.5.39',
-    }),
   }),
   'mcp-production-dependencies': Object.freeze({
     componentPropertyNamespace: 'better-convex-mcp',
     generatorName: 'better-convex-mcp-sbom-generator',
     requiredComponents: Object.freeze(['@modelcontextprotocol/server']),
-    requiredPhysicalVersions: Object.freeze({
-      '@modelcontextprotocol/server': '2.0.0-beta.5',
-    }),
   }),
 })
 const sbomProfile = resolveSbomProfile(descriptor)
+const requiredPhysicalVersions =
+  sbomProfile.requiredPhysicalVersions ??
+  derivePackagePhysicalVersions(descriptor.id, reviewedPackageManifest)
 
 function parseArguments(args) {
   const values = new Map()
@@ -103,6 +102,26 @@ function resolveSbomProfile(packageDescriptor) {
     throw new Error(`Package ${packageDescriptor.id} has no reviewed SBOM profile.`)
   }
   return profile
+}
+
+function derivePackagePhysicalVersions(packageId, manifest) {
+  const sources =
+    packageId === 'vue'
+      ? Object.fromEntries(
+          ['convex', 'vue'].map((name) => [name, manifest.devDependencies?.[name]]),
+        )
+      : manifest.dependencies
+  if (
+    !sources ||
+    Object.entries(sources).some(
+      ([, version]) =>
+        typeof version !== 'string' ||
+        !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u.test(version),
+    )
+  ) {
+    throw new Error(`Package ${packageId} physical runtime versions must be exact manifest pins.`)
+  }
+  return Object.freeze({ ...sources })
 }
 
 function purl(name, version) {
@@ -199,9 +218,9 @@ for (const [name, version] of Object.entries(pkg.peerDependencies ?? {})) {
   const dependencyKind = pkg.peerDependenciesMeta?.[name]?.optional
     ? 'optional-peer'
     : 'required-peer'
-  addComponent(name, sbomProfile.requiredPhysicalVersions[name] ?? version, dependencyKind)
+  addComponent(name, requiredPhysicalVersions[name] ?? version, dependencyKind)
 }
-for (const [name, version] of Object.entries(sbomProfile.requiredPhysicalVersions)) {
+for (const [name, version] of Object.entries(requiredPhysicalVersions)) {
   addComponent(name, version, pkg.peerDependencies?.[name] ? 'required-peer' : 'required-runtime')
 }
 

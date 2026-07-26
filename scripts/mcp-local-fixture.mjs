@@ -234,7 +234,8 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
     if (
       installedManifest.name !== '@better-convex/mcp' ||
       installedManifest.version !== sourceManifest.version ||
-      installedManifest.dependencies?.['@modelcontextprotocol/server'] !== '2.0.0-beta.5'
+      installedManifest.dependencies?.['@modelcontextprotocol/server'] !==
+        sourceManifest.dependencies?.['@modelcontextprotocol/server']
     ) {
       throw new Error('BCN_MCP_RELEASE_TARBALL did not contain the reviewed MCP package')
     }

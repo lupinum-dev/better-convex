@@ -52,6 +52,19 @@ const mcpCandidate = inspectConsumerCandidate({
   packageName: '@better-convex/mcp',
   tarballPath: args['mcp-tarball'],
 })
+const officialClientVersion = repositoryManifest.devDependencies?.['@modelcontextprotocol/client']
+const officialAppsVersion =
+  vueCandidate.manifest.peerDependencies?.['@modelcontextprotocol/ext-apps']
+const officialServerVersion = mcpCandidate.manifest.dependencies?.['@modelcontextprotocol/server']
+const reviewedVueVersion = vueCandidate.manifest.devDependencies?.vue
+for (const [name, version] of Object.entries({
+  '@modelcontextprotocol/client': officialClientVersion,
+  '@modelcontextprotocol/ext-apps': officialAppsVersion,
+  '@modelcontextprotocol/server': officialServerVersion,
+  vue: reviewedVueVersion,
+})) {
+  if (typeof version !== 'string') throw new TypeError(`Reviewed package manifest omits ${name}.`)
+}
 
 try {
   cpSync(args['vue-tarball'], join(scratchRoot, 'better-convex-vue.tgz'))
@@ -65,11 +78,11 @@ try {
         packageManager: repositoryManifest.packageManager,
         dependencies: {
           '@better-convex/mcp': 'file:./better-convex-mcp.tgz',
-          '@modelcontextprotocol/client': '2.0.0-beta.5',
-          '@modelcontextprotocol/ext-apps': '1.7.4',
-          '@modelcontextprotocol/server': '2.0.0-beta.5',
+          '@modelcontextprotocol/client': officialClientVersion,
+          '@modelcontextprotocol/ext-apps': officialAppsVersion,
+          '@modelcontextprotocol/server': officialServerVersion,
           'better-convex-vue': 'file:./better-convex-vue.tgz',
-          vue: '3.5.39',
+          vue: reviewedVueVersion,
           zod: '4.4.3',
         },
       },

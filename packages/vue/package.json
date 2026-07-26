@@ -39,7 +39,7 @@
     "convex": "1.42.2",
     "typescript": "~5.9.3",
     "unbuild": "3.6.1",
-    "vue": "^3.5.39",
+    "vue": "3.5.39",
     "vue-tsc": "^3.3.7"
   },
   "peerDependencies": {

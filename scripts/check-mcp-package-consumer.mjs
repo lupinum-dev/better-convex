@@ -16,6 +16,10 @@ const candidate = inspectConsumerCandidate({
   packageName: '@better-convex/mcp',
   tarballPath,
 })
+const officialServerVersion = candidate.manifest.dependencies?.['@modelcontextprotocol/server']
+if (typeof officialServerVersion !== 'string') {
+  throw new TypeError('MCP candidate does not declare the official server SDK.')
+}
 
 function parseTarball(args) {
   if (args.length !== 2 || args[0] !== '--tarball' || !args[1]) {
@@ -38,7 +42,7 @@ try {
         type: 'module',
         dependencies: {
           '@better-convex/mcp': 'file:./better-convex-mcp.tgz',
-          '@modelcontextprotocol/server': '2.0.0-beta.5',
+          '@modelcontextprotocol/server': officialServerVersion,
           '@types/node': '22.20.1',
           typescript: '5.9.3',
           zod: '4.3.6',
@@ -85,7 +89,7 @@ try {
     throw new Error('MCP runtime entry does not match the reviewed export allowlist.')
   }
   const manifest = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'))
-  if (manifest.dependencies?.['@modelcontextprotocol/server'] !== '2.0.0-beta.5') {
+  if (manifest.dependencies?.['@modelcontextprotocol/server'] !== officialServerVersion) {
     throw new Error('MCP consumer did not install the exact official SDK contract.')
   }
   console.log(`MCP exact-tarball contract consumer passed (${candidate.manifest.version}).`)

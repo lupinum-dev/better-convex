@@ -6,6 +6,16 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '../..')
+const vuePackageManifest = JSON.parse(
+  readFileSync(join(root, 'packages/vue/package.json'), 'utf8'),
+) as {
+  devDependencies: Record<string, string>
+}
+const mcpPackageManifest = JSON.parse(
+  readFileSync(join(root, 'packages/mcp/package.json'), 'utf8'),
+) as {
+  dependencies: Record<string, string>
+}
 
 function run(args: string[]) {
   return spawnSync(process.execPath, ['scripts/generate-sbom.mjs', ...args], {
@@ -100,8 +110,12 @@ describe('package-profile SBOM generation', () => {
           ],
         }),
       )
-      expect(sbom.components.find(({ name }) => name === 'convex')?.version).toBe('1.42.2')
-      expect(sbom.components.find(({ name }) => name === 'vue')?.version).toBe('3.5.39')
+      expect(sbom.components.find(({ name }) => name === 'convex')?.version).toBe(
+        vuePackageManifest.devDependencies.convex,
+      )
+      expect(sbom.components.find(({ name }) => name === 'vue')?.version).toBe(
+        vuePackageManifest.devDependencies.vue,
+      )
       for (const peer of ['convex', 'vue']) {
         expect(sbom.components).toContainEqual(
           expect.objectContaining({
@@ -140,7 +154,7 @@ describe('package-profile SBOM generation', () => {
       expect(sbom.components).toContainEqual(
         expect.objectContaining({
           name: '@modelcontextprotocol/server',
-          version: '2.0.0-beta.5',
+          version: mcpPackageManifest.dependencies['@modelcontextprotocol/server'],
         }),
       )
     } finally {

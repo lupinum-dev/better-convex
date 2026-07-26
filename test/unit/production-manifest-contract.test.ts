@@ -107,7 +107,7 @@ describe('production manifest certification profiles', () => {
       'scripts',
     ])
     expect(contract.manifest).toMatchObject({
-      dependencies: { '@modelcontextprotocol/server': '2.0.0-beta.5' },
+      dependencies: mcpManifest.dependencies,
       files: ['dist'],
       sideEffects: false,
       scripts: { prepack: 'pnpm run build' },
