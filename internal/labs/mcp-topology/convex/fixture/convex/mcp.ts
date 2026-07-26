@@ -114,22 +114,6 @@ function projectToolResult<Value>(result: OperationResult<Value>, text: (value: 
   }
 }
 
-async function runRcMcpTool(
-  operation: () =>
-    | CallToolResult
-    | InputRequiredResult
-    | Promise<CallToolResult | InputRequiredResult>,
-): Promise<CallToolResult | InputRequiredResult> {
-  try {
-    return await operation()
-  } catch {
-    return {
-      content: [{ text: 'Tool execution failed', type: 'text' }],
-      isError: true,
-    }
-  }
-}
-
 interface WorkspaceDeletionState {
   readonly locator?: string
   readonly operationKey: string
@@ -308,7 +292,7 @@ function createNotesServer(
       outputSchema: workspaceDeletionCompleteSchema,
     },
     async (input, context) =>
-      runRcMcpTool(async () => {
+      runMcpTool<CallToolResult | InputRequiredResult>(async () => {
         if (!access.scopes.includes('notes:write')) {
           return projectToolResult({ code: 'ACCESS_DENIED', ok: false }, () => '')
         }

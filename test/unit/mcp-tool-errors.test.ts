@@ -6,6 +6,18 @@ import { z } from 'zod'
 import { runMcpTool } from '../../packages/mcp/src/tools'
 
 describe('MCP tool failure projection', () => {
+  it('preserves an object result outside the ordinary tool-result shape', async () => {
+    await expect(
+      runMcpTool(async () => ({
+        requestState: 'opaque-state',
+        resultType: 'input_required' as const,
+      })),
+    ).resolves.toEqual({
+      requestState: 'opaque-state',
+      resultType: 'input_required',
+    })
+  })
+
   it('preserves expected values and explicit safe actionable failures', async () => {
     const expected = await runMcpTool(() => ({
       content: [{ type: 'text', text: 'Entry changed; refresh before retrying.' }],
