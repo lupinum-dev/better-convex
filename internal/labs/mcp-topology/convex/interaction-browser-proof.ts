@@ -148,7 +148,8 @@ export async function proveInteractionBrowserBoundary(
 
     const [confirmationResponse] = await Promise.all([
       page.waitForResponse(
-        (response) => response.url() === interactionUrl && response.request().method() === 'POST',
+        (response) =>
+          response.url() === reviewedInteractionUrl && response.request().method() === 'POST',
       ),
       page.getByTestId('confirm').click(),
     ])
@@ -161,7 +162,7 @@ export async function proveInteractionBrowserBoundary(
         (response) =>
           response.method === 'POST' &&
           response.status === 303 &&
-          response.location === interactionUrl,
+          response.location === reviewedInteractionUrl,
       ),
       `Confirmation POST omitted the canonical upstream redirect: ${JSON.stringify({ requestDiagnostics, responseBodies, responseDiagnostics })}`,
     )
@@ -175,7 +176,7 @@ export async function proveInteractionBrowserBoundary(
       `Confirmation POST omitted the real same-origin browser metadata: ${JSON.stringify(requestDiagnostics)}`,
     )
     // Perform the canonical GET explicitly after suppressing only Playwright's synthetic redirect.
-    await page.goto(interactionUrl, { waitUntil: 'domcontentloaded' })
+    await page.goto(reviewedInteractionUrl, { waitUntil: 'domcontentloaded' })
     const finalStatus = (await page.getByTestId('status').textContent()) ?? ''
     assert(finalStatus === 'applied', `The explicit confirmation settled as ${finalStatus}`)
     assert((await page.getByTestId('confirm').count()) === 0, 'Applied operation stayed actionable')
@@ -226,7 +227,7 @@ export async function proveInteractionBrowserBoundary(
     const unexpectedFailedRequests = failedRequests.filter(
       (request) =>
         !(
-          request.url === interactionUrl &&
+          request.url === reviewedInteractionUrl &&
           ((request.method === 'POST' && request.error === 'net::ERR_ABORTED') ||
             (request.method === 'GET' && request.error === 'net::ERR_NAME_NOT_RESOLVED'))
         ),
