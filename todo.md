@@ -2049,14 +2049,29 @@ MCP-validation ledger note (2026-07-26):
 ### Release and artifact validation
 
 - [ ] Canonical release command from an empty artifact root.
-- [ ] `pnpm run check:asvs`
-- [ ] `pnpm run check:sbom`
-- [ ] `pnpm run test:e2e:full`
-- [ ] `pnpm run test:dast:proxy`
+- [x] `pnpm run check:asvs`
+- [x] `pnpm run check:sbom`
+- [x] `pnpm run test:e2e:full`
+- [x] `pnpm run test:dast:proxy`
 - [ ] Exact source commit, tarball SHA-256, SRI, SBOM, content manifest, runtime
       fingerprint, and installed-byte comparison agree.
 - [ ] Candidate package dependency ordering and companion coordinates are exact.
 - [ ] Protected OIDC staging consumes the already-built candidates and does not repack.
+
+Release-validation ledger note (2026-07-26):
+
+- The canonical ASVS gate passed all 253 uniquely identified controls, including the
+  33 auth invariants. The canonical SBOM gate passed with 241 production components.
+- The full isolated E2E gate passed all 11 files, including the extended auth session
+  matrix and two-factor ceremony. The runner now moves any developer playground
+  selection/database aside, starts from fresh local Convex state, provisions the
+  pre-traffic signing key when the fixture requires it, and restores the original
+  playground state in `finally`.
+- The dedicated proxy DAST gate passed all six route probes. Typecheck, focused lint,
+  diff hygiene, and the no-starter-generated-artifacts gate also pass for the E2E
+  isolation fix.
+- Candidate artifact agreement, dependency ordering, and protected staging remain open
+  until the clean-root canonical candidate set below is built and inspected.
 
 ### Final release acceptance
 
