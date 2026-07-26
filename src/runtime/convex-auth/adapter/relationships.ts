@@ -171,9 +171,9 @@ export function createAuthRelationshipEngine(input: {
     }
 
     for (const { planned, patch } of setNullPatches.values()) {
-      await ctx.db.patch(planned.row._id as never, patch as never)
+      await ctx.db.patch(planned.model as never, planned.row._id as never, patch as never)
       if (!handles.onUpdateHandle || !updateTriggerModels.has(planned.model)) continue
-      const updated = await ctx.db.get(planned.row._id as never)
+      const updated = await ctx.db.get(planned.model as never, planned.row._id as never)
       if (!updated) throw new Error('AUTH_REFERENCE_SET_NULL_READBACK_FAILED')
       await runTrigger(ctx, handles.onUpdateHandle, {
         model: planned.model,
@@ -183,7 +183,7 @@ export function createAuthRelationshipEngine(input: {
     }
 
     for (const candidate of deletionOrder) {
-      await ctx.db.delete(candidate.row._id as never)
+      await ctx.db.delete(candidate.model as never, candidate.row._id as never)
       if (!handles.onDeleteHandle || !deleteTriggerModels.has(candidate.model)) continue
       await runTrigger(ctx, handles.onDeleteHandle, {
         model: candidate.model,
