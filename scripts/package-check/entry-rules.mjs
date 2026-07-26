@@ -75,6 +75,7 @@ const NUXT_CHECKER_ENTRY_RULES = [
         'convex/values',
       ],
       typeExternalSpecifiers: [
+        '@better-auth/oauth-provider',
         'better-auth',
         'better-auth/adapters',
         'better-auth/plugins',
