@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useMcpApp } from '../../packages/vue/src/mcp-app'
+
 const harness = vi.hoisted(() => {
   type Listener = (value: unknown) => void
 
@@ -65,8 +67,6 @@ vi.mock('vue', async (importOriginal) => {
     },
   }
 })
-
-import { useMcpApp } from '../../packages/vue/src/mcp-app'
 
 async function mount() {
   for (const callback of [...harness.mounted]) await callback()
