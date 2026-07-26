@@ -88,9 +88,15 @@ export default defineNuxtPlugin({
     )
     let observedIdentityGeneration = runtime.attachment.identity.snapshot().identityGeneration
     const stopProtectedPayloadObservation = runtime.attachment.identity.subscribe(() => {
-      const generation = runtime.attachment.identity.snapshot().identityGeneration
+      const snapshot = runtime.attachment.identity.snapshot()
+      const generation = snapshot.identityGeneration
       if (generation === observedIdentityGeneration) return
       observedIdentityGeneration = generation
+      if (snapshot.error) {
+        identity.value = ANONYMOUS_IDENTITY
+        authError.value = snapshot.error.message
+        pendingState.value = false
+      }
       purgeConvexIdentityPayloadKeys(nuxtApp)
       queryErrors.value = retainAnonymousConvexQueryErrors(queryErrors.value)
       clearNuxtData((key) => {

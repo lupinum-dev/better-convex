@@ -395,17 +395,37 @@ Ledger note (2026-07-26):
 
 Source: Claude unverified `OWN-01`.
 
-- [ ] Reproduce or refute the claim that the Vue identity port can be failed closed
+- [x] Reproduce or refute the claim that the Vue identity port can be failed closed
       while Nuxt's app-facing auth state still reports authenticated.
-- [ ] If reproduced, project the existing canonical identity error; do not create a
+- [x] If reproduced, project the existing canonical identity error; do not create a
       second auth state machine.
-- [ ] If refuted, record the exact production trace and remove this item.
+- [x] If refuted, record the exact production trace and remove this item. (Not
+      applicable: the claim was reproduced.)
 
 Acceptance criteria if reproduced:
 
-- [ ] App-facing auth state, query gating, and identity-port state agree after
+- [x] App-facing auth state, query gating, and identity-port state agree after
       fail-closed settlement.
-- [ ] Recovery is driven by the canonical provider/identity transition.
+- [x] Recovery is driven by the canonical provider/identity transition.
+
+Ledger note (2026-07-26):
+
+- Reproduced the split after initial authentication: a later Convex credential
+  rejection fails the Vue identity port closed to anonymous and advances
+  `identityGeneration`, so query gating is closed, but the Nuxt plugin's identity
+  observer previously only purged protected payloads. Its token/user refs therefore
+  still reported Alice as authenticated.
+- Extended that existing observer to read its one canonical identity snapshot. On an
+  errored generation it projects anonymous identity, the port's safe public error
+  message, and settled pending state into the Nuxt presentation refs. No new state,
+  revision, or recovery path was added.
+- Recovery remains provider-owned: the adapter's authenticated callback publishes
+  the replacement token/user, then the error-free canonical identity transition
+  performs isolation cleanup without overwriting that recovered presentation.
+- Red proof: the client-plugin regression retained Alice's token/user after the port
+  published generation 2 as anonymous with an authentication error.
+- Green proof: the exact plugin regression, the Nuxt auth facade, and the Vue
+  identity-port suite pass (3 files/17 tests), along with the full root typecheck.
 
 ### T1.6 — Avoid the unused eager client in auth-enabled startup
 
