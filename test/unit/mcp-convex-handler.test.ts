@@ -5,7 +5,8 @@ import { z } from 'zod'
 
 import { createConvexMcpHandler } from '../../packages/mcp/src/handler'
 import type { McpAccessVerifier } from '../../packages/mcp/src/index'
-import { maximumMcpRequestBytes, mcpRequestTimeoutMs } from '../../packages/mcp/src/transport'
+const expectedMaximumMcpRequestBytes = 65_536
+const expectedMcpRequestTimeoutMs = 30_000
 
 const resource = new URL('https://notes.example.test/mcp')
 const serverInfo = { name: 'mcp-handler-test', version: '0.1.0' } as const
@@ -709,7 +710,7 @@ describe('Convex-native official MCP handler composition', () => {
     const response = await handler.fetch(
       {},
       new Request(resource, {
-        body: 'a'.repeat(maximumMcpRequestBytes + 1),
+        body: 'a'.repeat(expectedMaximumMcpRequestBytes + 1),
         headers: {
           authorization: `Bearer ${bearer}`,
           'content-type': 'application/json',
@@ -769,7 +770,7 @@ describe('Convex-native official MCP handler composition', () => {
       const responsePromise = expect(pending).resolves.toMatchObject({
         status: 504,
       })
-      await vi.advanceTimersByTimeAsync(mcpRequestTimeoutMs)
+      await vi.advanceTimersByTimeAsync(expectedMcpRequestTimeoutMs)
       await responsePromise
       const response = await pending
       expect(response.headers.get('cache-control')).toBe('no-store')

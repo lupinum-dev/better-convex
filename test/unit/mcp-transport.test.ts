@@ -2,20 +2,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   boundMcpResponse,
-  maximumMcpRequestBytes,
-  maximumMcpResponseBytes,
-  mcpRequestTimeoutMs,
   McpTransportFailure,
   mcpTransportFailureResponse,
   prepareBoundedMcpRequest,
   runMcpRequestDeadline,
 } from '../../packages/mcp/src/transport'
 
+const expectedMaximumRequestBytes = 65_536
+const expectedMaximumResponseBytes = 1_048_576
+const expectedRequestTimeoutMs = 30_000
+
 afterEach(() => vi.useRealTimers())
 
 describe('MCP transport bounds', () => {
   it('accepts the exact request limit and rejects declared or streamed overflow', async () => {
-    const exactBody = 'a'.repeat(maximumMcpRequestBytes)
+    const exactBody = 'a'.repeat(expectedMaximumRequestBytes)
     const exact = await prepareBoundedMcpRequest(
       new Request('https://notes.example.test/mcp', { body: exactBody, method: 'POST' }),
       new AbortController().signal,
@@ -25,11 +26,11 @@ describe('MCP transport bounds', () => {
     for (const request of [
       new Request('https://notes.example.test/mcp', {
         body: 'small',
-        headers: { 'content-length': String(maximumMcpRequestBytes + 1) },
+        headers: { 'content-length': String(expectedMaximumRequestBytes + 1) },
         method: 'POST',
       }),
       new Request('https://notes.example.test/mcp', {
-        body: 'a'.repeat(maximumMcpRequestBytes + 1),
+        body: 'a'.repeat(expectedMaximumRequestBytes + 1),
         method: 'POST',
       }),
     ]) {
@@ -77,7 +78,7 @@ describe('MCP transport bounds', () => {
   })
 
   it('bounds JSON responses and rejects streaming or non-JSON responses', async () => {
-    const exactBody = 'a'.repeat(maximumMcpResponseBytes)
+    const exactBody = 'a'.repeat(expectedMaximumResponseBytes)
     const exact = await boundMcpResponse(
       new Response(exactBody, {
         headers: { 'content-type': 'application/json', 'x-test': 'kept' },
@@ -88,7 +89,7 @@ describe('MCP transport bounds', () => {
 
     await expect(
       boundMcpResponse(
-        new Response('a'.repeat(maximumMcpResponseBytes + 1), {
+        new Response('a'.repeat(expectedMaximumResponseBytes + 1), {
           headers: { 'content-type': 'application/json' },
         }),
       ),
@@ -97,7 +98,7 @@ describe('MCP transport bounds', () => {
       boundMcpResponse(
         new Response('small', {
           headers: {
-            'content-length': String(maximumMcpResponseBytes + 1),
+            'content-length': String(expectedMaximumResponseBytes + 1),
             'content-type': 'application/json',
           },
         }),
@@ -122,7 +123,7 @@ describe('MCP transport bounds', () => {
       return await new Promise<Response>(() => {})
     })
     const timedOut = expect(pending).rejects.toMatchObject({ status: 504 })
-    await vi.advanceTimersByTimeAsync(mcpRequestTimeoutMs - 1)
+    await vi.advanceTimersByTimeAsync(expectedRequestTimeoutMs - 1)
     expect(operationSignal?.aborted).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
     await timedOut
@@ -153,7 +154,7 @@ describe('MCP transport bounds', () => {
       )
     })
     const timedOut = expect(pending).rejects.toMatchObject({ status: 504 })
-    await vi.advanceTimersByTimeAsync(mcpRequestTimeoutMs)
+    await vi.advanceTimersByTimeAsync(expectedRequestTimeoutMs)
     await timedOut
     expect(cancelled).toBe(true)
   })

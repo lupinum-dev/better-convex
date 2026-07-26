@@ -1,6 +1,6 @@
-export const maximumMcpRequestBytes = 64 * 1024
-export const maximumMcpResponseBytes = 1024 * 1024
-export const mcpRequestTimeoutMs = 30_000
+const maximumMcpRequestBytes = 64 * 1024
+const maximumMcpResponseBytes = 1024 * 1024
+const mcpRequestTimeoutMs = 30_000
 
 export class McpTransportFailure extends Error {
   readonly status: 400 | 413 | 502 | 504
