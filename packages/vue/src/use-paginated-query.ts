@@ -143,29 +143,46 @@ export function useConvexPaginatedQuery<
   let previousTag = tag.value
   let previousBoundaryKey = boundaryKey.value
   let previousLive = live.value
+  let initialized = false
   const reconcile = () => {
     const nextTag = tag.value
     const nextBoundaryKey = boundaryKey.value
-    if (
-      nextTag.identityGeneration !== previousTag.identityGeneration ||
-      nextTag.identityKey !== previousTag.identityKey
-    ) {
-      boundaryFirstPage.value = null
-      controller.handleIdentityBoundary({ nextTag, previousTag, previousBoundaryKey })
-    } else {
-      if (nextBoundaryKey !== previousBoundaryKey) boundaryFirstPage.value = null
-      void controller.handleExecutionBoundary({
-        nextBoundaryKey,
-        previousBoundaryKey,
-        nextLive: live.value,
-        previousLive,
-      })
+    if (!initialized) {
+      initialized = true
+      previousTag = nextTag
+      previousBoundaryKey = nextBoundaryKey
+      previousLive = live.value
+      if (live.value) controller.subscribeFirstPage()
+      else if (gate.value === 'execute') void refreshBoundary()
+      return
     }
+    const priorTag = previousTag
+    const priorBoundaryKey = previousBoundaryKey
+    const priorLive = previousLive
     previousTag = nextTag
     previousBoundaryKey = nextBoundaryKey
     previousLive = live.value
-    if (live.value) controller.subscribeFirstPage()
-    else if (gate.value === 'execute') void refreshBoundary()
+    if (
+      nextTag.identityGeneration !== priorTag.identityGeneration ||
+      nextTag.identityKey !== priorTag.identityKey
+    ) {
+      boundaryFirstPage.value = null
+      controller.handleIdentityBoundary({
+        nextTag,
+        previousTag: priorTag,
+        previousBoundaryKey: priorBoundaryKey,
+      })
+      if (live.value) controller.subscribeFirstPage()
+      else if (gate.value === 'execute') void refreshBoundary()
+    } else {
+      if (nextBoundaryKey !== priorBoundaryKey) boundaryFirstPage.value = null
+      void controller.handleExecutionBoundary({
+        nextBoundaryKey,
+        previousBoundaryKey: priorBoundaryKey,
+        nextLive: live.value,
+        previousLive: priorLive,
+      })
+    }
   }
   const stop = watch([argsHash, gate, live, () => identity.value.identityGeneration], reconcile, {
     immediate: true,

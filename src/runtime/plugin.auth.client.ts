@@ -8,6 +8,7 @@ import convexAuthClientDefinition from '#convex/auth-client'
 import { convexClientPlugin } from './auth-client/convex-client-plugin'
 import {
   ANONYMOUS_IDENTITY,
+  identityKeyOf,
   identityToken,
   identityUser,
   toAuthenticatedIdentity,
@@ -56,23 +57,30 @@ export default defineNuxtPlugin({
     const authError = useState<string | null>('convex:authError', () => null)
     const pendingState = useConvexAuthPendingState()
     let synchronization: ReturnType<typeof createSessionSynchronization> | null = null
-    const adapter = createBetterAuthBrowserAdapter(authClient, {
-      authenticated(token, user) {
-        identity.value = toAuthenticatedIdentity(token, user)
-        authError.value = null
-        pendingState.value = false
+    const adapter = createBetterAuthBrowserAdapter(
+      authClient,
+      {
+        authenticated(token, user) {
+          identity.value = toAuthenticatedIdentity(token, user)
+          authError.value = null
+          pendingState.value = false
+        },
+        anonymous(error) {
+          identity.value = ANONYMOUS_IDENTITY
+          authError.value = error
+          pendingState.value = false
+        },
+        sessionChanged(sessionToken, errorMessage) {
+          if (!synchronization) return
+          const revision = synchronization.advance()
+          synchronization.complete(revision, errorMessage ? null : sessionToken)
+        },
       },
-      anonymous(error) {
-        identity.value = ANONYMOUS_IDENTITY
-        authError.value = error
-        pendingState.value = false
+      {
+        initialIdentityKey:
+          identity.value.status === 'authenticated' ? identity.value.user.id : undefined,
       },
-      sessionChanged(sessionToken, errorMessage) {
-        if (!synchronization) return
-        const revision = synchronization.advance()
-        synchronization.complete(revision, errorMessage ? null : sessionToken)
-      },
-    })
+    )
 
     const vuePlugin = createBetterConvex({
       convexUrl: convexConfig.url,
@@ -86,24 +94,42 @@ export default defineNuxtPlugin({
       'convex:query-errors',
       () => ({}),
     )
-    let observedIdentityGeneration = runtime.attachment.identity.snapshot().identityGeneration
-    const stopProtectedPayloadObservation = runtime.attachment.identity.subscribe(() => {
-      const snapshot = runtime.attachment.identity.snapshot()
-      const generation = snapshot.identityGeneration
-      if (generation === observedIdentityGeneration) return
-      observedIdentityGeneration = generation
-      if (snapshot.error) {
-        identity.value = ANONYMOUS_IDENTITY
-        authError.value = snapshot.error.message
-        pendingState.value = false
-      }
+    const ssrIdentityKey = identityKeyOf(identity.value)
+    const initialSnapshot = runtime.attachment.identity.snapshot()
+    let observedIdentityGeneration = initialSnapshot.identityGeneration
+    let initialHydrationReconciled = false
+    const purgeProtectedPayload = () => {
       purgeConvexIdentityPayloadKeys(nuxtApp)
       queryErrors.value = retainAnonymousConvexQueryErrors(queryErrors.value)
       clearNuxtData((key) => {
         const mode = readAuthMode(key)
         return mode === 'required' || mode === 'optional'
       })
-    })
+    }
+    const reconcileProtectedPayload = () => {
+      const snapshot = runtime.attachment.identity.snapshot()
+      const generation = snapshot.identityGeneration
+      if (!initialHydrationReconciled) {
+        if (snapshot.identityKey !== ssrIdentityKey) {
+          initialHydrationReconciled = true
+          purgeProtectedPayload()
+        } else if (snapshot.settled) {
+          initialHydrationReconciled = true
+        }
+      } else if (generation !== observedIdentityGeneration) {
+        purgeProtectedPayload()
+      }
+
+      observedIdentityGeneration = generation
+      if (snapshot.error) {
+        identity.value = ANONYMOUS_IDENTITY
+        authError.value = snapshot.error.message
+        pendingState.value = false
+      }
+    }
+    const stopProtectedPayloadObservation =
+      runtime.attachment.identity.subscribe(reconcileProtectedPayload)
+    reconcileProtectedPayload()
 
     let disposed = false
     const operations = createAuthOperationCoordinator()

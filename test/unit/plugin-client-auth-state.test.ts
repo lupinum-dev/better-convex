@@ -15,6 +15,7 @@ const {
   createBetterConvexMock,
   identityState,
   pendingState,
+  queryErrorsState,
   runtime,
   snapshot,
   subscribers,
@@ -53,6 +54,9 @@ const {
       value: { status: 'anonymous' } as AuthIdentity,
     },
     pendingState: { value: false },
+    queryErrorsState: {
+      value: {} as Record<string, unknown>,
+    },
     runtime,
     snapshot,
     subscribers,
@@ -65,6 +69,7 @@ vi.mock('#app', () => ({
   useRuntimeConfig: vi.fn(() => ({ public: { convex: {} } })),
   useState: vi.fn((key: string, init?: () => unknown) => {
     if (key === 'convex:authError') return authErrorState
+    if (key === 'convex:query-errors') return queryErrorsState
     return { value: init?.() ?? null }
   }),
 }))
@@ -130,6 +135,7 @@ describe('auth client app-facing state projection', () => {
     })
     authErrorState.value = null
     pendingState.value = false
+    queryErrorsState.value = {}
     snapshot.settled = true
     snapshot.identityKey = 'user:alice'
     snapshot.identityGeneration = 1
@@ -166,6 +172,7 @@ describe('auth client app-facing state projection', () => {
         use: vi.fn(),
       },
     })
+    expect(clearNuxtDataMock).not.toHaveBeenCalled()
 
     snapshot.identityKey = 'anonymous'
     snapshot.identityGeneration = 2
@@ -178,6 +185,7 @@ describe('auth client app-facing state projection', () => {
     expect(identityState.value).toBe(ANONYMOUS_IDENTITY)
     expect(authErrorState.value).toBe('Authentication is temporarily unavailable')
     expect(pendingState.value).toBe(false)
+    expect(clearNuxtDataMock).toHaveBeenCalledTimes(1)
 
     snapshot.identityKey = 'user:alice'
     snapshot.identityGeneration = 3
@@ -193,5 +201,59 @@ describe('auth client app-facing state projection', () => {
       'replacement-token',
     )
     expect(authErrorState.value).toBeNull()
+    expect(clearNuxtDataMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('purges a mismatched initial browser identity once, then purges later generations once', async () => {
+    vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
+    snapshot.settled = false
+    snapshot.identityKey = 'user:bob'
+    snapshot.identityGeneration = 0
+    queryErrorsState.value = {
+      'convex:notes:list:auth:optional:user:alice': { private: 'alice-error' },
+      'convex:status:list:auth:none': { public: true },
+    }
+    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
+      setup(nuxtApp: {
+        payload: { data: Record<string, unknown>; state: Record<string, unknown> }
+        provide: ReturnType<typeof vi.fn>
+        vueApp: {
+          onUnmount: ReturnType<typeof vi.fn>
+          use: ReturnType<typeof vi.fn>
+        }
+      }): void
+    }
+    plugin.setup({
+      payload: {
+        data: {
+          'convex:notes:list:auth:optional:user:alice': { private: 'alice' },
+        },
+        state: {},
+      },
+      provide: vi.fn(),
+      vueApp: {
+        onUnmount: vi.fn(),
+        use: vi.fn(),
+      },
+    })
+
+    expect(clearNuxtDataMock).toHaveBeenCalledTimes(1)
+    expect(queryErrorsState.value).toEqual({
+      'convex:status:list:auth:none': { public: true },
+    })
+    snapshot.settled = true
+    for (const subscriber of subscribers) subscriber()
+    expect(clearNuxtDataMock).toHaveBeenCalledTimes(1)
+
+    queryErrorsState.value = {
+      ...queryErrorsState.value,
+      'convex:notes:list:auth:required:user:bob': { private: 'bob-error' },
+    }
+    snapshot.identityGeneration = 1
+    for (const subscriber of subscribers) subscriber()
+    expect(clearNuxtDataMock).toHaveBeenCalledTimes(2)
+    expect(queryErrorsState.value).toEqual({
+      'convex:status:list:auth:none': { public: true },
+    })
   })
 })

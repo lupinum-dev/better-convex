@@ -37,6 +37,7 @@ export function createBetterAuthBrowserAdapter(
     anonymous(error: string | null): void
     sessionChanged?(sessionToken: string | null, error: string | null): void
   } = { authenticated: () => {}, anonymous: () => {} },
+  options: { initialIdentityKey?: string } = {},
 ): BetterConvexAuthAdapter & {
   failClosed(message: string): void
   dispose(): void
@@ -46,14 +47,21 @@ export function createBetterAuthBrowserAdapter(
   let disposed = false
   let sessionGeneration = 0
   let observedSessionToken: string | null | undefined
-  let observedIdentityKey: string | null | undefined
+  let observedIdentityKey: string | null | undefined = options.initialIdentityKey
   let cachedToken: string | null = null
-  let snapshot: BetterConvexAuthSnapshot = {
-    status: 'loading',
-    identityKey: null,
-    sessionGeneration,
-    error: null,
-  }
+  let snapshot: BetterConvexAuthSnapshot = options.initialIdentityKey
+    ? {
+        status: 'authenticated',
+        identityKey: options.initialIdentityKey,
+        sessionGeneration,
+        error: null,
+      }
+    : {
+        status: 'loading',
+        identityKey: null,
+        sessionGeneration,
+        error: null,
+      }
 
   const notify = () => {
     for (const listener of [...listeners]) {
@@ -74,6 +82,13 @@ export function createBetterAuthBrowserAdapter(
     const key = userId
 
     if (value.isPending === true) {
+      if (
+        observedSessionToken === undefined &&
+        observedIdentityKey !== undefined &&
+        snapshot.status === 'authenticated'
+      ) {
+        return
+      }
       snapshot = {
         status: 'loading',
         identityKey: null,
@@ -112,10 +127,13 @@ export function createBetterAuthBrowserAdapter(
       return
     }
 
+    const establishesMatchingProvisionalIdentity =
+      observedSessionToken === undefined &&
+      observedIdentityKey !== undefined &&
+      observedIdentityKey === key
     const changed =
-      observedSessionToken !== sessionToken ||
-      observedIdentityKey !== key ||
-      observedSessionToken === undefined
+      !establishesMatchingProvisionalIdentity &&
+      (observedSessionToken !== sessionToken || observedIdentityKey !== key)
     if (changed) {
       sessionGeneration += 1
       cachedToken = null

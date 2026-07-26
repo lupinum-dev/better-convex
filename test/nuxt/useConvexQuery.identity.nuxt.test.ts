@@ -4,9 +4,14 @@ import { useState } from '#imports'
 
 import { toAuthenticatedIdentity, type AuthIdentity } from '../../src/runtime/auth/auth-identity'
 import { createConvexQueryState } from '../../src/runtime/composables/useConvexQuery'
+import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
+import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 import { makeMockOwner } from '../helpers/mock-client-owner'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
-import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
+import {
+  captureInNuxt,
+  createIdentityObserverHarness,
+} from '../helpers/nuxt-runtime-harness'
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -16,6 +21,146 @@ afterEach(() => {
 // identity change, keepPreviousData never crosses an identity boundary, and a
 // result captured under a stale identity cannot commit after the switch.
 describe('useConvexQuery identity isolation', () => {
+  it.each(['optional', 'required'] as const)(
+    'retains matching %s SSR data through first identity settlement without a duplicate query',
+    async (auth) => {
+      const primary = new MockConvexClient()
+      const query = mockFnRef<'query'>(`notes:hydrated-${auth}`)
+      const key = withAuthDimension(createConvexQueryKey(query, {}), auth, 'user:A')
+      const identityPort = createIdentityObserverHarness({
+        authEnabled: true,
+        settled: false,
+        identityKey: 'user:A',
+        identityGeneration: 0,
+        error: null,
+      })
+
+      const { result, flush, wrapper } = await captureInNuxt(
+        () => {
+          const pending = useState<boolean>('convex:pending', () => false)
+          const identity = useState<AuthIdentity>('convex:identity')
+          pending.value = false
+          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          return createConvexQueryState(query, {}, { auth }, true).resultData
+        },
+        {
+          owner: makeMockOwner(primary),
+          identityObserver: identityPort.observer,
+          payloadData: { [key]: { value: { owner: 'A', source: 'ssr' } } },
+        },
+      )
+
+      expect(result.data.value).toEqual({ owner: 'A', source: 'ssr' })
+      expect(primary.calls.onUpdate).toHaveLength(0)
+
+      identityPort.set({
+        authEnabled: true,
+        settled: true,
+        identityKey: 'user:A',
+        identityGeneration: 0,
+        error: null,
+      })
+      await flush()
+
+      expect(result.data.value).toEqual({ owner: 'A', source: 'ssr' })
+      expect(primary.calls.onUpdate).toHaveLength(1)
+      wrapper.unmount()
+    },
+  )
+
+  it.each([
+    {
+      label: 'another browser user',
+      snapshot: {
+        authEnabled: true,
+        settled: false,
+        identityKey: 'user:B' as const,
+        identityGeneration: 0,
+        error: null,
+      },
+    },
+    {
+      label: 'an anonymous browser',
+      snapshot: {
+        authEnabled: true,
+        settled: true,
+        identityKey: 'anonymous' as const,
+        identityGeneration: 0,
+        error: null,
+      },
+    },
+  ])('rejects user A SSR data for $label before use', async ({ snapshot }) => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:mismatched-hydration')
+    const key = withAuthDimension(createConvexQueryKey(query, {}), 'optional', 'user:A')
+    const identityPort = createIdentityObserverHarness(snapshot)
+
+    const { result, wrapper } = await captureInNuxt(
+      () => {
+        const pending = useState<boolean>('convex:pending', () => false)
+        const identity = useState<AuthIdentity>('convex:identity')
+        pending.value = false
+        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        return createConvexQueryState(query, {}, { auth: 'optional' }, true).resultData
+      },
+      {
+        owner: makeMockOwner(primary),
+        identityObserver: identityPort.observer,
+        payloadData: { [key]: { value: { owner: 'A' } } },
+      },
+    )
+
+    expect(result.data.value).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('clears hydrated data on later generations even when the identity key returns to A', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:hydrated-generation-fence')
+    const key = withAuthDimension(createConvexQueryKey(query, {}), 'optional', 'user:A')
+    const identityPort = createIdentityObserverHarness({
+      authEnabled: true,
+      settled: true,
+      identityKey: 'user:A',
+      identityGeneration: 0,
+      error: null,
+    })
+
+    const { result, wrapper } = await captureInNuxt(
+      () => {
+        const pending = useState<boolean>('convex:pending', () => false)
+        const identity = useState<AuthIdentity>('convex:identity')
+        pending.value = false
+        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        return createConvexQueryState(query, {}, { auth: 'optional' }, true).resultData
+      },
+      {
+        owner: makeMockOwner(primary),
+        identityObserver: identityPort.observer,
+        payloadData: { [key]: { value: { owner: 'A' } } },
+      },
+    )
+    expect(result.data.value).toEqual({ owner: 'A' })
+
+    identityPort.set({
+      authEnabled: true,
+      settled: false,
+      identityKey: 'user:B',
+      identityGeneration: 1,
+      error: null,
+    })
+    expect(result.data.value).toBeNull()
+    identityPort.set({
+      authEnabled: true,
+      settled: false,
+      identityKey: 'user:A',
+      identityGeneration: 2,
+      error: null,
+    })
+    expect(result.data.value).toBeNull()
+    wrapper.unmount()
+  })
+
   it('drops a deferred one-shot result resolved during the synchronous A-to-B window', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:deferred-once')

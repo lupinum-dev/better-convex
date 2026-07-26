@@ -125,12 +125,11 @@ export function createPaginationController<Item, TransformedItem = Item>(
   }
 
   function subscribeFirstPage(): void {
-    if (disposed || !input.subscribe || !input.isLive()) return
+    if (disposed || firstPageUnsubscribe || !input.subscribe || !input.isLive()) return
     const client = input.getClient()
     const args = input.getArgs()
     if (!client || args === 'skip') return
     const operation = fence.capture()
-    firstPageUnsubscribe?.()
     firstPageUnsubscribe = client.onUpdate(
       input.query,
       { ...args, paginationOpts: initialOptions.value },
@@ -410,6 +409,16 @@ export function createPaginationController<Item, TransformedItem = Item>(
       boundary.nextLive === boundary.previousLive
     )
       return
+    if (
+      boundary.nextBoundaryKey === boundary.previousBoundaryKey &&
+      boundary.nextLive &&
+      !boundary.previousLive
+    ) {
+      fence.invalidate()
+      manualRefreshPending.value = false
+      subscribeFirstPage()
+      return
+    }
     fence.invalidate()
     manualRefreshPending.value = false
     input.setBoundaryError(null, boundary.previousBoundaryKey)

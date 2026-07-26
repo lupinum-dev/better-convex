@@ -17,7 +17,11 @@ import { ConvexCallError, normalizeConvexError } from '../errors'
 import { readConvexRuntimeContext } from '../runtime-context'
 import type { ConvexQueryRest } from '../utils/args-tuple'
 import { useConvexIdentityState } from '../utils/auth-identity-state'
-import { fetchAuthToken, withAuthDimension } from '../utils/convex-cache'
+import {
+  fetchAuthToken,
+  matchesConvexHydrationIdentity,
+  withAuthDimension,
+} from '../utils/convex-cache'
 import { computeQueryStatus, createConvexQueryKey, getFunctionName } from '../utils/convex-shared'
 import { executeQueryHttp } from '../utils/query-execution'
 import { createQueryExecutionGate } from '../utils/query-execution-gate'
@@ -121,7 +125,16 @@ export function createConvexQueryState<
           )
         : `convex:${hydrationGate.outcome}:${getFunctionName(query)}`
     const nuxtApp = useNuxtApp()
-    const hasHydratedData = Object.hasOwn(nuxtApp.payload.data, hydrationKey)
+    const runtime = readConvexRuntimeContext(nuxtApp)
+    const hydrationIdentityMatches =
+      hydrationGate.outcome === 'execute' &&
+      matchesConvexHydrationIdentity(
+        auth,
+        hydrationGate.cacheIdentity,
+        runtime?.attachment.identity.snapshot(),
+      )
+    const hasHydratedData =
+      hydrationIdentityMatches && Object.hasOwn(nuxtApp.payload.data, hydrationKey)
     const hydratedPayload = nuxtApp.payload.data[hydrationKey] as
       | SsrQueryPayload<RawT>
       | null
@@ -150,12 +163,16 @@ export function createConvexQueryState<
       },
       { flush: 'sync' },
     )
-    const error = computed(() => result.error.value ?? hydratedErrors.value[hydrationKey] ?? null)
+    const error = computed(
+      () =>
+        result.error.value ??
+        (hydrationIdentityMatches ? hydratedErrors.value[hydrationKey] : null) ??
+        null,
+    )
     const pending = computed(() => (error.value ? false : result.pending.value))
     const status = computed<ConvexCallStatus>(() =>
       error.value ? 'error' : (result.status.value as ConvexCallStatus),
     )
-    const runtime = readConvexRuntimeContext(nuxtApp)
     const stopDevtools = watch(
       [status, result.data, error],
       ([currentStatus, data, currentError]) => {

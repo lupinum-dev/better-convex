@@ -9,7 +9,10 @@ import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
 import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 import { makeMockOwner } from '../helpers/mock-client-owner'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
-import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
+import {
+  captureInNuxt,
+  createIdentityObserverHarness,
+} from '../helpers/nuxt-runtime-harness'
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -23,6 +26,110 @@ function page<T>(items: T[], isDone: boolean, cursor: string | null): Pagination
 // acquisition through composable-owned listeners, and clears its pages on an
 // identity change.
 describe('useConvexPaginatedQuery controller', () => {
+  it('retains a matching SSR first page through settlement and subscribes exactly once', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:ssr-settlement')
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'optional',
+      'user:A',
+    )
+    const identityPort = createIdentityObserverHarness({
+      authEnabled: true,
+      settled: false,
+      identityKey: 'user:A',
+      identityGeneration: 0,
+      error: null,
+    })
+
+    const { result, flush, wrapper } = await captureInNuxt(
+      () => {
+        const pending = useState<boolean>('convex:pending', () => false)
+        const identity = useState<AuthIdentity>('convex:identity')
+        pending.value = false
+        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        return createConvexPaginatedQueryState(
+          query,
+          {},
+          { auth: 'optional', initialNumItems: 2 },
+          true,
+        ).resultData
+      },
+      {
+        owner: makeMockOwner(primary),
+        identityObserver: identityPort.observer,
+        payloadData: { [key]: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
+      },
+    )
+
+    expect(result.results.value).toEqual(['ssr-a', 'ssr-b'])
+    expect(primary.calls.onUpdate).toHaveLength(0)
+    identityPort.set({
+      authEnabled: true,
+      settled: true,
+      identityKey: 'user:A',
+      identityGeneration: 0,
+      error: null,
+    })
+    await flush()
+
+    expect(result.results.value).toEqual(['ssr-a', 'ssr-b'])
+    expect(primary.calls.onUpdate).toHaveLength(1)
+    result.loadMore(2)
+    expect(primary.calls.onUpdate[1]?.args).toMatchObject({
+      paginationOpts: { cursor: 'ssr-cursor' },
+    })
+    wrapper.unmount()
+  })
+
+  it('rejects a mismatched SSR first page before exposing browser state', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:ssr-mismatch')
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'optional',
+      'user:A',
+    )
+    const identityPort = createIdentityObserverHarness({
+      authEnabled: true,
+      settled: false,
+      identityKey: 'user:B',
+      identityGeneration: 0,
+      error: null,
+    })
+
+    const { result, wrapper } = await captureInNuxt(
+      () => {
+        const pending = useState<boolean>('convex:pending', () => false)
+        const identity = useState<AuthIdentity>('convex:identity')
+        pending.value = false
+        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        return createConvexPaginatedQueryState(
+          query,
+          {},
+          { auth: 'optional', initialNumItems: 2 },
+          true,
+        ).resultData
+      },
+      {
+        owner: makeMockOwner(primary),
+        identityObserver: identityPort.observer,
+        payloadData: { [key]: page(['private-A'], true, null) },
+      },
+    )
+
+    expect(result.results.value).toEqual([])
+    wrapper.unmount()
+  })
+
   it('does not reacquire the first-page subscription when reset finishes after disposal', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:reset-after-disposal')

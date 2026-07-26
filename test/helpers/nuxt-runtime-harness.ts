@@ -3,6 +3,7 @@ import { createBetterConvex } from 'better-convex-vue'
 import type {
   BetterConvexAttachedRuntime,
   BetterConvexIdentityObserver,
+  BetterConvexIdentitySnapshot,
 } from 'better-convex-vue/embedded'
 import { defineComponent, h, nextTick, watch, type ComponentPublicInstance } from 'vue'
 
@@ -174,6 +175,36 @@ interface CaptureOptions {
   owner?: unknown
   convexConfig?: Record<string, unknown>
   payloadData?: Record<string, unknown>
+  identityObserver?: BetterConvexIdentityObserver
+}
+
+export function createIdentityObserverHarness(initial: BetterConvexIdentitySnapshot) {
+  let snapshot = initial
+  const listeners = new Set<() => void>()
+  const settlementWaiters = new Set<() => void>()
+  const observer: BetterConvexIdentityObserver = {
+    snapshot: () => snapshot,
+    waitForInitialSettlement() {
+      if (snapshot.settled) return Promise.resolve()
+      return new Promise<void>((resolve) => settlementWaiters.add(resolve))
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+
+  return {
+    observer,
+    set(next: BetterConvexIdentitySnapshot) {
+      snapshot = next
+      if (snapshot.settled) {
+        for (const resolve of [...settlementWaiters]) resolve()
+        settlementWaiters.clear()
+      }
+      for (const listener of [...listeners]) listener()
+    },
+  }
 }
 
 const DEFAULT_OWNER_CONNECTION_STATE = {
@@ -352,7 +383,7 @@ export async function captureInNuxt<T>(
           },
           { flush: 'sync' },
         )
-        setCurrentIdentityObserver(observer)
+        setCurrentIdentityObserver(options.identityObserver ?? observer)
 
         if (options.convex === undefined) {
           currentConvexTarget = null

@@ -11,10 +11,15 @@ import { useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
 import { identityToken } from '../auth/auth-identity'
 import { normalizeConvexError, type ConvexCallError } from '../errors'
+import { readConvexRuntimeContext } from '../runtime-context'
 import type { ConvexQueryRest } from '../utils/args-tuple'
 import { useConvexIdentityState } from '../utils/auth-identity-state'
 import type { ConvexAuthMode } from '../utils/auth-status'
-import { fetchAuthToken, withAuthDimension } from '../utils/convex-cache'
+import {
+  fetchAuthToken,
+  matchesConvexHydrationIdentity,
+  withAuthDimension,
+} from '../utils/convex-cache'
 import { createConvexQueryKey, getFunctionName } from '../utils/convex-shared'
 import { executeQueryHttp } from '../utils/query-execution'
 import { createQueryExecutionGate } from '../utils/query-execution-gate'
@@ -122,10 +127,18 @@ export function createConvexPaginatedQueryState<
             hydrationGate.cacheIdentity,
           )
         : `convex-paginated:${hydrationGate.outcome}:${getFunctionName(query)}`
-    const hydrated = useNuxtApp().payload.data[hydrationKey] as
-      | PaginationResult<Item>
-      | null
-      | undefined
+    const nuxtApp = useNuxtApp()
+    const runtime = readConvexRuntimeContext(nuxtApp)
+    const hydrationIdentityMatches =
+      hydrationGate.outcome === 'execute' &&
+      matchesConvexHydrationIdentity(
+        auth,
+        hydrationGate.cacheIdentity,
+        runtime?.attachment.identity.snapshot(),
+      )
+    const hydrated = hydrationIdentityMatches
+      ? (nuxtApp.payload.data[hydrationKey] as PaginationResult<Item> | null | undefined)
+      : undefined
     const result = useVuePaginatedQuery<Query, TransformedItem>(query, args, {
       initialNumItems,
       subscribe,

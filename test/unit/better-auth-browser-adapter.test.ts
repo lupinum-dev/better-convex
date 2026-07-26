@@ -39,6 +39,60 @@ function source(
 }
 
 describe('Better Auth browser adapter', () => {
+  it('keeps matching SSR identity provenance through initial provider settlement', () => {
+    const fixture = source({ isPending: true, data: null, error: null }, [])
+    const adapter = createBetterAuthBrowserAdapter(
+      fixture.client,
+      undefined,
+      { initialIdentityKey: 'alice' },
+    )
+
+    expect(adapter.snapshot()).toMatchObject({
+      status: 'authenticated',
+      identityKey: 'alice',
+      sessionGeneration: 0,
+    })
+
+    fixture.session.value = {
+      isPending: false,
+      data: {
+        session: { token: 'session-a' },
+        user: { id: 'alice' },
+      },
+      error: null,
+    }
+    expect(adapter.snapshot()).toMatchObject({
+      status: 'authenticated',
+      identityKey: 'alice',
+      sessionGeneration: 0,
+    })
+    adapter.dispose()
+  })
+
+  it('retires mismatched SSR identity provenance before provider confirmation', () => {
+    const fixture = source({ isPending: true, data: null, error: null }, [])
+    const adapter = createBetterAuthBrowserAdapter(
+      fixture.client,
+      undefined,
+      { initialIdentityKey: 'alice' },
+    )
+
+    fixture.session.value = {
+      isPending: false,
+      data: {
+        session: { token: 'session-b' },
+        user: { id: 'bob' },
+      },
+      error: null,
+    }
+    expect(adapter.snapshot()).toMatchObject({
+      status: 'authenticated',
+      identityKey: 'bob',
+      sessionGeneration: 1,
+    })
+    adapter.dispose()
+  })
+
   it('uses the same session parser for identity and reconciliation', () => {
     const stableData = {
       session: { token: 'session-a' },

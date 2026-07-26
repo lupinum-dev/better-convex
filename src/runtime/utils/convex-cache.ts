@@ -40,6 +40,24 @@ export function withAuthDimension(
 }
 
 /**
+ * A protected SSR payload may seed a browser controller only when the canonical
+ * browser identity already names the same principal. The auth adapter seeds an
+ * unsettled first generation from SSR provenance, so an anonymous snapshot is a
+ * real mismatch here rather than a reason to expose protected data speculatively.
+ */
+export function matchesConvexHydrationIdentity(
+  authMode: ConvexAuthMode,
+  payloadIdentity: ConvexIdentityKey,
+  browserIdentity:
+    | {
+        readonly identityKey: ConvexIdentityKey | null
+      }
+    | undefined,
+): boolean {
+  return authMode === 'none' || browserIdentity?.identityKey === payloadIdentity
+}
+
+/**
  * True when a key belongs to one of the two library-owned Convex payload
  * namespaces.
  */

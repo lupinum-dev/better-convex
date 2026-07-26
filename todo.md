@@ -61,7 +61,7 @@ gate are complete.
 - [x] `MCP-01`: force unary JSON MCP responses.
 - [x] `MCPI-01`: recoverable MCP App protocol errors must not brick the App or discard a
       committed result.
-- [ ] `NUXT-01`: preserve same-identity SSR hydration through initial auth settlement.
+- [x] `NUXT-01`: preserve same-identity SSR hydration through initial auth settlement.
 - [x] `REL-01`: replace the unsatisfiable fresh-runner release command with one ordered
       entry point.
 - [x] `vue-lifecycle/VUE-01`: fence initial fail-closed reporting with the generation
@@ -771,22 +771,48 @@ Ledger note (2026-07-26):
 
 Source: Claude `NUXT-01`. Depends on T3.1.
 
-- [ ] Carry the already-computed SSR identity provenance with initial query/page data.
-- [ ] Retain data only for the matching first settlement.
-- [ ] Clear synchronously on anonymous↔authenticated mismatch, A→B, and every later
+- [x] Carry the already-computed SSR identity provenance with initial query/page data.
+- [x] Retain data only for the matching first settlement.
+- [x] Clear synchronously on anonymous↔authenticated mismatch, A→B, and every later
       generation change.
-- [ ] Remove the redundant paginated first-page refresh once same-identity hydration is
+- [x] Remove the redundant paginated first-page refresh once same-identity hydration is
       proven.
-- [ ] Extend the Nuxt test harness so the identity port can start unsettled.
+- [x] Extend the Nuxt test harness so the identity port can start unsettled.
 
 Acceptance criteria:
 
-- [ ] `auth: 'optional'` and `'required'` retain matching hydrated data with no flash to
+- [x] `auth: 'optional'` and `'required'` retain matching hydrated data with no flash to
       empty and no duplicate client query.
-- [ ] SSR A hydrated by browser B or anonymous is cleared before use.
-- [ ] A later A→B→A transition still clears generation-bound data.
-- [ ] Payload, `useAsyncData`, query-error, and pagination state purge once on a genuine
+- [x] SSR A hydrated by browser B or anonymous is cleared before use.
+- [x] A later A→B→A transition still clears generation-bound data.
+- [x] Payload, `useAsyncData`, query-error, and pagination state purge once on a genuine
       identity crossing.
+
+Ledger note (2026-07-26):
+
+- Red proof: the browser identity port began as loading/anonymous, so discovering the
+  same SSR user looked like a new identity generation and cleared valid regular and
+  paginated seeds. Pagination then acquired a live first-page subscription and issued
+  a redundant boundary refresh.
+- Reused the existing identity-partitioned payload key as the SSR provenance. The
+  Better Auth adapter now seeds only the non-secret SSR user id as an unsettled first
+  generation; a matching provider session settles that generation in place, while a
+  different user or anonymous session retires it.
+- Protected hydration is accepted only when the canonical browser port names the same
+  identity as the payload key. User A data is therefore rejected synchronously when
+  the browser already names B or anonymous. No token or provider-private session value
+  enters the payload or Vue boundary.
+- The auth-client purge observer now reconciles the initial SSR/browser identity before
+  treating generations as crossings. Matching first settlement performs no purge;
+  an initial mismatch and each later generation purge protected payload/useAsyncData
+  and query-error state exactly once while retaining `auth: 'none'`.
+- The pagination controller preserves a matching first-page seed across wait→live,
+  makes first-page subscription acquisition idempotent, and deletes the redundant
+  refresh. The SSR continuation cursor remains available to `loadMore`.
+- Added a controllable unsettled identity observer to the Nuxt harness. Focused
+  adapter/plugin/cache tests pass 17 tests; focused query/pagination tests pass 17.
+  The complete unit project passes 1,364 tests and the complete Nuxt project passes
+  115. Vue/root typechecks, Vue build, and root lint pass.
 
 ### T3.3 — Give SSR and public server calls one bounded transport owner
 
