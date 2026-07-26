@@ -227,7 +227,7 @@ describe('packed artifact path classes', () => {
       writeArtifact(
         packageRoot,
         'package.json',
-        '{"name":"better-convex-nuxt","version":"1.0.0"}\n',
+        '{"name":"better-convex-nuxt","version":"1.0.0","bin":{"fixture":"dist/cli.mjs"}}\n',
       )
       writeArtifact(packageRoot, 'dist/cli.mjs', '#!/usr/bin/env node\n')
       chmodSync(join(packageRoot, 'package.json'), 0o644)
@@ -264,6 +264,9 @@ describe('packed artifact path classes', () => {
         expect.objectContaining({ path: 'dist/cli.mjs', mode: '755' }),
         expect.objectContaining({ path: 'package.json', mode: '644' }),
       ])
+      const failures: string[] = []
+      scanExtractedTarball('nuxt', second.packageDir, failures, secondManifest)
+      expect(failures).not.toContain('packed package bin["fixture"] target is not executable')
     } finally {
       process.umask(previousUmask)
       if (firstScratch) rmSync(firstScratch, { recursive: true, force: true })
