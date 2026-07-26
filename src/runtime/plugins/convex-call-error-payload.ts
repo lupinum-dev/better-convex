@@ -22,12 +22,6 @@ export default definePayloadPlugin(() => {
 
   definePayloadReviver('ConvexCallError', (value) => {
     if (!isSerializedConvexCallError(value)) return
-    return new ConvexCallError({
-      kind: value.kind,
-      message: value.message,
-      code: value.code,
-      status: value.status,
-      data: value.data,
-    })
+    return new ConvexCallError(value)
   })
 })

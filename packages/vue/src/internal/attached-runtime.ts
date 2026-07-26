@@ -28,15 +28,7 @@ function projectIdentitySnapshot(snapshot: ClientIdentitySnapshot): ClientIdenti
     settled: snapshot.settled,
     identityKey: snapshot.identityKey,
     identityGeneration: snapshot.identityGeneration,
-    error: snapshot.error
-      ? new ConvexCallError({
-          kind: snapshot.error.kind,
-          message: snapshot.error.message,
-          code: snapshot.error.code,
-          status: snapshot.error.status,
-          data: snapshot.error.data,
-        })
-      : null,
+    error: snapshot.error ? new ConvexCallError(snapshot.error.toJSON()) : null,
   })
 }
 

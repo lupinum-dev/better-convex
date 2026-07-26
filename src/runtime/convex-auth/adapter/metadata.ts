@@ -186,8 +186,7 @@ export function assertAuthSchemaMatchesMetadata(
         if (!exportedIndex || !sameStrings(index.fields, exportedIndex.fields)) mismatch()
       }
     }
-  } catch (error) {
-    if (error instanceof Error && error.message === 'AUTH_SCHEMA_METADATA_MISMATCH') throw error
+  } catch {
     mismatch()
   }
 }

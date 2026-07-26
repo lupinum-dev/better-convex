@@ -13,7 +13,9 @@ const MAX_STRING_LENGTH = 512
 
 function sanitizeString(value: string): string {
   let escaped = ''
-  for (const character of value) {
+  const bounded =
+    value.length > MAX_STRING_LENGTH * 2 ? value.slice(0, MAX_STRING_LENGTH * 2) : value
+  for (const character of bounded) {
     const codeUnit = character.charCodeAt(0)
     escaped +=
       codeUnit <= 31 || (codeUnit >= 127 && codeUnit <= 159)

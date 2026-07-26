@@ -127,6 +127,9 @@ export function createAccountIdTokenProtector(options: IdTokenProtectionOptions)
       throw new Error('AUTH_OAUTH_TOKEN_ENCRYPTION_REQUIRED')
     }
     const secretConfig = idTokenSecretConfig(options)
+    if (direction === 'reveal' && !value.startsWith(encryptedEnvelopePrefix)) {
+      throw new Error('AUTH_ID_TOKEN_AT_REST_UNENCRYPTED')
+    }
     let transformed: string
     try {
       if (direction === 'protect') {
@@ -137,18 +140,11 @@ export function createAccountIdTokenProtector(options: IdTokenProtectionOptions)
           transformed = await symmetricEncrypt({ data: value, key: secretConfig })
         }
       } else {
-        if (!value.startsWith(encryptedEnvelopePrefix)) {
-          throw new Error('AUTH_ID_TOKEN_AT_REST_UNENCRYPTED')
-        }
         transformed = await symmetricDecrypt({ data: value, key: secretConfig })
       }
-    } catch (error) {
-      if (error instanceof Error && error.message === 'AUTH_ID_TOKEN_AT_REST_UNENCRYPTED') {
-        throw error
-      }
+    } catch {
       // The caught crypto error may contain credential/configuration detail;
       // this storage boundary deliberately exposes only the fixed safe code.
-      // eslint-disable-next-line preserve-caught-error
       throw new Error(
         direction === 'protect'
           ? 'AUTH_ID_TOKEN_ENCRYPTION_FAILED'
