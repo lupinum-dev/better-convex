@@ -1,6 +1,7 @@
 import type { AuthTokenFetcher, ConvexClient } from 'convex/browser'
 
 import { ConvexCallError } from '../errors'
+import { createIdentityChangedError } from './identity-changed-error'
 import type { ClientIdentityPort, ClientIdentitySnapshot } from './identity-port'
 
 export type BrowserAuthStatus = 'loading' | 'authenticated' | 'anonymous' | 'error'
@@ -129,13 +130,7 @@ export function createAuthAdapterIdentityPort(
 
   const waitForGenerationSettlement = (generation: number): Promise<void> => {
     if (snapshot.identityGeneration !== generation) {
-      return Promise.reject(
-        new ConvexCallError({
-          kind: 'authentication',
-          code: 'IDENTITY_CHANGED',
-          message: 'Identity changed while refreshing authentication',
-        }),
-      )
+      return Promise.reject(createIdentityChangedError('authentication refresh'))
     }
     if (snapshot.settled) {
       return snapshot.error ? Promise.reject(snapshot.error) : Promise.resolve()
@@ -144,13 +139,7 @@ export function createAuthAdapterIdentityPort(
       const waiter = {
         check() {
           if (snapshot.identityGeneration !== generation) {
-            waiter.cancel(
-              new ConvexCallError({
-                kind: 'authentication',
-                code: 'IDENTITY_CHANGED',
-                message: 'Identity changed while refreshing authentication',
-              }),
-            )
+            waiter.cancel(createIdentityChangedError('authentication refresh'))
             return
           }
           if (!snapshot.settled) return
@@ -203,11 +192,7 @@ export function createAuthAdapterIdentityPort(
     ) {
       return activeConfirmation.promise
     }
-    const superseded = new ConvexCallError({
-      kind: 'authentication',
-      code: 'IDENTITY_CHANGED',
-      message: 'Identity changed while authenticating',
-    })
+    const superseded = createIdentityChangedError('authentication')
     activeConfirmation?.cancel(superseded)
     const configuration = {}
     activeAuthConfiguration.set(client, configuration)
@@ -254,13 +239,7 @@ export function createAuthAdapterIdentityPort(
           client !== currentClient ||
           activeAuthConfiguration.get(client) !== configuration
         ) {
-          finish(
-            new ConvexCallError({
-              kind: 'authentication',
-              code: 'IDENTITY_CHANGED',
-              message: 'Identity changed while authenticating',
-            }),
-          )
+          finish(createIdentityChangedError('authentication'))
           return
         }
         if (!authenticated) {
@@ -304,11 +283,7 @@ export function createAuthAdapterIdentityPort(
       previous.sessionGeneration !== next.sessionGeneration
 
     if (crossedIdentity) {
-      const retired = new ConvexCallError({
-        kind: 'authentication',
-        code: 'IDENTITY_CHANGED',
-        message: 'Identity changed while authenticating',
-      })
+      const retired = createIdentityChangedError('authentication')
       activeConfirmation?.cancel(retired)
       identityGeneration += 1
       currentClient = null
@@ -397,7 +372,6 @@ export function createAuthAdapterIdentityPort(
       disposed = true
       const cancellation = new ConvexCallError({
         kind: 'authentication',
-        code: 'IDENTITY_CHANGED',
         message: 'Authentication runtime was disposed',
       })
       activeConfirmation?.cancel(cancellation)
