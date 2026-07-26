@@ -1956,13 +1956,30 @@ Phase 5 exit ledger note (2026-07-26):
 
 ### Source and focused validation
 
-- [ ] `pnpm run format:check`
-- [ ] `pnpm run lint`
-- [ ] `pnpm run typecheck`
-- [ ] `pnpm run check:boundaries`
-- [ ] `pnpm run test`
-- [ ] `pnpm run check:contracts`
-- [ ] Every focused regression added in Phases 1–4.
+- [x] `pnpm run format:check`
+- [x] `pnpm run lint`
+- [x] `pnpm run typecheck`
+- [x] `pnpm run check:boundaries`
+- [x] `pnpm run test`
+- [x] `pnpm run check:contracts`
+- [x] Every focused regression added in Phases 1–4.
+
+Source-validation ledger note (2026-07-26):
+
+- A canonical `CI=true pnpm install` passed the 1,280-entry supply-chain policy and
+  restored the exact lockfile graph. Format checked 1,139 files; lint, all module/server/
+  fixture typechecks, and all 14 architecture boundaries pass.
+- The first sandboxed full test run correctly exposed one stale beta.0 candidate-set
+  fixture after REL-05; it now uses the reviewed floor and its 53 focused tests pass.
+  Local-listener, Chromium, and pnpm-store denials were rerun outside the sandbox.
+- The canonical pool then exposed serial candidate-runner probes exceeding Vitest's
+  unchanged five-second budget only under full contention. The same seven independent
+  commands now run concurrently with identical assertions; the focused case fell from
+  about two seconds to 0.6 seconds. The final canonical pool passes 1,996 tests in 169
+  files without increasing a timeout.
+- `pnpm run check:contracts` passes the old-runtime absence and single-owner checks,
+  source and packed builds, API docs, workspace dependency alignment, consumer/type
+  fixtures, auth-disabled graph, and the 151-file/nine-entry packed Nuxt export gate.
 
 ### Auth and security validation
 
