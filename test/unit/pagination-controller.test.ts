@@ -152,6 +152,30 @@ function makeHarness(options?: { live?: boolean }) {
 }
 
 describe('pagination controller', () => {
+  it('settles the first-page awaitable on a hydrated page, live value, error, or disposal', async () => {
+    const hydrated = makeHarness()
+    hydrated.state.setBoundaryFirstPage(page(['hydrated'], '', true))
+    await expect(hydrated.controller.firstPageSettled()).resolves.toBeUndefined()
+    hydrated.controller.dispose()
+
+    const live = makeHarness()
+    const liveSettlement = live.controller.firstPageSettled()
+    live.state.subscriptions[0]?.value(page(['live'], '', true))
+    await expect(liveSettlement).resolves.toBeUndefined()
+    live.controller.dispose()
+
+    const failed = makeHarness()
+    const failedSettlement = failed.controller.firstPageSettled()
+    failed.state.subscriptions[0]?.error(new Error('failed'))
+    await expect(failedSettlement).resolves.toBeUndefined()
+    failed.controller.dispose()
+
+    const disposed = makeHarness()
+    const disposedSettlement = disposed.controller.firstPageSettled()
+    disposed.controller.dispose()
+    await expect(disposedSettlement).resolves.toBeUndefined()
+  })
+
   it('owns initial, argument, identity, idle, and disposal subscription transitions', async () => {
     const { controller, state } = makeHarness()
 

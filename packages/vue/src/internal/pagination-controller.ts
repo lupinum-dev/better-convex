@@ -60,6 +60,7 @@ export interface PaginationController<Item, TransformedItem> {
     options: PaginationPageOptions,
     operation: PaginationOperationContext,
   ): Promise<BetterPaginationResult<Item> | null>
+  firstPageSettled(): Promise<void>
   loadMore(numItems: number): void
   refresh(): Promise<void>
   reset(): Promise<void>
@@ -91,6 +92,19 @@ interface PendingPageSplit<Item> {
   ]
 }
 
+interface FirstPageSettlement {
+  promise: Promise<void>
+  resolve(): void
+}
+
+function deferredSettlement(): FirstPageSettlement {
+  let resolve!: () => void
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 export function createPaginationController<Item, TransformedItem = Item>(
   input: PaginationControllerInput<Item, TransformedItem>,
 ): PaginationController<Item, TransformedItem> {
@@ -103,6 +117,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
   const lastSettledResults = shallowRef<TransformedItem[]>([])
   const lastSettledArgsHash = shallowRef<string | null>(null)
   let firstPageUnsubscribe: (() => void) | null = null
+  let pendingFirstPageSettlement: FirstPageSettlement | null = null
   let stopSettledWatch: (() => void) | null = null
   const pendingSplits: PendingPageSplit<Item>[] = []
   let disposed = false
@@ -128,6 +143,23 @@ export function createPaginationController<Item, TransformedItem = Item>(
     firstPageWithheld.value
       ? null
       : (visiblePage(firstPageRealtime.value) ?? visiblePage(input.getBoundaryFirstPage()))
+
+  function settleFirstPageIfTerminal(): void {
+    if (
+      !pendingFirstPageSettlement ||
+      (!disposed && !input.isIdle() && firstPage() === null && input.getBoundaryError() === null)
+    )
+      return
+    pendingFirstPageSettlement.resolve()
+    pendingFirstPageSettlement = null
+  }
+
+  function firstPageSettled(): Promise<void> {
+    if (disposed || input.isIdle() || firstPage() !== null || input.getBoundaryError() !== null)
+      return Promise.resolve()
+    pendingFirstPageSettlement ??= deferredSettlement()
+    return pendingFirstPageSettlement.promise
+  }
 
   async function fetchForOperation(
     options: PaginationPageOptions,
@@ -164,6 +196,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
     for (const part of split.parts) part.page.unsubscribe?.()
     removePendingSplit(split)
     input.setBoundaryError(normalizeConvexError(error), split.operation.boundaryKey)
+    if (split.target === 'first') settleFirstPageIfTerminal()
   }
 
   function finishPendingSplit(split: PendingPageSplit<Item>): void {
@@ -206,6 +239,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
       secondResult.pageStatus === 'SplitRequired'
     )
       beginPageSplit(promoted[1].paginationOpts, secondResult)
+    if (split.target === 'first') settleFirstPageIfTerminal()
   }
 
   function subscribeSplitPart(split: PendingPageSplit<Item>, partIndex: 0 | 1): void {
@@ -272,6 +306,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
           ),
           input.getBoundaryKey(),
         )
+        if (target === 'first') settleFirstPageIfTerminal()
       }
       return
     }
@@ -284,6 +319,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
           ),
           input.getBoundaryKey(),
         )
+        if (target === 'first') settleFirstPageIfTerminal()
       }
       return
     }
@@ -350,6 +386,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
     firstPageRealtime.value = result
     input.setBoundaryError(null, operation.boundaryKey)
     if (result.pageStatus === 'SplitRecommended') beginPageSplit('first', result)
+    settleFirstPageIfTerminal()
   }
 
   function acceptPageResult(
@@ -395,6 +432,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
       (error) => {
         if (!fence.isCurrent(operation)) return
         input.setBoundaryError(normalizeConvexError(error), operation.boundaryKey)
+        settleFirstPageIfTerminal()
       },
     )
   }
@@ -741,6 +779,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
     teardownSubscriptions()
     stopSettledWatch?.()
     stopSettledWatch = null
+    settleFirstPageIfTerminal()
   }
 
   return {
@@ -757,6 +796,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
     captureOperation: fence.capture,
     isOperationCurrent: fence.isCurrent,
     fetchForOperation,
+    firstPageSettled,
     loadMore,
     refresh,
     reset,

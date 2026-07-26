@@ -153,7 +153,12 @@ export function createConvexPaginatedQueryState<
     })
     return {
       resultData: result,
-      resolvePromise: resolveImmediately ? Promise.resolve() : result.refresh(),
+      resolvePromise:
+        resolveImmediately || hydrated !== undefined
+          ? Promise.resolve()
+          : subscribe
+            ? result.firstPageSettled()
+            : result.refresh(),
     }
   }
 

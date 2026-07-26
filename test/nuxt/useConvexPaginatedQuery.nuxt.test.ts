@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useState } from '#imports'
 
 import { toAuthenticatedIdentity, type AuthIdentity } from '../../src/runtime/auth/auth-identity'
-import { createConvexPaginatedQueryState } from '../../src/runtime/composables/useConvexPaginatedQuery'
+import {
+  createConvexPaginatedQueryState,
+  useConvexPaginatedQuery,
+} from '../../src/runtime/composables/useConvexPaginatedQuery'
 import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
 import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 import { makeMockOwner } from '../helpers/mock-client-owner'
@@ -23,6 +26,58 @@ function page<T>(items: T[], isDone: boolean, cursor: string | null): Pagination
 // acquisition through composable-owned listeners, and clears its pages on an
 // identity change.
 describe('useConvexPaginatedQuery controller', () => {
+  it('awaits the first live page without issuing a duplicate one-shot query', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:first-page-settlement')
+    const { result, wrapper } = await captureInNuxt(
+      () => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 }),
+      { owner: makeMockOwner(primary) },
+    )
+    let settled = false
+    const completion = result.then((value) => {
+      settled = true
+      return value
+    })
+
+    await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
+    expect(primary.calls.query).toHaveLength(0)
+    expect(settled).toBe(false)
+
+    primary.emitQueryResultWhere(() => true, page(['first'], false, 'next'))
+    const queryResult = await completion
+
+    expect(queryResult.results.value).toEqual(['first'])
+    expect(primary.calls.query).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('resolves an awaited hydrated first page without another query', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:hydrated-first-page-settlement')
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'none',
+      'anonymous',
+    )
+    const { result, wrapper } = await captureInNuxt(
+      () => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 }),
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: page(['hydrated'], false, 'next') },
+      },
+    )
+    const queryResult = await result
+
+    expect(queryResult.results.value).toEqual(['hydrated'])
+    expect(primary.calls.query).toHaveLength(0)
+    expect(primary.calls.onUpdate).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('retains a matching SSR first page through settlement and subscribes exactly once', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:ssr-settlement')

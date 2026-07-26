@@ -1026,7 +1026,7 @@ Nuxt `NUXT-09`, independently source-confirmed.
       caller search confirms its value and settlement promise are unread.
 - [x] Give overlapping one-shot query refreshes a local monotonic sequence so an older
       completion cannot overwrite the newer result.
-- [ ] Add a first-page settlement promise to the pagination controller instead of
+- [x] Add a first-page settlement promise to the pagination controller instead of
       making Nuxt issue/await a duplicate query.
 - [ ] Reconcile paginated SSR error hydration using the same overlay/clear contract as
       regular queries.
@@ -1035,7 +1035,7 @@ Acceptance criteria:
 
 - [ ] Mounting N queries does not add N unused identity listeners.
 - [x] If two refreshes resolve in reverse order, only the later refresh commits.
-- [ ] A hydrated page resolves immediately; a live first page resolves on its first
+- [x] A hydrated page resolves immediately; a live first page resolves on its first
       value/error without an extra HTTP query.
 - [ ] Paginated SSR errors survive hydration and clear on the first live value/error.
 - [ ] Long-lived subscription callbacks still use the existing generation fence.
@@ -1053,6 +1053,14 @@ Implementation ledger (active, 2026-07-26):
   proves the older value cannot overwrite the newer value or end its loading state;
   the long-lived subscription operation is not invalidated. The focused Vue runtime
   and controller suites pass 22 tests and the Vue package typecheck passes.
+- The pagination controller now owns a lazy first-page settlement promise that resolves
+  for hydrated data, the first complete live value, a first-page error, idle state, or
+  disposal. Nuxt awaits it for subscribed queries and retains manual `refresh()` only
+  as the sole transport for `subscribe: false`; the unconditional duplicate one-shot
+  query is deleted. Public Nuxt tests prove both hydrated and non-hydrated awaited
+  calls perform zero client `query()` calls, while the live path stays blocked until
+  its subscription settles. Focused controller and Nuxt pagination suites pass 23
+  tests, and Vue/root typechecks pass.
 
 Phase 3 exit gate:
 

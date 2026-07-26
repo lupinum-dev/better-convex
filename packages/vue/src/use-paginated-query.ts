@@ -199,6 +199,7 @@ export function useConvexPaginatedQuery<
     hasNextPage: controller.hasNextPage,
     loadMore: controller.loadMore,
     error: controller.error,
+    firstPageSettled: controller.firstPageSettled,
     refresh: controller.refresh,
     reset: controller.reset,
   }
