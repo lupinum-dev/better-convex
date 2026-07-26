@@ -12,7 +12,7 @@ export interface QueryIsolationTag {
 export interface QueryOperationContext extends QueryIsolationTag {
   argsHash: string
   boundaryKey: string
-  operationId: number
+  operationRevision: number
 }
 
 export interface QuerySubscriptionClient {
@@ -28,7 +28,6 @@ export interface QueryControllerBoundary<RawT> {
   hasData(): boolean
   readData(): RawT
   writeData(value: RawT): void
-  clearAsyncError(): void
   setError(error: ConvexCallError | null, boundaryKey: string): void
   clearData(): void
 }
@@ -50,7 +49,6 @@ export interface CreateQueryControllerInput<RawT, DataT> {
   subscribe: boolean
   keepPreviousData: boolean
   transform?: (value: RawT) => DataT
-  initialData?: RawT | (() => RawT | undefined)
   getArgs(): Record<string, unknown> | 'skip'
   getArgsHash(): string
   getBoundaryKey(): string
@@ -70,7 +68,6 @@ export interface QueryController<RawT, DataT> {
   teardownSubscription(): void
   firstValue(): Promise<void> | null
   hasData(): boolean
-  defaultValue(): RawT | null
   transformedData(): DataT | null
   isStale(input: { idle: boolean; pending: boolean }): boolean
   handleIdentityBoundary(input: {
@@ -122,7 +119,6 @@ export function createQueryController<RawT, DataT = RawT>(
   const noSettledValue = Symbol('no-settled-query-value')
   const lastSettledRaw = shallowRef<RawT | typeof noSettledValue>(noSettledValue)
   const lastSettledArgsHash = shallowRef<string | null>(null)
-  const lastSettledTag = shallowRef<QueryIsolationTag | null>(null)
 
   let operationRevision = 0
   let unsubscribe: (() => void) | null = null
@@ -135,7 +131,7 @@ export function createQueryController<RawT, DataT = RawT>(
       ...input.getIsolationTag(),
       argsHash: input.getArgsHash(),
       boundaryKey: input.getBoundaryKey(),
-      operationId: operationRevision,
+      operationRevision,
     }
   }
 
@@ -146,7 +142,7 @@ export function createQueryController<RawT, DataT = RawT>(
   function isOperationCurrent(operation: QueryOperationContext): boolean {
     return (
       !disposed &&
-      operation.operationId === operationRevision &&
+      operation.operationRevision === operationRevision &&
       operation.argsHash === input.getArgsHash() &&
       operation.boundaryKey === input.getBoundaryKey() &&
       sameTag(operation, input.getIsolationTag())
@@ -156,7 +152,6 @@ export function createQueryController<RawT, DataT = RawT>(
   function commitSettled(value: RawT, operation?: QueryOperationContext): void {
     lastSettledRaw.value = value
     lastSettledArgsHash.value = operation?.argsHash ?? input.getArgsHash()
-    lastSettledTag.value = operation ?? input.getIsolationTag()
   }
 
   function teardownSubscription(): void {
@@ -227,7 +222,6 @@ export function createQueryController<RawT, DataT = RawT>(
   function resetSettled(): void {
     lastSettledRaw.value = noSettledValue
     lastSettledArgsHash.value = null
-    lastSettledTag.value = null
   }
 
   function handleIdentityBoundary(boundary: {
@@ -241,7 +235,6 @@ export function createQueryController<RawT, DataT = RawT>(
     input.boundary.setError(null, boundary.previousBoundaryKey)
     resetSettled()
     input.boundary.clearData()
-    input.boundary.clearAsyncError()
   }
 
   function handleExecutionBoundary(boundary: {
@@ -264,29 +257,12 @@ export function createQueryController<RawT, DataT = RawT>(
     if (boundary.nextIdle) {
       resetSettled()
       input.boundary.clearData()
-      input.boundary.clearAsyncError()
       return
     }
     if (!input.keepPreviousData && boundary.nextBoundaryKey !== boundary.previousBoundaryKey) {
       input.boundary.clearData()
     }
     if (boundary.nextLive) setupSubscription()
-  }
-
-  function defaultValue(): RawT | null {
-    if (
-      input.keepPreviousData &&
-      lastSettledRaw.value !== noSettledValue &&
-      lastSettledTag.value &&
-      sameTag(lastSettledTag.value, input.getIsolationTag())
-    ) {
-      return lastSettledRaw.value
-    }
-    const initial =
-      typeof input.initialData === 'function'
-        ? (input.initialData as () => RawT | undefined)()
-        : input.initialData
-    return initial === undefined ? null : initial
   }
 
   function transformedData(): DataT | null {
@@ -331,7 +307,6 @@ export function createQueryController<RawT, DataT = RawT>(
     teardownSubscription,
     firstValue: () => pendingFirstValue?.promise ?? null,
     hasData: input.boundary.hasData,
-    defaultValue,
     transformedData,
     isStale,
     handleIdentityBoundary,

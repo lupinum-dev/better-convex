@@ -16,7 +16,6 @@ interface Value {
 function makeHarness(options?: {
   keepPreviousData?: boolean
   transform?: (value: Value) => string
-  initialData?: Value
 }) {
   const query = mockFnRef<'query'>('notes:list')
   let args: Record<string, unknown> | 'skip' = { page: 1 }
@@ -29,7 +28,6 @@ function makeHarness(options?: {
   let data: Value | null = null
   let hasData = false
   let error: ConvexCallError | null = null
-  let asyncError: Error | null = null
   let active:
     | {
         value: (value: unknown) => void
@@ -59,7 +57,6 @@ function makeHarness(options?: {
     subscribe: true,
     keepPreviousData: options?.keepPreviousData ?? true,
     transform: options?.transform ?? ((value) => `${value.owner}:${value.count}`),
-    initialData: options?.initialData,
     getArgs: () => args,
     getArgsHash: () => argsHash,
     getBoundaryKey: () => boundaryKey,
@@ -74,9 +71,6 @@ function makeHarness(options?: {
       writeData: (value) => {
         data = value
         hasData = true
-      },
-      clearAsyncError: () => {
-        asyncError = null
       },
       setError: (value) => {
         error = value
@@ -98,12 +92,6 @@ function makeHarness(options?: {
       },
       get error() {
         return error
-      },
-      set asyncError(value: Error | null) {
-        asyncError = value
-      },
-      get asyncError() {
-        return asyncError
       },
       get active() {
         return active
@@ -140,7 +128,6 @@ describe('query controller', () => {
     await expect(first).resolves.toBeUndefined()
     expect(state.data).toEqual({ owner: 'alice', count: 2 })
     expect(controller.transformedData()).toBe('alice:2')
-    expect(controller.defaultValue()).toEqual({ owner: 'alice', count: 2 })
   })
 
   it('rejects queued stale work and clears all protected state on identity change', () => {
@@ -148,7 +135,6 @@ describe('query controller', () => {
     controller.setupSubscription()
     const queuedAliceValue = state.active?.value
     state.active?.value({ owner: 'alice', count: 1 })
-    state.asyncError = new Error('wrapped')
 
     state.setIdentity({ identityKey: 'user:bob', identityGeneration: 2 }, 'notes:list:bob:page:1')
     controller.handleIdentityBoundary({
@@ -160,8 +146,6 @@ describe('query controller', () => {
 
     expect(state.data).toBeNull()
     expect(state.error).toBeNull()
-    expect(state.asyncError).toBeNull()
-    expect(controller.defaultValue()).toBeNull()
     expect(state.unsubscribes).toBe(1)
     expect(state.removed).toEqual(['notes:list:alice:page:1'])
   })
@@ -183,7 +167,6 @@ describe('query controller', () => {
     expect(state.unsubscribes).toBe(1)
     expect(state.active).toBeDefined()
     expect(controller.isStale({ idle: false, pending: true })).toBe(true)
-    expect(controller.defaultValue()).toEqual({ owner: 'alice', count: 1 })
   })
 
   it('clears the prior result on an args boundary when previous data is disabled', () => {
@@ -221,7 +204,6 @@ describe('query controller', () => {
     })
 
     expect(state.data).toBeNull()
-    expect(controller.defaultValue()).toBeNull()
     expect(state.unsubscribes).toBe(1)
   })
 
@@ -253,10 +235,7 @@ describe('query controller', () => {
   })
 
   it('does not subscribe when skipped and clear retires queued callbacks', () => {
-    const { controller, state } = makeHarness({
-      initialData: { owner: 'initial', count: 0 },
-    })
-    expect(controller.defaultValue()).toEqual({ owner: 'initial', count: 0 })
+    const { controller, state } = makeHarness()
 
     controller.setupSubscription()
     const queued = state.active?.value

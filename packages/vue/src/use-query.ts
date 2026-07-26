@@ -90,7 +90,6 @@ export function useConvexQuery<
     subscribe,
     keepPreviousData: options?.keepPreviousData ?? false,
     transform: options?.transform,
-    initialData: options?.initialData,
     getArgs: () =>
       isConvexArgsSkipped(currentArgs.value)
         ? 'skip'
@@ -113,7 +112,6 @@ export function useConvexQuery<
       writeData: (value) => {
         raw.value = value
       },
-      clearAsyncError: () => {},
       setError: (error) => {
         boundaryError.value = error
       },
