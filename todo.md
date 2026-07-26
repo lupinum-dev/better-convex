@@ -1788,22 +1788,49 @@ Interim ledger note (2026-07-26):
 
 Claude IDs: `NORM-01` through `NORM-05`.
 
-- [ ] Update `SECURITY.md` only where a production trace proves the current topology or
+- [x] Update `SECURITY.md` only where a production trace proves the current topology or
       package ownership is misstated; do not treat byte age alone as a defect.
-- [ ] Make `RELEASING.md` name the one canonical release command and exact staging
+- [x] Make `RELEASING.md` name the one canonical release command and exact staging
       guarantees.
-- [ ] Remove obsolete RFC “current source” links and deleted-path diagrams.
-- [ ] Remove the `plan.md` stable-publication dependency if that file remains
+- [x] Remove obsolete RFC “current source” links and deleted-path diagrams.
+- [x] Remove the `plan.md` stable-publication dependency if that file remains
       non-normative/0.7-specific.
-- [ ] Make the decision ledger match the actual removal of MCP RC context.
+- [x] Make the decision ledger match the actual removal of MCP RC context.
 
 Acceptance criteria:
 
-- [ ] Every operational security/release claim names an enforcing production path or
+- [x] Every operational security/release claim names an enforcing production path or
       executed gate.
-- [ ] No doc claims a staging, mutation, conformance, or artifact property that its
+- [x] No doc claims a staging, mutation, conformance, or artifact property that its
       cited evidence did not execute.
-- [ ] Historical intent remains clearly distinguished from current authority.
+- [x] Historical intent remains clearly distinguished from current authority.
+
+Ledger note (2026-07-26):
+
+- Traced the shipped MCP path through the application-owned Convex routes,
+  `createConvexMcpHandler`, the supplied verifier, explicit official-SDK registration,
+  and named internal functions. `SECURITY.md` now names that path, states that Nuxt owns
+  no MCP route, includes all three prerelease packages, and matches the current Better
+  Auth/OAuth Provider RC.
+- Reconciled protected staging with `scripts/run-auth-cloud-staging.mjs`: the Nuxt
+  fingerprint and auth responses prove candidate bytes, while the separate Convex MCP
+  resource proves its exact unauthenticated RFC 9728 challenge. Removed the unsupported
+  MCP fingerprint and Nuxt-ingress claims. `pnpm release:prepare` remains the sole
+  package-family preparation command.
+- Replaced the RFC's deleted topology/proxy/starter links and proposed tree with the
+  hard-cut repository shape; all 16 relative RFC links resolve. Decision `D-055` and the
+  admission ledger now record that the public locked-RC request-era callback context was
+  actually removed, without claiming the still-open final private RC reconciliation is
+  complete.
+- Removed the final stable-release delegation to historical `plan.md`. The RFC owns 1.0
+  eligibility, `SECURITY.md` owns human approval, and canonical ASVS JSON now owns its
+  invariant map instead of scraping the historical plan.
+- Deleted the retired `test:auth-mutations` command and nonexistent fixture from the
+  historical plan, security lab, canonical ASVS evidence, and generated report. The ASVS
+  generator/check passes for 253 controls and 33 auth invariants. Focused release,
+  security, package, and version-alignment suites pass 105 tests; the additional focused
+  security set passes 17 tests. Local security-governance identity validation correctly
+  remains unavailable without the protected owner, deputy, and delivery-test variables.
 
 ### T5.9 — Tie-break remaining high-value unverified candidates
 
