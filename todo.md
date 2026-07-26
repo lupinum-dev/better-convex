@@ -95,7 +95,7 @@ gate are complete.
 - [x] Claude `ERR-01` is handled with the broader public-error opacity correction:
       unknown causes are opaque everywhere, and structured error data remains intact
       without sending UDF frames through SSR.
-- [ ] Claude `ERR-03` is handled at the diagnostic boundary, where a sink is made
+- [x] Claude `ERR-03` is handled at the diagnostic boundary, where a sink is made
       non-authoritative once, rather than by wrapping every caller.
 - [ ] Claude `vue-controllers/VUE-02` (`SplitRequired`) is accepted as a fail-closed
       pagination correctness task.
@@ -901,20 +901,38 @@ Ledger note (2026-07-26):
 
 Sources: Claude `ERR-02` and contested `ERR-03`.
 
-- [ ] Delete callable-controller observability handlers with no production supplier.
-- [ ] Do not add a new application callback merely to report callback failures.
-- [ ] Isolate the remaining Nuxt DevTools sink inside `callable-devtools.ts` so no sink
+- [x] Delete callable-controller observability handlers with no production supplier.
+- [x] Do not add a new application callback merely to report callback failures.
+- [x] Isolate the remaining Nuxt DevTools sink inside `callable-devtools.ts` so no sink
       throw can alter dispatch or settlement.
-- [ ] Keep application `onSuccess`/`onError` exceptions unable to replace the remote
+- [x] Keep application `onSuccess`/`onError` exceptions unable to replace the remote
       outcome.
 
 Acceptance criteria:
 
-- [ ] A throwing `registerMutation` sink cannot prevent dispatch.
-- [ ] A throwing `updateMutation` sink cannot turn a committed success into rejection.
-- [ ] `.safe()` always resolves to its `CallResult`.
-- [ ] `execute()` rejects only with the call's normalized error.
-- [ ] Dead hook declarations and tests are removed rather than supplied speculatively.
+- [x] A throwing `registerMutation` sink cannot prevent dispatch.
+- [x] A throwing `updateMutation` sink cannot turn a committed success into rejection.
+- [x] `.safe()` always resolves to its `CallResult`.
+- [x] `execute()` rejects only with the call's normalized error.
+- [x] Dead hook declarations and tests are removed rather than supplied speculatively.
+
+Ledger note (2026-07-26):
+
+- Deleted all six callable-controller observability hooks (`logSuccess`, `logError`,
+  `logCallbackError`, `startEvent`, `finishEvent`, and `failEvent`) because no
+  production caller supplied them. Callback isolation now has no speculative reporting
+  path.
+- Kept the remaining diagnostics owner in Nuxt's `callable-devtools.ts`. Registration,
+  success projection, and failure projection are isolated there; a throwing sink is
+  treated as absent and no application callback or fallback logger was added.
+- Red proofs showed throwing registration prevented dispatch and throwing updates
+  replaced both committed and failed outcomes. Integration tests now prove execute and
+  `.safe()` behavior for registration failure, success-update failure, and
+  failure-update failure. Controller tests prove throwing `onSuccess` and `onError`
+  cannot replace the remote outcome.
+- Focused tests pass 29 tests. The complete unit project passes 1,373 and the complete
+  Nuxt project passes 117. Vue/root typechecks, Vue build, lint, format, architecture
+  boundaries, and built-output dead-hook searches pass.
 
 ### T3.6 — Keep one explicit query skip sentinel
 

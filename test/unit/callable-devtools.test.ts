@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { createDevtoolsSink } from '../../src/runtime/devtools/sink'
+import type { DevtoolsSink } from '../../src/runtime/devtools/sink'
 import { ConvexCallError, normalizeConvexError } from '../../src/runtime/errors'
 import { createCallableDevtoolsEvents } from '../../src/runtime/utils/callable-devtools'
 
@@ -89,5 +90,46 @@ describe('callable DevTools adapter', () => {
     const event = events.startEvent?.({}, 1)
     expect(event).toBeUndefined()
     expect(() => events.finishEvent?.(event, 'ok', 1)).not.toThrow()
+  })
+
+  it('is inert when sink registration throws', () => {
+    const sink = {
+      registerMutation() {
+        throw new Error('diagnostics unavailable')
+      },
+    } as unknown as DevtoolsSink
+    const events = createCallableDevtoolsEvents<Record<string, never>, string>({
+      operation: 'mutation',
+      fnName: 'notes:rename',
+      hasOptimisticUpdate: false,
+      getSink: () => sink,
+    })
+
+    expect(events.startEvent({}, 1)).toBeUndefined()
+  })
+
+  it('does not throw when success or failure projection throws', () => {
+    const sink = {
+      registerMutation: () => 'event-1',
+      updateMutation() {
+        throw new Error('diagnostics unavailable')
+      },
+    } as unknown as DevtoolsSink
+    const events = createCallableDevtoolsEvents<Record<string, never>, string>({
+      operation: 'action',
+      fnName: 'reports:generate',
+      hasOptimisticUpdate: false,
+      getSink: () => sink,
+    })
+    const event = events.startEvent({}, 1)
+
+    expect(() => events.finishEvent(event, 'committed', 1)).not.toThrow()
+    expect(() =>
+      events.failEvent(
+        event,
+        new ConvexCallError({ kind: 'server', message: 'remote failure' }),
+        1,
+      ),
+    ).not.toThrow()
   })
 })

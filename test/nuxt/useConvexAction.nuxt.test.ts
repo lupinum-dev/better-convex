@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { useConvexAction } from '../../src/runtime/composables/useConvexAction'
+import type { DevtoolsSink } from '../../src/runtime/devtools/sink'
+import { ConvexCallError } from '../../src/runtime/errors'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt, installIdentityPortHarness } from '../helpers/nuxt-runtime-harness'
 
@@ -49,5 +51,62 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     await expect(result()).resolves.toEqual({})
     expect(convex.calls.action.at(-1)?.args).toEqual({})
+  })
+
+  it('dispatches execute and safe calls when DevTools registration throws', async () => {
+    const convex = new MockConvexClient()
+    const action = mockFnRef<'action'>('testing:diagnostics-registration')
+    convex.setActionHandler('testing:diagnostics-registration', async () => 'committed')
+    const registerMutation = vi.fn(() => {
+      throw new Error('diagnostics unavailable')
+    })
+    const sink = { registerMutation } as unknown as DevtoolsSink
+    const { result, nuxtApp } = await captureInNuxt(() => useConvexAction(action), { convex })
+    const runtime = nuxtApp.$convexRuntime!
+    const previous = runtime.getDevtoolsSink
+    ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = () => sink
+
+    try {
+      await expect(result({} as never)).resolves.toBe('committed')
+      await expect(result.safe({} as never)).resolves.toEqual({ ok: true, data: 'committed' })
+      expect(convex.calls.action).toHaveLength(2)
+      expect(registerMutation).toHaveBeenCalledTimes(2)
+    } finally {
+      ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = previous
+    }
+  })
+
+  it('keeps committed and failed call outcomes when DevTools updates throw', async () => {
+    const convex = new MockConvexClient()
+    const action = mockFnRef<'action'>('testing:diagnostics-update')
+    const remoteFailure = new ConvexCallError({ kind: 'server', message: 'remote failure' })
+    convex.setActionHandler('testing:diagnostics-update', async (args) => {
+      if ((args as { fail?: boolean }).fail) throw remoteFailure
+      return 'committed'
+    })
+    const updateMutation = vi.fn(() => {
+      throw new Error('diagnostics unavailable')
+    })
+    const sink = {
+      registerMutation: () => 'event-1',
+      updateMutation,
+    } as unknown as DevtoolsSink
+    const { result, nuxtApp } = await captureInNuxt(() => useConvexAction(action), { convex })
+    const runtime = nuxtApp.$convexRuntime!
+    const previous = runtime.getDevtoolsSink
+    ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = () => sink
+
+    try {
+      await expect(result({} as never)).resolves.toBe('committed')
+      await expect(result.safe({} as never)).resolves.toEqual({ ok: true, data: 'committed' })
+      await expect(result({ fail: true } as never)).rejects.toBe(remoteFailure)
+      await expect(result.safe({ fail: true } as never)).resolves.toEqual({
+        ok: false,
+        error: remoteFailure,
+      })
+      expect(updateMutation).toHaveBeenCalledTimes(4)
+    } finally {
+      ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = previous
+    }
   })
 })

@@ -57,6 +57,38 @@ describe('callable lifecycle: throwing / .safe() equivalence ', () => {
       expect((thrown as ConvexCallError).toJSON()).toEqual(safe.error.toJSON())
     })
   }
+
+  it('keeps a committed result when onSuccess throws', async () => {
+    const onSuccess = vi.fn(() => {
+      throw new Error('application callback failed')
+    })
+    const lifecycle = makeLifecycle({
+      invoke: async () => 'committed',
+      onSuccess,
+    })
+
+    await expect(lifecycle.run({})).resolves.toBe('committed')
+    await expect(lifecycle.safe({})).resolves.toEqual({ ok: true, data: 'committed' })
+    expect(onSuccess).toHaveBeenCalledTimes(2)
+    expect(lifecycle.data.value).toBe('committed')
+    expect(lifecycle.error.value).toBeNull()
+  })
+
+  it('keeps the normalized remote failure when onError throws', async () => {
+    const remoteFailure = new ConvexCallError({ kind: 'server', message: 'remote failure' })
+    const onError = vi.fn(() => {
+      throw new Error('application callback failed')
+    })
+    const lifecycle = makeLifecycle({
+      invoke: () => Promise.reject(remoteFailure),
+      onError,
+    })
+
+    await expect(lifecycle.run({})).rejects.toBe(remoteFailure)
+    await expect(lifecycle.safe({})).resolves.toEqual({ ok: false, error: remoteFailure })
+    expect(onError).toHaveBeenCalledTimes(2)
+    expect(lifecycle.error.value).toBe(remoteFailure)
+  })
 })
 
 describe('callable lifecycle: identity-change stale rejection (architecture invariant)', () => {
@@ -65,8 +97,6 @@ describe('callable lifecycle: identity-change stale rejection (architecture inva
     let releaseInvoke!: (value: string) => void
     const onSuccess = vi.fn()
     const onError = vi.fn()
-    const logSuccess = vi.fn()
-    const logError = vi.fn()
     let notifyIdentityChange!: () => void
 
     const lifecycle = makeLifecycle(
@@ -77,8 +107,6 @@ describe('callable lifecycle: identity-change stale rejection (architecture inva
           }),
         onSuccess,
         onError,
-        logSuccess,
-        logError,
       },
       () => generation,
       (listener) => {
@@ -107,8 +135,6 @@ describe('callable lifecycle: identity-change stale rejection (architecture inva
     expect(isIdentityChangedError(rejection)).toBe(true)
     expect(onSuccess).not.toHaveBeenCalled()
     expect(onError).not.toHaveBeenCalled()
-    expect(logSuccess).not.toHaveBeenCalled()
-    expect(logError).not.toHaveBeenCalled()
 
     // State is masked, not showing the stale result or a spurious error.
     expect(lifecycle.status.value).toBe('idle')

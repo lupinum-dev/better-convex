@@ -14,12 +14,6 @@ export interface CallableControllerHandlers<Args, Result> {
   onStart?: (args: Args) => void
   onSuccess?: (result: Result, args: Args) => void
   onError?: (error: ConvexCallError, args: Args) => void
-  logSuccess?: (args: Args, durationMs: number) => void
-  logError?: (args: Args, durationMs: number, error: ConvexCallError) => void
-  logCallbackError?: (error: ConvexCallError) => void
-  startEvent?: (args: Args, startedAt: number) => unknown
-  finishEvent?: (event: unknown, result: Result, startedAt: number) => void
-  failEvent?: (event: unknown, error: ConvexCallError, startedAt: number) => void
 }
 
 export interface CallableControllerInput<Args, Result> {
@@ -62,8 +56,8 @@ export function createCallableController<Args, Result>(
   const runCallback = (callback: () => void) => {
     try {
       callback()
-    } catch (callbackError) {
-      handlers.logCallbackError?.(normalizeConvexError(callbackError))
+    } catch {
+      // Application callbacks cannot replace the remote outcome.
     }
   }
 
@@ -78,8 +72,6 @@ export function createCallableController<Args, Result>(
     const generation = getIdentityGeneration()
     const attempt = ++attemptRevision
     let requestId = callState.start()
-    const startedAt = Date.now()
-    const event = handlers.startEvent?.(args, startedAt)
 
     try {
       if (handlers.settle) await handlers.settle()
@@ -107,8 +99,6 @@ export function createCallableController<Args, Result>(
       const committed = callState.commitSuccess(requestId, result)
       if (committed) {
         if (handlers.onSuccess) runCallback(() => handlers.onSuccess!(result, args))
-        handlers.finishEvent?.(event, result, startedAt)
-        handlers.logSuccess?.(args, Date.now() - startedAt)
       }
       return result
     } catch (rawError) {
@@ -124,8 +114,6 @@ export function createCallableController<Args, Result>(
       const committed = callState.commitError(requestId, normalized)
       if (committed) {
         if (handlers.onError) runCallback(() => handlers.onError!(normalized, args))
-        handlers.failEvent?.(event, normalized, startedAt)
-        handlers.logError?.(args, Date.now() - startedAt, normalized)
       }
       throw normalized
     }
