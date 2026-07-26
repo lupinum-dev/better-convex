@@ -24,7 +24,7 @@ import { createLabOAuthVerifier, labOAuthMetadataOptions, labOAuthSubject } from
 const BEARER_BOUNDARY_HEADER = 'x-bcn-lab-bearer-boundary'
 const NOTES_DASHBOARD_RESOURCE_URI = 'ui://notes/dashboard.html'
 const NOTES_DASHBOARD_RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app'
-const NOTES_DASHBOARD_MAX_HTML_BYTES = 512 * 1024
+const NOTES_DASHBOARD_MAX_HTML_BYTES = 288 * 1024
 if (
   !NOTES_DASHBOARD_HTML.startsWith('<!doctype html>') ||
   new TextEncoder().encode(NOTES_DASHBOARD_HTML).byteLength > NOTES_DASHBOARD_MAX_HTML_BYTES

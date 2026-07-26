@@ -297,7 +297,7 @@ describe('vNext MCP Apps private topology probe', () => {
         },
       })
       expect(proof.appHtmlBytes).toBeGreaterThan(0)
-      expect(proof.appHtmlBytes).toBeLessThanOrEqual(512 * 1024)
+      expect(proof.appHtmlBytes).toBeLessThanOrEqual(288 * 1024)
       expect(proof.toolCalls).toEqual([
         {
           arguments: { limit: 5, query: 'alpha', workspaceId: 'workspace-a' },
@@ -317,6 +317,9 @@ describe('vNext MCP Apps private topology probe', () => {
       const appModules = build.appModules.join('\n')
       expect(appModules).toMatch(/node_modules\/\.pnpm\/@vue\+/u)
       expect(appModules).toContain('@modelcontextprotocol/ext-apps')
+      expect(build.appModules.filter((moduleId) => moduleId.includes('/zod/v4/locales/'))).toEqual([
+        expect.stringMatching(/\/zod\/v4\/locales\/en\.js$/u),
+      ])
       expect(build.appHtml).toContain(
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'",
       )

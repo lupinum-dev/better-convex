@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import vue from '@vitejs/plugin-vue'
 import { build, type Rollup } from 'vite'
 
+const emptyZodLocalesModule = '\0better-convex-empty-zod-locales'
+
 export interface NotesDashboardBuild {
   readonly appHtml: string
   readonly appModules: readonly string[]
@@ -55,7 +57,23 @@ async function bundleEntry(
     configFile: false,
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },
     logLevel: 'silent',
-    plugins: options.vue ? [vue()] : [],
+    plugins: [
+      {
+        enforce: 'pre',
+        load(id) {
+          return id === emptyZodLocalesModule ? 'export {}' : null
+        },
+        name: 'better-convex-empty-zod-locales',
+        resolveId(source, importer) {
+          return source === '../locales/index.js' &&
+            importer !== undefined &&
+            /[/\\]zod[/\\]v4[/\\]/u.test(importer)
+            ? emptyZodLocalesModule
+            : null
+        },
+      },
+      ...(options.vue ? [vue()] : []),
+    ],
     resolve: {
       alias: options.aliases,
       dedupe: ['vue'],
