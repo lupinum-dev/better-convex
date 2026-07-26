@@ -66,12 +66,13 @@ export function createBetterConvexBrowserRuntime(
   if (authPort) owner.attachIdentityPort(authPort)
 
   const primary = owner.getPrimary()?.client
-  const initial =
-    authPort && primary && input.auth?.snapshot().status !== 'loading'
-      ? authPort.initializePrimary(primary as ConvexClient).catch((cause) => {
-          authPort.failPrimary(authPort.snapshot().identityGeneration, cause)
-        })
-      : Promise.resolve()
+  let initial = Promise.resolve()
+  if (authPort && primary && input.auth?.snapshot().status !== 'loading') {
+    const initialGeneration = authPort.snapshot().identityGeneration
+    initial = authPort.initializePrimary(primary as ConvexClient).catch((cause) => {
+      authPort.failPrimary(initialGeneration, cause)
+    })
+  }
 
   owner.addDisposer(() => authPort?.dispose())
   const anonymousHandle: ConvexClientHandle = Object.freeze({

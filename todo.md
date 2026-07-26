@@ -64,7 +64,7 @@ gate are complete.
 - [ ] `NUXT-01`: preserve same-identity SSR hydration through initial auth settlement.
 - [ ] `REL-01`: replace the unsatisfiable fresh-runner release command with one ordered
       entry point.
-- [ ] `vue-lifecycle/VUE-01`: fence initial fail-closed reporting with the generation
+- [x] `vue-lifecycle/VUE-01`: fence initial fail-closed reporting with the generation
       captured before the attempt.
 - [ ] `BAA-01`: stop full-scanning indexed `in` predicates.
 - [ ] `AUTH-01`: make the allowed OAuth provider profile exact and reject unknown
@@ -247,19 +247,32 @@ Affected code:
 
 Change:
 
-- [ ] Capture the generation before `initializePrimary`.
-- [ ] Report failure with that captured generation, never with a snapshot read in
+- [x] Capture the generation before `initializePrimary`.
+- [x] Report failure with that captured generation, never with a snapshot read in
       `.catch`.
-- [ ] Evaluate deleting the special initial path only if the same tests prove the normal
+- [x] Evaluate deleting the special initial path only if the same tests prove the normal
       replacement path fully subsumes it; otherwise take the two-line fence.
 
 Acceptance criteria:
 
-- [ ] Initial identity A may be superseded by B while A confirmation is pending.
-- [ ] A's late rejection cannot fail-close or cancel B.
-- [ ] B can settle authenticated with `error: null`.
-- [ ] A genuine same-generation initial failure still fails closed.
-- [ ] Disposal still cancels an unconfirmed initial credential.
+- [x] Initial identity A may be superseded by B while A confirmation is pending.
+- [x] A's late rejection cannot fail-close or cancel B.
+- [x] B can settle authenticated with `error: null`.
+- [x] A genuine same-generation initial failure still fails closed.
+- [x] Disposal still cancels an unconfirmed initial credential.
+
+Ledger note (2026-07-26):
+
+- Retained the special startup path because it owns the initial readiness promise; the
+  normal replacement listener does not subsume that responsibility.
+- Captured generation `0` before `initializePrimary` and used only that value in the
+  rejection handler.
+- Red proof: `pnpm exec vitest run test/unit/browser-runtime.test.ts` failed because the
+  stale Alice rejection advanced Bob to anonymous generation `2`, and a genuine Alice
+  rejection double-advanced to generation `2`.
+- Green proof: the same command passes all 6 tests, including A→B supersession,
+  same-generation failure, and disposal; `pnpm --dir packages/vue typecheck` also
+  passes.
 
 ### T1.3 — Delete redundant `authEpoch` and value-identical transitions
 

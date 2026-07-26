@@ -120,6 +120,75 @@ describe('Better Convex browser runtime', () => {
     expect(adapter.listenerCount()).toBe(0)
   })
 
+  it('ignores a stale initial confirmation failure after the identity changes', async () => {
+    const adapter = new Adapter({
+      status: 'authenticated',
+      identityKey: 'alice',
+      sessionGeneration: 1,
+      error: null,
+    })
+    const clients: Client[] = []
+    const runtime = createBetterConvexBrowserRuntime({
+      auth: adapter,
+      clientFactory: () => {
+        const value = client()
+        clients.push(value)
+        return value
+      },
+    })
+    const ready = runtime.ready()
+
+    adapter.emit({
+      status: 'authenticated',
+      identityKey: 'bob',
+      sessionGeneration: 2,
+      error: null,
+    })
+    expect(clients).toHaveLength(2)
+    clients[1]!.confirm(true)
+
+    await ready
+    expect(runtime.identity.snapshot()).toMatchObject({
+      settled: true,
+      identityKey: 'user:bob',
+      identityGeneration: 1,
+      error: null,
+    })
+    expect(clients).toHaveLength(2)
+    await runtime.dispose()
+  })
+
+  it('still fails closed when the initial generation is rejected', async () => {
+    const adapter = new Adapter({
+      status: 'authenticated',
+      identityKey: 'alice',
+      sessionGeneration: 1,
+      error: null,
+    })
+    const clients: Client[] = []
+    const runtime = createBetterConvexBrowserRuntime({
+      auth: adapter,
+      clientFactory: () => {
+        const value = client()
+        clients.push(value)
+        return value
+      },
+    })
+    const ready = runtime.ready()
+
+    clients[0]!.confirm(false)
+
+    await ready
+    expect(runtime.identity.snapshot()).toMatchObject({
+      settled: true,
+      identityKey: 'anonymous',
+      identityGeneration: 1,
+    })
+    expect(runtime.identity.snapshot().error).not.toBeNull()
+    expect(clients).toHaveLength(2)
+    await runtime.dispose()
+  })
+
   it('waits through loading and replaces before publishing a later identity', async () => {
     const adapter = new Adapter({
       status: 'loading',
