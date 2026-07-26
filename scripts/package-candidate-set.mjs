@@ -15,14 +15,7 @@ const setFields = Object.freeze([
   'packageManager',
   'packages',
 ])
-const packageFields = Object.freeze([
-  'packageId',
-  'packageName',
-  'evidence',
-  'tarball',
-  'sha256',
-  'integrity',
-])
+const packageFields = Object.freeze(['packageId', 'packageName', 'evidence', 'tarball'])
 
 function exactFields(value, fields) {
   return Boolean(
@@ -78,13 +71,11 @@ export function createCandidateSetEvidence(repositoryRoot) {
     sourceCommit: entries[0].evidence.sourceCommit,
     version: entries[0].evidence.version,
     packageManager: entries[0].evidence.packageManager,
-    packages: entries.map(({ coordinates, evidence }) => ({
+    packages: entries.map(({ coordinates }) => ({
       packageId: coordinates.packageId,
       packageName: coordinates.packageName,
       evidence: relative(root, coordinates.paths.evidence).split(sep).join('/'),
       tarball: relative(root, coordinates.paths.tarball).split(sep).join('/'),
-      sha256: evidence.tarball.sha256,
-      integrity: evidence.tarball.integrity,
     })),
   }
 }

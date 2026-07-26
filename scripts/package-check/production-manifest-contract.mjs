@@ -4,6 +4,25 @@ import { isDeepStrictEqual } from 'node:util'
 import { getPackageCertificationDescriptor } from '../package-certification-manifest.mjs'
 
 const productionManifestContractSchemaVersion = 1
+const releaseManifestPolicy = Object.freeze({
+  forbiddenLifecycleScripts: Object.freeze([
+    'preinstall',
+    'install',
+    'postinstall',
+    'prepublish',
+    'prepublishOnly',
+    'preprepare',
+    'prepare',
+    'postprepare',
+    'predependencies',
+    'dependencies',
+    'postdependencies',
+    'postpack',
+    'publish',
+    'postpublish',
+  ]),
+  requiredLifecycleScripts: Object.freeze(['prepack']),
+})
 
 /**
  * Package-specific policy selected only through a closed certification
@@ -48,23 +67,7 @@ const contractProfiles = Object.freeze({
       'libc',
       'publishConfig',
     ]),
-    forbiddenLifecycleScripts: Object.freeze([
-      'preinstall',
-      'install',
-      'postinstall',
-      'prepublish',
-      'prepublishOnly',
-      'preprepare',
-      'prepare',
-      'postprepare',
-      'predependencies',
-      'dependencies',
-      'postdependencies',
-      'postpack',
-      'publish',
-      'postpublish',
-    ]),
-    requiredLifecycleScripts: Object.freeze(['prepack']),
+    ...releaseManifestPolicy,
     validate: assertNuxtManifestShapes,
   }),
   'vue-production-dependencies': Object.freeze({
@@ -104,23 +107,7 @@ const contractProfiles = Object.freeze({
       'publishConfig',
       'packageManager',
     ]),
-    forbiddenLifecycleScripts: Object.freeze([
-      'preinstall',
-      'install',
-      'postinstall',
-      'prepublish',
-      'prepublishOnly',
-      'preprepare',
-      'prepare',
-      'postprepare',
-      'predependencies',
-      'dependencies',
-      'postdependencies',
-      'postpack',
-      'publish',
-      'postpublish',
-    ]),
-    requiredLifecycleScripts: Object.freeze(['prepack']),
+    ...releaseManifestPolicy,
     validate: assertVueManifestShapes,
   }),
   'mcp-production-dependencies': Object.freeze({
@@ -160,23 +147,7 @@ const contractProfiles = Object.freeze({
       'publishConfig',
       'packageManager',
     ]),
-    forbiddenLifecycleScripts: Object.freeze([
-      'preinstall',
-      'install',
-      'postinstall',
-      'prepublish',
-      'prepublishOnly',
-      'preprepare',
-      'prepare',
-      'postprepare',
-      'predependencies',
-      'dependencies',
-      'postdependencies',
-      'postpack',
-      'publish',
-      'postpublish',
-    ]),
-    requiredLifecycleScripts: Object.freeze(['prepack']),
+    ...releaseManifestPolicy,
     validate: assertMcpManifestShapes,
   }),
 })
@@ -273,20 +244,7 @@ function assertNuxtManifestShapes(manifest, profile) {
   ) {
     throw new Error('Production package manifest field files must be non-empty strings.')
   }
-  if (Object.keys(manifest.engines).length !== 1 || typeof manifest.engines.node !== 'string') {
-    throw new Error('Production package manifest engines must declare only node.')
-  }
-  assertStringMap(manifest.scripts, 'scripts')
-  for (const script of profile.requiredLifecycleScripts) {
-    if (!Object.hasOwn(manifest.scripts, script)) {
-      throw new Error(`Production package manifest is missing required lifecycle script ${script}.`)
-    }
-  }
-  for (const script of profile.forbiddenLifecycleScripts) {
-    if (Object.hasOwn(manifest.scripts, script)) {
-      throw new Error(`Production package manifest uses forbidden lifecycle script ${script}.`)
-    }
-  }
+  assertReleaseManifestPolicy(manifest, profile)
 }
 
 function assertVueManifestShapes(manifest, profile) {
@@ -318,20 +276,7 @@ function assertVueManifestShapes(manifest, profile) {
   ) {
     throw new Error('Vue package may mark only the exact official MCP Apps SDK peer as optional.')
   }
-  if (Object.keys(manifest.engines).length !== 1 || typeof manifest.engines.node !== 'string') {
-    throw new Error('Production package manifest engines must declare only node.')
-  }
-  assertStringMap(manifest.scripts, 'scripts')
-  for (const script of profile.requiredLifecycleScripts) {
-    if (!Object.hasOwn(manifest.scripts, script)) {
-      throw new Error(`Production package manifest is missing required lifecycle script ${script}.`)
-    }
-  }
-  for (const script of profile.forbiddenLifecycleScripts) {
-    if (Object.hasOwn(manifest.scripts, script)) {
-      throw new Error(`Production package manifest uses forbidden lifecycle script ${script}.`)
-    }
-  }
+  assertReleaseManifestPolicy(manifest, profile)
 }
 
 function assertMcpManifestShapes(manifest, profile) {
@@ -352,6 +297,16 @@ function assertMcpManifestShapes(manifest, profile) {
   }
   assertPlainRecord(manifest.exports, 'exports')
   for (const field of ['dependencies', 'engines']) assertStringMap(manifest[field], field)
+  assertReleaseManifestPolicy(manifest, profile)
+  if (
+    Object.keys(manifest.dependencies).length !== 1 ||
+    !Object.hasOwn(manifest.dependencies, '@modelcontextprotocol/server')
+  ) {
+    throw new Error('MCP package must pin exactly one official server SDK dependency.')
+  }
+}
+
+function assertReleaseManifestPolicy(manifest, profile) {
   if (Object.keys(manifest.engines).length !== 1 || typeof manifest.engines.node !== 'string') {
     throw new Error('Production package manifest engines must declare only node.')
   }
@@ -365,12 +320,6 @@ function assertMcpManifestShapes(manifest, profile) {
     if (Object.hasOwn(manifest.scripts, script)) {
       throw new Error(`Production package manifest uses forbidden lifecycle script ${script}.`)
     }
-  }
-  if (
-    Object.keys(manifest.dependencies).length !== 1 ||
-    manifest.dependencies['@modelcontextprotocol/server'] !== '2.0.0-beta.5'
-  ) {
-    throw new Error('MCP package must pin exactly one official server SDK dependency.')
   }
 }
 

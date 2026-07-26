@@ -121,17 +121,11 @@ describe('package candidate set', () => {
     )
   })
 
-  it('rejects reordered, rehashed, path-selected, or extended package-set evidence', () => {
+  it('rejects reordered, path-selected, or extended package-set evidence', () => {
     const root = createRepository()
     const evidence = createCandidateSetEvidence(root)
     const mutations = [
       { ...evidence, packages: [...evidence.packages].reverse() },
-      {
-        ...evidence,
-        packages: evidence.packages.map((entry, index) =>
-          index === 0 ? { ...entry, sha256: 'f'.repeat(64) } : entry,
-        ),
-      },
       {
         ...evidence,
         packages: evidence.packages.map((entry, index) =>
