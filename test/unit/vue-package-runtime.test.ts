@@ -383,8 +383,8 @@ describe('better-convex-vue package runtime', () => {
     })
     expect(query.results.value).toEqual([{ id: 'a' }])
     query.loadMore(1)
-    expect(host.subscriptions).toHaveLength(2)
-    host.subscriptions[1]!.emit({
+    expect(host.subscriptions).toHaveLength(3)
+    host.subscriptions[2]!.emit({
       page: [{ id: 'b' }],
       continueCursor: null,
       isDone: true,
@@ -397,8 +397,9 @@ describe('better-convex-vue package runtime', () => {
       identityGeneration: 2,
     })
     expect(query.results.value).toEqual([])
-    expect(host.subscriptions.slice(0, 2).every((subscription) => !subscription.active)).toBe(true)
-    expect(host.subscriptions).toHaveLength(3)
+    expect(host.subscriptions.slice(0, 3).every((subscription) => !subscription.active)).toBe(true)
+    expect(host.subscriptions).toHaveLength(4)
+    expect(host.subscriptions[3]!.active).toBe(true)
     scope.stop()
   })
 

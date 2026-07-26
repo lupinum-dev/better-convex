@@ -10,7 +10,7 @@ import { computed, toValue, type ComputedRef, type MaybeRefOrGetter, type Ref } 
 import { useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
 import { identityToken } from '../auth/auth-identity'
-import { normalizeConvexError, type ConvexCallError } from '../errors'
+import { ConvexCallError, normalizeConvexError } from '../errors'
 import { readConvexRuntimeContext } from '../runtime-context'
 import type { ConvexQueryRest } from '../utils/args-tuple'
 import { useConvexIdentityState } from '../utils/auth-identity-state'
@@ -26,7 +26,10 @@ import { createQueryExecutionGate } from '../utils/query-execution-gate'
 import { createConvexQueryAuthContext } from '../utils/query-foundation'
 import { normalizeConvexReactiveArgs } from '../utils/reactive-args'
 import { getConvexRuntimeConfig } from '../utils/runtime-config'
-import { computeSsrPaginationStatus } from '../utils/ssr-pagination-state'
+import {
+  computeSsrPaginationStatus,
+  isIncompletePaginationPage,
+} from '../utils/ssr-pagination-state'
 
 export type ConvexPaginatedQuerySkip = 'skip'
 export type ConvexPaginatedQueryArgs<Args> = Args | ConvexPaginatedQuerySkip
@@ -214,6 +217,13 @@ export function createConvexPaginatedQueryState<
           token,
           event?.web?.request?.signal,
         )
+        if (isIncompletePaginationPage(value)) {
+          throw new ConvexCallError({
+            kind: 'unknown',
+            code: 'PAGINATION_SPLIT_REQUIRED',
+            message: 'Convex pagination page requires a bounded live split',
+          })
+        }
         const { [key.value]: _removed, ...rest } = errors.value
         errors.value = rest
         return value

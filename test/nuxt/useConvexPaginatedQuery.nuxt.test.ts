@@ -77,7 +77,11 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.results.value).toEqual(['ssr-a', 'ssr-b'])
     expect(primary.calls.onUpdate).toHaveLength(1)
     result.loadMore(2)
+    expect(primary.calls.onUpdate).toHaveLength(3)
     expect(primary.calls.onUpdate[1]?.args).toMatchObject({
+      paginationOpts: { cursor: null, endCursor: 'ssr-cursor' },
+    })
+    expect(primary.calls.onUpdate[2]?.args).toMatchObject({
       paginationOpts: { cursor: 'ssr-cursor' },
     })
     wrapper.unmount()
@@ -224,10 +228,11 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.q.results.value).toEqual(['a', 'b'])
     expect(result.q.hasNextPage.value).toBe(true)
 
-    // Load the next page: a second listener is acquired for the continue cursor.
+    // Load the next page: the first page is rebound to a fixed end cursor and
+    // one listener is acquired for the next range.
     result.q.loadMore(2)
     await flush()
-    expect(primary.calls.onUpdate.length).toBe(2)
+    expect(primary.calls.onUpdate.length).toBe(3)
 
     primary.emitQueryResultWhere(
       (e) =>
@@ -336,8 +341,11 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.hasNextPage.value).toBe(true)
     result.loadMore(2)
     await flush()
-    expect(primary.calls.onUpdate).toHaveLength(2)
+    expect(primary.calls.onUpdate).toHaveLength(3)
     expect(primary.calls.onUpdate[1]?.args).toMatchObject({
+      paginationOpts: { cursor: null, endCursor: 'ssr-cursor' },
+    })
+    expect(primary.calls.onUpdate[2]?.args).toMatchObject({
       paginationOpts: { cursor: 'ssr-cursor' },
     })
     wrapper.unmount()

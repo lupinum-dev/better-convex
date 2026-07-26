@@ -152,8 +152,7 @@ export function useConvexPaginatedQuery<
       previousTag = nextTag
       previousBoundaryKey = nextBoundaryKey
       previousLive = live.value
-      if (live.value) controller.subscribeFirstPage()
-      else if (gate.value === 'execute') void refreshBoundary()
+      if (!live.value && gate.value === 'execute') void refreshBoundary()
       return
     }
     const priorTag = previousTag
@@ -172,8 +171,7 @@ export function useConvexPaginatedQuery<
         previousTag: priorTag,
         previousBoundaryKey: priorBoundaryKey,
       })
-      if (live.value) controller.subscribeFirstPage()
-      else if (gate.value === 'execute') void refreshBoundary()
+      if (!live.value && gate.value === 'execute') void refreshBoundary()
     } else {
       if (nextBoundaryKey !== priorBoundaryKey) boundaryFirstPage.value = null
       void controller.handleExecutionBoundary({

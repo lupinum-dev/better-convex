@@ -97,11 +97,10 @@ gate are complete.
       without sending UDF frames through SSR.
 - [x] Claude `ERR-03` is handled at the diagnostic boundary, where a sink is made
       non-authoritative once, rather than by wrapping every caller.
-- [ ] Claude `vue-controllers/VUE-02` (`SplitRequired`) is accepted as a fail-closed
+- [x] Claude `vue-controllers/VUE-02` (`SplitRequired`) is accepted as a fail-closed
       pagination correctness task.
-- [ ] Claude `vue-controllers/VUE-01` (head-page boundary reset) remains a product
-      contract decision. Do not add sequential refetch storms or `endCursor` machinery
-      until the bounded acceptance task below is settled.
+- [x] Claude `vue-controllers/VUE-01` (head-page boundary reset) is settled with
+      bounded `endCursor` subscriptions, without sequential refetch storms.
 
 ### Corrections to Claude's report
 
@@ -119,7 +118,7 @@ gate are complete.
 - [x] Do not publish an internal Vue unref helper solely to deduplicate a small Nuxt
       helper. Preserve correct non-plain values with a private implementation unless an
       existing public primitive already has the exact contract.
-- [ ] Do not implement live pagination tail `refresh()` on every head change. Cursor
+- [x] Do not implement live pagination tail `refresh()` on every head change. Cursor
       chaining is sequential and would amplify a busy feed by `O(loaded pages)`.
 - [ ] Do not add a permanent “latest prerelease” dependency gate. Reconcile Better Auth
       `1.7.0-rc.1` against the currently published `1.7.0-rc.2` once in the final
@@ -972,24 +971,51 @@ Ledger note (2026-07-26):
 
 Sources: Codex `F-012`; Claude contested controller `VUE-01`/`VUE-02`.
 
-- [ ] Make the pagination controller the only subscription initiator.
-- [ ] Honor structured `pageStatus: 'SplitRequired'`; do not render a possibly
+- [x] Make the pagination controller the only subscription initiator.
+- [x] Honor structured `pageStatus: 'SplitRequired'`; do not render a possibly
       incomplete page as ready.
-- [ ] Add exact subscribe/unsubscribe count tests for auth, args, identity, and disposal.
-- [ ] Decide the head-boundary contract with an executed realistic-feed test:
+- [x] Add exact subscribe/unsubscribe count tests for auth, args, identity, and disposal.
+- [x] Decide the head-boundary contract with an executed realistic-feed test:
       documented safe reset, observable restart, or bounded `endCursor` implementation.
-- [ ] During final SDK reconciliation, compare a hard cut to the pinned official
+- [x] During final SDK reconciliation, compare a hard cut to the pinned official
       paginated-update primitive against retaining the manual tail algorithm. Prefer the
       hard cut only if it deletes ownership and keeps experimental types private.
-- [ ] Do not call sequential `refresh()` per live head update.
+- [x] Do not call sequential `refresh()` per live head update.
 
 Acceptance criteria:
 
-- [ ] One boundary transition creates one replacement subscription.
-- [ ] `SplitRequired` data is withheld and a non-ready/error state is visible.
-- [ ] `SplitRecommended` continues normally.
-- [ ] No gap/duplicate appears across page boundaries.
-- [ ] Sequential cursor dependency and synchronous identity clearing remain intact.
+- [x] One boundary transition creates one replacement subscription.
+- [x] `SplitRequired` data is withheld and a non-ready/error state is visible.
+- [x] `SplitRecommended` continues normally.
+- [x] No gap/duplicate appears across page boundaries.
+- [x] Sequential cursor dependency and synchronous identity clearing remain intact.
+
+Ledger note (2026-07-26):
+
+- The pagination controller now starts and replaces every live subscription itself.
+  Auth-mode, argument, identity, idle, and disposal tests assert exact acquisition and
+  retirement counts; composables no longer expose or call an initial-subscription hook.
+- Every loaded live range is bounded by the next page's cursor. The realistic
+  three-page feed test asserts the exact `endCursor` arguments and proves that live
+  inserts preserve ordering without gaps or duplicates. Head updates never trigger the
+  sequential manual refresh path, while an explicit refresh still follows the cursor
+  chain and commits atomically.
+- `SplitRequired` results are withheld while two bounded subscriptions settle and are
+  promoted atomically; `SplitRecommended` keeps the complete old range visible until
+  the same swap. First-page and tail tests cover both states, promoted live updates,
+  incomplete-page behavior, and synchronous identity retirement.
+- The pinned Convex `1.42.2` experimental paginated-update primitive was inspected. It
+  handles page splitting, but adopting it would widen the intentionally exact
+  four-method client handle or add a fallback path. Retaining one private manual
+  controller keeps experimental SDK types out of the public/cross-bundle bridge and
+  avoids a second ownership path.
+- Nuxt SSR rejects `SplitRequired` pages with a structured pagination error instead of
+  hydrating potentially incomplete data. The pagination guide documents controller
+  ownership, bounded ranges, and both split states.
+- Focused pagination tests pass 48 tests. The complete unit project passes 1,381 and
+  the complete Nuxt project passes 117. Vue and docs builds, docs/Vue/root typechecks,
+  lint, format, architecture boundaries, the exact packed Vue consumer, and the built
+  Nuxt consumer smoke check pass.
 
 ### T3.8 — Remove dead query mirrors and give one-shot refreshes real identities
 

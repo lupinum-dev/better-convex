@@ -5,6 +5,8 @@ export interface BetterPaginationResult<T> {
   page: T[]
   isDone: boolean
   continueCursor: string | null
+  splitCursor?: string | null
+  pageStatus?: 'SplitRecommended' | 'SplitRequired' | null
 }
 
 /** Cache-busting generation; random avoids SSR-global sequential state. */
@@ -60,6 +62,7 @@ export interface PaginationPageOptions {
   numItems: number
   cursor: string | null
   id: number
+  endCursor?: string | null
 }
 
 export interface PaginationPageState<T> {

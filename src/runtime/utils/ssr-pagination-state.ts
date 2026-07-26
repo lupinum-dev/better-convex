@@ -2,6 +2,12 @@ import type { QueryExecutionOutcome } from './query-execution-gate'
 
 export type SsrPaginationStatus = 'idle' | 'loading-first-page' | 'ready' | 'exhausted' | 'error'
 
+export function isIncompletePaginationPage(
+  page: { pageStatus?: 'SplitRecommended' | 'SplitRequired' | null } | null | undefined,
+): boolean {
+  return page?.pageStatus === 'SplitRequired'
+}
+
 export function computeSsrPaginationStatus(input: {
   execution: QueryExecutionOutcome
   hasError: boolean
