@@ -305,13 +305,23 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
     // the raw client for the four supported operations).
     options?: unknown,
   ): Promise<unknown> {
+    // Capture the caller's identity synchronously, before auth settlement can
+    // suspend this dispatch. A call entered by generation A must never resume
+    // against generation B merely because B settled while the caller waited.
+    const entryGeneration = authPort?.snapshot().identityGeneration ?? currentIdentityGeneration
     const target = await primaryForDispatch()
     const { client, identityGeneration: generation } = target
     // `primaryForDispatch` necessarily crosses a promise boundary. Re-check its
     // atomic client+generation snapshot before invoking the wire method so a
     // synchronous retirement between capture and continuation cannot dispatch
     // once more through the retired principal.
-    if (disposed || primary !== client || currentIdentityGeneration !== generation) {
+    if (
+      disposed ||
+      generation !== entryGeneration ||
+      (authPort?.snapshot().identityGeneration ?? currentIdentityGeneration) !== entryGeneration ||
+      primary !== client ||
+      currentIdentityGeneration !== generation
+    ) {
       throw createIdentityChangedError(method)
     }
     let reject!: (reason: unknown) => void
@@ -331,7 +341,11 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
 
     try {
       const result = await Promise.race([underlying, aborted])
-      if (disposed || currentIdentityGeneration !== generation) {
+      if (
+        disposed ||
+        currentIdentityGeneration !== generation ||
+        (authPort?.snapshot().identityGeneration ?? currentIdentityGeneration) !== entryGeneration
+      ) {
         throw createIdentityChangedError(method)
       }
       return result

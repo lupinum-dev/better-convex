@@ -89,11 +89,15 @@ function fakePort(initial: Partial<ClientIdentitySnapshot> = {}) {
     ...initial,
   }
   const listeners = new Set<() => void>()
+  const settlementWaiters = new Set<() => void>()
   const initializePrimary = vi.fn(async () => {})
   const failPrimary = vi.fn()
   const port: ClientIdentityPort = {
     snapshot: () => snap,
-    waitForInitialSettlement: () => Promise.resolve(),
+    waitForInitialSettlement: () => {
+      if (snap.settled) return Promise.resolve()
+      return new Promise<void>((resolve) => settlementWaiters.add(resolve))
+    },
     subscribe: (l) => {
       listeners.add(l)
       return () => listeners.delete(l)
@@ -103,6 +107,10 @@ function fakePort(initial: Partial<ClientIdentitySnapshot> = {}) {
   }
   const emit = (next: Partial<ClientIdentitySnapshot>) => {
     snap = { ...snap, ...next }
+    if (snap.settled) {
+      for (const resolve of [...settlementWaiters]) resolve()
+      settlementWaiters.clear()
+    }
     for (const l of [...listeners]) l()
   }
   return { port, emit, initializePrimary, failPrimary, current: () => snap }
@@ -410,6 +418,88 @@ describe('createConvexClientOwner', () => {
   })
 
   describe('handle dispatch generation guard', () => {
+    const rawCallCases = [
+      {
+        method: 'query',
+        invoke: (o: ReturnType<typeof owner>, path: string) =>
+          o.handle.query(mockFnRef<'query'>(path), {}),
+        prepare: (client: CountingClient, path: string, value: string) =>
+          client.setQueryHandler(path, () => value),
+        calls: (client: CountingClient) => client.calls.query,
+      },
+      {
+        method: 'mutation',
+        invoke: (o: ReturnType<typeof owner>, path: string) =>
+          o.handle.mutation(mockFnRef<'mutation'>(path), {}),
+        prepare: (client: CountingClient, path: string, value: string) =>
+          client.setMutationHandler(path, () => value),
+        calls: (client: CountingClient) => client.calls.mutation,
+      },
+      {
+        method: 'action',
+        invoke: (o: ReturnType<typeof owner>, path: string) =>
+          o.handle.action(mockFnRef<'action'>(path), {}),
+        prepare: (client: CountingClient, path: string, value: string) =>
+          client.setActionHandler(path, () => value),
+        calls: (client: CountingClient) => client.calls.action,
+      },
+    ] as const
+
+    for (const rawCall of rawCallCases) {
+      it(`rejects a raw ${rawCall.method} entered while generation A is unsettled before generation B can dispatch it`, async () => {
+        resetCounts()
+        const { port, emit } = fakePort({ settled: false })
+        const o = owner()
+        o.attachIdentityPort(port)
+        const stableHandle = o.handle
+        const a = o.getPrimary()!.client as unknown as CountingClient
+        const path = `${rawCall.method}:crossing`
+
+        const pending = rawCall.invoke(o, path)
+        const rejection = expect(pending).rejects.toMatchObject({
+          code: IDENTITY_CHANGED,
+        })
+        expect(rawCall.calls(a)).toHaveLength(0)
+
+        emit({
+          settled: true,
+          identityKey: 'user:bob',
+          identityGeneration: 1,
+          authEpoch: 1,
+        })
+
+        await rejection
+        await vi.waitFor(() => expect(o.getPrimary()?.identityGeneration).toBe(1))
+        const b = o.getPrimary()!.client as unknown as CountingClient
+        expect(rawCall.calls(a)).toHaveLength(0)
+        expect(rawCall.calls(b)).toHaveLength(0)
+        expect(o.handle).toBe(stableHandle)
+
+        rawCall.prepare(b, path, 'generation-b')
+        await expect(rawCall.invoke(o, path)).resolves.toBe('generation-b')
+        expect(rawCall.calls(b)).toHaveLength(1)
+        await o.dispose()
+      })
+
+      it(`waits and runs a raw ${rawCall.method} when auth settles in the same generation`, async () => {
+        resetCounts()
+        const { port, emit } = fakePort({ settled: false })
+        const o = owner()
+        o.attachIdentityPort(port)
+        const a = o.getPrimary()!.client as unknown as CountingClient
+        const path = `${rawCall.method}:same-generation`
+        rawCall.prepare(a, path, 'generation-a')
+
+        const pending = rawCall.invoke(o, path)
+        expect(rawCall.calls(a)).toHaveLength(0)
+        emit({ settled: true, identityKey: 'anonymous', identityGeneration: 0, authEpoch: 1 })
+
+        await expect(pending).resolves.toBe('generation-a')
+        expect(rawCall.calls(a)).toHaveLength(1)
+        await o.dispose()
+      })
+    }
+
     it('resolves normally when the generation is unchanged', async () => {
       resetCounts()
       const o = owner()

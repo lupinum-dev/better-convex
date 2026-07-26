@@ -105,7 +105,7 @@ gate are complete.
 
 ### Corrections to Claude's report
 
-- [ ] Claude's “no P0” conclusion is superseded by the executed raw-`useConvex()` proof:
+- [x] Claude's “no P0” conclusion is superseded by the executed raw-`useConvex()` proof:
       a call entering while generation 0 is unsettled can execute on replacement client
       B in generation 1. This is P0.
 - [ ] Claude's rejection of `NUXT-02` is not adopted. Its refuters conceded that
@@ -214,27 +214,38 @@ Affected code:
 
 Change:
 
-- [ ] Capture `identityGeneration` synchronously when raw `query`, `mutation`, or
+- [x] Capture `identityGeneration` synchronously when raw `query`, `mutation`, or
       `action` dispatch begins.
-- [ ] After auth settlement and before wire dispatch, reject with the existing safe
+- [x] After auth settlement and before wire dispatch, reject with the existing safe
       `IDENTITY_CHANGED` outcome if the generation changed.
-- [ ] Retain the post-wire generation fence.
-- [ ] Add no new generation counter or compatibility path.
+- [x] Retain the post-wire generation fence.
+- [x] Add no new generation counter or compatibility path.
 
 Acceptance criteria:
 
-- [ ] A raw query/mutation/action entered in unsettled generation A and settled in
+- [x] A raw query/mutation/action entered in unsettled generation A and settled in
       generation B performs zero wire calls on both clients.
-- [ ] The returned promise rejects with the normalized identity-changed code.
-- [ ] A same-generation call still waits and succeeds.
-- [ ] A generation change after wire dispatch still prevents a stale result from
+- [x] The returned promise rejects with the normalized identity-changed code.
+- [x] A same-generation call still waits and succeeds.
+- [x] A generation change after wire dispatch still prevents a stale result from
       resolving.
-- [ ] The stable public handle itself is not replaced.
+- [x] The stable public handle itself is not replaced.
 
 Verification:
 
-- [ ] Run focused client-owner and public-handle tests.
-- [ ] Run exact packed Vue consumer tests.
+- [x] Run focused client-owner and public-handle tests.
+- [x] Run exact packed Vue consumer tests.
+
+Ledger note (2026-07-26):
+
+- Captured the port generation synchronously at raw-call entry and compared it both
+  immediately before wire dispatch and after the wire promise settles. The existing
+  owner and stable handle remain the only dispatch path.
+- Red proof: query, mutation, and action crossing tests each reached replacement client
+  B before the entry-generation fence was added.
+- Green proof: `pnpm exec vitest run test/unit/client-owner.test.ts
+test/unit/vue-package-runtime.test.ts` passes 43 tests; the Vue package typecheck and
+  `pnpm run check:vue-auth-consumer` packed install/typecheck/build pass.
 
 ### T1.2 — Fence the special initial fail-closed path
 
