@@ -1,3 +1,5 @@
+import type { OAuthOptions, Scope } from '@better-auth/oauth-provider'
+
 import { readStreamWithByteLimit } from '../shared/bounded-stream'
 
 const OAUTH_CONFIG_ERROR = 'AUTH_OAUTH_CONFIG_INVALID'
@@ -43,45 +45,45 @@ const TOKEN_CLAIMS = new Set([
  * configuration abstraction. Runtime validation intentionally accepts only a
  * strict subset of the exact installed provider's options.
  */
-export interface PinnedOAuthProviderProfile {
-  accessTokenExpiresIn?: number
-  allowDynamicClientRegistration?: boolean
-  allowPublicClientPrelogin?: boolean
-  allowUnauthenticatedClientRegistration?: boolean
-  advertisedMetadata?: {
-    claims_supported?: readonly string[]
-    scopes_supported?: readonly string[]
-  }
-  clientCredentialGrantDefaultScopes?: readonly string[]
-  clientPrivileges?: unknown
-  clientRegistrationRequirePKCE?: boolean
-  codeExpiresIn?: number
-  consentPage?: string
-  customAccessTokenClaims?: unknown
-  customIdTokenClaims?: unknown
-  customTokenResponseFields?: unknown
-  customUserInfoClaims?: unknown
-  disableJwtPlugin?: boolean
-  dpop?: { signingAlgorithms?: readonly string[] }
-  enforcePerClientResources?: boolean
-  extensions?: readonly unknown[]
-  grantTypes?: readonly string[]
-  loginPage?: string
-  m2mAccessTokenExpiresIn?: number
-  pairwiseSecret?: string
-  rateLimit?: {
-    authorize?: false | { max?: number; window?: number }
-    revoke?: false | { max?: number; window?: number }
-    token?: false | { max?: number; window?: number }
-  }
-  requestUriResolver?: unknown
-  resourcePrivileges?: unknown
-  resources?: readonly unknown[]
-  scopes?: readonly string[]
-  storeClientSecret?: unknown
-  storeTokens?: unknown
-  validateInitialAccessToken?: unknown
-}
+const PINNED_OAUTH_PROVIDER_KEYS = [
+  'accessTokenExpiresIn',
+  'allowDynamicClientRegistration',
+  'allowPublicClientPrelogin',
+  'allowUnauthenticatedClientRegistration',
+  'advertisedMetadata',
+  'clientCredentialGrantDefaultScopes',
+  'clientPrivileges',
+  'clientRegistrationRequirePKCE',
+  'codeExpiresIn',
+  'consentPage',
+  'customAccessTokenClaims',
+  'customIdTokenClaims',
+  'customTokenResponseFields',
+  'customUserInfoClaims',
+  'disableJwtPlugin',
+  'dpop',
+  'enforcePerClientResources',
+  'extensions',
+  'grantTypes',
+  'loginPage',
+  'm2mAccessTokenExpiresIn',
+  'pairwiseSecret',
+  'rateLimit',
+  'requestUriResolver',
+  'resourcePrivileges',
+  'resources',
+  'scopes',
+  'storeClientSecret',
+  'storeTokens',
+  'validateInitialAccessToken',
+] as const satisfies readonly (keyof OAuthOptions<Scope[]>)[]
+
+const PINNED_OAUTH_PROVIDER_KEY_SET = new Set<string>(PINNED_OAUTH_PROVIDER_KEYS)
+
+export type PinnedOAuthProviderProfile = Pick<
+  OAuthOptions<Scope[]>,
+  (typeof PINNED_OAUTH_PROVIDER_KEYS)[number]
+>
 
 export interface OAuthClientRecord extends Record<string, unknown> {
   clientId: string
@@ -267,6 +269,9 @@ function validateConfiguredResource(
 
 export function validateOAuthProviderProfile(options: PinnedOAuthProviderProfile): void {
   if (!isRecord(options)) invalidConfig()
+  for (const key of Reflect.ownKeys(options)) {
+    if (typeof key !== 'string' || !PINNED_OAUTH_PROVIDER_KEY_SET.has(key)) invalidConfig()
+  }
   if (
     options.accessTokenExpiresIn !== 600 ||
     options.codeExpiresIn !== 120 ||

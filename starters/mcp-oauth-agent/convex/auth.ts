@@ -128,7 +128,6 @@ function oauthOptions(ctx: AuthCtx<DataModel>): OAuthOptions<Scope[]> {
     },
     resourcePrivileges: (identity) => hasOAuthAdminPrivilege(ctx, identity),
     scopes: ['mcp:read', 'mcp:write'],
-    silenceWarnings: { oauthAuthServerConfig: true },
     storeClientSecret: 'hashed',
     storeTokens: 'hashed',
   }

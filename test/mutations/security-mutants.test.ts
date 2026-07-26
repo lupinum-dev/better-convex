@@ -199,7 +199,6 @@ function createOAuthAuth(db: MemoryDB) {
     },
     resourcePrivileges: async () => true,
     scopes: ['mcp:read', 'mcp:write'],
-    silenceWarnings: { oauthAuthServerConfig: true },
     storeClientSecret: 'hashed',
     storeTokens: 'hashed',
   } satisfies OAuthOptions<['mcp:read', 'mcp:write']>

@@ -120,6 +120,38 @@ describe('fixed OAuth provider profile', () => {
   })
 
   it.each([
+    { futureProviderOption: true },
+    { signup: { page: '/signup' } },
+    { signup: { page: 'https://evil.example/signup' } },
+    { selectAccount: { page: '//evil.example/select', shouldRedirect: async () => true } },
+    {
+      postLogin: {
+        consentReferenceId: async () => 'tenant',
+        page: '/post-login?next=evil',
+        shouldRedirect: async () => true,
+      },
+    },
+  ])('rejects unknown and unreviewed redirect-capable provider options %#', (override) => {
+    expect(() =>
+      validateOAuthProviderProfile(
+        oauthOptions(override as unknown as Partial<PinnedOAuthProviderProfile>),
+      ),
+    ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+  })
+
+  it.each(['https://evil.example/login', '//evil.example/login', '/login?next=/admin', '/login#x'])(
+    'rejects unsafe login and consent page target %s',
+    (page) => {
+      expect(() => validateOAuthProviderProfile(oauthOptions({ loginPage: page }))).toThrow(
+        'AUTH_OAUTH_CONFIG_INVALID',
+      )
+      expect(() => validateOAuthProviderProfile(oauthOptions({ consentPage: page }))).toThrow(
+        'AUTH_OAUTH_CONFIG_INVALID',
+      )
+    },
+  )
+
+  it.each([
     { grantTypes: ['client_credentials'] },
     { grantTypes: ['authorization_code', 'refresh_token'] },
     { accessTokenExpiresIn: 601 },

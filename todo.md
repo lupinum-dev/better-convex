@@ -1173,13 +1173,13 @@ Ledger note (2026-07-26):
 
 Source: Claude `AUTH-01`.
 
-- [ ] Derive public field types from the exact installed provider type without exposing
+- [x] Derive public field types from the exact installed provider type without exposing
       all upstream options as supported.
-- [ ] Keep one runtime allowed-key set for the reviewed subset.
-- [ ] Reject every unknown/unreviewed key at construction.
-- [ ] Validate or forbid every redirect-capable page option, including signup,
+- [x] Keep one runtime allowed-key set for the reviewed subset.
+- [x] Reject every unknown/unreviewed key at construction.
+- [x] Validate or forbid every redirect-capable page option, including signup,
       select-account, and post-login.
-- [ ] Retain all current value-level hardening.
+- [x] Retain all current value-level hardening.
 - [ ] After the allowed profile is canonical, collapse the admin-provisioning firewall
       onto the same normalized predicate: move scope parsing inside its safe error
       boundary, pass mutating endpoint method explicitly, and fail closed when it is
@@ -1187,14 +1187,32 @@ Source: Claude `AUTH-01`.
 
 Acceptance criteria:
 
-- [ ] Unknown and newly introduced provider keys fail closed.
-- [ ] Absolute, protocol-relative, query-bearing, and fragment-bearing page targets are
+- [x] Unknown and newly introduced provider keys fail closed.
+- [x] Absolute, protocol-relative, query-bearing, and fragment-bearing page targets are
       rejected everywhere.
-- [ ] All current security profile values remain enforced.
-- [ ] The maintained starter contains no silently ignored option.
-- [ ] A dependency bump produces a loud review diff rather than widening the profile.
+- [x] All current security profile values remain enforced.
+- [x] The maintained starter contains no silently ignored option.
+- [x] A dependency bump produces a loud review diff rather than widening the profile.
 - [ ] Request-time and stored-record profile validation agree over one differential
       corpus and return the reviewed 4xx error instead of an accidental 500.
+
+Ledger note (2026-07-26, exact provider-profile slice):
+
+- Deleted the hand-written field types. `PinnedOAuthProviderProfile` is now a `Pick`
+  from the exact installed `OAuthOptions<Scope[]>`, with one reviewed key tuple serving
+  as both its public subset and the runtime allowlist.
+- Construction rejects every own key outside that tuple, including symbols and all
+  three unreviewed redirect-capable option families (`signup`, `selectAccount`, and
+  `postLogin`). Login and consent retain their relative, query-free, fragment-free
+  path rule.
+- Removed the starter's previously ignored `silenceWarnings` option and the matching
+  integration fixtures instead of expanding the supported profile for a warning-only
+  control.
+- Red proof: five unknown/unreviewed profiles, including all three redirect families,
+  were accepted before the exact-key loop.
+- Green proof: the profile and real-provider integration suites pass 148 tests, the
+  auth mutation fixture passes 15 tests, and root/fixture typechecks pass. The existing
+  value-hardening corpus remains unchanged and green.
 
 ### T4.4 — Map Better Auth logical fields for select and sort
 
