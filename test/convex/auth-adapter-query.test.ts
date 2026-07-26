@@ -271,4 +271,23 @@ describe('Convex auth adapter ordered queries', () => {
       }),
     ).resolves.toBe(128)
   })
+
+  it('rejects immutable-id and unique-field bulk updates before effects', async () => {
+    const test = initAuthQueryTest()
+
+    await expect(
+      test.mutation(auth.updateMany, {
+        model: 'user',
+        update: { id: 'attacker-chosen-id' },
+        where: [],
+      }),
+    ).rejects.toThrow('AUTH_FIELD_IMMUTABLE:user.id')
+    await expect(
+      test.mutation(auth.updateMany, {
+        model: 'user',
+        update: { email: 'shared@example.test' },
+        where: [],
+      }),
+    ).rejects.toThrow('AUTH_BULK_UNIQUE_UPDATE_FORBIDDEN:user.email')
+  })
 })

@@ -565,6 +565,35 @@ describe('greenfield Convex auth write contexts', () => {
     ])
   })
 
+  it('delegates consumeOne to one component mutation without a split read/delete path', async () => {
+    const consumeReference = { operation: 'consumeOne' }
+    const ctx = {
+      auth: {},
+      db: {},
+      runMutation: vi.fn(async () => null),
+      runQuery: vi.fn(async () => null),
+    }
+    const adapter = createConvexAuthAdapter(
+      ctx as never,
+      { adapter: { consumeOne: consumeReference } } as never,
+    )({} as never)
+
+    await adapter.consumeOne({
+      model: 'verification',
+      where: [{ field: 'id', value: 'code-1' }],
+    })
+
+    expect(ctx.runQuery).not.toHaveBeenCalled()
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      consumeReference,
+      expect.objectContaining({
+        model: 'verification',
+        where: [expect.objectContaining({ field: 'id', value: 'code-1' })],
+      }),
+    )
+  })
+
   it('maps logical filters once and delegates count to the component snapshot query', async () => {
     const findManyReference = { operation: 'findMany' }
     const countReference = { operation: 'count' }
