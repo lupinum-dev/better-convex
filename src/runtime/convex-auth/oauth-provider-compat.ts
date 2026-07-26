@@ -3,8 +3,10 @@ import { APIError } from 'better-auth/api'
 
 import {
   OAuthSecurityError,
-  validateOAuthRedirectUris,
+  assertSafeStoredOAuthClient,
+  assertSafeStoredOAuthResource,
   type hardenOAuthProviderCallbacks,
+  type OAuthClientRecord,
   type PinnedOAuthProviderProfile,
 } from './oauth-security'
 
@@ -143,84 +145,93 @@ function invalidClientProfile(): never {
   })
 }
 
+function projectPinnedClientRecord(
+  input: Record<string, unknown>,
+  allowedScopes: readonly string[],
+  updating: boolean,
+): OAuthClientRecord {
+  const tokenEndpointAuthMethod =
+    updating && input.token_endpoint_auth_method === undefined
+      ? 'client_secret_basic'
+      : input.token_endpoint_auth_method
+  const rawExpiry = input.client_secret_expires_at
+  const expiresAt =
+    rawExpiry === undefined || rawExpiry === 0 || rawExpiry === '0'
+      ? undefined
+      : typeof rawExpiry === 'number' || typeof rawExpiry === 'string'
+        ? new Date(Number(rawExpiry) * 1000)
+        : rawExpiry
+  return {
+    backchannelLogoutSessionRequired: input.backchannel_logout_session_required,
+    backchannelLogoutUri: input.backchannel_logout_uri,
+    clientId: 'provisioning-client',
+    clientSecret: tokenEndpointAuthMethod === 'client_secret_basic' ? 'provisioning-secret' : null,
+    disabled: input.disabled,
+    dpopBoundAccessTokens:
+      updating && input.dpop_bound_access_tokens === undefined
+        ? false
+        : input.dpop_bound_access_tokens,
+    enableEndSession:
+      updating && input.enable_end_session === undefined ? false : input.enable_end_session,
+    expiresAt,
+    grantTypes:
+      updating && input.grant_types === undefined ? ['authorization_code'] : input.grant_types,
+    jwks: input.jwks,
+    jwksUri: input.jwks_uri,
+    metadata: input.metadata,
+    postLogoutRedirectUris: input.post_logout_redirect_uris,
+    public: updating ? false : tokenEndpointAuthMethod === 'none',
+    redirectUris:
+      updating && input.redirect_uris === undefined
+        ? ['https://provisioning.invalid/callback']
+        : input.redirect_uris,
+    requirePKCE: updating && input.require_pkce === undefined ? true : input.require_pkce,
+    responseTypes: updating && input.response_types === undefined ? ['code'] : input.response_types,
+    scopes:
+      typeof input.scope === 'string'
+        ? parseScope(input.scope)
+        : updating
+          ? [...allowedScopes]
+          : [],
+    skipConsent: updating && input.skip_consent === undefined ? false : input.skip_consent,
+    softwareStatement: input.software_statement,
+    subjectType: input.subject_type,
+    tokenEndpointAuthMethod,
+    type: updating && input.type === undefined ? 'web' : input.type,
+  }
+}
+
 export function assertSafePinnedClientProvisioning(
+  method: unknown,
   body: unknown,
   allowedScopes: readonly string[],
 ): void {
   if (!body || typeof body !== 'object' || Array.isArray(body)) invalidClientProfile()
   const input = body as Record<string, unknown>
-  const scopes = typeof input.scope === 'string' ? parseScope(input.scope) : []
   try {
-    validateOAuthRedirectUris(input.redirect_uris)
-    const publicClient =
-      input.token_endpoint_auth_method === 'none' &&
-      (input.type === 'native' || input.type === 'user-agent-based')
-    const confidentialClient =
-      input.token_endpoint_auth_method === 'client_secret_basic' && input.type === 'web'
-    if (
-      (!publicClient && !confidentialClient) ||
-      input.require_pkce !== true ||
-      input.skip_consent !== false ||
-      input.enable_end_session !== false ||
-      input.dpop_bound_access_tokens !== false ||
-      !Array.isArray(input.grant_types) ||
-      input.grant_types.length !== 1 ||
-      input.grant_types[0] !== 'authorization_code' ||
-      !Array.isArray(input.response_types) ||
-      input.response_types.length !== 1 ||
-      input.response_types[0] !== 'code' ||
-      input.jwks !== undefined ||
-      input.jwks_uri !== undefined ||
-      input.metadata !== undefined ||
-      input.software_statement !== undefined ||
-      input.backchannel_logout_uri !== undefined ||
-      input.backchannel_logout_session_required !== undefined ||
-      input.post_logout_redirect_uris !== undefined ||
-      scopes.length === 0 ||
-      scopes.some((scope) => !allowedScopes.includes(scope))
-    ) {
-      invalidConfiguration()
-    }
+    if (method !== 'POST') invalidConfiguration()
+    assertSafeStoredOAuthClient(
+      projectPinnedClientRecord(input, allowedScopes, false),
+      allowedScopes,
+    )
   } catch {
     invalidClientProfile()
   }
 }
 
 export function assertSafePinnedClientUpdate(
+  method: unknown,
   body: unknown,
   allowedScopes: readonly string[],
 ): void {
   if (!body || typeof body !== 'object' || Array.isArray(body)) invalidClientProfile()
   const input = body as Record<string, unknown>
   try {
-    if (input.redirect_uris !== undefined) validateOAuthRedirectUris(input.redirect_uris)
-    const scopes = typeof input.scope === 'string' ? parseScope(input.scope) : undefined
-    if (
-      (scopes !== undefined && scopes.some((scope) => !allowedScopes.includes(scope))) ||
-      input.token_endpoint_auth_method !== undefined ||
-      input.type !== undefined ||
-      input.require_pkce !== undefined ||
-      (input.skip_consent !== undefined && input.skip_consent !== false) ||
-      (input.enable_end_session !== undefined && input.enable_end_session !== false) ||
-      (input.dpop_bound_access_tokens !== undefined && input.dpop_bound_access_tokens !== false) ||
-      (input.grant_types !== undefined &&
-        (!Array.isArray(input.grant_types) ||
-          input.grant_types.length !== 1 ||
-          input.grant_types[0] !== 'authorization_code')) ||
-      (input.response_types !== undefined &&
-        (!Array.isArray(input.response_types) ||
-          input.response_types.length !== 1 ||
-          input.response_types[0] !== 'code')) ||
-      input.jwks !== undefined ||
-      input.jwks_uri !== undefined ||
-      input.metadata !== undefined ||
-      input.software_statement !== undefined ||
-      input.backchannel_logout_uri !== undefined ||
-      input.backchannel_logout_session_required !== undefined ||
-      input.post_logout_redirect_uris !== undefined
-    ) {
-      invalidConfiguration()
-    }
+    if (method !== 'PATCH') invalidConfiguration()
+    assertSafeStoredOAuthClient(
+      projectPinnedClientRecord(input, allowedScopes, true),
+      allowedScopes,
+    )
   } catch {
     invalidClientProfile()
   }
@@ -233,30 +244,33 @@ function invalidResourceProfile(): never {
 }
 
 export function assertSafePinnedResourceProvisioning(
+  method: unknown,
   body: unknown,
   allowedScopes: readonly string[],
 ): void {
   if (!body || typeof body !== 'object' || Array.isArray(body)) invalidResourceProfile()
   const input = body as Record<string, unknown>
   try {
-    if (
-      input.dpopBoundAccessTokensRequired === true ||
-      input.refreshTokenTtl !== undefined ||
-      input.signingKeyId !== undefined ||
-      input.customClaims !== undefined ||
-      (input.signingAlgorithm !== undefined && input.signingAlgorithm !== 'RS256') ||
-      (input.accessTokenTtl !== undefined &&
-        (!Number.isSafeInteger(input.accessTokenTtl) ||
-          (input.accessTokenTtl as number) <= 0 ||
-          (input.accessTokenTtl as number) > 600)) ||
-      (input.allowedScopes !== undefined &&
-        (!Array.isArray(input.allowedScopes) ||
-          input.allowedScopes.some(
-            (scope) => typeof scope !== 'string' || !allowedScopes.includes(scope),
-          )))
-    ) {
-      invalidConfiguration()
-    }
+    if (method !== 'POST' && method !== 'PATCH') invalidConfiguration()
+    const updating = method === 'PATCH'
+    assertSafeStoredOAuthResource(
+      {
+        accessTokenTtl: input.accessTokenTtl,
+        allowedScopes: input.allowedScopes,
+        customClaims: input.customClaims,
+        // Disabling an existing resource is an intentional terminal transition.
+        // Every field that can make an enabled resource unsafe still uses the
+        // canonical stored-record predicate.
+        disabled: updating ? false : input.disabled,
+        dpopBoundAccessTokensRequired: input.dpopBoundAccessTokensRequired,
+        identifier: updating ? 'https://provisioning.invalid/resource' : String(input.identifier),
+        name: updating ? 'Provisioning resource' : input.name,
+        refreshTokenTtl: input.refreshTokenTtl,
+        signingAlgorithm: input.signingAlgorithm,
+        signingKeyId: input.signingKeyId,
+      },
+      allowedScopes,
+    )
   } catch {
     invalidResourceProfile()
   }

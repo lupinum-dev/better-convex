@@ -67,14 +67,14 @@ gate are complete.
 - [x] `vue-lifecycle/VUE-01`: fence initial fail-closed reporting with the generation
       captured before the attempt.
 - [ ] `BAA-01`: stop full-scanning indexed `in` predicates.
-- [ ] `AUTH-01`: make the allowed OAuth provider profile exact and reject unknown
+- [x] `AUTH-01`: make the allowed OAuth provider profile exact and reject unknown
       options.
 - [ ] `BAA-03`: make the shipped CLI and repository schema generator emit identical
       bytes. This is P1 because the certified public CLI rejects the repository's own
       committed fixtures.
 - [x] `MCPI-02`: make the real browser confirmation POST compatible with its
       referrer/CSRF policy.
-- [ ] `AUTH-03`: stream-bound OAuth form bodies before materialization. This is promoted
+- [x] `AUTH-03`: stream-bound OAuth form bodies before materialization. This is promoted
       from Claude's P3 to P1 because the executed proof consumed 256 MiB at an
       unauthenticated endpoint with a declared 16 KiB bound.
 - [x] `vue-lifecycle/VUE-02`: suppress value-identical provider transitions and remove
@@ -1180,7 +1180,7 @@ Source: Claude `AUTH-01`.
 - [x] Validate or forbid every redirect-capable page option, including signup,
       select-account, and post-login.
 - [x] Retain all current value-level hardening.
-- [ ] After the allowed profile is canonical, collapse the admin-provisioning firewall
+- [x] After the allowed profile is canonical, collapse the admin-provisioning firewall
       onto the same normalized predicate: move scope parsing inside its safe error
       boundary, pass mutating endpoint method explicitly, and fail closed when it is
       absent.
@@ -1193,7 +1193,7 @@ Acceptance criteria:
 - [x] All current security profile values remain enforced.
 - [x] The maintained starter contains no silently ignored option.
 - [x] A dependency bump produces a loud review diff rather than widening the profile.
-- [ ] Request-time and stored-record profile validation agree over one differential
+- [x] Request-time and stored-record profile validation agree over one differential
       corpus and return the reviewed 4xx error instead of an accidental 500.
 
 Ledger note (2026-07-26, exact provider-profile slice):
@@ -1213,6 +1213,32 @@ Ledger note (2026-07-26, exact provider-profile slice):
 - Green proof: the profile and real-provider integration suites pass 148 tests, the
   auth mutation fixture passes 15 tests, and root/fixture typechecks pass. The existing
   value-hardening corpus remains unchanged and green.
+
+Ledger note (2026-07-26, provisioning slice):
+
+- Client create/update bodies now project their snake-case fields into one synthetic
+  stored record and run `assertSafeStoredOAuthClient`; resource configuration and
+  create/update provisioning likewise reuse `assertSafeStoredOAuthResource`. The thin
+  projections retain the provider naming boundary without restating the security
+  predicate.
+- Scope parsing moved inside the fixed API-error boundary. Duplicate and empty scope
+  tokens now return `BAD_REQUEST / AUTH_OAUTH_CLIENT_PROFILE_INVALID`, not a bare
+  `OAuthSecurityError` that becomes an accidental 500.
+- Every provisioning validator requires its exact mutation method. The hook routes an
+  absent method into rejection while leaving resource GET/DELETE operations alone,
+  and the maintained starter now forwards the pinned endpoint method on every
+  in-process `dispatchAuthEndpoint` call.
+- Resource disabling remains an intentional terminal transition; all fields that can
+  make an enabled resource unsafe still pass through the canonical stored predicate.
+- Red proof: malformed and duplicate create-client scopes escaped as
+  `AUTH_OAUTH_CONFIG_INVALID`; resource dispatch without a method skipped the hook;
+  pairwise subjects, disabled clients, and invalid expiries were accepted at request
+  time but rejected after storage.
+- Green proof: the differential client-create, client-update, and resource corpus plus
+  provider integration pass 192 focused security tests. The configured matrix passes
+  2,011 tests across 167 files; OAuth passes 200 tests, MCP auth passes 55, auth fuzz
+  passes 11, and all 17 reviewed auth mutants are killed. Root/fixture typechecks,
+  lint, canonical format, the package build, and all 14 architecture boundaries pass.
 
 ### T4.4 — Map Better Auth logical fields for select and sort
 

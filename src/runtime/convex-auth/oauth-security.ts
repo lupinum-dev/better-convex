@@ -242,29 +242,22 @@ function validateConfiguredResource(
     validateResourceIdentifier(value)
     return
   }
-  if (!isRecord(value) || typeof value.identifier !== 'string') invalidConfig()
-  validateResourceIdentifier(value.identifier)
-  if (value.accessTokenTtl !== undefined) {
-    if (
-      !Number.isSafeInteger(value.accessTokenTtl) ||
-      (value.accessTokenTtl as number) <= 0 ||
-      (value.accessTokenTtl as number) > 600
-    ) {
-      invalidConfig()
-    }
-  }
-  if (
-    !emptyValue(value.refreshTokenTtl) ||
-    !emptyValue(value.signingKeyId) ||
-    !emptyValue(value.customClaims) ||
-    value.dpopBoundAccessTokensRequired === true ||
-    (value.signingAlgorithm !== undefined && value.signingAlgorithm !== 'RS256')
-  ) {
-    invalidConfig()
-  }
-  if (value.allowedScopes !== undefined) {
-    validateScopeSubset(value.allowedScopes, allowedScopes, true)
-  }
+  if (!isRecord(value)) invalidConfig()
+  assertSafeStoredOAuthResource(
+    {
+      accessTokenTtl: value.accessTokenTtl,
+      allowedScopes: value.allowedScopes,
+      customClaims: value.customClaims,
+      disabled: value.disabled,
+      dpopBoundAccessTokensRequired: value.dpopBoundAccessTokensRequired,
+      identifier: value.identifier as string,
+      name: typeof value.name === 'string' ? value.name : 'Configured resource',
+      refreshTokenTtl: value.refreshTokenTtl,
+      signingAlgorithm: value.signingAlgorithm,
+      signingKeyId: value.signingKeyId,
+    },
+    allowedScopes,
+  )
 }
 
 export function validateOAuthProviderProfile(options: PinnedOAuthProviderProfile): void {

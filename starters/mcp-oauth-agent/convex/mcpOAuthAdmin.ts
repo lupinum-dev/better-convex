@@ -330,16 +330,21 @@ export function mcpOAuthAdminPlugin(
 
   const providerCall =
     (context: unknown, headers: Headers | undefined): ProviderCall =>
-    async (endpoint, input = {}) =>
-      await dispatchAuthEndpoint(
+    async (endpoint, input = {}) => {
+      const configuredMethod = (endpoint as { options?: { method?: unknown } }).options?.method
+      const method = Array.isArray(configuredMethod) ? configuredMethod[0] : configuredMethod
+      if (typeof method !== 'string' || method === '*') profileDrift()
+      return await dispatchAuthEndpoint(
         endpoint as never,
         {
           ...input,
           asResponse: false,
           context,
           headers: headers ?? new Headers(),
+          method,
         } as never,
       )
+    }
 
   return {
     id: 'mcp-oauth-admin',

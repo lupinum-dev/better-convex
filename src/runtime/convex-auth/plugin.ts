@@ -695,17 +695,26 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
                 matcher: (context: Parameters<BeforeHook['matcher']>[0]) =>
                   context.path === '/admin/oauth2/create-client' ||
                   context.path === '/admin/oauth2/update-client' ||
-                  (context.path === '/admin/oauth2/resources' && context.method === 'POST') ||
+                  (context.path === '/admin/oauth2/resources' && context.method !== 'GET') ||
                   (context.path === '/admin/oauth2/resources/:identifier' &&
-                    context.method === 'PATCH'),
+                    context.method !== 'GET' &&
+                    context.method !== 'DELETE'),
                 handler: createAuthMiddleware(async (context) => {
                   if (context.path === '/admin/oauth2/create-client') {
-                    assertSafePinnedClientProvisioning(context.body, oauthOptions.scopes!)
+                    assertSafePinnedClientProvisioning(
+                      context.method,
+                      context.body,
+                      oauthOptions.scopes!,
+                    )
                   } else if (context.path === '/admin/oauth2/update-client') {
                     const body = context.body as { update?: unknown }
-                    assertSafePinnedClientUpdate(body.update, oauthOptions.scopes!)
-                  } else if (context.method === 'POST' || context.method === 'PATCH') {
-                    assertSafePinnedResourceProvisioning(context.body, oauthOptions.scopes!)
+                    assertSafePinnedClientUpdate(context.method, body.update, oauthOptions.scopes!)
+                  } else {
+                    assertSafePinnedResourceProvisioning(
+                      context.method,
+                      context.body,
+                      oauthOptions.scopes!,
+                    )
                   }
                 }),
               },

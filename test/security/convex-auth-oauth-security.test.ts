@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  assertSafePinnedClientProvisioning,
+  assertSafePinnedClientUpdate,
+  assertSafePinnedResourceProvisioning,
+} from '../../src/runtime/convex-auth/oauth-provider-compat'
+import {
   assertOAuthAccessTokenClaims,
   assertPkceS256,
   assertSafeStoredOAuthClient,
@@ -69,6 +74,22 @@ function storedClient(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function provisioningClient(overrides: Record<string, unknown> = {}) {
+  return {
+    dpop_bound_access_tokens: false,
+    enable_end_session: false,
+    grant_types: ['authorization_code'],
+    redirect_uris: ['https://client.example.test/callback'],
+    require_pkce: true,
+    response_types: ['code'],
+    scope: 'mcp:read mcp:write',
+    skip_consent: false,
+    token_endpoint_auth_method: 'client_secret_basic',
+    type: 'web',
+    ...overrides,
+  }
+}
+
 function storedPublicClient(overrides: Record<string, unknown> = {}) {
   return storedClient({
     clientId: 'public-client',
@@ -93,6 +114,19 @@ function storedResource(overrides: Record<string, unknown> = {}) {
     refreshTokenTtl: null,
     signingAlgorithm: 'RS256',
     signingKeyId: null,
+    ...overrides,
+  }
+}
+
+function provisioningResource(overrides: Record<string, unknown> = {}) {
+  return {
+    accessTokenTtl: 600,
+    allowedScopes: [...scopes],
+    disabled: false,
+    dpopBoundAccessTokensRequired: false,
+    identifier: resource,
+    name: 'MCP',
+    signingAlgorithm: 'RS256',
     ...overrides,
   }
 }
@@ -312,6 +346,313 @@ describe('stored OAuth beta inventory', () => {
   ])('rejects an unsafe redirect %s', (redirectUri) => {
     expect(() => validateOAuthRedirectUris([redirectUri])).toThrow('AUTH_OAUTH_CONFIG_INVALID')
   })
+})
+
+describe('admin OAuth provisioning boundary', () => {
+  function expectClientProfile4xx(run: () => void): void {
+    expect(run).toThrow(
+      expect.objectContaining({
+        body: { message: 'AUTH_OAUTH_CLIENT_PROFILE_INVALID' },
+        status: 'BAD_REQUEST',
+        statusCode: 400,
+      }),
+    )
+  }
+
+  function expectResourceProfile4xx(run: () => void): void {
+    expect(run).toThrow(
+      expect.objectContaining({
+        body: { message: 'AUTH_OAUTH_RESOURCE_PROFILE_INVALID' },
+        status: 'BAD_REQUEST',
+        statusCode: 400,
+      }),
+    )
+  }
+
+  it.each(['mcp:read  mcp:write', 'mcp:read mcp:read'])(
+    'maps malformed scope %j to the reviewed client-profile 4xx',
+    (scope) => {
+      expectClientProfile4xx(() =>
+        assertSafePinnedClientProvisioning('POST', provisioningClient({ scope }), scopes),
+      )
+    },
+  )
+
+  it('requires the explicit pinned mutation method at every provisioning boundary', () => {
+    for (const method of [undefined, 'GET', 'PATCH']) {
+      expectClientProfile4xx(() =>
+        assertSafePinnedClientProvisioning(method, provisioningClient(), scopes),
+      )
+    }
+    for (const method of [undefined, 'GET', 'POST']) {
+      expectClientProfile4xx(() => assertSafePinnedClientUpdate(method, {}, scopes))
+    }
+    for (const method of [undefined, 'GET']) {
+      expectResourceProfile4xx(() => assertSafePinnedResourceProvisioning(method, {}, scopes))
+    }
+  })
+
+  it.each([
+    {
+      accepted: true,
+      name: 'confidential-basic web client',
+      request: {},
+      stored: {},
+    },
+    {
+      accepted: true,
+      name: 'public-none native client',
+      request: { token_endpoint_auth_method: 'none', type: 'native' },
+      stored: {
+        clientSecret: null,
+        public: true,
+        tokenEndpointAuthMethod: 'none',
+        type: 'native',
+      },
+    },
+    {
+      accepted: false,
+      name: 'duplicate scope',
+      request: { scope: 'mcp:read mcp:read' },
+      stored: { scopes: ['mcp:read', 'mcp:read'] },
+    },
+    {
+      accepted: false,
+      name: 'unapproved scope',
+      request: { scope: 'mcp:admin' },
+      stored: { scopes: ['mcp:admin'] },
+    },
+    {
+      accepted: false,
+      name: 'PKCE disabled',
+      request: { require_pkce: false },
+      stored: { requirePKCE: false },
+    },
+    {
+      accepted: false,
+      name: 'consent skipped',
+      request: { skip_consent: true },
+      stored: { skipConsent: true },
+    },
+    {
+      accepted: false,
+      name: 'end session enabled',
+      request: { enable_end_session: true },
+      stored: { enableEndSession: true },
+    },
+    {
+      accepted: false,
+      name: 'DPoP enabled',
+      request: { dpop_bound_access_tokens: true },
+      stored: { dpopBoundAccessTokens: true },
+    },
+    {
+      accepted: false,
+      name: 'refresh grant',
+      request: { grant_types: ['refresh_token'] },
+      stored: { grantTypes: ['refresh_token'] },
+    },
+    {
+      accepted: false,
+      name: 'missing code response',
+      request: { response_types: [] },
+      stored: { responseTypes: [] },
+    },
+    {
+      accepted: false,
+      name: 'unsafe redirect',
+      request: { redirect_uris: ['https://localhost/callback'] },
+      stored: { redirectUris: ['https://localhost/callback'] },
+    },
+    {
+      accepted: false,
+      name: 'pairwise subject',
+      request: { subject_type: 'pairwise' },
+      stored: { subjectType: 'pairwise' },
+    },
+    {
+      accepted: false,
+      name: 'hidden metadata',
+      request: { metadata: { privilege: 'admin' } },
+      stored: { metadata: JSON.stringify({ privilege: 'admin' }) },
+    },
+    {
+      accepted: false,
+      name: 'expired client secret',
+      request: { client_secret_expires_at: 1 },
+      stored: { expiresAt: new Date(1000) },
+    },
+    {
+      accepted: false,
+      name: 'invalid client secret expiry',
+      request: { client_secret_expires_at: 'not-a-time' },
+      stored: { expiresAt: new Date(Number.NaN) },
+    },
+    {
+      accepted: false,
+      name: 'post authentication',
+      request: { token_endpoint_auth_method: 'client_secret_post' },
+      stored: { tokenEndpointAuthMethod: 'client_secret_post' },
+    },
+    {
+      accepted: false,
+      name: 'confidential native mismatch',
+      request: { type: 'native' },
+      stored: { type: 'native' },
+    },
+  ])('keeps request and stored validation aligned: $name', ({ accepted, request, stored }) => {
+    const requestValidation = () =>
+      assertSafePinnedClientProvisioning('POST', provisioningClient(request), scopes)
+    const storedValidation = () => assertSafeStoredOAuthClient(storedClient(stored), scopes)
+
+    if (accepted) {
+      expect(requestValidation).not.toThrow()
+      expect(storedValidation).not.toThrow()
+    } else {
+      expectClientProfile4xx(requestValidation)
+      expect(storedValidation).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    }
+  })
+
+  it.each([
+    {
+      accepted: true,
+      name: 'empty safe update',
+      request: {},
+      stored: {},
+    },
+    {
+      accepted: true,
+      name: 'scope narrowing',
+      request: { scope: 'mcp:read' },
+      stored: { scopes: ['mcp:read'] },
+    },
+    {
+      accepted: true,
+      name: 'safe redirect replacement',
+      request: { redirect_uris: ['https://client.example.test/new-callback'] },
+      stored: { redirectUris: ['https://client.example.test/new-callback'] },
+    },
+    {
+      accepted: false,
+      name: 'pairwise subject update',
+      request: { subject_type: 'pairwise' },
+      stored: { subjectType: 'pairwise' },
+    },
+    {
+      accepted: false,
+      name: 'disabled update',
+      request: { disabled: true },
+      stored: { disabled: true },
+    },
+    {
+      accepted: false,
+      name: 'invalid expiry update',
+      request: { client_secret_expires_at: 'not-a-time' },
+      stored: { expiresAt: new Date(Number.NaN) },
+    },
+    {
+      accepted: false,
+      name: 'duplicate scope update',
+      request: { scope: 'mcp:read mcp:read' },
+      stored: { scopes: ['mcp:read', 'mcp:read'] },
+    },
+    {
+      accepted: false,
+      name: 'confidential native update',
+      request: { type: 'native' },
+      stored: { type: 'native' },
+    },
+    {
+      accepted: false,
+      name: 'hidden metadata update',
+      request: { metadata: { privilege: 'admin' } },
+      stored: { metadata: JSON.stringify({ privilege: 'admin' }) },
+    },
+  ])('keeps update and stored validation aligned: $name', ({ accepted, request, stored }) => {
+    const requestValidation = () => assertSafePinnedClientUpdate('PATCH', request, scopes)
+    const storedValidation = () => assertSafeStoredOAuthClient(storedClient(stored), scopes)
+
+    if (accepted) {
+      expect(requestValidation).not.toThrow()
+      expect(storedValidation).not.toThrow()
+    } else {
+      expectClientProfile4xx(requestValidation)
+      expect(storedValidation).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    }
+  })
+
+  it.each([
+    {
+      accepted: true,
+      name: 'fixed RS256 resource',
+      request: {},
+      stored: {},
+    },
+    {
+      accepted: false,
+      name: 'disabled resource',
+      request: { disabled: true },
+      stored: { disabled: true },
+    },
+    {
+      accepted: false,
+      name: 'DPoP-bound resource',
+      request: { dpopBoundAccessTokensRequired: true },
+      stored: { dpopBoundAccessTokensRequired: true },
+    },
+    {
+      accepted: false,
+      name: 'long token lifetime',
+      request: { accessTokenTtl: 601 },
+      stored: { accessTokenTtl: 601 },
+    },
+    {
+      accepted: false,
+      name: 'refresh token lifetime',
+      request: { refreshTokenTtl: 600 },
+      stored: { refreshTokenTtl: 600 },
+    },
+    {
+      accepted: false,
+      name: 'custom signing key',
+      request: { signingKeyId: 'key-1' },
+      stored: { signingKeyId: 'key-1' },
+    },
+    {
+      accepted: false,
+      name: 'custom claims',
+      request: { customClaims: { role: 'admin' } },
+      stored: { customClaims: JSON.stringify({ role: 'admin' }) },
+    },
+    {
+      accepted: false,
+      name: 'non-RS256 signing',
+      request: { signingAlgorithm: 'ES256' },
+      stored: { signingAlgorithm: 'ES256' },
+    },
+    {
+      accepted: false,
+      name: 'unapproved resource scope',
+      request: { allowedScopes: ['mcp:admin'] },
+      stored: { allowedScopes: ['mcp:admin'] },
+    },
+  ])(
+    'keeps resource request and stored validation aligned: $name',
+    ({ accepted, request, stored }) => {
+      const requestValidation = () =>
+        assertSafePinnedResourceProvisioning('POST', provisioningResource(request), scopes)
+      const storedValidation = () => assertSafeStoredOAuthResource(storedResource(stored), scopes)
+
+      if (accepted) {
+        expect(requestValidation).not.toThrow()
+        expect(storedValidation).not.toThrow()
+      } else {
+        expectResourceProfile4xx(requestValidation)
+        expect(storedValidation).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+      }
+    },
+  )
 })
 
 describe('pre-provider request parsing', () => {

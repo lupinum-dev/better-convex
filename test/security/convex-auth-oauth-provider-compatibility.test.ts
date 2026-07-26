@@ -99,4 +99,39 @@ describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
     expect(installed.options?.resourcePrivileges).toBe(safe.resourcePrivileges)
     expect(installed.options?.customAccessTokenClaims).toBe(safe.customAccessTokenClaims)
   })
+
+  it('routes absent mutating methods into the fail-closed provisioning guard', () => {
+    const plugin = createConvexPlugin(profile())()
+    const beforeHooks = (plugin.hooks?.before ?? []) as unknown as Array<{
+      matcher: (context: { method?: string; path: string }) => boolean
+    }>
+    const provisioningHook = beforeHooks.find((hook) =>
+      hook.matcher({ path: '/admin/oauth2/create-client' }),
+    )
+    expect(provisioningHook).toBeDefined()
+
+    for (const path of [
+      '/admin/oauth2/create-client',
+      '/admin/oauth2/update-client',
+      '/admin/oauth2/resources',
+      '/admin/oauth2/resources/:identifier',
+    ]) {
+      expect(provisioningHook!.matcher({ path })).toBe(true)
+    }
+    expect(provisioningHook!.matcher({ method: 'GET', path: '/admin/oauth2/resources' })).toBe(
+      false,
+    )
+    expect(
+      provisioningHook!.matcher({
+        method: 'GET',
+        path: '/admin/oauth2/resources/:identifier',
+      }),
+    ).toBe(false)
+    expect(
+      provisioningHook!.matcher({
+        method: 'DELETE',
+        path: '/admin/oauth2/resources/:identifier',
+      }),
+    ).toBe(false)
+  })
 })
