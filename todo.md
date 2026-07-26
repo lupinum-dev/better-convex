@@ -1868,9 +1868,9 @@ These are verification tasks, not pre-approved implementation:
 
 Tie-break acceptance:
 
-- [ ] Each candidate ends as either an executed accepted finding with its own
+- [x] Each candidate ends as either an executed accepted finding with its own
       acceptance test, or a written rejection with production evidence.
-- [ ] No unverified finding is retained as a “maybe” implementation backlog.
+- [x] No unverified finding is retained as a “maybe” implementation backlog.
 
 Interim ledger note (2026-07-26):
 
@@ -1932,9 +1932,23 @@ Interim ledger note (2026-07-26):
 
 Phase 5 exit gate:
 
-- [ ] Public beta surface contains only earned contracts.
-- [ ] Evidence labels match what was executed.
-- [ ] One current security/release narrative remains.
+- [x] Public beta surface contains only earned contracts.
+- [x] Evidence labels match what was executed.
+- [x] One current security/release narrative remains.
+
+Phase 5 exit ledger note (2026-07-26):
+
+- Generated API-surface documentation is current; the exact package-entry manifest
+  passes 27 tests. The single-runtime-owner gate and all 14 package-boundary rules pass
+  over 268 files. T5.9 added no registry, compatibility path, public diagnostic sink, or
+  cross-package helper solely for deduplication.
+- The current `SECURITY.md`, `RELEASING.md`, RFC, canonical ASVS data, and release
+  scripts now agree on topology, package ownership, evidence classes, staging claims,
+  and stable eligibility. Historical material is labeled as evidence rather than
+  operational authority.
+- Every T5.9 candidate has an accepted implementation or a production-evidence
+  rejection. The unchecked MCP Apps line is not an undecided backlog: it requires one
+  prescribed repeat against final SDK bytes after the T2.6 hard cut.
 
 ---
 
