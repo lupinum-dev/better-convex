@@ -88,7 +88,7 @@ gate are complete.
 ### Merged with Codex findings
 
 - [x] Claude `NUXT-03` is the same bytes/non-plain-object corruption found by Codex.
-- [ ] Claude `REL-03` is the same self-validating candidate-profile duplication found by
+- [x] Claude `REL-03` is the same self-validating candidate-profile duplication found by
       Codex.
 - [ ] Claude `MCP-05`/`NORM-03` are part of deleting the public constant `era` context and
       local MCP method classifier.
@@ -1646,16 +1646,34 @@ Ledger note (2026-07-26):
 
 Sources: Codex `F-013`; Claude `REL-03`.
 
-- [ ] Delete `reviewedRunners` and duplicate exact-list tests.
-- [ ] Keep one static package/candidate descriptor.
-- [ ] Retain structural shape, safe-path, uniqueness, closed-map, actual-runner, and
+- [x] Delete `reviewedRunners` and duplicate exact-list tests.
+- [x] Keep one static package/candidate descriptor.
+- [x] Retain structural shape, safe-path, uniqueness, closed-map, actual-runner, and
       artifact-consumption tests.
 
 Acceptance criteria:
 
-- [ ] Adding/changing a maintained runner requires one authority edit.
-- [ ] An unknown runner or package still fails.
-- [ ] The validator can fail without editing its expected copy in the same change.
+- [x] Adding/changing a maintained runner requires one authority edit.
+- [x] An unknown runner or package still fails.
+- [x] The validator can fail without editing its expected copy in the same change.
+
+Ledger note (2026-07-26):
+
+- Deleted the private `reviewedRunners` mirror and all whole-profile equality assertions.
+  `candidateTestProfiles` is now the only candidate-matrix authority; tests discover every
+  package profile and runner from it.
+- The validator now checks facts outside that authority: the package-manifest profile map is
+  closed, runner and fixture paths are package-owned and safe, runner files and fixture
+  directories are real non-symlink repository entries, pnpm fixtures have lockfiles and
+  declare the certified package, and companion declarations match fixture manifests.
+- The exported validation seam rejects a missing runner, unsafe fixture, duplicate runner,
+  unknown companion package, and extra profile without a second expected matrix. Every
+  configured runner is also spawned with a deliberately absent artifact and must fail on
+  that exact path, proving the selected executable consumes the supplied candidate.
+- Focused candidate tests pass 7/7; the adjacent manifest/artifact tests pass 125/125; lint,
+  typecheck, and diff checks pass. `release-artifact-evidence` again fails only when sharing
+  the larger subprocess-heavy pool (32/32 SBOM setup failures) and passes alone 32/32 in
+  47.21 seconds, matching the previously recorded full-pool resource-isolation issue.
 
 ### T5.5 — Make content manifests independent of verifier umask
 
