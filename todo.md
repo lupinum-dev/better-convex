@@ -87,7 +87,7 @@ gate are complete.
 
 ### Merged with Codex findings
 
-- [ ] Claude `NUXT-03` is the same bytes/non-plain-object corruption found by Codex.
+- [x] Claude `NUXT-03` is the same bytes/non-plain-object corruption found by Codex.
 - [ ] Claude `REL-03` is the same self-validating candidate-profile duplication found by
       Codex.
 - [ ] Claude `MCP-05`/`NORM-03` are part of deleting the public constant `era` context and
@@ -116,7 +116,7 @@ gate are complete.
 - [ ] Do not implement Claude's proposed automatic `registerTool` interceptor. It would
       add a second MCP registration owner. Keep explicit `runMcpTool` at the application
       boundary and delete only its unearned diagnostic surface.
-- [ ] Do not publish an internal Vue unref helper solely to deduplicate a small Nuxt
+- [x] Do not publish an internal Vue unref helper solely to deduplicate a small Nuxt
       helper. Preserve correct non-plain values with a private implementation unless an
       existing public primitive already has the exact contract.
 - [ ] Do not implement live pagination tail `refresh()` on every head change. Cursor
@@ -736,20 +736,36 @@ Phase 2 exit gate:
 
 Sources: Codex `F-002`; Claude `NUXT-03`.
 
-- [ ] Recurse only into refs, arrays, and plain records.
-- [ ] Preserve `ArrayBuffer` and every other supported non-plain Convex value.
-- [ ] Use one private Nuxt normalization contract for SSR keys, hydration keys, and
+- [x] Recurse only into refs, arrays, and plain records.
+- [x] Preserve `ArrayBuffer` and every other supported non-plain Convex value.
+- [x] Use one private Nuxt normalization contract for SSR keys, hydration keys, and
       call arguments.
-- [ ] Reuse the exact Vue semantics through an existing private embedded boundary if
+- [x] Reuse the exact Vue semantics through an existing private embedded boundary if
       that requires no new export; otherwise keep a small private Nuxt implementation.
-- [ ] Do not add a new public cross-package utility solely for this helper.
+- [x] Do not add a new public cross-package utility solely for this helper.
 
 Acceptance criteria:
 
-- [ ] Byte arguments reach Convex as the original bytes.
-- [ ] Different buffers produce different keys.
-- [ ] Regular and paginated SSR/client keys agree.
-- [ ] Existing nested-ref behavior remains unchanged.
+- [x] Byte arguments reach Convex as the original bytes.
+- [x] Different buffers produce different keys.
+- [x] Regular and paginated SSR/client keys agree.
+- [x] Existing nested-ref behavior remains unchanged.
+
+Ledger note (2026-07-26):
+
+- Red proof: regular and paginated hydration both missed payload entries keyed by the
+  real bytes because the Nuxt resolver recursively projected `ArrayBuffer` to `{}`.
+- Replaced that broad object projection with one private Nuxt contract that unwraps
+  refs only while traversing arrays and plain records. Primitive Convex values and
+  non-plain values such as `ArrayBuffer` remain untouched.
+- Kept the helper inside the Nuxt runtime. The Vue package's existing private
+  `deepUnref` already has the same semantics, so no cross-package export or second
+  public utility was introduced.
+- Green proof: original byte identity reaches the client query call, distinct buffers
+  produce distinct keys, and regular plus paginated hydration consume their matching
+  byte-specific SSR payload. The two focused Nuxt files pass 31 tests, including the
+  pre-existing nested-ref behavior. The complete Nuxt project passes 108 tests; root
+  typecheck and lint pass.
 
 ### T3.2 — Preserve same-identity SSR payload through initial settlement
 

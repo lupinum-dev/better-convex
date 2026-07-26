@@ -238,4 +238,37 @@ describe('useConvexPaginatedQuery controller', () => {
     })
     wrapper.unmount()
   })
+
+  it('hydrates byte arguments from the same paginated key used by SSR', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:hydrated-by-digest')
+    const digest = new Uint8Array([4, 5, 6]).buffer
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { digest, paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'none',
+      'anonymous',
+    )
+
+    const { result, wrapper } = await captureInNuxt(
+      () =>
+        createConvexPaginatedQueryState(
+          query,
+          { digest } as never,
+          { auth: 'none', initialNumItems: 2 },
+          true,
+        ).resultData,
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: page(['matching-bytes'], true, null) },
+      },
+    )
+
+    expect(result.results.value).toEqual(['matching-bytes'])
+    expect((primary.calls.onUpdate[0]?.args as { digest: ArrayBuffer }).digest).toBe(digest)
+    wrapper.unmount()
+  })
 })

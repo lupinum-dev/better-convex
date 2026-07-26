@@ -431,6 +431,55 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     )
   })
 
+  it('preserves byte arguments at the client query boundary', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('files:by-digest')
+    const digest = new Uint8Array([0, 127, 255]).buffer
+
+    const { flush, wrapper } = await captureInNuxt(
+      () => useConvexQueryState(query, { digest }),
+      { convex },
+    )
+
+    await flush()
+    expect(convex.calls.onUpdate).toHaveLength(1)
+    expect(convex.calls.onUpdate[0]?.args).toEqual({ digest })
+    expect((convex.calls.onUpdate[0]?.args as { digest: ArrayBuffer }).digest).toBe(digest)
+    wrapper.unmount()
+  })
+
+  it('hydrates byte arguments from their byte-specific Nuxt key', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('files:hydrated-by-digest')
+    const digest = new Uint8Array([1, 2, 3]).buffer
+    const otherDigest = new Uint8Array([1, 2, 4]).buffer
+    const key = withAuthDimension(
+      createConvexQueryKey(query, { digest }),
+      'none',
+      'anonymous',
+    )
+    const otherKey = withAuthDimension(
+      createConvexQueryKey(query, { digest: otherDigest }),
+      'none',
+      'anonymous',
+    )
+
+    expect(otherKey).not.toBe(key)
+    const { result, wrapper } = await captureInNuxt(
+      () => useConvexQueryState(query, { digest }, { auth: 'none' }),
+      {
+        convex,
+        payloadData: {
+          [key]: { value: { source: 'matching-bytes' } },
+          [otherKey]: { value: { source: 'other-bytes' } },
+        },
+      },
+    )
+
+    expect(result.data.value).toEqual({ source: 'matching-bytes' })
+    wrapper.unmount()
+  })
+
   it('reactive args trigger refetches for deep updates and added keys', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('search:notes:reactive-args')

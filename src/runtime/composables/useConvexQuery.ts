@@ -3,7 +3,6 @@ import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex
 import {
   computed,
   effectScope,
-  isRef,
   onScopeDispose,
   toValue,
   watch,
@@ -24,6 +23,7 @@ import { executeQueryHttp } from '../utils/query-execution'
 import { createQueryExecutionGate } from '../utils/query-execution-gate'
 import { createConvexQueryAuthContext } from '../utils/query-foundation'
 import { computeConvexQueryPending } from '../utils/query-state'
+import { normalizeConvexReactiveArgs } from '../utils/reactive-args'
 import { getConvexRuntimeConfig } from '../utils/runtime-config'
 import type { ConvexCallStatus } from '../utils/types'
 
@@ -57,20 +57,6 @@ interface BuildConvexQueryResult<DataT> {
 
 interface SsrQueryPayload<T> {
   value: T
-}
-
-export function resolveConvexReactiveValue(value: unknown): unknown {
-  const resolved = isRef(value) ? value.value : value
-  if (Array.isArray(resolved)) return resolved.map(resolveConvexReactiveValue)
-  if (resolved && typeof resolved === 'object') {
-    return Object.fromEntries(
-      Object.entries(resolved as Record<string, unknown>).map(([key, entry]) => [
-        key,
-        resolveConvexReactiveValue(entry),
-      ]),
-    )
-  }
-  return resolved
 }
 
 function waitForClientTerminal(status: ComputedRef<string>, timeoutMs: number): Promise<void> {
@@ -118,7 +104,7 @@ export function createConvexQueryState<
 
   if (import.meta.client) {
     const authContext = createConvexQueryAuthContext(useNuxtApp())
-    const hydratedArgs = resolveConvexReactiveValue(toValue(args)) as Args
+    const hydratedArgs = normalizeConvexReactiveArgs(toValue(args)) as Args
     const hydrationGate = createQueryExecutionGate({
       authStatus: authContext.status.value,
       authMode: auth,
@@ -176,7 +162,7 @@ export function createConvexQueryState<
         runtime?.getDevtoolsSink()?.upsertQuery({
           id: hydrationKey,
           name: getFunctionName(query),
-          args: resolveConvexReactiveValue(toValue(args)),
+          args: normalizeConvexReactiveArgs(toValue(args)),
           status: currentStatus,
           data,
           error: currentError?.message,
@@ -209,7 +195,7 @@ export function createConvexQueryState<
   }
 
   const authContext = createConvexQueryAuthContext(null)
-  const currentArgs = computed(() => resolveConvexReactiveValue(toValue(args)) as Args)
+  const currentArgs = computed(() => normalizeConvexReactiveArgs(toValue(args)) as Args)
   const skipped = computed(() => currentArgs.value === 'skip')
   const gate = computed(() =>
     createQueryExecutionGate({

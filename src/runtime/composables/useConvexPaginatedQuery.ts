@@ -19,9 +19,9 @@ import { createConvexQueryKey, getFunctionName } from '../utils/convex-shared'
 import { executeQueryHttp } from '../utils/query-execution'
 import { createQueryExecutionGate } from '../utils/query-execution-gate'
 import { createConvexQueryAuthContext } from '../utils/query-foundation'
+import { normalizeConvexReactiveArgs } from '../utils/reactive-args'
 import { getConvexRuntimeConfig } from '../utils/runtime-config'
 import { computeSsrPaginationStatus } from '../utils/ssr-pagination-state'
-import { resolveConvexReactiveValue } from './useConvexQuery'
 
 export type ConvexPaginatedQuerySkip = 'skip'
 export type ConvexPaginatedQueryArgs<Args> = Args | ConvexPaginatedQuerySkip
@@ -99,7 +99,7 @@ export function createConvexPaginatedQueryState<
 
   if (import.meta.client) {
     const authContext = createConvexQueryAuthContext(useNuxtApp())
-    const hydratedArgs = resolveConvexReactiveValue(toValue(args)) as Args
+    const hydratedArgs = normalizeConvexReactiveArgs(toValue(args)) as Args
     const hydrationGate = createQueryExecutionGate({
       authStatus: authContext.status.value,
       authMode: auth,
@@ -144,7 +144,7 @@ export function createConvexPaginatedQueryState<
   const authContext = createConvexQueryAuthContext(null)
   const currentArgs = computed(
     () =>
-      resolveConvexReactiveValue(toValue(args)) as ConvexPaginatedQueryArgs<
+      normalizeConvexReactiveArgs(toValue(args)) as ConvexPaginatedQueryArgs<
         PaginatedQueryArgs<Query>
       >,
   )
