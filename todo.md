@@ -59,7 +59,7 @@ gate are complete.
 ### Accepted from Claude
 
 - [x] `MCP-01`: force unary JSON MCP responses.
-- [ ] `MCPI-01`: recoverable MCP App protocol errors must not brick the App or discard a
+- [x] `MCPI-01`: recoverable MCP App protocol errors must not brick the App or discard a
       committed result.
 - [ ] `NUXT-01`: preserve same-identity SSR hydration through initial auth settlement.
 - [ ] `REL-01`: replace the unsatisfiable fresh-runner release command with one ordered
@@ -405,20 +405,33 @@ Ledger note (2026-07-26):
 
 Source: Claude `MCPI-01`.
 
-- [ ] Remove `app.onerror = fail` as a phase transition.
-- [ ] Delete `hasError` if no longer needed.
-- [ ] Keep connect rejection and actual transport close as terminal lifecycle signals.
-- [ ] Remove post-await readiness checks that can discard an already-committed result;
+- [x] Remove `app.onerror = fail` as a phase transition.
+- [x] Delete `hasError` if no longer needed.
+- [x] Keep connect rejection and actual transport close as terminal lifecycle signals.
+- [x] Remove post-await readiness checks that can discard an already-committed result;
       keep pre-call readiness and disposal fencing.
 
 Acceptance criteria:
 
-- [ ] Unknown/late response IDs and unknown progress tokens leave the App usable.
-- [ ] The next tool call still reaches the host.
-- [ ] A recoverable protocol error during an in-flight tool call does not discard the
+- [x] Unknown/late response IDs and unknown progress tokens leave the App usable.
+- [x] The next tool call still reaches the host.
+- [x] A recoverable protocol error during an in-flight tool call does not discard the
       committed result.
-- [ ] Connect failure and transport close still produce a non-ready state.
-- [ ] App listeners and the private official `App` are disposed exactly once.
+- [x] Connect failure and transport close still produce a non-ready state.
+- [x] App listeners and the private official `App` are disposed exactly once.
+
+Ledger note (2026-07-26):
+
+- Removed the SDK's out-of-band `onerror` callback from the lifecycle state machine.
+  Pre-call readiness remains strict; after an awaited host operation, only disposal is
+  fenced, so a recoverable protocol diagnostic cannot erase a committed result.
+- Red proof: an unknown-response error emitted during an in-flight tool call moved the
+  composable to `error`, and the post-await readiness check discarded the returned
+  result.
+- Green proof: unknown response/progress diagnostics leave the phase ready, the
+  in-flight result resolves, and the next call reaches the host. Connect rejection,
+  teardown, listener removal, and close-once behavior remain covered. The focused unit
+  tests, existing real-Chromium MCP Apps proof, Vue typecheck, and Vue build pass.
 
 ### T2.3 — Make high-impact confirmation work in a real browser
 

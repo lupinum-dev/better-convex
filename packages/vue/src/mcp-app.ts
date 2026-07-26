@@ -67,13 +67,9 @@ export function useMcpApp(options: UseMcpAppOptions): UseMcpAppReturn {
   const toolCancelled = shallowRef<McpUiToolCancelledNotification['params']>()
   let active = true
   let closeStarted = false
-  let hasError = false
 
   function fail(): void {
-    if (active) {
-      hasError = true
-      phase.value = 'error'
-    }
+    if (active) phase.value = 'error'
   }
 
   function snapshot<T>(value: T): T | undefined {
@@ -110,12 +106,16 @@ export function useMcpApp(options: UseMcpAppOptions): UseMcpAppReturn {
     }
   }
 
+  function requireActive(): void {
+    if (!active) throw new Error('MCP App is closed')
+  }
+
   async function callServerTool(
     input: Parameters<App['callServerTool']>[0],
   ): Promise<Awaited<ReturnType<App['callServerTool']>>> {
     requireReady()
     const result = await app.callServerTool(cloneForBridge(input))
-    requireReady()
+    requireActive()
     return cloneForBridge(result)
   }
 
@@ -124,7 +124,7 @@ export function useMcpApp(options: UseMcpAppOptions): UseMcpAppReturn {
   ): Promise<Awaited<ReturnType<App['openLink']>>> {
     requireReady()
     const result = await app.openLink(cloneForBridge(input))
-    requireReady()
+    requireActive()
     return cloneForBridge(result)
   }
 
@@ -167,7 +167,6 @@ export function useMcpApp(options: UseMcpAppOptions): UseMcpAppReturn {
     if (closeStarted) return
     closeStarted = true
     app.onteardown = undefined
-    app.onerror = undefined
     void app.close().catch(() => {})
   }
 
@@ -180,7 +179,6 @@ export function useMcpApp(options: UseMcpAppOptions): UseMcpAppReturn {
     retire()
     return {}
   }
-  app.onerror = fail
 
   onMounted(async () => {
     if (!active) return
@@ -193,7 +191,7 @@ export function useMcpApp(options: UseMcpAppOptions): UseMcpAppReturn {
       if (capabilities !== undefined) receive(hostCapabilities, capabilities)
       if (version !== undefined) receive(hostVersion, version)
       receiveHostContext()
-      if (!hasError) phase.value = 'ready'
+      phase.value = 'ready'
     } catch {
       fail()
     }
