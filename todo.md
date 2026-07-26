@@ -1679,16 +1679,33 @@ Ledger note (2026-07-26):
 
 Source: Claude unverified `REL-04`, independently accepted.
 
-- [ ] Read path, size, and mode from archive headers.
-- [ ] Continue hashing the extracted file bytes.
-- [ ] Do not derive certified modes from umask-filtered extracted filesystem stats.
+- [x] Read path, size, and mode from archive headers.
+- [x] Continue hashing the extracted file bytes.
+- [x] Do not derive certified modes from umask-filtered extracted filesystem stats.
 
 Acceptance criteria:
 
-- [ ] The same tarball verified under umask `022` and `077` produces an identical
+- [x] The same tarball verified under umask `022` and `077` produces an identical
       content manifest.
-- [ ] Executable bin modes match the archive, not the verifier environment.
-- [ ] Path traversal, symlink, duplicate-entry, and unexpected-file checks remain.
+- [x] Executable bin modes match the archive, not the verifier environment.
+- [x] Path traversal, symlink, duplicate-entry, and unexpected-file checks remain.
+
+Ledger note (2026-07-26):
+
+- `inspectTarballArchive` now retains and validates each file header's path, declared size,
+  and numeric mode. `packAndExtract` carries that closed header list to content-manifest
+  generation instead of rediscovering certified metadata from the extracted filesystem.
+- Content manifests join archive path/size/mode to SHA-256 hashes of the extracted bytes.
+  The join fails on a missing file, size mismatch, or any extracted file absent from the
+  archive. Installed-package comparison uses a separate mode-free byte identity, so npm's
+  installed modes do not become release evidence.
+- The load-bearing regression extracts one tarball under both umask `022` and `077`.
+  Filesystem modes demonstrably differ (`644/755` versus `600/700`), but both manifests are
+  identical and retain archive modes `644/755`; the restrictive extraction's declared bin
+  still passes the executable-mode check.
+- Archive path/type/link/duplicate/count/size tests pass 20/20, including a new invalid-mode
+  rejection. Release evidence passes 32/32 standalone, lint and typecheck pass, and the real
+  MCP packed-entry gate emits its manifest successfully from the retained headers.
 
 ### T5.6 — Derive physical package pins and repeated manifest policy
 
