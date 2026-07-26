@@ -1610,19 +1610,37 @@ Ledger note (2026-07-26):
 
 Source: Claude `TE-01`.
 
-- [ ] Inventory which manually authored fault-injection cases uniquely exercise
+- [x] Inventory which manually authored fault-injection cases uniquely exercise
       production invariants.
-- [ ] Move unique production assertions into normal security/behavior suites.
-- [ ] Delete or accurately rename the remaining hand-authored mutant harness.
-- [ ] Remove “17 killed security mutants” from attestations unless production code is
+- [x] Move unique production assertions into normal security/behavior suites.
+- [x] Delete or accurately rename the remaining hand-authored mutant harness.
+- [x] Remove “17 killed security mutants” from attestations unless production code is
       actually mutated by the gate.
 
 Acceptance criteria:
 
-- [ ] No evidence labels hand-authored alternate functions as production mutation
+- [x] No evidence labels hand-authored alternate functions as production mutation
       testing.
-- [ ] No unique security invariant is lost.
-- [ ] The release gate reports only executed evidence classes.
+- [x] No unique security invariant is lost.
+- [x] The release gate reports only executed evidence classes.
+
+Ledger note (2026-07-26):
+
+- Audited all 16 hand-authored cases. Thirteen production negatives already had normal
+  owners in OAuth security/provider integration, auth fuzz, proxy, and signed-client-IP
+  suites. The three unique assertions moved first: `consumeOne` is now proven to issue
+  exactly one component mutation with no query, and Convex adapter tests directly reject
+  immutable-id and unique-field bulk updates.
+- Deleted the alternate insecure closures, manifest, contract helper, custom runner, two
+  Vitest projects, package script, and both CI invocations: 899 lines removed. No
+  mutation-testing alias or renamed harness remains because production code was never
+  mutated.
+- Removed the false command and “killed security mutants” claims from current docs,
+  historical evidence summaries, and the vNext task ledger. `verify:auth` now reports
+  only gates it actually executes.
+- Adapter suites pass 37 tests, OAuth passes 207, auth fuzz passes 11, affected workflow
+  tests pass 26, full workspace typecheck and lint pass, and a repository-wide stale-name
+  scan is empty.
 
 ### T5.4 — Delete candidate-profile mirrors
 
