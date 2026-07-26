@@ -11,6 +11,7 @@ import {
   toAuthenticatedIdentity,
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
+import { createConvexPaginatedQueryState } from '../../src/runtime/composables/useConvexPaginatedQuery'
 import {
   createConvexQueryState,
   useConvexQuery,
@@ -21,7 +22,7 @@ import { ConvexCallError } from '../../src/runtime/errors'
 import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
 import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
-import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
+import { captureInNuxt, identityProxyListenerCount } from '../helpers/nuxt-runtime-harness'
 import { waitFor } from '../helpers/wait-for'
 
 function useConvexQueryState<
@@ -38,6 +39,26 @@ function useConvexQueryState<
 }
 
 describe('useConvexQuery composables (Nuxt runtime)', () => {
+  it('does not add one identity observer listener per query composable', async () => {
+    const query = mockFnRef<'query'>('notes:list:no-identity-mirror')
+    const paginated = mockFnRef<'query'>('notes:page:no-identity-mirror')
+
+    const { result } = await captureInNuxt(
+      () => {
+        const before = identityProxyListenerCount()
+        createConvexQueryState(query, 'skip', undefined, true)
+        createConvexQueryState(query, 'skip', undefined, true)
+        createConvexQueryState(query, 'skip', undefined, true)
+        createConvexPaginatedQueryState(paginated as never, 'skip', undefined, true)
+        createConvexPaginatedQueryState(paginated as never, 'skip', undefined, true)
+        return { before, after: identityProxyListenerCount() }
+      },
+      { convex: new MockConvexClient() },
+    )
+
+    expect(result.after).toBe(result.before)
+  })
+
   it('mounts immediately from an SSR error and keeps it until client reconciliation settles', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:ssr-error-hydration')

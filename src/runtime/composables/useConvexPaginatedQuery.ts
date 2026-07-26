@@ -106,7 +106,7 @@ export function createConvexPaginatedQueryState<
   const auth = options?.auth ?? 'optional'
 
   if (import.meta.client) {
-    const authContext = createConvexQueryAuthContext(useNuxtApp())
+    const authContext = createConvexQueryAuthContext()
     const hydratedArgs = normalizeConvexReactiveArgs(toValue(args)) as Args
     const hydrationGate = createQueryExecutionGate({
       authStatus: authContext.status.value,
@@ -157,7 +157,7 @@ export function createConvexPaginatedQueryState<
     }
   }
 
-  const authContext = createConvexQueryAuthContext(null)
+  const authContext = createConvexQueryAuthContext()
   const currentArgs = computed(
     () =>
       normalizeConvexReactiveArgs(toValue(args)) as ConvexPaginatedQueryArgs<

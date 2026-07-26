@@ -93,6 +93,11 @@ const anonymousIdentity: BetterConvexIdentityObserver = {
   subscribe: () => () => {},
 }
 const identityProxyListeners = new Set<() => void>()
+
+export function identityProxyListenerCount() {
+  return identityProxyListeners.size
+}
+
 let stopCurrentIdentity: (() => void) | null = null
 function setCurrentIdentityObserver(observer: BetterConvexIdentityObserver | null) {
   stopCurrentIdentity?.()
@@ -124,7 +129,9 @@ const attachmentProxy: BetterConvexAttachedRuntime = {
         | { state?: { value: unknown } }
         | undefined
       if (ownerConnection?.state?.value) return ownerConnection.state.value as never
-      const target = currentConvexTarget as { connectionState?: () => unknown } | null
+      const target = currentConvexTarget as {
+        connectionState?: () => unknown
+      } | null
       return (target?.connectionState?.() ?? DEFAULT_OWNER_CONNECTION_STATE) as never
     },
     subscribe(listener) {

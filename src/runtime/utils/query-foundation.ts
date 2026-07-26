@@ -1,15 +1,11 @@
-import type {
-  BetterConvexAttachedRuntime,
-  BetterConvexIdentityObserver,
-} from 'better-convex-vue/embedded'
+import type { BetterConvexAttachedRuntime } from 'better-convex-vue/embedded'
 import type { ComputedRef } from 'vue'
-import { computed, getCurrentScope, onScopeDispose, shallowRef } from 'vue'
+import { computed } from 'vue'
 
 import { useState } from '#imports'
 
 import { identityKeyOf } from '../auth/auth-identity'
 import { ConvexCallError } from '../errors'
-import { readConvexRuntimeContext } from '../runtime-context'
 import { useConvexIdentityState } from './auth-identity-state'
 import { useConvexAuthPendingState } from './auth-pending-state'
 import { deriveConvexAuthStatus, type ConvexAuthStatus } from './auth-status'
@@ -24,40 +20,21 @@ import { getConvexRuntimeConfig } from './runtime-config'
  *
  * Derived from the SSR-seeded reactive state (`convex:pending` / `convex:identity` /
  * `convex:authError`) so it is correct on both server and client, plus the
- * frozen {@link ClientIdentityObserver} for the monotonic `identityGeneration` used as
- * the isolation dimension. Auth-disabled and server contexts have no port and
- * report generation `0`.
+ * Query isolation generations are owned by the attached Vue runtime; this Nuxt
+ * context only derives the server/client execution gate.
  */
 export interface ConvexQueryAuthContext {
   readonly status: ComputedRef<ConvexAuthStatus>
   readonly identityKey: ComputedRef<ConvexIdentityKey | null>
-  readonly identityGeneration: ComputedRef<number>
   readonly error: ComputedRef<ConvexCallError | null>
-  /** Resolve when initial auth bootstrap settles (used by the await contract). */
-  waitForInitialSettlement(): Promise<void>
 }
 
-export function createConvexQueryAuthContext(nuxtApp: unknown): ConvexQueryAuthContext {
+export function createConvexQueryAuthContext(): ConvexQueryAuthContext {
   const authEnabled = getConvexRuntimeConfig().auth !== false
 
   const identity = useConvexIdentityState()
   const pending = useConvexAuthPendingState()
   const authError = useState<string | null>('convex:authError', () => null)
-
-  const port: BetterConvexIdentityObserver | undefined = authEnabled
-    ? readConvexRuntimeContext(nuxtApp)?.attachment.identity
-    : undefined
-
-  // Mirror the port's monotonic identity generation reactively. Subscribing keeps
-  // masking correct across A->B primary replacement even when the identity key
-  // alone would repeat (A->B->A). Server/disabled contexts stay at 0.
-  const generation = shallowRef(port ? port.snapshot().identityGeneration : 0)
-  if (port && getCurrentScope()) {
-    const stop = port.subscribe(() => {
-      generation.value = port.snapshot().identityGeneration
-    })
-    onScopeDispose(stop)
-  }
 
   const identityKey = computed<ConvexIdentityKey | null>(() =>
     authEnabled ? identityKeyOf(identity.value) : null,
@@ -66,7 +43,10 @@ export function createConvexQueryAuthContext(nuxtApp: unknown): ConvexQueryAuthC
   const error = computed<ConvexCallError | null>(() => {
     if (!authEnabled) return null
     return authError.value
-      ? new ConvexCallError({ kind: 'authentication', message: authError.value })
+      ? new ConvexCallError({
+          kind: 'authentication',
+          message: authError.value,
+        })
       : null
   })
 
@@ -84,12 +64,7 @@ export function createConvexQueryAuthContext(nuxtApp: unknown): ConvexQueryAuthC
   return {
     status,
     identityKey,
-    identityGeneration: computed(() => generation.value),
     error,
-    waitForInitialSettlement() {
-      if (port) return port.waitForInitialSettlement()
-      return Promise.resolve()
-    },
   }
 }
 

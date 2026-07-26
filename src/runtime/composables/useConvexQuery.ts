@@ -107,7 +107,7 @@ export function createConvexQueryState<
   const auth = options?.auth ?? 'optional'
 
   if (import.meta.client) {
-    const authContext = createConvexQueryAuthContext(useNuxtApp())
+    const authContext = createConvexQueryAuthContext()
     const hydratedArgs = normalizeConvexReactiveArgs(toValue(args)) as Args
     const hydrationGate = createQueryExecutionGate({
       authStatus: authContext.status.value,
@@ -211,7 +211,7 @@ export function createConvexQueryState<
     }
   }
 
-  const authContext = createConvexQueryAuthContext(null)
+  const authContext = createConvexQueryAuthContext()
   const currentArgs = computed(() => normalizeConvexReactiveArgs(toValue(args)) as Args)
   const skipped = computed(() => currentArgs.value === 'skip')
   const gate = computed(() =>

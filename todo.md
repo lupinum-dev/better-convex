@@ -1022,7 +1022,7 @@ Ledger note (2026-07-26):
 Sources: Claude unverified Vue lifecycle `VUE-06`, controller `VUE-06`/`VUE-07`, and
 Nuxt `NUXT-09`, independently source-confirmed.
 
-- [ ] Delete the per-composable identity-generation mirror/subscription if the final
+- [x] Delete the per-composable identity-generation mirror/subscription if the final
       caller search confirms its value and settlement promise are unread.
 - [ ] Give overlapping one-shot query refreshes a local monotonic sequence so an older
       completion cannot overwrite the newer result.
@@ -1039,6 +1039,15 @@ Acceptance criteria:
       value/error without an extra HTTP query.
 - [ ] Paginated SSR errors survive hydration and clear on the first live value/error.
 - [ ] Long-lived subscription callbacks still use the existing generation fence.
+
+Implementation ledger (active, 2026-07-26):
+
+- The final caller search found both Nuxt auth-context exports unread:
+  `identityGeneration` and `waitForInitialSettlement`. Their per-composable port mirror
+  and lifecycle subscription were deleted rather than retained behind another helper.
+  A mixed five-composable regression proves mounting queries and paginated queries adds
+  zero identity-observer listeners. The focused Nuxt query/pagination suite passes 34
+  tests and the root Vue typecheck passes.
 
 Phase 3 exit gate:
 
