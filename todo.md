@@ -1033,14 +1033,14 @@ Nuxt `NUXT-09`, independently source-confirmed.
 
 Acceptance criteria:
 
-- [ ] Mounting N queries does not add N unused identity listeners.
+- [x] Mounting N queries does not add N unused identity listeners.
 - [x] If two refreshes resolve in reverse order, only the later refresh commits.
 - [x] A hydrated page resolves immediately; a live first page resolves on its first
       value/error without an extra HTTP query.
 - [x] Paginated SSR errors survive hydration and clear on the first live value/error.
-- [ ] Long-lived subscription callbacks still use the existing generation fence.
+- [x] Long-lived subscription callbacks still use the existing generation fence.
 
-Implementation ledger (active, 2026-07-26):
+Implementation ledger (complete, 2026-07-26):
 
 - The final caller search found both Nuxt auth-context exports unread:
   `identityGeneration` and `waitForInitialSettlement`. Their per-composable port mirror
@@ -1066,13 +1066,32 @@ Implementation ledger (active, 2026-07-26):
   unsettled, then is deleted on either the first live value or live error; the live
   error remains visible after replacing the overlay. `reset()` also clears the overlay.
   The focused Nuxt pagination suite passes 13 tests and the root typecheck passes.
+- The phase-wide pass completes 1,383 unit tests and 122 Nuxt tests. Root and fixture
+  typechecks, lint, canonical format, architecture boundaries, the Vue package build,
+  all three packed Vue consumers (anonymous, authenticated, and cross-copy embedded),
+  the Nuxt module build, and its maintained consumer-smoke typecheck pass. Existing
+  identity-boundary tests continue to prove queued long-lived callbacks are rejected
+  by the controller generation fence.
 
 Phase 3 exit gate:
 
-- [ ] Same-identity SSR has no duplicate fetch or flash.
-- [ ] Different identities cannot observe retained data.
-- [ ] All public call/query/pagination errors satisfy the same opacity contract.
-- [ ] Subscription counts are deterministic and bounded by loaded pages.
+- [x] Same-identity SSR has no duplicate fetch or flash.
+- [x] Different identities cannot observe retained data.
+- [x] All public call/query/pagination errors satisfy the same opacity contract.
+- [x] Subscription counts are deterministic and bounded by loaded pages.
+
+Phase 3 ledger note (2026-07-26):
+
+- Same-identity query and pagination hydration is retained until live settlement
+  without a duplicate fetch. Identity changes synchronously clear protected query,
+  pagination, retained, pending, and error state before a replacement listener can
+  publish.
+- Public calls, regular queries, pagination, SSR transport, and hydrated overlays now
+  share opaque unknown-cause handling while preserving reviewed structured Convex
+  error data.
+- Query subscriptions have one owner and pagination has one controller-owned
+  subscription per stable loaded range, with a bounded two-part replacement only while
+  Convex requests a split. Exact lifecycle counts and disposal are covered.
 
 ---
 
