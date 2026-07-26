@@ -52,7 +52,6 @@ import {
 import { runOfficialMcpToolProbe } from '../official-tools'
 import {
   interactionLocatorFromPath,
-  interactionPath,
   interactionUrl,
   INTERACTION_LAB_SESSIONS,
   INTERACTION_ORIGIN,
