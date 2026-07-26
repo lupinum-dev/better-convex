@@ -10,7 +10,13 @@ import {
   normalizeConvexError,
   type ConvexCallErrorInput,
 } from '../../src/runtime/errors'
-import { createSsrConvexFetch, executeQueryHttp } from '../../src/runtime/utils/query-execution'
+import {
+  CONVEX_HTTP_ACTION_TIMEOUT_MS,
+  CONVEX_HTTP_MUTATION_TIMEOUT_MS,
+  CONVEX_HTTP_QUERY_TIMEOUT_MS,
+  createBoundedConvexFetch,
+} from '../../src/runtime/utils/bounded-convex-fetch'
+import { executeQueryHttp } from '../../src/runtime/utils/query-execution'
 
 /**
  * Golden fixtures for the public error contract (architecture invariant).
@@ -449,26 +455,32 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
   })
 
   it('enforces response bounds before and during body consumption', async () => {
-    const declared = createSsrConvexFetch({
-      fetchImpl: () =>
-        Promise.resolve(
-          new Response('small', {
-            headers: { 'content-length': String(1024) },
-          }),
-        ),
-      maxResponseBytes: 4,
-    })
-    await expect(declared('https://example.test')).rejects.toMatchObject({
-      kind: 'transport',
-    })
+    for (const operation of ['query', 'mutation', 'action']) {
+      const declared = createBoundedConvexFetch({
+        fetchImpl: () =>
+          Promise.resolve(
+            new Response('small', {
+              headers: { 'content-length': String(1024) },
+            }),
+          ),
+        maxResponseBytes: 4,
+      })
+      await expect(declared(`https://example.convex.cloud/api/${operation}`)).rejects.toMatchObject(
+        {
+          kind: 'transport',
+        },
+      )
 
-    const streamed = createSsrConvexFetch({
-      fetchImpl: () => Promise.resolve(new Response('12345')),
-      maxResponseBytes: 4,
-    })
-    await expect((await streamed('https://example.test')).text()).rejects.toMatchObject({
-      kind: 'transport',
-    })
+      const streamed = createBoundedConvexFetch({
+        fetchImpl: () => Promise.resolve(new Response('12345')),
+        maxResponseBytes: 4,
+      })
+      await expect(
+        (await streamed(`https://example.convex.cloud/api/${operation}`)).text(),
+      ).rejects.toMatchObject({
+        kind: 'transport',
+      })
+    }
   })
 
   it('propagates parent abort and enforces the request deadline', async () => {
@@ -480,7 +492,7 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
         })
       })
     const parent = new AbortController()
-    const aborted = createSsrConvexFetch({
+    const aborted = createBoundedConvexFetch({
       fetchImpl: neverFetch,
       signal: parent.signal,
     })
@@ -492,7 +504,7 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
     parent.abort()
     await abortedExpectation
 
-    const timed = createSsrConvexFetch({
+    const timed = createBoundedConvexFetch({
       fetchImpl: neverFetch,
       timeoutMs: 25,
     })
@@ -504,7 +516,7 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
     await vi.advanceTimersByTimeAsync(25)
     await timedExpectation
 
-    const bodyTimed = createSsrConvexFetch({
+    const bodyTimed = createBoundedConvexFetch({
       fetchImpl: () =>
         Promise.resolve(
           new Response(
@@ -524,6 +536,40 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
     })
     await vi.advanceTimersByTimeAsync(25)
     await bodyExpectation
+    vi.useRealTimers()
+  })
+
+  it.each([
+    ['query', CONVEX_HTTP_QUERY_TIMEOUT_MS],
+    ['mutation', CONVEX_HTTP_MUTATION_TIMEOUT_MS],
+    ['action', CONVEX_HTTP_ACTION_TIMEOUT_MS],
+  ] as const)('applies the reviewed %s operation deadline', async (operation, timeoutMs) => {
+    vi.useFakeTimers()
+    const neverFetch: typeof fetch = async (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+          once: true,
+        })
+      })
+    const bounded = createBoundedConvexFetch({ fetchImpl: neverFetch })
+    const pending = bounded(`https://example.convex.cloud/api/${operation}`)
+    const expectation = expect(pending).rejects.toMatchObject({
+      kind: 'transport',
+      message: 'Convex HTTP request timed out',
+    })
+
+    await vi.advanceTimersByTimeAsync(timeoutMs - 1)
+    await expect(
+      Promise.race([
+        pending.then(
+          () => 'settled',
+          () => 'settled',
+        ),
+        Promise.resolve('pending'),
+      ]),
+    ).resolves.toBe('pending')
+    await vi.advanceTimersByTimeAsync(1)
+    await expectation
     vi.useRealTimers()
   })
 })

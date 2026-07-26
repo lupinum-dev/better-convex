@@ -72,10 +72,15 @@ function setConfig(convex: Record<string, unknown>) {
   mocks.useRuntimeConfigMock.mockReturnValue({ public: { convex } })
 }
 
-function createEvent(cookie?: string, headers: Record<string, string> = {}): H3Event {
+function createEvent(
+  cookie?: string,
+  headers: Record<string, string> = {},
+  signal?: AbortSignal,
+): H3Event {
   return {
     context: { nitro: { runtimeConfig: mocks.useRuntimeConfigMock() } },
     node: { req: { headers: { ...headers, ...(cookie ? { cookie } : {}) } } },
+    ...(signal ? { web: { request: new Request('https://app.example.com', { signal }) } } : {}),
   } as unknown as H3Event
 }
 
@@ -89,6 +94,10 @@ beforeEach(() => {
   mocks.actionMock.mockReset()
   mocks.exchangeMock.mockReset()
   setConfig({ url: CONVEX_URL, siteUrl: SITE_URL, auth: {} })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 type EmptyArgs = Record<string, never>
@@ -163,6 +172,40 @@ describe('serverConvex caller-scoped invariants', () => {
     }
     expect(options.logger).toBe(false)
     expect(typeof options.fetch).toBe('function')
+  })
+
+  it('binds Convex response consumption to the incoming request abort signal', async () => {
+    const request = new AbortController()
+    let upstreamSignal: AbortSignal | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input, init) => {
+        upstreamSignal = init?.signal ?? undefined
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('partial'))
+            },
+          }),
+        )
+      }),
+    )
+    mocks.queryMock.mockResolvedValue(null)
+
+    await serverConvex(createEvent(undefined, {}, request.signal), { auth: 'none' }).query(
+      queryRef,
+      {},
+    )
+    const boundedFetch = (mocks.ctorCalls[0]?.options as { fetch: typeof fetch }).fetch
+    const response = await boundedFetch(`${CONVEX_URL}/api/query`)
+    expect(upstreamSignal).toBeInstanceOf(AbortSignal)
+
+    const body = response.text()
+    request.abort()
+    await expect(body).rejects.toMatchObject({
+      kind: 'transport',
+      message: 'Convex HTTP request was aborted',
+    })
   })
 
   it('passes the request and normalized trusted client IP header to the exchange', async () => {

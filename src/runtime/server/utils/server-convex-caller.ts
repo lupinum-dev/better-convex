@@ -4,6 +4,7 @@ import type { H3Event } from 'h3'
 
 import { ConvexCallError, normalizeConvexError } from '../../errors'
 import type { TightenEmptyArgs } from '../../utils/args-tuple'
+import { createBoundedConvexFetch } from '../../utils/bounded-convex-fetch'
 import { normalizeConvexRuntimeConfig } from '../../utils/runtime-config-normalize'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
 import {
@@ -80,35 +81,11 @@ function readCookieHeader(event: H3Event): string | null {
   return typeof raw === 'string' ? raw : null
 }
 
-// ---------------------------------------------------------------------------
-// Classified fetch + boundary error normalization .
-// ---------------------------------------------------------------------------
-
-/**
- * Wrap ONLY a fetch rejection so the official `ConvexHttpClient` cannot erase
- * transport context . Non-OK responses are left untouched: Convex
- * reconstructs function failures from a private HTTP status/protocol path whose
- * status constant is not exported, so this wrapper must let the client consume
- * every response body itself.
- */
-function createClassifiedConvexFetch(): typeof fetch {
-  return async (input, init) => {
-    try {
-      return await fetch(input, init)
-    } catch {
-      throw new ConvexCallError({
-        kind: 'transport',
-        message: 'Convex HTTP request could not complete',
-      })
-    }
-  }
-}
-
 /**
  * Classify an error thrown by `ConvexHttpClient` into public
  * :
  *
- * - an existing {@link ConvexCallError} (our classified-fetch `transport`, or a
+ * - an existing {@link ConvexCallError} (our bounded-fetch `transport`, or a
  *   `authentication` thrown during required token resolution) passes through;
  * - a mechanically recognized Convex application error becomes `server` with its
  *   `data` preserved verbatim, including `data.code === 'UNAUTHORIZED'`;
@@ -117,10 +94,7 @@ function createClassifiedConvexFetch(): typeof fetch {
  *   discarded and its message/code/status/data are never copied into the public
  *   error.
  */
-function normalizeServerConvexBoundaryError(
-  error: unknown,
-  _normalized: NormalizedServerConvexOptions,
-): ConvexCallError {
+function normalizeServerConvexBoundaryError(error: unknown): ConvexCallError {
   if (error instanceof ConvexCallError) return error
   // normalizeConvexError returns `server` ONLY for a recognized Convex
   // application error; anything else it would classify `unknown` while copying
@@ -233,16 +207,20 @@ async function resolveServerToken(
  *
  * The caller lazily resolves one authentication token and one
  * `ConvexHttpClient` (built with `logger: false` so arbitrary Convex function
- * log lines are not re-emitted, and a classified fetch so transport context is
- * preserved). A rejected token or client promise stays rejected for this caller;
- * retrying requires a new caller. Neither promise is stored on the event nor
- * keyed by option hash.
+ * log lines are not re-emitted, and the shared bounded fetch so abort, deadline,
+ * response-size, and transport classification remain request-scoped). A
+ * rejected token or client promise stays rejected for this caller; retrying
+ * requires a new caller. Neither promise is stored on the event nor keyed by
+ * option hash.
  */
 export function serverConvex(
   event: H3Event,
   options: ServerConvexOptions = {},
 ): ServerConvexCaller {
   const normalized = validateServerConvexOptions(options)
+  const boundedFetch = createBoundedConvexFetch({
+    signal: event.web?.request?.signal,
+  })
   let tokenPromise: Promise<string | null> | null = null
   let clientPromise: Promise<ConvexHttpClient> | null = null
 
@@ -254,7 +232,7 @@ export function serverConvex(
   const getClient = (): Promise<ConvexHttpClient> => {
     clientPromise ??= (async () => {
       const client = new ConvexHttpClient(readRequiredConvexUrl(event), {
-        fetch: createClassifiedConvexFetch(),
+        fetch: boundedFetch,
         logger: false,
       })
       const token = await getToken()
@@ -282,7 +260,7 @@ export function serverConvex(
           args as FunctionArgs<typeof query>,
         )) as FunctionReturnType<typeof query>
       } catch (error) {
-        throw normalizeServerConvexBoundaryError(error, normalized)
+        throw normalizeServerConvexBoundaryError(error)
       }
     },
     async mutation(mutation, args) {
@@ -293,7 +271,7 @@ export function serverConvex(
           args as FunctionArgs<typeof mutation>,
         )) as FunctionReturnType<typeof mutation>
       } catch (error) {
-        throw normalizeServerConvexBoundaryError(error, normalized)
+        throw normalizeServerConvexBoundaryError(error)
       }
     },
     async action(action, args) {
@@ -304,7 +282,7 @@ export function serverConvex(
           args as FunctionArgs<typeof action>,
         )) as FunctionReturnType<typeof action>
       } catch (error) {
-        throw normalizeServerConvexBoundaryError(error, normalized)
+        throw normalizeServerConvexBoundaryError(error)
       }
     },
   }

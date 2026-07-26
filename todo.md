@@ -108,7 +108,7 @@ gate are complete.
 - [x] Claude's “no P0” conclusion is superseded by the executed raw-`useConvex()` proof:
       a call entering while generation 0 is unsettled can execute on replacement client
       B in generation 1. This is P0.
-- [ ] Claude's rejection of `NUXT-02` is not adopted. Its refuters conceded that
+- [x] Claude's rejection of `NUXT-02` is not adopted. Its refuters conceded that
       `serverConvex` has no deadline, response bound, or request-abort propagation.
       Codex executed both an orphaned-abort proof and an approximately 2 MiB response
       proof. The corrected fix uses operation-aware limits instead of imposing the SSR
@@ -811,30 +811,48 @@ Ledger note (2026-07-26):
   refresh. The SSR continuation cursor remains available to `loadMore`.
 - Added a controllable unsettled identity observer to the Nuxt harness. Focused
   adapter/plugin/cache tests pass 17 tests; focused query/pagination tests pass 17.
-  The complete unit project passes 1,364 tests and the complete Nuxt project passes
-  115. Vue/root typechecks, Vue build, and root lint pass.
+  The complete unit project passes 1,364 tests and the complete Nuxt project passes 115. Vue/root typechecks, Vue build, and root lint pass.
 
 ### T3.3 — Give SSR and public server calls one bounded transport owner
 
 Source: Codex `F-006`; this deliberately overturns Claude's `NUXT-02` rejection.
 
-- [ ] Generalize the existing bounded fetch from `query-execution.ts`.
-- [ ] Use it for both SSR queries and `serverConvex`.
-- [ ] Propagate the incoming request abort signal.
-- [ ] Use private operation-aware deadlines; do not force an 8-second query deadline on
+- [x] Generalize the existing bounded fetch from `query-execution.ts`.
+- [x] Use it for both SSR queries and `serverConvex`.
+- [x] Propagate the incoming request abort signal.
+- [x] Use private operation-aware deadlines; do not force an 8-second query deadline on
       long actions.
-- [ ] Apply a documented response-size cap to query, mutation, and action responses.
-- [ ] Delete `createClassifiedConvexFetch`.
+- [x] Apply a documented response-size cap to query, mutation, and action responses.
+- [x] Delete `createClassifiedConvexFetch`.
 
 Acceptance criteria:
 
-- [ ] Client disconnect aborts upstream work.
-- [ ] Never-settling query/mutation/action calls terminate at their reviewed deadline.
-- [ ] Declared and streamed oversize responses fail at the boundary without full
+- [x] Client disconnect aborts upstream work.
+- [x] Never-settling query/mutation/action calls terminate at their reviewed deadline.
+- [x] Declared and streamed oversize responses fail at the boundary without full
       buffering.
-- [ ] Status-560 structured application errors and opaque non-560 transport errors keep
+- [x] Status-560 structured application errors and opaque non-560 transport errors keep
       their intended classification.
-- [ ] Packed Nitro behavior matches source tests.
+- [x] Packed Nitro behavior matches source tests.
+
+Ledger note (2026-07-26):
+
+- Extracted the existing SSR fetch bounds into one private dependency-light transport
+  owner. Both `executeQueryHttp` and the request-scoped `serverConvex` client now use it;
+  the server path passes the incoming request signal and the duplicate classified fetch
+  wrapper is deleted.
+- Fixed private policy is query 8 seconds, mutation 15 seconds, action 60 seconds, with
+  a 1 MiB response limit for declared and streamed bodies. The public server-call docs
+  record the policy without adding configuration or a second source of truth.
+- The first pack attempt correctly failed because importing from `query-execution`
+  widened the public server graph to query-only Convex modules. Moving only the
+  transport into `bounded-convex-fetch.ts` restored the reviewed package boundary; no
+  allowlist exception was added.
+- Focused transport/server tests pass 62 tests and the complete unit project passes
+  1,368. Root typecheck and lint pass. `pnpm pack` passes its production build, package
+  export, and single-owner gates. A script importing the extracted tarball verified
+  request abort, exact operation deadlines, declared/streamed response limits, status
+  560 handling, and opaque non-560 classification.
 
 ### T3.4 — One public opacity rule for errors
 
