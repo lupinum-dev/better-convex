@@ -214,10 +214,16 @@ describe('vNext Convex-native MCP topology probe', () => {
     const fixtureManifest = JSON.parse(
       await readFile(path.join(sourceFixture, 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, string> }
+    const mcpManifest = JSON.parse(
+      await readFile(path.join(root, 'packages/mcp/package.json'), 'utf8'),
+    ) as { dependencies: Record<string, string> }
+    const rootManifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')) as {
+      peerDependencies: Record<string, string>
+    }
     expect(fixtureManifest.dependencies).toEqual({
       '@better-convex/mcp': '0.1.0-beta.6',
-      '@modelcontextprotocol/server': '2.0.0-beta.5',
-      convex: '1.42.2',
+      '@modelcontextprotocol/server': mcpManifest.dependencies['@modelcontextprotocol/server'],
+      convex: rootManifest.peerDependencies.convex,
       zod: '4.3.6',
     })
     const sources = await Promise.all(
