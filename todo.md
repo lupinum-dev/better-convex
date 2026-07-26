@@ -1422,15 +1422,59 @@ Ledger note — T4.7:
 
 Current npm state on 2026-07-26:
 
-- Candidate: Better Auth/OAuth Provider `1.7.0-rc.1`.
-- Published `rc` dist-tag: `1.7.0-rc.2`.
+- Previous candidate: Better Auth/OAuth Provider `1.7.0-rc.1`.
+- Chosen exact candidate: Better Auth/OAuth Provider `1.7.0-rc.2`.
 
-- [ ] Diff only the owned dependency seams from RC.1 to RC.2.
-- [ ] Decide explicitly: upgrade and recertify, or retain RC.1 with a recorded blocking
+- [x] Diff only the owned dependency seams from RC.1 to RC.2.
+- [x] Decide explicitly: upgrade and recertify, or retain RC.1 with a recorded blocking
       reason until stable.
-- [ ] Re-run provider-profile, adapter, OAuth, browser-session, advisory, and packed
+- [x] Re-run provider-profile, adapter, OAuth, browser-session, advisory, and packed
       consumer tests against the chosen exact bytes.
-- [ ] Do not add an automatic moving-dist-tag gate.
+- [x] Do not add an automatic moving-dist-tag gate.
+
+Ledger note (2026-07-26):
+
+- Chose the hard-cut RC.2 upgrade. The reviewed upstream range is
+  `fb1dff141c3ae8de325f190b154a7f9e9f86979a` →
+  `cc708e51bcb1d4c367d2bc6182e6fd7fd722ece8`; exact registry integrities are
+  `sha512-5KZrqbAsoQA8q1edmufaoF/CBbMjGb/BoPqyMTzXFyDeXNhk8pXO2xJkiDDeZcSGtyhUKXiDnD7hxh4sJVgYZw==`
+  for `better-auth`,
+  `sha512-NreNGg68j4qUVVYTcC1DtvRTwSJdCavH5igrMyTO5ghZxnzL4G539uRIzOZmJ64MLzOyOwzWH+JHqpVaj0ZRxw==`
+  for `@better-auth/core`, and
+  `sha512-fc3jCYwS/PaQyErOPqIUplqK456zhrmNWGnJPhDEF68merXBQN1OodUTzicZ3skFDpAv6MY3m5vk4D1Gz3R/oA==`
+  for `@better-auth/oauth-provider`.
+- The owned behavioral changes are explicit: account identity is now the upstream
+  `(issuer, providerAccountId)` compound unique key, generated schema consumes
+  upstream table-level indexes, joins configuration follows
+  `advanced.database.joins`, and the Vue session composable keeps its exact
+  plugin-client namespace through a minimum private constraint. The unreleased
+  component and fixtures were regenerated directly; no `accountId` alias,
+  migration shim, dual schema, or RC.1 branch remains in the current package.
+- Root, distributed-app, and maintained fixture manifests use exact RC.2 bytes;
+  standalone app locks were refreshed. The internal Agentic SaaS proof remains on
+  its retired beta.18 package lock and is not a shipped or maintained consumer; its
+  checked-in schema pair is still regenerated as one of the current renderer
+  fixtures. Published beta candidate dependencies retained inside standalone
+  candidate locks are replaced by local tarballs during release-candidate
+  certification.
+- Red proof: the RC.1 generator rejected RC.2's removed `account.accountId`; new
+  table-index and account-identity tests failed; the old joins path and Vue client
+  constraint failed typecheck; the packed demo resolved RC.1 and produced stale
+  schema bytes. Updating direct consumer manifests made the source and installed
+  CLIs byte-identical. The concurrency gate also exposed the obsolete 1,001-row
+  scale proof that T4.6 had superseded; its test-only functions were deleted rather
+  than weakening the private 128-row production bound.
+- Proof: adapter invariants pass 24 tests; the real adapter project passes 36; OAuth
+  provider/profile tests pass 209; native Chromium passes 5; the disposable
+  two-factor browser/session matrix passes with revocation, concurrency, and
+  lockout evidence. Advisory checks pass production/full audits, nine exact package
+  queries, and imported advisories with zero exceptions. Concurrency, OAuth quota,
+  authorization-code race, and real export-sentinel gates pass. The packed
+  auth-schema gate proves non-writing CLI parity, clean-tarball and local component
+  deployment, first database writes, fresh codegen, and greater than 10× headroom
+  at the 128-row bound. All 29 provenance records pass against source and packed
+  bytes. The complete repository gate passes 2,026 tests across 168 files together
+  with canonical format, lint, all typechecks, and all 14 architecture boundaries.
 
 ### T4.9 — Make reusable auth construction idempotent and delete dead protocol surface
 
