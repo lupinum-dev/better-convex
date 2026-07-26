@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -23,6 +23,27 @@ function currentProfiles() {
 function allRunners() {
   return Object.values(currentProfiles()).flatMap((profile) =>
     profile.kind === 'runners' ? profile.runners : profile.browserRunners,
+  )
+}
+
+function runCandidateRunner(runner: string, arguments_: string[]) {
+  return new Promise<{ runner: string; status: number | null; stderr: string; stdout: string }>(
+    (resolve, reject) => {
+      const child = spawn(process.execPath, [runner, ...arguments_], {
+        cwd: join(import.meta.dirname, '../..'),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+        stdout += chunk
+      })
+      child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+        stderr += chunk
+      })
+      child.once('error', reject)
+      child.once('close', (status) => resolve({ runner, status, stderr, stdout }))
+    },
   )
 }
 
@@ -90,16 +111,20 @@ describe('maintained candidate-test profiles', () => {
     )
   })
 
-  it('executes every configured runner and proves it consumes the supplied artifact path', () => {
+  it('executes every configured runner and proves it consumes the supplied artifact path', async () => {
     const missingTarball = join(import.meta.dirname, 'missing-candidate-artifact.tgz')
-    for (const runner of allRunners()) {
-      const arguments_ = runner.includes('check-nuxt-')
-        ? ['--nuxt-tarball', missingTarball, '--vue-tarball', missingTarball]
-        : ['--tarball', missingTarball]
-      const result = spawnSync(process.execPath, [runner, ...arguments_], {
-        cwd: join(import.meta.dirname, '../..'),
-        encoding: 'utf8',
-      })
+    const results = await Promise.all(
+      allRunners().map((runner) =>
+        runCandidateRunner(
+          runner,
+          runner.includes('check-nuxt-')
+            ? ['--nuxt-tarball', missingTarball, '--vue-tarball', missingTarball]
+            : ['--tarball', missingTarball],
+        ),
+      ),
+    )
+    for (const result of results) {
+      const { runner } = result
       expect(result.status, runner).not.toBe(0)
       expect(`${result.stdout}${result.stderr}`, runner).toContain(missingTarball)
     }
