@@ -1540,12 +1540,32 @@ Phase 4 exit gate:
 ### T5.1 — Complete beta public API hard cuts
 
 - [x] Remove `authEpoch`.
-- [ ] Remove Vue `null`/`undefined` skip types.
+- [x] Remove Vue `null`/`undefined` skip types.
 - [x] Remove MCP `era`/request context.
 - [x] Remove MCP diagnostic types/options.
-- [ ] Remove OAuth `nowSeconds` and unused returned `issuedAt`.
-- [ ] Re-run source and exact-tarball declaration snapshots.
-- [ ] Add no aliases, deprecated overloads, or compatibility exports.
+- [x] Remove OAuth `nowSeconds` and unused returned `issuedAt`.
+- [x] Re-run source and exact-tarball declaration snapshots.
+- [x] Add no aliases, deprecated overloads, or compatibility exports.
+
+Ledger note (2026-07-26):
+
+- This consolidation audit rechecked the earlier hard cuts from T3.2, T4.2, and the
+  MCP boundary work instead of adding a second implementation path. Source type
+  contracts reject direct, ref, and getter `null`/`undefined` query arguments;
+  OAuth verification ignores a caller-smuggled `nowSeconds` and returns no
+  `issuedAt`; the maintained MCP package exports neither era/request context nor
+  diagnostic configuration.
+- Fresh exact-tarball declaration gates pass for Vue (25 source files, 4 deep-checked
+  entries), MCP (5 source files, 1 deep-checked entry), and Nuxt (151 source files,
+  9 deep-checked entries). The Nuxt gate exposed the pinned OAuth provider profile's
+  legitimate public type edge; the reviewed declaration graph now names
+  `@better-auth/oauth-provider` directly instead of duplicating its callback types.
+- Focused Vue type/runtime checks pass 5 tests, OAuth resource verification passes
+  46 tests, MCP access/handler/boundary checks pass 35 tests, declaration-manifest
+  checks pass 52 tests, and the full workspace typecheck passes. Two canonical
+  `pnpm check` attempts hit full-suite subprocess contention in the packed Apps,
+  SBOM, and release-evidence files; all 40 affected tests pass together in an
+  isolated rerun. The final canonical gate remains open below and was not weakened.
 
 ### T5.2 — Replace release source-text tests with behavioral proof
 
