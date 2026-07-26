@@ -111,8 +111,8 @@ describe('greenfield Convex auth schema generation', () => {
       nullable: true,
       sortable: true,
     })
-    expect(artifacts.schemaCode).toContain('"id": v.string()')
-    expect(artifacts.schemaCode).toContain('"displayLabel": v.union(v.null(), v.string())')
+    expect(artifacts.schemaCode).toContain('id: v.string()')
+    expect(artifacts.schemaCode).toContain('displayLabel: v.union(v.null(), v.string())')
     expect(artifacts.schemaCode).not.toContain('v.optional')
   })
 
@@ -201,7 +201,7 @@ describe('greenfield Convex auth schema generation', () => {
       fields: ['identifier', 'createdAt'],
     })
     expect(artifacts.schemaCode).toContain(
-      '.index("identifier_createdAt", ["identifier","createdAt"])',
+      ".index('identifier_createdAt', ['identifier', 'createdAt'])",
     )
   })
 

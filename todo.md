@@ -69,7 +69,7 @@ gate are complete.
 - [x] `BAA-01`: stop full-scanning indexed `in` predicates.
 - [x] `AUTH-01`: make the allowed OAuth provider profile exact and reject unknown
       options.
-- [ ] `BAA-03`: make the shipped CLI and repository schema generator emit identical
+- [x] `BAA-03`: make the shipped CLI and repository schema generator emit identical
       bytes. This is P1 because the certified public CLI rejects the repository's own
       committed fixtures.
 - [x] `MCPI-02`: make the real browser confirmation POST compatible with its
@@ -1377,18 +1377,46 @@ Ledger note (2026-07-26):
 
 Source: Claude `BAA-03`.
 
-- [ ] Make the shipped CLI and repository generator use one canonical renderer.
-- [ ] Avoid making a formatter a shipped runtime dependency merely to normalize output.
-- [ ] Support one documented schema-options export form.
-- [ ] Delete the second format/staleness authority.
-- [ ] Re-record reviewed hashes when canonical bytes legitimately change.
+- [x] Make the shipped CLI and repository generator use one canonical renderer.
+- [x] Avoid making a formatter a shipped runtime dependency merely to normalize output.
+- [x] Support one documented schema-options export form.
+- [x] Delete the second format/staleness authority.
+- [x] Re-record reviewed hashes when canonical bytes legitimately change.
 
 Acceptance criteria:
 
-- [ ] Both entry points emit byte-identical schema and metadata.
-- [ ] The shipped CLI `--check` passes against committed reference fixtures.
-- [ ] `--check` remains non-writing.
-- [ ] Pair-write ordering and runtime fingerprint validation remain fail-closed.
+- [x] Both entry points emit byte-identical schema and metadata.
+- [x] The shipped CLI `--check` passes against committed reference fixtures.
+- [x] `--check` remains non-writing.
+- [x] Pair-write ordering and runtime fingerprint validation remain fail-closed.
+
+Ledger note — T4.7:
+
+- The adapter renderer now emits formatter-stable TypeScript directly: canonical
+  single-quoted strings, safe unquoted property names, deterministic metadata
+  indentation, and stable index chains. The shipped runtime does not import or depend
+  on `oxfmt`.
+- The repository generator no longer renders, formats, writes, or compares artifacts.
+  It enumerates the five maintained targets and delegates each one to the shipped
+  auth-schema CLI, leaving one pair writer and one staleness authority.
+- Curated, Team, and Agentic schema options hard-cut to the same default-export form
+  already used by the maintained fixtures and documented for consumers. No named
+  compatibility export or dual config loader remains.
+- Canonical output exactly reproduces every existing committed schema and metadata
+  byte, so their reviewed artifact hashes and runtime fingerprints did not change.
+  The provenance ledger now records the current hashes of the generator, schema
+  options, and the other legitimately changed auth-owned targets accumulated by this
+  remediation branch.
+- Proof: four CLI authority tests cover exact committed bytes, current and stale
+  non-writing checks, and the Team default-export reference; all 22 adapter invariants
+  retain runtime mismatch rejection. The repository command checks all five maintained
+  pairs. The built package CLI checks committed Team and two-factor references without
+  writing, and the full auth-schema gate deploys both a clean tarball consumer and the
+  local component, performs database-backed first writes, proves more than 10x
+  transaction headroom, and produces fresh codegen. Package build and exact auth
+  provenance validation pass. The complete repository gate passes 2,024 tests across
+  168 files together with canonical format, lint, root/fixture typechecks, and all 14
+  architecture boundaries.
 
 ### T4.8 — Reconcile Better Auth RC bytes once
 

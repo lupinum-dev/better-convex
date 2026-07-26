@@ -30,7 +30,7 @@ export const schemaOAuthOptions = {
   storeTokens: 'hashed',
 } satisfies OAuthOptions<['mcp:read', 'mcp:write']>
 
-export const schemaAuthOptions = {
+const schemaAuthOptions = {
   ...schemaGenerationEnvironment,
   account: { encryptOAuthTokens: true },
   basePath: '/api/auth',
@@ -57,3 +57,5 @@ export const schemaAuthOptions = {
   },
   verification: { storeIdentifier: 'hashed' },
 } satisfies BetterAuthOptions
+
+export default schemaAuthOptions

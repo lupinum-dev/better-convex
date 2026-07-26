@@ -1,83 +1,50 @@
-import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { getAuthTables } from 'better-auth/db'
-import { format } from 'oxfmt'
-
-import { schemaAuthOptions } from '../internal/convex-auth/schema-options.ts'
-import { schemaAuthOptions as agenticSchemaAuthOptions } from '../internal/labs/agentic-saas/convex/betterAuth/schemaOptions.ts'
-import { generateAuthSchemaArtifacts } from '../src/runtime/convex-auth/adapter/generate-schema.ts'
-import { schemaAuthOptions as teamSchemaAuthOptions } from '../starters/team/convex/betterAuth/schemaOptions.ts'
-import localSchemaOptions from '../test/fixtures/better-auth-local-component/convex/betterAuth/schemaOptions.ts'
-import twoFactorSchemaOptions from '../test/fixtures/better-auth-two-factor/convex/betterAuth/schemaOptions.ts'
-
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const componentDirectory = path.join(root, 'src/runtime/convex-auth/component')
-const curatedArtifacts = generateAuthSchemaArtifacts(getAuthTables(schemaAuthOptions))
-const agenticArtifacts = generateAuthSchemaArtifacts(getAuthTables(agenticSchemaAuthOptions))
-const teamArtifacts = generateAuthSchemaArtifacts(getAuthTables(teamSchemaAuthOptions))
-const localArtifacts = generateAuthSchemaArtifacts(getAuthTables(localSchemaOptions))
-const twoFactorArtifacts = generateAuthSchemaArtifacts(getAuthTables(twoFactorSchemaOptions))
-const formatOptions = {
-  printWidth: 100,
-  semi: false,
-  singleQuote: true,
-  sortImports: {},
-  tabWidth: 2,
-  trailingComma: 'all',
-}
-const outputSources = new Map([
-  [path.join(componentDirectory, 'schema.ts'), curatedArtifacts.schemaCode],
-  [path.join(componentDirectory, 'schemaMetadata.ts'), curatedArtifacts.metadataCode],
-  [
-    path.join(root, 'internal/labs/agentic-saas/convex/betterAuth/schema.ts'),
-    agenticArtifacts.schemaCode,
-  ],
-  [
-    path.join(root, 'internal/labs/agentic-saas/convex/betterAuth/schemaMetadata.ts'),
-    agenticArtifacts.metadataCode,
-  ],
-  [path.join(root, 'starters/team/convex/betterAuth/schema.ts'), teamArtifacts.schemaCode],
-  [
-    path.join(root, 'starters/team/convex/betterAuth/schemaMetadata.ts'),
-    teamArtifacts.metadataCode,
-  ],
-  [
-    path.join(root, 'test/fixtures/better-auth-local-component/convex/betterAuth/schema.ts'),
-    localArtifacts.schemaCode,
-  ],
-  [
-    path.join(
-      root,
-      'test/fixtures/better-auth-local-component/convex/betterAuth/schemaMetadata.ts',
-    ),
-    localArtifacts.metadataCode,
-  ],
-  [
-    path.join(root, 'test/fixtures/better-auth-two-factor/convex/betterAuth/schema.ts'),
-    twoFactorArtifacts.schemaCode,
-  ],
-  [
-    path.join(root, 'test/fixtures/better-auth-two-factor/convex/betterAuth/schemaMetadata.ts'),
-    twoFactorArtifacts.metadataCode,
-  ],
-])
-const outputs = new Map()
-for (const [file, source] of outputSources) {
-  const result = await format(file, source, formatOptions)
-  if (result.errors.length > 0) throw new Error(`Unable to format ${file}`)
-  outputs.set(file, result.code)
-}
+const jiti = path.join(root, 'node_modules/jiti/lib/jiti-cli.mjs')
+const cli = path.join(root, 'src/runtime/cli/auth-schema.ts')
 const check = process.argv.includes('--check')
+const unknown = process.argv.slice(2).filter((argument) => argument !== '--check')
 
-let stale = false
-for (const [file, contents] of outputs) {
-  const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
-  if (current === contents) continue
-  stale = true
-  if (!check) fs.writeFileSync(file, contents, 'utf8')
-  console.error(`${check ? 'stale' : 'generated'}: ${path.relative(root, file)}`)
+if (unknown.length > 0) throw new Error(`Unknown argument: ${unknown[0]}`)
+
+const targets = [
+  {
+    config: 'internal/convex-auth/schema-options.ts',
+    output: 'src/runtime/convex-auth/component',
+  },
+  {
+    config: 'internal/labs/agentic-saas/convex/betterAuth/schemaOptions.ts',
+    output: 'internal/labs/agentic-saas/convex/betterAuth',
+  },
+  {
+    config: 'starters/team/convex/betterAuth/schemaOptions.ts',
+    output: 'starters/team/convex/betterAuth',
+  },
+  {
+    config: 'test/fixtures/better-auth-local-component/convex/betterAuth/schemaOptions.ts',
+    output: 'test/fixtures/better-auth-local-component/convex/betterAuth',
+  },
+  {
+    config: 'test/fixtures/better-auth-two-factor/convex/betterAuth/schemaOptions.ts',
+    output: 'test/fixtures/better-auth-two-factor/convex/betterAuth',
+  },
+]
+
+for (const target of targets) {
+  execFileSync(
+    process.execPath,
+    [
+      jiti,
+      cli,
+      '--config',
+      target.config,
+      '--output',
+      target.output,
+      ...(check ? ['--check'] : []),
+    ],
+    { cwd: root, stdio: 'inherit' },
+  )
 }
-
-if (check && stale) process.exitCode = 1

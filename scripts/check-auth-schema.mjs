@@ -297,6 +297,41 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
   return packaged
 }
 
+function verifyPackagedSchemaCli(packagedDemo, isolatedRoot) {
+  const references = [
+    'starters/team/convex/betterAuth',
+    'test/fixtures/better-auth-two-factor/convex/betterAuth',
+  ]
+  const before = references.map((reference) => snapshot(isolatedRoot, reference))
+
+  for (const reference of references) {
+    run(
+      'pnpm',
+      [
+        'exec',
+        'better-convex-nuxt-auth-schema',
+        '--config',
+        path.join(isolatedRoot, reference, 'schemaOptions.ts'),
+        '--output',
+        path.join(isolatedRoot, reference),
+        '--check',
+      ],
+      packagedDemo,
+    )
+  }
+
+  const differences = references.flatMap((reference, index) =>
+    diffSnapshots(before[index], snapshot(isolatedRoot, reference)),
+  )
+  if (differences.length > 0) {
+    fail(
+      `packaged auth-schema --check wrote reference files:\n${differences
+        .map((item) => `- ${item}`)
+        .join('\n')}`,
+    )
+  }
+}
+
 async function main() {
   const unknown = process.argv.slice(2)
   if (unknown.length > 0) fail(`unknown argument ${JSON.stringify(unknown[0])}`)
@@ -320,6 +355,7 @@ async function main() {
     const tarball = resolveSchemaTarball(isolatedRoot, parent)
     const vueTarball = resolveSchemaVueTarball(isolatedRoot, parent)
     const packagedDemo = preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball)
+    verifyPackagedSchemaCli(packagedDemo, isolatedRoot)
     await runRealCodegen(packagedDemo, {
       GITHUB_CLIENT_ID: 'bcn-auth-schema-inert-github-client',
       GITHUB_CLIENT_SECRET: 'bcn-auth-schema-inert-github-secret',
@@ -341,7 +377,7 @@ async function main() {
     }
 
     console.log(
-      '[auth-schema] PASS: curated, Team, Agentic SaaS, local-fixture, and two-factor schema/metadata are deterministic; a clean tarball consumer and local component both deploy, perform database-backed first writes, preserve >10x transaction headroom at the 128-row bulk limit, and produce fresh codegen on the reviewed backend.',
+      '[auth-schema] PASS: one canonical renderer keeps curated, Team, Agentic SaaS, local-fixture, and two-factor schema/metadata deterministic; the installed CLI checks committed references without writing; a clean tarball consumer and local component both deploy, perform database-backed first writes, preserve >10x transaction headroom at the 128-row bulk limit, and produce fresh codegen on the reviewed backend.',
     )
   } finally {
     clearConvexEnvironment()
