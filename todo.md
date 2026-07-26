@@ -79,7 +79,7 @@ gate are complete.
       unauthenticated endpoint with a declared 16 KiB bound.
 - [x] `vue-lifecycle/VUE-02`: suppress value-identical provider transitions and remove
       redundant `authEpoch`.
-- [ ] `vue-lifecycle/VUE-03`: fix the no-op recovery path and explicitly decide, with
+- [x] `vue-lifecycle/VUE-03`: fix the no-op recovery path and explicitly decide, with
       security evidence, whether a transient session transport failure retains or
       retires the current identity.
 - [ ] `ERR-02`, `REL-02`, `TE-01`, and `TE-02`: remove false or implementation-coupled
@@ -353,24 +353,43 @@ Ledger note (2026-07-26):
 
 Source: Claude `vue-lifecycle/VUE-03`.
 
-- [ ] Keep malformed session state and an authoritative unauthorized/401 result as
+- [x] Keep malformed session state and an authoritative unauthorized/401 result as
       fail-closed identity events.
-- [ ] Tie-break the disputed non-401 case with the full authority trace: upstream Better
+- [x] Tie-break the disputed non-401 case with the full authority trace: upstream Better
       Auth retains usable session data, while Better Convex currently retires the
       identity. Record whether availability or conservative retirement is the accepted
       contract before changing it.
-- [ ] Regardless of that decision, make `refreshAuth()` call the provider's real session
+- [x] Regardless of that decision, make `refreshAuth()` call the provider's real session
       refetch and then re-confirm Convex; it must not silently no-op in the error state.
-- [ ] Preserve raw provider-error opacity.
+- [x] Preserve raw provider-error opacity.
 
 Acceptance criteria:
 
-- [ ] The chosen 503/network behavior is explicit, tested, and consistent between the
+- [x] The chosen 503/network behavior is explicit, tested, and consistent between the
       Better Auth adapter, identity port, Nuxt app-facing state, and documentation.
-- [ ] 401, revoked session, malformed user, and token/subject mismatch still fail
+- [x] 401, revoked session, malformed user, and token/subject mismatch still fail
       closed.
-- [ ] `refreshAuth()` performs one provider refetch and can recover without page reload.
-- [ ] A raw transport message/cause never reaches public state or logs.
+- [x] `refreshAuth()` performs one provider refetch and can recover without page reload.
+- [x] A raw transport message/cause never reaches public state or logs.
+
+Ledger note (2026-07-26):
+
+- Accepted Better Auth's own authority rule: its session atom retains prior data for a
+  non-401 failure and clears it for 401. Better Convex now retains only an already
+  established session whose token and user id are unchanged; it never establishes or
+  changes identity from an errored response.
+- Kept 401, malformed session/user data, Convex rejection, and token-subject mismatch
+  fail-closed. Raw session/refetch errors are replaced with the generic public
+  authentication error.
+- Made provider session refetch a required adapter operation. `refreshAuth()` now
+  refetches first, then either confirms the retained client or waits for a recovered
+  generation's replacement client to confirm.
+- Red proof: the adapter retired Alice on a same-data 503, and refresh from an error
+  state called no provider operation and allocated no replacement.
+- Green proof: 5 focused files/32 tests, Vue and root typechecks, and the exact packed
+  authenticated Vue consumer pass. The packed proof also now enforces that a
+  value-identical provider notification performs zero token fetches while explicit
+  refresh performs exactly one.
 
 ### T1.5 — Tie-break app-facing fail-closed state propagation
 

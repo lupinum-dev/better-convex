@@ -20,6 +20,7 @@ export interface BrowserAuthAdapter {
   snapshot(): BrowserAuthSnapshot
   subscribe(listener: () => void): () => void
   fetchToken: AuthTokenFetcher
+  refreshSession(): Promise<void>
 }
 
 interface AuthCapableClient extends ConvexClient {
@@ -93,6 +94,10 @@ export function createAuthAdapterIdentityPort(
   }
   const listeners = new Set<() => void>()
   const settlementWaiters = new Set<() => void>()
+  const generationSettlementWaiters = new Set<{
+    check(): void
+    cancel(error: ConvexCallError): void
+  }>()
   let activeConfirmation: {
     client: AuthCapableClient
     generation: number
@@ -118,7 +123,49 @@ export function createAuthAdapterIdentityPort(
   const publish = (next: ClientIdentitySnapshot) => {
     snapshot = Object.freeze(next)
     resolveSettlement()
+    for (const waiter of [...generationSettlementWaiters]) waiter.check()
     notify()
+  }
+
+  const waitForGenerationSettlement = (generation: number): Promise<void> => {
+    if (snapshot.identityGeneration !== generation) {
+      return Promise.reject(
+        new ConvexCallError({
+          kind: 'authentication',
+          code: 'IDENTITY_CHANGED',
+          message: 'Identity changed while refreshing authentication',
+        }),
+      )
+    }
+    if (snapshot.settled) {
+      return snapshot.error ? Promise.reject(snapshot.error) : Promise.resolve()
+    }
+    return new Promise<void>((resolve, reject) => {
+      const waiter = {
+        check() {
+          if (snapshot.identityGeneration !== generation) {
+            waiter.cancel(
+              new ConvexCallError({
+                kind: 'authentication',
+                code: 'IDENTITY_CHANGED',
+                message: 'Identity changed while refreshing authentication',
+              }),
+            )
+            return
+          }
+          if (!snapshot.settled) return
+          generationSettlementWaiters.delete(waiter)
+          if (snapshot.error) reject(snapshot.error)
+          else resolve()
+        },
+        cancel(error: ConvexCallError) {
+          generationSettlementWaiters.delete(waiter)
+          reject(error)
+        },
+      }
+      generationSettlementWaiters.add(waiter)
+      waiter.check()
+    })
   }
 
   const failClosed = (failedGeneration: number, cause: unknown) => {
@@ -325,8 +372,25 @@ export function createAuthAdapterIdentityPort(
       failClosed(failedGeneration, cause)
     },
     async refresh() {
-      if (disposed || desired.status !== 'authenticated' || !currentClient) return
-      await confirm(currentClient, currentClientGeneration)
+      if (disposed) return
+      await adapter.refreshSession()
+      if (disposed || desired.status === 'anonymous') return
+      if (desired.status !== 'authenticated') {
+        throw (
+          snapshot.error ??
+          new ConvexCallError({
+            kind: 'authentication',
+            message: 'Authentication refresh failed',
+          })
+        )
+      }
+      const generation = identityGeneration
+      const client = currentClient
+      if (client) {
+        await confirm(client, currentClientGeneration)
+        return
+      }
+      await waitForGenerationSettlement(generation)
     },
     dispose() {
       if (disposed) return
@@ -337,6 +401,7 @@ export function createAuthAdapterIdentityPort(
         message: 'Authentication runtime was disposed',
       })
       activeConfirmation?.cancel(cancellation)
+      for (const waiter of [...generationSettlementWaiters]) waiter.cancel(cancellation)
       unsubscribeAdapter()
       listeners.clear()
       snapshot = Object.freeze({ ...snapshot, settled: true })

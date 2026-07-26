@@ -12,6 +12,7 @@ interface SessionState {
   } | null
   isPending?: boolean
   error?: unknown
+  refetch?: () => Promise<void>
 }
 
 function jwt(sub: string, expiresInSeconds = 3_600) {
@@ -23,10 +24,12 @@ function source(
   initial: SessionState,
   responses: Array<{ data?: { token: string | null } | null; error?: unknown }>,
 ) {
-  const session = ref<SessionState>(initial)
+  const refetch = vi.fn(async () => {})
+  const session = ref<SessionState>({ ...initial, refetch })
   const token = vi.fn(async () => responses.shift() ?? { data: null, error: null })
   return {
     session,
+    refetch,
     token,
     client: {
       useSession: () => session,
@@ -205,6 +208,54 @@ describe('Better Auth browser adapter', () => {
     expect(sessionChanged).toHaveBeenCalledWith(null, 'Authentication is temporarily unavailable')
     const rendered = inspect(sessionChanged.mock.calls, { depth: null })
     for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
+    adapter.dispose()
+  })
+
+  it('retains an established session on a transient refetch failure but retires it on 401', async () => {
+    const data = {
+      session: { token: 'session-a' },
+      user: { id: 'alice' },
+    }
+    const fixture = source({ isPending: false, data, error: null }, [])
+    const listener = vi.fn()
+    const adapter = createBetterAuthBrowserAdapter(fixture.client)
+    adapter.subscribe(listener)
+    const generation = adapter.snapshot().sessionGeneration
+
+    fixture.session.value = {
+      isPending: false,
+      data,
+      error: { status: 503, message: 'raw-upstream-sentinel' },
+      refetch: fixture.refetch,
+    }
+    expect(adapter.snapshot()).toMatchObject({
+      status: 'authenticated',
+      identityKey: 'alice',
+      sessionGeneration: generation,
+      error: null,
+    })
+    expect(listener).not.toHaveBeenCalled()
+
+    await adapter.refreshSession()
+    expect(fixture.refetch).toHaveBeenCalledOnce()
+
+    fixture.refetch.mockRejectedValueOnce(new Error('raw-refetch-rejection-sentinel'))
+    await expect(adapter.refreshSession()).rejects.toThrow(
+      'Authentication is temporarily unavailable',
+    )
+
+    fixture.session.value = {
+      isPending: false,
+      data,
+      error: { status: 401, message: 'raw-unauthorized-sentinel' },
+      refetch: fixture.refetch,
+    }
+    expect(adapter.snapshot()).toMatchObject({
+      status: 'error',
+      identityKey: null,
+      sessionGeneration: generation + 1,
+    })
+    expect(JSON.stringify(adapter.snapshot())).not.toContain('raw-unauthorized-sentinel')
     adapter.dispose()
   })
 })

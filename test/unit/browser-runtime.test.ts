@@ -11,6 +11,7 @@ import type { OwnedConvexClient } from '../../packages/vue/src/internal/client-o
 class Adapter implements BrowserAuthAdapter {
   private listeners = new Set<() => void>()
   readonly fetchToken = vi.fn<AuthTokenFetcher>(async () => 'private-token')
+  readonly refreshSession = vi.fn(async () => {})
   constructor(private value: BrowserAuthSnapshot) {}
   snapshot = () => this.value
   subscribe = (listener: () => void) => {
@@ -112,7 +113,7 @@ describe('Better Convex browser runtime', () => {
       identityKey: 'user:alice',
     })
     const refresh = runtime.refreshAuth()
-    expect(initialClient.setAuthCalls).toBe(2)
+    await vi.waitFor(() => expect(initialClient.setAuthCalls).toBe(2))
     initialClient.confirm(true)
     await refresh
     expect(runtime.identity.snapshot().identityGeneration).toBe(0)
@@ -238,5 +239,45 @@ describe('Better Convex browser runtime', () => {
     await runtime.dispose()
     await expect(ready).resolves.toBeUndefined()
     expect(adapter.listenerCount()).toBe(0)
+  })
+
+  it('refetches a failed provider session and waits for replacement confirmation', async () => {
+    const adapter = new Adapter({
+      status: 'error',
+      identityKey: null,
+      sessionGeneration: 1,
+      error: new Error('private-provider-sentinel'),
+    })
+    const clients: Client[] = []
+    const runtime = createBetterConvexBrowserRuntime({
+      auth: adapter,
+      clientFactory: () => {
+        const value = client()
+        clients.push(value)
+        return value
+      },
+    })
+    await runtime.ready()
+    adapter.refreshSession.mockImplementationOnce(async () => {
+      adapter.emit({
+        status: 'authenticated',
+        identityKey: 'alice',
+        sessionGeneration: 2,
+        error: null,
+      })
+    })
+
+    const refresh = runtime.refreshAuth()
+    await vi.waitFor(() => expect(clients).toHaveLength(2))
+    expect(adapter.refreshSession).toHaveBeenCalledOnce()
+    expect(clients[1]!.setAuthCalls).toBe(1)
+    clients[1]!.confirm(true)
+    await refresh
+    expect(runtime.identity.snapshot()).toMatchObject({
+      settled: true,
+      identityKey: 'user:alice',
+      error: null,
+    })
+    await runtime.dispose()
   })
 })

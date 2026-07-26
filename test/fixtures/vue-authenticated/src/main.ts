@@ -76,6 +76,7 @@ const adapter: BetterConvexAuthAdapter = {
     return () => authListeners.delete(listener)
   },
   fetchToken: async () => credential,
+  refreshSession: async () => {},
 }
 
 const plugin = createBetterConvex({

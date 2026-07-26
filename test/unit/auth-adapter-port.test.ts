@@ -14,6 +14,7 @@ import {
 class FakeAdapter implements BrowserAuthAdapter {
   private listeners = new Set<() => void>()
   readonly fetchToken = vi.fn<AuthTokenFetcher>(async () => 'token-secret-sentinel')
+  readonly refreshSession = vi.fn(async () => {})
 
   constructor(private value: BrowserAuthSnapshot) {}
 
@@ -133,6 +134,7 @@ describe('provider-neutral auth adapter identity port', () => {
         return () => listeners.delete(listener)
       },
       fetchToken: async () => 'better-auth-convex-jwt-sentinel',
+      refreshSession: async () => {},
     }
     const port = createAuthAdapterIdentityPort(adapter)
 
@@ -222,7 +224,7 @@ describe('provider-neutral auth adapter identity port', () => {
     expect(Object.keys(port.snapshot())).not.toContain('authEpoch')
 
     const explicitRefresh = port.refresh()
-    expect(client.setAuthCalls).toBe(2)
+    await vi.waitFor(() => expect(client.setAuthCalls).toBe(2))
     await client.confirm(true)
     await explicitRefresh
     notify.mockClear()
@@ -318,7 +320,7 @@ describe('provider-neutral auth adapter identity port', () => {
 
     const first = port.refresh()
     const second = port.refresh()
-    expect(client.setAuthCalls).toBe(2)
+    await vi.waitFor(() => expect(client.setAuthCalls).toBe(2))
     await client.confirm(false)
     await expect(first).rejects.toMatchObject({ kind: 'authentication' })
     await expect(second).rejects.toMatchObject({ kind: 'authentication' })
@@ -361,6 +363,7 @@ describe('provider-neutral auth adapter identity port', () => {
         return () => listeners.delete(listener)
       },
       fetchToken: async () => 'custom-provider-token-sentinel',
+      refreshSession: async () => {},
     }
     const port = createAuthAdapterIdentityPort(customProvider)
     providerState = authSnapshot('custom-subject', 1)

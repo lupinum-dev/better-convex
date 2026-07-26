@@ -264,8 +264,8 @@ try {
     identityGeneration: 2,
   })
   const afterProviderRefresh = await invoke('stats')
-  if (afterProviderRefresh.tokenFetches !== beforeProviderRefresh.tokenFetches + 1) {
-    throw new Error('Same-session provider notification did not refresh exactly once')
+  if (afterProviderRefresh.tokenFetches !== beforeProviderRefresh.tokenFetches) {
+    throw new Error('Value-identical provider notification unexpectedly fetched a token')
   }
   const beforeRefresh = await invoke('stats')
   assertSnapshot(await invoke('refresh'), {

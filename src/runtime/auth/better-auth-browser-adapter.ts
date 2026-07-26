@@ -11,6 +11,7 @@ interface BetterAuthSessionState {
   } | null
   isPending?: boolean
   error?: unknown
+  refetch?: () => Promise<void>
 }
 
 interface BetterAuthBrowserSource extends ConvexTokenSource {
@@ -18,6 +19,15 @@ interface BetterAuthBrowserSource extends ConvexTokenSource {
 }
 
 const UNAVAILABLE = 'Authentication is temporarily unavailable'
+
+function isUnauthorized(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'status' in error &&
+    (error as { status?: unknown }).status === 401,
+  )
+}
 
 /** Private first-party adapter proof. It becomes a Nuxt adapter only after the atomic package cut. */
 export function createBetterAuthBrowserAdapter(
@@ -77,6 +87,14 @@ export function createBetterAuthBrowserAdapter(
     const malformed =
       (value.data?.session !== undefined && sessionToken === null) ||
       (sessionToken !== null && key === null)
+    const retainsEstablishedSession =
+      Boolean(value.error) &&
+      !isUnauthorized(value.error) &&
+      snapshot.status === 'authenticated' &&
+      observedSessionToken === sessionToken &&
+      observedIdentityKey === key
+    if (retainsEstablishedSession) return
+
     if (value.error || malformed) {
       cachedToken = null
       sessionGeneration += 1
@@ -127,9 +145,9 @@ export function createBetterAuthBrowserAdapter(
     [
       () => session.value.isPending === true,
       () => session.value.data,
-      () => Boolean(session.value.error),
+      () => session.value.error,
     ] as const,
-    ([isPending, data, hasError]) => publishFromSession({ isPending, data, error: hasError }),
+    ([isPending, data, error]) => publishFromSession({ isPending, data, error }),
     {
       immediate: true,
       deep: false,
@@ -167,6 +185,16 @@ export function createBetterAuthBrowserAdapter(
       cachedToken = null
       callbacks.anonymous(outcome.authError)
       return null
+    },
+    async refreshSession() {
+      if (disposed) return
+      const refetch = session.value.refetch
+      if (typeof refetch !== 'function') throw new Error(UNAVAILABLE)
+      try {
+        await refetch()
+      } catch {
+        throw new Error(UNAVAILABLE)
+      }
     },
     failClosed(message: string) {
       if (disposed) return
