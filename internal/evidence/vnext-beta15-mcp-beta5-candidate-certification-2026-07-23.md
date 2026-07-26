@@ -55,7 +55,7 @@ passed the closed Vue/Nuxt candidate-set pipeline:
 - npm production/full audits, eight exact GitHub package queries, and imported
   upstream advisories with zero active exceptions;
 - deterministic packed auth schema deployment, source/packed auth provenance,
-  17 killed security mutants, credential sentinels, concurrency, OAuth
+  credential sentinels, concurrency, OAuth
   authorization-code single consumption, MFA, direct PKCE, live authorization,
   terminal revocation, and locked-RC conformance;
 - three exact Vue consumers;

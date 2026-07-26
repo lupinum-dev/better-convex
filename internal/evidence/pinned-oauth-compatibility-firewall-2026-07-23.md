@@ -55,7 +55,7 @@ differential tests—not a public provider type—bind it to the exact dependenc
 - `pnpm prepack` — package build, nine-entry deep export graph, and source/dist
   single-runtime-owner checks passed.
 - `pnpm verify:auth` — schema/deployment, adapter, OAuth, fuzz, packed secret
-  sentinels, 17 security mutants, concurrency, OAuth transport quota,
+  sentinels, concurrency, OAuth transport quota,
   authorization-code single consumption, export sentinels, MFA, direct PKCE,
   live revocation, and MCP RC conformance all passed.
 

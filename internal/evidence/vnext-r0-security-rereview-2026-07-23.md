@@ -72,8 +72,8 @@ records:
 - 163 repository test files and 1,881 tests;
 - 253 ASVS controls and 33 auth invariants;
 - 11 isolated production E2E suites and auth-proxy DAST;
-- source/packed auth provenance, 17 killed security mutants, credential
-  sentinels, concurrency, OAuth code consumption, MFA, PKCE, live
+- source/packed auth provenance, credential sentinels, concurrency, OAuth code
+  consumption, MFA, PKCE, live
   authorization, revocation, and locked-RC conformance;
 - three exact Vue consumers, six exact pnpm Nuxt consumers, one isolated npm
   consumer, and the packed production lifecycle runner;

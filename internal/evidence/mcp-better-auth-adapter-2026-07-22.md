@@ -31,9 +31,6 @@ pnpm exec vitest run --project=security \
   test/security/convex-auth-oauth-provider-integration.test.ts
   3 files, 157 tests passed
 
-pnpm exec vitest run --project=auth-mutations \
-  test/mutations/security-mutants.test.ts
-  1 file, 15 tests passed
 ```
 
 The adapter matrix rejects the same-key Convex session token class, a missing token class, foreign

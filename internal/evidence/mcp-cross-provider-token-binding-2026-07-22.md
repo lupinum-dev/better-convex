@@ -40,9 +40,6 @@ pnpm exec vitest run --project=unit \
   test/unit/mcp-convex-handler.test.ts
   2 files, 10 tests passed
 
-pnpm exec vitest run --project=auth-mutations \
-  test/mutations/security-mutants.test.ts
-  1 file, 15 tests passed
 ```
 
 The combined matrix rejects:

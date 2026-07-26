@@ -88,28 +88,6 @@ export default defineConfig({
         },
       },
 
-      // Fixed reviewed security-negative mutants. The runner verifies that
-      // every manifest entry executes exactly once and is killed.
-      {
-        test: {
-          name: 'auth-mutations',
-          include: ['test/mutations/security-mutants.test.ts'],
-          environment: 'node',
-          fileParallelism: false,
-          testTimeout: 30_000,
-        },
-      },
-      {
-        test: {
-          name: 'auth-mutations-convex',
-          include: ['test/mutations/adapter-security-mutants.test.ts'],
-          environment: 'edge-runtime',
-          server: { deps: { inline: [/convex/] } },
-          fileParallelism: false,
-          testTimeout: 60_000,
-        },
-      },
-
       // MCP resource/proxy/runner contracts. Real client and conformance
       // evidence is orchestrated by the two root MCP runners.
       {

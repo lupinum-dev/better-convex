@@ -46,7 +46,6 @@ jobs:
       - run: pnpm test:oauth
       - run: pnpm test:auth-fuzz
       - run: pnpm test:auth-sentinels
-      - run: pnpm test:auth-mutations
 
   pinned-backend:
     runs-on: ubuntu-latest

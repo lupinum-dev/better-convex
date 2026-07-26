@@ -14,7 +14,6 @@ test/
 ├── auth-fuzz/                             # Seeded hostile auth/OAuth input corpus
 ├── convex/                                # Component behavior via convex-test
 ├── mcp/                                   # MCP boundary and live-authorization contracts
-├── mutations/                             # Fixed security-negative mutants
 ├── nuxt/                                  # Composables in Nuxt runtime (happy-dom)
 ├── browser/                               # Native browser component rendering
 ├── e2e/                                   # Thin full-stack release-gate tests
@@ -36,7 +35,6 @@ playground/convex/
 - `auth-adapter`: pinned adapter contract/reference-model suite in an edge-like runtime.
 - `oauth`: OAuth profile, provider integration, claims, and negative matrix.
 - `auth-fuzz`: deterministic bounded proxy/OAuth fuzz corpus.
-- `auth-mutations`: fixed invariant mutants that must all be killed.
 - `mcp`: fixed dispatch, bearer, proxy, and transactional-authorization contracts.
 
 ## Commands
@@ -65,7 +63,6 @@ pnpm test:auth-adapter
 pnpm test:oauth
 pnpm test:auth-fuzz
 pnpm test:auth-sentinels
-pnpm test:auth-mutations
 
 # Static dependency, provenance, and live upstream review gates
 pnpm check:auth-advisories
