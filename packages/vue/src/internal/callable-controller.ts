@@ -11,7 +11,6 @@ export interface CallableControllerHandlers<Args, Result> {
   /** Settle authentication before the operation is bound and dispatched. */
   settle?: () => Promise<void>
   invoke: (args: Args) => Promise<Result>
-  onStart?: (args: Args) => void
   onSuccess?: (result: Result, args: Args) => void
   onError?: (error: ConvexCallError, args: Args) => void
 }
@@ -85,10 +84,6 @@ export function createCallableController<Args, Result>(
       // attemptRevision.
       if (attempt === attemptRevision && !callState.isCurrent(requestId)) {
         requestId = callState.start()
-      }
-      handlers.onStart?.(args)
-      if (getIdentityGeneration() !== generation) {
-        throw createIdentityChangedError(operation)
       }
       const result = await handlers.invoke(args)
 

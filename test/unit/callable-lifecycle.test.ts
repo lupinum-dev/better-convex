@@ -308,25 +308,6 @@ describe('callable lifecycle: settlement binding', () => {
     },
   )
 
-  it('rejects when a synchronous pre-dispatch callback changes identity', async () => {
-    let generation = 0
-    const invoke = vi.fn(async () => 'unreachable')
-    const lifecycle = makeLifecycle(
-      {
-        onStart: () => {
-          generation += 1
-        },
-        invoke,
-      },
-      () => generation,
-    )
-
-    await expect(lifecycle.run({})).rejects.toMatchObject({
-      code: 'IDENTITY_CHANGED',
-    })
-    expect(invoke).not.toHaveBeenCalled()
-  })
-
   it('does not dispatch before settlement completes', async () => {
     let releaseSettlement!: () => void
     const invoke = vi.fn(async () => 'done')
