@@ -183,19 +183,38 @@ Observed state:
 - `pnpm run check:auth-advisories` therefore fails closed before GitHub/upstream
   queries.
 
-- [ ] Reproduce in the exact CI Node/pnpm environment.
-- [ ] Determine whether a reviewed pnpm update, registry-response correction, or CI
+- [x] Reproduce in the exact CI Node/pnpm environment.
+- [x] Determine whether a reviewed pnpm update, registry-response correction, or CI
       transport setting fixes the full audit.
-- [ ] Keep the repository checker fail-closed; do not catch and ignore invalid audit
+- [x] Keep the repository checker fail-closed; do not catch and ignore invalid audit
       output.
-- [ ] Record exact tool bytes used by the successful release gate.
+- [x] Record exact tool bytes used by the successful release gate.
 
 Acceptance criteria:
 
-- [ ] Production and full audits both return parseable reports.
-- [ ] Exact GitHub tuple queries and imported-upstream advisory queries execute.
-- [ ] Any exception is explicit, owned, URL-backed, and unexpired.
-- [ ] `pnpm run check:auth-advisories` exits 0 without bypass flags.
+- [x] Production and full audits both return parseable reports.
+- [x] Exact GitHub tuple queries and imported-upstream advisory queries execute.
+- [x] Any exception is explicit, owned, URL-backed, and unexpired.
+- [x] `pnpm run check:auth-advisories` exits 0 without bypass flags.
+
+Ledger note (2026-07-26):
+
+- Reproduced pnpm 10.30.3's invalid full-audit JSON in the release runner's Node
+  22.14.0 environment. pnpm 10 uses npm's retired quick/legacy audit endpoints;
+  pnpm 11 uses the bulk advisory endpoint.
+- Hard-cut the root toolchain to the Corepack-verified
+  `pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1`.
+  Moved all pnpm-specific settings into `pnpm-workspace.yaml` and approved only the
+  three dependency build identities the install actually requires.
+- The restored full audit exposed `brace-expansion@1.1.16`. Widened the existing
+  security override to cover every vulnerable version, regenerated and
+  supply-chain-verified the lock, and deleted the now-stale repository exception.
+- Proof: production audit reports 241 dependencies/zero advisories; full audit reports
+  1,280 dependencies/zero advisories; the unchanged fail-closed checker passes both
+  audits, nine exact GitHub tuple queries, and the imported-upstream query with zero
+  repository exceptions. Three focused configuration/evidence suites pass 30 tests,
+  the root typecheck passes, and the post-commit immutable release-evidence suite
+  passes all 32 tests against the committed package-manager bytes.
 
 ### T0.3 — Lock the red tests before production edits
 
@@ -207,8 +226,8 @@ Acceptance criteria:
 
 Phase 0 exit gate:
 
-- [ ] The release command is satisfiable from a clean artifact root.
-- [ ] The advisory command produces complete evidence.
+- [x] The release command is satisfiable from a clean artifact root.
+- [x] The advisory command produces complete evidence.
 - [ ] Every P0/P1 correction has a focused failing regression test.
 
 ---

@@ -4,19 +4,6 @@
     {
       "id": "GHSA-mh99-v99m-4gvg",
       "source": "npm",
-      "auditScope": "repository",
-      "package": "brace-expansion",
-      "version": "1.1.16",
-      "owner": "Better Convex maintainers",
-      "mitigation": "The package is reachable only through the local MCP Inspector CLI and the demo's build-time ESLint/checker graph; Better Convex exposes no user-controlled glob interface, repository tooling supplies the inputs, and shipped runtime plus standalone starter production audits exclude this development-only graph.",
-      "reason": "Upstream published the memory-bound fix only in the API-incompatible 5.x line. The official MCP Inspector CLI and demo build tooling still resolve minimatch 3 / brace-expansion 1, so forcing 5.x would break those callers; retain the exact development tools until their upstream graphs adopt a compatible patched release.",
-      "sourceUrl": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
-      "createdAt": "2026-07-25T00:00:00.000Z",
-      "expiresAt": "2026-08-24T00:00:00.000Z"
-    },
-    {
-      "id": "GHSA-mh99-v99m-4gvg",
-      "source": "npm",
       "auditScope": "clean-nuxt-consumer",
       "package": "brace-expansion",
       "version": "2.1.2",

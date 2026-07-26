@@ -117,8 +117,9 @@ prerelease version in the root `package.json`. The workflow then:
 
 1. requires distinct named Security Owner/deputy repository variables and a
    notification-delivery test no older than 30 days;
-2. uses Node `22.14.0`, npm `11.5.1`, a frozen pnpm lock, and commit-pinned
-   GitHub Actions;
+2. uses Node `22.14.0`, npm `11.5.1`, the Corepack-verified
+   `pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1`,
+   a frozen pnpm lock, and commit-pinned GitHub Actions;
 3. builds and packs the statically reviewed Vue/Nuxt candidate set once and the
    statically reviewed MCP candidate once, without accepting package paths or
    release profiles from workflow input;

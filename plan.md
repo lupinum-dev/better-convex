@@ -377,7 +377,7 @@ As inspected on 2026-07-16:
 | `@convex-dev/better-auth` | `0.12.5`                                 |
 | Convex                    | `1.42.2`                                 |
 | Nuxt                      | peer `^4.4.0`, development `4.4.8`       |
-| Package manager           | `pnpm@10.30.3`                           |
+| Package manager           | `pnpm@11.5.0`                            |
 
 ### 3.2 Fixed implementation tuple
 
