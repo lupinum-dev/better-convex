@@ -1,5 +1,4 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -55,14 +54,6 @@ describe('maintained candidate-test profiles', () => {
     expect(
       selected.profile.pnpmApps.some((entry: { name: string }) => entry.name === 'agentic-saas'),
     ).toBe(false)
-
-    const laboratoryReadme = readFileSync(
-      join(import.meta.dirname, '../../internal/labs/agentic-saas/README.md'),
-      'utf8',
-    )
-    expect(laboratoryReadme).toContain('Internal proof only')
-    expect(laboratoryReadme).toContain('not a maintained or shipped')
-    expect(laboratoryReadme).toContain('real provider-backed execution path')
   })
 
   it('rejects a runner that is not a real repository-owned consumer', () => {

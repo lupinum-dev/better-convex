@@ -16,10 +16,6 @@ const targets = [
     output: 'src/runtime/convex-auth/component',
   },
   {
-    config: 'internal/labs/agentic-saas/convex/betterAuth/schemaOptions.ts',
-    output: 'internal/labs/agentic-saas/convex/betterAuth',
-  },
-  {
     config: 'starters/team/convex/betterAuth/schemaOptions.ts',
     output: 'starters/team/convex/betterAuth',
   },

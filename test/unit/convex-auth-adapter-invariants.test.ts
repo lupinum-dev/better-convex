@@ -3,8 +3,6 @@
 import type { BetterAuthDBSchema, DBFieldAttribute } from 'better-auth/db'
 import { describe, expect, it, vi } from 'vitest'
 
-import agenticSchema from '../../internal/labs/agentic-saas/convex/betterAuth/schema'
-import agenticSchemaMetadata from '../../internal/labs/agentic-saas/convex/betterAuth/schemaMetadata'
 import rootPackage from '../../package.json'
 import lockfile from '../../pnpm-lock.yaml?raw'
 import adapterProvenance from '../../security/upstream-convex-better-auth.json'
@@ -27,6 +25,8 @@ import packagedSchemaMetadata from '../../src/runtime/convex-auth/component/sche
 import { requireWritableAuthCtx } from '../../src/runtime/convex-auth/context'
 import teamSchema from '../../starters/team/convex/betterAuth/schema'
 import teamSchemaMetadata from '../../starters/team/convex/betterAuth/schemaMetadata'
+import localComponentSchema from '../fixtures/better-auth-local-component/convex/betterAuth/schema'
+import localComponentSchemaMetadata from '../fixtures/better-auth-local-component/convex/betterAuth/schemaMetadata'
 
 const tables = {
   user: {
@@ -297,13 +297,13 @@ describe('greenfield Convex auth schema generation', () => {
 
   it('keeps every maintained local component paired with its generated metadata', () => {
     expect(() =>
-      assertAuthSchemaMatchesMetadata(agenticSchema, agenticSchemaMetadata),
+      assertAuthSchemaMatchesMetadata(localComponentSchema, localComponentSchemaMetadata),
     ).not.toThrow()
     expect(() => assertAuthSchemaMatchesMetadata(teamSchema, teamSchemaMetadata)).not.toThrow()
   })
 
   it('generates the organization indexes used by live authorization and invitation paging', () => {
-    expect(agenticSchemaMetadata.models.member?.indexes).toContainEqual({
+    expect(localComponentSchemaMetadata.models.member?.indexes).toContainEqual({
       descriptor: 'organizationId_userId',
       fields: ['organizationId', 'userId'],
       unique: true,

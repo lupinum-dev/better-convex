@@ -19,7 +19,6 @@
     "test/fixtures/server-consumer",
     "test/fixtures/user-sync-triggers-consumer",
     "test/fixtures/vue-anonymous",
-    "internal/labs/agentic-saas",
     "internal/labs/mcp-topology/convex/fixture",
     "src/runtime/server"
   ]
