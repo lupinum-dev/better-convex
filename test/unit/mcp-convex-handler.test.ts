@@ -725,6 +725,50 @@ describe('Convex-native official MCP handler composition', () => {
     expect(factoryCalls).toBe(0)
   })
 
+  it('surfaces unsupported configured capabilities before the SDK error boundary', async () => {
+    const handler = createConvexMcpHandler({
+      serverInfo,
+      resource,
+      verifier: accessVerifier(),
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
+      configureServer(_context, _access, server) {
+        server.registerPrompt('unsupported', {}, () => ({
+          messages: [],
+        }))
+      },
+    })
+
+    await expect(
+      handler.fetch(
+        {},
+        new Request(resource, {
+          body: JSON.stringify({
+            id: 'unsupported-capability',
+            jsonrpc: '2.0',
+            method: 'server/discover',
+            params: {
+              _meta: {
+                'io.modelcontextprotocol/clientCapabilities': {},
+                'io.modelcontextprotocol/clientInfo': {
+                  name: 'unsupported-capability-client',
+                  version: '0.1.0',
+                },
+                'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              },
+            },
+          }),
+          headers: {
+            authorization: `Bearer ${bearer}`,
+            'content-type': 'application/json',
+            'mcp-method': 'server/discover',
+            'mcp-protocol-version': '2026-07-28',
+          },
+          method: 'POST',
+        }),
+      ),
+    ).rejects.toThrow('MCP_UNSUPPORTED_SERVER_CAPABILITY')
+  })
+
   it('returns an opaque timeout when the official handler cannot settle', async () => {
     vi.useFakeTimers()
     try {

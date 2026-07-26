@@ -95,22 +95,24 @@ export function createConvexMcpHandler<ActionContext>(
           }
 
           const boundedRequest = await prepareBoundedMcpRequest(request, signal)
-          const handler = createMcpHandler(
-            async () => {
-              const server = new McpServer(options.serverInfo)
-              await options.configureServer(context, authenticated.access, server)
-              return hardenUnaryServer(server)
-            },
-            {
-              legacy: 'reject',
-              maxSubscriptions: 0,
-              responseMode: 'json',
-            },
-          )
+          const server = new McpServer(options.serverInfo)
+          try {
+            await options.configureServer(context, authenticated.access, server)
+            hardenUnaryServer(server)
+          } catch (error) {
+            await server.close().catch(() => {})
+            throw error
+          }
+          const handler = createMcpHandler(async () => server, {
+            legacy: 'reject',
+            maxSubscriptions: 0,
+            responseMode: 'json',
+          })
           try {
             return await boundMcpResponse(await handler.fetch(boundedRequest), signal)
           } finally {
             await handler.close()
+            await server.close().catch(() => {})
           }
         })
       } catch (error) {
