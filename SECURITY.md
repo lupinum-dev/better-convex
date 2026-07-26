@@ -4,7 +4,19 @@
 
 Security fixes are provided for the latest published minor release. Older minors are unsupported after a newer minor is published.
 
-The current greenfield candidate uses Node `^22.12.0 || ^24.11.0 || >=26.0.0`, Nuxt `4.4.8`, Convex `1.42.2`, Better Auth `1.7.0-rc.1`, Kysely `0.28.17`, package-owned `@better-auth/oauth-provider` `1.7.0-rc.1`, and Convex Helpers `0.1.114`. The exact root package manifest is canonical. Better Auth, Convex, Nuxt, and Kysely are exact peers; the OAuth Provider is an exact direct production dependency installed transitively with Better Convex Nuxt. A supported application resolves one physical instance of each stateful runtime in the tuple.
+The current package family consists of the `better-convex-nuxt@0.8.0-beta.21`,
+`better-convex-vue@0.8.0-beta.21`, and `@better-convex/mcp@0.1.0-beta.9`
+prerelease candidates. The Nuxt candidate uses Node
+`^22.12.0 || ^24.11.0 || >=26.0.0`, Nuxt `4.4.8`, Convex `1.42.2`, Better Auth
+`1.7.0-rc.2`, Kysely `0.28.17`, package-owned
+`@better-auth/oauth-provider` `1.7.0-rc.2`, and Convex Helpers `0.1.114`.
+Each package manifest is canonical for its own dependencies and peers; each
+reviewed release descriptor binds its package manifest into that package's
+artifact proof. `pnpm release:prepare` certifies the three package candidates
+from one checkout. Better Auth, Convex, Nuxt, and Kysely are exact peers of the
+Nuxt package; the OAuth Provider is its exact direct production dependency. A
+supported application resolves one physical instance of each stateful runtime
+in the tuple.
 
 This is not yet a stable authentication tuple. Stable publication is blocked until a compatible stable Better Auth 1.7 release exists and the human release gates below pass.
 
@@ -28,18 +40,23 @@ browser or Nuxt SSR
   -> Better Auth component
 ```
 
-The supported delegated MCP path is also fixed:
+The supported delegated MCP path is fixed on the application-owned Convex
+resource:
 
 ```text
 OAuth/MCP client
-  -> same-origin /mcp
-  -> one configured Convex HTTP action
-  -> exact access-token verification
-  -> closed tool dispatch
-  -> tool-specific internal Convex function
+  -> configured Convex site origin /mcp
+  -> application HTTP action using @better-convex/mcp
+  -> application-supplied exact access-token verifier
+  -> explicit official-SDK tool registration
+  -> named internal Convex function
 ```
 
-There is no generic function bridge, caller-selected upstream, caller-supplied principal, raw-token function argument, or extra shared MCP secret.
+`starters/mcp-oauth-agent/convex/http.ts` and `convex/mcp.ts` are the maintained
+production trace for that composition. Better Convex Nuxt owns no `/mcp` route
+or bearer-token proxy. There is no generic function bridge, caller-selected
+upstream, caller-supplied principal, raw-token function argument, or extra
+shared MCP secret.
 
 ## Enforced invariants
 

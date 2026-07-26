@@ -128,11 +128,12 @@ prerelease version in the root `package.json`. The workflow then:
    from the checkout, and runs artifact-dependent provenance, package-entry,
    and maintained clean-consumer gates against the exact tarballs;
 5. enters the protected `bcn-auth-staging` environment, reverifies the
-   downloaded Nuxt set, proves the staging ingress is closed to unleased
-   traffic, requires its fingerprint from the already-deployed public Nuxt
-   origin and the real auth/MCP responses, clean-installs and deploys its Convex
-   fixture, proves zero persisted staging state, and runs the reduced critical
-   races;
+   downloaded Nuxt set, proves the public Nuxt fingerprint and auth routes are
+   closed to unleased traffic, requires the candidate fingerprint from the
+   already-deployed public Nuxt origin and real auth responses, clean-installs
+   and deploys its Convex fixture, proves zero persisted staging state, verifies
+   the application-owned Convex `/mcp` resource challenge, and runs the reduced
+   critical races;
 6. waits for approval in the protected `npm-release` environment;
 7. grants `id-token: write` only to protected publication jobs, publishes Vue
    through npm OIDC under `next-staging`, and byte-compares the registry
@@ -157,7 +158,7 @@ the workflow neither creates nor destroys it. The repository can deploy Convex
 functions with a deployment-scoped key, but deploying the Nuxt host is
 provider-specific. Before approving this protected job, the host operator must
 build and deploy the application from the exact downloaded candidate tarball.
-The public origin must expose that candidate's package-owned
+The public Nuxt origin must expose that candidate's package-owned
 `/api/_better-convex-nuxt/release-fingerprint` response. A source build or a
 different/stale tarball does not register or cannot match that route, so the job
 fails before deploying Convex functions or writing application data. Environment
@@ -166,9 +167,12 @@ variables cannot assert or override the fingerprint.
 This fixed deployment is safe to clean only while the workflow has exclusive
 ingress and operator ownership. The host edge must reject requests without the
 protected `__Host-bcn-staging-lease` cookie with an exact `403` before Nuxt for
-the fingerprint, auth read/write, and MCP probes. The protected workflow proves
-that behavior before deployment, then sends the lease only from in-memory HTTP
-and browser contexts. The lease is a staging perimeter control, not an
+the fingerprint and auth read/write probes. The application-owned MCP resource
+is served separately from the Convex site origin; the workflow proves that
+resource with an unauthenticated `401` and its exact RFC 9728
+`resource_metadata` challenge. The protected workflow proves the Nuxt ingress
+behavior before deployment, then sends the lease only from in-memory HTTP and
+browser contexts. The lease is a staging perimeter control, not an
 application credential or supported runtime option. The deployment key must be
 reserved for this workflow, the environment concurrency group must remain
 exclusive, and operators must not invoke Convex functions or write staging data
@@ -215,10 +219,12 @@ rotation, provider-owned authorization-code/PKCE races, and the real Better Auth
 database-backed lockout/reset path. It exchanges a final persisted session for a
 short-lived RS256 JWT, verifies its exact claims and published-key signature, and
 requires the named Convex deployment to accept that token with the matching
-subject and `convex-session` class. The real auth and MCP proxy responses must
-carry the candidate fingerprint. It then deletes every row from all discovered
-mounted auth models and application tables. It must re-prove zero state before
-writing and uploading
+subject and `convex-session` class. The real auth responses must carry the
+candidate fingerprint. The MCP resource does not carry a Nuxt runtime
+fingerprint: its package-byte binding comes from the separately certified
+`@better-convex/mcp` artifact and its installed-byte consumer gates. It then
+deletes every row from all discovered mounted auth models and application
+tables. It must re-prove zero state before writing and uploading
 `bcn-auth-staging-report`. The report contains artifact coordinates, public
 topology, booleans, and counts—never credentials, codes, verifiers, tokens, or
 key material.
@@ -280,5 +286,6 @@ publish from a workstation.
 Do not unpublish or reuse a version. If any gate or candidate deployment fails,
 leave `latest` unchanged, correct the source, obtain independent review, assign
 a new prerelease version, and rerun the complete workflow to create new bytes.
-Stable publication remains blocked until Better Auth 1.7 stable exists and the
-stable gates and independent security review in `plan.md` pass.
+Stable publication remains blocked until Better Auth 1.7 stable exists, the
+1.0 eligibility criteria in `internal/RFC-better-convex-vnext.md` pass, and the
+independent human security approval required by `SECURITY.md` is recorded.

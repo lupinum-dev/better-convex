@@ -60,8 +60,9 @@ inferable type, or had no independent consumer contract:
 - user sync: `UserSyncRebuildResult`.
 - Vue root: `BetterConvexPlugin`, `ConvexQuerySkip`, and `UseConvexQueryResult`.
 - Vue MCP App: `McpAppPhase`, `UseMcpAppOptions`, and `UseMcpAppReturn`.
-- MCP: `ConvexMcpHandler`, `ConvexMcpHandlerOptions`, `ConvexMcpRequestContext`,
-  `McpToolDiagnostic`, and `McpToolDiagnosticOptions`.
+- MCP: `ConvexMcpHandler`, `ConvexMcpHandlerOptions`, `ConvexMcpRequestContext`
+  (including its locked-RC request-era callback argument), `McpToolDiagnostic`,
+  and `McpToolDiagnosticOptions`.
 
 No runtime behavior or compatibility shim replaced these names. Public functions retain precise
 inferred inputs and results. Internal shared types moved behind the entry only where runtime validation

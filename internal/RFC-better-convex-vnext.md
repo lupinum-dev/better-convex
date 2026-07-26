@@ -437,7 +437,7 @@ During beta, Nuxt SHOULD pin the exact certified `better-convex-vue` version. It
 
 ### Repository shape
 
-The target repository keeps the already-certified Nuxt package at the root. A monorepo does not require moving it into a symmetrical directory:
+The implemented repository keeps the Nuxt package at the root. A monorepo does not require moving it into a symmetrical directory:
 
 ```text
 better-convex/
@@ -451,31 +451,24 @@ better-convex/
       package.json                 # @better-convex/mcp
 
   internal/
-    conformance/
-    release/
-
-  examples/
-    vue-vite/
-    nuxt/
-    mcp-basic/
-    mcp-oauth/
-    mcp-url-handoff/
-    mcp-app-vue/
+    labs/
+      mcp-topology/                # active neutral final-reconciliation proof
 
   starters/
-    agency/                        # existing
-    agentic-saas/                 # existing neutral proof target
-    public/                        # existing
-    team/                          # existing
-    mcp-agent/                    # existing private service actor
-    mcp-oauth-agent/              # existing delegated human
-    vue-vite/                     # candidate addition after proof
+    agency/
+    public/
+    team/
+    mcp-oauth-agent/               # delegated-human Convex MCP resource
 
   docs/
   scripts/
 ```
 
-The tree shows additions, not a deletion plan for maintained starters. Both current MCP trust-model starters remain until the topology proof records a migrate, retain, or delete decision for each. The selected topology supplies one protocol implementation; a retained starter may demonstrate a distinct trust model only by using that implementation.
+This is the hard-cut result of `D-019`, `D-048`, and `P5-021`, not the RFC's
+earlier illustrative addition list. The losing Nitro topology, Nuxt MCP relay,
+duplicate service-actor starter, and mock-only Agentic SaaS proof are not
+parallel compatibility paths. The selected topology supplies one protocol
+implementation.
 
 The documentation brand becomes **Better Convex** when the Vue package is approved. The GitHub repository MAY be renamed in the same release window, but the root Nuxt package remains in place. Existing npm consumers keep the `better-convex-nuxt` package name. No `better-convex` meta-package is introduced by this RFC.
 
@@ -2967,7 +2960,7 @@ The RFC may move to **Accepted** after the final MCP reconciliation and topology
 
 ## Repository references
 
-Current sources that implementation must reconcile:
+Current implementation authorities:
 
 - [Current runtime architecture](../src/ARCHITECTURE.md)
 - [Design decisions](../docs/content/docs/2.understand/8.design-decisions.md)
@@ -2977,9 +2970,10 @@ Current sources that implementation must reconcile:
 - [Error types](../docs/content/docs/6.reference/4.error-types.md)
 - [Release compatibility](../docs/content/docs/7.operations/5.release-compatibility.md)
 - [Delegated-human MCP starter](../starters/mcp-oauth-agent/README.md)
-- [Private service-actor MCP starter](../starters/mcp-agent/README.md)
-- [Current MCP topology](../src/runtime/server/mcp/topology.ts)
-- [Current bounded MCP proxy](../src/runtime/server/mcp/proxy.ts)
+- [Convex MCP route](../starters/mcp-oauth-agent/convex/http.ts)
+- [Application MCP registration](../starters/mcp-oauth-agent/convex/mcp.ts)
+- [MCP handler boundary](../packages/mcp/src/handler.ts)
+- [MCP transport bounds](../packages/mcp/src/transport.ts)
 - [Current selected MCP conformance runner](../scripts/run-mcp-conformance.mjs)
 - [Release packer](../scripts/release.mjs)
 - [Release verifier](../scripts/verify-release.mjs)
