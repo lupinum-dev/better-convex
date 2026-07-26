@@ -1101,21 +1101,37 @@ Phase 3 ledger note (2026-07-26):
 
 Source: Claude `AUTH-03`, promoted to P1.
 
-- [ ] Replace `request.clone().text()` plus full `TextEncoder` measurement with the
+- [x] Replace `request.clone().text()` plus full `TextEncoder` measurement with the
       existing running byte-limit primitive, moved to a neutral private location if
       necessary.
-- [ ] Keep the cheap `Content-Length` precheck.
-- [ ] Apply the same implementation to authorize, token, and revoke form parsing.
-- [ ] Decode and parse only accepted bounded bytes.
+- [x] Keep the cheap `Content-Length` precheck.
+- [x] Apply the same implementation to authorize, token, and revoke form parsing.
+- [x] Decode and parse only accepted bounded bytes.
 
 Acceptance criteria:
 
-- [ ] Headerless/chunked bodies stop reading at approximately 8 KiB or 16 KiB, not at
+- [x] Headerless/chunked bodies stop reading at approximately 8 KiB or 16 KiB, not at
       end-of-stream.
-- [ ] Exactly-limit input succeeds; limit+1 fails with the fixed reviewed error.
-- [ ] Allowed-field and singleton-parameter checks remain.
-- [ ] The provider can still read its cloned accepted body.
-- [ ] No unauthenticated request can force full materialization beyond the owned cap.
+- [x] Exactly-limit input succeeds; limit+1 fails with the fixed reviewed error.
+- [x] Allowed-field and singleton-parameter checks remain.
+- [x] The provider can still read its cloned accepted body.
+- [x] No unauthenticated request can force full materialization beyond the owned cap.
+
+Ledger note (2026-07-26):
+
+- The existing running stream limiter moved into one dependency-free private Web
+  Streams leaf and remains the sole implementation for auth-proxy request/response
+  caps and OAuth form caps. The architecture check explicitly permits only that leaf
+  across the Convex-auth island and proves it imports nothing.
+- Authorize (8 KiB), token, and revoke (16 KiB) retain their `Content-Length` precheck,
+  then read a cloned request stream only through the running cap. Text decoding and
+  `URLSearchParams` construction occur only after accepted bytes are assembled;
+  allowed-field and singleton checks are unchanged.
+- Executed tests prove exact-limit acceptance, limit+1 rejection, early cancellation of
+  a much longer headerless stream, and that the provider-owned original request body
+  remains readable after guard parsing. Focused OAuth/proxy tests pass 14 tests; the
+  complete unit project passes 1,386. Root/fixture typechecks, lint, canonical format,
+  and all 14 architecture boundary rules pass.
 
 ### T4.2 — Remove caller-controlled OAuth verification time
 

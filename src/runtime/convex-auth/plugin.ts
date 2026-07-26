@@ -32,6 +32,7 @@ import {
   assertSafeStoredOAuthResource,
   hardenOAuthProviderCallbacks,
   installUrlCanParseCompatibility,
+  parseBoundedFormBody,
   parseBoundedFormRequest,
   projectOAuthAuthorizationServerMetadata,
   requireSingleParameter,
@@ -386,22 +387,7 @@ async function authorizeParameters(request: Request): Promise<URLSearchParams> {
     throw new OAuthSecurityError('AUTH_OAUTH_REQUEST_INVALID')
   }
 
-  const mediaType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
-  if (mediaType !== 'application/x-www-form-urlencoded') {
-    throw new OAuthSecurityError('AUTH_OAUTH_REQUEST_INVALID')
-  }
-  const contentLength = request.headers.get('content-length')
-  if (contentLength !== null) {
-    const bytes = Number(contentLength)
-    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > AUTHORIZE_BODY_MAX_BYTES) {
-      throw new OAuthSecurityError('AUTH_OAUTH_REQUEST_INVALID')
-    }
-  }
-  const body = await request.clone().text()
-  if (new TextEncoder().encode(body).byteLength > AUTHORIZE_BODY_MAX_BYTES) {
-    throw new OAuthSecurityError('AUTH_OAUTH_REQUEST_INVALID')
-  }
-  return new URLSearchParams(body)
+  return await parseBoundedFormBody(request, AUTHORIZE_BODY_MAX_BYTES)
 }
 
 function oauthAuthorizationFailure(

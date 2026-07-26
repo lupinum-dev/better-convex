@@ -92,6 +92,7 @@ const MCP_APP_ENTRY = p('packages/vue/src/mcp-app.ts')
 const MCP_PACKAGE_DIR = p('packages/mcp/src')
 const SHARED_AUTH_COOKIE_FILE = p('src/runtime/shared/auth-cookie.ts')
 const SHARED_AUTH_ORIGIN_FILE = p('src/runtime/shared/auth-origin.ts')
+const SHARED_BOUNDED_STREAM_FILE = p('src/runtime/shared/bounded-stream.ts')
 const SHARED_CLIENT_IP_FILE = p('src/runtime/shared/client-ip.ts')
 
 function inDir(absPath, dirAbs) {
@@ -114,9 +115,13 @@ const isClientLifecycle = (absPath) => inDir(absPath, CLIENT_LIFECYCLE_DIR)
 const isMcpPackage = (absPath) => inDir(absPath, MCP_PACKAGE_DIR)
 const isSharedAuthCookie = (absPath) => absPath === SHARED_AUTH_COOKIE_FILE
 const isSharedAuthOrigin = (absPath) => absPath === SHARED_AUTH_ORIGIN_FILE
+const isSharedBoundedStream = (absPath) => absPath === SHARED_BOUNDED_STREAM_FILE
 const isSharedClientIp = (absPath) => absPath === SHARED_CLIENT_IP_FILE
 const isConvexAuthSharedLeaf = (absPath) =>
-  isSharedAuthCookie(absPath) || isSharedAuthOrigin(absPath) || isSharedClientIp(absPath)
+  isSharedAuthCookie(absPath) ||
+  isSharedAuthOrigin(absPath) ||
+  isSharedBoundedStream(absPath) ||
+  isSharedClientIp(absPath)
 
 /**
  * Bare-specifier families that only make sense in a browser/Nuxt-app context.
@@ -262,6 +267,14 @@ const RULES = [
     description:
       'src/runtime/shared/auth-origin.ts is a dependency-free leaf shared by Nuxt and Convex auth code.',
     from: isSharedAuthOrigin,
+    disallow: () => true,
+    typeOnlyExempt: false,
+  },
+  {
+    name: 'shared-bounded-stream-dependency-free',
+    description:
+      'src/runtime/shared/bounded-stream.ts is a dependency-free Web Streams leaf shared by Nitro and Convex auth code.',
+    from: isSharedBoundedStream,
     disallow: () => true,
     typeOnlyExempt: false,
   },

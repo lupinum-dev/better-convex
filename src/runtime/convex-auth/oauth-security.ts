@@ -1,3 +1,5 @@
+import { readStreamWithByteLimit } from '../shared/bounded-stream'
+
 const OAUTH_CONFIG_ERROR = 'AUTH_OAUTH_CONFIG_INVALID'
 const OAUTH_REQUEST_ERROR = 'AUTH_OAUTH_REQUEST_INVALID'
 const OAUTH_TOKEN_ERROR = 'AUTH_OAUTH_TOKEN_INVALID'
@@ -609,6 +611,19 @@ export async function parseBoundedFormRequest(
   allowedFields: readonly string[],
   maxBytes = 16 * 1024,
 ): Promise<URLSearchParams> {
+  const parameters = await parseBoundedFormBody(request, maxBytes)
+  const allowed = new Set(allowedFields)
+  for (const field of parameters.keys()) {
+    if (!allowed.has(field)) invalidRequest()
+  }
+  assertSingleParameters(parameters, allowedFields)
+  return parameters
+}
+
+export async function parseBoundedFormBody(
+  request: Request,
+  maxBytes: number,
+): Promise<URLSearchParams> {
   const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
   if (contentType !== 'application/x-www-form-urlencoded') invalidRequest()
   const contentLength = request.headers.get('content-length')
@@ -616,15 +631,13 @@ export async function parseBoundedFormRequest(
     const bytes = Number(contentLength)
     if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > maxBytes) invalidRequest()
   }
-  const body = await request.clone().text()
-  if (new TextEncoder().encode(body).byteLength > maxBytes) invalidRequest()
-  const parameters = new URLSearchParams(body)
-  const allowed = new Set(allowedFields)
-  for (const field of parameters.keys()) {
-    if (!allowed.has(field)) invalidRequest()
-  }
-  assertSingleParameters(parameters, allowedFields)
-  return parameters
+  const body = await readStreamWithByteLimit(
+    request.clone().body,
+    maxBytes,
+    () => new OAuthSecurityError(OAUTH_REQUEST_ERROR),
+    request.signal,
+  )
+  return new URLSearchParams(new TextDecoder().decode(body ?? new Uint8Array()))
 }
 
 function metadataUrl(value: unknown, expected: string): void {
