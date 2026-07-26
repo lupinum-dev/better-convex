@@ -14,50 +14,10 @@ const safeFilenamePattern = /^[\dA-Za-z][\w.-]*$/u
 const maximumFilesystemComponentBytes = 255
 const maximumNpmPackageNameBytes = 214
 const fullGitCommitPattern = /^[0-9a-f]{40}$/u
-const retiredUnpublishedVersions = Object.freeze({
-  '@better-convex/mcp': Object.freeze([
-    '0.1.0-beta.0',
-    '0.1.0-beta.1',
-    '0.1.0-beta.2',
-    '0.1.0-beta.3',
-    '0.1.0-beta.4',
-    '0.1.0-beta.5',
-    '0.1.0-beta.6',
-    '0.1.0-beta.7',
-    '0.1.0-beta.8',
-  ]),
-  'better-convex-nuxt': Object.freeze([
-    '0.8.0-beta.6',
-    '0.8.0-beta.7',
-    '0.8.0-beta.8',
-    '0.8.0-beta.9',
-    '0.8.0-beta.10',
-    '0.8.0-beta.11',
-    '0.8.0-beta.12',
-    '0.8.0-beta.13',
-    '0.8.0-beta.14',
-    '0.8.0-beta.16',
-    '0.8.0-beta.17',
-    '0.8.0-beta.18',
-    '0.8.0-beta.19',
-    '0.8.0-beta.20',
-  ]),
-  'better-convex-vue': Object.freeze([
-    '0.8.0-beta.6',
-    '0.8.0-beta.7',
-    '0.8.0-beta.8',
-    '0.8.0-beta.9',
-    '0.8.0-beta.10',
-    '0.8.0-beta.11',
-    '0.8.0-beta.12',
-    '0.8.0-beta.13',
-    '0.8.0-beta.14',
-    '0.8.0-beta.16',
-    '0.8.0-beta.17',
-    '0.8.0-beta.18',
-    '0.8.0-beta.19',
-    '0.8.0-beta.20',
-  ]),
+const minimumReleasableVersions = Object.freeze({
+  '@better-convex/mcp': '0.1.0-beta.9',
+  'better-convex-nuxt': '0.8.0-beta.21',
+  'better-convex-vue': '0.8.0-beta.21',
 })
 
 /**
@@ -141,15 +101,62 @@ export function validatePackageArtifactVersion(version) {
   return version
 }
 
-/** Reject source identities retired by an explicit stabilization decision. */
+/** Reject package versions older than the stabilization cutover. */
 export function assertReleaseEligiblePackageVersion(packageName, version) {
-  const retiredVersions = retiredUnpublishedVersions[packageName] ?? []
-  if (retiredVersions.includes(version)) {
+  const minimumVersion = minimumReleasableVersions[packageName]
+  if (
+    minimumVersion !== undefined &&
+    compareCanonicalSemver(
+      validatePackageArtifactVersion(version),
+      validatePackageArtifactVersion(minimumVersion),
+    ) < 0
+  ) {
     throw new Error(
-      `${packageName}@${version} is a retired unpublished source identity and cannot produce an artifact.`,
+      `${packageName}@${version} predates the minimum releasable version ${minimumVersion}.`,
     )
   }
   return version
+}
+
+function compareCanonicalSemver(left, right) {
+  const leftVersion = parseCanonicalSemver(left)
+  const rightVersion = parseCanonicalSemver(right)
+  for (let index = 0; index < leftVersion.core.length; index += 1) {
+    const comparison = compareNumericIdentifiers(leftVersion.core[index], rightVersion.core[index])
+    if (comparison !== 0) return comparison
+  }
+  if (leftVersion.prerelease === undefined) return rightVersion.prerelease === undefined ? 0 : 1
+  if (rightVersion.prerelease === undefined) return -1
+  const sharedLength = Math.min(leftVersion.prerelease.length, rightVersion.prerelease.length)
+  for (let index = 0; index < sharedLength; index += 1) {
+    const leftIdentifier = leftVersion.prerelease[index]
+    const rightIdentifier = rightVersion.prerelease[index]
+    if (leftIdentifier === rightIdentifier) continue
+    const leftIsNumeric = numericPrereleaseIdentifierPattern.test(leftIdentifier)
+    const rightIsNumeric = numericPrereleaseIdentifierPattern.test(rightIdentifier)
+    if (leftIsNumeric && rightIsNumeric) {
+      return compareNumericIdentifiers(leftIdentifier, rightIdentifier)
+    }
+    if (leftIsNumeric !== rightIsNumeric) return leftIsNumeric ? -1 : 1
+    return leftIdentifier < rightIdentifier ? -1 : 1
+  }
+  return Math.sign(leftVersion.prerelease.length - rightVersion.prerelease.length)
+}
+
+function parseCanonicalSemver(version) {
+  const separator = version.indexOf('-')
+  const core = separator === -1 ? version : version.slice(0, separator)
+  const prerelease = separator === -1 ? undefined : version.slice(separator + 1)
+  return {
+    core: core.split('.'),
+    prerelease: prerelease?.split('.'),
+  }
+}
+
+function compareNumericIdentifiers(left, right) {
+  if (left.length !== right.length) return left.length < right.length ? -1 : 1
+  if (left === right) return 0
+  return left < right ? -1 : 1
 }
 
 function isCanonicalSemverWithoutBuildMetadata(version) {
