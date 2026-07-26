@@ -37,21 +37,21 @@ gate are complete.
 
 ## Non-negotiable rules
 
-- [ ] Do not publish, stage, or call the candidate stable while any P0/P1 item is open.
-- [ ] Do not weaken an auth, identity, transport, artifact, or advisory gate to make it
+- [x] Do not publish, stage, or call the candidate stable while any P0/P1 item is open.
+- [x] Do not weaken an auth, identity, transport, artifact, or advisory gate to make it
       pass.
-- [ ] Add a failing behavioral/type test before changing each P0/P1 production path.
-- [ ] Prefer hard deletion over beta compatibility aliases, overloads, shims, flags, or
+- [x] Add a failing behavioral/type test before changing each P0/P1 production path.
+- [x] Prefer hard deletion over beta compatibility aliases, overloads, shims, flags, or
       dual paths.
-- [ ] Keep one source of truth for identity, schema artifacts, MCP protocol behavior,
+- [x] Keep one source of truth for identity, schema artifacts, MCP protocol behavior,
       release ordering, and public error projection.
-- [ ] Do not add a table, projection, cache, job, service, registry wrapper, or public
+- [x] Do not add a table, projection, cache, job, service, registry wrapper, or public
       option unless a task below explicitly proves it is required.
-- [ ] Preserve exact artifact hashes, SRI, SBOM, content manifests, runtime
+- [x] Preserve exact artifact hashes, SRI, SBOM, content manifests, runtime
       fingerprints, installed-byte comparison, dependency-order publication, and
       protected OIDC.
-- [ ] Do not interpret source-text assertions or evidence prose as behavioral proof.
-- [ ] Keep application roles, current authorization, high-impact operation state, and
+- [x] Do not interpret source-text assertions or evidence prose as behavioral proof.
+- [x] Keep application roles, current authorization, high-impact operation state, and
       destructive-operation policy outside Better Convex.
 
 ## Reconciliation decisions
@@ -82,7 +82,7 @@ gate are complete.
 - [x] `vue-lifecycle/VUE-03`: fix the no-op recovery path and explicitly decide, with
       security evidence, whether a transient session transport failure retains or
       retires the current identity.
-- [ ] `ERR-02`, `REL-02`, `TE-01`, and `TE-02`: remove false or implementation-coupled
+- [x] `ERR-02`, `REL-02`, `TE-01`, and `TE-02`: remove false or implementation-coupled
       observability/evidence claims while retaining real invariant coverage.
 
 ### Merged with Codex findings
@@ -90,7 +90,7 @@ gate are complete.
 - [x] Claude `NUXT-03` is the same bytes/non-plain-object corruption found by Codex.
 - [x] Claude `REL-03` is the same self-validating candidate-profile duplication found by
       Codex.
-- [ ] Claude `MCP-05`/`NORM-03` are part of deleting the public constant `era` context and
+- [x] Claude `MCP-05`/`NORM-03` are part of deleting the public constant `era` context and
       local MCP method classifier.
 - [x] Claude `ERR-01` is handled with the broader public-error opacity correction:
       unknown causes are opaque everywhere, and structured error data remains intact
@@ -112,7 +112,7 @@ gate are complete.
       Codex executed both an orphaned-abort proof and an approximately 2 MiB response
       proof. The corrected fix uses operation-aware limits instead of imposing the SSR
       query deadline on actions.
-- [ ] Do not implement Claude's proposed automatic `registerTool` interceptor. It would
+- [x] Do not implement Claude's proposed automatic `registerTool` interceptor. It would
       add a second MCP registration owner. Keep explicit `runMcpTool` at the application
       boundary and delete only its unearned diagnostic surface.
 - [x] Do not publish an internal Vue unref helper solely to deduplicate a small Nuxt
@@ -120,10 +120,10 @@ gate are complete.
       existing public primitive already has the exact contract.
 - [x] Do not implement live pagination tail `refresh()` on every head change. Cursor
       chaining is sequential and would amplify a busy feed by `O(loaded pages)`.
-- [ ] Do not add a permanent “latest prerelease” dependency gate. Reconcile Better Auth
+- [x] Do not add a permanent “latest prerelease” dependency gate. Reconcile Better Auth
       `1.7.0-rc.1` against the currently published `1.7.0-rc.2` once in the final
       dependency phase; exact pinned reviewed bytes remain authoritative.
-- [ ] Do not delete all reviewed-fault-injection tests until their unique production
+- [x] Do not delete all reviewed-fault-injection tests until their unique production
       invariant assertions have been identified and moved.
 
 ---
@@ -217,17 +217,26 @@ Ledger note (2026-07-26):
 
 ### T0.3 — Lock the red tests before production edits
 
-- [ ] Add isolated red tests for T1.1, T1.2, T2.1, T2.2, T3.1, T3.2, T4.1, T4.4,
+- [x] Add isolated red tests for T1.1, T1.2, T2.1, T2.2, T3.1, T3.2, T4.1, T4.4,
       T4.5, and T4.6.
-- [ ] Each test must fail for the claimed behavioral reason at the target commit.
-- [ ] Store no scratch harness, generated credential, or deployment artifact in the
+- [x] Each test must fail for the claimed behavioral reason at the target commit.
+- [x] Store no scratch harness, generated credential, or deployment artifact in the
       repository.
 
 Phase 0 exit gate:
 
 - [x] The release command is satisfiable from a clean artifact root.
 - [x] The advisory command produces complete evidence.
-- [ ] Every P0/P1 correction has a focused failing regression test.
+- [x] Every P0/P1 correction has a focused failing regression test.
+
+Ledger note (2026-07-26):
+
+- Each named P0/P1 task below records the isolated red behavior observed before its
+  production correction and the focused green suite retained afterward. The resulting
+  tests exercise runtime behavior or public types, not source strings.
+- The remediation commits contain no scratch proof, generated credential, deployment
+  output, or release artifact. Temporary release roots and browser/codegen deployments
+  are created outside the repository or cleaned by their owning harness.
 
 ---
 
@@ -721,10 +730,10 @@ Ledger note (2026-07-26):
 
 Phase 2 exit gate:
 
-- [ ] One explicit tool reaches one explicit application operation.
-- [ ] One protocol implementation parses and classifies MCP messages: the official SDK.
-- [ ] A committed effect cannot be surfaced as transport/App failure.
-- [ ] No bearer, cookie, provider-private value, raw cause, or mutable SDK object enters
+- [x] One explicit tool reaches one explicit application operation.
+- [x] One protocol implementation parses and classifies MCP messages: the official SDK.
+- [x] A committed effect cannot be surfaced as transport/App failure.
+- [x] No bearer, cookie, provider-private value, raw cause, or mutable SDK object enters
       an MCP App.
 
 ---
@@ -1986,35 +1995,45 @@ Phase 5 exit gate:
 
 ## Explicitly rejected work
 
-- [ ] Do **not** add a public core/catch-all package.
-- [ ] Do **not** add Commands, approvals, workflow, RBAC, or a second canonical
+- [x] Do **not** add a public core/catch-all package.
+- [x] Do **not** add Commands, approvals, workflow, RBAC, or a second canonical
       high-impact-operation store.
-- [ ] Do **not** add a second MCP registry, automatic tool interceptor, or Nitro MCP
+- [x] Do **not** add a second MCP registry, automatic tool interceptor, or Nitro MCP
       topology.
-- [ ] Do **not** convert `@modelcontextprotocol/server` to a consumer-owned peer merely
+- [x] Do **not** convert `@modelcontextprotocol/server` to a consumer-owned peer merely
       because `McpServer` appears in a callback; the package intentionally constructs
       and owns that instance.
-- [ ] Do **not** remove `createBetterAuthMcpAccessVerifier`; Ginko is a real consumer and
+- [x] Do **not** remove `createBetterAuthMcpAccessVerifier`; Ginko is a real consumer and
       the narrow verifier result prevents provider-private state entering public access
       context.
-- [ ] Do **not** treat the request-local starter verifier closure as module-global state.
-- [ ] Do **not** add a cascade projection, cache, queue, or background job before a real
+- [x] Do **not** treat the request-local starter verifier closure as module-global state.
+- [x] Do **not** add a cascade projection, cache, queue, or background job before a real
       workload exceeds the bounded transaction contract.
-- [ ] Do **not** remove the exact Kysely peer. Better Auth permits a wider range, so the
+- [x] Do **not** remove the exact Kysely peer. Better Auth permits a wider range, so the
       peer is what forces the reviewed physical runtime tuple.
-- [ ] Do **not** split `rotateSigningKey` into another service/factory; it is an
+- [x] Do **not** split `rotateSigningKey` into another service/factory; it is an
       intentionally atomic JWKS-domain operation.
-- [ ] Do **not** add a policy hook to derived user-projection cleanup without a real
+- [x] Do **not** add a policy hook to derived user-projection cleanup without a real
       application-owned canonical-row requirement.
-- [ ] Do **not** parallelize cursor-dependent pagination.
-- [ ] Do **not** refresh every loaded page on each live head update.
-- [ ] Do **not** redesign the upload queue around a `Map` without a benchmark that
+- [x] Do **not** parallelize cursor-dependent pagination.
+- [x] Do **not** refresh every loaded page on each live head update.
+- [x] Do **not** redesign the upload queue around a `Map` without a benchmark that
       crosses the current simple-array budget.
-- [ ] Do **not** split `client-owner.ts` or the auth plugin because of file size alone.
-- [ ] Do **not** add compatibility shims for vNext beta APIs.
-- [ ] Do **not** accept `Origin: null` as a general CSRF solution.
-- [ ] Do **not** remove exact artifact integrity or request-isolation controls.
-- [ ] Do **not** delete the trusted live-codegen freshness gate: the main/scheduled
+- [x] Do **not** split `client-owner.ts` or the auth plugin because of file size alone.
+- [x] Do **not** add compatibility shims for vNext beta APIs.
+- [x] Do **not** accept `Origin: null` as a general CSRF solution.
+- [x] Do **not** remove exact artifact integrity or request-isolation controls.
+- [x] Do **not** delete the trusted live-codegen freshness gate: the main/scheduled
       workflow supplies its deploy key outside PR-controlled execution.
-- [ ] Do **not** implement Claude consensus-rejected controller/MCP/adapter hypotheses
+- [x] Do **not** implement Claude consensus-rejected controller/MCP/adapter hypotheses
       unless new production evidence changes their premise.
+
+Ledger note (2026-07-26):
+
+- Final caller, export, dependency, route, and architecture searches found none of the
+  rejected additions or removals above. The remediation kept the existing package
+  boundaries and direct SDK/application ownership, used hard cuts for unreleased
+  surfaces, and retained every listed security or release invariant.
+- The only unverified Claude candidates carried forward were the bounded T5.9 set. Each
+  presently decidable candidate now has an accepted implementation or a production-trace
+  rejection; the final-SDK-dependent MCP Apps recheck remains explicitly in T2.6.
