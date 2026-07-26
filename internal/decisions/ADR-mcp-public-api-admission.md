@@ -113,7 +113,7 @@ not parse JSON-RPC or implement protocol negotiation.
    application, so direct use repeats security-sensitive glue.
 3. **Can Better Convex be simplified instead?** Yes. Delete the existing starter parser/relay and use
    one adapter around the official SDK. Keep registration and domain outcomes in the official SDK;
-   retain only the two-consumer `runMcpTool()` failure/diagnostic boundary.
+   retain only the two-consumer, one-argument `runMcpTool()` opaque failure boundary.
 4. **Two materially different consumers.** Neutral notes maps `(issuer, subject)` to tenant membership;
    Ginko maps it to an integration, current member/role, contract, and resource authority. Their domain
    policies and operations differ.
@@ -145,14 +145,13 @@ subject are joined as a tuple. Scopes are normalized ceilings, not roles or curr
 Provider-owned session, consent, grant, or credential references are not members of the public access
 context. A provider adapter may retain them in request-private state needed for a live provider check,
 including inside an internal Convex authorization bridge. They must not enter tool arguments exposed by
-the application, results, diagnostics, URLs, logs, Vue state, or MCP App messages. `P5-003`, `P5-004`,
+the application, results, URLs, logs, Vue state, or MCP App messages. `P5-003`, `P5-004`,
 and `P5-012` must prove the exact mechanism before the Better Auth adapter is admitted.
 
 ## Rejected helpers
 
 - `withBetterConvex()` registration wrappers remain rejected. `runMcpTool()` is the narrower admitted
-  exception for opaque unexpected failures and optional allowlisted diagnostics; registration remains
-  direct and official.
+  exception for opaque unexpected failures; registration remains direct and official.
 - Better Convex tool definitions or registries: second source of truth.
 - automatic Convex function exposure or generic dispatcher: violates explicit operation mapping.
 - `requireMcpScope()`: checking a normalized array does not justify a public function; revisit only if

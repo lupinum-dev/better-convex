@@ -54,7 +54,6 @@ describe('MCP credential passthrough absence', () => {
       },
     }
     const operationArguments: unknown[] = []
-    const diagnostics: unknown[] = []
     const responseBodies: string[] = []
     const callbackHeaders: Headers[] = []
     const handler = createConvexMcpHandler({
@@ -87,19 +86,9 @@ describe('MCP credential passthrough absence', () => {
           { inputSchema: z.object({}).strict() },
           (_input, extra) => {
             if (extra.http?.req) callbackHeaders.push(new Headers(extra.http.req.headers))
-            return runMcpTool(
-              () => {
-                throw new Error(`${bearer}:${providerReference}`)
-              },
-              {
-                operation: 'action',
-                toolName: 'fail_safely',
-                functionName: 'notes:failSafely',
-                onDiagnostic(diagnostic) {
-                  diagnostics.push(diagnostic)
-                },
-              },
-            )
+            return runMcpTool(() => {
+              throw new Error(`${bearer}:${providerReference}`)
+            })
           },
         )
       },
@@ -152,19 +141,6 @@ describe('MCP credential passthrough absence', () => {
         input: { query: privateInput },
       },
     ])
-    expect(diagnostics).toEqual([
-      {
-        callId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
-        causeConstructorName: 'Error',
-        causeName: 'Error',
-        classification: 'unknown',
-        functionName: 'notes:failSafely',
-        hasStructuredData: false,
-        operation: 'action',
-        outcome: 'failed',
-        toolName: 'fail_safely',
-      },
-    ])
     expect(callbackHeaders).toHaveLength(2)
     for (const headers of callbackHeaders) {
       expect(headers.get('authorization')).toBeNull()
@@ -175,7 +151,6 @@ describe('MCP credential passthrough absence', () => {
     }
     const observable = JSON.stringify({
       callbackHeaders: callbackHeaders.map((headers) => Object.fromEntries(headers)),
-      diagnostics,
       operationArguments,
       responseBodies,
     })
@@ -183,7 +158,6 @@ describe('MCP credential passthrough absence', () => {
     expect(observable).not.toContain(providerReference)
     const publicObservable = JSON.stringify({
       callbackHeaders: callbackHeaders.map((headers) => Object.fromEntries(headers)),
-      diagnostics,
       responseBodies,
     })
     expect(publicObservable).not.toContain(subjectPii)

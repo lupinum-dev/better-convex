@@ -631,20 +631,37 @@ Ledger note (2026-07-26):
 
 Sources: Codex `F-009`; Claude `ERR-04`, `ERR-07`, and `MCP-02` discussion.
 
-- [ ] Delete `McpToolDiagnostic`, its options, `causeName`, constructor-name
+- [x] Delete `McpToolDiagnostic`, its options, `causeName`, constructor-name
       inspection, single-valued classification, and `onDiagnostic`.
-- [ ] Keep one-argument explicit `runMcpTool` with its fixed unexpected-failure result.
-- [ ] Keep explicit application/domain error projection inside each tool.
-- [ ] Do not add an automatic `registerTool` interceptor or second registry.
+- [x] Keep one-argument explicit `runMcpTool` with its fixed unexpected-failure result.
+- [x] Keep explicit application/domain error projection inside each tool.
+- [x] Do not add an automatic `registerTool` interceptor or second registry.
 
 Acceptance criteria:
 
-- [ ] Error name, constructor name, message, data, stack, and cause sentinels never
+- [x] Error name, constructor name, message, data, stack, and cause sentinels never
       enter unexpected MCP failure results.
-- [ ] Maintained tools still return allowlisted application error codes.
-- [ ] Throwing observability code cannot affect tool outcome because no public
+- [x] Maintained tools still return allowlisted application error codes.
+- [x] Throwing observability code cannot affect tool outcome because no public
       observability hook remains.
-- [ ] Packed exports contain no diagnostic interfaces.
+- [x] Packed exports contain no diagnostic interfaces.
+
+Ledger note (2026-07-26):
+
+- Deleted both diagnostic interfaces, the optional second argument, random call IDs,
+  cause/name/constructor/data inspection, classification, and `onDiagnostic`. No
+  replacement hook, registration interceptor, or registry was added.
+- `runMcpTool` now does exactly one thing: return the tool's explicit result, or replace
+  an unexpected throw with the fixed `Tool execution failed` result. Maintained tools
+  continue to project allowlisted application/domain failures themselves.
+- Red proof: the runtime function still exposed arity two before the hard cut.
+- Green proof: hostile getters are untouched and name, constructor, message, data,
+  stack, cause, bearer, and provider sentinels never enter the result or console
+  boundary. Focused tool, credential, live-authorization, and operation-mapping suites
+  pass (4 files/21 tests); the MCP typecheck/build pass.
+- Exact packed declarations expose only the one-argument function and contain no
+  diagnostic interface or observability option. The complete MCP project passes 55
+  tests.
 
 ### T2.6 — Final official MCP reconciliation
 
@@ -1050,7 +1067,7 @@ Phase 4 exit gate:
 - [x] Remove `authEpoch`.
 - [ ] Remove Vue `null`/`undefined` skip types.
 - [x] Remove MCP `era`/request context.
-- [ ] Remove MCP diagnostic types/options.
+- [x] Remove MCP diagnostic types/options.
 - [ ] Remove OAuth `nowSeconds` and unused returned `issuedAt`.
 - [ ] Re-run source and exact-tarball declaration snapshots.
 - [ ] Add no aliases, deprecated overloads, or compatibility exports.

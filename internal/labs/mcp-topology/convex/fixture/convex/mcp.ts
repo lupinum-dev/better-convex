@@ -254,24 +254,17 @@ function createNotesServer(
       },
     },
     async (input) =>
-      runMcpTool(
-        async () => {
-          const result = await ctx.runQuery(internal.operations.searchNotes, {
-            ...input,
-            principal,
-          })
-          return projectToolResult(
-            result,
-            (value) =>
-              `${value.matches.length} note${value.matches.length === 1 ? '' : 's'} matched.`,
-          )
-        },
-        {
-          operation: 'query',
-          toolName: 'search_notes',
-          functionName: 'operations:searchNotes',
-        },
-      ),
+      runMcpTool(async () => {
+        const result = await ctx.runQuery(internal.operations.searchNotes, {
+          ...input,
+          principal,
+        })
+        return projectToolResult(
+          result,
+          (value) =>
+            `${value.matches.length} note${value.matches.length === 1 ? '' : 's'} matched.`,
+        )
+      }),
   )
 
   server.registerTool(
@@ -288,23 +281,16 @@ function createNotesServer(
       outputSchema: renameReceiptSchema,
     },
     async (input) =>
-      runMcpTool(
-        async () => {
-          if (!access.scopes.includes('notes:write')) {
-            return projectToolResult({ code: 'ACCESS_DENIED', ok: false }, () => '')
-          }
-          const result = await ctx.runMutation(internal.operations.renameNote, {
-            ...input,
-            principal,
-          })
-          return projectToolResult(result, (value) => `Renamed ${value.noteId}.`)
-        },
-        {
-          operation: 'mutation',
-          toolName: 'rename_note',
-          functionName: 'operations:renameNote',
-        },
-      ),
+      runMcpTool(async () => {
+        if (!access.scopes.includes('notes:write')) {
+          return projectToolResult({ code: 'ACCESS_DENIED', ok: false }, () => '')
+        }
+        const result = await ctx.runMutation(internal.operations.renameNote, {
+          ...input,
+          principal,
+        })
+        return projectToolResult(result, (value) => `Renamed ${value.noteId}.`)
+      }),
   )
 
   server.registerTool(
@@ -382,21 +368,14 @@ function createNotesServer(
       outputSchema: workspaceDeletionCompleteSchema,
     },
     async (input) =>
-      runMcpTool(
-        async () => {
-          const result = await ctx.runQuery(internal.operations.getWorkspaceDeletionStatus, {
-            access: applicationAccessBinding(access),
-            operationKey: input.operationKey,
-          })
-          if (!result.ok) return projectToolResult(result, () => '')
-          return projectWorkspaceDeletionComplete(result.value)
-        },
-        {
-          operation: 'query',
-          toolName: 'get_workspace_deletion_status',
-          functionName: 'operations:getWorkspaceDeletionStatus',
-        },
-      ),
+      runMcpTool(async () => {
+        const result = await ctx.runQuery(internal.operations.getWorkspaceDeletionStatus, {
+          access: applicationAccessBinding(access),
+          operationKey: input.operationKey,
+        })
+        if (!result.ok) return projectToolResult(result, () => '')
+        return projectWorkspaceDeletionComplete(result.value)
+      }),
   )
 
   server.registerTool(
@@ -407,20 +386,13 @@ function createNotesServer(
       outputSchema: reportSchema,
     },
     async (input) =>
-      runMcpTool(
-        async () => {
-          const result = await ctx.runQuery(internal.operations.generateReport, {
-            ...input,
-            principal,
-          })
-          return projectToolResult(result, (value) => `Generated report ${value.reportId}.`)
-        },
-        {
-          operation: 'query',
-          toolName: 'generate_report',
-          functionName: 'operations:generateReport',
-        },
-      ),
+      runMcpTool(async () => {
+        const result = await ctx.runQuery(internal.operations.generateReport, {
+          ...input,
+          principal,
+        })
+        return projectToolResult(result, (value) => `Generated report ${value.reportId}.`)
+      }),
   )
 
   server.registerResource(
