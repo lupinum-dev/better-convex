@@ -1983,13 +1983,36 @@ Source-validation ledger note (2026-07-26):
 
 ### Auth and security validation
 
-- [ ] `pnpm run check:auth-advisories`
-- [ ] `pnpm run verify:auth`
+- [x] `pnpm run check:auth-advisories`
+- [x] `pnpm run verify:auth`
 - [ ] Auth cloud/concurrency/export-sentinel/MFA tests against the reviewed backend.
-- [ ] OAuth chunked-body, clock, redirect, custom-field, indexed-`in`, and transaction
+- [x] OAuth chunked-body, clock, redirect, custom-field, indexed-`in`, and transaction
       budget boundary tests.
-- [ ] No credential, raw cause, stack, response body, or provider-private identifier in
+- [x] No credential, raw cause, stack, response body, or provider-private identifier in
       transferable errors or artifacts.
+
+Auth-validation ledger note (2026-07-26):
+
+- The advisory gate passed parseable production/full npm audits, 12 exact GitHub
+  package queries, and imported-upstream queries with zero exceptions.
+- The full auth aggregate passed all 29 source-provenance records, upstream monitoring,
+  deterministic schema deployment and first writes on reviewed backend
+  `precompiled-2026-07-06-44f7aa7`, 37 adapter tests, 207 OAuth tests, 11 fuzz tests,
+  and the MCP authorization/conformance tail.
+- Secret sentinels scanned 287 packed files, 281 build files, 569 artifact leaves, and
+  runtime database/HTTP/error/console/DevTools surfaces without finding credential,
+  raw-cause, stack, response-body, or provider-private leakage. The export sentinel
+  separately scanned five credential-bearing tables, 43 bounded export files, and
+  browser local/session/cookie storage; Cache Storage and IndexedDB remained absent.
+- Concurrency, transport quota, authorization-code race, and MFA all passed: logical
+  and unique writes/consumes had one winner, increment completed 200/200, failure
+  paths rolled back, chunked quotas rejected bypasses, consumed codes could not replay,
+  and concurrent invalid factors enforced lockout. The maintained OAuth suite retains
+  clock, canonical redirect, custom-field select/sort, indexed-`in`, and 128-row
+  transaction-budget boundaries.
+- The combined cloud/concurrency/export/MFA checkbox remains open solely because
+  protected `test:auth-cloud-staging` requires the final candidate artifact manifest.
+  Its concurrency, export-sentinel, and MFA components passed in this run.
 
 ### MCP validation
 
