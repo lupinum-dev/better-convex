@@ -1024,7 +1024,7 @@ Nuxt `NUXT-09`, independently source-confirmed.
 
 - [x] Delete the per-composable identity-generation mirror/subscription if the final
       caller search confirms its value and settlement promise are unread.
-- [ ] Give overlapping one-shot query refreshes a local monotonic sequence so an older
+- [x] Give overlapping one-shot query refreshes a local monotonic sequence so an older
       completion cannot overwrite the newer result.
 - [ ] Add a first-page settlement promise to the pagination controller instead of
       making Nuxt issue/await a duplicate query.
@@ -1034,7 +1034,7 @@ Nuxt `NUXT-09`, independently source-confirmed.
 Acceptance criteria:
 
 - [ ] Mounting N queries does not add N unused identity listeners.
-- [ ] If two refreshes resolve in reverse order, only the later refresh commits.
+- [x] If two refreshes resolve in reverse order, only the later refresh commits.
 - [ ] A hydrated page resolves immediately; a live first page resolves on its first
       value/error without an extra HTTP query.
 - [ ] Paginated SSR errors survive hydration and clear on the first live value/error.
@@ -1048,6 +1048,11 @@ Implementation ledger (active, 2026-07-26):
   A mixed five-composable regression proves mounting queries and paginated queries adds
   zero identity-observer listeners. The focused Nuxt query/pagination suite passes 34
   tests and the root Vue typecheck passes.
+- One-shot Vue query refreshes now carry a composable-local monotonic sequence in
+  addition to the existing controller generation fence. A reverse-resolution test
+  proves the older value cannot overwrite the newer value or end its loading state;
+  the long-lived subscription operation is not invalidated. The focused Vue runtime
+  and controller suites pass 22 tests and the Vue package typecheck passes.
 
 Phase 3 exit gate:
 

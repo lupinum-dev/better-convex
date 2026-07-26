@@ -28,12 +28,13 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
     error: null,
   }
   const listeners = new Set<() => void>()
+  const query = vi.fn(async () => options?.queryResult ?? label)
   const mutation = vi.fn(async (_fn: unknown, args: unknown) => ({ label, args }))
   const action = vi.fn(async (_fn: unknown, args: unknown) => ({ label, args }))
   const subscriptions: Array<{ active: boolean; emit(value: unknown): void }> = []
   const runtime = createBetterConvexAttachment({
     client: {
-      query: vi.fn(async () => options?.queryResult ?? label) as never,
+      query: query as never,
       mutation: mutation as never,
       action: action as never,
       onUpdate: vi.fn((_fn, _args, onValue) => {
@@ -55,6 +56,7 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
   })
   return {
     runtime,
+    query,
     mutation,
     action,
     subscriptions,
@@ -67,6 +69,43 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
 }
 
 describe('better-convex-vue package runtime', () => {
+  it('keeps the newer result when one-shot refreshes resolve in reverse order', async () => {
+    const host = attachedRuntime('alice', { queryResult: 'initial' })
+    const app = createApp({})
+    app.use(createBetterConvex({ runtime: host.runtime }))
+    const scope = effectScope()
+    const query = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexQuery(
+          makeFunctionReference<'query'>('notes:refresh-order'),
+          {},
+          {
+            subscribe: false,
+          },
+        ),
+      ),
+    )!
+
+    await vi.waitFor(() => expect(query.data.value).toBe('initial'))
+    const resolvers: Array<(value: string) => void> = []
+    host.query
+      .mockImplementationOnce(() => new Promise((resolve) => resolvers.push(resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => resolvers.push(resolve)))
+
+    const older = query.refresh()
+    const newer = query.refresh()
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2))
+
+    resolvers[1]?.('newer')
+    await newer
+    expect(query.data.value).toBe('newer')
+
+    resolvers[0]?.('older')
+    await older
+    expect(query.data.value).toBe('newer')
+    scope.stop()
+  })
+
   it('reactively enters and leaves the explicit query skip state', () => {
     const host = attachedRuntime('alice')
     const app = createApp({})

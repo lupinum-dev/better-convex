@@ -134,6 +134,7 @@ export function useConvexQuery<
   let previousTag = tag.value
   let previousBoundaryKey = boundaryKey.value
   let previousLive = false
+  let refreshSequence = 0
 
   const reconcile = () => {
     const nextTag = tag.value
@@ -186,22 +187,26 @@ export function useConvexQuery<
 
   async function refresh(): Promise<void> {
     if (gate.value !== 'execute' || isConvexArgsSkipped(currentArgs.value)) return
+    const sequence = ++refreshSequence
     const operation = controller.beginOperation()
+    const isCurrentRefresh = () =>
+      sequence === refreshSequence && controller.isOperationCurrent(operation)
     loading.value = true
     boundaryError.value = null
     try {
       const value = (await runtime.browser
         .clientFor(auth)
         .query(query, currentArgs.value as FunctionArgs<Query>)) as Raw
-      if (!controller.isOperationCurrent(operation)) return
+      if (!isCurrentRefresh()) return
       raw.value = value
       controller.commitSettled(value, operation)
     } catch (error) {
+      if (!isCurrentRefresh()) return
       const normalized = controller.setOperationError(error, operation)
       if (!normalized) return
       boundaryError.value = normalized
     } finally {
-      if (controller.isOperationCurrent(operation)) loading.value = false
+      if (isCurrentRefresh()) loading.value = false
     }
   }
 
