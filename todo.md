@@ -2017,12 +2017,34 @@ Auth-validation ledger note (2026-07-26):
 ### MCP validation
 
 - [ ] Official final-SDK conformance.
-- [ ] Mid-call notification with exactly-once committed effect.
-- [ ] Stateless subscription rejection.
-- [ ] Real-browser App stray-message recovery.
-- [ ] Real-browser high-impact confirmation without header rewriting.
-- [ ] Maintained neutral and OAuth starters against exact packed MCP bytes.
+- [x] Mid-call notification with exactly-once committed effect.
+- [x] Stateless subscription rejection.
+- [x] Real-browser App stray-message recovery.
+- [x] Real-browser high-impact confirmation without header rewriting.
+- [x] Maintained neutral and OAuth starters against exact packed MCP bytes.
 - [ ] At least one real host for MCP Apps before claiming host interoperability.
+
+MCP-validation ledger note (2026-07-26):
+
+- The focused handler/App/browser slice passes 36 tests. A tool that increments one
+  application effect and emits mid-call progress returns one unary committed result;
+  the dropped notification does not retry the effect. Official SDK responses reject
+  `resources/subscribe`, `resources/unsubscribe`, and `subscriptions/listen` in the
+  stateless configuration.
+- Real Chromium tolerates unknown-response/progress bridge diagnostics without losing
+  an in-flight result, remains usable for the next tool call, and still treats connect
+  and teardown as terminal. The separate application-owned interaction page submits
+  its scriptless POST with native browser headers, receives 303, and proves subject
+  binding, stale/replay safety, inert GET, bounded empty POST, and locator secrecy.
+- The MCP declaration fix is verified in built bytes: `runMcpTool` retains both its
+  ordinary `CallToolResult` contextual signature and its generic result signature.
+  The full disposable Convex topology passes four tests against those packed bytes.
+- One exact `@better-convex/mcp@0.1.0-beta.9` tarball passed its public-entry gate and
+  all three maintained consumers: provider-neutral contract, Better Auth/OAuth
+  production composition (including 55 MCP tests and live authorization), and the
+  external-verifier Convex application with real browser confirmation.
+- Final-SDK conformance remains gated on T2.6. Real-host interoperability remains a
+  separate external-host proof and is not inferred from the browser harness.
 
 ### Release and artifact validation
 
