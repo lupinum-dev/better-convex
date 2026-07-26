@@ -514,7 +514,7 @@ async function handleRequest(ctx: ActionCtx, request: Request): Promise<Response
       requiredScopes: ['notes:read'],
       scopesSupported: metadata.scopesSupported,
     },
-    configureServer: (_context, access, _request, server) =>
+    configureServer: (_context, access, server) =>
       createNotesServer(ctx, Object.freeze({ subject: access.subject }), access, server),
   })
   const response = await handler.fetch(ctx, request)

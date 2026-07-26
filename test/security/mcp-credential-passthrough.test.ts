@@ -62,7 +62,7 @@ describe('MCP credential passthrough absence', () => {
       resource,
       verifier,
       authorization: { mode: 'oauth', metadata: oauthMetadata },
-      configureServer(_context, access, _request, server) {
+      configureServer(_context, access, server) {
         server.registerTool(
           'search_notes',
           {
@@ -188,6 +188,23 @@ describe('MCP credential passthrough absence', () => {
     })
     expect(publicObservable).not.toContain(subjectPii)
     expect(publicObservable).not.toContain(privateInput)
-    for (const spy of consoleSpies) expect(spy).not.toHaveBeenCalled()
+    for (const spy of consoleSpies.slice(0, -1)) expect(spy).not.toHaveBeenCalled()
+    const warningCalls = consoleSpies.at(-1)!.mock.calls
+    expect(warningCalls).toEqual([
+      [
+        "responseMode: 'json' drops mid-call notifications. subscriptions/listen streams are always served over SSE regardless; other notifications emitted before a result are dropped.",
+      ],
+      [
+        "responseMode: 'json' drops mid-call notifications. subscriptions/listen streams are always served over SSE regardless; other notifications emitted before a result are dropped.",
+      ],
+      [
+        "responseMode: 'json' drops mid-call notifications. subscriptions/listen streams are always served over SSE regardless; other notifications emitted before a result are dropped.",
+      ],
+    ])
+    const logged = JSON.stringify(consoleSpies.flatMap((spy) => spy.mock.calls))
+    expect(logged).not.toContain(bearer)
+    expect(logged).not.toContain(providerReference)
+    expect(logged).not.toContain(subjectPii)
+    expect(logged).not.toContain(privateInput)
   })
 })

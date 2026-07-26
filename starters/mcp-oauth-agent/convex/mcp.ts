@@ -269,7 +269,7 @@ export const handleMcp = httpAction(async (ctx, request) => {
         }
       },
     },
-    configureServer(actionCtx, access, _request, server) {
+    configureServer(actionCtx, access, server) {
       const principal = verifiedPrincipal
       if (
         !principal ||

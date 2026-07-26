@@ -580,29 +580,52 @@ Ledger note (2026-07-26):
   and an upstream 303. The focused browser proof and direct local-Convex interaction
   matrix pass; the latter covers null/missing/cross-site rejection, inert GET,
   POST-only confirmation, and the empty bounded body.
-- [ ] CSP, `frame-ancestors 'none'`, private/no-store, user binding, expiry, and
+- [x] CSP, `frame-ancestors 'none'`, private/no-store, user binding, expiry, and
       exactly-once effect semantics remain intact.
 
 ### T2.4 — Return protocol ownership to the official SDK
 
 Sources: Codex `F-007`; Claude `MCP-05` and `NORM-03`.
 
-- [ ] Delete the local stateful-method registry and pre-parser.
-- [ ] Delete `ConvexMcpRequestContext`, the constant public `era`, and the third
+- [x] Delete the local stateful-method registry and pre-parser.
+- [x] Delete `ConvexMcpRequestContext`, the constant public `era`, and the third
       `configureServer` callback argument.
-- [ ] Configure official subscription limits and verify exact final-SDK rejection
+- [x] Configure official subscription limits and verify exact final-SDK rejection
       behavior.
-- [ ] Keep Better Convex ownership limited to authentication, allowlisting, bounds,
+- [x] Keep Better Convex ownership limited to authentication, allowlisting, bounds,
       deadline, abort, and lifecycle disposal.
 
 Acceptance criteria:
 
-- [ ] Packed callback signature is `(context, access, server)`.
-- [ ] No RC protocol term appears in public declarations.
-- [ ] Subscription/listen methods cannot create durable transport state.
-- [ ] Official SDK JSON-RPC errors are returned rather than wrapper-specific empty 405
+- [x] Packed callback signature is `(context, access, server)`.
+- [x] No RC protocol term appears in public declarations.
+- [x] Subscription/listen methods cannot create durable transport state.
+- [x] Official SDK JSON-RPC errors are returned rather than wrapper-specific empty 405
       responses.
-- [ ] Request and response bounds still hold.
+- [x] Request and response bounds still hold.
+
+Ledger note (2026-07-26):
+
+- Deleted the wrapper's JSON clone/pre-parser and stateful-method name registry. The
+  already-bounded request now goes directly to the official handler after
+  authentication.
+- Set the official per-request handler's `maxSubscriptions` to zero. Its exact pinned
+  behavior is now regression-tested: resource subscribe/unsubscribe return HTTP 404
+  JSON-RPC `-32601 Method not found`; `subscriptions/listen` returns HTTP 200 JSON-RPC
+  `-32603 Subscription limit reached`. Each response is SDK-owned, not an empty
+  wrapper 405.
+- Removed `ConvexMcpRequestContext`, the RC `era` projection, and the fourth callback
+  parameter everywhere. Built declarations expose exactly
+  `(context, access, server)`.
+- The SDK emits one fixed warning each time unary JSON mode is constructed. The
+  credential-passthrough proof allowlists only those exact warning bytes and asserts
+  that bearer, provider reference, subject PII, and private input sentinels remain
+  absent from all console calls.
+- Focused handler, operation mapping, starter, and credential-boundary suites pass (4
+  files/23 tests); the MCP package typecheck and build pass. Existing request/response
+  cap and deadline tests remain green in the handler suite.
+- The exact packed tarball declaration exposes the three-argument callback and no
+  request context/era. The real-Chromium MCP Apps probe also passes after the hard cut.
 
 ### T2.5 — Delete the unearned diagnostic projection
 
@@ -1026,7 +1049,7 @@ Phase 4 exit gate:
 
 - [x] Remove `authEpoch`.
 - [ ] Remove Vue `null`/`undefined` skip types.
-- [ ] Remove MCP `era`/request context.
+- [x] Remove MCP `era`/request context.
 - [ ] Remove MCP diagnostic types/options.
 - [ ] Remove OAuth `nowSeconds` and unused returned `issuedAt`.
 - [ ] Re-run source and exact-tarball declaration snapshots.

@@ -63,7 +63,7 @@ describe('MCP explicit Convex operation mapping', () => {
       resource,
       verifier,
       authorization: { mode: 'oauth', metadata: oauthMetadata },
-      configureServer(context, access, _request, server) {
+      configureServer(context, access, server) {
         server.registerTool(
           'search_notes',
           {

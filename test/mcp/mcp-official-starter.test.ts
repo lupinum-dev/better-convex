@@ -40,7 +40,7 @@ describe('delegated OAuth starter official MCP composition', () => {
           }
         },
       },
-      configureServer(context, access, _request, server) {
+      configureServer(context, access, server) {
         createDelegatedMcpServer(
           context as never,
           access,

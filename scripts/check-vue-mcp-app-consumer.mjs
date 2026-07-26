@@ -133,7 +133,7 @@ try {
         }
       },
     },
-    configureServer(_context, _access, _request, server) {
+    configureServer(_context, _access, server) {
       server.registerTool(
         'search_notes',
         {

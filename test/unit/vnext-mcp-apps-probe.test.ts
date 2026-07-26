@@ -117,7 +117,7 @@ function createHandler(appHtml: string, isRevoked: () => boolean, onSearch: () =
         }
       },
     },
-    configureServer(application, _access, _request, server) {
+    configureServer(application, _access, server) {
       server.registerTool(
         'search_notes',
         {

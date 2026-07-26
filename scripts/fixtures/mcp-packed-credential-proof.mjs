@@ -29,7 +29,7 @@ const handler = createConvexMcpHandler({
     mode: 'preconfigured-bearer',
   },
   serverInfo: { name: 'packed-proof', version: '0.0.0' },
-  configureServer(_context, _access, _request, server) {
+  configureServer(_context, _access, server) {
     server.registerTool('inspect_headers', { inputSchema: z.object({}) }, (_input, extra) => {
       callbackHeaders = Object.fromEntries(extra.http?.req?.headers ?? [])
       return {

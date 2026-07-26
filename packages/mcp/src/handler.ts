@@ -11,7 +11,6 @@ import {
   McpServer,
   type AuthInfo,
   type AuthMetadataOptions,
-  type McpRequestContext,
   type OAuthMetadata,
   type OAuthTokenVerifier,
 } from '@modelcontextprotocol/server'
@@ -25,10 +24,6 @@ import {
   prepareBoundedMcpRequest,
   runMcpRequestDeadline,
 } from './transport.js'
-
-export interface ConvexMcpRequestContext {
-  readonly era: McpRequestContext['era']
-}
 
 export interface ConvexMcpHandlerOptions<ActionContext> {
   readonly serverInfo: {
@@ -57,7 +52,6 @@ export interface ConvexMcpHandlerOptions<ActionContext> {
   readonly configureServer: (
     context: ActionContext,
     access: McpAccessContext,
-    request: ConvexMcpRequestContext,
     server: McpServer,
   ) => void | Promise<void>
 }
@@ -98,15 +92,15 @@ export function createConvexMcpHandler<ActionContext>(
           }
 
           const boundedRequest = await prepareBoundedMcpRequest(request, signal)
-          if (await containsStatefulMcpMethod(boundedRequest)) return emptyFailure(405)
           const handler = createMcpHandler(
-            async ({ era }) => {
+            async () => {
               const server = new McpServer(options.serverInfo)
-              await options.configureServer(context, authenticated.access, { era }, server)
+              await options.configureServer(context, authenticated.access, server)
               return hardenUnaryServer(server)
             },
             {
               legacy: 'reject',
+              maxSubscriptions: 0,
               responseMode: 'json',
             },
           )
@@ -264,26 +258,6 @@ async function authenticateRequest(
       resourceMetadataUrl === undefined ? undefined : { resourceMetadataUrl },
     )
   )
-}
-
-const STATEFUL_MCP_METHODS = new Set([
-  'resources/subscribe',
-  'resources/unsubscribe',
-  'subscriptions/listen',
-])
-
-async function containsStatefulMcpMethod(request: Request): Promise<boolean> {
-  try {
-    const value = (await request.clone().json()) as unknown
-    const messages = Array.isArray(value) ? value : [value]
-    return messages.some((message) => {
-      if (typeof message !== 'object' || message === null) return false
-      const method = Reflect.get(message, 'method')
-      return typeof method === 'string' && STATEFUL_MCP_METHODS.has(method)
-    })
-  } catch {
-    return false
-  }
 }
 
 function hardenUnaryServer(server: McpServer): McpServer {
