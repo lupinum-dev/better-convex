@@ -1028,7 +1028,7 @@ Nuxt `NUXT-09`, independently source-confirmed.
       completion cannot overwrite the newer result.
 - [x] Add a first-page settlement promise to the pagination controller instead of
       making Nuxt issue/await a duplicate query.
-- [ ] Reconcile paginated SSR error hydration using the same overlay/clear contract as
+- [x] Reconcile paginated SSR error hydration using the same overlay/clear contract as
       regular queries.
 
 Acceptance criteria:
@@ -1037,7 +1037,7 @@ Acceptance criteria:
 - [x] If two refreshes resolve in reverse order, only the later refresh commits.
 - [x] A hydrated page resolves immediately; a live first page resolves on its first
       value/error without an extra HTTP query.
-- [ ] Paginated SSR errors survive hydration and clear on the first live value/error.
+- [x] Paginated SSR errors survive hydration and clear on the first live value/error.
 - [ ] Long-lived subscription callbacks still use the existing generation fence.
 
 Implementation ledger (active, 2026-07-26):
@@ -1061,6 +1061,11 @@ Implementation ledger (active, 2026-07-26):
   calls perform zero client `query()` calls, while the live path stays blocked until
   its subscription settles. Focused controller and Nuxt pagination suites pass 23
   tests, and Vue/root typechecks pass.
+- Paginated client hydration now uses the same library-owned error overlay as regular
+  queries. A matching SSR error remains authoritative while the live first page is
+  unsettled, then is deleted on either the first live value or live error; the live
+  error remains visible after replacing the overlay. `reset()` also clears the overlay.
+  The focused Nuxt pagination suite passes 13 tests and the root typecheck passes.
 
 Phase 3 exit gate:
 

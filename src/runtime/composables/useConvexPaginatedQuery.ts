@@ -5,7 +5,15 @@ import {
   type PaginatedQueryReference,
 } from 'better-convex-vue'
 import type { FunctionArgs, PaginationResult } from 'convex/server'
-import { computed, toValue, type ComputedRef, type MaybeRefOrGetter, type Ref } from 'vue'
+import {
+  computed,
+  onScopeDispose,
+  toValue,
+  watch,
+  type ComputedRef,
+  type MaybeRefOrGetter,
+  type Ref,
+} from 'vue'
 
 import { useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
@@ -142,6 +150,10 @@ export function createConvexPaginatedQueryState<
     const hydrated = hydrationIdentityMatches
       ? (nuxtApp.payload.data[hydrationKey] as PaginationResult<Item> | null | undefined)
       : undefined
+    const hydratedErrors = useState<Record<string, ConvexCallError | null>>(
+      'convex:query-errors',
+      () => ({}),
+    )
     const result = useVuePaginatedQuery<Query, TransformedItem>(query, args, {
       initialNumItems,
       subscribe,
@@ -151,10 +163,43 @@ export function createConvexPaginatedQueryState<
       keepPreviousData: options?.keepPreviousData,
       auth,
     })
+    const clearHydratedError = () => {
+      if (!(hydrationKey in hydratedErrors.value)) return
+      const { [hydrationKey]: _removed, ...rest } = hydratedErrors.value
+      hydratedErrors.value = rest
+    }
+    const stopHydratedErrorReconciliation = watch(
+      [result.error, result.status],
+      ([liveError, liveStatus]) => {
+        if (liveError || liveStatus !== 'loading-first-page') clearHydratedError()
+      },
+      { flush: 'sync' },
+    )
+    onScopeDispose(stopHydratedErrorReconciliation)
+    const error = computed(
+      () =>
+        result.error.value ??
+        (hydrationIdentityMatches ? hydratedErrors.value[hydrationKey] : null) ??
+        null,
+    )
+    const status = computed<PaginatedQueryStatus>(() =>
+      error.value ? 'error' : result.status.value,
+    )
+    const isLoading = computed(() => (error.value ? false : result.isLoading.value))
+    const resultData: UseConvexPaginatedQueryData<TransformedItem> = {
+      ...result,
+      error,
+      status,
+      isLoading,
+      reset: async () => {
+        clearHydratedError()
+        await result.reset()
+      },
+    }
     return {
-      resultData: result,
+      resultData,
       resolvePromise:
-        resolveImmediately || hydrated !== undefined
+        resolveImmediately || hydrated !== undefined || error.value
           ? Promise.resolve()
           : subscribe
             ? result.firstPageSettled()

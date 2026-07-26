@@ -8,6 +8,7 @@ import {
   createConvexPaginatedQueryState,
   useConvexPaginatedQuery,
 } from '../../src/runtime/composables/useConvexPaginatedQuery'
+import { ConvexCallError } from '../../src/runtime/errors'
 import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
 import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 import { makeMockOwner } from '../helpers/mock-client-owner'
@@ -26,6 +27,95 @@ function page<T>(items: T[], isDone: boolean, cursor: string | null): Pagination
 // acquisition through composable-owned listeners, and clears its pages on an
 // identity change.
 describe('useConvexPaginatedQuery controller', () => {
+  it('keeps an SSR error through hydration and clears it on the first live value', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:ssr-error-hydration')
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'none',
+      'anonymous',
+    )
+    const ssrError = new ConvexCallError({
+      kind: 'transport',
+      message: 'Sanitized pagination transport failure',
+      status: 500,
+    })
+    const { result, flush, wrapper } = await captureInNuxt(
+      () => {
+        useState<Record<string, ConvexCallError | null>>('convex:query-errors').value = {
+          [key]: ssrError,
+        }
+        return useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 })
+      },
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: null },
+      },
+    )
+    const queryResult = await result
+
+    expect(queryResult.error.value).toBe(ssrError)
+    expect(queryResult.status.value).toBe('error')
+    primary.emitQueryResultWhere(() => true, page(['live'], false, 'next'))
+    await flush()
+
+    expect(queryResult.error.value).toBeNull()
+    expect(queryResult.status.value).toBe('ready')
+    expect(queryResult.results.value).toEqual(['live'])
+    wrapper.unmount()
+  })
+
+  it('replaces a hydrated SSR error with the first live error', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:ssr-to-live-error')
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'none',
+      'anonymous',
+    )
+    const ssrError = new ConvexCallError({
+      kind: 'transport',
+      message: 'Sanitized pagination transport failure',
+      status: 500,
+    })
+    const { result, flush, wrapper } = await captureInNuxt(
+      () => {
+        const errors = useState<Record<string, ConvexCallError | null>>('convex:query-errors')
+        errors.value = { [key]: ssrError }
+        return {
+          errors,
+          query: useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 }),
+        }
+      },
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: null },
+      },
+    )
+    const queryResult = await result.query
+    expect(queryResult.error.value).toBe(ssrError)
+
+    primary.emitQueryErrorWhere(() => true, new Error('live pagination failed'))
+    await flush()
+
+    expect(queryResult.error.value).not.toBe(ssrError)
+    expect(queryResult.error.value).toMatchObject({
+      kind: 'unknown',
+      message: 'Unknown Convex error',
+    })
+    expect(key in result.errors.value).toBe(false)
+    expect(queryResult.status.value).toBe('error')
+    wrapper.unmount()
+  })
+
   it('awaits the first live page without issuing a duplicate one-shot query', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:first-page-settlement')
