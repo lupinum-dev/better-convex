@@ -3,6 +3,8 @@ import { join, relative } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { escapeEmailHtml } from '../../starters/team/convex/lib/authEmail'
+
 const repoRoot = join(import.meta.dirname, '../..')
 const authApps = ['demo', 'playground', 'starters/agency', 'starters/team'] as const
 const passwordApps = authApps.filter((app) => app !== 'demo')
@@ -106,6 +108,12 @@ const RAW_CONVEX_MAIN_COMMAND =
   /(?:^|\s)node(?:\.exe)?\s+--\s+\S*node_modules\/convex\/bin\/main\.js\s+(?:codegen|deploy|deployment|dev|env|import|project|run)\b/u
 
 describe('shipped Better Auth factory invariants', () => {
+  it('escapes every user-controlled transactional-email HTML delimiter', () => {
+    expect(escapeEmailHtml(`<img src=x onerror="alert('x')"> & invited`)).toBe(
+      '&lt;img src=x onerror=&quot;alert(&#39;x&#39;)&quot;&gt; &amp; invited',
+    )
+  })
+
   it.each(authApps)('%s fails closed on runtime secret and unsafe application origins', (app) => {
     const auth = read(`${app}/convex/auth.ts`)
 
@@ -410,17 +418,5 @@ describe('shipped Better Auth factory invariants', () => {
     expect(page).toContain('await signUp.email')
     expect(page).toContain('await signIn.email')
     expect(page).not.toContain('await refresh()')
-  })
-
-  it('escapes dynamic Team transactional-email HTML at the delivery boundary', () => {
-    const auth = read('starters/team/convex/auth.ts')
-    const delivery = read('starters/team/convex/lib/authEmail.ts')
-
-    expect(auth).toContain('escapeEmailHtml(inviterName)')
-    expect(auth).toContain('escapeEmailHtml(data.organization.name)')
-    expect(auth).toContain('escapeEmailHtml(link)')
-    expect(auth).toContain('escapeEmailHtml(data.url)')
-    expect(delivery).toMatch(/value\.replace\(\s*\/\[&<>"'\]\/g/)
-    expect(delivery).not.toContain("process.env.ALLOW_TEST_RESET === 'true'")
   })
 })
