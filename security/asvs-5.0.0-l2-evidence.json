@@ -27,11 +27,10 @@
     {
       "id": "AUTH-INV-002A",
       "asvs": ["v5.0.0-2.3.3", "v5.0.0-15.3.3"],
-      "commands": ["pnpm test:auth-adapter", "pnpm test:auth-mutations"],
+      "commands": ["pnpm test:auth-adapter"],
       "evidence": [
         "test/unit/convex-auth-adapter-invariants.test.ts",
-        "src/runtime/convex-auth/component/adapter.ts",
-        "test/mutations/adapter-security-mutants.test.ts"
+        "src/runtime/convex-auth/component/adapter.ts"
       ]
     },
     {
@@ -55,21 +54,19 @@
     {
       "id": "AUTH-INV-005",
       "asvs": ["v5.0.0-2.3.3", "v5.0.0-2.3.4"],
-      "commands": ["pnpm test:auth-concurrency", "pnpm test:auth-mutations"],
+      "commands": ["pnpm test:auth-concurrency"],
       "evidence": [
         "src/runtime/convex-auth/component/adapter.ts",
-        "playground/convex/authConcurrency.ts",
-        "test/mutations/adapter-security-mutants.test.ts"
+        "playground/convex/authConcurrency.ts"
       ]
     },
     {
       "id": "AUTH-INV-006",
       "asvs": ["v5.0.0-2.3.3", "v5.0.0-2.3.4"],
-      "commands": ["pnpm test:auth-concurrency", "pnpm test:auth-mutations"],
+      "commands": ["pnpm test:auth-concurrency"],
       "evidence": [
         "src/runtime/convex-auth/component/adapter.ts",
-        "playground/convex/authConcurrency.ts",
-        "test/mutations/adapter-security-mutants.test.ts"
+        "playground/convex/authConcurrency.ts"
       ]
     },
     {
@@ -94,11 +91,10 @@
     {
       "id": "AUTH-INV-008",
       "asvs": ["v5.0.0-8.2.1", "v5.0.0-16.5.3"],
-      "commands": ["pnpm test:auth-adapter", "pnpm test:auth-mutations"],
+      "commands": ["pnpm test:auth-adapter"],
       "evidence": [
         "src/runtime/convex-auth/context.ts",
-        "test/unit/convex-auth-adapter-invariants.test.ts",
-        "test/mutations/adapter-security-mutants.test.ts"
+        "test/unit/convex-auth-adapter-invariants.test.ts"
       ]
     },
     {
@@ -362,7 +358,7 @@
     {
       "id": "AUTH-INV-029",
       "asvs": ["v5.0.0-8.2.1", "v5.0.0-8.2.2", "v5.0.0-8.3.1", "v5.0.0-16.5.3"],
-      "commands": ["pnpm test:oauth", "pnpm test:auth-mutations"],
+      "commands": ["pnpm test:oauth"],
       "evidence": [
         "src/runtime/convex-auth/oauth-security.ts",
         "test/security/convex-auth-oauth-security.test.ts",

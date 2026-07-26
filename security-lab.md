@@ -248,7 +248,6 @@ These commands exist today and are the foundation of the lab:
 | immutable candidate and full release graph      | `pnpm release:prepare`                            |
 | OAuth profile and negative matrix               | `pnpm test:oauth`                                 |
 | deterministic hostile-input corpus              | `pnpm test:auth-fuzz`                             |
-| reviewed security mutants                       | `pnpm test:auth-mutations`                        |
 | real-backend races and quotas                   | `pnpm test:auth-concurrency`                      |
 | MFA/final-session behavior                      | `pnpm test:auth-mfa`                              |
 | artifact/runtime credential sentinels           | `pnpm test:auth-sentinels`                        |

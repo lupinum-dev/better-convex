@@ -2133,7 +2133,6 @@ fixtures, timeout, and CI integration are merged.
 | `pnpm test:auth-concurrency`     | Real Convex uniqueness, consume, increment/rate-limit, and rotation races, including verified-IP cross-isolate quotas                                                                                                  | `node scripts/run-auth-concurrency.mjs`             | Auth PR reduced load; nightly full load; release | 600 s   |
 | `pnpm test:oauth`                | Discovery, authorization code, PKCE, resource, replay, claims, negative HTTP and fault matrix                                                                                                                          | `vitest run --project=oauth` plus real HTTP fixture | OAuth PR; nightly; release                       | 600 s   |
 | `pnpm test:auth-fuzz`            | Seeded bounded HTTP fuzz corpora for proxy/OAuth form, query, path, duplicate parameters, encodings, and size/timeout limits                                                                                           | `vitest run --project=auth-fuzz`                    | Proxy/OAuth PR; nightly; release                 | 600 s   |
-| `pnpm test:auth-mutations`       | Kill a fixed reviewed set of security-negative code mutants; no global score target                                                                                                                                    | `node scripts/run-auth-mutations.mjs`               | Relevant auth PR; nightly; release               | 900 s   |
 | `pnpm test:mcp-auth`             | Actual MCP clients, Nuxt/direct-Convex equivalence, fixed dispatch, and live transactional authorization                                                                                                               | `node scripts/run-mcp-auth.mjs`                     | MCP PR; nightly; release                         | 600 s   |
 | `pnpm test:mcp-conformance`      | Run the pinned official initialize, ping, and tools/list server scenarios matching BCN's advertised MCP surface through a test-only authenticated relay; this is neither the full active suite nor OAuth certification | `node scripts/run-mcp-conformance.mjs`              | MCP PR reduced; release full                     | 900 s   |
 | `pnpm release:artifact`          | Build/prepack once, pack with lifecycle scripts disabled, and emit one tarball plus SHA-256, SRI, file manifest, and SBOM manifest                                                                                     | refactored `scripts/release.mjs artifact`           | Phase 5 rehearsal; every public release          | 600 s   |
@@ -2177,24 +2176,11 @@ path normalization, method overrides, malformed bearer headers, hostile
 Origin/Host combinations, response splitting attempts, body limits, and timeout
 boundaries. It is bounded fuzzing, not unbounded internet exposure.
 
-`test:auth-mutations` uses a fixed list of critical negative controls. Each phase
-adds the mutants for seams that now exist, and the release runner passes only
-when every declared mutant executes and is killed. By beta the required list is:
-
-- skip JWT audience/type validation;
-- treat an undefined privilege callback result as allow;
-- derive canonical origin from the request/Host;
-- trust a caller-supplied forwarded/client-IP header or skip the Nuxt IP
-  signature check;
-- bypass the token-endpoint registered-auth-method guard;
-- bypass the authorize/token exact-one-resource guard;
-- skip one authorization-code binding check;
-- allow `updateMany` to change `id` or a unique field;
-- split atomic consume into read-then-delete.
-
-Do not add a noisy repository-wide mutation score. A new invariant adds a named
-mutant only when removing its enforcement would create a plausible silent
-security regression.
+The proposed `test:auth-mutations` harness was retired during the vNext audit
+because it selected prewritten negative fixtures rather than mutating production
+code. Current invariant evidence names the behavior, concurrency, and fault
+tests that actually execute; this historical plan does not confer release
+authority on the deleted command.
 
 Extend the existing ASVS evidence generator instead of creating another security
 mapping document. Every new invariant must map to its test command and evidence
@@ -2530,7 +2516,7 @@ the replaced package.
 - `scripts/check-auth-schema.mjs`;
 - `scripts/check-auth-logical-ids.mjs`;
 - `scripts/check-auth-advisories.mjs`;
-- auth adapter/concurrency/mutation runners and canonical Vitest projects;
+- auth adapter/concurrency runners and canonical Vitest projects;
 - CI jobs and documentation required by this phase.
 
 **Must not add or retain:**
@@ -2674,7 +2660,6 @@ pnpm check:auth-advisories
 pnpm check:auth-backend
 pnpm test:auth-adapter
 pnpm test:auth-concurrency
-pnpm test:auth-mutations
 pnpm typecheck
 pnpm test
 pnpm test:e2e:full
@@ -2887,7 +2872,6 @@ ordinary password login succeeds.
 pnpm test
 pnpm test:auth-concurrency
 pnpm test:auth-fuzz
-pnpm test:auth-mutations
 pnpm test:dast:proxy
 pnpm test:e2e:full
 pnpm check:auth-schema
@@ -3377,7 +3361,6 @@ pnpm test:auth-adapter
 pnpm test:auth-concurrency
 pnpm test:oauth
 pnpm test:auth-fuzz
-pnpm test:auth-mutations
 pnpm test:dast:proxy
 pnpm check:auth-advisories
 pnpm verify
@@ -3924,7 +3907,6 @@ pnpm test:oauth
 pnpm test:mcp-auth
 pnpm test:mcp-conformance
 pnpm test:auth-fuzz
-pnpm test:auth-mutations
 pnpm test:dast:proxy
 pnpm check:auth-advisories
 pnpm check:auth-backend
@@ -4069,7 +4051,6 @@ pnpm test:oauth
 pnpm test:mcp-auth
 pnpm test:mcp-conformance
 pnpm test:auth-fuzz
-pnpm test:auth-mutations
 pnpm test:dast:proxy
 pnpm check:auth-advisories
 pnpm check:auth-backend

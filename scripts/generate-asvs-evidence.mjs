@@ -8,7 +8,6 @@ import { isAbsolute, relative, resolve } from 'node:path'
 const root = process.cwd()
 const inputPath = resolve(root, 'security/asvs-5.0.0-l2-evidence.json')
 const outputPath = resolve(root, 'security/asvs-5-level-2-evidence.md')
-const planPath = resolve(root, 'plan.md')
 const packagePath = resolve(root, 'package.json')
 const expectedRequirementCount = 253
 const expectedRequirementSetSha256 =
@@ -22,7 +21,6 @@ const allowedResponsibilities = new Set([
 ])
 const evidence = JSON.parse(readFileSync(inputPath, 'utf8'))
 const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'))
-const plan = readFileSync(planPath, 'utf8')
 
 if (evidence.standard !== 'OWASP ASVS' || evidence.version !== '5.0.0') {
   throw new Error('ASVS evidence must target the stable OWASP ASVS 5.0.0 release.')
@@ -73,24 +71,19 @@ for (const control of evidence.requirements) {
   }
 }
 
-const planInvariantIds = [...plan.matchAll(/^\|\s*(AUTH-INV-\d+[A-Z]?)\s*\|/gm)].map(
-  (match) => match[1],
-)
-if (planInvariantIds.length === 0) {
-  throw new Error('No authentication invariants were found in plan.md.')
-}
-if (new Set(planInvariantIds).size !== planInvariantIds.length) {
-  throw new Error('plan.md contains duplicate authentication invariant IDs.')
-}
 if (!Array.isArray(evidence.authInvariants)) {
   throw new TypeError('ASVS evidence must contain a top-level authInvariants array.')
 }
 
 const authInvariantIds = evidence.authInvariants.map((invariant) => invariant.id)
-if (JSON.stringify(authInvariantIds) !== JSON.stringify(planInvariantIds)) {
-  throw new Error(
-    `Authentication invariant IDs must exactly match plan.md.\nPlan: ${planInvariantIds.join(', ')}\nEvidence: ${authInvariantIds.join(', ')}`,
-  )
+if (
+  authInvariantIds.length === 0 ||
+  authInvariantIds.some((id) => !/^AUTH-INV-\d+[A-Z]?$/.test(id))
+) {
+  throw new Error('ASVS evidence contains an invalid authentication invariant ID.')
+}
+if (new Set(authInvariantIds).size !== authInvariantIds.length) {
+  throw new Error('ASVS evidence contains duplicate authentication invariant IDs.')
 }
 
 const invariantKeys = ['asvs', 'commands', 'evidence', 'id']
@@ -188,7 +181,7 @@ lines.push(
   '',
   '## Authentication invariant map',
   '',
-  'This map is generated from the canonical ASVS evidence JSON. The generator requires exact invariant-ID parity with `plan.md` and validates every ASVS control, root package command, and repository evidence path.',
+  'This map is generated from the canonical ASVS evidence JSON. The generator validates unique invariant IDs, every ASVS control, every root package command, and every repository evidence path.',
   '',
   '| Invariant | ASVS controls | Verification commands | Evidence |',
   '| --- | --- | --- | --- |',
@@ -213,11 +206,15 @@ lines.push(
   '',
 )
 
-const rendered = execFileSync('pnpm', ['exec', 'oxfmt', '--stdin-filepath', outputPath], {
-  cwd: root,
-  encoding: 'utf8',
-  input: `${lines.join('\n')}\n`,
-})
+const rendered = execFileSync(
+  resolve(root, 'node_modules', '.bin', process.platform === 'win32' ? 'oxfmt.cmd' : 'oxfmt'),
+  ['--stdin-filepath', outputPath],
+  {
+    cwd: root,
+    encoding: 'utf8',
+    input: `${lines.join('\n')}\n`,
+  },
+)
 if (process.argv.includes('--check')) {
   const current = existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : ''
   if (current !== rendered) {
