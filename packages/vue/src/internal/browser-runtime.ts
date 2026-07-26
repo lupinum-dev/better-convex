@@ -1,4 +1,4 @@
-import type { ConnectionState, ConvexClient } from 'convex/browser'
+import type { ConnectionState } from 'convex/browser'
 import { watch } from 'vue'
 
 import { createAttachedClientRuntime, type AttachedClientRuntime } from './attached-runtime'
@@ -56,22 +56,28 @@ export function createBetterConvexBrowserRuntime(
     : null
   const owner = createConvexClientOwner({
     primaryFactory: input.clientFactory,
-    ...(authPort ? { anonymousFactory: input.clientFactory } : {}),
+    ...(authPort
+      ? {
+          anonymousFactory: input.clientFactory,
+          identityPort: authPort,
+        }
+      : {}),
     onRetiredClientCloseError: input.onRetiredClientCloseError,
   })
   const identity = authPort ?? ANONYMOUS_OBSERVER
   let disposed = false
 
-  if (authPort) owner.attachIdentityPort(authPort)
-
-  const primary = owner.getPrimary()?.client
-  let initial = Promise.resolve()
-  if (authPort && primary && input.auth?.snapshot().status !== 'loading') {
-    const initialGeneration = authPort.snapshot().identityGeneration
-    initial = authPort.initializePrimary(primary as ConvexClient).catch((cause) => {
-      authPort.failPrimary(initialGeneration, cause)
-    })
-  }
+  const primaryReady = owner.getPrimary()
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => {
+        let stop = () => {}
+        const finish = () => {
+          stop()
+          resolve()
+        }
+        stop = owner.subscribeIdentityChange(finish)
+        owner.addDisposer(finish)
+      })
 
   owner.addDisposer(() => authPort?.dispose())
   const anonymousHandle: ConvexClientHandle = Object.freeze({
@@ -111,8 +117,8 @@ export function createBetterConvexBrowserRuntime(
       return mode === 'none' ? anonymousHandle : owner.handle
     },
     async ready() {
-      await initial
       await identity.waitForInitialSettlement()
+      await primaryReady
     },
     async refreshAuth() {
       await authPort?.refresh()

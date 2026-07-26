@@ -109,6 +109,11 @@ export interface CreateConvexClientOwnerInput {
   /** Constructs the primary client and every replacement candidate. */
   primaryFactory: () => OwnedConvexClient
   /**
+   * Canonical auth authority. Its presence defers the first primary until the
+   * port exposes an actionable identity generation.
+   */
+  identityPort?: ClientIdentityPort
+  /**
    * Constructs the dedicated `none` anonymous client. Omit in an auth-disabled
    * build so `getAnonymous()` reuses the already-anonymous primary.
    */
@@ -148,9 +153,9 @@ interface PendingCall {
 }
 
 export function createConvexClientOwner(input: CreateConvexClientOwnerInput): ConvexClientOwner {
-  const { primaryFactory, anonymousFactory, onRetiredClientCloseError } = input
+  const { primaryFactory, identityPort, anonymousFactory, onRetiredClientCloseError } = input
 
-  let primary: OwnedConvexClient | null = primaryFactory()
+  let primary: OwnedConvexClient | null = identityPort ? null : primaryFactory()
   let currentIdentityGeneration = 0
   let anonymous: OwnedConvexClient | null = null
   let disposed = false
@@ -488,6 +493,15 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
     // not a same-generation notification that can spin client construction indefinitely.
     let observedGeneration = port.snapshot().identityGeneration
     let observedSettled = port.snapshot().settled
+    const replaceGeneration = (targetGeneration: number) => {
+      void replacePrimary({
+        identityGeneration: targetGeneration,
+        isCurrent: () => port.snapshot().identityGeneration === targetGeneration,
+        initialize: (candidate) => port.initializePrimary(candidate as ConvexClient),
+      }).catch((error) => {
+        port.failPrimary(targetGeneration, error)
+      })
+    }
     const unsubscribe = port.subscribe(() => {
       const snapshot = port.snapshot()
       const becameSettled = !observedSettled && snapshot.settled
@@ -502,14 +516,12 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
       if (snapshot.identityGeneration === observedGeneration) return
       const targetGeneration = snapshot.identityGeneration
       observedGeneration = targetGeneration
-      void replacePrimary({
-        identityGeneration: targetGeneration,
-        isCurrent: () => port.snapshot().identityGeneration === targetGeneration,
-        initialize: (candidate) => port.initializePrimary(candidate as ConvexClient),
-      }).catch((error) => {
-        port.failPrimary(targetGeneration, error)
-      })
+      replaceGeneration(targetGeneration)
     })
+    const initialSnapshot = port.snapshot()
+    if (!primary && (initialSnapshot.settled || initialSnapshot.identityKey !== 'anonymous')) {
+      replaceGeneration(initialSnapshot.identityGeneration)
+    }
     addDisposer(() => {
       unsubscribe()
       if (authPort === port) authPort = null
@@ -586,6 +598,8 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
     })()
     return disposePromise
   }
+
+  if (identityPort) attachIdentityPort(identityPort)
 
   return {
     handle,

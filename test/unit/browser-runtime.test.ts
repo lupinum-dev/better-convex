@@ -47,7 +47,7 @@ function client(): Client {
       inflightMutations: 0,
       inflightActions: 0,
     }),
-    subscribeToConnectionState: () => () => {},
+    subscribeToConnectionState: vi.fn(() => () => {}),
     close: vi.fn(async () => {}),
     setAuthCalls: 0,
     setAuth(_fetch: AuthTokenFetcher, onChange: (value: boolean) => void) {
@@ -71,6 +71,7 @@ describe('Better Convex browser runtime', () => {
         return value
       },
     })
+    expect(clients).toHaveLength(1)
     await runtime.ready()
 
     expect(runtime.identity.snapshot()).toMatchObject({
@@ -207,6 +208,8 @@ describe('Better Convex browser runtime', () => {
       },
     })
     const ready = runtime.ready()
+    expect(clients).toHaveLength(0)
+
     adapter.emit({
       status: 'authenticated',
       identityKey: 'bob',
@@ -217,12 +220,49 @@ describe('Better Convex browser runtime', () => {
       settled: false,
       identityKey: 'user:bob',
     })
-    expect(clients[0]?.close).toHaveBeenCalledOnce()
-
-    await vi.waitFor(() => expect(clients).toHaveLength(2))
-    clients[1]!.confirm(true)
+    await vi.waitFor(() => expect(clients).toHaveLength(1))
+    clients[0]!.confirm(true)
     await ready
     expect(runtime.identity.snapshot().settled).toBe(true)
+    await runtime.dispose()
+  })
+
+  it('constructs one primary when loading settles anonymous', async () => {
+    const adapter = new Adapter({
+      status: 'loading',
+      identityKey: null,
+      sessionGeneration: 0,
+      error: null,
+    })
+    const clients: Client[] = []
+    const runtime = createBetterConvexBrowserRuntime({
+      auth: adapter,
+      clientFactory: () => {
+        const value = client()
+        clients.push(value)
+        return value
+      },
+    })
+    const ready = runtime.ready()
+    expect(clients).toHaveLength(0)
+
+    adapter.emit({
+      status: 'anonymous',
+      identityKey: null,
+      sessionGeneration: 1,
+      error: null,
+    })
+
+    await ready
+    expect(clients).toHaveLength(1)
+    expect(clients[0]!.setAuthCalls).toBe(0)
+    expect(runtime.identity.snapshot()).toMatchObject({
+      settled: true,
+      identityKey: 'anonymous',
+    })
+    const stopConnectionObservation = runtime.connection.addConsumer()
+    expect(clients[0]!.subscribeToConnectionState).toHaveBeenCalledOnce()
+    stopConnectionObservation()
     await runtime.dispose()
   })
 

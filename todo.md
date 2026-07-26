@@ -432,24 +432,55 @@ Ledger note (2026-07-26):
 Source: Claude unverified `vue-lifecycle/VUE-04`, independently source-confirmed.
 Depends on T1.2.
 
-- [ ] In auth-enabled mode, do not construct a primary Convex client/WebSocket while
+- [x] In auth-enabled mode, do not construct a primary Convex client/WebSocket while
       provider identity is still loading.
-- [ ] Let the first settled identity transition create the first appropriate primary.
-- [ ] Keep auth-disabled mode eager and simple.
-- [ ] Delete the special initial-client path if T1.2's tests prove it is fully subsumed.
+- [x] Let the first settled identity transition create the first appropriate primary.
+- [x] Keep auth-disabled mode eager and simple.
+- [x] Delete the special initial-client path if T1.2's tests prove it is fully subsumed.
 
 Acceptance criteria:
 
-- [ ] Loading→authenticated and loading→anonymous each construct one primary client, not
+- [x] Loading→authenticated and loading→anonymous each construct one primary client, not
       an immediately discarded extra client.
-- [ ] No primary WebSocket opens during unresolved auth loading.
-- [ ] Auth-disabled startup behavior and public readiness remain unchanged.
+- [x] No primary WebSocket opens during unresolved auth loading.
+- [x] Auth-disabled startup behavior and public readiness remain unchanged.
+
+Ledger note (2026-07-26):
+
+- Reproduced the eager allocation: the owner constructed generation 0 before the
+  loading provider had an actionable identity, then loading settlement immediately
+  retired it and constructed generation 1.
+- Auth-enabled browser runtimes now construct the owner with its canonical identity
+  port, whose presence defers only the initial primary. The port starts the first
+  candidate for an already authenticated/settled snapshot, or waits for loading to
+  cross to its first generation. Auth-disabled runtimes retain their eager anonymous
+  primary.
+- Deleted the browser runtime's separate initial-client confirmation branch. Initial
+  and later candidates now use the same `replacePrimary`/`initializePrimary` path.
+- Preserved `ready()` with a one-shot barrier on the owner's existing primary-commit
+  event (or disposal), after canonical identity settlement. The anonymous regression
+  verifies the primary is committed by observing its connection subscription
+  immediately after readiness.
+- Red proof: both loading paths had already allocated one client before provider
+  settlement.
+- Green proof: loading→authenticated and loading→anonymous each allocate exactly one
+  primary, auth-disabled startup allocates one eagerly, and the browser runtime,
+  owner, adapter-port, package-runtime, and Nuxt connection suites pass (5 files/65
+  tests), along with Vue and root typechecks.
 
 Phase 1 exit gate:
 
-- [ ] Every identity-crossing test passes for query, mutation, action, subscription,
+- [x] Every identity-crossing test passes for query, mutation, action, subscription,
       initial confirmation, refresh, disposal, and A→B→A replacement.
-- [ ] One public identity revision remains: `identityGeneration`.
+- [x] One public identity revision remains: `identityGeneration`.
+
+Phase 1 exit evidence (2026-07-26):
+
+- The complete configured Vitest matrix passes across unit, security, Convex, Nuxt,
+  and browser projects. The focused identity/runtime matrix passes 65 tests.
+- A source audit finds no production `authEpoch`, `identityRevision`,
+  `sessionRevision`, or `clientGeneration`; the only `authEpoch` occurrence is the
+  regression assertion proving it is absent from the public snapshot.
 
 ---
 
