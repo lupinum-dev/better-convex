@@ -43,6 +43,7 @@ export async function proveInteractionBrowserBoundary(
     bodyBytes: number
     method: string
     origin: string | null
+    referer: string | null
   }> = []
   const responseDiagnostics: Array<{
     location: string | null
@@ -83,16 +84,6 @@ export async function proveInteractionBrowserBoundary(
       const headers = new Headers(browserRequest.headers())
       headers.delete('content-length')
       headers.delete('host')
-      const browserOriginHeader = headers.get('origin')
-      if (
-        browserRequest.method() === 'POST' &&
-        browserOriginHeader === 'null' &&
-        originalUrl.origin === INTERACTION_ORIGIN
-      ) {
-        // Playwright gives intercepted documents an opaque initiator. Preserve the original fixed
-        // browser origin while proxying the request to the local Convex deployment.
-        headers.set('origin', originalUrl.origin)
-      }
       const body =
         browserRequest.method() === 'GET' || browserRequest.method() === 'HEAD'
           ? undefined
@@ -101,7 +92,8 @@ export async function proveInteractionBrowserBoundary(
       requestDiagnostics.push({
         bodyBytes: body === undefined ? 0 : Buffer.byteLength(body),
         method: browserRequest.method(),
-        origin: browserOriginHeader,
+        origin: headers.get('origin'),
+        referer: headers.get('referer'),
       })
       const upstream = await fetch(upstreamUrl, {
         ...(body === undefined ? {} : { body }),
@@ -171,6 +163,15 @@ export async function proveInteractionBrowserBoundary(
           response.location === interactionUrl,
       ),
       `Confirmation POST omitted the canonical upstream redirect: ${JSON.stringify({ requestDiagnostics, responseBodies, responseDiagnostics })}`,
+    )
+    assert(
+      requestDiagnostics.some(
+        (request) =>
+          request.method === 'POST' &&
+          request.origin === INTERACTION_ORIGIN &&
+          request.referer === `${INTERACTION_ORIGIN}/`,
+      ),
+      `Confirmation POST omitted the real same-origin browser metadata: ${JSON.stringify(requestDiagnostics)}`,
     )
     // Perform the canonical GET explicitly after suppressing only Playwright's synthetic redirect.
     await page.goto(interactionUrl, { waitUntil: 'domcontentloaded' })

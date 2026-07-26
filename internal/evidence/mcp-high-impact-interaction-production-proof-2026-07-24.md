@@ -33,7 +33,7 @@ Content-Security-Policy:
   frame-ancestors 'none';
   base-uri 'none';
   object-src 'none'
-Referrer-Policy: no-referrer
+Referrer-Policy: strict-origin
 X-Frame-Options: DENY
 X-Content-Type-Options: nosniff
 Cross-Origin-Opener-Policy: same-origin
@@ -60,14 +60,17 @@ The deployed local Convex and browser matrix proves:
 7. a lost response is recoverable with the explicit operation key and returns the stored receipt;
 8. changed impact renders `stale`; expired state renders `expired`; neither remains actionable;
 9. a real Chromium page receives an HTTP-only `SameSite=Strict` session, renders the exact pending
-   operation, performs the explicit POST, and renders the canonical applied state;
+   operation, sends the exact application Origin plus an origin-only Referer on the explicit POST,
+   and renders the canonical applied state;
 10. the page DOM, response bodies, browser console, page errors, MCP responses, and diagnostics contain
     none of the session or OAuth bearer sentinels.
 
-The Playwright host routes the fixed HTTPS test origin to the deployed local Convex site. Intercepted
-same-URL redirects do not receive a DNS-backed navigation in Chromium, so the harness verifies the
-exact `303` and `Location` through the direct HTTP proof and then performs the canonical GET
-explicitly. This is a harness limitation, not a production fallback or alternate protocol.
+The Playwright host routes the fixed HTTPS test origin to the deployed local Convex site and forwards
+the browser's Origin, Referer, and Fetch Metadata unchanged. `strict-origin` keeps the opaque locator
+out of Referer while allowing the exact Origin check to succeed. Intercepted same-URL redirects do not
+receive a DNS-backed navigation in Chromium, so the harness verifies the exact `303` and `Location`
+through the direct HTTP proof and then performs the canonical GET explicitly. This redirect handling
+is a harness limitation, not a production fallback or alternate protocol.
 
 ## Exact installed-byte proof
 

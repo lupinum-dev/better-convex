@@ -64,7 +64,7 @@ function responseHeaders(contentType = 'text/html; charset=utf-8'): Headers {
     'cross-origin-opener-policy': 'same-origin',
     'permissions-policy':
       'camera=(), display-capture=(), geolocation=(), microphone=(), payment=(), usb=()',
-    'referrer-policy': 'no-referrer',
+    'referrer-policy': 'strict-origin',
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
   })

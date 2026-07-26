@@ -40,8 +40,8 @@ The deployed Convex/browser matrix also executes:
 - expiry;
 - synchronized confirmation, replay, one effect, and one identical receipt;
 - lost-response status recovery;
-- fixed-origin POST, CSRF rejection, private/no-store, no-referrer, no framing, and no script-readable
-  session.
+- fixed-origin POST, CSRF rejection, private/no-store, strict-origin referrer policy, no framing, and
+  no script-readable session.
 
 The browser harness records the real upstream `303` and exact canonical `Location`. It suppresses only
 Playwright's synthetic same-URL redirect race, then performs the canonical GET explicitly. This is a

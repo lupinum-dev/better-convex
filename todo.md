@@ -72,7 +72,7 @@ gate are complete.
 - [ ] `BAA-03`: make the shipped CLI and repository schema generator emit identical
       bytes. This is P1 because the certified public CLI rejects the repository's own
       committed fixtures.
-- [ ] `MCPI-02`: make the real browser confirmation POST compatible with its
+- [x] `MCPI-02`: make the real browser confirmation POST compatible with its
       referrer/CSRF policy.
 - [ ] `AUTH-03`: stream-bound OAuth form bodies before materialization. This is promoted
       from Claude's P3 to P1 because the executed proof consumed 256 MiB at an
@@ -437,21 +437,35 @@ Ledger note (2026-07-26):
 
 Source: Claude `MCPI-02`.
 
-- [ ] Remove the browser-proof Origin rewrite.
-- [ ] Prefer retaining exact Origin validation and changing `Referrer-Policy` to a
+- [x] Remove the browser-proof Origin rewrite.
+- [x] Prefer retaining exact Origin validation and changing `Referrer-Policy` to a
       policy such as `strict-origin` that sends Origin without leaking the opaque
       locator path.
-- [ ] If `Sec-Fetch-*` is used instead, prove browser coverage and document why missing
+- [x] If `Sec-Fetch-*` is used instead, prove browser coverage and document why missing
       headers fail closed.
-- [ ] Never “fix” this by broadly accepting `Origin: null`.
+- [x] Never “fix” this by broadly accepting `Origin: null`.
 
 Acceptance criteria:
 
-- [ ] Real Chromium submits the scriptless confirmation form with no harness header
+- [x] Real Chromium submits the scriptless confirmation form with no harness header
       rewriting and receives the expected 303.
-- [ ] Cross-site navigation is rejected.
-- [ ] GET remains inert; confirmation remains POST-only with an empty bounded body.
-- [ ] The locator is absent from DOM, logs, and full Referer paths.
+- [x] Cross-site navigation is rejected.
+- [x] GET remains inert; confirmation remains POST-only with an empty bounded body.
+- [x] The locator is absent from DOM, logs, and full Referer paths.
+
+Ledger note (2026-07-26):
+
+- Selected exact Origin plus `Referrer-Policy: strict-origin`; `Sec-Fetch-*` is not an
+  authorization input. The browser now sends the application Origin and an origin-only
+  Referer, while `Origin: null`, missing Origin, and hostile cross-site Origin remain
+  rejected.
+- Red proof: after deleting the harness Origin substitution, the real Chromium form
+  POST received 403 under `no-referrer`.
+- Green proof: the same unmodified browser POST reaches the handler with
+  `Origin: https://notes.example.invalid`, Referer `https://notes.example.invalid/`,
+  and an upstream 303. The focused browser proof and direct local-Convex interaction
+  matrix pass; the latter covers null/missing/cross-site rejection, inert GET,
+  POST-only confirmation, and the empty bounded body.
 - [ ] CSP, `frame-ancestors 'none'`, private/no-store, user binding, expiry, and
       exactly-once effect semantics remain intact.
 

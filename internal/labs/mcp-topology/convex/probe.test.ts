@@ -1582,7 +1582,7 @@ describe('vNext Convex-native MCP topology probe', () => {
       expect(response.status).toBe(200)
       expect(response.headers.get('cache-control')).toBe('private, no-store')
       expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'")
-      expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+      expect(response.headers.get('referrer-policy')).toBe('strict-origin')
       expect(response.headers.get('x-frame-options')).toBe('DENY')
       const html = await response.text()
       expect(html).toContain('Delete workspace workspace-a')
@@ -1608,6 +1608,15 @@ describe('vNext Convex-native MCP topology probe', () => {
         session: INTERACTION_LAB_SESSIONS.alice,
       }),
       await request(locator, {
+        method: 'POST',
+        origin: 'null',
+        session: INTERACTION_LAB_SESSIONS.alice,
+      }),
+      await request(locator, {
+        headers: {
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-site': 'cross-site',
+        },
         method: 'POST',
         origin: 'https://attacker.example.invalid',
         session: INTERACTION_LAB_SESSIONS.alice,
