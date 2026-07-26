@@ -7,7 +7,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { createConvexAuthAdapter } from '../../src/runtime/convex-auth/adapter/create-adapter'
 import {
   assertOAuthAccessTokenClaims,
-  assertPkceS256,
   assertSafeStoredOAuthClient,
   assertSingleParameters,
   hardenOAuthProviderCallbacks,
@@ -460,13 +459,6 @@ const nodePairs: Record<string, MutantPair> = {
       const parsed = new URL('https://*.example.test/callback')
       return parsed.protocol === 'https:' && !parsed.hash
     },
-  },
-  'oauth-pkce-plain-allowed': {
-    production: accepted(
-      () => assertPkceS256('A'.repeat(43), 'plain'),
-      'AUTH_OAUTH_REQUEST_INVALID',
-    ),
-    mutant: () => /^.{43}$/u.test('A'.repeat(43)),
   },
   'oauth-code-redirect-binding-skipped': {
     production: productionAcceptsMismatchedCodeRedirect,

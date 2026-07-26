@@ -7,9 +7,7 @@ interface ActiveBarrier extends SessionSynchronizationBarrier {
 }
 
 export interface SessionSynchronization {
-  advance(): number
-  isCurrent(revision: number): boolean
-  complete(revision: number, sessionToken: string | null): void
+  observe(sessionToken: string | null): void
   createBarrier(): SessionSynchronizationBarrier
   dispose(): void
 }
@@ -85,17 +83,10 @@ export function createSessionSynchronization(input: {
   }
 
   return {
-    advance() {
+    observe(sessionToken) {
       revision += 1
-      return revision
-    },
-    isCurrent(candidate) {
-      return candidate === revision
-    },
-    complete(candidate, sessionToken) {
-      if (candidate !== revision) return
       for (const barrier of [...barriers]) {
-        if (barrier.afterRevision >= candidate) continue
+        if (barrier.afterRevision >= revision) continue
         barrier.observe(sessionToken)
       }
     },

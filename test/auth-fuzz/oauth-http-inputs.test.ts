@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { verifyOAuthBearerToken } from '../../src/runtime/convex-auth/oauth-resource'
 import {
   assertOAuthAccessTokenClaims,
-  assertPkceS256,
   assertSingleParameters,
   parseBoundedFormRequest,
   requireSingleParameter,
@@ -114,27 +113,14 @@ describe('seeded OAuth HTTP input corpus', () => {
     })
   })
 
-  it('rejects non-S256 PKCE and unsafe redirect URI variants', async () => {
+  it('rejects unsafe redirect URI variants', async () => {
     for (const redirectUri of HOSTILE_REDIRECT_URIS) {
       expect(() => validateOAuthRedirectUris([redirectUri]), redirectUri).toThrow(
         'AUTH_OAUTH_CONFIG_INVALID',
       )
     }
 
-    await runSeededAuthCorpus('oauth-redirect-pkce', 64, (random) => {
-      const safeChallenge = random.pick(['A', 'z', '0', '_', '-']).repeat(43)
-      expect(() => assertPkceS256(safeChallenge, 'S256')).not.toThrow()
-
-      const unsafeChallenge = random.pick([
-        safeChallenge.slice(1),
-        `${safeChallenge}=`,
-        `${safeChallenge.slice(0, 42)}+`,
-        `${safeChallenge}${random.nextUint32().toString(36)}`,
-      ])
-      expect(() => assertPkceS256(unsafeChallenge, random.pick(['S256', 'plain', 's256']))).toThrow(
-        'AUTH_OAUTH_REQUEST_INVALID',
-      )
-
+    await runSeededAuthCorpus('oauth-redirect', 64, (random) => {
       const label = random.nextUint32().toString(36)
       for (const redirectUri of [
         `https://*.${label}.example.test/callback`,

@@ -57,9 +57,9 @@ function createAuth(
   secrets: { value: string; version: number }[],
   overrides: Partial<JwtOptions['jwks']> = {},
   runtimeOverrides: Partial<Pick<BetterAuthOptions, 'advanced' | 'rateLimit'>> = {},
+  jwtPlugin = createJwtPlugin(overrides),
 ) {
   database.rateLimit ??= []
-  const jwtPlugin = createJwtPlugin(overrides)
   const auth = betterAuth({
     advanced:
       runtimeOverrides.advanced ??
@@ -260,6 +260,25 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
       },
     )
     await expect(value.auth.$context).resolves.toBeDefined()
+  })
+
+  it('constructs auth repeatedly over the same reviewed JWT plugin', async () => {
+    const sharedJwtPlugin = createJwtPlugin()
+    const first = createAuth({}, [{ value: currentSecret, version: 1 }], {}, {}, sharedJwtPlugin)
+    await expect(first.auth.$context).resolves.toBeDefined()
+
+    const second = createAuth({}, [{ value: currentSecret, version: 1 }], {}, {}, sharedJwtPlugin)
+    await expect(second.auth.$context).resolves.toBeDefined()
+  })
+
+  it('rejects a foreign shared JWKS reader', async () => {
+    const jwtPlugin = createJwtPlugin()
+    const jwtOptions = jwtPlugin.options as JwtOptions
+    jwtOptions.adapter = {
+      getJwks: async () => [],
+    }
+    const value = createAuth({}, [{ value: currentSecret, version: 1 }], {}, {}, jwtPlugin)
+    await expect(value.auth.$context).rejects.toThrow('AUTH_JWKS_CONFIG_INVALID')
   })
 
   it('uses official key generation and versioned private-key encryption before commit', async () => {

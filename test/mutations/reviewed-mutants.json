@@ -58,11 +58,6 @@
       "invariant": "OAuth redirect URIs are exact canonical registrations without wildcards."
     },
     {
-      "id": "oauth-pkce-plain-allowed",
-      "project": "node",
-      "invariant": "Authorization requests require an exact 43-character S256 challenge."
-    },
-    {
       "id": "oauth-code-redirect-binding-skipped",
       "project": "node",
       "invariant": "The token exchange redirect URI must equal the URI persisted with the code."

@@ -8,21 +8,6 @@ const OAUTH_TOKEN_ERROR = 'AUTH_OAUTH_TOKEN_INVALID'
 
 const FORBIDDEN_SCOPES = new Set(['email', 'offline_access', 'openid', 'profile'])
 const SCOPE_PATTERN = /^[\w:./-]+$/
-const PKCE_S256_PATTERN = /^[\w-]{43}$/
-
-const AUTHORIZATION_METADATA_FIELDS = new Set([
-  'authorization_endpoint',
-  'authorization_response_iss_parameter_supported',
-  'code_challenge_methods_supported',
-  'grant_types_supported',
-  'issuer',
-  'jwks_uri',
-  'revocation_endpoint',
-  'response_types_supported',
-  'scopes_supported',
-  'token_endpoint',
-  'token_endpoint_auth_methods_supported',
-])
 
 const TOKEN_CLAIMS = new Set([
   'aud',
@@ -581,12 +566,6 @@ export function assertSafeStoredOAuthClientResource(
   }
 }
 
-export function assertPkceS256(challenge: unknown, method: unknown): void {
-  if (method !== 'S256' || typeof challenge !== 'string' || !PKCE_S256_PATTERN.test(challenge)) {
-    invalidRequest()
-  }
-}
-
 export function assertSingleParameters(
   parameters: URLSearchParams,
   singletonFields: readonly string[],
@@ -690,7 +669,7 @@ export function projectOAuthAuthorizationServerMetadata(
     invalidConfig()
   }
 
-  const projected: Record<string, unknown> = {
+  return Object.freeze({
     issuer: expected.issuer,
     authorization_endpoint: expected.authorization_endpoint,
     token_endpoint: expected.token_endpoint,
@@ -702,32 +681,6 @@ export function projectOAuthAuthorizationServerMetadata(
     token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'],
     code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
-  }
-  if (Object.keys(projected).some((field) => !AUTHORIZATION_METADATA_FIELDS.has(field))) {
-    invalidConfig()
-  }
-  return Object.freeze(projected)
-}
-
-export function projectOAuthProtectedResourceMetadata(
-  officialMetadata: unknown,
-  resource: string,
-  issuer: string,
-  scopes: readonly string[],
-): Readonly<Record<string, unknown>> {
-  if (!isRecord(officialMetadata)) invalidConfig()
-  if (
-    officialMetadata.resource !== resource ||
-    !exactArray(officialMetadata.authorization_servers, [issuer]) ||
-    !exactArray(officialMetadata.scopes_supported, scopes)
-  ) {
-    invalidConfig()
-  }
-  return Object.freeze({
-    resource,
-    authorization_servers: [issuer],
-    scopes_supported: [...scopes],
-    bearer_methods_supported: ['header'],
   })
 }
 

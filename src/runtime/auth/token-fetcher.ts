@@ -27,10 +27,7 @@ export interface FetchedIdentity {
 
 export { TOKEN_EXPIRY_SAFETY_BUFFER_MS }
 
-/** Coalesced-retry backoff schedule (architecture invariant): 1, 2, 4, 8, 16, then 30s. */
-export const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const
-
-/** Bounded transient-retry attempts inside a single fetch call. */
+/** Immediate transient-retry attempts bounded by one fixed exchange deadline. */
 export const MAX_FETCH_ATTEMPTS = 4
 
 /** Total browser budget for one Better Auth -> Convex token exchange cycle. */

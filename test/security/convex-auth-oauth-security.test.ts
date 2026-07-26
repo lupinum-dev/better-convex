@@ -7,7 +7,6 @@ import {
 } from '../../src/runtime/convex-auth/oauth-provider-compat'
 import {
   assertOAuthAccessTokenClaims,
-  assertPkceS256,
   assertSafeStoredOAuthClient,
   assertSafeStoredOAuthClientResource,
   assertSafeStoredOAuthResource,
@@ -15,7 +14,6 @@ import {
   installUrlCanParseCompatibility,
   parseBoundedFormRequest,
   projectOAuthAuthorizationServerMetadata,
-  projectOAuthProtectedResourceMetadata,
   validateOAuthProviderProfile,
   validateOAuthRedirectUris,
   type PinnedOAuthProviderProfile,
@@ -713,12 +711,6 @@ describe('pre-provider request parsing', () => {
       'AUTH_OAUTH_REQUEST_INVALID',
     )
   })
-
-  it('requires a canonical S256 challenge', () => {
-    expect(() => assertPkceS256('A'.repeat(43), 'S256')).not.toThrow()
-    expect(() => assertPkceS256('A'.repeat(43), 'plain')).toThrow('AUTH_OAUTH_REQUEST_INVALID')
-    expect(() => assertPkceS256('short', 'S256')).toThrow('AUTH_OAUTH_REQUEST_INVALID')
-  })
 })
 
 describe('OAuth metadata projections', () => {
@@ -787,27 +779,6 @@ describe('OAuth metadata projections', () => {
         scopes,
       ),
     ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
-  })
-
-  it('omits DPoP and exposes header-only protected-resource metadata', () => {
-    const projected = projectOAuthProtectedResourceMetadata(
-      {
-        authorization_servers: [issuer],
-        dpop_signing_alg_values_supported: ['ES256'],
-        resource,
-        scopes_supported: [...scopes],
-      },
-      resource,
-      issuer,
-      scopes,
-    )
-    expect(projected).toEqual({
-      authorization_servers: [issuer],
-      bearer_methods_supported: ['header'],
-      resource,
-      scopes_supported: [...scopes],
-    })
-    expect(projected).not.toHaveProperty('dpop_signing_alg_values_supported')
   })
 })
 

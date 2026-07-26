@@ -72,8 +72,7 @@ export default defineNuxtPlugin({
         },
         sessionChanged(sessionToken, errorMessage) {
           if (!synchronization) return
-          const revision = synchronization.advance()
-          synchronization.complete(revision, errorMessage ? null : sessionToken)
+          synchronization.observe(errorMessage ? null : sessionToken)
         },
       },
       {

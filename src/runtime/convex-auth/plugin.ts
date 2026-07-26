@@ -97,6 +97,15 @@ interface OAuthGuardContext {
   baseURL: string
 }
 
+const sharedJwksReader: NonNullable<NonNullable<JwtOptions['adapter']>['getJwks']> = async (
+  endpointContext,
+) => {
+  const rows = (await endpointContext.context.adapter.findMany({
+    model: 'jwks',
+  })) as Jwk[]
+  return rows.map((row) => sanitizeStoredJwk(row))
+}
+
 function configureSharedJwks(
   context: Parameters<NonNullable<BetterAuthPlugin['init']>>[0],
   errorCode: string,
@@ -123,7 +132,8 @@ function configureSharedJwks(
   assertSupportedJwksOptions(jwtOptions, errorCode)
   if (
     !jwtOptions ||
-    jwtOptions.adapter?.getJwks !== undefined ||
+    (jwtOptions.adapter?.getJwks !== undefined &&
+      jwtOptions.adapter.getJwks !== sharedJwksReader) ||
     jwtOptions.jwt?.audience !== context.baseURL ||
     jwtOptions.jwt.expirationTime !== '10m' ||
     jwtOptions.jwt.issuer !== context.baseURL
@@ -133,12 +143,7 @@ function configureSharedJwks(
 
   jwtOptions.adapter = {
     createJwk: rejectImplicitSigningKeyCreation,
-    getJwks: async (endpointContext) => {
-      const rows = (await endpointContext.context.adapter.findMany({
-        model: 'jwks',
-      })) as Jwk[]
-      return rows.map((row) => sanitizeStoredJwk(row))
-    },
+    getJwks: sharedJwksReader,
   }
 }
 
