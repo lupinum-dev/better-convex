@@ -37,14 +37,7 @@ function applicationFailure(error: unknown) {
   }
 }
 
-async function invokeTool(
-  operation: () => Promise<unknown>,
-  metadata: {
-    functionName: string
-    operation: 'mutation'
-    toolName: string
-  },
-) {
+async function invokeTool(operation: () => Promise<unknown>) {
   return await runMcpTool(async () => {
     try {
       const value = await operation()
@@ -55,7 +48,7 @@ async function invokeTool(
     } catch (error) {
       return applicationFailure(error)
     }
-  }, metadata)
+  })
 }
 
 function requireScope(access: McpAccessContext, scope: McpScope) {
@@ -86,17 +79,11 @@ export function createDelegatedMcpServer(
     async ({ organizationId }) => {
       const denied = requireScope(access, 'mcp:read')
       if (denied) return denied
-      return await invokeTool(
-        () =>
-          ctx.runMutation(internal.mcpTools.listProjects, {
-            organizationId,
-            principal,
-          }),
-        {
-          functionName: 'mcpTools:listProjects',
-          operation: 'mutation',
-          toolName: 'projects.list',
-        },
+      return await invokeTool(() =>
+        ctx.runMutation(internal.mcpTools.listProjects, {
+          organizationId,
+          principal,
+        }),
       )
     },
   )
@@ -115,18 +102,12 @@ export function createDelegatedMcpServer(
     async ({ name, organizationId }) => {
       const denied = requireScope(access, 'mcp:write')
       if (denied) return denied
-      return await invokeTool(
-        () =>
-          ctx.runMutation(internal.mcpTools.createProject, {
-            name,
-            organizationId,
-            principal,
-          }),
-        {
-          functionName: 'mcpTools:createProject',
-          operation: 'mutation',
-          toolName: 'projects.create',
-        },
+      return await invokeTool(() =>
+        ctx.runMutation(internal.mcpTools.createProject, {
+          name,
+          organizationId,
+          principal,
+        }),
       )
     },
   )
@@ -141,18 +122,12 @@ export function createDelegatedMcpServer(
     async ({ organizationId, projectId }) => {
       const denied = requireScope(access, 'mcp:write')
       if (denied) return denied
-      return await invokeTool(
-        () =>
-          ctx.runMutation(internal.mcpTools.previewProjectDelete, {
-            organizationId,
-            principal,
-            projectId,
-          }),
-        {
-          functionName: 'mcpTools:previewProjectDelete',
-          operation: 'mutation',
-          toolName: 'projects.delete.preview',
-        },
+      return await invokeTool(() =>
+        ctx.runMutation(internal.mcpTools.previewProjectDelete, {
+          organizationId,
+          principal,
+          projectId,
+        }),
       )
     },
   )
@@ -166,18 +141,12 @@ export function createDelegatedMcpServer(
     async ({ organizationId, projectId }) => {
       const denied = requireScope(access, 'mcp:write')
       if (denied) return denied
-      return await invokeTool(
-        () =>
-          ctx.runMutation(internal.mcpTools.requestProjectDeleteApproval, {
-            organizationId,
-            principal,
-            projectId,
-          }),
-        {
-          functionName: 'mcpTools:requestProjectDeleteApproval',
-          operation: 'mutation',
-          toolName: 'projects.delete.requestApproval',
-        },
+      return await invokeTool(() =>
+        ctx.runMutation(internal.mcpTools.requestProjectDeleteApproval, {
+          organizationId,
+          principal,
+          projectId,
+        }),
       )
     },
   )
@@ -197,19 +166,13 @@ export function createDelegatedMcpServer(
     async ({ approvalId, organizationId, projectId }) => {
       const denied = requireScope(access, 'mcp:write')
       if (denied) return denied
-      return await invokeTool(
-        () =>
-          ctx.runMutation(internal.mcpTools.executeProjectDelete, {
-            approvalId,
-            organizationId,
-            principal,
-            projectId,
-          }),
-        {
-          functionName: 'mcpTools:executeProjectDelete',
-          operation: 'mutation',
-          toolName: 'projects.delete.execute',
-        },
+      return await invokeTool(() =>
+        ctx.runMutation(internal.mcpTools.executeProjectDelete, {
+          approvalId,
+          organizationId,
+          principal,
+          projectId,
+        }),
       )
     },
   )
