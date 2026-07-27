@@ -238,15 +238,33 @@ an external publication blocker, as does the provider-specific Nuxt deployment
 record for the exact tarball. A passing report is not a substitute for either
 record.
 
-Before the first prerelease, an npm package owner must configure
-`publish-prerelease.yml` as the package's only trusted publisher, allow
-`npm publish`, protect the `bcn-auth-staging` and `npm-release` environments and
-release-tag pattern,
-set npm publishing access to **Require two-factor authentication and disallow
-tokens**, revoke existing automation write tokens, and enable private
-vulnerability reporting. Record the Security Owner and the human who reviewed
-package licensing and metadata; one solo maintainer may fill both roles. Those
-are external release blockers, not defaults the repository can silently provide.
+### One-time package-name bootstrap
+
+An npm trusted publisher is configured on an existing package. When a reviewed
+package name does not exist yet, the solo owner must first publish one exact
+certified prerelease tarball manually with npm account 2FA:
+
+1. finish `pnpm release:prepare` and every per-package verification gate;
+2. inspect the retained tarball instead of repacking the package directory;
+3. publish only that tarball under `next-staging`;
+4. compare the registry tarball with the retained candidate bytes;
+5. immediately configure `publish-prerelease.yml` and `npm-release` as the
+   package's trusted publisher, then disallow traditional publish tokens.
+
+This exception creates the package settings needed for OIDC. It is not a second
+recurring release lane, does not promote `latest`, and must not be used again
+once the trusted publisher exists. An agent must stop before the interactive
+2FA publication; the human owner performs and records that action.
+
+Before the coordinated prerelease, the npm package owner must configure
+`publish-prerelease.yml` as every existing package's only trusted publisher,
+allow `npm publish`, protect the `bcn-auth-staging` and `npm-release`
+environments and release-tag pattern, set npm publishing access to **Require
+two-factor authentication and disallow tokens**, revoke existing automation
+write tokens, and enable private vulnerability reporting. Record the Security
+Owner and the human who reviewed package licensing and metadata; one solo
+maintainer may fill both roles. Those are external release blockers, not
+defaults the repository can silently provide.
 
 The `npm-release` approver (which may be the solo owner for a prerelease) must
 withhold approval until the release record for
