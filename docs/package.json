@@ -12,8 +12,8 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@lupinum/ginko-content": "0.3.0-rc.3",
-    "@lupinum/ginko-docs": "0.2.2",
+    "@lupinum/ginko-content": "0.3.2",
+    "@lupinum/ginko-docs": "0.2.3",
     "nuxt": "^4.4.8"
   },
   "devDependencies": {
