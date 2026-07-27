@@ -115,8 +115,8 @@ matrix requires the exact same-commit MCP companion artifact.
 The protected `v*-*` tag must point at the reviewed commit and exactly match the
 prerelease version in the root `package.json`. The workflow then:
 
-1. requires distinct named Security Owner/deputy repository variables and a
-   notification-delivery test no older than 30 days;
+1. requires named Security Owner and licensing-reviewer repository variables;
+   a solo maintainer may fill both roles for a prerelease;
 2. uses Node `22.14.0`, npm `11.5.1`, the Corepack-verified
    `pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1`,
    a frozen pnpm lock, and commit-pinned GitHub Actions;
@@ -243,16 +243,20 @@ Before the first prerelease, an npm package owner must configure
 `npm publish`, protect the `bcn-auth-staging` and `npm-release` environments and
 release-tag pattern,
 set npm publishing access to **Require two-factor authentication and disallow
-tokens**, revoke existing automation write tokens, and test Security
-Owner/deputy notification delivery. Those are external release blockers, not
-defaults the repository can silently provide.
+tokens**, revoke existing automation write tokens, and enable private
+vulnerability reporting. Record the Security Owner and the human who reviewed
+package licensing and metadata; one solo maintainer may fill both roles. Those
+are external release blockers, not defaults the repository can silently provide.
 
-The `npm-release` approver must withhold approval until the release record for
+The `npm-release` approver (which may be the solo owner for a prerelease) must
+withhold approval until the release record for
 the downloaded artifact hash contains the empty production-like rehearsal,
 separate `bcn-auth-staging` race report, synthetic-advisory notification and
-expiry drill, forward-fix timeline, and independent audit with no unresolved
-P0/P1 finding. Repository tests cannot manufacture cloud, delivery, or human
-review evidence; a missing record blocks publication.
+expiry drill, forward-fix timeline, and no unresolved P0/P1 finding. The record
+must state explicitly when no independent audit occurred; independent approval
+remains mandatory before stable auth publication. Repository tests cannot
+manufacture cloud, delivery, or human review evidence; a missing record blocks
+publication.
 
 ## Security release governance
 
@@ -286,6 +290,8 @@ publish from a workstation.
 Do not unpublish or reuse a version. If any gate or candidate deployment fails,
 leave `latest` unchanged, correct the source, obtain independent review, assign
 a new prerelease version, and rerun the complete workflow to create new bytes.
+For a solo prerelease, record the maintainer's corrective review instead of
+claiming independent review.
 Stable publication remains blocked until Better Auth 1.7 stable exists, the
 1.0 eligibility criteria in `internal/RFC-better-convex-vnext.md` pass, and the
 independent human security approval required by `SECURITY.md` is recorded.

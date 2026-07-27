@@ -37,8 +37,7 @@ jobs:
 
       - name: Verify protected prerelease identity
         env:
-          BCN_SECURITY_DEPUTY: ${{ vars.BCN_SECURITY_DEPUTY }}
-          BCN_SECURITY_NOTIFICATION_TESTED_AT: ${{ vars.BCN_SECURITY_NOTIFICATION_TESTED_AT }}
+          BCN_LICENSE_REVIEWER: ${{ vars.BCN_LICENSE_REVIEWER }}
           BCN_SECURITY_OWNER: ${{ vars.BCN_SECURITY_OWNER }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: pnpm check:security-governance --prerelease

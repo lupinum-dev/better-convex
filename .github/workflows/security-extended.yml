@@ -32,8 +32,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:security-governance
         env:
-          BCN_SECURITY_DEPUTY: ${{ vars.BCN_SECURITY_DEPUTY }}
-          BCN_SECURITY_NOTIFICATION_TESTED_AT: ${{ vars.BCN_SECURITY_NOTIFICATION_TESTED_AT }}
           BCN_SECURITY_OWNER: ${{ vars.BCN_SECURITY_OWNER }}
       - run: pnpm check:no-old-auth-runtime
       - run: pnpm check:auth-logical-ids

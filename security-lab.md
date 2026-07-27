@@ -848,7 +848,8 @@ Residual risk:
 - lockout/reset, OAuth code, quota, and JWKS races;
 - zero-state cleanup proof;
 - protected npm trusted publishing and registry byte comparison;
-- current Security Owner/deputy notification drill.
+- named Security Owner and licensing reviewer (the same solo maintainer may fill both);
+- enabled private vulnerability reporting, with no claim of independent review.
 
 ### Before stable
 

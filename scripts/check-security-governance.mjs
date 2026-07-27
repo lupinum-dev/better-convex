@@ -5,34 +5,19 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
-export const SECURITY_NOTIFICATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000
 
 function normalizedName(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export function validateSecurityGovernance(input, now = new Date()) {
+export function validateSecurityGovernance(input, { requireLicensingReviewer = false } = {}) {
   const failures = []
   const owner = normalizedName(input?.owner)
-  const deputy = normalizedName(input?.deputy)
-  const nowMilliseconds = now instanceof Date ? now.getTime() : Number(now)
+  const licensingReviewer = normalizedName(input?.licensingReviewer)
 
-  if (!Number.isFinite(nowMilliseconds)) throw new Error('governance validation clock is invalid')
   if (!owner) failures.push('BCN_SECURITY_OWNER must name the current Security Owner')
-  if (!deputy) failures.push('BCN_SECURITY_DEPUTY must name the current Security Owner deputy')
-  if (owner && deputy && owner.toLowerCase() === deputy.toLowerCase()) {
-    failures.push('BCN Security Owner and deputy must be distinct people')
-  }
-
-  const testedAtValue =
-    typeof input?.notificationTestedAt === 'string' ? input.notificationTestedAt.trim() : ''
-  const testedAt = testedAtValue ? Date.parse(testedAtValue) : Number.NaN
-  if (!Number.isFinite(testedAt)) {
-    failures.push('BCN_SECURITY_NOTIFICATION_TESTED_AT must be a valid delivery-test timestamp')
-  } else if (testedAt > nowMilliseconds) {
-    failures.push('security notification delivery-test timestamp must not be in the future')
-  } else if (nowMilliseconds - testedAt > SECURITY_NOTIFICATION_MAX_AGE_MS) {
-    failures.push('security notification delivery-test timestamp must be no older than 30 days')
+  if (requireLicensingReviewer && !licensingReviewer) {
+    failures.push('BCN_LICENSE_REVIEWER must name the human who reviewed package licensing')
   }
 
   return failures
@@ -59,11 +44,13 @@ function parseArguments(arguments_) {
 
 function run() {
   const { prerelease } = parseArguments(process.argv.slice(2))
-  const failures = validateSecurityGovernance({
-    deputy: process.env.BCN_SECURITY_DEPUTY,
-    notificationTestedAt: process.env.BCN_SECURITY_NOTIFICATION_TESTED_AT,
-    owner: process.env.BCN_SECURITY_OWNER,
-  })
+  const failures = validateSecurityGovernance(
+    {
+      licensingReviewer: process.env.BCN_LICENSE_REVIEWER,
+      owner: process.env.BCN_SECURITY_OWNER,
+    },
+    { requireLicensingReviewer: prerelease },
+  )
 
   if (prerelease) {
     const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'))

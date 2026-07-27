@@ -642,7 +642,9 @@ There is **no beta.6 candidate artifact** for the audited HEAD. Source version s
 - `pnpm check:asvs` fails because the evidence catalog references the deleted `src/runtime/server/mcp/proxy.ts`. Root `check` does not currently execute this check, while release verification does. Rebind the evidence to current enforcing code or delete the stale claim; never waive it.
 - Ginko cannot cold-install the declared candidate tuple because MCP is omitted and local links/source aliases substitute for candidate bytes (F-015).
 - Ginko's workflow trust boundary must be repaired before its green status is accepted as protected downstream evidence (F-016).
-- Protected Security Owner/deputy, notification drill, environment and npm publication approvals remain external governance blockers. They should remain named blockers; no code path should bypass them.
+- A named Security Owner, licensing review, protected environments, and npm publication
+  approval remain external governance blockers. A solo maintainer may own the prerelease
+  roles, but the release record must not claim independent review.
 
 ### Required publication sequence
 
@@ -777,7 +779,10 @@ These are not confirmed vulnerabilities. Each item names the missing evidence an
 11. **MCP Apps normative host boundary.** Serve the iframe from the intended distinct origin through the official proxy/host implementation, run at least one real compatible host, and inject malicious results/messages/links plus credential sentinels. A credential/client in DOM, message, console or bundle; escaped navigation; missing CSP/sandbox; or leaked listener is release-blocking.
 12. **Negotiated URL interaction.** Against the final SDK and two clients, prove capability absence, initiating-subject mismatch, forwarded link, same email/different issuer, prefetch/crawler, expiry, stale impact, replay, concurrency and lost notification. Only one canonical effect/receipt may exist and `GET` must remain inert.
 13. **Packed beta.6 successor artifacts.** Build only after P0 from a clean final commit, run the closed candidate matrix and recompute every identity. Until that exists, no statement about current packed behavior is verified.
-14. **Protected external governance.** Security-owner/deputy notification drill, protected environment approval, OIDC/npm provenance and registry byte equality require authorized external execution. Failure blocks publication but does not block local repairs.
+14. **Protected external governance.** Named solo ownership/licensing review, protected
+    environment approval, OIDC/npm provenance and registry byte equality require authorized
+    external execution. Independent review remains a stable-release gate. Failure blocks
+    publication but does not block local repairs.
 
 ## 14. Remediation roadmap
 
