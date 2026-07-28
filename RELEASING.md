@@ -262,17 +262,18 @@ Before the coordinated prerelease, the npm package owner must configure
 allow `npm publish`, protect the `bcn-auth-staging` and `npm-release`
 environments and release-tag pattern, set npm publishing access to **Require
 two-factor authentication and disallow tokens**, revoke existing automation
-write tokens, and enable private vulnerability reporting. Record the Security
-Owner and the human who reviewed package licensing and metadata; one solo
-maintainer may fill both roles. Those are external release blockers, not
+write tokens, and enable private vulnerability reporting. The protected run
+records `governanceMode: solo-maintainer`, the human tag actor, checked-out
+commit author, tag, and source commit. It does not invent a deputy, separate
+licensing reviewer, notification drill, or independent review. npm account
+configuration and real staging credentials are external release blockers, not
 defaults the repository can silently provide.
 
-The `npm-release` approver (which may be the solo owner for a prerelease) must
-withhold approval until the release record for
-the downloaded artifact hash contains the empty production-like rehearsal,
-separate `bcn-auth-staging` race report, synthetic-advisory notification and
-expiry drill, forward-fix timeline, and no unresolved P0/P1 finding. The record
-must state explicitly when no independent audit occurred; independent approval
+The solo owner must not let the `npm-release` jobs proceed until the release
+record for the downloaded artifact hash contains the empty production-like
+rehearsal, separate `bcn-auth-staging` race report, and no unresolved P0/P1
+finding. The record must state explicitly that no independent audit occurred;
+independent approval
 remains mandatory before stable auth publication. Repository tests cannot
 manufacture cloud, delivery, or human review evidence; a missing record blocks
 publication.
