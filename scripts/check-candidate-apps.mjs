@@ -251,16 +251,32 @@ function prepareCompanionCandidates(mainManifest) {
 }
 
 function prepareFixtureCompanionCandidate(packageId, suppliedTarball, sourceManifest, label) {
-  if (packageId !== 'mcp' || !suppliedTarball) {
-    throw new Error(`${label}: reviewed MCP companion tarball is required`)
-  }
+  if (packageId !== 'mcp') throw new Error(`${label}: unsupported fixture companion ${packageId}`)
   const descriptor = getPackageCertificationDescriptor(packageId)
-  const tarballPath = resolve(repoRoot, suppliedTarball)
+  const packageRoot = resolve(repoRoot, descriptor.packageDirectory)
+  let tarballPath
+  let filename
+  if (suppliedTarball) {
+    tarballPath = resolve(repoRoot, suppliedTarball)
+    filename = tarballPath.split(/[\\/]/u).at(-1)
+  } else {
+    run('pnpm', ['run', 'prepack'], { cwd: packageRoot })
+    const packResult = JSON.parse(
+      run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', scratchDir], {
+        cwd: packageRoot,
+        capture: true,
+      }),
+    )
+    if (!Array.isArray(packResult) || packResult.length !== 1 || !packResult[0]?.filename) {
+      throw new Error(`${label}: MCP companion must produce exactly one tarball`)
+    }
+    filename = packResult[0].filename
+    tarballPath = join(scratchDir, filename)
+  }
   const stats = existsSync(tarballPath) ? lstatSync(tarballPath) : undefined
   if (!stats?.isFile() || stats.isSymbolicLink()) {
-    throw new Error(`${label}: supplied MCP companion must be a regular tarball`)
+    throw new Error(`${label}: MCP companion must be a regular tarball`)
   }
-  const filename = tarballPath.split(/[\\/]/u).at(-1)
   const extractedDir = join(scratchDir, `companion-${descriptor.id}-${label}`)
   mkdirSync(extractedDir)
   run('tar', ['-xzf', tarballPath, '-C', extractedDir])

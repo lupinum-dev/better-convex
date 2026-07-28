@@ -240,8 +240,8 @@ pnpm test:mcp-conformance
 That command runs the complete OAuth/MCP evidence and the selected protocol
 scenarios in one fixture lifecycle, using the freshly issued least-scope bearer
 internally. Do not run `test:mcp-auth` first and do not run both commands against
-one deployment; either run consumes it. This validates the locked RC request
-envelope with the official beta.5 client and retains the older official
+one deployment; either run consumes it. This validates the stable-SDK request
+envelope with the official server package and retains the older official
 conformance package only for its published `2025-11-25` scenarios. It is not
 OAuth certification or OAuth conformance.
 
@@ -298,7 +298,7 @@ pnpm typecheck
 pnpm build
 ```
 
-The supported tuple is exact: Better Auth and OAuth Provider `1.7.0-rc.1`,
+The supported tuple is exact: Better Auth and OAuth Provider `1.7.0-rc.2`,
 Convex `1.42.2`, Kysely `0.28.17`, Better Convex Nuxt `0.8.0-beta.21`,
 `@better-convex/mcp@0.1.0-beta.9`, and official MCP server SDK
-`2.0.0-beta.5`. Kysely `0.29.2` is not compatible with this pinned beta adapter tuple.
+`2.0.0`. Kysely `0.29.2` is not compatible with this pinned beta adapter tuple.
