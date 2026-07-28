@@ -6,14 +6,14 @@ replace the RFC's product decisions.
 
 ## Working state
 
-| Field                 | Value                                                                                                     |
-| --------------------- | --------------------------------------------------------------------------------------------------------- |
-| Current phase         | Phase 9 exact immutable candidate preparation after documentation completion                              |
-| Current task          | `P9-014`; produce and certify the beta.21/beta.9 package candidate set                                    |
-| Last verified commit  | BCN dependency tuple `55ba0395`; Ginko OAuth hard cut `d038cb55`, evidence `5f346426`                     |
-| Next executable tasks | commit the bounded Nitro advisory decision; certify MCP; certify the Vue/Nuxt set                         |
-| Baseline release      | `better-convex-nuxt@0.7.0-beta.1`, tag `v0.7.0-beta.1`, commit `a6e76f1f61a483de5dbd3a19003ab35abcf75fad` |
-| Ledger rule           | At most one task is `in_progress`; `done` requires its named proof                                        |
+| Field                 | Value                                                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Current phase         | Final MCP reconciliation before fresh immutable beta.22/beta.10 certification                                                     |
+| Current task          | `P1-015`; blocked on the official final `2026-07-28` specification, changelog, and matching stable conformance scenarios          |
+| Last verified commit  | BCN `03fc33e4`; Ginko `4fe0ca8d`; exact hosted Ginko source rehearsal run `30346762924`                                           |
+| Next executable tasks | Reconcile the published final MCP contract; reserve-check and certify beta.22/beta.10; update Ginko's one compatibility authority |
+| Baseline release      | `better-convex-nuxt@0.7.0-beta.1`, tag `v0.7.0-beta.1`, commit `a6e76f1f61a483de5dbd3a19003ab35abcf75fad`                         |
+| Ledger rule           | At most one task is `in_progress`; `done` requires its named proof                                                                |
 
 ## External and human blockers
 
@@ -21,7 +21,7 @@ replace the RFC's product decisions.
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------- |
 | `EXT-002` | Protected `bcn-auth-staging` deployment/host evidence and `npm-release` human approval require authorized operators and secrets.                                                                                                                   | Phase 0 publication and later protected releases | Local, packed, and non-secret staging preparation |
 | `EXT-003` | Stable split SDK `2.0.0` is published, but the official `2026-07-28` specification/changelog and matching stable conformance scenarios are not. Stable API and final compliance claims remain prohibited until those publications are reconciled.  | `P1-013`, `P1-015`, stable MCP claims            | Stable-SDK package, consumer, and contract work   |
-| `EXT-004` | Ginko protected deployment, production MCP cutover, and final live compatibility run require explicit operator authority and deployment credentials. Local work on the authorized stabilization branch remains allowed.                            | Protected Ginko evidence and final cutover       | Local source/exact-package Ginko proof            |
+| `EXT-004` | Ginko's dedicated disposable deployment and protected environment are prepared. The final live compatibility run and production MCP cutover still require published final Better Convex artifacts and explicit operator authority.                 | Protected Ginko evidence and final cutover       | Local source/exact-package Ginko proof            |
 | `EXT-005` | Repository rename, npm publication, dist-tag movement, production deployment, and external-provider configuration require explicit owner authorization at the relevant phase.                                                                      | Phase 4+ external mutations                      | Build, test, pack, and decision evidence          |
 | `EXT-006` | Stable MCP Apps admission needs compatible real-host evidence and upstream control over the exact Apps SDK's unconditional browser logging. Local different-origin, exact-package, hostile-message, disclosure, and fallback evidence is complete. | `P9-006`; stable Vue MCP App claim               | Base Vue/Nuxt/MCP work and experimental App use   |
 
@@ -165,6 +165,8 @@ remain gated rather than implied stable contracts.
 | 2026-07-25 | `P9-013` documentation boundary | MCP docs tests, generated API surface check, workspace alignment, and production docs build with 348 prerendered routes; `internal/evidence/vnext-documentation-boundaries-2026-07-25.md` | Nuxt, Vue, MCP, MCP Apps, interaction, and Tasks boundaries are truthful; `/docs/get-started/plain-vue` is built; final MCP and stable Apps claims remain gated. |
 | 2026-07-25 | failed Vue/Nuxt beta.19 and MCP beta.7 candidates | Exact package lanes and isolated npm Nuxt consumer; `internal/evidence/vnext-beta19-clean-consumer-failure-2026-07-25.md` | Clean npm resolution drifted package-owned `@nuxt/kit` to 4.5.0 and introduced vulnerable `brace-expansion@2.1.2`; the gate failed closed, all three unpublished coordinates are retired, and beta.20/beta.8 are reserved. |
 | 2026-07-25 | `55ba0395`; failed Vue/Nuxt beta.20 and MCP beta.8 coordinated set | Full 1,895-test release matrix, exact isolated npm consumer, installed dependency/call-path trace, and `internal/evidence/vnext-beta20-nitro-advisory-boundary-2026-07-25.md` | Exact `@nuxt/kit` pinning passed but Nitro 2.13.4 independently retained `archiver@7` and `brace-expansion@2.1.2`; the vulnerable parser is reachable only from the Azure build preset with constant `**/*`, so one exact 30-day exception is admitted and beta.21/beta.9 are reserved. |
+| 2026-07-28 | `03fc33e4`; final-SDK and release-resumption checkpoint | Stable split SDK, combined SDK, Apps, Inspector, package/consumer contracts, full `pnpm run check`, and full `pnpm verify` | Stable SDK bytes pass 169 files/1,996 tests, 253 ASVS controls, 242-component SBOM, builds, packed consumers, and release gates. Protected publication can resume safely after a verified first-package bootstrap; beta.21/beta.9 remain superseded evidence rather than final candidates. |
+| 2026-07-28 | Ginko `4fe0ca8d`; hosted run `30346762924` | Exact Better Convex source tarballs; full 186-file/1,236-test check; pnpm packed production consumer; production audit; hosted repository, packed-consumer, and audit gates | Ginko's source rehearsal is green against BCN `03fc33e4`. Its dedicated `dev:adamant-mandrill-185` deployment and tag-restricted `ginko-release` environment have matching URLs and a deployment-scoped key; final registry-only candidate staging remains gated on beta.22/beta.10. |
 
 ## Status vocabulary
 
