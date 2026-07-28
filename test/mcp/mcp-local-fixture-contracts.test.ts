@@ -87,7 +87,13 @@ describe('self-contained MCP OAuth fixture contracts', () => {
     expect(fixtureSource).toContain(
       "['-xzf', mcpReleaseTarball, '--strip-components=1', '-C', installedMcp]",
     )
-    expect(fixtureSource).toContain("await symlink(root, installedModule, 'dir')")
+    expect(fixtureSource).toContain(
+      "cp(join(root, 'dist'), join(installedModule, 'dist'), { recursive: true })",
+    )
+    expect(fixtureSource).toContain(
+      "cp(join(root, 'package.json'), join(installedModule, 'package.json'))",
+    )
+    expect(fixtureSource).not.toContain("await symlink(root, installedModule, 'dir')")
     expect(fixtureSource).toContain("name === '@better-convex/mcp' && mcpReleaseTarball")
     expect(fixtureSource).not.toMatch(/(?:npm|pnpm)[^\n]+\bpack\b/u)
   })
@@ -142,7 +148,9 @@ describe('self-contained MCP OAuth fixture contracts', () => {
       "const installedModule = join(modules, 'better-convex-nuxt')",
     )
     const buildCall = fixtureSource.indexOf('await ensureWorkspacePackageBuild()')
-    const workspaceLink = fixtureSource.indexOf("await symlink(root, installedModule, 'dir')")
+    const workspaceCopy = fixtureSource.indexOf(
+      "cp(join(root, 'dist'), join(installedModule, 'dist'), { recursive: true })",
+    )
 
     for (const index of [
       prepare,
@@ -151,7 +159,7 @@ describe('self-contained MCP OAuth fixture contracts', () => {
       componentAccess,
       installedModule,
       buildCall,
-      workspaceLink,
+      workspaceCopy,
     ]) {
       expect(index).toBeGreaterThan(-1)
     }
@@ -159,9 +167,9 @@ describe('self-contained MCP OAuth fixture contracts', () => {
     expect(build).toBeLessThan(moduleAccess)
     expect(build).toBeLessThan(componentAccess)
     expect(installedModule).toBeLessThan(buildCall)
-    expect(buildCall).toBeLessThan(workspaceLink)
-    expect(moduleAccess).toBeLessThan(workspaceLink)
-    expect(componentAccess).toBeLessThan(workspaceLink)
+    expect(buildCall).toBeLessThan(workspaceCopy)
+    expect(moduleAccess).toBeLessThan(workspaceCopy)
+    expect(componentAccess).toBeLessThan(workspaceCopy)
   })
 
   it('randomizes concurrent fixture ports and narrowly retries idempotent environment OCC writes', () => {

@@ -216,7 +216,11 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
     }
   } else {
     await ensureWorkspacePackageBuild()
-    await symlink(root, installedModule, 'dir')
+    await mkdir(installedModule, { mode: 0o700 })
+    await Promise.all([
+      cp(join(root, 'dist'), join(installedModule, 'dist'), { recursive: true }),
+      cp(join(root, 'package.json'), join(installedModule, 'package.json')),
+    ])
   }
   if (mcpReleaseTarball) {
     const installedMcp = join(modules, '@better-convex/mcp')
