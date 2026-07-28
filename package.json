@@ -169,7 +169,7 @@
     "test:browser": "nuxt-module-build prepare && vitest run --project=browser",
     "test:e2e": "node scripts/run-e2e.mjs",
     "test:e2e:full": "node scripts/run-e2e.mjs --full",
-    "test:auth-adapter": "nuxt-module-build prepare && vitest run --project=auth-adapter",
+    "test:auth-adapter": "nuxt-module-build build --stub && nuxt-module-build prepare && vitest run --project=auth-adapter",
     "test:auth-cloud-staging": "node scripts/run-auth-cloud-staging.mjs",
     "test:auth-concurrency": "node scripts/run-auth-concurrency.mjs && node scripts/run-oauth-transport-quota.mjs && node scripts/run-oauth-code-concurrency.mjs",
     "test:auth-export-sentinels": "node scripts/run-auth-export-sentinels.mjs",
