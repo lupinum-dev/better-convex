@@ -45,6 +45,9 @@ const {
       authenticated: undefined as
         | ((token: string, user: { id: string; name?: string }) => void)
         | undefined,
+      sessionChanged: undefined as
+        | ((sessionToken: string | null, errorMessage: string | null) => void)
+        | undefined,
     },
     authErrorState: { value: null as string | null },
     clearNuxtDataMock: vi.fn(),
@@ -90,9 +93,11 @@ vi.mock('../../src/runtime/auth/better-auth-browser-adapter', () => ({
       _client: unknown,
       callbacks: {
         authenticated(token: string, user: { id: string; name?: string }): void
+        sessionChanged(sessionToken: string | null, errorMessage: string | null): void
       },
     ) => {
       adapterCallbacks.authenticated = callbacks.authenticated
+      adapterCallbacks.sessionChanged = callbacks.sessionChanged
       return {
         dispose: vi.fn(),
         failClosed: vi.fn(),
@@ -141,6 +146,7 @@ describe('auth client app-facing state projection', () => {
     snapshot.identityGeneration = 1
     snapshot.error = null
     adapterCallbacks.authenticated = undefined
+    adapterCallbacks.sessionChanged = undefined
 
     createAuthClientMock.mockReturnValue({
       signIn: {},
@@ -155,7 +161,9 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('projects a later canonical identity failure into Nuxt auth state', async () => {
-    vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
+    vi.stubGlobal('window', {
+      location: { origin: 'https://app.example.com' },
+    })
     const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
       setup(nuxtApp: {
         provide: ReturnType<typeof vi.fn>
@@ -205,7 +213,9 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('purges a mismatched initial browser identity once, then purges later generations once', async () => {
-    vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
+    vi.stubGlobal('window', {
+      location: { origin: 'https://app.example.com' },
+    })
     snapshot.settled = false
     snapshot.identityKey = 'user:bob'
     snapshot.identityGeneration = 0
@@ -215,7 +225,10 @@ describe('auth client app-facing state projection', () => {
     }
     const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
       setup(nuxtApp: {
-        payload: { data: Record<string, unknown>; state: Record<string, unknown> }
+        payload: {
+          data: Record<string, unknown>
+          state: Record<string, unknown>
+        }
         provide: ReturnType<typeof vi.fn>
         vueApp: {
           onUnmount: ReturnType<typeof vi.fn>
@@ -255,5 +268,65 @@ describe('auth client app-facing state projection', () => {
     expect(queryErrorsState.value).toEqual({
       'convex:status:list:auth:none': { public: true },
     })
+  })
+
+  it('settles integrated sign-in only after Convex confirms the new identity', async () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://app.example.com' },
+    })
+    snapshot.settled = true
+    snapshot.identityKey = 'anonymous'
+    snapshot.identityGeneration = 1
+    const email = vi.fn(async () => ({
+      data: { token: 'session-new' },
+      error: null,
+    }))
+    createAuthClientMock.mockReturnValue({
+      signIn: { email },
+      signUp: {},
+      signOut: vi.fn(async () => ({ data: { success: true }, error: null })),
+    })
+
+    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
+      setup(nuxtApp: {
+        provide: ReturnType<typeof vi.fn>
+        vueApp: {
+          onUnmount: ReturnType<typeof vi.fn>
+          use: ReturnType<typeof vi.fn>
+        }
+      }): void
+    }
+    plugin.setup({
+      provide: vi.fn(),
+      vueApp: {
+        onUnmount: vi.fn(),
+        use: vi.fn(),
+      },
+    })
+    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
+      integratedSignIn: {
+        email(): Promise<unknown>
+      }
+    }
+    let settled = false
+    const signIn = controller.integratedSignIn.email().then(() => {
+      settled = true
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    adapterCallbacks.sessionChanged?.('session-new', null)
+
+    snapshot.settled = false
+    snapshot.identityKey = 'user:alice'
+    snapshot.identityGeneration = 2
+    for (const subscriber of subscribers) subscriber()
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    snapshot.settled = true
+    for (const subscriber of subscribers) subscriber()
+    await signIn
+    expect(settled).toBe(true)
+    expect(email).toHaveBeenCalledTimes(1)
   })
 })

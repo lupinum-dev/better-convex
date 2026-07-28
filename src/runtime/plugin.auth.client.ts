@@ -57,6 +57,7 @@ export default defineNuxtPlugin({
     const authError = useState<string | null>('convex:authError', () => null)
     const pendingState = useConvexAuthPendingState()
     let synchronization: ReturnType<typeof createSessionSynchronization> | null = null
+    let latestSessionToken: string | null | undefined
     const adapter = createBetterAuthBrowserAdapter(
       authClient,
       {
@@ -71,8 +72,11 @@ export default defineNuxtPlugin({
           pendingState.value = false
         },
         sessionChanged(sessionToken, errorMessage) {
-          if (!synchronization) return
-          synchronization.observe(errorMessage ? null : sessionToken)
+          // The Better Auth cookie changing is necessary but not sufficient:
+          // the Vue runtime must still fetch and have Convex accept its JWT.
+          // Reconciliation is published from the settled runtime snapshot
+          // below so integrated auth cannot resolve in that security gap.
+          latestSessionToken = errorMessage ? null : sessionToken
         },
       },
       {
@@ -124,6 +128,9 @@ export default defineNuxtPlugin({
         identity.value = ANONYMOUS_IDENTITY
         authError.value = snapshot.error.message
         pendingState.value = false
+      }
+      if (snapshot.settled && latestSessionToken !== undefined) {
+        synchronization?.observe(snapshot.error ? null : latestSessionToken)
       }
     }
     const stopProtectedPayloadObservation =
