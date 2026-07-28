@@ -15,7 +15,7 @@ permissions:
 
 env:
   RELEASE_NODE_VERSION: '22.14.0'
-  RELEASE_NPM_VERSION: '11.5.1'
+  RELEASE_NPM_VERSION: '11.18.0'
 
 jobs:
   preview:

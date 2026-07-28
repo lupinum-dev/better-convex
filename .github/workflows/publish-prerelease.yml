@@ -15,7 +15,7 @@ permissions:
 env:
   BCN_STAGING_DIST_TAG: 'next-staging'
   RELEASE_NODE_VERSION: '22.14.0'
-  RELEASE_NPM_VERSION: '11.5.1'
+  RELEASE_NPM_VERSION: '11.18.0'
 
 jobs:
   build-candidates:

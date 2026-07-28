@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_NPM_VERSION: '11.18.0'
+
 jobs:
   secrets:
     runs-on: ubuntu-latest
@@ -100,7 +103,7 @@ jobs:
           node-version: '22.14.0'
           package-manager-cache: false
       - name: Install pinned release tooling
-        run: npm install --global npm@11.5.1 corepack@0.34.5 && corepack enable
+        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Install browser

@@ -133,6 +133,11 @@ async function stopProcess(child) {
 }
 
 async function ensureWorkspacePackageBuild() {
+  await runCommand('pnpm', ['--filter', '@better-convex/mcp', 'build'], {
+    cwd: root,
+    env: cleanEnvironment(),
+    secrets: [],
+  })
   await runCommand('pnpm', ['--filter', 'better-convex-vue', 'build'], {
     cwd: root,
     env: cleanEnvironment(),
@@ -149,6 +154,7 @@ async function ensureWorkspacePackageBuild() {
     secrets: [],
   })
   await Promise.all([
+    access(join(root, 'packages/mcp/dist/index.mjs')),
     access(join(root, 'packages/vue/dist/errors.mjs')),
     access(join(root, 'dist/module.mjs')),
     access(join(root, 'dist/runtime/convex-auth/component/convex.config.js')),
