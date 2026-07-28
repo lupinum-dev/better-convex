@@ -123,6 +123,8 @@ describe('self-contained MCP OAuth fixture contracts', () => {
     expect(fixtureSource).toContain('starterManifest.dependencies')
     expect(fixtureSource).toContain('starterManifest.devDependencies')
     expect(fixtureSource).toContain("dependencyNames.delete('better-convex-nuxt')")
+    expect(fixtureSource).toContain('const installedSource = await realpath(source)')
+    expect(fixtureSource).toContain("await symlink(installedSource, destination, 'dir')")
     expect(fixtureSource).toContain('await mkdir(dirname(destination),')
     expect(fixtureSource).not.toContain(
       "['better-auth', 'convex', 'kysely', 'nuxt', 'typescript', 'vue', 'vue-tsc']",

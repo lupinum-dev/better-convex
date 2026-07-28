@@ -198,9 +198,9 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
     if (name === '@better-convex/mcp' && mcpReleaseTarball) continue
     const source = join(root, 'node_modules', name)
     const destination = join(modules, name)
-    await access(source)
+    const installedSource = await realpath(source)
     await mkdir(dirname(destination), { mode: 0o700, recursive: true })
-    await symlink(source, destination, 'dir')
+    await symlink(installedSource, destination, 'dir')
   }
   const installedModule = join(modules, 'better-convex-nuxt')
   if (releaseTarball) {
