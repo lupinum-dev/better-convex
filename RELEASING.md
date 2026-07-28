@@ -256,6 +256,12 @@ This exception creates the package settings needed for OIDC. It is not a second
 recurring release lane, does not promote `latest`, and must not be used again
 once the trusted publisher exists. An agent must stop before the interactive
 2FA publication; the human owner performs and records that action.
+After the bootstrap, rerun the protected workflow from the same tag and source
+commit. Its static publication command detects that exact version, skips a
+second publish, and still requires the downloaded registry tarball to be
+byte-for-byte equal to the retained candidate. A lookup error other than an
+authoritative registry `E404`, an unexpected version, or unequal bytes fails
+closed.
 
 Before the coordinated prerelease, the npm package owner must configure
 `publish-prerelease.yml` as every existing package's only trusted publisher,

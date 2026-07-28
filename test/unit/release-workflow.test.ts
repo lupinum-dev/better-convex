@@ -229,6 +229,79 @@ describe('trusted prerelease workflow', () => {
     )
     expect(comparator.status).toBe(1)
     expect(comparator.stderr).toContain('Unknown package certification descriptor')
+
+    const publisher = spawnSync(
+      process.execPath,
+      ['scripts/publish-registry-package.mjs', '--package', 'unreviewed', '--tag', 'next-staging'],
+      { cwd: root, encoding: 'utf8' },
+    )
+    expect(publisher.status).toBe(1)
+    expect(publisher.stderr).toContain('Unknown package certification descriptor')
+  })
+
+  it('publishes only after an authoritative registry E404 and resumes exact versions', () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'bcn-registry-publish-'))
+    const fakeBin = join(temporaryDirectory, 'bin')
+    const fakeNpm = join(fakeBin, 'npm')
+    const executionLog = join(temporaryDirectory, 'executed.log')
+    const version = (JSON.parse(read('packages/vue/package.json')) as { version: string }).version
+    mkdirSync(fakeBin)
+    writeFileSync(
+      fakeNpm,
+      `#!/bin/sh
+if [ "$1" = "view" ]; then
+  if [ "$BCN_FAKE_NPM_MODE" = "present" ]; then
+    printf '"%s"\\n' "$BCN_FAKE_NPM_VERSION"
+    exit 0
+  fi
+  if [ "$BCN_FAKE_NPM_MODE" = "missing" ]; then
+    printf '{"error":{"code":"E404"}}\\n' >&2
+    exit 1
+  fi
+  printf '{"error":{"code":"E500"}}\\n' >&2
+  exit 1
+fi
+printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
+`,
+    )
+    chmodSync(fakeNpm, 0o755)
+
+    const runPublisher = (mode: string) =>
+      spawnSync(
+        process.execPath,
+        ['scripts/publish-registry-package.mjs', '--package', 'vue', '--tag', 'next-staging'],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            BCN_FAKE_NPM_LOG: executionLog,
+            BCN_FAKE_NPM_MODE: mode,
+            BCN_FAKE_NPM_VERSION: version,
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+          },
+        },
+      )
+
+    try {
+      const present = runPublisher('present')
+      expect(present.status, present.stderr).toBe(0)
+      expect(present.stdout).toContain('publication is skipped')
+      expect(existsSync(executionLog)).toBe(false)
+
+      const unavailable = runPublisher('unavailable')
+      expect(unavailable.status).toBe(1)
+      expect(unavailable.stderr).toContain('without an authoritative E404')
+      expect(existsSync(executionLog)).toBe(false)
+
+      const missing = runPublisher('missing')
+      expect(missing.status, missing.stderr).toBe(0)
+      expect(readFileSync(executionLog, 'utf8')).toContain(
+        `publish ${resolve(root, `.release-artifacts/vue/${version}/better-convex-vue-${version}.tgz`)} --tag next-staging --access public --registry https://registry.npmjs.org`,
+      )
+    } finally {
+      rmSync(temporaryDirectory, { force: true, recursive: true })
+    }
   })
 
   it('uses the one canonical preparation command in CI and preview workflows', () => {
@@ -342,12 +415,15 @@ describe('trusted prerelease workflow', () => {
     const publishRuns = oidcJobs.flatMap(({ job }) =>
       (job.steps ?? [])
         .map(normalizedRun)
-        .filter((run): run is string => run?.startsWith('npm publish ') ?? false),
+        .filter(
+          (run): run is string =>
+            run?.startsWith('node scripts/publish-registry-package.mjs ') ?? false,
+        ),
     )
     expect(publishRuns).toHaveLength(3)
     expect(
       publishRuns.every(
-        (run) => run.includes('--tag "$BCN_STAGING_DIST_TAG"') && run.includes('--access public'),
+        (run) => run.includes('--package ') && run.includes('--tag "$BCN_STAGING_DIST_TAG"'),
       ),
     ).toBe(true)
 

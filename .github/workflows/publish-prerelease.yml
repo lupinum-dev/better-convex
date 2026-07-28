@@ -279,13 +279,10 @@ jobs:
           path: ${{ steps.candidate_set.outputs.directory }}
       - name: Reverify the unchanged candidate set before first publication
         run: pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"
-      - name: Publish exact Vue bytes under the non-default staging tag
+      - name: Publish exact Vue bytes or resume after its verified package-name bootstrap
         env:
           NPM_CONFIG_PROVENANCE: 'true'
-        run: >-
-          npm publish "${{ steps.vue.outputs.tarball }}"
-          --tag "$BCN_STAGING_DIST_TAG"
-          --access public
+        run: node scripts/publish-registry-package.mjs --package vue --tag "$BCN_STAGING_DIST_TAG"
       - name: Compare Vue registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package vue
 
@@ -345,13 +342,10 @@ jobs:
           path: ${{ steps.candidate_set.outputs.directory }}
       - name: Reverify Nuxt bytes after the registry Vue gate
         run: node scripts/release.mjs verify "${{ steps.nuxt.outputs.evidence }}" --package nuxt
-      - name: Publish exact Nuxt bytes under the non-default staging tag
+      - name: Publish exact Nuxt bytes or resume after verified prior publication
         env:
           NPM_CONFIG_PROVENANCE: 'true'
-        run: >-
-          npm publish "${{ steps.nuxt.outputs.tarball }}"
-          --tag "$BCN_STAGING_DIST_TAG"
-          --access public
+        run: node scripts/publish-registry-package.mjs --package nuxt --tag "$BCN_STAGING_DIST_TAG"
       - name: Compare Nuxt registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package nuxt
 
@@ -382,13 +376,10 @@ jobs:
           path: ${{ steps.mcp.outputs.directory }}
       - name: Reverify MCP bytes before its separate publication lane
         run: node scripts/release.mjs verify "${{ steps.mcp.outputs.evidence }}" --package mcp
-      - name: Publish exact MCP bytes under the non-default staging tag
+      - name: Publish exact MCP bytes or resume after its verified package-name bootstrap
         env:
           NPM_CONFIG_PROVENANCE: 'true'
-        run: >-
-          npm publish "${{ steps.mcp.outputs.tarball }}"
-          --tag "$BCN_STAGING_DIST_TAG"
-          --access public
+        run: node scripts/publish-registry-package.mjs --package mcp --tag "$BCN_STAGING_DIST_TAG"
       - name: Compare MCP registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package mcp
 
