@@ -848,8 +848,10 @@ Residual risk:
 - lockout/reset, OAuth code, quota, and JWKS races;
 - zero-state cleanup proof;
 - protected npm trusted publishing and registry byte comparison;
-- named Security Owner and licensing reviewer (the same solo maintainer may fill both);
-- enabled private vulnerability reporting, with no claim of independent review.
+- enabled private vulnerability reporting;
+- protected-run evidence naming `governanceMode: solo-maintainer`, the human tag actor,
+  checked-out commit author, tag, and source commit, with no invented deputy, reviewer,
+  notification drill, or independent review.
 
 ### Before stable
 

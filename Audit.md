@@ -642,9 +642,10 @@ There is **no beta.6 candidate artifact** for the audited HEAD. Source version s
 - `pnpm check:asvs` fails because the evidence catalog references the deleted `src/runtime/server/mcp/proxy.ts`. Root `check` does not currently execute this check, while release verification does. Rebind the evidence to current enforcing code or delete the stale claim; never waive it.
 - Ginko cannot cold-install the declared candidate tuple because MCP is omitted and local links/source aliases substitute for candidate bytes (F-015).
 - Ginko's workflow trust boundary must be repaired before its green status is accepted as protected downstream evidence (F-016).
-- A named Security Owner, licensing review, protected environments, and npm publication
-  approval remain external governance blockers. A solo maintainer may own the prerelease
-  roles, but the release record must not claim independent review.
+- Protected environments and npm publication approval remain external governance
+  blockers. Prerelease governance uses the human tag actor and commit author as the
+  honest solo-maintainer record and does not claim a deputy, separate reviewer,
+  notification drill, or independent review.
 
 ### Required publication sequence
 
@@ -880,7 +881,7 @@ Do **not** solve these findings by adding:
 6. **Topology gate:** exactly one shipping MCP topology and one Ginko endpoint remain.
 7. **Artifact gate:** every public package has an exact immutable artifact tied to final source, installed-byte equality, production consumers, SBOM/SRI/content/fingerprint and no source/workspace substitution.
 8. **Standards gate:** claims name exact final/experimental versions truthfully; official final conformance and real clients support stable MCP claims.
-9. **Governance gate:** protected environment, security ownership, notification and publication authority are satisfied without bypass.
+9. **Governance gate:** protected environments and publication authority are satisfied without bypass, and the run records honest solo-maintainer ownership without fabricated personnel or drills.
 10. **Deletion gate:** old engines, parser/stream paths, topology, test globals, source aliases and stale release paths are removed—not hidden behind flags.
 
 ## 16. Final confidence statement

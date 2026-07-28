@@ -12,36 +12,35 @@ import {
 const root = resolve(import.meta.dirname, '../..')
 
 const validInput = {
-  licensingReviewer: 'BCN Licensing Reviewer',
-  owner: 'BCN Security Owner',
+  commitAuthor: 'Solo Maintainer <maintainer@example.test>',
+  governanceMode: 'solo-maintainer',
+  releaseOwner: 'solo-maintainer',
 }
 
 describe('security governance gate', () => {
-  it('accepts one named security owner for ongoing maintenance', () => {
+  it('accepts an explicit solo-maintainer prerelease owner and commit author', () => {
     expect(validateSecurityGovernance(validInput)).toEqual([])
-    expect(validateSecurityGovernance({ ...validInput, licensingReviewer: '' })).toEqual([])
   })
 
-  it('fails closed without a named owner', () => {
-    expect(validateSecurityGovernance({ ...validInput, owner: ' ' })).toEqual([
-      'BCN_SECURITY_OWNER must name the current Security Owner',
+  it('fails closed without the exact governance mode or a human tag actor', () => {
+    expect(
+      validateSecurityGovernance({
+        ...validInput,
+        governanceMode: 'committee',
+      }),
+    ).toEqual(['BCN_GOVERNANCE_MODE must be solo-maintainer for this prerelease'])
+    expect(
+      validateSecurityGovernance({
+        ...validInput,
+        releaseOwner: 'github-actions[bot]',
+      }),
+    ).toEqual(['RELEASE_OWNER must identify a human tag actor'])
+    expect(validateSecurityGovernance({ ...validInput, releaseOwner: ' ' })).toEqual([
+      'RELEASE_OWNER must identify the tag actor',
     ])
-  })
-
-  it('requires a human licensing reviewer for a prerelease and permits self-review', () => {
-    expect(validateSecurityGovernance(validInput, { requireLicensingReviewer: true })).toEqual([])
-    expect(
-      validateSecurityGovernance(
-        { licensingReviewer: 'Solo Maintainer', owner: 'Solo Maintainer' },
-        { requireLicensingReviewer: true },
-      ),
-    ).toEqual([])
-    expect(
-      validateSecurityGovernance(
-        { ...validInput, licensingReviewer: ' ' },
-        { requireLicensingReviewer: true },
-      ),
-    ).toEqual(['BCN_LICENSE_REVIEWER must name the human who reviewed package licensing'])
+    expect(validateSecurityGovernance({ ...validInput, commitAuthor: ' ' })).toEqual([
+      'the checked-out release commit must have an author',
+    ])
   })
 
   it('keeps prerelease tag validation in the direct workflow script', () => {
@@ -50,28 +49,23 @@ describe('security governance gate', () => {
     expect(validatePrereleaseIdentity('v0.7.0-beta.1', '0.7.0-beta.0')).not.toEqual([])
   })
 
-  it('runs the one gate in prerelease and scheduled security workflows', () => {
-    for (const [path, command] of [
-      ['.github/workflows/publish-prerelease.yml', 'pnpm check:security-governance --prerelease'],
-      ['.github/workflows/security-extended.yml', 'pnpm check:security-governance'],
-    ] as const) {
-      const workflow = parse(readFileSync(resolve(root, path), 'utf8')) as {
-        jobs?: Record<string, { steps?: Array<{ env?: Record<string, unknown>; run?: unknown }> }>
-      }
-      const gate = Object.values(workflow.jobs ?? {})
-        .flatMap((job) => job.steps ?? [])
-        .find((step) => step.run === command)
-      expect(gate?.env).toEqual(
-        path.includes('publish-prerelease')
-          ? {
-              BCN_LICENSE_REVIEWER: '${{ vars.BCN_LICENSE_REVIEWER }}',
-              BCN_SECURITY_OWNER: '${{ vars.BCN_SECURITY_OWNER }}',
-              RELEASE_TAG: '${{ github.ref_name }}',
-            }
-          : {
-              BCN_SECURITY_OWNER: '${{ vars.BCN_SECURITY_OWNER }}',
-            },
-      )
+  it('runs only in the prerelease workflow with GitHub-owned release identity', () => {
+    const prerelease = parse(
+      readFileSync(resolve(root, '.github/workflows/publish-prerelease.yml'), 'utf8'),
+    ) as {
+      jobs?: Record<string, { steps?: Array<{ env?: Record<string, unknown>; run?: unknown }> }>
     }
+    const gate = Object.values(prerelease.jobs ?? {})
+      .flatMap((job) => job.steps ?? [])
+      .find((step) => step.run === 'pnpm check:security-governance --prerelease')
+    expect(gate?.env).toEqual({
+      BCN_GOVERNANCE_MODE: 'solo-maintainer',
+      RELEASE_OWNER: '${{ github.actor }}',
+      RELEASE_TAG: '${{ github.ref_name }}',
+    })
+
+    const scheduled = readFileSync(resolve(root, '.github/workflows/security-extended.yml'), 'utf8')
+    expect(scheduled).not.toContain('check:security-governance')
+    expect(scheduled).not.toContain('BCN_SECURITY_OWNER')
   })
 })

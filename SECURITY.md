@@ -155,12 +155,12 @@ An XSS flaw, compromised same-origin dependency, stolen bearer, compromised OAut
 
 Operators own TLS termination, host validation, sibling-subdomain isolation, trusted-ingress configuration, secret storage and rotation, provider and recovery ceremonies, CSP, authorization rules, backups, logging access, dependency response, and incident handling. Preview deployments need separate data, origins, and secrets.
 
-A public prerelease requires a named BCN Security Owner, enabled private vulnerability
-reporting, and a human review of package licensing and metadata. A solo maintainer may
-perform both named roles; this records responsibility without pretending that an
-independent review occurred. Stable auth publication additionally requires an operational
-backup contact and an independent human auth/security reviewer who was not the primary
-implementer.
+A public prerelease uses the honest solo-maintainer model: private vulnerability
+reporting is enabled, and the protected release run records the human tag actor,
+checked-out commit author, tag, and source commit. The maintainer remains responsible
+for package licensing and metadata without inventing a separate reviewer, deputy,
+notification drill, or independent review. Independent review and operational backup
+remain future stable-release criteria; they are not prerelease gates.
 
 The project describes releases as hardened against a documented threat model. It does not claim complete or universal security.
 

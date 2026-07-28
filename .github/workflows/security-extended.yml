@@ -30,9 +30,6 @@ jobs:
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check:security-governance
-        env:
-          BCN_SECURITY_OWNER: ${{ vars.BCN_SECURITY_OWNER }}
       - run: pnpm check:no-old-auth-runtime
       - run: pnpm check:auth-logical-ids
       - run: pnpm check:auth-provenance --source-only

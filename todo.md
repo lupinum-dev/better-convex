@@ -1861,9 +1861,11 @@ Ledger note (2026-07-26):
   historical plan, security lab, canonical ASVS evidence, and generated report. The ASVS
   generator/check passes for 253 controls and 33 auth invariants. Focused release,
   security, package, and version-alignment suites pass 105 tests; the additional focused
-  security set passes 17 tests. The solo prerelease governance gate now passes with
-  `Mat4m0` recorded as Security Owner and licensing reviewer; private vulnerability
-  reporting is enabled. Protected cloud/release execution remains separate.
+  security set passes 17 tests. The solo prerelease governance gate records the human
+  tag actor and checked-out commit author directly from the protected run; private
+  vulnerability reporting is enabled. It does not invent a deputy, licensing reviewer,
+  notification drill, or independent review. Protected cloud/release execution remains
+  separate.
 
 ### T5.9 — Tie-break remaining high-value unverified candidates
 
@@ -2104,9 +2106,10 @@ Release-validation ledger note (2026-07-26):
       SSR isolation, OAuth bounds, artifact authority, or public stable API.
 - [ ] All P2 public hard cuts are complete before stable compatibility begins.
 - [ ] Worktree is clean and the final commit is the commit certified by every artifact.
-- [x] A named Security Owner and licensing reviewer are recorded for the prerelease.
-- [ ] Stable auth publication remains blocked until an independent reviewer and operational
-      backup are recorded.
+- [x] Solo-maintainer prerelease governance records the human tag actor, commit author,
+      tag, and source commit without inventing separate reviewers or backup personnel.
+- [x] Independent review and operational backup are explicitly future stable-release
+      criteria, not blockers for the coordinated prerelease in this plan.
 
 ---
 

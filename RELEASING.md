@@ -115,8 +115,9 @@ matrix requires the exact same-commit MCP companion artifact.
 The protected `v*-*` tag must point at the reviewed commit and exactly match the
 prerelease version in the root `package.json`. The workflow then:
 
-1. requires named Security Owner and licensing-reviewer repository variables;
-   a solo maintainer may fill both roles for a prerelease;
+1. records `governanceMode: solo-maintainer`, the human tag actor, the checked-out
+   commit author, tag, and source commit in the protected run; it does not invent
+   a deputy, licensing reviewer, notification drill, or independent review;
 2. uses Node `22.14.0`, npm `11.5.1`, the Corepack-verified
    `pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1`,
    a frozen pnpm lock, and commit-pinned GitHub Actions;
