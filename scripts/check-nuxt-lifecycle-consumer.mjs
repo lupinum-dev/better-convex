@@ -100,6 +100,10 @@ function assertDeepEqual(actual, expected, label) {
   }
 }
 
+function boundedBrowserDiagnostics(values) {
+  return values.slice(-8).map((value) => value.slice(-1_000))
+}
+
 function productionJavaScript(outputDirectory) {
   const publicDirectory = join(outputDirectory, 'public')
   const files = []
@@ -196,17 +200,37 @@ try {
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
   const pageErrors = []
+  const consoleMessages = []
   const consoleErrors = []
   const failedRequests = []
+  const failedResponses = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('console', (message) => {
+    consoleMessages.push(`[${message.type()}] ${message.text()}`)
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
   page.on('requestfailed', (request) => {
     failedRequests.push(`${request.method()} ${request.url()}`)
   })
+  page.on('response', (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`)
+  })
   await page.goto(origin, { waitUntil: 'networkidle' })
-  await page.waitForFunction(() => Boolean(window.__betterConvexNuxtLifecycle))
+  try {
+    await page.waitForFunction(() => Boolean(window.__betterConvexNuxtLifecycle))
+  } catch (error) {
+    throw new Error(
+      `Lifecycle probe did not mount: ${JSON.stringify({
+        consoleMessages: boundedBrowserDiagnostics(consoleMessages),
+        consoleErrors: boundedBrowserDiagnostics(consoleErrors),
+        failedRequests: boundedBrowserDiagnostics(failedRequests),
+        failedResponses: boundedBrowserDiagnostics(failedResponses),
+        html: (await page.content()).slice(-4_000),
+        pageErrors: boundedBrowserDiagnostics(pageErrors),
+      })}`,
+      { cause: error },
+    )
+  }
 
   const invoke = (method, ...args) =>
     page.evaluate(

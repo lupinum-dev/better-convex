@@ -198,7 +198,10 @@ export function createConvexPaginatedQueryState<
     return {
       resultData,
       resolvePromise:
-        resolveImmediately || hydrated !== undefined || error.value
+        resolveImmediately ||
+        hydrated !== undefined ||
+        options?.initialData !== undefined ||
+        error.value
           ? Promise.resolve()
           : subscribe
             ? result.firstPageSettled()

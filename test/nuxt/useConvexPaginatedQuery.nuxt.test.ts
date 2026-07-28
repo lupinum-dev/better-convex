@@ -141,6 +141,31 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
+  it('resolves explicit initial data while retaining the live first-page subscription', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:explicit-initial-page')
+    const { result, wrapper } = await captureInNuxt(
+      () =>
+        useConvexPaginatedQuery(
+          query,
+          {},
+          {
+            auth: 'none',
+            initialData: [],
+            initialNumItems: 2,
+          },
+        ),
+      { owner: makeMockOwner(primary) },
+    )
+
+    const queryResult = await result
+
+    expect(queryResult.results.value).toEqual([])
+    expect(primary.calls.query).toHaveLength(0)
+    expect(primary.calls.onUpdate).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('resolves an awaited hydrated first page without another query', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:hydrated-first-page-settlement')
