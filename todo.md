@@ -691,6 +691,11 @@ Ledger note (2026-07-28):
 - The official split client/server/core packages reached stable `2.0.0`; the active
   package graph hard-cuts to those exact bytes. Apps moved to `1.7.5`, its compatible
   combined SDK to `1.30.0`, and stable Inspector to `1.0.1`.
+- The Inspector registry later advanced to `2.0.0` on 2026-07-28 at
+  `07:33:59.696Z` with integrity
+  `sha512-uEoeEG7/+ZbrvccPF3EsgbfjcyJ3bWVJXT4pcZtpmDUhA0zdK4T4Tuj2oUphi2Huwl66LqVdo3Mx2PkS2SUHXA==`.
+  It remains final-reconciliation input rather than a reason to churn the verified
+  package graph while the specification and stable conformance set are still absent.
 - The stable wire delta is explicit: `serverInfo` remains result metadata and
   per-request `clientInfo` is optional. The contract suite now proves both present and
   absent client identity metadata without a version branch or alias.
