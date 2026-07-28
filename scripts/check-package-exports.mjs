@@ -209,7 +209,10 @@ const allowedVirtualImports = new Set(checkerProfile.sourceScan.allowedVirtualIm
 const allowedVirtualPrefixes = checkerProfile.sourceScan.allowedVirtualPrefixes
 const allowedFrameworkPackages = new Set(checkerProfile.sourceScan.allowedFrameworkPackages)
 const checkedExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs', '.vue'])
-const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.nuxt', '.git', 'dist'])
+// Build output is inspected from the packed artifact below. Scanning Nuxt's
+// generated browser chunks as authored source misclassifies strings and
+// bundler loaders as package imports.
+const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.nuxt', '.output', '.git', 'dist'])
 
 function collectFiles(target) {
   if (!existsSync(target)) return []

@@ -364,6 +364,16 @@ describe('packed artifact path classes', () => {
       writeArtifact(packageRoot, 'dist/runtime/devtools/ui/dist/index.html', '<!doctype html>')
       writeArtifact(
         packageRoot,
+        'dist/runtime/devtools/ui/dist/_nuxt/generated.js',
+        "const loader = process.getBuiltinModule; import(runtimeChunk); import '#entry'\n",
+      )
+      writeArtifact(
+        packageRoot,
+        'dist/runtime/devtools/ui/dist/_nuxt/generated-leak.js',
+        "const sourcePath = '/Users/example/private/source.ts'\n",
+      )
+      writeArtifact(
+        packageRoot,
         'dist/unlinked-loader.mjs',
         "require.call(null, 'hidden-package')\n",
       )
@@ -415,6 +425,8 @@ describe('packed artifact path classes', () => {
       expect(failures).toContain(
         'packed dist/unlinked-loader.mjs uses unsupported module loader: require',
       )
+      expect(failures).not.toContainEqual(expect.stringContaining('_nuxt/generated.js'))
+      expect(failures).toContainEqual(expect.stringContaining('_nuxt/generated-leak.js'))
       expect(failures).toContainEqual(
         expect.stringMatching(
           /packed dist\/unlinked-invalid\.mjs has TypeScript parse error\(s\): TS8008/u,

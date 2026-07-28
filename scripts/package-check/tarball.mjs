@@ -71,6 +71,11 @@ function checkNodeModuleSyntax(file, relativePath, failures) {
   }
 }
 
+function isBuiltDevtoolsBrowserAsset(packageDir, file) {
+  const relativePath = relative(packageDir, file)
+  return relativePath.startsWith('dist/runtime/devtools/ui/dist/')
+}
+
 // ---------------------------------------------------------------------------
 
 /** Host-provided runtime/declaration specifiers legitimately unresolved by
@@ -423,7 +428,11 @@ export function scanExtractedTarball(packageId, packageDir, failures, manifest) 
   const distDir = join(packageDir, 'dist')
   const files = walkDir(distDir, new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.json']))
   checkArtifactJavaScriptProgram(
-    files.filter((file) => file.endsWith('.js') || file.endsWith('.mjs')),
+    files.filter(
+      (file) =>
+        (file.endsWith('.js') || file.endsWith('.mjs')) &&
+        !isBuiltDevtoolsBrowserAsset(packageDir, file),
+    ),
     failures,
     packageDir,
   )
@@ -447,6 +456,12 @@ export function scanExtractedTarball(packageId, packageDir, failures, manifest) 
     for (const match of text.matchAll(ALIAS_RE)) {
       failures.push(`packed ${rel} contains an app-specific alias leak: "${match[1] ?? match[0]}"`)
     }
+
+    // These files are the opaque static output of Nuxt's browser bundler, not
+    // Node/package modules. They still receive archive, path, size, absolute
+    // path, and alias-leak checks; their module graph is owned by the generated
+    // HTML/chunk manifest and exercised by the packed consumer.
+    if (isBuiltDevtoolsBrowserAsset(packageDir, file)) continue
 
     if (extname(file) === '.json') continue
     if (file.endsWith('.cjs')) {
