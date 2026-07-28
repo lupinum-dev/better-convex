@@ -71,7 +71,7 @@ describe('vNext MCP SDK transport laboratory', () => {
     }
   })
 
-  it('matches the beta.5 re-sealed 2026 result identity and optional client-info envelope', async () => {
+  it('matches the stable 2026 result identity and optional client-info envelope', async () => {
     const serverInfo = { name: 'better-convex-vnext-modern-lab', version: '0.0.0' }
     const handler = createMcpHandler(
       () => {

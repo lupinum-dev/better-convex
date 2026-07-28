@@ -90,6 +90,13 @@ try {
       2,
     )}\n`,
   )
+  writeFileSync(
+    join(scratchRoot, 'pnpm-workspace.yaml'),
+    `minimumReleaseAgeExclude:
+  - '${mcpCandidate.manifest.name}@${mcpCandidate.manifest.version}'
+  - '${vueCandidate.manifest.name}@${vueCandidate.manifest.version}'
+`,
+  )
   run('pnpm', ['install', '--frozen-lockfile=false', '--ignore-scripts'])
   run('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts', '--offline'])
 

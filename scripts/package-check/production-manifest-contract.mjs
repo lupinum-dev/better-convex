@@ -272,7 +272,7 @@ function assertVueManifestShapes(manifest, profile) {
     !isDeepStrictEqual(manifest.peerDependenciesMeta, {
       '@modelcontextprotocol/ext-apps': { optional: true },
     }) ||
-    manifest.peerDependencies['@modelcontextprotocol/ext-apps'] !== '1.7.4'
+    manifest.peerDependencies['@modelcontextprotocol/ext-apps'] !== '1.7.5'
   ) {
     throw new Error('Vue package may mark only the exact official MCP Apps SDK peer as optional.')
   }

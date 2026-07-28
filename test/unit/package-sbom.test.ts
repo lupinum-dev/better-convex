@@ -101,7 +101,7 @@ describe('package-profile SBOM generation', () => {
       ])
       expect(sbom.components.find(({ name }) => name === '@modelcontextprotocol/ext-apps')).toEqual(
         expect.objectContaining({
-          version: '1.7.4',
+          version: '1.7.5',
           properties: [
             {
               name: 'better-convex-vue:dependency-kind',

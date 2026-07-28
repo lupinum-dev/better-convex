@@ -12,10 +12,10 @@ import {
   redactEvidenceLog,
 } from '../../scripts/mcp-auth-contracts.mjs'
 import {
-  MCP_RC_EXPECTED_CAPABILITIES,
-  MCP_RC_PROTOCOL_VERSION,
+  MCP_EXPECTED_CAPABILITIES,
+  MCP_PROTOCOL_VERSION,
   normalizeEvidenceOrigin,
-  runRcProtocolConformance,
+  runProtocolConformance,
 } from '../../scripts/run-mcp-conformance.mjs'
 
 describe('pinned MCP client runner contracts', () => {
@@ -77,10 +77,10 @@ describe('pinned MCP client runner contracts', () => {
 })
 
 describe('official MCP conformance runner contracts', () => {
-  it('proves the locked RC stateless envelope and exact advertised capability surface', async () => {
+  it('proves the stable SDK stateless envelope and exact advertised capability surface', async () => {
     const handler = createMcpHandler(
       () => {
-        const server = new McpServer({ name: 'bcn-rc-conformance', version: '1.0.0' })
+        const server = new McpServer({ name: 'bcn-conformance', version: '1.0.0' })
         server.registerTool(
           'search_notes',
           { inputSchema: z.object({ query: z.string().optional() }) },
@@ -92,15 +92,15 @@ describe('official MCP conformance runner contracts', () => {
     )
     try {
       await expect(
-        runRcProtocolConformance({
-          bearer: 'rc-conformance-bearer',
+        runProtocolConformance({
+          bearer: 'conformance-bearer',
           endpoint: 'https://notes.example.test/mcp',
           fetch: (input: RequestInfo | URL, init?: RequestInit) =>
             handler.fetch(new Request(input, init)),
         }),
       ).resolves.toEqual({
-        capabilities: MCP_RC_EXPECTED_CAPABILITIES,
-        protocolVersion: MCP_RC_PROTOCOL_VERSION,
+        capabilities: MCP_EXPECTED_CAPABILITIES,
+        protocolVersion: MCP_PROTOCOL_VERSION,
         requests: 2,
         toolCount: 1,
       })

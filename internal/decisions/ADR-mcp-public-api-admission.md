@@ -1,10 +1,11 @@
 # ADR: minimal MCP public API admission
 
 - Status: accepted for experimental prerelease
-- Date: 2026-07-22
-- Protocol basis: locked `2026-07-28` release candidate
-- SDK basis: exact `@modelcontextprotocol/server@2.0.0-beta.5`
-- Stabilization gate: final specification and SDK reconciliation under `G-001`
+- Date: 2026-07-22; amended 2026-07-28
+- Protocol basis: `2026-07-28` stable TypeScript SDK wire contract
+- SDK basis: exact `@modelcontextprotocol/server@2.0.0`
+- Stabilization gate: final specification, changelog, and matching conformance reconciliation under
+  `G-001`
 
 ## Outcome
 
@@ -165,10 +166,15 @@ and `P5-012` must prove the exact mechanism before the Better Auth adapter is ad
 - configurable transport framework: begin with reviewed fixed bounds; admit options only from executed
   consumer evidence.
 
-## RC status
+## 2026-07-28 reconciliation status
 
-The official project still labels the TypeScript v2 SDK as in development and the `2026-07-28`
-specification as a release candidate. The RC is locked, so experimental implementation can proceed, but
-the package must remain prerelease and must not claim final compliance. The final spec, changelog, SDK
-bytes, and conformance suite are re-read after publication; material differences are handled by a hard
-cut, not a compatibility shim.
+The official split TypeScript packages reached stable `2.0.0` on 2026-07-28 and describe their schemas
+as the final wire revision. Better Convex hard-cuts to those exact bytes: result-owned `serverInfo`
+metadata remains required and per-request `clientInfo` is optional. No beta-version branch or alias is
+retained.
+
+The official specification repository still exposes only the `2026-07-28-RC` release, and stable
+`@modelcontextprotocol/conformance@0.1.16` still has no `2026-07-28` scenarios. The package therefore
+remains experimental and may not claim final protocol certification. When the final specification,
+changelog, and matching scenarios publish, material differences are handled by one further hard cut,
+not a compatibility shim.

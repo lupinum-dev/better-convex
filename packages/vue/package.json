@@ -35,7 +35,7 @@
     "ohash": "^2.0.11"
   },
   "devDependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.4",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
     "convex": "1.42.2",
     "typescript": "~5.9.3",
     "unbuild": "3.6.1",
@@ -43,7 +43,7 @@
     "vue-tsc": "^3.3.7"
   },
   "peerDependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.4",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
     "convex": "1.42.2",
     "vue": "^3.5.0"
   },

@@ -673,13 +673,36 @@ Ledger note (2026-07-26):
 
 ### T2.6 — Final official MCP reconciliation
 
-- [ ] Wait for the final `2026-07-28` specification and compatible official TypeScript
-      SDK bytes; do not infer finality from the current beta dist-tag.
-- [ ] Diff final protocol/SDK behavior against the private RC interaction and Apps
-      implementation.
-- [ ] Delete obsolete RC types and code instead of retaining compatibility.
-- [ ] Run official conformance, neutral consumer, maintained starter, packed tarball,
-      and real-host evidence.
+- [x] Pin the compatible stable split TypeScript SDK `2.0.0`, combined SDK `1.30.0`,
+      Apps `1.7.5`, and stable Inspector `1.0.1` from exact registry bytes.
+- [ ] Wait for the official final `2026-07-28` specification, changelog, and matching
+      stable conformance scenarios; do not infer their publication from stable SDK
+      availability.
+- [x] Diff the stable SDK's final-wire behavior against the private RC implementation.
+- [x] Delete obsolete executable RC constants and helpers instead of retaining
+      compatibility.
+- [x] Run focused stable-SDK contracts, package builds/typechecks, neutral packed MCP,
+      and packed Vue MCP App consumers.
+- [ ] Run matching official conformance, the coordinated beta.10 maintained starter,
+      protected deployment, Inspector, and documented real-host evidence.
+
+Ledger note (2026-07-28):
+
+- The official split client/server/core packages reached stable `2.0.0`; the active
+  package graph hard-cuts to those exact bytes. Apps moved to `1.7.5`, its compatible
+  combined SDK to `1.30.0`, and stable Inspector to `1.0.1`.
+- The stable wire delta is explicit: `serverInfo` remains result metadata and
+  per-request `clientInfo` is optional. The contract suite now proves both present and
+  absent client identity metadata without a version branch or alias.
+- The complete MCP project passes 55 tests; package builds/typechecks, workspace
+  alignment, Vue SBOM/export checks, exact temporary packed MCP consumer, and exact
+  packed Vue MCP App consumer pass.
+- The official spec repository still publishes only `2026-07-28-RC`; the final spec
+  URL/tag are absent, and stable conformance `0.1.16` has no `2026-07-28` scenarios.
+  T2.6 therefore remains open and beta.22/beta.10 certification is not authorized.
+- Exact versions, integrities, commands, hard cuts, and remaining external gates are
+  recorded in
+  `internal/evidence/mcp-stable-sdk-reconciliation-2026-07-28.md`.
 
 ### T2.7 — Narrow remaining MCP auth surface
 

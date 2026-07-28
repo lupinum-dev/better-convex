@@ -24,9 +24,9 @@ describe('MCP package documentation', () => {
     expect(guide).toContain(
       `\`@modelcontextprotocol/server@${mcpManifest.dependencies['@modelcontextprotocol/server']}\``,
     )
-    expect(normalizedGuide).toContain('locked MCP `2026-07-28` release candidate')
+    expect(normalizedGuide).toContain('stable `@modelcontextprotocol/server@2.0.0` contract')
     expect(normalizedGuide).toContain(
-      'Do not describe that release candidate or this package as stable',
+      'Do not describe the protocol or this package as finally certified',
     )
   })
 

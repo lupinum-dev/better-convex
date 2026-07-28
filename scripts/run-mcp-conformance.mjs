@@ -9,34 +9,34 @@ import { normalizeEvidenceOrigin } from './mcp-auth-contracts.mjs'
 
 export { normalizeEvidenceOrigin } from './mcp-auth-contracts.mjs'
 
-export const MCP_RC_PROTOCOL_VERSION = '2026-07-28'
-export const MCP_RC_EXPECTED_CAPABILITIES = Object.freeze(['tools'])
+export const MCP_PROTOCOL_VERSION = '2026-07-28'
+export const MCP_EXPECTED_CAPABILITIES = Object.freeze(['tools'])
 
-const MAX_RC_RESPONSE_BYTES = 256 * 1024
+const MAX_RESPONSE_BYTES = 256 * 1024
 
-async function readRcResponse(response) {
+async function readProtocolResponse(response) {
   const text = await response.text()
-  if (Buffer.byteLength(text) > MAX_RC_RESPONSE_BYTES) {
-    throw new Error('MCP RC conformance response exceeded its bound')
+  if (Buffer.byteLength(text) > MAX_RESPONSE_BYTES) {
+    throw new Error('MCP conformance response exceeded its bound')
   }
   try {
     return text ? JSON.parse(text) : null
   } catch {
-    throw new Error(`MCP RC conformance response was not JSON (${response.status})`)
+    throw new Error(`MCP conformance response was not JSON (${response.status})`)
   }
 }
 
-function requireRcError(evidence, status, code, description) {
+function requireProtocolError(evidence, status, code, description) {
   if (
     evidence.status !== status ||
     evidence.body?.error?.code !== code ||
     evidence.body?.result !== undefined
   ) {
-    throw new Error(`MCP RC ${description} did not fail with ${status}/${code}`)
+    throw new Error(`MCP ${description} did not fail with ${status}/${code}`)
   }
 }
 
-function requireRcResultMetadata(result, description) {
+function requireResultMetadata(result, description) {
   const serverInfo = result?._meta?.['io.modelcontextprotocol/serverInfo']
   if (
     result?.resultType !== 'complete' ||
@@ -44,24 +44,24 @@ function requireRcResultMetadata(result, description) {
     typeof serverInfo.name !== 'string' ||
     typeof serverInfo.version !== 'string'
   ) {
-    throw new Error(`MCP RC ${description} omitted complete server identity metadata`)
+    throw new Error(`MCP ${description} omitted complete server identity metadata`)
   }
 }
 
-export async function runRcProtocolConformance({ bearer, endpoint, fetch = globalThis.fetch }) {
+export async function runProtocolConformance({ bearer, endpoint, fetch = globalThis.fetch }) {
   if (typeof bearer !== 'string' || !bearer || bearer.length > 16_384) {
-    throw new Error('MCP RC conformance bearer is invalid')
+    throw new Error('MCP conformance bearer is invalid')
   }
   const resource = new URL(endpoint)
   if (resource.pathname !== '/mcp' || resource.search || resource.hash) {
-    throw new Error('MCP RC conformance endpoint is invalid')
+    throw new Error('MCP conformance endpoint is invalid')
   }
   const exchanges = []
   const observedFetch = async (input, init) => {
     const request = new Request(input, init)
     const requestBody = JSON.parse(await request.clone().text())
     const response = await fetch(request)
-    const responseBody = await readRcResponse(response.clone())
+    const responseBody = await readProtocolResponse(response.clone())
     exchanges.push({
       requestBody,
       requestHeaders: new Headers(request.headers),
@@ -76,8 +76,8 @@ export async function runRcProtocolConformance({ bearer, endpoint, fetch = globa
     requestInit: { headers: { authorization: `Bearer ${bearer}` } },
   })
   const client = new Client(
-    { name: 'better-convex-rc-conformance', version: '1.0.0' },
-    { versionNegotiation: { mode: { pin: MCP_RC_PROTOCOL_VERSION } } },
+    { name: 'better-convex-conformance', version: '1.0.0' },
+    { versionNegotiation: { mode: { pin: MCP_PROTOCOL_VERSION } } },
   )
   try {
     await client.connect(transport)
@@ -87,14 +87,14 @@ export async function runRcProtocolConformance({ bearer, endpoint, fetch = globa
   }
 
   if (exchanges.length !== 2) {
-    throw new Error(`MCP RC conformance observed ${exchanges.length} requests; expected 2`)
+    throw new Error(`MCP conformance observed ${exchanges.length} requests; expected 2`)
   }
   const [discover, tools] = exchanges
   if (
     discover.requestBody?.method !== 'server/discover' ||
     tools.requestBody?.method !== 'tools/list'
   ) {
-    throw new Error('MCP RC conformance did not use stateless discovery and tool listing')
+    throw new Error('MCP conformance did not use stateless discovery and tool listing')
   }
   for (const [description, exchange] of [
     ['discovery', discover],
@@ -102,34 +102,36 @@ export async function runRcProtocolConformance({ bearer, endpoint, fetch = globa
   ]) {
     if (
       exchange.status !== 200 ||
-      exchange.requestHeaders.get('mcp-protocol-version') !== MCP_RC_PROTOCOL_VERSION ||
+      exchange.requestHeaders.get('mcp-protocol-version') !== MCP_PROTOCOL_VERSION ||
       exchange.requestHeaders.get('mcp-method') !== exchange.requestBody.method ||
       exchange.requestHeaders.has('mcp-session-id') ||
       exchange.responseHeaders.has('mcp-session-id')
     ) {
-      throw new Error(`MCP RC ${description} violated the stateless HTTP envelope`)
+      throw new Error(`MCP ${description} violated the stateless HTTP envelope`)
     }
     const meta = exchange.requestBody.params?._meta
     if (
-      meta?.['io.modelcontextprotocol/protocolVersion'] !== MCP_RC_PROTOCOL_VERSION ||
-      typeof meta?.['io.modelcontextprotocol/clientInfo']?.name !== 'string' ||
+      meta?.['io.modelcontextprotocol/protocolVersion'] !== MCP_PROTOCOL_VERSION ||
       !meta?.['io.modelcontextprotocol/clientCapabilities']
     ) {
-      throw new Error(`MCP RC ${description} omitted required per-request metadata`)
+      throw new Error(`MCP ${description} omitted required per-request metadata`)
     }
-    requireRcResultMetadata(exchange.responseBody?.result, description)
+    const clientInfo = meta?.['io.modelcontextprotocol/clientInfo']
+    if (clientInfo !== undefined && typeof clientInfo?.name !== 'string') {
+      throw new Error(`MCP ${description} supplied invalid optional client identity metadata`)
+    }
+    requireResultMetadata(exchange.responseBody?.result, description)
   }
 
   const discoverResult = discover.responseBody.result
   const capabilities = Object.keys(discoverResult.capabilities ?? {}).sort()
   if (
-    JSON.stringify(discoverResult.supportedVersions) !==
-      JSON.stringify([MCP_RC_PROTOCOL_VERSION]) ||
-    JSON.stringify(capabilities) !== JSON.stringify(MCP_RC_EXPECTED_CAPABILITIES) ||
+    JSON.stringify(discoverResult.supportedVersions) !== JSON.stringify([MCP_PROTOCOL_VERSION]) ||
+    JSON.stringify(capabilities) !== JSON.stringify(MCP_EXPECTED_CAPABILITIES) ||
     discoverResult.ttlMs !== 0 ||
     discoverResult.cacheScope !== 'private'
   ) {
-    throw new Error('MCP RC discovery advertised an unsupported or cache-unsafe capability')
+    throw new Error('MCP discovery advertised an unsupported or cache-unsafe capability')
   }
   const toolsResult = tools.responseBody.result
   if (
@@ -143,7 +145,7 @@ export async function runRcProtocolConformance({ bearer, endpoint, fetch = globa
         tool.inputSchema.$schema !== 'https://json-schema.org/draft/2020-12/schema',
     )
   ) {
-    throw new Error('MCP RC tool listing escaped the private zero-TTL schema profile')
+    throw new Error('MCP tool listing escaped the private zero-TTL schema profile')
   }
 
   const raw = async (body, headers) => {
@@ -154,23 +156,33 @@ export async function runRcProtocolConformance({ bearer, endpoint, fetch = globa
           accept: 'application/json',
           authorization: `Bearer ${bearer}`,
           'content-type': 'application/json',
-          'mcp-protocol-version': MCP_RC_PROTOCOL_VERSION,
+          'mcp-protocol-version': MCP_PROTOCOL_VERSION,
           ...headers,
         },
         method: 'POST',
       }),
     )
     const evidence = {
-      body: await readRcResponse(response),
+      body: await readProtocolResponse(response),
       status: response.status,
     }
     if (JSON.stringify(evidence).includes(bearer)) {
-      throw new Error('MCP RC conformance response exposed its bearer')
+      throw new Error('MCP conformance response exposed its bearer')
     }
     return evidence
   }
-  requireRcError(await raw(tools.requestBody, {}), 400, -32020, 'missing method header')
-  requireRcError(
+  const withoutClientInfo = structuredClone(tools.requestBody)
+  delete withoutClientInfo.params?._meta?.['io.modelcontextprotocol/clientInfo']
+  const optionalClientInfo = await raw(withoutClientInfo, { 'mcp-method': 'tools/list' })
+  if (
+    optionalClientInfo.status !== 200 ||
+    optionalClientInfo.body?.result?.resultType !== 'complete'
+  ) {
+    throw new Error('MCP server rejected a request without optional clientInfo metadata')
+  }
+
+  requireProtocolError(await raw(tools.requestBody, {}), 400, -32020, 'missing method header')
+  requireProtocolError(
     await raw(tools.requestBody, { 'mcp-method': 'prompts/list' }),
     400,
     -32020,
@@ -183,7 +195,7 @@ export async function runRcProtocolConformance({ bearer, endpoint, fetch = globa
   ]) {
     const unsupported = structuredClone(tools.requestBody)
     unsupported.method = method
-    requireRcError(
+    requireProtocolError(
       await raw(unsupported, { 'mcp-method': method }),
       404,
       -32601,
@@ -197,7 +209,7 @@ export async function runRcProtocolConformance({ bearer, endpoint, fetch = globa
     name: toolsResult.tools[0].name,
     arguments: {},
   }
-  requireRcError(
+  requireProtocolError(
     await raw(call, { 'mcp-method': 'tools/call', 'mcp-name': 'wrong-tool-name' }),
     400,
     -32020,
@@ -206,7 +218,7 @@ export async function runRcProtocolConformance({ bearer, endpoint, fetch = globa
 
   return Object.freeze({
     capabilities: Object.freeze(capabilities),
-    protocolVersion: MCP_RC_PROTOCOL_VERSION,
+    protocolVersion: MCP_PROTOCOL_VERSION,
     requests: exchanges.length,
     toolCount: toolsResult.tools.length,
   })
@@ -218,12 +230,12 @@ export async function runConformanceEvidence({ bearer, origin: originValue }) {
   const origin = normalizeEvidenceOrigin(originValue)
   const upstream = `${origin}/mcp`
 
-  const rc = await runRcProtocolConformance({ bearer, endpoint: upstream })
+  const protocol = await runProtocolConformance({ bearer, endpoint: upstream })
   console.log(
-    `MCP ${rc.protocolVersion} RC conformance passed (${rc.requests} stateless requests, ${rc.toolCount} tools, capabilities: ${rc.capabilities.join(', ')}).`,
+    `MCP ${protocol.protocolVersion} stable-SDK contract check passed (${protocol.requests} stateless requests, ${protocol.toolCount} tools, capabilities: ${protocol.capabilities.join(', ')}).`,
   )
   console.log(
-    `@modelcontextprotocol/conformance@0.1.16 has no ${MCP_RC_PROTOCOL_VERSION} server scenarios; legacy protocol conformance is intentionally not relayed into the RC-only server.`,
+    `@modelcontextprotocol/conformance@0.1.16 has no ${MCP_PROTOCOL_VERSION} server scenarios; legacy protocol conformance is intentionally not relayed into the stateless server.`,
   )
 }
 

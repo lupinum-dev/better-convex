@@ -1,9 +1,9 @@
 # ADR: minimal Vue MCP App lifecycle admission
 
 - Status: amended after stabilization audit; experimental only
-- Date checked: 2026-07-22
+- Date checked: 2026-07-28
 - Extension basis: MCP Apps `2026-01-26`
-- SDK basis: exact `@modelcontextprotocol/ext-apps@1.7.4`
+- SDK basis: exact `@modelcontextprotocol/ext-apps@1.7.5`
 - Decision task: `P7-001`
 
 ## Decision
@@ -53,14 +53,11 @@ it must not add more surface without another admission result.
 
 ## Exact authority
 
-Registry and repository checks on 2026-07-22 show:
+Registry checks on 2026-07-28 show:
 
 ```text
-@modelcontextprotocol/ext-apps latest: 1.7.4
-published: 2026-06-05
-package.json SHA-256: 5f238c430e0c3a62f8be2a918a05da0d09ccf369b695d85237afd92a81f194df
-app.js SHA-256: 5d73952817a00799fdca8ed96b6d693da5b7005e1a8871f0aab3864359c4dc8b
-app.d.ts SHA-256: 7b2fda78a2914c9baba53496f1dbac3ae5baeb94bf5b1e4f4520c5b3eb0a4b19
+@modelcontextprotocol/ext-apps latest: 1.7.5
+registry integrity: sha512-TjPH2S2y5UEGKhmI6+XGFuqfqOV4ppe1x6DA3txnUaEWkgtA4G5vo14jGKFZmegdkZ1H4QMLyujLvoU1BEdnAg==
 ```
 
 MCP Apps is an official extension. The framework-neutral SDK exports `App`,
@@ -70,8 +67,8 @@ official Vue example constructs the App on mount and does not close it on Vue
 scope disposal.
 
 The Apps server helper is peer-coupled to combined
-`@modelcontextprotocol/sdk@^1.29.0`, while `@better-convex/mcp` uses split
-`@modelcontextprotocol/server@2.0.0-beta.5`. Do not import the server helper,
+`@modelcontextprotocol/sdk@^1.29.0` (resolved here as exact `1.30.0`), while
+`@better-convex/mcp` uses split `@modelcontextprotocol/server@2.0.0`. Do not import the server helper,
 cast between majors, ship both server runtimes, or add a compatibility wrapper.
 Server-side Apps metadata remains direct official v2 registration until an
 official compatible helper exists. `P7-004` must record that hard cut rather
