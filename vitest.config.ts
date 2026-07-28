@@ -47,6 +47,13 @@ export default defineConfig({
 
       // The shared adapter's pure model and its convex-test backend contract.
       {
+        resolve: {
+          alias: {
+            'better-convex-nuxt/convex-auth/test': fileURLToPath(
+              new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
+            ),
+          },
+        },
         test: {
           name: 'auth-adapter',
           include: [
