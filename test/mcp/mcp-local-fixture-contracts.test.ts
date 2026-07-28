@@ -212,6 +212,12 @@ describe('self-contained MCP OAuth fixture contracts', () => {
     expect(returnedFixture).not.toMatch(/betterAuthSecrets|proxyIpSecret/u)
   })
 
+  it('includes only bounded redacted Nuxt output when startup fails', () => {
+    expect(fixtureSource).toContain('`${message}; Nuxt output: ${safeLog(nuxtLog(), secrets)}`')
+    expect(fixtureSource).toContain('return redactEvidenceLog(value, secrets).slice(-8_000)')
+    expect(fixtureSource).not.toContain('Nuxt output: ${nuxtLog()}')
+  })
+
   it('proves the mounted-provider Convex token with the official verifier and exact token class', () => {
     expect(runnerSource).toContain('/api/auth/convex/token')
     expect(runnerSource).toContain('verifyBearerToken as verifyOfficialJwt')

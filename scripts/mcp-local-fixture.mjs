@@ -506,11 +506,16 @@ export async function startLocalMcpOAuthFixture(options = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const nuxtLog = capture(nuxt)
-    await waitUntil(async () => {
-      if (nuxt.exitCode !== null)
-        throw new Error(`Nuxt exited early: ${safeLog(nuxtLog(), secrets)}`)
-      return fetch(origin, { redirect: 'manual' }).then((response) => response.status === 200)
-    }, 'Nuxt MCP OAuth fixture')
+    try {
+      await waitUntil(async () => {
+        if (nuxt.exitCode !== null)
+          throw new Error(`Nuxt exited early: ${safeLog(nuxtLog(), secrets)}`)
+        return fetch(origin, { redirect: 'manual' }).then((response) => response.status === 200)
+      }, 'Nuxt MCP OAuth fixture')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Nuxt MCP OAuth fixture failed'
+      throw new Error(`${message}; Nuxt output: ${safeLog(nuxtLog(), secrets)}`, { cause: error })
+    }
 
     const signup = await fetch(`${origin}/api/auth/sign-up/email`, {
       body: JSON.stringify({ email, name: 'MCP Gate', password }),
