@@ -694,16 +694,21 @@ Ledger note (2026-07-28):
 - The Inspector registry later advanced to `2.0.0` on 2026-07-28 at
   `07:33:59.696Z` with integrity
   `sha512-uEoeEG7/+ZbrvccPF3EsgbfjcyJ3bWVJXT4pcZtpmDUhA0zdK4T4Tuj2oUphi2Huwl66LqVdo3Mx2PkS2SUHXA==`.
-  It remains final-reconciliation input rather than a reason to churn the verified
-  package graph while the specification and stable conformance set are still absent.
+  Its published manifest still depends on split SDK `2.0.0-beta.5` packages, while
+  the split client/server/core `latest` tags are stable `2.0.0`. It remains
+  final-reconciliation input rather than a reason to create a mixed SDK graph or churn
+  the verified package graph while the specification and stable conformance set are
+  still absent.
 - The stable wire delta is explicit: `serverInfo` remains result metadata and
   per-request `clientInfo` is optional. The contract suite now proves both present and
   absent client identity metadata without a version branch or alias.
 - The complete MCP project passes 55 tests; package builds/typechecks, workspace
   alignment, Vue SBOM/export checks, exact temporary packed MCP consumer, and exact
   packed Vue MCP App consumer pass.
-- The official spec repository still publishes only `2026-07-28-RC`; the final spec
-  URL/tag are absent, and stable conformance `0.1.16` has no `2026-07-28` scenarios.
+- A direct official-repository tag query at the current checkpoint still publishes
+  only `2026-07-28-RC` (`9d700ed62dcf86cb77475c9b81930611a9182f46`);
+  the final spec URL/tag are absent, and stable conformance `0.1.16` has no
+  `2026-07-28` scenarios.
   T2.6 therefore remains open and beta.22/beta.10 certification is not authorized.
 - Exact versions, integrities, commands, hard cuts, and remaining external gates are
   recorded in
