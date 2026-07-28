@@ -15,7 +15,7 @@ const starter = join(root, 'starters/mcp-oauth-agent')
 const convexCli = join(root, 'node_modules/convex/bin/main.js')
 const nuxtCli = join(root, 'node_modules/nuxt/bin/nuxt.mjs')
 const MAX_LOG_BYTES = 256 * 1024
-const START_TIMEOUT_MS = 60_000
+const START_TIMEOUT_MS = 120_000
 
 const copiedArtifactNames = new Set([
   '--port',

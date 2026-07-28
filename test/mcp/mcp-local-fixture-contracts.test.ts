@@ -173,6 +173,7 @@ describe('self-contained MCP OAuth fixture contracts', () => {
   })
 
   it('randomizes concurrent fixture ports and narrowly retries idempotent environment OCC writes', () => {
+    expect(fixtureSource).toContain('const START_TIMEOUT_MS = 120_000')
     expect(fixtureSource).toContain('availableRandomPort')
     expect(fixtureSource).toContain('randomInt(12_000, 44_000)')
     expect(fixtureSource).not.toContain('randomBytes(2).readUInt16BE(0)')
