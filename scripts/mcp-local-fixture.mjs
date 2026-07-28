@@ -133,6 +133,11 @@ async function stopProcess(child) {
 }
 
 async function ensureWorkspacePackageBuild() {
+  await runCommand('pnpm', ['--filter', 'better-convex-vue', 'build'], {
+    cwd: root,
+    env: cleanEnvironment(),
+    secrets: [],
+  })
   await runCommand('pnpm', ['exec', 'nuxt-module-build', 'prepare'], {
     cwd: root,
     env: cleanEnvironment(),
@@ -144,6 +149,7 @@ async function ensureWorkspacePackageBuild() {
     secrets: [],
   })
   await Promise.all([
+    access(join(root, 'packages/vue/dist/errors.mjs')),
     access(join(root, 'dist/module.mjs')),
     access(join(root, 'dist/runtime/convex-auth/component/convex.config.js')),
   ])
@@ -465,12 +471,17 @@ export async function startLocalMcpOAuthFixture(options = {}) {
     ]) {
       await setFixtureEnvironment(name, value)
     }
-    await waitUntil(() => {
-      if (convex.exitCode !== null) {
-        throw new Error(`Convex exited before deployment: ${safeLog(convexLog(), secrets)}`)
-      }
-      return convexLog().includes('Convex functions ready!')
-    }, 'MCP OAuth Convex function deployment')
+    try {
+      await waitUntil(() => {
+        if (convex.exitCode !== null) {
+          throw new Error(`Convex exited before deployment: ${safeLog(convexLog(), secrets)}`)
+        }
+        return convexLog().includes('Convex functions ready!')
+      }, 'MCP OAuth Convex function deployment')
+    } catch (error) {
+      console.error(`[mcp-oauth-fixture] Convex output: ${safeLog(convexLog(), secrets)}`)
+      throw error
+    }
     await runCli(['run', 'auth:rotateSigningKey', '{}'])
 
     const nuxtEnvironment = {

@@ -138,8 +138,12 @@ describe('self-contained MCP OAuth fixture contracts', () => {
   })
 
   it('builds uncommitted workspace dist before a non-release fixture resolves package exports', () => {
+    const vueBuild = fixtureSource.indexOf("['--filter', 'better-convex-vue', 'build']")
     const prepare = fixtureSource.indexOf("['exec', 'nuxt-module-build', 'prepare']")
     const build = fixtureSource.indexOf("['exec', 'nuxt-module-build', 'build']")
+    const vueErrorsAccess = fixtureSource.indexOf(
+      "access(join(root, 'packages/vue/dist/errors.mjs'))",
+    )
     const moduleAccess = fixtureSource.indexOf("access(join(root, 'dist/module.mjs'))")
     const componentAccess = fixtureSource.indexOf(
       "access(join(root, 'dist/runtime/convex-auth/component/convex.config.js'))",
@@ -153,8 +157,10 @@ describe('self-contained MCP OAuth fixture contracts', () => {
     )
 
     for (const index of [
+      vueBuild,
       prepare,
       build,
+      vueErrorsAccess,
       moduleAccess,
       componentAccess,
       installedModule,
@@ -163,7 +169,9 @@ describe('self-contained MCP OAuth fixture contracts', () => {
     ]) {
       expect(index).toBeGreaterThan(-1)
     }
+    expect(vueBuild).toBeLessThan(prepare)
     expect(prepare).toBeLessThan(build)
+    expect(build).toBeLessThan(vueErrorsAccess)
     expect(build).toBeLessThan(moduleAccess)
     expect(build).toBeLessThan(componentAccess)
     expect(installedModule).toBeLessThan(buildCall)
