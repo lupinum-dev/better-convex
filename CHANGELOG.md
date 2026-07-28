@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Hard-cut the supported Nuxt tuple to the patched `4.5.1` release with
+  `@nuxt/kit@4.5.1`, `@nuxt/schema@4.5.1`, Vite `8.1.5`, and Vue `3.5.40`.
+- Delete the workspace-wide Vite override; maintained consumers now declare the
+  coordinated runtime directly.
+
 ## v0.8.0-beta.21
 
 - Retire beta.20 after the exact clean npm consumer again failed closed on

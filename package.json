@@ -186,7 +186,7 @@
   },
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.0-rc.2",
-    "@nuxt/kit": "4.4.8",
+    "@nuxt/kit": "4.5.1",
     "better-convex-vue": "0.8.0-beta.21",
     "convex-helpers": "0.1.114",
     "defu": "^6.1.5",
@@ -206,7 +206,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@nuxt/eslint-config": "^1.16.0",
     "@nuxt/module-builder": "^1.0.2",
-    "@nuxt/schema": "^4.4.8",
+    "@nuxt/schema": "4.5.1",
     "@nuxt/test-utils": "^4.0.3",
     "@types/node": "22.20.1",
     "@vitejs/plugin-vue": "^6.0.8",
@@ -219,13 +219,13 @@
     "jose": "6.2.3",
     "kysely": "0.28.17",
     "mcp-remote": "0.1.38",
-    "nuxt": "4.4.8",
+    "nuxt": "4.5.1",
     "oxfmt": "^0.59.0",
     "pkg-pr-new": "0.0.78",
     "playwright": "^1.61.1",
     "tar": "7.5.22",
     "typescript": "~5.9.3",
-    "vite": "7.3.6",
+    "vite": "8.1.5",
     "vitest": "^4.1.8",
     "vitest-browser-vue": "^2.1.0",
     "vue-tsc": "^3.3.7",
@@ -235,7 +235,7 @@
     "better-auth": "1.7.0-rc.2",
     "convex": "1.42.2",
     "kysely": "0.28.17",
-    "nuxt": "4.4.8"
+    "nuxt": "4.5.1"
   },
   "engines": {
     "node": "^22.12.0 || ^24.11.0 || >=26.0.0"

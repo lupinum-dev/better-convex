@@ -14,7 +14,7 @@
   "dependencies": {
     "@lupinum/ginko-content": "0.3.2",
     "@lupinum/ginko-docs": "0.2.3",
-    "nuxt": "^4.4.8"
+    "nuxt": "4.5.1"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.12.1",

@@ -48,7 +48,7 @@ See [limitations and trade-offs](https://better-convex-nuxt.vercel.app/docs/over
 ## Install
 
 ```bash
-pnpm add better-convex-nuxt convex@1.42.2 nuxt@4.4.8 better-auth@1.7.0-rc.1 kysely@0.28.17
+pnpm add better-convex-nuxt convex@1.42.2 nuxt@4.5.1 better-auth@1.7.0-rc.1 kysely@0.28.17
 ```
 
 ```ts [nuxt.config.ts]

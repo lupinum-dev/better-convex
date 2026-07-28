@@ -189,7 +189,7 @@ export default defineNuxtModule<ModuleOptions>({
     name: 'better-convex-nuxt',
     configKey: 'convex',
     compatibility: {
-      nuxt: '4.4.8',
+      nuxt: '4.5.1',
     },
   },
   defaults: {

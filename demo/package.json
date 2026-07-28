@@ -18,7 +18,7 @@
     "better-convex-nuxt": "0.8.0-beta.21",
     "convex": "1.42.2",
     "kysely": "0.28.17",
-    "nuxt": "4.4.8"
+    "nuxt": "4.5.1"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.15.2",
