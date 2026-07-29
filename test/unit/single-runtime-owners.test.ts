@@ -108,7 +108,7 @@ describe('single runtime-owner gate', () => {
     write(
       root,
       'starters/rogue-mcp/App.vue',
-      "<script setup>\nimport { McpServer } from '@modelcontextprotocol/server'\nnew McpServer({ name: 'rogue', version: '1' })\n</script >\n",
+      "<script setup>\nimport { McpServer } from '@modelcontextprotocol/server'\nnew McpServer({ name: 'rogue', version: '1' })\n</script\t\n ignored>\n",
     )
 
     expect(findSingleRuntimeOwnerViolations(root)).toEqual(
