@@ -8,8 +8,8 @@ replace the RFC's product decisions.
 
 | Field                 | Value                                                                                                                         |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Current phase         | Same-day experimental beta.22/beta.10 candidate certification                                                                 |
-| Current task          | Prepare immutable beta.22/beta.10 candidates without claiming final MCP compliance                                            |
+| Current phase         | Same-day experimental beta.23/beta.11 candidate certification                                                                 |
+| Current task          | Prepare immutable beta.23/beta.11 candidates after retiring the failed protected beta.22/beta.10 set                          |
 | Last verified commit  | BCN `f2e278a6`; Ginko `1ed69476`; exact hosted Ginko source rehearsal run `30364471680`                                       |
 | Next executable tasks | Pass mandatory source/security/artifact gates; certify and publish `next-staging`; update Ginko's one compatibility authority |
 | Baseline release      | `better-convex-nuxt@0.7.0-beta.1`, tag `v0.7.0-beta.1`, commit `a6e76f1f61a483de5dbd3a19003ab35abcf75fad`                     |

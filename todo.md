@@ -683,7 +683,7 @@ Ledger note (2026-07-26):
       compatibility.
 - [x] Run focused stable-SDK contracts, package builds/typechecks, neutral packed MCP,
       and packed Vue MCP App consumers.
-- [ ] Run matching official conformance, the coordinated beta.10 maintained starter,
+- [ ] Run matching official conformance, the coordinated beta.11 maintained starter,
       protected deployment, Inspector, and documented real-host evidence.
 
 Ledger note (2026-07-28):
@@ -710,7 +710,7 @@ Ledger note (2026-07-28):
   the final spec URL/tag are absent, and stable conformance `0.1.16` has no
   `2026-07-28` scenarios.
   T2.6 therefore remains open and final/stable MCP certification is not authorized.
-  The 2026-07-29 same-day release decision permits beta.22/beta.10 only as an
+  The 2026-07-29 same-day release decision permits beta.23/beta.11 only as an
   experimental `next-staging` prerelease that names the draft/RC basis and waives
   final MCP maturity, real-host MCP evidence, Better cloud staging, and Ginko strict
   npm support. Those waived gates remain open and must not be represented as passing.

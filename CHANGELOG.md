@@ -2,9 +2,28 @@
 
 ## Unreleased
 
+## v0.8.0-beta.23
+
+- Retire unpublished beta.22 after its protected tag workflow produced the
+  Vue/Nuxt artifacts but MCP prepack triggered pnpm dependency verification and
+  dirtied the checkout with `packages/mcp/pnpm-lock.yaml`.
+- Run release prepack with dependency verification disabled after the workflow
+  has already completed its frozen root install. The clean-tree guard remains
+  mandatory and no generated package lock is ignored or deleted.
+- Preserve the exact Nuxt `4.5.1`, Vite `8.1.5`, Vue `3.5.40`, and experimental
+  MCP 2026-07-28 draft/RC boundaries from beta.22.
+
+## v0.1.0-beta.11 (`@better-convex/mcp`)
+
+- Retire unpublished beta.10 with the coordinated beta.22 set.
+- Prevent MCP prepack from performing an implicit dependency install, so the
+  reviewed frozen workspace remains the only dependency authority.
+
 ## v0.8.0-beta.22
 
-- Prepare Vue/Nuxt `0.8.0-beta.22` for the same-day experimental
+- Retired after the protected tag workflow produced immutable Vue/Nuxt
+  artifacts but failed before MCP certification. Nothing was published.
+- Prepared Vue/Nuxt `0.8.0-beta.22` for the same-day experimental
   `next-staging` release after beta.21 failed immutable verification and
   remained unpublished.
 - Replace the exact Nitro Azure build-only `brace-expansion@2.1.2` exception
@@ -20,7 +39,9 @@
 
 ## v0.1.0-beta.10 (`@better-convex/mcp`)
 
-- Prepare MCP beta.10 with experimental support for the `2026-07-28` draft/RC
+- Retired after MCP prepack implicitly created an untracked package lock in the
+  protected workflow. No MCP artifact or registry package was produced.
+- Prepared MCP beta.10 with experimental support for the `2026-07-28` draft/RC
   after coordinated beta.9 remained unpublished.
 - Retain the stable official SDK ownership and stateless contract without
   claiming final specification or stable conformance support.

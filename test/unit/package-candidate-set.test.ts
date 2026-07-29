@@ -24,7 +24,7 @@ afterEach(() => {
   }
 })
 
-function createRepository(version = '0.8.0-beta.22') {
+function createRepository(version = '0.8.0-beta.23') {
   const root = mkdtempSync(join(tmpdir(), 'bcn-candidate-set-'))
   temporaryDirectories.push(root)
   writeFileSync(
@@ -111,13 +111,13 @@ describe('package candidate set', () => {
     expect(evidence).toMatchObject({
       schemaVersion: candidateSetSchemaVersion,
       sourceCommit,
-      version: '0.8.0-beta.22',
+      version: '0.8.0-beta.23',
       packageManager: 'pnpm@10.30.3',
     })
     expect(evidence.packages.map((entry) => entry.packageId)).toEqual(['vue', 'nuxt'])
     expect(parseCandidateSetEvidence(evidence, root)).toEqual(evidence)
     expect(getCandidateSetCoordinates(root).manifest).toBe(
-      join(realpathSync(root), '.release-artifacts/set/0.8.0-beta.22/artifact-set.json'),
+      join(realpathSync(root), '.release-artifacts/set/0.8.0-beta.23/artifact-set.json'),
     )
   })
 
@@ -146,7 +146,7 @@ describe('package candidate set', () => {
     const root = createRepository()
     writeFileSync(
       join(root, 'packages/vue/package.json'),
-      `${JSON.stringify({ name: 'better-convex-vue', version: '0.8.0-beta.23' })}\n`,
+      `${JSON.stringify({ name: 'better-convex-vue', version: '0.8.0-beta.24' })}\n`,
     )
 
     expect(() => getCandidateSetCoordinates(root)).toThrow('must use one exact version')

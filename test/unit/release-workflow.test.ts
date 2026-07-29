@@ -367,6 +367,14 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     )
   })
 
+  it('prevents release prepack from mutating dependency state', () => {
+    const release = read('scripts/release.mjs')
+
+    expect(release).toContain("npm_config_verify_deps_before_run: 'false'")
+    expect(release).toContain("PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: 'false'")
+    expect(release).toContain('env: options.env ? { ...process.env, ...options.env } : process.env')
+  })
+
   it('keeps the source security job artifact-free and blocking', () => {
     const securityJob = requireJob(workflow, 'release-security')
     expect(securityJob.permissions).toEqual({

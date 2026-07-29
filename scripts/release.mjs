@@ -98,6 +98,7 @@ function run(executable, args, options = {}) {
   return execFileSync(executable, args, {
     cwd: options.cwd ?? repoRoot,
     encoding: 'utf8',
+    env: options.env ? { ...process.env, ...options.env } : process.env,
     stdio: options.capture ? 'pipe' : 'inherit',
   })
 }
@@ -405,7 +406,13 @@ function createArtifact() {
   assertPackageManifestMatchesCommit(releasePackageId, sourceCommit)
   assertPackageArtifactWriteTarget(releasePackageId)
   rmSync(distDir, { recursive: true, force: true })
-  run('pnpm', ['run', 'prepack'], { cwd: packageRoot })
+  run('pnpm', ['run', 'prepack'], {
+    cwd: packageRoot,
+    env: {
+      npm_config_verify_deps_before_run: 'false',
+      PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: 'false',
+    },
+  })
 
   assertPackageArtifactWriteTarget(releasePackageId)
   mkdirSync(artifactCoordinates.packageArtifactDirectory, { recursive: true })
