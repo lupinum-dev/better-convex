@@ -2,19 +2,31 @@
 
 ## Unreleased
 
-- Reserve Vue/Nuxt `0.8.0-beta.22` and MCP `0.1.0-beta.10` for the same-day
-  experimental `next-staging` release after beta.21/beta.9 failed immutable
-  verification and remained unpublished.
+## v0.8.0-beta.22
+
+- Prepare Vue/Nuxt `0.8.0-beta.22` for the same-day experimental
+  `next-staging` release after beta.21 failed immutable verification and
+  remained unpublished.
 - Replace the exact Nitro Azure build-only `brace-expansion@2.1.2` exception
   with `2.1.3`; the reviewed constant-pattern call path and non-runtime
   mitigation are unchanged, and the replacement expires on 2026-08-28.
-- Describe MCP `2026-07-28` support as draft/RC support. Stable conformance,
-  real-host proof, strict Ginko npm compatibility, and protected Better Convex
-  cloud staging are explicitly outside this experimental release claim.
 - Hard-cut the supported Nuxt tuple to the patched `4.5.1` release with
   `@nuxt/kit@4.5.1`, `@nuxt/schema@4.5.1`, Vite `8.1.5`, and Vue `3.5.40`.
 - Delete the workspace-wide Vite override; maintained consumers now declare the
   coordinated runtime directly.
+- Keep final MCP maturity, real-host MCP evidence, strict Ginko npm
+  compatibility, and protected Better Convex cloud staging outside this
+  experimental release claim.
+
+## v0.1.0-beta.10 (`@better-convex/mcp`)
+
+- Prepare MCP beta.10 with experimental support for the `2026-07-28` draft/RC
+  after coordinated beta.9 remained unpublished.
+- Retain the stable official SDK ownership and stateless contract without
+  claiming final specification or stable conformance support.
+- Keep final MCP maturity, real-host MCP evidence, strict Ginko npm
+  compatibility, and protected Better Convex cloud staging outside this
+  experimental release claim.
 
 ## v0.8.0-beta.21
 
