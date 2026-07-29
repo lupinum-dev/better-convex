@@ -179,6 +179,7 @@ function main() {
   run('pnpm', ['run', 'verify:auth'], {
     env: {
       ...process.env,
+      BCN_MCP_RELEASE_TARBALL: mcpCoordinates.paths.tarball,
       BCN_RELEASE_TARBALL: tarball,
       BCN_RELEASE_VUE_TARBALL: vueCoordinates.paths.tarball,
     },

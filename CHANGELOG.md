@@ -2,8 +2,29 @@
 
 ## Unreleased
 
+## v0.8.0-beta.24
+
+- Retire unpublished beta.23 after its protected tag workflow verified the
+  candidate set and release security, then the Nuxt hybrid auth gate linked the
+  unbuilt workspace MCP package instead of installing the retained MCP
+  candidate. No registry publication job ran.
+- Pass the exact retained MCP tarball into hybrid auth verification alongside
+  the exact Nuxt and Vue tarballs. Clean-checkout verification no longer
+  depends on a prior workspace MCP build.
+- Preserve the exact Nuxt `4.5.1`, Vite `8.1.5`, Vue `3.5.40`, and experimental
+  MCP 2026-07-28 draft/RC boundaries from beta.23.
+
+## v0.1.0-beta.12 (`@better-convex/mcp`)
+
+- Retire unpublished beta.11 with the coordinated beta.23 set.
+- Make the immutable MCP candidate the MCP dependency used by the coordinated
+  Nuxt hybrid auth proof.
+
 ## v0.8.0-beta.23
 
+- Retired after protected candidate construction and security passed but the
+  Nuxt hybrid auth gate used an unbuilt workspace MCP link. Nothing was
+  published.
 - Retire unpublished beta.22 after its protected tag workflow produced the
   Vue/Nuxt artifacts but MCP prepack triggered pnpm dependency verification and
   dirtied the checkout with `packages/mcp/pnpm-lock.yaml`.

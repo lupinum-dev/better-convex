@@ -197,6 +197,13 @@ describe('trusted prerelease workflow', () => {
     }
   })
 
+  it('passes both immutable companion candidates into hybrid auth verification', () => {
+    const verifier = read('scripts/verify-release.mjs')
+
+    expect(verifier).toContain('BCN_MCP_RELEASE_TARBALL: mcpCoordinates.paths.tarball')
+    expect(verifier).toContain('BCN_RELEASE_VUE_TARBALL: vueCoordinates.paths.tarball')
+  })
+
   it('rejects unreviewed verifier and registry coordinates before network work', () => {
     const verifier = spawnSync(
       process.execPath,
