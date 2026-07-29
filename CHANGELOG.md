@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.8.0-beta.25
+
+- Retire unpublished beta.24 after its protected tag workflow passed candidate
+  construction, release security, artifact identity, and Vue certification,
+  then the clean Linux Nuxt source gate imported the unbuilt workspace MCP
+  entry. No registry publication job ran.
+- Make the self-contained MCP source-test runner build its workspace package
+  before Vitest imports the maintained MCP starter. Exact candidate checks
+  still consume the retained tarball and never repack it.
+- Preserve the exact Nuxt `4.5.1`, Vite `8.1.5`, Vue `3.5.40`, and experimental
+  MCP 2026-07-28 draft/RC boundaries from beta.24.
+
+## v0.1.0-beta.13 (`@better-convex/mcp`)
+
+- Retire unpublished beta.12 with the coordinated beta.24 set.
+- Ensure clean-checkout source tests compile the workspace MCP public entry
+  before importing it; immutable candidate verification remains separate.
+
 ## v0.8.0-beta.24
 
 - Retire unpublished beta.23 after its protected tag workflow verified the

@@ -72,10 +72,13 @@ describe('self-contained MCP OAuth fixture contracts', () => {
     expect(starterPackage).toContain('better-convex-nuxt-convex dev')
   })
 
-  it('prepares generated root types before the standalone MCP contract suite', () => {
+  it('builds the workspace MCP entry and prepares generated root types before its tests', () => {
+    const build = runnerSource.indexOf("['--dir', 'packages/mcp', 'build']")
     const prepare = runnerSource.indexOf("['exec', 'nuxt-module-build', 'prepare']")
     const tests = runnerSource.indexOf("['exec', 'vitest', 'run', '--project=mcp']")
 
+    expect(build).toBeGreaterThan(-1)
+    expect(build).toBeLessThan(prepare)
     expect(prepare).toBeGreaterThan(-1)
     expect(prepare).toBeLessThan(tests)
   })

@@ -1,6 +1,6 @@
 {
   "name": "better-convex-nuxt",
-  "version": "0.8.0-beta.24",
+  "version": "0.8.0-beta.25",
   "description": "Full-featured Convex integration for Nuxt with SSR, real-time subscriptions, and authentication",
   "keywords": [
     "authentication",
@@ -187,7 +187,7 @@
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.0-rc.2",
     "@nuxt/kit": "4.5.1",
-    "better-convex-vue": "0.8.0-beta.24",
+    "better-convex-vue": "0.8.0-beta.25",
     "convex-helpers": "0.1.114",
     "defu": "^6.1.5",
     "h3": "1.15.11",

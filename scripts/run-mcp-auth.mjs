@@ -128,6 +128,15 @@ async function verifyDiscoveryDocuments(context, origin, resource) {
 }
 
 async function runLocalMcpTests(root) {
+  const builtMcp = spawnSync('pnpm', ['--dir', 'packages/mcp', 'build'], {
+    cwd: root,
+    env: safeChildEnvironment(),
+    stdio: 'inherit',
+  })
+  if (builtMcp.error) throw builtMcp.error
+  if (builtMcp.status !== 0) {
+    throw new Error(`MCP workspace build failed with exit code ${builtMcp.status}`)
+  }
   const prepared = spawnSync('pnpm', ['exec', 'nuxt-module-build', 'prepare'], {
     cwd: root,
     env: safeChildEnvironment(),
