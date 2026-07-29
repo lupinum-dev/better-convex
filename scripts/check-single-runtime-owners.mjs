@@ -101,7 +101,7 @@ function collectProductionFiles(root) {
 }
 
 function vueScripts(source) {
-  return [...source.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/giu)].map(
+  return [...source.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script\s*>/giu)].map(
     (match) => match[1],
   )
 }

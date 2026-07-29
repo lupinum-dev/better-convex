@@ -46,7 +46,7 @@ function readCandidateTarball(path) {
     }),
   )
   return {
-    metadataPath: `/${packageJson.name.replace('/', '%2F')}`,
+    metadataPath: `/${packageJson.name.replaceAll('/', '%2F')}`,
     integrity: `sha512-${createHash('sha512').update(tarball).digest('base64')}`,
     packageJson,
     tarball,

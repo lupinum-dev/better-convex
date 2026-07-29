@@ -103,6 +103,23 @@ describe('single runtime-owner gate', () => {
     expect(findSingleRuntimeOwnerViolations(createRoot())).toEqual([])
   })
 
+  it('inspects Vue script blocks with whitespace in the closing tag', () => {
+    const root = createRoot()
+    write(
+      root,
+      'starters/rogue-mcp/App.vue',
+      "<script setup>\nimport { McpServer } from '@modelcontextprotocol/server'\nnew McpServer({ name: 'rogue', version: '1' })\n</script >\n",
+    )
+
+    expect(findSingleRuntimeOwnerViolations(root)).toEqual(
+      expect.arrayContaining([
+        'starters/rogue-mcp/App.vue: MCP server runtime import outside packages/mcp/src',
+        'starters/rogue-mcp/App.vue: McpServer construction outside packages/mcp/src/handler.ts',
+        'expected exactly one McpServer construction, found 2',
+      ]),
+    )
+  })
+
   it('rejects a second MCP runtime import, constructor, parser, and removed implementation', () => {
     const root = createRoot()
     write(
