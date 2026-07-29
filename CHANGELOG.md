@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v0.8.0-beta.26
+
+- Retire unpublished beta.25 after its immutable MCP candidate and all
+  artifact-dependent MCP gates passed, then the source-test build command
+  caused pnpm 11 to create a nested workspace lockfile. No registry
+  publication job ran.
+- Build the MCP source-test entry through the root workspace's installed
+  `unbuild` command and explicit package directory. The source checkout stays
+  read-only while the same public MCP entry is compiled before tests.
+
+## v0.1.0-beta.14 (`@better-convex/mcp`)
+
+- Retire unpublished beta.13 with the coordinated beta.25 set.
+- Keep source-test compilation under the root dependency authority so the
+  nested MCP workspace cannot create a package-local lockfile.
+
 ## v0.8.0-beta.25
 
 - Retire unpublished beta.24 after its protected tag workflow passed candidate

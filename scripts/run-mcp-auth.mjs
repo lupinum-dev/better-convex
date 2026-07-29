@@ -128,7 +128,7 @@ async function verifyDiscoveryDocuments(context, origin, resource) {
 }
 
 async function runLocalMcpTests(root) {
-  const builtMcp = spawnSync('pnpm', ['--dir', 'packages/mcp', 'build'], {
+  const builtMcp = spawnSync('pnpm', ['exec', 'unbuild', 'packages/mcp'], {
     cwd: root,
     env: safeChildEnvironment(),
     stdio: 'inherit',

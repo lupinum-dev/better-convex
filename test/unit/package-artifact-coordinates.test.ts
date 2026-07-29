@@ -27,7 +27,7 @@ function createRepository() {
   temporaryDirectories.push(root)
   writeFileSync(
     join(root, 'package.json'),
-    `${JSON.stringify({ name: 'better-convex-nuxt', version: '0.8.0-beta.25' })}\n`,
+    `${JSON.stringify({ name: 'better-convex-nuxt', version: '0.8.0-beta.26' })}\n`,
   )
   return root
 }
@@ -47,14 +47,14 @@ describe('package artifact coordinates', () => {
   })
 
   it('accepts the release floor, successors, and unrelated package versions', () => {
-    expect(assertReleaseEligiblePackageVersion('better-convex-nuxt', '0.8.0-beta.25')).toBe(
-      '0.8.0-beta.25',
+    expect(assertReleaseEligiblePackageVersion('better-convex-nuxt', '0.8.0-beta.26')).toBe(
+      '0.8.0-beta.26',
     )
-    expect(assertReleaseEligiblePackageVersion('better-convex-vue', '0.8.0-beta.25')).toBe(
-      '0.8.0-beta.25',
+    expect(assertReleaseEligiblePackageVersion('better-convex-vue', '0.8.0-beta.26')).toBe(
+      '0.8.0-beta.26',
     )
-    expect(assertReleaseEligiblePackageVersion('@better-convex/mcp', '0.1.0-beta.13')).toBe(
-      '0.1.0-beta.13',
+    expect(assertReleaseEligiblePackageVersion('@better-convex/mcp', '0.1.0-beta.14')).toBe(
+      '0.1.0-beta.14',
     )
     expect(assertReleaseEligiblePackageVersion('@better-convex/mcp', '0.1.0')).toBe('0.1.0')
     expect(assertReleaseEligiblePackageVersion('unrelated-package', '0.8.0-beta.6')).toBe(
@@ -81,20 +81,20 @@ describe('package artifact coordinates', () => {
         candidateTests: 'nuxt-maintained-consumers',
         runtimeFingerprint: 'nuxt-runtime-binding',
       },
-      version: '0.8.0-beta.25',
-      relativeDirectory: '.release-artifacts/nuxt/0.8.0-beta.25',
+      version: '0.8.0-beta.26',
+      relativeDirectory: '.release-artifacts/nuxt/0.8.0-beta.26',
       files: {
         contents: 'contents.json',
         evidence: 'artifact.json',
         sbom: 'sbom.cdx.json',
-        tarball: 'better-convex-nuxt-0.8.0-beta.25.tgz',
+        tarball: 'better-convex-nuxt-0.8.0-beta.26.tgz',
       },
     })
     expect(coordinates.relativePaths).toEqual({
-      contents: '.release-artifacts/nuxt/0.8.0-beta.25/contents.json',
-      evidence: '.release-artifacts/nuxt/0.8.0-beta.25/artifact.json',
-      sbom: '.release-artifacts/nuxt/0.8.0-beta.25/sbom.cdx.json',
-      tarball: '.release-artifacts/nuxt/0.8.0-beta.25/better-convex-nuxt-0.8.0-beta.25.tgz',
+      contents: '.release-artifacts/nuxt/0.8.0-beta.26/contents.json',
+      evidence: '.release-artifacts/nuxt/0.8.0-beta.26/artifact.json',
+      sbom: '.release-artifacts/nuxt/0.8.0-beta.26/sbom.cdx.json',
+      tarball: '.release-artifacts/nuxt/0.8.0-beta.26/better-convex-nuxt-0.8.0-beta.26.tgz',
     })
     expect(new Set(Object.values(coordinates.paths)).size).toBe(4)
     for (const path of Object.values(coordinates.paths)) {

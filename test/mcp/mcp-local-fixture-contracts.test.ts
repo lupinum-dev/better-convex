@@ -73,7 +73,7 @@ describe('self-contained MCP OAuth fixture contracts', () => {
   })
 
   it('builds the workspace MCP entry and prepares generated root types before its tests', () => {
-    const build = runnerSource.indexOf("['--dir', 'packages/mcp', 'build']")
+    const build = runnerSource.indexOf("['exec', 'unbuild', 'packages/mcp']")
     const prepare = runnerSource.indexOf("['exec', 'nuxt-module-build', 'prepare']")
     const tests = runnerSource.indexOf("['exec', 'vitest', 'run', '--project=mcp']")
 
