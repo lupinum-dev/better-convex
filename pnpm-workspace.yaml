@@ -7,6 +7,7 @@ shamefullyHoist: true
 strictPeerDependencies: false
 
 allowBuilds:
+  '@modelcontextprotocol/inspector': true
   '@parcel/watcher': true
   esbuild: true
   unrs-resolver: true
@@ -35,9 +36,6 @@ overrides:
 minimumReleaseAgeExclude:
   - '@modelcontextprotocol/client@2.0.0'
   - '@modelcontextprotocol/core@2.0.0'
-  - '@modelcontextprotocol/inspector-cli@1.0.1'
-  - '@modelcontextprotocol/inspector-client@1.0.1'
-  - '@modelcontextprotocol/inspector-server@1.0.1'
-  - '@modelcontextprotocol/inspector@1.0.1'
+  - '@modelcontextprotocol/inspector@2.0.0'
   - '@modelcontextprotocol/sdk@1.30.0'
   - '@modelcontextprotocol/server@2.0.0'

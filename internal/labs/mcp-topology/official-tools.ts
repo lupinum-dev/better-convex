@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from 'node:child_process'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -7,8 +7,8 @@ import { promisify } from 'node:util'
 
 const execFile = promisify(execFileCallback)
 
-export const MCP_CONFORMANCE_VERSION = '0.1.16'
-export const MCP_INSPECTOR_VERSION = '1.0.0'
+export const MCP_CONFORMANCE_PREFLIGHT_VERSION = '0.2.0-alpha.10'
+export const MCP_INSPECTOR_VERSION = '2.0.0'
 const maximumRelayBodyBytes = 1024 * 1024
 const maximumRelayResponseBytes = 2 * 1024 * 1024
 const officialToolTimeoutMs = 60_000
@@ -33,14 +33,32 @@ async function runPackageCli(
   repositoryRoot: string,
   packageSpec: string,
   args: readonly string[],
+  redactions: readonly string[],
 ): Promise<string> {
-  const { stderr, stdout } = await execFile('pnpm', ['dlx', packageSpec, ...args], {
-    cwd: repositoryRoot,
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
-    timeout: officialToolTimeoutMs,
-  })
-  return `${stdout}\n${stderr}`
+  try {
+    const { stderr, stdout } = await execFile('pnpm', ['dlx', packageSpec, ...args], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: officialToolTimeoutMs,
+    })
+    return `${stdout}\n${stderr}`
+  } catch (error) {
+    const output =
+      error && typeof error === 'object'
+        ? `${String('stdout' in error ? error.stdout : '')}\n${String(
+            'stderr' in error ? error.stderr : '',
+          )}`
+        : ''
+    const safeOutput = redactions.reduce(
+      (current, secret) => current.replaceAll(secret, '[REDACTED]'),
+      output,
+    )
+    throw new Error(
+      `${packageSpec} exited unsuccessfully${safeOutput.trim() ? `:\n${safeOutput.slice(0, 8192)}` : ''}`,
+      { cause: error },
+    )
+  }
 }
 
 async function readRequestBody(request: import('node:http').IncomingMessage): Promise<Buffer> {
@@ -180,44 +198,59 @@ export async function runOfficialMcpToolProbe(
     },
   ] as const
   const inspectorMethods = inspectorProbes.map((probe) => probe.method)
-  for (const probe of inspectorProbes) {
-    const output = await runPackageCli(
-      options.repositoryRoot,
-      `@modelcontextprotocol/inspector@${MCP_INSPECTOR_VERSION}`,
-      [
-        '--cli',
-        options.endpoint.href,
-        '--transport',
-        'http',
-        '--method',
-        probe.method,
-        ...probe.args,
-        '--header',
-        `Authorization: Bearer ${options.token}`,
-      ],
-    )
-    assertOutputIsSafe(output, options.token, `${options.label} Inspector ${probe.method}`)
-    if (!output.includes(probe.expected)) {
-      throw new Error(
-        `${options.label} Inspector ${probe.method} did not observe ${probe.expected}`,
+  const inspectorDirectory = await mkdtemp(path.join(tmpdir(), 'better-convex-mcp-inspector-'))
+  const inspectorConfig = path.join(inspectorDirectory, 'mcp.json')
+  await writeFile(
+    inspectorConfig,
+    JSON.stringify({
+      mcpServers: {
+        candidate: {
+          headers: { Authorization: `Bearer ${options.token}` },
+          protocolEra: 'modern',
+          type: 'streamable-http',
+          url: options.endpoint.href,
+        },
+      },
+    }),
+    { mode: 0o600 },
+  )
+  try {
+    for (const probe of inspectorProbes) {
+      const output = await runPackageCli(
+        options.repositoryRoot,
+        `@modelcontextprotocol/inspector@${MCP_INSPECTOR_VERSION}`,
+        [
+          '--cli',
+          '--config',
+          inspectorConfig,
+          '--server',
+          'candidate',
+          '--method',
+          probe.method,
+          ...probe.args,
+        ],
+        [options.token],
       )
+      assertOutputIsSafe(output, options.token, `${options.label} Inspector ${probe.method}`)
+      if (!output.includes(probe.expected)) {
+        throw new Error(
+          `${options.label} Inspector ${probe.method} did not observe ${probe.expected}`,
+        )
+      }
     }
+  } finally {
+    await rm(inspectorDirectory, { force: true, recursive: true })
   }
 
   const relay = await createConformanceAuthRelay(options.endpoint, options.token)
   const outputDirectory = await mkdtemp(path.join(tmpdir(), 'better-convex-mcp-conformance-'))
-  const conformanceScenarios = [
-    'server-initialize',
-    'ping',
-    'tools-list',
-    'resources-list',
-  ] as const
+  const conformanceScenarios = ['tools-list', 'resources-list', 'http-header-validation'] as const
   try {
     for (const scenario of conformanceScenarios) {
       const scenarioDirectory = path.join(outputDirectory, scenario)
       const output = await runPackageCli(
         options.repositoryRoot,
-        `@modelcontextprotocol/conformance@${MCP_CONFORMANCE_VERSION}`,
+        `@modelcontextprotocol/conformance@${MCP_CONFORMANCE_PREFLIGHT_VERSION}`,
         [
           'server',
           '--url',
@@ -225,10 +258,11 @@ export async function runOfficialMcpToolProbe(
           '--scenario',
           scenario,
           '--spec-version',
-          '2025-11-25',
+          '2026-07-28',
           '--output-dir',
           scenarioDirectory,
         ],
+        [options.token],
       )
       assertOutputIsSafe(output, options.token, `${options.label} conformance ${scenario}`)
       const checks = await collectConformanceChecks(scenarioDirectory)

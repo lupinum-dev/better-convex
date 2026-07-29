@@ -201,7 +201,7 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/conformance": "0.1.16",
     "@modelcontextprotocol/ext-apps": "1.7.5",
-    "@modelcontextprotocol/inspector": "1.0.1",
+    "@modelcontextprotocol/inspector": "2.0.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@nuxt/eslint-config": "^1.16.0",

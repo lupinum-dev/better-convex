@@ -794,10 +794,9 @@ describe('vNext Convex-native MCP topology probe', () => {
           'resources/read',
         ])
         expect(officialTools.conformanceScenarios).toEqual([
-          'server-initialize',
-          'ping',
           'tools-list',
           'resources-list',
+          'http-header-validation',
         ])
       }
 

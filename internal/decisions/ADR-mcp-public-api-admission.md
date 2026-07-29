@@ -1,7 +1,7 @@
 # ADR: minimal MCP public API admission
 
 - Status: accepted for experimental prerelease
-- Date: 2026-07-22; amended 2026-07-28
+- Date: 2026-07-22; amended 2026-07-28 and 2026-07-29
 - Protocol basis: `2026-07-28` stable TypeScript SDK wire contract
 - SDK basis: exact `@modelcontextprotocol/server@2.0.0`
 - Stabilization gate: final specification, changelog, and matching conformance reconciliation under
@@ -173,8 +173,23 @@ as the final wire revision. Better Convex hard-cuts to those exact bytes: result
 metadata remains required and per-request `clientInfo` is optional. No beta-version branch or alias is
 retained.
 
-The official specification repository still exposes only the `2026-07-28-RC` release, and stable
-`@modelcontextprotocol/conformance@0.1.16` still has no `2026-07-28` scenarios. The package therefore
-remains experimental and may not claim final protocol certification. When the final specification,
-changelog, and matching scenarios publish, material differences are handled by one further hard cut,
-not a compatibility shim.
+The final specification was published on 2026-07-28 at signed release commit
+`5f5440bb26a62e2cf3440b92da5a667efa03b267`. Its dated changelog confirms the stateless request
+metadata, discovery, result metadata, standard headers, zero-session transport, cache hints, standard
+resource-not-found error, and unsupported legacy methods already enforced by the package. It also
+removes the RC `notifications/elicitation/complete` and `elicitationId` path in favor of application
+`requestState`; Better Convex retains neither removed surface.
+
+Inspector v1 was hard-cut from the maintained proof. Exact
+`@modelcontextprotocol/inspector@2.0.0` now exercises tool listing/calling and resource
+template/reading through its documented `protocolEra: "modern"` configuration. Exact
+`@modelcontextprotocol/conformance@0.2.0-alpha.10` passes the applicable `tools-list`,
+`resources-list`, and `http-header-validation` scenarios. The alpha's `server-stateless` and
+`caching` scenarios are not candidate gates because they require unadvertised diagnostic,
+subscription, or prompts surfaces instead of skipping inapplicable capabilities; Better Convex does
+not add those surfaces to satisfy a test fixture.
+
+Stable `@modelcontextprotocol/conformance@0.1.16` still has no `2026-07-28` scenarios. The package
+therefore remains experimental and may not claim final conformance certification until matching
+stable scenarios publish and pass. Any later material difference is handled by one hard cut, not a
+compatibility shim.

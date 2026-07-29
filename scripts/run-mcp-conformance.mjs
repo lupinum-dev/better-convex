@@ -235,7 +235,7 @@ export async function runConformanceEvidence({ bearer, origin: originValue }) {
     `MCP ${protocol.protocolVersion} stable-SDK contract check passed (${protocol.requests} stateless requests, ${protocol.toolCount} tools, capabilities: ${protocol.capabilities.join(', ')}).`,
   )
   console.log(
-    `@modelcontextprotocol/conformance@0.1.16 has no ${MCP_PROTOCOL_VERSION} server scenarios; legacy protocol conformance is intentionally not relayed into the stateless server.`,
+    `Stable @modelcontextprotocol/conformance@0.1.16 has no ${MCP_PROTOCOL_VERSION} server scenarios; the exact alpha preflight is gated separately by the maintained topology probe, and legacy protocol conformance is not relayed into the stateless server.`,
   )
 }
 
