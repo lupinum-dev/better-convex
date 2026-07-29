@@ -709,7 +709,11 @@ Ledger note (2026-07-28):
   only `2026-07-28-RC` (`9d700ed62dcf86cb77475c9b81930611a9182f46`);
   the final spec URL/tag are absent, and stable conformance `0.1.16` has no
   `2026-07-28` scenarios.
-  T2.6 therefore remains open and beta.22/beta.10 certification is not authorized.
+  T2.6 therefore remains open and final/stable MCP certification is not authorized.
+  The 2026-07-29 same-day release decision permits beta.22/beta.10 only as an
+  experimental `next-staging` prerelease that names the draft/RC basis and waives
+  final MCP maturity, real-host MCP evidence, Better cloud staging, and Ginko strict
+  npm support. Those waived gates remain open and must not be represented as passing.
 - Exact versions, integrities, commands, hard cuts, and remaining external gates are
   recorded in
   `internal/evidence/mcp-stable-sdk-reconciliation-2026-07-28.md`.

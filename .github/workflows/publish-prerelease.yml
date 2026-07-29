@@ -187,10 +187,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      - name: Record the experimental release boundary
+        run: |
+          {
+            echo '## Experimental next-staging release'
+            echo
+            echo '- MCP 2026-07-28 support targets the published draft/RC; stable final conformance is not claimed.'
+            echo '- Real-host MCP proof is deferred.'
+            echo '- Strict Ginko npm compatibility is deferred to the Ginko release workflow.'
+            echo '- Better Convex protected cloud staging is observational and does not gate this experimental tag.'
+            echo
+            echo 'Security, authorization, immutable artifact, provenance, and registry byte-equality gates remain mandatory.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   bcn-auth-staging:
     needs: verify-candidates
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    continue-on-error: true
     environment: bcn-auth-staging
     concurrency:
       group: bcn-auth-staging
@@ -251,7 +265,7 @@ jobs:
           retention-days: 90
 
   publish-vue-staging:
-    needs: [verify-candidates, bcn-auth-staging]
+    needs: verify-candidates
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm-release

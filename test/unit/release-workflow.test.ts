@@ -321,7 +321,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'release-security': ['build-candidates'],
       'verify-candidates': ['build-candidates', 'release-security'],
       'bcn-auth-staging': ['verify-candidates'],
-      'publish-vue-staging': ['verify-candidates', 'bcn-auth-staging'],
+      'publish-vue-staging': ['verify-candidates'],
       'registry-vue-nuxt-gate': ['publish-vue-staging'],
       'publish-nuxt-staging': ['registry-vue-nuxt-gate'],
       'publish-mcp-staging': ['publish-nuxt-staging'],
@@ -388,10 +388,14 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     )
   })
 
-  it('pins every action and has no non-blocking workflow escape hatch', () => {
+  it('pins every action and confines the experimental waiver to cloud staging', () => {
     expect(uses(workflow).every((action) => /^[^@\s]+@[0-9a-f]{40}$/u.test(action))).toBe(true)
-    for (const job of Object.values(workflow.jobs ?? {})) {
-      expect(job['continue-on-error']).toBeUndefined()
+    for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
+      if (jobId === 'bcn-auth-staging') {
+        expect(job['continue-on-error']).toBe(true)
+      } else {
+        expect(job['continue-on-error']).toBeUndefined()
+      }
       expect(job.if).not.toBe('always()')
       for (const step of job.steps ?? []) {
         expect(step['continue-on-error']).toBeUndefined()
@@ -433,10 +437,11 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     expect(structuredWorkflow).not.toContain('NPM_TOKEN')
   })
 
-  it('binds protected cloud staging and its report before publication', () => {
+  it('keeps cloud staging observable without blocking the experimental publication', () => {
     const staging = requireJob(workflow, 'bcn-auth-staging')
     expect(staging.environment).toBe('bcn-auth-staging')
     expect(staging.concurrency?.group).toBe('bcn-auth-staging')
+    expect(staging['continue-on-error']).toBe(true)
     const proofStep = steps(workflow, 'bcn-auth-staging').find((step) =>
       normalizedRun(step)?.startsWith('pnpm test:auth-cloud-staging '),
     )
@@ -457,6 +462,9 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
           step.with?.path === '.release-artifacts/bcn-auth-staging.report.json',
       ),
     ).toBe(true)
-    expect(needs(workflow, 'publish-vue-staging')).toContain('bcn-auth-staging')
+    expect(needs(workflow, 'publish-vue-staging')).toEqual(['verify-candidates'])
+    expect(runs(workflow, 'verify-candidates')).toContainEqual(
+      expect.stringContaining('Experimental next-staging release'),
+    )
   })
 })

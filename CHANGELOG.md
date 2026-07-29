@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Reserve Vue/Nuxt `0.8.0-beta.22` and MCP `0.1.0-beta.10` for the same-day
+  experimental `next-staging` release after beta.21/beta.9 failed immutable
+  verification and remained unpublished.
+- Replace the exact Nitro Azure build-only `brace-expansion@2.1.2` exception
+  with `2.1.3`; the reviewed constant-pattern call path and non-runtime
+  mitigation are unchanged, and the replacement expires on 2026-08-28.
+- Describe MCP `2026-07-28` support as draft/RC support. Stable conformance,
+  real-host proof, strict Ginko npm compatibility, and protected Better Convex
+  cloud staging are explicitly outside this experimental release claim.
 - Hard-cut the supported Nuxt tuple to the patched `4.5.1` release with
   `@nuxt/kit@4.5.1`, `@nuxt/schema@4.5.1`, Vite `8.1.5`, and Vue `3.5.40`.
 - Delete the workspace-wide Vite override; maintained consumers now declare the
@@ -9,6 +18,8 @@
 
 ## v0.8.0-beta.21
 
+- Retired after immutable verification resolved `brace-expansion@2.1.3`, which
+  was outside the exact `2.1.2` exception. This coordinate was not published.
 - Retire beta.20 after the exact clean npm consumer again failed closed on
   `brace-expansion@2.1.2` in Nitro's Azure deployment-only `archiver@7`
   graph.
@@ -21,6 +32,7 @@
 
 ## v0.1.0-beta.9 (`@better-convex/mcp`)
 
+- Retired with its coordinated beta.21 companions and never published.
 - Reserve a fresh coordinated source identity after beta.8 independently
   passed its complete lane but could not remain in a candidate set whose
   Vue/Nuxt companion failed.

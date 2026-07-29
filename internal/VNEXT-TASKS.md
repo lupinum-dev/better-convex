@@ -6,14 +6,14 @@ replace the RFC's product decisions.
 
 ## Working state
 
-| Field                 | Value                                                                                                                        |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Current phase         | Final MCP reconciliation before fresh immutable beta.22/beta.10 certification                                                |
-| Current task          | `P1-015`; final spec/Inspector reconciled, blocked only on matching stable conformance scenarios                             |
-| Last verified commit  | BCN `f2e278a6`; Ginko `1ed69476`; exact hosted Ginko source rehearsal run `30364471680`                                      |
-| Next executable tasks | Complete final interaction/host proof; reserve-check and certify beta.22/beta.10; update Ginko's one compatibility authority |
-| Baseline release      | `better-convex-nuxt@0.7.0-beta.1`, tag `v0.7.0-beta.1`, commit `a6e76f1f61a483de5dbd3a19003ab35abcf75fad`                    |
-| Ledger rule           | At most one task is `in_progress`; `done` requires its named proof                                                           |
+| Field                 | Value                                                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Current phase         | Same-day experimental beta.22/beta.10 candidate certification                                                                 |
+| Current task          | Prepare immutable beta.22/beta.10 candidates without claiming final MCP compliance                                            |
+| Last verified commit  | BCN `f2e278a6`; Ginko `1ed69476`; exact hosted Ginko source rehearsal run `30364471680`                                       |
+| Next executable tasks | Pass mandatory source/security/artifact gates; certify and publish `next-staging`; update Ginko's one compatibility authority |
+| Baseline release      | `better-convex-nuxt@0.7.0-beta.1`, tag `v0.7.0-beta.1`, commit `a6e76f1f61a483de5dbd3a19003ab35abcf75fad`                     |
+| Ledger rule           | At most one task is `in_progress`; `done` requires its named proof                                                            |
 
 ## External and human blockers
 
@@ -28,7 +28,7 @@ replace the RFC's product decisions.
 ## Accepted decision records
 
 [`internal/decisions-ledger.md`](./decisions-ledger.md) is the single detailed decision history. The
-current accepted records are `D-001`–`D-054`; final topology certification, Tasks, and repository rename
+current accepted records are `D-001`–`D-057`; final topology certification, Tasks, and repository rename
 remain gated rather than implied stable contracts.
 
 ## Verification log

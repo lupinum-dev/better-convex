@@ -21,8 +21,8 @@ importers:
         specifier: 1.7.0-rc.2
         version: 1.7.0-rc.2(@better-auth/core@1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.0-rc.2(react@19.2.7)(vue@3.5.40(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))
       '@better-convex/mcp':
-        specifier: 0.1.0-beta.9
-        version: 0.1.0-beta.9
+        specifier: 0.1.0-beta.10
+        version: 0.1.0-beta.10
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
@@ -30,8 +30,8 @@ importers:
         specifier: 1.7.0-rc.2
         version: 1.7.0-rc.2(react@19.2.7)(vue@3.5.40(typescript@5.9.3))
       better-convex-nuxt:
-        specifier: 0.8.0-beta.21
-        version: 0.8.0-beta.21(fc0e6bb2d2743707a1cc885d79852554)
+        specifier: 0.8.0-beta.22
+        version: 0.8.0-beta.22(ac9a9e1941fffac771d4a4f5d48cd4d4)
       convex:
         specifier: 1.42.2
         version: 1.42.2(react@19.2.7)
@@ -251,15 +251,6 @@ packages:
       mongodb:
         optional: true
 
-  '@better-auth/oauth-provider@1.7.0-rc.1':
-    resolution: {integrity: sha512-992i44HfdHRDlMSnaapXMkMRKGyNxIMm5K//K2yiL0dErdtBB5s5q1PZI0Cm2/imzrOI6HP9UjUvy6lCDj6EHw==}
-    peerDependencies:
-      '@better-auth/core': ^1.7.0-rc.1
-      '@better-auth/utils': 0.4.2
-      '@better-fetch/fetch': 1.3.1
-      better-auth: ^1.7.0-rc.1
-      better-call: 1.3.7
-
   '@better-auth/oauth-provider@1.7.0-rc.2':
     resolution: {integrity: sha512-fc3jCYwS/PaQyErOPqIUplqK456zhrmNWGnJPhDEF68merXBQN1OodUTzicZ3skFDpAv6MY3m5vk4D1Gz3R/oA==}
     peerDependencies:
@@ -292,8 +283,8 @@ packages:
   '@better-auth/utils@0.4.2':
     resolution: {integrity: sha512-AUxrvu+HaaODsUyzDxFgwd/8RZ1yZaYo42LXKSrU2oGgR38pS1ij8nqQKNgtTWoYGpNevNXtCfgTy6loHveW9A==}
 
-  '@better-convex/mcp@0.1.0-beta.9':
-    resolution: {integrity: sha512-dVZBc5+aaiiHVL36lsvDHB39MIEHZEsmLdSN1ZIavkL/5G+iz9K+I05vSNilEDmoJtUbFhezKnQLJDohSr3Uaw==}
+  '@better-convex/mcp@0.1.0-beta.10':
+    resolution: {integrity: sha512-Pr3qCN6jSoWaVSAGKXBYYmqmb1f1AnZCkjqCseP1jZA3EDobjuccErka0taNals3RqixBrTNIgC+cUWqwua4lw==}
     engines: {node: '>=22.14.0'}
 
   '@better-fetch/fetch@1.3.1':
@@ -726,16 +717,8 @@ packages:
     resolution: {integrity: sha512-pJCEwGG7Lfr/+PQp9ZTwKXNeO5wzbfKL7H3MYpCorM4oFBoQrdjnBgEoqG+RjhsvS1FKrDbKux+M1HhlnGWqcA==}
     engines: {node: '>=20'}
 
-  '@modelcontextprotocol/core@2.0.0-beta.5':
-    resolution: {integrity: sha512-HKbY9XTbsDy1Y6r2I55TGE3JEapM0vg96e1MUmBIF9LGjos5gjhcIrTz1yvBPLg2aFKHjwhUAQfRdrCEnPxNew==}
-    engines: {node: '>=20'}
-
   '@modelcontextprotocol/server@2.0.0':
     resolution: {integrity: sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==}
-    engines: {node: '>=20'}
-
-  '@modelcontextprotocol/server@2.0.0-beta.5':
-    resolution: {integrity: sha512-i1E5l75rQKsgY/AKAIspgMBH1vEL7dqiK7tHr0L+raYcb0SWOziqNGJXGIG6NY4AlXDWIKGJQGB7Nqfs3oUi5g==}
     engines: {node: '>=20'}
 
   '@napi-rs/wasm-runtime@1.1.6':
@@ -795,10 +778,6 @@ packages:
     peerDependenciesMeta:
       '@vitejs/devtools':
         optional: true
-
-  '@nuxt/kit@4.4.8':
-    resolution: {integrity: sha512-ZUlZ5iYfyfJFDPluhn6ZxFWcsuxWbLnZBc8w3MAROcQ4lYfZ+qFpALBLSNlpc0zhOa++33EE+5PEbOAdVIY+dw==}
-    engines: {node: '>=18.12.0'}
 
   '@nuxt/kit@4.5.1':
     resolution: {integrity: sha512-xDXQspE2blxaZwxwGknL/BqaIbkLizl85Ov+pbSlPPd/rw2KjJGx88RHU5SwoQNwCiSC5hWZBnVAznIsq1xNHQ==}
@@ -1884,21 +1863,21 @@ packages:
       zod:
         optional: true
 
-  better-convex-nuxt@0.8.0-beta.21:
-    resolution: {integrity: sha512-TVGods745Lm+OMdFzBSH3565vBRtP8XlIcxeBEcZuB9G/GmrhJyxblFwb49qmizlGr783kPg89nH3POJJCqZpA==}
+  better-convex-nuxt@0.8.0-beta.22:
+    resolution: {integrity: sha512-b/BcGoktUVgGjc82RAfxcl8SljnnchOl/1uRo/uulYwaOS9qKVzNhfa6IrL3QAun6ph+SeMquZAkXOzA41GzJA==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
-      better-auth: 1.7.0-rc.1
+      better-auth: 1.7.0-rc.2
       convex: 1.42.2
       kysely: 0.28.17
-      nuxt: 4.4.8
+      nuxt: 4.5.1
 
-  better-convex-vue@0.8.0-beta.21:
-    resolution: {integrity: sha512-nwBcEKGCbEYFwOCVrobtOPE3RUGd1rDj6/0fb2CL0Ed5ZolbQ5qUv37fh40JE/KubJotIUbCpvY6VRU2tKqudg==}
+  better-convex-vue@0.8.0-beta.22:
+    resolution: {integrity: sha512-7GAUnk7ynu3ahZ1iqrpDb6ExxLrCC92zyzx1ZlsUFcCu27v3y+SU6uB8n54GvyHm1L3/nrnk/v7mgNMYSj/hVQ==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
-      '@modelcontextprotocol/ext-apps': 1.7.4
+      '@modelcontextprotocol/ext-apps': 1.7.5
       convex: 1.42.2
       vue: ^3.5.0
     peerDependenciesMeta:
@@ -4274,16 +4253,6 @@ snapshots:
       '@better-auth/core': 1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0)
       '@better-auth/utils': 0.4.2
 
-  '@better-auth/oauth-provider@1.7.0-rc.1(@better-auth/core@1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.0-rc.2(react@19.2.7)(vue@3.5.40(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))':
-    dependencies:
-      '@better-auth/core': 1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0)
-      '@better-auth/utils': 0.4.2
-      '@better-fetch/fetch': 1.3.1
-      better-auth: 1.7.0-rc.2(react@19.2.7)(vue@3.5.40(typescript@5.9.3))
-      better-call: 1.3.7(zod@4.4.3)
-      jose: 6.2.3
-      zod: 4.4.3
-
   '@better-auth/oauth-provider@1.7.0-rc.2(@better-auth/core@1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.0-rc.2(react@19.2.7)(vue@3.5.40(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))':
     dependencies:
       '@better-auth/core': 1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0)
@@ -4309,9 +4278,9 @@ snapshots:
     dependencies:
       '@noble/hashes': 2.2.0
 
-  '@better-convex/mcp@0.1.0-beta.9':
+  '@better-convex/mcp@0.1.0-beta.10':
     dependencies:
-      '@modelcontextprotocol/server': 2.0.0-beta.5
+      '@modelcontextprotocol/server': 2.0.0
 
   '@better-fetch/fetch@1.3.1': {}
 
@@ -4632,18 +4601,9 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  '@modelcontextprotocol/core@2.0.0-beta.5':
-    dependencies:
-      zod: 4.4.3
-
   '@modelcontextprotocol/server@2.0.0':
     dependencies:
       '@modelcontextprotocol/core': 2.0.0
-      zod: 4.4.3
-
-  '@modelcontextprotocol/server@2.0.0-beta.5':
-    dependencies:
-      '@modelcontextprotocol/core': 2.0.0-beta.5
       zod: 4.4.3
 
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
@@ -4803,31 +4763,6 @@ snapshots:
       - uploadthing
       - utf-8-validate
       - vue
-
-  '@nuxt/kit@4.4.8(magicast@0.5.3)':
-    dependencies:
-      c12: 3.3.4(magicast@0.5.3)
-      consola: 3.4.2
-      defu: 6.1.7
-      destr: 2.0.5
-      errx: 0.1.0
-      exsolve: 1.1.0
-      ignore: 7.0.6
-      jiti: 2.7.0
-      klona: 2.0.6
-      mlly: 1.8.2
-      ohash: 2.0.11
-      pathe: 2.0.3
-      pkg-types: 2.3.1
-      rc9: 3.0.1
-      scule: 1.3.0
-      semver: 7.8.5
-      tinyglobby: 0.2.17
-      ufo: 1.6.4
-      unctx: 2.5.0
-      untyped: 2.0.0
-    transitivePeerDependencies:
-      - magicast
 
   '@nuxt/kit@4.5.1(magic-string@1.1.0)(magicast@0.5.3)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.62.2)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0)))':
     dependencies:
@@ -5837,12 +5772,12 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  better-convex-nuxt@0.8.0-beta.21(fc0e6bb2d2743707a1cc885d79852554):
+  better-convex-nuxt@0.8.0-beta.22(ac9a9e1941fffac771d4a4f5d48cd4d4):
     dependencies:
-      '@better-auth/oauth-provider': 1.7.0-rc.1(@better-auth/core@1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.0-rc.2(react@19.2.7)(vue@3.5.40(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))
-      '@nuxt/kit': 4.4.8(magicast@0.5.3)
+      '@better-auth/oauth-provider': 1.7.0-rc.2(@better-auth/core@1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.0-rc.2(react@19.2.7)(vue@3.5.40(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))
+      '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.3)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.62.2)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0)))
       better-auth: 1.7.0-rc.2(react@19.2.7)(vue@3.5.40(typescript@5.9.3))
-      better-convex-vue: 0.8.0-beta.21(convex@1.42.2(react@19.2.7))(vue@3.5.40(typescript@5.9.3))
+      better-convex-vue: 0.8.0-beta.22(convex@1.42.2(react@19.2.7))(vue@3.5.40(typescript@5.9.3))
       convex: 1.42.2(react@19.2.7)
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2(react@19.2.7))(react@19.2.7)(typescript@5.9.3)(zod@4.4.3)
       defu: 6.1.7
@@ -5859,13 +5794,17 @@ snapshots:
       - '@standard-schema/spec'
       - better-call
       - hono
+      - magic-string
       - magicast
+      - oxc-parser
       - react
+      - rolldown
       - typescript
+      - unplugin
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.21(convex@1.42.2(react@19.2.7))(vue@3.5.40(typescript@5.9.3)):
+  better-convex-vue@0.8.0-beta.22(convex@1.42.2(react@19.2.7))(vue@3.5.40(typescript@5.9.3)):
     dependencies:
       convex: 1.42.2(react@19.2.7)
       ohash: 2.0.11
