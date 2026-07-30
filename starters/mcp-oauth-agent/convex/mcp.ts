@@ -1,5 +1,5 @@
-import { createConvexMcpHandler, runMcpTool, type McpAccessContext } from '@better-convex/mcp'
 import type { McpServer } from '@modelcontextprotocol/server'
+import { createConvexMcpHandler, runMcpTool, type McpAccessContext } from 'better-convex-mcp'
 import { requireAuthOrigin, verifyOAuthBearerToken } from 'better-convex-nuxt/convex-auth'
 import { ConvexError } from 'convex/values'
 import { z } from 'zod'

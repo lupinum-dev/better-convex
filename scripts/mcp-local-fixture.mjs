@@ -133,7 +133,7 @@ async function stopProcess(child) {
 }
 
 async function ensureWorkspacePackageBuild() {
-  await runCommand('pnpm', ['--filter', '@better-convex/mcp', 'build'], {
+  await runCommand('pnpm', ['--filter', 'better-convex-mcp', 'build'], {
     cwd: root,
     env: cleanEnvironment(),
     secrets: [],
@@ -207,7 +207,7 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
     if (!/^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/iu.test(name)) {
       throw new Error('Invalid fixture dependency name')
     }
-    if (name === '@better-convex/mcp' && mcpReleaseTarball) continue
+    if (name === 'better-convex-mcp' && mcpReleaseTarball) continue
     const source = join(root, 'node_modules', name)
     const destination = join(modules, name)
     const installedSource = await realpath(source)
@@ -235,7 +235,7 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
     ])
   }
   if (mcpReleaseTarball) {
-    const installedMcp = join(modules, '@better-convex/mcp')
+    const installedMcp = join(modules, 'better-convex-mcp')
     await mkdir(installedMcp, { mode: 0o700, recursive: true })
     await runCommand(
       'tar',
@@ -248,7 +248,7 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
       ),
     )
     if (
-      installedManifest.name !== '@better-convex/mcp' ||
+      installedManifest.name !== 'better-convex-mcp' ||
       installedManifest.version !== sourceManifest.version ||
       installedManifest.dependencies?.['@modelcontextprotocol/server'] !==
         sourceManifest.dependencies?.['@modelcontextprotocol/server']

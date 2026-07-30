@@ -145,7 +145,7 @@ describe('package-profile SBOM generation', () => {
         components: Array<{ name: string; version: string }>
         metadata: { component: { name: string } }
       }
-      expect(sbom.metadata.component.name).toBe('@better-convex/mcp')
+      expect(sbom.metadata.component.name).toBe('better-convex-mcp')
       expect(sbom.components.map(({ name }) => name).sort()).toEqual([
         '@modelcontextprotocol/core',
         '@modelcontextprotocol/server',

@@ -41,7 +41,7 @@ function createRepository(
   mkdirSync(mcpPackageDirectory, { recursive: true })
   writeFileSync(
     join(mcpPackageDirectory, 'package.json'),
-    `${JSON.stringify({ name: '@better-convex/mcp', version: '1.0.0' })}\n`,
+    `${JSON.stringify({ name: 'better-convex-mcp', version: '1.0.0' })}\n`,
   )
   return root
 }
@@ -91,7 +91,7 @@ describe('package certification manifest', () => {
       },
       {
         id: 'mcp',
-        packageName: '@better-convex/mcp',
+        packageName: 'better-convex-mcp',
         packageDirectory: 'packages/mcp',
         profiles: {
           build: 'mcp-unbuild',

@@ -110,7 +110,7 @@ describe('production manifest certification profiles', () => {
       dependencies: mcpManifest.dependencies,
       files: ['dist'],
       sideEffects: false,
-      scripts: { prepack: 'pnpm run build' },
+      scripts: { prepack: 'unbuild' },
     })
   })
 

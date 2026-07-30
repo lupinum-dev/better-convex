@@ -9,8 +9,8 @@
 
 The first-party Better Auth adapter belongs in the existing
 `better-convex-nuxt/convex-auth` backend entry. It will be a thin structural implementation of
-`McpAccessVerifier`; it will not be a runtime dependency of `@better-convex/mcp`, and it will not require
-`@better-convex/mcp` to import Better Auth.
+`McpAccessVerifier`; it will not be a runtime dependency of `better-convex-mcp`, and it will not require
+`better-convex-mcp` to import Better Auth.
 
 The implementation task may admit one provider-specific factory, provisionally shaped as:
 
@@ -53,12 +53,12 @@ adapter boundary; the returned provider-neutral MCP access context does not.
 The MCP package owns none of those provider rules. Moving them into MCP would copy a high-consequence
 verifier or make Better Auth part of the provider-neutral dependency graph.
 
-The returned verifier does not need a compile-time import from `@better-convex/mcp`: TypeScript's
+The returned verifier does not need a compile-time import from `better-convex-mcp`: TypeScript's
 structural contract allows the provider entry to return the exact method/result shape. This preserves
 both package directions:
 
 ```text
-@better-convex/mcp
+better-convex-mcp
   → official MCP SDK only
 
 better-convex-nuxt/convex-auth
@@ -68,13 +68,13 @@ better-convex-nuxt/convex-auth
 
 ## Rejected placements
 
-### `@better-convex/mcp/better-auth`
+### `better-convex-mcp/better-auth`
 
 Rejected. It would add Better Auth and OAuth-provider peer/optional dependency policy to the base MCP
 artifact or duplicate the root verifier. A subpath does not erase package-level install and maintenance
 cost.
 
-### `@better-convex/mcp-better-auth`
+### `better-convex-mcp-better-auth`
 
 Rejected. A fourth public package is not justified for one small adapter already owned by the current
 provider integration.
@@ -93,7 +93,7 @@ verifier rather than a lowest-common-denominator JWT abstraction.
 ## Executed dependency evidence
 
 ```text
-pnpm list --filter @better-convex/mcp --prod --json --depth Infinity
+pnpm list --filter better-convex-mcp --prod --json --depth Infinity
   direct production dependency: @modelcontextprotocol/server only
 
 node scripts/check-candidate-apps.mjs --package mcp

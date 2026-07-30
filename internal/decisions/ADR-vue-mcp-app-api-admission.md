@@ -68,7 +68,7 @@ scope disposal.
 
 The Apps server helper is peer-coupled to combined
 `@modelcontextprotocol/sdk@^1.29.0` (resolved here as exact `1.30.0`), while
-`@better-convex/mcp` uses split `@modelcontextprotocol/server@2.0.0`. Do not import the server helper,
+`better-convex-mcp` uses split `@modelcontextprotocol/server@2.0.0`. Do not import the server helper,
 cast between majors, ship both server runtimes, or add a compatibility wrapper.
 Server-side Apps metadata remains direct official v2 registration until an
 official compatible helper exists. `P7-004` must record that hard cut rather

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.8.0-beta.27
+
+- Supersede the partially staged beta.26 family after its exact Vue and Nuxt
+  candidates reached npm, but the reserved `@better-convex` npm scope proved
+  unavailable for the independently packaged MCP candidate.
+- Hard-cut the MCP package coordinate to the available unscoped
+  `better-convex-mcp` name, keeping one consistent Better Convex package
+  family. No alias, compatibility package, or second release path is retained.
+- Preserve Nuxt `4.5.1` and the already-certified runtime and security
+  boundaries while producing a fresh coordinated candidate set.
+
+## v0.1.0-beta.15 (`better-convex-mcp`)
+
+- Retire the unpublished `@better-convex/mcp@0.1.0-beta.14` candidate because
+  its npm scope is unavailable.
+- Publish the same provider-neutral MCP contract under the unscoped
+  `better-convex-mcp` coordinate as one breaking prerelease cut.
+
 ## v0.8.0-beta.26
 
 - Retire unpublished beta.25 after its immutable MCP candidate and all

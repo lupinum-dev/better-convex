@@ -19,7 +19,7 @@ const normalizedGuide = guide.replace(/\s+/gu, ' ')
 
 describe('MCP package documentation', () => {
   it('states the exact experimental SDK and protocol authority', () => {
-    expect(guide).toContain('`@better-convex/mcp`')
+    expect(guide).toContain('`better-convex-mcp`')
     expect(guide).toContain(`\`${mcpManifest.version}\``)
     expect(guide).toContain(
       `\`@modelcontextprotocol/server@${mcpManifest.dependencies['@modelcontextprotocol/server']}\``,

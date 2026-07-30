@@ -243,7 +243,7 @@ Only after Phase 3 proof:
   registry bytes, then install the unchanged Nuxt candidate against registry Vue before publishing Nuxt;
 - rename/rebrand the repository only after the package cutover passes.
 
-### Phase 5 — base `@better-convex/mcp`
+### Phase 5 — base `better-convex-mcp`
 
 - Implement only the selected official-SDK-backed topology.
 - Provide explicit tools/resources, schema validation, safe access context, provider-neutral verifier,

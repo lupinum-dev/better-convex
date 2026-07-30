@@ -115,7 +115,7 @@ async function materializeFixture(appHtml: string): Promise<string> {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
       dependencies: Record<string, string>
     }
-    manifest.dependencies['@better-convex/mcp'] = 'file:./better-convex-mcp.tgz'
+    manifest.dependencies['better-convex-mcp'] = 'file:./better-convex-mcp.tgz'
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     execFileSync('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], {
       cwd: directory,
@@ -127,10 +127,10 @@ async function materializeFixture(appHtml: string): Promise<string> {
     }
     packedCandidate = inspectConsumerCandidate({
       packageId: 'mcp',
-      packageName: '@better-convex/mcp',
+      packageName: 'better-convex-mcp',
       tarballPath,
     })
-    packedCandidate.assertInstalled(path.join(directory, 'node_modules/@better-convex/mcp'))
+    packedCandidate.assertInstalled(path.join(directory, 'node_modules/better-convex-mcp'))
   } else {
     await symlink(path.join(root, 'node_modules'), path.join(directory, 'node_modules'), 'dir')
   }
@@ -224,7 +224,7 @@ describe('vNext Convex-native MCP topology probe', () => {
       peerDependencies: Record<string, string>
     }
     expect(fixtureManifest.dependencies).toEqual({
-      '@better-convex/mcp': '0.1.0-beta.6',
+      'better-convex-mcp': '0.1.0-beta.6',
       '@modelcontextprotocol/server': mcpManifest.dependencies['@modelcontextprotocol/server'],
       convex: rootManifest.peerDependencies.convex,
       zod: '4.3.6',

@@ -48,7 +48,7 @@ const reviewedDescriptors = [
   },
   {
     id: 'mcp',
-    packageName: '@better-convex/mcp',
+    packageName: 'better-convex-mcp',
     packageDirectory: 'packages/mcp',
     profiles: {
       build: 'mcp-unbuild',

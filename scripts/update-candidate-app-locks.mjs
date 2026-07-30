@@ -64,7 +64,7 @@ const [nuxtCandidate, vueCandidate, mcpCandidate] = candidates
 if (
   nuxtCandidate.packageJson.name !== 'better-convex-nuxt' ||
   vueCandidate.packageJson.name !== 'better-convex-vue' ||
-  mcpCandidate.packageJson.name !== '@better-convex/mcp' ||
+  mcpCandidate.packageJson.name !== 'better-convex-mcp' ||
   nuxtCandidate.packageJson.dependencies?.['better-convex-vue'] !== vueCandidate.packageJson.version
 ) {
   throw new Error('Candidate tarballs do not form the reviewed exact Vue/Nuxt/MCP package set.')

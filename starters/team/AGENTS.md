@@ -6,7 +6,7 @@
 - Keep product authorization policy in `convex/lib/authz.ts`.
 - Keep product behavior in product modules such as `convex/projects.ts`.
 - Do not add agency delegation here; use the `agency` starter.
-- Do not add MCP or agent surfaces here; use the provider-neutral `@better-convex/mcp`
+- Do not add MCP or agent surfaces here; use the provider-neutral `better-convex-mcp`
   package and keep application authorization in the application.
 
 <!-- convex-ai-start -->

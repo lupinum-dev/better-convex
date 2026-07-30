@@ -130,7 +130,7 @@ not parse JSON-RPC or implement protocol negotiation.
    are absent from its type and value.
 9. **Authorization owner.** The verifier owns credential validity and scope ceiling. Each explicit
    application operation reloads canonical actor/resource authority and owns the effect.
-10. **Packed production proof.** Exact `@better-convex/mcp` bytes must run in a deployed Convex fixture
+10. **Packed production proof.** Exact `better-convex-mcp` bytes must run in a deployed Convex fixture
     with both Better Auth and an external verifier, then pass neutral and Ginko read/write matrices.
 11. **Deleted code.** The selected replacement removes the supported hand-written MCP parser/relay,
     duplicate starter protocol code, active Nitro fallback, and Ginko's HMAC/server-caller bridge for

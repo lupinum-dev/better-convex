@@ -99,7 +99,7 @@ describe('package entry manifest', () => {
 
     expect(manifest).toMatchObject({
       packageId: 'mcp',
-      packageName: '@better-convex/mcp',
+      packageName: 'better-convex-mcp',
       packageDirectory: 'packages/mcp',
       profileId: 'mcp-public-entries',
     })

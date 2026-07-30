@@ -13,7 +13,7 @@ const scratchRoot = mkdtempSync(join(tmpdir(), 'better-convex-mcp-consumer-'))
 const tarballPath = parseTarball(process.argv.slice(2))
 const candidate = inspectConsumerCandidate({
   packageId: 'mcp',
-  packageName: '@better-convex/mcp',
+  packageName: 'better-convex-mcp',
   tarballPath,
 })
 const officialServerVersion = candidate.manifest.dependencies?.['@modelcontextprotocol/server']
@@ -41,7 +41,7 @@ try {
         private: true,
         type: 'module',
         dependencies: {
-          '@better-convex/mcp': 'file:./better-convex-mcp.tgz',
+          'better-convex-mcp': 'file:./better-convex-mcp.tgz',
           '@modelcontextprotocol/server': officialServerVersion,
           '@types/node': '22.20.1',
           typescript: '5.9.3',
@@ -71,7 +71,7 @@ try {
   )
   writeFileSync(
     join(scratchRoot, 'consumer.ts'),
-    `import { createConvexMcpHandler, runMcpTool, type McpAccessContext, type McpAccessVerifier, type VerifiedMcpAccess } from '@better-convex/mcp'\n\nconst access: McpAccessContext = { issuer: 'https://issuer.example', subject: 'alice', clientId: 'client', resource: 'https://resource.example/mcp', scopes: ['notes:read'] }\nconst verifier: McpAccessVerifier = { async verifyAccessToken(_token, _resource): Promise<VerifiedMcpAccess> { return { access, expiresAt: 4_102_444_800 } } }\nvoid createConvexMcpHandler\nvoid runMcpTool\nvoid verifier\n`,
+    `import { createConvexMcpHandler, runMcpTool, type McpAccessContext, type McpAccessVerifier, type VerifiedMcpAccess } from 'better-convex-mcp'\n\nconst access: McpAccessContext = { issuer: 'https://issuer.example', subject: 'alice', clientId: 'client', resource: 'https://resource.example/mcp', scopes: ['notes:read'] }\nconst verifier: McpAccessVerifier = { async verifyAccessToken(_token, _resource): Promise<VerifiedMcpAccess> { return { access, expiresAt: 4_102_444_800 } } }\nvoid createConvexMcpHandler\nvoid runMcpTool\nvoid verifier\n`,
   )
   cpSync(
     join(repositoryRoot, 'scripts/fixtures/mcp-packed-credential-proof.mjs'),
@@ -82,7 +82,7 @@ try {
   run('pnpm', ['exec', 'tsc', '--noEmit'])
   run('node', ['runtime-proof.mjs'])
 
-  const installedRoot = join(scratchRoot, 'node_modules/@better-convex/mcp')
+  const installedRoot = join(scratchRoot, 'node_modules/better-convex-mcp')
   candidate.assertInstalled(installedRoot)
   const imported = await import(pathToFileURL(join(installedRoot, 'dist/index.mjs')).href)
   if (Object.keys(imported).sort().join(',') !== 'createConvexMcpHandler,runMcpTool') {

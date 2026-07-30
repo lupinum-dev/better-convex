@@ -223,7 +223,7 @@ requires the named Convex deployment to accept that token with the matching
 subject and `convex-session` class. The real auth responses must carry the
 candidate fingerprint. The MCP resource does not carry a Nuxt runtime
 fingerprint: its package-byte binding comes from the separately certified
-`@better-convex/mcp` artifact and its installed-byte consumer gates. It then
+`better-convex-mcp` artifact and its installed-byte consumer gates. It then
 deletes every row from all discovered mounted auth models and application
 tables. It must re-prove zero state before writing and uploading
 `bcn-auth-staging-report`. The report contains artifact coordinates, public

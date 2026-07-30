@@ -9,7 +9,7 @@
 
 ## Decision
 
-Build the experimental `@better-convex/mcp` package on the Convex-native topology. The official MCP
+Build the experimental `better-convex-mcp` package on the Convex-native topology. The official MCP
 server SDK terminates MCP and OAuth bearer access in one explicit Convex HTTP action. That action maps
 each registered tool or resource to one named internal application operation. Application state and
 authorization remain canonical in Convex.

@@ -27,7 +27,7 @@ function createRepository() {
   temporaryDirectories.push(root)
   writeFileSync(
     join(root, 'package.json'),
-    `${JSON.stringify({ name: 'better-convex-nuxt', version: '0.8.0-beta.26' })}\n`,
+    `${JSON.stringify({ name: 'better-convex-nuxt', version: '0.8.0-beta.27' })}\n`,
   )
   return root
 }
@@ -38,8 +38,8 @@ describe('package artifact coordinates', () => {
     ['better-convex-nuxt', '0.8.0-beta.15'],
     ['better-convex-nuxt', '0.8.0-beta.20'],
     ['better-convex-vue', '0.8.0-beta.20'],
-    ['@better-convex/mcp', '0.1.0-beta.0'],
-    ['@better-convex/mcp', '0.1.0-beta.8'],
+    ['better-convex-mcp', '0.1.0-beta.0'],
+    ['better-convex-mcp', '0.1.0-beta.8'],
   ])('rejects every identity below the release floor for %s@%s', (packageName, version) => {
     expect(() => assertReleaseEligiblePackageVersion(packageName, version)).toThrow(
       'predates the minimum releasable version',
@@ -47,16 +47,16 @@ describe('package artifact coordinates', () => {
   })
 
   it('accepts the release floor, successors, and unrelated package versions', () => {
-    expect(assertReleaseEligiblePackageVersion('better-convex-nuxt', '0.8.0-beta.26')).toBe(
-      '0.8.0-beta.26',
+    expect(assertReleaseEligiblePackageVersion('better-convex-nuxt', '0.8.0-beta.27')).toBe(
+      '0.8.0-beta.27',
     )
-    expect(assertReleaseEligiblePackageVersion('better-convex-vue', '0.8.0-beta.26')).toBe(
-      '0.8.0-beta.26',
+    expect(assertReleaseEligiblePackageVersion('better-convex-vue', '0.8.0-beta.27')).toBe(
+      '0.8.0-beta.27',
     )
-    expect(assertReleaseEligiblePackageVersion('@better-convex/mcp', '0.1.0-beta.14')).toBe(
-      '0.1.0-beta.14',
+    expect(assertReleaseEligiblePackageVersion('better-convex-mcp', '0.1.0-beta.15')).toBe(
+      '0.1.0-beta.15',
     )
-    expect(assertReleaseEligiblePackageVersion('@better-convex/mcp', '0.1.0')).toBe('0.1.0')
+    expect(assertReleaseEligiblePackageVersion('better-convex-mcp', '0.1.0')).toBe('0.1.0')
     expect(assertReleaseEligiblePackageVersion('unrelated-package', '0.8.0-beta.6')).toBe(
       '0.8.0-beta.6',
     )
@@ -81,20 +81,20 @@ describe('package artifact coordinates', () => {
         candidateTests: 'nuxt-maintained-consumers',
         runtimeFingerprint: 'nuxt-runtime-binding',
       },
-      version: '0.8.0-beta.26',
-      relativeDirectory: '.release-artifacts/nuxt/0.8.0-beta.26',
+      version: '0.8.0-beta.27',
+      relativeDirectory: '.release-artifacts/nuxt/0.8.0-beta.27',
       files: {
         contents: 'contents.json',
         evidence: 'artifact.json',
         sbom: 'sbom.cdx.json',
-        tarball: 'better-convex-nuxt-0.8.0-beta.26.tgz',
+        tarball: 'better-convex-nuxt-0.8.0-beta.27.tgz',
       },
     })
     expect(coordinates.relativePaths).toEqual({
-      contents: '.release-artifacts/nuxt/0.8.0-beta.26/contents.json',
-      evidence: '.release-artifacts/nuxt/0.8.0-beta.26/artifact.json',
-      sbom: '.release-artifacts/nuxt/0.8.0-beta.26/sbom.cdx.json',
-      tarball: '.release-artifacts/nuxt/0.8.0-beta.26/better-convex-nuxt-0.8.0-beta.26.tgz',
+      contents: '.release-artifacts/nuxt/0.8.0-beta.27/contents.json',
+      evidence: '.release-artifacts/nuxt/0.8.0-beta.27/artifact.json',
+      sbom: '.release-artifacts/nuxt/0.8.0-beta.27/sbom.cdx.json',
+      tarball: '.release-artifacts/nuxt/0.8.0-beta.27/better-convex-nuxt-0.8.0-beta.27.tgz',
     })
     expect(new Set(Object.values(coordinates.paths)).size).toBe(4)
     for (const path of Object.values(coordinates.paths)) {
@@ -166,7 +166,7 @@ describe('package artifact coordinates', () => {
   })
 
   it('derives npm canonical tarball basenames without using them as package directories', () => {
-    expect(canonicalNpmTarballFilename('@better-convex/mcp', '1.2.3-beta.4')).toBe(
+    expect(canonicalNpmTarballFilename('better-convex-mcp', '1.2.3-beta.4')).toBe(
       'better-convex-mcp-1.2.3-beta.4.tgz',
     )
     expect(canonicalNpmTarballFilename('better-convex-vue', '1.0.0-RC.1')).toBe(

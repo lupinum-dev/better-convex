@@ -18,7 +18,7 @@ describe('delegated MCP static trust boundaries', () => {
     const action = readFileSync(join(starter, 'convex/mcp.ts'), 'utf8')
     const tools = readFileSync(join(starter, 'convex/mcpTools.ts'), 'utf8')
     expect(action.match(/verifyOAuthBearerToken\(/g)).toHaveLength(1)
-    expect(action).toContain("from '@better-convex/mcp'")
+    expect(action).toContain("from 'better-convex-mcp'")
     expect(action).toContain("from '@modelcontextprotocol/server'")
     expect(action.match(/server\.registerTool\(/g)).toHaveLength(5)
     expect(action).not.toMatch(/run(?:Query|Mutation|Action)\([^,\n]*(?:message|input)\./)

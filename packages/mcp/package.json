@@ -1,6 +1,6 @@
 {
-  "name": "@better-convex/mcp",
-  "version": "0.1.0-beta.14",
+  "name": "better-convex-mcp",
+  "version": "0.1.0-beta.15",
   "description": "Provider-neutral MCP integration for Convex applications",
   "license": "MIT",
   "files": [
@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "unbuild",
-    "prepack": "pnpm run build",
+    "prepack": "unbuild",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

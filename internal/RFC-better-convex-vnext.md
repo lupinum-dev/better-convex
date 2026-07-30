@@ -55,7 +55,7 @@ Browser applications
   └── better-convex-nuxt
 
 Agent applications
-  └── @better-convex/mcp
+  └── better-convex-mcp
 
 Canonical backend
   └── application-owned Convex functions and state
@@ -91,7 +91,7 @@ Approve the following product direction:
 1. Complete and freeze `better-convex-nuxt@0.7` as the secure Nuxt baseline.
 2. Rebrand the product family to **Better Convex** and rename the repository only after the second public package is proven, without publishing a catch-all package or relocating the certified Nuxt package merely for symmetry.
 3. Add `better-convex-vue` from a private shared client-lifecycle implementation already proven by the Nuxt package.
-4. Add `@better-convex/mcp` as an optional standards integration built on the official MCP SDK.
+4. Add `better-convex-mcp` as an optional standards integration built on the official MCP SDK.
 5. Use explicit application MCP tools, not automatic Convex-function exposure.
 6. Keep business authorization live and application-owned in Convex.
 7. Use ordinary tool calls for ordinary writes.
@@ -322,7 +322,7 @@ Ginko may motivate a primitive, but Ginko alone does not justify a general publi
             └──────────────────┬─────────┴──────────────┬──────────┘
                                │                        │
                                ▼                        ▼
-                     explicit application API   @better-convex/mcp
+                     explicit application API   better-convex-mcp
                                │                        │
                                └────────────┬───────────┘
                                             ▼
@@ -381,7 +381,7 @@ This package owns Nuxt-specific behavior:
 
 Nuxt MUST use the same query, pagination, callable, identity, and disposal implementation as Vue after hydration. Once `better-convex-vue` is published, Nuxt consumes that package rather than a copied private implementation. It MUST NOT maintain a second client engine.
 
-#### `@better-convex/mcp`
+#### `better-convex-mcp`
 
 This optional package owns only MCP-to-application integration:
 
@@ -410,9 +410,9 @@ It MUST NOT own:
 Candidate subpaths, subject to the package proof, are:
 
 ```text
-@better-convex/mcp
-@better-convex/mcp/convex
-@better-convex/mcp/testing
+better-convex-mcp
+better-convex-mcp/convex
+better-convex-mcp/testing
 ```
 
 A Better Auth adapter MAY be exposed as an optional subpath only if doing so avoids dependency leakage and is useful outside Nuxt. Otherwise it remains in the Nuxt/Convex integration that already owns Better Auth.
@@ -448,7 +448,7 @@ better-convex/
     vue/
       package.json                 # better-convex-vue
     mcp/
-      package.json                 # @better-convex/mcp
+      package.json                 # better-convex-mcp
 
   internal/
     labs/
@@ -2140,7 +2140,7 @@ Exit criteria:
 - installed bytes match both approved candidates;
 - no old Nuxt client engine remains.
 
-### Phase 5: base `@better-convex/mcp`
+### Phase 5: base `better-convex-mcp`
 
 Scope:
 
@@ -2546,7 +2546,7 @@ better-convex-vue
   → production Vite anonymous and authenticated apps
   → production embedded Vue app
 
-@better-convex/mcp
+better-convex-mcp
   → selected production MCP runtime
   → OAuth and protocol conformance
   → URL interaction fixture
@@ -2587,7 +2587,7 @@ Public packages use independent versions because their compatibility and securit
 ```text
 better-convex-nuxt@0.x
 better-convex-vue@0.x
-@better-convex/mcp@0.x
+better-convex-mcp@0.x
 ```
 
 The existing Nuxt tag format MAY remain until the release certifier supports reviewed package-qualified tags. New packages use unambiguous package-qualified tags. During beta, internal public-package dependencies use exact versions. Version ranges widen only after an executed compatibility matrix supports them.
@@ -2781,7 +2781,7 @@ These are the only unresolved architectural decisions authorized by this RFC.
 
 ### 4. Better Auth MCP adapter location
 
-- Options: optional `@better-convex/mcp` subpath or the existing Nuxt/Convex auth integration.
+- Options: optional `better-convex-mcp` subpath or the existing Nuxt/Convex auth integration.
 - Closure: dependency graph and non-Nuxt Better Auth consumer proof.
 - Prohibited outcome: Better Auth becoming a required dependency of the provider-neutral MCP base.
 
@@ -2827,7 +2827,7 @@ Docs MUST distinguish normative support from examples and experimental adapters.
 - The product and repository are named Better Convex.
 - Existing consumers continue installing `better-convex-nuxt`.
 - Plain Vue installs `better-convex-vue` without Nuxt or Nitro dependencies.
-- Agent integration installs `@better-convex/mcp` only when needed.
+- Agent integration installs `better-convex-mcp` only when needed.
 - No catch-all package, public core, Commands, Trusted Calls, RBAC, or workflow package exists without a later RFC.
 - One private client-lifecycle implementation powers Vue and post-hydration Nuxt behavior.
 - One official-SDK-backed MCP protocol implementation remains.

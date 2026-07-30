@@ -1,4 +1,4 @@
-import { createConvexMcpHandler } from '@better-convex/mcp'
+import { createConvexMcpHandler } from 'better-convex-mcp'
 import { z } from 'zod'
 
 const resource = new URL('https://packed-mcp.invalid/mcp')

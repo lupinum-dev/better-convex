@@ -49,7 +49,7 @@ const vueCandidate = inspectConsumerCandidate({
 })
 const mcpCandidate = inspectConsumerCandidate({
   packageId: 'mcp',
-  packageName: '@better-convex/mcp',
+  packageName: 'better-convex-mcp',
   tarballPath: args['mcp-tarball'],
 })
 const officialClientVersion = repositoryManifest.devDependencies?.['@modelcontextprotocol/client']
@@ -77,7 +77,7 @@ try {
         type: 'module',
         packageManager: repositoryManifest.packageManager,
         dependencies: {
-          '@better-convex/mcp': 'file:./better-convex-mcp.tgz',
+          'better-convex-mcp': 'file:./better-convex-mcp.tgz',
           '@modelcontextprotocol/client': officialClientVersion,
           '@modelcontextprotocol/ext-apps': officialAppsVersion,
           '@modelcontextprotocol/server': officialServerVersion,
@@ -106,7 +106,7 @@ try {
   }
 
   const installedVue = join(scratchRoot, 'node_modules/better-convex-vue')
-  const installedMcp = join(scratchRoot, 'node_modules/@better-convex/mcp')
+  const installedMcp = join(scratchRoot, 'node_modules/better-convex-mcp')
   vueCandidate.assertInstalled(installedVue)
   mcpCandidate.assertInstalled(installedMcp)
 
