@@ -32,10 +32,3 @@ overrides:
   c12: 3.3.4
   'ws@8.18.0': 8.21.0
   'ws@8.19.0': 8.21.0
-
-minimumReleaseAgeExclude:
-  - '@modelcontextprotocol/client@2.0.0'
-  - '@modelcontextprotocol/core@2.0.0'
-  - '@modelcontextprotocol/inspector@2.0.0'
-  - '@modelcontextprotocol/sdk@1.30.0'
-  - '@modelcontextprotocol/server@2.0.0'
