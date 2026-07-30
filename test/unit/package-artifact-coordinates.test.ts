@@ -33,7 +33,7 @@ function createRepository() {
         type: 'git',
         url: 'https://github.com/lupinum-dev/better-convex-nuxt',
       },
-      version: '0.8.0-beta.28',
+      version: '0.8.0-beta.29',
     })}\n`,
   )
   return root
@@ -54,14 +54,14 @@ describe('package artifact coordinates', () => {
   })
 
   it('accepts the release floor, successors, and unrelated package versions', () => {
-    expect(assertReleaseEligiblePackageVersion('better-convex-nuxt', '0.8.0-beta.28')).toBe(
-      '0.8.0-beta.28',
+    expect(assertReleaseEligiblePackageVersion('better-convex-nuxt', '0.8.0-beta.29')).toBe(
+      '0.8.0-beta.29',
     )
-    expect(assertReleaseEligiblePackageVersion('better-convex-vue', '0.8.0-beta.28')).toBe(
-      '0.8.0-beta.28',
+    expect(assertReleaseEligiblePackageVersion('better-convex-vue', '0.8.0-beta.29')).toBe(
+      '0.8.0-beta.29',
     )
-    expect(assertReleaseEligiblePackageVersion('better-convex-mcp', '0.1.0-beta.16')).toBe(
-      '0.1.0-beta.16',
+    expect(assertReleaseEligiblePackageVersion('better-convex-mcp', '0.1.0-beta.17')).toBe(
+      '0.1.0-beta.17',
     )
     expect(assertReleaseEligiblePackageVersion('better-convex-mcp', '0.1.0')).toBe('0.1.0')
     expect(assertReleaseEligiblePackageVersion('unrelated-package', '0.8.0-beta.6')).toBe(
@@ -88,20 +88,20 @@ describe('package artifact coordinates', () => {
         candidateTests: 'nuxt-maintained-consumers',
         runtimeFingerprint: 'nuxt-runtime-binding',
       },
-      version: '0.8.0-beta.28',
-      relativeDirectory: '.release-artifacts/nuxt/0.8.0-beta.28',
+      version: '0.8.0-beta.29',
+      relativeDirectory: '.release-artifacts/nuxt/0.8.0-beta.29',
       files: {
         contents: 'contents.json',
         evidence: 'artifact.json',
         sbom: 'sbom.cdx.json',
-        tarball: 'better-convex-nuxt-0.8.0-beta.28.tgz',
+        tarball: 'better-convex-nuxt-0.8.0-beta.29.tgz',
       },
     })
     expect(coordinates.relativePaths).toEqual({
-      contents: '.release-artifacts/nuxt/0.8.0-beta.28/contents.json',
-      evidence: '.release-artifacts/nuxt/0.8.0-beta.28/artifact.json',
-      sbom: '.release-artifacts/nuxt/0.8.0-beta.28/sbom.cdx.json',
-      tarball: '.release-artifacts/nuxt/0.8.0-beta.28/better-convex-nuxt-0.8.0-beta.28.tgz',
+      contents: '.release-artifacts/nuxt/0.8.0-beta.29/contents.json',
+      evidence: '.release-artifacts/nuxt/0.8.0-beta.29/artifact.json',
+      sbom: '.release-artifacts/nuxt/0.8.0-beta.29/sbom.cdx.json',
+      tarball: '.release-artifacts/nuxt/0.8.0-beta.29/better-convex-nuxt-0.8.0-beta.29.tgz',
     })
     expect(new Set(Object.values(coordinates.paths)).size).toBe(4)
     for (const path of Object.values(coordinates.paths)) {
