@@ -15,7 +15,7 @@
     "@iconify-json/simple-icons": "^1.2.71",
     "@nuxt/ui": "^4.5.0",
     "better-auth": "1.7.0-rc.2",
-    "better-convex-nuxt": "0.8.0-beta.28",
+    "better-convex-nuxt": "0.8.0-beta.29",
     "convex": "1.42.2",
     "kysely": "0.28.17",
     "nuxt": "4.5.1"
