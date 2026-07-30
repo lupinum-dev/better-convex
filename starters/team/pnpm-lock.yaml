@@ -24,8 +24,8 @@ importers:
         specifier: 1.7.0-rc.2
         version: 1.7.0-rc.2(react@19.2.7)(vitest@4.1.9(@edge-runtime/vm@5.0.0)(@types/node@25.9.4)(vite@8.1.5(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3))
       better-convex-nuxt:
-        specifier: 0.8.0-beta.27
-        version: 0.8.0-beta.27(bc294f57e05d0a2c62007182782f875f)
+        specifier: 0.8.0-beta.28
+        version: 0.8.0-beta.28(bc294f57e05d0a2c62007182782f875f)
       convex:
         specifier: 1.42.2
         version: 1.42.2(react@19.2.7)
@@ -1988,8 +1988,8 @@ packages:
       zod:
         optional: true
 
-  better-convex-nuxt@0.8.0-beta.27:
-    resolution: {integrity: sha512-OVgWAK8acBd7zPr46GUIphiLcOYaJOkavN2XbN5l6c/E2Xr3IBwf0UKS7kRxNoexc6CCRw2IEGeeblbcoeALcw==}
+  better-convex-nuxt@0.8.0-beta.28:
+    resolution: {integrity: sha512-F9Hf2bZL7cDXwcNCDp92LSAjy8igodmAchgkKqIvi5jBIwhsnJim3BEYWRSQqEc4u/Gwg0QTDubnughxtrwTqA==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -1998,8 +1998,8 @@ packages:
       kysely: 0.28.17
       nuxt: 4.5.1
 
-  better-convex-vue@0.8.0-beta.27:
-    resolution: {integrity: sha512-MbaDGynwdDjCVlrLY8//Nqx4u2uyYPUuUeqKiVLl9VEGujfK9DA/Gx1GGtAeibXe0XDdKrCU+aOItT0uFKIhgg==}
+  better-convex-vue@0.8.0-beta.28:
+    resolution: {integrity: sha512-HADEWIVaPGv9E+eS6kprlyA94TmmqK/kQNbehtAz0NIEn5v0XBjIUFgyitJoF5Kn9d/8tFV80wEeBkI+Hx3Esw==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5
@@ -6176,12 +6176,12 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  better-convex-nuxt@0.8.0-beta.27(bc294f57e05d0a2c62007182782f875f):
+  better-convex-nuxt@0.8.0-beta.28(bc294f57e05d0a2c62007182782f875f):
     dependencies:
       '@better-auth/oauth-provider': 1.7.0-rc.2(@better-auth/core@1.7.0-rc.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.7.0-rc.2(react@19.2.7)(vitest@4.1.9(@edge-runtime/vm@5.0.0)(@types/node@25.9.4)(vite@8.1.5(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3)))(better-call@1.3.7(zod@4.4.3))
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.3)(oxc-parser@0.140.0)(rolldown@1.2.0)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.0)(rollup@4.62.2)(vite@8.1.5(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0)))
       better-auth: 1.7.0-rc.2(react@19.2.7)(vitest@4.1.9(@edge-runtime/vm@5.0.0)(@types/node@25.9.4)(vite@8.1.5(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3))
-      better-convex-vue: 0.8.0-beta.27(convex@1.42.2(react@19.2.7))(vue@3.5.40(typescript@5.9.3))
+      better-convex-vue: 0.8.0-beta.28(convex@1.42.2(react@19.2.7))(vue@3.5.40(typescript@5.9.3))
       convex: 1.42.2(react@19.2.7)
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2(react@19.2.7))(react@19.2.7)(typescript@5.9.3)(zod@4.4.3)
       defu: 6.1.7
@@ -6208,7 +6208,7 @@ snapshots:
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.27(convex@1.42.2(react@19.2.7))(vue@3.5.40(typescript@5.9.3)):
+  better-convex-vue@0.8.0-beta.28(convex@1.42.2(react@19.2.7))(vue@3.5.40(typescript@5.9.3)):
     dependencies:
       convex: 1.42.2(react@19.2.7)
       ohash: 2.0.11

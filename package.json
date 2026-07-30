@@ -1,6 +1,6 @@
 {
   "name": "better-convex-nuxt",
-  "version": "0.8.0-beta.27",
+  "version": "0.8.0-beta.28",
   "description": "Full-featured Convex integration for Nuxt with SSR, real-time subscriptions, and authentication",
   "keywords": [
     "authentication",
@@ -23,7 +23,7 @@
   "author": "Matthias Amon",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lupinum-dev/better-convex-nuxt.git"
+    "url": "https://github.com/lupinum-dev/better-convex-nuxt"
   },
   "bin": {
     "better-convex-nuxt-auth-schema": "./dist/runtime/cli/auth-schema.js",
@@ -108,7 +108,7 @@
   "scripts": {
     "build:devtools": "nuxi build src/runtime/devtools/ui --preset static && node scripts/normalize-devtools-build.mjs",
     "build:package": "pnpm --dir packages/vue build && nuxt-module-build prepare && pnpm run build:devtools && nuxt-module-build build",
-    "prepack": "pnpm --dir packages/mcp build && pnpm run build:package && pnpm run check:package-exports:dist --dist-only && pnpm run check:single-runtime-owners:dist",
+    "prepack": "pnpm exec unbuild packages/mcp && pnpm run build:package && pnpm run check:package-exports:dist --dist-only && pnpm run check:single-runtime-owners:dist",
     "dev": "pnpm run dev:prepare && nuxi dev --cwd playground --dotenv .env.local --port 4578",
     "dev:build": "nuxi build --cwd playground --dotenv .env.local",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare --cwd playground --dotenv .env.local",
@@ -187,7 +187,7 @@
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.0-rc.2",
     "@nuxt/kit": "4.5.1",
-    "better-convex-vue": "0.8.0-beta.27",
+    "better-convex-vue": "0.8.0-beta.28",
     "convex-helpers": "0.1.114",
     "defu": "^6.1.5",
     "h3": "1.15.11",

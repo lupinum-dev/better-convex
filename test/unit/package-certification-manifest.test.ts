@@ -11,6 +11,10 @@ import {
 } from '../../scripts/package-certification-manifest.mjs'
 
 const temporaryDirectories: string[] = []
+const repository = {
+  type: 'git',
+  url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+}
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -29,19 +33,19 @@ function createRepository(
   mkdirSync(absolutePackageDirectory, { recursive: true })
   writeFileSync(
     join(absolutePackageDirectory, 'package.json'),
-    `${JSON.stringify({ name, private: options.private, version: '1.0.0' })}\n`,
+    `${JSON.stringify({ name, private: options.private, repository, version: '1.0.0' })}\n`,
   )
   const vuePackageDirectory = join(root, 'packages/vue')
   mkdirSync(vuePackageDirectory, { recursive: true })
   writeFileSync(
     join(vuePackageDirectory, 'package.json'),
-    `${JSON.stringify({ name: 'better-convex-vue', version: '1.0.0' })}\n`,
+    `${JSON.stringify({ name: 'better-convex-vue', repository, version: '1.0.0' })}\n`,
   )
   const mcpPackageDirectory = join(root, 'packages/mcp')
   mkdirSync(mcpPackageDirectory, { recursive: true })
   writeFileSync(
     join(mcpPackageDirectory, 'package.json'),
-    `${JSON.stringify({ name: 'better-convex-mcp', version: '1.0.0' })}\n`,
+    `${JSON.stringify({ name: 'better-convex-mcp', repository, version: '1.0.0' })}\n`,
   )
   return root
 }
@@ -276,6 +280,17 @@ describe('package certification manifest', () => {
         repositoryRoot: privateRoot,
       }),
     ).toThrow('descriptor nuxt cannot certify a private package')
+
+    const missingRepositoryRoot = createRepository()
+    writeFileSync(
+      join(missingRepositoryRoot, 'package.json'),
+      `${JSON.stringify({ name: 'better-convex-nuxt', version: '1.0.0' })}\n`,
+    )
+    expect(() =>
+      validatePackageCertificationDescriptors(cloneDescriptors(), {
+        repositoryRoot: missingRepositoryRoot,
+      }),
+    ).toThrow('requires repository.url')
 
     const missingRoot = createRepository()
     rmSync(join(missingRoot, 'package.json'))

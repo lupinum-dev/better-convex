@@ -22,7 +22,7 @@
   "dependencies": {
     "@convex-dev/rate-limiter": "^0.3.2",
     "better-auth": "1.7.0-rc.2",
-    "better-convex-nuxt": "0.8.0-beta.27",
+    "better-convex-nuxt": "0.8.0-beta.28",
     "convex": "1.42.2",
     "kysely": "0.28.17",
     "nuxt": "4.5.1",

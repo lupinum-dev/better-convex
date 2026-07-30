@@ -24,17 +24,31 @@ afterEach(() => {
   }
 })
 
-function createRepository(version = '0.8.0-beta.27') {
+function createRepository(version = '0.8.0-beta.28') {
   const root = mkdtempSync(join(tmpdir(), 'bcn-candidate-set-'))
   temporaryDirectories.push(root)
   writeFileSync(
     join(root, 'package.json'),
-    `${JSON.stringify({ name: 'better-convex-nuxt', version })}\n`,
+    `${JSON.stringify({
+      name: 'better-convex-nuxt',
+      repository: {
+        type: 'git',
+        url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+      },
+      version,
+    })}\n`,
   )
   mkdirSync(join(root, 'packages/vue'), { recursive: true })
   writeFileSync(
     join(root, 'packages/vue/package.json'),
-    `${JSON.stringify({ name: 'better-convex-vue', version })}\n`,
+    `${JSON.stringify({
+      name: 'better-convex-vue',
+      repository: {
+        type: 'git',
+        url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+      },
+      version,
+    })}\n`,
   )
   for (const packageId of ['vue', 'nuxt'] as const) {
     const coordinates = getPackageArtifactCoordinates(packageId, {
@@ -111,13 +125,13 @@ describe('package candidate set', () => {
     expect(evidence).toMatchObject({
       schemaVersion: candidateSetSchemaVersion,
       sourceCommit,
-      version: '0.8.0-beta.27',
+      version: '0.8.0-beta.28',
       packageManager: 'pnpm@10.30.3',
     })
     expect(evidence.packages.map((entry) => entry.packageId)).toEqual(['vue', 'nuxt'])
     expect(parseCandidateSetEvidence(evidence, root)).toEqual(evidence)
     expect(getCandidateSetCoordinates(root).manifest).toBe(
-      join(realpathSync(root), '.release-artifacts/set/0.8.0-beta.27/artifact-set.json'),
+      join(realpathSync(root), '.release-artifacts/set/0.8.0-beta.28/artifact-set.json'),
     )
   })
 
@@ -146,7 +160,14 @@ describe('package candidate set', () => {
     const root = createRepository()
     writeFileSync(
       join(root, 'packages/vue/package.json'),
-      `${JSON.stringify({ name: 'better-convex-vue', version: '0.8.0-beta.28' })}\n`,
+      `${JSON.stringify({
+        name: 'better-convex-vue',
+        repository: {
+          type: 'git',
+          url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+        },
+        version: '0.8.0-beta.29',
+      })}\n`,
     )
 
     expect(() => getCandidateSetCoordinates(root)).toThrow('must use one exact version')
