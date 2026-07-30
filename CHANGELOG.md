@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.8.0-beta.29
+
+- Keep the published beta.28 Vue/Nuxt bytes and source commit immutable while
+  opening the next untagged development coordinate for post-release source
+  maintenance.
+- Remove the exact official MCP package-age exclusions after every pinned
+  package passed the normal 24-hour supply-chain age policy.
+- Preserve Nuxt `4.5.1`, Vite `8.1.5`, Vue `3.5.40`, and the existing public
+  Vue/Nuxt API without adding a compatibility path or runtime behavior change.
+
+## v0.1.0-beta.17 (`better-convex-mcp`)
+
+- Keep the published beta.16 MCP bytes and source commit immutable while
+  opening the next untagged development coordinate for the coordinated source
+  tree.
+- Preserve the existing provider-neutral MCP contract and official SDK tuple
+  without adding a protocol switch, fallback, or public API change.
+
 ## v0.8.0-beta.28
 
 - Retire unpublished beta.27 after its immutable Vue, Nuxt, and MCP candidates
