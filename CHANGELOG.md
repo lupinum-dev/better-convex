@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## v0.8.0-beta.28
+
+- Retire unpublished beta.27 after its immutable Vue, Nuxt, and MCP candidates
+  passed protected verification, but npm correctly rejected Vue provenance
+  because the packed package did not declare the repository URL.
+- Bind all three publishable package manifests to the canonical
+  `https://github.com/lupinum-dev/better-convex-nuxt` repository and make that
+  provenance identity a release-certification invariant.
+- Build the MCP workspace entry directly through the root `unbuild` authority
+  during Nuxt prepack so pnpm cannot create a nested package lockfile.
+- Preserve the exact Nuxt `4.5.1`, Vite `8.1.5`, Vue `3.5.40`, and experimental
+  MCP `2026-07-28` boundaries.
+
+## v0.1.0-beta.16 (`better-convex-mcp`)
+
+- Retire unpublished beta.15 with the coordinated beta.27 set.
+- Declare and certify the canonical repository URL required for npm trusted
+  publishing and signed provenance.
+
 ## v0.8.0-beta.27
 
 - Supersede the partially staged beta.26 family after its exact Vue and Nuxt
