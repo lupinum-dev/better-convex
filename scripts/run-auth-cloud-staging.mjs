@@ -597,7 +597,7 @@ async function prepareCloudFixture(artifact) {
     writeFileSync(packagePath, `${JSON.stringify(fixturePackage, null, 2)}\n`)
     runFixtureCommand(
       'pnpm',
-      ['install', '--no-frozen-lockfile', '--ignore-scripts'],
+      ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
       fixtureDirectory,
       'AUTH_CLOUD_STAGING_FIXTURE_INSTALL_FAILED',
     )

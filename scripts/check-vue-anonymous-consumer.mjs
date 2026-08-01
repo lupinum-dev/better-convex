@@ -79,7 +79,11 @@ try {
 
   cpSync(fixtureRoot, consumerRoot, { recursive: true })
   cpSync(packedTarball, join(consumerRoot, tarballName))
-  run('pnpm', ['install', '--frozen-lockfile=false', '--ignore-scripts'], consumerRoot)
+  run(
+    'pnpm',
+    ['install', '--frozen-lockfile=false', '--ignore-scripts', '--strict-peer-dependencies'],
+    consumerRoot,
+  )
   run('pnpm', ['run', 'typecheck'], consumerRoot)
   run('pnpm', ['run', 'build'], consumerRoot)
 

@@ -185,7 +185,11 @@ async function runRealCodegen(cwd, deploymentEnv = undefined, verifyBulkBudget =
   process.env.BCN_E2E_REQUIRE_LOCAL = 'true'
   process.env.CONVEX_AGENT_MODE = 'anonymous'
   process.env.CONVEX_E2E_AUTO_START = 'true'
-  const handle = await ensureLocalConvex({ cwd, deploymentEnv, timeoutMs: 90_000 })
+  const handle = await ensureLocalConvex({
+    cwd,
+    deploymentEnv,
+    timeoutMs: 90_000,
+  })
   try {
     const siteUrl = handle.env.CONVEX_SITE_URL
     if (!siteUrl) fail(`local backend did not report a site URL for ${cwd}`)
@@ -275,6 +279,7 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
     recursive: true,
     filter: (source) => {
       const relative = path.relative(path.join(isolatedRoot, 'demo'), source)
+      if (relative === 'pnpm-lock.yaml') return false
       return !relative
         .split(path.sep)
         .some((segment) => excludedDirectoryNames.has(segment) || segment === '.env.local')
@@ -286,14 +291,42 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
   copyFileSync(vueTarball, localVueTarball)
   const manifestPath = path.join(packaged, 'package.json')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const repositoryManifest = JSON.parse(
+    readFileSync(path.join(isolatedRoot, 'package.json'), 'utf8'),
+  )
+  manifest.packageManager = repositoryManifest.packageManager
+  manifest.dependencies = Object.fromEntries(
+    ['better-auth', 'convex', 'kysely', 'nuxt'].map((name) => [name, manifest.dependencies[name]]),
+  )
   manifest.dependencies['better-convex-nuxt'] = 'file:./better-convex-nuxt.tgz'
+  delete manifest.devDependencies
+  delete manifest.scripts
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   writeFileSync(
     path.join(packaged, 'pnpm-workspace.yaml'),
-    "overrides:\n  'better-convex-vue': 'file:./better-convex-vue.tgz'\n",
+    [
+      'strictPeerDependencies: true',
+      'overrides:',
+      "  'better-convex-vue': 'file:./better-convex-vue.tgz'",
+      '',
+    ].join('\n'),
   )
-  run('pnpm', ['install', '--lockfile-only', '--no-frozen-lockfile', '--ignore-scripts'], packaged)
-  run('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts'], packaged)
+  run(
+    'pnpm',
+    [
+      'install',
+      '--lockfile-only',
+      '--no-frozen-lockfile',
+      '--ignore-scripts',
+      '--strict-peer-dependencies',
+    ],
+    packaged,
+  )
+  run(
+    'pnpm',
+    ['install', '--frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
+    packaged,
+  )
   return packaged
 }
 

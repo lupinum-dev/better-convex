@@ -86,9 +86,15 @@ try {
   candidate = prepareVueCandidate(process.argv.slice(2), scratchRoot)
 
   cpSync(fixtureRoot, consumerRoot, { recursive: true })
-  cpSync(browserRuntimeFixture, join(scratchRoot, 'browser-runtime'), { recursive: true })
+  cpSync(browserRuntimeFixture, join(scratchRoot, 'browser-runtime'), {
+    recursive: true,
+  })
   cpSync(candidate.tarballPath, join(consumerRoot, 'better-convex-vue.tgz'))
-  run('pnpm', ['install', '--frozen-lockfile=false', '--ignore-scripts'], consumerRoot)
+  run(
+    'pnpm',
+    ['install', '--frozen-lockfile=false', '--ignore-scripts', '--strict-peer-dependencies'],
+    consumerRoot,
+  )
   symlinkSync(join(consumerRoot, 'node_modules'), join(scratchRoot, 'node_modules'), 'dir')
   candidate.assertInstalled(join(consumerRoot, 'node_modules/better-convex-vue'))
   run('pnpm', ['run', 'typecheck'], consumerRoot)

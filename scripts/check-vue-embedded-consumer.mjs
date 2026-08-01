@@ -98,7 +98,11 @@ try {
   for (const consumerRoot of [hostRoot, embeddedRoot]) {
     cpSync(fixtureRoot, consumerRoot, { recursive: true })
     cpSync(candidate.tarballPath, join(consumerRoot, 'better-convex-vue.tgz'))
-    run('pnpm', ['install', '--frozen-lockfile=false', '--ignore-scripts'], consumerRoot)
+    run(
+      'pnpm',
+      ['install', '--frozen-lockfile=false', '--ignore-scripts', '--strict-peer-dependencies'],
+      consumerRoot,
+    )
     const installed = JSON.parse(
       readFileSync(join(consumerRoot, 'node_modules/better-convex-vue/package.json'), 'utf8'),
     )

@@ -7,6 +7,7 @@ import {
 } from './package-certification-manifest.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
+const repositoryManifest = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'))
 const runnerFields = Object.freeze(['kind', 'runners', 'tarballFilename'])
 const appFields = Object.freeze([
   'browserRunners',
@@ -33,7 +34,6 @@ const candidateTestProfiles = Object.freeze({
     }),
     pnpmApps: Object.freeze(
       [
-        { name: 'demo', path: 'demo' },
         { name: 'agency', path: 'starters/agency' },
         {
           name: 'mcp-oauth-agent',
@@ -155,6 +155,9 @@ function assertFixture(fixture, label, descriptor, requireLockfile) {
   const manifest = readFixtureManifest(fixture, label)
   if (requireLockfile) {
     assertRepositoryEntry(join(fixture.path, 'pnpm-lock.yaml'), `${label} pnpm-lock.yaml`, 'file')
+    if (manifest.packageManager !== repositoryManifest.packageManager) {
+      throw new Error(`${label} does not use the repository package manager.`)
+    }
     if (dependencySpecifier(manifest, descriptor.packageName) === undefined) {
       throw new Error(`${label} does not declare ${descriptor.packageName}.`)
     }

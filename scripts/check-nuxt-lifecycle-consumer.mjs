@@ -149,8 +149,16 @@ try {
   })
   cpSync(options.nuxtTarball, join(consumerRoot, 'better-convex-nuxt.tgz'))
   cpSync(options.vueTarball, join(consumerRoot, 'better-convex-vue.tgz'))
-  run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], consumerRoot)
-  run('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts'], consumerRoot)
+  run(
+    'pnpm',
+    ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
+    consumerRoot,
+  )
+  run(
+    'pnpm',
+    ['install', '--frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
+    consumerRoot,
+  )
   symlinkSync(join(consumerRoot, 'node_modules'), join(scratchRoot, 'node_modules'), 'dir')
 
   const lock = readFileSync(join(consumerRoot, 'pnpm-lock.yaml'), 'utf8')

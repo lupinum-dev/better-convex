@@ -80,12 +80,18 @@ const updatedLocks = new Map()
 function runPnpm(directory, registry, frozen) {
   return new Promise((resolvePromise, reject) => {
     const installArgs = frozen
-      ? ['install', '--frozen-lockfile', '--ignore-scripts']
-      : ['install', '--lockfile-only', '--no-frozen-lockfile', '--ignore-scripts']
+      ? ['install', '--frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies']
+      : [
+          'install',
+          '--lockfile-only',
+          '--no-frozen-lockfile',
+          '--ignore-scripts',
+          '--strict-peer-dependencies',
+        ]
     console.log(`\n> pnpm ${installArgs.join(' ')} (${directory})`)
     const child = spawn('pnpm', installArgs, {
       cwd: resolve(repoRoot, directory),
-      env: { ...process.env, npm_config_registry: registry },
+      env: { ...process.env, PNPM_CONFIG_REGISTRY: registry },
       stdio: 'inherit',
     })
     child.on('error', reject)
@@ -94,50 +100,6 @@ function runPnpm(directory, registry, frozen) {
       else reject(new Error(`pnpm exited with ${signal ?? code} for ${directory}`))
     })
   })
-}
-
-function removeCandidateResolution(lock, packageJson) {
-  const lines = lock.split('\n')
-  const output = []
-  const removed = { importers: 0, packages: 0, snapshots: 0 }
-  let section
-
-  for (let index = 0; index < lines.length;) {
-    const line = lines[index]
-    if (/^\S.*:$/.test(line)) section = line.slice(0, -1)
-
-    const indent =
-      section === 'importers' && line === `      ${packageJson.name}:`
-        ? 6
-        : (section === 'packages' || section === 'snapshots') &&
-            line.startsWith(`  ${packageJson.name}@`) &&
-            line.endsWith(':')
-          ? 2
-          : undefined
-
-    if (indent === undefined) {
-      output.push(line)
-      index += 1
-      continue
-    }
-
-    index += 1
-    while (
-      index < lines.length &&
-      lines[index].trim() !== '' &&
-      lines[index].length - lines[index].trimStart().length > indent
-    ) {
-      index += 1
-    }
-    removed[section] += 1
-  }
-
-  for (const [sectionName, count] of Object.entries(removed)) {
-    if (count !== 1) {
-      throw new Error(`Expected one ${packageJson.name} block in ${sectionName}; found ${count}`)
-    }
-  }
-  return output.join('\n')
 }
 
 let registry
@@ -223,8 +185,6 @@ const validationRoot = mkdtempSync(join(tmpdir(), 'bcn-candidate-locks-'))
 try {
   for (const { path: directory } of maintainedCandidateApps) {
     const lockPath = join(repoRoot, directory, 'pnpm-lock.yaml')
-    const previousLock = readFileSync(lockPath, 'utf8')
-    const lockWithoutCandidate = removeCandidateResolution(previousLock, nuxtCandidate.packageJson)
     const validationDir = join(validationRoot, directory)
     mkdirSync(validationDir, { recursive: true })
     for (const filename of ['package.json', 'pnpm-workspace.yaml']) {
@@ -233,7 +193,9 @@ try {
     }
     const validationManifest = JSON.parse(readFileSync(join(validationDir, 'package.json'), 'utf8'))
     const validationLockPath = join(validationDir, 'pnpm-lock.yaml')
-    writeFileSync(validationLockPath, lockWithoutCandidate)
+    // Regenerate from the maintained manifest and workspace policy. Reusing a
+    // prior lock would preserve obsolete peer snapshots across toolchain or
+    // upstream metadata changes and make a strict install report false errors.
     await runPnpm(validationDir, registry, false)
     const lock = readFileSync(validationLockPath, 'utf8')
     // Requests proxied through the temporary registry otherwise make pnpm

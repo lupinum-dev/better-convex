@@ -97,8 +97,19 @@ try {
   - '${vueCandidate.manifest.name}@${vueCandidate.manifest.version}'
 `,
   )
-  run('pnpm', ['install', '--frozen-lockfile=false', '--ignore-scripts'])
-  run('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts', '--offline'])
+  run('pnpm', [
+    'install',
+    '--frozen-lockfile=false',
+    '--ignore-scripts',
+    '--strict-peer-dependencies',
+  ])
+  run('pnpm', [
+    'install',
+    '--frozen-lockfile',
+    '--ignore-scripts',
+    '--offline',
+    '--strict-peer-dependencies',
+  ])
 
   const lock = readFileSync(join(scratchRoot, 'pnpm-lock.yaml'), 'utf8')
   if (!lock.includes('better-convex-vue.tgz') || !lock.includes('better-convex-mcp.tgz')) {
@@ -134,7 +145,10 @@ try {
       import(pathToFileURL(join(scratchRoot, 'node_modules/zod/index.js')).href),
     ])
   const handler = createConvexMcpHandler({
-    authorization: { issuer: 'https://packed-app.invalid/issuer/', mode: 'preconfigured-bearer' },
+    authorization: {
+      issuer: 'https://packed-app.invalid/issuer/',
+      mode: 'preconfigured-bearer',
+    },
     resource: new URL('https://packed-app.invalid/mcp'),
     verifier: {
       async verifyAccessToken(value, expectedResource) {
@@ -169,7 +183,12 @@ try {
         async (input) => {
           if (input.workspaceId !== 'workspace-a' || input.query === 'revoked') {
             return {
-              content: [{ type: 'text', text: 'The request is not currently authorized.' }],
+              content: [
+                {
+                  type: 'text',
+                  text: 'The request is not currently authorized.',
+                },
+              ],
               isError: true,
             }
           }

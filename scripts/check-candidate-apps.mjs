@@ -711,12 +711,26 @@ try {
       // Preserve every committed transitive resolution. Only replace the module
       // package entry with the exact local tarball, then prove that resulting
       // candidate lock is internally frozen-installable.
-      run('pnpm', ['install', '--lockfile-only', '--no-frozen-lockfile', '--ignore-scripts'], {
-        cwd: appDir,
-      })
-      run('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts'], {
-        cwd: appDir,
-      })
+      run(
+        'pnpm',
+        [
+          'install',
+          '--lockfile-only',
+          '--no-frozen-lockfile',
+          '--ignore-scripts',
+          '--strict-peer-dependencies',
+        ],
+        {
+          cwd: appDir,
+        },
+      )
+      run(
+        'pnpm',
+        ['install', '--frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
+        {
+          cwd: appDir,
+        },
+      )
 
       const lock = readFileSync(join(appDir, 'pnpm-lock.yaml'), 'utf8')
       if (!lock.includes(candidateProfile.tarballFilename)) {

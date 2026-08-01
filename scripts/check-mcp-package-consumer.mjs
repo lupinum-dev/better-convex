@@ -78,7 +78,12 @@ try {
     join(scratchRoot, 'runtime-proof.mjs'),
   )
 
-  run('pnpm', ['install', '--frozen-lockfile=false', '--ignore-scripts'])
+  run('pnpm', [
+    'install',
+    '--frozen-lockfile=false',
+    '--ignore-scripts',
+    '--strict-peer-dependencies',
+  ])
   run('pnpm', ['exec', 'tsc', '--noEmit'])
   run('node', ['runtime-proof.mjs'])
 

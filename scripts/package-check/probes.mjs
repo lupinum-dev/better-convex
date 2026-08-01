@@ -18,6 +18,20 @@ function run(command, args, options = {}) {
   })
 }
 
+function installStrict(cwd, { production = false } = {}) {
+  run(
+    'pnpm',
+    [
+      'install',
+      ...(production ? ['--prod'] : []),
+      '--no-frozen-lockfile',
+      '--ignore-scripts',
+      '--strict-peer-dependencies',
+    ],
+    { cwd },
+  )
+}
+
 function productionGraph(directory) {
   return JSON.parse(
     execFileSync('pnpm', ['list', '--prod', '--depth', 'Infinity', '--json'], {
@@ -256,7 +270,7 @@ export function probeRootEntry(ctx) {
   })
 
   try {
-    run('pnpm', ['install', '--prod', '--no-frozen-lockfile', '--ignore-scripts'], { cwd: dir })
+    installStrict(dir, { production: true })
     run('node', ['index.mjs'], { cwd: dir })
     assertProductionGraph(dir, requiredPhysicalRuntimeNames, 'production consumer')
     if (process.env.BCN_RELEASE_PRODUCTION_AUDIT === 'true') {
@@ -269,9 +283,7 @@ export function probeRootEntry(ctx) {
       )
     }
 
-    run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], {
-      cwd: dir,
-    })
+    installStrict(dir)
     run('pnpm', ['exec', 'tsc', '-p', 'tsconfig.json'], { cwd: dir })
     run(
       'pnpm',
@@ -323,9 +335,7 @@ export function probeErrorsEntry(ctx) {
   const restoreFixture = prepareFixtureTarballs(ctx, fixtureDir)
 
   try {
-    run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], {
-      cwd: fixtureDir,
-    })
+    installStrict(fixtureDir)
     run('pnpm', ['run', 'build'], { cwd: fixtureDir })
     run('pnpm', ['run', 'start'], { cwd: fixtureDir })
   } catch (error) {
@@ -357,9 +367,7 @@ export function probeAuthClientTyping(ctx) {
   const restoreFixture = prepareFixtureTarballs(ctx, fixtureDir)
 
   try {
-    run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], {
-      cwd: fixtureDir,
-    })
+    installStrict(fixtureDir)
     run('pnpm', ['run', 'prepare:types'], { cwd: fixtureDir })
     run('pnpm', ['run', 'typecheck'], { cwd: fixtureDir })
     run('pnpm', ['run', 'typecheck:base-fallback'], { cwd: fixtureDir })
@@ -389,9 +397,7 @@ export function probeServerEntry(ctx) {
   const restoreFixture = prepareFixtureTarballs(ctx, fixtureDir)
 
   try {
-    run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], {
-      cwd: fixtureDir,
-    })
+    installStrict(fixtureDir)
     run('pnpm', ['run', 'prepare:types'], { cwd: fixtureDir })
     run('pnpm', ['run', 'typecheck'], { cwd: fixtureDir })
     run('pnpm', ['run', 'probe:production'], { cwd: fixtureDir })
@@ -430,9 +436,7 @@ export function probeCreateUserSyncTriggersEntry(ctx) {
   const restoreFixture = prepareFixtureTarballs(ctx, fixtureDir)
 
   try {
-    run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], {
-      cwd: fixtureDir,
-    })
+    installStrict(fixtureDir)
     run('pnpm', ['run', 'build'], { cwd: fixtureDir })
     run('pnpm', ['run', 'start'], { cwd: fixtureDir })
   } catch (error) {

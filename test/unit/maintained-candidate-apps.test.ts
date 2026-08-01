@@ -70,11 +70,11 @@ describe('maintained candidate-test profiles', () => {
     for (const profile of Object.values(currentProfiles())) visit(profile)
   })
 
-  it('keeps the mock-provider agent application outside the maintained starter surface', () => {
+  it('keeps non-starter demo applications outside the maintained starter surface', () => {
     const selected = getMaintainedCandidateProfile('nuxt')
-    expect(
-      selected.profile.pnpmApps.some((entry: { name: string }) => entry.name === 'agentic-saas'),
-    ).toBe(false)
+    const names = selected.profile.pnpmApps.map((entry: { name: string }) => entry.name)
+    expect(names).not.toContain('agentic-saas')
+    expect(names).not.toContain('demo')
   })
 
   it('rejects a runner that is not a real repository-owned consumer', () => {
