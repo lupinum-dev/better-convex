@@ -2,21 +2,22 @@
 
 ## Unreleased
 
-## v0.8.0-beta.29
+## v0.8.0-beta.30
 
-- Keep the published beta.28 Vue/Nuxt bytes and source commit immutable while
-  opening the next untagged development coordinate for post-release source
-  maintenance.
+- Retire the unpublished beta.29 Vue/Nuxt candidate after its clean local
+  candidate matrix exposed two Team starter integration tests that could exceed
+  Vitest's generic five-second unit-test timeout under sustained workload.
+- Give the Team starter's Convex integration suite one explicit 15-second test
+  budget. The product assertions and runtime behavior are unchanged.
 - Remove the exact official MCP package-age exclusions after every pinned
   package passed the normal 24-hour supply-chain age policy.
 - Preserve Nuxt `4.5.1`, Vite `8.1.5`, Vue `3.5.40`, and the existing public
   Vue/Nuxt API without adding a compatibility path or runtime behavior change.
 
-## v0.1.0-beta.17 (`better-convex-mcp`)
+## v0.1.0-beta.18 (`better-convex-mcp`)
 
-- Keep the published beta.16 MCP bytes and source commit immutable while
-  opening the next untagged development coordinate for the coordinated source
-  tree.
+- Retire the unpublished beta.17 MCP candidate with the coordinated beta.29
+  Vue/Nuxt set; no MCP implementation or public contract changed.
 - Preserve the existing provider-neutral MCP contract and official SDK tuple
   without adding a protocol switch, fallback, or public API change.
 
