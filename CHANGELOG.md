@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## v0.8.0-beta.32
+
+- Retire the unpublished beta.31 Vue/Nuxt candidate set after its full clean
+  release rehearsal exposed an integrated-auth race: one Better Auth refetch
+  could resolve after a competing refresh became authoritative but was still
+  pending or refetching, causing a successful browser operation to reconcile
+  against stale session data.
+- Await canonical Better Auth session settlement after refetch with one bounded,
+  leak-free watcher before reconciling Convex identity. The public auth API and
+  its sanitized failure contract are unchanged.
+- Advance Vue with Nuxt as one exact closed candidate set even though the Vue
+  runtime is unchanged; no second version or source-commit path is retained.
+
+## v0.1.0-beta.20 (`better-convex-mcp`)
+
+- Retire the unpublished beta.19 MCP candidate with the failed beta.31 release
+  family. The protected workflows build every package from one fresh checkout,
+  so a corrected source commit must not mint different beta.19 evidence.
+- Preserve the beta.19 provider-neutral MCP implementation and public contract
+  unchanged while reserving one fresh immutable coordinate for certification.
+
 ## v0.8.0-beta.31
 
 - Hard-cut the client API to one Vue-owned lifecycle: queries use `undefined`

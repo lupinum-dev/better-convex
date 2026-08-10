@@ -15,9 +15,9 @@ const maximumFilesystemComponentBytes = 255
 const maximumNpmPackageNameBytes = 214
 const fullGitCommitPattern = /^[0-9a-f]{40}$/u
 const minimumReleasableVersions = Object.freeze({
-  'better-convex-mcp': '0.1.0-beta.19',
-  'better-convex-nuxt': '0.8.0-beta.31',
-  'better-convex-vue': '0.8.0-beta.31',
+  'better-convex-mcp': '0.1.0-beta.20',
+  'better-convex-nuxt': '0.8.0-beta.32',
+  'better-convex-vue': '0.8.0-beta.32',
 })
 
 /**

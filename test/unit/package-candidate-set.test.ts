@@ -24,7 +24,7 @@ afterEach(() => {
   }
 })
 
-function createRepository(version = '0.8.0-beta.31') {
+function createRepository(version = '0.8.0-beta.32') {
   const root = mkdtempSync(join(tmpdir(), 'bcn-candidate-set-'))
   temporaryDirectories.push(root)
   writeFileSync(
@@ -125,13 +125,13 @@ describe('package candidate set', () => {
     expect(evidence).toMatchObject({
       schemaVersion: candidateSetSchemaVersion,
       sourceCommit,
-      version: '0.8.0-beta.31',
+      version: '0.8.0-beta.32',
       packageManager: 'pnpm@10.30.3',
     })
     expect(evidence.packages.map((entry) => entry.packageId)).toEqual(['vue', 'nuxt'])
     expect(parseCandidateSetEvidence(evidence, root)).toEqual(evidence)
     expect(getCandidateSetCoordinates(root).manifest).toBe(
-      join(realpathSync(root), '.release-artifacts/set/0.8.0-beta.31/artifact-set.json'),
+      join(realpathSync(root), '.release-artifacts/set/0.8.0-beta.32/artifact-set.json'),
     )
   })
 
@@ -166,7 +166,7 @@ describe('package candidate set', () => {
           type: 'git',
           url: 'https://github.com/lupinum-dev/better-convex-nuxt',
         },
-        version: '0.8.0-beta.32',
+        version: '0.8.0-beta.33',
       })}\n`,
     )
 
