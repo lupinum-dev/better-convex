@@ -8,9 +8,9 @@ type McpToolResult = CallToolResult | InputRequiredResult
  * This deliberately narrow helper does not sanitize SDK input/output validation failures or callbacks
  * that do not call it. Expected domain outcomes remain ordinary official tool return values.
  */
-export const runMcpTool = async <Result extends McpToolResult>(
-  operation: () => Result | Promise<Result>,
-): Promise<Result | CallToolResult> => {
+export const runMcpTool = async (
+  operation: () => McpToolResult | Promise<McpToolResult>,
+): Promise<McpToolResult> => {
   try {
     return await operation()
   } catch {

@@ -1,6 +1,10 @@
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose'
 
-import type { McpAccessVerifier, VerifiedMcpAccess } from '../../packages/mcp/src/index'
+import type {
+  McpAccessVerifier,
+  McpVerificationExpectation,
+  VerifiedMcpAccess,
+} from '../../packages/mcp/src/index'
 
 export interface ExternalOAuthVerifierOptions {
   readonly allowedScopes: readonly string[]
@@ -47,8 +51,12 @@ export async function discoverExternalOAuthVerifier(
   })
 
   return Object.freeze({
-    async verifyAccessToken(token: string, expectedResource: URL): Promise<VerifiedMcpAccess> {
-      const resource = canonicalHttpsUrl(expectedResource.href, true)
+    async verifyAccessToken(
+      token: string,
+      expected: McpVerificationExpectation,
+    ): Promise<VerifiedMcpAccess> {
+      if (expected.issuer !== issuer) invalid()
+      const resource = canonicalHttpsUrl(expected.resource.href, true)
       const now = options.now?.() ?? Date.now() / 1_000
       if (!Number.isSafeInteger(now)) invalid()
       const { payload, protectedHeader } = await jwtVerify(token, keys, {

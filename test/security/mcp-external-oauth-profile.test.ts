@@ -86,6 +86,8 @@ async function accessToken(
 }
 
 describe('external RFC 8414 and RFC 9068 verifier profile', () => {
+  const expectation = () => Object.freeze({ issuer, resource: new URL(resource.href) })
+
   it('discovers an exact issuer, verifies its public JWKS, and returns only safe access provenance', async () => {
     const fetch = externalFetch()
     const verifier = await createVerifier(() => 1_800_000_000, { fetch })
@@ -112,7 +114,7 @@ describe('external RFC 8414 and RFC 9068 verifier profile', () => {
 
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([discoveryUrl.href, jwksUrl])
-    const serialized = JSON.stringify(await verifier.verifyAccessToken(token, resource))
+    const serialized = JSON.stringify(await verifier.verifyAccessToken(token, expectation()))
     expect(serialized).not.toContain(token)
     expect(serialized).not.toContain('jti')
   })
@@ -130,15 +132,15 @@ describe('external RFC 8414 and RFC 9068 verifier profile', () => {
   ])('rejects %s', async (_label, claimOverrides, headerOverrides) => {
     const verifier = await createVerifier()
     await expect(
-      verifier.verifyAccessToken(await accessToken(claimOverrides, headerOverrides), resource),
+      verifier.verifyAccessToken(await accessToken(claimOverrides, headerOverrides), expectation()),
     ).rejects.toThrow()
   })
 
   it('rejects malformed, expired, and wrong-key access tokens', async () => {
     const verifier = await createVerifier()
-    await expect(verifier.verifyAccessToken('not-a-jwt', resource)).rejects.toThrow()
+    await expect(verifier.verifyAccessToken('not-a-jwt', expectation())).rejects.toThrow()
     await expect(
-      verifier.verifyAccessToken(await accessToken({ exp: 1_799_999_999 }), resource),
+      verifier.verifyAccessToken(await accessToken({ exp: 1_799_999_999 }), expectation()),
     ).rejects.toThrow()
 
     const foreign = await generateKeyPair('RS256')
@@ -154,7 +156,7 @@ describe('external RFC 8414 and RFC 9068 verifier profile', () => {
     })
       .setProtectedHeader({ alg: 'RS256', kid: keyId, typ: 'at+jwt' })
       .sign(foreign.privateKey)
-    await expect(verifier.verifyAccessToken(wrongKeyToken, resource)).rejects.toThrow()
+    await expect(verifier.verifyAccessToken(wrongKeyToken, expectation())).rejects.toThrow()
   })
 
   it('rejects discovery issuer substitution before accepting token material', async () => {
@@ -173,7 +175,7 @@ describe('external RFC 8414 and RFC 9068 verifier profile', () => {
     let applicationCredentialActive = true
 
     const invokeApplicationEffect = async () => {
-      const verified = await verifier.verifyAccessToken(token, resource)
+      const verified = await verifier.verifyAccessToken(token, expectation())
       if (!applicationCredentialActive) throw new Error('APPLICATION_ACCESS_REVOKED')
       return `${verified.access.issuer}:${verified.access.subject}`
     }
@@ -187,6 +189,6 @@ describe('external RFC 8414 and RFC 9068 verifier profile', () => {
     await expect(invokeApplicationEffect()).rejects.toThrow('APPLICATION_ACCESS_REVOKED')
 
     now = 1_800_000_241
-    await expect(verifier.verifyAccessToken(token, resource)).rejects.toThrow()
+    await expect(verifier.verifyAccessToken(token, expectation())).rejects.toThrow()
   })
 })
