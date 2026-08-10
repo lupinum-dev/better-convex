@@ -94,6 +94,22 @@ describe('package entry manifest', () => {
     })
   })
 
+  it('keeps the MCP App subpath lifecycle contract exact', () => {
+    expect(getPackageEntry('vue', './mcp-app')).toMatchObject({
+      kind: 'runtime',
+      valueExports: ['useMcpApp'],
+      typeExports: [
+        'McpAppError',
+        'McpAppErrorCode',
+        'McpAppHostVersion',
+        'McpAppPhase',
+        'UseMcpAppOptions',
+        'UseMcpAppReturn',
+      ],
+      exactDeclaredExports: true,
+    })
+  })
+
   it('selects the exact reviewed MCP type-contract entry profile', () => {
     const manifest = getPackageEntryManifest('mcp')
 

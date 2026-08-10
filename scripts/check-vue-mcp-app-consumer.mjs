@@ -121,6 +121,57 @@ try {
   vueCandidate.assertInstalled(installedVue)
   mcpCandidate.assertInstalled(installedMcp)
 
+  writeFileSync(
+    join(scratchRoot, 'mcp-app-types.ts'),
+    `import {
+  type McpAppError,
+  type McpAppErrorCode,
+  type McpAppHostVersion,
+  type McpAppPhase,
+  type UseMcpAppOptions,
+  type UseMcpAppReturn,
+  useMcpApp,
+} from 'better-convex-vue/mcp-app'
+
+declare const options: UseMcpAppOptions
+const app: UseMcpAppReturn = useMcpApp(options)
+const phase: McpAppPhase = app.phase.value
+const error: McpAppError | undefined = app.error.value
+const code: McpAppErrorCode | undefined = error?.code
+const version: McpAppHostVersion | undefined = app.hostVersion.value
+void phase
+void code
+void version
+// @ts-expect-error the mutable official App stays private
+app.app
+if (error) {
+  // @ts-expect-error lifecycle diagnostics are readonly
+  error.code = 'MCP_APP_CONNECT_FAILED'
+}
+`,
+  )
+  writeFileSync(
+    join(scratchRoot, 'tsconfig.json'),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          lib: ['DOM', 'ES2022'],
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          noEmit: true,
+          skipLibCheck: true,
+          strict: true,
+          target: 'ES2022',
+          types: [],
+        },
+        files: ['mcp-app-types.ts'],
+      },
+      null,
+      2,
+    )}\n`,
+  )
+  run(process.execPath, [join(repositoryRoot, 'node_modules/typescript/bin/tsc'), '--project', '.'])
+
   const consumerRequire = createRequire(join(scratchRoot, 'package.json'))
   const build = await buildNotesDashboard({
     extAppsBridgeEntry: consumerRequire.resolve('@modelcontextprotocol/ext-apps/app-bridge'),

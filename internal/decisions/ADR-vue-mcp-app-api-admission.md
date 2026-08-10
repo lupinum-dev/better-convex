@@ -37,6 +37,15 @@ type McpAppLifecycle = {
   callServerTool: App['callServerTool']
   openLink: App['openLink']
   phase: Readonly<Ref<'idle' | 'connecting' | 'ready' | 'error' | 'closed'>>
+  error: Readonly<
+    ShallowRef<
+      | {
+          readonly code: 'MCP_APP_CONNECT_FAILED' | 'MCP_APP_CLONE_FAILED'
+          readonly message: string
+        }
+      | undefined
+    >
+  >
   hostCapabilities: Readonly<ShallowRef<McpUiHostCapabilities | undefined>>
   hostContext: Readonly<ShallowRef<McpUiHostContext | undefined>>
   hostVersion: Readonly<ShallowRef<Implementation | undefined>>
@@ -134,14 +143,17 @@ received envelope.
 6. **Authorization owner?** The host mediates requests and the MCP server
    re-verifies the bearer plus current application authority. Vue state grants
    nothing.
-7. **Invalid states?** The wrapper exposes one phase, two narrow host
-   operations, and readonly shallow projections. The mutable SDK App, a Convex
-   client, and tokens remain private.
+7. **Invalid states?** Construction fails before creating the SDK App unless a
+   browser and current Vue component instance own `onMounted`. The wrapper
+   exposes one phase, one sanitized lifecycle error, two narrow host operations,
+   and readonly shallow projections. The mutable SDK App, a Convex client, and
+   tokens remain private.
 8. **Persistent mechanism?** None. No table, cache, worker, registry, plugin,
    global singleton, or background job is added.
-9. **Failure model?** Connect/protocol failure moves the lifecycle to `error`
-   without exposing a raw cause. Official operation results/errors stay official
-   and application code handles domain failures.
+9. **Failure model?** Connection and structured-clone failures retire and close
+   the App, move the lifecycle to `error`, and expose only a stable local
+   code/message. Official operation results/errors stay caller-owned and do not
+   change the lifecycle phase or error.
 10. **Packed proof?** The subpath must be installed from the exact Vue tarball in
     production Vite Apps for both consumers before stabilization.
 
@@ -159,8 +171,9 @@ received envelope.
   runtime is needed.
 - Automatic theme mutation: consumers may compose the official theme helpers;
   the lifecycle only exposes current context.
-- Raw error causes, messages, stacks, bridge transcripts, or diagnostics in Vue
-  state.
+- Raw error causes, host messages, stacks, bridge transcripts, or rejected
+  values in Vue state. The only lifecycle diagnostic is a stable local
+  code/message pair.
 - Direct Convex or Better Auth attachment inside the iframe.
 - A host/sandbox implementation in the Vue package. Hosts own sandboxing; Better
   Convex tests it but does not become a general MCP host SDK.

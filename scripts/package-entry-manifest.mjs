@@ -254,7 +254,14 @@ const vuePackageEntries = [
     distJs: 'dist/mcp-app.mjs',
     distDts: 'dist/mcp-app.d.mts',
     valueExports: ['useMcpApp'],
-    typeExports: [],
+    typeExports: [
+      'McpAppError',
+      'McpAppErrorCode',
+      'McpAppHostVersion',
+      'McpAppPhase',
+      'UseMcpAppOptions',
+      'UseMcpAppReturn',
+    ],
     exactDeclaredExports: true,
     forbiddenNames: [
       'callTool',

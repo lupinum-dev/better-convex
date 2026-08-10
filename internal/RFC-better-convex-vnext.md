@@ -1171,24 +1171,32 @@ It SHOULD compose with `@modelcontextprotocol/ext-apps` and provide Vue lifecycl
 - calling allowed MCP tools through the host;
 - opening allowed external links through the host;
 - cleanup on Vue scope disposal;
-- safe error normalization;
+- stable sanitized connection/clone diagnostics;
 - test harnesses for the iframe boundary.
 
 An illustrative consumer shape is:
 
 ```ts
-const app = useMcpApp()
-const input = useMcpToolInput()
-const result = useMcpToolResult()
-const host = useMcpHostContext()
+const app = useMcpApp({
+  implementation: { name: 'filter-ui', version: '1.0.0' },
+  capabilities: {},
+})
 
-await app.callTool('filter_entries', {
-  collection: input.value.collection,
-  filters: selectedFilters.value,
+await app.callServerTool({
+  name: 'filter_entries',
+  arguments: {
+    collection: app.toolInput.value?.arguments?.collection,
+    filters: selectedFilters.value,
+  },
 })
 ```
 
-These names are not approved until tested against the final extension SDK. The package SHOULD follow official terminology rather than rename App Bridge concepts.
+The mutable official `App` remains private. The public lifecycle consists of
+readonly host context/capability/version and four tool notification refs,
+`callServerTool`, `openLink`, phase, and a sanitized error carrying only
+`MCP_APP_CONNECT_FAILED` or `MCP_APP_CLONE_FAILED`. Operation rejections stay
+local to their caller. The package follows official terminology rather than
+renaming App Bridge concepts.
 
 ### MCP App security boundary
 
