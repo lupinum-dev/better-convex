@@ -13,7 +13,7 @@ type RegisteredHttpAction = {
 async function dispatch(path: string, method: RouteMethod, init: RequestInit = {}) {
   const route = http.lookup(path, method)
   if (!route) throw new Error(`Missing ${method} ${path} route`)
-  const handler = route[0] as RegisteredHttpAction
+  const handler = route[0] as unknown as RegisteredHttpAction
   return await handler._handler(
     {},
     new Request(`${deploymentOrigin}${path}`, {

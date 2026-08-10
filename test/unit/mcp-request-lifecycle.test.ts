@@ -74,7 +74,7 @@ describe('request-scoped MCP lifecycle', () => {
       const index = closeCounts.push(0) - 1
       const onclose = server.server.onclose
       server.server.onclose = () => {
-        closeCounts[index] += 1
+        closeCounts[index] = (closeCounts[index] ?? 0) + 1
         onclose?.()
       }
       server.registerTool('notes_list', { inputSchema: z.object({}) }, () => ({
