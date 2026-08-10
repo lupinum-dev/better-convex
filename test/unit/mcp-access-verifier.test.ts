@@ -103,6 +103,21 @@ describe('provider-neutral MCP access verification boundary', () => {
     expect(JSON.stringify(result)).not.toContain('raw-bearer-sentinel')
   })
 
+  it.each(['https://issuer.example.test', 'https://issuer.example.test/'])(
+    'preserves the exact valid issuer identifier %s',
+    async (issuer) => {
+      const result = await verifyAndNormalizeMcpAccess({
+        verifier: verifier(verified({ access: { ...verified().access, issuer } })),
+        token: 'exact-issuer-token',
+        expectedIssuer: issuer,
+        expectedResource,
+        now: () => 1_800_000_000,
+      })
+
+      expect(result.access.issuer).toBe(issuer)
+    },
+  )
+
   it('lets a Better Auth-shaped verifier use a private grant reference without exposing it', async () => {
     const bearer = 'better-auth-token-sentinel'
     const providerReference = 'private-grant-reference-sentinel'

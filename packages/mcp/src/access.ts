@@ -76,17 +76,28 @@ function normalizeVerifiedAccess(
 }
 
 export function canonicalMcpIssuer(value: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.trim() !== value ||
+    /\s/u.test(value) ||
+    hasUnsafeTextCharacter(value)
+  ) {
+    throw new TypeError('Invalid access issuer')
+  }
   const issuer = new URL(value)
   if (
     !isSecureResource(issuer) ||
     issuer.username ||
     issuer.password ||
     issuer.search ||
-    issuer.hash ||
-    issuer.href !== value
+    issuer.hash
   ) {
     throw new TypeError('Invalid access issuer')
   }
+  // OAuth issuer identifiers are exact strings. Parsing validates the
+  // structure, but the package deliberately does not rewrite a caller's
+  // identifier (for example by adding a trailing slash).
   return value
 }
 
