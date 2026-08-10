@@ -55,13 +55,17 @@ const mcpCandidate = inspectConsumerCandidate({
 const officialClientVersion = repositoryManifest.devDependencies?.['@modelcontextprotocol/client']
 const officialAppsVersion =
   vueCandidate.manifest.peerDependencies?.['@modelcontextprotocol/ext-apps']
+const officialSdkVersion = vueCandidate.manifest.peerDependencies?.['@modelcontextprotocol/sdk']
 const officialServerVersion = mcpCandidate.manifest.dependencies?.['@modelcontextprotocol/server']
+const officialZodVersion = vueCandidate.manifest.peerDependencies?.zod
 const reviewedVueVersion = vueCandidate.manifest.devDependencies?.vue
 for (const [name, version] of Object.entries({
   '@modelcontextprotocol/client': officialClientVersion,
   '@modelcontextprotocol/ext-apps': officialAppsVersion,
+  '@modelcontextprotocol/sdk': officialSdkVersion,
   '@modelcontextprotocol/server': officialServerVersion,
   vue: reviewedVueVersion,
+  zod: officialZodVersion,
 })) {
   if (typeof version !== 'string') throw new TypeError(`Reviewed package manifest omits ${name}.`)
 }
@@ -80,10 +84,11 @@ try {
           'better-convex-mcp': 'file:./better-convex-mcp.tgz',
           '@modelcontextprotocol/client': officialClientVersion,
           '@modelcontextprotocol/ext-apps': officialAppsVersion,
+          '@modelcontextprotocol/sdk': officialSdkVersion,
           '@modelcontextprotocol/server': officialServerVersion,
           'better-convex-vue': 'file:./better-convex-vue.tgz',
           vue: reviewedVueVersion,
-          zod: '4.4.3',
+          zod: officialZodVersion,
         },
       },
       null,
@@ -199,25 +204,29 @@ if (error) {
     authorization: {
       issuer: 'https://packed-app.invalid/issuer/',
       mode: 'preconfigured-bearer',
-    },
-    resource: new URL('https://packed-app.invalid/mcp'),
-    verifier: {
-      async verifyAccessToken(value, expectedResource) {
-        if (value !== token || expectedResource.href !== 'https://packed-app.invalid/mcp') {
-          throw new Error('invalid')
-        }
-        return {
-          access: {
-            clientId: 'packed-app-client',
-            issuer: 'https://packed-app.invalid/issuer/',
-            resource: expectedResource.href,
-            scopes: ['notes:read'],
-            subject: 'alice',
-          },
-          expiresAt: Math.floor(Date.now() / 1_000) + 300,
-        }
+      verifier: {
+        async verifyAccessToken(value, expected) {
+          if (
+            value !== token ||
+            expected.issuer !== 'https://packed-app.invalid/issuer/' ||
+            expected.resource.href !== 'https://packed-app.invalid/mcp'
+          ) {
+            throw new Error('invalid')
+          }
+          return {
+            access: {
+              clientId: 'packed-app-client',
+              issuer: 'https://packed-app.invalid/issuer/',
+              resource: expected.resource.href,
+              scopes: ['notes:read'],
+              subject: 'alice',
+            },
+            expiresAt: Math.floor(Date.now() / 1_000) + 300,
+          }
+        },
       },
     },
+    resource: new URL('https://packed-app.invalid/mcp'),
     configureServer(_access, server) {
       server.registerTool(
         'search_notes',

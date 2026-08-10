@@ -109,8 +109,9 @@ const packedArtifactProfiles = Object.freeze({
     buildHint: 'pnpm exec nuxt-module-build build',
   }),
   'vue-runtime-artifact': Object.freeze({
-    allowedPackageRootFiles: Object.freeze(['LICENSE', 'package.json']),
+    allowedPackageRootFiles: Object.freeze(['LICENSE', 'README.md', 'package.json']),
     requiredPackedFiles: Object.freeze([
+      'README.md',
       'dist/index.mjs',
       'dist/index.d.mts',
       'dist/errors.mjs',
@@ -136,8 +137,8 @@ const packedArtifactProfiles = Object.freeze({
     buildHint: 'pnpm run build',
   }),
   'mcp-runtime-artifact': Object.freeze({
-    allowedPackageRootFiles: Object.freeze(['LICENSE', 'package.json']),
-    requiredPackedFiles: Object.freeze(['dist/index.mjs', 'dist/index.d.mts']),
+    allowedPackageRootFiles: Object.freeze(['LICENSE', 'README.md', 'package.json']),
+    requiredPackedFiles: Object.freeze(['README.md', 'dist/index.mjs', 'dist/index.d.mts']),
     requiredBuildFiles: Object.freeze(['dist/index.mjs', 'dist/index.d.mts']),
     allowedHostPackages: Object.freeze([]),
     allowedVirtualSpecifiers: Object.freeze([]),

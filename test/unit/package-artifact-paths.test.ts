@@ -288,6 +288,7 @@ describe('packed artifact path classes', () => {
       {
         files: [
           { path: 'LICENSE' },
+          { path: 'README.md' },
           { path: 'package.json' },
           { path: 'dist/index.mjs' },
           { path: 'dist/index.d.mts' },
@@ -298,8 +299,8 @@ describe('packed artifact path classes', () => {
     expect(accepted).toEqual([])
 
     const rejected: string[] = []
-    checkPackedPathClasses('vue', { files: [{ path: 'README.md' }] }, rejected)
-    expect(rejected).toContainEqual(expect.stringContaining('unplanned root path: README.md'))
+    checkPackedPathClasses('vue', { files: [{ path: 'source.ts' }] }, rejected)
+    expect(rejected).toContainEqual(expect.stringContaining('unplanned root path: source.ts'))
   })
 
   it('allows package metadata, declarations, runtime files, and built DevTools assets', () => {

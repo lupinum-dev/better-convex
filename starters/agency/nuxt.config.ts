@@ -8,9 +8,8 @@ export default {
   },
   convex: {
     auth: {
-      proxy: {
-        trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
-      },
+      origin: process.env.SITE_URL ?? 'http://localhost:3000',
+      trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
     },
   },
 }

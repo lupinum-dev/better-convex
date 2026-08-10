@@ -4,7 +4,7 @@
 
     <div class="panel">
       <div class="row">
-        <span>isAuthenticated</span><strong data-testid="auth-state">{{ isAuthenticated }}</strong>
+        <span>status</span><strong data-testid="auth-state">{{ status }}</strong>
       </div>
       <div class="row">
         <span>isPending</span><strong>{{ isPending }}</strong>
@@ -36,10 +36,15 @@
     </div>
 
     <div class="panel actions">
-      <button class="btn" @click="callSignIn">Call signIn.email()</button>
-      <button class="btn" @click="callSignUp">Call signUp.email()</button>
-      <button class="btn" data-testid="raw-signout" @click="callRawSignOut">
-        Raw Better Auth signOut()
+      <button class="btn" :disabled="isPending" @click="callSignIn">Call signIn.email()</button>
+      <button class="btn" :disabled="isPending" @click="callSignUp">Call signUp.email()</button>
+      <button
+        class="btn"
+        data-testid="integrated-signout"
+        :disabled="isPending"
+        @click="callSignOut"
+      >
+        Integrated Better Auth signOut()
       </button>
       <pre class="result">{{ resultText }}</pre>
     </div>
@@ -53,17 +58,26 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { isAuthenticated, isPending, user, client, signIn, signUp } = useConvexAuth()
+const { status, isPending, user, client } = useConvexAuth()
 const publicSession = client?.useSession()
 const publicSessionUserId = computed(() => publicSession?.value.data?.user.id ?? null)
-const { data: permissionContext } = await useConvexQuery(api.auth.getPermissionContext, {})
+const permissionArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
+const { data: permissionContext } = await useConvexQuery(
+  api.auth.getPermissionContext,
+  permissionArgs,
+)
 const resultText = ref('(idle)')
 
-const signInEmailType = computed(() => typeof signIn.email)
-const signUpEmailType = computed(() => typeof signUp.email)
+const signInEmailType = computed(() => typeof client?.signIn.email)
+const signUpEmailType = computed(() => typeof client?.signUp.email)
+
+function requireAuthClient() {
+  if (!client) throw new Error('Authentication client unavailable')
+  return client
+}
 
 async function callSignIn() {
-  const result = await signIn.email({
+  const result = await requireAuthClient().signIn.email({
     email: 'stub@example.com',
     password: 'Password123456!',
   })
@@ -71,7 +85,7 @@ async function callSignIn() {
 }
 
 async function callSignUp() {
-  const result = await signUp.email({
+  const result = await requireAuthClient().signUp.email({
     name: 'Stub User',
     email: 'stub@example.com',
     password: 'Password123456!',
@@ -79,8 +93,8 @@ async function callSignUp() {
   resultText.value = JSON.stringify(result, null, 2)
 }
 
-async function callRawSignOut() {
-  resultText.value = JSON.stringify(await client?.signOut(), null, 2)
+async function callSignOut() {
+  resultText.value = JSON.stringify(await requireAuthClient().signOut(), null, 2)
 }
 </script>
 

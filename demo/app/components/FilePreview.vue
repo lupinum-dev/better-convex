@@ -7,15 +7,25 @@ const props = defineProps<{
   filename: string
 }>()
 
-const storageIdRef = computed(() => props.storageId)
-const imageUrl = useConvexStorageUrl(api.files.getUrl, storageIdRef, { auth: 'required' })
+const { data: imageUrl, status } = useConvexQuery(
+  api.files.getUrl,
+  () => ({ storageId: props.storageId }),
+  { auth: 'required' },
+)
 </script>
 
 <template>
   <div class="w-full h-full">
     <img v-if="imageUrl" :src="imageUrl" :alt="filename" class="w-full h-full object-cover" />
-    <div v-else class="w-full h-full flex items-center justify-center">
+    <div v-else-if="status === 'pending'" class="w-full h-full flex items-center justify-center">
       <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin text-muted" />
+    </div>
+    <div
+      v-else
+      class="w-full h-full flex items-center justify-center"
+      aria-label="File unavailable"
+    >
+      <UIcon name="i-lucide-image-off" class="size-6 text-muted" />
     </div>
   </div>
 </template>

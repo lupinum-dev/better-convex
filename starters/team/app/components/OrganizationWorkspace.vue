@@ -1,26 +1,36 @@
 <script setup lang="ts">
 import { api } from '#convex/api'
 
-const currentUser = useConvexUser(api.users.getCurrent, {}, { source: 'projection' })
-const { signOut } = useConvexAuth()
+const { data: currentUser } = await useConvexQuery(
+  api.users.getCurrent,
+  {},
+  {
+    auth: 'required',
+    server: false,
+  },
+)
+const { client, isPending } = useConvexAuth()
 const { data: organizations, pending: organizationsPending } = await useConvexQuery(
   api.organizations.listMine,
   {},
 )
 
-const hasUserProjection = computed(() => currentUser.source.value === 'projection')
+const hasUserProjection = computed(() => currentUser.value != null)
 
 async function handleSignOut() {
-  await signOut()
+  if (!client) throw new Error('Authentication client unavailable')
+  await client.signOut()
 }
 </script>
 
 <template>
-  <section v-if="currentUser.data.value" class="user">
+  <section v-if="currentUser" class="user">
     <span>
-      {{ currentUser.data.value.email || currentUser.data.value.name || 'Signed in' }}
+      {{ currentUser.email || currentUser.name || 'Signed in' }}
     </span>
-    <button type="button" @click="handleSignOut">Sign out</button>
+    <button type="button" :disabled="isPending" @click="handleSignOut">
+      {{ isPending ? 'Signing out...' : 'Sign out' }}
+    </button>
   </section>
 
   <template v-if="hasUserProjection">

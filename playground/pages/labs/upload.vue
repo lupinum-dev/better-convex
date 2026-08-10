@@ -35,7 +35,12 @@ const saveFile = useConvexMutation(api.files.saveFile)
 const registeredStorageId = ref<Id<'_storage'> | null>(null)
 
 // Resolve a URL only after the backend has accepted and registered the blob.
-const imageUrl = useConvexStorageUrl(api.files.getUrl, registeredStorageId, { auth: 'required' })
+const imageUrlArgs = computed(() =>
+  registeredStorageId.value ? { storageId: registeredStorageId.value } : ('skip' as const),
+)
+const { data: imageUrl } = await useConvexQuery(api.files.getUrl, imageUrlArgs, {
+  auth: 'required',
+})
 
 // Track upload counts
 const successCount = ref(0)

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ConvexCallError } from '../../packages/vue/src/errors'
 import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
 import { decideQueryExecution } from '../../packages/vue/src/internal/query-execution'
-import type { ConvexAuthMode, ConvexAuthStatus } from '../../src/runtime/utils/auth-status'
+import type { ConvexAuthMode, ConvexQueryAuthStatus } from '../../src/runtime/utils/auth-status'
 import type { ConvexIdentityKey } from '../../src/runtime/utils/identity-key'
 import {
   createQueryExecutionGate,
@@ -23,7 +23,13 @@ function gate(overrides: Partial<QueryExecutionGateInput> = {}) {
 }
 
 const MODES: ConvexAuthMode[] = ['required', 'optional', 'none']
-const STATUSES: ConvexAuthStatus[] = ['disabled', 'loading', 'anonymous', 'authenticated', 'error']
+const STATUSES: ConvexQueryAuthStatus[] = [
+  'disabled',
+  'loading',
+  'anonymous',
+  'authenticated',
+  'error',
+]
 
 describe('createQueryExecutionGate', () => {
   // 1. Explicit skip resolves idle regardless of status/mode.
@@ -199,7 +205,7 @@ describe('createQueryExecutionGate', () => {
   })
 
   it('matches the client package matrix for every representable settled state', () => {
-    const snapshots: Record<ConvexAuthStatus, ClientIdentitySnapshot> = {
+    const snapshots: Record<ConvexQueryAuthStatus, ClientIdentitySnapshot> = {
       disabled: {
         authEnabled: false,
         settled: true,

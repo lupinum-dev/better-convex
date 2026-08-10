@@ -5,7 +5,7 @@ import { ConvexCallError } from '../errors'
 import type { ConvexClientHandle } from './client-owner'
 import type { ClientIdentityObserver, ClientIdentitySnapshot } from './identity-port'
 
-export interface AttachedClientRuntime {
+export interface BetterConvexAttachment {
   readonly client: ConvexClientHandle
   /** Stable anonymous transport used by `auth: 'none'`. */
   readonly anonymousClient: ConvexClientHandle
@@ -33,21 +33,25 @@ function projectIdentitySnapshot(snapshot: ClientIdentitySnapshot): ClientIdenti
 }
 
 /** Build the opaque, stable cross-bundle boundary without refs, tokens, or a raw client. */
-export function createAttachedClientRuntime(input: {
+export function createBetterConvexAttachment(input: {
   client: ConvexClientHandle
-  anonymousClient?: ConvexClientHandle
+  anonymousClient: ConvexClientHandle
   identity: ClientIdentityObserver
-  connection?: AttachedClientRuntime['connection']
-}): AttachedClientRuntime {
+  connection?: BetterConvexAttachment['connection']
+}): BetterConvexAttachment {
   const projectClient = (source: ConvexClientHandle): ConvexClientHandle =>
     Object.freeze({
-      query: source.query,
-      mutation: source.mutation,
-      action: source.action,
-      onUpdate: source.onUpdate,
+      query: ((...args: Parameters<ConvexClientHandle['query']>) =>
+        source.query(...args)) as ConvexClientHandle['query'],
+      mutation: ((...args: Parameters<ConvexClientHandle['mutation']>) =>
+        source.mutation(...args)) as ConvexClientHandle['mutation'],
+      action: ((...args: Parameters<ConvexClientHandle['action']>) =>
+        source.action(...args)) as ConvexClientHandle['action'],
+      onUpdate: ((...args: Parameters<ConvexClientHandle['onUpdate']>) =>
+        source.onUpdate(...args)) as ConvexClientHandle['onUpdate'],
     })
   const client = projectClient(input.client)
-  const anonymousClient = projectClient(input.anonymousClient ?? input.client)
+  const anonymousClient = projectClient(input.anonymousClient)
 
   const identity: ClientIdentityObserver = Object.freeze({
     snapshot: () => projectIdentitySnapshot(input.identity.snapshot()),
@@ -67,29 +71,31 @@ export function createAttachedClientRuntime(input: {
 
   const connection = input.connection
     ? Object.freeze({
-        snapshot: () => ({ ...input.connection!.snapshot() }),
+        snapshot: () => Object.freeze({ ...input.connection!.snapshot() }),
         subscribe: (listener: (state: ConnectionState) => void) =>
-          input.connection!.subscribe((state) => listener({ ...state })),
+          input.connection!.subscribe((state) => listener(Object.freeze({ ...state }))),
       })
     : undefined
   return Object.freeze({ client, anonymousClient, identity, connection })
 }
 
 /** Convert an attached plain-object observer to refs owned by the consuming Vue copy. */
-export function attachClientIdentity(runtime: AttachedClientRuntime): AttachedClientIdentityState {
-  const snapshot = shallowRef(projectIdentitySnapshot(runtime.identity.snapshot()))
+export function attachClientIdentity(
+  attachment: BetterConvexAttachment,
+): AttachedClientIdentityState {
+  const snapshot = shallowRef(projectIdentitySnapshot(attachment.identity.snapshot()))
   let disposed = false
-  const stop = runtime.identity.subscribe(() => {
-    if (!disposed) snapshot.value = projectIdentitySnapshot(runtime.identity.snapshot())
+  const stop = attachment.identity.subscribe(() => {
+    if (!disposed) snapshot.value = projectIdentitySnapshot(attachment.identity.snapshot())
   })
   // Close the snapshot-before-subscribe race without polling.
-  snapshot.value = projectIdentitySnapshot(runtime.identity.snapshot())
+  snapshot.value = projectIdentitySnapshot(attachment.identity.snapshot())
 
   return {
     snapshot: readonly(snapshot),
     async waitForInitialSettlement() {
-      await runtime.identity.waitForInitialSettlement()
-      if (!disposed) snapshot.value = projectIdentitySnapshot(runtime.identity.snapshot())
+      await attachment.identity.waitForInitialSettlement()
+      if (!disposed) snapshot.value = projectIdentitySnapshot(attachment.identity.snapshot())
     },
     dispose() {
       if (disposed) return

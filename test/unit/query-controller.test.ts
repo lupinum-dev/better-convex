@@ -13,10 +13,7 @@ interface Value {
   count: number
 }
 
-function makeHarness(options?: {
-  keepPreviousData?: boolean
-  transform?: (value: Value) => string
-}) {
+function makeHarness(options?: { keepPreviousData?: boolean }) {
   const query = mockFnRef<'query'>('notes:list')
   let args: Record<string, unknown> | 'skip' = { page: 1 }
   let argsHash = 'page:1'
@@ -27,7 +24,7 @@ function makeHarness(options?: {
   }
   let data: Value | null = null
   let hasData = false
-  let error: ConvexCallError | null = null
+  let error: ConvexCallError | undefined
   let active:
     | {
         value: (value: unknown) => void
@@ -52,11 +49,9 @@ function makeHarness(options?: {
     },
   }
 
-  const controller = createQueryController<Value, string>({
+  const controller = createQueryController<Value>({
     query,
-    subscribe: true,
     keepPreviousData: options?.keepPreviousData ?? true,
-    transform: options?.transform ?? ((value) => `${value.owner}:${value.count}`),
     getArgs: () => args,
     getArgsHash: () => argsHash,
     getBoundaryKey: () => boundaryKey,
@@ -114,20 +109,21 @@ function makeHarness(options?: {
 }
 
 describe('query controller', () => {
-  it('owns one subscription and commits, transforms, and tags its first value', async () => {
+  it('owns one subscription and commits and tags its first value', () => {
     const { controller, state } = makeHarness()
 
     const operation = controller.setupSubscription()
-    const first = controller.firstValue()
     expect(operation).not.toBeNull()
     expect(controller.setupSubscription()).toBeNull()
     expect(state.active).toBeDefined()
+    expect(controller.isAwaitingFirstValue()).toBe(true)
 
     state.active?.value({ owner: 'alice', count: 2 })
 
-    await expect(first).resolves.toBeUndefined()
+    expect(controller.isAwaitingFirstValue()).toBe(false)
     expect(state.data).toEqual({ owner: 'alice', count: 2 })
-    expect(controller.transformedData()).toBe('alice:2')
+    expect(controller.data()).toEqual({ owner: 'alice', count: 2 })
+    expect(controller.hasSettledForCurrentArgs()).toBe(true)
   })
 
   it('rejects queued stale work and clears all protected state on identity change', () => {
@@ -140,12 +136,11 @@ describe('query controller', () => {
     controller.handleIdentityBoundary({
       nextTag: { identityKey: 'user:bob', identityGeneration: 2 },
       previousTag: { identityKey: 'user:alice', identityGeneration: 1 },
-      previousBoundaryKey: 'notes:list:alice:page:1',
     })
     queuedAliceValue?.({ owner: 'alice-stale', count: 99 })
 
     expect(state.data).toBeNull()
-    expect(state.error).toBeNull()
+    expect(state.error).toBeUndefined()
     expect(state.unsubscribes).toBe(1)
     expect(state.removed).toEqual(['notes:list:alice:page:1'])
   })
@@ -166,7 +161,18 @@ describe('query controller', () => {
 
     expect(state.unsubscribes).toBe(1)
     expect(state.active).toBeDefined()
-    expect(controller.isStale({ idle: false, pending: true })).toBe(true)
+    expect(controller.isStale({ idle: false, pending: true, errored: false })).toBe(true)
+  })
+
+  it('keeps retained data stale after the replacement operation fails', () => {
+    const { controller, state } = makeHarness()
+    controller.setupSubscription()
+    state.active?.value({ owner: 'alice', count: 1 })
+    state.active?.error(new Error('replacement failed'))
+
+    expect(controller.isStale({ idle: false, pending: false, errored: true })).toBe(true)
+    expect(state.data).toEqual({ owner: 'alice', count: 1 })
+    expect(state.error).toBeDefined()
   })
 
   it('clears the prior result on an args boundary when previous data is disabled', () => {
@@ -184,7 +190,7 @@ describe('query controller', () => {
     })
 
     expect(state.data).toBeNull()
-    expect(controller.isStale({ idle: false, pending: true })).toBe(false)
+    expect(controller.isStale({ idle: false, pending: true, errored: false })).toBe(false)
     expect(state.unsubscribes).toBe(1)
     expect(state.active).toBeDefined()
   })
@@ -220,28 +226,41 @@ describe('query controller', () => {
     expect(state.error).toBe(normalized)
   })
 
-  it('settles a first-value waiter and disposes the listener exactly once', async () => {
+  it('surfaces a current subscription error even while retaining previous data', () => {
     const { controller, state } = makeHarness()
     controller.setupSubscription()
-    const first = controller.firstValue()
+    state.active?.value({ owner: 'alice', count: 1 })
+
+    state.setArgs({ page: 2 }, 'page:2', 'notes:list:alice:page:2')
+    controller.handleExecutionBoundary({
+      nextBoundaryKey: 'notes:list:alice:page:2',
+      previousBoundaryKey: 'notes:list:alice:page:1',
+      nextLive: true,
+      previousLive: true,
+      nextIdle: false,
+    })
+    state.active?.error(new Error('private details'))
+
+    expect(state.data).toEqual({ owner: 'alice', count: 1 })
+    expect(state.error).toBeInstanceOf(Error)
+  })
+
+  it('retires first-value state and disposes the listener exactly once', () => {
+    const { controller, state } = makeHarness()
+    controller.setupSubscription()
+    expect(controller.isAwaitingFirstValue()).toBe(true)
 
     controller.dispose()
     controller.dispose()
 
-    await expect(first).resolves.toBeUndefined()
+    expect(controller.isAwaitingFirstValue()).toBe(false)
     expect(state.unsubscribes).toBe(1)
     expect(state.active).toBeUndefined()
     expect(controller.setupSubscription()).toBeNull()
   })
 
-  it('does not subscribe when skipped and clear retires queued callbacks', () => {
+  it('does not subscribe when skipped', () => {
     const { controller, state } = makeHarness()
-
-    controller.setupSubscription()
-    const queued = state.active?.value
-    controller.clear()
-    queued?.({ owner: 'late', count: 5 })
-    expect(state.data).toBeNull()
 
     state.setArgs('skip', 'skip', 'notes:list:idle')
     expect(controller.setupSubscription()).toBeNull()

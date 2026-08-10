@@ -128,7 +128,7 @@ async function resolveServerToken(
       event,
       siteUrl: config.siteUrl,
       credential: normalized.credential,
-      trustedClientIpHeader: config.auth.proxy.trustedClientIpHeader,
+      trustedClientIpHeader: config.auth.trustedClientIpHeader,
     })
     if (result.token) return result.token
     throwExchangeFailure(result)
@@ -155,7 +155,7 @@ async function resolveServerToken(
     event,
     siteUrl: config.siteUrl,
     credential: { type: 'cookie', value: authCookieHeader },
-    trustedClientIpHeader: config.auth.proxy.trustedClientIpHeader,
+    trustedClientIpHeader: config.auth.trustedClientIpHeader,
   })
 
   if (result.token) return result.token

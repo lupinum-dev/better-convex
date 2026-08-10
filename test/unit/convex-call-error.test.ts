@@ -30,20 +30,6 @@ import { executeQueryHttp } from '../../src/runtime/utils/query-execution'
 
 const SECRET = 'super-secret-token-do-not-leak'
 
-/** Throwing path: throw the normalized error. */
-function throwingCall(raw: unknown): ConvexCallError {
-  try {
-    throw raw
-  } catch (error) {
-    return normalizeConvexError(error)
-  }
-}
-
-/** Safe path: return the normalized error, same normalizer as the throwing path. */
-function safeCall(raw: unknown): ConvexCallError {
-  return normalizeConvexError(raw)
-}
-
 /** Mirror the payload plugin's reducer + reviver without importing Nuxt. */
 function payloadRoundTrip(error: ConvexCallError): unknown {
   const reduced = JSON.parse(JSON.stringify(error.toJSON())) as unknown
@@ -201,25 +187,6 @@ describe('ConvexCallError golden fixtures ', () => {
     })
     expect(normalizeConvexError(existing)).toBe(existing)
   })
-})
-
-describe('throwing and safe calls are equivalent ', () => {
-  const rawFailures: Array<{ name: string; raw: unknown }> = [
-    { name: 'plain Error', raw: new Error('boom') },
-    { name: 'ConvexError', raw: new ConvexError({ code: 'X', reason: 'y' }) },
-    { name: 'string', raw: 'bare string' },
-    { name: 'opaque object', raw: { unrelated: 1 } },
-  ]
-
-  for (const { name, raw } of rawFailures) {
-    it(`equal toJSON and both instanceof for ${name}`, () => {
-      const thrown = throwingCall(raw)
-      const safe = safeCall(raw)
-      expect(thrown).toBeInstanceOf(ConvexCallError)
-      expect(safe).toBeInstanceOf(ConvexCallError)
-      expect(thrown.toJSON()).toEqual(safe.toJSON())
-    })
-  }
 })
 
 describe('ConvexCallError class contract: raw causes are not retained ', () => {

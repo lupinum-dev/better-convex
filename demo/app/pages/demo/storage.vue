@@ -33,11 +33,6 @@ const deleteError = deleteFile.error
 // Combined error from any operation
 const operationError = computed(() => deleteError.value || saveError.value)
 
-function clearErrors() {
-  deleteError.value = null
-  saveError.value = null
-}
-
 // File input ref
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -98,7 +93,7 @@ function formatFileSize(bytes: number) {
       color="secondary"
       variant="subtle"
       title="How it works"
-      description="useConvexFileUpload handles the entire upload flow: generating upload URLs, uploading to Convex storage, and tracking progress. useConvexStorageUrl converts storage IDs to accessible URLs."
+      description="useConvexFileUpload handles upload URL generation, transfer, and progress. Each preview uses an ordinary useConvexQuery so loading, missing, and error states stay distinct."
     />
 
     <!-- Operation Error -->
@@ -109,8 +104,6 @@ function formatFileSize(bytes: number) {
       color="error"
       variant="subtle"
       :title="operationError.message"
-      :close-icon="'i-lucide-x'"
-      @close="clearErrors"
     />
 
     <!-- Upload Zone -->

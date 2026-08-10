@@ -23,6 +23,8 @@ import type { VueAuthClient } from 'better-auth/vue'
 
 import type { AuthClientPlugins, ConvexAuthClientDefinitionOptions } from './definition-types'
 
+export type { IntegratedAuthClient } from '../utils/integrated-auth-client'
+
 /** A frozen, framework-free description of the consumer's client (no instance). */
 export interface ConvexAuthClientDefinition<Plugins extends AuthClientPlugins> {
   readonly options: ConvexAuthClientDefinitionOptions<Plugins>
@@ -97,9 +99,9 @@ type ResolvedOptions<Plugins extends AuthClientPlugins> = Omit<
 export type BaseAuthClient = VueAuthClient<ResolvedOptions<[]>>
 
 /**
- * The `useConvexAuth().client` type. Exposes the registered definition's plugin
- * methods when a definition is registered; falls back to the base Better Auth
- * client type otherwise.
+ * The registered raw Better Auth shape used to infer the integrated client.
+ * Exposes plugin methods when a definition is registered; falls back to the
+ * base Better Auth client type otherwise.
  */
 export type InferRegisteredConvexAuthClient = ConvexAuthClientRegistry extends {
   definition: infer D

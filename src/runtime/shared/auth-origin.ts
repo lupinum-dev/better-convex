@@ -1,7 +1,7 @@
 export type AuthOriginName =
   | 'SITE_URL'
   | 'CONVEX_SITE_URL'
-  | 'auth.publicOrigin'
+  | 'auth.origin'
   | 'convex.url'
   | 'convex.siteUrl'
 

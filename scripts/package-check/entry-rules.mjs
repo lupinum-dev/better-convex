@@ -1,7 +1,7 @@
 import { getPackageEntryManifest } from '../package-entry-manifest.mjs'
 import {
   probeAuthClientTyping,
-  probeCreateUserSyncTriggersEntry,
+  probeCreateUserProjectionTriggers,
   probeErrorsEntry,
   probeRootEntry,
   probeServerEntry,
@@ -30,14 +30,11 @@ const NUXT_CHECKER_ENTRY_RULES = [
       runtimeExternalSpecifiers: ['@nuxt/kit', 'defu', 'node:fs'],
       typeExternalSpecifiers: [
         '@nuxt/schema',
-        'better-auth/client',
-        'better-auth/vue',
         'better-convex-vue',
         'better-convex-vue/errors',
         'convex/browser',
         'convex/server',
         'convex/values',
-        'h3',
         'vue',
       ],
     },
@@ -84,6 +81,7 @@ const NUXT_CHECKER_ENTRY_RULES = [
         'convex/values',
       ],
     },
+    packedProbe: probeCreateUserProjectionTriggers,
   },
   {
     subpath: './convex-auth/convex.config',
@@ -119,25 +117,9 @@ const NUXT_CHECKER_ENTRY_RULES = [
       // request time, outside Nuxt's transform pipeline. Lazy Nitro runtime
       // APIs remain valid for authenticated cache operations after import.
       runtimeExternalSpecifiers: ['better-convex-vue/errors', 'convex/browser'],
-      typeExternalSpecifiers: [
-        'better-convex-vue',
-        'better-convex-vue/errors',
-        'convex/server',
-        'h3',
-      ],
+      typeExternalSpecifiers: ['better-convex-vue/errors', 'convex/server', 'h3'],
     },
     packedProbe: probeServerEntry,
-  },
-  {
-    subpath: './server/createUserSyncTriggers',
-    purity: {
-      // Framework-free: this entry has no Convex/H3/Nitro imports of its own
-      // (it only takes user-supplied ctx/db shapes as generics), so any Vue,
-      // Nuxt, or Nitro import here would be an accidental coupling.
-      runtimeExternalSpecifiers: [],
-      typeExternalSpecifiers: [],
-    },
-    packedProbe: probeCreateUserSyncTriggersEntry,
   },
 ]
 

@@ -287,8 +287,8 @@ try {
     throw new Error('Nuxt host attachment inspection exposed a credential-shaped field')
   }
   let snapshot = await invoke('snapshot')
-  assertDeepEqual(snapshot.query.data, [], 'Initial query data')
-  assertDeepEqual(snapshot.pagination.results, [], 'Initial pagination data')
+  assertDeepEqual(snapshot.query.data, undefined, 'Initial query data')
+  assertDeepEqual(snapshot.pagination.data, undefined, 'Initial pagination data')
 
   snapshot = await invoke('emitQuery', [{ id: 'query-a' }])
   assertDeepEqual(snapshot.query.data, [{ id: 'query-a' }], 'Live query data')
@@ -297,14 +297,14 @@ try {
     continueCursor: 'cursor-empty',
     isDone: false,
   })
-  assertDeepEqual(snapshot.pagination.results, [{ id: 'page-a' }], 'First live page')
+  assertDeepEqual(snapshot.pagination.data, [{ id: 'page-a' }], 'First live page')
   await invoke('loadMore', 1)
   snapshot = await invoke('emitPage', 'cursor-empty', {
     page: [],
     continueCursor: 'cursor-tail',
     isDone: false,
   })
-  assertDeepEqual(snapshot.pagination.results, [{ id: 'page-a' }], 'Empty continuation page')
+  assertDeepEqual(snapshot.pagination.data, [{ id: 'page-a' }], 'Empty continuation page')
   await invoke('loadMore', 1)
   snapshot = await invoke('emitPage', 'cursor-tail', {
     page: [{ id: 'page-b' }],
@@ -312,15 +312,19 @@ try {
     isDone: true,
   })
   assertDeepEqual(
-    snapshot.pagination.results,
+    snapshot.pagination.data,
     [{ id: 'page-a' }, { id: 'page-b' }],
     'Pagination cursor chain',
   )
 
   const beforeArgumentChange = await invoke('subscriptions')
   snapshot = await invoke('setOwner', 'bob')
-  assertDeepEqual(snapshot.query.data, null, 'Query retirement after argument change')
-  assertDeepEqual(snapshot.pagination.results, [], 'Pagination retirement after argument change')
+  assertDeepEqual(snapshot.query.data, undefined, 'Query retirement after argument change')
+  assertDeepEqual(
+    snapshot.pagination.data,
+    undefined,
+    'Pagination retirement after argument change',
+  )
   const afterArgumentChange = await invoke('subscriptions')
   const priorIds = new Set(beforeArgumentChange.map((entry) => entry.id))
   if (afterArgumentChange.some((entry) => priorIds.has(entry.id) && entry.active)) {

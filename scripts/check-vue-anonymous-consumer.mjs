@@ -23,20 +23,24 @@ const consumerRoot = join(scratchRoot, 'consumer')
 const tarballName = 'better-convex-vue.tgz'
 const forbiddenPackages = new Set([
   '@modelcontextprotocol/ext-apps',
+  '@modelcontextprotocol/sdk',
   'better-auth',
   '@better-auth/core',
   '@better-auth/oauth-provider',
   'nuxt',
   'nitropack',
   'h3',
+  'zod',
 ])
 const forbiddenBundleMarkers = [
   '@modelcontextprotocol/ext-apps',
+  '@modelcontextprotocol/sdk',
   'better-auth',
   '@better-auth/',
   'nitropack',
   'from"h3"',
   'from"nuxt"',
+  'from"zod"',
 ]
 
 function run(command, args, cwd, options = {}) {
@@ -84,8 +88,6 @@ try {
     ['install', '--frozen-lockfile=false', '--ignore-scripts', '--strict-peer-dependencies'],
     consumerRoot,
   )
-  run('pnpm', ['run', 'typecheck'], consumerRoot)
-  run('pnpm', ['run', 'build'], consumerRoot)
 
   const installedManifest = JSON.parse(
     readFileSync(join(consumerRoot, 'node_modules/better-convex-vue/package.json'), 'utf8'),
@@ -109,6 +111,9 @@ try {
   if (forbiddenInstalled.length > 0) {
     throw new Error(`Anonymous production graph contains: ${forbiddenInstalled.join(', ')}`)
   }
+
+  run('pnpm', ['run', 'typecheck'], consumerRoot)
+  run('pnpm', ['run', 'build'], consumerRoot)
 
   const bundleText = collectFiles(join(consumerRoot, 'dist'))
     .filter((file) => /\.(?:html|js|css)$/u.test(file))

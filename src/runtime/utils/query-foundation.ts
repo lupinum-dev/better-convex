@@ -7,7 +7,7 @@ import { identityKeyOf } from '../auth/auth-identity'
 import { ConvexCallError } from '../errors'
 import { useConvexIdentityState } from './auth-identity-state'
 import { useConvexAuthPendingState } from './auth-pending-state'
-import { deriveConvexAuthStatus, type ConvexAuthStatus } from './auth-status'
+import { deriveConvexAuthStatus, type ConvexQueryAuthStatus } from './auth-status'
 import type { ConvexIdentityKey } from './identity-key'
 import { getConvexRuntimeConfig } from './runtime-config'
 
@@ -22,7 +22,7 @@ import { getConvexRuntimeConfig } from './runtime-config'
  * context only derives the server/client execution gate.
  */
 export interface ConvexQueryAuthContext {
-  readonly status: ComputedRef<ConvexAuthStatus>
+  readonly status: ComputedRef<ConvexQueryAuthStatus>
   readonly identityKey: ComputedRef<ConvexIdentityKey | null>
   readonly error: ComputedRef<ConvexCallError | null>
 }
@@ -48,7 +48,7 @@ export function createConvexQueryAuthContext(): ConvexQueryAuthContext {
       : null
   })
 
-  const status = computed<ConvexAuthStatus>(() => {
+  const status = computed<ConvexQueryAuthStatus>(() => {
     if (!authEnabled) return 'disabled'
     if (pending.value) return 'loading'
     return deriveConvexAuthStatus({

@@ -7,8 +7,6 @@ const lifecycleMock = fileURLToPath(
 export default defineNuxtConfig({
   modules: ['better-convex-nuxt'],
   convex: {
-    auth: false,
-    defaults: { server: false, subscribe: true, waitTimeoutMs: 1_000 },
     url: 'https://nuxt-lifecycle.invalid',
   },
   devtools: { enabled: false },

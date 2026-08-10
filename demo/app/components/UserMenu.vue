@@ -1,21 +1,15 @@
 <script setup lang="ts">
-const { user, isAuthenticated, isPending, signOut: convexSignOut } = useConvexAuth()
+const { user, status, isPending, error: authError, client } = useConvexAuth()
 const { user: permissionUser } = await useDemoPermissions()
 const router = useRouter()
 
 // Get avatar URL from permission context (fetched from Convex, includes GitHub avatar)
-const avatarUrl = computed(() => (permissionUser.value as any)?.avatarUrl)
-
-const isSigningOut = ref(false)
+const avatarUrl = computed(() => permissionUser.value?.avatarUrl)
 
 async function signOut() {
-  isSigningOut.value = true
-  try {
-    await convexSignOut()
-    router.push('/')
-  } finally {
-    isSigningOut.value = false
-  }
+  if (!client) throw new Error('Authentication client unavailable')
+  await client.signOut()
+  await router.push('/')
 }
 
 const items = computed(() => [
@@ -37,12 +31,16 @@ const items = computed(() => [
 </script>
 
 <template>
-  <div v-if="isPending">
+  <div v-if="status === 'loading'">
     <USkeleton class="w-8 h-8 rounded-full" />
   </div>
 
-  <UDropdownMenu v-else-if="isAuthenticated && user" :items="items" :content="{ align: 'end' }">
-    <UButton color="neutral" variant="ghost" class="p-0.5" :loading="isSigningOut">
+  <UDropdownMenu
+    v-else-if="status === 'authenticated' && user"
+    :items="items"
+    :content="{ align: 'end' }"
+  >
+    <UButton color="neutral" variant="ghost" class="p-0.5" :loading="isPending">
       <UAvatar :src="avatarUrl" :alt="user.name || user.email || 'User'" size="sm" />
     </UButton>
 
@@ -57,5 +55,17 @@ const items = computed(() => [
     </template>
   </UDropdownMenu>
 
-  <UButton v-else to="/auth/signin" color="primary" variant="soft"> Sign in </UButton>
+  <UButton v-else-if="status === 'anonymous'" to="/auth/signin" color="primary" variant="soft">
+    Sign in
+  </UButton>
+
+  <UButton
+    v-else
+    color="error"
+    variant="soft"
+    disabled
+    :title="authError?.message ?? 'Authentication unavailable'"
+  >
+    Auth unavailable
+  </UButton>
 </template>

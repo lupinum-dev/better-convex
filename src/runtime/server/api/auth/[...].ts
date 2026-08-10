@@ -29,6 +29,8 @@ import { normalizeConvexSiteUrl } from '../../../utils/site-url'
 import { DEFAULT_SERVER_FETCH_TIMEOUT_MS } from '../../utils/http'
 import {
   cancelResponseBody,
+  DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES,
+  DEFAULT_MAX_PROXY_RESPONSE_BODY_BYTES,
   getRequestBodySizeError,
   getResponseBodySizeError,
   readRequestBodyWithLimit,
@@ -241,8 +243,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       if (event.method !== 'GET' || !event.node.req.complete) closeRequestConnection(event)
       throw createError({ statusCode: 404, message: 'Authentication is disabled' })
     }
-    const traceEnabled =
-      config.logging === 'debug' && (auth.debug.authFlow || auth.debug.serverAuthFlow)
+    const traceEnabled = config.logging === 'debug'
     const requestId = import.meta.dev || traceEnabled ? crypto.randomUUID() : ''
     const logger = createLogger(traceEnabled ? 'debug' : false)
     const trace = (
@@ -264,7 +265,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         status,
       })
     trace('auth-proxy.request.started', 'success')
-    const publicOrigin = auth.publicOrigin
+    const publicOrigin = auth.origin
     if (!publicOrigin) {
       if (event.method === 'POST') closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_PUBLIC_ORIGIN_MISSING', 500)
@@ -278,7 +279,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
     // by servers (including Convex's JWT verifier), so it has no browser ingress
     // address to sign. Every credentialed/session route keeps the strict IP
     // requirement below.
-    const trustedClientIpHeader = publicMetadataCors ? null : auth.proxy.trustedClientIpHeader
+    const trustedClientIpHeader = publicMetadataCors ? null : auth.trustedClientIpHeader
     if (trustedClientIpHeader && !normalizeClientIp(event.headers.get(trustedClientIpHeader))) {
       if (event.method === 'POST') closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_CLIENT_IP_INVALID', 400)
@@ -419,8 +420,8 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       let body: Uint8Array | undefined
       if (event.method === 'POST') {
         const requestBodyLimit = isPublicTokenCorsPost
-          ? Math.min(auth.proxy.maxRequestBodyBytes, OAUTH_TOKEN_CORS_MAX_BODY_BYTES)
-          : auth.proxy.maxRequestBodyBytes
+          ? Math.min(DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES, OAUTH_TOKEN_CORS_MAX_BODY_BYTES)
+          : DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES
         const sizeError = getRequestBodySizeError(
           event.headers.get('content-length'),
           requestBodyLimit,
@@ -502,7 +503,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
 
       const responseSizeError = getResponseBodySizeError(
         response.headers.get('content-length'),
-        auth.proxy.maxResponseBodyBytes,
+        DEFAULT_MAX_PROXY_RESPONSE_BODY_BYTES,
       )
       if (responseSizeError) {
         throw createError({
@@ -513,7 +514,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       }
       const responseBody = await readResponseBodyWithLimit(
         response,
-        auth.proxy.maxResponseBodyBytes,
+        DEFAULT_MAX_PROXY_RESPONSE_BODY_BYTES,
         controller.signal,
       )
 

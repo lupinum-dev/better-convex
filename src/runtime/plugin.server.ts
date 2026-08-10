@@ -30,11 +30,9 @@ export default defineNuxtPlugin(async () => {
   const logger = createLogger(logLevel)
   const endInit = logger.time('plugin:init (server)')
 
-  // Defensive: the module never registers this plugin for a Convex-only build.
+  // Defensive invariant: this entry is absent from a Convex-only build graph.
   if (authConfig === false) {
-    endInit()
-    logger.debug('Auth not enabled, skipping server-side auth')
-    return
+    throw new Error('[better-convex-nuxt] auth server plugin loaded in a no-auth build')
   }
 
   const event = useRequestEvent()
@@ -48,8 +46,7 @@ export default defineNuxtPlugin(async () => {
   }
   const requestMethod = event.method || 'GET'
   const requestId = crypto.randomUUID()
-  const traceEnabled =
-    logLevel === 'debug' && (authConfig.debug.authFlow || authConfig.debug.serverAuthFlow)
+  const traceEnabled = logLevel === 'debug'
   const convexIdentity = useConvexIdentityState()
   const cookieHeader = event.headers.get('cookie')
   const hasSupportedBetterAuthCookie = filterBetterAuthCookies(cookieHeader) !== null
@@ -101,7 +98,7 @@ export default defineNuxtPlugin(async () => {
     cookieHeader,
     requestId,
     trackWaterfall: import.meta.dev,
-    trustedClientIpHeader: authConfig.proxy.trustedClientIpHeader,
+    trustedClientIpHeader: authConfig.trustedClientIpHeader,
   })
 
   convexIdentity.value =

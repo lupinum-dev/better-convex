@@ -44,6 +44,7 @@ const contractProfiles = Object.freeze({
       'files',
       'dependencies',
       'peerDependencies',
+      'peerDependenciesMeta',
       'engines',
       'packageManager',
     ]),
@@ -59,7 +60,6 @@ const contractProfiles = Object.freeze({
       'gypfile',
       'sideEffects',
       'optionalDependencies',
-      'peerDependenciesMeta',
       'bundleDependencies',
       'bundledDependencies',
       'os',
@@ -237,6 +237,17 @@ function assertNuxtManifestShapes(manifest, profile) {
   for (const field of ['bin', 'dependencies', 'peerDependencies', 'engines']) {
     assertStringMap(manifest[field], field)
   }
+  assertPlainRecord(manifest.peerDependenciesMeta, 'peerDependenciesMeta')
+  if (
+    !isDeepStrictEqual(manifest.peerDependenciesMeta, {
+      '@better-auth/oauth-provider': { optional: true },
+      'better-auth': { optional: true },
+    }) ||
+    manifest.peerDependencies['@better-auth/oauth-provider'] !== '1.7.0-rc.2' ||
+    manifest.peerDependencies['better-auth'] !== '1.7.0-rc.2'
+  ) {
+    throw new Error('Nuxt auth packages must be exact optional peers.')
+  }
   if (
     !Array.isArray(manifest.files) ||
     manifest.files.length === 0 ||
@@ -271,10 +282,14 @@ function assertVueManifestShapes(manifest, profile) {
   if (
     !isDeepStrictEqual(manifest.peerDependenciesMeta, {
       '@modelcontextprotocol/ext-apps': { optional: true },
+      '@modelcontextprotocol/sdk': { optional: true },
+      zod: { optional: true },
     }) ||
-    manifest.peerDependencies['@modelcontextprotocol/ext-apps'] !== '1.7.5'
+    manifest.peerDependencies['@modelcontextprotocol/ext-apps'] !== '1.7.5' ||
+    manifest.peerDependencies['@modelcontextprotocol/sdk'] !== '1.30.0' ||
+    manifest.peerDependencies.zod !== '4.4.3'
   ) {
-    throw new Error('Vue package may mark only the exact official MCP Apps SDK peer as optional.')
+    throw new Error('Vue MCP App packages must be exact optional peers.')
   }
   assertReleaseManifestPolicy(manifest, profile)
 }

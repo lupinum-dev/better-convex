@@ -24,15 +24,15 @@ describe('auth logical-ID AST gate', () => {
   it('rejects auth-row storage IDs, projection use, and compatibility fallbacks', () => {
     expect(
       messages(`
-        interface BetterAuthUserDocLike { _id: string; id: string }
-        function project(user: BetterAuthUserDocLike) {
+        interface BetterAuthUserProjectionSource { _id: string; id: string }
+        function project(user: BetterAuthUserProjectionSource) {
           const authId = user.id ?? user._id
           return { authId: user._id, value: authId }
         }
       `),
     ).toEqual(
       expect.arrayContaining([
-        'BetterAuthUserDocLike exposes Convex _id',
+        'BetterAuthUserProjectionSource exposes Convex _id',
         'Better Auth row user uses Convex _id',
         'logical id falls back to Convex _id',
         'auth projection is populated from Convex _id',
@@ -68,8 +68,8 @@ describe('auth logical-ID AST gate', () => {
   it('allows application document IDs and logical Better Auth IDs', () => {
     expect(
       messages(`
-        interface BetterAuthUserDocLike { id: string; email?: string }
-        function project(user: BetterAuthUserDocLike, applicationUser: { _id: string }) {
+        interface BetterAuthUserProjectionSource { id: string; email?: string }
+        function project(user: BetterAuthUserProjectionSource, applicationUser: { _id: string }) {
           return { authId: user.id, applicationId: applicationUser._id }
         }
       `),

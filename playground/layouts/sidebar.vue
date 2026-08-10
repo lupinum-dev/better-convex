@@ -1,18 +1,14 @@
 <script setup lang="ts">
-const { user, isAuthenticated, signOut: convexSignOut } = useConvexAuth()
+const { user, status, isPending, error: authError, client } = useConvexAuth()
 const route = useRoute()
 
-const isSigningOut = ref(false)
-
 async function handleSignOut() {
-  isSigningOut.value = true
   try {
-    await convexSignOut()
+    if (!client) throw new Error('Authentication client unavailable')
+    await client.signOut()
     window.location.href = '/'
   } catch (error) {
     console.error('Sign out failed:', error)
-  } finally {
-    isSigningOut.value = false
   }
 }
 
@@ -33,7 +29,7 @@ const navSections = [
       { to: '/labs/mutations', label: 'Mutations', icon: 'M' },
       { to: '/labs/realtime', label: 'Realtime', icon: 'R' },
       { to: '/labs/optimistic', label: 'Optimistic', icon: 'O' },
-      { to: '/labs/auth', label: 'Auth Components', icon: 'A' },
+      { to: '/labs/auth', label: 'Auth State', icon: 'A' },
       { to: '/labs/connection', label: 'Connection State', icon: 'C' },
       { to: '/labs/upload', label: 'File Upload', icon: 'U' },
       { to: '/labs/server-actions', label: 'Server Actions', icon: 'S' },
@@ -88,13 +84,17 @@ const isActiveRoute = (to: string) => {
         </div>
 
         <div class="header-right">
-          <template v-if="isAuthenticated">
+          <span v-if="status === 'loading'" class="auth-user">Checking session...</span>
+          <span v-else-if="status === 'error'" class="auth-user">
+            {{ authError?.message ?? 'Authentication unavailable' }}
+          </span>
+          <template v-else-if="status === 'authenticated'">
             <span class="auth-user">{{ user?.name || user?.email }}</span>
-            <button class="btn btn-sm" :disabled="isSigningOut" @click="handleSignOut">
-              {{ isSigningOut ? 'Signing out...' : 'Sign Out' }}
+            <button class="btn btn-sm" :disabled="isPending" @click="handleSignOut">
+              {{ isPending ? 'Signing out...' : 'Sign Out' }}
             </button>
           </template>
-          <template v-else>
+          <template v-else-if="status === 'anonymous'">
             <NuxtLink to="/auth/signin" class="btn btn-sm btn-primary">Sign In</NuxtLink>
             <NuxtLink to="/auth/signup" class="btn btn-sm">Sign Up</NuxtLink>
           </template>

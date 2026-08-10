@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import vm from 'node:vm'
 
@@ -9,7 +9,6 @@ import { getPackageEntryManifest } from './package-entry-manifest.mjs'
 
 const rootDir = process.cwd()
 const apiSurfacePath = resolve(rootDir, 'src/module-api-surface.ts')
-const componentsDir = resolve(rootDir, 'src/runtime/components')
 const outputPath = resolve(rootDir, 'docs/content/docs/6.reference/7.api-surface.md')
 const packageJsonPath = resolve(rootDir, 'package.json')
 const checkOnly = process.argv.includes('--check')
@@ -68,10 +67,8 @@ function extractNamesFromRegistry(registryName) {
   ].sort((a, b) => a.localeCompare(b))
 }
 
-const composableImports = [
-  ...extractNamesFromRegistry('composableAutoImports'),
-  ...extractNamesFromRegistry('authAutoImports'),
-].sort((a, b) => a.localeCompare(b))
+const composableImports = extractNamesFromRegistry('composableAutoImports')
+const authImports = extractNamesFromRegistry('authAutoImports')
 const serverImports = extractNamesFromRegistry('serverAutoImports')
 const packageContract = packageEntryManifest.entries.map(
   ({ subpath, valueExports, typeExports }) => ({
@@ -94,62 +91,7 @@ function toPackageEntryRows(entries) {
     })
     .join('\n')
 }
-const componentNames = readdirSync(componentsDir)
-  .filter((name) => name.endsWith('.vue'))
-  .map((name) => name.replace(/\.vue$/, ''))
-  .sort((a, b) => a.localeCompare(b))
-
 const composableMeta = {
-  deleteFromPaginatedQuery: {
-    kind: 'Helper',
-    purpose: 'Optimistically removes an item from a paginated query cache.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
-  deleteFromQuery: {
-    kind: 'Helper',
-    purpose: 'Optimistically removes an item from a regular query cache.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
-  insertAtBottomIfLoaded: {
-    kind: 'Helper',
-    purpose: 'Optimistically inserts an item at the end of paginated data when loaded.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
-  insertAtPosition: {
-    kind: 'Helper',
-    purpose: 'Optimistically inserts an item at a custom position in paginated data.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
-  insertAtTop: {
-    kind: 'Helper',
-    purpose: 'Optimistically inserts an item at the top of paginated data.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
-  updateInPaginatedQuery: {
-    kind: 'Helper',
-    purpose: 'Optimistically updates matching items across paginated query pages.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
-  defineSharedConvexQuery: {
-    kind: 'Helper',
-    purpose: 'Defines a reusable shared query contract for multiple consumers.',
-    guide: '/docs/build/queries/sharing-query-state',
-  },
-  setQueryData: {
-    kind: 'Helper',
-    purpose: 'Replaces cached query data with a new value.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
-  updateAllQueries: {
-    kind: 'Helper',
-    purpose: 'Applies an updater across multiple cached query results.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
-  updateQuery: {
-    kind: 'Helper',
-    purpose: 'Applies an updater to one cached query result.',
-    guide: '/docs/build/write-data/optimistic-updates',
-  },
   useConvex: {
     kind: 'Composable',
     purpose: 'Returns the stable replacement-safe handle for imperative Convex calls.',
@@ -163,16 +105,21 @@ const composableMeta = {
   useConvexAttachment: {
     kind: 'Composable',
     purpose: 'Returns the frozen token-free runtime boundary for an embedded Vue application.',
-    guide: '/docs/reference/composables#useconvexattachment',
+    guide: '/docs/reference/composables#client-and-configuration-code-useconvexattachment',
   },
   useConvexAuth: {
     kind: 'Composable',
     purpose: 'Tracks auth state and user/session information in Nuxt.',
     guide: '/docs/build/authentication/auth-state-and-user',
   },
+  useConvexConfig: {
+    kind: 'Composable',
+    purpose: 'Returns the readonly public Convex deployment URLs.',
+    guide: '/docs/reference/module-configuration',
+  },
   useConvexConnectionState: {
     kind: 'Composable',
-    purpose: 'Observes live WebSocket connection state to Convex.',
+    purpose: 'Observes the exact live Convex transport state.',
     guide: '/docs/build/application-behavior/connection-state',
   },
   useConvexFileUpload: {
@@ -187,28 +134,13 @@ const composableMeta = {
   },
   useConvexPaginatedQuery: {
     kind: 'Composable',
-    purpose: 'Fetches and paginates query results with real-time updates.',
+    purpose: 'Returns one reactive, SSR-aware pagination lifecycle.',
     guide: '/docs/build/queries/pagination',
   },
   useConvexQuery: {
     kind: 'Composable',
-    purpose: 'Fetches reactive query data with SSR and subscription support.',
+    purpose: 'Returns one reactive SSR-to-realtime query lifecycle.',
     guide: '/docs/build/queries/queries',
-  },
-  useConvexUser: {
-    kind: 'Composable',
-    purpose: 'Seeds from session user, then upgrades to canonical user/profile data.',
-    guide: '/docs/build/authentication/auth-state-and-user',
-  },
-  useConvexStorageUrl: {
-    kind: 'Composable',
-    purpose: 'Resolves Convex file storage IDs to usable URLs.',
-    guide: '/docs/build/files/storage-urls',
-  },
-  useConvexUploadQueue: {
-    kind: 'Composable',
-    purpose: 'Queues and coordinates concurrent file uploads.',
-    guide: '/docs/build/files/upload-queues',
   },
 }
 
@@ -221,29 +153,6 @@ const serverMeta = {
   },
 }
 
-const componentMeta = {
-  ConvexAuthenticated: {
-    kind: 'Component',
-    purpose: 'Renders slot content only for authenticated users.',
-    guide: '/docs/reference/auth-components',
-  },
-  ConvexAuthError: {
-    kind: 'Component',
-    purpose: 'Renders slot content when auth resolves with an error.',
-    guide: '/docs/reference/auth-components',
-  },
-  ConvexAuthLoading: {
-    kind: 'Component',
-    purpose: 'Renders slot content while auth state is still loading.',
-    guide: '/docs/reference/auth-components',
-  },
-  ConvexUnauthenticated: {
-    kind: 'Component',
-    purpose: 'Renders slot content only for signed-out users.',
-    guide: '/docs/reference/auth-components',
-  },
-}
-
 function fallbackMeta(name, defaultKind = 'Helper') {
   return {
     kind: name.startsWith('use') ? 'Composable' : defaultKind,
@@ -253,30 +162,28 @@ function fallbackMeta(name, defaultKind = 'Helper') {
 }
 
 function toRows(names, meta, options = {}) {
-  const { component = false, defaultKind = 'Helper' } = options
+  const { defaultKind = 'Helper' } = options
   return names
     .map((name) => {
       const details = meta[name] ?? fallbackMeta(name, defaultKind)
-      const displayName = component ? `<${name}>` : name
-      return `| \`${displayName}\` | ${details.kind} | ${details.purpose} | [Guide](${details.guide}) |`
+      return `| \`${name}\` | ${details.kind} | ${details.purpose} | [Guide](${details.guide}) |`
     })
     .join('\n')
 }
 
 const file = `---
 title: API Surface
-description: Generated reference of auto-imported composables, server helpers, and global auth components.
+description: Generated reference of auto-imported composables, server helpers, aliases, and package entries.
 navigation:
   icon: i-lucide-list
 ---
 
-This page is generated from module entrypoints and runtime component files.
+This page is generated from the reviewed module and package entrypoint registries.
 
 Source of truth:
 - [src/module-api-surface.ts](${repoBase}/blob/main/src/module-api-surface.ts)
 - [scripts/package-entry-manifest.mjs](${repoBase}/blob/main/scripts/package-entry-manifest.mjs)
 - [src/runtime/server/utils](${repoBase}/tree/main/src/runtime/server/utils)
-- [src/runtime/components](${repoBase}/tree/main/src/runtime/components)
 
 This reference answers:
 - Which APIs are auto-imported?
@@ -296,6 +203,7 @@ node scripts/generate-api-surface.mjs
 | ----- | --------- | ------------------ |
 | \`#convex/api\` | Your app's \`convex/_generated/api\` | Vue components, composables, route middleware, Nitro server routes, tests |
 | \`#convex/server\` | \`better-convex-nuxt\` server exports | Nitro server routes and Convex-adjacent server utilities |
+| \`#convex/auth-client\` | The configured Better Auth client definition | Auth-enabled builds only |
 
 Use \`#convex/api\` for generated Convex functions:
 
@@ -317,31 +225,53 @@ Use \`#convex/server\` when an explicit server import is clearer than relying on
 import { serverConvex } from '#convex/server'
 \`\`\`
 
-\`createUserSyncTriggers\` runs inside your \`convex/\` functions, where Nuxt aliases do not exist. Import it from its dedicated subpath instead:
+\`createUserProjectionTriggers\` runs inside your \`convex/\` functions. Import it from the Better Auth integration subpath:
 
 \`\`\`ts
-import { createUserSyncTriggers } from 'better-convex-nuxt/server/createUserSyncTriggers'
+import { createUserProjectionTriggers } from 'better-convex-nuxt/convex-auth'
 \`\`\`
 
-## Composable Auto-Imports
+## Core Composable Auto-Imports
 
-\`useConvexAuth\`, \`useConvexUser\`, and the global auth components are always available. With \`auth: false\`, they expose the documented disabled-auth state without loading Better Auth. The typed Better Auth client for an enabled build is defined with \`defineConvexAuthClient\` from \`better-convex-nuxt/auth-client\` and read through \`useConvexAuth().client\`.
+These composables are available in every build. Omitting \`convex.auth\` keeps Better Auth, its proxy, its middleware, its page metadata, and \`useConvexAuth\` out of the application surface.
 
 | Name | Kind | Purpose | Learn More |
 | ---- | ---- | ------- | ---------- |
 ${toRows(composableImports, composableMeta)}
+
+\`useConvexQuery\` accepts \`auth\`, \`keepPreviousData\`, and Nuxt's \`server\` option. Its state is \`data\`, \`status\`, \`pending\`, \`error\`, \`isStale\`, and \`refresh()\`. These option and state lists are exhaustive.
+
+\`useConvexPaginatedQuery\` requires a positive \`initialNumItems\`. Its state is \`data\`, \`status\`, \`isLoading\`, \`canLoadMore\`, \`error\`, \`isStale\`, \`loadMore()\`, and \`refresh()\`.
+
+## Auth-Enabled Auto-Imports
+
+Auth is an explicit opt-in:
+
+\`\`\`ts [nuxt.config.ts]
+export default defineNuxtConfig({
+  modules: ['better-convex-nuxt'],
+  convex: {
+    auth: {
+      origin: process.env.SITE_URL ?? 'http://localhost:3000',
+      trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
+    },
+  },
+})
+\`\`\`
+
+Only an auth-enabled build auto-imports the following API. Define its typed Better Auth client with \`defineConvexAuthClient\` from \`better-convex-nuxt/auth-client\`, then access the integrated client through \`useConvexAuth().client\`.
+
+| Name | Kind | Purpose | Learn More |
+| ---- | ---- | ------- | ---------- |
+${toRows(authImports, composableMeta)}
+
+Render auth UI with ordinary Vue conditionals over \`status\`, \`isPending\`, and \`error\`. The module does not register auth UI components.
 
 ## Server Auto-Imports
 
 | Name | Kind | Purpose | Learn More |
 | ---- | ---- | ------- | ---------- |
 ${toRows(serverImports, serverMeta, { defaultKind: 'Server helper' })}
-
-## Global Auth Components
-
-| Name | Kind | Purpose | Learn More |
-| ---- | ---- | ------- | ---------- |
-${toRows(componentNames, componentMeta, { component: true, defaultKind: 'Component' })}
 `
 
 if (checkOnly) {

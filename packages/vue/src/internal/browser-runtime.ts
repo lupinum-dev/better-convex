@@ -1,7 +1,7 @@
 import type { ConnectionState } from 'convex/browser'
 import { watch } from 'vue'
 
-import { createAttachedClientRuntime, type AttachedClientRuntime } from './attached-runtime'
+import { createBetterConvexAttachment, type BetterConvexAttachment } from './attached-runtime'
 import {
   createAuthAdapterIdentityPort,
   type BrowserAuthAdapter,
@@ -18,7 +18,7 @@ import type { ClientIdentityObserver, ClientIdentitySnapshot } from './identity-
 export interface BetterConvexBrowserRuntime {
   readonly handle: ConvexClientHandle
   readonly identity: ClientIdentityObserver
-  readonly attachment: AttachedClientRuntime
+  readonly attachment: BetterConvexAttachment
   readonly connection: ConvexClientOwner['connection']
   /** Internal transport selection; never exposed by the public stable handle. */
   clientFor(mode: 'required' | 'optional' | 'none'): ConvexClientHandle
@@ -88,7 +88,7 @@ export function createBetterConvexBrowserRuntime(
     onUpdate: ((...args: Parameters<ConvexClientHandle['onUpdate']>) =>
       owner.getAnonymous().onUpdate(...args)) as ConvexClientHandle['onUpdate'],
   }) as ConvexClientHandle
-  const attachment = createAttachedClientRuntime({
+  const attachment = createBetterConvexAttachment({
     client: owner.handle,
     anonymousClient: anonymousHandle,
     identity,

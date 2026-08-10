@@ -33,7 +33,7 @@ describe('useConvexQuery none transport isolation', () => {
         useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity('jwt.signed.in', {
           id: 'u1',
         })
-        return createConvexQueryState(query, {}, { auth: 'none' }, true).resultData
+        return createConvexQueryState(query, {}, { auth: 'none' }).resultData
       },
       { owner: makeMockOwner(primary, anon) },
     )
@@ -55,7 +55,7 @@ describe('useConvexQuery none transport isolation', () => {
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
         identity.value = ANONYMOUS_IDENTITY
-        const q = createConvexQueryState(query, {}, { auth: 'none' }, true).resultData
+        const q = createConvexQueryState(query, {}, { auth: 'none' }).resultData
         return { q, identity }
       },
       { owner: makeMockOwner(primary, anon) },
@@ -87,7 +87,7 @@ describe('useConvexQuery none transport isolation', () => {
     const query = mockFnRef<'query'>('notes:public:auth-disabled')
 
     const { flush } = await captureInNuxt(
-      () => createConvexQueryState(query, {}, { auth: 'none' }, true).resultData,
+      () => createConvexQueryState(query, {}, { auth: 'none' }).resultData,
       { owner: makeMockOwner(primary, anon), convexConfig: { auth: false } },
     )
 

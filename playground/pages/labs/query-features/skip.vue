@@ -11,7 +11,7 @@ definePageMeta({
  * Uses the explicit skip sentinel to permanently skip the query.
  * Expected behavior:
  * - status = 'idle'
- * - data = null
+ * - data = undefined
  * - pending = false
  * - No network requests made
  */
@@ -40,12 +40,12 @@ const { data, pending, status, error } = await useConvexQuery(api.notes.list, 's
         <div class="state-item">
           <span class="label">data:</span>
           <span data-testid="data" class="value">{{
-            data === null ? 'null' : JSON.stringify(data)
+            data === undefined ? 'undefined' : JSON.stringify(data)
           }}</span>
         </div>
         <div class="state-item">
           <span class="label">has data:</span>
-          <span data-testid="has-data" class="value">{{ data !== null }}</span>
+          <span data-testid="has-data" class="value">{{ data !== undefined }}</span>
         </div>
         <div v-if="error" class="state-item">
           <span class="label">error:</span>
@@ -59,7 +59,7 @@ const { data, pending, status, error } = await useConvexQuery(api.notes.list, 's
       <ul>
         <li>status: <code>idle</code></li>
         <li>pending: <code>false</code></li>
-        <li>data: <code>null</code></li>
+        <li>data: <code>undefined</code></li>
         <li>has data: <code>false</code></li>
       </ul>
     </section>

@@ -62,9 +62,6 @@
       ],
       "server": [
         "./dist/runtime/server/index.d.ts"
-      ],
-      "server/createUserSyncTriggers": [
-        "./dist/runtime/server/createUserSyncTriggers.d.ts"
       ]
     }
   },
@@ -99,10 +96,6 @@
     "./server": {
       "types": "./dist/runtime/server/index.d.ts",
       "import": "./dist/runtime/server/index.js"
-    },
-    "./server/createUserSyncTriggers": {
-      "types": "./dist/runtime/server/createUserSyncTriggers.d.ts",
-      "import": "./dist/runtime/server/createUserSyncTriggers.js"
     }
   },
   "scripts": {
@@ -186,7 +179,6 @@
     "test:types": "pnpm run typecheck:module"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "1.7.0-rc.2",
     "@nuxt/kit": "4.5.1",
     "better-convex-vue": "0.8.0-beta.31",
     "convex-helpers": "0.1.114",
@@ -198,6 +190,7 @@
   "devDependencies": {
     "@better-auth/api-key": "1.7.0-rc.2",
     "@better-auth/core": "1.7.0-rc.2",
+    "@better-auth/oauth-provider": "1.7.0-rc.2",
     "@edge-runtime/vm": "^5.0.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/conformance": "0.1.16",
@@ -217,7 +210,6 @@
     "eslint": "^10.7.0",
     "happy-dom": "^20.8.9",
     "jose": "6.2.3",
-    "kysely": "0.28.17",
     "mcp-remote": "0.1.38",
     "nuxt": "4.5.1",
     "oxfmt": "^0.59.0",
@@ -229,13 +221,22 @@
     "vitest": "^4.1.8",
     "vitest-browser-vue": "^2.1.0",
     "vue-tsc": "^3.3.7",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
   },
   "peerDependencies": {
+    "@better-auth/oauth-provider": "1.7.0-rc.2",
     "better-auth": "1.7.0-rc.2",
     "convex": "1.42.2",
-    "kysely": "0.28.17",
     "nuxt": "4.5.1"
+  },
+  "peerDependenciesMeta": {
+    "@better-auth/oauth-provider": {
+      "optional": true
+    },
+    "better-auth": {
+      "optional": true
+    }
   },
   "engines": {
     "node": "^22.12.0 || ^24.11.0 || >=26.0.0"

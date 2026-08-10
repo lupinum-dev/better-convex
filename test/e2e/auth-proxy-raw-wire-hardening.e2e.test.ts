@@ -6,7 +6,8 @@ import { gzipSync } from 'node:zlib'
 import { setup, url } from '@nuxt/test-utils/e2e'
 import { afterAll, describe, expect, it } from 'vitest'
 
-const BODY_LIMIT = 4_096
+const BODY_LIMIT = 1_048_576
+const OAUTH_TOKEN_BODY_LIMIT = 16 * 1024
 const PUBLIC_ORIGIN = 'http://localhost:3000'
 const redirectDestinations = new Map([
   ['relative', '/redirect-target'],
@@ -294,13 +295,7 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
       convex: {
         url: 'https://demo.convex.cloud',
         siteUrl: upstream.url,
-        auth: {
-          publicOrigin: PUBLIC_ORIGIN,
-          proxy: {
-            maxRequestBodyBytes: BODY_LIMIT,
-            maxResponseBodyBytes: BODY_LIMIT,
-          },
-        },
+        auth: { origin: PUBLIC_ORIGIN },
       },
     },
   })
@@ -477,7 +472,7 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
     expect(hostilePreflight.status).toBe(405)
     expect(hostilePreflight.headers['access-control-allow-origin']).toBeUndefined()
 
-    const oversizedBody = Buffer.alloc(BODY_LIMIT + 1, 97)
+    const oversizedBody = Buffer.alloc(OAUTH_TOKEN_BODY_LIMIT + 1, 97)
     const oversized = await requestProxy('/api/auth/oauth2/token', {
       body: oversizedBody,
       headers: {
@@ -486,8 +481,8 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
       },
       method: 'POST',
     })
-    expect(oversized.status).toBe(413)
-    expect(oversized.headers['access-control-allow-origin']).toBe('*')
+    expect(oversized.status).toBe(403)
+    expect(oversized.headers['access-control-allow-origin']).toBeUndefined()
     expect(oversized.headers['access-control-allow-credentials']).toBeUndefined()
     expect(capturedRequests).toHaveLength(start)
   })
@@ -609,12 +604,8 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
     expect(declared.headers['cache-control']).toBe('private, no-store')
 
     const chunked = await requestProxy('/api/auth/_capture?case=chunked-over', {
+      body: overLimit,
       method: 'POST',
-      slowChunks: [
-        overLimit.subarray(0, BODY_LIMIT),
-        overLimit.subarray(BODY_LIMIT),
-        Buffer.from([8]),
-      ],
     })
     expect(chunked.status, chunked.body.toString()).toBe(413)
     expect(capturedSince(start)).toHaveLength(0)

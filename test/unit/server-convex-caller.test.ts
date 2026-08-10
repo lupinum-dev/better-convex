@@ -67,6 +67,11 @@ import { ServerConvexValidationError } from '../../src/runtime/server/utils/serv
 
 const SITE_URL = 'https://example.convex.site'
 const CONVEX_URL = 'https://example.convex.cloud'
+const AUTH_CONFIG = Object.freeze({
+  origin: 'http://localhost:3000',
+  trustedClientIpHeader: '',
+  redirectTo: '/auth/signin',
+})
 
 function setConfig(convex: Record<string, unknown>) {
   mocks.useRuntimeConfigMock.mockReturnValue({ public: { convex } })
@@ -93,7 +98,7 @@ beforeEach(() => {
   mocks.mutationMock.mockReset()
   mocks.actionMock.mockReset()
   mocks.exchangeMock.mockReset()
-  setConfig({ url: CONVEX_URL, siteUrl: SITE_URL, auth: {} })
+  setConfig({ url: CONVEX_URL, siteUrl: SITE_URL, auth: AUTH_CONFIG })
 })
 
 afterEach(() => {
@@ -212,7 +217,7 @@ describe('serverConvex caller-scoped invariants', () => {
     setConfig({
       url: CONVEX_URL,
       siteUrl: SITE_URL,
-      auth: { proxy: { trustedClientIpHeader: 'CF-Connecting-IP' } },
+      auth: { ...AUTH_CONFIG, trustedClientIpHeader: 'CF-Connecting-IP' },
     })
     mocks.exchangeMock.mockResolvedValue({ token: 'jwt-token', status: 200, error: null })
 

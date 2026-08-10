@@ -53,7 +53,7 @@ describe('Auth loop (full stack)', async () => {
           convex: {
             url: local.env.NUXT_PUBLIC_CONVEX_URL,
             siteUrl: local.env.NUXT_PUBLIC_CONVEX_SITE_URL,
-            auth: { publicOrigin: 'http://localhost:3050' },
+            auth: { origin: 'http://localhost:3050' },
           },
         }
       : undefined,

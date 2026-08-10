@@ -31,9 +31,10 @@ client replacement and identity generations. The server plugin exchanges the
 request session once and hydrates the canonical identity state before page
 setup.
 
-`auth: false` excludes the auth client plugin, server auth plugin, auth proxy,
-and auth middleware from the generated application. Auth composables remain
-available and return their documented disabled state.
+Omitting `auth` excludes the auth client plugin, server auth plugin, auth proxy,
+auth middleware, auth composable, and auth-only type generation from the
+generated application. `auth: false` is the explicit Nuxt-layer tombstone for
+removing inherited auth configuration.
 
 ## Client ownership
 
@@ -88,9 +89,10 @@ transport, or error.
 
 ## Calls and errors
 
-Mutations and actions use the shared callable lifecycle. Throwing calls and
-`.safe()` calls pass failures through the same normalizer. `ConvexCallError` is
-the only public error class and the `/errors` export remains framework-free.
+Mutations and actions use the shared callable lifecycle and reject through
+ordinary `await`/`catch`. Every failure passes through the same normalizer.
+`ConvexCallError` is the only public error class and the `/errors` export
+remains framework-free.
 
 Server calls are request-scoped. `serverConvex(event)` owns one lazy token
 promise and one HTTP client per caller. Authenticated callers must never be
@@ -100,7 +102,7 @@ stored globally or shared between requests.
 
 Nuxt payload data, query state, and optional user projections are derived.
 They must be partitioned by identity where applicable and reproducible from
-canonical Better Auth or Convex state. `createUserSyncTriggers` includes a
+canonical Better Auth or Convex state. `createUserProjectionTriggers` includes a
 rebuild path; projections must not become an authorization source.
 
 ## Release artifact fingerprint
@@ -131,7 +133,6 @@ The supported package entry points are:
 - `better-convex-nuxt/convex-auth/test`
 - `better-convex-nuxt/errors`
 - `better-convex-nuxt/server`
-- `better-convex-nuxt/server/createUserSyncTriggers`
 
 Anything else under `src/runtime` is internal. Internal files may change
 without compatibility wrappers; released exports and documented behavior
@@ -146,7 +147,7 @@ The permanent suite protects:
 - auth identity changes, stale-operation retirement, and multi-app isolation;
 - query auth modes, identity-partitioned payload state, and pagination;
 - request-scoped server callers and auth proxy security boundaries;
-- public errors and throwing/`.safe()` equivalence;
+- public errors and ordinary rejected-call normalization;
 - Better Auth provider and user-sync contracts.
 
 Migration mechanics and deleted implementation details are not compatibility

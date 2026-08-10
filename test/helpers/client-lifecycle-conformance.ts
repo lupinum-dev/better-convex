@@ -6,13 +6,13 @@ export interface ClientLifecycleConformanceReport {
     action: string
   }
   afterIdentityChange: {
-    query: null
-    pagination: []
+    query: undefined
+    pagination: undefined
     mutationStatus: 'idle'
     actionStatus: 'idle'
   }
   afterDispose: {
-    query: null
+    query: undefined
     activeQuerySubscriptions: 0
     activePaginationSubscriptions: 0
     identityListeners: 0
@@ -27,13 +27,13 @@ export const EXPECTED_CLIENT_LIFECYCLE_REPORT: ClientLifecycleConformanceReport 
     action: 'action:user:alice:work',
   },
   afterIdentityChange: {
-    query: null,
-    pagination: [],
+    query: undefined,
+    pagination: undefined,
     mutationStatus: 'idle',
     actionStatus: 'idle',
   },
   afterDispose: {
-    query: null,
+    query: undefined,
     activeQuerySubscriptions: 0,
     activePaginationSubscriptions: 0,
     identityListeners: 0,

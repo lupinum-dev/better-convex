@@ -14,6 +14,7 @@ import {
   type BaseAuthClient,
   type ConvexAuthClientDefinition,
   type InferRegisteredConvexAuthClient,
+  type IntegratedAuthClient,
 } from '../../src/runtime/auth-client'
 import {
   ConvexAuthClientDefinitionError,
@@ -44,6 +45,7 @@ declare module '../../src/runtime/auth-client' {
 // (a) The registered apiKey definition makes the narrowed non-null client expose
 //     apiKey.create with typed params/return — not `any`.
 declare const registeredClient: InferRegisteredConvexAuthClient | null
+declare const integratedClient: IntegratedAuthClient<InferRegisteredConvexAuthClient>
 export function _assertPluginClient() {
   if (!registeredClient) return
 
@@ -67,6 +69,19 @@ export function _assertPluginClient() {
   // Params are typed (not any): an unknown field is rejected.
   // @ts-expect-error `notAField` is not part of apiKey.create input.
   void registeredClient.apiKey.create({ name: 'x', notAField: true })
+}
+
+export function _assertIntegratedClient() {
+  const session = integratedClient.useSession()
+  const create = integratedClient.apiKey.create({ name: 'ci-key' })
+  void session.value.isPending
+  void create.then
+  // @ts-expect-error the integrated client has no raw fetch escape.
+  void integratedClient.$fetch
+  // @ts-expect-error the integrated client has no raw store escape.
+  void integratedClient.$store
+  // @ts-expect-error the integrated client cannot hydrate provider state.
+  void integratedClient.hydrateSession
 }
 
 // (b) The base fallback client exposes only the base surface — apiKey is absent.

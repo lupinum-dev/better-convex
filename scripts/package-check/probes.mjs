@@ -9,6 +9,7 @@ import {
   requiredStatefulPeerNames,
   supportedDependencyTuple,
 } from '../supported-dependency-tuple.mjs'
+import { collectDeclarationExternalSpecifiers } from './purity.mjs'
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, {
@@ -83,6 +84,39 @@ function assertProductionGraph(directory, expectedRuntimeNames, label) {
   }
 }
 
+function assertProductionGraphExcludes(directory, forbiddenRuntimeNames, label) {
+  const instances = collectDependencyInstances(productionGraph(directory))
+  const installed = forbiddenRuntimeNames.filter((name) => instances.has(name))
+  if (installed.length > 0) {
+    throw new Error(`${label} unexpectedly installs ${installed.join(', ')}`)
+  }
+}
+
+function assertRootDeclarationsExcludeAuth(packageRoot, manifest) {
+  const entryPath = manifest.exports?.['.']?.types ?? manifest.types
+  if (typeof entryPath !== 'string') {
+    throw new TypeError('Packed root manifest has no declaration entry.')
+  }
+  const failures = []
+  const externalSpecifiers = collectDeclarationExternalSpecifiers(entryPath, failures, packageRoot)
+  if (failures.length > 0) {
+    throw new Error(`Packed root declaration closure is invalid: ${failures.join('; ')}`)
+  }
+  const authSpecifiers = [...externalSpecifiers].filter(
+    (specifier) =>
+      specifier === 'better-auth' ||
+      specifier.startsWith('better-auth/') ||
+      specifier.startsWith('@better-auth/') ||
+      specifier === 'kysely' ||
+      specifier.startsWith('kysely/'),
+  )
+  if (authSpecifiers.length > 0) {
+    throw new Error(
+      `Convex-only root declarations reference auth-only packages: ${authSpecifiers.sort().join(', ')}`,
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 /** @typedef {{ filename: string, packageName: string, tarballPath: string, version: string }} CompanionTarball */
@@ -95,6 +129,99 @@ function companionDependencies(ctx) {
       `file:${companion.tarballPath}`,
     ]),
   )
+}
+
+function requiredConsumerPeers(manifest) {
+  return Object.fromEntries(
+    Object.entries(manifest.peerDependencies ?? {}).filter(
+      ([name]) => manifest.peerDependenciesMeta?.[name]?.optional !== true,
+    ),
+  )
+}
+
+function probeRootEntryWithoutAuth(ctx) {
+  const dir = mkdtempSync(join(tmpdir(), 'bcn-root-no-auth-probe-'))
+  writeJson(join(dir, 'package.json'), {
+    name: 'root-no-auth-probe',
+    private: true,
+    type: 'module',
+    packageManager: ctx.packageManifest.packageManager,
+    dependencies: {
+      ...requiredConsumerPeers(ctx.packageManifest),
+      ...companionDependencies(ctx),
+      [ctx.packageName]: `file:${ctx.tarballPath}`,
+    },
+    devDependencies: {
+      typescript: ctx.packageManifest.devDependencies.typescript,
+      '@types/node': ctx.packageManifest.devDependencies['@types/node'],
+    },
+  })
+  writeFile(join(dir, '.npmrc'), 'ignore-scripts=true\n')
+  const companionOverrides = ctx.companionTarballs
+    .map((companion) => `  '${companion.packageName}': 'file:${companion.tarballPath}'`)
+    .join('\n')
+  writeFile(
+    join(dir, 'pnpm-workspace.yaml'),
+    [
+      '# isolated Convex-only packed consumer',
+      ...(companionOverrides ? ['overrides:', companionOverrides] : []),
+      '',
+    ].join('\n'),
+  )
+  writeFile(
+    join(dir, 'index.mjs'),
+    [
+      `import mod from '${ctx.packageName}'`,
+      "if (typeof mod !== 'function' && typeof mod !== 'object') throw new Error('default export did not resolve')",
+      "console.log('root-no-auth-probe runtime OK')",
+      '',
+    ].join('\n'),
+  )
+  writeFile(
+    join(dir, 'index.ts'),
+    [
+      `import mod, { type ModuleOptions, type UseConvexQueryOptions } from '${ctx.packageName}'`,
+      'const options: ModuleOptions = {}',
+      "const query: UseConvexQueryOptions = { auth: 'none', server: false }",
+      'void mod',
+      'void options',
+      'void query',
+      '',
+    ].join('\n'),
+  )
+  writeJson(join(dir, 'tsconfig.json'), {
+    compilerOptions: {
+      target: 'ES2022',
+      lib: ['ES2022', 'DOM'],
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      types: ['node'],
+    },
+    include: ['index.ts'],
+  })
+
+  try {
+    installStrict(dir)
+    run('node', ['index.mjs'], { cwd: dir })
+    run('pnpm', ['exec', 'tsc', '-p', 'tsconfig.json'], { cwd: dir })
+    const installedPackageRoot = join(dir, 'node_modules', ctx.packageName)
+    const installedManifest = JSON.parse(
+      readFileSync(join(installedPackageRoot, 'package.json'), 'utf8'),
+    )
+    assertRootDeclarationsExcludeAuth(installedPackageRoot, installedManifest)
+    assertProductionGraphExcludes(
+      dir,
+      ['better-auth', '@better-auth/core', '@better-auth/oauth-provider', 'kysely'],
+      'Convex-only production consumer',
+    )
+  } catch (error) {
+    ctx.failures.push(`[.] packed Convex-only root probe failed: ${error.message}`)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 function prepareFixtureTarballs(ctx, fixtureDir) {
@@ -134,6 +261,7 @@ function prepareFixtureTarballs(ctx, fixtureDir) {
  * No dedicated fixture directory is required.
  */
 export function probeRootEntry(ctx) {
+  probeRootEntryWithoutAuth(ctx)
   const dir = mkdtempSync(join(tmpdir(), 'bcn-root-probe-'))
 
   const consumerPeers = ctx.packageManifest.peerDependencies
@@ -217,39 +345,106 @@ export function probeRootEntry(ctx) {
     join(dir, 'index.ts'),
     [
       'import type {',
-      '  BaseAuthClient, ConvexAuthMode, ConvexAuthOptions, ConvexAuthClientRegistry,',
-      '  ConvexAuthStatus, ConvexCallErrorKind, ConvexCallStatus, ConvexClientHandle, ConvexRuntimeConfig,',
-      '  InferRegisteredConvexAuthClient, ModuleOptions, OptimisticUpdate, ServerConvexOptions,',
+      '  ConvexAuthMode, ConvexAuthOptions, ConvexAuthStatus, ConvexCallStatus,',
+      '  ConvexClientHandle, ConvexRuntimeConfig, ModuleOptions, NuxtConvexPaginatedQuery,',
+      '  NuxtConvexQuery, OptimisticUpdate,',
       '  UploadProgressInfo, UploadStatus, UploadUrlMutation, UseConvexAuthReturn,',
       '  UseConvexCall, UseConvexFileUploadOptions, UseConvexFileUploadReturn, UseConvexMutationOptions,',
-      '  UseConvexPaginatedQueryOptions,',
-      '  UseConvexQueryOptions,',
+      '  UseConvexPaginatedQueryOptions, UseConvexPaginatedQueryState,',
+      '  UseConvexQueryOptions, UseConvexQueryParameters, UseConvexQueryState,',
       `} from '${ctx.packageName}'`,
+      'import type {',
+      '  BaseAuthClient, ConvexAuthClientRegistry, InferRegisteredConvexAuthClient, IntegratedAuthClient,',
+      `} from '${ctx.packageName}/auth-client'`,
+      `import type { ConvexCallErrorKind } from '${ctx.packageName}/errors'`,
+      `import type { ServerConvexOptions } from '${ctx.packageName}/server'`,
+      '// @ts-expect-error auth client machinery is available only from /auth-client',
+      `import type { BaseAuthClient as RemovedRootBaseAuthClient } from '${ctx.packageName}'`,
+      '// @ts-expect-error auth client machinery is available only from /auth-client',
+      `import type { ConvexAuthClientRegistry as RemovedRootAuthRegistry } from '${ctx.packageName}'`,
+      '// @ts-expect-error auth client machinery is available only from /auth-client',
+      `import type { InferRegisteredConvexAuthClient as RemovedRootAuthInference } from '${ctx.packageName}'`,
+      '// @ts-expect-error auth client machinery is available only from /auth-client',
+      `import type { IntegratedAuthClient as RemovedRootIntegratedAuthClient } from '${ctx.packageName}'`,
+      '// @ts-expect-error the generic ConvexUser projection wrapper was deleted',
+      `import type { ConvexUser as RemovedRootConvexUser } from '${ctx.packageName}'`,
+      '// @ts-expect-error error taxonomy is available only from /errors',
+      `import type { ConvexCallErrorKind as RemovedRootErrorKind } from '${ctx.packageName}'`,
+      '// @ts-expect-error server options are available only from /server',
+      `import type { ServerConvexOptions as RemovedRootServerOptions } from '${ctx.packageName}'`,
+      "import type { FunctionReference } from 'convex/server'",
       'import type {',
       '  AuthComponentTriggers, AuthCtx, AuthFunctions, CreateAuth, VerifyOAuthBearerTokenOptions,',
       `} from '${ctx.packageName}/convex-auth'`,
+      `import { createAuthComponent } from '${ctx.packageName}/convex-auth'`,
       `import authComponent from '${ctx.packageName}/convex-auth/convex.config'`,
       `import type { ComponentApi } from '${ctx.packageName}/convex-auth/_generated/component.js'`,
       `import authTest, { register } from '${ctx.packageName}/convex-auth/test'`,
       `import mod from '${ctx.packageName}'`,
       '',
       'const _opts: ModuleOptions | undefined = undefined',
+      "type EmptyQuery = FunctionReference<'query', 'public', {}, string>",
+      "type OptionalArgsQuery = FunctionReference<'query', 'public', { term?: string }, string[]>",
+      "const _queryOptions: UseConvexQueryOptions = { auth: 'none', keepPreviousData: true, server: false }",
+      "const _paginatedOptions: UseConvexPaginatedQueryOptions = { auth: 'none', initialNumItems: 25, server: false }",
+      'const _emptyQueryParameters: UseConvexQueryParameters<EmptyQuery> = [{}, { server: false }]',
+      'type OptionalArgsRequirePosition = [] extends UseConvexQueryParameters<OptionalArgsQuery> ? never : true',
+      'const _optionalArgsRequirePosition: OptionalArgsRequirePosition = true',
+      'const _removedQueryOption: UseConvexQueryOptions = {',
+      '  // @ts-expect-error subscribe is transport policy, not a public option',
+      '  subscribe: true,',
+      '}',
+      'const _removedPaginatedOption: UseConvexPaginatedQueryOptions = {',
+      '  initialNumItems: 25,',
+      '  // @ts-expect-error initialPage is private hydration machinery',
+      '  initialPage: null,',
+      '}',
+      'const _removedModuleDefaults: ModuleOptions = {',
+      '  // @ts-expect-error query defaults were removed in favor of per-call policy',
+      '  defaults: { server: false },',
+      '}',
+      'const _removedUploadDefaults: ModuleOptions = {',
+      '  // @ts-expect-error multi-file upload orchestration is application-owned',
+      '  upload: { maxConcurrent: 3 },',
+      '}',
       'type PublicContract = [',
       '  BaseAuthClient, ConvexAuthMode, ConvexAuthOptions, ConvexAuthClientRegistry,',
       '  ConvexAuthStatus, ConvexCallErrorKind, ConvexCallStatus, ConvexClientHandle, ConvexRuntimeConfig,',
-      '  InferRegisteredConvexAuthClient, OptimisticUpdate<never>, ServerConvexOptions, UseConvexAuthReturn,',
+      '  InferRegisteredConvexAuthClient, NuxtConvexPaginatedQuery<unknown>, NuxtConvexQuery<unknown>,',
+      '  IntegratedAuthClient<BaseAuthClient>, OptimisticUpdate<never>, ServerConvexOptions, UseConvexAuthReturn,',
       '  UploadProgressInfo, UploadStatus, UploadUrlMutation, UseConvexFileUploadOptions,',
       '  UseConvexCall<never>, UseConvexFileUploadReturn<UploadUrlMutation>, UseConvexMutationOptions<never>,',
-      '  UseConvexPaginatedQueryOptions, UseConvexQueryOptions<unknown>,',
+      '  UseConvexPaginatedQueryOptions, UseConvexPaginatedQueryState<unknown>,',
+      '  UseConvexQueryOptions, UseConvexQueryParameters<EmptyQuery>, UseConvexQueryState<unknown>,',
       '  AuthComponentTriggers, AuthCtx, AuthFunctions, CreateAuth, VerifyOAuthBearerTokenOptions, ComponentApi,',
       ']',
       'const _contract: PublicContract | undefined = undefined',
+      'declare const _authCtx: AuthCtx',
+      "declare const _mountedAuthComponent: ComponentApi<'betterAuth'>",
+      'const _authApi = createAuthComponent(_mountedAuthComponent)',
+      'const _liveOAuthAccess: Promise<boolean> = _authApi.validateOAuthAccess(_authCtx, {',
+      "  clientId: 'client-id',",
+      "  issuer: 'https://accounts.example.test',",
+      "  resource: 'https://deployment.example.test/mcp',",
+      "  scopes: ['mcp:read'],",
+      "  sessionId: 'session-id',",
+      "  subject: 'user-id',",
+      '})',
       'void mod',
       'void authComponent',
       'void authTest',
       'void register',
       'void _opts',
+      'void _queryOptions',
+      'void _paginatedOptions',
+      'void _emptyQueryParameters',
+      'void _optionalArgsRequirePosition',
+      'void _removedQueryOption',
+      'void _removedPaginatedOption',
+      'void _removedModuleDefaults',
+      'void _removedUploadDefaults',
       'void _contract',
+      'void _liveOAuthAccess',
       '',
     ].join('\n'),
   )
@@ -427,14 +622,12 @@ export function probeServerEntry(ctx) {
 }
 
 /**
- * `/server/createUserSyncTriggers` probe: this entry is framework-free (no
- * Nuxt/H3/Convex import of its own), so — like `/errors` — it is proved with
- * a standalone Node consumer rather than a full Nuxt fixture: installs the
- * packed tarball into `test/fixtures/user-sync-triggers-consumer` and runs its
- * `build` (type resolution via `tsc`) and `start` (runtime resolution).
+ * `/convex-auth` projection probe: installs the packed package into a
+ * standalone Convex-oriented consumer and executes the projection helper's
+ * type and runtime contracts from the public auth integration boundary.
  */
-export function probeCreateUserSyncTriggersEntry(ctx) {
-  const fixtureDir = resolve(ctx.repositoryRoot, 'test/fixtures/user-sync-triggers-consumer')
+export function probeCreateUserProjectionTriggers(ctx) {
+  const fixtureDir = resolve(ctx.repositoryRoot, 'test/fixtures/user-projection-triggers-consumer')
   const localTarball = join(fixtureDir, 'better-convex-nuxt.tgz')
   copyFileSync(ctx.tarballPath, localTarball)
   const restoreFixture = prepareFixtureTarballs(ctx, fixtureDir)
@@ -445,7 +638,7 @@ export function probeCreateUserSyncTriggersEntry(ctx) {
     run('pnpm', ['run', 'start'], { cwd: fixtureDir })
   } catch (error) {
     ctx.failures.push(
-      `[./server/createUserSyncTriggers] packed user-sync-triggers-consumer probe failed: ${error.message}`,
+      `[./convex-auth] packed user-projection-triggers-consumer probe failed: ${error.message}`,
     )
   } finally {
     rmSync(join(fixtureDir, 'node_modules'), { recursive: true, force: true })

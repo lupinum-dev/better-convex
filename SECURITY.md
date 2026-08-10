@@ -8,15 +8,16 @@ The current package family consists of the `better-convex-nuxt@0.8.0-beta.31`,
 `better-convex-vue@0.8.0-beta.31`, and `better-convex-mcp@0.1.0-beta.19`
 prerelease candidates. The Nuxt candidate uses Node
 `^22.12.0 || ^24.11.0 || >=26.0.0`, Nuxt `4.5.1`, Convex `1.42.2`, Better Auth
-`1.7.0-rc.2`, Kysely `0.28.17`, package-owned
-`@better-auth/oauth-provider` `1.7.0-rc.2`, and Convex Helpers `0.1.114`.
+`1.7.0-rc.2`, `@better-auth/oauth-provider` `1.7.0-rc.2`, and Convex Helpers
+`0.1.114`.
 Each package manifest is canonical for its own dependencies and peers; each
 reviewed release descriptor binds its package manifest into that package's
 artifact proof. `pnpm release:prepare` certifies the three package candidates
-from one checkout. Better Auth, Convex, Nuxt, and Kysely are exact peers of the
-Nuxt package; the OAuth Provider is its exact direct production dependency. A
-supported application resolves one physical instance of each stateful runtime
-in the tuple.
+from one checkout. Convex and Nuxt are exact required peers of the Nuxt package.
+Better Auth and the OAuth Provider are exact optional peers installed only by
+auth-enabled applications. Better Auth owns its Kysely dependency; Better Convex
+does not redeclare it. An auth-enabled application resolves one physical
+instance of each stateful runtime in the tuple.
 
 This is not yet a stable authentication tuple. Stable publication is blocked until a compatible stable Better Auth 1.7 release exists and the human release gates below pass.
 
@@ -60,7 +61,7 @@ shared MCP secret.
 
 ## Enforced invariants
 
-- The public Nuxt origin is configured statically. `SITE_URL`, `auth.publicOrigin`, and `CONVEX_SITE_URL` are validated as bare origins. Incoming `Host`, `Forwarded`, `X-Forwarded-*`, and request URLs never select an issuer, callback, JWKS URL, redirect target, or trusted origin.
+- The public origins are configured statically. `convex.auth.origin`/`SITE_URL` and `CONVEX_SITE_URL` are validated as bare origins. Incoming `Host`, `Forwarded`, `X-Forwarded-*`, and request URLs never select an issuer, callback, JWKS URL, redirect target, or trusted origin.
 - Browser auth uses the fixed same-origin `/api/auth` base path. The proxy accepts only GET and POST, bounds request and response bodies, filters cookies to Better Auth's namespace, strips hop-by-hop and forwarding controls, and does not follow upstream redirects with credentials.
 - When a deployment configures an ingress-owned client-IP header, Nuxt strips caller copies, canonicalizes one address, and signs it with `BCN_AUTH_PROXY_IP_SECRET`. Convex accepts only that signature or its own direct request metadata. Callers cannot select a Better Auth rate-limit bucket.
 - Better Auth rate limiting is enabled with database storage. The adapter implements the counter update atomically; there is no process-local security counter. Any process-local defense in depth is non-authoritative; deployments still own a trusted-ingress per-account and per-IP limiter for distributed abuse.

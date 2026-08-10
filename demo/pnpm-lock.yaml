@@ -19,6 +19,9 @@ importers:
 
   .:
     dependencies:
+      '@better-auth/oauth-provider':
+        specifier: 1.7.0-rc.2
+        version: 1.7.0-rc.2(22766707da32e28d0d1fb09526050bab)
       '@iconify-json/lucide':
         specifier: ^1.2.95
         version: 1.2.95
@@ -37,9 +40,6 @@ importers:
       convex:
         specifier: 1.42.2
         version: 1.42.2(react@19.2.3)
-      kysely:
-        specifier: 0.28.17
-        version: 0.28.17
       nuxt:
         specifier: 4.5.1
         version: 4.5.1(83fcc4862c8d4cc566e08d1ea3c1043e)

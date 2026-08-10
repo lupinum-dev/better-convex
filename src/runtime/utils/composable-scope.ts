@@ -2,7 +2,6 @@ export type ConvexScopeComposableName =
   | 'useConvexQuery'
   | 'useConvexPaginatedQuery'
   | 'useConvexFileUpload'
-  | 'useConvexUploadQueue'
 
 export function assertConvexComposableScope(
   composable: ConvexScopeComposableName,

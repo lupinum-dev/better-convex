@@ -16,11 +16,9 @@ import {
   isSerializedConvexCallError,
   normalizeConvexError,
 } from 'better-convex-nuxt/errors'
-import type { CallResult, ConvexCallErrorKind } from 'better-convex-nuxt/errors'
+import type { ConvexCallErrorKind } from 'better-convex-nuxt/errors'
 
-const typedResult: CallResult<number> = { ok: true, data: 1 }
 const typedKind: ConvexCallErrorKind = 'server'
-void typedResult
 void typedKind
 
 function fail(message: string): never {

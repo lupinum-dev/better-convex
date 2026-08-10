@@ -22,50 +22,73 @@ import { useBetterConvexRuntime } from './runtime-context'
 export type ConvexAuthMode = 'required' | 'optional' | 'none'
 export type ConvexQuerySkip = 'skip'
 export type ConvexQueryArgs<Args> = Args | ConvexQuerySkip
+export type ConvexCallStatus = ClientCallStatus
 
-export interface UseConvexQueryOptions<Raw, Data = Raw> {
-  subscribe?: boolean
-  initialData?: Raw | (() => Raw | undefined)
-  transform?: (value: Raw) => Data
-  keepPreviousData?: boolean
-  auth?: ConvexAuthMode
+export interface UseConvexQueryOptions {
+  readonly auth?: ConvexAuthMode
+  readonly keepPreviousData?: boolean
 }
 
-export interface UseConvexQueryResult<Data> {
-  data: ComputedRef<Data | null>
-  error: ComputedRef<ConvexCallError | null>
-  pending: ComputedRef<boolean>
-  status: ComputedRef<ClientCallStatus>
-  isStale: ComputedRef<boolean>
+export interface UseConvexQueryState<Data> {
+  readonly data: ComputedRef<Data | undefined>
+  readonly status: ComputedRef<ConvexCallStatus>
+  readonly pending: ComputedRef<boolean>
+  readonly error: ComputedRef<ConvexCallError | undefined>
+  readonly isStale: ComputedRef<boolean>
   refresh(): Promise<void>
-  clear(): void
 }
 
-export function useConvexQuery<
+type EmptyConvexArgs = Record<string, never>
+type StrictEmptyConvexArgs = Record<PropertyKey, never>
+type TightenEmptyConvexArgs<Args> = Args extends unknown
+  ? Args extends EmptyConvexArgs
+    ? StrictEmptyConvexArgs
+    : Args
+  : never
+type QueryArgsParameter<Query extends FunctionReference<'query'>> = MaybeRefOrGetter<
+  ConvexQueryArgs<TightenEmptyConvexArgs<FunctionArgs<Query>>>
+>
+
+export type UseConvexQueryParameters<
   Query extends FunctionReference<'query'>,
-  Data = FunctionReturnType<Query>,
->(
+  Options extends UseConvexQueryOptions = UseConvexQueryOptions,
+> = [FunctionArgs<Query>] extends [EmptyConvexArgs]
+  ? [] | [args: QueryArgsParameter<Query>, options?: Options]
+  : [args: QueryArgsParameter<Query>, options?: Options]
+
+interface QueryHydrationSeed<Data> {
+  readonly value: Data
+}
+
+type InternalQueryParameters<Query extends FunctionReference<'query'>> = [
+  args?: MaybeRefOrGetter<ConvexQueryArgs<FunctionArgs<Query>>>,
+  options?: UseConvexQueryOptions,
+  hydrationSeed?: QueryHydrationSeed<FunctionReturnType<Query>>,
+]
+
+export function useConvexQuery<Query extends FunctionReference<'query'>>(
   query: Query,
-  args: MaybeRefOrGetter<ConvexQueryArgs<FunctionArgs<Query>>>,
-  options?: UseConvexQueryOptions<FunctionReturnType<Query>, Data>,
-): UseConvexQueryResult<Data> {
+  ...parameters: UseConvexQueryParameters<Query>
+): UseConvexQueryState<FunctionReturnType<Query>> {
   if (!getCurrentScope()) {
     throw new Error('[better-convex-vue] useConvexQuery must run inside a Vue effect scope')
   }
   type Raw = FunctionReturnType<Query>
+  // Nuxt passes an SSR seed in a fourth runtime-only slot. It is intentionally
+  // absent from the public declaration: hydration is adapter machinery, not a
+  // second public source of query data.
+  const [providedArgs, options, hydrationSeed] = parameters as InternalQueryParameters<Query>
+  const args = (parameters.length === 0 ? {} : providedArgs) as MaybeRefOrGetter<
+    ConvexQueryArgs<FunctionArgs<Query>>
+  >
   const runtime = useBetterConvexRuntime()
   const auth = options?.auth ?? 'optional'
-  const subscribe = options?.subscribe ?? true
   const currentArgs = computed(() => normalizeConvexArgs(args))
   const argsHash = computed(() => hash(currentArgs.value))
-  const initial = options?.initialData
   const noQueryValue = Symbol('no-query-value')
-  const initialValue =
-    typeof initial === 'function' ? (initial as () => Raw | undefined)() : initial
-  const raw = shallowRef<Raw | typeof noQueryValue>(
-    initialValue === undefined ? noQueryValue : initialValue,
-  )
-  const boundaryError = shallowRef<ConvexCallError | null>(null)
+  const initialValue = hydrationSeed === undefined ? noQueryValue : (hydrationSeed.value as Raw)
+  const raw = shallowRef<Raw | typeof noQueryValue>(initialValue)
+  const boundaryError = shallowRef<ConvexCallError | undefined>(undefined)
   const loading = ref(false)
   const identity = runtime.identity.snapshot
   const functionName = getFunctionName(query)
@@ -85,11 +108,9 @@ export function useConvexQuery<
     () => `${functionName}:${auth}:${tag.value.identityKey}:${argsHash.value}`,
   )
 
-  const controller = createQueryController<Raw, Data>({
+  const controller = createQueryController<Raw>({
     query,
-    subscribe,
     keepPreviousData: options?.keepPreviousData ?? false,
-    transform: options?.transform,
     getArgs: () =>
       isConvexArgsSkipped(currentArgs.value)
         ? 'skip'
@@ -129,6 +150,8 @@ export function useConvexQuery<
     },
   })
 
+  if (hydrationSeed !== undefined) controller.markSettled()
+
   let previousTag = tag.value
   let previousBoundaryKey = boundaryKey.value
   let previousLive = false
@@ -137,13 +160,13 @@ export function useConvexQuery<
   const reconcile = () => {
     const nextTag = tag.value
     const nextBoundaryKey = boundaryKey.value
-    const nextLive = gate.value === 'execute' && subscribe
+    const nextLive = gate.value === 'execute'
     const nextIdle = gate.value === 'idle' || gate.value === 'error'
     if (
       nextTag.identityGeneration !== previousTag.identityGeneration ||
       nextTag.identityKey !== previousTag.identityKey
     ) {
-      controller.handleIdentityBoundary({ nextTag, previousTag, previousBoundaryKey })
+      controller.handleIdentityBoundary({ nextTag, previousTag })
     } else {
       controller.handleExecutionBoundary({
         nextBoundaryKey,
@@ -158,7 +181,7 @@ export function useConvexQuery<
     previousLive = nextLive
 
     if (gate.value === 'error') {
-      boundaryError.value = identity.value.error
+      boundaryError.value = identity.value.error ?? undefined
       loading.value = false
       return
     }
@@ -169,18 +192,12 @@ export function useConvexQuery<
     }
     if (gate.value === 'idle') {
       loading.value = false
-      boundaryError.value = null
+      boundaryError.value = undefined
       return
     }
-    boundaryError.value = null
-    if (subscribe) {
-      controller.setupSubscription()
-      const firstValue = controller.firstValue()
-      loading.value = firstValue !== null
-      void firstValue?.catch(() => {})
-    } else {
-      void refresh()
-    }
+    boundaryError.value = undefined
+    controller.setupSubscription()
+    loading.value = controller.isAwaitingFirstValue() && !controller.hasSettledForCurrentArgs()
   }
 
   async function refresh(): Promise<void> {
@@ -190,14 +207,14 @@ export function useConvexQuery<
     const isCurrentRefresh = () =>
       sequence === refreshSequence && controller.isOperationCurrent(operation)
     loading.value = true
-    boundaryError.value = null
+    boundaryError.value = undefined
     try {
       const value = (await runtime.browser
         .clientFor(auth)
         .query(query, currentArgs.value as FunctionArgs<Query>)) as Raw
       if (!isCurrentRefresh()) return
       raw.value = value
-      controller.commitSettled(value, operation)
+      controller.markSettled(operation)
     } catch (error) {
       if (!isCurrentRefresh()) return
       const normalized = controller.setOperationError(error, operation)
@@ -218,7 +235,7 @@ export function useConvexQuery<
     controller.dispose()
   })
 
-  const data = computed(() => controller.transformedData())
+  const data = computed(() => controller.data())
   const error = computed(() => boundaryError.value)
   const pending = computed(() => loading.value)
   const status = computed<ClientCallStatus>(() =>
@@ -231,21 +248,19 @@ export function useConvexQuery<
           : 'idle',
   )
   const isStale = computed(() =>
-    controller.isStale({ idle: gate.value !== 'execute', pending: loading.value }),
+    controller.isStale({
+      idle: gate.value !== 'execute',
+      pending: loading.value,
+      errored: boundaryError.value !== undefined,
+    }),
   )
 
-  return {
+  return Object.freeze({
     data,
     error,
     pending,
     status,
     isStale,
     refresh,
-    clear() {
-      boundaryError.value = null
-      raw.value = noQueryValue
-      loading.value = false
-      controller.clear()
-    },
-  }
+  })
 }

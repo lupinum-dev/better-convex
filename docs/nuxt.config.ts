@@ -25,7 +25,9 @@ export default defineNuxtConfig({
     '/docs/guide/concepts': { redirect: '/docs/understand/mental-model' },
     '/docs/data-fetching/queries': { redirect: '/docs/build/queries/queries' },
     '/docs/data-fetching/pagination': { redirect: '/docs/build/queries/pagination' },
-    '/docs/data-fetching/caching-reuse': { redirect: '/docs/build/queries/sharing-query-state' },
+    '/docs/data-fetching/caching-reuse': {
+      redirect: '/docs/understand/query-ownership-and-caching',
+    },
     '/docs/mutations/mutations': { redirect: '/docs/build/write-data/mutations' },
     '/docs/mutations/actions': { redirect: '/docs/build/write-data/actions' },
     '/docs/mutations/optimistic-updates': { redirect: '/docs/build/write-data/optimistic-updates' },

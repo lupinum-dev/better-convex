@@ -287,7 +287,7 @@
         "test/security/auth-secret-sentinels.test.ts",
         "test/security/proxy-regressions.test.ts",
         "test/unit/auth-adapter-port.test.ts",
-        "test/unit/auth-operation-coordinator.test.ts",
+        "test/unit/integrated-auth-client.test.ts",
         "test/unit/auth-export-sentinels.test.ts",
         "test/unit/convex-auth-id-token-encryption.test.ts",
         "test/unit/devtools-auth-proxy-registry.test.ts",

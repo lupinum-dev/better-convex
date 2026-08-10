@@ -80,12 +80,9 @@ describe('auth proxy security regressions', () => {
       url: 'https://demo.convex.cloud',
       siteUrl: 'https://demo.convex.site',
       auth: {
-        publicOrigin: 'https://app.example.test',
-        proxy: {
-          maxRequestBodyBytes: 1_048_576,
-          maxResponseBodyBytes: 1_048_576,
-          trustedClientIpHeader: 'cf-connecting-ip',
-        },
+        origin: 'https://app.example.test',
+        trustedClientIpHeader: 'cf-connecting-ip',
+        redirectTo: '/auth/signin',
       },
     })
     mocks.storage.mockReturnValue({
@@ -173,7 +170,7 @@ describe('auth proxy security regressions', () => {
     const configured = mocks.config()
     mocks.config.mockReturnValue({
       ...configured,
-      auth: { ...configured.auth, publicOrigin: '' },
+      auth: { ...configured.auth, origin: '' },
     })
     const fetchMock = vi.fn(async () => new Response('{}'))
     vi.stubGlobal('fetch', fetchMock)
@@ -228,10 +225,6 @@ describe('auth proxy security regressions', () => {
     mocks.config.mockReturnValue({
       ...configured,
       logging: 'debug',
-      auth: {
-        ...configured.auth,
-        debug: { authFlow: false, clientAuthFlow: false, serverAuthFlow: true },
-      },
     })
     const requestSentinel = 'BCN_PROXY_REQUEST_SECRET_SENTINEL'
     const responseSentinel = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJwcm94eS1zZW50aW5lbCJ9.signature'

@@ -296,7 +296,10 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
   )
   manifest.packageManager = repositoryManifest.packageManager
   manifest.dependencies = Object.fromEntries(
-    ['better-auth', 'convex', 'kysely', 'nuxt'].map((name) => [name, manifest.dependencies[name]]),
+    ['@better-auth/oauth-provider', 'better-auth', 'convex', 'nuxt'].map((name) => [
+      name,
+      manifest.dependencies[name],
+    ]),
   )
   manifest.dependencies['better-convex-nuxt'] = 'file:./better-convex-nuxt.tgz'
   delete manifest.devDependencies

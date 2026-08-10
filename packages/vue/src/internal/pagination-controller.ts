@@ -1,4 +1,4 @@
-import type { FunctionReference } from 'convex/server'
+import type { FunctionReference, PaginationResult } from 'convex/server'
 import { computed, shallowRef, watch, type ComputedRef, type Ref } from 'vue'
 
 import { normalizeConvexError, type ConvexCallError } from '../errors'
@@ -17,52 +17,46 @@ import {
   type PaginationPageOptions,
   type PaginationPageState,
   type PaginationStatus,
-  type BetterPaginationResult,
 } from './pagination-state'
 import type { QueryIsolationTag, QuerySubscriptionClient } from './query-controller'
 
-export interface PaginationControllerInput<Item, TransformedItem> {
+export interface PaginationControllerInput<Item> {
   query: FunctionReference<'query'>
   initialNumItems: number
-  subscribe: boolean
   keepPreviousData: boolean
-  transform?: (items: Item[]) => TransformedItem[]
-  initialData?: Item[] | (() => Item[])
   getArgs(): Record<string, unknown> | 'skip'
   getArgsHash(): string
   getBoundaryKey(): string
   getIsolationTag(): QueryIsolationTag
   isIdle(): boolean
   isLive(): boolean
-  getBoundaryFirstPage(): BetterPaginationResult<Item> | null
-  getBoundaryError(): ConvexCallError | null
-  setBoundaryError(error: ConvexCallError | null, key: string): void
+  getBoundaryFirstPage(): PaginationResult<Item> | null
+  getBoundaryError(): ConvexCallError | undefined
+  setBoundaryError(error: ConvexCallError | undefined, key: string): void
   getClient(): QuerySubscriptionClient | null
-  fetchPage(options: PaginationPageOptions): Promise<BetterPaginationResult<Item> | null>
-  refreshBoundary(): Promise<void>
+  fetchPage(options: PaginationPageOptions): Promise<PaginationResult<Item> | null>
 }
 
-export interface PaginationController<Item, TransformedItem> {
+export interface PaginationController<Item> {
   generation: Readonly<Ref<number>>
   initialOptions: ComputedRef<PaginationPageOptions>
   pages: Readonly<Ref<PaginationPageState<Item>[]>>
-  results: ComputedRef<TransformedItem[]>
+  data: ComputedRef<readonly Item[] | undefined>
   status: ComputedRef<PaginationStatus>
   isLoading: ComputedRef<boolean>
   isStale: ComputedRef<boolean>
-  hasNextPage: ComputedRef<boolean>
-  error: ComputedRef<ConvexCallError | null>
+  canLoadMore: ComputedRef<boolean>
+  error: ComputedRef<ConvexCallError | undefined>
   start(): void
   captureOperation(): PaginationOperationContext
   isOperationCurrent(operation: PaginationOperationContext): boolean
   fetchForOperation(
     options: PaginationPageOptions,
     operation: PaginationOperationContext,
-  ): Promise<BetterPaginationResult<Item> | null>
+  ): Promise<PaginationResult<Item> | null>
   firstPageSettled(): Promise<void>
   loadMore(numItems: number): void
   refresh(): Promise<void>
-  reset(): Promise<void>
   handleIdentityBoundary(input: {
     nextTag: QueryIsolationTag
     previousTag: QueryIsolationTag
@@ -86,8 +80,8 @@ interface PendingPageSplit<Item> {
   operation: PaginationOperationContext
   required: boolean
   parts: [
-    { page: PaginationPageState<Item>; received: BetterPaginationResult<Item> | null },
-    { page: PaginationPageState<Item>; received: BetterPaginationResult<Item> | null },
+    { page: PaginationPageState<Item>; received: PaginationResult<Item> | null },
+    { page: PaginationPageState<Item>; received: PaginationResult<Item> | null },
   ]
 }
 
@@ -104,16 +98,16 @@ function deferredSettlement(): FirstPageSettlement {
   return { promise, resolve }
 }
 
-export function createPaginationController<Item, TransformedItem = Item>(
-  input: PaginationControllerInput<Item, TransformedItem>,
-): PaginationController<Item, TransformedItem> {
+export function createPaginationController<Item>(
+  input: PaginationControllerInput<Item>,
+): PaginationController<Item> {
   const generation = shallowRef(createPaginationGeneration())
   const pages = shallowRef<PaginationPageState<Item>[]>([])
-  const firstPageRealtime = shallowRef<BetterPaginationResult<Item> | null>(null)
+  const firstPageRealtime = shallowRef<PaginationResult<Item> | null>(null)
   const firstPageOptions = shallowRef<PaginationPageOptions | null>(null)
   const firstPageWithheld = shallowRef(false)
   const manualRefreshPending = shallowRef(false)
-  const lastSettledResults = shallowRef<TransformedItem[]>([])
+  const lastSettledResults = shallowRef<readonly Item[] | undefined>(undefined)
   let firstPageUnsubscribe: (() => void) | null = null
   let pendingFirstPageSettlement: FirstPageSettlement | null = null
   let stopSettledWatch: (() => void) | null = null
@@ -134,7 +128,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
     isDisposed: () => disposed,
   })
 
-  const visiblePage = (result: BetterPaginationResult<Item> | null | undefined) =>
+  const visiblePage = (result: PaginationResult<Item> | null | undefined) =>
     result?.pageStatus === 'SplitRequired' ? null : (result ?? null)
 
   const firstPage = () =>
@@ -145,7 +139,10 @@ export function createPaginationController<Item, TransformedItem = Item>(
   function settleFirstPageIfTerminal(): void {
     if (
       !pendingFirstPageSettlement ||
-      (!disposed && !input.isIdle() && firstPage() === null && input.getBoundaryError() === null)
+      (!disposed &&
+        !input.isIdle() &&
+        firstPage() === null &&
+        input.getBoundaryError() === undefined)
     )
       return
     pendingFirstPageSettlement.resolve()
@@ -153,7 +150,12 @@ export function createPaginationController<Item, TransformedItem = Item>(
   }
 
   function firstPageSettled(): Promise<void> {
-    if (disposed || input.isIdle() || firstPage() !== null || input.getBoundaryError() !== null)
+    if (
+      disposed ||
+      input.isIdle() ||
+      firstPage() !== null ||
+      input.getBoundaryError() !== undefined
+    )
       return Promise.resolve()
     pendingFirstPageSettlement ??= deferredSettlement()
     return pendingFirstPageSettlement.promise
@@ -162,7 +164,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
   async function fetchForOperation(
     options: PaginationPageOptions,
     operation: PaginationOperationContext,
-  ): Promise<BetterPaginationResult<Item> | null> {
+  ): Promise<PaginationResult<Item> | null> {
     const result = await input.fetchPage(options)
     return result && fence.isCurrent(operation) ? result : null
   }
@@ -172,9 +174,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
     pages.value = pages.value.slice(0, index)
   }
 
-  function isSplitResult(
-    result: BetterPaginationResult<Item>,
-  ): result is BetterPaginationResult<Item> & {
+  function isSplitResult(result: PaginationResult<Item>): result is PaginationResult<Item> & {
     splitCursor: string
     pageStatus: 'SplitRecommended' | 'SplitRequired'
   } {
@@ -205,7 +205,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
     const promoted = split.parts.map(({ page, received }) => ({
       ...page,
       result: visiblePage(received!) ?? undefined,
-      error: null,
+      error: undefined,
       pending: received!.pageStatus === 'SplitRequired',
     })) as [PaginationPageState<Item>, PaginationPageState<Item>]
 
@@ -226,7 +226,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
       pages.value = [...pages.value.slice(0, index), ...promoted, ...pages.value.slice(index + 1)]
     }
 
-    input.setBoundaryError(null, split.operation.boundaryKey)
+    input.setBoundaryError(undefined, split.operation.boundaryKey)
     const firstResult = split.parts[0].received!
     const secondResult = split.parts[1].received!
     const promotedFirstTarget = split.target === 'first' ? 'first' : promoted[0].paginationOpts
@@ -250,7 +250,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
       { ...args, paginationOpts: part.page.paginationOpts },
       (raw) => {
         if (!fence.isCurrent(split.operation)) return
-        const result = raw as BetterPaginationResult<Item>
+        const result = raw as PaginationResult<Item>
         if (pendingSplits.includes(split)) {
           part.received = result
           finishPendingSplit(split)
@@ -291,10 +291,10 @@ export function createPaginationController<Item, TransformedItem = Item>(
 
   function beginPageSplit(
     target: 'first' | PaginationPageOptions,
-    result: BetterPaginationResult<Item>,
+    result: PaginationResult<Item>,
   ): void {
     if (disposed) return
-    if (!input.subscribe || !input.isLive()) {
+    if (!input.isLive()) {
       if (result.pageStatus === 'SplitRequired') {
         input.setBoundaryError(
           normalizeConvexError(
@@ -358,7 +358,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
           const page = pages.value[index]!
           pages.value = [
             ...pages.value.slice(0, index),
-            { ...page, result: undefined, error: null, pending: true },
+            { ...page, result: undefined, error: undefined, pending: true },
             ...pages.value.slice(index + 1),
           ]
         }
@@ -370,7 +370,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
   }
 
   function acceptFirstPageResult(
-    result: BetterPaginationResult<Item>,
+    result: PaginationResult<Item>,
     operation: PaginationOperationContext,
   ): void {
     if (result.pageStatus === 'SplitRequired') {
@@ -382,14 +382,14 @@ export function createPaginationController<Item, TransformedItem = Item>(
       retirePagesFrom(0)
     firstPageWithheld.value = false
     firstPageRealtime.value = result
-    input.setBoundaryError(null, operation.boundaryKey)
+    input.setBoundaryError(undefined, operation.boundaryKey)
     if (result.pageStatus === 'SplitRecommended') beginPageSplit('first', result)
     settleFirstPageIfTerminal()
   }
 
   function acceptPageResult(
     pageOptions: PaginationPageOptions,
-    result: BetterPaginationResult<Item>,
+    result: PaginationResult<Item>,
   ): void {
     const index = pages.value.findIndex((candidate) => candidate.paginationOpts === pageOptions)
     if (index < 0) return
@@ -409,12 +409,12 @@ export function createPaginationController<Item, TransformedItem = Item>(
     } else {
       pages.value = nextPages
     }
-    input.setBoundaryError(null, input.getBoundaryKey())
+    input.setBoundaryError(undefined, input.getBoundaryKey())
     if (result.pageStatus === 'SplitRecommended') beginPageSplit(pageOptions, result)
   }
 
   function subscribeFirstPage(options = initialOptions.value): void {
-    if (disposed || firstPageUnsubscribe || !input.subscribe || !input.isLive()) return
+    if (disposed || firstPageUnsubscribe || !input.isLive()) return
     const client = input.getClient()
     const args = input.getArgs()
     if (!client || args === 'skip') return
@@ -425,7 +425,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
       { ...args, paginationOpts: options },
       (raw) => {
         if (!fence.isCurrent(operation)) return
-        acceptFirstPageResult(raw as BetterPaginationResult<Item>, operation)
+        acceptFirstPageResult(raw as PaginationResult<Item>, operation)
       },
       (error) => {
         if (!fence.isCurrent(operation)) return
@@ -436,7 +436,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
   }
 
   function subscribePage(pageIndex: number): void {
-    if (disposed || !input.subscribe || !input.isLive()) return
+    if (disposed || !input.isLive()) return
     const page = pages.value[pageIndex]
     const client = input.getClient()
     const args = input.getArgs()
@@ -449,7 +449,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
       { ...args, paginationOpts: page.paginationOpts },
       (raw) => {
         if (!fence.isCurrent(operation)) return
-        acceptPageResult(pageOptions, raw as BetterPaginationResult<Item>)
+        acceptPageResult(pageOptions, raw as PaginationResult<Item>)
       },
       (error) => {
         if (!fence.isCurrent(operation)) return
@@ -489,64 +489,60 @@ export function createPaginationController<Item, TransformedItem = Item>(
       disabled: input.isIdle(),
       refresh: manualRefreshPending.value ? 'pending' : 'idle',
       hasError:
-        input.getBoundaryError() !== null || pages.value.some((page) => page.error !== null),
+        input.getBoundaryError() !== undefined ||
+        pages.value.some((page) => page.error !== undefined),
       firstPage: firstPageState,
       nextPage: nextPageState,
     })
   })
 
-  const transformedResults = computed<TransformedItem[]>(() => {
-    if (input.isIdle()) return transform([])
+  const currentData = computed<readonly Item[] | undefined>(() => {
+    if (input.isIdle()) return undefined
     const items: Item[] = []
     const currentFirstPage = firstPage()
     if (currentFirstPage) items.push(...currentFirstPage.page)
     for (const page of pages.value) if (page.result) items.push(...page.result.page)
-    if (items.length > 0) return transform(items)
-    const initial =
-      typeof input.initialData === 'function' ? input.initialData() : input.initialData
-    return status.value === 'loading-first-page' && initial ? transform(initial) : transform([])
+    if (currentFirstPage || pages.value.some((page) => page.result !== undefined)) return items
+    return undefined
   })
-
-  function transform(items: Item[]): TransformedItem[] {
-    return input.transform ? input.transform(items) : (items as unknown as TransformedItem[])
-  }
 
   const isStale = computed(() =>
     computePaginationStale({
       keepPreviousData: input.keepPreviousData,
       status: status.value,
-      transformedResultCount: transformedResults.value.length,
-      lastSettledResultCount: lastSettledResults.value.length,
+      hasCurrentData: currentData.value !== undefined,
+      hasLastSettledData: lastSettledResults.value !== undefined,
     }),
   )
-  const results = computed(() =>
-    isStale.value ? lastSettledResults.value : transformedResults.value,
+  const data = computed<readonly Item[] | undefined>(() =>
+    isStale.value ? lastSettledResults.value : currentData.value,
   )
-  const isLoading = computed(
-    () => status.value === 'loading-first-page' || status.value === 'loading-more',
-  )
-  const hasNextPage = computed(() => status.value === 'ready')
-  const error = computed<ConvexCallError | null>(() => {
+  const isLoading = computed(() => status.value === 'pending')
+  const canLoadMore = computed(() => {
+    if (status.value !== 'success') return false
+    return getLastLoadedPaginationResult(firstPage(), pages.value)?.isDone === false
+  })
+  const error = computed<ConvexCallError | undefined>(() => {
     const boundaryError = input.getBoundaryError()
     if (boundaryError) return boundaryError
-    return pages.value.find((page) => page.error)?.error ?? null
+    return pages.value.find((page) => page.error)?.error
   })
 
   function start(): void {
     if (disposed || stopSettledWatch) return
     stopSettledWatch = watch(
-      [status, transformedResults],
-      ([nextStatus, nextResults]) => {
-        if (input.isIdle() || nextStatus === 'loading-first-page') return
-        lastSettledResults.value = nextResults
+      [status, currentData],
+      ([nextStatus, nextData]) => {
+        if (input.isIdle() || nextStatus !== 'success' || nextData === undefined) return
+        lastSettledResults.value = nextData
       },
-      { immediate: true },
+      { immediate: true, flush: 'sync' },
     )
     if (input.isLive()) subscribeFirstPage()
   }
 
   function boundLastLoadedPage(endCursor: string | null): void {
-    if (!input.isLive() || !input.subscribe) return
+    if (!input.isLive()) return
     const lastIndex = pages.value.length - 1
     if (lastIndex < 0) {
       const options = firstPageOptions.value ?? initialOptions.value
@@ -570,6 +566,9 @@ export function createPaginationController<Item, TransformedItem = Item>(
   }
 
   function loadMore(numItems: number): void {
+    if (!Number.isSafeInteger(numItems) || numItems < 1) {
+      throw new Error('[better-convex-vue] loadMore numItems must be a positive safe integer')
+    }
     if (disposed || input.isIdle() || manualRefreshPending.value) return
     if (pages.value.at(-1)?.pending) return
     const lastResult = getLastLoadedPaginationResult(firstPage(), pages.value)
@@ -593,7 +592,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
         if (result.pageStatus === 'SplitRequired') {
           pages.value = [
             ...pages.value.slice(0, index),
-            { ...page, result: undefined, error: null, pending: false },
+            { ...page, result: undefined, error: undefined, pending: false },
             ...pages.value.slice(index + 1),
           ]
           beginPageSplit(page.paginationOpts, result)
@@ -610,7 +609,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
   async function refresh(): Promise<void> {
     if (disposed || input.isIdle() || manualRefreshPending.value) return
     manualRefreshPending.value = true
-    input.setBoundaryError(null, input.getBoundaryKey())
+    input.setBoundaryError(undefined, input.getBoundaryKey())
     const loadedPages = [...pages.value]
     const operation = fence.capture()
     try {
@@ -622,7 +621,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
       const refreshed: PaginationPageState<Item>[] = []
       const splitResults: Array<{
         options: PaginationPageOptions
-        result: BetterPaginationResult<Item>
+        result: PaginationResult<Item>
       }> = []
       let previous = firstResult
       for (let index = 0; index < loadedPages.length; index += 1) {
@@ -645,7 +644,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
               ? page.paginationOpts
               : { ...page.paginationOpts, cursor },
           result: visiblePage(result) ?? undefined,
-          error: null,
+          error: undefined,
           pending: result.pageStatus === 'SplitRequired',
         })
         if (result.pageStatus === 'SplitRecommended' || result.pageStatus === 'SplitRequired') {
@@ -670,7 +669,7 @@ export function createPaginationController<Item, TransformedItem = Item>(
           }
         }
       }
-      input.setBoundaryError(null, operation.boundaryKey)
+      input.setBoundaryError(undefined, operation.boundaryKey)
       if (
         firstResult.pageStatus === 'SplitRecommended' ||
         firstResult.pageStatus === 'SplitRequired'
@@ -686,24 +685,6 @@ export function createPaginationController<Item, TransformedItem = Item>(
     }
   }
 
-  async function reset(): Promise<void> {
-    if (disposed) return
-    fence.invalidate()
-    manualRefreshPending.value = true
-    teardownSubscriptions()
-    firstPageRealtime.value = null
-    firstPageWithheld.value = false
-    generation.value = createPaginationGeneration()
-    pages.value = []
-    input.setBoundaryError(null, input.getBoundaryKey())
-    try {
-      await input.refreshBoundary()
-    } finally {
-      manualRefreshPending.value = false
-    }
-    if (!disposed && input.isLive()) subscribeFirstPage()
-  }
-
   function handleIdentityBoundary(boundary: {
     nextTag: QueryIsolationTag
     previousTag: QueryIsolationTag
@@ -717,9 +698,10 @@ export function createPaginationController<Item, TransformedItem = Item>(
     firstPageRealtime.value = null
     firstPageWithheld.value = false
     pages.value = []
-    input.setBoundaryError(null, boundary.previousBoundaryKey)
-    lastSettledResults.value = []
+    input.setBoundaryError(undefined, boundary.previousBoundaryKey)
+    lastSettledResults.value = undefined
     if (input.isLive()) subscribeFirstPage()
+    else settleFirstPageIfTerminal()
   }
 
   async function handleExecutionBoundary(boundary: {
@@ -745,20 +727,22 @@ export function createPaginationController<Item, TransformedItem = Item>(
     }
     fence.invalidate()
     manualRefreshPending.value = false
-    input.setBoundaryError(null, boundary.previousBoundaryKey)
+    input.setBoundaryError(undefined, boundary.previousBoundaryKey)
     teardownSubscriptions()
     firstPageRealtime.value = null
     firstPageWithheld.value = false
     if (input.isIdle()) {
       pages.value = []
-      input.setBoundaryError(null, input.getBoundaryKey())
+      lastSettledResults.value = undefined
+      input.setBoundaryError(undefined, input.getBoundaryKey())
+      settleFirstPageIfTerminal()
       return
     }
     generation.value = createPaginationGeneration()
     pages.value = []
-    input.setBoundaryError(null, input.getBoundaryKey())
+    input.setBoundaryError(undefined, input.getBoundaryKey())
     if (boundary.nextLive) subscribeFirstPage()
-    await input.refreshBoundary()
+    else settleFirstPageIfTerminal()
   }
 
   function dispose(): void {
@@ -775,11 +759,11 @@ export function createPaginationController<Item, TransformedItem = Item>(
     generation,
     initialOptions,
     pages,
-    results,
+    data,
     status,
     isLoading,
     isStale,
-    hasNextPage,
+    canLoadMore,
     error,
     start,
     captureOperation: fence.capture,
@@ -788,7 +772,6 @@ export function createPaginationController<Item, TransformedItem = Item>(
     firstPageSettled,
     loadMore,
     refresh,
-    reset,
     handleIdentityBoundary,
     handleExecutionBoundary,
     dispose,

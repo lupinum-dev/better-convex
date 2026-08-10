@@ -15,11 +15,12 @@ definePageMeta({
  * - Basic paginated query test (from /test-paginated-query)
  */
 
-const { results, status, isLoading, loadMore, error } = await useConvexPaginatedQuery(
+const { data, status, isLoading, canLoadMore, loadMore, error } = await useConvexPaginatedQuery(
   api.notes.listPaginated,
   {},
   { initialNumItems: 3, auth: 'none' },
 )
+const notes = computed(() => data.value ?? [])
 
 const addNote = useConvexMutation(api.notes.add)
 const removeNote = useConvexMutation(api.notes.remove)
@@ -80,8 +81,6 @@ function handleLoadMore() {
     <h2>Feature Tests</h2>
     <nav class="nav-links small">
       <NuxtLink to="/labs/pagination/features/refresh" class="nav-link">refresh()</NuxtLink>
-      <NuxtLink to="/labs/pagination/features/reset" class="nav-link">reset()</NuxtLink>
-      <NuxtLink to="/labs/pagination/features/transform" class="nav-link">transform</NuxtLink>
     </nav>
 
     <section class="control-section">
@@ -97,7 +96,7 @@ function handleLoadMore() {
       <button
         data-testid="load-more-btn"
         class="action-btn load-more-btn"
-        :disabled="status !== 'ready'"
+        :disabled="!canLoadMore"
         @click="handleLoadMore"
       >
         {{ isLoading ? 'Loading...' : 'Load More' }}
@@ -117,7 +116,7 @@ function handleLoadMore() {
         </div>
         <div class="state-item">
           <span class="label">result count:</span>
-          <span data-testid="count" class="value">{{ results?.length ?? 0 }}</span>
+          <span data-testid="count" class="value">{{ notes.length }}</span>
         </div>
         <div class="state-item">
           <span class="label">adds performed:</span>
@@ -141,17 +140,17 @@ function handleLoadMore() {
     <section class="notes-section">
       <h2>Notes</h2>
 
-      <div v-if="status === 'loading-first-page'" class="loading" data-testid="loading">
+      <div v-if="isLoading && notes.length === 0" class="loading" data-testid="loading">
         Loading first page...
       </div>
 
-      <div v-else-if="results && results.length === 0" class="empty" data-testid="empty">
+      <div v-else-if="notes.length === 0" class="empty" data-testid="empty">
         No notes yet. Click "Add Note" to create one.
       </div>
 
-      <ul v-else-if="results" class="notes-list">
+      <ul v-else class="notes-list">
         <li
-          v-for="note in results"
+          v-for="note in notes"
           :key="note._id"
           class="note-item"
           :data-testid="`note-${note._id}`"
@@ -175,11 +174,15 @@ function handleLoadMore() {
         </li>
       </ul>
 
-      <div v-if="status === 'loading-more'" class="loading-more" data-testid="loading-more">
+      <div v-if="isLoading && notes.length > 0" class="loading-more" data-testid="loading-more">
         Loading more...
       </div>
 
-      <div v-if="status === 'exhausted'" class="exhausted" data-testid="exhausted">
+      <div
+        v-if="status === 'success' && !canLoadMore && notes.length > 0"
+        class="exhausted"
+        data-testid="exhausted"
+      >
         All notes loaded.
       </div>
     </section>
@@ -199,13 +202,13 @@ function handleLoadMore() {
           <tr>
             <td>false</td>
             <td><code>useConvexPaginatedQuery</code></td>
-            <td>status=loading-first-page</td>
+            <td>status=pending</td>
             <td>instant, loading state</td>
           </tr>
           <tr>
             <td>false</td>
             <td><code>await useConvexPaginatedQuery</code></td>
-            <td>status=loading-first-page</td>
+            <td>status=pending</td>
             <td>blocked until data</td>
           </tr>
           <tr class="highlight">

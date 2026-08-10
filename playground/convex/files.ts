@@ -85,12 +85,7 @@ export const saveFile = mutation({
   },
 })
 
-/**
- * Get a signed URL for a file in storage.
- * This is used by useConvexStorageUrl.
- *
- * Only the file's owner can resolve its URL.
- */
+/** Get a signed URL for a file in storage when requested by its owner. */
 export const getUrl = query({
   args: { storageId: v.id('_storage') },
   handler: async (ctx, args) => {

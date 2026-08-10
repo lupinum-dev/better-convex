@@ -10,7 +10,6 @@ import {
   addServerHandler,
   addServerImports,
   addServerPlugin,
-  addComponentsDir,
   addRouteMiddleware,
   resolvePath,
   useLogger,
@@ -45,7 +44,6 @@ const releaseRuntimeFingerprint = getPackedRuntimeFingerprint()
 // Re-exported public types . The root default export is the module;
 // stable public types are re-exported here. Do not export the raw
 // `ConvexPublicRuntimeConfig` — consumers read `useConvexConfig()`.
-export type { ConvexUser } from './runtime/utils/types'
 export type { ConvexAuthOptions } from './runtime/utils/auth-config'
 export type { ConvexAuthMode, ConvexAuthStatus } from './runtime/utils/auth-status'
 export type {
@@ -55,14 +53,7 @@ export type {
   UseConvexCall,
 } from 'better-convex-vue'
 export type { ConvexRuntimeConfig } from './runtime/utils/runtime-config'
-export type {
-  BaseAuthClient,
-  ConvexAuthClientRegistry,
-  InferRegisteredConvexAuthClient,
-} from './runtime/auth-client'
-export type { ConvexCallErrorKind } from './runtime/errors'
-export type { ServerConvexOptions } from './runtime/server'
-export type { UseConvexAuthReturn } from './runtime/composables/useConvexAuth'
+export type { UseConvexAuthReturn } from './runtime/utils/auth-contract'
 export type {
   UploadProgressInfo,
   UploadStatus,
@@ -71,8 +62,25 @@ export type {
   UseConvexFileUploadReturn,
 } from './runtime/composables/useConvexFileUpload'
 export type { UseConvexMutationOptions } from './runtime/composables/useConvexMutation'
-export type { UseConvexPaginatedQueryOptions } from './runtime/composables/useConvexPaginatedQuery'
-export type { UseConvexQueryOptions } from './runtime/composables/useConvexQuery'
+export type {
+  NuxtConvexPaginatedQuery,
+  UseConvexPaginatedQueryState,
+} from './runtime/composables/useConvexPaginatedQuery'
+export type { NuxtConvexQuery, UseConvexQueryState } from './runtime/composables/useConvexQuery'
+
+/** Per-call query options for the Nuxt composable, including its SSR policy. */
+export type UseConvexQueryOptions =
+  import('./runtime/composables/useConvexQuery').UseNuxtConvexQueryOptions
+
+/** The exact rest parameters accepted by Nuxt's `useConvexQuery`. */
+export type UseConvexQueryParameters<
+  Query extends import('convex/server').FunctionReference<'query'>,
+  Options extends UseConvexQueryOptions = UseConvexQueryOptions,
+> = import('better-convex-vue').UseConvexQueryParameters<Query, Options>
+
+/** Per-call pagination options for the Nuxt composable, including its SSR policy. */
+export type UseConvexPaginatedQueryOptions =
+  import('./runtime/composables/useConvexPaginatedQuery').UseNuxtConvexPaginatedQueryOptions
 
 const logger = useLogger('better-convex-nuxt')
 
@@ -141,33 +149,10 @@ async function resolveAuthClientDefinitionPath(
 }
 
 /**
- * Default options for query composables (useConvexQuery, useConvexPaginatedQuery).
- * These can be overridden per query. There is no `auth` default: query auth
- * policy is `optional` by default and never a per-build knob .
- */
-interface QueryDefaults {
-  /** Run query on server during SSR. @default true */
-  server?: boolean
-  /** Subscribe to real-time updates via WebSocket. @default true */
-  subscribe?: boolean
-  /**
-   * How long an awaited subscribe-mode query waits (ms) for its first WebSocket
-   * result before resolving. Set 0 to wait indefinitely. @default 10000
-   */
-  waitTimeoutMs?: number
-}
-
-interface UploadDefaults {
-  /** Maximum number of concurrent uploads for useConvexUploadQueue. @default 3 */
-  maxConcurrent?: number
-}
-
-/**
  * Better Convex Nuxt module options .
  *
- * `auth` is a false-or-options value: omit it (or pass an object) to install
- * authentication with defaults, or set `auth: false` for a Convex-only build.
- * Every auth-only build option lives inside `ConvexAuthOptions`.
+ * Omitted auth produces a Convex-only build. An object explicitly installs
+ * authentication; `false` removes auth inherited from a Nuxt layer.
  */
 export interface ModuleOptions {
   /** Convex deployment URL (WebSocket) - e.g., https://your-app.convex.cloud */
@@ -178,8 +163,8 @@ export interface ModuleOptions {
    */
   siteUrl?: string
   /**
-   * Authentication installation. Omitted or object-valued installs auth with
-   * defaults; `false` produces a Convex-only build with no Better Auth runtime.
+   * Authentication installation. An object opts in; omission is off. `false`
+   * is the explicit Nuxt-layer tombstone for inherited auth configuration.
    */
   auth?: false | ConvexAuthOptions
   /**
@@ -190,10 +175,6 @@ export interface ModuleOptions {
    * @default false
    */
   logging?: LogLevel
-  /** Default options for query composables. Per-query options override these. */
-  defaults?: QueryDefaults
-  /** Default options for upload composables. */
-  upload?: UploadDefaults
 }
 
 export default defineNuxtModule<ModuleOptions>({
@@ -207,11 +188,9 @@ export default defineNuxtModule<ModuleOptions>({
   defaults: {
     url: process.env.NUXT_PUBLIC_CONVEX_URL || process.env.CONVEX_URL,
     siteUrl: process.env.NUXT_PUBLIC_CONVEX_SITE_URL || process.env.CONVEX_SITE_URL,
-    // `auth` is intentionally omitted: leaving it undefined installs auth with
-    // defaults, while an explicit host `auth: false` is preserved by defu.
+    // Auth is intentionally omitted: an ordinary Convex application has no
+    // Better Auth build graph unless it opts in with an auth object.
     logging: CONVEX_MODULE_DEFAULTS.logging,
-    defaults: { ...CONVEX_MODULE_DEFAULTS.defaults },
-    upload: { ...CONVEX_MODULE_DEFAULTS.upload },
   },
   async setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
@@ -237,7 +216,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     // Single build-time auth resolution: one discriminated value drives every
     // plugin/handler/middleware registration decision (architecture invariant).
-    const normalizedAuthConfig = normalizeConvexAuthConfig(options.auth, process.env.SITE_URL)
+    const normalizedAuthConfig = normalizeConvexAuthConfig(options.auth)
     const isAuthEnabled = isConvexAuthEnabled(normalizedAuthConfig)
 
     if (isAuthEnabled && !resolvedSiteUrl) {
@@ -246,29 +225,18 @@ export default defineNuxtModule<ModuleOptions>({
       )
     }
 
-    // Public runtime config. Auth-only build options live under `auth`; no
-    // Auth-only build options remain nested under `auth`; the proxy route,
-    // origin policy, and no-cache behavior are fixed security invariants.
-    const convexConfig = defu(
-      nuxt.options.runtimeConfig.public.convex as Record<string, unknown> | undefined,
-      {
+    // Public runtime config. Normalized auth build policy is materialized
+    // internally; build-only client selection never enters runtime config.
+    const convexConfig = {
+      ...defu(nuxt.options.runtimeConfig.public.convex as Record<string, unknown> | undefined, {
         url: resolvedUrl || '',
         siteUrl: resolvedSiteUrl || '',
-        auth: normalizedAuthConfig,
         logging: options.logging ?? CONVEX_MODULE_DEFAULTS.logging,
-        defaults: {
-          server: options.defaults?.server ?? CONVEX_MODULE_DEFAULTS.defaults.server,
-          subscribe: options.defaults?.subscribe ?? CONVEX_MODULE_DEFAULTS.defaults.subscribe,
-          waitTimeoutMs:
-            options.defaults?.waitTimeoutMs ?? CONVEX_MODULE_DEFAULTS.defaults.waitTimeoutMs,
-        },
-        upload: {
-          maxConcurrent:
-            options.upload?.maxConcurrent ?? CONVEX_MODULE_DEFAULTS.upload.maxConcurrent,
-        },
-      },
-    )
-    nuxt.options.runtimeConfig.public.convex = convexConfig
+      }),
+      // Auth is build policy, not a deploy-time/public runtime override.
+      auth: normalizedAuthConfig,
+    }
+    nuxt.options.runtimeConfig.public.convex = convexConfig as never
     registerConvexAliases({ nuxt, resolver, convexApiAlias })
     addServerPlugin(resolver.resolve('./runtime/server/plugins/runtime-config'))
     if (releaseRuntimeFingerprint) {
@@ -306,7 +274,7 @@ export default defineNuxtModule<ModuleOptions>({
       // build-only `auth.client` path is resolved for templates only and never
       // reaches `runtimeConfig` (it was excluded from `convexConfig` above).
       const authClientDefinitionPath = await resolveAuthClientDefinitionPath(
-        (options.auth === false ? {} : (options.auth ?? {})) as ConvexAuthOptions,
+        options.auth as ConvexAuthOptions,
         nuxt,
         resolver,
       )
@@ -387,30 +355,27 @@ export default defineNuxtModule<ModuleOptions>({
         route: '/.well-known/oauth-authorization-server/api/auth',
         handler: resolver.resolve('./runtime/server/api/auth/authorization-server-metadata'),
       })
+
+      // Auth-only page metadata. A no-auth build does not advertise a policy it
+      // cannot execute.
+      addTemplate({
+        filename: 'types/better-convex-nuxt-auth.d.ts',
+        getContents: () =>
+          getTypeAugmentationTemplateContents(
+            resolver.resolve('./runtime/utils/auth-route-protection'),
+          ),
+      })
+      addImports(resolveModuleImports(resolver, authAutoImports))
     }
 
-    // 3. Type augmentation for IDE support.
-    addTemplate({
-      filename: 'types/better-convex-nuxt.d.ts',
-      getContents: () =>
-        getTypeAugmentationTemplateContents(
-          resolver.resolve('./runtime/utils/auth-route-protection'),
-        ),
-    })
-
-    // 4. Auto-import composables (always available, including useConvexAuth and
-    //    the four auth rendering components which render from ConvexAuthStatus).
+    // 3. Core composables are available in every build. Auth APIs are
+    // registered only in the auth-enabled block above.
     addImports(resolveModuleImports(resolver, composableAutoImports))
-    addImports(resolveModuleImports(resolver, authAutoImports))
-    addComponentsDir({
-      path: resolver.resolve('./runtime/components'),
-      global: true,
-    })
 
-    // 5. Auto-import server utilities.
+    // 4. Auto-import server utilities.
     addServerImports(resolveModuleImports(resolver, serverAutoImports))
 
-    // 6. Nuxt DevTools integration (dev mode only).
+    // 5. Nuxt DevTools integration (dev mode only).
     if (nuxt.options.dev) {
       setupDevTools(nuxt, resolver)
     }

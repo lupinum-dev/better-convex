@@ -1,8 +1,6 @@
-import type { BetterConvexIdentitySnapshot } from 'better-convex-vue'
-
 import type { ConvexUser } from './types'
 
-export type ConvexIdentityKey = NonNullable<BetterConvexIdentitySnapshot['identityKey']>
+export type ConvexIdentityKey = 'anonymous' | `user:${string}`
 
 export function isAuthenticatedIdentityKey(key: ConvexIdentityKey | null): key is `user:${string}` {
   return typeof key === 'string' && key.startsWith('user:')

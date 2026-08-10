@@ -82,4 +82,4 @@ only the three transport routes and no OAuth metadata.
 callback. It is not an SDK-wide sanitizer and cannot cover schema validation,
 resources, prompts, or callbacks that bypass it.
 
-Documentation: <https://better-convex.lupinum.com/docs/build/agents/mcp>
+Documentation: <https://better-convex-nuxt.vercel.app/docs/build/agents/mcp>

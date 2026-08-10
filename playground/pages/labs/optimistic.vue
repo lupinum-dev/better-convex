@@ -2,7 +2,6 @@
 import type { Id } from '~~/convex/_generated/dataModel'
 
 import { api } from '#convex/api'
-import { updateQuery, deleteFromQuery } from '#imports'
 
 definePageMeta({
   layout: 'sidebar',
@@ -26,7 +25,7 @@ definePageMeta({
  * 4. "Real-time update received" - when subscription confirms
  */
 
-const { data, pending, status } = await useConvexQuery(api.notes.list, {}, {})
+const { data, pending, status } = await useConvexQuery(api.notes.list, {})
 
 // Track add/remove counts for verification
 const addCount = ref(0)
@@ -46,23 +45,21 @@ watch(
 const addNoteOptimistic = useConvexMutation(api.notes.add, {
   optimisticUpdate: (localStore, args) => {
     console.log('[Optimistic] Applying optimistic update for add')
-    updateQuery({
-      query: api.notes.list,
-      args: {},
-      store: localStore,
-      updater: (current) => {
-        const now = Date.now()
-        const optimisticNote = {
-          _id: `optimistic-${now}` as Id<'notes'>,
-          _creationTime: now,
-          createdAt: now,
-          title: args.title,
-          content: args.content,
-        }
-        console.log('[Optimistic] Created optimistic note:', optimisticNote.title)
-        return current ? [optimisticNote, ...current] : [optimisticNote]
-      },
-    })
+    const current = localStore.getQuery(api.notes.list, {})
+    const now = Date.now()
+    const optimisticNote = {
+      _id: `optimistic-${now}` as Id<'notes'>,
+      _creationTime: now,
+      createdAt: now,
+      title: args.title,
+      content: args.content,
+    }
+    console.log('[Optimistic] Created optimistic note:', optimisticNote.title)
+    localStore.setQuery(
+      api.notes.list,
+      {},
+      current ? [optimisticNote, ...current] : [optimisticNote],
+    )
   },
 })
 const { pending: addPendingOptimistic } = addNoteOptimistic
@@ -75,12 +72,14 @@ const { pending: addPendingNormal } = addNoteNormal
 const removeNoteOptimistic = useConvexMutation(api.notes.remove, {
   optimisticUpdate: (localStore, args) => {
     console.log('[Optimistic] Applying optimistic update for remove')
-    deleteFromQuery({
-      query: api.notes.list,
-      args: {},
-      store: localStore,
-      shouldDelete: (note) => note._id === args.id,
-    })
+    const current = localStore.getQuery(api.notes.list, {})
+    if (current) {
+      localStore.setQuery(
+        api.notes.list,
+        {},
+        current.filter((note) => note._id !== args.id),
+      )
+    }
   },
 })
 const { pending: removePendingOptimistic } = removeNoteOptimistic

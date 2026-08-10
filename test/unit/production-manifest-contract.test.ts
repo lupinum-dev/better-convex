@@ -39,6 +39,7 @@ describe('production manifest certification profiles', () => {
       'files',
       'dependencies',
       'peerDependencies',
+      'peerDependenciesMeta',
       'engines',
       'packageManager',
       'scripts',
@@ -72,6 +73,8 @@ describe('production manifest certification profiles', () => {
       scripts: { prepack: 'pnpm run build' },
       peerDependenciesMeta: {
         '@modelcontextprotocol/ext-apps': { optional: true },
+        '@modelcontextprotocol/sdk': { optional: true },
+        zod: { optional: true },
       },
     })
   })
@@ -83,7 +86,7 @@ describe('production manifest certification profiles', () => {
       'unreviewed-optional-peer': { optional: true },
     }
     expect(() => selectProductionManifestContract('vue', unreviewed)).toThrow(
-      'may mark only the exact official MCP Apps SDK peer as optional',
+      'Vue MCP App packages must be exact optional peers',
     )
   })
 

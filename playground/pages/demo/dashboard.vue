@@ -3,16 +3,25 @@
     <div class="card">
       <header class="header">
         <h1>Dashboard</h1>
-        <button class="btn-signout" :disabled="isSigningOut" @click="handleSignOut">
-          {{ isSigningOut ? '...' : 'Sign Out' }}
+        <button class="btn-signout" :disabled="isPending" @click="handleSignOut">
+          {{ isPending ? '...' : 'Sign Out' }}
         </button>
       </header>
 
       <!-- Loading state -->
-      <div v-if="isPending || isLoadingUser" class="loading">Loading...</div>
+      <div
+        v-if="status === 'loading' || (status === 'authenticated' && isLoadingUser)"
+        class="loading"
+      >
+        Loading...
+      </div>
+
+      <div v-else-if="status === 'error'" class="not-auth">
+        <p>{{ authError?.message ?? 'Authentication failed.' }}</p>
+      </div>
 
       <!-- Not authenticated -->
-      <div v-else-if="!isAuthenticated" class="not-auth">
+      <div v-else-if="status === 'anonymous'" class="not-auth">
         <p>You need to sign in to view this page.</p>
         <NuxtLink to="/auth/signin" class="btn btn-primary"> Sign In </NuxtLink>
       </div>
@@ -49,12 +58,12 @@
           <h2>Session Info</h2>
           <div class="info-grid">
             <div class="info-item">
-              <span class="label">Has Token</span>
-              <span class="value">{{ token ? 'Yes' : 'No' }}</span>
+              <span class="label">Status</span>
+              <span class="value">{{ status }}</span>
             </div>
             <div class="info-item">
-              <span class="label">Token Preview</span>
-              <span class="value id">{{ tokenPreview }}</span>
+              <span class="label">Operation pending</span>
+              <span class="value">{{ isPending ? 'Yes' : 'No' }}</span>
             </div>
           </div>
         </section>
@@ -83,19 +92,17 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { isAuthenticated, isPending, token, signOut: convexSignOut } = useConvexAuth()
-const isSigningOut = ref(false)
+const { status, isPending, error: authError, client } = useConvexAuth()
 const isTestingConvex = ref(false)
 const convexResult = ref<string | null>(null)
 const convexError = ref(false)
 
 // Get the user projection from our users table (Better Auth owns identity)
-const { data: user, pending: isLoadingUser } = await useConvexQuery(api.users.getCurrentUser, {})
-
-const tokenPreview = computed(() => {
-  if (!token.value) return 'None'
-  return token.value.substring(0, 20) + '...'
-})
+const userArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
+const { data: user, pending: isLoadingUser } = await useConvexQuery(
+  api.users.getCurrentUser,
+  userArgs,
+)
 
 // useConvex() is client-only; the handle is used exclusively from browser
 // event handlers, so capture it during client setup and guard SSR.
@@ -108,14 +115,12 @@ function getConvexClient() {
 }
 
 async function handleSignOut() {
-  isSigningOut.value = true
   try {
-    await convexSignOut()
+    if (!client) throw new Error('Authentication client unavailable')
+    await client.signOut()
     window.location.href = '/'
   } catch (error) {
     console.error('Sign out failed:', error)
-  } finally {
-    isSigningOut.value = false
   }
 }
 

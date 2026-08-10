@@ -43,26 +43,22 @@ ConvexCallError
   auth: BetterConvexAuthAdapter
 } // standalone provider-authenticated runtime
 {
-  runtime: BetterConvexAttachedRuntime
+  attachment: BetterConvexAttachment
 } // host-owned opaque runtime
 ```
 
 The options are a discriminated exclusive union. There is no raw-client, client-factory, token,
 logger, auth-provider, defaults registry, or catch-all client-options escape hatch in the first cut.
-The returned Vue plugin owns per-app state and teardown. The atomic Nuxt/embedded proof admits three
-safe host-adapter methods on that plugin:
+The returned Vue plugin owns per-app state and teardown. The atomic Nuxt/embedded proof admits one
+safe host-adapter method on that object plugin:
 
 ```ts
-attachment(): BetterConvexAttachedRuntime
-ready(): Promise<void>
-refreshAuth(): Promise<void>
+attachment(): BetterConvexAttachment
 ```
 
 `attachment()` is available only after installation and returns the already admitted frozen,
-token-free attachment. `ready()` observes initial authentication settlement. `refreshAuth()` asks the
-Vue-owned runtime to re-confirm the current provider token without exposing the token, client, or
-confirmation callback. These are not owner/replacement/disposal controls, and normal application
-components do not need them.
+token-free attachment. Readiness and authentication refresh remain private runtime/provider
+coordination rather than ordinary plugin controls.
 
 From `better-convex-vue/embedded`:
 
@@ -75,21 +71,21 @@ observer, copies only allowlisted methods and fields, and returns a frozen attac
 can consume the attachment; the embedded application never receives a token or replaceable raw client.
 
 Type exports are limited to the declarations required to use those values: plugin/options, stable
-client handle, attached runtime and identity snapshot, query/pagination/mutation/action option and
-result types, skip sentinels, call result/status, and `ConvexCallError` fields. Type-only declarations
-do not create parallel runtime entry points.
+client handle, opaque attachment, query/pagination/mutation/action option and state types, skip
+sentinels, call status, and the dedicated error-entry fields. Internal identity snapshots remain
+private. Type-only declarations do not create parallel runtime entry points.
 
 ### Vue composable contract
 
 - composable construction is synchronous;
 - queries use the already-selected reactive `'skip'` sentinel, not a second `enabled` option;
 - Vue query options omit Nuxt-only `server`, payload, cookie, and `useAsyncData` concerns;
-- query and pagination expose transform, initial data, previous-data policy, and the existing
-  `required | optional | none` execution modes needed by attached authenticated hosts;
-- pagination also accepts a complete `initialPage` only so SSR framework adapters can preserve the
-  authoritative continuation cursor during hydration; the Nuxt public facade does not expose it;
-- mutation/action retain the callable function plus `safe`, `data`, `status`, `pending`, `error`, and
-  `reset` shape;
+- query and pagination expose `keepPreviousData` plus the existing `required | optional | none`
+  execution modes needed by attached authenticated hosts; derived views use Vue `computed`;
+- pagination requires `initialNumItems`; Nuxt hydration uses a private runtime-only bridge rather
+  than a public `initialPage` option;
+- mutation/action retain one named stable callable plus readonly `data`, `status`, `pending`, and
+  `error` state; there is no `.safe`, callback, or reset protocol;
 - mutation retains the official Convex optimistic-update callback;
 - connection state is a separate composable; it is not added to the stable client handle;
 - identity generation and controller disposal are enforced internally and are not writable public
@@ -109,8 +105,7 @@ do not create parallel runtime entry points.
 - provider clients, provider user/session objects, token refs, raw clients, roles, or permissions;
 - Nuxt-only file upload, storage URL, shared-SSR-query, config, user, and Better Auth composables;
 - optimistic helper convenience exports in the Vue package. The official `OptimisticLocalStore` API is
-  sufficient; Nuxt may retain its existing compatibility helpers without making them a new Vue
-  contract.
+  sufficient, so Nuxt deletes its duplicate compatibility helpers as part of the same hard cut.
 
 ## Public API admission test
 
@@ -167,11 +162,10 @@ of the value they describe.
 11. **Deletion:** private Vite direct-controller glue and Nuxt-owned post-hydration lifecycle branches.
 12. **Failure/rollback:** same beta-pair rollback; state is disposable and has no migration.
 
-### C. Mutation/action, connection, and safe errors
+### C. Mutation/action, connection, and errors
 
-1. **Repeated problem:** calls need settlement, pending/error state, callback containment, stale awaited
-   completion rejection, safe-result form, optimistic mutation support, and replacement-safe connection
-   observation.
+1. **Repeated problem:** calls need settlement, pending/error state, stale awaited completion rejection,
+   optimistic mutation support, and replacement-safe connection observation.
 2. **Official direct solution:** Convex dispatches calls and exposes connection state, but does not bind
    their Vue state to an identity generation or keep a captured raw client safe across replacement.
 3. **Existing simplification:** use one callable controller and the existing owner connection store;
@@ -181,8 +175,8 @@ of the value they describe.
 5. **Source of truth:** remote Convex result plus one disposable latest-attempt projection.
 6. **New expensive state:** no persistence; only per-call refs and the owner's existing connection ref.
 7. **Discard:** reset, identity change, replacement, and scope disposal retire revisions/listeners.
-8. **Invalid states prevented:** one call-status union; `CallResult` separates success/error; the stable
-   handle cannot close or reauthenticate the client.
+8. **Invalid states prevented:** one call-status union and one rejected-Promise error protocol; the
+   stable handle cannot close or reauthenticate the client.
 9. **Authorization:** application Convex mutations/actions; optimistic state and callbacks are never
    authority.
 10. **Packed proof:** successful/error/stale/disposal/optimistic/connection tests in exact Vite and Nuxt
@@ -218,10 +212,11 @@ of the value they describe.
 
 ### E. Provider-neutral browser auth adapter (`D-014` amendment)
 
-The only additional public declarations admitted are:
+The adapter is the only additional public declaration. Its snapshot remains an
+internal return shape so applications do not couple to identity-port vocabulary:
 
 ```ts
-interface BetterConvexAuthSnapshot {
+interface BrowserAuthSnapshot {
   status: 'loading' | 'authenticated' | 'anonymous' | 'error'
   identityKey: string | null
   sessionGeneration: number
@@ -229,7 +224,7 @@ interface BetterConvexAuthSnapshot {
 }
 
 interface BetterConvexAuthAdapter {
-  snapshot(): BetterConvexAuthSnapshot
+  snapshot(): BrowserAuthSnapshot
   subscribe(listener: () => void): () => void
   fetchToken(input: { forceRefreshToken: boolean }): Promise<string | null>
 }

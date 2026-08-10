@@ -117,23 +117,23 @@ No hypothesis becomes a compatibility promise merely because it appears in this 
 
 Conformance checklists use these source labels:
 
-| Label           | Meaning                                                                                        |
-| --------------- | ---------------------------------------------------------------------------------------------- |
-| `[MCP-2025]`    | Requirement from the current final MCP `2025-11-25` specification                              |
-| `[MCP-2026-RC]` | Design target from the locked `2026-07-28` release candidate; not yet a final-compliance claim |
-| `[MCP-EXT]`     | Requirement from a separately versioned official MCP extension                                 |
-| `[BCN]`         | Stronger Better Convex product or security invariant adopted by this RFC                       |
+| Label        | Meaning                                                                  |
+| ------------ | ------------------------------------------------------------------------ |
+| `[MCP-2025]` | Requirement from the legacy MCP `2025-11-25` specification               |
+| `[MCP-2026]` | Requirement from the final MCP `2026-07-28` specification                |
+| `[MCP-EXT]`  | Requirement from a separately versioned official MCP extension           |
+| `[BCN]`      | Stronger Better Convex product or security invariant adopted by this RFC |
 
 ## Specification checkpoint
 
-At the date of this RFC:
+This RFC was amended after the final 2026 release:
 
-- MCP `2025-11-25` is the latest final base specification.
-- MCP `2026-07-28` is a release candidate scheduled to become final on 2026-07-28.
-- The release candidate removes the `initialize`/`initialized` handshake and protocol sessions, carries client information and capabilities with requests, adds `server/discover`, and makes the base protocol stateless.
+- MCP `2026-07-28` is the current final base specification.
+- Exact `@modelcontextprotocol/server@2.0.0` implements the selected final contract.
+- The final release removes the `initialize`/`initialized` handshake and protocol sessions, carries client information and capabilities with requests, adds `server/discover`, and makes the base protocol stateless.
 - MCP Apps is an official extension.
 - The experimental Tasks model in `2025-11-25` is being replaced by the separately versioned `io.modelcontextprotocol/tasks` extension and is not wire-compatible with that replacement.
-- Roots, sampling, and protocol logging are deprecated in the release candidate. Better Convex will not add stable wrappers for them before final-spec reconciliation; applications that require a currently supported form use the official SDK directly and accept its version lifecycle.
+- Roots, sampling, and protocol logging are deprecated in the final release. Better Convex does not add stable wrappers for them; applications that require them use the official SDK directly and accept its version lifecycle.
 
 The repository baseline when this RFC was created is:
 
@@ -154,11 +154,12 @@ This baseline is historical evidence, not a requirement that vNext retain those 
 Authoritative references:
 
 - [MCP `2025-11-25` key changes](https://modelcontextprotocol.io/specification/2025-11-25/changelog)
-- [MCP `2026-07-28` release candidate](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)
+- [MCP `2026-07-28` specification](https://modelcontextprotocol.io/specification/2026-07-28)
 - [MCP versioning](https://modelcontextprotocol.io/docs/learn/versioning)
 - [MCP extensions](https://modelcontextprotocol.io/extensions/overview)
 
-The implementation MUST re-read the final `2026-07-28` specification and changelog after publication. If the final release differs materially from the release candidate, this RFC MUST be amended before a vNext MCP public API is stabilized.
+Final reconciliation is complete for the selected SDK bytes. Stable publication still requires the
+repository's applicable conformance, package, lifecycle, and security matrices to remain green.
 
 Better Convex MUST NOT expose these as stable application APIs:
 
@@ -1352,7 +1353,6 @@ One shared controller MUST own:
 - stale callback rejection;
 - identity-generation retirement;
 - previous-data behavior;
-- transform behavior;
 - normalized error state;
 - Vue scope disposal.
 
@@ -1372,11 +1372,11 @@ One shared controller MUST own:
 - first-page boundary changes;
 - subscribed-page or tail reconciliation;
 - empty pages with continuation cursors;
-- reset and refresh;
+- refresh;
 - disposal;
-- optional application-selected first-page metadata.
 
-Generic metadata MAY be exposed as `pageData` or another neutral name. Better Convex MUST NOT add CMS-specific `facets`. Automatic merging of arbitrary metadata across pages is rejected unless the application supplies an explicit merge function.
+SSR first-page data is framework-adapter state and MUST stay out of the public Vue options. Better
+Convex MUST NOT add CMS-specific page metadata or a generic metadata merge system.
 
 ### Callable controller
 
@@ -1387,11 +1387,14 @@ Mutation and action composables SHOULD share one callable lifecycle that owns:
 - pending state;
 - stale completion retirement;
 - generic error normalization;
-- callback containment;
-- reset;
 - optional supported optimistic update integration.
 
-The caller's identity generation MUST be captured before waiting for authentication settlement. If the generation changes, the awaited call rejects with the safe identity-changed outcome; suppressing a reactive update while still resolving the original Promise is insufficient because post-`await` application code would continue under the replacement identity. `reset()`, cancellation, and Vue-scope disposal MUST increment or otherwise retire the active operation revision so a late completion cannot repopulate state. A success or error callback that throws MUST NOT turn a remotely committed success into an apparent call failure or replace the original normalized error.
+The caller's identity generation MUST be captured before waiting for authentication settlement. If
+the generation changes, the awaited call rejects with the safe identity-changed outcome;
+suppressing a reactive update while still resolving the original Promise is insufficient because
+post-`await` application code would continue under the replacement identity. Vue-scope disposal
+MUST retire active operation revisions so a late completion cannot repopulate state. The public
+contract has no callback or reset side channel.
 
 Applications MAY add preflight and error mapping, for example Ginko contract compatibility. The runtime MUST NOT treat a frontend preflight as backend authorization.
 
@@ -1400,17 +1403,19 @@ Applications MAY add preflight and error mapping, for example Ginko contract com
 Embedded Vue applications, such as Ginko Studio, MUST attach through an opaque stable runtime handle and observable identity state. The inter-bundle boundary SHOULD be framework-neutral so a host and embedded application with separate Vue copies do not rely on cross-runtime `Ref` identity or polling:
 
 ```ts
-interface BetterConvexAttachedRuntime {
-  client: StableConvexClientHandle
-  identity: {
+interface BetterConvexAttachment {
+  readonly client: ConvexClientHandle
+  readonly anonymousClient: ConvexClientHandle
+  readonly identity: {
     snapshot(): {
-      status: 'loading' | 'authenticated' | 'anonymous' | 'error'
-      key: string
-      generation: number
+      authEnabled: boolean
+      settled: boolean
+      identityKey: string | null
+      identityGeneration: number
       error: ConvexCallError | null
     }
     subscribe(listener: () => void): () => void
-    waitForSettlement(): Promise<void>
+    waitForInitialSettlement(): Promise<void>
   }
 }
 ```
@@ -2017,7 +2022,9 @@ Abort rule: a security or correctness defect in 0.7 takes precedence over vNext 
 
 ### Phase 1: final-spec reconciliation and MCP laboratory
 
-Begin fixture preparation before 2026-07-28, but do not claim or stabilize `2026-07-28` support until the final specification and compatible official TypeScript SDK are published.
+The final specification and compatible official split TypeScript SDK are published. This phase now
+owns the neutral fixture and applicable final-contract conformance evidence; it must not infer
+coverage for unimplemented capabilities from the SDK version alone.
 
 Build one neutral fixture with:
 
@@ -2276,7 +2283,7 @@ Better Convex 1.0 is eligible when:
 | Behavior branches on negotiated standards data, never host user agent          | `[BCN]`      | Source sentinel plus host matrix                       |
 | Legacy and stateless lifecycles are not combined                               | `[BCN]`      | Official SDK configuration and protocol matrix         |
 | Unsupported optional features return safe baseline behavior                    | `[BCN]`      | Tools, URL interaction, Apps, and Tasks fallback tests |
-| `2026-07-28` is claimed only after final publication                           | `[BCN]`      | Release governance check                               |
+| Final `2026-07-28` behavior is claimed only for executed applicable coverage   | `[MCP-2026]` | Release governance and conformance checks              |
 
 If the package supports both `2025-11-25` and `2026-07-28`, the official SDK MUST own both paths. Better Convex MUST NOT retain its own legacy session engine.
 
@@ -2284,7 +2291,7 @@ If the package supports both `2025-11-25` and `2026-07-28`, the official SDK MUS
 
 For any supported `2025-11-25` path, tests MUST cover the final specification's Streamable HTTP requirements, including UTF-8 JSON-RPC, valid `Accept`/`Content-Type`, required method behavior, session semantics where applicable, and `Origin` validation. Invalid origins return `403`. Local development binds to loopback by default.
 
-For the `2026-07-28` target, subject to final-spec confirmation, tests MUST cover:
+For the selected final `2026-07-28` target, tests MUST cover:
 
 - protocol version and per-request metadata;
 - absence of dependency on `initialize`, `initialized`, and `Mcp-Session-Id`;
@@ -2777,9 +2784,10 @@ These are the only unresolved architectural decisions authorized by this RFC.
 
 ### 2. Final `2026-07-28` wire details
 
-- Current input: locked release candidate.
-- Closure: re-read final specification, changelog, SDK release notes, and conformance suite after 2026-07-28.
-- Prohibited outcome: claiming final compliance from release-candidate behavior.
+- Decision: exact `@modelcontextprotocol/server@2.0.0` owns the final wire contract.
+- Closure: final specification and installed implementation were reconciled; applicable stable
+  conformance coverage remains a release gate.
+- Prohibited outcome: claiming capability coverage that was not implemented and executed.
 
 ### 3. Nuxt-to-Vue public integration seam
 
@@ -3006,7 +3014,7 @@ All web references were checked on 2026-07-20. Final implementation must re-chec
 - [MCP prompts](https://modelcontextprotocol.io/specification/2025-11-25/server/prompts)
 - [MCP elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation)
 - [Legacy experimental Tasks](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)
-- [MCP `2026-07-28` release candidate](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)
+- [MCP `2026-07-28` specification](https://modelcontextprotocol.io/specification/2026-07-28)
 - [MCP extensions overview](https://modelcontextprotocol.io/extensions/overview)
 - [MCP Apps overview](https://modelcontextprotocol.io/extensions/apps/overview)
 - [MCP Apps SDK documentation](https://apps.extensions.modelcontextprotocol.io/)

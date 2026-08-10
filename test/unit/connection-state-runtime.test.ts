@@ -27,6 +27,7 @@ function connectionRuntime() {
   }
   const attachment = createBetterConvexAttachment({
     client: client as never,
+    anonymousClient: client as never,
     identity: {
       snapshot: () => ({
         authEnabled: false,
@@ -61,7 +62,7 @@ describe('useConvexConnectionState (Vue runtime)', () => {
   it('owns one live subscription in a plain effect scope and retires it with that scope', () => {
     const host = connectionRuntime()
     const app = createApp({})
-    app.use(createBetterConvex({ runtime: host.attachment }))
+    app.use(createBetterConvex({ attachment: host.attachment }))
     const scope = effectScope()
 
     const connection = app.runWithContext(() => scope.run(() => useConvexConnectionState()))!

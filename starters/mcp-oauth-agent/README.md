@@ -312,6 +312,7 @@ pnpm build
 ```
 
 The supported tuple is exact: Better Auth and OAuth Provider `1.7.0-rc.2`,
-Convex `1.42.2`, Kysely `0.28.17`, Better Convex Nuxt `0.8.0-beta.31`,
-`better-convex-mcp@0.1.0-beta.19`, and official MCP server SDK
-`2.0.0`. Kysely `0.29.2` is not compatible with this pinned beta adapter tuple.
+Convex `1.42.2`, Better Convex Nuxt `0.8.0-beta.31`,
+`better-convex-mcp@0.1.0-beta.19`, and official MCP server SDK `2.0.0`.
+Better Auth owns its Kysely runtime; this starter does not add a standalone
+Kysely dependency.

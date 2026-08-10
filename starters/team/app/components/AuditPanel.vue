@@ -10,8 +10,8 @@ type AuditEvent = {
 
 defineProps<{
   title: string
-  events: AuditEvent[]
-  status: string
+  events: readonly AuditEvent[]
+  canLoadMore: boolean
   onLoadMore: (numItems: number) => void
 }>()
 </script>
@@ -28,6 +28,6 @@ defineProps<{
       </li>
     </ul>
     <section v-else class="empty">No {{ title.toLowerCase() }} yet.</section>
-    <button v-if="status === 'ready'" class="button" @click="onLoadMore(10)">Load more</button>
+    <button v-if="canLoadMore" class="button" @click="onLoadMore(10)">Load more</button>
   </section>
 </template>

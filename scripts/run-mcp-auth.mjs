@@ -448,6 +448,18 @@ function requireApplicationFailure(snapshot, code, description) {
   }
 }
 
+function requireInvalidToken(snapshot, description) {
+  if (
+    snapshot.status !== 401 ||
+    snapshot.body?.error !== 'invalid_token' ||
+    snapshot.body?.result !== undefined ||
+    typeof snapshot.challenge !== 'string' ||
+    !snapshot.challenge.startsWith('Bearer ')
+  ) {
+    throw new Error(`${description} did not fail with 401/invalid_token`)
+  }
+}
+
 function toolCall(id, name, args) {
   return {
     id,
@@ -769,7 +781,17 @@ async function runLiveAuthorizationEvidence({
       )
       await requireProviderOperation(response, 'Provider resource restore')
     },
-    () => expectDenied(list('resource-disabled'), 'MCP_ACCESS_REVOKED', 'resource disable'),
+    async () => {
+      const snapshot = await postMcpJson(context, resource, accessToken, list('resource-disabled'))
+      if (
+        snapshot.status !== 200 ||
+        snapshot.challenge !== null ||
+        snapshot.body?.result?.resultType !== 'complete' ||
+        snapshot.body?.result?.isError === true
+      ) {
+        throw new Error('Provider resource disable revoked an already-issued token')
+      }
+    },
   )
 
   await runWithFixtureState(
@@ -787,8 +809,11 @@ async function runLiveAuthorizationEvidence({
       )
       await requireProviderOperation(response, 'Provider client-resource relink')
     },
-    () =>
-      expectDenied(list('resource-unlinked'), 'MCP_ACCESS_REVOKED', 'resource ownership unlink'),
+    async () =>
+      requireInvalidToken(
+        await postMcpJson(context, resource, accessToken, list('resource-unlinked')),
+        'resource ownership unlink',
+      ),
   )
 
   const projectName = 'MCP destructive fixture'
@@ -975,7 +1000,7 @@ async function runTerminalRevocationEvidence({
       evidence.accessToken,
       toolCall(`terminal-${description}`, 'projects.list', { organizationId }),
     )
-    requireApplicationFailure(snapshot, 'MCP_ACCESS_REVOKED', description)
+    requireInvalidToken(snapshot, description)
   }
   const postAdminTransition = async (context, path, description) => {
     const response = await context.request.post(`${origin}/api/auth/mcp/admin/${path}`, {

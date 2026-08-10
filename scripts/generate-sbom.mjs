@@ -190,11 +190,10 @@ for (const dependencyName of Object.keys(pkg.dependencies ?? {})) {
   collect(dependency.dependencies)
 }
 
-// Better Auth and Convex are exact required peers so the consuming application
-// owns one physical runtime tuple. `pnpm list --prod` correctly omits them from
-// this package's dependency closure, but they remain required production
-// components of the published contract and must be visible in its SBOM. Their
-// transitive closure belongs to the consuming application's resolved SBOM.
+// Peer packages remain consumer-owned and therefore sit outside this package's
+// resolved dependency closure. Keep both required peers and feature-gated
+// optional peers visible in the published contract; their transitive closure
+// belongs to the consuming application's resolved SBOM.
 for (const [name, version] of Object.entries(pkg.peerDependencies ?? {})) {
   const dependencyKind = pkg.peerDependenciesMeta?.[name]?.optional
     ? 'optional-peer'

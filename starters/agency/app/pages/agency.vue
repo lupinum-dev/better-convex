@@ -5,38 +5,38 @@ import { api } from '#convex/api'
 
 defineOptions({ name: 'AgencyPage' })
 
-const { isAuthenticated, isPending, user, signIn, signUp, signOut } = useConvexAuth()
+const { status, isPending, user, error: authLifecycleError, client: authClient } = useConvexAuth()
 const authMode = ref<'signUp' | 'signIn'>('signUp')
 const name = ref('')
 const email = ref('')
 const password = ref('')
-const authBusy = ref(false)
-const authError = ref<string | null>(null)
+const operationError = ref<string | null>(null)
 const authNotice = ref<string | null>(null)
 const agencyOrganizationId = ref('' as Id<'organizations'>)
 const clientArgs = computed(() =>
-  isAuthenticated.value && agencyOrganizationId.value
+  status.value === 'authenticated' && agencyOrganizationId.value
     ? { agencyOrganizationId: agencyOrganizationId.value }
     : 'skip',
 )
 const { data: clients } = await useConvexQuery(api.organizationLinks.listClients, clientArgs)
 
 async function submitAuth() {
+  if (isPending.value) return
   if (password.value.length < 15 || !email.value.trim()) return
   if (authMode.value === 'signUp' && !name.value.trim()) return
 
-  authBusy.value = true
-  authError.value = null
+  operationError.value = null
   authNotice.value = null
   try {
+    if (!authClient) throw new Error('Authentication client unavailable')
     const signingUp = authMode.value === 'signUp'
     const result = signingUp
-      ? await signUp.email({
+      ? await authClient.signUp.email({
           name: name.value.trim(),
           email: email.value.trim().toLowerCase(),
           password: password.value,
         })
-      : await signIn.email({
+      : await authClient.signIn.email({
           email: email.value.trim().toLowerCase(),
           password: password.value,
         })
@@ -50,14 +50,13 @@ async function submitAuth() {
       authNotice.value = 'Account request complete. Sign in with your credentials.'
     }
   } catch (error) {
-    authError.value = error instanceof Error ? error.message : 'Authentication failed'
-  } finally {
-    authBusy.value = false
+    operationError.value = error instanceof Error ? error.message : 'Authentication failed'
   }
 }
 
 async function handleSignOut() {
-  await signOut()
+  if (!authClient) throw new Error('Authentication client unavailable')
+  await authClient.signOut()
   agencyOrganizationId.value = '' as Id<'organizations'>
 }
 </script>
@@ -67,9 +66,13 @@ async function handleSignOut() {
     <p>Agency starter</p>
     <h1>Client workspaces</h1>
 
-    <p v-if="!isAuthenticated && isPending">Checking session...</p>
+    <p v-if="status === 'loading'">Checking session...</p>
 
-    <form v-else-if="!isAuthenticated" class="auth-panel" @submit.prevent="submitAuth">
+    <p v-else-if="status === 'error'" class="error">
+      {{ authLifecycleError?.message ?? 'Authentication failed.' }}
+    </p>
+
+    <form v-else-if="status === 'anonymous'" class="auth-panel" @submit.prevent="submitAuth">
       <div class="auth-modes" aria-label="Authentication mode">
         <button type="button" @click="authMode = 'signUp'">Create account</button>
         <button type="button" @click="authMode = 'signIn'">Sign in</button>
@@ -93,16 +96,18 @@ async function handleSignOut() {
         />
       </label>
       <p v-if="authNotice" class="notice">{{ authNotice }}</p>
-      <p v-if="authError" class="error">{{ authError }}</p>
-      <button :disabled="authBusy" type="submit">
-        {{ authBusy ? 'Working...' : authMode === 'signUp' ? 'Create account' : 'Sign in' }}
+      <p v-if="operationError" class="error">{{ operationError }}</p>
+      <button :disabled="isPending" type="submit">
+        {{ isPending ? 'Working...' : authMode === 'signUp' ? 'Create account' : 'Sign in' }}
       </button>
     </form>
 
-    <template v-else>
+    <template v-else-if="status === 'authenticated'">
       <div class="session-row">
         <span>{{ user?.email ?? 'Signed in' }}</span>
-        <button type="button" @click="handleSignOut">Sign out</button>
+        <button type="button" :disabled="isPending" @click="handleSignOut">
+          {{ isPending ? 'Signing out...' : 'Sign out' }}
+        </button>
       </div>
 
       <label>

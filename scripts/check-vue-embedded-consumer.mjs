@@ -153,12 +153,16 @@ try {
     const embedded = window.__betterConvexEmbeddedConsumer
     if (!embedded) throw new Error('Embedded bundle did not install its proof boundary')
     const hostSnapshot = host.snapshot()
-    const runtimeKeys = Object.keys(host.runtime()).sort()
-    const clientKeys = Object.keys(host.runtime().client).sort()
+    const attachmentKeys = Object.keys(host.attachment()).sort()
+    const clientKeys = Object.keys(host.attachment().client).sort()
     const distinctVueCopies = host.vueIdentity !== embedded.vueIdentity
     const attached = embedded.attach()
     const listenersAfterAttach = host.listenerCount()
+    const connectionListenersAfterAttach = host.connectionListenerCount()
     const clientStatsAfterAttach = host.clientStats()
+    host.emitConnection(true)
+    await new Promise((resolvePromise) => requestAnimationFrame(resolvePromise))
+    const afterConnection = embedded.snapshot()
     host.emit({
       authEnabled: true,
       settled: true,
@@ -180,11 +184,13 @@ try {
     const afterIdentityChange = embedded.snapshot()
     const clientStatsAfterIdentityChange = host.clientStats()
     const rendered = document.body.textContent
-    const serializedRuntime = JSON.stringify(host.runtime())
+    const serializedAttachment = JSON.stringify(host.attachment())
     const afterUnmount = embedded.unmount()
     const listenersAfterUnmount = host.listenerCount()
+    const connectionListenersAfterUnmount = host.connectionListenerCount()
     const detachCount = host.detachCount()
     const clientStatsAfterUnmount = host.clientStats()
+    const ownerControlCallsAfterUnmount = host.ownerControlCalls()
     host.emit({
       authEnabled: true,
       settled: true,
@@ -192,33 +198,51 @@ try {
       identityGeneration: 3,
       error: null,
     })
+    host.emitConnection(false)
+    const afterLateHostChange = embedded.snapshot()
+    const remounted = embedded.attach()
+    const listenersAfterRemount = host.listenerCount()
+    const connectionListenersAfterRemount = host.connectionListenerCount()
+    const secondUnmount = embedded.unmount()
     return {
       distinctVueCopies,
-      runtimeKeys,
+      attachmentKeys,
       clientKeys,
       identityKeys: Object.keys(hostSnapshot).sort(),
       projectedCause: hostSnapshot.error?.cause,
       attached,
       embeddedClientKeys: embedded.clientKeys(),
       listenersAfterAttach,
+      connectionListenersAfterAttach,
       clientStatsAfterAttach,
+      afterConnection,
       afterAuthentication,
       clientStatsAfterAuthentication,
       afterIdentityChange,
       clientStatsAfterIdentityChange,
       rendered,
-      serializedRuntime,
+      serializedAttachment,
       afterUnmount,
       listenersAfterUnmount,
+      connectionListenersAfterUnmount,
       detachCount,
       clientStatsAfterUnmount,
-      afterLateHostChange: embedded.snapshot(),
+      ownerControlCallsAfterUnmount,
+      afterLateHostChange,
+      remounted,
+      listenersAfterRemount,
+      connectionListenersAfterRemount,
+      secondUnmount,
+      listenersAfterSecondUnmount: host.listenerCount(),
+      connectionListenersAfterSecondUnmount: host.connectionListenerCount(),
+      detachCountAfterSecondUnmount: host.detachCount(),
+      ownerControlCallsAfterSecondUnmount: host.ownerControlCalls(),
     }
   }, secretSentinel)
 
   assertDeepEqual(report.distinctVueCopies, true, 'Separate Vue copies')
   assertDeepEqual(
-    report.runtimeKeys,
+    report.attachmentKeys,
     ['anonymousClient', 'client', 'connection', 'identity'],
     'Attachment fields',
   )
@@ -235,6 +259,8 @@ try {
   )
   assertDeepEqual(report.projectedCause, undefined, 'Projected error cause')
   assertDeepEqual(report.listenersAfterAttach, 1, 'Host listener after attach')
+  assertDeepEqual(report.connectionListenersAfterAttach, 1, 'Host connection listener after attach')
+  assertDeepEqual(report.afterConnection.connected, true, 'Cross-copy connection observation')
   assertDeepEqual(
     report.clientStatsAfterAttach,
     { created: 0, active: 0, stopped: 0 },
@@ -254,16 +280,44 @@ try {
     'Cross-copy identity resubscription',
   )
   assertDeepEqual(report.listenersAfterUnmount, 0, 'Host listeners after unmount')
+  assertDeepEqual(
+    report.connectionListenersAfterUnmount,
+    0,
+    'Host connection listeners after unmount',
+  )
   assertDeepEqual(report.detachCount, 1, 'Exactly-once host detach')
   assertDeepEqual(
     report.clientStatsAfterUnmount,
     { created: 2, active: 0, stopped: 2 },
     'Embedded query disposal',
   )
+  assertDeepEqual(
+    report.ownerControlCallsAfterUnmount,
+    { close: 0, dispose: 0, setAuth: 0 },
+    'Child unmount host ownership',
+  )
   assertDeepEqual(report.afterLateHostChange.queryStatus, 'idle', 'Disposed state isolation')
+  assertDeepEqual(report.listenersAfterRemount, 1, 'Host listener after child remount')
+  assertDeepEqual(
+    report.connectionListenersAfterRemount,
+    1,
+    'Host connection listener after child remount',
+  )
+  assertDeepEqual(report.listenersAfterSecondUnmount, 0, 'Host listeners after second unmount')
+  assertDeepEqual(
+    report.connectionListenersAfterSecondUnmount,
+    0,
+    'Host connection listeners after second unmount',
+  )
+  assertDeepEqual(report.detachCountAfterSecondUnmount, 2, 'Exactly-once detach after remount')
+  assertDeepEqual(
+    report.ownerControlCallsAfterSecondUnmount,
+    { close: 0, dispose: 0, setAuth: 0 },
+    'Remounted child host ownership',
+  )
 
   for (const [label, value] of [
-    ['attachment', report.serializedRuntime],
+    ['attachment', report.serializedAttachment],
     ['rendered DOM', report.rendered],
     ['attached snapshot', JSON.stringify(report.attached)],
     ['post-change snapshot', JSON.stringify(report.afterIdentityChange)],

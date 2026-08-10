@@ -15,10 +15,8 @@ export default defineNuxtConfig({
 
   convex: {
     auth: {
-      publicOrigin: siteUrl.slice(0, -1),
-      proxy: {
-        trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
-      },
+      origin: siteUrl.slice(0, -1),
+      trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
     },
   },
 

@@ -1,13 +1,7 @@
+import type { PaginationResult } from 'convex/server'
+
 import { normalizeConvexError, type ConvexCallError } from '../errors'
 import type { QueryIsolationTag } from './query-controller'
-
-export interface BetterPaginationResult<T> {
-  page: T[]
-  isDone: boolean
-  continueCursor: string | null
-  splitCursor?: string | null
-  pageStatus?: 'SplitRecommended' | 'SplitRequired' | null
-}
 
 /** Cache-busting generation; random avoids SSR-global sequential state. */
 export function createPaginationGeneration(): number {
@@ -67,8 +61,8 @@ export interface PaginationPageOptions {
 
 export interface PaginationPageState<T> {
   paginationOpts: PaginationPageOptions
-  result: BetterPaginationResult<T> | undefined
-  error: ConvexCallError | null
+  result: PaginationResult<T> | undefined
+  error: ConvexCallError | undefined
   pending: boolean
   unsubscribe: (() => void) | null
 }
@@ -79,7 +73,7 @@ export function createPendingPaginationPage<T>(
   return {
     paginationOpts,
     result: undefined,
-    error: null,
+    error: undefined,
     pending: true,
     unsubscribe: null,
   }
@@ -88,7 +82,7 @@ export function createPendingPaginationPage<T>(
 export function commitPaginationPageResult<T>(
   pages: PaginationPageState<T>[],
   pageIndex: number,
-  result: BetterPaginationResult<T>,
+  result: PaginationResult<T>,
 ): PaginationPageState<T>[] {
   const page = pages[pageIndex]
   if (!page) return pages
@@ -97,7 +91,7 @@ export function commitPaginationPageResult<T>(
   nextPages[pageIndex] = {
     ...page,
     result,
-    error: null,
+    error: undefined,
     pending: false,
   }
   return nextPages
@@ -121,22 +115,16 @@ export function commitPaginationPageError<T>(
 }
 
 export function getLastLoadedPaginationResult<T>(
-  firstPage: BetterPaginationResult<T> | null | undefined,
+  firstPage: PaginationResult<T> | null | undefined,
   additionalPages: PaginationPageState<T>[],
-): BetterPaginationResult<T> | undefined {
+): PaginationResult<T> | undefined {
   const lastPage = additionalPages[additionalPages.length - 1]
   if (!lastPage) return firstPage ?? undefined
   if (lastPage.pending) return undefined
   return lastPage.result
 }
 
-export type PaginationStatus =
-  | 'idle'
-  | 'loading-first-page'
-  | 'ready'
-  | 'loading-more'
-  | 'exhausted'
-  | 'error'
+export type PaginationStatus = 'idle' | 'pending' | 'success' | 'error'
 
 export type PaginationFirstPageState = { state: 'loading' } | { state: 'ready'; isDone: boolean }
 
@@ -156,25 +144,27 @@ export interface PaginationStatusState {
 export function computePaginationStatus(input: PaginationStatusState): PaginationStatus {
   if (input.hasError) return 'error'
   if (input.disabled) return 'idle'
-  if (input.refresh === 'pending') return 'loading-first-page'
-  if (input.firstPage.state === 'loading') return 'loading-first-page'
-  if (input.nextPage.state === 'loading') return 'loading-more'
-  if (input.nextPage.state === 'exhausted' || input.firstPage.isDone) return 'exhausted'
-  return 'ready'
+  if (
+    input.refresh === 'pending' ||
+    input.firstPage.state === 'loading' ||
+    input.nextPage.state === 'loading'
+  )
+    return 'pending'
+  return 'success'
 }
 
 export interface PaginationStaleInput {
   keepPreviousData: boolean
   status: PaginationStatus
-  transformedResultCount: number
-  lastSettledResultCount: number
+  hasCurrentData: boolean
+  hasLastSettledData: boolean
 }
 
 export function computePaginationStale(input: PaginationStaleInput): boolean {
   return (
     input.keepPreviousData &&
-    input.status === 'loading-first-page' &&
-    input.transformedResultCount === 0 &&
-    input.lastSettledResultCount > 0
+    input.status === 'pending' &&
+    !input.hasCurrentData &&
+    input.hasLastSettledData
   )
 }

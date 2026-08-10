@@ -24,25 +24,31 @@ describe('supported version alignment', () => {
     expect(securityContract).toContain(`Nuxt \`${nuxtVersion}\``)
   })
 
-  it('keeps stateful peers and the package-owned provider on one exact tuple', () => {
+  it('keeps auth optional, exact, and consumer-owned', () => {
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>
       devDependencies: Record<string, string>
       peerDependencies: Record<string, string>
       peerDependenciesMeta?: Record<string, { optional?: boolean }>
     }
-    for (const name of ['better-auth', 'convex', 'kysely']) {
-      const version = supportedDependencyTuple[name as keyof typeof supportedDependencyTuple]
+    for (const name of ['better-auth', '@better-auth/oauth-provider'] as const) {
+      const version = supportedDependencyTuple[name]
       expect(manifest.peerDependencies[name]).toBe(version)
+      expect(manifest.peerDependenciesMeta?.[name]).toEqual({ optional: true })
       expect(manifest.devDependencies[name]).toBe(version)
       expect(manifest.dependencies?.[name]).toBeUndefined()
     }
 
-    const providerVersion = supportedDependencyTuple['@better-auth/oauth-provider']
-    expect(manifest.dependencies?.['@better-auth/oauth-provider']).toBe(providerVersion)
-    expect(manifest.devDependencies['@better-auth/oauth-provider']).toBeUndefined()
-    expect(manifest.peerDependencies['@better-auth/oauth-provider']).toBeUndefined()
-    expect(manifest.peerDependenciesMeta?.['@better-auth/oauth-provider']).toBeUndefined()
+    expect(manifest.peerDependencies.convex).toBe(supportedDependencyTuple.convex)
+    expect(manifest.devDependencies.convex).toBe(supportedDependencyTuple.convex)
+    expect(manifest.dependencies?.convex).toBeUndefined()
+    for (const dependencies of [
+      manifest.dependencies,
+      manifest.devDependencies,
+      manifest.peerDependencies,
+    ]) {
+      expect(dependencies?.kysely).toBeUndefined()
+    }
     expect(manifest.dependencies?.['convex-helpers']).toBe(
       supportedDependencyTuple['convex-helpers'],
     )

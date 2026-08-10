@@ -349,9 +349,13 @@ async function installFixtureAction(cwd, runId) {
     writeFile(
       path.join(cwd, 'app/pages/release-auth-lifecycle.vue'),
       `<script setup lang="ts">
-const { isPending, refresh, status } = useConvexAuth()
+const { client, isPending, status } = useConvexAuth()
 const hydrated = ref(false)
 onMounted(() => { hydrated.value = true })
+async function reconcileSession() {
+  if (!client) throw new Error('Integrated auth client is not ready')
+  await client.getSession()
+}
 </script>
 
 <template>
@@ -359,7 +363,7 @@ onMounted(() => { hydrated.value = true })
     <p data-testid="auth-status">{{ status }}</p>
     <p data-testid="auth-pending">{{ isPending }}</p>
     <p data-testid="hydrated">{{ hydrated ? 'ready' : 'server' }}</p>
-    <button data-testid="refresh" type="button" @click="refresh()">Refresh</button>
+    <button data-testid="refresh" type="button" @click="reconcileSession()">Refresh</button>
   </main>
 </template>
 `,

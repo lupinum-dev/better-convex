@@ -11,11 +11,9 @@ definePageMeta({
  * Tests that refresh() re-fetches all currently loaded pages via HTTP.
  */
 
-const { results, status, isLoading, loadMore, refresh, error } = await useConvexPaginatedQuery(
-  api.notes.listPaginated,
-  {},
-  { initialNumItems: 3, auth: 'none' },
-)
+const { data, status, isLoading, canLoadMore, loadMore, refresh, error } =
+  await useConvexPaginatedQuery(api.notes.listPaginated, {}, { initialNumItems: 3, auth: 'none' })
+const items = computed(() => data.value ?? [])
 
 const refreshCount = ref(0)
 const isRefreshing = ref(false)
@@ -48,7 +46,7 @@ async function handleRefresh() {
         </div>
         <div class="state-item">
           <span class="label">result count:</span>
-          <span data-testid="count" class="value">{{ results.length }}</span>
+          <span data-testid="count" class="value">{{ items.length }}</span>
         </div>
         <div class="state-item">
           <span class="label">refresh count:</span>
@@ -73,17 +71,17 @@ async function handleRefresh() {
       <button
         data-testid="load-more-btn"
         class="action-btn load-more-btn"
-        :disabled="status !== 'ready'"
+        :disabled="!canLoadMore"
         @click="loadMore(3)"
       >
         Load More
       </button>
     </section>
 
-    <section v-if="results.length > 0" class="data-section">
-      <h2>Results ({{ results.length }} items)</h2>
+    <section v-if="items.length > 0" class="data-section">
+      <h2>Results ({{ items.length }} items)</h2>
       <ul class="results-list">
-        <li v-for="item in results" :key="item._id">
+        <li v-for="item in items" :key="item._id">
           {{ item.title }}
         </li>
       </ul>

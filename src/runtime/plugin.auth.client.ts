@@ -15,12 +15,15 @@ import {
 } from './auth/auth-identity'
 import { createBetterAuthBrowserAdapter } from './auth/better-auth-browser-adapter'
 import type { AuthClientWithConvex } from './auth/client-engine-types'
-import { createIntegratedAuthNamespace } from './auth/integrated-namespace'
-import { createAuthOperationCoordinator } from './auth/pending-operations'
-import { createSessionSynchronization } from './auth/session-synchronization'
+import { createIntegratedAuthClient } from './auth/integrated-client'
+import { createAuthOperationTracker } from './auth/operation-tracker'
+import {
+  createSessionSynchronization,
+  type ProviderSessionRevision,
+} from './auth/session-synchronization'
 import { validateConvexAuthClientDefinition } from './auth/validate-auth-client-definition'
 import { setupNuxtDevtoolsClient } from './devtools/setup-client'
-import { ConvexCallError } from './errors'
+import type { ConvexCallError } from './errors'
 import { createConvexRuntimeContext, type NuxtConvexAuthController } from './runtime-context'
 import { useConvexIdentityState } from './utils/auth-identity-state'
 import { useConvexAuthPendingState } from './utils/auth-pending-state'
@@ -33,6 +36,9 @@ import { createLogger, getLogLevel } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
 
 const SESSION_RECONCILIATION_TIMEOUT_MS = 5_000
+// Matches the Vue package's private, non-exported owner seam. Keeping this off
+// the public plugin type prevents embedded children from gaining auth control.
+const INTERNAL_REFRESH_AUTH = Symbol.for('better-convex-vue:internal-refresh-auth')
 
 /** Auth-enabled entry: Better Auth is an adapter around the one Vue-owned runtime. */
 export default defineNuxtPlugin({
@@ -40,7 +46,10 @@ export default defineNuxtPlugin({
   setup(nuxtApp) {
     const config = useRuntimeConfig()
     const convexConfig = getConvexRuntimeConfig()
-    if (convexConfig.auth === false || !convexConfig.url) return
+    if (convexConfig.auth === false) {
+      throw new Error('[better-convex-nuxt] auth client plugin loaded in a no-auth build')
+    }
+    if (!convexConfig.url) return
 
     const publicConvex = config.public.convex as Record<string, unknown> | undefined
     const logger = createLogger(getLogLevel(publicConvex))
@@ -57,7 +66,8 @@ export default defineNuxtPlugin({
     const authError = useState<string | null>('convex:authError', () => null)
     const pendingState = useConvexAuthPendingState()
     let synchronization: ReturnType<typeof createSessionSynchronization> | null = null
-    let latestSessionToken: string | null | undefined
+    let latestProviderSession: ProviderSessionRevision | undefined
+    let publishCurrentSessionAcceptance: () => void = () => {}
     const adapter = createBetterAuthBrowserAdapter(
       authClient,
       {
@@ -71,12 +81,22 @@ export default defineNuxtPlugin({
           authError.value = error
           pendingState.value = false
         },
-        sessionChanged(sessionToken, errorMessage) {
+        sessionChanged(sessionToken, errorMessage, revision) {
           // The Better Auth cookie changing is necessary but not sufficient:
           // the Vue runtime must still fetch and have Convex accept its JWT.
           // Reconciliation is published from the settled runtime snapshot
           // below so integrated auth cannot resolve in that security gap.
-          latestSessionToken = errorMessage ? null : sessionToken
+          latestProviderSession = {
+            sessionToken: errorMessage ? null : sessionToken,
+            revision,
+            failed: errorMessage !== null,
+          }
+          synchronization?.observeProvider(latestProviderSession)
+          // A matching SSR-provisional generation can already be settled when
+          // Better Auth publishes its canonical token later. The generation
+          // guard inside this callback prevents a new session from inheriting
+          // the prior runtime's settled state.
+          publishCurrentSessionAcceptance()
         },
       },
       {
@@ -92,7 +112,6 @@ export default defineNuxtPlugin({
     nuxtApp.vueApp.use(vuePlugin)
     const runtime = createConvexRuntimeContext(vuePlugin.attachment(), logger)
     nuxtApp.provide('convexRuntime', runtime)
-    nuxtApp.provide('auth', authClient)
     const queryErrors = useState<Record<string, ConvexCallError | null>>(
       'convex:query-errors',
       () => ({}),
@@ -100,6 +119,7 @@ export default defineNuxtPlugin({
     const ssrIdentityKey = identityKeyOf(identity.value)
     const initialSnapshot = runtime.attachment.identity.snapshot()
     let observedIdentityGeneration = initialSnapshot.identityGeneration
+    let runtimeProviderRevision = adapter.snapshot().sessionGeneration
     let initialHydrationReconciled = false
     const purgeProtectedPayload = () => {
       purgeConvexIdentityPayloadKeys(nuxtApp)
@@ -109,9 +129,23 @@ export default defineNuxtPlugin({
         return mode === 'required' || mode === 'optional'
       })
     }
+    publishCurrentSessionAcceptance = () => {
+      const snapshot = runtime.attachment.identity.snapshot()
+      if (
+        snapshot.settled &&
+        latestProviderSession &&
+        latestProviderSession.revision === runtimeProviderRevision
+      ) {
+        synchronization?.observeAccepted(latestProviderSession, Boolean(snapshot.error))
+      }
+    }
     const reconcileProtectedPayload = () => {
       const snapshot = runtime.attachment.identity.snapshot()
       const generation = snapshot.identityGeneration
+      // Attachment notifications are emitted synchronously from the adapter
+      // transition. Capturing the adapter revision here binds this settled
+      // runtime generation to the exact provider generation that produced it.
+      runtimeProviderRevision = adapter.snapshot().sessionGeneration
       if (!initialHydrationReconciled) {
         if (snapshot.identityKey !== ssrIdentityKey) {
           initialHydrationReconciled = true
@@ -129,42 +163,42 @@ export default defineNuxtPlugin({
         authError.value = snapshot.error.message
         pendingState.value = false
       }
-      if (snapshot.settled && latestSessionToken !== undefined) {
-        synchronization?.observe(snapshot.error ? null : latestSessionToken)
-      }
+      publishCurrentSessionAcceptance()
     }
     const stopProtectedPayloadObservation =
       runtime.attachment.identity.subscribe(reconcileProtectedPayload)
     reconcileProtectedPayload()
 
     let disposed = false
-    const operations = createAuthOperationCoordinator()
+    const operations = createAuthOperationTracker()
+    const refreshConvexAuthentication = Reflect.get(vuePlugin, INTERNAL_REFRESH_AUTH)
+    if (typeof refreshConvexAuthentication !== 'function') {
+      throw new TypeError('[better-convex-nuxt] Vue auth refresh seam is unavailable')
+    }
     synchronization = createSessionSynchronization({
       timeoutMs: SESSION_RECONCILIATION_TIMEOUT_MS,
-      isDisposed: () => disposed,
-      async failClosed(failure) {
+      refetchCanonicalSession: () =>
+        Reflect.apply(refreshConvexAuthentication, vuePlugin, []) as Promise<void>,
+      failClosed(failure) {
         adapter.failClosed(failure.message)
       },
     })
-
-    const execute = <T>(operation: () => Promise<T>) => operations.run(operation)
-    const integratedSignIn = createIntegratedAuthNamespace(
-      authClient.signIn as object,
-      synchronization.createBarrier,
-      execute,
-    )
-    const integratedSignUp = createIntegratedAuthNamespace(
-      authClient.signUp as object,
-      synchronization.createBarrier,
-      execute,
+    if (latestProviderSession) synchronization.observeProvider(latestProviderSession)
+    // Seed already-settled SSR/browser identity so a Promise operation whose
+    // canonical refetch finds the same session need not manufacture a new
+    // Convex generation merely to prove an acceptance that already happened.
+    reconcileProtectedPayload()
+    const integratedClient = createIntegratedAuthClient(
+      authClient,
+      synchronization,
+      operations.track,
     )
 
     const controller: NuxtConvexAuthController = {
       isPending: computed(() => pendingState.value || operations.isPending.value),
-      integratedSignIn,
-      integratedSignUp,
+      client: integratedClient,
       async ready(options) {
-        const ready = vuePlugin.ready()
+        const ready = runtime.attachment.identity.waitForInitialSettlement()
         const timeoutMs = options?.timeoutMs ?? 0
         if (timeoutMs <= 0) await ready
         else {
@@ -186,35 +220,6 @@ export default defineNuxtPlugin({
         if (!snapshot.settled) return 'loading'
         if (snapshot.error) return 'error'
         return snapshot.identityKey === 'anonymous' ? 'anonymous' : 'authenticated'
-      },
-      refresh() {
-        const generation = runtime.attachment.identity.snapshot().identityGeneration
-        return operations.refresh(generation, async () => {
-          if (runtime.attachment.identity.snapshot().identityGeneration !== generation) return
-          await vuePlugin.refreshAuth()
-        })
-      },
-      signOut() {
-        return operations.run(async () => {
-          const barrier = synchronization!.createBarrier()
-          try {
-            const result = await authClient.signOut()
-            const error =
-              result && typeof result === 'object' && 'error' in result ? result.error : null
-            if (error) {
-              barrier.cancel()
-              throw new ConvexCallError({
-                kind: 'authentication',
-                message: 'Sign out failed',
-              })
-            }
-            await barrier.wait(null)
-            return result
-          } catch (error) {
-            barrier.cancel()
-            throw error
-          }
-        })
       },
       dispose() {
         if (disposed) return

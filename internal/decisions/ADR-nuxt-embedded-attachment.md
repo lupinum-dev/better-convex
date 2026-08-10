@@ -23,7 +23,7 @@ must not replace that with direct `$convexRuntime` access or another identity ad
 Add one Nuxt client composable:
 
 ```ts
-useConvexAttachment(): BetterConvexAttachedRuntime
+useConvexAttachment(): BetterConvexAttachment
 ```
 
 It returns the already-owned frozen attachment from the current Nuxt app. It creates no client,

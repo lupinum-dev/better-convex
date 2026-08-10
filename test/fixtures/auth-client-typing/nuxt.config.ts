@@ -10,8 +10,8 @@ export default defineNuxtConfig({
     url: 'https://auth-client-typing.convex.cloud',
     siteUrl: 'https://auth-client-typing.convex.site',
     auth: {
-      publicOrigin: process.env.SITE_URL ?? 'https://auth-client-typing.example.test',
-      proxy: { trustedClientIpHeader: 'x-test-client-ip' },
+      origin: process.env.SITE_URL ?? 'https://auth-client-typing.example.test',
+      trustedClientIpHeader: 'x-test-client-ip',
     },
   },
   typescript: {

@@ -1,9 +1,9 @@
 /**
  * Standalone packed-probe consumer (architecture invariant) for
- * `better-convex-nuxt/server/createUserSyncTriggers`.
+ * `better-convex-nuxt/convex-auth`.
  *
- * Imports ONLY this subpath — no Nuxt, no Vue, no H3, no live Convex — and
- * exercises the projection triggers against an in-memory fake `ctx.db` from a
+ * Imports the projection helper from its auth integration subpath and
+ * exercises it against an in-memory fake `ctx.db` from a
  * real node_modules-resident install of the packed tarball. Runnable
  * standalone:
  *
@@ -11,16 +11,25 @@
  *
  * or driven end-to-end by `scripts/check-package-exports.mjs`'s packed probe.
  */
-import { createUserSyncTriggers } from 'better-convex-nuxt/server/createUserSyncTriggers'
+import {
+  createUserProjectionTriggers,
+  type BetterAuthUserProjectionSource,
+  type CreateUserProjectionTriggersOptions,
+} from 'better-convex-nuxt/convex-auth'
 
 function fail(message: string): never {
-  console.error(`user-sync-triggers-consumer FAILED: ${message}`)
+  console.error(`user-projection-triggers-consumer FAILED: ${message}`)
   process.exit(1)
 }
 
 interface AppUser {
   _id: string
   [key: string]: unknown
+}
+
+interface AuthUser extends BetterAuthUserProjectionSource {
+  id: string
+  name?: string | null
 }
 
 const rows = new Map<string, AppUser>()
@@ -70,12 +79,14 @@ const db = {
 
 const ctx = { db }
 
-const triggers = createUserSyncTriggers<{ id: string; name?: string | null }, AppUser>({
+const projectionOptions = {
   table: 'appUsers',
   index: 'by_auth_id',
-  createDoc: ({ user }) => ({ authId: user.id, name: user.name ?? null }),
+  createDoc: ({ user }) => ({ name: user.name ?? null }),
   patchDoc: ({ user }) => ({ name: user.name ?? null }),
-})
+} satisfies CreateUserProjectionTriggersOptions<AuthUser, AppUser>
+
+const triggers = createUserProjectionTriggers<AuthUser, AppUser>(projectionOptions)
 
 function rowCount(): number {
   return rows.size
@@ -86,6 +97,9 @@ async function main() {
   const afterCreate = rowCount()
   if (afterCreate !== 1)
     fail(`expected exactly one projected row after onCreate, got ${afterCreate}`)
+  if ([...rows.values()][0]?.authId !== 'auth_1') {
+    fail(`projection helper did not inject the canonical auth id`)
+  }
 
   // onCreate is idempotent: a second delivery for the same auth id must not insert twice.
   await triggers.user.onCreate(ctx, { id: 'auth_1', name: 'Ada' })
@@ -110,7 +124,7 @@ async function main() {
     fail(`rebuild did not insert the missing projection row`)
   }
 
-  console.log('user-sync-triggers-consumer OK')
+  console.log('user-projection-triggers-consumer OK')
 }
 
 void main()

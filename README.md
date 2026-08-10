@@ -5,7 +5,7 @@
 [![License][license-src]][license-href]
 [![Nuxt][nuxt-src]][nuxt-href]
 
-Convex for Nuxt 4, without the integration glue: SSR-to-realtime queries, Better Auth, request-scoped server calls, optimistic updates, uploads, and one structured error model.
+Convex for Nuxt 4, without the integration glue: SSR-to-realtime queries, request-scoped server calls, mutation-scoped optimistic updates, uploads, one structured error model, and optional Better Auth.
 
 - [Documentation](https://better-convex-nuxt.vercel.app)
 - [Choose your path](https://better-convex-nuxt.vercel.app/docs/get-started/choose-your-path)
@@ -20,8 +20,8 @@ Better Convex Nuxt is ESM-only and supports Node `^22.12.0 || ^24.11.0 || >=26.0
 ## Better Convex packages
 
 - `better-convex-nuxt` is the full-stack Nuxt integration: SSR/hydration,
-  Nitro calls, Better Auth, the auth proxy, route middleware, uploads, and
-  DevTools.
+  Nitro calls, uploads, DevTools, and an opt-in Better Auth runtime with its
+  auth proxy and route middleware.
 - `better-convex-vue` is the shared client lifecycle for plain Vue/Vite and
   embedded Vue applications. It has no Nuxt, Nitro, H3, or Better Auth
   dependency.
@@ -37,10 +37,10 @@ server or grant application authority.
 
 - **One query lifecycle:** render during SSR, reuse the payload during hydration, and continue as a browser subscription.
 - **Identity isolation:** query state is partitioned across anonymous, signed-in, signed-out, and user-switch boundaries.
-- **Better Auth integration:** session and Convex identity stay synchronized through a bounded same-origin auth proxy.
+- **Opt-in Better Auth integration:** session and Convex identity stay synchronized through a bounded same-origin auth proxy when the app enables auth.
 - **Agents and MCP:** the provider-neutral `better-convex-mcp` boundary serves explicit Convex operations; the optional OAuth Provider profile adds delegated human access while authorization remains live in Convex.
 - **Nuxt server support:** call queries, mutations, and actions through one request-scoped `serverConvex` API.
-- **Application behavior:** optimistic state, pagination, uploads, connection state, DevTools, and structured errors use the same runtime model.
+- **Application behavior:** mutation-scoped optimistic updates, pagination, uploads, connection state, DevTools, and structured errors use the same runtime model.
 - **Explicit security ownership:** the library transports identity; Convex functions remain the source of truth for authorization.
 
 See [limitations and trade-offs](https://better-convex-nuxt.vercel.app/docs/overview/limitations) before adopting the module.
@@ -48,7 +48,7 @@ See [limitations and trade-offs](https://better-convex-nuxt.vercel.app/docs/over
 ## Install
 
 ```bash
-pnpm add better-convex-nuxt convex@1.42.2 nuxt@4.5.1 better-auth@1.7.0-rc.1 kysely@0.28.17
+pnpm add better-convex-nuxt convex@1.42.2 nuxt@4.5.1
 ```
 
 ```ts [nuxt.config.ts]
@@ -70,7 +70,7 @@ The checked runner strips inherited `CONVEX_*` values, validates the one fixed
 authority file, rejects deployment-selection overrides, and then invokes the
 pinned Convex CLI.
 
-The package supports the exact Nuxt, Convex, Better Auth, and Kysely peer versions declared in `package.json`. Kysely is pinned because the supported Better Auth Convex adapter loads it as a stateful query runtime. The exact OAuth Provider runtime is package-owned and installed transitively with Better Convex Nuxt, so applications do not select a second provider version. OAuth authorization-server applications follow the [delegated OAuth and MCP guide](https://better-convex-nuxt.vercel.app/docs/build/authentication/delegated-oauth-and-mcp).
+This is the complete no-auth install used by the public starter; it has no Better Auth or Kysely dependency. Better Convex Nuxt supports the exact Nuxt and Convex versions declared in `package.json`.
 
 ## Query from a page
 
@@ -92,7 +92,7 @@ const { data: tasks, status, error } = await useConvexQuery(api.tasks.list, {})
 </template>
 ```
 
-Queries use SSR and subscriptions by default. Every call receives an explicit args object or the literal `'skip'`.
+Queries use SSR and realtime updates by default. Pass an explicit args object (or omit it only for an exact no-argument query), and use the literal `'skip'` to pause execution.
 
 ## Write data
 
@@ -118,7 +118,7 @@ import { serverConvex } from '#convex/server'
 
 export default defineEventHandler(async (event) => {
   const convex = await serverConvex(event)
-  return convex.query(api.tasks.list, {})
+  return convex.query(api.tasks.list)
 })
 ```
 
@@ -126,27 +126,39 @@ Create the caller inside the request handler. Do not share authenticated callers
 
 ## Add authentication
 
-Authentication is installed by default and uses Better Auth with the Convex adapter. It requires the server definition, Convex HTTP routes, public site URL, and secret described in the [authentication setup guide](https://better-convex-nuxt.vercel.app/docs/get-started/add-authentication).
+Authentication is off when `convex.auth` is omitted. To opt in, install the exact Better Auth and OAuth Provider peers, then provide the application origin:
 
-Use `auth: false` when the application intentionally has no auth runtime:
+```bash
+pnpm add better-auth@1.7.0-rc.2 @better-auth/oauth-provider@1.7.0-rc.2
+```
 
 ```ts [nuxt.config.ts]
 export default defineNuxtConfig({
   modules: ['better-convex-nuxt'],
-  convex: { auth: false },
+  convex: {
+    auth: {
+      origin: process.env.SITE_URL ?? 'http://localhost:3000',
+      trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
+    },
+  },
 })
 ```
+
+`trustedClientIpHeader` may be omitted only for an exact loopback development origin. Better Auth and the OAuth Provider are optional exact peers owned by the auth-enabled application; Better Auth supplies its own Kysely runtime, so do not add a standalone Kysely peer for Better Convex. The server definition, Convex HTTP routes, secret, and optional typed client are covered in the [authentication setup guide](https://better-convex-nuxt.vercel.app/docs/get-started/add-authentication). OAuth authorization-server applications follow the [delegated OAuth and MCP guide](https://better-convex-nuxt.vercel.app/docs/build/authentication/delegated-oauth-and-mcp).
+
+Render auth UI with ordinary Vue conditionals over `useConvexAuth().status`, `isPending`, and `error`; the module does not register auth UI components.
 
 Route protection is navigation UX. Every protected Convex function must still validate identity, ownership, membership, and role requirements on the backend.
 
 ## Public API
 
-The generated [API surface](https://better-convex-nuxt.vercel.app/docs/reference/api-surface) is the source of truth for composables, helpers, server aliases, components, and package exports. The main entry points are:
+The generated [API surface](https://better-convex-nuxt.vercel.app/docs/reference/api-surface) is the source of truth for composables, server aliases, and package exports. The main entry points are:
 
-- `useConvexQuery` and `useConvexPaginatedQuery`
+- `useConvexQuery` with `data`, `status`, `pending`, `error`, `isStale`, and `refresh()`
+- `useConvexPaginatedQuery` with `data`, `status`, `isLoading`, `canLoadMore`, `error`, `isStale`, `loadMore()`, and `refresh()`
 - `useConvexMutation` and `useConvexAction`
-- `useConvexAuth` and `useConvexUser`
-- `useConvexFileUpload`, `useConvexUploadQueue`, and `useConvexStorageUrl`
+- `useConvexAuth` in auth-enabled builds
+- `useConvexFileUpload`
 - `useConvexConnectionState` and the stable `useConvex` handle
 - `serverConvex` from `better-convex-nuxt/server` or `#convex/server`
 - `ConvexCallError` from `better-convex-nuxt/errors`

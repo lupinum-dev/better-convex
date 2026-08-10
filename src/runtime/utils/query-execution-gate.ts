@@ -1,4 +1,4 @@
-import type { ConvexAuthMode, ConvexAuthStatus } from './auth-status'
+import type { ConvexAuthMode, ConvexQueryAuthStatus } from './auth-status'
 import { isAuthenticatedIdentityKey, type ConvexIdentityKey } from './identity-key'
 
 /**
@@ -22,7 +22,7 @@ import { isAuthenticatedIdentityKey, type ConvexIdentityKey } from './identity-k
  *      `user:<id>` key and execute with that identity.
  */
 export interface QueryExecutionGateInput {
-  authStatus: ConvexAuthStatus
+  authStatus: ConvexQueryAuthStatus
   authMode: ConvexAuthMode
   identityKey: ConvexIdentityKey | null
   skipped: boolean

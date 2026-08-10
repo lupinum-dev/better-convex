@@ -18,11 +18,15 @@ describe('module auto-import surface', () => {
     )
 
     expect(autoImportNames).toContain('useConvexAuth')
-    expect(autoImportNames).toContain('useConvexUser')
     expect(composableAutoImports).toContainEqual({
       name: 'useConvexAttachment',
       from: './runtime/composables/useConvexAttachment',
     })
+    expect(autoImportNames).not.toContain('useConvexUser')
+    expect(autoImportNames).not.toContain('defineSharedConvexQuery')
+    expect(autoImportNames).not.toContain('useConvexStorageUrl')
+    expect(autoImportNames).not.toContain('useConvexUploadQueue')
+    expect(autoImportNames).not.toContain('updateQuery')
     expect(autoImportNames.size).toBe(composableAutoImports.length + authAutoImports.length)
   })
 

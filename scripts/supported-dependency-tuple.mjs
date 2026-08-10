@@ -9,22 +9,20 @@ const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.me
 export const supportedDependencyTuple = Object.freeze({
   '@better-auth/api-key': requiredDevDependency('@better-auth/api-key'),
   '@better-auth/core': requiredDevDependency('@better-auth/core'),
-  '@better-auth/oauth-provider': requiredRuntimeDependency('@better-auth/oauth-provider'),
+  '@better-auth/oauth-provider': requiredOptionalPeerDependency('@better-auth/oauth-provider'),
   '@nuxt/kit': requiredRuntimeDependency('@nuxt/kit'),
-  'better-auth': requiredPeerDependency('better-auth'),
+  'better-auth': requiredOptionalPeerDependency('better-auth'),
   convex: requiredPeerDependency('convex'),
   'convex-helpers': requiredRuntimeDependency('convex-helpers'),
-  kysely: requiredPeerDependency('kysely'),
   nuxt: requiredPeerDependency('nuxt'),
 })
 
-export const requiredStatefulPeerNames = Object.freeze(['better-auth', 'convex', 'kysely'])
+export const requiredStatefulPeerNames = Object.freeze(['better-auth', 'convex'])
 export const requiredPhysicalRuntimeNames = Object.freeze([
   'better-auth',
   '@better-auth/core',
   '@better-auth/oauth-provider',
   'convex',
-  'kysely',
 ])
 
 validateTuple()
@@ -49,6 +47,14 @@ function requiredPeerDependency(name) {
   const version = packageJson.peerDependencies?.[name]
   if (typeof version !== 'string') {
     throw new TypeError(`package.json must declare ${name} as a peer dependency.`)
+  }
+  return version
+}
+
+function requiredOptionalPeerDependency(name) {
+  const version = requiredPeerDependency(name)
+  if (packageJson.peerDependenciesMeta?.[name]?.optional !== true) {
+    throw new TypeError(`package.json must declare ${name} as an optional peer dependency.`)
   }
   return version
 }
@@ -85,6 +91,12 @@ function validateTuple() {
     }
   }
 
+  for (const name of ['better-auth', '@better-auth/oauth-provider']) {
+    if (packageJson.peerDependenciesMeta?.[name]?.optional !== true) {
+      throw new Error(`${name} must remain optional for Convex-only consumers.`)
+    }
+  }
+
   if (supportedDependencyTuple['@nuxt/kit'] !== supportedDependencyTuple.nuxt) {
     throw new Error(
       `@nuxt/kit@${supportedDependencyTuple['@nuxt/kit']} must match nuxt@${supportedDependencyTuple.nuxt}.`,
@@ -93,10 +105,18 @@ function validateTuple() {
 
   const provider = '@better-auth/oauth-provider'
   if (
-    packageJson.devDependencies?.[provider] !== undefined ||
-    packageJson.peerDependencies?.[provider] !== undefined ||
-    packageJson.peerDependenciesMeta?.[provider] !== undefined
+    packageJson.devDependencies?.[provider] !== supportedDependencyTuple[provider] ||
+    packageJson.peerDependencies?.[provider] !== supportedDependencyTuple[provider] ||
+    packageJson.dependencies?.[provider] !== undefined
   ) {
-    throw new Error(`${provider} must be declared once as an exact runtime dependency.`)
+    throw new Error(`${provider} must be an exact optional peer exercised in development.`)
+  }
+
+  if (
+    packageJson.dependencies?.kysely !== undefined ||
+    packageJson.devDependencies?.kysely !== undefined ||
+    packageJson.peerDependencies?.kysely !== undefined
+  ) {
+    throw new Error('Kysely is owned transitively by Better Auth and must not be redeclared.')
   }
 }

@@ -4,21 +4,52 @@
 
 ## v0.8.0-beta.31
 
-- Retire the unpublished beta.30 Vue/Nuxt candidate after newly disclosed
-  transitive dependency advisories invalidated its previously certified bytes.
-- Delete the obsolete workspace override list and resolve the maintained
-  upstream dependency graph directly; the fresh strict lockfile has no known
-  production advisories and requires no peer or package-manager exception.
-- Repair the scheduled documentation link check for lychee's current
-  `--include-mail=false` command-line contract.
-- Preserve exact Nuxt `4.5.1` and the existing public Vue/Nuxt API.
+- Hard-cut the client API to one Vue-owned lifecycle: queries use `undefined`
+  for absence, preserve backend `null`, accept exact no-argument references,
+  and expose the same state through Nuxt-native awaitable query and pagination
+  objects. Pagination now requires `initialNumItems` and uses
+  `data`/`canLoadMore`.
+- Preserve one canonical stable direct callable and reject asynchronous
+  optimistic handlers. Remove `.safe`, callbacks, reset, wrapper-side function
+  reconstruction, shared-query state, optimistic convenience helpers, generic
+  user/storage URL helpers, and the upload queue instead of retaining
+  compatibility aliases.
+- Make Better Auth opt-in. Auth-enabled builds expose one integrated inferred
+  client whose Promise operations resolve only after the canonical provider
+  session is re-read and Convex accepts the corresponding token. No-auth builds
+  exclude Better Auth imports, routes, middleware, components, and declarations.
+- Replace the reconstructable embedded runtime with one frozen, token-free
+  attachment that requires an explicit anonymous transport. Plain Vue, Nuxt,
+  maintained starters, demos, fixtures, and packed consumers now use the same
+  attachment/query/callable contracts.
+- Replace user-sync boilerplate with an explicitly derived, rebuildable user
+  projection. The helper owns its indexed auth ID and prevents projection
+  callbacks from changing that source-of-truth field.
+- Make invalid server credential combinations unrepresentable, preserve
+  official no-argument call arity, and tighten single-file upload URL/result
+  typing while deleting the generic queue/config state machine.
+- Remove Kysely as a direct requirement. Better Auth and OAuth Provider are
+  exact optional peers; an ordinary Convex-only install has no auth dependency
+  graph.
+- Retire the unpublished beta.30 candidate, delete obsolete workspace
+  overrides, and preserve the exact reviewed Nuxt `4.5.1`, Vue `3.5.40`, and
+  Convex `1.42.2` tuple.
 
 ## v0.1.0-beta.19 (`better-convex-mcp`)
 
+- Replace the reusable wrapper-shaped handler with one request-scoped
+  `handleMcpRequest(request, options)` call backed by a fresh official server
+  and deterministic close lifecycle.
+- Mount the complete protected-resource metadata route graph, preserve exact
+  issuer identifiers, consolidate verifier ownership under authorization, and
+  revalidate provider access through the Better Auth component before exposing
+  application tools.
+- Export nameable MCP App lifecycle/error types and close failed client
+  transports. Keep `runMcpTool` explicitly narrow: stock MCP Server 2.0 does
+  not provide a universal operation-error projection hook.
 - Retire the unpublished beta.18 MCP candidate with the coordinated beta.30
-  Vue/Nuxt set because its immutable dependency evidence is now stale.
-- Preserve experimental MCP support without claiming final protocol maturity
-  or adding a compatibility path.
+  Vue/Nuxt set, and certify the final MCP 2026-07-28 contract on the official
+  Server `2.0.0` implementation without adding a legacy protocol path.
 
 ## v0.8.0-beta.30
 

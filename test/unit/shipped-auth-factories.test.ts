@@ -410,13 +410,15 @@ describe('shipped Better Auth factory invariants', () => {
     // Agency users are stable domain actors referenced by tenant and audit
     // records, not disposable display projections. Assert the required
     // lifecycle behavior without coupling this guard to the generic helper.
-    expect(auth).toContain('syncAgencyUserActor(ctx, user as BetterAuthUserDocLike, true)')
-    expect(auth).toContain('syncAgencyUserActor(ctx, user as BetterAuthUserDocLike, false)')
+    expect(auth).toContain('syncAgencyUserActor(ctx, user as BetterAuthUserProjectionSource, true)')
+    expect(auth).toContain(
+      'syncAgencyUserActor(ctx, user as BetterAuthUserProjectionSource, false)',
+    )
     expect(auth).toContain('syncAgencyUserActor(ctx, { id: String(user.id) }, false)')
     expect(auth).toContain('rebuildUserProjectionBatch = internalMutation')
     expect(page).toContain('useConvexAuth()')
-    expect(page).toContain('await signUp.email')
-    expect(page).toContain('await signIn.email')
+    expect(page).toContain('await authClient.signUp.email')
+    expect(page).toContain('await authClient.signIn.email')
     expect(page).not.toContain('await refresh()')
   })
 })

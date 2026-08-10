@@ -3,15 +3,13 @@ import { jwt } from 'better-auth/plugins'
 import {
   convexAuth,
   createAuthComponent,
+  createUserProjectionTriggers,
   getConvexAuthProvider,
   requireAuthOrigin,
   type AuthCtx,
   type AuthFunctions,
+  type BetterAuthUserProjectionSource,
 } from 'better-convex-nuxt/convex-auth'
-import {
-  createUserSyncTriggers,
-  type BetterAuthUserDocLike,
-} from 'better-convex-nuxt/server/createUserSyncTriggers'
 import { v } from 'convex/values'
 
 import { components, internal } from './_generated/api'
@@ -34,12 +32,12 @@ function requireAuthEnvironment(): {
 const authFunctions: AuthFunctions = internal.auth
 
 type BetterAuthUserPage = {
-  page: BetterAuthUserDocLike[]
+  page: BetterAuthUserProjectionSource[]
   continueCursor: string
   isDone: boolean
 }
 
-function userProjectionFields(user: BetterAuthUserDocLike) {
+function userProjectionFields(user: BetterAuthUserProjectionSource) {
   return {
     displayName: user.name ?? undefined,
     email: user.email ?? undefined,
@@ -47,7 +45,11 @@ function userProjectionFields(user: BetterAuthUserDocLike) {
   }
 }
 
-function userProjectionPatch(user: BetterAuthUserDocLike, existing: Doc<'users'>, now: number) {
+function userProjectionPatch(
+  user: BetterAuthUserProjectionSource,
+  existing: Doc<'users'>,
+  now: number,
+) {
   const fields = userProjectionFields(user)
   if (
     fields.displayName === existing.displayName &&
@@ -60,7 +62,7 @@ function userProjectionPatch(user: BetterAuthUserDocLike, existing: Doc<'users'>
   return { ...fields, updatedAt: now }
 }
 
-const userProjection = createUserSyncTriggers<BetterAuthUserDocLike, Doc<'users'>>({
+const userProjection = createUserProjectionTriggers<BetterAuthUserProjectionSource, Doc<'users'>>({
   table: 'users',
   index: 'by_auth_id',
   authIdField: 'authId',
@@ -80,15 +82,15 @@ export const authComponent = createAuthComponent<DataModel>(components.betterAut
   triggers: {
     user: {
       onCreate: async (ctx, user) =>
-        userProjection.user.onCreate(ctx, user as BetterAuthUserDocLike),
+        userProjection.user.onCreate(ctx, user as BetterAuthUserProjectionSource),
       onUpdate: async (ctx, user, previousUser) =>
         userProjection.user.onUpdate(
           ctx,
-          user as BetterAuthUserDocLike,
-          previousUser as BetterAuthUserDocLike,
+          user as BetterAuthUserProjectionSource,
+          previousUser as BetterAuthUserProjectionSource,
         ),
       onDelete: async (ctx, user) =>
-        userProjection.user.onDelete(ctx, user as BetterAuthUserDocLike),
+        userProjection.user.onDelete(ctx, user as BetterAuthUserProjectionSource),
     },
   },
 })

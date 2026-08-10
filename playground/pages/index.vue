@@ -6,15 +6,19 @@
 
       <!-- Auth Status -->
       <div class="auth-status">
-        <template v-if="isAuthenticated">
+        <span v-if="status === 'loading'" class="status">Checking session...</span>
+        <span v-else-if="status === 'error'" class="status">
+          {{ authError?.message ?? 'Authentication unavailable' }}
+        </span>
+        <template v-else-if="status === 'authenticated'">
           <span class="status authenticated">
             Logged in as <strong>{{ user?.name || user?.email }}</strong>
           </span>
-          <button class="btn btn-sm" :disabled="isSigningOut" @click="handleSignOut">
-            {{ isSigningOut ? 'Signing out...' : 'Sign Out' }}
+          <button class="btn btn-sm" :disabled="isPending" @click="handleSignOut">
+            {{ isPending ? 'Signing out...' : 'Sign Out' }}
           </button>
         </template>
-        <template v-else>
+        <template v-else-if="status === 'anonymous'">
           <span class="status">Not authenticated</span>
           <NuxtLink to="/auth/signin" class="btn btn-sm btn-primary"> Sign In </NuxtLink>
           <NuxtLink to="/auth/signup" class="btn btn-sm"> Sign Up </NuxtLink>
@@ -93,8 +97,8 @@
           <NuxtLink to="/labs/auth" class="link-card new">
             <span class="icon">A</span>
             <div>
-              <strong>Auth Components</strong>
-              <p>Auth UI components demo</p>
+              <strong>Auth State</strong>
+              <p>Explicit auth status rendering</p>
             </div>
           </NuxtLink>
           <NuxtLink to="/labs/connection" class="link-card new">
@@ -131,7 +135,7 @@
             <NuxtLink to="/labs/optimistic" class="link-card-mini">Optimistic</NuxtLink>
             <NuxtLink to="/labs/pagination" class="link-card-mini">Pagination</NuxtLink>
             <NuxtLink to="/labs/connection" class="link-card-mini">Connection</NuxtLink>
-            <NuxtLink to="/labs/auth" class="link-card-mini">Auth Components</NuxtLink>
+            <NuxtLink to="/labs/auth" class="link-card-mini">Auth State</NuxtLink>
             <NuxtLink to="/labs/mutations" class="link-card-mini">Mutations</NuxtLink>
             <NuxtLink to="/labs/upload" class="link-card-mini">File Upload</NuxtLink>
           </div>
@@ -162,25 +166,22 @@
 </template>
 
 <script setup lang="ts">
-const { user, isAuthenticated, token, signOut: convexSignOut } = useConvexAuth()
-
-const isSigningOut = ref(false)
+const { user, status, isPending, error: authError, client } = useConvexAuth()
 
 const debugInfo = computed(() => ({
-  isAuthenticated: isAuthenticated.value,
-  hasToken: !!token.value,
+  status: status.value,
+  isPending: isPending.value,
+  error: authError.value?.message,
   user: user.value,
 }))
 
 async function handleSignOut() {
-  isSigningOut.value = true
   try {
-    await convexSignOut()
+    if (!client) throw new Error('Authentication client unavailable')
+    await client.signOut()
     window.location.href = '/'
   } catch (error) {
     console.error('Sign out failed:', error)
-  } finally {
-    isSigningOut.value = false
   }
 }
 </script>

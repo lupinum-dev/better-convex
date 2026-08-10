@@ -30,14 +30,6 @@ import { ConvexError } from 'convex/values'
  */
 export type ConvexCallErrorKind = 'authentication' | 'transport' | 'server' | 'unknown'
 
-/**
- * The result envelope returned by every `.safe()` callable variant.
- *
- * The error entry owns this type so consumers have one framework-free import
- * location for both throwing and non-throwing call contracts.
- */
-export type CallResult<T, E = ConvexCallError> = { ok: true; data: T } | { ok: false; error: E }
-
 const CONVEX_CALL_ERROR_KINDS: readonly ConvexCallErrorKind[] = [
   'authentication',
   'transport',
@@ -56,7 +48,7 @@ export interface ConvexCallErrorInput {
 }
 
 /**
- * The single honest error type every throwing and safe Convex call exposes.
+ * The single honest error type every failed Convex operation exposes.
  *
  * Raw upstream causes are deliberately not retained on this public error
  * object. Library-owned credentials, tokens, cookies, request/response objects,

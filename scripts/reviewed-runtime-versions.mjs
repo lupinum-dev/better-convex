@@ -9,10 +9,13 @@ export function derivePackagePhysicalVersions(packageId, manifest) {
   const sources =
     packageId === 'vue'
       ? Object.fromEntries(
-          ['@modelcontextprotocol/ext-apps', 'convex', 'vue'].map((name) => [
-            name,
-            manifest.devDependencies?.[name],
-          ]),
+          [
+            '@modelcontextprotocol/ext-apps',
+            '@modelcontextprotocol/sdk',
+            'convex',
+            'vue',
+            'zod',
+          ].map((name) => [name, manifest.devDependencies?.[name]]),
         )
       : manifest.dependencies
   if (

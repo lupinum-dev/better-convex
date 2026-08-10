@@ -19,7 +19,6 @@ export default defineNuxtConfig({
     // Convex-only build: no Better Auth machinery, so an `optional`-mode
     // query never waits on auth settlement and the mocked HTTP boundary
     // failure surfaces as `server`, not `authentication`.
-    auth: false,
     url: process.env.SSR_ERRORS_MOCK_CONVEX_URL || 'http://127.0.0.1:4988',
   },
 })

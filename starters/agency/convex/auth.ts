@@ -7,8 +7,8 @@ import {
   requireAuthOrigin,
   type AuthCtx,
   type AuthFunctions,
+  type BetterAuthUserProjectionSource,
 } from 'better-convex-nuxt/convex-auth'
-import type { BetterAuthUserDocLike } from 'better-convex-nuxt/server/createUserSyncTriggers'
 import { ConvexError, v } from 'convex/values'
 
 import { components, internal } from './_generated/api'
@@ -25,7 +25,7 @@ type AgencyUserDoc = {
 }
 
 type BetterAuthUserPage = {
-  page: BetterAuthUserDocLike[]
+  page: BetterAuthUserProjectionSource[]
   continueCursor: string
   isDone: boolean
 }
@@ -39,7 +39,11 @@ function assertAuthSecretsConfigured(): void {
 const duplicateActorMessage =
   'Duplicate Agency user actors require explicit reference reconciliation'
 
-function userProjectionPatch(user: BetterAuthUserDocLike, existing: AgencyUserDoc, now: number) {
+function userProjectionPatch(
+  user: BetterAuthUserProjectionSource,
+  existing: AgencyUserDoc,
+  now: number,
+) {
   const name = user.name ?? undefined
   const email = user.email ?? undefined
   if (name === existing.name && email === existing.email) return null
@@ -49,7 +53,7 @@ function userProjectionPatch(user: BetterAuthUserDocLike, existing: AgencyUserDo
 
 async function syncAgencyUserActor(
   ctx: MutationCtx,
-  user: BetterAuthUserDocLike,
+  user: BetterAuthUserProjectionSource,
   insertIfMissing: boolean,
 ): Promise<'inserted' | 'patched' | 'skipped'> {
   const actors = await ctx.db
@@ -90,10 +94,10 @@ export const authComponent = createAuthComponent<DataModel>(components.betterAut
   triggers: {
     user: {
       onCreate: async (ctx, user) => {
-        await syncAgencyUserActor(ctx, user as BetterAuthUserDocLike, true)
+        await syncAgencyUserActor(ctx, user as BetterAuthUserProjectionSource, true)
       },
       onUpdate: async (ctx, user) => {
-        await syncAgencyUserActor(ctx, user as BetterAuthUserDocLike, false)
+        await syncAgencyUserActor(ctx, user as BetterAuthUserProjectionSource, false)
       },
       onDelete: async (ctx, user) => {
         // Keep the stable actor and its references, but remove the display PII

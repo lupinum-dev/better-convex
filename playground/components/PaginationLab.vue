@@ -24,7 +24,8 @@ const paginatedResult = await useConvexPaginatedQuery(
     server: props.serverOption,
   },
 )
-const { results, status, isLoading, loadMore, error } = paginatedResult
+const { data, status, isLoading, canLoadMore, loadMore, error } = paginatedResult
+const items = computed(() => data.value ?? [])
 
 if (import.meta.client) {
   const fmtMs = (value: number) => `${Math.round(value)}ms`
@@ -36,11 +37,11 @@ if (import.meta.client) {
     status: status.value,
     isLoading: isLoading.value,
     error: error.value?.message ?? null,
-    resultCount: results.value.length,
+    resultCount: items.value.length,
   })
 
   watch(
-    [status, isLoading, results, error],
+    [status, isLoading, items, error],
     ([nextStatus, nextLoading, nextResults, nextError], [prevStatus, prevLoading]) => {
       console.info(`[PaginationLab:${props.pageId}] state change`, {
         mode: 'blocking',
@@ -58,8 +59,8 @@ if (import.meta.client) {
 const capturedAtRender = {
   status: status.value,
   isLoading: isLoading.value,
-  hasData: results.value.length > 0,
-  dataLength: results.value.length,
+  hasData: items.value.length > 0,
+  dataLength: items.value.length,
 }
 </script>
 
@@ -109,17 +110,17 @@ const capturedAtRender = {
         </div>
         <div class="state-item">
           <span class="label">hasData:</span>
-          <span data-testid="current-has-data" class="value">{{ results.length > 0 }}</span>
+          <span data-testid="current-has-data" class="value">{{ items.length > 0 }}</span>
         </div>
         <div class="state-item">
           <span class="label">dataLength:</span>
-          <span data-testid="current-data-length" class="value">{{ results.length }}</span>
+          <span data-testid="current-data-length" class="value">{{ items.length }}</span>
         </div>
       </div>
     </section>
 
     <section class="actions-section">
-      <button data-testid="load-more-btn" :disabled="status !== 'ready'" @click="loadMore(3)">
+      <button data-testid="load-more-btn" :disabled="!canLoadMore" @click="loadMore(3)">
         Load More
       </button>
     </section>
@@ -133,9 +134,9 @@ const capturedAtRender = {
       </div>
     </section>
 
-    <section v-else-if="results.length > 0" class="data-section">
+    <section v-else-if="items.length > 0" class="data-section">
       <h2>Data Preview</h2>
-      <pre data-testid="data-preview">{{ JSON.stringify(results, null, 2) }}</pre>
+      <pre data-testid="data-preview">{{ JSON.stringify(items, null, 2) }}</pre>
     </section>
   </div>
 </template>

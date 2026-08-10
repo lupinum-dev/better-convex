@@ -40,19 +40,29 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "convex": "1.42.2",
     "typescript": "~5.9.3",
     "unbuild": "3.6.1",
     "vue": "3.5.40",
-    "vue-tsc": "^3.3.7"
+    "vue-tsc": "^3.3.7",
+    "zod": "4.4.3"
   },
   "peerDependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "convex": "1.42.2",
-    "vue": "^3.5.0"
+    "vue": "^3.5.0",
+    "zod": "4.4.3"
   },
   "peerDependenciesMeta": {
     "@modelcontextprotocol/ext-apps": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
       "optional": true
     }
   },

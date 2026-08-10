@@ -64,7 +64,7 @@ describe('plugin.server token exchange failure policy', () => {
 
     useRuntimeConfigMock.mockReturnValue({
       public: {
-        convex: { logging: false, debug: {} },
+        convex: { logging: false },
       },
     })
 
@@ -97,13 +97,9 @@ describe('plugin.server token exchange failure policy', () => {
       url: 'https://demo.convex.cloud',
       siteUrl: 'https://demo.convex.site',
       auth: {
-        proxy: {
-          maxRequestBodyBytes: 1024 * 1024,
-          maxResponseBodyBytes: 1024 * 1024,
-          trustedClientIpHeader: '',
-        },
-        debug: { authFlow: false, clientAuthFlow: false, serverAuthFlow: false },
-        routeProtection: { redirectTo: '/auth/signin', preserveReturnTo: true },
+        origin: 'http://localhost:3000',
+        trustedClientIpHeader: '',
+        redirectTo: '/auth/signin',
       },
     })
 
@@ -138,10 +134,7 @@ describe('plugin.server token exchange failure policy', () => {
       ...runtimeConfig,
       auth: {
         ...runtimeConfig.auth,
-        proxy: {
-          ...runtimeConfig.auth.proxy,
-          trustedClientIpHeader: 'cf-connecting-ip',
-        },
+        trustedClientIpHeader: 'cf-connecting-ip',
       },
     })
     const event = useRequestEventMock()
@@ -241,13 +234,6 @@ describe('plugin.server token exchange failure policy', () => {
     const cookieSentinel = 'BCN_SSR_COOKIE_SENTINEL'
     const jwtSentinel = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZW50aW5lbCJ9.signature'
     useRuntimeConfigMock.mockReturnValue({ public: { convex: { logging: 'debug' } } })
-    getConvexRuntimeConfigMock.mockReturnValue({
-      ...getConvexRuntimeConfigMock(),
-      auth: {
-        ...getConvexRuntimeConfigMock().auth,
-        debug: { authFlow: false, clientAuthFlow: false, serverAuthFlow: true },
-      },
-    })
     useRequestEventMock.mockReturnValue({
       ...useRequestEventMock(),
       headers: new Headers({ cookie: `better-auth.session_token=${cookieSentinel}` }),

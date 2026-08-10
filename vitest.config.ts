@@ -155,9 +155,6 @@ export default defineConfig({
             'better-convex-nuxt/convex-auth': fileURLToPath(
               new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
             ),
-            'better-convex-nuxt/server/createUserSyncTriggers': fileURLToPath(
-              new URL('./src/runtime/server/createUserSyncTriggers.ts', import.meta.url),
-            ),
           },
         },
         test: {

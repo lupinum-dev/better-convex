@@ -176,16 +176,15 @@ and `P5-012` must prove the exact mechanism before the Better Auth adapter is ad
 
 ## 2026-07-28 reconciliation status
 
-The official split TypeScript packages reached stable `2.0.0` on 2026-07-28 and expose explicit
-support for the draft/RC wire revision. Better Convex hard-cuts to those exact bytes: result-owned `serverInfo`
+The official split TypeScript packages reached stable `2.0.0` on 2026-07-28 and implement the final
+wire revision. Better Convex hard-cuts to those exact bytes: result-owned `serverInfo`
 metadata remains required and per-request `clientInfo` is optional. No beta-version branch or alias is
 retained.
 
-The `2026-07-28` specification remains a draft/RC at signed release commit
-`5f5440bb26a62e2cf3440b92da5a667efa03b267`. Its dated draft changelog describes the stateless request
+The final `2026-07-28` specification and signed release implementation describe the stateless request
 metadata, discovery, result metadata, standard headers, zero-session transport, cache hints, standard
 resource-not-found error, and unsupported legacy methods enforced by the package. It also
-removes the RC `notifications/elicitation/complete` and `elicitationId` path in favor of application
+remove `notifications/elicitation/complete` and the `elicitationId` path in favor of application
 `requestState`; Better Convex retains neither removed surface.
 
 Inspector v1 was hard-cut from the maintained proof. Exact

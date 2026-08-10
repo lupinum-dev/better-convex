@@ -18,6 +18,7 @@ function createOwnerHarness() {
   } as never
   const attachment = createBetterConvexAttachment({
     client,
+    anonymousClient: client,
     identity: {
       snapshot: () => ({
         authEnabled: true,

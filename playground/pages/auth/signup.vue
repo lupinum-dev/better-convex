@@ -33,12 +33,12 @@
           />
         </div>
 
-        <div v-if="error" class="error">
-          {{ error }}
+        <div v-if="visibleError" class="error">
+          {{ visibleError }}
         </div>
 
-        <button type="submit" class="btn btn-primary" :disabled="isLoading">
-          {{ isLoading ? 'Creating account...' : 'Create Account' }}
+        <button type="submit" class="btn btn-primary" :disabled="isPending">
+          {{ isPending ? 'Creating account...' : 'Create Account' }}
         </button>
       </form>
 
@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-const { signUp } = useConvexAuth()
+const { client, isPending, error: authError } = useConvexAuth()
 
 const form = reactive({
   name: '',
@@ -59,15 +59,16 @@ const form = reactive({
   password: '',
 })
 
-const isLoading = ref(false)
 const error = ref<string | null>(null)
+const visibleError = computed(() => error.value ?? authError.value?.message ?? null)
 
 async function handleSignUp() {
-  isLoading.value = true
+  if (isPending.value) return
   error.value = null
 
   try {
-    const result = await signUp.email({
+    if (!client) throw new Error('Authentication client unavailable')
+    const result = await client.signUp.email({
       name: form.name,
       email: form.email,
       password: form.password,
@@ -84,8 +85,6 @@ async function handleSignUp() {
     await navigateTo('/auth/signin')
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'An unexpected error occurred'
-  } finally {
-    isLoading.value = false
   }
 }
 </script>

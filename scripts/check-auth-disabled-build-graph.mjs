@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds test/fixtures/auth-disabled (a real `auth: false` Nuxt app) and scans
+// Builds test/fixtures/auth-disabled (a real default-off Nuxt app) and scans
 // the generated client + Nitro output for markers unique to the auth-enabled-
 // only files: the Better Auth client plugin, the auth engine, the auth proxy
 // server handler, and the `convex-auth` route middleware. An auth-disabled
@@ -17,13 +17,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(__dirname, '..')
 const fixtureDir = join(repoRoot, 'test/fixtures/auth-disabled')
 const outputDir = join(fixtureDir, '.output')
+const buildDir = join(fixtureDir, '.nuxt')
 
 // Markers that may ONLY legitimately appear if the auth-enabled-only files
-// (plugin.auth.client.ts, plugin.server.ts, the auth proxy handler, the
-// `convex-auth` route middleware) were bundled. The always-registered
-// rendering components (ConvexAuthenticated, ConvexAuthError, etc.) and the
-// disabled `useConvexAuth()` contract legitimately contain the substring
-// "auth" but never these specific markers.
+// (plugin.auth.client.ts, plugin.server.ts, the auth proxy handler, or the
+// `convex-auth` route middleware) were bundled. No auth composable, page-meta
+// augmentation, or rendering component exists in this fixture's public API.
 const FORBIDDEN_MARKERS = [
   'better-auth',
   'createAuthClient',
@@ -70,11 +69,50 @@ function scan(dir, label) {
   return violations
 }
 
+function scanGeneratedPublicSurface() {
+  const violations = []
+  const generatedContracts = [
+    ['imports', join(buildDir, 'imports.d.ts')],
+    ['typed imports', join(buildDir, 'types', 'imports.d.ts')],
+    ['components', join(buildDir, 'components.d.ts')],
+  ]
+  const forbiddenNames = [
+    'useConvexAuth',
+    'ConvexAuthenticated',
+    'ConvexUnauthenticated',
+    'ConvexAuthLoading',
+    'ConvexAuthError',
+    'convexAuth?:',
+  ]
+
+  for (const [label, file] of generatedContracts) {
+    if (!existsSync(file)) continue
+    const contents = readFileSync(file, 'utf8')
+    for (const name of forbiddenNames) {
+      if (contents.includes(name)) {
+        violations.push(`${label}: ${file} exposes auth-only name "${name}"`)
+      }
+    }
+  }
+  const authPageMeta = join(buildDir, 'types', 'better-convex-nuxt-auth.d.ts')
+  if (existsSync(authPageMeta)) {
+    violations.push(`page meta: no-auth build generated ${authPageMeta}`)
+  }
+  const generatedTsConfig = join(buildDir, 'tsconfig.json')
+  if (
+    existsSync(generatedTsConfig) &&
+    readFileSync(generatedTsConfig, 'utf8').includes('#convex/auth-client')
+  ) {
+    violations.push(`types: no-auth build registered the #convex/auth-client virtual module`)
+  }
+  return violations
+}
+
 function main() {
   rmSync(outputDir, { recursive: true, force: true })
   rmSync(join(fixtureDir, '.nuxt'), { recursive: true, force: true })
 
-  console.log('[check-auth-disabled-build-graph] building fixture (auth: false)...')
+  console.log('[check-auth-disabled-build-graph] building fixture (auth omitted)...')
   execFileSync('pnpm', ['exec', 'nuxi', 'build', '--cwd', fixtureDir], {
     cwd: repoRoot,
     stdio: 'inherit',
@@ -83,6 +121,7 @@ function main() {
   const violations = [
     ...scan(join(outputDir, 'public'), 'client graph'),
     ...scan(join(outputDir, 'server'), 'nitro graph'),
+    ...scanGeneratedPublicSurface(),
   ]
 
   if (violations.length > 0) {

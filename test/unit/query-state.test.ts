@@ -89,7 +89,7 @@ describe('query state helpers', () => {
           ...readyPaginatedState,
           refresh: 'pending',
         }),
-      ).toBe('loading-first-page')
+      ).toBe('pending')
     })
 
     it('returns error for any query error', () => {
@@ -109,23 +109,23 @@ describe('query state helpers', () => {
           ...readyPaginatedState,
           firstPage: { state: 'loading' },
         }),
-      ).toBe('loading-first-page')
+      ).toBe('pending')
     })
 
-    it('distinguishes ready, loading-more, and exhausted', () => {
-      expect(computePaginationStatus(readyPaginatedState)).toBe('ready')
+    it('collapses ready and exhausted pages into success while work stays pending', () => {
+      expect(computePaginationStatus(readyPaginatedState)).toBe('success')
       expect(
         computePaginationStatus({ ...readyPaginatedState, nextPage: { state: 'loading' } }),
-      ).toBe('loading-more')
+      ).toBe('pending')
       expect(
         computePaginationStatus({ ...readyPaginatedState, nextPage: { state: 'exhausted' } }),
-      ).toBe('exhausted')
+      ).toBe('success')
       expect(
         computePaginationStatus({
           ...readyPaginatedState,
           firstPage: { state: 'ready', isDone: true },
         }),
-      ).toBe('exhausted')
+      ).toBe('success')
     })
 
     it('keeps a first-page-only exhausted result out of loading-more', () => {
@@ -135,7 +135,7 @@ describe('query state helpers', () => {
           firstPage: { state: 'ready', isDone: true },
           nextPage: { state: 'loading' },
         }),
-      ).toBe('loading-more')
+      ).toBe('pending')
     })
   })
 
@@ -144,18 +144,18 @@ describe('query state helpers', () => {
       expect(
         computePaginationStale({
           keepPreviousData: true,
-          status: 'loading-first-page',
-          transformedResultCount: 0,
-          lastSettledResultCount: 3,
+          status: 'pending',
+          hasCurrentData: false,
+          hasLastSettledData: true,
         }),
       ).toBe(true)
 
       expect(
         computePaginationStale({
           keepPreviousData: true,
-          status: 'loading-more',
-          transformedResultCount: 0,
-          lastSettledResultCount: 3,
+          status: 'success',
+          hasCurrentData: false,
+          hasLastSettledData: true,
         }),
       ).toBe(false)
     })

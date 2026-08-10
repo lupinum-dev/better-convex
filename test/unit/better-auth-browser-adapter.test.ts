@@ -104,7 +104,7 @@ describe('Better Auth browser adapter', () => {
 
     expect(sessionChanged).not.toHaveBeenCalled()
     fixture.session.value = { isPending: false, data: stableData, error: null }
-    expect(sessionChanged.mock.calls).toEqual([['session-a', null]])
+    expect(sessionChanged.mock.calls).toEqual([['session-a', null, 1]])
     expect(adapter.snapshot()).toMatchObject({
       status: 'authenticated',
       identityKey: 'alice',
@@ -121,12 +121,12 @@ describe('Better Auth browser adapter', () => {
       },
     }
     expect(sessionChanged.mock.calls).toEqual([
-      ['session-a', null],
-      ['session-a', null],
+      ['session-a', null, 1],
+      ['session-a', null, 1],
     ])
 
     fixture.session.value = { isPending: false, data: null, error: null }
-    expect(sessionChanged).toHaveBeenLastCalledWith(null, null)
+    expect(sessionChanged).toHaveBeenLastCalledWith(null, null, 2)
     adapter.dispose()
   })
 
@@ -180,6 +180,32 @@ describe('Better Auth browser adapter', () => {
       identityKey: null,
       sessionGeneration: 3,
     })
+    adapter.dispose()
+  })
+
+  it('assigns a new revision when a failed-closed session later recovers', () => {
+    const data = {
+      session: { token: 'session-a' },
+      user: { id: 'alice' },
+    }
+    const fixture = source({ isPending: false, data, error: null }, [])
+    const sessionChanged = vi.fn()
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, {
+      authenticated: vi.fn(),
+      anonymous: vi.fn(),
+      sessionChanged,
+    })
+    expect(sessionChanged).toHaveBeenLastCalledWith('session-a', null, 1)
+
+    adapter.failClosed('static failure')
+    expect(sessionChanged).toHaveBeenLastCalledWith(
+      null,
+      'Authentication is temporarily unavailable',
+      2,
+    )
+
+    fixture.session.value = { isPending: false, data: { ...data }, error: null }
+    expect(sessionChanged).toHaveBeenLastCalledWith('session-a', null, 3)
     adapter.dispose()
   })
 
@@ -255,7 +281,11 @@ describe('Better Auth browser adapter', () => {
       sessionChanged,
     })
 
-    expect(sessionChanged).toHaveBeenCalledWith(null, 'Authentication is temporarily unavailable')
+    expect(sessionChanged).toHaveBeenCalledWith(
+      null,
+      'Authentication is temporarily unavailable',
+      1,
+    )
     const rendered = inspect(sessionChanged.mock.calls, { depth: null })
     for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
     adapter.dispose()
@@ -286,7 +316,9 @@ describe('Better Auth browser adapter', () => {
     })
     expect(listener).not.toHaveBeenCalled()
 
-    await adapter.refreshSession()
+    await expect(adapter.refreshSession()).rejects.toThrow(
+      'Authentication is temporarily unavailable',
+    )
     expect(fixture.refetch).toHaveBeenCalledOnce()
 
     fixture.refetch.mockRejectedValueOnce(new Error('raw-refetch-rejection-sentinel'))

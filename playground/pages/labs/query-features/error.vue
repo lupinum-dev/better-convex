@@ -16,11 +16,7 @@ definePageMeta({
  * - refresh() retries the query (still fails)
  */
 
-const { data, pending, status, error, refresh } = await useConvexQuery(
-  api.testing.alwaysFails,
-  {},
-  {},
-)
+const { data, pending, status, error, refresh } = await useConvexQuery(api.testing.alwaysFails, {})
 
 // Track retry count
 const retryCount = ref(0)
@@ -53,11 +49,11 @@ async function handleRetry() {
         </div>
         <div class="state-item">
           <span class="label">has error:</span>
-          <span data-testid="has-error" class="value">{{ error !== null }}</span>
+          <span data-testid="has-error" class="value">{{ error !== undefined }}</span>
         </div>
         <div class="state-item">
           <span class="label">has data:</span>
-          <span data-testid="has-data" class="value">{{ data !== null }}</span>
+          <span data-testid="has-data" class="value">{{ data !== undefined }}</span>
         </div>
         <div class="state-item">
           <span class="label">retry count:</span>

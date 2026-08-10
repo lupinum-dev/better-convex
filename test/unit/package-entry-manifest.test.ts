@@ -25,7 +25,6 @@ const nuxtEntrySubpaths = [
   './convex-auth/_generated/component.js',
   './convex-auth/test',
   './server',
-  './server/createUserSyncTriggers',
 ]
 const vueEntrySubpaths = ['.', './errors', './embedded', './mcp-app']
 const mcpEntrySubpaths = ['.']
@@ -70,7 +69,7 @@ describe('package entry manifest', () => {
     expect('sourceRoots' in manifest).toBe(false)
     expect(getPackageCheckerProfile('nuxt').sourceRoots).toEqual(['src/module.ts', 'src/runtime'])
     expect(manifest.entries.map((entry: PackageEntry) => entry.subpath)).toEqual(nuxtEntrySubpaths)
-    expect(manifest.entries).toHaveLength(9)
+    expect(manifest.entries).toHaveLength(8)
     expect(manifest.bins).toEqual({
       'better-convex-nuxt-auth-schema': './dist/runtime/cli/auth-schema.js',
       'better-convex-nuxt-convex': './dist/runtime/cli/convex.js',

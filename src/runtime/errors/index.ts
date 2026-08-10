@@ -9,7 +9,6 @@ export {
   normalizeConvexError,
 } from 'better-convex-vue/errors'
 export type {
-  CallResult,
   ConvexCallErrorInput,
   ConvexCallErrorKind,
   SerializedConvexCallError,

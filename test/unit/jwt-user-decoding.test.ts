@@ -35,7 +35,7 @@ describe('decodeUserFromJwt', () => {
     })
   })
 
-  it('preserves custom claims for augmented ConvexUser consumers', () => {
+  it('does not project custom JWT claims into the browser auth user', () => {
     const token = makeJwt({
       sub: 'user_123',
       name: 'Ada',
@@ -52,10 +52,6 @@ describe('decodeUserFromJwt', () => {
       id: 'user_123',
       name: 'Ada',
       email: 'ada@example.com',
-      role: 'admin',
-      organizationId: 'org_1',
-      flags: ['beta'],
-      profile: { theme: 'dark' },
     })
   })
 

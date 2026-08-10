@@ -46,7 +46,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = true
           identity.value = LOADING_IDENTITY
-          return createConvexQueryState(query, {}, { auth: 'none' }, true).resultData
+          return createConvexQueryState(query, {}, { auth: 'none' }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -65,7 +65,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = true
           identity.value = LOADING_IDENTITY
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -98,7 +98,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = ANONYMOUS_IDENTITY
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -129,7 +129,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = toAuthenticatedIdentity('jwt-u1', { id: 'u1' })
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -164,7 +164,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = toAuthenticatedIdentity('jwt-u1-1', { id: 'u1' })
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -193,7 +193,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )

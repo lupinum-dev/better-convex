@@ -77,7 +77,7 @@ describe('Nuxt shared client lifecycle conformance', () => {
 
     const beforeIdentityChange = {
       query: result.query.data.value ?? [],
-      pagination: result.pagination.results.value,
+      pagination: result.pagination.data.value ?? [],
       mutation: await result.mutation({ value: 'write' } as never),
       action: await result.action({ value: 'work' } as never),
     }
@@ -88,7 +88,7 @@ describe('Nuxt shared client lifecycle conformance', () => {
     await flush()
     const afterIdentityChange = {
       query: result.query.data.value,
-      pagination: result.pagination.results.value,
+      pagination: result.pagination.data.value,
       mutationStatus: result.mutation.status.value,
       actionStatus: result.action.status.value,
     }

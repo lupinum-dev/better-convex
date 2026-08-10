@@ -48,6 +48,11 @@ for (const manifestPath of manifestPaths) {
   if (dependencySpecifier(packageJson, '@convex-dev/better-auth')) {
     failures.push(`${manifestPath} still declares the removed @convex-dev/better-auth package`)
   }
+  if (dependencySpecifier(packageJson, 'kysely')) {
+    failures.push(
+      `${manifestPath} declares kysely directly; Better Auth owns its database dependency`,
+    )
+  }
 }
 
 for (const manifestPath of distributedAppManifests) {

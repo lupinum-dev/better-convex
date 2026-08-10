@@ -98,6 +98,7 @@ describe('auth proxy plugin routes', async () => {
       convex: {
         url: 'https://demo.convex.cloud',
         siteUrl: upstream.url,
+        auth: { origin: 'http://localhost:3000' },
       },
     },
   })

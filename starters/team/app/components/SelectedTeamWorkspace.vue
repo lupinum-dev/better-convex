@@ -7,13 +7,13 @@ import type { Member, PendingInvitation } from '~/utils/organizationModels'
 const props = defineProps<{
   organizationId: string
   teamId: string
-  members: Member[]
+  members: readonly Member[]
   membersPending: boolean
   membersError: string | null
   membersHaveMore: boolean
   canManageMembers?: boolean
   selectedTeamName?: string
-  invitations: PendingInvitation[]
+  invitations: readonly PendingInvitation[]
   invitationsPending: boolean
   invitationsError: string | null
   invitationsHaveMore: boolean

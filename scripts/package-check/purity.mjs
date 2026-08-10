@@ -353,6 +353,22 @@ function walkEntryGraph(entry, packageRoot, graphKind, entryPath, failures, insp
   return observedExternalSpecifiers
 }
 
+export function collectDeclarationExternalSpecifiers(
+  entryPath,
+  failures,
+  artifactRoot,
+  subpath = '.',
+) {
+  return walkEntryGraph(
+    { subpath },
+    realpathSync(artifactRoot),
+    'types',
+    entryPath,
+    failures,
+    new Map(),
+  )
+}
+
 function assertExactExternalSpecifiers(entry, graphKind, observed, expected, failures) {
   const expectedSet = new Set(expected)
   for (const specifier of observed) {

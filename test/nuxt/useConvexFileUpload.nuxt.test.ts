@@ -73,16 +73,17 @@ function deferred<T>() {
 }
 
 describe('useConvexFileUpload (Nuxt runtime)', () => {
-  it('can be created during SSR setup without a Convex client and fails when called', async () => {
+  it('can be created without a live transport and safely normalizes execution failure', async () => {
     const mutation = mockFnRef<'mutation'>('files:ssr-safe-upload-url')
 
     const { result } = await captureInNuxt(() => useConvexFileUpload(mutation))
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' })
 
     expect(result.status.value).toBe('idle')
-    await expect(result.upload(file)).rejects.toThrow('Convex client is unavailable')
+    await expect(result.upload(file)).rejects.toThrow('Unknown Convex error')
     expect(result.status.value).toBe('error')
     expect(result.pending.value).toBe(false)
+    expect(result.error.value?.kind).toBe('unknown')
   })
 
   it('uploads file, tracks progress, and stores returned storageId', async () => {

@@ -3,26 +3,18 @@ import {
   type PaginatedQueryArgs,
   type PaginatedQueryItem,
   type PaginatedQueryReference,
+  type UseConvexPaginatedQueryOptions,
+  type UseConvexPaginatedQueryState,
 } from 'better-convex-vue'
-import type { FunctionArgs, PaginationResult } from 'convex/server'
-import {
-  computed,
-  onScopeDispose,
-  toValue,
-  watch,
-  type ComputedRef,
-  type MaybeRefOrGetter,
-  type Ref,
-} from 'vue'
+import type { PaginationResult } from 'convex/server'
+import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
 import { identityToken } from '../auth/auth-identity'
 import { ConvexCallError, normalizeConvexError } from '../errors'
 import { readConvexRuntimeContext } from '../runtime-context'
-import type { ConvexQueryRest } from '../utils/args-tuple'
 import { useConvexIdentityState } from '../utils/auth-identity-state'
-import type { ConvexAuthMode } from '../utils/auth-status'
 import {
   fetchAuthToken,
   matchesConvexHydrationIdentity,
@@ -34,187 +26,194 @@ import { createQueryExecutionGate } from '../utils/query-execution-gate'
 import { createConvexQueryAuthContext } from '../utils/query-foundation'
 import { normalizeConvexReactiveArgs } from '../utils/reactive-args'
 import { getConvexRuntimeConfig } from '../utils/runtime-config'
-import {
-  computeSsrPaginationStatus,
-  isIncompletePaginationPage,
-} from '../utils/ssr-pagination-state'
+import { isIncompletePaginationPage } from '../utils/ssr-pagination-state'
 
-export type ConvexPaginatedQuerySkip = 'skip'
-export type ConvexPaginatedQueryArgs<Args> = Args | ConvexPaginatedQuerySkip
-
-export {
-  insertAtTop,
-  insertAtPosition,
-  insertAtBottomIfLoaded,
-  updateInPaginatedQuery,
-  deleteFromPaginatedQuery,
-  type PaginatedQueryReference,
-  type PaginatedQueryArgs,
-  type PaginatedQueryItem,
-  type InsertAtTopOptions,
-  type InsertAtPositionOptions,
-  type InsertAtBottomIfLoadedOptions,
-  type UpdateInPaginatedQueryOptions,
-  type DeleteFromPaginatedQueryOptions,
-} from './optimistic-updates'
-
-export type PaginatedQueryStatus =
-  | 'idle'
-  | 'loading-first-page'
-  | 'ready'
-  | 'loading-more'
-  | 'exhausted'
-  | 'error'
-
-export interface UseConvexPaginatedQueryOptions<Item = unknown, TransformedItem = Item> {
-  initialNumItems?: number
-  server?: boolean
-  subscribe?: boolean
-  initialData?: Item[] | (() => Item[])
-  transform?: (results: Item[]) => TransformedItem[]
-  keepPreviousData?: boolean
-  auth?: ConvexAuthMode
+export type {
+  PaginatedQueryArgs,
+  PaginatedQueryItem,
+  PaginatedQueryReference,
+  UseConvexPaginatedQueryState,
 }
 
-export interface UseConvexPaginatedQueryData<Item> {
-  results: ComputedRef<Item[]>
-  status: ComputedRef<PaginatedQueryStatus>
-  isLoading: ComputedRef<boolean>
-  isStale: ComputedRef<boolean>
-  hasNextPage: ComputedRef<boolean>
-  loadMore: (numItems: number) => void
-  error: Readonly<Ref<ConvexCallError | null>>
-  refresh: () => Promise<void>
-  reset: () => Promise<void>
+export interface UseNuxtConvexPaginatedQueryOptions extends UseConvexPaginatedQueryOptions {
+  readonly server?: boolean
 }
+
+export type NuxtConvexPaginatedQuery<Item> = UseConvexPaginatedQueryState<Item> &
+  Promise<UseConvexPaginatedQueryState<Item>>
 
 interface BuildConvexPaginatedQueryResult<Item> {
-  resultData: UseConvexPaginatedQueryData<Item>
+  resultData: UseConvexPaginatedQueryState<Item>
   resolvePromise: Promise<void>
 }
 
-type CheckedPaginatedQuery<Query extends PaginatedQueryReference> =
-  FunctionArgs<Query> extends { paginationOpts: unknown } ? Query : never
+function asNativeNuxtPromise<Item>(
+  state: UseConvexPaginatedQueryState<Item>,
+  resolvePromise: Promise<void>,
+): NuxtConvexPaginatedQuery<Item> {
+  const awaitedState = Object.freeze({ ...state }) as UseConvexPaginatedQueryState<Item>
+  const promise = resolvePromise.then(
+    () => awaitedState,
+    () => awaitedState,
+  )
 
-export function createConvexPaginatedQueryState<
-  Query extends PaginatedQueryReference,
-  Args extends ConvexPaginatedQueryArgs<PaginatedQueryArgs<Query>> = PaginatedQueryArgs<Query>,
-  TransformedItem = PaginatedQueryItem<Query>,
->(
-  query: CheckedPaginatedQuery<Query>,
-  args: MaybeRefOrGetter<Args>,
-  options?: UseConvexPaginatedQueryOptions<PaginatedQueryItem<Query>, TransformedItem>,
+  void Object.assign(promise, state)
+  void Object.defineProperties(promise, {
+    then: { enumerable: true, value: promise.then.bind(promise) },
+    catch: { enumerable: true, value: promise.catch.bind(promise) },
+    finally: { enumerable: true, value: promise.finally.bind(promise) },
+  })
+  return promise as NuxtConvexPaginatedQuery<Item>
+}
+
+export function createConvexPaginatedQueryState<Query extends PaginatedQueryReference>(
+  query: Query,
+  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  options: UseNuxtConvexPaginatedQueryOptions,
   resolveImmediately = false,
-): BuildConvexPaginatedQueryResult<TransformedItem> {
+): BuildConvexPaginatedQueryResult<PaginatedQueryItem<Query>> {
   type Item = PaginatedQueryItem<Query>
   const config = getConvexRuntimeConfig()
-  const initialNumItems = options?.initialNumItems ?? 10
-  const server = options?.server ?? config.defaults.server
-  const subscribe = options?.subscribe ?? config.defaults.subscribe
-  const auth = options?.auth ?? 'optional'
+  const initialNumItems = options.initialNumItems
+  if (!Number.isSafeInteger(initialNumItems) || initialNumItems < 1) {
+    throw new Error('[better-convex-nuxt] initialNumItems must be a positive safe integer')
+  }
+  const server = options.server ?? true
+  const auth = options.auth ?? 'optional'
 
   if (import.meta.client) {
     const authContext = createConvexQueryAuthContext()
-    const hydratedArgs = normalizeConvexReactiveArgs(toValue(args)) as Args
-    const hydrationGate = createQueryExecutionGate({
-      authStatus: authContext.status.value,
-      authMode: auth,
-      identityKey: authContext.identityKey.value,
-      skipped: hydratedArgs === 'skip',
+    const currentBoundary = computed(() => {
+      const currentArgs = normalizeConvexReactiveArgs(toValue(args)) as
+        | PaginatedQueryArgs<Query>
+        | 'skip'
+      const gate = createQueryExecutionGate({
+        authStatus: authContext.status.value,
+        authMode: auth,
+        identityKey: authContext.identityKey.value,
+        skipped: currentArgs === 'skip',
+      })
+      const key =
+        gate.outcome === 'execute'
+          ? withAuthDimension(
+              createConvexQueryKey(
+                query,
+                {
+                  ...(currentArgs as PaginatedQueryArgs<Query>),
+                  paginationOpts: { numItems: initialNumItems, cursor: null },
+                } as never,
+                'convex-paginated',
+              ),
+              auth,
+              gate.cacheIdentity,
+            )
+          : `convex-paginated:${gate.outcome}:${getFunctionName(query)}`
+      return { gate, key }
     })
-    const hydrationKey =
-      hydrationGate.outcome === 'execute'
-        ? withAuthDimension(
-            createConvexQueryKey(
-              query,
-              {
-                ...(hydratedArgs as PaginatedQueryArgs<Query>),
-                paginationOpts: { numItems: initialNumItems, cursor: null },
-              } as never,
-              'convex-paginated',
-            ),
-            auth,
-            hydrationGate.cacheIdentity,
-          )
-        : `convex-paginated:${hydrationGate.outcome}:${getFunctionName(query)}`
+    const hydrationBoundary = currentBoundary.value
+    const hydrationKey = hydrationBoundary.key
     const nuxtApp = useNuxtApp()
     const runtime = readConvexRuntimeContext(nuxtApp)
     const hydrationIdentityMatches =
-      hydrationGate.outcome === 'execute' &&
+      hydrationBoundary.gate.outcome === 'execute' &&
       matchesConvexHydrationIdentity(
         auth,
-        hydrationGate.cacheIdentity,
+        hydrationBoundary.gate.cacheIdentity,
         runtime?.attachment.identity.snapshot(),
       )
-    const hydrated = hydrationIdentityMatches
-      ? (nuxtApp.payload.data[hydrationKey] as PaginationResult<Item> | null | undefined)
-      : undefined
+    const hydrationRetired = ref(false)
+    const matchesHydrationBoundary = () => {
+      const boundary = currentBoundary.value
+      return (
+        hydrationIdentityMatches &&
+        boundary.key === hydrationKey &&
+        boundary.gate.outcome === 'execute' &&
+        matchesConvexHydrationIdentity(
+          auth,
+          boundary.gate.cacheIdentity,
+          runtime?.attachment.identity.snapshot(),
+        )
+      )
+    }
+    const hydrationBoundaryMatches = computed(
+      () => !hydrationRetired.value && matchesHydrationBoundary(),
+    )
+    const stopHydrationBoundaryRetirement = watch(
+      currentBoundary,
+      () => {
+        if (!matchesHydrationBoundary()) hydrationRetired.value = true
+      },
+      { flush: 'sync' },
+    )
+    const hydrated =
+      hydrationIdentityMatches && Object.hasOwn(nuxtApp.payload.data, hydrationKey)
+        ? (nuxtApp.payload.data[hydrationKey] as PaginationResult<Item> | null | undefined)
+        : undefined
+    const hasHydratedPage = hydrated !== null && hydrated !== undefined
     const hydratedErrors = useState<Record<string, ConvexCallError | null>>(
       'convex:query-errors',
       () => ({}),
     )
-    const result = useVuePaginatedQuery<Query, TransformedItem>(query, args, {
-      initialNumItems,
-      subscribe,
-      initialData: options?.initialData,
-      initialPage: hydrated ?? undefined,
-      transform: options?.transform,
-      keepPreviousData: options?.keepPreviousData,
-      auth,
-    })
+    let firstPageSettled = Promise.resolve()
+    const result = Reflect.apply(useVuePaginatedQuery, undefined, [
+      query,
+      args,
+      { initialNumItems, auth, keepPreviousData: options.keepPreviousData },
+      {
+        initialPage: hasHydratedPage ? hydrated : undefined,
+        onFirstPageSettled(promise: Promise<void>) {
+          firstPageSettled = promise
+        },
+      },
+    ]) as UseConvexPaginatedQueryState<Item>
     const clearHydratedError = () => {
       if (!(hydrationKey in hydratedErrors.value)) return
       const { [hydrationKey]: _removed, ...rest } = hydratedErrors.value
       hydratedErrors.value = rest
     }
     const stopHydratedErrorReconciliation = watch(
-      [result.error, result.status],
-      ([liveError, liveStatus]) => {
-        if (liveError || liveStatus !== 'loading-first-page') clearHydratedError()
+      [result.error, result.status, hydrationBoundaryMatches],
+      ([liveError, liveStatus, boundaryMatches]) => {
+        if (boundaryMatches && (liveError || liveStatus !== 'pending')) clearHydratedError()
       },
       { flush: 'sync' },
     )
-    onScopeDispose(stopHydratedErrorReconciliation)
+    onScopeDispose(() => {
+      stopHydrationBoundaryRetirement()
+      stopHydratedErrorReconciliation()
+    })
     const error = computed(
       () =>
         result.error.value ??
-        (hydrationIdentityMatches ? hydratedErrors.value[hydrationKey] : null) ??
-        null,
+        (hydrationBoundaryMatches.value ? hydratedErrors.value[hydrationKey] : undefined) ??
+        undefined,
     )
-    const status = computed<PaginatedQueryStatus>(() =>
+    const status = computed<'idle' | 'pending' | 'success' | 'error'>(() =>
       error.value ? 'error' : result.status.value,
     )
-    const isLoading = computed(() => (error.value ? false : result.isLoading.value))
-    const resultData: UseConvexPaginatedQueryData<TransformedItem> = {
+    const isLoading = computed(() => status.value === 'pending')
+    const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
       ...result,
       error,
       status,
       isLoading,
-      reset: async () => {
-        clearHydratedError()
-        await result.reset()
-      },
-    }
+    })
     return {
       resultData,
       resolvePromise:
         resolveImmediately ||
-        hydrated !== undefined ||
-        options?.initialData !== undefined ||
-        error.value
+        !server ||
+        hasHydratedPage ||
+        error.value !== undefined ||
+        status.value === 'idle'
           ? Promise.resolve()
-          : subscribe
-            ? result.firstPageSettled()
-            : result.refresh(),
+          : firstPageSettled,
     }
   }
 
   const authContext = createConvexQueryAuthContext()
   const currentArgs = computed(
-    () =>
-      normalizeConvexReactiveArgs(toValue(args)) as ConvexPaginatedQueryArgs<
-        PaginatedQueryArgs<Query>
-      >,
+    () => normalizeConvexReactiveArgs(toValue(args)) as PaginatedQueryArgs<Query> | 'skip',
   )
   const gate = computed(() =>
     createQueryExecutionGate({
@@ -288,64 +287,48 @@ export function createConvexPaginatedQueryState<
     },
     { server, lazy: resolveImmediately, deep: false },
   )
-  const rawResults = computed(() => asyncData.data.value?.page ?? options?.initialData ?? [])
-  const results = computed<TransformedItem[]>(() => {
-    const raw = typeof rawResults.value === 'function' ? rawResults.value() : rawResults.value
-    return options?.transform ? options.transform(raw) : (raw as unknown as TransformedItem[])
-  })
+  const data = computed<readonly Item[] | undefined>(() => asyncData.data.value?.page)
   const error = computed(
     () =>
       errors.value[key.value] ??
       (gate.value.outcome === 'error'
         ? (authContext.error.value ??
           normalizeConvexError(new Error('Authentication failed before the query could execute')))
-        : null),
+        : undefined) ??
+      undefined,
   )
-  const status = computed<PaginatedQueryStatus>(() =>
-    computeSsrPaginationStatus({
-      execution: gate.value.outcome,
-      hasError: error.value !== null,
-      pending: asyncData.pending.value,
-      hasPage: asyncData.data.value !== null,
-      hasInitialData: options?.initialData !== undefined,
-      isDone: asyncData.data.value?.isDone === true,
-    }),
-  )
-  const resultData: UseConvexPaginatedQueryData<TransformedItem> = {
-    results,
+  const status = computed<'idle' | 'pending' | 'success' | 'error'>(() => {
+    if (error.value) return 'error'
+    if (gate.value.outcome === 'idle') return 'idle'
+    if (gate.value.outcome === 'wait' || asyncData.pending.value) return 'pending'
+    return asyncData.data.value === null ? 'pending' : 'success'
+  })
+  const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
+    data,
     status,
-    isLoading: computed(() => status.value === 'loading-first-page'),
+    isLoading: computed(() => status.value === 'pending'),
     isStale: computed(() => false),
-    hasNextPage: computed(() => Boolean(asyncData.data.value && !asyncData.data.value.isDone)),
+    canLoadMore: computed(
+      () => status.value === 'success' && asyncData.data.value?.isDone === false,
+    ),
     loadMore: () => {},
     error,
     refresh: asyncData.refresh,
-    reset: async () => {
-      asyncData.clear()
-      await asyncData.refresh()
-    },
-  }
+  })
   return {
     resultData,
     resolvePromise:
-      server && gate.value.outcome !== 'idle' ? asyncData.then(() => {}) : Promise.resolve(),
+      server && gate.value.outcome !== 'idle'
+        ? Promise.resolve(asyncData).then(() => {})
+        : Promise.resolve(),
   }
 }
 
-export async function useConvexPaginatedQuery<
-  Query extends PaginatedQueryReference,
-  Args extends ConvexPaginatedQueryArgs<PaginatedQueryArgs<Query>> = PaginatedQueryArgs<Query>,
-  TransformedItem = PaginatedQueryItem<Query>,
->(
-  query: CheckedPaginatedQuery<Query>,
-  ...rest: ConvexQueryRest<
-    PaginatedQueryArgs<Query>,
-    MaybeRefOrGetter<ConvexPaginatedQueryArgs<NoInfer<Args>>>,
-    UseConvexPaginatedQueryOptions<PaginatedQueryItem<Query>, TransformedItem>
-  >
-): Promise<UseConvexPaginatedQueryData<TransformedItem>> {
-  const [args, options] = rest
-  const result = createConvexPaginatedQueryState(query, args as MaybeRefOrGetter<Args>, options)
-  await result.resolvePromise
-  return result.resultData
+export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
+  query: Query,
+  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  options: UseNuxtConvexPaginatedQueryOptions,
+): NuxtConvexPaginatedQuery<PaginatedQueryItem<Query>> {
+  const result = createConvexPaginatedQueryState(query, args, options)
+  return asNativeNuxtPromise(result.resultData, result.resolvePromise)
 }

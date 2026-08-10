@@ -44,7 +44,7 @@ function withCandidateManifest(
 }
 
 describe('package-profile SBOM generation', () => {
-  it('roots the Nuxt SBOM in the reviewed package and preserves consumer peers', () => {
+  it('roots the Nuxt SBOM in the reviewed package and distinguishes optional auth peers', () => {
     const directory = mkdtempSync(join(tmpdir(), 'bcn-sbom-output-'))
     try {
       const output = join(directory, 'sbom.cdx.json')
@@ -59,7 +59,7 @@ describe('package-profile SBOM generation', () => {
         metadata: { component: { name: string } }
       }
       expect(sbom.metadata.component.name).toBe('better-convex-nuxt')
-      for (const peer of ['better-auth', 'convex', 'kysely', 'nuxt']) {
+      for (const peer of ['convex', 'nuxt']) {
         expect(sbom.components).toContainEqual(
           expect.objectContaining({
             name: peer,
@@ -72,12 +72,26 @@ describe('package-profile SBOM generation', () => {
           }),
         )
       }
+      for (const peer of ['@better-auth/oauth-provider', 'better-auth']) {
+        expect(sbom.components).toContainEqual(
+          expect.objectContaining({
+            name: peer,
+            properties: [
+              {
+                name: 'better-convex-nuxt:dependency-kind',
+                value: 'optional-peer',
+              },
+            ],
+          }),
+        )
+      }
+      expect(sbom.components).not.toContainEqual(expect.objectContaining({ name: 'kysely' }))
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
   }, 120_000)
 
-  it('roots the Vue SBOM in exactly its four production components', () => {
+  it('roots the Vue SBOM in its base graph and optional MCP App peers', () => {
     const directory = mkdtempSync(join(tmpdir(), 'bcv-sbom-output-'))
     try {
       const output = join(directory, 'sbom.cdx.json')
@@ -95,21 +109,29 @@ describe('package-profile SBOM generation', () => {
       expect(sbom.metadata.component.name).toBe('better-convex-vue')
       expect(sbom.components.map(({ name }) => name).sort()).toEqual([
         '@modelcontextprotocol/ext-apps',
+        '@modelcontextprotocol/sdk',
         'convex',
         'ohash',
         'vue',
+        'zod',
       ])
-      expect(sbom.components.find(({ name }) => name === '@modelcontextprotocol/ext-apps')).toEqual(
-        expect.objectContaining({
-          version: '1.7.5',
-          properties: [
-            {
-              name: 'better-convex-vue:dependency-kind',
-              value: 'optional-peer',
-            },
-          ],
-        }),
-      )
+      for (const [name, version] of [
+        ['@modelcontextprotocol/ext-apps', '1.7.5'],
+        ['@modelcontextprotocol/sdk', '1.30.0'],
+        ['zod', '4.4.3'],
+      ] as const) {
+        expect(sbom.components.find((component) => component.name === name)).toEqual(
+          expect.objectContaining({
+            version,
+            properties: [
+              {
+                name: 'better-convex-vue:dependency-kind',
+                value: 'optional-peer',
+              },
+            ],
+          }),
+        )
+      }
       expect(sbom.components.find(({ name }) => name === 'convex')?.version).toBe(
         vuePackageManifest.devDependencies.convex,
       )

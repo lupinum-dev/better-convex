@@ -23,21 +23,6 @@ export type OptimisticUpdate<Args> = (store: OptimisticLocalStore, args: Args) =
 
 type OptimisticUpdateCandidate<Args> = (store: OptimisticLocalStore, args: Args) => unknown
 
-type ReturnHasThen<Result> = Result extends unknown
-  ? 'then' extends keyof Result
-    ? true
-    : false
-  : never
-
-type OptimisticReturnHasThen<Update extends (...args: never[]) => unknown> = ReturnHasThen<
-  ReturnType<Update>
->
-
-type SynchronousOptimisticUpdate<Update extends (...args: never[]) => unknown> =
-  true extends OptimisticReturnHasThen<Update>
-    ? 'Optimistic update handlers must be synchronous'
-    : unknown
-
 export type UseConvexMutationOptions<Args> = Readonly<{ optimisticUpdate?: OptimisticUpdate<Args> }>
 
 interface InternalCallableOptions<Args, Result> {
@@ -130,13 +115,6 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
 export function useConvexMutation<Mutation extends FunctionReference<'mutation'>>(
   mutation: Mutation,
   options?: UseConvexMutationOptions<FunctionArgs<Mutation>>,
-): UseConvexCall<Mutation>
-export function useConvexMutation<
-  Mutation extends FunctionReference<'mutation'>,
-  Update extends OptimisticUpdateCandidate<FunctionArgs<Mutation>>,
->(
-  mutation: Mutation,
-  options: Readonly<{ optimisticUpdate: Update }> & SynchronousOptimisticUpdate<Update>,
 ): UseConvexCall<Mutation>
 export function useConvexMutation<Mutation extends FunctionReference<'mutation'>>(
   mutation: Mutation,

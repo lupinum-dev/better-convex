@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@better-auth/oauth-provider": "1.7.0-rc.2",
+    "better-auth": "1.7.0-rc.2",
     "better-convex-nuxt": "workspace:*"
   },
   "peerDependencies": {

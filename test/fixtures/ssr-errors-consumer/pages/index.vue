@@ -26,7 +26,7 @@ import { ConvexCallError } from '../../../../src/runtime/errors'
 //
 const query = makeFunctionReference<'query'>('fixture:query')
 
-const result = await useConvexQuery(query, {}, { subscribe: false })
+const result = await useConvexQuery(query, {})
 
 onMounted(() => {
   const e = result.error.value

@@ -1,69 +1,25 @@
-import {
-  normalizeConvexAuthConfig,
-  type ConvexRouteProtectionConfig,
-  type NormalizedConvexAuthConfig,
-} from './auth-config'
-import { normalizeMaxConcurrent, normalizeWaitTimeoutMs } from './config-defaults'
+import { normalizeConvexAuthConfig, type NormalizedConvexAuthConfig } from './auth-config'
 import { resolveConvexSiteUrl } from './convex-config'
 import type { LogLevel } from './logger'
 import { normalizeConvexDeploymentUrl, normalizeConvexSiteUrl } from './site-url'
 
 /**
- * Fixed query defaults . There is no `auth` default: query auth
- * policy is `optional` by default and is never a per-build knob.
- */
-export interface ConvexRuntimeDefaults {
-  server: boolean
-  subscribe: boolean
-  /** WS first-result wait timeout (ms) for awaited subscribe-mode queries. */
-  waitTimeoutMs: number
-}
-
-/**
- * The internal, fully materialized per-app runtime config. `auth` is the
- * discriminated {@link NormalizedConvexAuthConfig} (`false` or a complete options
- * object including the internal-only `debug` channels). The public projection is
- * {@link ConvexRuntimeConfig}, returned by `useConvexConfig()`.
+ * The internal, fully materialized per-app runtime config. `auth` is false for
+ * the no-auth build or the one normalized auth policy selected at build time.
  */
 export interface NormalizedConvexRuntimeConfig {
   url?: string
   siteUrl?: string
   auth: NormalizedConvexAuthConfig
   logging: LogLevel | false
-  upload: {
-    maxConcurrent: number
-  }
-  defaults: ConvexRuntimeDefaults
 }
 
 /**
- * The normalized PUBLIC runtime config , returned read-only by
- * `useConvexConfig()`. Its `auth` object omits the internal-only `debug` channels
- * and the build-only `client` path. `auth === false` is the only disabled signal.
+ * The minimal public connection projection returned by `useConvexConfig()`.
  */
 export interface ConvexRuntimeConfig {
   readonly url: string | undefined
   readonly siteUrl: string | undefined
-  readonly auth:
-    | false
-    | {
-        readonly publicOrigin: string
-        readonly proxy: Readonly<{
-          maxRequestBodyBytes: number
-          maxResponseBodyBytes: number
-          trustedClientIpHeader: string
-        }>
-        readonly routeProtection: Readonly<ConvexRouteProtectionConfig>
-      }
-  readonly defaults: {
-    readonly server: boolean
-    readonly subscribe: boolean
-    readonly waitTimeoutMs: number
-  }
-  readonly upload: {
-    readonly maxConcurrent: number
-  }
-  readonly logging: LogLevel | false
 }
 
 function asRecord(input: unknown): Record<string, unknown> | null {
@@ -72,8 +28,6 @@ function asRecord(input: unknown): Record<string, unknown> | null {
 
 export function normalizeConvexRuntimeConfig(input: unknown): NormalizedConvexRuntimeConfig {
   const raw = asRecord(input)
-  const defaults = asRecord(raw?.defaults)
-  const upload = asRecord(raw?.upload)
 
   // URL/siteUrl are resolved from runtimeConfig only. module.ts reads env at build
   // time; Nuxt's native `NUXT_PUBLIC_*` runtime override supplies deploy-time
@@ -98,14 +52,6 @@ export function normalizeConvexRuntimeConfig(input: unknown): NormalizedConvexRu
       raw?.logging === false || typeof raw?.logging === 'string'
         ? (raw.logging as LogLevel | false)
         : false,
-    upload: {
-      maxConcurrent: normalizeMaxConcurrent(upload?.maxConcurrent),
-    },
-    defaults: {
-      server: defaults?.server !== false,
-      subscribe: defaults?.subscribe !== false,
-      waitTimeoutMs: normalizeWaitTimeoutMs(defaults?.waitTimeoutMs),
-    },
   }
 }
 
@@ -113,25 +59,8 @@ export function normalizeConvexRuntimeConfig(input: unknown): NormalizedConvexRu
 export function toPublicConvexRuntimeConfig(
   internal: NormalizedConvexRuntimeConfig,
 ): ConvexRuntimeConfig {
-  const auth =
-    internal.auth === false
-      ? (false as const)
-      : {
-          publicOrigin: internal.auth.publicOrigin,
-          proxy: internal.auth.proxy,
-          routeProtection: internal.auth.routeProtection,
-        }
-
   return {
     url: internal.url,
     siteUrl: internal.siteUrl,
-    auth,
-    defaults: {
-      server: internal.defaults.server,
-      subscribe: internal.defaults.subscribe,
-      waitTimeoutMs: internal.defaults.waitTimeoutMs,
-    },
-    upload: { maxConcurrent: internal.upload.maxConcurrent },
-    logging: internal.logging,
   }
 }

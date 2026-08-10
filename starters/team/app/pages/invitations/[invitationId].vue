@@ -5,11 +5,11 @@ import { api } from '#convex/api'
 
 const route = useRoute()
 const invitationId = computed(() => route.params.invitationId as string)
-const { isAuthenticated, isPending, refresh, user } = useConvexAuth()
+const { status, error: authError, user } = useConvexAuth()
 const acceptInvitation = useConvexMutation(api.invitations.accept)
 const rejectInvitation = useConvexMutation(api.invitations.reject)
 const shouldLoadInvitation = computed(
-  () => isAuthenticated.value && user.value?.emailVerified === true,
+  () => status.value === 'authenticated' && user.value?.emailVerified === true,
 )
 const {
   data: invitation,
@@ -57,7 +57,6 @@ async function accept() {
     const result = await acceptInvitation({
       invitationId: invitationId.value,
     })
-    await refresh()
     await navigateTo(`/organizations/${result.organizationId}`)
   } catch (error) {
     actionError.value = error instanceof Error ? error.message : 'Invitation was not accepted'
@@ -91,10 +90,14 @@ async function reject() {
       <h1>Join an organization</h1>
     </section>
 
-    <section v-if="isPending" class="empty">Checking session...</section>
+    <section v-if="status === 'loading'" class="empty">Checking session...</section>
+
+    <section v-else-if="status === 'error'" class="empty">
+      {{ authError?.message ?? 'Authentication failed.' }}
+    </section>
 
     <AuthPanel
-      v-else-if="!isAuthenticated"
+      v-else-if="status === 'anonymous'"
       message="Sign in or create an account with the invited email address to continue."
     />
 

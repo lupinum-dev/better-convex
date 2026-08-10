@@ -27,7 +27,7 @@ never receives a raw `ConvexClient` and never controls replacement or disposal.
 The proof target is the smallest contract equivalent to:
 
 ```ts
-interface BetterConvexAuthSnapshot {
+interface BrowserAuthSnapshot {
   status: 'loading' | 'authenticated' | 'anonymous' | 'error'
   identityKey: string | null
   sessionGeneration: number
@@ -35,7 +35,7 @@ interface BetterConvexAuthSnapshot {
 }
 
 interface BetterConvexAuthAdapter {
-  snapshot(): BetterConvexAuthSnapshot
+  snapshot(): BrowserAuthSnapshot
   subscribe(listener: () => void): () => void
   fetchToken(input: { forceRefreshToken: boolean }): Promise<string | null>
 }

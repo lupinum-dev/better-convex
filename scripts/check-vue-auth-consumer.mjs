@@ -147,7 +147,7 @@ try {
   assertDeepEqual(
     operations.query,
     {
-      data: null,
+      data: undefined,
       status: 'pending',
       pending: true,
       error: null,
@@ -157,11 +157,11 @@ try {
   assertDeepEqual(
     operations.pagination,
     {
-      results: [],
-      status: 'loading-first-page',
+      data: undefined,
+      status: 'pending',
       loading: true,
       stale: false,
-      hasNextPage: false,
+      canLoadMore: false,
       error: null,
     },
     'Initial pagination state',
@@ -176,16 +176,16 @@ try {
     continueCursor: 'cursor-empty',
     isDone: false,
   })
-  assertDeepEqual(operations.pagination.results, [{ id: 'page-a' }], 'First page')
-  assertDeepEqual(operations.pagination.hasNextPage, true, 'First page continuation')
+  assertDeepEqual(operations.pagination.data, [{ id: 'page-a' }], 'First page')
+  assertDeepEqual(operations.pagination.canLoadMore, true, 'First page continuation')
   await invoke('loadMore', 1)
   operations = await invoke('emitPage', 'cursor-empty', {
     page: [],
     continueCursor: 'cursor-tail',
     isDone: false,
   })
-  assertDeepEqual(operations.pagination.results, [{ id: 'page-a' }], 'Empty continuation page')
-  assertDeepEqual(operations.pagination.hasNextPage, true, 'Empty page continuation')
+  assertDeepEqual(operations.pagination.data, [{ id: 'page-a' }], 'Empty continuation page')
+  assertDeepEqual(operations.pagination.canLoadMore, true, 'Empty page continuation')
   await invoke('loadMore', 1)
   operations = await invoke('emitPage', 'cursor-tail', {
     page: [{ id: 'page-b' }],
@@ -193,16 +193,17 @@ try {
     isDone: true,
   })
   assertDeepEqual(
-    operations.pagination.results,
+    operations.pagination.data,
     [{ id: 'page-a' }, { id: 'page-b' }],
     'Pagination cursor chain',
   )
-  assertDeepEqual(operations.pagination.status, 'exhausted', 'Pagination exhaustion')
+  assertDeepEqual(operations.pagination.status, 'success', 'Pagination exhaustion')
+  assertDeepEqual(operations.pagination.canLoadMore, false, 'Exhausted continuation state')
 
   const subscriptionsBeforeArgsChange = await invoke('subscriptions')
   operations = await invoke('setOwner', 'bob')
-  assertDeepEqual(operations.query.data, null, 'Query data after argument boundary')
-  assertDeepEqual(operations.pagination.results, [], 'Pagination after argument boundary')
+  assertDeepEqual(operations.query.data, undefined, 'Query data after argument boundary')
+  assertDeepEqual(operations.pagination.data, undefined, 'Pagination after argument boundary')
   const subscriptionsAfterArgsChange = await invoke('subscriptions')
   if (
     subscriptionsAfterArgsChange
@@ -225,7 +226,7 @@ try {
     continueCursor: '',
     isDone: true,
   })
-  assertDeepEqual(operations.pagination.results, [{ id: 'page-bob' }], 'Page after args change')
+  assertDeepEqual(operations.pagination.data, [{ id: 'page-bob' }], 'Page after args change')
 
   assertDeepEqual(
     await invoke('runMutation', 'write'),
@@ -257,8 +258,8 @@ try {
     identityGeneration: 2,
   })
   operations = await invoke('operationSnapshot')
-  assertDeepEqual(operations.query.data, null, 'Query retirement across identity')
-  assertDeepEqual(operations.pagination.results, [], 'Pagination retirement across identity')
+  assertDeepEqual(operations.query.data, undefined, 'Query retirement across identity')
+  assertDeepEqual(operations.pagination.data, undefined, 'Pagination retirement across identity')
   assertDeepEqual(operations.mutation.status, 'idle', 'Mutation retirement across identity')
   const retiredMutation = await invoke('finishDeferredMutation', 'should-not-commit')
   assertDeepEqual(retiredMutation.ok, false, 'Retired mutation completion')
@@ -272,16 +273,6 @@ try {
   const afterProviderRefresh = await invoke('stats')
   if (afterProviderRefresh.tokenFetches !== beforeProviderRefresh.tokenFetches) {
     throw new Error('Value-identical provider notification unexpectedly fetched a token')
-  }
-  const beforeRefresh = await invoke('stats')
-  assertSnapshot(await invoke('refresh'), {
-    settled: true,
-    identityKey: 'user:alice',
-    identityGeneration: 2,
-  })
-  const afterRefresh = await invoke('stats')
-  if (afterRefresh.tokenFetches !== beforeRefresh.tokenFetches + 1) {
-    throw new Error('Explicit refresh did not fetch exactly one new token')
   }
   assertSnapshot(await invoke('transition', 'authenticated', 'alice', 3, tokenSentinel), {
     settled: true,

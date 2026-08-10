@@ -5,7 +5,6 @@ import {
   useConvexPaginatedQuery,
   useConvexQuery,
   type BetterConvexAuthAdapter,
-  type BetterConvexAuthSnapshot,
 } from 'better-convex-vue'
 import {
   makeFunctionReference,
@@ -25,7 +24,8 @@ import {
   resolveDeferredMutation,
 } from '../../browser-runtime/mock-convex-browser'
 
-type AuthStatus = BetterConvexAuthSnapshot['status']
+type BrowserAuthSnapshot = ReturnType<BetterConvexAuthAdapter['snapshot']>
+type AuthStatus = BrowserAuthSnapshot['status']
 interface Note {
   id: string
 }
@@ -61,7 +61,7 @@ const generateNote = makeFunctionReference<'action'>('notes:generate') as Functi
   OperationValue
 >
 
-let authSnapshot: BetterConvexAuthSnapshot = {
+let authSnapshot: BrowserAuthSnapshot = {
   status: 'loading',
   identityKey: null,
   sessionGeneration: 0,
@@ -94,6 +94,24 @@ function safeSnapshot() {
 
 function renderSnapshot(): void {
   renderedSnapshot.value = JSON.stringify(safeSnapshot())
+}
+
+async function waitForCurrentSettlement(): Promise<void> {
+  const identity = plugin.attachment().identity
+  if (identity.snapshot().settled) return
+  await new Promise<void>((resolve) => {
+    let stop: (() => void) | null = null
+    let settledBeforeSubscriptionReturned = false
+    const finish = () => {
+      if (!identity.snapshot().settled) return
+      if (stop) stop()
+      else settledBeforeSubscriptionReturned = true
+      resolve()
+    }
+    stop = identity.subscribe(finish)
+    if (settledBeforeSubscriptionReturned) stop()
+    else finish()
+  })
 }
 
 function serializeError(error: unknown) {
@@ -139,11 +157,11 @@ function operationSnapshot() {
       error: serializeError(operations.query.error.value),
     },
     pagination: {
-      results: operations.pagination.results.value,
+      data: operations.pagination.data.value,
       status: operations.pagination.status.value,
       loading: operations.pagination.isLoading.value,
       stale: operations.pagination.isStale.value,
-      hasNextPage: operations.pagination.hasNextPage.value,
+      canLoadMore: operations.pagination.canLoadMore.value,
       error: serializeError(operations.pagination.error.value),
     },
     mutation: {
@@ -196,7 +214,7 @@ async function transition(
     error: status === 'error' ? new Error(token ?? 'Provider authentication failed') : null,
   }
   for (const listener of [...authListeners]) listener()
-  await plugin.ready()
+  await waitForCurrentSettlement()
   await nextTick()
   renderSnapshot()
   return safeSnapshot()
@@ -265,11 +283,6 @@ Object.assign(window, {
       } catch (error) {
         return { ok: false, error: serializeError(error) }
       }
-    },
-    async refresh() {
-      await plugin.refreshAuth()
-      renderSnapshot()
-      return safeSnapshot()
     },
     rejectCurrent() {
       rejectCurrentCredential()

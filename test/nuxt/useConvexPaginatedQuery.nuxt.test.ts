@@ -1,5 +1,6 @@
 import type { PaginationResult } from 'convex/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 
 import { useState } from '#imports'
 
@@ -63,9 +64,117 @@ describe('useConvexPaginatedQuery controller', () => {
     primary.emitQueryResultWhere(() => true, page(['live'], false, 'next'))
     await flush()
 
-    expect(queryResult.error.value).toBeNull()
-    expect(queryResult.status.value).toBe('ready')
-    expect(queryResult.results.value).toEqual(['live'])
+    expect(queryResult.error.value).toBeUndefined()
+    expect(queryResult.status.value).toBe('success')
+    expect(queryResult.data.value).toEqual(['live'])
+    wrapper.unmount()
+  })
+
+  it('retires a hydrated SSR error when reactive arguments change', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:ssr-error-argument-boundary')
+    const initialArgs = { category: 'alpha' }
+    const replacementArgs = { category: 'beta' }
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { ...initialArgs, paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'none',
+      'anonymous',
+    )
+    const ssrError = new ConvexCallError({
+      kind: 'transport',
+      message: 'Sanitized pagination transport failure',
+      status: 500,
+    })
+    const { result, flush, wrapper } = await captureInNuxt(
+      () => {
+        const args = ref(initialArgs)
+        const errors = useState<Record<string, ConvexCallError | null>>('convex:query-errors')
+        errors.value = { [key]: ssrError }
+        return {
+          args,
+          errors,
+          query: useConvexPaginatedQuery(query, args, {
+            auth: 'none',
+            initialNumItems: 2,
+          }),
+          stableQuery: useConvexPaginatedQuery(query, initialArgs, {
+            auth: 'none',
+            initialNumItems: 2,
+          }),
+        }
+      },
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: null },
+      },
+    )
+
+    expect(result.query.error.value).toBe(ssrError)
+    expect(result.query.status.value).toBe('error')
+
+    result.args.value = replacementArgs
+    await flush()
+
+    expect(result.query.error.value).toBeUndefined()
+    expect(result.query.status.value).toBe('pending')
+    expect(result.query.data.value).toBeUndefined()
+    expect(result.stableQuery.error.value).toBe(ssrError)
+    expect(key in result.errors.value).toBe(true)
+
+    primary.emitQueryResultWhere(
+      ({ args }) => (args as { category?: string }).category === 'beta',
+      page(['beta'], true, null),
+    )
+    await vi.waitFor(() => expect(result.query.status.value).toBe('success'))
+    expect(result.query.data.value).toEqual(['beta'])
+
+    primary.emitQueryResultWhere(
+      ({ args }) => (args as { category?: string }).category === 'alpha',
+      page(['alpha'], true, null),
+    )
+    await vi.waitFor(() => expect(result.stableQuery.status.value).toBe('success'))
+    expect(result.stableQuery.data.value).toEqual(['alpha'])
+    expect(key in result.errors.value).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not settle from a null SSR payload without a page or error', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:null-ssr-payload')
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'none',
+      'anonymous',
+    )
+    const { result, wrapper } = await captureInNuxt(
+      () => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 }),
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: null },
+      },
+    )
+    let settled = false
+    void result.then(() => {
+      settled = true
+    })
+
+    await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
+    await Promise.resolve()
+    expect(result.status.value).toBe('pending')
+    expect(settled).toBe(false)
+
+    primary.emitQueryResultWhere(() => true, page(['live'], true, null))
+    const queryResult = await result
+    expect(queryResult.status.value).toBe('success')
+    expect(queryResult.data.value).toEqual(['live'])
     wrapper.unmount()
   })
 
@@ -134,35 +243,131 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(settled).toBe(false)
 
     primary.emitQueryResultWhere(() => true, page(['first'], false, 'next'))
+    await vi.waitFor(() => expect(settled).toBe(true))
     const queryResult = await completion
 
-    expect(queryResult.results.value).toEqual(['first'])
+    expect(queryResult.data.value).toEqual(['first'])
     expect(primary.calls.query).toHaveLength(0)
     wrapper.unmount()
   })
 
-  it('resolves explicit initial data while retaining the live first-page subscription', async () => {
+  it('settles initial live errors without rejecting the optional await', async () => {
     const primary = new MockConvexClient()
-    const query = mockFnRef<'query'>('feed:explicit-initial-page')
+    const query = mockFnRef<'query'>('feed:first-page-error')
     const { result, wrapper } = await captureInNuxt(
-      () =>
-        useConvexPaginatedQuery(
-          query,
-          {},
-          {
-            auth: 'none',
-            initialData: [],
-            initialNumItems: 2,
-          },
-        ),
+      () => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 }),
       { owner: makeMockOwner(primary) },
     )
 
+    primary.emitQueryErrorWhere(() => true, new Error('secret transport detail'))
     const queryResult = await result
 
-    expect(queryResult.results.value).toEqual([])
-    expect(primary.calls.query).toHaveLength(0)
-    expect(primary.calls.onUpdate).toHaveLength(1)
+    expect(queryResult.status.value).toBe('error')
+    expect(queryResult.error.value).toMatchObject({
+      kind: 'unknown',
+      message: 'Unknown Convex error',
+    })
+    wrapper.unmount()
+  })
+
+  it.each([
+    { name: 'skip', args: 'skip' as const, server: true, status: 'idle' as const },
+    { name: 'server false', args: {}, server: false, status: 'pending' as const },
+  ])('settles $name immediately', async ({ args, server, status }) => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:immediate-settlement')
+    const { result, wrapper } = await captureInNuxt(
+      () =>
+        useConvexPaginatedQuery(query, args, {
+          auth: 'none',
+          initialNumItems: 2,
+          server,
+        }),
+      { owner: makeMockOwner(primary) },
+    )
+
+    const awaited = await result
+    expect(awaited.status).toBe(result.status)
+    expect(result.status.value).toBe(status)
+    wrapper.unmount()
+  })
+
+  it('settles when the current reactive generation becomes skipped', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:reactive-skip-settlement')
+    const args = ref<Record<string, never> | 'skip'>({})
+    const { result, flush, wrapper } = await captureInNuxt(
+      () => useConvexPaginatedQuery(query, args, { auth: 'none', initialNumItems: 2 }),
+      { owner: makeMockOwner(primary) },
+    )
+    let settled = false
+    void result.then(() => {
+      settled = true
+    })
+
+    args.value = 'skip'
+    await flush()
+    const awaited = await result
+
+    expect(settled).toBe(true)
+    expect(awaited.status.value).toBe('idle')
+    expect(awaited.data.value).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('retires an initial identity without settling until the replacement page arrives', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:identity-first-settlement')
+    const { result, flush, wrapper } = await captureInNuxt(
+      () => {
+        const identity = useState<AuthIdentity>('convex:identity')
+        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        return {
+          identity,
+          query: useConvexPaginatedQuery(query, {}, { initialNumItems: 2 }),
+        }
+      },
+      { owner: makeMockOwner(primary) },
+    )
+    let settled = false
+    void result.query.then(() => {
+      settled = true
+    })
+
+    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    await flush()
+    expect(settled).toBe(false)
+    expect(result.query.data.value).toBeUndefined()
+
+    primary.emitQueryResultWhere(() => true, page(['B'], true, null))
+    const awaited = await result.query
+    expect(awaited.data.value).toEqual(['B'])
+    wrapper.unmount()
+  })
+
+  it('returns a native Promise with immediate enumerable state and a separate awaited view', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:native-promise')
+    const { result, wrapper } = await captureInNuxt(
+      () => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 }),
+      { owner: makeMockOwner(primary) },
+    )
+
+    expect(result).toBeInstanceOf(Promise)
+    expect(result.data.value).toBeUndefined()
+    expect(result.status.value).toBe('pending')
+    for (const key of ['then', 'catch', 'finally']) {
+      expect(Object.prototype.propertyIsEnumerable.call(result, key)).toBe(true)
+    }
+
+    primary.emitQueryResultWhere(() => true, page([], true, null))
+    const awaited = await result
+
+    expect(awaited).not.toBe(result)
+    expect(Object.isFrozen(awaited)).toBe(true)
+    expect(awaited.data).toBe(result.data)
+    expect(awaited.data.value).toEqual([])
+    expect(awaited.status.value).toBe('success')
     wrapper.unmount()
   })
 
@@ -187,7 +392,7 @@ describe('useConvexPaginatedQuery controller', () => {
     )
     const queryResult = await result
 
-    expect(queryResult.results.value).toEqual(['hydrated'])
+    expect(queryResult.data.value).toEqual(['hydrated'])
     expect(primary.calls.query).toHaveLength(0)
     expect(primary.calls.onUpdate).toHaveLength(1)
     wrapper.unmount()
@@ -233,7 +438,7 @@ describe('useConvexPaginatedQuery controller', () => {
       },
     )
 
-    expect(result.results.value).toEqual(['ssr-a', 'ssr-b'])
+    expect(result.data.value).toEqual(['ssr-a', 'ssr-b'])
     expect(primary.calls.onUpdate).toHaveLength(0)
     identityPort.set({
       authEnabled: true,
@@ -244,7 +449,7 @@ describe('useConvexPaginatedQuery controller', () => {
     })
     await flush()
 
-    expect(result.results.value).toEqual(['ssr-a', 'ssr-b'])
+    expect(result.data.value).toEqual(['ssr-a', 'ssr-b'])
     expect(primary.calls.onUpdate).toHaveLength(1)
     result.loadMore(2)
     expect(primary.calls.onUpdate).toHaveLength(3)
@@ -297,30 +502,8 @@ describe('useConvexPaginatedQuery controller', () => {
       },
     )
 
-    expect(result.results.value).toEqual([])
+    expect(result.data.value).toBeUndefined()
     wrapper.unmount()
-  })
-
-  it('does not reacquire the first-page subscription when reset finishes after disposal', async () => {
-    const primary = new MockConvexClient()
-    const query = mockFnRef<'query'>('feed:reset-after-disposal')
-
-    const { result, flush, wrapper } = await captureInNuxt(
-      () =>
-        createConvexPaginatedQueryState(query, {}, { auth: 'none', initialNumItems: 2 }, true)
-          .resultData,
-      { owner: makeMockOwner(primary) },
-    )
-
-    await flush()
-    expect(primary.activeListenerCount()).toBe(1)
-
-    const reset = result.reset()
-    expect(primary.activeListenerCount()).toBe(0)
-    wrapper.unmount()
-    await reset
-
-    expect(primary.activeListenerCount()).toBe(0)
   })
 
   it('drops a deferred refresh resolved during the synchronous A-to-B window', async () => {
@@ -344,7 +527,7 @@ describe('useConvexPaginatedQuery controller', () => {
         const q = createConvexPaginatedQueryState(
           query,
           {},
-          { auth: 'optional', subscribe: false, initialNumItems: 2 },
+          { auth: 'optional', initialNumItems: 2 },
           true,
         ).resultData
         return { q, identity }
@@ -357,8 +540,8 @@ describe('useConvexPaginatedQuery controller', () => {
     result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
     resolveA(page(['A'], true, null))
     await refresh
-    expect(result.q.results.value).not.toContain('A')
-    expect(result.q.error.value).toBeNull()
+    expect(result.q.data.value ?? []).not.toContain('A')
+    expect(result.q.error.value).toBeUndefined()
 
     await flush()
     wrapper.unmount()
@@ -395,8 +578,8 @@ describe('useConvexPaginatedQuery controller', () => {
       page(['a', 'b'], false, 'cursor-1'),
     )
     await flush()
-    expect(result.q.results.value).toEqual(['a', 'b'])
-    expect(result.q.hasNextPage.value).toBe(true)
+    expect(result.q.data.value).toEqual(['a', 'b'])
+    expect(result.q.canLoadMore.value).toBe(true)
 
     // Load the next page: the first page is rebound to a fixed end cursor and
     // one listener is acquired for the next range.
@@ -411,8 +594,8 @@ describe('useConvexPaginatedQuery controller', () => {
       page(['c', 'd'], true, 'cursor-2'),
     )
     await flush()
-    expect(result.q.results.value).toEqual(['a', 'b', 'c', 'd'])
-    expect(result.q.status.value).toBe('exhausted')
+    expect(result.q.data.value).toEqual(['a', 'b', 'c', 'd'])
+    expect(result.q.status.value).toBe('success')
 
     wrapper.unmount()
   })
@@ -441,17 +624,17 @@ describe('useConvexPaginatedQuery controller', () => {
     await flush()
     primary.emitQueryResultWhere(() => true, page(['a1', 'a2'], false, 'c1'))
     await flush()
-    expect(result.q.results.value).toEqual(['a1', 'a2'])
+    expect(result.q.data.value).toEqual(['a1', 'a2'])
 
     // Switch identity: pages cleared, no A rows carried across.
     result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
     await flush()
-    expect(result.q.results.value).toEqual([])
+    expect(result.q.data.value).toBeUndefined()
 
     // B's first page acquires a fresh listener and commits under B.
     primary.emitQueryResultWhere(() => true, page(['b1'], true, 'c2'))
     await flush()
-    expect(result.q.results.value).toEqual(['b1'])
+    expect(result.q.data.value).toEqual(['b1'])
 
     wrapper.unmount()
   })
@@ -506,8 +689,8 @@ describe('useConvexPaginatedQuery controller', () => {
     )
 
     await result.resolvePromise
-    expect(result.resultData.results.value).toEqual(['ssr-a', 'ssr-b'])
-    expect(result.resultData.hasNextPage.value).toBe(true)
+    expect(result.resultData.data.value).toEqual(['ssr-a', 'ssr-b'])
+    expect(result.resultData.canLoadMore.value).toBe(true)
     expect(primary.calls.query).toHaveLength(0)
     expect(primary.calls.onUpdate).toHaveLength(1)
     result.resultData.loadMore(2)
@@ -550,7 +733,7 @@ describe('useConvexPaginatedQuery controller', () => {
       },
     )
 
-    expect(result.results.value).toEqual(['matching-bytes'])
+    expect(result.data.value).toEqual(['matching-bytes'])
     expect((primary.calls.onUpdate[0]?.args as { digest: ArrayBuffer }).digest).toBe(digest)
     wrapper.unmount()
   })

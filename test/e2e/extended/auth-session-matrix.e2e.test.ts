@@ -110,8 +110,8 @@ describe('canonical Better Auth session matrix', async () => {
         url: convexUrl,
         siteUrl: local.env.NUXT_PUBLIC_CONVEX_SITE_URL,
         auth: {
-          publicOrigin: 'http://localhost:3050',
-          proxy: { trustedClientIpHeader: testClientIpHeader },
+          origin: 'http://localhost:3050',
+          trustedClientIpHeader: testClientIpHeader,
         },
       },
       routeRules: {

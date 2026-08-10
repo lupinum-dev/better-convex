@@ -48,6 +48,16 @@ function decodeVerifiedPayload(token: string): Record<string, unknown> {
   }
 }
 
+function isSecureOAuthEndpoint(value: URL): boolean {
+  return (
+    value.protocol === 'https:' ||
+    (value.protocol === 'http:' &&
+      (value.hostname === '127.0.0.1' ||
+        value.hostname === 'localhost' ||
+        value.hostname === '[::1]'))
+  )
+}
+
 function requireCanonicalJwksUrl(issuer: string, jwksUrl: string): void {
   let parsedIssuer: URL
   let parsedJwks: URL
@@ -58,11 +68,12 @@ function requireCanonicalJwksUrl(issuer: string, jwksUrl: string): void {
     throw new OAuthSecurityError('AUTH_OAUTH_TOKEN_INVALID')
   }
   if (
-    parsedIssuer.protocol !== 'https:' ||
+    !isSecureOAuthEndpoint(parsedIssuer) ||
     parsedIssuer.username ||
     parsedIssuer.password ||
     parsedIssuer.search ||
     parsedIssuer.hash ||
+    !isSecureOAuthEndpoint(parsedJwks) ||
     parsedJwks.href !== jwksUrl ||
     parsedJwks.origin !== parsedIssuer.origin ||
     parsedJwks.username ||
@@ -150,7 +161,7 @@ export function createBetterAuthMcpAccessVerifier(options: BetterAuthMcpAccessVe
         !expected ||
         typeof expected.issuer !== 'string' ||
         !(expected.resource instanceof URL) ||
-        expected.resource.protocol !== 'https:' ||
+        !isSecureOAuthEndpoint(expected.resource) ||
         expected.resource.username ||
         expected.resource.password ||
         expected.resource.search ||

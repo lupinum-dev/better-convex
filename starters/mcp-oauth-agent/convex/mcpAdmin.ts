@@ -179,10 +179,7 @@ export const setFixtureDelegation = internalMutation({
     status: v.union(v.literal('active'), v.literal('revoked')),
   },
   handler: async (ctx, { authUserId, clientId, organizationId, scopes, status }) => {
-    if (
-      scopes.length > MCP_SCOPES.length ||
-      scopes.some((scope) => !isMcpScope(scope))
-    ) {
+    if (scopes.length > MCP_SCOPES.length || scopes.some((scope) => !isMcpScope(scope))) {
       throw new Error('MCP_FIXTURE_SCOPE_INVALID')
     }
     const user = await requireFixtureUser(ctx, authUserId)

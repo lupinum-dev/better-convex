@@ -43,7 +43,7 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
     mockServer = createServer((req, res) => {
       // The always-on client-core plugin (`src/runtime/plugin.client.ts`)
       // eagerly opens a WebSocket to `convex.url` for the app's primary
-      // client, independent of this page's `subscribe: false` query option.
+      // client, independent of this page's query lifecycle.
       // That connection attempt (a plain GET Upgrade request our HTTP mock
       // does not implement) is irrelevant background noise for this test —
       // only the real query boundary's `POST /api/query` matters — so it must

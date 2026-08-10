@@ -1,8 +1,12 @@
 import { ConvexClient } from 'convex/browser'
-import type { App, InjectionKey, Plugin } from 'vue'
+import type { App, InjectionKey, ObjectPlugin } from 'vue'
 import { inject, readonly, shallowRef } from 'vue'
 
-import { attachClientIdentity, type AttachedClientIdentityState } from './internal/attached-runtime'
+import {
+  attachClientIdentity,
+  type AttachedClientIdentityState,
+  type BetterConvexAttachment,
+} from './internal/attached-runtime'
 import type { BrowserAuthAdapter } from './internal/auth-adapter'
 import {
   createBetterConvexBrowserRuntime,
@@ -15,22 +19,24 @@ export interface BetterConvexVueRuntime {
 }
 
 const BETTER_CONVEX_KEY: InjectionKey<BetterConvexVueRuntime> = Symbol('better-convex-vue')
+// Private cross-package seam used by the Nuxt owner to reconcile one provider
+// operation with the already-installed Convex runtime. It is intentionally not
+// part of BetterConvexPlugin or any package export.
+const INTERNAL_REFRESH_AUTH = Symbol.for('better-convex-vue:internal-refresh-auth')
 
 export type BetterConvexAuthAdapter = BrowserAuthAdapter
 
 export type CreateBetterConvexOptions =
-  | { convexUrl: string; auth?: BetterConvexAuthAdapter; runtime?: never }
+  | { convexUrl: string; auth?: BetterConvexAuthAdapter; attachment?: never }
   | {
-      runtime: import('./internal/attached-runtime').AttachedClientRuntime
+      attachment: BetterConvexAttachment
       convexUrl?: never
       auth?: never
     }
 
-export type BetterConvexPlugin = Plugin & {
+export type BetterConvexPlugin = ObjectPlugin & {
   /** Safe cross-framework attachment; available after plugin installation. */
-  attachment(): import('./internal/attached-runtime').AttachedClientRuntime
-  ready(): Promise<void>
-  refreshAuth(): Promise<void>
+  attachment(): BetterConvexAttachment
 }
 
 function makeClient(convexUrl: string) {
@@ -40,22 +46,23 @@ function makeClient(convexUrl: string) {
 export function createBetterConvex(options: CreateBetterConvexOptions): BetterConvexPlugin {
   let installed = false
   let dispose: (() => Promise<void> | void) | null = null
-  let installedAttachment: import('./internal/attached-runtime').AttachedClientRuntime | null = null
-  let installedBrowser: BetterConvexBrowserRuntime | null = null
+  let installedAttachment: BetterConvexAttachment | null = null
+  let ownedBrowser: BetterConvexBrowserRuntime | null = null
 
   return Object.freeze({
     install(app: App) {
       if (installed) throw new Error('[better-convex-vue] plugin is already installed')
       installed = true
-      const attached = 'runtime' in options && options.runtime ? options.runtime : null
+      const attached = 'attachment' in options ? options.attachment : null
       const browser = attached
         ? null
         : createBetterConvexBrowserRuntime({
             clientFactory: () => makeClient(options.convexUrl!),
             auth: options.auth,
           })
+      ownedBrowser = browser
       const attachment = attached ?? browser!.attachment
-      installedBrowser = browser ?? createAttachedBrowserFacade(attachment)
+      const installedBrowser = browser ?? createAttachedBrowserFacade(attachment)
       installedAttachment = attachment
       const identity = attachClientIdentity(attachment)
       const runtime: BetterConvexVueRuntime = Object.freeze({
@@ -77,28 +84,26 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
       }
       return installedAttachment
     },
-    async ready() {
-      if (!installedBrowser) throw new Error('[better-convex-vue] plugin is not installed')
-      await installedBrowser.ready()
-    },
-    async refreshAuth() {
-      if (!installedBrowser) throw new Error('[better-convex-vue] plugin is not installed')
-      await installedBrowser.refreshAuth()
+    async [INTERNAL_REFRESH_AUTH]() {
+      if (!ownedBrowser) {
+        throw new Error('[better-convex-vue] only the owning plugin can refresh authentication')
+      }
+      await ownedBrowser.refreshAuth()
     },
   })
 }
 
 function createAttachedBrowserFacade(
-  runtime: import('./internal/attached-runtime').AttachedClientRuntime,
+  attachment: BetterConvexAttachment,
 ): BetterConvexBrowserRuntime {
-  const state = shallowRef(runtime.connection?.snapshot() ?? disconnectedState())
+  const state = shallowRef(attachment.connection?.snapshot() ?? disconnectedState())
   let consumers = 0
   let stop: (() => void) | null = null
   const addConsumer = () => {
     consumers += 1
-    if (consumers === 1 && runtime.connection) {
-      state.value = runtime.connection.snapshot()
-      stop = runtime.connection.subscribe((next) => {
+    if (consumers === 1 && attachment.connection) {
+      state.value = attachment.connection.snapshot()
+      stop = attachment.connection.subscribe((next) => {
         state.value = next
       })
     }
@@ -114,15 +119,15 @@ function createAttachedBrowserFacade(
     }
   }
   return {
-    handle: runtime.client,
-    identity: runtime.identity,
-    attachment: runtime,
+    handle: attachment.client,
+    identity: attachment.identity,
+    attachment,
     connection: {
       state: readonly(state),
       addConsumer,
     },
-    clientFor: (mode) => (mode === 'none' ? runtime.anonymousClient : runtime.client),
-    ready: () => runtime.identity.waitForInitialSettlement(),
+    clientFor: (mode) => (mode === 'none' ? attachment.anonymousClient : attachment.client),
+    ready: () => attachment.identity.waitForInitialSettlement(),
     refreshAuth: async () => {},
     dispose: async () => {},
   }

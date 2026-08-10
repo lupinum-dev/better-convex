@@ -11,7 +11,7 @@ import { getMaintainedCandidateProfile } from './maintained-candidate-apps.mjs'
 const root = resolve(import.meta.dirname, '..')
 const { profile: maintainedCandidateProfile } = getMaintainedCandidateProfile('nuxt')
 export const maintainedAuthConsumerRoots = [
-  'src/runtime/server/createUserSyncTriggers.ts',
+  'src/runtime/convex-auth/user-projection.ts',
   'playground/convex',
   ...maintainedCandidateProfile.pnpmApps.map(({ path }) => `${path}/convex`),
   'test/fixtures/better-auth-local-component/convex',

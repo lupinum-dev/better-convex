@@ -11,7 +11,7 @@ const inviteRole = ref<InviteRole>('member')
 const props = defineProps<{
   canManageMembers?: boolean
   selectedTeamName?: string
-  invitations: PendingInvitation[]
+  invitations: readonly PendingInvitation[]
   invitationsPending: boolean
   invitationsError: string | null
   hasMore: boolean

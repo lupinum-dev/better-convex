@@ -9,9 +9,7 @@ export function buildMissingSiteUrlMessage(): string {
 }
 
 export function buildMissingPublicOriginMessage(): string {
-  return prefix(
-    'Auth proxy requires one canonical public Nuxt origin. Set `convex.auth.publicOrigin` or `SITE_URL`.',
-  )
+  return prefix('Auth proxy requires one canonical public Nuxt origin. Set `convex.auth.origin`.')
 }
 
 export function buildBlockedOriginMessage(): string {

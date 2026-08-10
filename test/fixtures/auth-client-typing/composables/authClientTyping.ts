@@ -7,6 +7,7 @@ import type { BetterAuthClientOptions, BetterAuthClientPlugin } from 'better-aut
 import type {
   BaseAuthClient,
   InferRegisteredConvexAuthClient,
+  IntegratedAuthClient,
 } from 'better-convex-nuxt/auth-client'
 
 // --- tiny type-assertion kit ---
@@ -17,9 +18,12 @@ type Equal<A, B> =
 
 // The current implementation shape, proved end-to-end through the LIVE composable (not a bare
 // `declare const`): `useConvexAuth().client` is narrowed to
-// `InferRegisteredConvexAuthClient | null` by the module-generated registry.
+// the integrated form of `InferRegisteredConvexAuthClient | null` by the
+// module-generated registry.
 const { client } = useConvexAuth()
-type _clientIsRegisteredType = Expect<Equal<typeof client, InferRegisteredConvexAuthClient | null>>
+type _clientIsRegisteredType = Expect<
+  Equal<typeof client, IntegratedAuthClient<InferRegisteredConvexAuthClient> | null>
+>
 
 // -----------------------------------------------------------------------------
 // (a) The registered apiKey-plugin definition makes the narrowed non-null client
@@ -48,6 +52,14 @@ export function assertPluginClient() {
   // Params are typed (not any): an unknown field is rejected.
   // @ts-expect-error `notAField` is not part of apiKey.create input.
   client.apiKey.create({ name: 'x', notAField: true })
+
+  // The integrated contract removes all direct provider state/fetch bypasses.
+  // @ts-expect-error direct Better Fetch access is intentionally hidden.
+  client.$fetch
+  // @ts-expect-error direct store access is intentionally hidden.
+  client.$store
+  // @ts-expect-error direct session hydration is intentionally hidden.
+  client.hydrateSession
 }
 
 // -----------------------------------------------------------------------------

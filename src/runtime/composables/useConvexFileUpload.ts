@@ -309,8 +309,7 @@ export function useConvexFileUpload<Mutation extends UploadUrlMutation>(
       requireCurrentIdentity()
     }
 
-    const publishError = (rawError: unknown): ConvexCallError => {
-      const err = normalizeConvexError(rawError)
+    const publishConvexError = (err: ConvexCallError): ConvexCallError => {
       publishTerminalState({
         ...viewState.value,
         status: 'error',
@@ -329,6 +328,8 @@ export function useConvexFileUpload<Mutation extends UploadUrlMutation>(
       requireCurrentIdentity()
       return err
     }
+    const publishError = (rawError: unknown): ConvexCallError =>
+      publishConvexError(normalizeConvexError(rawError))
 
     // Client-side validation before uploading
     let validationError: ConvexCallError | undefined
@@ -343,7 +344,17 @@ export function useConvexFileUpload<Mutation extends UploadUrlMutation>(
         message: `File type "${file.type}" not allowed. Allowed: ${options.allowedTypes.join(', ')}`,
       })
     }
-    if (validationError) throw publishError(validationError)
+    if (validationError) throw publishConvexError(validationError)
+
+    if (import.meta.server || !attachment || typeof attachment.client.mutation !== 'function') {
+      throw publishConvexError(
+        new ConvexCallError({
+          kind: 'unknown',
+          message:
+            '[useConvexFileUpload] Convex client is unavailable. Upload files from the browser after configuring a Convex URL.',
+        }),
+      )
+    }
 
     const attempt = new AbortController()
     currentAttempt = attempt
@@ -364,14 +375,6 @@ export function useConvexFileUpload<Mutation extends UploadUrlMutation>(
         progress: { loaded: 0, total: file.size, percent: 0 },
       }
       requireCurrentUpload()
-
-      if (!attachment || typeof attachment.client.mutation !== 'function') {
-        throw new ConvexCallError({
-          kind: 'unknown',
-          message:
-            '[useConvexFileUpload] Convex client is unavailable. Upload files from the browser after configuring a Convex URL.',
-        })
-      }
 
       const storageId = await executeFileUpload(
         attachment.client,

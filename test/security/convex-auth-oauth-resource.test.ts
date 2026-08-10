@@ -193,6 +193,44 @@ describe('official OAuth resource-client integration', () => {
     })
   })
 
+  it('preserves loopback HTTP for the local Convex MCP authority chain', async () => {
+    const loopbackIssuer = 'http://127.0.0.1:3210/api/auth'
+    const loopbackAudience = 'http://127.0.0.1:3220/mcp'
+    const now = Math.floor(Date.now() / 1000)
+    const validateLiveAccess = vi.fn(async () => true)
+    const verifier = createBetterAuthMcpAccessVerifier({
+      allowedScopes: ['mcp:read'],
+      jwksUrl: `${loopbackIssuer}/jwks`,
+      validateLiveAccess,
+    })
+    const token = compactToken({
+      aud: loopbackAudience,
+      exp: now + 300,
+      iat: now - 10,
+      iss: loopbackIssuer,
+    })
+
+    await expect(
+      verifier.verifyAccessToken(
+        token,
+        Object.freeze({ issuer: loopbackIssuer, resource: new URL(loopbackAudience) }),
+      ),
+    ).resolves.toMatchObject({
+      access: { issuer: loopbackIssuer, resource: loopbackAudience },
+    })
+    expect(verifyBearerToken).toHaveBeenLastCalledWith(
+      token,
+      expect.objectContaining({
+        jwksUrl: `${loopbackIssuer}/jwks`,
+        verifyOptions: expect.objectContaining({
+          audience: loopbackAudience,
+          issuer: loopbackIssuer,
+        }),
+      }),
+    )
+    expect(validateLiveAccess).toHaveBeenCalledOnce()
+  })
+
   it('fails construction when request-local Better Auth validation is absent', () => {
     expect(() =>
       createBetterAuthMcpAccessVerifier({

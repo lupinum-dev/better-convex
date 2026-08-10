@@ -1,8 +1,10 @@
-import type { BetterConvexAuthAdapter, BetterConvexAuthSnapshot } from 'better-convex-vue'
+import type { BetterConvexAuthAdapter } from 'better-convex-vue'
 import { watch, type Ref } from 'vue'
 
 import type { ConvexUser } from '../utils/types'
 import { fetchConvexToken, isTokenUsable, type ConvexTokenSource } from './token-fetcher'
+
+type BrowserAuthSnapshot = ReturnType<BetterConvexAuthAdapter['snapshot']>
 
 interface BetterAuthSessionState {
   data?: {
@@ -35,7 +37,11 @@ export function createBetterAuthBrowserAdapter(
   callbacks: {
     authenticated(token: string, user: ConvexUser): void
     anonymous(error: string | null): void
-    sessionChanged?(sessionToken: string | null, error: string | null): void
+    sessionChanged?(
+      sessionToken: string | null,
+      error: string | null,
+      sessionGeneration: number,
+    ): void
   } = { authenticated: () => {}, anonymous: () => {} },
   options: { initialIdentityKey?: string } = {},
 ): BetterConvexAuthAdapter & {
@@ -49,7 +55,7 @@ export function createBetterAuthBrowserAdapter(
   let observedSessionToken: string | null | undefined
   let observedIdentityKey: string | null | undefined = options.initialIdentityKey
   let cachedToken: string | null = null
-  let snapshot: BetterConvexAuthSnapshot = options.initialIdentityKey
+  let snapshot: BrowserAuthSnapshot = options.initialIdentityKey
     ? {
         status: 'authenticated',
         identityKey: options.initialIdentityKey,
@@ -113,8 +119,11 @@ export function createBetterAuthBrowserAdapter(
     if (value.error || malformed) {
       cachedToken = null
       sessionGeneration += 1
-      observedSessionToken = sessionToken
-      observedIdentityKey = key
+      // The published failed state is the null provider identity. Reset the
+      // observed pair as well so recovery cannot reuse this revision for a
+      // different token/key pair.
+      observedSessionToken = null
+      observedIdentityKey = null
       snapshot = {
         status: 'error',
         identityKey: null,
@@ -122,7 +131,7 @@ export function createBetterAuthBrowserAdapter(
         error: new Error(UNAVAILABLE),
       }
       callbacks.anonymous(UNAVAILABLE)
-      callbacks.sessionChanged?.(null, UNAVAILABLE)
+      callbacks.sessionChanged?.(null, UNAVAILABLE, sessionGeneration)
       notify()
       return
     }
@@ -155,7 +164,7 @@ export function createBetterAuthBrowserAdapter(
             error: null,
           }
     if (!sessionToken) callbacks.anonymous(null)
-    callbacks.sessionChanged?.(sessionToken, null)
+    callbacks.sessionChanged?.(sessionToken, null, sessionGeneration)
     notify()
   }
 
@@ -213,6 +222,7 @@ export function createBetterAuthBrowserAdapter(
       } catch {
         throw new Error(UNAVAILABLE)
       }
+      if (session.value.error) throw new Error(UNAVAILABLE)
     },
     failClosed(message: string) {
       if (disposed) return
@@ -224,7 +234,10 @@ export function createBetterAuthBrowserAdapter(
         sessionGeneration,
         error: new Error(UNAVAILABLE),
       }
+      observedSessionToken = null
+      observedIdentityKey = null
       callbacks.anonymous(message)
+      callbacks.sessionChanged?.(null, UNAVAILABLE, sessionGeneration)
       notify()
     },
     dispose() {

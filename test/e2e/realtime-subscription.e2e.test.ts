@@ -24,7 +24,7 @@ describe('Realtime subscription (full stack)', async () => {
       convex: {
         url: local.env.NUXT_PUBLIC_CONVEX_URL,
         siteUrl: local.env.NUXT_PUBLIC_CONVEX_SITE_URL,
-        auth: { publicOrigin },
+        auth: { origin: publicOrigin },
       },
     },
   })

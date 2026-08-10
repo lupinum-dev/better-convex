@@ -1,4 +1,4 @@
-export interface BetterAuthUserDocLike {
+export interface BetterAuthUserProjectionSource {
   id: string
   name?: string | null
   email?: string | null
@@ -6,21 +6,21 @@ export interface BetterAuthUserDocLike {
   [key: string]: unknown
 }
 
-type UserSyncDb<TExistingUser extends { _id: unknown }> = {
+type UserProjectionDb<TExistingUser extends { _id: unknown }> = {
   insert(table: string, value: Record<string, unknown>): Promise<unknown>
   query(table: string): unknown
   patch(id: TExistingUser['_id'], value: Record<string, unknown>): Promise<unknown>
   delete(id: TExistingUser['_id']): Promise<unknown>
 }
 
-type UserSyncCtx<TExistingUser extends { _id: unknown }> = {
-  db: UserSyncDb<TExistingUser>
+type UserProjectionCtx<TExistingUser extends { _id: unknown }> = {
+  db: UserProjectionDb<TExistingUser>
 }
 
-export interface CreateUserSyncTriggersOptions<
-  TAuthUser extends BetterAuthUserDocLike = BetterAuthUserDocLike,
+export interface CreateUserProjectionTriggersOptions<
+  TAuthUser extends BetterAuthUserProjectionSource = BetterAuthUserProjectionSource,
   TExistingUser extends { _id: unknown } = { _id: unknown },
-  TCtx extends UserSyncCtx<TExistingUser> = UserSyncCtx<TExistingUser>,
+  TCtx extends UserProjectionCtx<TExistingUser> = UserProjectionCtx<TExistingUser>,
 > {
   /**
    * Convex table to project Better Auth users into (for example: "userProfiles").
@@ -77,41 +77,77 @@ export interface CreateUserSyncTriggersOptions<
 type ConvexQueryChain<TExistingUser> = {
   withIndex(
     indexName: string,
-    cb: (q: UserSyncIndexRangeBuilder) => unknown,
+    cb: (q: UserProjectionIndexRangeBuilder) => unknown,
   ): { collect: () => Promise<TExistingUser[]> }
 }
 
-type UserSyncIndexRangeBuilder = {
+type UserProjectionIndexRangeBuilder = {
   eq(field: string, value: unknown): unknown
 }
 
-interface UserSyncRebuildResult {
+interface UserProjectionRebuildResult {
   inserted: number
   patched: number
   skipped: number
 }
 
-async function findExistingByAuthId<
-  TExistingUser extends { _id: unknown },
-  TCtx extends UserSyncCtx<TExistingUser>,
->(
-  ctx: { db: Pick<UserSyncDb<TExistingUser>, 'query'> },
-  options: Pick<
-    CreateUserSyncTriggersOptions<BetterAuthUserDocLike, TExistingUser, TCtx>,
-    'table' | 'index' | 'authIdField'
-  >,
+interface UserProjectionLookup {
+  readonly table: string
+  readonly index: string
+  readonly authIdField: string
+}
+
+function resolveAuthIdField(field: string | undefined): string {
+  const resolved = field ?? 'authId'
+  const startsWithReservedPrefix = resolved.startsWith('$') || resolved.startsWith('_')
+  let containsInvalidCharacter = false
+  for (let index = 0; index < resolved.length && index <= 1024; index += 1) {
+    const code = resolved.charCodeAt(index)
+    if (code < 32 || code >= 127) {
+      containsInvalidCharacter = true
+      break
+    }
+  }
+  if (
+    resolved.length === 0 ||
+    resolved.length > 1024 ||
+    startsWithReservedPrefix ||
+    containsInvalidCharacter ||
+    resolved.includes('.') ||
+    resolved === 'prototype' ||
+    resolved === 'constructor'
+  ) {
+    throw new TypeError(
+      '[better-convex-nuxt] authIdField must be a valid top-level Convex application field',
+    )
+  }
+  return resolved
+}
+
+function withCanonicalAuthId(
+  value: Record<string, unknown>,
+  authIdField: string,
+  authUserId: string,
+): Record<string, unknown> {
+  return { ...value, [authIdField]: authUserId }
+}
+
+async function findExistingByAuthId<TExistingUser extends { _id: unknown }>(
+  ctx: { db: Pick<UserProjectionDb<TExistingUser>, 'query'> },
+  lookup: UserProjectionLookup,
   authUserId: string,
 ): Promise<TExistingUser[]> {
-  const authIdField = options.authIdField ?? 'authId'
-  const query = ctx.db.query(options.table) as ConvexQueryChain<TExistingUser>
+  const query = ctx.db.query(lookup.table) as ConvexQueryChain<TExistingUser>
 
   return await query
-    .withIndex(options.index, (q: UserSyncIndexRangeBuilder) => q.eq(authIdField, authUserId))
+    .withIndex(lookup.index, (q: UserProjectionIndexRangeBuilder) =>
+      q.eq(lookup.authIdField, authUserId),
+    )
     .collect()
 }
 
 async function deleteDuplicateRows<TExistingUser extends { _id: unknown }>(
-  ctx: UserSyncCtx<TExistingUser>,
+  ctx: UserProjectionCtx<TExistingUser>,
   existing: readonly TExistingUser[],
 ): Promise<void> {
   for (const duplicate of existing.slice(1)) {
@@ -126,31 +162,29 @@ async function deleteDuplicateRows<TExistingUser extends { _id: unknown }>(
  * remains the canonical source of auth truth; app tables created with this
  * helper must be treated as derived and rebuildable.
  */
-export function createUserSyncTriggers<
-  TAuthUser extends BetterAuthUserDocLike = BetterAuthUserDocLike,
+export function createUserProjectionTriggers<
+  TAuthUser extends BetterAuthUserProjectionSource = BetterAuthUserProjectionSource,
   TExistingUser extends { _id: unknown } = { _id: unknown },
-  TCtx extends UserSyncCtx<TExistingUser> = UserSyncCtx<TExistingUser>,
->(options: CreateUserSyncTriggersOptions<TAuthUser, TExistingUser, TCtx>) {
+  TCtx extends UserProjectionCtx<TExistingUser> = UserProjectionCtx<TExistingUser>,
+>(options: CreateUserProjectionTriggersOptions<TAuthUser, TExistingUser, TCtx>) {
+  const lookup: UserProjectionLookup = Object.freeze({
+    table: options.table,
+    index: options.index,
+    authIdField: resolveAuthIdField(options.authIdField),
+  })
+
   return {
     user: {
       onCreate: async (ctx: TCtx, user: TAuthUser) => {
         const now = Date.now()
-        const existing = await findExistingByAuthId<TExistingUser, TCtx>(
-          ctx,
-          {
-            table: options.table,
-            index: options.index,
-            authIdField: options.authIdField,
-          },
-          user.id,
-        )
+        const existing = await findExistingByAuthId<TExistingUser>(ctx, lookup, user.id)
         if (existing.length > 0) {
           await deleteDuplicateRows(ctx, existing)
           return
         }
 
         const doc = await options.createDoc({ ctx, user, now })
-        await ctx.db.insert(options.table, doc)
+        await ctx.db.insert(options.table, withCanonicalAuthId(doc, lookup.authIdField, user.id))
       },
       /**
        * Patches the projected row for a Better Auth user update.
@@ -166,15 +200,7 @@ export function createUserSyncTriggers<
        * event's payload) or run `rebuild()` periodically to reconcile drift.
        */
       onUpdate: async (ctx: TCtx, user: TAuthUser, previousUser: TAuthUser) => {
-        const existing = await findExistingByAuthId<TExistingUser, TCtx>(
-          ctx,
-          {
-            table: options.table,
-            index: options.index,
-            authIdField: options.authIdField,
-          },
-          user.id,
-        )
+        const existing = await findExistingByAuthId<TExistingUser>(ctx, lookup, user.id)
         const [retained] = existing
         if (!retained) return
 
@@ -190,24 +216,19 @@ export function createUserSyncTriggers<
         })
         if (!patch || Object.keys(patch).length === 0) return
 
-        await ctx.db.patch(retained._id, patch)
+        await ctx.db.patch(retained._id, withCanonicalAuthId(patch, lookup.authIdField, user.id))
       },
       onDelete: async (ctx: TCtx, user: TAuthUser) => {
-        const existing = await findExistingByAuthId<TExistingUser, TCtx>(
-          ctx,
-          {
-            table: options.table,
-            index: options.index,
-            authIdField: options.authIdField,
-          },
-          user.id,
-        )
+        const existing = await findExistingByAuthId<TExistingUser>(ctx, lookup, user.id)
         for (const row of existing) {
           await ctx.db.delete(row._id)
         }
       },
-      rebuild: async (ctx: TCtx, users: readonly TAuthUser[]): Promise<UserSyncRebuildResult> => {
-        const result: UserSyncRebuildResult = {
+      rebuild: async (
+        ctx: TCtx,
+        users: readonly TAuthUser[],
+      ): Promise<UserProjectionRebuildResult> => {
+        const result: UserProjectionRebuildResult = {
           inserted: 0,
           patched: 0,
           skipped: 0,
@@ -215,20 +236,15 @@ export function createUserSyncTriggers<
 
         for (const user of users) {
           const now = Date.now()
-          const existing = await findExistingByAuthId<TExistingUser, TCtx>(
-            ctx,
-            {
-              table: options.table,
-              index: options.index,
-              authIdField: options.authIdField,
-            },
-            user.id,
-          )
+          const existing = await findExistingByAuthId<TExistingUser>(ctx, lookup, user.id)
           const [retained] = existing
 
           if (!retained) {
             const doc = await options.createDoc({ ctx, user, now })
-            await ctx.db.insert(options.table, doc)
+            await ctx.db.insert(
+              options.table,
+              withCanonicalAuthId(doc, lookup.authIdField, user.id),
+            )
             result.inserted += 1
             continue
           }
@@ -251,7 +267,7 @@ export function createUserSyncTriggers<
             continue
           }
 
-          await ctx.db.patch(retained._id, patch)
+          await ctx.db.patch(retained._id, withCanonicalAuthId(patch, lookup.authIdField, user.id))
           result.patched += 1
         }
 

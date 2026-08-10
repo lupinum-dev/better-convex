@@ -13,8 +13,9 @@ const activeTab = ref('infinite')
 // ============================================
 
 const {
-  results: infiniteResults,
+  data: infiniteResults,
   status: infiniteStatus,
+  canLoadMore: infiniteCanLoadMore,
   loadMore: infiniteLoadMore,
   isLoading: infiniteLoading,
 } = await useConvexPaginatedQuery(api.messages.listPaginated, {}, { initialNumItems: 10 })
@@ -29,7 +30,7 @@ onMounted(() => {
     (entries) => {
       const [entry] = entries
       if (!entry) return
-      if (entry.isIntersecting && infiniteStatus.value === 'ready' && !infiniteLoading.value) {
+      if (entry.isIntersecting && infiniteCanLoadMore.value && !infiniteLoading.value) {
         infiniteLoadMore(5)
       }
     },
@@ -45,8 +46,9 @@ onMounted(() => {
 // ============================================
 
 const {
-  results: buttonResults,
+  data: buttonResults,
   status: buttonStatus,
+  canLoadMore: buttonCanLoadMore,
   loadMore: buttonLoadMore,
   isLoading: buttonLoading,
 } = await useConvexPaginatedQuery(api.messages.listPaginated, {}, { initialNumItems: 5 })
@@ -136,16 +138,17 @@ async function addSampleData() {
           <!-- Intersection observer target -->
           <div ref="loadMoreRef" class="py-4 text-center">
             <UIcon
-              v-if="infiniteStatus === 'loading-more' || infiniteLoading"
+              v-if="infiniteLoading"
               name="i-lucide-loader-circle"
               class="size-5 animate-spin"
             />
-            <p v-else-if="infiniteStatus === 'exhausted'" class="text-muted text-sm">
+            <p
+              v-else-if="infiniteStatus === 'success' && !infiniteCanLoadMore"
+              class="text-muted text-sm"
+            >
               No more messages
             </p>
-            <p v-else-if="infiniteStatus === 'ready'" class="text-muted text-sm">
-              Scroll for more...
-            </p>
+            <p v-else-if="infiniteCanLoadMore" class="text-muted text-sm">Scroll for more...</p>
           </div>
         </div>
 
@@ -183,18 +186,18 @@ async function addSampleData() {
 
         <div class="mt-4 text-center">
           <UButton
-            v-if="buttonStatus === 'ready'"
+            v-if="buttonCanLoadMore"
             variant="outline"
             :loading="buttonLoading"
             @click="buttonLoadMore(5)"
           >
             Load More
           </UButton>
-          <p v-else-if="buttonStatus === 'loading-more'" class="text-muted">
+          <p v-else-if="buttonLoading" class="text-muted">
             <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin mr-2 inline" />
             Loading...
           </p>
-          <p v-else-if="buttonStatus === 'exhausted'" class="text-muted text-sm">
+          <p v-else-if="buttonStatus === 'success'" class="text-muted text-sm">
             All messages loaded
           </p>
         </div>
@@ -219,9 +222,9 @@ async function addSampleData() {
           <p class="text-muted">Infinite Scroll Status</p>
           <UBadge
             :color="
-              infiniteStatus === 'ready'
+              infiniteStatus === 'success'
                 ? 'success'
-                : infiniteStatus === 'loading-more'
+                : infiniteStatus === 'pending'
                   ? 'info'
                   : 'neutral'
             "
@@ -233,9 +236,9 @@ async function addSampleData() {
           <p class="text-muted">Load More Status</p>
           <UBadge
             :color="
-              buttonStatus === 'ready'
+              buttonStatus === 'success'
                 ? 'success'
-                : buttonStatus === 'loading-more'
+                : buttonStatus === 'pending'
                   ? 'info'
                   : 'neutral'
             "

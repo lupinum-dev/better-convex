@@ -13,17 +13,6 @@ import { readConvexRuntimeContext } from '../runtime-context'
 import { createCallableDevtoolsEvents } from '../utils/callable-devtools'
 import { CALLABLE_OBSERVER_KEY } from '../utils/callable-observer'
 
-export {
-  updateQuery,
-  setQueryData,
-  updateAllQueries,
-  deleteFromQuery,
-  type UpdateQueryOptions,
-  type SetQueryDataOptions,
-  type UpdateAllQueriesOptions,
-  type DeleteFromQueryOptions,
-} from './regular-optimistic-updates'
-
 export type UseConvexMutationOptions<Args extends Record<string, unknown>> =
   VueMutationOptions<Args>
 

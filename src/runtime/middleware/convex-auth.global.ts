@@ -15,12 +15,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   const pageMeta = to.meta as { convexAuth?: ConvexAuthPageMeta }
 
-  const { isAuthenticated, isPending, ready } = useConvexAuth()
+  const { status, isPending, ready } = useConvexAuth()
 
   const decision = resolveRouteProtectionDecision({
     meta: pageMeta.convexAuth,
-    defaultRedirectTo: authConfig.routeProtection.redirectTo,
-    preserveReturnTo: authConfig.routeProtection.preserveReturnTo,
+    defaultRedirectTo: authConfig.redirectTo,
+    preserveReturnTo: true,
     currentPath: to.path,
     currentFullPath: to.fullPath,
   })
@@ -40,6 +40,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
     // Fall through to secure default route protection if still pending.
   }
 
-  if (isAuthenticated.value) return
+  if (status.value === 'authenticated') return
   return navigateTo(decision.redirectTo)
 })

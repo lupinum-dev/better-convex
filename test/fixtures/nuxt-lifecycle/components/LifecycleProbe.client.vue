@@ -62,12 +62,10 @@ const generateNote = makeFunctionReference<'action'>('notes:generate') as Functi
 
 const query = await useConvexQuery(notesQuery, () => ({ owner: owner.value }), {
   auth: 'none',
-  initialData: [],
   server: false,
 })
 const pagination = await useConvexPaginatedQuery(pagesQuery, () => ({ owner: owner.value }), {
   auth: 'none',
-  initialData: [],
   initialNumItems: 1,
   server: false,
 })
@@ -104,11 +102,11 @@ function snapshot() {
       error: serializeError(query.error.value),
     },
     pagination: {
-      results: pagination.results.value,
+      data: pagination.data.value,
       status: pagination.status.value,
       loading: pagination.isLoading.value,
       stale: pagination.isStale.value,
-      hasNextPage: pagination.hasNextPage.value,
+      canLoadMore: pagination.canLoadMore.value,
       error: serializeError(pagination.error.value),
     },
     mutation: {

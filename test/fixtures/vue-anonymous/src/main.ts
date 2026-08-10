@@ -30,6 +30,7 @@ const mutation = makeFunctionReference<'mutation'>('notes:rename')
 const action = makeFunctionReference<'action'>('notes:report')
 
 function packedTypeContracts() {
+  const paginationOptions = { initialNumItems: 10 } as const
   void useConvexQuery(query, { owner: 'alice' })
   void useConvexQuery(query, ref<{ owner: string } | 'skip'>('skip'))
   void useConvexQuery(query, () => 'skip' as const)
@@ -46,21 +47,25 @@ function packedTypeContracts() {
   // @ts-expect-error a getter returning undefined is not a query skip sentinel
   void useConvexQuery(query, () => undefined)
 
-  void useConvexPaginatedQuery(paginatedQuery, { owner: 'alice' })
-  void useConvexPaginatedQuery(paginatedQuery, ref<{ owner: string } | 'skip'>('skip'))
-  void useConvexPaginatedQuery(paginatedQuery, () => 'skip' as const)
+  void useConvexPaginatedQuery(paginatedQuery, { owner: 'alice' }, paginationOptions)
+  void useConvexPaginatedQuery(
+    paginatedQuery,
+    ref<{ owner: string } | 'skip'>('skip'),
+    paginationOptions,
+  )
+  void useConvexPaginatedQuery(paginatedQuery, () => 'skip' as const, paginationOptions)
   // @ts-expect-error null is not a paginated query skip sentinel
-  void useConvexPaginatedQuery(paginatedQuery, null)
+  void useConvexPaginatedQuery(paginatedQuery, null, paginationOptions)
   // @ts-expect-error undefined is not a paginated query skip sentinel
-  void useConvexPaginatedQuery(paginatedQuery, undefined)
+  void useConvexPaginatedQuery(paginatedQuery, undefined, paginationOptions)
   // @ts-expect-error a ref containing null is not a paginated query skip sentinel
-  void useConvexPaginatedQuery(paginatedQuery, ref(null))
+  void useConvexPaginatedQuery(paginatedQuery, ref(null), paginationOptions)
   // @ts-expect-error a ref containing undefined is not a paginated query skip sentinel
-  void useConvexPaginatedQuery(paginatedQuery, ref(undefined))
+  void useConvexPaginatedQuery(paginatedQuery, ref(undefined), paginationOptions)
   // @ts-expect-error a getter returning null is not a paginated query skip sentinel
-  void useConvexPaginatedQuery(paginatedQuery, () => null)
+  void useConvexPaginatedQuery(paginatedQuery, () => null, paginationOptions)
   // @ts-expect-error a getter returning undefined is not a paginated query skip sentinel
-  void useConvexPaginatedQuery(paginatedQuery, () => undefined)
+  void useConvexPaginatedQuery(paginatedQuery, () => undefined, paginationOptions)
 }
 
 void packedTypeContracts

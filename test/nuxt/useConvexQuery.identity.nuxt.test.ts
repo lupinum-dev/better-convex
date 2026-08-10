@@ -4,6 +4,7 @@ import { useState } from '#imports'
 
 import { toAuthenticatedIdentity, type AuthIdentity } from '../../src/runtime/auth/auth-identity'
 import { createConvexQueryState } from '../../src/runtime/composables/useConvexQuery'
+import { ConvexCallError } from '../../src/runtime/errors'
 import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
 import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 import { makeMockOwner } from '../helpers/mock-client-owner'
@@ -38,7 +39,7 @@ describe('useConvexQuery identity isolation', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-          return createConvexQueryState(query, {}, { auth }, true).resultData
+          return createConvexQueryState(query, {}, { auth }).resultData
         },
         {
           owner: makeMockOwner(primary),
@@ -64,6 +65,65 @@ describe('useConvexQuery identity isolation', () => {
       wrapper.unmount()
     },
   )
+
+  it('retires a hydrated SSR error when the browser identity changes', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:hydrated-error-identity-boundary')
+    const key = withAuthDimension(createConvexQueryKey(query, {}), 'optional', 'user:A')
+    const ssrError = new ConvexCallError({
+      kind: 'transport',
+      message: 'Sanitized SSR transport failure',
+      status: 500,
+    })
+    const identityPort = createIdentityObserverHarness({
+      authEnabled: true,
+      settled: true,
+      identityKey: 'user:A',
+      identityGeneration: 0,
+      error: null,
+    })
+
+    const { result, flush, wrapper } = await captureInNuxt(
+      () => {
+        const identity = useState<AuthIdentity>('convex:identity')
+        const errors = useState<Record<string, ConvexCallError | undefined>>('convex:query-errors')
+        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        errors.value = { [key]: ssrError }
+        return {
+          identity,
+          errors,
+          query: createConvexQueryState(query, {}, { auth: 'optional' }).resultData,
+        }
+      },
+      {
+        owner: makeMockOwner(primary),
+        identityObserver: identityPort.observer,
+        payloadData: { [key]: null },
+      },
+    )
+
+    expect(result.query.error.value).toBe(ssrError)
+    expect(result.query.status.value).toBe('error')
+
+    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    identityPort.set({
+      authEnabled: true,
+      settled: true,
+      identityKey: 'user:B',
+      identityGeneration: 1,
+      error: null,
+    })
+    await flush()
+
+    expect(result.query.error.value).toBeUndefined()
+    expect(result.query.status.value).toBe('pending')
+    expect(result.query.data.value).toBeUndefined()
+    // Identity-change payload purging owns the shared error bag. This composable
+    // retires its local view without deleting state another same-key consumer
+    // could still be reconciling.
+    expect(key in result.errors.value).toBe(true)
+    wrapper.unmount()
+  })
 
   it.each([
     {
@@ -98,7 +158,7 @@ describe('useConvexQuery identity isolation', () => {
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
         identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        return createConvexQueryState(query, {}, { auth: 'optional' }, true).resultData
+        return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
       },
       {
         owner: makeMockOwner(primary),
@@ -107,7 +167,7 @@ describe('useConvexQuery identity isolation', () => {
       },
     )
 
-    expect(result.data.value).toBeNull()
+    expect(result.data.value).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -129,7 +189,7 @@ describe('useConvexQuery identity isolation', () => {
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
         identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        return createConvexQueryState(query, {}, { auth: 'optional' }, true).resultData
+        return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
       },
       {
         owner: makeMockOwner(primary),
@@ -146,7 +206,7 @@ describe('useConvexQuery identity isolation', () => {
       identityGeneration: 1,
       error: null,
     })
-    expect(result.data.value).toBeNull()
+    expect(result.data.value).toBeUndefined()
     identityPort.set({
       authEnabled: true,
       settled: false,
@@ -154,7 +214,7 @@ describe('useConvexQuery identity isolation', () => {
       identityGeneration: 2,
       error: null,
     })
-    expect(result.data.value).toBeNull()
+    expect(result.data.value).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -176,12 +236,7 @@ describe('useConvexQuery identity isolation', () => {
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
         identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        const q = createConvexQueryState(
-          query,
-          {},
-          { auth: 'optional', subscribe: false },
-          true,
-        ).resultData
+        const q = createConvexQueryState(query, {}, { auth: 'optional' }).resultData
         return { q, identity }
       },
       { owner: makeMockOwner(primary) },
@@ -193,7 +248,7 @@ describe('useConvexQuery identity isolation', () => {
     resolveA({ owner: 'A' })
     await refresh
     expect(result.q.data.value).not.toEqual({ owner: 'A' })
-    expect(result.q.error.value).toBeNull()
+    expect(result.q.error.value).toBeUndefined()
 
     await flush()
     wrapper.unmount()
@@ -212,8 +267,10 @@ describe('useConvexQuery identity isolation', () => {
         const q = createConvexQueryState(
           query,
           {},
-          { auth: 'optional', keepPreviousData: true },
-          true,
+          {
+            auth: 'optional',
+            keepPreviousData: true,
+          },
         ).resultData
         return { q, pending, identity }
       },
@@ -232,7 +289,7 @@ describe('useConvexQuery identity isolation', () => {
     await flush()
 
     // A's data is gone and keepPreviousData did not carry it into B.
-    expect(result.q.data.value).toBeNull()
+    expect(result.q.data.value).toBeUndefined()
 
     // B's result commits under B.
     primary.emitQueryResultWhere(() => true, { owner: 'B' })
@@ -252,7 +309,7 @@ describe('useConvexQuery identity isolation', () => {
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
         identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        const q = createConvexQueryState(query, {}, { auth: 'optional' }, true).resultData
+        const q = createConvexQueryState(query, {}, { auth: 'optional' }).resultData
         return { q, pending, identity }
       },
       { owner: makeMockOwner(primary) },
@@ -272,7 +329,7 @@ describe('useConvexQuery identity isolation', () => {
     lateA()
     await flush()
     expect(result.q.data.value).not.toEqual({ owner: 'A-stale' })
-    expect(result.q.data.value).toBeNull()
+    expect(result.q.data.value).toBeUndefined()
 
     wrapper.unmount()
   })

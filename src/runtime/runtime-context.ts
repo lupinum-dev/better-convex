@@ -1,4 +1,4 @@
-import type { BetterConvexAttachedRuntime } from 'better-convex-vue/embedded'
+import type { BetterConvexAttachment } from 'better-convex-vue/embedded'
 import type { ComputedRef } from 'vue'
 
 import type { DevtoolsSink } from './devtools/sink'
@@ -8,17 +8,14 @@ import type { Logger } from './utils/logger'
 /** Nuxt-owned Better Auth presentation; it never controls a Convex client. */
 export interface NuxtConvexAuthController {
   readonly isPending: ComputedRef<boolean>
-  readonly integratedSignIn: object | null
-  readonly integratedSignUp: object | null
+  readonly client: object
   ready(options?: { timeoutMs?: number }): Promise<ConvexAuthStatus>
-  refresh(): Promise<void>
-  signOut(): Promise<unknown>
   dispose(): void
 }
 
 /** Nuxt adapters around the one Vue-owned browser runtime. */
 export interface ConvexRuntimeContext {
-  readonly attachment: BetterConvexAttachedRuntime
+  readonly attachment: BetterConvexAttachment
   readonly logger: Logger
   getAuthController(): NuxtConvexAuthController | null
   attachAuthController(controller: NuxtConvexAuthController): void
@@ -35,7 +32,7 @@ export function readConvexRuntimeContext(nuxtApp: unknown): ConvexRuntimeContext
 }
 
 export function createConvexRuntimeContext(
-  attachment: BetterConvexAttachedRuntime,
+  attachment: BetterConvexAttachment,
   logger: Logger,
 ): ConvexRuntimeContext {
   let authController: NuxtConvexAuthController | null = null

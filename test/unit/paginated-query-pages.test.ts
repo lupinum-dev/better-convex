@@ -71,7 +71,7 @@ describe('paginated query page state', () => {
     expect(pending).toMatchObject({
       paginationOpts: { numItems: 10, cursor: 'c1', id: 7 },
       result: undefined,
-      error: null,
+      error: undefined,
       pending: true,
       unsubscribe: null,
     })
@@ -89,7 +89,7 @@ describe('paginated query page state', () => {
     expect(nextPages).not.toBe(pages)
     expect(nextPages[0]).toMatchObject({
       result,
-      error: null,
+      error: undefined,
       pending: false,
       unsubscribe,
     })

@@ -9,13 +9,18 @@ import { ConvexCallError } from '../../src/runtime/errors'
 
 const {
   adapterCallbacks,
+  adapterSessionGeneration,
+  authRefreshMock,
   authErrorState,
   clearNuxtDataMock,
   createAuthClientMock,
   createBetterConvexMock,
+  emitInitialProviderSession,
+  failClosedMock,
   identityState,
   pendingState,
   queryErrorsState,
+  refreshSessionMock,
   runtime,
   snapshot,
   subscribers,
@@ -31,6 +36,7 @@ const {
     attachment: {
       identity: {
         snapshot: () => snapshot,
+        waitForInitialSettlement: vi.fn(async () => {}),
         subscribe(callback: () => void) {
           subscribers.add(callback)
           return () => subscribers.delete(callback)
@@ -46,13 +52,17 @@ const {
         | ((token: string, user: { id: string; name?: string }) => void)
         | undefined,
       sessionChanged: undefined as
-        | ((sessionToken: string | null, errorMessage: string | null) => void)
+        | ((sessionToken: string | null, errorMessage: string | null, revision: number) => void)
         | undefined,
     },
+    adapterSessionGeneration: { value: 0 },
+    authRefreshMock: vi.fn(async () => {}),
     authErrorState: { value: null as string | null },
     clearNuxtDataMock: vi.fn(),
     createAuthClientMock: vi.fn(),
     createBetterConvexMock: vi.fn(),
+    emitInitialProviderSession: { value: true },
+    failClosedMock: vi.fn(),
     identityState: {
       value: { status: 'anonymous' } as AuthIdentity,
     },
@@ -60,6 +70,7 @@ const {
     queryErrorsState: {
       value: {} as Record<string, unknown>,
     },
+    refreshSessionMock: vi.fn(async () => {}),
     runtime,
     snapshot,
     subscribers,
@@ -93,14 +104,24 @@ vi.mock('../../src/runtime/auth/better-auth-browser-adapter', () => ({
       _client: unknown,
       callbacks: {
         authenticated(token: string, user: { id: string; name?: string }): void
-        sessionChanged(sessionToken: string | null, errorMessage: string | null): void
+        sessionChanged(
+          sessionToken: string | null,
+          errorMessage: string | null,
+          revision: number,
+        ): void
       },
     ) => {
       adapterCallbacks.authenticated = callbacks.authenticated
-      adapterCallbacks.sessionChanged = callbacks.sessionChanged
+      adapterCallbacks.sessionChanged = (sessionToken, errorMessage, revision) => {
+        adapterSessionGeneration.value = revision
+        callbacks.sessionChanged(sessionToken, errorMessage, revision)
+      }
+      if (emitInitialProviderSession.value) adapterCallbacks.sessionChanged(null, null, 0)
       return {
         dispose: vi.fn(),
-        failClosed: vi.fn(),
+        failClosed: failClosedMock,
+        refreshSession: refreshSessionMock,
+        snapshot: () => ({ sessionGeneration: adapterSessionGeneration.value }),
       }
     },
   ),
@@ -126,7 +147,11 @@ vi.mock('../../src/runtime/utils/auth-pending-state', () => ({
 vi.mock('../../src/runtime/utils/runtime-config', () => ({
   getConvexRuntimeConfig: vi.fn(() => ({
     url: 'https://demo.convex.cloud',
-    auth: {},
+    auth: {
+      origin: 'https://app.example.com',
+      trustedClientIpHeader: 'cf-connecting-ip',
+      redirectTo: '/auth/signin',
+    },
   })),
 }))
 
@@ -139,6 +164,7 @@ describe('auth client app-facing state projection', () => {
       name: 'Alice',
     })
     authErrorState.value = null
+    emitInitialProviderSession.value = true
     pendingState.value = false
     queryErrorsState.value = {}
     snapshot.settled = true
@@ -147,16 +173,26 @@ describe('auth client app-facing state projection', () => {
     snapshot.error = null
     adapterCallbacks.authenticated = undefined
     adapterCallbacks.sessionChanged = undefined
+    adapterSessionGeneration.value = 0
+    failClosedMock.mockReset()
+    refreshSessionMock.mockReset()
+    refreshSessionMock.mockResolvedValue(undefined)
+    authRefreshMock.mockReset()
+    authRefreshMock.mockImplementation(async () => refreshSessionMock())
 
     createAuthClientMock.mockReturnValue({
+      useSession: vi.fn(() => ({ value: { isPending: false } })),
       signIn: {},
       signUp: {},
       signOut: vi.fn(async () => ({ data: { success: true }, error: null })),
+      $fetch: vi.fn(),
+      $store: {},
+      hydrateSession: vi.fn(),
+      convex: { token: vi.fn() },
     })
     createBetterConvexMock.mockReturnValue({
       attachment: vi.fn(() => runtime.attachment),
-      ready: vi.fn(async () => {}),
-      refreshAuth: vi.fn(async () => {}),
+      [Symbol.for('better-convex-vue:internal-refresh-auth')]: authRefreshMock,
     })
   })
 
@@ -278,13 +314,86 @@ describe('auth client app-facing state projection', () => {
     snapshot.identityKey = 'anonymous'
     snapshot.identityGeneration = 1
     const email = vi.fn(async () => ({
-      data: { token: 'session-new' },
+      data: { user: { id: 'alice' } },
       error: null,
     }))
     createAuthClientMock.mockReturnValue({
+      useSession: vi.fn(() => ({ value: { isPending: false } })),
       signIn: { email },
       signUp: {},
       signOut: vi.fn(async () => ({ data: { success: true }, error: null })),
+      $fetch: vi.fn(),
+      $store: {},
+      hydrateSession: vi.fn(),
+      convex: { token: vi.fn() },
+    })
+    refreshSessionMock.mockImplementation(async () => {
+      adapterCallbacks.sessionChanged?.('session-new', null, 2)
+    })
+
+    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
+      setup(nuxtApp: {
+        provide: ReturnType<typeof vi.fn>
+        vueApp: {
+          onUnmount: ReturnType<typeof vi.fn>
+          use: ReturnType<typeof vi.fn>
+        }
+      }): void
+    }
+    const provide = vi.fn()
+    plugin.setup({
+      provide,
+      vueApp: {
+        onUnmount: vi.fn(),
+        use: vi.fn(),
+      },
+    })
+    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
+      client: {
+        signIn: {
+          email(): Promise<unknown>
+        }
+      }
+    }
+    let settled = false
+    const signIn = controller.client.signIn.email().then(() => {
+      settled = true
+    })
+    await vi.waitFor(() => expect(refreshSessionMock).toHaveBeenCalledOnce())
+
+    snapshot.settled = false
+    snapshot.identityKey = 'user:alice'
+    snapshot.identityGeneration = 2
+    for (const subscriber of subscribers) subscriber()
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    snapshot.settled = true
+    for (const subscriber of subscribers) subscriber()
+    await signIn
+    expect(settled).toBe(true)
+    expect(email).toHaveBeenCalledTimes(1)
+    expect(provide).toHaveBeenCalledWith('convexRuntime', runtime)
+    expect(provide).not.toHaveBeenCalledWith('auth', expect.anything())
+    expect((controller.client as Record<string, unknown>).$fetch).toBeUndefined()
+    expect((controller.client as Record<string, unknown>).convex).toBeUndefined()
+  })
+
+  it('accepts a late provider token for an already-settled matching SSR generation', async () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://app.example.com' },
+    })
+    emitInitialProviderSession.value = false
+    snapshot.settled = true
+    snapshot.identityKey = 'user:alice'
+    snapshot.identityGeneration = 0
+    const read = vi.fn(async () => ({ data: { ok: true }, error: null }))
+    createAuthClientMock.mockReturnValue({
+      useSession: vi.fn(() => ({ value: { isPending: false } })),
+      read,
+    })
+    refreshSessionMock.mockImplementation(async () => {
+      adapterCallbacks.sessionChanged?.('session-alice', null, 0)
     })
 
     const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
@@ -303,30 +412,83 @@ describe('auth client app-facing state projection', () => {
         use: vi.fn(),
       },
     })
+    adapterCallbacks.sessionChanged?.('session-alice', null, 0)
     const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
-      integratedSignIn: {
-        email(): Promise<unknown>
-      }
+      client: { read(): Promise<unknown> }
     }
+
+    await expect(controller.client.read()).resolves.toEqual({
+      data: { ok: true },
+      error: null,
+    })
+    expect(refreshSessionMock).toHaveBeenCalledOnce()
+  })
+
+  it('reconfirms a changed Convex token before resolving a same-session operation', async () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://app.example.com' },
+    })
+    emitInitialProviderSession.value = false
+    snapshot.settled = true
+    snapshot.identityKey = 'user:alice'
+    snapshot.identityGeneration = 1
+    const updateUser = vi.fn(async () => ({ data: { status: true }, error: null }))
+    createAuthClientMock.mockReturnValue({
+      useSession: vi.fn(() => ({ value: { isPending: false } })),
+      updateUser,
+    })
+
+    let confirmRuntime!: () => void
+    const runtimeConfirmation = new Promise<void>((resolve) => {
+      confirmRuntime = resolve
+    })
+    authRefreshMock.mockImplementation(async () => {
+      await refreshSessionMock()
+      await runtimeConfirmation
+      adapterCallbacks.authenticated?.('fresh-convex-jwt', {
+        id: 'alice',
+        name: 'Updated Alice',
+      })
+      for (const subscriber of subscribers) subscriber()
+    })
+
+    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
+      setup(nuxtApp: {
+        provide: ReturnType<typeof vi.fn>
+        vueApp: {
+          onUnmount: ReturnType<typeof vi.fn>
+          use: ReturnType<typeof vi.fn>
+        }
+      }): void
+    }
+    plugin.setup({
+      provide: vi.fn(),
+      vueApp: {
+        onUnmount: vi.fn(),
+        use: vi.fn(),
+      },
+    })
+    adapterCallbacks.sessionChanged?.('session-alice', null, 0)
+    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
+      client: { updateUser(): Promise<unknown> }
+    }
+
     let settled = false
-    const signIn = controller.integratedSignIn.email().then(() => {
+    const operation = controller.client.updateUser().then(() => {
       settled = true
     })
-    await Promise.resolve()
-    await Promise.resolve()
-    adapterCallbacks.sessionChanged?.('session-new', null)
-
-    snapshot.settled = false
-    snapshot.identityKey = 'user:alice'
-    snapshot.identityGeneration = 2
-    for (const subscriber of subscribers) subscriber()
-    await Promise.resolve()
+    await vi.waitFor(() => expect(authRefreshMock).toHaveBeenCalledOnce())
     expect(settled).toBe(false)
+    expect(
+      identityState.value.status === 'authenticated' ? identityState.value.user.name : null,
+    ).toBe('Alice')
 
-    snapshot.settled = true
-    for (const subscriber of subscribers) subscriber()
-    await signIn
+    confirmRuntime()
+    await operation
     expect(settled).toBe(true)
-    expect(email).toHaveBeenCalledTimes(1)
+    expect(
+      identityState.value.status === 'authenticated' ? identityState.value.user.name : null,
+    ).toBe('Updated Alice')
+    expect(updateUser).toHaveBeenCalledOnce()
   })
 })

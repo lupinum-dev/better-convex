@@ -1,4 +1,4 @@
-import type { BetterConvexAttachedRuntime } from 'better-convex-vue/embedded'
+import type { BetterConvexAttachment } from 'better-convex-vue/embedded'
 
 export interface SafeIdentityInput {
   authEnabled: boolean
@@ -11,12 +11,15 @@ export interface SafeIdentityInput {
 export interface EmbeddedHostProof {
   vueIdentity: unknown
   initialize(secret: string): void
-  runtime(): BetterConvexAttachedRuntime
+  attachment(): BetterConvexAttachment
   snapshot(): unknown
   emit(snapshot: SafeIdentityInput): void
+  emitConnection(connected: boolean): void
   listenerCount(): number
+  connectionListenerCount(): number
   detachCount(): number
   clientStats(): { created: number; active: number; stopped: number }
+  ownerControlCalls(): { close: number; dispose: number; setAuth: number }
 }
 
 export interface EmbeddedConsumerProof {
