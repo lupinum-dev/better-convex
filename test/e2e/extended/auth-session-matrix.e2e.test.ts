@@ -66,7 +66,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
 const pollOptions = { interval: 100, timeout: 15_000 }
 
 async function expectAuthenticatedIdentity(page: Page): Promise<string> {
-  await expect.poll(() => page.getByTestId('auth-state').textContent(), pollOptions).toBe('true')
+  await expect
+    .poll(() => page.getByTestId('auth-state').textContent(), pollOptions)
+    .toBe('authenticated')
   await expect
     .poll(async () => {
       const sessionUserId = await page.getByTestId('session-user-id').textContent()
@@ -79,7 +81,9 @@ async function expectAuthenticatedIdentity(page: Page): Promise<string> {
 }
 
 async function expectAnonymousIdentity(page: Page): Promise<void> {
-  await expect.poll(() => page.getByTestId('auth-state').textContent(), pollOptions).toBe('false')
+  await expect
+    .poll(() => page.getByTestId('auth-state').textContent(), pollOptions)
+    .toBe('anonymous')
   await expect.poll(() => page.getByTestId('auth-email').textContent(), pollOptions).toBe('none')
   await expect
     .poll(() => page.getByTestId('session-user-id').textContent(), pollOptions)
@@ -127,7 +131,7 @@ describe('canonical Better Auth session matrix', async () => {
     },
   })
 
-  it('propagates raw Better Auth logout across tabs and clears Convex identity', async () => {
+  it('propagates integrated Better Auth logout across tabs and clears Convex identity', async () => {
     const browser = await chromium.launch()
     const context = await createIsolatedBrowserContext(browser)
     const page = await context.newPage()
@@ -140,7 +144,7 @@ describe('canonical Better Auth session matrix', async () => {
       const firstIdentity = await expectAuthenticatedIdentity(page)
       expect(await expectAuthenticatedIdentity(secondPage)).toBe(firstIdentity)
 
-      await page.getByTestId('raw-signout').click()
+      await page.getByTestId('integrated-signout').click()
       await expectAnonymousIdentity(page)
       await expectAnonymousIdentity(secondPage)
     } finally {
@@ -166,7 +170,7 @@ describe('canonical Better Auth session matrix', async () => {
       const firstIdentity = await expectAuthenticatedIdentity(page)
       expect(await expectAuthenticatedIdentity(secondPage)).toBe(firstIdentity)
 
-      await secondPage.getByTestId('raw-signout').click()
+      await secondPage.getByTestId('integrated-signout').click()
       await expectAnonymousIdentity(page)
       await expectAnonymousIdentity(secondPage)
 
