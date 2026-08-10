@@ -32,9 +32,16 @@ export type PaginatedQueryReference = FunctionReference<
   PaginationResult<unknown>
 >
 
-export type PaginatedQueryArgs<Query extends PaginatedQueryReference> = Omit<
-  FunctionArgs<Query>,
-  'paginationOpts'
+type EmptyConvexArgs = Record<string, never>
+type StrictEmptyConvexArgs = Record<PropertyKey, never>
+type TightenEmptyConvexArgs<Args> = Args extends unknown
+  ? Args extends EmptyConvexArgs
+    ? StrictEmptyConvexArgs
+    : Args
+  : never
+
+export type PaginatedQueryArgs<Query extends PaginatedQueryReference> = TightenEmptyConvexArgs<
+  Omit<FunctionArgs<Query>, 'paginationOpts'>
 >
 
 export type PaginatedQueryItem<Query extends PaginatedQueryReference> =

@@ -28,6 +28,12 @@ declare const requiredPaginatedQuery: FunctionReference<
   { owner: string; paginationOpts: PaginationOptions },
   PaginationResult<string>
 >
+declare const emptyPaginatedQuery: FunctionReference<
+  'query',
+  'public',
+  { paginationOpts: PaginationOptions },
+  PaginationResult<string>
+>
 declare const ordinaryQuery: FunctionReference<'query', 'public', { owner: string }, string[]>
 declare const wrongPaginatedResult: FunctionReference<
   'query',
@@ -76,6 +82,11 @@ function typeContracts() {
   void useConvexPaginatedQuery(requiredPaginatedQuery, () => 'skip' as const, {
     initialNumItems: 10,
   })
+  void useConvexPaginatedQuery(emptyPaginatedQuery, {}, { initialNumItems: 10 })
+  // @ts-expect-error an empty-args query still rejects a ref containing null
+  void useConvexPaginatedQuery(emptyPaginatedQuery, ref(null), { initialNumItems: 10 })
+  // @ts-expect-error an empty-args query still rejects a getter returning undefined
+  void useConvexPaginatedQuery(emptyPaginatedQuery, () => undefined, { initialNumItems: 10 })
   // @ts-expect-error pagination options are required
   void useConvexPaginatedQuery(requiredPaginatedQuery, { owner: 'alice' })
   // @ts-expect-error required paginated query arguments cannot be omitted
