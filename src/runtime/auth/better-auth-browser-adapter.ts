@@ -12,6 +12,7 @@ interface BetterAuthSessionState {
     user?: { id?: unknown }
   } | null
   isPending?: boolean
+  isRefetching?: boolean
   error?: unknown
   refetch?: () => Promise<void>
 }
@@ -21,6 +22,7 @@ interface BetterAuthBrowserSource extends ConvexTokenSource {
 }
 
 const UNAVAILABLE = 'Authentication is temporarily unavailable'
+const SESSION_SETTLEMENT_TIMEOUT_MS = 5_000
 
 function isUnauthorized(error: unknown): boolean {
   return Boolean(
@@ -50,6 +52,7 @@ export function createBetterAuthBrowserAdapter(
 } {
   const session = source.useSession()
   const listeners = new Set<() => void>()
+  const cancelSessionSettlement = new Set<() => void>()
   let disposed = false
   let sessionGeneration = 0
   let observedSessionToken: string | null | undefined
@@ -184,6 +187,41 @@ export function createBetterAuthBrowserAdapter(
     },
   )
 
+  const waitForSessionSettlement = async () => {
+    const isUnsettled = () =>
+      session.value.isPending === true || session.value.isRefetching === true
+    if (!isUnsettled()) return
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      let stopPending = () => {}
+      const finish = (error?: Error) => {
+        if (settled) return
+        settled = true
+        stopPending()
+        clearTimeout(timer)
+        cancelSessionSettlement.delete(cancel)
+        if (error) reject(error)
+        else resolve()
+      }
+      const cancel = () => finish(new Error(UNAVAILABLE))
+
+      cancelSessionSettlement.add(cancel)
+      stopPending = watch(
+        isUnsettled,
+        (unsettled) => {
+          if (!unsettled) finish()
+        },
+        { flush: 'sync' },
+      )
+      const timer = setTimeout(cancel, SESSION_SETTLEMENT_TIMEOUT_MS)
+
+      // Close the gap between the initial check and watcher registration.
+      if (disposed) cancel()
+      else if (!isUnsettled()) finish()
+    })
+  }
+
   return Object.freeze({
     snapshot: () => snapshot,
     subscribe(listener: () => void) {
@@ -219,10 +257,11 @@ export function createBetterAuthBrowserAdapter(
       if (typeof refetch !== 'function') throw new Error(UNAVAILABLE)
       try {
         await refetch()
+        await waitForSessionSettlement()
       } catch {
         throw new Error(UNAVAILABLE)
       }
-      if (session.value.error) throw new Error(UNAVAILABLE)
+      if (disposed || session.value.error) throw new Error(UNAVAILABLE)
     },
     failClosed(message: string) {
       if (disposed) return
@@ -244,6 +283,8 @@ export function createBetterAuthBrowserAdapter(
       if (disposed) return
       disposed = true
       stop()
+      for (const cancel of [...cancelSessionSettlement]) cancel()
+      cancelSessionSettlement.clear()
       listeners.clear()
       cachedToken = null
       observedSessionToken = null

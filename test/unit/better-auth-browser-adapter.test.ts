@@ -11,6 +11,7 @@ interface SessionState {
     user?: { id?: unknown }
   } | null
   isPending?: boolean
+  isRefetching?: boolean
   error?: unknown
   refetch?: () => Promise<void>
 }
@@ -339,5 +340,102 @@ describe('Better Auth browser adapter', () => {
     })
     expect(JSON.stringify(adapter.snapshot())).not.toContain('raw-unauthorized-sentinel')
     adapter.dispose()
+  })
+
+  it('waits for the canonical session ref to settle after refetch resolves', async () => {
+    const data = {
+      session: { token: 'session-a' },
+      user: { id: 'alice' },
+    }
+    const fixture = source({ isPending: false, data, error: null }, [])
+    fixture.refetch.mockImplementationOnce(async () => {
+      fixture.session.value = {
+        isPending: true,
+        data,
+        error: null,
+        refetch: fixture.refetch,
+      }
+    })
+    const adapter = createBetterAuthBrowserAdapter(fixture.client)
+    const finished = vi.fn()
+    const refresh = adapter.refreshSession().then(finished)
+
+    await vi.waitFor(() => expect(adapter.snapshot().status).toBe('loading'))
+    expect(finished).not.toHaveBeenCalled()
+
+    fixture.session.value = {
+      isPending: false,
+      data: null,
+      error: null,
+      refetch: fixture.refetch,
+    }
+    await expect(refresh).resolves.toBeUndefined()
+    expect(finished).toHaveBeenCalledOnce()
+    expect(adapter.snapshot().status).toBe('anonymous')
+    adapter.dispose()
+  })
+
+  it('waits for the winning refetch when a concurrent provider refresh aborts its request', async () => {
+    const data = {
+      session: { token: 'session-a' },
+      user: { id: 'alice' },
+    }
+    const fixture = source({ isPending: false, data, error: null }, [])
+    fixture.refetch.mockImplementationOnce(async () => {
+      fixture.session.value = {
+        isPending: false,
+        isRefetching: true,
+        data,
+        error: null,
+        refetch: fixture.refetch,
+      }
+    })
+    const adapter = createBetterAuthBrowserAdapter(fixture.client)
+    const finished = vi.fn()
+    const refresh = adapter.refreshSession().then(finished)
+
+    await Promise.resolve()
+    expect(finished).not.toHaveBeenCalled()
+
+    fixture.session.value = {
+      isPending: false,
+      isRefetching: false,
+      data: null,
+      error: null,
+      refetch: fixture.refetch,
+    }
+    await expect(refresh).resolves.toBeUndefined()
+    expect(finished).toHaveBeenCalledOnce()
+    expect(adapter.snapshot().status).toBe('anonymous')
+    adapter.dispose()
+  })
+
+  it('bounds a provider session ref that never settles', async () => {
+    vi.useFakeTimers()
+    try {
+      const data = {
+        session: { token: 'session-a' },
+        user: { id: 'alice' },
+      }
+      const fixture = source({ isPending: false, data, error: null }, [])
+      fixture.refetch.mockImplementationOnce(async () => {
+        fixture.session.value = {
+          isPending: true,
+          data,
+          error: null,
+          refetch: fixture.refetch,
+        }
+      })
+      const adapter = createBetterAuthBrowserAdapter(fixture.client)
+      const refresh = expect(adapter.refreshSession()).rejects.toThrow(
+        'Authentication is temporarily unavailable',
+      )
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      await refresh
+      adapter.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
