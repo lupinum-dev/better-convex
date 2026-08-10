@@ -224,7 +224,7 @@ describe('vNext Convex-native MCP topology probe', () => {
       peerDependencies: Record<string, string>
     }
     expect(fixtureManifest.dependencies).toEqual({
-      'better-convex-mcp': '0.1.0-beta.6',
+      'better-convex-mcp': '0.1.0-beta.19',
       '@modelcontextprotocol/server': mcpManifest.dependencies['@modelcontextprotocol/server'],
       convex: rootManifest.peerDependencies.convex,
       zod: '4.3.6',
@@ -243,8 +243,12 @@ describe('vNext Convex-native MCP topology probe', () => {
     expect(fixtureSource.includes('@modelcontextprotocol/client')).toBe(false)
     expect(fixtureSource.includes('polyfill')).toBe(false)
     expect(httpSource).not.toContain('/api/auth/get-session')
-    expect(httpSource.match(/handler: handleMcp/gu)).toHaveLength(1)
-    expect(mcpSource.match(/createConvexMcpHandler/gu)).toHaveLength(2)
+    expect(httpSource.match(/handler: handleMcp/gu)).toHaveLength(3)
+    expect(httpSource.match(/handler: handleOAuthMetadata/gu)).toHaveLength(3)
+    expect(httpSource).toContain(
+      "method: 'OPTIONS',\n  path: '/.well-known/oauth-protected-resource/mcp'",
+    )
+    expect(mcpSource.match(/handleMcpRequest/gu)).toHaveLength(2)
     expect(mcpSource).not.toContain('createMcpHandler')
     expect(mcpSource).not.toContain('requireLabOAuthAccess')
     expect(operationsSource).not.toMatch(/\b(?:AuthInfo|Request|authorization|bearer|token)\b/iu)

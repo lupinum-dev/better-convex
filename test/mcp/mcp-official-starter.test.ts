@@ -1,7 +1,7 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { describe, expect, it } from 'vitest'
 
-import { createConvexMcpHandler } from '../../packages/mcp/src/handler'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
 import { createDelegatedMcpServer } from '../../starters/mcp-oauth-agent/convex/mcp'
 
 const resource = new URL('https://starter.example.test/mcp')
@@ -17,7 +17,7 @@ describe('delegated OAuth starter official MCP composition', () => {
         return [{ id: 'project-1', name: 'Example' }]
       },
     }
-    const handler = createConvexMcpHandler<typeof application>({
+    const requestOptions = {
       serverInfo: {
         name: 'better-convex-nuxt-mcp-oauth-agent',
         version: '0.1.0',
@@ -40,9 +40,9 @@ describe('delegated OAuth starter official MCP composition', () => {
           }
         },
       },
-      configureServer(context, access, server) {
+      configureServer(access, server) {
         createDelegatedMcpServer(
-          context as never,
+          application as never,
           access,
           {
             clientId: access.clientId,
@@ -54,12 +54,12 @@ describe('delegated OAuth starter official MCP composition', () => {
           server,
         )
       },
-    })
+    } satisfies HandleMcpRequestOptions
     const responseBodies: string[] = []
     const transport = new StreamableHTTPClientTransport(resource, {
       requestInit: { headers: { authorization: `Bearer ${bearer}` } },
       fetch: async (input, init) => {
-        const response = await handler.fetch(application, new Request(input, init))
+        const response = await handleMcpRequest(new Request(input, init), requestOptions)
         responseBodies.push(await response.clone().text())
         return response
       },

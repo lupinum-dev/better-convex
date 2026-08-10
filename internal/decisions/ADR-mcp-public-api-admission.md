@@ -35,20 +35,22 @@ export interface McpAccessVerifier {
   verifyAccessToken(token: string, expectedResource: URL): Promise<VerifiedMcpAccess>
 }
 
-export const mcp = createConvexMcpHandler({
-  resource: new URL('https://deployment.example/mcp'),
-  verifier,
-  authorization: {
-    mode: 'oauth',
-    issuer: 'https://accounts.example.com/',
-  },
-  serverInfo: { name: 'my-app', version: '0.1.0' },
-  configureServer(ctx, access, server) {
-    server.registerTool(/* official SDK API */)
-  },
-})
-
-export const handleMcp = httpAction((ctx, request) => mcp.fetch(ctx, request))
+export const handleMcp = httpAction((ctx, request) =>
+  handleMcpRequest(request, {
+    resource: new URL('https://deployment.example/mcp'),
+    verifier,
+    authorization: {
+      mode: 'oauth',
+      issuer: 'https://accounts.example.com/',
+    },
+    serverInfo: { name: 'my-app', version: '0.1.0' },
+    configureServer(access, server) {
+      void ctx
+      void access
+      server.registerTool(/* official SDK API */)
+    },
+  }),
+)
 ```
 
 Names and the verifier's non-public result shape remain subject to implementation proof. No other

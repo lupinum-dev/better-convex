@@ -36,7 +36,7 @@ Final MCP core reconciliation remains separately blocked until the scheduled 202
 ## Repository proof
 
 - `@better-convex/mcp` has exactly two runtime exports:
-  `createConvexMcpHandler` and `runMcpTool`.
+  `handleMcpRequest` and `runMcpTool`.
 - Its only named types are the provider-neutral access-verifier contract.
 - Vue, Nuxt, and MCP package-entry manifests contain no public name matching `task`.
 - Runtime source contains no Tasks adapter, task store, task route, task registration, or legacy parser.

@@ -33,8 +33,8 @@ said to add no tool helper was corrected to describe this admitted exception.
   13 architecture rules over four public packages, 164 files, and 1,882 tests.
 - Focused maintained-candidate, export-manifest, and MCP tool-error suites: 3 files and 40 tests passed.
 - Credential-passthrough security regression: 1 file and 1 test passed.
-- MCP package typecheck and production build passed with exactly two runtime exports:
-  `createConvexMcpHandler` and `runMcpTool`.
+- MCP package typecheck and production build passed. The request-lifecycle hard cut keeps exactly two
+  runtime exports: `handleMcpRequest` and `runMcpTool`.
 - Exact temporary MCP tarball SHA-256
   `cc45a4c9848bb17212f6c1795752bb725fa4ceec3fd15e59b0d42b03e83a2783` installed into an isolated
   consumer; typecheck, runtime credential proof, installed-byte equality, exact SDK dependency, and

@@ -21,7 +21,7 @@ commit `988b40f1`; it is not a supported runtime or compatibility path.
 ## Replacement proof
 
 - `starters/mcp-oauth-agent/convex/mcp.ts` uses the official SDK and
-  `createConvexMcpHandler` for five explicit tools.
+  request-scoped `handleMcpRequest` for five explicit tools.
 - Better Auth OAuth remains the authorization server at the Nuxt application
   origin; the protected resource and its metadata live at `CONVEX_SITE_URL`.
 - The bearer terminates in the verifier. Only an allowlisted access context and

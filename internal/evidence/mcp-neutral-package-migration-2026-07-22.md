@@ -2,7 +2,7 @@
 
 ## Outcome
 
-The deployed neutral notes consumer now imports `createConvexMcpHandler` and `runMcpTool` from
+The deployed neutral notes consumer now imports `handleMcpRequest` and `runMcpTool` from
 `@better-convex/mcp`. Its direct official SDK registrations remain application-owned, but the fixture no
 longer owns a bearer middleware, metadata handler, request-body reader, timeout loop, protocol handler,
 or per-request SDK cleanup path.

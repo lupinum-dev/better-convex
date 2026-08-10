@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server'
-import { createConvexMcpHandler, runMcpTool, type McpAccessContext } from 'better-convex-mcp'
+import { handleMcpRequest, runMcpTool, type McpAccessContext } from 'better-convex-mcp'
 import { requireAuthOrigin, verifyOAuthBearerToken } from 'better-convex-nuxt/convex-auth'
 import { ConvexError } from 'convex/values'
 import { z } from 'zod'
@@ -182,7 +182,7 @@ export const handleMcp = httpAction(async (ctx, request) => {
   const issuer = `${requireAuthOrigin('SITE_URL')}/api/auth`
   const resource = new URL('/mcp', requireAuthOrigin('CONVEX_SITE_URL'))
   let verifiedPrincipal: Awaited<ReturnType<typeof verifyOAuthBearerToken>> | undefined
-  const handler = createConvexMcpHandler<ActionCtx>({
+  return await handleMcpRequest(request, {
     serverInfo: {
       name: 'better-convex-nuxt-mcp-oauth-agent',
       version: '0.1.0',
@@ -216,7 +216,7 @@ export const handleMcp = httpAction(async (ctx, request) => {
         }
       },
     },
-    configureServer(actionCtx, access, server) {
+    configureServer(access, server) {
       const principal = verifiedPrincipal
       if (
         !principal ||
@@ -226,7 +226,7 @@ export const handleMcp = httpAction(async (ctx, request) => {
         throw new Error('MCP_ACCESS_CONTEXT_INVALID')
       }
       createDelegatedMcpServer(
-        actionCtx,
+        ctx,
         access,
         serializePrincipal({
           clientId: principal.clientId,
@@ -239,5 +239,4 @@ export const handleMcp = httpAction(async (ctx, request) => {
       )
     },
   })
-  return await handler.fetch(ctx, request)
 })

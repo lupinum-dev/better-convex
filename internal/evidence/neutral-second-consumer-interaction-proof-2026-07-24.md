@@ -33,7 +33,7 @@ other's state, roles, effects, or status transitions.
 
 The neutral consumer uses:
 
-- `createConvexMcpHandler()` for the one bearer-consuming official-SDK HTTP action;
+- `handleMcpRequest()` for the one bearer-consuming official-SDK HTTP action;
 - `runMcpTool()` for allowlisted operation diagnostics and opaque unexpected failures;
 - direct official-SDK tool/resource registration and schemas;
 - `useMcpApp()` for Vue mount, readonly cloned projections, host calls, and disposal;

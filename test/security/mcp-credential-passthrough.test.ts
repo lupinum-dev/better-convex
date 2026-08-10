@@ -2,7 +2,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { createConvexMcpHandler } from '../../packages/mcp/src/handler'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
 import type { McpAccessVerifier } from '../../packages/mcp/src/index'
 import { runMcpTool } from '../../packages/mcp/src/tools'
 
@@ -56,12 +56,12 @@ describe('MCP credential passthrough absence', () => {
     const operationArguments: unknown[] = []
     const responseBodies: string[] = []
     const callbackHeaders: Headers[] = []
-    const handler = createConvexMcpHandler({
+    const requestOptions = {
       serverInfo: { name: 'absence-proof', version: '0.1.0' },
       resource,
       verifier,
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(_context, access, server) {
+      configureServer(access, server) {
         server.registerTool(
           'search_notes',
           {
@@ -92,7 +92,7 @@ describe('MCP credential passthrough absence', () => {
           },
         )
       },
-    })
+    } satisfies HandleMcpRequestOptions
     const transport = new StreamableHTTPClientTransport(resource, {
       requestInit: {
         headers: {
@@ -103,7 +103,7 @@ describe('MCP credential passthrough absence', () => {
         },
       },
       fetch: async (input, init) => {
-        const response = await handler.fetch({}, new Request(input, init))
+        const response = await handleMcpRequest(new Request(input, init), requestOptions)
         responseBodies.push(await response.clone().text())
         return response
       },

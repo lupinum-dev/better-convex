@@ -15,7 +15,7 @@ avoided in the maintained handler proof.
 
 ## Executed proof
 
-The official client calls the selected `createConvexMcpHandler` through the official streamable HTTP
+The official client calls `handleMcpRequest` through the official streamable HTTP
 transport and proves:
 
 - `search_notes` returns schema-validated structured content and `1 note matched: Alpha.` as its complete

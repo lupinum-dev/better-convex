@@ -1854,7 +1854,7 @@ Acceptance criteria:
 Ledger note (2026-07-26):
 
 - Traced the shipped MCP path through the application-owned Convex routes,
-  `createConvexMcpHandler`, the supplied verifier, explicit official-SDK registration,
+  `handleMcpRequest`, the supplied verifier, explicit official-SDK registration,
   and named internal functions. `SECURITY.md` now names that path, states that Nuxt owns
   no MCP route, includes all three prerelease packages, and matches the current Better
   Auth/OAuth Provider RC.

@@ -8,7 +8,7 @@ import {
   type ServerContext,
 } from '@modelcontextprotocol/server'
 import {
-  createConvexMcpHandler,
+  handleMcpRequest,
   runMcpTool,
   type McpAccessContext,
   type McpAccessVerifier,
@@ -453,7 +453,7 @@ function markCanonicalBearerBoundary(response: Response): Response {
 async function handleRequest(ctx: ActionCtx, request: Request): Promise<Response> {
   const resource = new URL('/mcp', request.url)
   const metadata = labOAuthMetadataOptions(resource)
-  const handler = createConvexMcpHandler({
+  const response = await handleMcpRequest(request, {
     serverInfo: {
       name: 'better-convex-convex-topology-lab',
       version: '0.0.0',
@@ -467,10 +467,9 @@ async function handleRequest(ctx: ActionCtx, request: Request): Promise<Response
       requiredScopes: ['notes:read'],
       scopesSupported: metadata.scopesSupported,
     },
-    configureServer: (_context, access, server) =>
+    configureServer: (access, server) =>
       createNotesServer(ctx, Object.freeze({ subject: access.subject }), access, server),
   })
-  const response = await handler.fetch(ctx, request)
   return new URL(request.url).pathname === '/mcp' && !request.headers.has('origin')
     ? markCanonicalBearerBoundary(response)
     : response

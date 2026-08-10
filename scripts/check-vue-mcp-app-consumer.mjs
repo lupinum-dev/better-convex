@@ -135,7 +135,7 @@ try {
     throw new Error('Production App bundle fell back to Vue package source.')
   }
 
-  const [{ createConvexMcpHandler }, { Client, StreamableHTTPClientTransport }, { z }] =
+  const [{ handleMcpRequest }, { Client, StreamableHTTPClientTransport }, { z }] =
     await Promise.all([
       import(pathToFileURL(join(installedMcp, 'dist/index.mjs')).href),
       import(
@@ -144,7 +144,7 @@ try {
       ),
       import(pathToFileURL(join(scratchRoot, 'node_modules/zod/index.js')).href),
     ])
-  const handler = createConvexMcpHandler({
+  const mcpOptions = {
     authorization: {
       issuer: 'https://packed-app.invalid/issuer/',
       mode: 'preconfigured-bearer',
@@ -167,7 +167,7 @@ try {
         }
       },
     },
-    configureServer(_context, _access, server) {
+    configureServer(_access, server) {
       server.registerTool(
         'search_notes',
         {
@@ -210,7 +210,7 @@ try {
         },
       )
     },
-  })
+  }
 
   let lastProtocolFailure
   const transport = new StreamableHTTPClientTransport(new URL('https://packed-app.invalid/mcp'), {
@@ -218,7 +218,7 @@ try {
       const request = new Request(input, init)
       const headers = new Headers(request.headers)
       headers.set('authorization', `Bearer ${token}`)
-      const response = await handler.fetch({}, new Request(request, { headers }))
+      const response = await handleMcpRequest(new Request(request, { headers }), mcpOptions)
       if (!response.ok) {
         lastProtocolFailure = `HTTP ${response.status}`
         return response

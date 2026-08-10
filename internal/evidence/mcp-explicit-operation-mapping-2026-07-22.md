@@ -11,7 +11,7 @@ closure is the explicit mapping and remains visible in ordinary code review.
 
 ## Executed substitution matrix
 
-`test/unit/mcp-operation-mapping.test.ts` runs through the selected `createConvexMcpHandler`, official
+`test/unit/mcp-operation-mapping.test.ts` runs through `handleMcpRequest`, the official
 streamable HTTP client, and official server registration API. It proves:
 
 - `search_notes` reaches only the fixed `notes:search` query reference;

@@ -23,7 +23,7 @@ That API was intentionally hard-cut during stabilization. The immutable MCP
 candidate already exposes the corrected package-owned lifecycle:
 
 ```text
-createConvexMcpHandler({ configureServer(..., server) })
+handleMcpRequest(request, { configureServer(..., server) })
 ```
 
 The proof was corrected to register its tool on the package-owned server. No

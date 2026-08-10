@@ -16,7 +16,7 @@ import {
 } from '../../internal/labs/mcp-topology/convex/fixture/convex/interaction_page_contract'
 import { NeutralNotesApplication } from '../../internal/labs/mcp-topology/neutral/notes-application'
 import { noteSchema } from '../../internal/labs/mcp-topology/neutral/notes-schemas'
-import { createConvexMcpHandler } from '../../packages/mcp/src/handler'
+import { handleMcpRequest } from '../../packages/mcp/src/handler'
 
 const RESOURCE = new URL('https://mcp-apps.invalid/mcp')
 const ISSUER = 'https://mcp-apps.invalid/credentials/'
@@ -64,7 +64,7 @@ function createApplication(): NeutralNotesApplication {
 }
 
 function connectClient(
-  handler: ReturnType<typeof createConvexMcpHandler<NeutralNotesApplication>>,
+  handleRequest: (request: Request) => Promise<Response>,
   supportsApps: boolean,
 ): { client: Client; connect: Promise<void>; requestBodies: string[]; responseBodies: string[] } {
   const requestBodies: string[] = []
@@ -74,7 +74,7 @@ function connectClient(
     requestBodies.push(await request.clone().text())
     const headers = new Headers(request.headers)
     headers.set('authorization', `Bearer ${TOKEN}`)
-    const response = await handler.fetch(createApplication(), new Request(request, { headers }))
+    const response = await handleRequest(new Request(request, { headers }))
     responseBodies.push(await response.clone().text())
     return response
   }
@@ -102,75 +102,78 @@ function connectClient(
 }
 
 function createHandler(appHtml: string, isRevoked: () => boolean, onSearch: () => void) {
-  return createConvexMcpHandler<NeutralNotesApplication>({
-    serverInfo: { name: 'better-convex-apps-probe', version: '0.0.0' },
-    resource: RESOURCE,
-    authorization: { mode: 'preconfigured-bearer', issuer: ISSUER },
-    verifier: {
-      async verifyAccessToken(token, expectedResource) {
-        if (token !== TOKEN || expectedResource.href !== RESOURCE.href || isRevoked()) {
-          throw new Error('invalid')
-        }
-        return {
-          access: {
-            clientId: 'apps-client',
-            issuer: ISSUER,
-            resource: RESOURCE.href,
-            scopes: ['notes:read', 'notes:write'],
-            subject: ACTOR.subject,
-          },
-          expiresAt: Math.floor(Date.now() / 1_000) + 300,
-        }
-      },
-    },
-    configureServer(application, _access, server) {
-      server.registerTool(
-        'search_notes',
-        {
-          inputSchema: z
-            .object({
-              limit: z.number().int().min(1).max(50).optional(),
-              query: z.string().max(200),
-              workspaceId: z.string(),
-            })
-            .strict(),
-          outputSchema: z.object({ matches: z.array(noteSchema) }),
-          _meta: {
-            ui: {
-              resourceUri: NOTES_DASHBOARD_RESOURCE_URI,
-              visibility: ['model', 'app'],
-            },
-          },
-        },
-        async (input) => {
-          onSearch()
-          const output = { matches: await application.searchNotes(ACTOR, input) }
+  return async (request: Request) => {
+    const application = createApplication()
+    return await handleMcpRequest(request, {
+      serverInfo: { name: 'better-convex-apps-probe', version: '0.0.0' },
+      resource: RESOURCE,
+      authorization: { mode: 'preconfigured-bearer', issuer: ISSUER },
+      verifier: {
+        async verifyAccessToken(token, expectedResource) {
+          if (token !== TOKEN || expectedResource.href !== RESOURCE.href || isRevoked()) {
+            throw new Error('invalid')
+          }
           return {
-            content: [{ type: 'text', text: `${output.matches.length} note matched.` }],
-            structuredContent: output,
+            access: {
+              clientId: 'apps-client',
+              issuer: ISSUER,
+              resource: RESOURCE.href,
+              scopes: ['notes:read', 'notes:write'],
+              subject: ACTOR.subject,
+            },
+            expiresAt: Math.floor(Date.now() / 1_000) + 300,
           }
         },
-      )
-      server.registerResource(
-        'notes-dashboard',
-        NOTES_DASHBOARD_RESOURCE_URI,
-        {
-          _meta: notesDashboardResourceMeta,
-          mimeType: NOTES_DASHBOARD_RESOURCE_MIME_TYPE,
-        },
-        async (uri) => ({
-          contents: [
-            {
-              _meta: notesDashboardResourceMeta,
-              mimeType: NOTES_DASHBOARD_RESOURCE_MIME_TYPE,
-              text: appHtml,
-              uri: uri.href,
+      },
+      configureServer(_access, server) {
+        server.registerTool(
+          'search_notes',
+          {
+            inputSchema: z
+              .object({
+                limit: z.number().int().min(1).max(50).optional(),
+                query: z.string().max(200),
+                workspaceId: z.string(),
+              })
+              .strict(),
+            outputSchema: z.object({ matches: z.array(noteSchema) }),
+            _meta: {
+              ui: {
+                resourceUri: NOTES_DASHBOARD_RESOURCE_URI,
+                visibility: ['model', 'app'],
+              },
             },
-          ],
-        }),
-      )
-    },
-  })
+          },
+          async (input) => {
+            onSearch()
+            const output = { matches: await application.searchNotes(ACTOR, input) }
+            return {
+              content: [{ type: 'text', text: `${output.matches.length} note matched.` }],
+              structuredContent: output,
+            }
+          },
+        )
+        server.registerResource(
+          'notes-dashboard',
+          NOTES_DASHBOARD_RESOURCE_URI,
+          {
+            _meta: notesDashboardResourceMeta,
+            mimeType: NOTES_DASHBOARD_RESOURCE_MIME_TYPE,
+          },
+          async (uri) => ({
+            contents: [
+              {
+                _meta: notesDashboardResourceMeta,
+                mimeType: NOTES_DASHBOARD_RESOURCE_MIME_TYPE,
+                text: appHtml,
+                uri: uri.href,
+              },
+            ],
+          }),
+        )
+      },
+    })
+  }
 }
 
 describe('vNext MCP Apps private topology probe', () => {

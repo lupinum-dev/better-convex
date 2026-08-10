@@ -2,7 +2,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { createConvexMcpHandler } from '../../packages/mcp/src/handler'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
 import type { McpAccessVerifier } from '../../packages/mcp/src/index'
 
 const resource = new URL('https://mapping.example.test/mcp')
@@ -58,12 +58,12 @@ describe('MCP explicit Convex operation mapping', () => {
         return { id: 'note-1', title: 'Beta' }
       },
     }
-    const handler = createConvexMcpHandler<typeof application>({
+    const requestOptions = {
       serverInfo: { name: 'mapping-proof', version: '0.1.0' },
       resource,
       verifier,
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(context, access, server) {
+      configureServer(access, server) {
         server.registerTool(
           'search_notes',
           {
@@ -71,7 +71,7 @@ describe('MCP explicit Convex operation mapping', () => {
             outputSchema: z.object({ titles: z.array(z.string()) }).strict(),
           },
           async (input) => {
-            const output = await context.runQuery(searchNotesReference, {
+            const output = await application.runQuery(searchNotesReference, {
               actor: { issuer: access.issuer, subject: access.subject },
               input,
             })
@@ -88,7 +88,7 @@ describe('MCP explicit Convex operation mapping', () => {
             outputSchema: z.object({ id: z.string(), title: z.string() }).strict(),
           },
           async (input) => {
-            const output = await context.runMutation(renameNoteReference, {
+            const output = await application.runMutation(renameNoteReference, {
               actor: { issuer: access.issuer, subject: access.subject },
               input,
             })
@@ -99,10 +99,10 @@ describe('MCP explicit Convex operation mapping', () => {
           },
         )
       },
-    })
+    } satisfies HandleMcpRequestOptions
     const transport = new StreamableHTTPClientTransport(resource, {
       requestInit: { headers: { authorization: `Bearer ${bearer}` } },
-      fetch: (input, init) => handler.fetch(application, new Request(input, init)),
+      fetch: (input, init) => handleMcpRequest(new Request(input, init), requestOptions),
     })
     const client = new Client(
       { name: 'mapping-client', version: '0.1.0' },

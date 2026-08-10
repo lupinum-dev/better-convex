@@ -38,7 +38,7 @@ registration without forcing both server runtimes into the package.
 ## Executed proof
 
 `test/unit/vnext-mcp-apps-probe.test.ts` runs two official clients through
-`createConvexMcpHandler()`:
+the request-scoped `handleMcpRequest()` boundary:
 
 - one advertises the official `io.modelcontextprotocol/ui` extension and MIME
   type;
