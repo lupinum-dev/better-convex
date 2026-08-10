@@ -7,31 +7,51 @@ import type { ConvexAuthMode } from '../../utils/auth-status'
 export type ConvexCredential = { type: 'cookie'; value: string }
 
 /**
- * Public per-caller options for `serverConvex` ("Final types").
+ * Public per-caller options for `serverConvex`.
  *
- * - `auth` selects the auth policy for cookie-based resolution.
- * - `authToken` is an explicit opaque JWT the caller already holds.
- * - `credential` is an explicit Better Auth cookie principal to exchange.
- *
- * `authToken` and `credential` are mutually exclusive, and either one forces an
- * explicit-principal policy (see {@link validateServerConvexOptions}).
+ * Cookie policy, an explicit Convex token, and an explicit Better Auth cookie
+ * credential are three mutually exclusive call modes. An explicit principal
+ * always requires authentication, so those branches deliberately do not accept
+ * a redundant `auth: 'required'` field.
  */
-export interface ServerConvexOptions {
-  auth?: ConvexAuthMode
-  authToken?: string
-  credential?: ConvexCredential
-}
+export type ServerConvexOptions =
+  | {
+      auth?: ConvexAuthMode
+      authToken?: never
+      credential?: never
+    }
+  | {
+      auth?: never
+      authToken: string
+      credential?: never
+    }
+  | {
+      auth?: never
+      authToken?: never
+      credential: ConvexCredential
+    }
 
 /**
  * The validated, resolved options a caller operates on. `auth` is always a
  * concrete mode: cookie-based callers default to a fixed `optional`, while an
  * explicit principal resolves to `required`.
  */
-export interface NormalizedServerConvexOptions {
-  auth: ConvexAuthMode
-  authToken?: string
-  credential?: ConvexCredential
-}
+export type NormalizedServerConvexOptions =
+  | {
+      auth: ConvexAuthMode
+      authToken?: never
+      credential?: never
+    }
+  | {
+      auth: 'required'
+      authToken: string
+      credential?: never
+    }
+  | {
+      auth: 'required'
+      authToken?: never
+      credential: ConvexCredential
+    }
 
 /**
  * Synchronous validation failure for server-call options and credential values
@@ -92,6 +112,12 @@ export function assertConvexCredentialShape(
   }
 }
 
+function assertConvexAuthMode(auth: unknown): asserts auth is ConvexAuthMode | undefined {
+  if (auth !== undefined && auth !== 'required' && auth !== 'optional' && auth !== 'none') {
+    throw new ServerConvexValidationError("auth must be one of 'required', 'optional', or 'none'")
+  }
+}
+
 /**
  * Validate and normalize {@link ServerConvexOptions} synchronously (public
  * "Validation rules"). Throws {@link ServerConvexValidationError} — before any
@@ -100,9 +126,8 @@ export function assertConvexCredentialShape(
  *
  * Rules:
  * - `authToken` and `credential` are mutually exclusive.
- * - Providing either forces an omitted `auth` to `required`.
- * - An explicit principal combines only with omitted `auth` or `required`;
- *   `optional` and `none` are rejected (never silently downgraded).
+ * - Providing either implies `required`; every explicit `auth` field is
+ *   rejected as redundant or contradictory.
  * - An empty or control-character token/credential value is rejected.
  * - With no explicit principal, cookie-based resolution defaults to a fixed
  *   `optional`.
@@ -110,9 +135,22 @@ export function assertConvexCredentialShape(
 export function validateServerConvexOptions(
   options: ServerConvexOptions = {},
 ): NormalizedServerConvexOptions {
-  const { auth, authToken, credential } = options
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new ServerConvexValidationError('serverConvex options must be an object')
+  }
+
+  // Re-read as unknown because JavaScript and casts can bypass the public
+  // mutually exclusive union. Runtime validation must enforce the same
+  // contract before any credential reaches a request header.
+  const { auth, authToken, credential } = options as {
+    auth?: unknown
+    authToken?: unknown
+    credential?: unknown
+  }
   const hasToken = authToken !== undefined
   const hasCredential = credential !== undefined
+
+  assertConvexAuthMode(auth)
 
   if (hasToken && hasCredential) {
     throw new ServerConvexValidationError(
@@ -131,16 +169,13 @@ export function validateServerConvexOptions(
   const hasExplicitPrincipal = hasToken || hasCredential
 
   if (hasExplicitPrincipal) {
-    if (auth !== undefined && auth !== 'required') {
+    if (auth !== undefined) {
       throw new ServerConvexValidationError(
-        `An explicit authToken or credential requires auth 'required' (or omitted); '${auth}' is not allowed`,
+        'auth must be omitted when authToken or credential is provided; an explicit principal already requires authentication',
       )
     }
-    return {
-      auth: 'required',
-      ...(hasToken ? { authToken } : {}),
-      ...(hasCredential ? { credential } : {}),
-    }
+    if (hasToken) return { auth: 'required', authToken }
+    if (hasCredential) return { auth: 'required', credential }
   }
 
   // No explicit principal: cookie-based event resolution. Default to a fixed

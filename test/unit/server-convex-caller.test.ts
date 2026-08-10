@@ -272,13 +272,29 @@ describe('serverConvex caller-scoped invariants', () => {
     expect(mocks.setAuthCalls).toEqual(['explicit.jwt'])
   })
 
-  it('rejects an explicit token combined with optional/none before any network access', () => {
-    expect(() => serverConvex(createEvent(), { authToken: 'x', auth: 'none' })).toThrow(
-      ServerConvexValidationError,
-    )
-    expect(() => serverConvex(createEvent(), { authToken: 'x', auth: 'optional' })).toThrow(
-      ServerConvexValidationError,
-    )
+  it.each(['required', 'optional', 'none'] as const)(
+    'rejects an explicit token combined with auth=%s before any network access',
+    (auth) => {
+      expect(() =>
+        // @ts-expect-error explicit tokens already imply required auth
+        serverConvex(createEvent(), { authToken: 'x', auth }),
+      ).toThrow(ServerConvexValidationError)
+    },
+  )
+
+  it('forwards omitted args for exact no-argument query, mutation, and action references', async () => {
+    mocks.queryMock.mockResolvedValue('query')
+    mocks.mutationMock.mockResolvedValue('mutation')
+    mocks.actionMock.mockResolvedValue('action')
+
+    const caller = serverConvex(createEvent(), { auth: 'none' })
+    await caller.query(queryRef)
+    await caller.mutation(mutationRef)
+    await caller.action(actionRef)
+
+    expect(mocks.queryMock).toHaveBeenCalledWith(queryRef)
+    expect(mocks.mutationMock).toHaveBeenCalledWith(mutationRef)
+    expect(mocks.actionMock).toHaveBeenCalledWith(actionRef)
     expect(mocks.exchangeMock).not.toHaveBeenCalled()
   })
 })

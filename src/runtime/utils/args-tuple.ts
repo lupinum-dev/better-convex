@@ -15,15 +15,10 @@ type StrictEmptyArgs = Record<PropertyKey, never>
  * `never` for disjoint members and would wrongly collapse the whole union to
  * the empty-args type.
  *
- * Exported for the `serverConvex` caller, which applies the same no-argument
- * tightening as the client contract: a no-arg server call must still pass `{}`,
- * and an options-shaped object can never occupy the args slot.
+ * This tightening is private to the client composable contract. The server
+ * caller follows Convex's native `OptionalRestArgs` behavior instead.
  */
-export type TightenEmptyArgs<T> = T extends unknown
-  ? keyof T extends never
-    ? StrictEmptyArgs
-    : T
-  : never
+type TightenEmptyArgs<T> = T extends unknown ? (keyof T extends never ? StrictEmptyArgs : T) : never
 type TightenEmptyArgsParam<T> =
   T extends MaybeRefOrGetter<infer Value> ? MaybeRefOrGetter<TightenEmptyArgs<Value>> : T
 

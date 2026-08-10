@@ -17,6 +17,35 @@ const scenarios = new Set<ProbeScenario>([
 ])
 const ARGUMENT_SENTINEL = 'PACKED_SERVER_ARGUMENT_SENTINEL_63dff0c4'
 
+/**
+ * Packed declaration contracts. This function is never invoked by the runtime
+ * probe; `nuxi typecheck` verifies the published `/server` types instead.
+ */
+async function _packedServerTypeContracts(event: Parameters<typeof serverConvex>[0]) {
+  const caller = serverConvex(event)
+  const noArgsQuery = makeFunctionReference<'query', Record<string, never>, string[]>(
+    'serverProbe:no-args',
+  )
+  const requiredMutation = makeFunctionReference<'mutation', ProbeArgs, ProbeResult>(
+    'serverProbe:required-args',
+  )
+
+  await caller.query(noArgsQuery)
+  await caller.query(noArgsQuery, {})
+  // @ts-expect-error required mutation args cannot be omitted
+  await caller.mutation(requiredMutation)
+
+  serverConvex(event, { authToken: 'jwt' })
+  serverConvex(event, { credential: { type: 'cookie', value: 'better-auth.session_token=k' } })
+  // @ts-expect-error an explicit token already implies required auth
+  serverConvex(event, { authToken: 'jwt', auth: 'required' })
+  serverConvex(event, {
+    authToken: 'jwt',
+    // @ts-expect-error token and credential are mutually exclusive
+    credential: { type: 'cookie', value: 'better-auth.session_token=k' },
+  })
+}
+
 function readProbeValue<T extends string>(value: unknown, allowed: Set<T>, label: string): T {
   if (typeof value !== 'string' || !allowed.has(value as T)) {
     throw createError({ statusCode: 400, statusMessage: `Invalid ${label}` })

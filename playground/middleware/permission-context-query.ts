@@ -9,7 +9,7 @@ import { api } from '#convex/api'
  */
 export default defineNuxtRouteMiddleware(async () => {
   const context = import.meta.server
-    ? await serverConvex(useRequestEvent()!).query(api.auth.getPermissionContext, {})
+    ? await serverConvex(useRequestEvent()!).query(api.auth.getPermissionContext)
     : await useConvex().query(api.auth.getPermissionContext, {})
 
   // For the playground demo, just require an authenticated permission context.

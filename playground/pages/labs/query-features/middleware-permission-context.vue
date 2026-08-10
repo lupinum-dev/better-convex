@@ -83,7 +83,7 @@ const {
       <h2>Admin-Only Middleware Variant (Example)</h2>
       <pre><code>export default defineNuxtRouteMiddleware(async () => {
   const context = import.meta.server
-    ? await serverConvex(useRequestEvent()!).query(api.auth.getPermissionContext, {})
+    ? await serverConvex(useRequestEvent()!).query(api.auth.getPermissionContext)
     : await useConvex().query(api.auth.getPermissionContext, {})
 
   if (!context || context.role !== 'admin') {

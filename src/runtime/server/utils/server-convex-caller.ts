@@ -1,9 +1,8 @@
 import { ConvexHttpClient } from 'convex/browser'
-import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
+import type { FunctionReference, FunctionReturnType, OptionalRestArgs } from 'convex/server'
 import type { H3Event } from 'h3'
 
 import { ConvexCallError, normalizeConvexError } from '../../errors'
-import type { TightenEmptyArgs } from '../../utils/args-tuple'
 import { createBoundedConvexFetch } from '../../utils/bounded-convex-fetch'
 import { normalizeConvexRuntimeConfig } from '../../utils/runtime-config-normalize'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
@@ -21,24 +20,24 @@ export type { ServerConvexOptions }
  *
  * A caller owns exactly one lazy authentication token promise and one lazy
  * `ConvexHttpClient`; `setAuth` runs at most once, when a token exists. The
- * no-argument tightening from the client contract applies here too: every call
- * passes an explicit args object, and a no-arg function must be called with
- * `{}`.
+ * operation methods use Convex's native optional-rest-args contract, so exact
+ * no-argument references omit the artificial `{}` argument while references
+ * with declared arguments remain required and inferred.
  */
 export interface ServerConvexCaller {
-  getToken: () => Promise<string | null>
-  query: <Query extends FunctionReference<'query'>>(
+  getToken(): Promise<string | null>
+  query<Query extends FunctionReference<'query'>>(
     query: Query,
-    args: TightenEmptyArgs<FunctionArgs<Query>>,
-  ) => Promise<FunctionReturnType<Query>>
-  mutation: <Mutation extends FunctionReference<'mutation'>>(
+    ...args: OptionalRestArgs<Query>
+  ): Promise<FunctionReturnType<Query>>
+  mutation<Mutation extends FunctionReference<'mutation'>>(
     mutation: Mutation,
-    args: TightenEmptyArgs<FunctionArgs<Mutation>>,
-  ) => Promise<FunctionReturnType<Mutation>>
-  action: <Action extends FunctionReference<'action'>>(
+    ...args: OptionalRestArgs<Mutation>
+  ): Promise<FunctionReturnType<Mutation>>
+  action<Action extends FunctionReference<'action'>>(
     action: Action,
-    args: TightenEmptyArgs<FunctionArgs<Action>>,
-  ) => Promise<FunctionReturnType<Action>>
+    ...args: OptionalRestArgs<Action>
+  ): Promise<FunctionReturnType<Action>>
 }
 
 // ---------------------------------------------------------------------------
@@ -225,35 +224,26 @@ export function serverConvex(
 
   return {
     getToken,
-    async query(query, args) {
+    async query(query, ...args) {
       const client = await prepareClient()
       try {
-        return (await client.query(
-          query,
-          args as FunctionArgs<typeof query>,
-        )) as FunctionReturnType<typeof query>
+        return (await client.query(query, ...args)) as FunctionReturnType<typeof query>
       } catch (error) {
         throw normalizeConvexError(error)
       }
     },
-    async mutation(mutation, args) {
+    async mutation(mutation, ...args) {
       const client = await prepareClient()
       try {
-        return (await client.mutation(
-          mutation,
-          args as FunctionArgs<typeof mutation>,
-        )) as FunctionReturnType<typeof mutation>
+        return (await client.mutation(mutation, ...args)) as FunctionReturnType<typeof mutation>
       } catch (error) {
         throw normalizeConvexError(error)
       }
     },
-    async action(action, args) {
+    async action(action, ...args) {
       const client = await prepareClient()
       try {
-        return (await client.action(
-          action,
-          args as FunctionArgs<typeof action>,
-        )) as FunctionReturnType<typeof action>
+        return (await client.action(action, ...args)) as FunctionReturnType<typeof action>
       } catch (error) {
         throw normalizeConvexError(error)
       }

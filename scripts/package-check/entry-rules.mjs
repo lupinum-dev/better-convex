@@ -124,7 +124,6 @@ const NUXT_CHECKER_ENTRY_RULES = [
         'better-convex-vue/errors',
         'convex/server',
         'h3',
-        'vue',
       ],
     },
     packedProbe: probeServerEntry,
