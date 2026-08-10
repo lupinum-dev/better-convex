@@ -9,6 +9,10 @@ const delegatedGuide = readFileSync(
   join(root, 'docs/content/docs/4.build/3.authentication/10.delegated-oauth-and-mcp.md'),
   'utf8',
 )
+const appsGuide = readFileSync(
+  join(root, 'docs/content/docs/4.build/7.agents/2.mcp-apps.md'),
+  'utf8',
+)
 const starterReadme = readFileSync(join(root, 'starters/mcp-oauth-agent/README.md'), 'utf8')
 const mcpManifest = JSON.parse(readFileSync(join(root, 'packages/mcp/package.json'), 'utf8')) as {
   name: string
@@ -18,16 +22,25 @@ const mcpManifest = JSON.parse(readFileSync(join(root, 'packages/mcp/package.jso
 const normalizedGuide = guide.replace(/\s+/gu, ' ')
 
 describe('MCP package documentation', () => {
-  it('states the exact experimental SDK and protocol authority', () => {
+  it('states the exact prerelease package and final protocol authority', () => {
     expect(guide).toContain('`better-convex-mcp`')
     expect(guide).toContain(`\`${mcpManifest.version}\``)
     expect(guide).toContain(
       `\`@modelcontextprotocol/server@${mcpManifest.dependencies['@modelcontextprotocol/server']}\``,
     )
-    expect(normalizedGuide).toContain('stable `@modelcontextprotocol/server@2.0.0` contract')
     expect(normalizedGuide).toContain(
-      'Do not describe the protocol or this package as finally certified',
+      'final MCP `2026-07-28` contract through exact `@modelcontextprotocol/server@2.0.0`',
     )
+    expect(normalizedGuide).toContain('The protocol is stable; this integration remains prerelease')
+    expect(guide).toContain(
+      'better-convex-mcp@0.1.0-beta.19 @modelcontextprotocol/server@2.0.0 zod@4.4.3',
+    )
+  })
+
+  it('documents the complete strict MCP App peer set', () => {
+    expect(appsGuide).toContain('@modelcontextprotocol/ext-apps@1.7.5')
+    expect(appsGuide).toContain('@modelcontextprotocol/sdk@1.30.0')
+    expect(appsGuide).toContain('zod@4.4.3')
   })
 
   it('keeps provider and application authorization ownership explicit', () => {

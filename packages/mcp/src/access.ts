@@ -19,11 +19,14 @@ export async function verifyAndNormalizeMcpAccess(options: {
   now?: () => number
 }): Promise<VerifiedMcpAccess> {
   const issuer = canonicalMcpIssuer(options.expectedIssuer)
-  const resource = canonicalResource(options.expectedResource)
+  const resource = canonicalMcpResource(options.expectedResource)
   let verified: VerifiedMcpAccess
 
   try {
-    verified = await options.verifier.verifyAccessToken(options.token, new URL(resource))
+    verified = await options.verifier.verifyAccessToken(
+      options.token,
+      Object.freeze({ issuer, resource: new URL(resource) }),
+    )
   } catch {
     throw new McpAccessVerificationFailure()
   }
@@ -63,7 +66,7 @@ function normalizeVerifiedAccess(
   const clientId = safeIdentity(verified.access.clientId)
   const resource = canonicalResourceString(verified.access.resource)
   if (resource !== expectedResource) throw new TypeError('Unexpected access resource')
-  const scopes = normalizeScopes(verified.access.scopes)
+  const scopes = normalizeMcpScopes(verified.access.scopes)
   const access: McpAccessContext = Object.freeze({
     issuer,
     subject,
@@ -101,9 +104,9 @@ export function canonicalMcpIssuer(value: string): string {
   return value
 }
 
-function canonicalResource(value: URL): string {
+export function canonicalMcpResource(value: URL): string {
   if (!(value instanceof URL)) throw new TypeError('Invalid expected resource')
-  if (!isSecureResource(value) || value.username || value.password || value.hash) {
+  if (!isSecureResource(value) || value.username || value.password || value.search || value.hash) {
     throw new TypeError('Invalid access resource')
   }
   return value.href
@@ -122,7 +125,7 @@ function isSecureResource(value: URL): boolean {
 function canonicalResourceString(value: string): string {
   const resource = new URL(value)
   if (resource.href !== value) throw new TypeError('Noncanonical access resource')
-  return canonicalResource(resource)
+  return canonicalMcpResource(resource)
 }
 
 function safeIdentity(value: string): string {
@@ -138,7 +141,7 @@ function safeIdentity(value: string): string {
   return value
 }
 
-function normalizeScopes(value: readonly string[]): readonly string[] {
+export function normalizeMcpScopes(value: readonly string[]): readonly string[] {
   if (!Array.isArray(value) || value.length > maximumScopeCount) {
     throw new TypeError('Invalid access scopes')
   }

@@ -9,10 +9,13 @@ import {
 import { v } from 'convex/values'
 
 import type { ComponentApi } from '../../../../src/runtime/convex-auth/component/_generated/component'
+import { createAuthComponent } from '../../../../src/runtime/convex-auth/create-auth-component'
 
 const components = componentsGeneric() as unknown as {
+  relationshipAuth: ComponentApi<'relationshipAuth'>
   relationshipPolicies: ComponentApi<'relationshipPolicies'>
 }
+const authComponent = createAuthComponent(components.relationshipAuth)
 
 const onDelete = makeFunctionReference<'mutation'>('relationshipTriggers:onDelete')
 const onUpdate = makeFunctionReference<'mutation'>('relationshipTriggers:onUpdate')
@@ -62,4 +65,19 @@ export const deleteWithParentTriggerOnly = mutationGeneric({
 export const listEvents = queryGeneric({
   args: {},
   handler: (ctx) => ctx.db.query('relationshipEvents').collect(),
+})
+
+const oauthAccessValidator = v.object({
+  clientId: v.string(),
+  issuer: v.string(),
+  resource: v.string(),
+  scopes: v.array(v.string()),
+  sessionId: v.string(),
+  subject: v.string(),
+})
+
+export const validateOAuthAccess = queryGeneric({
+  args: { access: oauthAccessValidator },
+  returns: v.boolean(),
+  handler: (ctx, args) => authComponent.validateOAuthAccess(ctx, args.access),
 })

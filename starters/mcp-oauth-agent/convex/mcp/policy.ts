@@ -1,19 +1,21 @@
-export const MCP_SCOPES = Object.freeze(['mcp:read', 'mcp:write'] as const)
-export type McpScope = (typeof MCP_SCOPES)[number]
+import type { McpScope } from './scopes'
+
 export type McpRole = 'owner' | 'admin' | 'member' | 'viewer'
 
 export interface OAuthPrincipal {
   readonly clientId: string
+  readonly issuer: string
   readonly resource: string
-  readonly scopes: ReadonlySet<string>
+  readonly scopes: ReadonlySet<McpScope>
   readonly sessionId: string
   readonly subject: string
 }
 
 export interface SerializableOAuthPrincipal {
   clientId: string
+  issuer: string
   resource: string
-  scopes: string[]
+  scopes: McpScope[]
   sessionId: string
   subject: string
 }
@@ -26,23 +28,6 @@ export interface LiveAuthorizationState {
     organizationId: string
     projectId: string
     status: 'pending' | 'approved' | 'rejected' | 'used'
-    userId: string
-  }
-  client: null | {
-    clientId: string
-    disabled: boolean
-    grantTypes: readonly string[]
-    public: boolean
-    requirePKCE: boolean
-    responseTypes: readonly string[]
-    scopes: readonly string[]
-    tokenEndpointAuthMethod: string
-  }
-  clientResource: null | { clientId: string; resourceId: string }
-  consent: null | {
-    clientId: string
-    resources: readonly string[]
-    scopes: readonly string[]
     userId: string
   }
   delegation: null | {
@@ -64,13 +49,6 @@ export interface LiveAuthorizationState {
     organizationId: string
     status: 'active' | 'deleted'
   }
-  resource: null | {
-    allowedScopes: readonly string[]
-    disabled: boolean
-    identifier: string
-    signingAlgorithm: string
-  }
-  session: null | { expiresAt: number; id: string; userId: string }
   user: null | { active: boolean; authId: string; id: string }
 }
 
@@ -110,8 +88,8 @@ function includes(values: readonly string[], value: string): boolean {
 }
 
 /**
- * Recompute effective access from one transactional snapshot. Token scope is a
- * ceiling; every persisted grant in this chain must still be active.
+ * Recompute application-owned access from one transactional snapshot. Provider-owned OAuth
+ * authority is validated immediately before this function by authComponent.validateOAuthAccess.
  */
 export function assertLiveMcpAuthorization(
   state: LiveAuthorizationState,
@@ -119,46 +97,12 @@ export function assertLiveMcpAuthorization(
   requirement: LiveAuthorizationRequirement,
   now = Date.now(),
 ): { role: McpRole; userId: string } {
-  if (
-    !state.session ||
-    state.session.id !== principal.sessionId ||
-    state.session.userId !== principal.subject ||
-    state.session.expiresAt <= now ||
-    !state.user ||
-    !state.user.active ||
-    state.user.authId !== principal.subject ||
-    !state.client ||
-    state.client.disabled ||
-    state.client.clientId !== principal.clientId ||
-    !state.client.public ||
-    state.client.tokenEndpointAuthMethod !== 'none' ||
-    !state.client.requirePKCE ||
-    state.client.grantTypes.length !== 1 ||
-    state.client.grantTypes[0] !== 'authorization_code' ||
-    state.client.responseTypes.length !== 1 ||
-    state.client.responseTypes[0] !== 'code' ||
-    !state.resource ||
-    state.resource.disabled ||
-    state.resource.identifier !== principal.resource ||
-    state.resource.signingAlgorithm !== 'RS256' ||
-    !state.clientResource ||
-    state.clientResource.clientId !== principal.clientId ||
-    state.clientResource.resourceId !== principal.resource ||
-    !state.consent ||
-    state.consent.clientId !== principal.clientId ||
-    state.consent.userId !== principal.subject ||
-    !includes(state.consent.resources, principal.resource)
-  ) {
+  if (!state.user || !state.user.active || state.user.authId !== principal.subject) {
     throw new McpAuthorizationError('MCP_ACCESS_REVOKED')
   }
 
   const scope = requirement.scope
-  if (
-    !principal.scopes.has(scope) ||
-    !includes(state.client.scopes, scope) ||
-    !includes(state.resource.allowedScopes, scope) ||
-    !includes(state.consent.scopes, scope)
-  ) {
+  if (!principal.scopes.has(scope)) {
     throw new McpAuthorizationError('MCP_SCOPE_REQUIRED')
   }
 
@@ -213,6 +157,7 @@ export function assertLiveMcpAuthorization(
 export function serializePrincipal(principal: OAuthPrincipal): SerializableOAuthPrincipal {
   return {
     clientId: principal.clientId,
+    issuer: principal.issuer,
     resource: principal.resource,
     scopes: [...principal.scopes],
     sessionId: principal.sessionId,
@@ -221,5 +166,5 @@ export function serializePrincipal(principal: OAuthPrincipal): SerializableOAuth
 }
 
 export function deserializePrincipal(principal: SerializableOAuthPrincipal): OAuthPrincipal {
-  return { ...principal, scopes: new Set(principal.scopes) }
+  return { ...principal, scopes: new Set<McpScope>(principal.scopes) }
 }

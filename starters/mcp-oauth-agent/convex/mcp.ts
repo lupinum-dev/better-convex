@@ -1,17 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { handleMcpRequest, runMcpTool, type McpAccessContext } from 'better-convex-mcp'
-import { requireAuthOrigin, verifyOAuthBearerToken } from 'better-convex-nuxt/convex-auth'
+import {
+  createBetterAuthMcpAccessVerifier,
+  requireAuthOrigin,
+} from 'better-convex-nuxt/convex-auth'
 import { ConvexError } from 'convex/values'
 import { z } from 'zod'
 
 import { internal } from './_generated/api'
 import { httpAction, type ActionCtx } from './_generated/server'
-import {
-  MCP_SCOPES,
-  serializePrincipal,
-  type McpScope,
-  type SerializableOAuthPrincipal,
-} from './mcp/policy'
+import { authComponent } from './auth'
+import { serializePrincipal, type SerializableOAuthPrincipal } from './mcp/policy'
+import { MCP_SCOPES, isMcpScope, type McpScope } from './mcp/scopes'
 
 const SAFE_APPLICATION_CODES = new Set([
   'MCP_ACCESS_REVOKED',
@@ -181,7 +181,20 @@ export function createDelegatedMcpServer(
 export const handleMcp = httpAction(async (ctx, request) => {
   const issuer = `${requireAuthOrigin('SITE_URL')}/api/auth`
   const resource = new URL('/mcp', requireAuthOrigin('CONVEX_SITE_URL'))
-  let verifiedPrincipal: Awaited<ReturnType<typeof verifyOAuthBearerToken>> | undefined
+  type ProviderAccess = Parameters<
+    Parameters<typeof createBetterAuthMcpAccessVerifier>[0]['validateLiveAccess']
+  >[0]
+  let verifiedPrincipal: ProviderAccess | undefined
+  const verifier = createBetterAuthMcpAccessVerifier({
+    allowedScopes: MCP_SCOPES,
+    jwksUrl: `${issuer}/jwks`,
+    maxLifetimeSeconds: 600,
+    validateLiveAccess: async (access) => {
+      if (!(await authComponent.validateOAuthAccess(ctx, access))) return false
+      verifiedPrincipal = access
+      return true
+    },
+  })
   return await handleMcpRequest(request, {
     serverInfo: {
       name: 'better-convex-nuxt-mcp-oauth-agent',
@@ -193,35 +206,20 @@ export const handleMcp = httpAction(async (ctx, request) => {
       mode: 'oauth',
       resourceName: 'Better Convex Nuxt MCP',
       scopesSupported: MCP_SCOPES,
-    },
-    verifier: {
-      async verifyAccessToken(token, expectedResource) {
-        const principal = await verifyOAuthBearerToken(token, {
-          allowedScopes: MCP_SCOPES,
-          audience: expectedResource.href,
-          issuer,
-          jwksUrl: `${issuer}/jwks`,
-          maxLifetimeSeconds: 600,
-        })
-        verifiedPrincipal = principal
-        return {
-          access: {
-            clientId: principal.clientId,
-            issuer,
-            resource: expectedResource.href,
-            scopes: [...principal.scopes],
-            subject: principal.subject,
-          },
-          expiresAt: principal.expiresAt,
-        }
-      },
+      verifier,
     },
     configureServer(access, server) {
       const principal = verifiedPrincipal
+      const delegatedScopes = principal?.scopes.filter(isMcpScope) ?? []
       if (
         !principal ||
         principal.clientId !== access.clientId ||
-        principal.subject !== access.subject
+        principal.issuer !== access.issuer ||
+        principal.resource !== access.resource ||
+        principal.subject !== access.subject ||
+        delegatedScopes.length !== principal.scopes.length ||
+        principal.scopes.length !== access.scopes.length ||
+        access.scopes.some((scope) => !principal.scopes.includes(scope))
       ) {
         throw new Error('MCP_ACCESS_CONTEXT_INVALID')
       }
@@ -230,8 +228,9 @@ export const handleMcp = httpAction(async (ctx, request) => {
         access,
         serializePrincipal({
           clientId: principal.clientId,
-          resource: access.resource,
-          scopes: new Set(principal.scopes),
+          issuer: principal.issuer,
+          resource: principal.resource,
+          scopes: new Set(delegatedScopes),
           sessionId: principal.sessionId,
           subject: principal.subject,
         }),

@@ -18,7 +18,10 @@ The application continues to create `McpServer` directly and calls official `reg
 abstraction. The neutral package migration admitted one `runMcpTool` callback boundary because the
 official SDK deliberately serializes unexpected callback throws and cannot emit application-safe
 diagnostics without seeing the callback failure. The helper only returns an existing official
-`CallToolResult`; it owns no registration, schema, operation mapping, or domain result vocabulary.
+`CallToolResult | InputRequiredResult`; it owns no registration, schema, operation mapping, or domain
+result vocabulary. It protects only callbacks that opt into it. SDK input/output validation,
+resources, prompts, and unwrapped callbacks remain outside this narrow boundary until the official
+SDK exposes an operation-error projection hook.
 
 Candidate surface for `P5-002` and `P5-003` proof:
 
@@ -32,16 +35,19 @@ export interface McpAccessContext {
 }
 
 export interface McpAccessVerifier {
-  verifyAccessToken(token: string, expectedResource: URL): Promise<VerifiedMcpAccess>
+  verifyAccessToken(
+    token: string,
+    expected: { readonly issuer: string; readonly resource: URL },
+  ): Promise<VerifiedMcpAccess>
 }
 
 export const handleMcp = httpAction((ctx, request) =>
   handleMcpRequest(request, {
     resource: new URL('https://deployment.example/mcp'),
-    verifier,
     authorization: {
       mode: 'oauth',
       issuer: 'https://accounts.example.com/',
+      verifier,
     },
     serverInfo: { name: 'my-app', version: '0.1.0' },
     configureServer(access, server) {

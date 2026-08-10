@@ -1,5 +1,6 @@
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client'
 
+import type { OAuthLiveAccess } from './oauth-live-access'
 import {
   OAuthSecurityError,
   installUrlCanParseCompatibility,
@@ -12,20 +13,16 @@ export interface VerifyOAuthBearerTokenOptions extends OAuthAccessTokenExpectati
   jwksUrl: string
 }
 
-export type BetterAuthMcpAccessVerifierOptions = Omit<VerifyOAuthBearerTokenOptions, 'audience'> & {
+export type BetterAuthMcpAccessVerifierOptions = Omit<
+  VerifyOAuthBearerTokenOptions,
+  'audience' | 'issuer'
+> & {
   /**
    * Required request-local Better Auth authority check. The callback runs only on the server and
    * must validate the current session, user, client, consent, and resource grant from canonical
    * state. Provider-private session identity never enters the MCP access context.
    */
-  readonly validateLiveAccess: (access: {
-    readonly clientId: string
-    readonly issuer: string
-    readonly resource: string
-    readonly scopes: readonly string[]
-    readonly sessionId: string
-    readonly subject: string
-  }) => Promise<boolean>
+  readonly validateLiveAccess: (access: OAuthLiveAccess) => Promise<boolean>
 }
 
 const COMPACT_JWT_PATTERN = /^[\w-]+\.[\w-]+\.[\w-]+$/u
@@ -61,10 +58,18 @@ function requireCanonicalJwksUrl(issuer: string, jwksUrl: string): void {
     throw new OAuthSecurityError('AUTH_OAUTH_TOKEN_INVALID')
   }
   if (
-    parsedIssuer.href !== issuer ||
+    parsedIssuer.protocol !== 'https:' ||
+    parsedIssuer.username ||
+    parsedIssuer.password ||
+    parsedIssuer.search ||
+    parsedIssuer.hash ||
     parsedJwks.href !== jwksUrl ||
     parsedJwks.origin !== parsedIssuer.origin ||
-    jwksUrl !== `${issuer}/jwks`
+    parsedJwks.username ||
+    parsedJwks.password ||
+    parsedJwks.search ||
+    parsedJwks.hash ||
+    jwksUrl !== `${issuer.endsWith('/') ? issuer : `${issuer}/`}jwks`
   ) {
     throw new OAuthSecurityError('AUTH_OAUTH_TOKEN_INVALID')
   }
@@ -123,7 +128,6 @@ export function createBetterAuthMcpAccessVerifier(options: BetterAuthMcpAccessVe
   }
   const fixedOptions: BetterAuthMcpAccessVerifierOptions = Object.freeze({
     allowedScopes: Object.freeze([...options.allowedScopes]),
-    issuer: options.issuer,
     jwksUrl: options.jwksUrl,
     ...(options.clientId === undefined ? {} : { clientId: options.clientId }),
     ...(options.maxLifetimeSeconds === undefined
@@ -135,29 +139,37 @@ export function createBetterAuthMcpAccessVerifier(options: BetterAuthMcpAccessVe
     ...(options.subject === undefined ? {} : { subject: options.subject }),
     validateLiveAccess: options.validateLiveAccess,
   })
+  const { validateLiveAccess, ...verificationOptions } = fixedOptions
 
   return Object.freeze({
-    async verifyAccessToken(token: string, expectedResource: URL) {
+    async verifyAccessToken(
+      token: string,
+      expected: { readonly issuer: string; readonly resource: URL },
+    ) {
       if (
-        !(expectedResource instanceof URL) ||
-        expectedResource.protocol !== 'https:' ||
-        expectedResource.username ||
-        expectedResource.password ||
-        expectedResource.hash
+        !expected ||
+        typeof expected.issuer !== 'string' ||
+        !(expected.resource instanceof URL) ||
+        expected.resource.protocol !== 'https:' ||
+        expected.resource.username ||
+        expected.resource.password ||
+        expected.resource.search ||
+        expected.resource.hash
       ) {
         invalidToken()
       }
-      const resource = expectedResource.href
+      const resource = expected.resource.href
       const principal = await verifyOAuthBearerToken(token, {
-        ...fixedOptions,
+        ...verificationOptions,
         audience: resource,
+        issuer: expected.issuer,
       })
       let live = false
       try {
-        live = await fixedOptions.validateLiveAccess(
+        live = await validateLiveAccess(
           Object.freeze({
             clientId: principal.clientId,
-            issuer: fixedOptions.issuer,
+            issuer: expected.issuer,
             resource,
             scopes: Object.freeze([...principal.scopes]),
             sessionId: principal.sessionId,
@@ -170,7 +182,7 @@ export function createBetterAuthMcpAccessVerifier(options: BetterAuthMcpAccessVe
       if (live !== true) invalidToken()
       return Object.freeze({
         access: Object.freeze({
-          issuer: fixedOptions.issuer,
+          issuer: expected.issuer,
           subject: principal.subject,
           clientId: principal.clientId,
           resource,

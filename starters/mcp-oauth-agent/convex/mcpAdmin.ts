@@ -2,8 +2,9 @@ import { v } from 'convex/values'
 
 import type { Id } from './_generated/dataModel'
 import { internalMutation, internalQuery, type MutationCtx } from './_generated/server'
+import { MCP_SCOPES, isMcpScope } from './mcp/scopes'
 
-const SCOPES = ['mcp:read', 'mcp:write'] as const
+const mcpScopeValidator = v.union(v.literal(MCP_SCOPES[0]), v.literal(MCP_SCOPES[1]))
 
 async function requireFixtureUser(ctx: MutationCtx, authUserId: string) {
   const user = await ctx.db
@@ -120,7 +121,7 @@ export const grantFixtureDelegations = internalMutation({
       if (delegation) {
         await ctx.db.patch(delegation._id, {
           expiresAt,
-          scopes: [...SCOPES],
+          scopes: [...MCP_SCOPES],
           status: 'active',
         })
       } else {
@@ -128,7 +129,7 @@ export const grantFixtureDelegations = internalMutation({
           clientId,
           expiresAt,
           organizationId,
-          scopes: [...SCOPES],
+          scopes: [...MCP_SCOPES],
           status: 'active',
           userId: user._id,
         })
@@ -174,13 +175,13 @@ export const setFixtureDelegation = internalMutation({
     authUserId: v.string(),
     clientId: v.string(),
     organizationId: v.id('organizations'),
-    scopes: v.array(v.string()),
+    scopes: v.array(mcpScopeValidator),
     status: v.union(v.literal('active'), v.literal('revoked')),
   },
   handler: async (ctx, { authUserId, clientId, organizationId, scopes, status }) => {
     if (
-      scopes.length > SCOPES.length ||
-      scopes.some((scope) => !SCOPES.includes(scope as (typeof SCOPES)[number]))
+      scopes.length > MCP_SCOPES.length ||
+      scopes.some((scope) => !isMcpScope(scope))
     ) {
       throw new Error('MCP_FIXTURE_SCOPE_INVALID')
     }

@@ -23,6 +23,7 @@ import { createConvexAuthAdapter } from './adapter/create-adapter'
 import type { AuthCtx, WritableAuthCtx } from './context'
 import { INTERNAL_SESSION_HEADER } from './internal-session'
 import { rotateSigningKeyWithOfficialJwt } from './jwks-rotation'
+import { validateOAuthAccess, type OAuthLiveAccess } from './oauth-live-access'
 import { requireAuthOrigin } from './origin'
 import type {
   AuthAdapterComponentApi,
@@ -126,6 +127,9 @@ export function createAuthComponent<
       if (!user) throw new ConvexError('Unauthenticated')
       return user
     },
+
+    validateOAuthAccess: (ctx: AuthCtx<DataModel>, access: OAuthLiveAccess) =>
+      validateOAuthAccess(ctx, component, access),
 
     getAuth: async <Auth>(
       createAuth: CreateAuth<DataModel, Auth>,

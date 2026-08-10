@@ -1,4 +1,5 @@
-const ALLOWED_SCOPES = new Set(['mcp:read', 'mcp:write'])
+import { isMcpScope } from '../../convex/mcp/scopes'
+
 const MAX_SIGNED_QUERY_LENGTH = 16 * 1024
 
 interface PublicOAuthClient {
@@ -43,7 +44,7 @@ export function useVerifiedOAuthTransaction() {
         resource !== `${runtimeConfig.public.convex.siteUrl}/mcp` ||
         scopes.length === 0 ||
         new Set(scopes).size !== scopes.length ||
-        scopes.some((entry) => !entry || !ALLOWED_SCOPES.has(entry))
+        scopes.some((entry) => !entry || !isMcpScope(entry))
       ) {
         throw new Error('OAUTH_TRANSACTION_INVALID')
       }

@@ -285,6 +285,7 @@ const mcpPackageEntries = [
       'HandleMcpRequestOptions',
       'McpAccessContext',
       'McpAccessVerifier',
+      'McpVerificationExpectation',
       'VerifiedMcpAccess',
     ],
     exactDeclaredExports: true,

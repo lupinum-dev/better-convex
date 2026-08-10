@@ -11,8 +11,7 @@ import type { AuthCtx } from 'better-convex-nuxt/convex-auth'
 
 import { internal } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
-
-const SCOPES = ['mcp:read', 'mcp:write'] as const
+import { MCP_SCOPES } from './mcp/scopes'
 
 interface PublicClientProfile {
   callback: string
@@ -139,7 +138,7 @@ function assertClientProfile(
     value.enable_end_session !== false ||
     value.dpop_bound_access_tokens !== false ||
     value.subject_type !== 'public' ||
-    value.scope !== SCOPES.join(' ') ||
+    value.scope !== MCP_SCOPES.join(' ') ||
     !exactStrings(value.redirect_uris, [expected.callback]) ||
     !exactStrings(value.grant_types, ['authorization_code']) ||
     !exactStrings(value.response_types, ['code'])
@@ -166,7 +165,7 @@ function assertConfidentialClientProfile(
     value.enable_end_session !== false ||
     value.dpop_bound_access_tokens !== false ||
     value.subject_type !== 'public' ||
-    value.scope !== SCOPES.join(' ') ||
+    value.scope !== MCP_SCOPES.join(' ') ||
     !exactStrings(value.redirect_uris, [CONFIDENTIAL_CLIENT.callback]) ||
     !exactStrings(value.grant_types, ['authorization_code']) ||
     !exactStrings(value.response_types, ['code'])
@@ -195,7 +194,7 @@ function assertResourceProfile(value: OAuthResourceView, resource: string): void
     value.disabled !== false ||
     value.dpopBoundAccessTokensRequired !== false ||
     value.signingAlgorithm !== 'RS256' ||
-    !exactStrings(value.allowedScopes, SCOPES)
+    !exactStrings(value.allowedScopes, MCP_SCOPES)
   ) {
     profileDrift()
   }
@@ -212,7 +211,7 @@ async function ensureResource(
     storedResource = (await call(provider.endpoints.adminCreateOAuthResource, {
       body: {
         accessTokenTtl: 600,
-        allowedScopes: [...SCOPES],
+        allowedScopes: [...MCP_SCOPES],
         disabled: false,
         dpopBoundAccessTokensRequired: false,
         identifier: resource,
@@ -244,7 +243,7 @@ async function ensurePublicClient(
         redirect_uris: [expected.callback],
         require_pkce: true,
         response_types: ['code'],
-        scope: SCOPES.join(' '),
+        scope: MCP_SCOPES.join(' '),
         skip_consent: false,
         software_id: expected.profile,
         subject_type: 'public',
@@ -289,7 +288,7 @@ async function provisionConfidentialClient(
         redirect_uris: [CONFIDENTIAL_CLIENT.callback],
         require_pkce: true,
         response_types: ['code'],
-        scope: SCOPES.join(' '),
+        scope: MCP_SCOPES.join(' '),
         skip_consent: false,
         software_id: CONFIDENTIAL_CLIENT.profile,
         subject_type: 'public',

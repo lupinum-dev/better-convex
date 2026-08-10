@@ -14,7 +14,12 @@ import {
   type OAuthTokenVerifier,
 } from '@modelcontextprotocol/server'
 
-import { canonicalMcpIssuer, verifyAndNormalizeMcpAccess } from './access.js'
+import {
+  canonicalMcpIssuer,
+  canonicalMcpResource,
+  normalizeMcpScopes,
+  verifyAndNormalizeMcpAccess,
+} from './access.js'
 import type { McpAccessContext, McpAccessVerifier, VerifiedMcpAccess } from './index.js'
 import {
   boundMcpResponse,
@@ -30,11 +35,11 @@ export interface HandleMcpRequestOptions {
     readonly version: string
   }
   readonly resource: URL
-  readonly verifier: McpAccessVerifier
   readonly authorization:
     | {
         readonly mode: 'oauth'
         readonly issuer: string
+        readonly verifier: McpAccessVerifier
         readonly resourceName?: string
         readonly requiredScopes?: readonly string[]
         readonly scopesSupported?: readonly string[]
@@ -46,6 +51,7 @@ export interface HandleMcpRequestOptions {
          */
         readonly mode: 'preconfigured-bearer'
         readonly issuer: string
+        readonly verifier: McpAccessVerifier
         readonly requiredScopes?: readonly string[]
       }
   readonly configureServer: (access: McpAccessContext, server: McpServer) => void | Promise<void>
@@ -55,7 +61,7 @@ export async function handleMcpRequest(
   request: Request,
   options: HandleMcpRequestOptions,
 ): Promise<Response> {
-  const expectedResource = new URL(options.resource.href)
+  const expectedResource = new URL(canonicalMcpResource(options.resource))
   const authorization = normalizeAuthorization(options.authorization, expectedResource)
   const requiredScopes =
     authorization.requiredScopes === undefined ? undefined : [...authorization.requiredScopes]
@@ -75,7 +81,7 @@ export async function handleMcpRequest(
       if (boundaryResponse) return boundaryResponse
       const authenticated = await authenticateRequest(
         request.headers.get('authorization'),
-        options.verifier,
+        authorization.verifier,
         authorization.issuer,
         expectedResource,
         authorization.resourceMetadataUrl,
@@ -119,6 +125,7 @@ type NormalizedAuthorization =
   | {
       readonly mode: 'oauth'
       readonly issuer: string
+      readonly verifier: McpAccessVerifier
       readonly metadataOptions: AuthMetadataOptions
       readonly resourceMetadataUrl: string
       readonly requiredScopes?: readonly string[]
@@ -126,6 +133,7 @@ type NormalizedAuthorization =
   | {
       readonly mode: 'preconfigured-bearer'
       readonly issuer: string
+      readonly verifier: McpAccessVerifier
       readonly resourceMetadataUrl: undefined
       readonly requiredScopes?: readonly string[]
     }
@@ -136,38 +144,55 @@ function normalizeAuthorization(
 ): NormalizedAuthorization {
   if (authorization.mode === 'preconfigured-bearer') {
     const issuer = canonicalMcpIssuer(authorization.issuer)
+    const requiredScopes = normalizeConfiguredScopes(authorization.requiredScopes)
     return Object.freeze({
       mode: authorization.mode,
       issuer,
+      verifier: authorization.verifier,
       resourceMetadataUrl: undefined,
-      ...(authorization.requiredScopes === undefined
-        ? {}
-        : { requiredScopes: Object.freeze([...authorization.requiredScopes]) }),
+      ...(requiredScopes === undefined ? {} : { requiredScopes }),
     })
   }
 
   const issuer = canonicalMcpIssuer(authorization.issuer)
+  const requiredScopes = normalizeConfiguredScopes(authorization.requiredScopes)
+  const scopesSupported = normalizeConfiguredScopes(authorization.scopesSupported)
+  if (
+    requiredScopes !== undefined &&
+    scopesSupported !== undefined &&
+    requiredScopes.some((scope) => !scopesSupported.includes(scope))
+  ) {
+    throw new TypeError('MCP required scopes must be advertised as supported')
+  }
   const metadataOptions: AuthMetadataOptions = {
     oauthMetadata: { issuer } as AuthMetadataOptions['oauthMetadata'],
     resourceServerUrl: new URL(expectedResource.href),
     ...(authorization.resourceName === undefined
       ? {}
       : { resourceName: authorization.resourceName }),
-    ...(authorization.scopesSupported === undefined
-      ? {}
-      : { scopesSupported: [...authorization.scopesSupported] }),
+    ...(scopesSupported === undefined ? {} : { scopesSupported: [...scopesSupported] }),
     ...(new URL(issuer).protocol === 'http:' ? { dangerouslyAllowInsecureIssuerUrl: true } : {}),
   }
   buildOAuthProtectedResourceMetadata(metadataOptions)
   return Object.freeze({
     mode: authorization.mode,
     issuer,
+    verifier: authorization.verifier,
     metadataOptions,
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(expectedResource),
-    ...(authorization.requiredScopes === undefined
-      ? {}
-      : { requiredScopes: Object.freeze([...authorization.requiredScopes]) }),
+    ...(requiredScopes === undefined ? {} : { requiredScopes }),
   })
+}
+
+function normalizeConfiguredScopes(
+  value: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (value === undefined) return undefined
+  const normalized = normalizeMcpScopes(value)
+  if (normalized.length !== value.length) {
+    throw new TypeError('MCP configured scopes must be unique')
+  }
+  return normalized
 }
 
 function protectedResourceMetadataResponse(

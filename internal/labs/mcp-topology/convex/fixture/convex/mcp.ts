@@ -414,9 +414,12 @@ function createNotesServer(
 function createVerifier(ctx: ActionCtx, resource: URL): McpAccessVerifier {
   const verifier = createLabOAuthVerifier(resource)
   return {
-    async verifyAccessToken(token, expectedResource) {
+    async verifyAccessToken(token, expected) {
+      if (expected.issuer !== 'https://issuer.example/api/auth') {
+        throw new Error('MCP_ACCESS_INVALID')
+      }
       const authInfo = await verifier.verifyAccessToken(token)
-      if (authInfo.resource?.href !== expectedResource.href || authInfo.expiresAt === undefined) {
+      if (authInfo.resource?.href !== expected.resource.href || authInfo.expiresAt === undefined) {
         throw new Error('MCP_ACCESS_INVALID')
       }
       const access = {
@@ -459,10 +462,10 @@ async function handleRequest(ctx: ActionCtx, request: Request): Promise<Response
       version: '0.0.0',
     },
     resource,
-    verifier: createVerifier(ctx, resource),
     authorization: {
       mode: 'oauth',
       issuer: metadata.oauthMetadata.issuer,
+      verifier: createVerifier(ctx, resource),
       resourceName: metadata.resourceName,
       requiredScopes: ['notes:read'],
       scopesSupported: metadata.scopesSupported,

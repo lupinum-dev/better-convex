@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url'
 import { inspectConsumerCandidate } from './package-consumer-candidate.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
+const repositoryManifest = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'))
 const scratchRoot = mkdtempSync(join(tmpdir(), 'better-convex-mcp-consumer-'))
 const tarballPath = parseTarball(process.argv.slice(2))
 const candidate = inspectConsumerCandidate({
@@ -17,8 +18,12 @@ const candidate = inspectConsumerCandidate({
   tarballPath,
 })
 const officialServerVersion = candidate.manifest.dependencies?.['@modelcontextprotocol/server']
+const reviewedZodVersion = repositoryManifest.devDependencies?.zod
 if (typeof officialServerVersion !== 'string') {
   throw new TypeError('MCP candidate does not declare the official server SDK.')
+}
+if (typeof reviewedZodVersion !== 'string') {
+  throw new TypeError('Repository manifest does not declare the reviewed Zod contract.')
 }
 
 function parseTarball(args) {
@@ -45,7 +50,7 @@ try {
           '@modelcontextprotocol/server': officialServerVersion,
           '@types/node': '22.20.1',
           typescript: '5.9.3',
-          zod: '4.3.6',
+          zod: reviewedZodVersion,
         },
       },
       null,
@@ -71,7 +76,7 @@ try {
   )
   writeFileSync(
     join(scratchRoot, 'consumer.ts'),
-    `import { handleMcpRequest, runMcpTool, type HandleMcpRequestOptions, type McpAccessContext, type McpAccessVerifier, type VerifiedMcpAccess } from 'better-convex-mcp'\n\nconst resource = new URL('https://resource.example/mcp')\nconst access: McpAccessContext = { issuer: 'https://issuer.example', subject: 'alice', clientId: 'client', resource: resource.href, scopes: ['notes:read'] }\nconst verifier: McpAccessVerifier = { async verifyAccessToken(_token, _resource): Promise<VerifiedMcpAccess> { return { access, expiresAt: 4_102_444_800 } } }\nconst options: HandleMcpRequestOptions = { serverInfo: { name: 'consumer', version: '1.0.0' }, resource, verifier, authorization: { mode: 'oauth', issuer: access.issuer }, configureServer(nextAccess, server) { void nextAccess; void server } }\ndeclare const request: Request\nvoid handleMcpRequest(request, options)\nvoid runMcpTool\n`,
+    `import type { McpServer } from '@modelcontextprotocol/server'\nimport { z } from 'zod'\nimport { handleMcpRequest, runMcpTool, type HandleMcpRequestOptions, type McpAccessContext, type McpAccessVerifier, type VerifiedMcpAccess } from 'better-convex-mcp'\n\nconst resource = new URL('https://resource.example/mcp')\nconst access: McpAccessContext = { issuer: 'https://issuer.example', subject: 'alice', clientId: 'client', resource: resource.href, scopes: ['notes:read'] }\nconst verifier: McpAccessVerifier = { async verifyAccessToken(_token, expected): Promise<VerifiedMcpAccess> { if (expected.issuer !== access.issuer || expected.resource.href !== resource.href) throw new Error('invalid'); return { access, expiresAt: 4_102_444_800 } } }\nconst options: HandleMcpRequestOptions = { serverInfo: { name: 'consumer', version: '1.0.0' }, resource, authorization: { mode: 'oauth', issuer: access.issuer, verifier }, configureServer(nextAccess, server) { const directServer: McpServer = server; directServer.registerTool('typed', { inputSchema: z.object({}) }, async () => ({ content: [{ type: 'text', text: 'ok' }] })); void nextAccess } }\ndeclare const request: Request\nvoid handleMcpRequest(request, options)\nvoid runMcpTool(async () => ({ resultType: 'input_required' as const, requestState: 'opaque-state' }))\n// @ts-expect-error arbitrary objects are not official tool callback results\nvoid runMcpTool(async () => ({ arbitrary: true }))\n`,
   )
   cpSync(
     join(repositoryRoot, 'scripts/fixtures/mcp-packed-credential-proof.mjs'),

@@ -26,8 +26,14 @@ const oauthMetadata = {
 }
 
 const verifier: McpAccessVerifier = {
-  async verifyAccessToken(token, expectedResource) {
-    if (token !== bearer || expectedResource.href !== resource.href) throw new Error('invalid')
+  async verifyAccessToken(token, expected) {
+    if (
+      token !== bearer ||
+      expected.issuer !== oauthMetadata.issuer ||
+      expected.resource.href !== resource.href
+    ) {
+      throw new Error('invalid')
+    }
     return {
       access: {
         issuer: oauthMetadata.issuer,
@@ -61,8 +67,7 @@ describe('MCP explicit Convex operation mapping', () => {
     const requestOptions = {
       serverInfo: { name: 'mapping-proof', version: '0.1.0' },
       resource,
-      verifier,
-      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer, verifier },
       configureServer(access, server) {
         server.registerTool(
           'search_notes',

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
 import { createDelegatedMcpServer } from '../../starters/mcp-oauth-agent/convex/mcp'
+import { isMcpScope } from '../../starters/mcp-oauth-agent/convex/mcp/scopes'
 
 const resource = new URL('https://starter.example.test/mcp')
 const issuer = 'https://starter.example.test/credentials/'
@@ -23,21 +24,29 @@ describe('delegated OAuth starter official MCP composition', () => {
         version: '0.1.0',
       },
       resource,
-      authorization: { mode: 'preconfigured-bearer', issuer },
-      verifier: {
-        async verifyAccessToken(token, expectedResource) {
-          if (token !== bearer || expectedResource.href !== resource.href)
-            throw new Error('invalid')
-          return {
-            access: {
-              clientId: 'client-1',
-              issuer,
-              resource: resource.href,
-              scopes: ['mcp:read', 'mcp:write'],
-              subject: 'user-1',
-            },
-            expiresAt: Math.floor(Date.now() / 1_000) + 300,
-          }
+      authorization: {
+        mode: 'preconfigured-bearer',
+        issuer,
+        verifier: {
+          async verifyAccessToken(token, expected) {
+            if (
+              token !== bearer ||
+              expected.issuer !== issuer ||
+              expected.resource.href !== resource.href
+            ) {
+              throw new Error('invalid')
+            }
+            return {
+              access: {
+                clientId: 'client-1',
+                issuer,
+                resource: resource.href,
+                scopes: ['mcp:read', 'mcp:write'],
+                subject: 'user-1',
+              },
+              expiresAt: Math.floor(Date.now() / 1_000) + 300,
+            }
+          },
         },
       },
       configureServer(access, server) {
@@ -46,8 +55,9 @@ describe('delegated OAuth starter official MCP composition', () => {
           access,
           {
             clientId: access.clientId,
+            issuer: access.issuer,
             resource: access.resource,
-            scopes: [...access.scopes],
+            scopes: access.scopes.filter(isMcpScope),
             sessionId: 'session-1',
             subject: access.subject,
           },
@@ -91,6 +101,7 @@ describe('delegated OAuth starter official MCP composition', () => {
           organizationId: 'organization-1',
           principal: {
             clientId: 'client-1',
+            issuer,
             resource: resource.href,
             scopes: ['mcp:read', 'mcp:write'],
             sessionId: 'session-1',

@@ -9,24 +9,30 @@ let callbackHeaders
 
 const options = {
   resource,
-  verifier: {
-    async verifyAccessToken(token, expectedResource) {
-      if (token !== bearer || expectedResource.href !== resource.href) throw new Error('denied')
-      return {
-        access: {
-          clientId: 'packed-client',
-          issuer: 'https://packed-mcp.invalid/issuer/',
-          resource: resource.href,
-          scopes: ['notes:read'],
-          subject: 'packed-subject',
-        },
-        expiresAt: Math.floor(Date.now() / 1000) + 300,
-      }
-    },
-  },
   authorization: {
     issuer: 'https://packed-mcp.invalid/issuer/',
     mode: 'preconfigured-bearer',
+    verifier: {
+      async verifyAccessToken(token, expected) {
+        if (
+          token !== bearer ||
+          expected.issuer !== 'https://packed-mcp.invalid/issuer/' ||
+          expected.resource.href !== resource.href
+        ) {
+          throw new Error('denied')
+        }
+        return {
+          access: {
+            clientId: 'packed-client',
+            issuer: 'https://packed-mcp.invalid/issuer/',
+            resource: resource.href,
+            scopes: ['notes:read'],
+            subject: 'packed-subject',
+          },
+          expiresAt: Math.floor(Date.now() / 1000) + 300,
+        }
+      },
+    },
   },
   serverInfo: { name: 'packed-proof', version: '0.0.0' },
   configureServer(_access, server) {

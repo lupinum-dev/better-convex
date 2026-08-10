@@ -107,22 +107,30 @@ function createHandler(appHtml: string, isRevoked: () => boolean, onSearch: () =
     return await handleMcpRequest(request, {
       serverInfo: { name: 'better-convex-apps-probe', version: '0.0.0' },
       resource: RESOURCE,
-      authorization: { mode: 'preconfigured-bearer', issuer: ISSUER },
-      verifier: {
-        async verifyAccessToken(token, expectedResource) {
-          if (token !== TOKEN || expectedResource.href !== RESOURCE.href || isRevoked()) {
-            throw new Error('invalid')
-          }
-          return {
-            access: {
-              clientId: 'apps-client',
-              issuer: ISSUER,
-              resource: RESOURCE.href,
-              scopes: ['notes:read', 'notes:write'],
-              subject: ACTOR.subject,
-            },
-            expiresAt: Math.floor(Date.now() / 1_000) + 300,
-          }
+      authorization: {
+        mode: 'preconfigured-bearer',
+        issuer: ISSUER,
+        verifier: {
+          async verifyAccessToken(token, expected) {
+            if (
+              token !== TOKEN ||
+              expected.issuer !== ISSUER ||
+              expected.resource.href !== RESOURCE.href ||
+              isRevoked()
+            ) {
+              throw new Error('invalid')
+            }
+            return {
+              access: {
+                clientId: 'apps-client',
+                issuer: ISSUER,
+                resource: RESOURCE.href,
+                scopes: ['notes:read', 'notes:write'],
+                subject: ACTOR.subject,
+              },
+              expiresAt: Math.floor(Date.now() / 1_000) + 300,
+            }
+          },
         },
       },
       configureServer(_access, server) {

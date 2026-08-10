@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { runMcpTool } from '../../packages/mcp/src/tools'
 
 describe('MCP tool failure projection', () => {
-  it('preserves an object result outside the ordinary tool-result shape', async () => {
+  it('preserves the official input-required result shape', async () => {
     await expect(
       runMcpTool(async () => ({
         requestState: 'opaque-state',

@@ -9,8 +9,14 @@ const bearer = 'request-lifecycle-bearer'
 
 function verifier(): McpAccessVerifier {
   return {
-    async verifyAccessToken(token, expectedResource) {
-      if (token !== bearer || expectedResource.href !== resource.href) throw new Error('invalid')
+    async verifyAccessToken(token, expected) {
+      if (
+        token !== bearer ||
+        expected.issuer !== 'https://issuer.example.test/' ||
+        expected.resource.href !== resource.href
+      ) {
+        throw new Error('invalid')
+      }
       return {
         access: {
           issuer: 'https://issuer.example.test/',
@@ -59,8 +65,11 @@ function options(
   return {
     serverInfo: { name: 'request-lifecycle-test', version: '1.0.0' },
     resource,
-    verifier: verifier(),
-    authorization: { mode: 'oauth', issuer: 'https://issuer.example.test/' },
+    authorization: {
+      mode: 'oauth',
+      issuer: 'https://issuer.example.test/',
+      verifier: verifier(),
+    },
     configureServer,
   }
 }

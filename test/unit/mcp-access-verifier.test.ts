@@ -78,9 +78,43 @@ describe('provider-neutral MCP access verification boundary', () => {
     ).rejects.toThrow('Invalid access issuer')
   })
 
+  it.each([
+    new URL('https://mcp.example.test/api/mcp?tenant=one'),
+    new URL('https://mcp.example.test/api/mcp#fragment'),
+    new URL('https://user:secret@mcp.example.test/api/mcp'),
+  ])('rejects an ambiguous configured resource before verifier work: %s', async (resource) => {
+    let verifierCalls = 0
+    await expect(
+      verifyAndNormalizeMcpAccess({
+        verifier: {
+          async verifyAccessToken() {
+            verifierCalls += 1
+            return verified()
+          },
+        },
+        token: 'must-not-reach-verifier',
+        expectedIssuer: 'https://issuer.example.test/',
+        expectedResource: resource,
+      }),
+    ).rejects.toThrow('Invalid access resource')
+    expect(verifierCalls).toBe(0)
+  })
+
   it('normalizes and freezes the exact allowlisted access context', async () => {
+    let expectationWasFrozen = false
+    let observedExpectation: { issuer: string; resource: string } | undefined
     const result = await verifyAndNormalizeMcpAccess({
-      verifier: verifier(),
+      verifier: {
+        async verifyAccessToken(_token, expected) {
+          expectationWasFrozen = Object.isFrozen(expected)
+          observedExpectation = {
+            issuer: expected.issuer,
+            resource: expected.resource.href,
+          }
+          expected.resource.pathname = '/verifier-local-mutation'
+          return verified()
+        },
+      },
       token: 'raw-bearer-sentinel',
       expectedIssuer: 'https://issuer.example.test/',
       expectedResource,
@@ -100,6 +134,12 @@ describe('provider-neutral MCP access verification boundary', () => {
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.access)).toBe(true)
     expect(Object.isFrozen(result.access.scopes)).toBe(true)
+    expect(expectationWasFrozen).toBe(true)
+    expect(observedExpectation).toEqual({
+      issuer: 'https://issuer.example.test/',
+      resource: expectedResource.href,
+    })
+    expect(expectedResource.href).toBe('https://mcp.example.test/api/mcp')
     expect(JSON.stringify(result)).not.toContain('raw-bearer-sentinel')
   })
 
@@ -123,8 +163,14 @@ describe('provider-neutral MCP access verification boundary', () => {
     const providerReference = 'private-grant-reference-sentinel'
     let privateReferenceWasChecked = false
     const betterAuthFake: McpAccessVerifier = {
-      async verifyAccessToken(token, resource) {
-        if (token !== bearer || resource.href !== expectedResource.href) throw new Error('invalid')
+      async verifyAccessToken(token, expected) {
+        if (
+          token !== bearer ||
+          expected.issuer !== 'https://issuer.example.test/' ||
+          expected.resource.href !== expectedResource.href
+        ) {
+          throw new Error('invalid')
+        }
         privateReferenceWasChecked = providerReference === 'private-grant-reference-sentinel'
         return verified()
       },
@@ -165,7 +211,7 @@ describe('provider-neutral MCP access verification boundary', () => {
     )
     const token = `${payload.toString('base64url')}.${sign(null, payload, privateKey).toString('base64url')}`
     const externalVerifier: McpAccessVerifier = {
-      async verifyAccessToken(candidate, resource) {
+      async verifyAccessToken(candidate, expected) {
         const [encodedPayload, encodedSignature, extra] = candidate.split('.')
         if (!encodedPayload || !encodedSignature || extra) throw new Error('invalid token')
         const signedPayload = Buffer.from(encodedPayload, 'base64url')
@@ -180,7 +226,8 @@ describe('provider-neutral MCP access verification boundary', () => {
           scopes: string[]
           expiresAt: number
         }
-        if (claims.resource !== resource.href) throw new Error('wrong resource')
+        if (claims.issuer !== expected.issuer) throw new Error('wrong issuer')
+        if (claims.resource !== expected.resource.href) throw new Error('wrong resource')
         const { expiresAt, ...access } = claims
         return { access, expiresAt }
       },

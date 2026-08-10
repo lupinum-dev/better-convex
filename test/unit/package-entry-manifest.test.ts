@@ -132,6 +132,7 @@ describe('package entry manifest', () => {
         'HandleMcpRequestOptions',
         'McpAccessContext',
         'McpAccessVerifier',
+        'McpVerificationExpectation',
         'VerifiedMcpAccess',
       ],
     })

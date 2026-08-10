@@ -1,8 +1,8 @@
 import { ConvexError, v } from 'convex/values'
 
-import { components } from './_generated/api'
 import type { DataModel, Doc, Id } from './_generated/dataModel'
 import { internalMutation, type MutationCtx } from './_generated/server'
+import { authComponent } from './auth'
 import {
   McpAuthorizationError,
   assertLiveMcpAuthorization,
@@ -11,11 +11,15 @@ import {
   type LiveAuthorizationState,
   type SerializableOAuthPrincipal,
 } from './mcp/policy'
+import { MCP_SCOPES } from './mcp/scopes'
+
+const mcpScopeValidator = v.union(v.literal(MCP_SCOPES[0]), v.literal(MCP_SCOPES[1]))
 
 const principalValidator = v.object({
   clientId: v.string(),
+  issuer: v.string(),
   resource: v.string(),
-  scopes: v.array(v.string()),
+  scopes: v.array(mcpScopeValidator),
   sessionId: v.string(),
   subject: v.string(),
 })
@@ -32,21 +36,6 @@ function requireId<Table extends TableName>(
   return id
 }
 
-async function authRecord(
-  ctx: MutationCtx,
-  model: string,
-  where: { field: string; value: string }[],
-): Promise<Record<string, unknown> | null> {
-  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
-    model,
-    where,
-  })) as Record<string, unknown> | null
-}
-
-function strings(value: unknown): string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? value : []
-}
-
 async function loadLiveState(
   ctx: MutationCtx,
   principal: SerializableOAuthPrincipal,
@@ -54,24 +43,6 @@ async function loadLiveState(
   projectId?: Id<'projects'>,
   approvalId?: Id<'approvals'>,
 ): Promise<LiveAuthorizationState> {
-  const session = await authRecord(ctx, 'session', [
-    { field: 'id', value: principal.sessionId },
-    { field: 'userId', value: principal.subject },
-  ])
-  const client = await authRecord(ctx, 'oauthClient', [
-    { field: 'clientId', value: principal.clientId },
-  ])
-  const resource = await authRecord(ctx, 'oauthResource', [
-    { field: 'identifier', value: principal.resource },
-  ])
-  const clientResource = await authRecord(ctx, 'oauthClientResource', [
-    { field: 'clientId', value: principal.clientId },
-    { field: 'resourceId', value: principal.resource },
-  ])
-  const consent = await authRecord(ctx, 'oauthConsent', [
-    { field: 'clientId', value: principal.clientId },
-    { field: 'userId', value: principal.subject },
-  ])
   const user = await ctx.db
     .query('users')
     .withIndex('by_auth_id', (q) => q.eq('authId', principal.subject))
@@ -110,36 +81,6 @@ async function loadLiveState(
           userId: String(approval.userId),
         }
       : null,
-    client: client
-      ? {
-          clientId: typeof client.clientId === 'string' ? client.clientId : '',
-          disabled: client.disabled === true,
-          grantTypes: strings(client.grantTypes),
-          public: client.public === true,
-          requirePKCE: client.requirePKCE === true,
-          responseTypes: strings(client.responseTypes),
-          scopes: strings(client.scopes),
-          tokenEndpointAuthMethod:
-            typeof client.tokenEndpointAuthMethod === 'string'
-              ? client.tokenEndpointAuthMethod
-              : '',
-        }
-      : null,
-    clientResource: clientResource
-      ? {
-          clientId: typeof clientResource.clientId === 'string' ? clientResource.clientId : '',
-          resourceId:
-            typeof clientResource.resourceId === 'string' ? clientResource.resourceId : '',
-        }
-      : null,
-    consent: consent
-      ? {
-          clientId: typeof consent.clientId === 'string' ? consent.clientId : '',
-          resources: strings(consent.resources),
-          scopes: strings(consent.scopes),
-          userId: typeof consent.userId === 'string' ? consent.userId : '',
-        }
-      : null,
     delegation: delegation
       ? {
           clientId: delegation.clientId,
@@ -165,22 +106,6 @@ async function loadLiveState(
           status: project.status,
         }
       : null,
-    resource: resource
-      ? {
-          allowedScopes: strings(resource.allowedScopes),
-          disabled: resource.disabled === true,
-          identifier: typeof resource.identifier === 'string' ? resource.identifier : '',
-          signingAlgorithm:
-            typeof resource.signingAlgorithm === 'string' ? resource.signingAlgorithm : '',
-        }
-      : null,
-    session: session
-      ? {
-          expiresAt: typeof session.expiresAt === 'number' ? session.expiresAt : 0,
-          id: typeof session.id === 'string' ? session.id : '',
-          userId: typeof session.userId === 'string' ? session.userId : '',
-        }
-      : null,
     user: user ? { active: user.active, authId: user.authId, id: String(user._id) } : null,
   }
 }
@@ -194,6 +119,9 @@ async function requireLiveAuthorization(
     projectId?: Id<'projects'>
   },
 ) {
+  if (!(await authComponent.validateOAuthAccess(ctx, principal))) {
+    throw new ConvexError('MCP_ACCESS_REVOKED')
+  }
   const state = await loadLiveState(
     ctx,
     principal,

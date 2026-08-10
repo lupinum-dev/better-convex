@@ -17,7 +17,8 @@ describe('delegated MCP static trust boundaries', () => {
   it('has one public HTTP verifier and only tool-specific internal operations', () => {
     const action = readFileSync(join(starter, 'convex/mcp.ts'), 'utf8')
     const tools = readFileSync(join(starter, 'convex/mcpTools.ts'), 'utf8')
-    expect(action.match(/verifyOAuthBearerToken\(/g)).toHaveLength(1)
+    expect(action.match(/createBetterAuthMcpAccessVerifier\(/g)).toHaveLength(1)
+    expect(action).toContain('authComponent.validateOAuthAccess(ctx, access)')
     expect(action).toContain("from 'better-convex-mcp'")
     expect(action).toContain("from '@modelcontextprotocol/server'")
     expect(action.match(/server\.registerTool\(/g)).toHaveLength(5)
@@ -25,6 +26,9 @@ describe('delegated MCP static trust boundaries', () => {
     expect(tools).not.toMatch(/export const \w+\s*=\s*(?:query|mutation)\s*\(/)
     expect(tools.match(/internalMutation\s*\(/g)).toHaveLength(5)
     expect(tools).not.toMatch(/bearerToken|authorizationHeader|rawToken/)
+    expect(tools).not.toMatch(
+      /['"]oauth(?:Client(?:Resource)?|Consent|Resource)['"]|['"]session['"]/,
+    )
   })
 
   it('never puts the raw token or a second MCP secret in function arguments or state', () => {
@@ -43,9 +47,22 @@ describe('delegated MCP static trust boundaries', () => {
   it('keeps OAuth cryptography in the shared package verifier', () => {
     const action = readFileSync(join(starter, 'convex/mcp.ts'), 'utf8')
     expect(action).toContain("from 'better-convex-nuxt/convex-auth'")
-    expect(action).toContain('verifyOAuthBearerToken')
+    expect(action).toContain('createBetterAuthMcpAccessVerifier')
     expect(action).not.toContain('@better-auth/oauth-provider/resource-client')
     expect(action).not.toMatch(/jose|subtle|createRemoteJWKSet|jwtVerify/)
+  })
+
+  it('uses one delegated scope vocabulary across provider, verifier, UI, and transactions', () => {
+    const scopeSource = readFileSync(join(starter, 'convex/mcp/scopes.ts'), 'utf8')
+    const sourceFiles = files(starter).filter((path) => /\.(?:ts|vue)$/u.test(path))
+    const source = sourceFiles.map((path) => readFileSync(path, 'utf8')).join('\n')
+    const delegatedScopes = [...source.matchAll(/['"](mcp:[\w:.-]+)['"]/gu)].map(
+      (match) => match[1],
+    )
+
+    expect(scopeSource).toContain("Object.freeze(['mcp:read', 'mcp:write'] as const)")
+    expect(new Set(delegatedScopes)).toEqual(new Set(['mcp:read', 'mcp:write']))
+    expect(source.match(/const (?:ALLOWED_)?SCOPES\s*=/gu) ?? []).toHaveLength(0)
   })
 
   it('provisions only through provider-owned admin endpoints behind live app authorization', () => {
@@ -96,8 +113,8 @@ describe('delegated MCP static trust boundaries', () => {
     expect(users).toContain(".withIndex('by_auth_id'")
     expect(users).toContain('if (!user?.active) return null')
     expect(users).toContain('return { email: user.email, name: user.name }')
-    expect(index).toContain('seedFromSession: false')
-    expect(index).toContain("source: 'projection'")
+    expect(index).toContain('useConvexQuery(api.users.getCurrent')
+    expect(index).toContain("auth: 'required'")
     expect(index).not.toMatch(/const\s*\{[^}]*\buser\b[^}]*\}\s*=\s*useConvexAuth\(/u)
     expect(index).not.toContain('user?.email')
   })

@@ -12,6 +12,7 @@ import {
 
 import { components, internal } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
+import { MCP_SCOPES } from './mcp/scopes'
 import { mcpOAuthAdminPlugin } from './mcpOAuthAdmin'
 const authFunctions: AuthFunctions = internal.auth
 
@@ -127,7 +128,7 @@ function oauthOptions(ctx: AuthCtx<DataModel>): OAuthOptions<Scope[]> {
       token: { max: 20, window: 60 },
     },
     resourcePrivileges: (identity) => hasOAuthAdminPrivilege(ctx, identity),
-    scopes: ['mcp:read', 'mcp:write'],
+    scopes: [...MCP_SCOPES],
     storeClientSecret: 'hashed',
     storeTokens: 'hashed',
   }

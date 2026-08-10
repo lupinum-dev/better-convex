@@ -37,7 +37,7 @@ describe('confidential OAuth code fixture contracts', () => {
     expect(providerSource).toContain("value.type !== 'web'")
     expect(providerSource).toContain("value.token_endpoint_auth_method !== 'client_secret_basic'")
     expect(providerSource).toContain('value.require_pkce !== true')
-    expect(providerSource).toContain("scope: SCOPES.join(' ')")
+    expect(providerSource).toContain("scope: MCP_SCOPES.join(' ')")
     expect(providerSource).toContain('provider.endpoints.adminLinkClientResource')
     expect(providerSource).toContain('provider.endpoints.rotateClientSecret')
     expect(providerSource).not.toMatch(/console\.(?:debug|error|info|log|warn)/u)

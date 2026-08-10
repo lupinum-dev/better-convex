@@ -23,6 +23,12 @@ export interface VerifiedMcpAccess {
   readonly expiresAt: number
 }
 
+/** Captured verification target with a frozen outer record and a request-local resource clone. */
+export interface McpVerificationExpectation {
+  readonly issuer: string
+  readonly resource: URL
+}
+
 /**
  * Provider-neutral token verifier consumed by the Better Convex MCP resource boundary.
  *
@@ -31,7 +37,7 @@ export interface VerifiedMcpAccess {
  * the adapter and never become part of {@link McpAccessContext}.
  */
 export interface McpAccessVerifier {
-  verifyAccessToken(token: string, expectedResource: URL): Promise<VerifiedMcpAccess>
+  verifyAccessToken(token: string, expected: McpVerificationExpectation): Promise<VerifiedMcpAccess>
 }
 
 export { handleMcpRequest } from './handler.js'

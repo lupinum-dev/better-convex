@@ -1,17 +1,14 @@
-import type { CallToolResult } from '@modelcontextprotocol/server'
+import type { CallToolResult, InputRequiredResult } from '@modelcontextprotocol/server'
+
+type McpToolResult = CallToolResult | InputRequiredResult
 
 /**
- * Converts unexpected application or infrastructure throws into one static MCP tool failure.
- * Expected domain outcomes and deliberately projected actionable failures remain ordinary return values.
+ * Converts unexpected throws from an opted-in tool callback into one static MCP tool failure.
+ *
+ * This deliberately narrow helper does not sanitize SDK input/output validation failures or callbacks
+ * that do not call it. Expected domain outcomes remain ordinary official tool return values.
  */
-interface RunMcpTool {
-  (operation: () => CallToolResult | Promise<CallToolResult>): Promise<CallToolResult>
-  <Result extends object>(
-    operation: () => Result | Promise<Result>,
-  ): Promise<Result | CallToolResult>
-}
-
-export const runMcpTool: RunMcpTool = async <Result extends object>(
+export const runMcpTool = async <Result extends McpToolResult>(
   operation: () => Result | Promise<Result>,
 ): Promise<Result | CallToolResult> => {
   try {

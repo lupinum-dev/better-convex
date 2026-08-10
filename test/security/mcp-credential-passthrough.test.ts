@@ -33,10 +33,11 @@ describe('MCP credential passthrough absence', () => {
       vi.spyOn(console, 'warn').mockImplementation(() => undefined),
     ]
     const verifier: McpAccessVerifier = {
-      async verifyAccessToken(token, expectedResource) {
+      async verifyAccessToken(token, expected) {
         if (
           token !== bearer ||
-          expectedResource.href !== resource.href ||
+          expected.issuer !== oauthMetadata.issuer ||
+          expected.resource.href !== resource.href ||
           providerReference.length === 0
         ) {
           throw new Error('invalid')
@@ -59,8 +60,7 @@ describe('MCP credential passthrough absence', () => {
     const requestOptions = {
       serverInfo: { name: 'absence-proof', version: '0.1.0' },
       resource,
-      verifier,
-      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
+      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer, verifier },
       configureServer(access, server) {
         server.registerTool(
           'search_notes',
