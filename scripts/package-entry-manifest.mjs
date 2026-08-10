@@ -269,8 +269,13 @@ const mcpPackageEntries = [
     subpath: '.',
     distJs: 'dist/index.mjs',
     distDts: 'dist/index.d.mts',
-    valueExports: ['createConvexMcpHandler', 'runMcpTool'],
-    typeExports: ['McpAccessContext', 'McpAccessVerifier', 'VerifiedMcpAccess'],
+    valueExports: ['handleMcpRequest', 'runMcpTool'],
+    typeExports: [
+      'HandleMcpRequestOptions',
+      'McpAccessContext',
+      'McpAccessVerifier',
+      'VerifiedMcpAccess',
+    ],
     exactDeclaredExports: true,
     forbiddenNames: [
       'McpPrincipal',

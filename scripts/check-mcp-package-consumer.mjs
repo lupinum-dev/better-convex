@@ -71,7 +71,7 @@ try {
   )
   writeFileSync(
     join(scratchRoot, 'consumer.ts'),
-    `import { createConvexMcpHandler, runMcpTool, type McpAccessContext, type McpAccessVerifier, type VerifiedMcpAccess } from 'better-convex-mcp'\n\nconst access: McpAccessContext = { issuer: 'https://issuer.example', subject: 'alice', clientId: 'client', resource: 'https://resource.example/mcp', scopes: ['notes:read'] }\nconst verifier: McpAccessVerifier = { async verifyAccessToken(_token, _resource): Promise<VerifiedMcpAccess> { return { access, expiresAt: 4_102_444_800 } } }\nvoid createConvexMcpHandler\nvoid runMcpTool\nvoid verifier\n`,
+    `import { handleMcpRequest, runMcpTool, type HandleMcpRequestOptions, type McpAccessContext, type McpAccessVerifier, type VerifiedMcpAccess } from 'better-convex-mcp'\n\nconst resource = new URL('https://resource.example/mcp')\nconst access: McpAccessContext = { issuer: 'https://issuer.example', subject: 'alice', clientId: 'client', resource: resource.href, scopes: ['notes:read'] }\nconst verifier: McpAccessVerifier = { async verifyAccessToken(_token, _resource): Promise<VerifiedMcpAccess> { return { access, expiresAt: 4_102_444_800 } } }\nconst options: HandleMcpRequestOptions = { serverInfo: { name: 'consumer', version: '1.0.0' }, resource, verifier, authorization: { mode: 'oauth', issuer: access.issuer }, configureServer(nextAccess, server) { void nextAccess; void server } }\ndeclare const request: Request\nvoid handleMcpRequest(request, options)\nvoid runMcpTool\n`,
   )
   cpSync(
     join(repositoryRoot, 'scripts/fixtures/mcp-packed-credential-proof.mjs'),
@@ -90,7 +90,7 @@ try {
   const installedRoot = join(scratchRoot, 'node_modules/better-convex-mcp')
   candidate.assertInstalled(installedRoot)
   const imported = await import(pathToFileURL(join(installedRoot, 'dist/index.mjs')).href)
-  if (Object.keys(imported).sort().join(',') !== 'createConvexMcpHandler,runMcpTool') {
+  if (Object.keys(imported).sort().join(',') !== 'handleMcpRequest,runMcpTool') {
     throw new Error('MCP runtime entry does not match the reviewed export allowlist.')
   }
   const manifest = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'))

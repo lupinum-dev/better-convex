@@ -1,4 +1,4 @@
-import { createConvexMcpHandler } from 'better-convex-mcp'
+import { handleMcpRequest } from 'better-convex-mcp'
 import { z } from 'zod'
 
 const resource = new URL('https://packed-mcp.invalid/mcp')
@@ -7,7 +7,7 @@ const cookie = 'packed-mcp-cookie-sentinel'
 const proxyCredential = 'packed-mcp-proxy-sentinel'
 let callbackHeaders
 
-const handler = createConvexMcpHandler({
+const options = {
   resource,
   verifier: {
     async verifyAccessToken(token, expectedResource) {
@@ -29,7 +29,7 @@ const handler = createConvexMcpHandler({
     mode: 'preconfigured-bearer',
   },
   serverInfo: { name: 'packed-proof', version: '0.0.0' },
-  configureServer(_context, _access, server) {
+  configureServer(_access, server) {
     server.registerTool('inspect_headers', { inputSchema: z.object({}) }, (_input, extra) => {
       callbackHeaders = Object.fromEntries(extra.http?.req?.headers ?? [])
       return {
@@ -38,10 +38,9 @@ const handler = createConvexMcpHandler({
       }
     })
   },
-})
+}
 
-const response = await handler.fetch(
-  {},
+const response = await handleMcpRequest(
   new Request(resource, {
     body: JSON.stringify({
       id: 'packed-tool-call',
@@ -71,6 +70,7 @@ const response = await handler.fetch(
     },
     method: 'POST',
   }),
+  options,
 )
 
 if (response.status !== 200) throw new Error(`Packed MCP request failed: ${response.status}`)

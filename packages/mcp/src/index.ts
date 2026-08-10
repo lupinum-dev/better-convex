@@ -34,5 +34,6 @@ export interface McpAccessVerifier {
   verifyAccessToken(token: string, expectedResource: URL): Promise<VerifiedMcpAccess>
 }
 
-export { createConvexMcpHandler } from './handler.js'
+export { handleMcpRequest } from './handler.js'
+export type { HandleMcpRequestOptions } from './handler.js'
 export { runMcpTool } from './tools.js'

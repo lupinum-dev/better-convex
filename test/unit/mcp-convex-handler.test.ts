@@ -3,7 +3,7 @@ import { ResourceTemplate } from '@modelcontextprotocol/server'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { createConvexMcpHandler } from '../../packages/mcp/src/handler'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
 import type { McpAccessVerifier } from '../../packages/mcp/src/index'
 const expectedMaximumMcpRequestBytes = 65_536
 const expectedMcpRequestTimeoutMs = 30_000
@@ -45,17 +45,17 @@ describe('Convex-native official MCP handler composition', () => {
   it('keeps a committed tool result unary when the tool emits mid-call progress', async () => {
     const application = { effects: 0 }
     const toolResponses: Array<{ contentType: string | null; status: number }> = []
-    const handler = createConvexMcpHandler<typeof application>({
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: accessVerifier(),
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(context, _access, server) {
+      configureServer(_access, server) {
         server.registerTool(
           'commit_once',
           { inputSchema: z.object({}) },
           async (_args, requestContext) => {
-            context.effects += 1
+            application.effects += 1
             const progressToken = requestContext.mcpReq._meta?.progressToken
             if (progressToken === undefined) throw new Error('missing progress token')
             await requestContext.mcpReq.notify({
@@ -64,17 +64,17 @@ describe('Convex-native official MCP handler composition', () => {
             })
             return {
               content: [{ type: 'text', text: 'committed once' }],
-              structuredContent: { effects: context.effects },
+              structuredContent: { effects: application.effects },
             }
           },
         )
       },
-    })
+    } satisfies HandleMcpRequestOptions
     const transport = new StreamableHTTPClientTransport(resource, {
       requestInit: { headers: { authorization: `Bearer ${bearer}` } },
       fetch: async (input, init) => {
         const request = new Request(input, init)
-        const response = await handler.fetch(application, request)
+        const response = await handleMcpRequest(request, requestOptions)
         if (request.headers.get('mcp-method') === 'tools/call') {
           toolResponses.push({
             contentType: response.headers.get('content-type'),
@@ -114,7 +114,7 @@ describe('Convex-native official MCP handler composition', () => {
     const observedAccess: unknown[] = []
     const observedOfficialAuth: unknown[] = []
     const observedRequestHeaders: Headers[] = []
-    const handler = createConvexMcpHandler<typeof application>({
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: accessVerifier(),
@@ -124,7 +124,7 @@ describe('Convex-native official MCP handler composition', () => {
         resourceName: 'Neutral notes',
         scopesSupported: ['notes:read', 'notes:write'],
       },
-      configureServer(context, access, server) {
+      configureServer(access, server) {
         observedAccess.push(access)
         server.registerTool(
           'search_notes',
@@ -135,9 +135,9 @@ describe('Convex-native official MCP handler composition', () => {
           ({ query }, extra) => {
             observedOfficialAuth.push(extra.http?.authInfo)
             if (extra.http?.req) observedRequestHeaders.push(new Headers(extra.http.req.headers))
-            context.operations.push(`search:${access.issuer}:${access.subject}`)
+            application.operations.push(`search:${access.issuer}:${access.subject}`)
             const output = {
-              titles: [...context.notes.values()].filter((title) =>
+              titles: [...application.notes.values()].filter((title) =>
                 title.toLowerCase().includes(query.toLowerCase()),
               ),
             }
@@ -164,9 +164,9 @@ describe('Convex-native official MCP handler composition', () => {
           ({ id, title }, extra) => {
             observedOfficialAuth.push(extra.http?.authInfo)
             if (extra.http?.req) observedRequestHeaders.push(new Headers(extra.http.req.headers))
-            if (!context.notes.has(id)) throw new Error('missing note')
-            context.notes.set(id, title)
-            context.operations.push(`rename:${id}:${access.clientId}`)
+            if (!application.notes.has(id)) throw new Error('missing note')
+            application.notes.set(id, title)
+            application.operations.push(`rename:${id}:${access.clientId}`)
             const output = { id, title }
             return {
               content: [{ type: 'text', text: `Renamed ${id} to “${title}”.` }],
@@ -183,7 +183,7 @@ describe('Convex-native official MCP handler composition', () => {
           },
           async (uri, { id }, extra) => {
             if (extra.http?.req) observedRequestHeaders.push(new Headers(extra.http.req.headers))
-            const title = context.notes.get(String(id))
+            const title = application.notes.get(String(id))
             if (title === undefined) throw new Error('resource unavailable')
             return {
               contents: [{ uri: uri.href, mimeType: 'text/plain', text: title }],
@@ -191,7 +191,7 @@ describe('Convex-native official MCP handler composition', () => {
           },
         )
       },
-    })
+    } satisfies HandleMcpRequestOptions
     const responseBodies: string[] = []
     const transport = new StreamableHTTPClientTransport(resource, {
       requestInit: {
@@ -203,7 +203,7 @@ describe('Convex-native official MCP handler composition', () => {
         },
       },
       fetch: async (input, init) => {
-        const response = await handler.fetch(application, new Request(input, init))
+        const response = await handleMcpRequest(new Request(input, init), requestOptions)
         responseBodies.push(await response.clone().text())
         return response
       },
@@ -274,19 +274,18 @@ describe('Convex-native official MCP handler composition', () => {
 
   it('uses the official bearer challenge and never constructs an application server when denied', async () => {
     let factoryCalls = 0
-    const handler = createConvexMcpHandler({
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: accessVerifier(),
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(_context, _access, server) {
+      configureServer(_access, server) {
         factoryCalls += 1
         void server
       },
-    })
+    } satisfies HandleMcpRequestOptions
 
-    const response = await handler.fetch(
-      {},
+    const response = await handleMcpRequest(
       new Request(resource, {
         method: 'POST',
         headers: {
@@ -295,6 +294,7 @@ describe('Convex-native official MCP handler composition', () => {
         },
         body: '{}',
       }),
+      requestOptions,
     )
 
     expect(response.status).toBe(401)
@@ -306,20 +306,19 @@ describe('Convex-native official MCP handler composition', () => {
   })
 
   it('owns the SDK server instance supplied to application configuration', async () => {
-    const handler = createConvexMcpHandler({
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: accessVerifier(),
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(_context, _access, server) {
+      configureServer(_access, server) {
         server.registerTool('owned-server', { inputSchema: z.object({}) }, () => ({
           content: [{ type: 'text', text: 'owned' }],
         }))
       },
-    })
+    } satisfies HandleMcpRequestOptions
 
-    const response = await handler.fetch(
-      {},
+    const response = await handleMcpRequest(
       new Request(resource, {
         method: 'POST',
         headers: {
@@ -342,6 +341,7 @@ describe('Convex-native official MCP handler composition', () => {
           },
         }),
       }),
+      requestOptions,
     )
 
     expect(response.status).toBe(200)
@@ -352,7 +352,7 @@ describe('Convex-native official MCP handler composition', () => {
 
   it('supports preconfigured bearer credentials without advertising an OAuth server', async () => {
     const credentialIssuer = 'https://notes.example.test/credentials/'
-    const handler = createConvexMcpHandler({
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: {
@@ -376,30 +376,30 @@ describe('Convex-native official MCP handler composition', () => {
         issuer: credentialIssuer,
         requiredScopes: ['notes:read'],
       },
-      configureServer(_context, access, server) {
+      configureServer(access, server) {
         server.registerTool('whoami', { inputSchema: z.object({}) }, () => ({
           content: [{ type: 'text', text: 'Credential is active.' }],
           structuredContent: { subject: access.subject },
         }))
       },
-    })
+    } satisfies HandleMcpRequestOptions
 
     for (const metadataUrl of [
       'https://notes.example.test/.well-known/oauth-protected-resource/mcp',
       'https://notes.example.test/.well-known/oauth-authorization-server',
     ]) {
-      const response = await handler.fetch({}, new Request(metadataUrl))
+      const response = await handleMcpRequest(new Request(metadataUrl), requestOptions)
       expect(response.status).toBe(404)
       await expect(response.text()).resolves.toBe('')
     }
 
-    const denied = await handler.fetch(
-      {},
+    const denied = await handleMcpRequest(
       new Request(resource, {
         body: '{}',
         headers: { 'content-type': 'application/json' },
         method: 'POST',
       }),
+      requestOptions,
     )
     expect(denied.status).toBe(401)
     expect(denied.headers.get('www-authenticate')).toMatch(/^Bearer /u)
@@ -407,7 +407,8 @@ describe('Convex-native official MCP handler composition', () => {
 
     const transport = new StreamableHTTPClientTransport(resource, {
       requestInit: { headers: { authorization: `Bearer ${bearer}` } },
-      fetch: async (input, init) => await handler.fetch({}, new Request(input, init)),
+      fetch: async (input, init) =>
+        await handleMcpRequest(new Request(input, init), requestOptions),
     })
     const client = new Client(
       { name: 'preconfigured-client', version: '0.1.0' },
@@ -423,9 +424,9 @@ describe('Convex-native official MCP handler composition', () => {
     }
   })
 
-  it('rejects malformed preconfigured credential issuers at construction', () => {
-    expect(() =>
-      createConvexMcpHandler({
+  it('rejects malformed preconfigured credential issuers before request handling', async () => {
+    await expect(
+      handleMcpRequest(new Request(resource), {
         serverInfo,
         resource,
         verifier: accessVerifier(),
@@ -433,11 +434,11 @@ describe('Convex-native official MCP handler composition', () => {
           mode: 'preconfigured-bearer',
           issuer: 'http://notes.example.test/credentials/',
         },
-        configureServer(_context, _access, server) {
+        configureServer(_access, server) {
           void server
         },
       }),
-    ).toThrow('Invalid access issuer')
+    ).rejects.toThrow('Invalid access issuer')
   })
 
   it.each([
@@ -483,7 +484,7 @@ describe('Convex-native official MCP handler composition', () => {
   ])('rejects $label before credential or application handling', async ({ request, status }) => {
     let verifierCalls = 0
     let factoryCalls = 0
-    const handler = createConvexMcpHandler({
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: {
@@ -493,12 +494,12 @@ describe('Convex-native official MCP handler composition', () => {
         },
       },
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(_context, _access, server) {
+      configureServer(_access, server) {
         factoryCalls += 1
         void server
       },
-    })
-    const response = await handler.fetch({}, request())
+    } satisfies HandleMcpRequestOptions
+    const response = await handleMcpRequest(request(), requestOptions)
     expect(response.status).toBe(status)
     expect(response.headers.get('cache-control')).toBe('no-store')
     await expect(response.text()).resolves.toBe('')
@@ -507,7 +508,7 @@ describe('Convex-native official MCP handler composition', () => {
   })
 
   it('serves fixed RFC 9728 metadata and binds every challenge to its exact URL', async () => {
-    const handler = createConvexMcpHandler({
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: accessVerifier(),
@@ -517,14 +518,17 @@ describe('Convex-native official MCP handler composition', () => {
         resourceName: 'Neutral notes',
         scopesSupported: ['notes:read', 'notes:write'],
       },
-      configureServer(_context, _access, server) {
+      configureServer(_access, server) {
         void server
       },
-    })
+    } satisfies HandleMcpRequestOptions
     const protectedResourceUrl = new URL(
       'https://notes.example.test/.well-known/oauth-protected-resource/mcp',
     )
-    const protectedResponse = await handler.fetch({}, new Request(protectedResourceUrl))
+    const protectedResponse = await handleMcpRequest(
+      new Request(protectedResourceUrl),
+      requestOptions,
+    )
     expect(protectedResponse.status).toBe(200)
     expect(protectedResponse.headers.get('access-control-allow-origin')).toBe('*')
     await expect(protectedResponse.json()).resolves.toEqual({
@@ -533,19 +537,19 @@ describe('Convex-native official MCP handler composition', () => {
       resource_name: 'Neutral notes',
       scopes_supported: ['notes:read', 'notes:write'],
     })
-    const protectedHead = await handler.fetch(
-      {},
+    const protectedHead = await handleMcpRequest(
       new Request(protectedResourceUrl, { method: 'HEAD' }),
+      requestOptions,
     )
     expect(protectedHead.status).toBe(200)
     expect(protectedHead.headers.get('access-control-allow-origin')).toBe('*')
     await expect(protectedHead.text()).resolves.toBe('')
-    const protectedOptions = await handler.fetch(
-      {},
+    const protectedOptions = await handleMcpRequest(
       new Request(protectedResourceUrl, {
         headers: { 'access-control-request-headers': 'authorization, mcp-method' },
         method: 'OPTIONS',
       }),
+      requestOptions,
     )
     expect(protectedOptions.status).toBe(204)
     expect(protectedOptions.headers.get('access-control-allow-origin')).toBe('*')
@@ -555,15 +559,14 @@ describe('Convex-native official MCP handler composition', () => {
     )
     expect(protectedOptions.headers.get('vary')).toBe('Access-Control-Request-Headers')
 
-    const authorizationResponse = await handler.fetch(
-      {},
+    const authorizationResponse = await handleMcpRequest(
       new Request('https://notes.example.test/.well-known/oauth-authorization-server'),
+      requestOptions,
     )
     expect(authorizationResponse.status).toBe(404)
     await expect(authorizationResponse.text()).resolves.toBe('')
 
-    const denied = await handler.fetch(
-      {},
+    const denied = await handleMcpRequest(
       new Request(resource, {
         method: 'POST',
         headers: {
@@ -572,6 +575,7 @@ describe('Convex-native official MCP handler composition', () => {
         },
         body: JSON.stringify({ resource: 'https://attacker.invalid' }),
       }),
+      requestOptions,
     )
     expect(denied.status).toBe(401)
     const challenge = denied.headers.get('www-authenticate')
@@ -581,9 +585,9 @@ describe('Convex-native official MCP handler composition', () => {
     expect(challenge).not.toContain('attacker')
   })
 
-  it('fails at construction for an insecure or malformed authorization-server issuer', () => {
-    expect(() =>
-      createConvexMcpHandler({
+  it('fails before request handling for an insecure or malformed authorization-server issuer', async () => {
+    await expect(
+      handleMcpRequest(new Request(resource), {
         serverInfo,
         resource,
         verifier: accessVerifier(),
@@ -591,32 +595,32 @@ describe('Convex-native official MCP handler composition', () => {
           mode: 'oauth',
           issuer: 'http://issuer.example.test/',
         },
-        configureServer(_context, _access, server) {
+        configureServer(_access, server) {
           void server
         },
       }),
-    ).toThrow()
+    ).rejects.toThrow()
   })
 
   it.each(['localhost', '127.0.0.1', '[::1]'])(
     'accepts the exact reviewed %s loopback issuer in both authorization modes',
-    (host) => {
+    async (host) => {
       const issuer = `http://${host}:3210/`
       for (const authorization of [
         { mode: 'oauth' as const, issuer },
         { mode: 'preconfigured-bearer' as const, issuer },
       ]) {
-        expect(() =>
-          createConvexMcpHandler({
+        await expect(
+          handleMcpRequest(new Request(resource), {
             serverInfo,
             resource,
             verifier: accessVerifier(),
             authorization,
-            configureServer(_context, _access, server) {
+            configureServer(_access, server) {
               void server
             },
           }),
-        ).not.toThrow()
+        ).resolves.toBeInstanceOf(Response)
       }
     },
   )
@@ -637,18 +641,17 @@ describe('Convex-native official MCP handler composition', () => {
         }
       },
     }
-    const foreignHandler = createConvexMcpHandler({
+    const foreignOptions = {
       serverInfo,
       resource,
       verifier: foreignIssuerVerifier,
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(_context, _access, server) {
+      configureServer(_access, server) {
         factoryCalls += 1
         void server
       },
-    })
-    const foreignResponse = await foreignHandler.fetch(
-      {},
+    } satisfies HandleMcpRequestOptions
+    const foreignResponse = await handleMcpRequest(
       new Request(resource, {
         method: 'POST',
         headers: {
@@ -657,19 +660,20 @@ describe('Convex-native official MCP handler composition', () => {
         },
         body: '{}',
       }),
+      foreignOptions,
     )
     expect(foreignResponse.status).toBe(401)
 
-    const headerOnlyHandler = createConvexMcpHandler({
+    const headerOnlyOptions = {
       serverInfo,
       resource,
       verifier: accessVerifier(),
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(_context, _access, server) {
+      configureServer(_access, server) {
         factoryCalls += 1
         void server
       },
-    })
+    } satisfies HandleMcpRequestOptions
     for (const [request, expectedStatus] of [
       [
         new Request(`${resource.href}?access_token=${bearer}`, {
@@ -688,7 +692,7 @@ describe('Convex-native official MCP handler composition', () => {
         401,
       ],
     ] as const) {
-      const response = await headerOnlyHandler.fetch({}, request)
+      const response = await handleMcpRequest(request, headerOnlyOptions)
       expect(response.status).toBe(expectedStatus)
       expect(await response.text()).not.toContain(bearer)
     }
@@ -697,18 +701,17 @@ describe('Convex-native official MCP handler composition', () => {
 
   it('enforces request bounds before protocol parsing or application construction', async () => {
     let factoryCalls = 0
-    const handler = createConvexMcpHandler({
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: accessVerifier(),
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(_context, _access, server) {
+      configureServer(_access, server) {
         factoryCalls += 1
         void server
       },
-    })
-    const response = await handler.fetch(
-      {},
+    } satisfies HandleMcpRequestOptions
+    const response = await handleMcpRequest(
       new Request(resource, {
         body: 'a'.repeat(expectedMaximumMcpRequestBytes + 1),
         headers: {
@@ -717,6 +720,7 @@ describe('Convex-native official MCP handler composition', () => {
         },
         method: 'POST',
       }),
+      requestOptions,
     )
 
     expect(response.status).toBe(413)
@@ -725,22 +729,21 @@ describe('Convex-native official MCP handler composition', () => {
     expect(factoryCalls).toBe(0)
   })
 
-  it('surfaces unsupported configured capabilities before the SDK error boundary', async () => {
-    const handler = createConvexMcpHandler({
+  it('rejects unsupported configured capabilities through the official SDK boundary', async () => {
+    const requestOptions = {
       serverInfo,
       resource,
       verifier: accessVerifier(),
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(_context, _access, server) {
+      configureServer(_access, server) {
         server.registerPrompt('unsupported', {}, () => ({
           messages: [],
         }))
       },
-    })
+    } satisfies HandleMcpRequestOptions
 
     await expect(
-      handler.fetch(
-        {},
+      handleMcpRequest(
         new Request(resource, {
           body: JSON.stringify({
             id: 'unsupported-capability',
@@ -765,27 +768,27 @@ describe('Convex-native official MCP handler composition', () => {
           },
           method: 'POST',
         }),
+        requestOptions,
       ),
-    ).rejects.toThrow('MCP_UNSUPPORTED_SERVER_CAPABILITY')
+    ).resolves.toMatchObject({ status: 500 })
   })
 
   it('returns an opaque timeout when the official handler cannot settle', async () => {
     vi.useFakeTimers()
     try {
       let factoryCalls = 0
-      const handler = createConvexMcpHandler({
+      const requestOptions = {
         serverInfo,
         resource,
         verifier: accessVerifier(),
         authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-        async configureServer(_context, _access, server) {
+        async configureServer(_access, server) {
           factoryCalls += 1
           void server
           return await new Promise<void>(() => {})
         },
-      })
-      const pending = handler.fetch(
-        {},
+      } satisfies HandleMcpRequestOptions
+      const pending = handleMcpRequest(
         new Request(resource, {
           body: JSON.stringify({
             id: 'server-discover-timeout',
@@ -810,6 +813,7 @@ describe('Convex-native official MCP handler composition', () => {
           },
           method: 'POST',
         }),
+        requestOptions,
       )
       const responsePromise = expect(pending).resolves.toMatchObject({
         status: 504,
@@ -839,18 +843,17 @@ describe('Convex-native official MCP handler composition', () => {
     'returns the official SDK rejection for %s',
     async (method, methodParams, status, code, message) => {
       let factoryCalls = 0
-      const handler = createConvexMcpHandler({
+      const requestOptions = {
         serverInfo,
         resource,
         verifier: accessVerifier(),
         authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-        configureServer(_context, _access, server) {
+        configureServer(_access, server) {
           factoryCalls += 1
           void server
         },
-      })
-      const response = await handler.fetch(
-        {},
+      } satisfies HandleMcpRequestOptions
+      const response = await handleMcpRequest(
         new Request(resource, {
           body: JSON.stringify({
             id: 'stateful-request',
@@ -876,6 +879,7 @@ describe('Convex-native official MCP handler composition', () => {
           },
           method: 'POST',
         }),
+        requestOptions,
       )
 
       expect(response.status).toBe(status)
@@ -913,42 +917,6 @@ describe('Convex-native official MCP handler composition', () => {
         }
       },
     }
-    const handler = createConvexMcpHandler<{
-      readonly trustedNetworkKey: string
-    }>({
-      serverInfo,
-      resource,
-      verifier,
-      authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
-      configureServer(context, access, server) {
-        for (const tool of ['search_notes', 'rename_note'] as const) {
-          server.registerTool(tool, { inputSchema: z.object({}) }, () => {
-            const key = [
-              access.resource,
-              access.issuer,
-              access.subject,
-              access.clientId,
-              tool,
-              context.trustedNetworkKey,
-            ].join('\u0000')
-            const existing = windows.get(key)
-            if (!existing || now - existing.startedAt >= 10_000) {
-              windows.set(key, { count: 1, startedAt: now })
-              return { content: [{ type: 'text', text: 'allowed' }] }
-            }
-            if (existing.count >= 1) {
-              return {
-                content: [{ type: 'text', text: 'rate limited' }],
-                isError: true,
-              }
-            }
-            existing.count += 1
-            return { content: [{ type: 'text', text: 'allowed' }] }
-          })
-        }
-      },
-    })
-
     const call = async (
       token: string,
       trustedNetworkKey: string,
@@ -963,7 +931,39 @@ describe('Convex-native official MCP handler composition', () => {
           },
         },
         fetch: async (input, init) =>
-          await handler.fetch({ trustedNetworkKey }, new Request(input, init)),
+          await handleMcpRequest(new Request(input, init), {
+            serverInfo,
+            resource,
+            verifier,
+            authorization: { mode: 'oauth', issuer: oauthMetadata.issuer },
+            configureServer(access, server) {
+              for (const registeredTool of ['search_notes', 'rename_note'] as const) {
+                server.registerTool(registeredTool, { inputSchema: z.object({}) }, () => {
+                  const key = [
+                    access.resource,
+                    access.issuer,
+                    access.subject,
+                    access.clientId,
+                    registeredTool,
+                    trustedNetworkKey,
+                  ].join('\u0000')
+                  const existing = windows.get(key)
+                  if (!existing || now - existing.startedAt >= 10_000) {
+                    windows.set(key, { count: 1, startedAt: now })
+                    return { content: [{ type: 'text', text: 'allowed' }] }
+                  }
+                  if (existing.count >= 1) {
+                    return {
+                      content: [{ type: 'text', text: 'rate limited' }],
+                      isError: true,
+                    }
+                  }
+                  existing.count += 1
+                  return { content: [{ type: 'text', text: 'allowed' }] }
+                })
+              }
+            },
+          }),
       })
       const client = new Client(
         { name: 'quota-client', version: '0.1.0' },

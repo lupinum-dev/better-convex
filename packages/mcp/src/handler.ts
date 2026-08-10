@@ -24,7 +24,7 @@ import {
   runMcpRequestDeadline,
 } from './transport.js'
 
-export interface ConvexMcpHandlerOptions<ActionContext> {
+export interface HandleMcpRequestOptions {
   readonly serverInfo: {
     readonly name: string
     readonly version: string
@@ -48,79 +48,71 @@ export interface ConvexMcpHandlerOptions<ActionContext> {
         readonly issuer: string
         readonly requiredScopes?: readonly string[]
       }
-  readonly configureServer: (
-    context: ActionContext,
-    access: McpAccessContext,
-    server: McpServer,
-  ) => void | Promise<void>
+  readonly configureServer: (access: McpAccessContext, server: McpServer) => void | Promise<void>
 }
 
-export interface ConvexMcpHandler<ActionContext> {
-  fetch(context: ActionContext, request: Request): Promise<Response>
-}
-
-export function createConvexMcpHandler<ActionContext>(
-  options: ConvexMcpHandlerOptions<ActionContext>,
-): ConvexMcpHandler<ActionContext> {
+export async function handleMcpRequest(
+  request: Request,
+  options: HandleMcpRequestOptions,
+): Promise<Response> {
   const expectedResource = new URL(options.resource.href)
   const authorization = normalizeAuthorization(options.authorization, expectedResource)
   const requiredScopes =
     authorization.requiredScopes === undefined ? undefined : [...authorization.requiredScopes]
 
-  return Object.freeze({
-    async fetch(context: ActionContext, request: Request): Promise<Response> {
-      try {
-        return await runMcpRequestDeadline(request.signal, async (signal) => {
-          const metadataResponse =
-            authorization.mode === 'oauth'
-              ? protectedResourceMetadataResponse(
-                  request,
-                  authorization.metadataOptions,
-                  authorization.resourceMetadataUrl,
-                )
-              : undefined
-          if (metadataResponse) return await boundMcpResponse(metadataResponse, signal)
-          const boundaryResponse = requestBoundaryResponse(request, expectedResource)
-          if (boundaryResponse) return boundaryResponse
-          const authenticated = await authenticateRequest(
-            request.headers.get('authorization'),
-            options.verifier,
-            authorization.issuer,
-            expectedResource,
-            authorization.resourceMetadataUrl,
-            requiredScopes,
-          )
-          if (authenticated instanceof Response) {
-            return await boundMcpResponse(authenticated, signal)
-          }
+  try {
+    return await runMcpRequestDeadline(request.signal, async (signal) => {
+      const metadataResponse =
+        authorization.mode === 'oauth'
+          ? protectedResourceMetadataResponse(
+              request,
+              authorization.metadataOptions,
+              authorization.resourceMetadataUrl,
+            )
+          : undefined
+      if (metadataResponse) return await boundMcpResponse(metadataResponse, signal)
+      const boundaryResponse = requestBoundaryResponse(request, expectedResource)
+      if (boundaryResponse) return boundaryResponse
+      const authenticated = await authenticateRequest(
+        request.headers.get('authorization'),
+        options.verifier,
+        authorization.issuer,
+        expectedResource,
+        authorization.resourceMetadataUrl,
+        requiredScopes,
+      )
+      if (authenticated instanceof Response) {
+        return await boundMcpResponse(authenticated, signal)
+      }
 
-          const boundedRequest = await prepareBoundedMcpRequest(request, signal)
+      const boundedRequest = await prepareBoundedMcpRequest(request, signal)
+      const handler = createMcpHandler(
+        async () => {
           const server = new McpServer(options.serverInfo)
           try {
-            await options.configureServer(context, authenticated.access, server)
-            hardenUnaryServer(server)
+            await options.configureServer(authenticated.access, server)
+            return hardenUnaryServer(server)
           } catch (error) {
             await server.close().catch(() => {})
             throw error
           }
-          const handler = createMcpHandler(async () => server, {
-            legacy: 'reject',
-            maxSubscriptions: 0,
-            responseMode: 'json',
-          })
-          try {
-            return await boundMcpResponse(await handler.fetch(boundedRequest), signal)
-          } finally {
-            await handler.close()
-            await server.close().catch(() => {})
-          }
-        })
-      } catch (error) {
-        if (error instanceof McpTransportFailure) return mcpTransportFailureResponse(error)
-        throw error
+        },
+        {
+          legacy: 'reject',
+          maxSubscriptions: 0,
+          responseMode: 'json',
+        },
+      )
+      try {
+        return await boundMcpResponse(await handler.fetch(boundedRequest), signal)
+      } finally {
+        await handler.close()
       }
-    },
-  })
+    })
+  } catch (error) {
+    if (error instanceof McpTransportFailure) return mcpTransportFailureResponse(error)
+    throw error
+  }
 }
 
 type NormalizedAuthorization =
@@ -139,7 +131,7 @@ type NormalizedAuthorization =
     }
 
 function normalizeAuthorization(
-  authorization: ConvexMcpHandlerOptions<unknown>['authorization'],
+  authorization: HandleMcpRequestOptions['authorization'],
   expectedResource: URL,
 ): NormalizedAuthorization {
   if (authorization.mode === 'preconfigured-bearer') {
