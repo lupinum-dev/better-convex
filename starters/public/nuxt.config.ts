@@ -6,6 +6,7 @@ export default {
     strict: true,
   },
   convex: {
-    auth: false,
+    url: process.env.NUXT_PUBLIC_CONVEX_URL ?? process.env.VITE_CONVEX_URL,
+    siteUrl: process.env.NUXT_PUBLIC_CONVEX_SITE_URL ?? process.env.VITE_CONVEX_SITE_URL,
   },
 }

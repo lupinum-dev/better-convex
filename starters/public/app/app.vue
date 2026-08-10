@@ -1,27 +1,13 @@
 <script setup lang="ts">
-import { makeFunctionReference } from 'convex/server'
-import type { GenericId as Id } from 'convex/values'
-
-type Todo = {
-  _id: Id<'todos'>
-  text: string
-  completed: boolean
-}
-
-const listTodos = makeFunctionReference<'query', Record<string, never>, Todo[]>('todos:list')
-const createTodoRef = makeFunctionReference<'mutation', { text: string }, Id<'todos'>>(
-  'todos:create',
-)
-const toggleTodoRef = makeFunctionReference<'mutation', { id: Id<'todos'> }, null>('todos:toggle')
-const removeTodoRef = makeFunctionReference<'mutation', { id: Id<'todos'> }, null>('todos:remove')
+import { api } from '#convex/api'
 
 const newText = ref('')
-const { data: todos, status } = await useConvexQuery(listTodos, {})
-const createTodo = useConvexMutation(createTodoRef)
-const toggleTodo = useConvexMutation(toggleTodoRef)
-const removeTodo = useConvexMutation(removeTodoRef)
+const { data: todos, status } = await useConvexQuery(api.todos.list)
+const createTodo = useConvexMutation(api.todos.create)
+const toggleTodo = useConvexMutation(api.todos.toggle)
+const removeTodo = useConvexMutation(api.todos.remove)
 const isCreating = createTodo.pending
-const todoList = computed(() => (todos.value ?? []) as Todo[])
+const todoList = computed(() => todos.value ?? [])
 
 async function addTodo() {
   const text = newText.value.trim()

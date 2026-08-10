@@ -16,7 +16,11 @@ const retainedGeneratedFiles = new Set([
   'starters/mcp-oauth-agent/convex/_generated/dataModel.d.ts',
   'starters/mcp-oauth-agent/convex/_generated/server.d.ts',
   'starters/mcp-oauth-agent/convex/_generated/server.js',
-  'starters/public/convex/_generated/placeholder.ts',
+  'starters/public/convex/_generated/api.d.ts',
+  'starters/public/convex/_generated/api.js',
+  'starters/public/convex/_generated/dataModel.d.ts',
+  'starters/public/convex/_generated/server.d.ts',
+  'starters/public/convex/_generated/server.js',
   'starters/team/convex/_generated/ai/ai-files.state.json',
   'starters/team/convex/_generated/ai/guidelines.md',
   'starters/team/convex/_generated/api.d.ts',
@@ -69,35 +73,39 @@ function collectEmittedJavaScriptArtifacts(dir, relativeDir) {
   }
 }
 
-const agencyConvexDir = join(startersDir, 'agency', 'convex')
-const agencyGeneratedApi = readFileSync(join(agencyConvexDir, '_generated', 'api.d.ts'), 'utf8')
-const generatedAgencyModules = new Set(
-  [...agencyGeneratedApi.matchAll(/import type \* as \S+ from "\.\.\/(.+)\.js";/g)].map(
-    (match) => match[1],
-  ),
-)
-const expectedAgencyModules = new Set(
-  readdirSync(agencyConvexDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
-    .map((entry) => entry.name.slice(0, -3))
-    .filter(
-      (name) =>
-        !name.endsWith('.test') &&
-        !name.endsWith('.config') &&
-        name !== 'schema' &&
-        name !== 'test.setup',
+function checkGeneratedApiModules(starter) {
+  const convexDir = join(startersDir, starter, 'convex')
+  const generatedApi = readFileSync(join(convexDir, '_generated', 'api.d.ts'), 'utf8')
+  const generatedModules = new Set(
+    [...generatedApi.matchAll(/import type \* as \S+ from "\.\.\/(.+)\.js";/g)].map(
+      (match) => match[1],
     ),
-)
-for (const name of expectedAgencyModules) {
-  if (!generatedAgencyModules.has(name)) {
-    offenders.push(`starters/agency/convex/_generated/api.d.ts (missing module ${name})`)
+  )
+  const expectedModules = new Set(
+    readdirSync(convexDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
+      .map((entry) => entry.name.slice(0, -3))
+      .filter(
+        (name) =>
+          !name.endsWith('.test') &&
+          !name.endsWith('.config') &&
+          name !== 'schema' &&
+          name !== 'test.setup',
+      ),
+  )
+  for (const name of expectedModules) {
+    if (!generatedModules.has(name)) {
+      offenders.push(`starters/${starter}/convex/_generated/api.d.ts (missing module ${name})`)
+    }
+  }
+  for (const name of generatedModules) {
+    if (!expectedModules.has(name)) {
+      offenders.push(`starters/${starter}/convex/_generated/api.d.ts (stale module ${name})`)
+    }
   }
 }
-for (const name of generatedAgencyModules) {
-  if (!expectedAgencyModules.has(name)) {
-    offenders.push(`starters/agency/convex/_generated/api.d.ts (stale module ${name})`)
-  }
-}
+
+for (const starter of ['agency', 'public']) checkGeneratedApiModules(starter)
 
 for (const entry of readdirSync(startersDir, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue
