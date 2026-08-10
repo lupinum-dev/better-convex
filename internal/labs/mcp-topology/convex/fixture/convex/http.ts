@@ -7,9 +7,16 @@ import { handleMcp, handleOAuthMetadata } from './mcp'
 const http = httpRouter()
 
 http.route({ handler: handleMcp, method: 'POST', path: '/mcp' })
+http.route({ handler: handleMcp, method: 'GET', path: '/mcp' })
+http.route({ handler: handleMcp, method: 'DELETE', path: '/mcp' })
 http.route({
   handler: handleOAuthMetadata,
   method: 'GET',
+  path: '/.well-known/oauth-protected-resource/mcp',
+})
+http.route({
+  handler: handleOAuthMetadata,
+  method: 'OPTIONS',
   path: '/.well-known/oauth-protected-resource/mcp',
 })
 http.route({

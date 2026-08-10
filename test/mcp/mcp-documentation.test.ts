@@ -41,6 +41,11 @@ describe('MCP package documentation', () => {
   it('documents one explicit official-SDK topology and the unsupported surface', () => {
     expect(normalizedGuide).toContain('Configure only reviewed application operations')
     expect(guide).toContain('one stateless Convex HTTP Action')
+    expect(normalizedGuide).toContain('OAuth mode has five explicit Convex route registrations')
+    expect(guide).toContain("method: 'OPTIONS'")
+    expect(normalizedGuide).toContain(
+      'Register only the three `/mcp` transport methods and omit both protected-resource metadata registrations',
+    )
     expect(guide).toContain('automatic Convex-function exposure')
     expect(guide).toContain('prompts, Tasks, or a URL approval workflow')
     expect(normalizedGuide).toContain('client entry lives in `better-convex-vue/mcp-app`')

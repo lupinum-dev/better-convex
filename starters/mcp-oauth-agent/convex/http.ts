@@ -14,5 +14,10 @@ http.route({
   method: 'GET',
   path: '/.well-known/oauth-protected-resource/mcp',
 })
+http.route({
+  handler: handleMcp,
+  method: 'OPTIONS',
+  path: '/.well-known/oauth-protected-resource/mcp',
+})
 
 export default http

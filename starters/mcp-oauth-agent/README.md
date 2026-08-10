@@ -35,6 +35,19 @@ an `MCP_SERVER_SECRET` bridge.
 approvals are app-owned Convex state. OAuth client/resource/consent rows remain
 provider-owned component state.
 
+## HTTP route graph
+
+The OAuth resource has exactly five registrations in `convex/http.ts`:
+
+- `POST`, `GET`, and `DELETE` at `/mcp`;
+- `GET` at `/.well-known/oauth-protected-resource/mcp`, which also serves
+  `HEAD` through Convex's router; and
+- explicit `OPTIONS` at the metadata path for credential-free discovery CORS.
+
+`GET` and `DELETE` on `/mcp` deliberately reach the MCP handler's `405`
+response. The starter does not register `OPTIONS /mcp`, so metadata discovery
+does not accidentally enable cross-origin MCP transport.
+
 ## Local setup
 
 Use a fresh deployment. This starter is greenfield and intentionally contains
