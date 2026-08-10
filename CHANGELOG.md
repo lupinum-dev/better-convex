@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.8.0-beta.31
+
+- Retire the unpublished beta.30 Vue/Nuxt candidate after newly disclosed
+  transitive dependency advisories invalidated its previously certified bytes.
+- Delete the obsolete workspace override list and resolve the maintained
+  upstream dependency graph directly; the fresh strict lockfile has no known
+  production advisories and requires no peer or package-manager exception.
+- Repair the scheduled documentation link check for lychee's current
+  `--include-mail=false` command-line contract.
+- Preserve exact Nuxt `4.5.1` and the existing public Vue/Nuxt API.
+
+## v0.1.0-beta.19 (`better-convex-mcp`)
+
+- Retire the unpublished beta.18 MCP candidate with the coordinated beta.30
+  Vue/Nuxt set because its immutable dependency evidence is now stale.
+- Preserve experimental MCP support without claiming final protocol maturity
+  or adding a compatibility path.
+
 ## v0.8.0-beta.30
 
 - Retire the unpublished beta.29 Vue/Nuxt candidate after its clean local

@@ -1,9 +1,0 @@
-# Standalone starter workspace. The committed dependency resolves from npm;
-# release verification installs the exact candidate tarball in a clean copy.
-overrides:
-  'brace-expansion@>=5.0.0 <5.0.8': 5.0.8
-  'esbuild@>=0.27.3 <0.28.1': 0.28.1
-  'minimatch@>=5.0.0 <10.2.5': 10.2.5
-  'shell-quote@<=1.8.4': 1.9.0
-  'svgo@>=4.0.0 <4.0.2': 4.0.2
-  'tar@<=7.5.20': 7.5.22
