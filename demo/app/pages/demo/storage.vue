@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { api } from '@@/convex/_generated/api'
-import type { Id } from '@@/convex/_generated/dataModel'
 
 definePageMeta({
   middleware: 'auth',
@@ -64,7 +63,7 @@ async function uploadFile(file: File) {
     const storageId = await upload(file)
     if (storageId) {
       await saveFile({
-        storageId: storageId as Id<'_storage'>,
+        storageId,
         filename: file.name,
       })
     }
@@ -135,8 +134,8 @@ function formatFileSize(bytes: number) {
         @click="fileInputRef?.click()"
       >
         <div v-if="uploadStatus === 'pending'" @click.stop>
-          <UProgress :value="progress" color="primary" class="mb-4" />
-          <p class="text-sm text-muted mb-3">Uploading... {{ progress }}%</p>
+          <UProgress :value="progress.percent" color="primary" class="mb-4" />
+          <p class="text-sm text-muted mb-3">Uploading... {{ progress.percent }}%</p>
           <UButton
             icon="i-lucide-x"
             color="neutral"

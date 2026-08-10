@@ -4,7 +4,8 @@
  * Inspired by nuxt-convex by @onmax (https://github.com/onmax/nuxt-convex)
  */
 
-import type { FunctionArgs, FunctionReference } from 'convex/server'
+import type { FunctionArgs, FunctionReference, OptionalRestArgs } from 'convex/server'
+import type { GenericId } from 'convex/values'
 import { computed, getCurrentScope, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
 
 import { useNuxtApp } from '#imports'
@@ -25,6 +26,14 @@ import {
 
 export type { UploadProgressInfo } from '../utils/upload-core'
 
+/** A public Convex mutation that generates a browser upload URL. */
+export type UploadUrlMutation = FunctionReference<
+  'mutation',
+  'public',
+  Record<string, unknown>,
+  string
+>
+
 /**
  * Upload status representing the current state of the upload
  * - 'idle': not yet called or reset
@@ -36,66 +45,65 @@ export type UploadStatus = 'idle' | 'pending' | 'success' | 'error'
 
 interface UploadViewState {
   status: UploadStatus
-  error: ConvexCallError | null
-  data: string | undefined
-  progress: number
+  error: ConvexCallError | undefined
+  data: GenericId<'_storage'> | undefined
+  progress: UploadProgressInfo
 }
 
 const INITIAL_UPLOAD_VIEW_STATE: UploadViewState = {
   status: 'idle',
-  error: null,
+  error: undefined,
   data: undefined,
-  progress: 0,
+  progress: Object.freeze({ loaded: 0, total: 0, percent: 0 }),
 }
 
 /**
  * Return value from useConvexFileUpload
  */
-export interface UseConvexFileUploadReturn<Mutation extends FunctionReference<'mutation'>> {
+export interface UseConvexFileUploadReturn<Mutation extends UploadUrlMutation> {
   /**
    * Upload a file. Returns the storageId on success.
    * Automatically tracks status, error, progress, and data.
    * Throws on error (use try/catch or check error ref after).
    *
    * @param file - The file to upload
-   * @param mutationArgs - Optional args to pass to the generateUploadUrl mutation
+   * @param args - Validator-derived args for the generateUploadUrl mutation
    */
-  upload: (file: File, mutationArgs?: FunctionArgs<Mutation>) => Promise<string>
+  upload: (file: File, ...args: OptionalRestArgs<Mutation>) => Promise<GenericId<'_storage'>>
 
   /**
    * StorageId from the last successful upload.
    * undefined if upload hasn't succeeded yet.
    */
-  data: ComputedRef<string | undefined>
+  readonly data: ComputedRef<GenericId<'_storage'> | undefined>
 
   /**
    * Upload status for explicit state management.
    */
-  status: ComputedRef<UploadStatus>
+  readonly status: ComputedRef<UploadStatus>
 
   /**
    * True when upload is in progress.
    * Equivalent to status === 'pending'.
    */
-  pending: ComputedRef<boolean>
+  readonly pending: ComputedRef<boolean>
 
   /**
-   * Upload progress from 0 to 100.
-   * Only updated during pending state.
+   * Byte-level progress for the current upload.
    */
-  progress: ComputedRef<number>
+  readonly progress: ComputedRef<UploadProgressInfo>
 
   /**
    * Error from the last upload attempt as the normalized {@link ConvexCallError}.
-   * null if no error or upload hasn't been called.
+   * undefined if no error or upload hasn't been called.
    */
-  error: ComputedRef<ConvexCallError | null>
+  readonly error: ComputedRef<ConvexCallError | undefined>
 
   /**
    * Cancel any in-progress upload and reset state.
    * Aborts XHR, clears error, data, and progress.
    */
-  cancel: () => void
+  readonly cancel: () => void
 }
 
 /**
@@ -103,24 +111,11 @@ export interface UseConvexFileUploadReturn<Mutation extends FunctionReference<'m
  */
 export interface UseConvexFileUploadOptions {
   /**
-   * Callback when upload completes successfully.
-   */
-  onSuccess?: (storageId: string, file: File) => void
-  /**
-   * Callback when an error occurs, receiving the normalized {@link ConvexCallError}.
-   */
-  onError?: (error: ConvexCallError, file: File) => void
-  /**
-   * Callback for upload progress updates.
-   * Called when the browser reports computable upload progress.
-   */
-  onProgress?: (info: UploadProgressInfo, file: File) => void
-  /**
    * Maximum file size in bytes.
    * Files exceeding this size will be rejected before upload starts.
    * @example 5 * 1024 * 1024 // 5MB
    */
-  maxSize?: number
+  readonly maxSize?: number
   /**
    * Allowed MIME types.
    * Files not matching these types will be rejected before upload starts.
@@ -131,7 +126,7 @@ export interface UseConvexFileUploadOptions {
    * @example ['image/*'] // Any image type
    * @example ['image/*', 'application/pdf'] // Any image or PDF
    */
-  allowedTypes?: string[]
+  readonly allowedTypes?: readonly string[]
 }
 
 /**
@@ -146,8 +141,8 @@ export interface UseConvexFileUploadOptions {
  * - `data` - storageId from last successful upload
  * - `status` - 'idle' | 'pending' | 'success' | 'error'
  * - `pending` - boolean shorthand for status === 'pending'
- * - `progress` - upload progress 0-100
- * - `error` - Error | null
+ * - `progress` - byte-level upload progress
+ * - `error` - Error | undefined
  *
  * Note: File uploads only work on the client side.
  *
@@ -179,7 +174,7 @@ export interface UseConvexFileUploadOptions {
  *
  * <template>
  *   <input type="file" @change="handleFile" :disabled="pending" />
- *   <div v-if="pending">Uploading: {{ progress }}%</div>
+ *   <div v-if="pending">Uploading: {{ progress.percent }}%</div>
  *   <p v-if="error" class="error">{{ error.message }}</p>
  * </template>
  * ```
@@ -196,29 +191,10 @@ export interface UseConvexFileUploadOptions {
  *
  * <template>
  *   <div v-if="pending">
- *     Uploading: {{ progress }}%
+ *     Uploading: {{ progress.percent }}%
  *     <button @click="cancel">Cancel</button>
  *   </div>
  * </template>
- * ```
- *
- * @example With callbacks
- * ```vue
- * <script setup>
- * import { api } from '#convex/api'
- *
- * const { upload, pending, progress } = useConvexFileUpload(
- *   api.files.generateUploadUrl,
- *   {
- *     onSuccess: (storageId, file) => {
- *       console.log(`Uploaded ${file.name}: ${storageId}`)
- *     },
- *     onError: (error, file) => {
- *       console.error(`Failed to upload ${file.name}:`, error)
- *     },
- *   }
- * )
- * </script>
  * ```
  *
  * @example Saving storageId to a document
@@ -236,7 +212,7 @@ export interface UseConvexFileUploadOptions {
  * </script>
  * ```
  */
-export function useConvexFileUpload<Mutation extends FunctionReference<'mutation'>>(
+export function useConvexFileUpload<Mutation extends UploadUrlMutation>(
   generateUploadUrlMutation: Mutation,
   options?: UseConvexFileUploadOptions,
 ): UseConvexFileUploadReturn<Mutation> {
@@ -296,7 +272,10 @@ export function useConvexFileUpload<Mutation extends FunctionReference<'mutation
   }
 
   // The upload function
-  const upload = async (file: File, mutationArgs?: FunctionArgs<Mutation>): Promise<string> => {
+  const upload = async (
+    file: File,
+    ...mutationArgs: OptionalRestArgs<Mutation>
+  ): Promise<GenericId<'_storage'>> => {
     const startTime = Date.now()
     const identityGeneration = getIdentityGeneration()
     const identityChanged = () => getIdentityGeneration() !== identityGeneration
@@ -347,13 +326,12 @@ export function useConvexFileUpload<Mutation extends FunctionReference<'mutation
         error: err,
       })
 
-      options?.onError?.(err, file)
       requireCurrentIdentity()
       return err
     }
 
     // Client-side validation before uploading
-    let validationError: ConvexCallError | null = null
+    let validationError: ConvexCallError | undefined
     if (options?.maxSize && file.size > options.maxSize) {
       validationError = new ConvexCallError({
         kind: 'unknown',
@@ -382,8 +360,8 @@ export function useConvexFileUpload<Mutation extends FunctionReference<'mutation
       viewState.value = {
         ...viewState.value,
         status: 'pending',
-        error: null,
-        progress: 0,
+        error: undefined,
+        progress: { loaded: 0, total: file.size, percent: 0 },
       }
       requireCurrentUpload()
 
@@ -398,7 +376,7 @@ export function useConvexFileUpload<Mutation extends FunctionReference<'mutation
       const storageId = await executeFileUpload(
         attachment.client,
         generateUploadUrlMutation,
-        (mutationArgs ?? {}) as FunctionArgs<Mutation>,
+        (mutationArgs[0] ?? {}) as FunctionArgs<Mutation>,
         file,
         {
           signal: attempt.signal,
@@ -406,10 +384,8 @@ export function useConvexFileUpload<Mutation extends FunctionReference<'mutation
             if (!isCurrentUpload()) return
             viewState.value = {
               ...viewState.value,
-              progress: info.percent,
+              progress: info,
             }
-            if (!isCurrentUpload()) return
-            options?.onProgress?.(info, file)
           },
         },
       )
@@ -430,7 +406,6 @@ export function useConvexFileUpload<Mutation extends FunctionReference<'mutation
         duration,
       })
 
-      options?.onSuccess?.(storageId, file)
       requireCurrentIdentity()
       return storageId
     } catch (e) {

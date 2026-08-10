@@ -1,12 +1,13 @@
 import type { ConvexClient } from 'convex/browser'
 import type { FunctionArgs, FunctionReference } from 'convex/server'
+import type { GenericId } from 'convex/values'
 
 import { ConvexCallError } from '../errors'
 
 export interface UploadProgressInfo {
-  loaded: number
-  total: number
-  percent: number
+  readonly loaded: number
+  readonly total: number
+  readonly percent: number
 }
 
 export interface UploadFileViaXhrOptions {
@@ -71,7 +72,7 @@ export async function executeFileUpload<Mutation extends FunctionReference<'muta
   mutationArgs: FunctionArgs<Mutation>,
   file: File,
   options?: UploadFileViaXhrOptions,
-): Promise<string> {
+): Promise<GenericId<'_storage'>> {
   const signal = options?.signal
   let rejectAbort: ((reason: unknown) => void) | null = null
   const aborted = new Promise<never>((_, reject) => {
@@ -94,14 +95,14 @@ export function uploadFileViaXhr(
   postUrl: string,
   file: File,
   options?: UploadFileViaXhrOptions,
-): Promise<string> {
+): Promise<GenericId<'_storage'>> {
   const { signal, onProgress } = options ?? {}
 
   if (signal?.aborted) {
     return Promise.reject(createAbortError())
   }
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<GenericId<'_storage'>>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
 
     const cleanup = () => {
@@ -151,7 +152,7 @@ export function uploadFileViaXhr(
             reject(createUploadTransportError('Upload endpoint response missing valid storageId'))
             return
           }
-          resolve(response.storageId)
+          resolve(response.storageId as GenericId<'_storage'>)
         } catch {
           reject(createUploadTransportError('Invalid response from upload endpoint'))
         }

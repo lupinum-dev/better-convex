@@ -15,6 +15,13 @@ export declare const api: {
   }
   files: {
     generateUploadUrl: FunctionReference<'mutation', 'public', {}, string>
+    generateWorkspaceUploadUrl: FunctionReference<
+      'mutation',
+      'public',
+      { workspaceId: string },
+      string
+    >
+    invalidUploadUrl: FunctionReference<'mutation', 'public', {}, number>
     getUrl: FunctionReference<'query', 'public', { storageId: string }, string | null>
   }
   tasks: {

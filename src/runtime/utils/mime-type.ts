@@ -40,6 +40,6 @@ export function matchesMimeType(fileType: string, pattern: string): boolean {
  * isFileTypeAllowed('video/mp4', ['image/*'])                   // false
  * isFileTypeAllowed('application/pdf', ['image/*', 'application/pdf'])  // true
  */
-export function isFileTypeAllowed(fileType: string, allowedTypes: string[]): boolean {
+export function isFileTypeAllowed(fileType: string, allowedTypes: readonly string[]): boolean {
   return allowedTypes.some((pattern) => matchesMimeType(fileType, pattern))
 }

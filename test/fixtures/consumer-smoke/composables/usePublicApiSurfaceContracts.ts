@@ -1,6 +1,7 @@
 import { defineConvexAuthClient } from 'better-convex-nuxt/auth-client'
 import type { ConvexAuthClientDefinition } from 'better-convex-nuxt/auth-client'
 import type { OptimisticLocalStore } from 'convex/browser'
+import type { GenericId } from 'convex/values'
 import type { ComputedRef, Ref } from 'vue'
 import { ref } from 'vue'
 
@@ -123,7 +124,9 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<boolean>((await sendEmail.safe({ to: 'team@example.com', subject: 'Smoke' })).ok)
 
   const upload = useConvexFileUpload(api.files.generateUploadUrl)
-  assertType<string>(await upload.upload(file))
+  assertType<GenericId<'_storage'>>(await upload.upload(file))
+  assertType<ComputedRef<GenericId<'_storage'> | undefined>>(upload.data)
+  assertType<number>(upload.progress.value.percent)
   assertType<ComputedRef<string | null>>(useConvexStorageUrl(api.files.getUrl, upload.data))
   // Auth transport mode is the three-literal ConvexAuthMode.
   assertType<ComputedRef<string | null>>(

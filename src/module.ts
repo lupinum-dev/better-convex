@@ -58,6 +58,13 @@ export type {
 export type { ConvexCallErrorKind } from './runtime/errors'
 export type { ServerConvexOptions } from './runtime/server'
 export type { UseConvexAuthReturn } from './runtime/composables/useConvexAuth'
+export type {
+  UploadProgressInfo,
+  UploadStatus,
+  UploadUrlMutation,
+  UseConvexFileUploadOptions,
+  UseConvexFileUploadReturn,
+} from './runtime/composables/useConvexFileUpload'
 export type { UseConvexMutationOptions } from './runtime/composables/useConvexMutation'
 export type { UseConvexPaginatedQueryOptions } from './runtime/composables/useConvexPaginatedQuery'
 export type { UseConvexQueryOptions } from './runtime/composables/useConvexQuery'
