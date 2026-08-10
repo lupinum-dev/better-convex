@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   createConvexClientOwner,
   type OwnedConvexClient,
 } from '../../packages/vue/src/internal/client-owner'
+import { useConvexConnectionState as useVueConvexConnectionState } from '../../packages/vue/src/use-connection-state'
 import { useConvexConnectionState } from '../../src/runtime/composables/useConvexConnectionState'
 import { MockConvexClient } from '../helpers/mock-convex-client'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
@@ -20,31 +21,30 @@ function ownerFor(convex: MockConvexClient) {
 }
 
 describe('useConvexConnectionState (Nuxt runtime)', () => {
-  afterEach(() => vi.restoreAllMocks())
+  it('fails before returning inert state outside a Vue effect scope', () => {
+    expect(() => useVueConvexConnectionState()).toThrow(
+      '[better-convex-vue] useConvexConnectionState must run inside a Vue effect scope',
+    )
+  })
 
-  it('suppresses offline UI during hydration grace window', async () => {
-    const realSetTimeout = globalThis.setTimeout
-    let finishHydration: (() => void) | undefined
-    vi.spyOn(globalThis, 'setTimeout').mockImplementation((handler, delay, ...args) => {
-      if (delay === 500 && typeof handler === 'function') {
-        finishHydration = () => handler(...args)
-        return 1 as unknown as ReturnType<typeof setTimeout>
-      }
-
-      return realSetTimeout(handler, delay, ...args)
-    })
+  it('returns transport facts immediately without product UI policy', async () => {
     const convex = new MockConvexClient()
     const owner = ownerFor(convex)
 
     const { result, wrapper } = await captureInNuxt(() => useConvexConnectionState(), { owner })
 
-    expect(result.shouldShowOfflineUi.value).toBe(false)
-
-    expect(finishHydration).toBeTypeOf('function')
-    finishHydration?.()
-    await Promise.resolve()
-
-    expect(result.shouldShowOfflineUi.value).toBe(true)
+    expect(Object.keys(result).sort()).toEqual([
+      'isConnected',
+      'isReconnecting',
+      'pendingActions',
+      'pendingMutations',
+      'state',
+    ])
+    expect(Object.isFrozen(result)).toBe(true)
+    expect(result.isConnected.value).toBe(false)
+    expect(result.isReconnecting.value).toBe(false)
+    expect(result.pendingMutations.value).toBe(0)
+    expect(result.pendingActions.value).toBe(0)
     wrapper.unmount()
   })
 
@@ -77,6 +77,19 @@ describe('useConvexConnectionState (Nuxt runtime)', () => {
     expect(result.first.isReconnecting.value).toBe(false)
     expect(result.first.pendingMutations.value).toBe(0)
     expect(result.second.pendingActions.value).toBe(0)
+
+    convex.updateConnectionState({
+      isWebSocketConnected: false,
+      hasEverConnected: true,
+      connectionRetries: 1,
+      inflightMutations: 1,
+      inflightActions: 2,
+    })
+
+    expect(result.first.isConnected.value).toBe(false)
+    expect(result.first.isReconnecting.value).toBe(true)
+    expect(result.first.pendingMutations.value).toBe(1)
+    expect(result.second.pendingActions.value).toBe(2)
 
     wrapper.unmount()
     // Every consumer released → the owner drops the underlying subscription.

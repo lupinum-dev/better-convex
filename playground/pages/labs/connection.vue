@@ -32,15 +32,9 @@
         <span class="value">{{ connectionRetries }}</span>
       </div>
       <div class="stat">
-        <span class="label">Hydrating Connection</span>
-        <span class="value" :class="{ active: isHydratingConnection }">{{
-          isHydratingConnection ? 'Yes' : 'No'
-        }}</span>
-      </div>
-      <div class="stat">
-        <span class="label">Should Show Offline UI</span>
-        <span class="value" :class="{ active: shouldShowOfflineUi }">{{
-          shouldShowOfflineUi ? 'Yes' : 'No'
+        <span class="label">Application Offline Banner</span>
+        <span class="value" :class="{ active: showOfflineBanner }">{{
+          showOfflineBanner ? 'Yes' : 'No'
         }}</span>
       </div>
       <div class="stat">
@@ -82,21 +76,39 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const {
-  state,
-  isConnected,
-  isReconnecting,
-  pendingMutations,
-  pendingActions,
-  shouldShowOfflineUi,
-} = useConvexConnectionState()
+const { state, isConnected, isReconnecting, pendingMutations, pendingActions } =
+  useConvexConnectionState()
 
 const hasEverConnected = computed(() => state.value.hasEverConnected)
 const connectionRetries = computed(() => state.value.connectionRetries)
 const hasInflightRequests = computed(() => state.value.hasInflightRequests)
 const inflightMutations = pendingMutations
 const inflightActions = pendingActions
-const isHydratingConnection = computed(() => !state.value.hasEverConnected)
+
+// Presentation timing belongs to the application, not the transport composable.
+const showOfflineBanner = ref(false)
+let offlineTimer: ReturnType<typeof setTimeout> | undefined
+let stopOfflineWatch: (() => void) | undefined
+onMounted(() => {
+  stopOfflineWatch = watch(
+    isConnected,
+    (connected) => {
+      clearTimeout(offlineTimer)
+      if (connected) {
+        showOfflineBanner.value = false
+        return
+      }
+      offlineTimer = setTimeout(() => {
+        showOfflineBanner.value = true
+      }, 500)
+    },
+    { immediate: true },
+  )
+})
+onBeforeUnmount(() => {
+  stopOfflineWatch?.()
+  clearTimeout(offlineTimer)
+})
 
 const statusClass = computed(() => {
   if (isReconnecting.value) return 'reconnecting'
