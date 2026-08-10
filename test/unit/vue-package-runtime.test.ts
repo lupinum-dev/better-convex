@@ -29,7 +29,10 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
   }
   const listeners = new Set<() => void>()
   const query = vi.fn(async () => options?.queryResult ?? label)
-  const mutation = vi.fn(async (_fn: unknown, args: unknown) => ({ label, args }))
+  const mutation = vi.fn(async (_fn: unknown, args: unknown, _options?: unknown) => ({
+    label,
+    args,
+  }))
   const action = vi.fn(async (_fn: unknown, args: unknown) => ({ label, args }))
   const subscriptions: Array<{ active: boolean; emit(value: unknown): void }> = []
   const runtime = createBetterConvexAttachment({
@@ -258,6 +261,8 @@ describe('better-convex-vue package runtime', () => {
       })),
     )!
 
+    expect(Object.isFrozen(operation.mutation)).toBe(true)
+    expect(Object.isFrozen(operation.action)).toBe(true)
     await expect(operation.mutation({ value: 'write' })).resolves.toEqual({
       label: 'alice',
       args: { value: 'write' },
@@ -289,6 +294,38 @@ describe('better-convex-vue package runtime', () => {
 
     scope.stop()
     expect(host.listeners.size).toBe(1) // plugin identity projection remains; callable listener is gone
+  })
+
+  it('diagnoses a casted Promise-like optimistic updater without throwing after registration', async () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ runtime: host.runtime }))
+    const scope = effectScope()
+    const thenable = { then: vi.fn() }
+    const optimisticUpdate = vi.fn(() => thenable)
+    const mutation = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexMutation(makeFunctionReference<'mutation'>('notes:optimistic'), {
+          optimisticUpdate: optimisticUpdate as never,
+        }),
+      ),
+    )!
+
+    await mutation({})
+    const options = host.mutation.mock.calls[0]?.[2] as
+      | { optimisticUpdate?: (store: unknown, args: unknown) => unknown }
+      | undefined
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(options?.optimisticUpdate?.({}, {})).toBeUndefined()
+      expect(optimisticUpdate).toHaveBeenCalledTimes(1)
+      expect(warn).toHaveBeenCalledWith(
+        '[better-convex-vue] optimisticUpdate returned a Promise-like value. Optimistic updates must be synchronous.',
+      )
+    } finally {
+      warn.mockRestore()
+      scope.stop()
+    }
   })
 
   it('subscribes synchronously and clears protected query state on identity change', () => {

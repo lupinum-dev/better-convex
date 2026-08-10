@@ -9,9 +9,10 @@ export { useConvex } from './use-convex'
 export { useConvexConnectionState } from './use-connection-state'
 export { useConvexMutation, useConvexAction } from './use-callable'
 export type {
+  ConvexCallStatus,
+  OptimisticUpdate,
+  UseConvexCall,
   UseConvexMutationOptions,
-  UseConvexActionOptions,
-  UseConvexCallableReturn,
 } from './use-callable'
 export { useConvexQuery } from './use-query'
 export type { ConvexAuthMode, ConvexQueryArgs, UseConvexQueryOptions } from './use-query'

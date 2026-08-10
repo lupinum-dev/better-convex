@@ -36,10 +36,10 @@ describe('useConvexAction (Nuxt runtime)', () => {
     expect(convex.calls.action[0]?.action).toEqual(action)
     expect(convex.calls.action[0]?.args).toEqual({ message: 'hello' })
     expect(result.status.value).toBe('success')
-    expect(result.error.value).toBeNull()
+    expect(result.error.value).toBeUndefined()
     expect(result.data.value).toEqual({ ok: true, args: { message: 'hello' } })
-    expect(typeof result.safe).toBe('function')
-    expect(typeof result.reset).toBe('function')
+    expect('safe' in result).toBe(false)
+    expect('reset' in result).toBe(false)
   })
 
   it('dispatches an empty object for an argless action', async () => {
@@ -53,7 +53,7 @@ describe('useConvexAction (Nuxt runtime)', () => {
     expect(convex.calls.action.at(-1)?.args).toEqual({})
   })
 
-  it('dispatches execute and safe calls when DevTools registration throws', async () => {
+  it('dispatches when DevTools registration throws', async () => {
     const convex = new MockConvexClient()
     const action = mockFnRef<'action'>('testing:diagnostics-registration')
     convex.setActionHandler('testing:diagnostics-registration', async () => 'committed')
@@ -68,9 +68,8 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     try {
       await expect(result({} as never)).resolves.toBe('committed')
-      await expect(result.safe({} as never)).resolves.toEqual({ ok: true, data: 'committed' })
-      expect(convex.calls.action).toHaveLength(2)
-      expect(registerMutation).toHaveBeenCalledTimes(2)
+      expect(convex.calls.action).toHaveLength(1)
+      expect(registerMutation).toHaveBeenCalledTimes(1)
     } finally {
       ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = previous
     }
@@ -98,13 +97,8 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     try {
       await expect(result({} as never)).resolves.toBe('committed')
-      await expect(result.safe({} as never)).resolves.toEqual({ ok: true, data: 'committed' })
       await expect(result({ fail: true } as never)).rejects.toBe(remoteFailure)
-      await expect(result.safe({ fail: true } as never)).resolves.toEqual({
-        ok: false,
-        error: remoteFailure,
-      })
-      expect(updateMutation).toHaveBeenCalledTimes(4)
+      expect(updateMutation).toHaveBeenCalledTimes(2)
     } finally {
       ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = previous
     }

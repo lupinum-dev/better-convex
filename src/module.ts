@@ -48,7 +48,12 @@ const releaseRuntimeFingerprint = getPackedRuntimeFingerprint()
 export type { ConvexUser } from './runtime/utils/types'
 export type { ConvexAuthOptions } from './runtime/utils/auth-config'
 export type { ConvexAuthMode, ConvexAuthStatus } from './runtime/utils/auth-status'
-export type { ConvexClientHandle } from 'better-convex-vue'
+export type {
+  ConvexCallStatus,
+  ConvexClientHandle,
+  OptimisticUpdate,
+  UseConvexCall,
+} from 'better-convex-vue'
 export type { ConvexRuntimeConfig } from './runtime/utils/runtime-config'
 export type {
   BaseAuthClient,

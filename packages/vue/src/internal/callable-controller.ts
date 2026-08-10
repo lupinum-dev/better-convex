@@ -1,6 +1,5 @@
 import type { ComputedRef, Ref } from 'vue'
 
-import type { CallResult } from '../errors'
 import { ConvexCallError, normalizeConvexError } from '../errors'
 import { createClientCallState, type ClientCallStatus } from './call-state'
 import { createIdentityChangedError, isIdentityChangedError } from './identity-changed-error'
@@ -11,8 +10,13 @@ export interface CallableControllerHandlers<Args, Result> {
   /** Settle authentication before the operation is bound and dispatched. */
   settle?: () => Promise<void>
   invoke: (args: Args) => Promise<Result>
-  onSuccess?: (result: Result, args: Args) => void
-  onError?: (error: ConvexCallError, args: Args) => void
+}
+
+/** Package-private observation seam used by Nuxt DevTools. */
+export interface CallableControllerObserver<Args, Result> {
+  startEvent(args: Args, startedAt: number): unknown
+  finishEvent(event: unknown, result: Result, startedAt: number): void
+  failEvent(event: unknown, error: ConvexCallError, startedAt: number): void
 }
 
 export interface CallableControllerInput<Args, Result> {
@@ -20,15 +24,15 @@ export interface CallableControllerInput<Args, Result> {
   getIdentityGeneration: () => number
   subscribeIdentityChange?: (listener: () => void) => () => void
   handlers: CallableControllerHandlers<Args, Result>
+  observer?: CallableControllerObserver<Args, Result>
 }
 
 export interface CallableController<Args, Result> {
   run(args: Args): Promise<Result>
-  safe(args: Args): Promise<CallResult<Result>>
   data: Ref<Result | undefined>
   status: ComputedRef<ClientCallStatus>
   pending: ComputedRef<boolean>
-  error: Ref<ConvexCallError | null>
+  error: Ref<ConvexCallError | undefined>
   reset(): void
   dispose(): void
 }
@@ -52,20 +56,20 @@ export function createCallableController<Args, Result>(
   let disposed = false
   let stopIdentity: (() => void) | null = null
 
-  const runCallback = (callback: () => void) => {
+  const observe = (callback: () => void) => {
     try {
       callback()
     } catch {
-      // Application callbacks cannot replace the remote outcome.
+      // Diagnostics are non-authoritative and cannot replace the remote outcome.
     }
   }
 
   const run = async (args: Args): Promise<Result> => {
-    if (disposed) {
-      throw new ConvexCallError({
-        kind: 'unknown',
-        code: 'CALL_DISPOSED',
-        message: 'Convex callable is no longer active',
+    const startedAt = Date.now()
+    let event: unknown
+    if (input.observer) {
+      observe(() => {
+        event = input.observer!.startEvent(args, startedAt)
       })
     }
     const generation = getIdentityGeneration()
@@ -73,6 +77,13 @@ export function createCallableController<Args, Result>(
     let requestId = callState.start()
 
     try {
+      if (disposed) {
+        throw new ConvexCallError({
+          kind: 'unknown',
+          code: 'CALL_DISPOSED',
+          message: 'Convex callable is no longer active',
+        })
+      }
       if (handlers.settle) await handlers.settle()
 
       if (getIdentityGeneration() !== generation) {
@@ -91,9 +102,9 @@ export function createCallableController<Args, Result>(
         throw createIdentityChangedError(operation)
       }
 
-      const committed = callState.commitSuccess(requestId, result)
-      if (committed) {
-        if (handlers.onSuccess) runCallback(() => handlers.onSuccess!(result, args))
+      callState.commitSuccess(requestId, result)
+      if (input.observer) {
+        observe(() => input.observer!.finishEvent(event, result, startedAt))
       }
       return result
     } catch (rawError) {
@@ -102,24 +113,20 @@ export function createCallableController<Args, Result>(
 
       if (stale) {
         if (callState.isCurrent(requestId)) callState.mask()
-        throw isIdentityChangedError(normalized)
+        const identityError = isIdentityChangedError(normalized)
           ? normalized
           : createIdentityChangedError(operation)
+        if (input.observer) {
+          observe(() => input.observer!.failEvent(event, identityError, startedAt))
+        }
+        throw identityError
       }
 
-      const committed = callState.commitError(requestId, normalized)
-      if (committed) {
-        if (handlers.onError) runCallback(() => handlers.onError!(normalized, args))
+      callState.commitError(requestId, normalized)
+      if (input.observer) {
+        observe(() => input.observer!.failEvent(event, normalized, startedAt))
       }
       throw normalized
-    }
-  }
-
-  const safe = async (args: Args): Promise<CallResult<Result>> => {
-    try {
-      return { ok: true, data: await run(args) }
-    } catch (error) {
-      return { ok: false, error: normalizeConvexError(error) }
     }
   }
 
@@ -148,7 +155,6 @@ export function createCallableController<Args, Result>(
 
   return {
     run,
-    safe,
     data: callState.data,
     status: callState.status,
     pending: callState.pending,

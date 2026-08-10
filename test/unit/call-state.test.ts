@@ -12,7 +12,7 @@ describe('createClientCallState', () => {
     expect(state.status.value).toBe('idle')
     expect(state.pending.value).toBe(false)
     expect(state.data.value).toBeUndefined()
-    expect(state.error.value).toBeNull()
+    expect(state.error.value).toBeUndefined()
 
     const first = state.start()
     expect(state.status.value).toBe('pending')
@@ -28,13 +28,13 @@ describe('createClientCallState', () => {
     expect(state.commitError(second, error)).toBe(true)
     expect(state.status.value).toBe('error')
     expect(state.error.value).toBe(error)
-    expect(state.data.value).toBe('ok')
+    expect(state.data.value).toBeUndefined()
 
     state.reset()
     expect(state.status.value).toBe('idle')
     expect(state.pending.value).toBe(false)
     expect(state.data.value).toBeUndefined()
-    expect(state.error.value).toBeNull()
+    expect(state.error.value).toBeUndefined()
   })
 
   it('rejects stale success and error commits after newer starts or reset', () => {
@@ -49,7 +49,7 @@ describe('createClientCallState', () => {
 
     expect(state.commitError(stale, callError('stale'))).toBe(false)
     expect(state.status.value).toBe('pending')
-    expect(state.error.value).toBeNull()
+    expect(state.error.value).toBeUndefined()
 
     expect(state.commitSuccess(current, 'current')).toBe(true)
     expect(state.data.value).toBe('current')
@@ -61,13 +61,10 @@ describe('createClientCallState', () => {
     expect(state.commitError(resetStale, callError('after-reset'))).toBe(false)
     expect(state.status.value).toBe('idle')
     expect(state.data.value).toBeUndefined()
-    expect(state.error.value).toBeNull()
+    expect(state.error.value).toBeUndefined()
   })
 
-  it('returns a commit signal callers must use to gate result callbacks', () => {
-    // Consumers (useConvexMutation/useConvexAction) must only invoke onSuccess/onError
-    // when commitSuccess/commitError report the commit actually landed. A superseded
-    // or reset request must fire neither callback.
+  it('returns a commit signal so superseded work cannot own public state', () => {
     const state = createClientCallState<string>()
 
     const superseded = state.start()

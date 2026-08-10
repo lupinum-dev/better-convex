@@ -117,11 +117,16 @@ export async function usePublicApiSurfaceContracts(file: File) {
     },
   })
   assertType<string>(await createTask({ text: 'callable' }))
-  assertType<boolean>((await createTask.safe({ text: 'safe' })).ok)
+  assertType<boolean>(createTask.pending.value)
+  // @ts-expect-error callable lifecycle state is readonly
+  createTask.data.value = 'mutated'
+  // @ts-expect-error one rejected-Promise protocol; `.safe` was removed
+  void createTask.safe({ text: 'removed' })
 
   const sendEmail = useConvexAction(api.emails.send)
   assertType<{ ok: boolean }>(await sendEmail({ to: 'team@example.com', subject: 'Smoke' }))
-  assertType<boolean>((await sendEmail.safe({ to: 'team@example.com', subject: 'Smoke' })).ok)
+  // @ts-expect-error actions have no callback options or alternate execution protocol
+  void sendEmail.safe({ to: 'team@example.com', subject: 'Removed' })
 
   const upload = useConvexFileUpload(api.files.generateUploadUrl)
   assertType<GenericId<'_storage'>>(await upload.upload(file))
@@ -144,6 +149,27 @@ export async function usePublicApiSurfaceContracts(file: File) {
   const emptyDefinition = defineConvexAuthClient()
   assertType<ConvexAuthClientDefinition<[]>>(emptyDefinition)
 }
+
+function _callableContracts() {
+  // @ts-expect-error optimistic updates must complete synchronously
+  useConvexMutation(api.tasks.create, {
+    async optimisticUpdate() {},
+  })
+
+  const thenableUpdate = () => ({ then() {} })
+  // @ts-expect-error arbitrary Promise-like returns are also forbidden
+  useConvexMutation(api.tasks.create, {
+    optimisticUpdate: thenableUpdate,
+  })
+
+  useConvexMutation(api.tasks.create, {
+    // @ts-expect-error completion belongs in ordinary await/catch control flow
+    onSuccess() {},
+  })
+  // @ts-expect-error actions expose no options bag
+  useConvexAction(api.emails.send, { onError() {} })
+}
+void _callableContracts
 
 /**
  * Public call-arity contracts. These calls pin the required args position and

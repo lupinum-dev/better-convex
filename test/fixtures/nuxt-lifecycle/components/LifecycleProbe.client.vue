@@ -171,8 +171,11 @@ onMounted(() => {
     },
     async safeMutation(kind: 'plain' | 'application', message: string) {
       failNextCall('mutation', kind, message)
-      const result = await mutation.safe({ value: 'denied' })
-      return result.ok ? result : { ok: false, error: serializeError(result.error) }
+      try {
+        return { ok: true, data: await mutation({ value: 'denied' }) }
+      } catch (error) {
+        return { ok: false, error: serializeError(error) }
+      }
     },
     async unmount() {
       props.dispose()

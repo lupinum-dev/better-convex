@@ -8,7 +8,7 @@ export interface ClientCallState<Result> {
   data: Ref<Result | undefined>
   status: ComputedRef<ClientCallStatus>
   pending: ComputedRef<boolean>
-  error: Ref<ConvexCallError | null>
+  error: Ref<ConvexCallError | undefined>
   start(): number
   isCurrent(requestId: number): boolean
   commitSuccess(requestId: number, result: Result): boolean
@@ -21,7 +21,7 @@ export interface ClientCallState<Result> {
 export function createClientCallState<Result>(): ClientCallState<Result> {
   let activeRequestId = 0
   const currentStatus = ref<ClientCallStatus>('idle')
-  const error = ref<ConvexCallError | null>(null) as Ref<ConvexCallError | null>
+  const error = ref<ConvexCallError | undefined>(undefined) as Ref<ConvexCallError | undefined>
   const data = ref<Result | undefined>(undefined) as Ref<Result | undefined>
 
   const status = computed(() => currentStatus.value)
@@ -30,7 +30,8 @@ export function createClientCallState<Result>(): ClientCallState<Result> {
   const start = () => {
     const requestId = ++activeRequestId
     currentStatus.value = 'pending'
-    error.value = null
+    error.value = undefined
+    data.value = undefined
     return requestId
   }
 
@@ -53,7 +54,7 @@ export function createClientCallState<Result>(): ClientCallState<Result> {
   const reset = () => {
     activeRequestId += 1
     currentStatus.value = 'idle'
-    error.value = null
+    error.value = undefined
     data.value = undefined
   }
 

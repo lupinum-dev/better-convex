@@ -244,8 +244,11 @@ Object.assign(window, {
     async safeMutation(kind: 'plain' | 'application', message: string) {
       if (!operations) throw new Error('Operation composables are not mounted')
       failNextCall('mutation', kind, message)
-      const result = await operations.mutation.safe({ value: 'denied' })
-      return result.ok ? result : { ok: false, error: serializeError(result.error) }
+      try {
+        return { ok: true, data: await operations.mutation({ value: 'denied' }) }
+      } catch (error) {
+        return { ok: false, error: serializeError(error) }
+      }
     },
     startDeferredMutation() {
       if (!operations) throw new Error('Operation composables are not mounted')
