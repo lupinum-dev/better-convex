@@ -418,6 +418,9 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
   })
 
   it('runs each expensive source suite once before immutable minting', () => {
+    const packageJson = JSON.parse(read('package.json')) as {
+      scripts?: Record<string, string>
+    }
     const source = read('scripts/release-source-certification.mjs')
     const verifier = read('scripts/verify-release.mjs')
     const allSourceRuns = [
@@ -435,6 +438,9 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     expect(source.match(/\['run', 'verify'\]/gu)).toHaveLength(1)
     expect(source.match(/\['run', 'verify:auth'\]/gu)).toHaveLength(1)
     expect(source.match(/\['run', 'test:e2e:full'\]/gu)).toHaveLength(1)
+    expect(packageJson.scripts?.['test:e2e:full']).toBe(
+      'pnpm --dir packages/vue build && node scripts/run-e2e.mjs --full',
+    )
     expect(verifier).not.toMatch(/verify:auth|test:e2e:full|test:dast:proxy/u)
     expect(needs(workflow, 'build-candidates')).toEqual(['staging-readiness'])
   })
