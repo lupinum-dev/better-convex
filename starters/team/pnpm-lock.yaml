@@ -18,8 +18,8 @@ importers:
         specifier: 1.7.0-rc.2
         version: 1.7.0-rc.2(vitest@4.1.10(@edge-runtime/vm@5.0.0)(@types/node@25.9.5)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3))
       better-convex-nuxt:
-        specifier: 0.8.0-beta.34
-        version: 0.8.0-beta.34(1bf4325c41c6b44c67eb3739adb609fe)
+        specifier: 0.8.0-beta.35
+        version: 0.8.0-beta.35(1bf4325c41c6b44c67eb3739adb609fe)
       convex:
         specifier: 1.42.2
         version: 1.42.2
@@ -1690,8 +1690,8 @@ packages:
       zod:
         optional: true
 
-  better-convex-nuxt@0.8.0-beta.34:
-    resolution: {integrity: sha512-R6H/x06xct3qQC052fTYvIKv3/oaVXN9mtCMxsHeh8sZL5zemxixB5YGal/FLrapOnzuWg2xDzQe/jkHhCmE/A==}
+  better-convex-nuxt@0.8.0-beta.35:
+    resolution: {integrity: sha512-T+8dMAMDX6yuPz0Ue88EAAYPAMBk8Ydd/sOiXUVgrNB66N9VUDoMyRRX4zXuz+MXB9JhFO2//8l4jtnv4w6eAQ==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -1705,8 +1705,8 @@ packages:
       better-auth:
         optional: true
 
-  better-convex-vue@0.8.0-beta.34:
-    resolution: {integrity: sha512-HeUeJ8+8bpui/pTd1kkf2QQb9lr2uwGZ6628sDdUqJLos5GIvfgujPAxD7byyjgS/bf7ksuMav0cLWXa63A75w==}
+  better-convex-vue@0.8.0-beta.35:
+    resolution: {integrity: sha512-VzYmvqGoXEZuhTg3TGrQrBg1GTUr4RpjuEkM1oKTXuaeDFtcD6RZToP6fONH2nTh2RLQDA/w+KGZ9N38JpiLZA==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5
@@ -1728,8 +1728,8 @@ packages:
   birpc@2.9.0:
     resolution: {integrity: sha512-KrayHS5pBi69Xi9JmvoqrIgYGDkD6mcSe/i6YKi3w5kekCLzrX4+nawcXqrj2tIp50Kw/mT/s3p+GVK0A0sKxw==}
 
-  birpc@4.0.0:
-    resolution: {integrity: sha512-LShSxJP0KTmd101b6DRyGBj57LZxSDYWKitQNW/mi8GRMvZb078Uf9+pveax1DrVL89vm7mWe+TovdI/UDOuPw==}
+  birpc@4.1.0:
+    resolution: {integrity: sha512-O8L9vALWGqdEe0cG4HJckauw3WeJETlJnDRPUYpgwB7wrU43b/5NGMdVjdVcRo+4ROgd3ih2wha1glDe4HRVgw==}
 
   boolbase@1.0.0:
     resolution: {integrity: sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww==}
@@ -3675,8 +3675,8 @@ packages:
       '@nuxt/kit':
         optional: true
 
-  vite-plugin-vue-tracer@1.4.0:
-    resolution: {integrity: sha512-0tQCjCqZWVSK6UeRW9S4ABbf47lKQ68zvrT2FNvZmiL+alDydCVyH/T3Jlfbdc3T3C2Iuyyl5aVsMbF8IQIoxA==}
+  vite-plugin-vue-tracer@1.5.0:
+    resolution: {integrity: sha512-G2aQ676fLBPnYhRi5lsARoL4hbtc/sx6fVzO7p44AB+1xQXo2UuiRgv7K26UdijrNzmuQprmJ121n3rdjBk1CA==}
     peerDependencies:
       vite: ^6.0.0 || ^7.0.0 || ^8.0.0-0
       vue: ^3.5.0
@@ -4544,7 +4544,7 @@ snapshots:
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
       '@vue/devtools-core': 8.2.1(vue@3.5.40(typescript@5.9.3))
       '@vue/devtools-kit': 8.2.1
-      birpc: 4.0.0
+      birpc: 4.1.0
       consola: 3.4.2
       destr: 2.0.5
       error-stack-parser-es: 2.0.1
@@ -4570,7 +4570,7 @@ snapshots:
       unstorage: 1.17.5(db0@0.3.4)(ioredis@5.11.1)
       vite: 8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)
       vite-plugin-inspect: 11.4.1(@nuxt/kit@4.5.1(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))))(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))
-      vite-plugin-vue-tracer: 1.4.0(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue@3.5.40(typescript@5.9.3))
+      vite-plugin-vue-tracer: 1.5.0(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue@3.5.40(typescript@5.9.3))
       which: 6.0.1
       ws: 8.21.3
     transitivePeerDependencies:
@@ -5537,10 +5537,10 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  better-convex-nuxt@0.8.0-beta.34(1bf4325c41c6b44c67eb3739adb609fe):
+  better-convex-nuxt@0.8.0-beta.35(1bf4325c41c6b44c67eb3739adb609fe):
     dependencies:
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
-      better-convex-vue: 0.8.0-beta.34(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3)
+      better-convex-vue: 0.8.0-beta.35(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3)
       convex: 1.42.2
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2)(typescript@5.9.3)(zod@4.4.3)
       defu: 6.1.7
@@ -5566,7 +5566,7 @@ snapshots:
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.34(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3):
+  better-convex-vue@0.8.0-beta.35(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3):
     dependencies:
       convex: 1.42.2
       ohash: 2.0.11
@@ -5580,7 +5580,7 @@ snapshots:
 
   birpc@2.9.0: {}
 
-  birpc@4.0.0: {}
+  birpc@4.1.0: {}
 
   boolbase@1.0.0: {}
 
@@ -7578,7 +7578,7 @@ snapshots:
 
   vite-dev-rpc@2.0.0(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)):
     dependencies:
-      birpc: 4.0.0
+      birpc: 4.1.0
       vite: 8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)
       vite-hot-client: 2.2.0(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))
 
@@ -7636,11 +7636,11 @@ snapshots:
     optionalDependencies:
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
 
-  vite-plugin-vue-tracer@1.4.0(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue@3.5.40(typescript@5.9.3)):
+  vite-plugin-vue-tracer@1.5.0(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue@3.5.40(typescript@5.9.3)):
     dependencies:
       estree-walker: 3.0.3
       exsolve: 1.1.1
-      magic-string: 0.30.21
+      magic-string: 1.1.0
       pathe: 2.0.3
       source-map-js: 1.2.1
       vite: 8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)

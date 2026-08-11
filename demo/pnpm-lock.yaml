@@ -35,8 +35,8 @@ importers:
         specifier: 1.7.0-rc.2
         version: 1.7.0-rc.2(vitest@4.1.10(@types/node@25.9.5)(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))(vue@3.5.41(typescript@5.9.3))
       better-convex-nuxt:
-        specifier: 0.8.0-beta.34
-        version: 0.8.0-beta.34(9aeb26015baf4f60f8684f3e93365377)
+        specifier: 0.8.0-beta.35
+        version: 0.8.0-beta.35(9aeb26015baf4f60f8684f3e93365377)
       convex:
         specifier: 1.42.2
         version: 1.42.2
@@ -792,8 +792,8 @@ packages:
   '@iconify-json/simple-icons@1.2.93':
     resolution: {integrity: sha512-/XhANjfGYOuqvSR3TmUnkQkINvQ4GVjVuukvymRbxtVFBvIq/yiXJqCDycKcQPT401OYT9H2vIY6ihAlz1QIAw==}
 
-  '@iconify/collections@1.0.722':
-    resolution: {integrity: sha512-y7G2/u+kzDC/aGsn2sz9X1apxw47D1csij4JVpDkRso52bj7Fz0I2dCxyjBDkGMogbKvVcIJ/j72PEbnrf3elQ==}
+  '@iconify/collections@1.0.723':
+    resolution: {integrity: sha512-h9/C2f+OC/iYFwCuqPh8nFAdAbRyV0TwNUGEA2L3VI4hC89YUa6LOBMr/6LUAgcd3wMPXPnnt0Y6Ecgxqb/rIQ==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -2447,8 +2447,8 @@ packages:
       zod:
         optional: true
 
-  better-convex-nuxt@0.8.0-beta.34:
-    resolution: {integrity: sha512-R6H/x06xct3qQC052fTYvIKv3/oaVXN9mtCMxsHeh8sZL5zemxixB5YGal/FLrapOnzuWg2xDzQe/jkHhCmE/A==}
+  better-convex-nuxt@0.8.0-beta.35:
+    resolution: {integrity: sha512-T+8dMAMDX6yuPz0Ue88EAAYPAMBk8Ydd/sOiXUVgrNB66N9VUDoMyRRX4zXuz+MXB9JhFO2//8l4jtnv4w6eAQ==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -2462,8 +2462,8 @@ packages:
       better-auth:
         optional: true
 
-  better-convex-vue@0.8.0-beta.34:
-    resolution: {integrity: sha512-HeUeJ8+8bpui/pTd1kkf2QQb9lr2uwGZ6628sDdUqJLos5GIvfgujPAxD7byyjgS/bf7ksuMav0cLWXa63A75w==}
+  better-convex-vue@0.8.0-beta.35:
+    resolution: {integrity: sha512-VzYmvqGoXEZuhTg3TGrQrBg1GTUr4RpjuEkM1oKTXuaeDFtcD6RZToP6fONH2nTh2RLQDA/w+KGZ9N38JpiLZA==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5
@@ -2899,8 +2899,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  electron-to-chromium@1.5.403:
-    resolution: {integrity: sha512-MQsYmdaLzvaCX5j+ZZBr5Fm6uCCnPQcRtlvmvRlWqrXy+BH2O4ffXIAScF+JQznQWB9brWp4lSD9Z4yNmaf2BA==}
+  electron-to-chromium@1.5.404:
+    resolution: {integrity: sha512-3WJtd7/lVq2Jnuz6wed1l9+1ZD2u2Tet1/1NBc4Iedkmgbu+I7YuAqdAQ8T+VZtnwysMsAf3IqSq9D1gyZjA2g==}
 
   embla-carousel-auto-height@8.6.0:
     resolution: {integrity: sha512-/HrJQOEM6aol/oF33gd2QlINcXy3e19fJWvHDuHWp2bpyTa+2dm9tVVJak30m2Qy6QyQ6Fc8DkImtv7pxWOJUQ==}
@@ -6149,7 +6149,7 @@ snapshots:
     dependencies:
       '@iconify/types': 2.0.0
 
-  '@iconify/collections@1.0.722':
+  '@iconify/collections@1.0.723':
     dependencies:
       '@iconify/types': 2.0.0
 
@@ -6533,7 +6533,7 @@ snapshots:
 
   '@nuxt/icon@2.5.0(magic-string@0.30.21)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue@3.5.41(typescript@5.9.3))':
     dependencies:
-      '@iconify/collections': 1.0.722
+      '@iconify/collections': 1.0.723
       '@iconify/types': 2.0.0
       '@iconify/utils': 3.1.4
       '@iconify/vue': 5.0.1(vue@3.5.41(typescript@5.9.3))
@@ -8168,10 +8168,10 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  better-convex-nuxt@0.8.0-beta.34(9aeb26015baf4f60f8684f3e93365377):
+  better-convex-nuxt@0.8.0-beta.35(9aeb26015baf4f60f8684f3e93365377):
     dependencies:
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
-      better-convex-vue: 0.8.0-beta.34(convex@1.42.2)(vue@3.5.41(typescript@5.9.3))(zod@4.4.3)
+      better-convex-vue: 0.8.0-beta.35(convex@1.42.2)(vue@3.5.41(typescript@5.9.3))(zod@4.4.3)
       convex: 1.42.2
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2)(typescript@5.9.3)(zod@4.4.3)
       defu: 6.1.7
@@ -8197,7 +8197,7 @@ snapshots:
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.34(convex@1.42.2)(vue@3.5.41(typescript@5.9.3))(zod@4.4.3):
+  better-convex-vue@0.8.0-beta.35(convex@1.42.2)(vue@3.5.41(typescript@5.9.3))(zod@4.4.3):
     dependencies:
       convex: 1.42.2
       ohash: 2.0.11
@@ -8232,7 +8232,7 @@ snapshots:
     dependencies:
       baseline-browser-mapping: 2.11.13
       caniuse-lite: 1.0.30001809
-      electron-to-chromium: 1.5.403
+      electron-to-chromium: 1.5.404
       node-releases: 2.0.53
       update-browserslist-db: 1.3.1(browserslist@4.28.8)
 
@@ -8558,7 +8558,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  electron-to-chromium@1.5.403: {}
+  electron-to-chromium@1.5.404: {}
 
   embla-carousel-auto-height@8.6.0(embla-carousel@8.6.0):
     dependencies:

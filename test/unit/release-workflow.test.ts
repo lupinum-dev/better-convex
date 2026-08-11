@@ -207,8 +207,8 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       ])
       expect(commands.slice(4)).toEqual(
         expect.arrayContaining([
-          'scripts/verify-release.mjs --package vue --artifact-manifest .release-artifacts/vue/0.8.0-beta.34/artifact.json',
-          'scripts/verify-release.mjs --package nuxt --artifact-manifest .release-artifacts/nuxt/0.8.0-beta.34/artifact.json',
+          'scripts/verify-release.mjs --package vue --artifact-manifest .release-artifacts/vue/0.8.0-beta.35/artifact.json',
+          'scripts/verify-release.mjs --package nuxt --artifact-manifest .release-artifacts/nuxt/0.8.0-beta.35/artifact.json',
         ]),
       )
     } finally {

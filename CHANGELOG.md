@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v0.8.0-beta.35
+
+- Retire the unpublished beta.34 Vue/Nuxt candidate after the first clean
+  Ubuntu pull-request run exposed a missing source mapping for the maintained
+  MCP starter's `better-convex-mcp` import. The local workspace had an existing
+  package link, while a fresh root install correctly did not.
+- Preserve beta.34/beta.22 as failed local evidence and never publish or reuse
+  those coordinates. Reserve beta.35/beta.23 with the MCP test program bound
+  directly to the reviewed package source; packed-consumer gates remain the
+  authority for package installation behavior.
+
+## v0.1.0-beta.23 (`better-convex-mcp`)
+
+- Retire unpublished beta.22 with the failed beta.34 family and reserve a fresh
+  MCP coordinate from the corrected clean source. The MCP runtime and public
+  API are unchanged.
+
 ## v0.8.0-beta.34
 
 - Retire the unpublished beta.33 Vue/Nuxt candidate set after its immutable
