@@ -72,8 +72,9 @@ export function assertCandidateAppLockTextBindsArtifact(lockSource, profile, art
     matchingKeys[0] !== packageKey ||
     packageEntries[packageKey]?.resolution?.integrity !== artifact.integrity
   ) {
+    const observedIntegrity = packageEntries?.[packageKey]?.resolution?.integrity ?? '(missing)'
     throw new Error(
-      `${profile.directory}/pnpm-lock.yaml does not bind ${packageKey} to the exact staged artifact integrity.`,
+      `${profile.directory}/pnpm-lock.yaml does not bind ${packageKey} to the exact staged artifact integrity: expected ${artifact.integrity}, observed ${String(observedIntegrity)}.`,
     )
   }
   if (artifact.packageId === 'mcp') {
