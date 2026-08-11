@@ -6,7 +6,9 @@ import { gzipSync } from 'node:zlib'
 import { setup, url } from '@nuxt/test-utils/e2e'
 import { afterAll, describe, expect, it } from 'vitest'
 
-const BODY_LIMIT = 4_096
+const BODY_LIMIT = 1_048_576
+const OAUTH_TOKEN_BODY_LIMIT = 16 * 1024
+const PUBLIC_ORIGIN = 'http://localhost:3000'
 const redirectDestinations = new Map([
   ['relative', '/redirect-target'],
   ['http', 'http://redirect-target.example.invalid/callback'],
@@ -143,6 +145,20 @@ async function startUpstream() {
       return
     }
 
+    if (requestUrl.pathname === '/api/auth/.well-known/oauth-authorization-server') {
+      response.setHeader('access-control-allow-credentials', 'true')
+      response.setHeader('access-control-allow-origin', 'https://upstream.example.test')
+      if (request.headers['x-test-metadata-cookie'] === '1') {
+        response.setHeader(
+          'set-cookie',
+          'better-auth.session_token=metadata-secret; Path=/; HttpOnly; SameSite=Lax',
+        )
+      }
+      response.setHeader('content-type', 'application/json')
+      response.end('{}')
+      return
+    }
+
     if (requestUrl.pathname === '/api/auth/_gzip-over-limit') {
       const compressed = gzipSync(Buffer.alloc(BODY_LIMIT * 2, 97))
       expect(compressed.byteLength).toBeLessThan(BODY_LIMIT)
@@ -223,7 +239,10 @@ function requestProxyRaw(payload: string): Promise<Buffer> {
 
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
-    const socket = createConnection({ host: target.hostname, port: Number(target.port) })
+    const socket = createConnection({
+      host: target.hostname,
+      port: Number(target.port),
+    })
     socket.setTimeout(5_000, () => socket.destroy(new Error('Raw proxy request timed out')))
     socket.on('connect', () => socket.end(payload))
     socket.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -237,7 +256,10 @@ function requestProxyRawIncomplete(payload: string): Promise<Buffer> {
 
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
-    const socket = createConnection({ host: target.hostname, port: Number(target.port) })
+    const socket = createConnection({
+      host: target.hostname,
+      port: Number(target.port),
+    })
     socket.setTimeout(5_000, () => socket.destroy(new Error('Raw proxy request timed out')))
     socket.on('connect', () => socket.write(payload))
     socket.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -273,12 +295,7 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
       convex: {
         url: 'https://demo.convex.cloud',
         siteUrl: upstream.url,
-        auth: {
-          proxy: {
-            maxRequestBodyBytes: BODY_LIMIT,
-            maxResponseBodyBytes: BODY_LIMIT,
-          },
-        },
+        auth: { origin: PUBLIC_ORIGIN },
       },
     },
   })
@@ -287,6 +304,187 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
     await new Promise<void>((resolve, reject) => {
       upstream.server.close((error) => (error ? reject(error) : resolve()))
     })
+  })
+
+  it('exposes only public OAuth metadata and the credential-free browser token exchange', async () => {
+    const clientOrigin = 'http://127.0.0.1:6274'
+    const metadataStart = capturedRequests.length
+    const authorizationMetadata = await requestProxy(
+      '/.well-known/oauth-authorization-server/api/auth',
+      { headers: { origin: clientOrigin } },
+    )
+    expect(authorizationMetadata.status).toBe(200)
+    expect(authorizationMetadata.headers['access-control-allow-origin']).toBe('*')
+    expect(authorizationMetadata.headers['access-control-allow-credentials']).toBeUndefined()
+    expect(capturedSince(metadataStart)).toHaveLength(1)
+    expect(capturedRequests.at(-1)?.url).toBe('/api/auth/.well-known/oauth-authorization-server')
+
+    const preflightStart = capturedRequests.length
+    const preflight = await requestProxy('/api/auth/oauth2/token', {
+      headers: {
+        'access-control-request-headers': 'content-type',
+        'access-control-request-method': 'POST',
+        origin: clientOrigin,
+      },
+      method: 'OPTIONS',
+    })
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers['access-control-allow-origin']).toBe('*')
+    expect(preflight.headers['access-control-allow-methods']).toBe('POST')
+    expect(preflight.headers['access-control-allow-headers']).toBe('content-type')
+    expect(preflight.headers['access-control-allow-credentials']).toBeUndefined()
+    expect(capturedRequests).toHaveLength(preflightStart)
+
+    const body = Buffer.from(
+      'grant_type=authorization_code&client_id=public-client&code=opaque&code_verifier=' +
+        'v'.repeat(43),
+    )
+    const token = await requestProxy('/api/auth/oauth2/token', {
+      body,
+      headers: {
+        'content-length': String(body.byteLength),
+        'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        origin: clientOrigin,
+        referer: `${clientOrigin}/oauth/callback`,
+        'sec-fetch-site': 'cross-site',
+      },
+      method: 'POST',
+    })
+    expect(token.status).toBe(200)
+    expect(token.headers['access-control-allow-origin']).toBe('*')
+    expect(token.headers['access-control-allow-credentials']).toBeUndefined()
+    expect(token.headers['set-cookie']).toBeUndefined()
+    const deliveredToken = capturedRequests.at(-1)
+    expect(deliveredToken?.url).toBe('/api/auth/oauth2/token')
+    expect(deliveredToken?.body).toEqual(body)
+    expect(deliveredToken?.headers.origin).toBe(PUBLIC_ORIGIN)
+    expect(deliveredToken?.headers.referer).toBeUndefined()
+    expect(deliveredToken?.headers['sec-fetch-site']).toBeUndefined()
+    expect(deliveredToken?.headers.cookie).toBeUndefined()
+    expect(deliveredToken?.headers.authorization).toBeUndefined()
+  })
+
+  it('keeps public authorization metadata credential-free in both directions', async () => {
+    const clientOrigin = 'http://127.0.0.1:6274'
+    const metadataDeliveries = () =>
+      capturedRequests.filter(
+        (request) => request.url === '/api/auth/.well-known/oauth-authorization-server',
+      ).length
+    const start = metadataDeliveries()
+    for (const [name, headers] of [
+      ['cookie', { cookie: 'better-auth.session_token=secret', origin: clientOrigin }],
+      ['authorization', { authorization: 'Bearer secret', origin: clientOrigin }],
+      ['dpop', { dpop: 'proof', origin: clientOrigin }],
+      ['proxy-authorization', { 'proxy-authorization': 'Basic secret', origin: clientOrigin }],
+    ] as const) {
+      const before = metadataDeliveries()
+      const response = await requestProxy('/.well-known/oauth-authorization-server/api/auth', {
+        headers,
+      })
+      expect(response.status).toBe(403)
+      expect(response.headers['access-control-allow-origin']).toBe('*')
+      expect(response.headers['access-control-allow-credentials']).toBeUndefined()
+      expect(metadataDeliveries(), name).toBe(before)
+    }
+    expect(metadataDeliveries()).toBe(start)
+
+    const target = new URL(url('/'))
+    const duplicateAuthorization = await requestProxyRaw(
+      [
+        'GET /.well-known/oauth-authorization-server/api/auth HTTP/1.1',
+        `Host: ${target.host}`,
+        `Origin: ${clientOrigin}`,
+        'Authorization: Bearer one',
+        'Authorization: Bearer two',
+        'Connection: close',
+        '',
+        '',
+      ].join('\r\n'),
+    )
+    if (duplicateAuthorization.length > 0) {
+      expect([400, 403]).toContain(rawResponseStatus(duplicateAuthorization))
+    }
+    expect(metadataDeliveries()).toBe(start)
+
+    const upstreamCookie = await requestProxy('/.well-known/oauth-authorization-server/api/auth', {
+      headers: { origin: clientOrigin, 'x-test-metadata-cookie': '1' },
+    })
+    expect(upstreamCookie.status).toBe(502)
+    expect(upstreamCookie.headers['access-control-allow-origin']).toBe('*')
+    expect(upstreamCookie.headers['access-control-allow-credentials']).toBeUndefined()
+    expect(upstreamCookie.headers['set-cookie']).toBeUndefined()
+    expect(metadataDeliveries()).toBe(start + 1)
+  })
+
+  it('rejects every credential, header, method, path, query, and preflight expansion', async () => {
+    const clientOrigin = 'http://127.0.0.1:6274'
+    const formHeaders = {
+      'content-type': 'application/x-www-form-urlencoded',
+      origin: clientOrigin,
+    }
+    const start = capturedRequests.length
+
+    for (const headers of [
+      { ...formHeaders, cookie: 'better-auth.session_token=secret' },
+      { ...formHeaders, authorization: 'Basic secret' },
+      { ...formHeaders, dpop: 'proof' },
+      { ...formHeaders, 'content-type': 'application/json' },
+    ]) {
+      const response = await requestProxy('/api/auth/oauth2/token', {
+        body: Buffer.from('grant_type=authorization_code'),
+        headers,
+        method: 'POST',
+      })
+      expect(response.status).toBe(403)
+      expect(response.headers['access-control-allow-origin']).toBeUndefined()
+    }
+
+    for (const path of [
+      '/api/auth/oauth2/token?tenant=attacker',
+      '/api/auth/oauth2/revoke',
+      '/api/auth/oauth2/authorize',
+      '/api/auth/get-session',
+      '/api/auth/mcp/admin/provision',
+    ]) {
+      const response = await requestProxy(path, {
+        body: Buffer.from('grant_type=authorization_code'),
+        headers: formHeaders,
+        method: 'POST',
+      })
+      expect(response.status).toBe(403)
+      expect(response.headers['access-control-allow-origin']).toBeUndefined()
+    }
+
+    const wrongMethod = await requestProxy('/api/auth/oauth2/token', {
+      headers: { origin: clientOrigin },
+      method: 'GET',
+    })
+    expect(wrongMethod.status).toBe(403)
+
+    const hostilePreflight = await requestProxy('/api/auth/oauth2/token', {
+      headers: {
+        'access-control-request-headers': 'content-type, authorization',
+        'access-control-request-method': 'POST',
+        origin: clientOrigin,
+      },
+      method: 'OPTIONS',
+    })
+    expect(hostilePreflight.status).toBe(405)
+    expect(hostilePreflight.headers['access-control-allow-origin']).toBeUndefined()
+
+    const oversizedBody = Buffer.alloc(OAUTH_TOKEN_BODY_LIMIT + 1, 97)
+    const oversized = await requestProxy('/api/auth/oauth2/token', {
+      body: oversizedBody,
+      headers: {
+        ...formHeaders,
+        'content-length': String(oversizedBody.byteLength),
+      },
+      method: 'POST',
+    })
+    expect(oversized.status).toBe(403)
+    expect(oversized.headers['access-control-allow-origin']).toBeUndefined()
+    expect(oversized.headers['access-control-allow-credentials']).toBeUndefined()
+    expect(capturedRequests).toHaveLength(start)
   })
 
   it('delivers every redirect status and destination once without a server-side replay', async () => {
@@ -324,7 +522,10 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
   it('preserves empty, binary, random, content-typed, and slow chunked request bytes', async () => {
     const cases = [
       { contentType: 'application/json', body: Buffer.from('{"value":"π"}') },
-      { contentType: 'application/x-www-form-urlencoded', body: Buffer.from('a=1&a=2&b=%2F') },
+      {
+        contentType: 'application/x-www-form-urlencoded',
+        body: Buffer.from('a=1&a=2&b=%2F'),
+      },
       {
         contentType: 'multipart/form-data; boundary=bcn-boundary',
         body: Buffer.from(
@@ -332,7 +533,10 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
         ),
       },
       { contentType: 'text/plain', body: Buffer.from('plain\u0000text') },
-      { contentType: 'application/octet-stream', body: Buffer.from([0, 255, 128, 13, 10, 1]) },
+      {
+        contentType: 'application/octet-stream',
+        body: Buffer.from([0, 255, 128, 13, 10, 1]),
+      },
     ]
 
     for (const [index, testCase] of cases.entries()) {
@@ -353,7 +557,10 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
 
     const emptyResponse = await requestProxy('/api/auth/_capture?case=empty', {
       body: Buffer.alloc(0),
-      headers: { 'content-length': '0', 'content-type': 'application/octet-stream' },
+      headers: {
+        'content-length': '0',
+        'content-type': 'application/octet-stream',
+      },
       method: 'POST',
     })
     expect(emptyResponse.status).toBe(200)
@@ -397,12 +604,8 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
     expect(declared.headers['cache-control']).toBe('private, no-store')
 
     const chunked = await requestProxy('/api/auth/_capture?case=chunked-over', {
+      body: overLimit,
       method: 'POST',
-      slowChunks: [
-        overLimit.subarray(0, BODY_LIMIT),
-        overLimit.subarray(BODY_LIMIT),
-        Buffer.from([8]),
-      ],
     })
     expect(chunked.status, chunked.body.toString()).toBe(413)
     expect(capturedSince(start)).toHaveLength(0)

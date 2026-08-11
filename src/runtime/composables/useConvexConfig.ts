@@ -7,19 +7,12 @@ import {
 export type { ConvexRuntimeConfig } from '../utils/runtime-config'
 
 /**
- * Read the normalized public runtime configuration .
- *
- * Returns the read-only result of the same normalizer used internally. It has no
- * setter and creates no second configuration source. The build-only `auth.client`
- * path and the internal-only `auth.debug` channels are never exposed;
- * `config.auth === false` is the only disabled-auth signal.
+ * Read the resolved Convex connection origins.
  *
  * @example
  * ```ts
  * const config = useConvexConfig()
- * if (config.auth !== false) {
- *   console.log(config.auth.proxy.maxRequestBodyBytes)
- * }
+ * console.log(config.url, config.siteUrl)
  * ```
  */
 export function useConvexConfig(): ConvexRuntimeConfig {

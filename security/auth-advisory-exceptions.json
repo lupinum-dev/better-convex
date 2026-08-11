@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 2,
+  "exceptions": [
+    {
+      "id": "GHSA-mh99-v99m-4gvg",
+      "source": "npm",
+      "auditScope": "clean-nuxt-consumer",
+      "package": "brace-expansion",
+      "version": "2.1.3",
+      "owner": "Better Convex maintainers",
+      "mitigation": "The exact clean Nuxt consumer reaches this package only through Nitro 2.13.4's Azure deployment archive builder. Nitro invokes archiver.glob with the constant pattern **/* over its generated output directory; the dependency is absent from the generated server runtime, Better Convex accepts no glob pattern, and no request or application value can influence the pattern.",
+      "reason": "Nitro 2.13.4 pins archiver to the incompatible ^7.0.1 line, while the first dependency chain using a patched brace-expansion is archiver 8. Requiring a consumer-only package-manager override would make npm certification dishonest. Retain this exact non-runtime dependency only until Nitro adopts a compatible patched archiver graph.",
+      "sourceUrl": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+      "createdAt": "2026-07-29T00:00:00.000Z",
+      "expiresAt": "2026-08-28T00:00:00.000Z"
+    }
+  ]
+}

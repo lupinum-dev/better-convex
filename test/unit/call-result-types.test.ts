@@ -2,9 +2,7 @@ import type { FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it } from 'vitest'
 
-import type { UseConvexActionReturn } from '../../src/runtime/composables/useConvexAction'
-import type { UseConvexMutationReturn } from '../../src/runtime/composables/useConvexMutation'
-import type { CallResult } from '../../src/runtime/errors'
+import type { UseConvexCall } from '../../packages/vue/src'
 import { normalizeConvexError } from '../../src/runtime/errors'
 
 type IsEqual<A, B> =
@@ -27,59 +25,39 @@ type ActionRef<Args extends ConvexArgs, Result> = FunctionReference<
 >
 type Argless = Record<string, never>
 
-type MutationReturn = UseConvexMutationReturn<MutationRef<{ id: string }, { id: string }>>
-type ActionReturn = UseConvexActionReturn<ActionRef<{ id: string }, { id: string }>>
-
-type _MutationNestedSafe = Assert<
-  IsEqual<
-    Awaited<
-      ReturnType<
-        UseConvexMutationReturn<MutationRef<{ id: string }, CallResult<{ id: string }>>>['safe']
-      >
-    >,
-    CallResult<CallResult<{ id: string }>>
-  >
->
+type MutationReturn = UseConvexCall<MutationRef<{ id: string }, { id: string }>>
+type ActionReturn = UseConvexCall<ActionRef<{ id: string }, { id: string }>>
 
 type _MutationCallable = Assert<IsEqual<Awaited<ReturnType<MutationReturn>>, { id: string }>>
 type _MutationCallableArgs = Assert<IsEqual<Parameters<MutationReturn>, [args: { id: string }]>>
 type _ArglessMutationCallableArgs = Assert<
-  IsEqual<Parameters<UseConvexMutationReturn<MutationRef<Argless, string>>>, [args?: Argless]>
+  IsEqual<Parameters<UseConvexCall<MutationRef<Argless, string>>>, [args?: Argless]>
 >
 type _MutationHasNoExecute = Assert<IsEqual<HasKey<MutationReturn, 'execute'>, false>>
-type _MutationHasNoExecuteSafe = Assert<IsEqual<HasKey<MutationReturn, 'executeSafe'>, false>>
-
-type _ActionNestedSafe = Assert<
-  IsEqual<
-    Awaited<
-      ReturnType<
-        UseConvexActionReturn<ActionRef<{ id: string }, CallResult<{ id: string }>>>['safe']
-      >
-    >,
-    CallResult<CallResult<{ id: string }>>
-  >
->
+type _MutationHasNoSafe = Assert<IsEqual<HasKey<MutationReturn, 'safe'>, false>>
+type _MutationHasNoReset = Assert<IsEqual<HasKey<MutationReturn, 'reset'>, false>>
 
 type _ActionCallable = Assert<IsEqual<Awaited<ReturnType<ActionReturn>>, { id: string }>>
 type _ActionCallableArgs = Assert<IsEqual<Parameters<ActionReturn>, [args: { id: string }]>>
 type _ArglessActionCallableArgs = Assert<
-  IsEqual<Parameters<UseConvexActionReturn<ActionRef<Argless, string>>>, [args?: Argless]>
+  IsEqual<Parameters<UseConvexCall<ActionRef<Argless, string>>>, [args?: Argless]>
 >
 type _ActionHasNoExecute = Assert<IsEqual<HasKey<ActionReturn, 'execute'>, false>>
-type _ActionHasNoExecuteSafe = Assert<IsEqual<HasKey<ActionReturn, 'executeSafe'>, false>>
+type _ActionHasNoSafe = Assert<IsEqual<HasKey<ActionReturn, 'safe'>, false>>
+type _ActionHasNoReset = Assert<IsEqual<HasKey<ActionReturn, 'reset'>, false>>
 
-describe('CallResult type contracts', () => {
-  it('keeps nested safe result typing for domain CallResult endpoints', () => {
+describe('callable and error type contracts', () => {
+  it('keeps one named direct-call contract without alternate execution paths', () => {
     expect(true).toBe(true)
   })
 
   it('does not special-case a LIMIT_* message prefix into a code', () => {
     // The normalizer never classifies from message text. A plain Error that
-    // happens to start with LIMIT_ passes through verbatim as `unknown`, and no
-    // code is synthesized from it.
+    // happens to start with LIMIT_ stays opaque `unknown`, and no code is
+    // synthesized from it.
     const normalized = normalizeConvexError(new Error('LIMIT_ITEMS: Limit reached'))
     expect(normalized.kind).toBe('unknown')
-    expect(normalized.message).toBe('LIMIT_ITEMS: Limit reached')
+    expect(normalized.message).toBe('Unknown Convex error')
     expect(normalized.code).toBeUndefined()
   })
 
@@ -94,13 +72,14 @@ describe('CallResult type contracts', () => {
     plain.data = { message: 'Limit reached', code: 'LIMIT_ITEMS' }
     const plainNormalized = normalizeConvexError(plain)
     expect(plainNormalized.kind).toBe('unknown')
-    expect(plainNormalized.message).toBe('fallback message')
+    expect(plainNormalized.message).toBe('Unknown Convex error')
     expect(plainNormalized.code).toBeUndefined()
 
     const structured = normalizeConvexError(
       new ConvexError({ message: 'Limit reached', code: 'LIMIT_ITEMS' }),
     )
     expect(structured.kind).toBe('server')
+    expect(structured.message).toBe('Convex application error')
     expect(structured.code).toBe('LIMIT_ITEMS')
     expect(structured.data).toEqual({ message: 'Limit reached', code: 'LIMIT_ITEMS' })
   })

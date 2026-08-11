@@ -34,17 +34,16 @@ export async function seedBetterAuthOrganization(
 ) {
   return await t.run(async (ctx) => {
     const organization = (await ctx.runMutation(components.betterAuth.adapter.create, {
-      input: {
-        model: 'organization',
-        data: {
-          name: args.name,
-          slug: args.name,
-          createdAt: now,
-        },
+      model: 'organization',
+      data: {
+        id: `organization_${args.name}`,
+        name: args.name,
+        slug: args.name,
+        createdAt: now,
       },
-    })) as { _id: string }
+    })) as { id: string }
 
-    return organization._id
+    return organization.id
   })
 }
 
@@ -61,26 +60,24 @@ export async function seedBetterAuthActor(
 
   await t.run(async (ctx) => {
     await ctx.runMutation(components.betterAuth.adapter.create, {
-      input: {
-        model: 'member',
-        data: {
-          organizationId: args.organizationId,
-          userId: user.authUserId,
-          role: args.role,
-          createdAt: now,
-        },
+      model: 'member',
+      data: {
+        id: `member_${args.organizationId}_${user.authUserId}`,
+        organizationId: args.organizationId,
+        userId: user.authUserId,
+        role: args.role,
+        createdAt: now,
       },
     })
 
     for (const teamId of args.teamIds ?? []) {
       await ctx.runMutation(components.betterAuth.adapter.create, {
-        input: {
-          model: 'teamMember',
-          data: {
-            teamId,
-            userId: user.authUserId,
-            createdAt: now,
-          },
+        model: 'teamMember',
+        data: {
+          id: `team-member_${teamId}_${user.authUserId}`,
+          teamId,
+          userId: user.authUserId,
+          createdAt: now,
         },
       })
     }
@@ -99,7 +96,7 @@ export async function signUpBetterAuthUser(
   },
 ) {
   return await t.run(async (ctx) => {
-    const auth = createAuth(ctx)
+    const auth = await createAuth(ctx)
     const email = `${args.label}@example.com`
     const password = 'Password123456!'
     const verificationPrefix = `[team-starter] Verification link ${email}: `
@@ -142,14 +139,14 @@ export async function signUpBetterAuthUser(
     const session = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'session',
       where: [{ field: 'token', value: signedIn.token }],
-    })) as { _id: string } | null
+    })) as { id: string } | null
     if (!session) {
       throw new Error('Better Auth session row was not created')
     }
 
     return {
       authUserId: signedUp.user.id,
-      sessionId: session._id,
+      sessionId: session.id,
       token: signedIn.token,
     }
   })
@@ -165,18 +162,18 @@ export async function seedBetterAuthTeam(
 ) {
   return await t.run(async (ctx) => {
     const team = (await ctx.runMutation(components.betterAuth.adapter.create, {
-      input: {
-        model: 'team',
-        data: {
-          name: args.name ?? args.teamId,
-          organizationId: args.organizationId,
-          createdAt: now,
-          updatedAt: now,
-        },
+      model: 'team',
+      data: {
+        id: args.teamId,
+        name: args.name ?? args.teamId,
+        memberCount: 0,
+        organizationId: args.organizationId,
+        createdAt: now,
+        updatedAt: now,
       },
-    })) as { _id: string }
+    })) as { id: string }
 
-    return team._id
+    return team.id
   })
 }
 
@@ -188,7 +185,9 @@ export function asActor(
   },
 ) {
   return t.withIdentity({
+    issuer: 'http://localhost:3210',
+    sid: args.sessionId,
     subject: args.userId,
-    sessionId: args.sessionId,
+    token_use: 'convex-session',
   } as Partial<UserIdentity>)
 }

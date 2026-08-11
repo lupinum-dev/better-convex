@@ -9,6 +9,7 @@
   "experimentalSortPackageJson": true,
   "ignorePatterns": [
     "docs/content/docs/6.reference/7.api-surface.md",
+    "docs/research/*.html",
     "dist",
     ".nuxt",
     ".output",

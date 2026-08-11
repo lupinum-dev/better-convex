@@ -1,7 +1,7 @@
 import { ConvexError, v } from 'convex/values'
 
-import { mutation, query } from './_generated/server'
-import { requireAuthenticatedSession } from './lib/authz'
+import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import { getAuthenticatedUserOrNull, requireAuthenticatedSession } from './lib/authz'
 import {
   getBetterAuthInvitation,
   getBetterAuthOrganization,
@@ -12,16 +12,14 @@ function normalizeEmail(email: string | null | undefined) {
   return email?.trim().toLowerCase() ?? ''
 }
 
-async function loadInvitationForSession(
-  ctx: Parameters<typeof requireAuthenticatedSession>[0],
-  invitationId: string,
-) {
-  const authState = await requireAuthenticatedSession(ctx)
-  const sessionEmail = normalizeEmail(authState.session.user.email)
+async function loadInvitationForUser(ctx: QueryCtx | MutationCtx, invitationId: string) {
+  const authenticated = await getAuthenticatedUserOrNull(ctx)
+  if (!authenticated) throw new ConvexError('Unauthenticated')
+  const sessionEmail = normalizeEmail(authenticated.user.email as string | undefined)
   if (!sessionEmail) {
     throw new ConvexError('Authenticated session is missing an email address')
   }
-  if (!authState.session.user.emailVerified) {
+  if (authenticated.user.emailVerified !== true) {
     throw new ConvexError('Verify your email before using invitation links')
   }
 
@@ -31,7 +29,7 @@ async function loadInvitationForSession(
   }
 
   return {
-    ...authState,
+    ...authenticated,
     invitation,
   }
 }
@@ -41,14 +39,14 @@ export const get = query({
     invitationId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { invitation } = await loadInvitationForSession(ctx, args.invitationId)
+    const { invitation } = await loadInvitationForUser(ctx, args.invitationId)
     const [organization, team] = await Promise.all([
       getBetterAuthOrganization(ctx, { organizationId: invitation.organizationId }),
       invitation.teamId ? getBetterAuthTeam(ctx, { teamId: invitation.teamId }) : null,
     ])
 
     return {
-      id: invitation.id ?? invitation._id ?? args.invitationId,
+      id: invitation.id,
       organizationId: invitation.organizationId,
       organizationName: organization?.name ?? 'Organization',
       email: invitation.email,
@@ -67,7 +65,8 @@ export const accept = mutation({
     invitationId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { auth, headers, invitation } = await loadInvitationForSession(ctx, args.invitationId)
+    const { invitation } = await loadInvitationForUser(ctx, args.invitationId)
+    const { auth, headers } = await requireAuthenticatedSession(ctx)
     if (invitation.status !== 'pending') {
       throw new ConvexError('Invitation is no longer pending')
     }
@@ -91,7 +90,8 @@ export const reject = mutation({
     invitationId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { auth, headers, invitation } = await loadInvitationForSession(ctx, args.invitationId)
+    const { invitation } = await loadInvitationForUser(ctx, args.invitationId)
+    const { auth, headers } = await requireAuthenticatedSession(ctx)
     if (invitation.status !== 'pending') {
       throw new ConvexError('Invitation is no longer pending')
     }

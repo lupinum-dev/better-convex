@@ -15,12 +15,6 @@ function getStatusClass(status: string): string {
   if (status === 'error') return 'error'
   return 'pending'
 }
-
-function getSourceLabel(source: string): string {
-  if (source === 'ssr') return 'SSR'
-  if (source === 'websocket') return 'WS'
-  return 'Client'
-}
 </script>
 
 <template>
@@ -42,8 +36,7 @@ function getSourceLabel(source: string): string {
         <span class="badge" :class="getStatusClass(q.status)">{{ q.status }}</span>
       </div>
       <div class="list-item-meta">
-        <span>{{ getSourceLabel(q.dataSource) }}</span>
-        <span>Updates: {{ q.updateCount }}</span>
+        <span>{{ new Date(q.lastUpdated).toLocaleTimeString() }}</span>
       </div>
     </div>
   </div>

@@ -20,7 +20,10 @@ export type ConvexAuthMode = 'required' | 'optional' | 'none'
  * auth work in flight. A background refresh keeps `status === 'authenticated'`
  * while `isPending === true`.
  */
-export type ConvexAuthStatus = 'disabled' | 'loading' | 'anonymous' | 'authenticated' | 'error'
+export type ConvexAuthStatus = 'loading' | 'anonymous' | 'authenticated' | 'error'
+
+/** Internal query gate state for a build that intentionally has no auth graph. */
+export type ConvexQueryAuthStatus = ConvexAuthStatus | 'disabled'
 
 /**
  * The two-dimensional inputs to status derivation. `settled` is the initial
@@ -43,7 +46,11 @@ export interface ConvexAuthStatusInput {
  * failed initial resolution surfaces the error instead of silently downgrading
  * to anonymous execution.
  */
-export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexAuthStatus {
+export function deriveConvexAuthStatus(
+  input: ConvexAuthStatusInput & { authEnabled: true },
+): ConvexAuthStatus
+export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexQueryAuthStatus
+export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexQueryAuthStatus {
   if (!input.authEnabled) return 'disabled'
   if (!input.settled) return 'loading'
   if (isAuthenticatedIdentityKey(input.identityKey)) return 'authenticated'

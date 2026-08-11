@@ -1,17 +1,17 @@
 import type { ConvexUser } from './types'
 
-/**
- * Stable identity cache dimension .
- *
- * `'anonymous'` covers every unauthenticated identity; `user:${string}` is the
- * Better Auth `user.id` and is the ONLY stable partition key. It is never a JWT,
- * never a token hash, and never derived from the token, so same-user token
- * rotation keeps the key stable while switching users always changes it.
- */
 export type ConvexIdentityKey = 'anonymous' | `user:${string}`
+
+export function isAuthenticatedIdentityKey(key: ConvexIdentityKey | null): key is `user:${string}` {
+  return typeof key === 'string' && key.startsWith('user:')
+}
 
 /**
  * The single stable-user-ID extraction function.
+ *
+ * `'anonymous'` covers every unauthenticated identity; `user:${string}` uses the
+ * Better Auth `user.id` at this Nuxt adapter boundary. It is never a JWT, token
+ * hash, role, or permission.
  *
  * Use this everywhere an identity-varying holder is keyed: SSR snapshots, client
  * auth, cache keys, payload keys, subscription keys, and identity generation.
@@ -27,9 +27,4 @@ export function getConvexIdentityKey(user: ConvexUser | null): ConvexIdentityKey
     throw new TypeError('Authenticated Convex user is missing a stable Better Auth user id')
   }
   return `user:${user.id}`
-}
-
-/** True when the key names a concrete authenticated subject (`user:<id>`). */
-export function isAuthenticatedIdentityKey(key: ConvexIdentityKey | null): key is `user:${string}` {
-  return typeof key === 'string' && key.startsWith('user:')
 }

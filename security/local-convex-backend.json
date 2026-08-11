@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "convexVersion": "1.42.2",
+  "backendVersion": "precompiled-2026-07-06-44f7aa7",
+  "artifacts": [
+    {
+      "platform": "darwin",
+      "arch": "arm64",
+      "filename": "convex-local-backend-aarch64-apple-darwin.zip",
+      "archiveSha256": "764f2f430b3de5b4debe7a613529d2531ccfd125d22b269c8e3664807f318d5d",
+      "sha256": "3d28873cf24019877146367c539104d54a05a9b8ec1b501e503077474c84415d"
+    },
+    {
+      "platform": "linux",
+      "arch": "x64",
+      "filename": "convex-local-backend-x86_64-unknown-linux-gnu.zip",
+      "archiveSha256": "704f08b3b46d6aef371767b3ed59d5dad89b280e102216d59b7891bb5b033d53",
+      "sha256": "162b0e7f1128991ed115b2a9e608bfd0c631198f66c95f3c15303680ec2297a0"
+    }
+  ]
+}

@@ -29,14 +29,23 @@ describe('Connection state (full stack)', async () => {
     const page = await createPage('/')
     await page.waitForLoadState('networkidle')
     const hydrationDiagnostics: string[] = []
+    const pageErrors: string[] = []
     page.on('console', (message) => {
       const text = message.text()
       if (/hydration.*mismatch/i.test(text)) {
         hydrationDiagnostics.push(text)
       }
     })
+    page.on('pageerror', (error) => pageErrors.push(error.message))
     await page.goto(`${new URL(page.url()).origin}/labs/connection`)
-    await page.waitForSelector('.raw-state pre', { timeout: 15000 })
+    try {
+      await page.waitForSelector('.raw-state pre', { timeout: 15000 })
+    } catch (error) {
+      throw new Error(
+        `Connection lab did not render. pageErrors=${JSON.stringify(pageErrors)} body=${JSON.stringify((await page.textContent('body'))?.slice(0, 1000))}`,
+        { cause: error },
+      )
+    }
 
     const heading = await page.textContent('.container h1')
     expect(heading).toContain('Connection Lab')

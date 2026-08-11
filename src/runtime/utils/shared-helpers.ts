@@ -5,6 +5,10 @@
  * consistent behavior across the module.
  */
 
+import { isBetterAuthCookieName } from '../shared/auth-cookie'
+
+export { hasBetterAuthCookie, isBetterAuthCookieName } from '../shared/auth-cookie'
+
 // ============================================================================
 // Deep Equality & Comparison
 // ============================================================================
@@ -219,13 +223,6 @@ function parseCookieHeader(cookieHeader: string | null | undefined): Map<string,
   return new Map(parseCookiePairs(cookieHeader).map((pair) => [pair.name, pair]))
 }
 
-/** The only cookie namespace supported by the Nuxt auth boundary. */
-export function isBetterAuthCookieName(name: string): boolean {
-  if (!COOKIE_NAME_PATTERN.test(name)) return false
-  const unprefixed = name.startsWith('__Secure-') ? name.slice('__Secure-'.length) : name
-  return unprefixed.startsWith('better-auth.') && unprefixed.length > 'better-auth.'.length
-}
-
 export function getBetterAuthSessionToken(cookieHeader: string | null | undefined): string | null {
   const cookies = parseCookieHeader(cookieHeader)
   if (cookies.has(BETTER_AUTH_SECURE_SESSION_COOKIE_NAME)) {
@@ -260,22 +257,4 @@ export function hasSetCookieDomainAttribute(setCookie: string): boolean {
     if (name === 'domain') return true
   }
   return false
-}
-
-// ============================================================================
-// Pagination ID Generation
-// ============================================================================
-
-/**
- * Generate a new unique pagination ID.
- * Uses random numbers to avoid SSR global state issues.
- * Each call returns a new ID, suitable for cache-busting.
- *
- * @returns A unique numeric ID
- */
-export function generatePaginationId(): number {
-  // Use random number to avoid SSR global state leak
-  // Math.random() is sufficient since this is only used for cache-busting
-  // Guarantees range [1, MAX_SAFE_INTEGER] - never returns 0
-  return Math.floor(Math.random() * (Number.MAX_SAFE_INTEGER - 1)) + 1
 }

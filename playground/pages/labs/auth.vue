@@ -2,16 +2,15 @@
   <div class="container">
     <h1>Auth Lab</h1>
     <p class="description">
-      This page tests the <code>&lt;ConvexAuthenticated&gt;</code>,
-      <code>&lt;ConvexUnauthenticated&gt;</code>, and
-      <code>&lt;ConvexAuthLoading&gt;</code> components.
+      This page tests explicit rendering from <code>useConvexAuth().status</code> and keeps
+      operation progress in <code>isPending</code>.
     </p>
 
     <div class="current-state">
       <h2>Current Auth State</h2>
       <p class="hint">
-        This page includes a TypeScript-only check for <code>user.authId</code>. If this page
-        compiles and loads, <code>ConvexUser</code> augmentation is working.
+        Authentication state comes from Better Auth. Product-specific profile fields belong in a
+        typed Convex profile query instead of an augmented auth-user wrapper.
       </p>
       <p class="hint">
         <strong>Note:</strong> Better Auth owns identity, role, and org state. This playground does
@@ -19,9 +18,9 @@
       </p>
       <div class="state-grid">
         <div class="state-item">
-          <span class="label">isAuthenticated</span>
-          <span class="value" :class="{ positive: isAuthenticated }">
-            {{ isAuthenticated }}
+          <span class="label">status</span>
+          <span class="value" :class="{ positive: status === 'authenticated' }">
+            {{ status }}
           </span>
         </div>
         <div class="state-item">
@@ -31,16 +30,16 @@
           </span>
         </div>
         <div class="state-item">
-          <span class="label">token</span>
-          <span class="value">{{ token ? '(present)' : '(none)' }}</span>
+          <span class="label">error</span>
+          <span class="value">{{ authError?.message ?? '(none)' }}</span>
         </div>
         <div class="state-item">
           <span class="label">user</span>
           <span class="value">{{ user?.name || user?.email || '(none)' }}</span>
         </div>
         <div class="state-item">
-          <span class="label">custom authId</span>
-          <span class="value id">{{ augmentedUserFields?.authId || '(no JWT claim)' }}</span>
+          <span class="label">auth user id</span>
+          <span class="value id">{{ user?.id || '(anonymous)' }}</span>
         </div>
         <div class="state-item">
           <span class="label">permission context userId</span>
@@ -50,60 +49,48 @@
     </div>
 
     <div class="component-demos">
-      <h2>Component Demos</h2>
+      <h2>Status Rendering</h2>
 
       <div class="demo-card">
-        <h3>&lt;ConvexAuthLoading&gt;</h3>
-        <p class="demo-description">Shows content only while auth is loading</p>
+        <h3>status === 'loading'</h3>
+        <p class="demo-description">Shows content only during initial auth resolution</p>
         <div class="demo-output">
-          <ConvexAuthLoading>
-            <div class="loading-indicator">
-              <span class="spinner" />
-              Checking authentication...
-            </div>
-          </ConvexAuthLoading>
-          <span v-if="!isPending" class="not-shown"
-            >(Auth check complete - loading content hidden)</span
-          >
+          <div v-if="status === 'loading'" class="loading-indicator">
+            <span class="spinner" />
+            Checking authentication...
+          </div>
+          <span v-else class="not-shown">(Auth check complete - loading content hidden)</span>
         </div>
       </div>
 
       <div class="demo-card">
-        <h3>&lt;ConvexAuthenticated&gt;</h3>
+        <h3>status === 'authenticated'</h3>
         <p class="demo-description">Shows content only when user is authenticated</p>
         <div class="demo-output">
-          <ConvexAuthenticated>
-            <div class="auth-content authenticated">
-              <span class="icon">&#x2714;</span>
-              <div>
-                <strong>Welcome, {{ user?.name || user?.email || 'User' }}!</strong>
-                <p>You are authenticated and can access protected content.</p>
-              </div>
+          <div v-if="status === 'authenticated'" class="auth-content authenticated">
+            <span class="icon">&#x2714;</span>
+            <div>
+              <strong>Welcome, {{ user?.name || user?.email || 'User' }}!</strong>
+              <p>You are authenticated and can access protected content.</p>
             </div>
-          </ConvexAuthenticated>
-          <span v-if="!isAuthenticated && !isPending" class="not-shown"
-            >(Not authenticated - content hidden)</span
-          >
+          </div>
+          <span v-else class="not-shown">(Not authenticated - content hidden)</span>
         </div>
       </div>
 
       <div class="demo-card">
-        <h3>&lt;ConvexUnauthenticated&gt;</h3>
-        <p class="demo-description">Shows content only when user is NOT authenticated</p>
+        <h3>status === 'anonymous'</h3>
+        <p class="demo-description">Shows content only when no user is authenticated</p>
         <div class="demo-output">
-          <ConvexUnauthenticated>
-            <div class="auth-content unauthenticated">
-              <span class="icon">&#x1F512;</span>
-              <div>
-                <strong>Please log in</strong>
-                <p>You need to authenticate to access this feature.</p>
-                <NuxtLink to="/auth/signin" class="login-link"> Go to Login &rarr; </NuxtLink>
-              </div>
+          <div v-if="status === 'anonymous'" class="auth-content unauthenticated">
+            <span class="icon">&#x1F512;</span>
+            <div>
+              <strong>Please log in</strong>
+              <p>You need to authenticate to access this feature.</p>
+              <NuxtLink to="/auth/signin" class="login-link"> Go to Login &rarr; </NuxtLink>
             </div>
-          </ConvexUnauthenticated>
-          <span v-if="isAuthenticated && !isPending" class="not-shown"
-            >(Authenticated - unauthenticated content hidden)</span
-          >
+          </div>
+          <span v-else class="not-shown">(Authenticated - unauthenticated content hidden)</span>
         </div>
       </div>
     </div>
@@ -111,34 +98,39 @@
     <div class="combined-example">
       <h2>Combined Example (Real-World Pattern)</h2>
       <div class="demo-output">
-        <ConvexAuthLoading>
-          <div class="loading-indicator">
-            <span class="spinner" />
-            Loading...
-          </div>
-        </ConvexAuthLoading>
-        <ConvexAuthenticated>
-          <div class="dashboard-preview">
-            <h4>Dashboard</h4>
-            <p>Your personalized content here.</p>
-          </div>
-        </ConvexAuthenticated>
-        <ConvexUnauthenticated>
-          <div class="login-prompt">
-            <h4>Welcome to the App</h4>
-            <p>Please sign in to continue.</p>
-          </div>
-        </ConvexUnauthenticated>
+        <div v-if="status === 'loading'" class="loading-indicator">
+          <span class="spinner" />
+          Loading...
+        </div>
+        <div v-else-if="status === 'authenticated'" class="dashboard-preview">
+          <h4>Dashboard</h4>
+          <p>Your personalized content here.</p>
+        </div>
+        <div v-else-if="status === 'anonymous'" class="login-prompt">
+          <h4>Welcome to the App</h4>
+          <p>Please sign in to continue.</p>
+        </div>
+        <div v-else class="login-prompt">
+          <h4>Authentication failed</h4>
+          <p>{{ authError?.message ?? 'Reload the page to retry.' }}</p>
+        </div>
       </div>
     </div>
 
     <div class="auth-actions">
       <h2>Test Authentication</h2>
       <div class="button-group">
-        <NuxtLink v-if="!isAuthenticated" to="/auth/signin" class="btn btn-primary">
+        <NuxtLink v-if="status === 'anonymous'" to="/auth/signin" class="btn btn-primary">
           Log In
         </NuxtLink>
-        <button v-else class="btn btn-secondary" @click="signOut">Sign Out</button>
+        <button
+          v-else-if="status === 'authenticated'"
+          class="btn btn-secondary"
+          :disabled="isPending"
+          @click="signOut"
+        >
+          {{ isPending ? 'Signing out...' : 'Sign Out' }}
+        </button>
       </div>
     </div>
   </div>
@@ -151,19 +143,14 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { isAuthenticated, isPending, token, user, signOut: authSignOut } = useConvexAuth()
+const { status, isPending, user, error: authError, client } = useConvexAuth()
 
-const permissionQueryArgs = computed(() => (isAuthenticated.value ? {} : 'skip'))
+const permissionQueryArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
 const { data: permissionContext } = await useConvexQuery(
   api.auth.getPermissionContext,
   permissionQueryArgs,
 )
 
-// Compile-time assertion: this property access fails if ConvexUser augmentation
-// does not flow through useConvexAuth().user.
-const augmentedUserFields = computed(() => ({
-  authId: user.value?.authId,
-}))
 const permissionUserId = computed(() =>
   permissionContext.value && 'userId' in permissionContext.value
     ? permissionContext.value.userId
@@ -171,7 +158,8 @@ const permissionUserId = computed(() =>
 )
 
 async function signOut() {
-  await authSignOut()
+  if (!client) throw new Error('Authentication client unavailable')
+  await client.signOut()
 }
 </script>
 

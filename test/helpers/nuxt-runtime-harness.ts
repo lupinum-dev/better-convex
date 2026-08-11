@@ -1,18 +1,29 @@
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { defineComponent, h, nextTick, type ComponentPublicInstance } from 'vue'
+import { createBetterConvex } from 'better-convex-vue'
+import { createBetterConvexAttachment } from 'better-convex-vue/embedded'
+import { defineComponent, h, nextTick, watch, type ComponentPublicInstance } from 'vue'
 
 import { useNuxtApp, useRuntimeConfig, useState } from '#imports'
 
+import type {
+  ClientIdentityObserver,
+  ClientIdentityPort,
+  ClientIdentitySnapshot,
+} from '../../packages/vue/src/internal/identity-port'
 import { ANONYMOUS_IDENTITY, type AuthIdentity } from '../../src/runtime/auth/auth-identity'
-import type { ConvexAuthCoordinator } from '../../src/runtime/auth/client-engine'
-import type { ConvexClientOwner } from '../../src/runtime/client/client-owner'
-import type { ConvexRuntimeContext } from '../../src/runtime/runtime-context'
+import type {
+  ConvexRuntimeContext,
+  NuxtConvexAuthController,
+} from '../../src/runtime/runtime-context'
+import { createLogger } from '../../src/runtime/utils/logger'
 
 let previousWrapper: { unmount: () => void } | null = null
 let currentConvexTarget: Record<PropertyKey, unknown> | null = null
 let currentAuthTarget: Record<PropertyKey, unknown> | null = null
 let currentOwnerTarget: Record<PropertyKey, unknown> | null = null
-let currentAuthCoordinator: ConvexAuthCoordinator | null = null
+let currentAuthController: NuxtConvexAuthController | null = null
+let currentIdentityObserver: ClientIdentityObserver | null = null
+let currentAuthEnabled = true
 
 const convexProxy = new Proxy<Record<PropertyKey, unknown>>(
   {},
@@ -38,36 +49,152 @@ const authProxy = new Proxy<Record<PropertyKey, unknown>>(
   },
 )
 
-// The per-app client owner  — provided once as a stable proxy so a
-// whole test file (which shares one implicit vueApp under @nuxt/test-utils) can
-// swap the backing owner per test despite Nuxt's one-time `provide`.
-const ownerProxy = new Proxy<Record<PropertyKey, unknown>>(
+// Nuxt provides values once per application, while this harness reuses one
+// application across captures. Keep the provided context stable and replace
+// only its test-owned targets between captures.
+const clientProxy = new Proxy<Record<PropertyKey, unknown>>(
   {},
   {
     get(_target, key) {
-      const target = currentOwnerTarget
-      if (!target) return undefined
-      const value = target[key]
-      if (value === undefined && key === 'getDevtoolsSink') return () => null
-      if (value === undefined && key === 'attachDevtoolsSink') return () => null
+      const owner = currentOwnerTarget
+      const target = owner
+        ? ((owner.handle as Record<PropertyKey, unknown> | undefined) ?? owner)
+        : currentConvexTarget
+      const value = target?.[key]
       return typeof value === 'function' ? value.bind(target) : value
     },
   },
 )
+const anonymousClientProxy = new Proxy<Record<PropertyKey, unknown>>(
+  {},
+  {
+    get(_target, key) {
+      const owner = currentOwnerTarget
+      const anonymous =
+        currentAuthEnabled && owner && typeof owner.getAnonymous === 'function'
+          ? owner.getAnonymous()
+          : owner
+            ? ((owner.handle as Record<PropertyKey, unknown> | undefined) ?? owner)
+            : currentConvexTarget
+      const value = (anonymous as Record<PropertyKey, unknown> | null)?.[key]
+      return typeof value === 'function' ? value.bind(anonymous) : value
+    },
+  },
+)
+const anonymousIdentity: ClientIdentityObserver = {
+  snapshot: () => ({
+    authEnabled: false,
+    settled: true,
+    identityKey: 'anonymous',
+    identityGeneration: 0,
+    error: null,
+  }),
+  waitForInitialSettlement: async () => {},
+  subscribe: () => () => {},
+}
+const identityProxyListeners = new Set<() => void>()
 
-// Nuxt provides values once per application, while this harness reuses one
-// application across captures. Keep the provided context stable and replace
-// only its test-owned targets between captures.
+export function identityProxyListenerCount() {
+  return identityProxyListeners.size
+}
+
+let stopCurrentIdentity: (() => void) | null = null
+function setCurrentIdentityObserver(observer: ClientIdentityObserver | null) {
+  stopCurrentIdentity?.()
+  stopCurrentIdentity = null
+  currentIdentityObserver = observer
+  if (observer) {
+    stopCurrentIdentity = observer.subscribe(() => {
+      for (const listener of [...identityProxyListeners]) listener()
+    })
+  }
+  for (const listener of [...identityProxyListeners]) listener()
+}
+const identityProxy: ClientIdentityObserver = {
+  snapshot: () => (currentIdentityObserver ?? anonymousIdentity).snapshot(),
+  waitForInitialSettlement: () =>
+    (currentIdentityObserver ?? anonymousIdentity).waitForInitialSettlement(),
+  subscribe(listener) {
+    identityProxyListeners.add(listener)
+    return () => identityProxyListeners.delete(listener)
+  },
+}
+function callHarnessClient(
+  client: Record<PropertyKey, unknown>,
+  method: 'query' | 'mutation' | 'action' | 'onUpdate',
+  args: unknown[],
+) {
+  const callable = client[method]
+  if (typeof callable !== 'function') {
+    throw new TypeError(`Harness Convex client does not implement ${method}`)
+  }
+  return Reflect.apply(callable, client, args)
+}
+
+function harnessClientHandle(client: Record<PropertyKey, unknown>) {
+  return {
+    query: ((...args: unknown[]) => callHarnessClient(client, 'query', args)) as never,
+    mutation: ((...args: unknown[]) => callHarnessClient(client, 'mutation', args)) as never,
+    action: ((...args: unknown[]) => callHarnessClient(client, 'action', args)) as never,
+    onUpdate: ((...args: unknown[]) => callHarnessClient(client, 'onUpdate', args)) as never,
+  }
+}
+
+const attachmentProxy = createBetterConvexAttachment({
+  client: harnessClientHandle(clientProxy),
+  anonymousClient: harnessClientHandle(anonymousClientProxy),
+  identity: identityProxy,
+  connection: {
+    snapshot() {
+      const ownerConnection = currentOwnerTarget?.connection as
+        | { state?: { value: unknown } }
+        | undefined
+      if (ownerConnection?.state?.value) return ownerConnection.state.value as never
+      const target = currentConvexTarget as {
+        connectionState?: () => unknown
+      } | null
+      return (target?.connectionState?.() ?? DEFAULT_OWNER_CONNECTION_STATE) as never
+    },
+    subscribe(listener) {
+      const ownerConnection = currentOwnerTarget?.connection as
+        | { state?: { value: unknown }; addConsumer?: () => () => void }
+        | undefined
+      if (ownerConnection?.state && ownerConnection.addConsumer) {
+        const remove = ownerConnection.addConsumer()
+        const stop = watch(
+          () => ownerConnection.state!.value,
+          (value) => listener(value as never),
+          { flush: 'sync' },
+        )
+        return () => {
+          stop()
+          remove()
+        }
+      }
+      const target = currentConvexTarget as {
+        subscribeToConnectionState?: (listener: (state: never) => void) => () => void
+      } | null
+      return target?.subscribeToConnectionState?.(listener) ?? (() => {})
+    },
+  },
+})
 const runtimeProxy: ConvexRuntimeContext = {
-  get owner() {
-    return currentOwnerTarget
-      ? (ownerProxy as unknown as ConvexClientOwner)
-      : (undefined as unknown as ConvexClientOwner)
+  attachment: attachmentProxy,
+  logger: createLogger(false),
+  getAuthController: () => currentAuthController,
+  attachAuthController: (controller) => {
+    currentAuthController = controller
   },
-  getAuthCoordinator: () => currentAuthCoordinator,
-  attachAuthCoordinator: (coordinator) => {
-    currentAuthCoordinator = coordinator
+  getDevtoolsSink: () => null,
+  attachDevtoolsSink: (sink) => {
+    let active = true
+    return () => {
+      if (!active) return
+      active = false
+      sink.dispose()
+    }
   },
+  dispose: () => {},
 }
 
 interface CaptureOptions {
@@ -76,6 +203,36 @@ interface CaptureOptions {
   owner?: unknown
   convexConfig?: Record<string, unknown>
   payloadData?: Record<string, unknown>
+  identityObserver?: ClientIdentityObserver
+}
+
+export function createIdentityObserverHarness(initial: ClientIdentitySnapshot) {
+  let snapshot = initial
+  const listeners = new Set<() => void>()
+  const settlementWaiters = new Set<() => void>()
+  const observer: ClientIdentityObserver = {
+    snapshot: () => snapshot,
+    waitForInitialSettlement() {
+      if (snapshot.settled) return Promise.resolve()
+      return new Promise<void>((resolve) => settlementWaiters.add(resolve))
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+
+  return {
+    observer,
+    set(next: ClientIdentitySnapshot) {
+      snapshot = next
+      if (snapshot.settled) {
+        for (const resolve of [...settlementWaiters]) resolve()
+        settlementWaiters.clear()
+      }
+      for (const listener of [...listeners]) listener()
+    },
+  }
 }
 
 const DEFAULT_OWNER_CONNECTION_STATE = {
@@ -116,18 +273,58 @@ function createSyntheticOwner(): Record<PropertyKey, unknown> {
     },
     getAnonymous: () => primary(),
     replacePrimary: async () => primary(),
-    attachAuthPort: () => {},
+    attachIdentityPort: () => {},
     connection: {
       state: { value: { ...DEFAULT_OWNER_CONNECTION_STATE } },
       addConsumer: () => () => {},
     },
     addDisposer: () => {},
-    getDevtoolsSink: () => null,
-    attachDevtoolsSink: () => null,
+    subscribeIdentityChange: () => () => {},
     dispose: async () => {},
   }
 }
 const syntheticOwner: Record<PropertyKey, unknown> = createSyntheticOwner()
+
+/** Install the narrow auth-port seam used by identity-generation composable tests. */
+export function installIdentityPortHarness() {
+  let identityGeneration = 0
+  const listeners = new Set<() => void>()
+  const port: ClientIdentityPort = {
+    snapshot: () => ({
+      authEnabled: true,
+      settled: true,
+      identityKey: `user:test-${identityGeneration}` as never,
+      identityGeneration,
+      error: null,
+    }),
+    waitForInitialSettlement: async () => {},
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    initializePrimary: async () => {},
+    failPrimary: () => {},
+  }
+  const nuxtApp = useNuxtApp()
+  if (!nuxtApp.$convexRuntime) throw new Error('Convex runtime was not installed')
+  setCurrentIdentityObserver(port)
+  nuxtApp.$convexRuntime.attachAuthController({
+    isPending: { value: false } as never,
+    client: {},
+    ready: async () => 'authenticated',
+    dispose: () => {},
+  })
+
+  return {
+    advance() {
+      identityGeneration += 1
+      for (const listener of [...listeners]) listener()
+    },
+    listenerCount() {
+      return listeners.size
+    },
+  }
+}
 
 export async function captureInNuxt<T>(
   factory: () => T,
@@ -169,11 +366,49 @@ export async function captureInNuxt<T>(
         useState<AuthIdentity>('convex:identity', () => ANONYMOUS_IDENTITY).value =
           ANONYMOUS_IDENTITY
         useState<string | null>('convex:authError', () => null).value = null
-        currentAuthCoordinator = null
+        currentAuthController = null
+        setCurrentIdentityObserver(null)
 
         if (!nuxtApp.$convexRuntime) {
           nuxtApp.provide('convexRuntime', runtimeProxy)
         }
+
+        const identityState = useState<AuthIdentity>('convex:identity')
+        const pendingState = useState<boolean>('convex:pending', () => false)
+        let generation = 0
+        let currentKey =
+          identityState.value.status === 'authenticated'
+            ? `user:${identityState.value.user.id}`
+            : 'anonymous'
+        const identityListeners = new Set<() => void>()
+        const observer: ClientIdentityObserver = {
+          snapshot: () => ({
+            authEnabled: currentAuthEnabled,
+            settled: !pendingState.value,
+            identityKey: pendingState.value ? null : (currentKey as never),
+            identityGeneration: generation,
+            error: null,
+          }),
+          waitForInitialSettlement: async () => {},
+          subscribe(listener) {
+            identityListeners.add(listener)
+            return () => identityListeners.delete(listener)
+          },
+        }
+        watch(
+          [identityState, pendingState],
+          () => {
+            const nextKey =
+              identityState.value.status === 'authenticated'
+                ? `user:${identityState.value.user.id}`
+                : 'anonymous'
+            if (nextKey !== currentKey) generation += 1
+            currentKey = nextKey
+            for (const listener of [...identityListeners]) listener()
+          },
+          { flush: 'sync' },
+        )
+        setCurrentIdentityObserver(options.identityObserver ?? observer)
 
         if (options.convex === undefined) {
           currentConvexTarget = null
@@ -212,7 +447,18 @@ export async function captureInNuxt<T>(
         }
         const publicConfig = (runtimeConfigMutable.public ??= {})
         const convexConfig = (publicConfig.convex ??= {}) as Record<string, unknown>
-        Object.assign(convexConfig, { url: 'http://127.0.0.1:3214' }, options.convexConfig ?? {})
+        // Runtime-composable tests exercise the auth-enabled engine by default,
+        // so make that opt-in explicit in the harness. Individual no-auth tests
+        // pass `auth: false`; no test inherits the previous capture's mode.
+        Object.assign(
+          convexConfig,
+          {
+            url: 'http://127.0.0.1:3214',
+            auth: { origin: 'http://localhost:3000' },
+          },
+          options.convexConfig ?? {},
+        )
+        currentAuthEnabled = typeof convexConfig.auth === 'object' && convexConfig.auth !== null
 
         if (options.payloadData) {
           Object.assign(nuxtApp.payload.data, options.payloadData)
@@ -223,6 +469,11 @@ export async function captureInNuxt<T>(
         return () => h('div')
       },
     }),
+    {
+      global: {
+        plugins: [createBetterConvex({ attachment: attachmentProxy })],
+      },
+    },
   )
 
   const flush = async () => {
@@ -245,4 +496,8 @@ export async function captureInNuxt<T>(
     },
     flush,
   }
+}
+
+export function createNuxtHarnessVuePlugin() {
+  return createBetterConvex({ attachment: attachmentProxy })
 }

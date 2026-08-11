@@ -1,6 +1,6 @@
 {
   "name": "better-convex-nuxt",
-  "version": "0.6.1",
+  "version": "0.8.0-beta.40",
   "description": "Full-featured Convex integration for Nuxt with SSR, real-time subscriptions, and authentication",
   "keywords": [
     "authentication",
@@ -23,10 +23,17 @@
   "author": "Matthias Amon",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lupinum-dev/better-convex-nuxt.git"
+    "url": "https://github.com/lupinum-dev/better-convex-nuxt"
+  },
+  "bin": {
+    "better-convex-nuxt-auth-schema": "./dist/runtime/cli/auth-schema.js",
+    "better-convex-nuxt-convex": "./dist/runtime/cli/convex.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSES",
+    "THIRD_PARTY_NOTICES.md",
+    "security/upstream-convex-better-auth.json"
   ],
   "type": "module",
   "main": "./dist/module.mjs",
@@ -38,14 +45,23 @@
       "auth-client": [
         "./dist/runtime/auth-client/index.d.ts"
       ],
+      "convex-auth": [
+        "./dist/runtime/convex-auth/index.d.ts"
+      ],
+      "convex-auth/convex.config": [
+        "./dist/runtime/convex-auth/component/convex.config.d.ts"
+      ],
+      "convex-auth/_generated/component.js": [
+        "./dist/runtime/convex-auth/component/_generated/component.d.ts"
+      ],
+      "convex-auth/test": [
+        "./dist/runtime/convex-auth/test.d.ts"
+      ],
       "errors": [
         "./dist/runtime/errors/index.d.ts"
       ],
       "server": [
         "./dist/runtime/server/index.d.ts"
-      ],
-      "server/createUserSyncTriggers": [
-        "./dist/runtime/server/createUserSyncTriggers.d.ts"
       ]
     }
   },
@@ -58,6 +74,21 @@
       "types": "./dist/runtime/auth-client/index.d.ts",
       "import": "./dist/runtime/auth-client/index.js"
     },
+    "./convex-auth": {
+      "types": "./dist/runtime/convex-auth/index.d.ts",
+      "import": "./dist/runtime/convex-auth/index.js"
+    },
+    "./convex-auth/convex.config": {
+      "types": "./dist/runtime/convex-auth/component/convex.config.d.ts",
+      "import": "./dist/runtime/convex-auth/component/convex.config.js"
+    },
+    "./convex-auth/_generated/component.js": {
+      "types": "./dist/runtime/convex-auth/component/_generated/component.d.ts"
+    },
+    "./convex-auth/test": {
+      "types": "./dist/runtime/convex-auth/test.d.ts",
+      "import": "./dist/runtime/convex-auth/test.js"
+    },
     "./errors": {
       "types": "./dist/runtime/errors/index.d.ts",
       "import": "./dist/runtime/errors/index.js"
@@ -65,103 +96,153 @@
     "./server": {
       "types": "./dist/runtime/server/index.d.ts",
       "import": "./dist/runtime/server/index.js"
-    },
-    "./server/createUserSyncTriggers": {
-      "types": "./dist/runtime/server/createUserSyncTriggers.d.ts",
-      "import": "./dist/runtime/server/createUserSyncTriggers.js"
     }
   },
   "scripts": {
     "build:devtools": "nuxi build src/runtime/devtools/ui --preset static && node scripts/normalize-devtools-build.mjs",
-    "prepack": "nuxt-module-build prepare && pnpm run build:devtools && nuxt-module-build build && pnpm run check:package-exports -- --dist-only",
+    "build:package": "pnpm --dir packages/vue build && nuxt-module-build prepare && pnpm run build:devtools && nuxt-module-build build",
+    "prepack": "pnpm exec unbuild packages/mcp && pnpm run build:package && pnpm run check:package-exports:dist --dist-only && pnpm run check:single-runtime-owners:dist",
     "dev": "pnpm run dev:prepare && nuxi dev --cwd playground --dotenv .env.local --port 4578",
     "dev:build": "nuxi build --cwd playground --dotenv .env.local",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare --cwd playground --dotenv .env.local",
     "docs:api-surface": "node scripts/generate-api-surface.mjs",
     "docs:asvs": "node scripts/generate-asvs-evidence.mjs",
-    "release:prepare": "node scripts/release.mjs",
+    "release:artifact": "node scripts/release.mjs artifact",
+    "release:artifact:set": "node scripts/prepare-candidate-set.mjs artifact",
+    "release:prepare": "node scripts/prepare-candidate-set.mjs family",
+    "release:smoke": "node scripts/release-smoke.mjs",
+    "release:certify:source": "node scripts/release-source-certification.mjs",
+    "release:verify:set": "node scripts/prepare-candidate-set.mjs verify",
     "verify": "pnpm check && pnpm check:asvs && pnpm check:sbom && pnpm check:contracts",
-    "release:verify": "pnpm verify && pnpm test:e2e",
+    "verify:auth": "pnpm check:auth-backend && pnpm check:no-old-auth-runtime && pnpm check:auth-logical-ids && pnpm check:auth-provenance --source-only && pnpm check:auth-upstream && pnpm check:auth-schema && pnpm test:auth-adapter && pnpm test:oauth && pnpm test:auth-fuzz && pnpm test:auth-sentinels && pnpm test:auth-concurrency && pnpm test:auth-export-sentinels && pnpm test:auth-mfa && pnpm test:mcp-auth && pnpm test:mcp-conformance",
+    "release:verify": "node scripts/verify-release.mjs",
     "lint": "pnpm run check:no-starter-generated-artifacts && eslint .",
-    "check:contracts": "pnpm run check:contract-fixtures && pnpm run check:package-exports",
+    "check:contracts": "pnpm run check:no-old-auth-runtime && pnpm run check:single-runtime-owners && pnpm run check:contract-fixtures && pnpm run check:package-exports",
     "check:contract-fixtures": "nuxt-module-build prepare && nuxt-module-build build && pnpm run check:contract-fixtures:dist",
-    "check:contract-fixtures:dist": "pnpm run check:api-surface-docs && pnpm run check:workspace-deps && pnpm run check:consumer-smoke:dist && pnpm run check:missing-convex-api && pnpm run check:auth-disabled-build-graph && pnpm run check:better-auth-local-component && pnpm run check:auth-security-plugins",
-    "check:package-exports": "node scripts/check-package-exports.mjs",
+    "check:contract-fixtures:dist": "pnpm run check:api-surface-docs && pnpm run check:workspace-deps && pnpm run check:consumer-smoke:dist && pnpm run check:missing-convex-api && pnpm run check:auth-disabled-build-graph && pnpm run check:better-auth-local-component && pnpm run check:better-auth-two-factor && pnpm run check:auth-security-plugins",
+    "check:package-exports": "pnpm --dir packages/vue build && pnpm run build:package && pnpm run check:package-exports:dist",
+    "check:package-exports:dist": "node scripts/check-package-exports.mjs --package nuxt",
+    "check:vue-package-exports": "pnpm --dir packages/vue build && node scripts/check-package-exports.mjs --package vue",
+    "check:vue-sbom": "node scripts/generate-sbom.mjs --package vue --check",
+    "check:vue-candidate": "node scripts/check-candidate-apps.mjs --package vue",
+    "check:vue-anonymous-consumer": "node scripts/check-vue-anonymous-consumer.mjs",
+    "check:vue-auth-consumer": "node scripts/check-vue-auth-consumer.mjs",
+    "check:vue-embedded-consumer": "node scripts/check-vue-embedded-consumer.mjs",
+    "check:auth-provenance": "node scripts/check-auth-provenance.mjs",
+    "check:auth-schema": "node scripts/check-auth-schema.mjs",
+    "check:auth-logical-ids": "node scripts/check-auth-logical-ids.mjs",
+    "check:auth-advisories": "node scripts/check-auth-advisories.mjs",
+    "check:auth-upstream": "node scripts/check-auth-upstream.mjs",
+    "check:security-governance": "node scripts/check-security-governance.mjs",
+    "check:auth-backend": "node scripts/check-auth-backend.mjs",
+    "check:no-old-auth-runtime": "node scripts/check-no-old-auth-runtime.mjs",
+    "check:single-runtime-owners": "node scripts/check-single-runtime-owners.mjs",
+    "check:single-runtime-owners:dist": "node scripts/check-single-runtime-owners.mjs --dist",
     "check:api-surface-docs": "node scripts/generate-api-surface.mjs --check",
     "check:asvs": "node scripts/generate-asvs-evidence.mjs --check",
-    "check:sbom": "node scripts/generate-sbom.mjs --check",
+    "check:sbom": "node scripts/generate-sbom.mjs --package nuxt --check",
     "check:no-starter-generated-artifacts": "node scripts/check-no-starter-generated-artifacts.mjs",
     "check:workspace-deps": "node scripts/check-workspace-dependency-alignment.mjs",
-    "check:candidate-apps": "node scripts/check-candidate-apps.mjs",
-    "update:candidate-app-locks": "node scripts/update-candidate-app-locks.mjs",
-    "check:consumer-smoke": "nuxt-module-build build && pnpm run check:consumer-smoke:dist",
+    "check:candidate-apps": "node scripts/check-candidate-apps.mjs --package nuxt",
+    "update:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs update",
+    "check:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs check",
+    "check:consumer-smoke": "nuxt-module-build prepare && nuxt-module-build build && pnpm run check:consumer-smoke:dist",
     "check:consumer-smoke:dist": "nuxi prepare --cwd test/fixtures/consumer-smoke && nuxi typecheck --cwd test/fixtures/consumer-smoke",
     "check:missing-convex-api": "nuxi prepare --cwd test/fixtures/missing-convex-api && nuxi typecheck --cwd test/fixtures/missing-convex-api",
     "check:auth-disabled-build-graph": "node scripts/check-auth-disabled-build-graph.mjs",
     "check:better-auth-local-component": "tsc --noEmit -p test/fixtures/better-auth-local-component/tsconfig.json",
+    "check:better-auth-two-factor": "tsc --noEmit -p test/fixtures/better-auth-two-factor/tsconfig.json",
     "check:auth-security-plugins": "tsc --noEmit -p test/fixtures/auth-security-plugins/tsconfig.json",
     "check:boundaries": "node scripts/check-boundaries.mjs",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck:module && pnpm run typecheck:server && pnpm run check:boundaries && pnpm run test",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run check:boundaries && pnpm run test",
     "typecheck:module": "nuxt-module-build prepare && vue-tsc --noEmit",
     "typecheck:server": "nuxt-module-build prepare && tsc --noEmit -p src/runtime/server/tsconfig.json",
-    "typecheck:fixtures": "pnpm run check:better-auth-local-component && pnpm run check:auth-security-plugins",
-    "typecheck": "pnpm run typecheck:module && pnpm run typecheck:server && pnpm run typecheck:fixtures",
+    "typecheck:mcp-tests": "tsc -p test/mcp/tsconfig.json",
+    "typecheck:fixtures": "pnpm run check:better-auth-local-component && pnpm run check:better-auth-two-factor && pnpm run check:auth-security-plugins",
+    "typecheck": "pnpm --dir packages/vue build && pnpm run typecheck:module && pnpm run typecheck:server && pnpm run typecheck:mcp-tests && pnpm run typecheck:fixtures",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "test": "vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser",
-    "test:browser": "vitest run --project=browser",
+    "test": "pnpm --dir packages/vue build && nuxt-module-build prepare && vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser",
+    "test:browser": "nuxt-module-build prepare && vitest run --project=browser",
     "test:e2e": "node scripts/run-e2e.mjs",
-    "test:e2e:full": "node scripts/run-e2e.mjs --full",
-    "test:dast:proxy": "nuxi prepare --cwd playground --dotenv .env.local && vitest run --project=e2e test/e2e/auth-proxy-plugin-routes.e2e.test.ts",
-    "test:nuxt": "vitest run --project=nuxt",
-    "test:watch": "vitest watch --project=unit --project=nuxt",
+    "test:e2e:full": "pnpm --dir packages/vue build && node scripts/run-e2e.mjs --full",
+    "test:auth-adapter": "nuxt-module-build prepare && vitest run --project=auth-adapter",
+    "test:auth-cloud-staging": "node scripts/run-auth-cloud-staging.mjs",
+    "test:auth-concurrency": "node scripts/run-auth-concurrency.mjs && node scripts/run-oauth-transport-quota.mjs && node scripts/run-oauth-code-concurrency.mjs",
+    "test:auth-export-sentinels": "node scripts/run-auth-export-sentinels.mjs",
+    "test:auth-fuzz": "nuxt-module-build prepare && vitest run --project=auth-fuzz",
+    "test:auth-mfa": "node scripts/run-auth-mfa.mjs",
+    "test:auth-sentinels": "pnpm --dir packages/vue build && nuxt-module-build prepare && node scripts/run-auth-sentinels.mjs",
+    "test:oauth": "nuxt-module-build prepare && vitest run --project=oauth",
+    "test:mcp-auth": "node scripts/run-mcp-auth.mjs",
+    "test:mcp-conformance": "node scripts/run-mcp-conformance.mjs",
+    "test:dast:proxy": "nuxt-module-build prepare && nuxi prepare --cwd playground --dotenv .env.local && vitest run --project=e2e test/e2e/auth-proxy-plugin-routes.e2e.test.ts",
+    "test:nuxt": "nuxt-module-build prepare && vitest run --project=nuxt",
+    "test:watch": "nuxt-module-build prepare && vitest watch --project=unit --project=nuxt",
     "test:types": "pnpm run typecheck:module"
   },
   "dependencies": {
-    "@nuxt/kit": "^4.4.8",
+    "@nuxt/kit": "4.5.1",
+    "better-convex-vue": "0.8.0-beta.40",
+    "convex-helpers": "0.1.114",
     "defu": "^6.1.5",
     "h3": "1.15.11",
+    "jiti": "2.7.0",
     "ohash": "^2.0.11"
   },
   "devDependencies": {
-    "@better-auth/api-key": "1.6.23",
-    "@convex-dev/better-auth": "0.12.5",
+    "@better-auth/api-key": "1.7.0-rc.2",
+    "@better-auth/core": "1.7.0-rc.2",
+    "@better-auth/oauth-provider": "1.7.0-rc.2",
     "@edge-runtime/vm": "^5.0.0",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/conformance": "0.1.16",
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "@nuxt/eslint-config": "^1.16.0",
-    "@nuxt/module-builder": "^1.0.2",
-    "@nuxt/schema": "^4.4.8",
+    "@nuxt/module-builder": "1.0.2",
+    "@nuxt/schema": "4.5.1",
     "@nuxt/test-utils": "^4.0.3",
     "@types/node": "22.20.1",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vitest/browser-playwright": "^4.1.8",
-    "better-auth": "1.6.23",
+    "better-auth": "1.7.0-rc.2",
     "convex": "1.42.2",
     "convex-test": "^0.0.54",
     "eslint": "^10.7.0",
     "happy-dom": "^20.8.9",
-    "nuxt": "4.4.8",
+    "jose": "6.2.3",
+    "mcp-remote": "0.1.38",
+    "nuxt": "4.5.1",
     "oxfmt": "^0.59.0",
+    "pkg-pr-new": "0.0.78",
     "playwright": "^1.61.1",
+    "tar": "7.5.22",
     "typescript": "~5.9.3",
+    "vite": "8.1.5",
     "vitest": "^4.1.8",
     "vitest-browser-vue": "^2.1.0",
-    "vue-tsc": "^3.3.7"
+    "vue-tsc": "^3.3.7",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
   },
   "peerDependencies": {
-    "@convex-dev/better-auth": "0.12.5",
-    "better-auth": "1.6.23",
+    "@better-auth/oauth-provider": "1.7.0-rc.2",
+    "better-auth": "1.7.0-rc.2",
     "convex": "1.42.2",
-    "nuxt": "^4.4.0"
+    "nuxt": "4.5.1"
+  },
+  "peerDependenciesMeta": {
+    "@better-auth/oauth-provider": {
+      "optional": true
+    },
+    "better-auth": {
+      "optional": true
+    }
   },
   "engines": {
     "node": "^22.12.0 || ^24.11.0 || >=26.0.0"
   },
-  "packageManager": "pnpm@10.30.3+sha512.c961d1e0a2d8e354ecaa5166b822516668b7f44cb5bd95122d590dd81922f606f5473b6d23ec4a5be05e7fcd18e8488d47d978bbe981872f1145d06e9a740017",
-  "pnpm": {
-    "overrides": {
-      "picomatch@4.0.3": "4.0.5",
-      "ws@8.18.0": "8.21.0",
-      "ws@8.19.0": "8.21.0"
-    }
-  }
+  "packageManager": "pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1"
 }

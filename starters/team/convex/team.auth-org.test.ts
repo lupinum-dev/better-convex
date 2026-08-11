@@ -18,7 +18,7 @@ describe('team starter auth and organization invariants', () => {
     await t.mutation(internal.auth.onCreate, {
       model: 'user',
       doc: {
-        _id: 'auth_1',
+        id: 'auth_1',
         name: 'Ada',
         email: 'ada@example.com',
         image: 'https://example.com/ada.png',
@@ -152,12 +152,14 @@ describe('team starter auth and organization invariants', () => {
         model: 'team',
         where: [{ field: 'organizationId', value: organization.id }],
         paginationOpts: { cursor: null, numItems: 10 },
-      })) as { page: Array<{ organizationId: string }> }
+      })) as unknown as { page: Array<{ organizationId: string }> }
       const members = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
         model: 'member',
         where: [{ field: 'organizationId', value: organization.id }],
         paginationOpts: { cursor: null, numItems: 10 },
-      })) as { page: Array<{ organizationId: string; role: string; userId: string }> }
+      })) as unknown as {
+        page: Array<{ organizationId: string; role: string; userId: string }>
+      }
 
       return { teams: teams.page, members: members.page }
     })
@@ -277,24 +279,21 @@ describe('team starter auth and organization invariants', () => {
 
     await t.run(async (ctx) => {
       await ctx.runMutation(components.betterAuth.adapter.create, {
-        input: {
-          model: 'member',
-          data: {
-            organizationId: targetOrganizationId,
-            userId: ownerSeed.authUserId,
-            role: 'owner',
-            createdAt: now,
-          },
+        model: 'member',
+        data: {
+          id: `member_${targetOrganizationId}_${ownerSeed.authUserId}`,
+          organizationId: targetOrganizationId,
+          userId: ownerSeed.authUserId,
+          role: 'owner',
+          createdAt: now,
         },
       })
 
       await ctx.runMutation(components.betterAuth.adapter.updateOne, {
-        input: {
-          model: 'session',
-          where: [{ field: '_id', value: ownerSeed.sessionId }],
-          update: {
-            activeOrganizationId: primaryOrganizationId,
-          },
+        model: 'session',
+        where: [{ field: 'id', value: ownerSeed.sessionId }],
+        update: {
+          activeOrganizationId: primaryOrganizationId,
         },
       })
     })

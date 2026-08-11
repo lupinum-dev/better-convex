@@ -41,21 +41,39 @@ application ceremony that proves authorization from both tenant sides.
 
 ```bash
 pnpm install
-pnpm convex:dev
+pnpm convex:configure
 pnpm dev
 pnpm test
 pnpm typecheck
 ```
 
-Set the auth origin and secret in Convex before starting the auth routes:
+Use `pnpm convex:dev` after `.env.local` exists; it selects only the deployment
+recorded in that file.
+
+Set the auth origin and both independent secrets before starting the auth routes:
 
 ```bash
-pnpm exec convex env set SITE_URL http://localhost:3000
-pnpm exec convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
+export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"
+(
+  set -eu
+  umask 077
+  sed '/^BCN_AUTH_PROXY_IP_SECRET=/d' .env.local > .env.local.next
+  printf 'BCN_AUTH_PROXY_IP_SECRET=%s\n' "$BCN_AUTH_PROXY_IP_SECRET" >> .env.local.next
+  mv .env.local.next .env.local
+)
+pnpm exec better-convex-nuxt-convex env set SITE_URL http://localhost:3000
+printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex-nuxt-convex env set BETTER_AUTH_SECRETS
+printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt-convex env set BCN_AUTH_PROXY_IP_SECRET
 ```
 
 `SITE_URL` must be the exact public Nuxt origin, without a path, query, or
-fragment. Production startup fails closed when either value is missing.
+fragment. In production, inject the same `BCN_AUTH_PROXY_IP_SECRET` into Nuxt
+with your secret manager. Do not print or commit it.
+Production startup fails closed when required values are missing.
+Outside exact loopback development, set
+`BCN_AUTH_TRUSTED_CLIENT_IP_HEADER` to a header your ingress overwrites with
+exactly one client IP. Public traffic must reach the Nuxt origin only through
+that ingress, or the origin must independently authenticate ingress requests.
 
 Better Auth is the identity source of truth. The app-owned `users` row is the
 stable domain actor referenced by organizations and audit events; only its

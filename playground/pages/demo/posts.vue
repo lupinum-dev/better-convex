@@ -15,10 +15,16 @@
       </p>
 
       <!-- Loading state -->
-      <div v-if="pending && isAuthenticated" class="loading">Loading posts...</div>
+      <div v-if="status === 'loading' || (pending && status === 'authenticated')" class="loading">
+        Loading posts...
+      </div>
+
+      <div v-else-if="status === 'error'" class="not-auth">
+        <p>{{ authError?.message ?? 'Authentication failed.' }}</p>
+      </div>
 
       <!-- Not authenticated -->
-      <div v-else-if="!isAuthenticated" class="not-auth">
+      <div v-else-if="status === 'anonymous'" class="not-auth">
         <p>You need to sign in to manage posts.</p>
         <NuxtLink to="/auth/signin" class="btn btn-primary">Sign In</NuxtLink>
       </div>
@@ -170,9 +176,9 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { isAuthenticated, user } = useConvexAuth()
+const { status, user, error: authError } = useConvexAuth()
 // Query posts with real-time updates
-const queryArgs = computed(() => (isAuthenticated.value ? {} : 'skip'))
+const queryArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
 
 const { data: posts, pending, error } = await useConvexQuery(api.posts.list, queryArgs)
 
@@ -199,7 +205,7 @@ const deletingPostId = ref<Id<'posts'> | null>(null)
 const canCreate = computed(() => {
   // In a real app, you'd check permissions client-side too
   // For now, we'll let the server handle it
-  return isAuthenticated.value && user.value
+  return status.value === 'authenticated' && user.value
 })
 
 // Ownership model: only the owner may edit/publish/delete their own posts.

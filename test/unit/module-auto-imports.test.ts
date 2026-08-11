@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { registerConvexAliases } from '../../src/module-aliases'
-import { authAutoImports, composableAutoImports } from '../../src/module-api-surface'
+import {
+  authAutoImports,
+  composableAutoImports,
+  serverAutoImports,
+} from '../../src/module-api-surface'
 import {
   getMissingConvexApiTemplateContents,
   getTypeAugmentationTemplateContents,
@@ -14,8 +18,25 @@ describe('module auto-import surface', () => {
     )
 
     expect(autoImportNames).toContain('useConvexAuth')
-    expect(autoImportNames).toContain('useConvexUser')
+    expect(composableAutoImports).toContainEqual({
+      name: 'useConvexAttachment',
+      from: './runtime/composables/useConvexAttachment',
+    })
+    expect(autoImportNames).not.toContain('useConvexUser')
+    expect(autoImportNames).not.toContain('defineSharedConvexQuery')
+    expect(autoImportNames).not.toContain('useConvexStorageUrl')
+    expect(autoImportNames).not.toContain('useConvexUploadQueue')
+    expect(autoImportNames).not.toContain('updateQuery')
     expect(autoImportNames.size).toBe(composableAutoImports.length + authAutoImports.length)
+  })
+
+  it('exposes only the request-bound server caller as a Nitro auto-import', () => {
+    expect(serverAutoImports).toEqual([
+      {
+        name: 'serverConvex',
+        from: './runtime/server/utils/server-convex-caller',
+      },
+    ])
   })
 
   it('registers the #convex runtime and type aliases', () => {

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { inspect } from 'node:util'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -46,7 +47,11 @@ function event(
   return {
     method,
     body,
-    headers: new Headers({ origin: 'https://app.example.test', ...headers }),
+    headers: new Headers({
+      'cf-connecting-ip': '203.0.113.10',
+      origin: 'https://app.example.test',
+      ...headers,
+    }),
     node: {
       req: Object.assign(new EventEmitter(), {
         complete: true,
@@ -69,16 +74,15 @@ function event(
 describe('auth proxy security regressions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'proxy-ip-test-secret-with-32-bytes')
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/get-session'))
     mocks.config.mockReturnValue({
       url: 'https://demo.convex.cloud',
       siteUrl: 'https://demo.convex.site',
       auth: {
-        proxy: {
-          maxRequestBodyBytes: 1_048_576,
-          maxResponseBodyBytes: 1_048_576,
-          trustedClientIpHeader: '',
-        },
+        origin: 'https://app.example.test',
+        trustedClientIpHeader: 'cf-connecting-ip',
+        redirectTo: '/auth/signin',
       },
     })
     mocks.storage.mockReturnValue({
@@ -111,6 +115,93 @@ describe('auth proxy security regressions', () => {
     })
   })
 
+  it('preserves Better Auth navigation versus browser-fetch redirect semantics', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+
+    await handler(event('GET', undefined, { 'sec-fetch-mode': 'navigate' }))
+    await handler(event('GET', undefined, { 'sec-fetch-mode': 'cors' }))
+    await handler(event())
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ mode: 'same-origin' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ mode: 'cors' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      expect.objectContaining({ mode: 'same-origin' }),
+    )
+  })
+
+  it('denies a poisoned Host with a matching attacker Origin before upstream delivery', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    mocks.requestUrl.mockReturnValue(new URL('https://attacker.example.test/api/auth/get-session'))
+
+    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+
+    await expect(
+      handler(
+        event('GET', undefined, {
+          host: 'attacker.example.test',
+          origin: 'https://attacker.example.test',
+          'x-forwarded-host': 'attacker.example.test',
+          'x-forwarded-proto': 'https',
+        }),
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      data: { code: 'BCN_AUTH_PROXY_ORIGIN_BLOCKED' },
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the configured public origin is missing', async () => {
+    const configured = mocks.config()
+    mocks.config.mockReturnValue({
+      ...configured,
+      auth: { ...configured.auth, origin: '' },
+    })
+    const fetchMock = vi.fn(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    await expect(handler(event())).rejects.toMatchObject({
+      statusCode: 500,
+      data: { code: 'BCN_AUTH_PROXY_PUBLIC_ORIGIN_MISSING' },
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, '203.0.113.10, 10.0.0.1', 'not-an-ip'])(
+    'rejects a missing or invalid trusted client IP before upstream delivery: %s',
+    async (clientIp) => {
+      const fetchMock = vi.fn(async () => new Response('{}'))
+      vi.stubGlobal('fetch', fetchMock)
+      const headers =
+        clientIp === undefined ? { 'cf-connecting-ip': '' } : { 'cf-connecting-ip': clientIp }
+
+      const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+        .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+      await expect(handler(event('GET', undefined, headers))).rejects.toMatchObject({
+        statusCode: 400,
+        data: { code: 'BCN_AUTH_PROXY_CLIENT_IP_INVALID' },
+      })
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
+
   it('keeps successful auth responses independent from development diagnostics storage', async () => {
     mocks.storage.mockImplementation(() => {
       throw new Error('diagnostics storage unavailable')
@@ -127,6 +218,45 @@ describe('auth proxy security regressions', () => {
     await expect(handler(proxyEvent)).resolves.toBeUndefined()
     expect(mocks.send).toHaveBeenCalledWith(proxyEvent, new TextEncoder().encode('{}'))
     expect(mocks.responseStatus).toHaveBeenCalledWith(expect.anything(), 200, '')
+  })
+
+  it('traces proxy state transitions without request or response credentials', async () => {
+    const configured = mocks.config()
+    mocks.config.mockReturnValue({
+      ...configured,
+      logging: 'debug',
+    })
+    const requestSentinel = 'BCN_PROXY_REQUEST_SECRET_SENTINEL'
+    const responseSentinel = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJwcm94eS1zZW50aW5lbCJ9.signature'
+    const requestBody = new TextEncoder().encode(`password=${requestSentinel}`)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ token: responseSentinel }))),
+    )
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/sign-in/email'))
+
+    try {
+      const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+        .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+      await handler(
+        event('POST', requestBody, {
+          'content-length': String(requestBody.byteLength),
+          'content-type': 'application/x-www-form-urlencoded',
+        }),
+      )
+
+      const output = JSON.stringify(log.mock.calls)
+      expect(output).toContain('auth-proxy.request.started')
+      expect(output).toContain('auth-proxy.request.completed')
+      expect(output).toContain('requestBodyBytes')
+      expect(output).toContain('responseBodyBytes')
+      expect(output).toContain('requestId')
+      expect(output).not.toContain(requestSentinel)
+      expect(output).not.toContain(responseSentinel)
+    } finally {
+      log.mockRestore()
+    }
   })
 
   it('preserves bytes, regenerates framing, and drops proxy controls', async () => {
@@ -287,6 +417,295 @@ describe('auth proxy security regressions', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(mocks.responseHeaders).toHaveBeenCalledWith(expect.anything(), {
       'cache-control': 'private, no-store',
+    })
+  })
+
+  it('proxies only a credential-free cross-origin public-client token form', async () => {
+    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
+    let forwardedInit: RequestInit | undefined
+    const fetchMock = vi.fn(async (_target: string, init?: RequestInit) => {
+      forwardedInit = init
+      return new Response('{"error":"invalid_grant"}', {
+        headers: {
+          'access-control-allow-credentials': 'true',
+          'access-control-allow-origin': 'https://upstream.example.test',
+          'content-type': 'application/json',
+        },
+        status: 400,
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const body = new TextEncoder().encode(
+      'grant_type=authorization_code&client_id=public-client&code=opaque',
+    )
+    const tokenRequest = event('POST', body, {
+      'content-length': String(body.byteLength),
+      'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      origin: 'http://127.0.0.1:6274',
+      referer: 'http://127.0.0.1:6274/oauth/callback',
+      'sec-fetch-site': 'cross-site',
+    })
+
+    await handler(tokenRequest)
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    if (!forwardedInit) throw new Error('Expected the public token request to be forwarded')
+    const init = forwardedInit
+    const forwarded = init.headers as Record<string, string>
+    expect(forwarded.origin).toBe('https://app.example.test')
+    expect(forwarded.referer).toBeUndefined()
+    expect(forwarded['sec-fetch-site']).toBeUndefined()
+    expect(forwarded.cookie).toBeUndefined()
+    expect(forwarded.authorization).toBeUndefined()
+    expect(mocks.responseHeaders).toHaveBeenCalledWith(tokenRequest, {
+      'access-control-allow-origin': '*',
+    })
+    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
+      'access-control-allow-credentials': expect.anything(),
+    })
+    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
+      'access-control-allow-origin': 'https://upstream.example.test',
+    })
+    expect(mocks.responseCookie).not.toHaveBeenCalled()
+  })
+
+  it('answers only the exact public-client token preflight without upstream traffic', async () => {
+    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const preflight = event('OPTIONS', undefined, {
+      'access-control-request-headers': 'content-type',
+      'access-control-request-method': 'POST',
+      origin: 'http://127.0.0.1:6274',
+    })
+
+    await handler(preflight)
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mocks.responseStatus).toHaveBeenCalledWith(preflight, 204)
+    expect(mocks.responseHeaders).toHaveBeenCalledWith(preflight, {
+      'access-control-allow-headers': 'content-type',
+      'access-control-allow-methods': 'POST',
+      'access-control-allow-origin': '*',
+      'access-control-max-age': 300,
+    })
+    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
+      'access-control-allow-credentials': expect.anything(),
+    })
+    expect(mocks.send).toHaveBeenCalledWith(preflight, '')
+  })
+
+  it('rejects credential, media, header, method, path, query, and preflight expansion', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const base = {
+      'content-type': 'application/x-www-form-urlencoded',
+      origin: 'http://127.0.0.1:6274',
+    }
+
+    for (const headers of [
+      { ...base, cookie: 'better-auth.session_token=secret' },
+      { ...base, authorization: 'Basic secret' },
+      { ...base, dpop: 'proof' },
+      { ...base, 'content-type': 'application/json' },
+    ]) {
+      mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
+      await expect(handler(event('POST', undefined, headers))).rejects.toMatchObject({
+        statusCode: 403,
+      })
+    }
+
+    for (const requestUrl of [
+      'https://app.example.test/api/auth/oauth2/token?tenant=attacker',
+      'https://app.example.test/api/auth/oauth2/revoke',
+      'https://app.example.test/api/auth/oauth2/authorize',
+      'https://app.example.test/api/auth/get-session',
+      'https://app.example.test/api/auth/mcp/admin/provision',
+    ]) {
+      mocks.requestUrl.mockReturnValue(new URL(requestUrl))
+      await expect(handler(event('POST', undefined, base))).rejects.toMatchObject({
+        statusCode: 403,
+      })
+    }
+
+    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
+    await expect(handler(event('GET', undefined, { origin: base.origin }))).rejects.toMatchObject({
+      statusCode: 403,
+    })
+    await expect(
+      handler(
+        event('OPTIONS', undefined, {
+          'access-control-request-headers': 'content-type, authorization',
+          'access-control-request-method': 'POST',
+          origin: base.origin,
+        }),
+      ),
+    ).rejects.toMatchObject({ statusCode: 405 })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects cookies from the public token upstream instead of exposing them cross-origin', async () => {
+    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
+    const responseHeaders = new Headers()
+    responseHeaders.append('set-cookie', 'better-auth.session_token=secret; Path=/; HttpOnly')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { headers: responseHeaders })),
+    )
+    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+
+    await expect(
+      handler(
+        event('POST', new TextEncoder().encode('grant_type=authorization_code'), {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: 'http://127.0.0.1:6274',
+        }),
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 502,
+      data: { code: 'BCN_AUTH_PROXY_TOKEN_COOKIE_REJECTED' },
+    })
+    expect(mocks.responseCookie).not.toHaveBeenCalled()
+  })
+
+  it('serves authorization-server metadata cross-origin without credentialed CORS', async () => {
+    mocks.requestUrl.mockReturnValue(
+      new URL('https://app.example.test/.well-known/oauth-authorization-server/api/auth'),
+    )
+    const fetchMock = vi.fn(
+      async () =>
+        new Response('{}', {
+          headers: {
+            'access-control-allow-credentials': 'true',
+            'access-control-allow-origin': 'https://upstream.example.test',
+            'content-type': 'application/json',
+          },
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const handler = (
+      await import('../../src/runtime/server/api/auth/authorization-server-metadata')
+    ).default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const metadataRequest = event('GET', undefined, { origin: 'http://127.0.0.1:6274' })
+
+    await handler(metadataRequest)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://demo.convex.site/api/auth/.well-known/oauth-authorization-server',
+      expect.anything(),
+    )
+    expect(mocks.responseHeaders).toHaveBeenCalledWith(metadataRequest, {
+      'access-control-allow-origin': '*',
+    })
+    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
+      'access-control-allow-credentials': expect.anything(),
+    })
+    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
+      'access-control-allow-origin': 'https://upstream.example.test',
+    })
+  })
+
+  it('serves credential-free JWKS to server verifiers without browser ingress metadata', async () => {
+    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/jwks'))
+    const fetchMock = vi.fn(async () => new Response('{"keys":[]}'))
+    vi.stubGlobal('fetch', fetchMock)
+    const handler = (await import('../../src/runtime/server/api/auth/jwks')).default as unknown as (
+      input: ReturnType<typeof event>,
+    ) => Promise<Uint8Array>
+    const jwksRequest = event('GET', undefined, {
+      'cf-connecting-ip': '',
+      origin: '',
+    })
+
+    await handler(jwksRequest)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://demo.convex.site/api/auth/jwks',
+      expect.objectContaining({
+        headers: expect.not.objectContaining({
+          'x-bcn-client-ip': expect.anything(),
+          'x-bcn-client-ip-signature': expect.anything(),
+        }),
+      }),
+    )
+    expect(mocks.responseHeaders).toHaveBeenCalledWith(jwksRequest, {
+      'access-control-allow-origin': '*',
+    })
+  })
+
+  it('rejects credentials on the public JWKS route', async () => {
+    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/jwks'))
+    const fetchMock = vi.fn(async () => new Response('{"keys":[]}'))
+    vi.stubGlobal('fetch', fetchMock)
+    const handler = (await import('../../src/runtime/server/api/auth/jwks')).default as unknown as (
+      input: ReturnType<typeof event>,
+    ) => Promise<Uint8Array>
+
+    await expect(
+      handler(
+        event('GET', undefined, {
+          'cf-connecting-ip': '',
+          cookie: 'better-auth.session_token=secret',
+        }),
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      data: { code: 'BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED' },
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects credentials entering or leaving public authorization-server metadata', async () => {
+    mocks.requestUrl.mockReturnValue(
+      new URL('https://app.example.test/.well-known/oauth-authorization-server/api/auth'),
+    )
+    const fetchMock = vi.fn(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    const handler = (
+      await import('../../src/runtime/server/api/auth/authorization-server-metadata')
+    ).default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+
+    const credentialHeaders: Record<string, string>[] = [
+      { cookie: 'better-auth.session_token=secret' },
+      { authorization: 'Bearer secret', origin: 'http://127.0.0.1:6274' },
+      { dpop: 'proof', origin: 'http://127.0.0.1:6274' },
+      { 'proxy-authorization': 'Basic secret', origin: 'http://127.0.0.1:6274' },
+    ]
+    for (const headers of credentialHeaders) {
+      await expect(handler(event('GET', undefined, headers))).rejects.toMatchObject({
+        statusCode: 403,
+        data: { code: 'BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED' },
+      })
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    const responseHeaders = new Headers({
+      'access-control-allow-credentials': 'true',
+      'access-control-allow-origin': 'https://upstream.example.test',
+    })
+    responseHeaders.append('set-cookie', 'better-auth.session_token=secret; Path=/; HttpOnly')
+    fetchMock.mockResolvedValueOnce(new Response('{}', { headers: responseHeaders }))
+    const metadataRequest = event('GET', undefined, { origin: 'http://127.0.0.1:6274' })
+    await expect(handler(metadataRequest)).rejects.toMatchObject({
+      statusCode: 502,
+      data: { code: 'BCN_AUTH_PROXY_METADATA_COOKIE_REJECTED' },
+    })
+    expect(mocks.responseCookie).not.toHaveBeenCalled()
+    expect(mocks.responseHeaders).toHaveBeenCalledWith(metadataRequest, {
+      'access-control-allow-origin': '*',
+    })
+    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
+      'access-control-allow-credentials': expect.anything(),
+    })
+    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
+      'access-control-allow-origin': 'https://upstream.example.test',
     })
   })
 
@@ -590,19 +1009,35 @@ describe('auth proxy security regressions', () => {
     expect(download.node.res.listenerCount('close')).toBe(0)
   })
 
-  it('redacts upstream failure details in production responses', async () => {
+  it('drops upstream failure message, cause, and stack from proxy responses', async () => {
+    const sentinels = {
+      message: 'AUTH_PROXY_MESSAGE_SENTINEL_f7d120',
+      cause: 'AUTH_PROXY_CAUSE_SENTINEL_c3550a',
+      stack: 'AUTH_PROXY_STACK_SENTINEL_9b70ee',
+    }
+    const upstreamError = new Error(sentinels.message, { cause: new Error(sentinels.cause) })
+    upstreamError.stack = sentinels.stack
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
-        throw new Error('secret-upstream-host.internal:8443')
+        throw upstreamError
       }),
     )
     const handler = (await import('../../src/runtime/server/api/auth/[...]'))
       .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
-    await expect(handler(event())).rejects.toMatchObject({
+    let rejection: unknown
+    try {
+      await handler(event())
+    } catch (error) {
+      rejection = error
+    }
+
+    expect(rejection).toMatchObject({
       statusCode: 502,
-      message: 'Failed to proxy request to Convex auth server',
+      message: expect.stringContaining('configured Convex auth server'),
+      data: { code: 'BCN_AUTH_PROXY_UNREACHABLE' },
     })
-    await expect(handler(event())).rejects.not.toThrow(/secret-upstream-host/)
+    const rendered = inspect(rejection, { depth: null })
+    for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
   })
 })

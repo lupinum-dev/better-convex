@@ -24,7 +24,7 @@ function hasUnsafePathCharacter(value: string): boolean {
   return false
 }
 
-function normalizeLocalPath(value: string): string | null {
+export function normalizeLocalRedirectPath(value: string): string | null {
   if (!value.startsWith('/') || value.startsWith('//') || hasUnsafePathCharacter(value)) {
     return null
   }
@@ -63,13 +63,13 @@ export function resolveRouteProtectionDecision(
   if (!redirectBase) return null
   if (typeof redirectBase !== 'string') {
     if ('path' in redirectBase && typeof redirectBase.path === 'string') {
-      const path = normalizeLocalPath(redirectBase.path)
+      const path = normalizeLocalRedirectPath(redirectBase.path)
       if (!path) return null
       return { redirectTo: { ...redirectBase, path } }
     }
     return { redirectTo: redirectBase }
   }
-  const redirectPath = normalizeLocalPath(redirectBase)
+  const redirectPath = normalizeLocalRedirectPath(redirectBase)
   if (!redirectPath) return null
   const redirectPathOnly = redirectPath.split(/[?#]/)[0] || redirectPath
   if (currentPath === redirectPathOnly) return null
@@ -78,7 +78,8 @@ export function resolveRouteProtectionDecision(
     return { redirectTo: redirectPath }
   }
 
-  const returnTo = normalizeLocalPath(currentFullPath) ?? normalizeLocalPath(currentPath) ?? '/'
+  const returnTo =
+    normalizeLocalRedirectPath(currentFullPath) ?? normalizeLocalRedirectPath(currentPath) ?? '/'
   const hashIndex = redirectPath.indexOf('#')
   const redirectWithoutHash = hashIndex === -1 ? redirectPath : redirectPath.slice(0, hashIndex)
   const hash = hashIndex === -1 ? '' : redirectPath.slice(hashIndex)

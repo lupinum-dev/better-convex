@@ -6,8 +6,8 @@ const props = defineProps<{
 }>()
 
 const {
-  results: orgAuditEvents,
-  status: orgAuditStatus,
+  data: orgAuditData,
+  canLoadMore: canLoadMoreOrgAudit,
   loadMore: loadMoreOrgAudit,
 } = await useConvexPaginatedQuery(
   api.audit.listForOrganization,
@@ -16,13 +16,15 @@ const {
     initialNumItems: 10,
   },
 )
+
+const orgAuditEvents = computed(() => orgAuditData.value ?? [])
 </script>
 
 <template>
   <AuditPanel
     title="Organization activity"
     :events="orgAuditEvents"
-    :status="orgAuditStatus"
+    :can-load-more="canLoadMoreOrgAudit"
     :on-load-more="loadMoreOrgAudit"
   />
 </template>

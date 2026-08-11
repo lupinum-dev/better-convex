@@ -10,11 +10,11 @@
 // rather than inside the published `/auth-client` entry because that entry
 // exports exactly one runtime value (`defineConvexAuthClient`).
 
+import type { ConvexAuthClientDefinition } from '../auth-client'
 import type {
   AuthClientPlugins,
-  ConvexAuthClientDefinition,
   ConvexAuthClientDefinitionOptions,
-} from '../auth-client'
+} from '../auth-client/definition-types'
 
 /** Own keys the library owns; a consumer may not set them. */
 const FORBIDDEN_OWN_KEYS = ['baseURL', 'basePath', 'fetchOptions'] as const

@@ -32,17 +32,16 @@ async function seedBetterAuthOrganization(
 ) {
   return await t.run(async (ctx) => {
     const organization = (await ctx.runMutation(components.betterAuth.adapter.create, {
-      input: {
-        model: 'organization',
-        data: {
-          name: args.name,
-          slug: args.name,
-          createdAt: now,
-        },
+      model: 'organization',
+      data: {
+        id: `organization_${args.name}`,
+        name: args.name,
+        slug: args.name,
+        createdAt: now,
       },
-    })) as { _id: string }
+    })) as { id: string }
 
-    return organization._id
+    return organization.id
   })
 }
 
@@ -55,18 +54,18 @@ async function seedBetterAuthTeam(
 ) {
   return await t.run(async (ctx) => {
     const team = (await ctx.runMutation(components.betterAuth.adapter.create, {
-      input: {
-        model: 'team',
-        data: {
-          name: args.name,
-          organizationId: args.organizationId,
-          createdAt: now,
-          updatedAt: now,
-        },
+      model: 'team',
+      data: {
+        id: `team_${args.organizationId}_${args.name}`,
+        name: args.name,
+        memberCount: 0,
+        organizationId: args.organizationId,
+        createdAt: now,
+        updatedAt: now,
       },
-    })) as { _id: string }
+    })) as { id: string }
 
-    return team._id
+    return team.id
   })
 }
 
@@ -80,14 +79,13 @@ async function seedBetterAuthMember(
 ) {
   await t.run(async (ctx) => {
     await ctx.runMutation(components.betterAuth.adapter.create, {
-      input: {
-        model: 'member',
-        data: {
-          organizationId: args.organizationId,
-          userId: args.userId,
-          role: args.role,
-          createdAt: now,
-        },
+      model: 'member',
+      data: {
+        id: `member_${args.organizationId}_${args.userId}`,
+        organizationId: args.organizationId,
+        userId: args.userId,
+        role: args.role,
+        createdAt: now,
       },
     })
   })
@@ -101,25 +99,19 @@ async function seedBetterAuthUserRow(
 ) {
   return await t.run(async (ctx) => {
     const user = (await ctx.runMutation(components.betterAuth.adapter.create, {
-      input: {
-        model: 'user',
-        data: {
-          name: args.label,
-          email: `${args.label}@example.com`,
-          emailVerified: true,
-          image: null,
-          createdAt: now,
-          updatedAt: now,
-        },
+      model: 'user',
+      data: {
+        id: `user_${args.label}`,
+        name: args.label,
+        email: `${args.label}@example.com`,
+        emailVerified: true,
+        image: null,
+        createdAt: now,
+        updatedAt: now,
       },
-    })) as { _id?: string; id?: string }
+    })) as { id: string }
 
-    const userId = user.id ?? user._id
-    if (!userId) {
-      throw new Error('Better Auth user row missing id')
-    }
-
-    return userId
+    return user.id
   })
 }
 
@@ -131,8 +123,10 @@ function asActor(
   },
 ) {
   return t.withIdentity({
+    issuer: 'http://localhost:3210',
+    sid: args.sessionId,
     subject: args.userId,
-    sessionId: args.sessionId,
+    token_use: 'convex-session',
   } as Partial<UserIdentity>)
 }
 
@@ -202,7 +196,7 @@ describe('team starter regressions', () => {
   it('clears nullable projection fields and deletes the projection row', async () => {
     const t = initConvexTest()
     const originalUser = {
-      _id: 'auth_projection_1',
+      id: 'auth_projection_1',
       name: 'Ada',
       email: 'ada@example.com',
       image: 'https://example.com/ada.png',
@@ -225,12 +219,12 @@ describe('team starter regressions', () => {
     const projectedAfterUpdate = await t.run(async (ctx) => {
       return await ctx.db
         .query('users')
-        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', originalUser._id))
+        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', originalUser.id))
         .unique()
     })
 
     expect(projectedAfterUpdate).toMatchObject({
-      authUserId: originalUser._id,
+      authUserId: originalUser.id,
       name: 'Ada',
       email: 'ada@example.com',
     })
@@ -247,14 +241,14 @@ describe('team starter regressions', () => {
     const projectedAfterDelete = await t.run(async (ctx) => {
       return await ctx.db
         .query('users')
-        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', originalUser._id))
+        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', originalUser.id))
         .unique()
     })
 
     expect(projectedAfterDelete).toBeNull()
   })
 
-  it('paginates every organization member and selected-team membership after 100 rows', async () => {
+  it('paginates and enriches members beyond the adapter scan bound', async () => {
     const t = initConvexTest()
     const organizationId = await seedBetterAuthOrganization(t, {
       name: 'org_member_pagination',
@@ -273,7 +267,7 @@ describe('team starter regressions', () => {
     })
 
     const seededUserIds: string[] = []
-    for (let index = 0; index < 105; index += 1) {
+    for (let index = 0; index < 205; index += 1) {
       const label = `organization_member_${index}`
       const userId = await seedBetterAuthUserRow(t, { label })
       seededUserIds.push(userId)
@@ -284,43 +278,42 @@ describe('team starter regressions', () => {
       })
     }
     await t.run(async (ctx) => {
-      await ctx.runMutation(components.betterAuth.adapter.create, {
-        input: {
+      for (const userId of seededUserIds) {
+        await ctx.runMutation(components.betterAuth.adapter.create, {
           model: 'teamMember',
           data: {
+            id: `team-member_${teamId}_${userId}`,
             teamId,
-            userId: seededUserIds[104]!,
+            userId,
             createdAt: now,
           },
-        },
-      })
+        })
+      }
     })
 
     const owner = asActor(t, {
       userId: ownerSeed.authUserId,
       sessionId: ownerSeed.sessionId,
     })
-    const firstPage = await owner.query(api.organizations.listMembers, {
+    let page = await owner.query(api.organizations.listMembers, {
       organizationId,
       teamId,
       paginationOpts: { cursor: null, numItems: 50 },
     })
-    const secondPage = await owner.query(api.organizations.listMembers, {
-      organizationId,
-      teamId,
-      paginationOpts: { cursor: firstPage.continueCursor, numItems: 50 },
-    })
-    const thirdPage = await owner.query(api.organizations.listMembers, {
-      organizationId,
-      teamId,
-      paginationOpts: { cursor: secondPage.continueCursor, numItems: 50 },
-    })
-    const members = [...firstPage.page, ...secondPage.page, ...thirdPage.page]
+    const members = [...page.page]
+    let pageCount = 1
+    while (!page.isDone) {
+      page = await owner.query(api.organizations.listMembers, {
+        organizationId,
+        teamId,
+        paginationOpts: { cursor: page.continueCursor, numItems: 50 },
+      })
+      members.push(...page.page)
+      pageCount += 1
+    }
 
-    expect(members).toHaveLength(106)
-    expect(firstPage.isDone).toBe(false)
-    expect(secondPage.isDone).toBe(false)
-    expect(thirdPage.isDone).toBe(true)
+    expect(members).toHaveLength(206)
+    expect(pageCount).toBe(5)
     expect(members).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -335,11 +328,11 @@ describe('team starter regressions', () => {
           }),
         }),
         expect.objectContaining({
-          userId: seededUserIds[104],
+          userId: seededUserIds[204],
           role: 'member',
           isTeamMember: true,
           user: expect.objectContaining({
-            email: 'organization_member_104@example.com',
+            email: 'organization_member_204@example.com',
           }),
         }),
       ]),

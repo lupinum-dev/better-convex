@@ -5,6 +5,6 @@ import { authComponent, createAuth } from './auth'
 const http = httpRouter()
 
 // Register all Better Auth routes (/api/auth/*)
-authComponent.registerRoutesLazy(http, createAuth)
+authComponent.registerRoutes(http, createAuth)
 
 export default http

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import betterAuth from '@convex-dev/better-auth/test'
+import betterAuth from 'better-convex-nuxt/convex-auth/test'
 import { convexTest } from 'convex-test'
 
 import schema from './schema'

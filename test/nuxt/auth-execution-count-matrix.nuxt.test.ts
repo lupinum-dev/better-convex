@@ -46,7 +46,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = true
           identity.value = LOADING_IDENTITY
-          return createConvexQueryState(query, {}, { auth: 'none' }, true).resultData
+          return createConvexQueryState(query, {}, { auth: 'none' }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -65,7 +65,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = true
           identity.value = LOADING_IDENTITY
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -98,7 +98,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = ANONYMOUS_IDENTITY
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -113,8 +113,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
       if (mode === 'none') {
         expect(delta).toBe(0) // zero auth-driven reruns
       } else {
-        // See the "client navigation" test above for why the delta is 2, not 1.
-        expect(delta).toBe(2)
+        expect(delta).toBe(1)
       }
     }
   })
@@ -130,7 +129,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = toAuthenticatedIdentity('jwt-u1', { id: 'u1' })
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -145,8 +144,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
       if (mode === 'none') {
         expect(delta).toBe(0)
       } else if (mode === 'optional') {
-        // See the "client navigation" test above for why the delta is 2, not 1.
-        expect(delta).toBe(2)
+        expect(delta).toBe(1)
       } else {
         expect(delta).toBe(0) // zero new calls; release to idle
         expect(primary.activeListenerCount(query, {})).toBe(0)
@@ -166,7 +164,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = toAuthenticatedIdentity('jwt-u1-1', { id: 'u1' })
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -195,7 +193,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
           identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-          return createConvexQueryState(query, {}, { auth: mode }, true).resultData
+          return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
       )
@@ -210,8 +208,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
       if (mode === 'none') {
         expect(delta).toBe(0) // identity-blind transport
       } else {
-        // See the "client navigation" test above for why the delta is 2, not 1.
-        expect(delta).toBe(2)
+        expect(delta).toBe(1)
       }
     }
   })

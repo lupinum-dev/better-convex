@@ -1,5 +1,6 @@
 # Dependencies
 node_modules
+.pnpm-store
 
 # Logs
 *.log
@@ -17,7 +18,9 @@ node_modules
 # Generated dirs
 dist
 .release-artifacts
+.package-preview
 .audit
+.artifacts/mcp-conformance/**
 
 # Nuxt
 .nuxt
@@ -29,6 +32,8 @@ dist
 
 # Env
 .env
+.env.*
+!.env.example
 
 # Testing
 reports
@@ -58,3 +63,6 @@ coverage
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# Custom
+learn

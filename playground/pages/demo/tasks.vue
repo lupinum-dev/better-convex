@@ -6,7 +6,13 @@
       <code>useConvexAuth</code> for authentication.
     </p>
 
-    <div v-if="!isAuthenticated" class="auth-warning">
+    <div v-if="status === 'loading'" class="auth-warning">Checking session...</div>
+
+    <div v-else-if="status === 'error'" class="auth-warning">
+      {{ authError?.message ?? 'Authentication failed.' }}
+    </div>
+
+    <div v-else-if="status === 'anonymous'" class="auth-warning">
       <p>Please <NuxtLink to="/auth/signin">sign in</NuxtLink> to view your tasks.</p>
     </div>
 
@@ -68,19 +74,12 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { isAuthenticated } = useConvexAuth()
+const { status, error: authError } = useConvexAuth()
 // Use useConvexQuery for SSR + real-time updates!
 // Skip query when not authenticated
-const queryArgs = computed(() => (isAuthenticated.value ? {} : 'skip'))
+const queryArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
 
-const {
-  data: tasks,
-  pending,
-  error,
-} = await useConvexQuery(api.tasks.list, queryArgs, {
-  // Check console for detailed logs
-
-})
+const { data: tasks, pending, error } = await useConvexQuery(api.tasks.list, queryArgs)
 
 // Client-only state
 const newTaskTitle = ref('')

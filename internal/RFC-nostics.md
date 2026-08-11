@@ -43,7 +43,7 @@ Better Convex Nuxt already has three intentionally different failure and observa
 
 ### Operation failures
 
-`ConvexCallError` is the framework-free public contract for failed queries, mutations, actions, uploads, server calls, authentication, and transport boundaries. It classifies errors, preserves structured Convex application data, supports safe result envelopes, and excludes runtime-only causes from serialization and logs.
+`ConvexCallError` is the framework-free public contract for failed queries, mutations, actions, uploads, server calls, authentication, and transport boundaries. It classifies errors, preserves structured Convex application data, and excludes runtime-only causes from serialization and logs.
 
 ### Security and HTTP contracts
 
@@ -70,7 +70,7 @@ Current actionable module and configuration failures include cases such as:
 - authentication is enabled without a usable `siteUrl`;
 - a deployment or site URL contains credentials, a query, a fragment, or a non-root path;
 - a non-loopback HTTP URL is configured;
-- `auth.proxy.trustedClientIpHeader` is not a valid header name;
+- `auth.trustedClientIpHeader` is not a valid header name;
 - generated Convex API files are absent when application code accesses `#convex/api`.
 
 The current messages are generally specific, but they are anonymous strings. Users cannot rely on a stable identifier, and documentation cannot link every failure to a permanent troubleshooting page.

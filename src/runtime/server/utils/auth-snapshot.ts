@@ -1,5 +1,6 @@
+import type { H3Event } from 'h3'
+
 import type { AuthWaterfall, AuthWaterfallPhase } from '../../devtools/types'
-import { buildTokenExchangeFailureMessage } from '../../utils/auth-errors'
 import { decodeUserFromJwt, isJwtUsable } from '../../utils/convex-shared'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
 import type { ConvexUser } from '../../utils/types'
@@ -7,44 +8,22 @@ import { exchangeConvexToken } from './token-exchange'
 
 type AuthLogOutcome = 'success' | 'error' | 'skip' | 'miss'
 
-/**
- * Generic message hydrated to the client in production when token exchange
- * fails. The detailed diagnostic (secret/file hints, upstream error text)
- * still reaches server-side log events via ServerAuthLogEvent.details - it
- * just never reaches the client-visible snapshot outside dev.
- */
 const GENERIC_AUTH_ERROR_MESSAGE = 'Authentication is temporarily unavailable'
-
-/**
- * Truncate a user id for debug logs. Log events are debug-gated but
- * still land in server logs / log aggregators; a full email is PII that
- * doesn't need to be there just to correlate log lines to a session.
- */
-function truncateUserIdForLog(id: string | null | undefined): string | undefined {
-  if (!id) return undefined
-  return id.length <= 8 ? id : `${id.slice(0, 8)}…`
-}
+const AUTH_TOKEN_EXCHANGE_FAILED = 'AUTH_TOKEN_EXCHANGE_FAILED'
 
 export interface ServerAuthLogEvent {
   phase: string
   outcome: AuthLogOutcome
   details?: Record<string, unknown>
-  error?: Error
 }
 
 export interface ResolveServerAuthSnapshotOptions {
+  event: H3Event
   siteUrl: string
   cookieHeader: string | null
   requestId: string
   trackWaterfall: boolean
-  throwOnMisconfig: boolean
-  /**
-   * Whether the client-visible `authError` may include implementation
-   * details (secret names, file hints, raw upstream error text). Pass
-   * `import.meta.dev` from callers. When false, a generic message is
-   * hydrated instead - the detailed message still flows into `logEvents`.
-   */
-  revealAuthErrorDetails: boolean
+  trustedClientIpHeader: string
 }
 
 export interface ServerAuthSnapshot {
@@ -53,7 +32,6 @@ export interface ServerAuthSnapshot {
   authError: string | null
   waterfall: AuthWaterfall | null
   logEvents: ServerAuthLogEvent[]
-  devError: Error | null
 }
 
 function buildPhase(
@@ -77,14 +55,7 @@ function buildPhase(
 export async function resolveServerAuthSnapshot(
   options: ResolveServerAuthSnapshotOptions,
 ): Promise<ServerAuthSnapshot> {
-  const {
-    siteUrl,
-    cookieHeader,
-    requestId,
-    trackWaterfall,
-    throwOnMisconfig,
-    revealAuthErrorDetails,
-  } = options
+  const { event, siteUrl, cookieHeader, requestId, trackWaterfall, trustedClientIpHeader } = options
   const waterfallStart = trackWaterfall ? Date.now() : 0
   const phases: AuthWaterfallPhase[] = []
   const logEvents: ServerAuthLogEvent[] = []
@@ -131,7 +102,6 @@ export async function resolveServerAuthSnapshot(
       authError: null,
       waterfall: buildWaterfall('unauthenticated'),
       logEvents,
-      devError: null,
     }
   }
 
@@ -155,12 +125,13 @@ export async function resolveServerAuthSnapshot(
 
     const exchangeStart = trackWaterfall ? Date.now() : 0
     const exchange = await exchangeConvexToken({
+      event,
       siteUrl,
       credential: { type: 'cookie', value: authCookieHeader },
+      trustedClientIpHeader,
       timeoutMs: 5_000,
     })
     const tokenExchangeStatus = exchange.status
-    const tokenExchangeThrown = exchange.status === undefined ? exchange.error : undefined
     const unusableHydrationToken = Boolean(exchange.token && !isJwtUsable(exchange.token))
 
     if (exchange.token && !unusableHydrationToken) {
@@ -190,9 +161,9 @@ export async function resolveServerAuthSnapshot(
       }
 
       logEvents.push({
-        phase: 'exchange',
+        phase: 'ssr.jwt.exchange',
         outcome: 'success',
-        details: { userId: truncateUserIdForLog(user?.id) },
+        details: { identityHydrated: true },
       })
       return {
         token,
@@ -200,34 +171,13 @@ export async function resolveServerAuthSnapshot(
         authError: null,
         waterfall: buildWaterfall('authenticated'),
         logEvents,
-        devError: null,
       }
     }
 
     const isDefinitiveAuthMiss = tokenExchangeStatus === 401 || tokenExchangeStatus === 403
     const isExchangeFailure =
       unusableHydrationToken || (exchange.error !== null && !isDefinitiveAuthMiss)
-
-    // Full diagnostic (secret names, file hints, raw upstream error text) -
-    // safe for server logs/dev error pages, never for the client in prod.
-    const detailedExchangeError = isExchangeFailure
-      ? buildTokenExchangeFailureMessage({
-          siteUrl,
-          status: tokenExchangeStatus,
-          error:
-            tokenExchangeThrown ??
-            exchange.error ??
-            (unusableHydrationToken
-              ? new Error('Convex token exchange returned an expired or malformed token')
-              : undefined),
-        })
-      : null
-
-    const authError = isExchangeFailure
-      ? revealAuthErrorDetails
-        ? detailedExchangeError
-        : GENERIC_AUTH_ERROR_MESSAGE
-      : null
+    const authError = isExchangeFailure ? GENERIC_AUTH_ERROR_MESSAGE : null
 
     if (trackWaterfall) {
       phases.push(
@@ -241,51 +191,44 @@ export async function resolveServerAuthSnapshot(
       )
     }
 
-    const devError =
-      throwOnMisconfig && isExchangeFailure
-        ? new Error(detailedExchangeError ?? 'Convex auth token exchange failed')
-        : null
-
     const exchangeLogDetails: Record<string, unknown> | undefined = tokenExchangeStatus
-      ? { status: tokenExchangeStatus }
-      : undefined
+      ? {
+          ...(isExchangeFailure ? { code: AUTH_TOKEN_EXCHANGE_FAILED } : {}),
+          status: tokenExchangeStatus,
+        }
+      : isExchangeFailure
+        ? { code: AUTH_TOKEN_EXCHANGE_FAILED }
+        : undefined
 
     logEvents.push({
-      phase: 'exchange',
+      phase: 'ssr.jwt.exchange',
       outcome: isExchangeFailure ? 'error' : 'miss',
-      // Detailed message always lands in server logs, regardless of env.
-      details: detailedExchangeError
-        ? { ...(exchangeLogDetails ?? {}), message: detailedExchangeError }
-        : exchangeLogDetails,
-      error: tokenExchangeThrown instanceof Error ? tokenExchangeThrown : undefined,
+      details: exchangeLogDetails,
     })
 
     return {
       token: null,
       user: null,
       authError,
-      waterfall: buildWaterfall(devError ? 'error' : 'unauthenticated', devError?.message),
+      waterfall: buildWaterfall(
+        isExchangeFailure ? 'error' : 'unauthenticated',
+        isExchangeFailure ? AUTH_TOKEN_EXCHANGE_FAILED : undefined,
+      ),
       logEvents,
-      devError,
     }
-  } catch (error) {
-    const detailedError = buildTokenExchangeFailureMessage({ siteUrl, error })
-    const authError = revealAuthErrorDetails ? detailedError : GENERIC_AUTH_ERROR_MESSAGE
-    const err = error instanceof Error ? error : new Error(detailedError)
+  } catch {
     logEvents.push({
-      phase: 'exchange',
+      phase: 'ssr.jwt.exchange',
       outcome: 'error',
-      error: err,
-      details: { message: detailedError },
+      details: { code: AUTH_TOKEN_EXCHANGE_FAILED },
     })
 
     return {
       token: null,
       user: null,
-      authError,
-      waterfall: buildWaterfall('error', err.message),
+      authError: GENERIC_AUTH_ERROR_MESSAGE,
+      waterfall: buildWaterfall('error', AUTH_TOKEN_EXCHANGE_FAILED),
       logEvents,
-      devError: throwOnMisconfig ? err : null,
     }
   }
 }

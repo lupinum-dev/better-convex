@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as authConcurrency from "../authConcurrency.js";
 import type * as files from "../files.js";
 import type * as http from "../http.js";
 import type * as lib_permissions from "../lib/permissions.js";
@@ -26,6 +27,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  authConcurrency: typeof authConcurrency;
   files: typeof files;
   http: typeof http;
   "lib/permissions": typeof lib_permissions;
@@ -63,5 +65,5 @@ export declare const internal: FilterApi<
 >;
 
 export declare const components: {
-  betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
+  betterAuth: import("better-convex-nuxt/convex-auth/_generated/component.js").ComponentApi<"betterAuth">;
 };

@@ -30,20 +30,23 @@ export default defineNuxtPlugin(async () => {
   const logger = createLogger(logLevel)
   const endInit = logger.time('plugin:init (server)')
 
-  // Defensive: the module never registers this plugin for a Convex-only build.
+  // Defensive invariant: this entry is absent from a Convex-only build graph.
   if (authConfig === false) {
-    endInit()
-    logger.debug('Auth not enabled, skipping server-side auth')
-    return
+    throw new Error('[better-convex-nuxt] auth server plugin loaded in a no-auth build')
   }
 
   const event = useRequestEvent()
   if (!event) {
-    logger.auth({ phase: 'init', outcome: 'error', error: new Error('No request event available') })
+    logger.auth({
+      phase: 'init',
+      outcome: 'error',
+      details: { code: 'AUTH_REQUEST_EVENT_MISSING' },
+    })
     return
   }
   const requestMethod = event.method || 'GET'
   const requestId = crypto.randomUUID()
+  const traceEnabled = logLevel === 'debug'
   const convexIdentity = useConvexIdentityState()
   const cookieHeader = event.headers.get('cookie')
   const hasSupportedBetterAuthCookie = filterBetterAuthCookies(cookieHeader) !== null
@@ -54,11 +57,15 @@ export default defineNuxtPlugin(async () => {
       hasBetterAuthCookie: hasSupportedBetterAuthCookie,
       serializesToken: false,
     })
-    const message = buildMissingSiteUrlMessage(convexConfig.url)
+    const message = buildMissingSiteUrlMessage()
     const convexAuthError = useState<string | null>('convex:authError', () => null)
     convexAuthError.value = message
     endInit()
-    logger.auth({ phase: 'init', outcome: 'error', error: new Error(message) })
+    logger.auth({
+      phase: 'init',
+      outcome: 'error',
+      details: { code: 'AUTH_SITE_URL_MISSING' },
+    })
     return
   }
 
@@ -66,13 +73,17 @@ export default defineNuxtPlugin(async () => {
     phase: string,
     outcome: 'success' | 'error' | 'skip' | 'miss',
     details?: Record<string, unknown>,
-    error?: Error,
   ) => {
     logger.auth({
       phase,
       outcome,
-      details: { requestId, method: requestMethod, ...details },
-      error,
+      details: traceEnabled ? { requestId, method: requestMethod, ...details } : details,
+    })
+  }
+
+  if (traceEnabled) {
+    logAuth('ssr.auth.started', 'success', {
+      hasSupportedAuthCookie: hasSupportedBetterAuthCookie,
     })
   }
 
@@ -80,15 +91,14 @@ export default defineNuxtPlugin(async () => {
   const convexAuthError = useState<string | null>('convex:authError', () => null)
   const convexAuthWaterfall = useState<AuthWaterfall | null>('convex:authWaterfall', () => null)
 
+  const snapshotStartedAt = Date.now()
   const snapshot = await resolveServerAuthSnapshot({
+    event,
     siteUrl,
     cookieHeader,
     requestId,
     trackWaterfall: import.meta.dev,
-    throwOnMisconfig: import.meta.dev,
-    // Detailed token-exchange failures are dev-only; production hydrates a
-    // generic message.
-    revealAuthErrorDetails: import.meta.dev,
+    trustedClientIpHeader: authConfig.trustedClientIpHeader,
   })
 
   convexIdentity.value =
@@ -108,10 +118,17 @@ export default defineNuxtPlugin(async () => {
 
   endInit()
   for (const logEvent of snapshot.logEvents) {
-    logAuth(logEvent.phase, logEvent.outcome, logEvent.details, logEvent.error)
+    logAuth(logEvent.phase, logEvent.outcome, logEvent.details)
   }
-
-  if (snapshot.devError) {
-    throw snapshot.devError
+  if (traceEnabled) {
+    logAuth(
+      'ssr.auth.completed',
+      snapshot.token ? 'success' : snapshot.authError ? 'error' : 'miss',
+      {
+        durationMs: Date.now() - snapshotStartedAt,
+        identityHydrated: snapshot.user !== null,
+        tokenSerialized: snapshot.token !== null,
+      },
+    )
   }
 })

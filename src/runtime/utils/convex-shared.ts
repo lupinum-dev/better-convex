@@ -14,56 +14,14 @@ const functionNameSymbol = Symbol.for('functionName')
  */
 const MAX_LOCAL_JWT_LENGTH = 65_536
 const MAX_DISPLAY_STRING_LENGTH = 4_096
-const MAX_DISPLAY_PROPERTY_NAME_LENGTH = 256
-const MAX_DISPLAY_COLLECTION_ENTRIES = 64
-const MAX_DISPLAY_CLAIM_DEPTH = 4
 
 /** Milliseconds before `exp` at which a locally retained token is unusable. */
 export const TOKEN_EXPIRY_SAFETY_BUFFER_MS = 30_000
-
-const INVALID_DISPLAY_CLAIM = Symbol('INVALID_DISPLAY_CLAIM')
-const UNSAFE_PROPERTY_NAMES = new Set(['__proto__', 'constructor', 'prototype'])
-const RESERVED_USER_CLAIMS = new Set([
-  'sub',
-  'id',
-  'userId',
-  'name',
-  'email',
-  'emailVerified',
-  'image',
-  'createdAt',
-  'updatedAt',
-  'iss',
-  'aud',
-  'exp',
-  'nbf',
-  'iat',
-  'jti',
-  // Added by @convex-dev/better-auth for backend identity correlation. It is
-  // not browser display data and must not be copied into ConvexUser.
-  'sessionId',
-])
-
-type SafeDisplayClaim =
-  | string
-  | number
-  | boolean
-  | null
-  | SafeDisplayClaim[]
-  | { [key: string]: SafeDisplayClaim }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null
-}
-
-function isSafePropertyName(key: string): boolean {
-  return (
-    key.length > 0 &&
-    key.length <= MAX_DISPLAY_PROPERTY_NAME_LENGTH &&
-    !UNSAFE_PROPERTY_NAMES.has(key)
-  )
 }
 
 function defineSafeProperty(target: Record<string, unknown>, key: string, value: unknown): void {
@@ -73,67 +31,6 @@ function defineSafeProperty(target: Record<string, unknown>, key: string, value:
     configurable: true,
     writable: true,
   })
-}
-
-/**
- * Clone one JSON claim into a normal, property-safe object graph. Unsupported,
- * too-large, or too-deep values are omitted rather than partially exposed.
- * Special prototype-mutating property names are omitted at every depth.
- */
-function sanitizeDisplayClaim(
-  value: unknown,
-  depth: number,
-): SafeDisplayClaim | typeof INVALID_DISPLAY_CLAIM {
-  if (value === null || typeof value === 'boolean') return value
-  if (typeof value === 'string') {
-    return value.length <= MAX_DISPLAY_STRING_LENGTH ? value : INVALID_DISPLAY_CLAIM
-  }
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : INVALID_DISPLAY_CLAIM
-  }
-  if (!value || typeof value !== 'object' || depth >= MAX_DISPLAY_CLAIM_DEPTH) {
-    return INVALID_DISPLAY_CLAIM
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length > MAX_DISPLAY_COLLECTION_ENTRIES) return INVALID_DISPLAY_CLAIM
-    const output: SafeDisplayClaim[] = []
-    for (const item of value) {
-      const sanitized = sanitizeDisplayClaim(item, depth + 1)
-      if (sanitized === INVALID_DISPLAY_CLAIM) return INVALID_DISPLAY_CLAIM
-      output.push(sanitized)
-    }
-    return output
-  }
-
-  if (!isPlainRecord(value)) return INVALID_DISPLAY_CLAIM
-  const entries = Object.entries(value)
-  if (entries.length > MAX_DISPLAY_COLLECTION_ENTRIES) return INVALID_DISPLAY_CLAIM
-
-  const output: Record<string, SafeDisplayClaim> = {}
-  for (const [key, item] of entries) {
-    if (!isSafePropertyName(key)) continue
-    const sanitized = sanitizeDisplayClaim(item, depth + 1)
-    if (sanitized === INVALID_DISPLAY_CLAIM) return INVALID_DISPLAY_CLAIM
-    defineSafeProperty(output, key, sanitized)
-  }
-  return output
-}
-
-function copySafeCustomClaims(
-  target: Record<string, unknown>,
-  input: Record<string, unknown>,
-): void {
-  let copied = 0
-  for (const [key, value] of Object.entries(input)) {
-    if (copied >= MAX_DISPLAY_COLLECTION_ENTRIES) break
-    if (RESERVED_USER_CLAIMS.has(key) || !isSafePropertyName(key)) continue
-
-    const sanitized = sanitizeDisplayClaim(value, 0)
-    if (sanitized === INVALID_DISPLAY_CLAIM) continue
-    defineSafeProperty(target, key, sanitized)
-    copied += 1
-  }
 }
 
 function readDisplayString(value: unknown): string | null | undefined {
@@ -283,7 +180,7 @@ export function decodeUserFromJwt(token: string): ConvexUser | null {
   const payload = decodeJwtPayload(token)
   if (!payload) return null
 
-  // @convex-dev/better-auth always signs Better Auth user.id as `sub`, and
+  // Better Convex Nuxt always signs the Better Auth logical user id as `sub`, and
   // Convex uses that same subject for backend identity. Never let a display
   // claim choose a different principal or coerce an object/number into an id.
   const subject = payload.sub
@@ -297,49 +194,12 @@ export function decodeUserFromJwt(token: string): ConvexUser | null {
 
   const user: ConvexUser & Record<string, unknown> = { id: subject }
   copyNormalizedDisplayFields(user, payload)
-  copySafeCustomClaims(user, payload)
   return user
 }
 
 // ============================================================================
 // Types
 // ============================================================================
-
-// ============================================================================
-// Response Parsing
-// ============================================================================
-
-/**
- * Parse Convex response, handling both success and error formats.
- *
- * Success formats:
- * - { value: T, status: 'success' }
- * - { value: T }
- * - T (direct value for primitives)
- *
- * Error format (the Convex HTTP API's actual contract):
- * - { status: 'error', errorMessage: string }
- *
- * Only `status === 'error'` is treated as an error. A payload whose `value`
- * legitimately contains a `code` field (e.g. `{ status: 'success', value: {
- * code: 'x' } }`) must not be mistaken for an error response.
- */
-export function parseConvexResponse<T>(response: unknown): T {
-  // Check for error response
-  if (response && typeof response === 'object') {
-    const resp = response as Record<string, unknown>
-    if (resp.status === 'error') {
-      const message = (resp.errorMessage || resp.message || 'Query failed') as string
-      throw new Error(message)
-    }
-    // Check for value wrapper
-    if ('value' in resp) {
-      return resp.value as T
-    }
-  }
-  // Direct value (shouldn't happen with Convex, but handle gracefully)
-  return response as T
-}
 
 // ============================================================================
 // Query Status

@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_NPM_VERSION: '11.18.0'
+
 jobs:
   secrets:
     runs-on: ubuntu-latest
@@ -33,17 +36,17 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.12.0'
+          node-version: '22.14.0'
       - name: Update and enable Corepack
         run: npm install --global corepack@0.34.5 && corepack enable
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Install browser
         run: pnpm exec playwright install --with-deps chromium
-      - name: Verify supported Node baseline
-        run: pnpm verify
+      - name: Certify core source lane
+        run: pnpm release:certify:source core
 
-  release-gate:
+  auth-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -52,12 +55,48 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Install browser
-        run: pnpm exec playwright install --with-deps chromium
-      - name: Release verification
-        run: pnpm release:verify
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check:auth-backend --install
+      - name: Certify auth source lane
+        run: pnpm release:certify:source auth
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  auth-real-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check:auth-backend --install
+      - name: Certify end-to-end source lane
+        run: pnpm release:certify:source e2e
+
+  release-gate:
+    needs: [secrets, compatibility, auth-contracts, auth-real-backend]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every independent source lane
+        env:
+          AUTH_CONTRACTS: ${{ needs.auth-contracts.result }}
+          AUTH_REAL_BACKEND: ${{ needs.auth-real-backend.result }}
+          COMPATIBILITY: ${{ needs.compatibility.result }}
+          SECRETS: ${{ needs.secrets.result }}
+        run: |
+          for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND"; do
+            test "$result" = success
+          done

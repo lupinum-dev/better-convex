@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { setup } from '@nuxt/test-utils/e2e'
 import { ConvexHttpClient } from 'convex/browser'
 import { makeFunctionReference } from 'convex/server'
-import { chromium, type APIRequestContext, type Page } from 'playwright'
+import { chromium, type APIRequestContext, type Browser, type Page } from 'playwright'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { assertLocalAuthReady, ensureLocalConvex } from '../../helpers/local-convex'
@@ -19,6 +19,19 @@ const getPermissionContext = makeFunctionReference<
   Record<string, never>,
   { role: string; userId: string }
 >('auth:getPermissionContext')
+
+// Simulate the normalized post-ingress value with one address per isolated
+// browser context so Better Auth's production per-IP limits do not couple
+// otherwise independent scenarios. Dedicated proxy security tests prove that
+// the real boundary strips, authenticates, and forwards this header safely.
+const testClientIpHeader = 'x-e2e-client-ip'
+let nextTestClientIp = 1
+
+function createIsolatedBrowserContext(browser: Browser) {
+  const clientIp = `192.0.2.${nextTestClientIp}`
+  nextTestClientIp += 1
+  return browser.newContext({ extraHTTPHeaders: { [testClientIpHeader]: clientIp } })
+}
 
 async function registerAndSignIn(page: Page, email: string) {
   await page.goto('http://localhost:3050/auth/signup')
@@ -53,7 +66,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
 const pollOptions = { interval: 100, timeout: 15_000 }
 
 async function expectAuthenticatedIdentity(page: Page): Promise<string> {
-  await expect.poll(() => page.getByTestId('auth-state').textContent(), pollOptions).toBe('true')
+  await expect
+    .poll(() => page.getByTestId('auth-state').textContent(), pollOptions)
+    .toBe('authenticated')
   await expect
     .poll(async () => {
       const sessionUserId = await page.getByTestId('session-user-id').textContent()
@@ -66,7 +81,9 @@ async function expectAuthenticatedIdentity(page: Page): Promise<string> {
 }
 
 async function expectAnonymousIdentity(page: Page): Promise<void> {
-  await expect.poll(() => page.getByTestId('auth-state').textContent(), pollOptions).toBe('false')
+  await expect
+    .poll(() => page.getByTestId('auth-state').textContent(), pollOptions)
+    .toBe('anonymous')
   await expect.poll(() => page.getByTestId('auth-email').textContent(), pollOptions).toBe('none')
   await expect
     .poll(() => page.getByTestId('session-user-id').textContent(), pollOptions)
@@ -90,12 +107,16 @@ describe('canonical Better Auth session matrix', async () => {
 
   await setup({
     rootDir: playgroundCwd,
-    env: local.env,
+    env: { ...local.env, SITE_URL: 'http://localhost:3050' },
     port: 3050,
     nuxtConfig: {
       convex: {
         url: convexUrl,
         siteUrl: local.env.NUXT_PUBLIC_CONVEX_SITE_URL,
+        auth: {
+          origin: 'http://localhost:3050',
+          trustedClientIpHeader: testClientIpHeader,
+        },
       },
       routeRules: {
         '/labs/use-auth-test': {
@@ -110,9 +131,9 @@ describe('canonical Better Auth session matrix', async () => {
     },
   })
 
-  it('propagates raw Better Auth logout across tabs and clears Convex identity', async () => {
+  it('propagates integrated Better Auth logout across tabs and clears Convex identity', async () => {
     const browser = await chromium.launch()
-    const context = await browser.newContext()
+    const context = await createIsolatedBrowserContext(browser)
     const page = await context.newPage()
     const secondPage = await context.newPage()
 
@@ -123,7 +144,7 @@ describe('canonical Better Auth session matrix', async () => {
       const firstIdentity = await expectAuthenticatedIdentity(page)
       expect(await expectAuthenticatedIdentity(secondPage)).toBe(firstIdentity)
 
-      await page.getByTestId('raw-signout').click()
+      await page.getByTestId('integrated-signout').click()
       await expectAnonymousIdentity(page)
       await expectAnonymousIdentity(secondPage)
     } finally {
@@ -133,7 +154,7 @@ describe('canonical Better Auth session matrix', async () => {
 
   it('replaces the prior account identity after logout and a second registration', async () => {
     const browser = await chromium.launch()
-    const context = await browser.newContext()
+    const context = await createIsolatedBrowserContext(browser)
     const page = await context.newPage()
     const secondPage = await context.newPage()
 
@@ -149,7 +170,7 @@ describe('canonical Better Auth session matrix', async () => {
       const firstIdentity = await expectAuthenticatedIdentity(page)
       expect(await expectAuthenticatedIdentity(secondPage)).toBe(firstIdentity)
 
-      await secondPage.getByTestId('raw-signout').click()
+      await secondPage.getByTestId('integrated-signout').click()
       await expectAnonymousIdentity(page)
       await expectAnonymousIdentity(secondPage)
 
@@ -174,9 +195,9 @@ describe('canonical Better Auth session matrix', async () => {
 
   it('isolates sequential and concurrent SSR payloads and defeats shared-cache route headers', async () => {
     const browser = await chromium.launch()
-    const contextA = await browser.newContext()
-    const contextB = await browser.newContext()
-    const anonymousContext = await browser.newContext()
+    const contextA = await createIsolatedBrowserContext(browser)
+    const contextB = await createIsolatedBrowserContext(browser)
+    const anonymousContext = await createIsolatedBrowserContext(browser)
     const pageA = await contextA.newPage()
     const pageB = await contextB.newPage()
 
@@ -241,11 +262,11 @@ describe('canonical Better Auth session matrix', async () => {
     }
   })
 
-  it('revokes Better Auth sessions while an issued Convex JWT remains replayable only until exp', async () => {
+  it('rejects public session bearer exchange while an issued Convex JWT remains replayable only until exp', async () => {
     const browser = await chromium.launch()
-    const contextA = await browser.newContext()
-    const contextB = await browser.newContext()
-    const bearerContext = await browser.newContext()
+    const contextA = await createIsolatedBrowserContext(browser)
+    const contextB = await createIsolatedBrowserContext(browser)
+    const bearerContext = await createIsolatedBrowserContext(browser)
     const pageA = await contextA.newPage()
     const pageB = await contextB.newPage()
 
@@ -264,15 +285,11 @@ describe('canonical Better Auth session matrix', async () => {
       expect(typeof firstSessions[0]?.token).toBe('string')
       const sessionTokenA = firstSessions[0]!.token as string
 
-      const bearerExchangeA = await bearerContext.request.get(
+      const rawBearerBeforeRevocation = await bearerContext.request.get(
         'http://localhost:3050/api/auth/convex/token',
         { headers: { authorization: `Bearer ${sessionTokenA}` } },
       )
-      expect(bearerExchangeA.status()).toBe(200)
-      const bearerClaimsA = decodeJwtPayload(
-        ((await bearerExchangeA.json()) as { token: string }).token,
-      )
-      expect(bearerClaimsA.sub).toBe(userId)
+      expect(rawBearerBeforeRevocation.status()).toBe(401)
 
       const tokenResponseA = await contextA.request.get(
         'http://localhost:3050/api/auth/convex/token',
@@ -283,9 +300,10 @@ describe('canonical Better Auth session matrix', async () => {
       expect(claimsA.sub).toBe(userId)
       expect(typeof claimsA.iat).toBe('number')
       expect(typeof claimsA.exp).toBe('number')
-      // @convex-dev/better-auth 0.12.5 defaults to a 15-minute JWT. This is
-      // the cryptographic replay ceiling after the backing session is removed.
-      expect((claimsA.exp as number) - (claimsA.iat as number)).toBe(15 * 60)
+      // Session JWTs stay within the supported 15-minute replay ceiling after
+      // the backing Better Auth session is removed.
+      expect((claimsA.exp as number) - (claimsA.iat as number)).toBeGreaterThan(0)
+      expect((claimsA.exp as number) - (claimsA.iat as number)).toBeLessThanOrEqual(15 * 60)
 
       await signIn(pageB, email)
       await pageB.goto('http://localhost:3050/labs/use-auth-test')
@@ -302,11 +320,11 @@ describe('canonical Better Auth session matrix', async () => {
         'http://localhost:3050/api/auth/convex/token',
       )
       expect(rejectedExchangeA.status()).toBe(401)
-      const rejectedBearerExchangeA = await bearerContext.request.get(
+      const rawBearerAfterRevocation = await bearerContext.request.get(
         'http://localhost:3050/api/auth/convex/token',
         { headers: { authorization: `Bearer ${sessionTokenA}` } },
       )
-      expect(rejectedBearerExchangeA.status()).toBe(401)
+      expect(rawBearerAfterRevocation.status()).toBe(401)
 
       const replayClientA = new ConvexHttpClient(convexUrl)
       replayClientA.setAuth(convexTokenA)

@@ -9,6 +9,10 @@ export default defineNuxtConfig({
   convex: {
     url: 'https://auth-client-typing.convex.cloud',
     siteUrl: 'https://auth-client-typing.convex.site',
+    auth: {
+      origin: process.env.SITE_URL ?? 'https://auth-client-typing.example.test',
+      trustedClientIpHeader: 'x-test-client-ip',
+    },
   },
   typescript: {
     // The base-fallback assertions are a SEPARATE TypeScript program (its own

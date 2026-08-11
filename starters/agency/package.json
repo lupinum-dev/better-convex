@@ -3,29 +3,30 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nuxt dev",
-    "build": "nuxt build",
-    "preview": "nuxt preview",
-    "convex:dev": "convex dev",
-    "convex:codegen": "convex codegen",
+    "dev": "nuxt dev --dotenv .env.local",
+    "build": "nuxt build --dotenv .env.local",
+    "preview": "nuxt preview --dotenv .env.local",
+    "convex:configure": "better-convex-nuxt-convex configure",
+    "convex:dev": "better-convex-nuxt-convex dev",
+    "convex:codegen": "better-convex-nuxt-convex codegen",
     "test": "vitest run",
-    "typecheck": "nuxt typecheck"
+    "typecheck": "nuxt typecheck --dotenv .env.local"
   },
   "dependencies": {
-    "@convex-dev/better-auth": "0.12.5",
-    "better-auth": "1.6.23",
-    "better-convex-nuxt": "0.6.1",
+    "@better-auth/oauth-provider": "1.7.0-rc.2",
+    "better-auth": "1.7.0-rc.2",
+    "better-convex-nuxt": "0.8.0-beta.40",
     "convex": "1.42.2",
-    "nuxt": "4.4.8",
-    "vue": "^3.5.25"
+    "nuxt": "4.5.1",
+    "vue": "3.5.40"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",
     "convex-test": "^0.0.41",
     "typescript": "~5.9.3",
-    "vite": "^7.2.7",
+    "vite": "8.1.5",
     "vitest": "^4.0.18",
     "vue-tsc": "^3.3.7"
   },
-  "packageManager": "pnpm@10.30.3"
+  "packageManager": "pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1"
 }

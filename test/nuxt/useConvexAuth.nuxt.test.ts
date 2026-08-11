@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 import { useNuxtApp, useState } from '#imports'
 
@@ -9,281 +9,106 @@ import {
   toAuthenticatedIdentity,
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
-import {
-  createConvexAuthCoordinator,
-  type AuthClientWithConvex,
-  type ConvexAuthCoordinator,
-  type ConvexAuthCoordinatorState,
-} from '../../src/runtime/auth/client-engine'
 import { useConvexAuth } from '../../src/runtime/composables/useConvexAuth'
-import type { ConvexUser } from '../../src/runtime/utils/types'
+import type { NuxtConvexAuthController } from '../../src/runtime/runtime-context'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
 
-function makeJwt(sub: string): string {
-  const toBase64Url = (value: string) =>
-    Buffer.from(value, 'utf-8')
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/g, '')
-  const payload = { sub, exp: Math.floor(Date.now() / 1000) + 3600 }
-  return `${toBase64Url(JSON.stringify({ alg: 'none' }))}.${toBase64Url(JSON.stringify(payload))}.sig`
-}
-
-/**
- * current implementation: `useConvexAuth()` derives its reactive contract (status/isPending/
- * isAuthenticated/user/token/error) from the canonical SSR-seeded identity plus
- * pending/error `useState` refs, and delegates operations (signOut/refresh/ready)
- * plus the integrated signIn/signUp namespaces to the coordinator owned by the
- * per-app runtime context.
- */
-function provideFakeCoordinator(
-  nuxtApp: ReturnType<typeof useNuxtApp>,
-  overrides: Partial<ConvexAuthCoordinator> = {},
-): ConvexAuthCoordinator {
-  const coordinator = {
-    port: {} as ConvexAuthCoordinator['port'],
-    status: computed(() => 'anonymous' as const),
+function controller(overrides: Partial<NuxtConvexAuthController> = {}): NuxtConvexAuthController {
+  return {
     isPending: computed(() => false),
-    isAuthenticated: computed(() => false),
-    token: ref(null),
-    user: ref(null),
-    error: computed(() => null),
-    wrapNamespace: <T extends object>(n: T) => n,
-    integratedSignIn: null,
-    integratedSignUp: null,
+    client: {},
     ready: vi.fn(async () => 'anonymous' as const),
-    refresh: vi.fn(async () => {}),
-    signOut: vi.fn(async () => ({ data: { success: true }, error: null })),
-    attachPrimary: vi.fn(),
     dispose: vi.fn(),
     ...overrides,
-  } as unknown as ConvexAuthCoordinator
-
-  if (!nuxtApp.$convexRuntime) throw new Error('Convex runtime was not installed')
-  nuxtApp.$convexRuntime.attachAuthCoordinator(coordinator)
-  return coordinator
+  }
 }
 
-describe('useConvexAuth (Nuxt runtime, current implementation)', () => {
-  it('returns the stable disabled contract for an auth-disabled build', async () => {
-    const { result } = await captureInNuxt(() => useConvexAuth(), {
-      convexConfig: { auth: false },
-    })
-
-    expect(result.status.value).toBe('disabled')
-    expect(result.isAuthenticated.value).toBe(false)
-    expect(result.isPending.value).toBe(false)
-    expect(result.client).toBe(null)
-    await expect(result.ready()).resolves.toBe('disabled')
-    await expect(result.signOut()).rejects.toThrow()
-    await expect(result.refresh()).rejects.toThrow()
-  })
-
-  it('derives authenticated state from token + user', async () => {
+describe('useConvexAuth Nuxt facade', () => {
+  it('derives loading, authenticated, anonymous, and error from canonical Nuxt state', async () => {
     const { result } = await captureInNuxt(
-      () => {
-        const identity = useState<AuthIdentity>('convex:identity')
-        const pending = useState<boolean>('convex:pending')
-        pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt.token', { id: 'u1' } as ConvexUser)
-        return useConvexAuth()
-      },
-      { convexConfig: { auth: {} } },
-    )
-
-    expect(result.isAuthenticated.value).toBe(true)
-    expect(result.status.value).toBe('authenticated')
-    expect(result.token.value).toBe('jwt.token')
-  })
-
-  it('derives loading while unsettled and error when settled with an authError', async () => {
-    const { result: loading } = await captureInNuxt(
       () => {
         const identity = useState<AuthIdentity>('convex:identity')
         const pending = useState<boolean>('convex:pending')
         const authError = useState<string | null>('convex:authError')
         identity.value = LOADING_IDENTITY
-        authError.value = null
         pending.value = true
-        return useConvexAuth()
+        authError.value = null
+        return { auth: useConvexAuth(), identity, pending, authError }
       },
-      { convexConfig: { auth: {} } },
+      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
     )
-    expect(loading.status.value).toBe('loading')
 
-    const { result: errored } = await captureInNuxt(
-      () => {
-        const identity = useState<AuthIdentity>('convex:identity')
-        const pending = useState<boolean>('convex:pending')
-        const authError = useState<string | null>('convex:authError')
-        identity.value = ANONYMOUS_IDENTITY
-        pending.value = false
-        authError.value = 'token exchange failed'
-        return useConvexAuth()
-      },
-      { convexConfig: { auth: {} } },
-    )
-    expect(errored.status.value).toBe('error')
-    expect(errored.error.value?.message).toContain('token exchange failed')
+    expect(result.auth.status.value).toBe('loading')
+    expect(result.auth.error.value).toBeUndefined()
+    result.identity.value = toAuthenticatedIdentity('jwt-secret', { id: 'alice' })
+    result.pending.value = false
+    expect(result.auth.status.value).toBe('authenticated')
+    expect(result.auth.user.value?.id).toBe('alice')
+
+    result.identity.value = ANONYMOUS_IDENTITY
+    expect(result.auth.status.value).toBe('anonymous')
+    result.authError.value = 'Authentication is temporarily unavailable'
+    expect(result.auth.status.value).toBe('error')
+    expect(result.auth.error.value).toMatchObject({ kind: 'authentication' })
+    expect(Object.keys(result.auth)).not.toContain('token')
+    expect(Object.keys(result.auth)).not.toContain('isAuthenticated')
   })
 
-  it('delegates signOut/refresh/ready to the injected coordinator', async () => {
-    let coordinator!: ConvexAuthCoordinator
+  it('exposes only the per-app integrated client and delegates ready', async () => {
+    const integratedClient = {
+      useSession: vi.fn(() => ({ value: { isPending: false } })),
+      signIn: { email: vi.fn(async () => ({ data: {}, error: null })) },
+    }
+    const authController = controller({ client: integratedClient })
     const { result } = await captureInNuxt(
       () => {
-        const app = useNuxtApp()
-        coordinator = provideFakeCoordinator(app)
+        useNuxtApp().$convexRuntime!.attachAuthController(authController)
         return useConvexAuth()
       },
-      { convexConfig: { auth: {} } },
+      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
     )
 
-    await result.signOut()
-    await result.refresh()
-    await result.ready({ timeoutMs: 10 })
-    expect(coordinator.signOut).toHaveBeenCalledTimes(1)
-    expect(coordinator.refresh).toHaveBeenCalledTimes(1)
-    expect(coordinator.ready).toHaveBeenCalledTimes(1)
+    expect(result.client).toBe(integratedClient)
+    expect(result.client?.useSession()).toEqual({ value: { isPending: false } })
+    await result.ready({ timeoutMs: 5 })
+    expect(authController.ready).toHaveBeenCalledWith({ timeoutMs: 5 })
+    expect(Object.keys(result)).not.toContain('signIn')
+    expect(Object.keys(result)).not.toContain('signOut')
+    expect(Object.keys(result)).not.toContain('refresh')
   })
 
-  it('exposes the coordinator integrated signIn/signUp namespaces', async () => {
-    const signInNamespace = {
-      email: async () => ({ data: { token: 't' }, error: null }),
-    }
-    const { result } = await captureInNuxt(
+  it('keeps two captured application controllers isolated', async () => {
+    const firstClient = { app: 'first' }
+    const secondClient = { app: 'second' }
+    const first = controller({
+      client: firstClient,
+      ready: vi.fn(async () => 'authenticated' as const),
+    })
+    const second = controller({
+      client: secondClient,
+      ready: vi.fn(async () => 'anonymous' as const),
+    })
+    const firstResult = await captureInNuxt(
       () => {
-        const app = useNuxtApp()
-        provideFakeCoordinator(app, {
-          integratedSignIn: signInNamespace,
-        })
+        useNuxtApp().$convexRuntime!.attachAuthController(first)
         return useConvexAuth()
       },
-      { convexConfig: { auth: {} } },
+      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
     )
+    expect(firstResult.result.client).toBe(firstClient)
+    expect(await firstResult.result.ready()).toBe('authenticated')
+    firstResult.wrapper.unmount()
 
-    expect(result.signIn).toBe(signInNamespace)
-  })
-
-  it('SSR-authenticated hydration never exposes "loading" (exception)', async () => {
-    const observed: string[] = []
-    const { result, wrapper } = await captureInNuxt(
+    const secondResult = await captureInNuxt(
       () => {
-        const identity = useState<AuthIdentity>('convex:identity', () => LOADING_IDENTITY)
-        const pending = useState<boolean>('convex:pending', () => true)
-        const authError = useState<string | null>('convex:authError', () => null)
-
-        // Simulate the SSR-hydrated snapshot published BEFORE the auth-enabled
-        // client plugin (and its `attachPrimary`) ever runs, exactly as
-        // `useConvexAuth()` seeds hydrated state from payload-restored refs.
-        identity.value = toAuthenticatedIdentity(makeJwt('A'), { id: 'A' } as ConvexUser)
-        pending.value = false
-        authError.value = null
-
-        const auth = useConvexAuth()
-        watch(auth.status, (value) => observed.push(value), {
-          immediate: true,
-          flush: 'sync',
-        })
-        return auth
+        useNuxtApp().$convexRuntime!.attachAuthController(second)
+        return useConvexAuth()
       },
-      { convexConfig: { auth: {} } },
+      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
     )
-
-    expect(result.status.value).toBe('authenticated')
-    expect(observed).toEqual(['authenticated'])
-    expect(observed).not.toContain('loading')
-
-    wrapper.unmount()
-  })
-
-  it('a real coordinator attached to a hydrated snapshot settles without ever publishing loading', async () => {
-    // End-to-end: the REAL coordinator's `attachPrimary` hydration path
-    // (architecture invariant) publishes the settled authenticated state before
-    // client-side confirmation; the fake client below resolves confirmation
-    // synchronously, but `status` must never observe `loading` in between.
-    const observed: string[] = []
-    const authClient = {
-      convex: {
-        token: async () => ({ data: { token: makeJwt('A') }, error: null }),
-      },
-      signIn: {},
-      signUp: {},
-    } as unknown as AuthClientWithConvex
-
-    await captureInNuxt(
-      () => {
-        const identity = useState<AuthIdentity>('convex:identity', () => LOADING_IDENTITY)
-        const pending = useState<boolean>('convex:pending', () => true)
-        const authError = useState<string | null>('convex:authError', () => null)
-        identity.value = toAuthenticatedIdentity(makeJwt('A'), { id: 'A' } as ConvexUser)
-        pending.value = false
-        authError.value = null
-
-        const state: ConvexAuthCoordinatorState = {
-          identity,
-          pending,
-          authError,
-        }
-        const coordinator = createConvexAuthCoordinator({ authClient, state })
-        watch(coordinator.status, (value) => observed.push(value), {
-          immediate: true,
-          flush: 'sync',
-        })
-        coordinator.attachPrimary({
-          setAuth: (
-            fetcher: (o: { forceRefreshToken: boolean }) => Promise<string | null>,
-            onChange: (ok: boolean) => void,
-          ) => {
-            void Promise.resolve(fetcher({ forceRefreshToken: false })).then((t) =>
-              onChange(Boolean(t)),
-            )
-          },
-        } as unknown as import('convex/browser').ConvexClient)
-        return coordinator
-      },
-      { convexConfig: { auth: {} } },
-    )
-
-    expect(observed[0]).toBe('authenticated')
-    expect(observed).not.toContain('loading')
-  })
-
-  it('HMR-safe: reevaluating the auth plugin on the same app reuses the existing coordinator', async () => {
-    // Models `plugin.auth.client.ts`'s runtime-context idempotency guard against
-    // the real coordinator factory. A second run on the same application must
-    // reuse the existing coordinator (architecture invariant HMR reuse).
-    let createCount = 0
-    const authClient = {
-      convex: { token: async () => ({ data: null, error: null }) },
-      signIn: {},
-      signUp: {},
-    } as unknown as AuthClientWithConvex
-
-    function runPluginOnce(nuxtApp: ReturnType<typeof useNuxtApp>) {
-      const existing = nuxtApp.$convexRuntime?.getAuthCoordinator()
-      if (existing) return existing
-      createCount += 1
-      const state: ConvexAuthCoordinatorState = {
-        identity: useState<AuthIdentity>('convex:identity', () => ANONYMOUS_IDENTITY),
-        pending: useState('convex:pending', () => false),
-        authError: useState('convex:authError', () => null),
-      }
-      const coordinator = createConvexAuthCoordinator({ authClient, state })
-      nuxtApp.$convexRuntime?.attachAuthCoordinator(coordinator)
-      return coordinator
-    }
-
-    await captureInNuxt(
-      () => {
-        const app = useNuxtApp()
-        const first = runPluginOnce(app)
-        const second = runPluginOnce(app) // simulated HMR reevaluation
-        expect(second).toBe(first)
-        return { first, second }
-      },
-      { convexConfig: { auth: {} } },
-    )
-    expect(createCount).toBe(1)
+    expect(secondResult.result.client).toBe(secondClient)
+    expect(await secondResult.result.ready()).toBe('anonymous')
+    expect(first.ready).toHaveBeenCalledOnce()
+    expect(second.ready).toHaveBeenCalledOnce()
   })
 })

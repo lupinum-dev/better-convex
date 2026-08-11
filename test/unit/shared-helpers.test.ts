@@ -7,12 +7,7 @@
 
 import { describe, it, expect } from 'vitest'
 
-import {
-  deepEqual,
-  argsMatch,
-  compareJsonValues,
-  generatePaginationId,
-} from '../../src/runtime/utils/shared-helpers'
+import { deepEqual, argsMatch, compareJsonValues } from '../../src/runtime/utils/shared-helpers'
 
 // ============================================================================
 // deepEqual Tests
@@ -292,32 +287,5 @@ describe('compareJsonValues', () => {
         compareJsonValues({ $integer: '9007199254740992' }, { $integer: '9007199254740993' }),
       ).toBeLessThan(0)
     })
-  })
-})
-
-// ============================================================================
-// Pagination ID Generation Tests
-// ============================================================================
-
-describe('generatePaginationId', () => {
-  it('returns unique IDs', () => {
-    const id1 = generatePaginationId()
-    const id2 = generatePaginationId()
-    const id3 = generatePaginationId()
-
-    // All IDs should be different (with very high probability due to random)
-    expect(id1).not.toBe(id2)
-    expect(id2).not.toBe(id3)
-    expect(id1).not.toBe(id3)
-  })
-
-  it('returns number', () => {
-    expect(typeof generatePaginationId()).toBe('number')
-  })
-
-  it('returns positive integer', () => {
-    const id = generatePaginationId()
-    expect(id).toBeGreaterThan(0)
-    expect(Number.isInteger(id)).toBe(true)
   })
 })

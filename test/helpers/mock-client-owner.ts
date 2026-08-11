@@ -20,7 +20,7 @@ export function makeMockOwner(
     getPrimary: () => ({ client: primary, identityGeneration: 0 }),
     getAnonymous: () => anonymous,
     replacePrimary: async () => primary,
-    attachAuthPort: () => {},
+    attachIdentityPort: () => {},
     connection: {
       state: { value: {} },
       addConsumer: () => () => {},

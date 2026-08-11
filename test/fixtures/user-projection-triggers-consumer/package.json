@@ -1,0 +1,19 @@
+{
+  "name": "user-projection-triggers-consumer",
+  "private": true,
+  "description": "Packed-probe consumer for createUserProjectionTriggers from better-convex-nuxt/convex-auth, exercised from a real node_modules-resident install of the packed tarball.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@better-auth/oauth-provider": "1.7.0-rc.2",
+    "better-auth": "1.7.0-rc.2",
+    "better-convex-nuxt": "file:./better-convex-nuxt.tgz",
+    "convex": "1.42.2",
+    "nuxt": "4.5.1",
+    "typescript": "5.9.3"
+  }
+}

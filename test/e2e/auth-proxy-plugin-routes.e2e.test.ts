@@ -98,6 +98,7 @@ describe('auth proxy plugin routes', async () => {
       convex: {
         url: 'https://demo.convex.cloud',
         siteUrl: upstream.url,
+        auth: { origin: 'http://localhost:3000' },
       },
     },
   })
@@ -160,6 +161,9 @@ describe('auth proxy plugin routes', async () => {
         'x-forwarded-for': '10.0.0.1',
         'x-forwarded-host': 'evil.example.test',
         'x-better-auth-forwarded-host': 'evil.example.test',
+        'x-bcn-client-ip': '10.0.0.2',
+        'x-bcn-client-ip-signature': 'forged-signature',
+        'x-bcn-verified-client-ip': '10.0.0.3',
       },
     })
     const request = capturedRequests.at(-1)
@@ -167,6 +171,9 @@ describe('auth proxy plugin routes', async () => {
     expect(request?.headers['x-forwarded-host']).toBeUndefined()
     expect(request?.headers['x-better-auth-forwarded-host']).toBeUndefined()
     expect(request?.headers['x-better-auth-forwarded-proto']).toBeUndefined()
+    expect(request?.headers['x-bcn-client-ip']).toBeUndefined()
+    expect(request?.headers['x-bcn-client-ip-signature']).toBeUndefined()
+    expect(request?.headers['x-bcn-verified-client-ip']).toBeUndefined()
   })
 
   it('removes Connection-nominated and transport-owned request headers', async () => {
@@ -193,7 +200,8 @@ describe('auth proxy plugin routes', async () => {
     expect(request?.body).toBe('{}')
   })
 
-  it('never converts forged or duplicate public-host inputs into upstream controls', async () => {
+  it('denies forged or duplicate public-host inputs before upstream delivery', async () => {
+    const requestCount = capturedRequests.length
     const firstStatus = await requestNitro('/api/auth/get-session', {
       headers: {
         host: 'evil.example.test',
@@ -209,7 +217,7 @@ describe('auth proxy plugin routes', async () => {
         'x-better-auth-forwarded-proto': 'http',
       },
     })
-    expect(firstStatus).toBe(201)
+    expect(firstStatus).toBe(403)
 
     const duplicateStatus = await requestNitro('/api/auth/get-session', {
       headers: [
@@ -221,20 +229,8 @@ describe('auth proxy plugin routes', async () => {
         'http://first.example.test',
       ],
     })
-    expect(duplicateStatus).toBe(201)
-
-    for (const request of capturedRequests.slice(-2)) {
-      expect(request.headers.host).toBe(new URL(upstream.url).host)
-      expect(request.headers.forwarded).toBeUndefined()
-      expect(request.headers['x-forwarded-for']).toBeUndefined()
-      expect(request.headers['x-forwarded-host']).toBeUndefined()
-      expect(request.headers['x-forwarded-proto']).toBeUndefined()
-      expect(request.headers['x-real-ip']).toBeUndefined()
-      expect(request.headers['x-original-host']).toBeUndefined()
-      expect(request.headers['x-vercel-forwarded-host']).toBeUndefined()
-      expect(request.headers['x-better-auth-forwarded-host']).toBeUndefined()
-      expect(request.headers['x-better-auth-forwarded-proto']).toBeUndefined()
-    }
+    expect(duplicateStatus).toBe(403)
+    expect(capturedRequests).toHaveLength(requestCount)
   })
 
   it('blocks cross-site POST evidence but preserves the exact core form_post callback', async () => {

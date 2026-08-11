@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { getRequestWebStream } from 'h3'
 
+import { bodyChunkBytes, readStreamWithByteLimit } from '../../../shared/bounded-stream'
 import { CONVEX_MODULE_DEFAULTS } from '../../../utils/config-defaults'
 
 const H3_RAW_BODY = Symbol.for('h3RawBody')
@@ -111,39 +112,6 @@ function createResponseBodySizeError(
   })
 }
 
-function chunkToUint8Array(chunk: unknown): Uint8Array {
-  if (chunk instanceof Uint8Array) return chunk
-  if (chunk instanceof ArrayBuffer) return new Uint8Array(chunk)
-  if (typeof chunk === 'string') return new TextEncoder().encode(chunk)
-  throw new TypeError('[better-convex-nuxt] Auth proxy body stream yielded an unsupported chunk.')
-}
-
-async function readNextChunk(
-  reader: ReadableStreamDefaultReader<unknown>,
-  signal?: AbortSignal,
-): Promise<ReadableStreamReadResult<unknown>> {
-  if (!signal) return await reader.read()
-  if (signal.aborted) throw signal.reason
-  return await new Promise((resolve, reject) => {
-    const abort = () => {
-      reject(signal.reason ?? new Error('Auth proxy body read was aborted'))
-    }
-    signal.addEventListener('abort', abort, { once: true })
-    reader
-      .read()
-      .then(resolve, reject)
-      .finally(() => signal.removeEventListener('abort', abort))
-  })
-}
-
-function cancelReader(reader: ReadableStreamDefaultReader<unknown>, reason: unknown): void {
-  try {
-    void reader.cancel(reason).catch(() => {})
-  } catch {
-    // A failed cancellation still leaves no other safe cleanup operation.
-  }
-}
-
 function createNodeRequestBodyStream(event: H3Event): ReadableStream<Uint8Array> {
   const request = event.node.req
   let cancel: () => void = () => {
@@ -174,7 +142,7 @@ function createNodeRequestBodyStream(event: H3Event): ReadableStream<Uint8Array>
       }
       const onData = (value: unknown) => {
         try {
-          controller.enqueue(chunkToUint8Array(value))
+          controller.enqueue(bodyChunkBytes(value))
         } catch (error) {
           fail(error)
         }
@@ -211,46 +179,6 @@ function createNodeRequestBodyStream(event: H3Event): ReadableStream<Uint8Array>
   })
 }
 
-async function readStreamWithLimit(
-  stream: ReadableStream<unknown> | null | undefined,
-  maxBytes: number,
-  createSizeError: (observedBytes: number, maxBytes: number) => ProxyBodySizeErrorShape,
-  signal?: AbortSignal,
-): Promise<Uint8Array | undefined> {
-  if (!stream) return undefined
-
-  const reader = stream.getReader()
-  const chunks: Uint8Array[] = []
-  let totalBytes = 0
-
-  try {
-    while (true) {
-      const { done, value } = await readNextChunk(reader, signal)
-      if (done) break
-
-      const chunk = chunkToUint8Array(value)
-      totalBytes += chunk.byteLength
-      if (totalBytes > maxBytes) {
-        throw createSizeError(totalBytes, maxBytes)
-      }
-      chunks.push(chunk)
-    }
-  } catch (error) {
-    cancelReader(reader, error)
-    throw error
-  } finally {
-    reader.releaseLock()
-  }
-
-  const body = new Uint8Array(totalBytes)
-  let offset = 0
-  for (const chunk of chunks) {
-    body.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return body
-}
-
 export async function readRequestBodyWithLimit(
   event: H3Event,
   maxBytes: number = DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES,
@@ -258,7 +186,7 @@ export async function readRequestBodyWithLimit(
 ): Promise<Uint8Array | undefined> {
   const webBody = event.web?.request?.body
   if (webBody) {
-    return await readStreamWithLimit(webBody, maxBytes, createRequestBodySizeError, signal)
+    return await readStreamWithByteLimit(webBody, maxBytes, createRequestBodySizeError, signal)
   }
 
   const request = event.node.req as H3Event['node']['req'] & Record<PropertyKey, unknown>
@@ -269,7 +197,7 @@ export async function readRequestBodyWithLimit(
     'body' in request ||
     '__unenv__' in request
   if (hasH3Body) {
-    return await readStreamWithLimit(
+    return await readStreamWithByteLimit(
       getRequestWebStream(event),
       maxBytes,
       createRequestBodySizeError,
@@ -281,7 +209,7 @@ export async function readRequestBodyWithLimit(
   // listeners when cancelled. Read the real Node stream directly so a deadline or
   // limit can remove this handler's listeners before Nitro writes the error response.
   if (request.socket) {
-    return await readStreamWithLimit(
+    return await readStreamWithByteLimit(
       createNodeRequestBodyStream(event),
       maxBytes,
       createRequestBodySizeError,
@@ -289,7 +217,7 @@ export async function readRequestBodyWithLimit(
     )
   }
 
-  return await readStreamWithLimit(
+  return await readStreamWithByteLimit(
     getRequestWebStream(event),
     maxBytes,
     createRequestBodySizeError,
@@ -303,7 +231,7 @@ export async function readResponseBodyWithLimit(
   signal?: AbortSignal,
 ): Promise<Uint8Array> {
   return (
-    (await readStreamWithLimit(response.body, maxBytes, createResponseBodySizeError, signal)) ??
+    (await readStreamWithByteLimit(response.body, maxBytes, createResponseBodySizeError, signal)) ??
     new Uint8Array()
   )
 }

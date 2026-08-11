@@ -27,12 +27,12 @@
           />
         </div>
 
-        <div v-if="error" class="error">
-          {{ error }}
+        <div v-if="visibleError" class="error">
+          {{ visibleError }}
         </div>
 
-        <button type="submit" class="btn btn-primary" :disabled="isLoading">
-          {{ isLoading ? 'Signing in...' : 'Sign In' }}
+        <button type="submit" class="btn btn-primary" :disabled="isPending">
+          {{ isPending ? 'Signing in...' : 'Sign In' }}
         </button>
       </form>
 
@@ -45,24 +45,25 @@
 </template>
 
 <script setup lang="ts">
-const { signIn } = useConvexAuth()
+const { client, isPending, error: authError } = useConvexAuth()
 
 const form = reactive({
   email: '',
   password: '',
 })
 
-const isLoading = ref(false)
 const error = ref<string | null>(null)
+const visibleError = computed(() => error.value ?? authError.value?.message ?? null)
 const signInFailure =
   'Sign in could not be completed. Check your credentials and verify your email if required.'
 
 async function handleSignIn() {
-  isLoading.value = true
+  if (isPending.value) return
   error.value = null
 
   try {
-    const result = await signIn.email({
+    if (!client) throw new Error('Authentication client unavailable')
+    const result = await client.signIn.email({
       email: form.email,
       password: form.password,
     })
@@ -72,13 +73,11 @@ async function handleSignIn() {
       return
     }
 
-    // The integrated `signIn` namespace settles identity (token/user) before it
-    // resolves ("Atomic sign-in/sign-up"), so navigate straight away.
+    // The integrated client settles the resulting Convex identity before the
+    // Promise resolves, so navigation cannot race authentication.
     window.location.href = '/'
   } catch {
     error.value = signInFailure
-  } finally {
-    isLoading.value = false
   }
 }
 </script>

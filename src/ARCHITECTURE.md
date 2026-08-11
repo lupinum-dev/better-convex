@@ -8,12 +8,15 @@ runtime. Public usage belongs in the generated API reference and guides.
 | Concept                                                  | Owner                                       |
 | -------------------------------------------------------- | ------------------------------------------- |
 | Better Auth sessions and users                           | Better Auth                                 |
+| OAuth protocol clients, resources, consent, and tokens   | Official Better Auth OAuth Provider         |
 | Application authorization and product data               | Convex functions                            |
-| Active browser Convex client                             | Per-Nuxt-app client owner                   |
-| Auth transitions and identity generation                 | Per-Nuxt-app auth coordinator               |
+| Public auth/OAuth origin                                 | Explicit validated application config       |
+| JWT signing keys and rotation                            | One Better Auth JWKS graph in the component |
+| Active browser Convex client                             | Per-Vue-root Better Convex runtime          |
+| Auth transitions and identity generation                 | Provider-neutral Vue auth adapter/runtime   |
 | Query transport, wire deduplication, and transport cache | Pinned Convex client                        |
 | SSR payload and Vue-visible query state                  | Each query composable                       |
-| Public error shape and normalization                     | `runtime/errors`                            |
+| Public error shape and normalization                     | `better-convex-vue/errors`                  |
 | Public runtime configuration                             | Module schema and runtime config normalizer |
 
 The module does not maintain a second session store, authorization model,
@@ -21,21 +24,24 @@ subscription registry, or raw-client public surface.
 
 ## Module graph
 
-The core client plugin creates one client owner per Nuxt application. When auth
-is enabled, the auth plugin adds one auth coordinator and replaces the owner's
-primary client at identity boundaries. The server plugin exchanges the request
-session once and hydrates the canonical identity state before page setup.
+The Nuxt client plugin installs one `better-convex-vue` runtime per Nuxt
+application. When auth is enabled, the Better Auth adapter supplies only a
+provider-neutral session snapshot and token callback; the Vue runtime owns
+client replacement and identity generations. The server plugin exchanges the
+request session once and hydrates the canonical identity state before page
+setup.
 
-`auth: false` excludes the auth client plugin, server auth plugin, auth proxy,
-and auth middleware from the generated application. Auth composables remain
-available and return their documented disabled state.
+Omitting `auth` excludes the auth client plugin, server auth plugin, auth proxy,
+auth middleware, auth composable, and auth-only type generation from the
+generated application. `auth: false` is the explicit Nuxt-layer tombstone for
+removing inherited auth configuration.
 
 ## Client ownership
 
-`client-owner.ts` is the only code that creates, replaces, and closes browser
-Convex clients. Consumers receive a stable handle containing exactly `query`,
-`mutation`, `action`, and `onUpdate`. The handle never exposes client lifecycle
-methods.
+`packages/vue/src/internal/client-owner.ts` is the only code that creates,
+replaces, and closes browser Convex clients. Consumers receive a stable handle
+containing exactly `query`, `mutation`, `action`, and `onUpdate`. The handle
+never exposes client lifecycle methods.
 
 An identity change retires operations bound to the previous generation,
 rebinds active listeners to the replacement client, publishes that client, and
@@ -44,19 +50,28 @@ selected by the canonical query execution gate.
 
 ## Authentication
 
-The auth coordinator serializes identity-changing operations and owns the
-identity generation. Session observation, token refresh, sign-in, and sign-out
-all converge on that coordinator. Operation progress is separate from settled
-identity state.
+The Vue runtime serializes identity-changing operations and owns the identity
+generation. A provider adapter reports settled authentication snapshots and
+supplies short-lived tokens without receiving a raw Convex client. Session
+observation, token refresh, sign-in, and sign-out all converge on that single
+runtime. Operation progress is separate from settled identity state.
 
 The browser talks to Better Auth only through the fixed same-origin
 `/api/auth` proxy. The proxy accepts GET and POST, validates origin and body
 limits, forwards only selected headers, rejects unsafe cookie attributes, and
-uses bounded request and response bodies. Development diagnostics are
-best-effort and cannot change proxy success or failure.
+uses bounded request and response bodies. Its only cross-origin exceptions are
+non-credentialed public metadata reads and the fixed public-client OAuth token
+POST/OPTIONS profile. Development diagnostics are best-effort and cannot
+change proxy success or failure.
 
 Better Auth establishes identity. Convex functions still enforce every
 authorization rule from canonical backend state.
+
+Delegated MCP traffic enters the deployment-owned Convex HTTP Action directly.
+The official-SDK-backed `better-convex-mcp` handler is the only bearer verifier;
+the Nuxt package owns no MCP relay or protocol parser. Explicit application tool
+registrations map to named internal operations. Each effect recomputes access
+from current provider and application state; token scopes are only a ceiling.
 
 ## Query lifecycle
 
@@ -74,9 +89,10 @@ transport, or error.
 
 ## Calls and errors
 
-Mutations and actions use the shared callable lifecycle. Throwing calls and
-`.safe()` calls pass failures through the same normalizer. `ConvexCallError` is
-the only public error class and the `/errors` export remains framework-free.
+Mutations and actions use the shared callable lifecycle and reject through
+ordinary `await`/`catch`. Every failure passes through the same normalizer.
+`ConvexCallError` is the only public error class and the `/errors` export
+remains framework-free.
 
 Server calls are request-scoped. `serverConvex(event)` owns one lazy token
 promise and one HTTP client per caller. Authenticated callers must never be
@@ -86,18 +102,37 @@ stored globally or shared between requests.
 
 Nuxt payload data, query state, and optional user projections are derived.
 They must be partitioned by identity where applicable and reproducible from
-canonical Better Auth or Convex state. `createUserSyncTriggers` includes a
+canonical Better Auth or Convex state. `createUserProjectionTriggers` includes a
 rebuild path; projections must not become an authorization source.
+
+## Release artifact fingerprint
+
+The release packer replaces one build-output token with a random fingerprint in
+both the packed Nuxt module and a read-only Nitro handler. Only a module carrying
+a valid packed fingerprint registers
+`/api/_better-convex-nuxt/release-fingerprint`; ordinary source and development
+builds remain unbound and do not register it. The response contains only the
+fixed schema version and embedded fingerprint—never environment, deployment, or
+secret data. This route exists solely to let the protected release gate reject a
+stale provider-hosted Nuxt build before staging writes; it is not an application
+identity or authorization source.
 
 ## Public boundaries
 
 The supported package entry points are:
 
+- `better-convex-vue`
+- `better-convex-vue/errors`
+- `better-convex-vue/embedded`
+
 - `better-convex-nuxt`
 - `better-convex-nuxt/auth-client`
+- `better-convex-nuxt/convex-auth`
+- `better-convex-nuxt/convex-auth/convex.config`
+- `better-convex-nuxt/convex-auth/_generated/component.js`
+- `better-convex-nuxt/convex-auth/test`
 - `better-convex-nuxt/errors`
 - `better-convex-nuxt/server`
-- `better-convex-nuxt/server/createUserSyncTriggers`
 
 Anything else under `src/runtime` is internal. Internal files may change
 without compatibility wrappers; released exports and documented behavior
@@ -112,7 +147,7 @@ The permanent suite protects:
 - auth identity changes, stale-operation retirement, and multi-app isolation;
 - query auth modes, identity-partitioned payload state, and pagination;
 - request-scoped server callers and auth proxy security boundaries;
-- public errors and throwing/`.safe()` equivalence;
+- public errors and ordinary rejected-call normalization;
 - Better Auth provider and user-sync contracts.
 
 Migration mechanics and deleted implementation details are not compatibility

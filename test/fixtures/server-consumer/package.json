@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "prepare:types": "nuxi prepare",
+    "probe:production": "node probe.mjs",
     "typecheck": "nuxi typecheck"
   },
   "devDependencies": {
+    "better-auth": "1.7.0-rc.2",
     "better-convex-nuxt": "file:./better-convex-nuxt.tgz",
     "convex": "1.42.2",
-    "nuxt": "4.4.8",
+    "nuxt": "4.5.1",
     "typescript": "5.9.3",
     "vue-tsc": "3.3.7"
   }

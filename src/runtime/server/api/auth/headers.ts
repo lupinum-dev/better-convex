@@ -1,6 +1,10 @@
 import type { H3Event } from 'h3'
 
 import { filterBetterAuthCookies } from '../../../utils/shared-helpers'
+import {
+  buildSignedClientIpHeaders,
+  type SignedClientIpHeadersOptions,
+} from '../../utils/signed-client-ip'
 
 const REQUEST_HEADERS_TO_DROP = new Set([
   'accept-encoding',
@@ -20,6 +24,12 @@ const REQUEST_HEADERS_TO_DROP = new Set([
 ])
 
 const RESPONSE_HEADERS_TO_DROP = new Set([
+  'access-control-allow-credentials',
+  'access-control-allow-headers',
+  'access-control-allow-methods',
+  'access-control-allow-origin',
+  'access-control-expose-headers',
+  'access-control-max-age',
   'cache-control',
   'connection',
   'content-encoding',
@@ -60,6 +70,7 @@ function parseConnectionHeader(value: string | null): Set<string> {
 function isProxyControlHeader(name: string): boolean {
   const lower = name.toLowerCase()
   return (
+    lower.startsWith('x-bcn-') ||
     lower === 'forwarded' ||
     lower === 'client-ip' ||
     lower === 'true-client-ip' ||
@@ -69,7 +80,11 @@ function isProxyControlHeader(name: string): boolean {
     lower.startsWith('x-original-') ||
     lower.startsWith('x-vercel-forwarded-') ||
     lower === 'cloudfront-forwarded-proto' ||
+    lower === 'cf-visitor' ||
     lower === 'front-end-https' ||
+    lower === 'x-envoy-external-address' ||
+    lower === 'x-url-scheme' ||
+    lower === 'x-scheme' ||
     lower === 'x-arr-ssl' ||
     lower.startsWith('x-forwarded-') ||
     lower.startsWith('x-better-auth-forwarded-')
@@ -93,38 +108,14 @@ function stripUnsafeRequestHeaders(headers: Headers): Headers {
   return result
 }
 
-export interface AuthProxyForwardHeadersOptions {
-  trustedClientIpHeader?: string | null
-}
+export type AuthProxyForwardHeadersOptions = SignedClientIpHeadersOptions
 
-function normalizeClientIp(value: string | null): string | null {
-  if (
-    !value ||
-    value.includes(',') ||
-    [...value].some((character) => {
-      const code = character.charCodeAt(0)
-      return code <= 32 || code === 127
-    })
-  ) {
-    return null
-  }
-  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(value)) {
-    return value.split('.').every((part) => Number(part) <= 255) ? value : null
-  }
-  try {
-    new URL(`http://[${value}]/`)
-    return value.toLowerCase()
-  } catch {
-    return null
-  }
-}
-
-export function buildAuthProxyForwardHeaders(
+export async function buildAuthProxyForwardHeaders(
   event: H3Event,
   options: AuthProxyForwardHeadersOptions,
-): Record<string, string> {
+): Promise<Record<string, string>> {
   const trustedHeader = options.trustedClientIpHeader
-  const clientIp = trustedHeader ? normalizeClientIp(event.headers.get(trustedHeader)) : null
+  const signedClientIpHeaders = await buildSignedClientIpHeaders(event, options)
   const headers = stripUnsafeRequestHeaders(event.headers)
   if (trustedHeader) headers.delete(trustedHeader)
   const authCookieHeader = filterBetterAuthCookies(headers.get('cookie'))
@@ -134,7 +125,7 @@ export function buildAuthProxyForwardHeaders(
     headers.delete('cookie')
   }
 
-  if (clientIp) headers.set('x-forwarded-for', clientIp)
+  for (const [name, value] of Object.entries(signedClientIpHeaders)) headers.set(name, value)
 
   return Object.fromEntries(headers.entries())
 }
@@ -146,6 +137,7 @@ export function shouldSkipProxyResponseHeader(
   const lower = name.toLowerCase()
   return (
     RESPONSE_HEADERS_TO_DROP.has(lower) ||
+    isProxyControlHeader(name) ||
     lower === 'cdn-cache-control' ||
     lower.endsWith('-cdn-cache-control') ||
     parseConnectionHeader(connectionHeader).has(lower)

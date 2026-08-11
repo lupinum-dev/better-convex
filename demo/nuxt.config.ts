@@ -1,6 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-const siteUrl =
-  (process.env.SITE_URL || 'https://better-convex-nuxt-demo.vercel.app/').replace(/\/$/, '') + '/'
+const siteUrl = (process.env.SITE_URL || 'http://localhost:3000/').replace(/\/$/, '') + '/'
 const ogImageUrl = `${siteUrl}og-image.png`
 
 export default defineNuxtConfig({
@@ -14,7 +13,12 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  convex: {},
+  convex: {
+    auth: {
+      origin: siteUrl.slice(0, -1),
+      trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
+    },
+  },
 
   compatibilityDate: '2025-01-15',
 

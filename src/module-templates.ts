@@ -3,9 +3,9 @@ export function getMissingConvexApiTemplateContents(): string {
 type MissingConvexGeneratedApi = {
   /**
    * The generated Convex API was not found.
-   * Run \`pnpm exec convex dev\` or \`pnpm exec convex codegen\` to create \`convex/_generated/api\`.
+   * Run the file-bound Convex dev command or \`pnpm exec better-convex-nuxt-convex codegen\` to create \`convex/_generated/api\`.
    */
-  readonly __betterConvexNuxtError: 'Missing generated Convex API. Run pnpm exec convex dev or pnpm exec convex codegen.'
+  readonly __betterConvexNuxtError: 'Missing generated Convex API. Run the file-bound Convex dev command or pnpm exec better-convex-nuxt-convex codegen.'
 }
 
 function createMissingConvexApiProxy(path: string[]): MissingConvexGeneratedApi {
@@ -13,12 +13,12 @@ function createMissingConvexApiProxy(path: string[]): MissingConvexGeneratedApi 
     get(_target, prop) {
       if (typeof prop === 'symbol') return undefined
       if (prop === '__betterConvexNuxtError') {
-        return 'Missing generated Convex API. Run pnpm exec convex dev or pnpm exec convex codegen.'
+        return 'Missing generated Convex API. Run the file-bound Convex dev command or pnpm exec better-convex-nuxt-convex codegen.'
       }
       const accessPath = [...path, String(prop)].join('.')
       throw new Error(
         '[better-convex-nuxt] #convex/api points to a placeholder because convex/_generated/api was not found. ' +
-          'Run \`pnpm exec convex dev\` or \`pnpm exec convex codegen\` to generate your Convex API. ' +
+          'Run the file-bound Convex dev command or \`pnpm exec better-convex-nuxt-convex codegen\` to generate your Convex API. ' +
           'Attempted to access ' + accessPath + '.',
       )
     },

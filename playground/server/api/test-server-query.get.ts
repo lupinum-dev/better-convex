@@ -30,7 +30,7 @@ export default defineEventHandler(async (event: H3Event) => {
   try {
     // Use the new serverConvex caller!
     // This is the key feature being tested - server-side queries
-    const notes = await serverConvex(event).query(api.notes.list, {})
+    const notes = await serverConvex(event).query(api.notes.list)
 
     // Take only the requested limit
     const limitedNotes = notes.slice(0, limit)

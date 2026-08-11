@@ -67,7 +67,7 @@
 import { api } from '#convex/api'
 
 export default defineEventHandler(async (event) => {
-  const notes = await serverConvex(event).query(api.notes.list, {})
+  const notes = await serverConvex(event).query(api.notes.list)
   return { notes }
 })</code></pre>
         </div>

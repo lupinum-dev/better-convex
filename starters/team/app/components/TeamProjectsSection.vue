@@ -16,11 +16,11 @@ const renameProject = useConvexMutation(api.projects.rename)
 const softDeleteProject = useConvexMutation(api.projects.softDelete)
 const restoreProject = useConvexMutation(api.projects.restore)
 const {
-  results: projects,
-  status: projectStatus,
+  data: projectData,
   isLoading: projectsLoading,
+  canLoadMore,
   loadMore,
-  reset,
+  refresh,
 } = await useConvexPaginatedQuery(
   api.projects.list,
   computed(() => ({ teamId: props.teamId, status: statusFilter.value })),
@@ -28,6 +28,8 @@ const {
     initialNumItems: 20,
   },
 )
+
+const projects = computed(() => projectData.value ?? [])
 
 function loadMoreProjects() {
   loadMore(20)
@@ -61,12 +63,12 @@ async function restoreSelectedProject(projectId: Id<'projects'>) {
     :team-id="teamId"
     :projects="projects"
     :projects-loading="projectsLoading"
-    :project-status="projectStatus"
+    :can-load-more="canLoadMore"
     :can-create-project="canCreateProject"
     :can-update-project="canUpdateProject"
     :can-delete-project="canDeleteProject"
     :on-load-more="loadMoreProjects"
-    :on-refresh="reset"
+    :on-refresh="refresh"
     :on-rename="renameSelectedProject"
     :on-delete="deleteSelectedProject"
     :on-restore="restoreSelectedProject"

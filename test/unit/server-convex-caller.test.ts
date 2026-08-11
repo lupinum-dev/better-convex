@@ -67,15 +67,25 @@ import { ServerConvexValidationError } from '../../src/runtime/server/utils/serv
 
 const SITE_URL = 'https://example.convex.site'
 const CONVEX_URL = 'https://example.convex.cloud'
+const AUTH_CONFIG = Object.freeze({
+  origin: 'http://localhost:3000',
+  trustedClientIpHeader: '',
+  redirectTo: '/auth/signin',
+})
 
 function setConfig(convex: Record<string, unknown>) {
   mocks.useRuntimeConfigMock.mockReturnValue({ public: { convex } })
 }
 
-function createEvent(cookie?: string): H3Event {
+function createEvent(
+  cookie?: string,
+  headers: Record<string, string> = {},
+  signal?: AbortSignal,
+): H3Event {
   return {
     context: { nitro: { runtimeConfig: mocks.useRuntimeConfigMock() } },
-    node: { req: { headers: { ...(cookie ? { cookie } : {}) } } },
+    node: { req: { headers: { ...headers, ...(cookie ? { cookie } : {}) } } },
+    ...(signal ? { web: { request: new Request('https://app.example.com', { signal }) } } : {}),
   } as unknown as H3Event
 }
 
@@ -88,7 +98,11 @@ beforeEach(() => {
   mocks.mutationMock.mockReset()
   mocks.actionMock.mockReset()
   mocks.exchangeMock.mockReset()
-  setConfig({ url: CONVEX_URL, siteUrl: SITE_URL, auth: {} })
+  setConfig({ url: CONVEX_URL, siteUrl: SITE_URL, auth: AUTH_CONFIG })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 type EmptyArgs = Record<string, never>
@@ -110,6 +124,20 @@ const actionRef = { _path: 'notes:run' } as unknown as FunctionReference<
   EmptyArgs,
   unknown
 >
+
+const serverOperations = [
+  ['query', () => mocks.queryMock, (c: ReturnType<typeof serverConvex>) => c.query(queryRef, {})],
+  [
+    'mutation',
+    () => mocks.mutationMock,
+    (c: ReturnType<typeof serverConvex>) => c.mutation(mutationRef, {}),
+  ],
+  [
+    'action',
+    () => mocks.actionMock,
+    (c: ReturnType<typeof serverConvex>) => c.action(actionRef, {}),
+  ],
+] as const
 
 describe('serverConvex caller-scoped invariants', () => {
   it('creates one token promise, one ConvexHttpClient, and calls setAuth at most once across calls', async () => {
@@ -151,6 +179,72 @@ describe('serverConvex caller-scoped invariants', () => {
     expect(typeof options.fetch).toBe('function')
   })
 
+  it('binds Convex response consumption to the incoming request abort signal', async () => {
+    const request = new AbortController()
+    let upstreamSignal: AbortSignal | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input, init) => {
+        upstreamSignal = init?.signal ?? undefined
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('partial'))
+            },
+          }),
+        )
+      }),
+    )
+    mocks.queryMock.mockResolvedValue(null)
+
+    await serverConvex(createEvent(undefined, {}, request.signal), { auth: 'none' }).query(
+      queryRef,
+      {},
+    )
+    const boundedFetch = (mocks.ctorCalls[0]?.options as { fetch: typeof fetch }).fetch
+    const response = await boundedFetch(`${CONVEX_URL}/api/query`)
+    expect(upstreamSignal).toBeInstanceOf(AbortSignal)
+
+    const body = response.text()
+    request.abort()
+    await expect(body).rejects.toMatchObject({
+      kind: 'transport',
+      message: 'Convex HTTP request was aborted',
+    })
+  })
+
+  it('passes the request and normalized trusted client IP header to the exchange', async () => {
+    setConfig({
+      url: CONVEX_URL,
+      siteUrl: SITE_URL,
+      auth: { ...AUTH_CONFIG, trustedClientIpHeader: 'CF-Connecting-IP' },
+    })
+    mocks.exchangeMock.mockResolvedValue({ token: 'jwt-token', status: 200, error: null })
+
+    const event = createEvent(AUTH_COOKIE, { 'cf-connecting-ip': '198.51.100.10' })
+    await serverConvex(event).getToken()
+
+    expect(mocks.exchangeMock).toHaveBeenCalledWith({
+      event,
+      siteUrl: SITE_URL,
+      credential: { type: 'cookie', value: AUTH_COOKIE },
+      trustedClientIpHeader: 'cf-connecting-ip',
+    })
+  })
+
+  it('does not attempt cookie exchange when auth is disabled', async () => {
+    setConfig({ url: CONVEX_URL, siteUrl: SITE_URL, auth: false })
+    mocks.queryMock.mockResolvedValue('anonymous')
+
+    await expect(
+      serverConvex(createEvent(AUTH_COOKIE), { auth: 'optional' }).query(queryRef, {}),
+    ).resolves.toBe('anonymous')
+    await expect(
+      serverConvex(createEvent(AUTH_COOKIE), { auth: 'required' }).getToken(),
+    ).rejects.toMatchObject({ kind: 'authentication', status: 401 })
+    expect(mocks.exchangeMock).not.toHaveBeenCalled()
+  })
+
   it('does not retry a failed token promise; a new caller can retry', async () => {
     mocks.exchangeMock.mockResolvedValue({
       token: null,
@@ -183,27 +277,47 @@ describe('serverConvex caller-scoped invariants', () => {
     expect(mocks.setAuthCalls).toEqual(['explicit.jwt'])
   })
 
-  it('rejects an explicit token combined with optional/none before any network access', () => {
-    expect(() => serverConvex(createEvent(), { authToken: 'x', auth: 'none' })).toThrow(
-      ServerConvexValidationError,
-    )
-    expect(() => serverConvex(createEvent(), { authToken: 'x', auth: 'optional' })).toThrow(
-      ServerConvexValidationError,
-    )
+  it.each(['required', 'optional', 'none'] as const)(
+    'rejects an explicit token combined with auth=%s before any network access',
+    (auth) => {
+      expect(() =>
+        // @ts-expect-error explicit tokens already imply required auth
+        serverConvex(createEvent(), { authToken: 'x', auth }),
+      ).toThrow(ServerConvexValidationError)
+    },
+  )
+
+  it('forwards omitted args for exact no-argument query, mutation, and action references', async () => {
+    mocks.queryMock.mockResolvedValue('query')
+    mocks.mutationMock.mockResolvedValue('mutation')
+    mocks.actionMock.mockResolvedValue('action')
+
+    const caller = serverConvex(createEvent(), { auth: 'none' })
+    await caller.query(queryRef)
+    await caller.mutation(mutationRef)
+    await caller.action(actionRef)
+
+    expect(mocks.queryMock).toHaveBeenCalledWith(queryRef)
+    expect(mocks.mutationMock).toHaveBeenCalledWith(mutationRef)
+    expect(mocks.actionMock).toHaveBeenCalledWith(actionRef)
     expect(mocks.exchangeMock).not.toHaveBeenCalled()
   })
 })
 
 describe('serverConvex auth-mode resolution', () => {
-  it('required anonymous caller throws authentication 401 without calling the client', async () => {
-    const caller = serverConvex(createEvent(), { auth: 'required' })
-    await expect(caller.query(queryRef, {})).rejects.toMatchObject({
-      kind: 'authentication',
-      status: 401,
-    })
-    expect(mocks.queryMock).not.toHaveBeenCalled()
-    expect(mocks.exchangeMock).not.toHaveBeenCalled()
-  })
+  it.each(serverOperations)(
+    'required anonymous %s throws authentication 401 without calling the client',
+    async (_name, getMock, invoke) => {
+      await expect(invoke(serverConvex(createEvent(), { auth: 'required' }))).rejects.toMatchObject(
+        {
+          kind: 'authentication',
+          status: 401,
+        },
+      )
+      expect(getMock()).not.toHaveBeenCalled()
+      expect(mocks.exchangeMock).not.toHaveBeenCalled()
+    },
+  )
 
   it('optional anonymous caller executes without auth', async () => {
     mocks.queryMock.mockResolvedValue('anon')
@@ -282,7 +396,7 @@ describe('serverConvex auth-mode resolution', () => {
     })
 
     const caller = serverConvex(createEvent(), {
-      credential: { type: 'bearer', value: 'api-key' },
+      credential: { type: 'cookie', value: AUTH_COOKIE },
     })
     await expect(caller.query(queryRef, {})).rejects.toMatchObject({
       kind: 'authentication',
@@ -298,19 +412,7 @@ describe('serverConvex boundary error sanitization', () => {
     vi.restoreAllMocks()
   })
 
-  it.each([
-    ['query', () => mocks.queryMock, (c: ReturnType<typeof serverConvex>) => c.query(queryRef, {})],
-    [
-      'mutation',
-      () => mocks.mutationMock,
-      (c: ReturnType<typeof serverConvex>) => c.mutation(mutationRef, {}),
-    ],
-    [
-      'action',
-      () => mocks.actionMock,
-      (c: ReturnType<typeof serverConvex>) => c.action(actionRef, {}),
-    ],
-  ] as const)(
+  it.each(serverOperations)(
     'keeps a sentinel upstream body out of the public %s error, JSON, and logs',
     async (_name, getMock, invoke) => {
       // Simulate ConvexHttpClient placing a raw non-OK upstream body in Error.message.
@@ -329,7 +431,7 @@ describe('serverConvex boundary error sanitization', () => {
       expect(caught).toBeInstanceOf(ConvexCallError)
       const err = caught as ConvexCallError
       expect(err.kind).toBe('unknown')
-      expect(err.message).toBe('Convex server call failed')
+      expect(err.message).toBe('Unknown Convex error')
       expect(err.message).not.toContain(SENTINEL)
       expect(JSON.stringify(err.toJSON())).not.toContain(SENTINEL)
       expect(JSON.stringify(err)).not.toContain(SENTINEL)
@@ -343,29 +445,37 @@ describe('serverConvex boundary error sanitization', () => {
     },
   )
 
-  it('preserves a Convex application error as server with data.code UNAUTHORIZED', async () => {
-    const appError = Object.assign(new Error('unauthorized'), {
-      [Symbol.for('ConvexError')]: true,
-      data: { code: 'UNAUTHORIZED' },
-    })
-    mocks.queryMock.mockRejectedValue(appError)
+  it.each(serverOperations)(
+    'preserves a Convex application error from %s as server with data.code UNAUTHORIZED',
+    async (_name, getMock, invoke) => {
+      const appError = Object.assign(new Error(`unauthorized ${SENTINEL}\n    at privateFrame`), {
+        [Symbol.for('ConvexError')]: true,
+        data: { code: 'UNAUTHORIZED', status: 403, detail: 'public detail' },
+      })
+      getMock().mockRejectedValue(appError)
 
-    await expect(
-      serverConvex(createEvent(), { auth: 'none' }).query(queryRef, {}),
-    ).rejects.toMatchObject({ kind: 'server', code: 'UNAUTHORIZED' })
-  })
+      await expect(invoke(serverConvex(createEvent(), { auth: 'none' }))).rejects.toMatchObject({
+        kind: 'server',
+        message: 'Convex application error',
+        code: 'UNAUTHORIZED',
+        status: 403,
+        data: { code: 'UNAUTHORIZED', status: 403, detail: 'public detail' },
+      })
+    },
+  )
 
-  it('passes a classified transport error through unchanged', async () => {
-    const transport = new ConvexCallError({
-      kind: 'transport',
-      message: 'net down',
-    })
-    mocks.queryMock.mockRejectedValue(transport)
+  it.each(serverOperations)(
+    'passes a classified %s transport error through unchanged',
+    async (_name, getMock, invoke) => {
+      const transport = new ConvexCallError({
+        kind: 'transport',
+        message: 'net down',
+      })
+      getMock().mockRejectedValue(transport)
 
-    await expect(serverConvex(createEvent(), { auth: 'none' }).query(queryRef, {})).rejects.toBe(
-      transport,
-    )
-  })
+      await expect(invoke(serverConvex(createEvent(), { auth: 'none' }))).rejects.toBe(transport)
+    },
+  )
 })
 
 describe('SSR auth response headers (Vary/Cache-Control)', () => {

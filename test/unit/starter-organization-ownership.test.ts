@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 const repoRoot = join(import.meta.dirname, '../..')
 
-const appOwnedOrganizationStarters = ['agency', 'mcp-agent'] as const
+const appOwnedOrganizationStarters = ['agency'] as const
 
 function readStarterFile(starter: string, path: string): string {
   return readFileSync(join(repoRoot, 'starters', starter, path), 'utf8')
@@ -13,15 +13,17 @@ function readStarterFile(starter: string, path: string): string {
 
 describe('starter organization ownership', () => {
   it('requires verified email ownership before accepting organization invitations', () => {
-    const starterAuth = readStarterFile('agentic-saas', 'convex/auth.ts')
+    const starterAuth = readStarterFile('team', 'convex/auth.ts')
+    const schemaPlugins = readStarterFile('team', 'convex/betterAuth/schemaPlugins.ts')
     const organizationGuide = readFileSync(
       join(repoRoot, 'docs/content/docs/5.recipes/6.organization-permissions.md'),
       'utf8',
     )
 
-    expect(starterAuth).toContain('requireEmailVerificationOnInvitation: true')
+    expect(starterAuth).toContain('createTeamAuthPlugins(authIssuer')
+    expect(schemaPlugins).toContain('requireEmailVerificationOnInvitation: true')
     expect(organizationGuide).toContain('requireEmailVerificationOnInvitation: true')
-    expect(starterAuth).not.toContain('requireEmailVerificationOnInvitation: false')
+    expect(schemaPlugins).not.toContain('requireEmailVerificationOnInvitation: false')
     expect(organizationGuide).not.toMatch(/requireEmailVerificationOnInvitation:\s*process\.env/)
   })
 
@@ -29,6 +31,7 @@ describe('starter organization ownership', () => {
     const schema = readStarterFile('team', 'convex/schema.ts')
     const readme = readStarterFile('team', 'README.md')
     const auth = readStarterFile('team', 'convex/auth.ts')
+    const schemaPlugins = readStarterFile('team', 'convex/betterAuth/schemaPlugins.ts')
     const organizationCreateForm = readStarterFile(
       'team',
       'app/components/OrganizationCreateForm.vue',
@@ -56,13 +59,16 @@ describe('starter organization ownership', () => {
     expect(readme).toMatch(
       /source for organization,\s+member,\s+invitation,\s+team,\s+and team-member state/,
     )
-    expect(auth).toMatch(/\borganization\s*\(/)
-    expect(auth).toContain("from 'better-auth/plugins'")
+    expect(auth).toContain('createTeamAuthPlugins(authIssuer')
+    expect(schemaPlugins).toMatch(/\borganization\s*\(/)
+    expect(schemaPlugins).toContain("from 'better-auth/plugins'")
     expect(organizationCreateForm).toContain('api.organizations.create')
     expect(organizationCreateForm).not.toContain('authClient.organization.create')
     expect(organizationWorkspace).toContain('api.organizations.listMine')
     expect(organizationWorkspace).not.toContain('useTeamOrganizations')
-    expect(authz).toContain('auth.api.hasPermission')
+    expect(authz).toContain('authComponent.safeGetAuthUser(ctx)')
+    expect(authz).toContain('roleAllowsOrganizationPermissions')
+    expect(authz).toContain('getBetterAuthMember(ctx')
     expect(projects).toContain('requireProjectTeamAccess')
     expect(projects).toContain('requireProjectAccessById')
     expect(projects).toContain("query('projects')")
@@ -84,7 +90,9 @@ describe('starter organization ownership', () => {
       expect(readme).toContain('app-owned Convex')
       expect(readme).toMatch(/does not enable the Better Auth Organization\s+plugin/)
       expect(auth).not.toMatch(/\borganization\s*\(/)
-      expect(auth).not.toContain("from 'better-auth/plugins'")
+      expect(auth).not.toMatch(
+        /import\s*\{[^}]*\borganization\b[^}]*\}\s*from 'better-auth\/plugins'/,
+      )
     },
   )
 })

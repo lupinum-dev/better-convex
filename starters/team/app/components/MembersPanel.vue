@@ -6,7 +6,7 @@ import type { Member } from '~/utils/organizationModels'
 
 defineProps<{
   canManageMembers?: boolean
-  members: Member[]
+  members: readonly Member[]
   selectedTeamMemberUserIds: Set<string>
   membersPending: boolean
   membersError: string | null

@@ -40,6 +40,24 @@ export function withAuthDimension(
 }
 
 /**
+ * A protected SSR payload may seed a browser controller only when the canonical
+ * browser identity already names the same principal. The auth adapter seeds an
+ * unsettled first generation from SSR provenance, so an anonymous snapshot is a
+ * real mismatch here rather than a reason to expose protected data speculatively.
+ */
+export function matchesConvexHydrationIdentity(
+  authMode: ConvexAuthMode,
+  payloadIdentity: ConvexIdentityKey,
+  browserIdentity:
+    | {
+        readonly identityKey: ConvexIdentityKey | null
+      }
+    | undefined,
+): boolean {
+  return authMode === 'none' || browserIdentity?.identityKey === payloadIdentity
+}
+
+/**
  * True when a key belongs to one of the two library-owned Convex payload
  * namespaces.
  */
@@ -91,6 +109,17 @@ export function purgeConvexIdentityPayloadKeys(nuxtApp: {
   scan(nuxtApp.payload?.data)
   scan(nuxtApp.payload?.state)
   return purged
+}
+
+/**
+ * Remove identity-bound query errors while retaining anonymous-query errors.
+ * Error state is stored under one Nuxt useState key rather than as individual
+ * payload keys, so it needs the same auth-mode filtering explicitly.
+ */
+export function retainAnonymousConvexQueryErrors<T>(
+  errors: Readonly<Record<string, T>>,
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(errors).filter(([key]) => readAuthMode(key) === 'none'))
 }
 
 // ============================================================================

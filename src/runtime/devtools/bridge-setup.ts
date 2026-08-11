@@ -8,7 +8,6 @@
 import { toRaw } from 'vue'
 import type { Ref } from 'vue'
 
-import type { ConvexClientOwner } from '../client/client-owner'
 import { decodeJwtPayload } from '../utils/convex-shared'
 import type { DevtoolsSink } from './sink'
 import { createAppDevtoolsTransport, cloneDevtoolsPayload } from './transport'
@@ -19,6 +18,7 @@ import type {
   EnhancedAuthState,
   AuthState,
   AuthWaterfall,
+  ConnectionState,
 } from './types'
 
 type HotImportMeta = ImportMeta & {
@@ -31,19 +31,19 @@ type HotImportMeta = ImportMeta & {
  * Setup the DevTools bridge on the window object.
  * Only called in dev mode from plugin.client.ts.
  *
- * @param owner - Per-app owner used to read the current replaceable client
  * @param sink - Per-app bounded diagnostics store
  * @param convexToken - Ref to the current auth token
  * @param convexUser - Ref to the current user data
  * @param convexAuthWaterfall - Ref to the SSR auth waterfall timing data
+ * @param readConnectionState - Safe projection of the active Vue runtime connection
  * @param providedInstanceId - Stable application identifier used for explicit UI selection
  */
 export async function setupDevToolsBridge(
-  owner: ConvexClientOwner,
   sink: DevtoolsSink,
   convexToken: Ref<string | null>,
   convexUser: Ref<unknown>,
   convexAuthWaterfall: Ref<AuthWaterfall | null>,
+  readConnectionState: () => ConnectionState,
   providedInstanceId?: string,
 ): Promise<() => void> {
   const decodeJWT = (token: string): JWTClaims | null => {
@@ -109,16 +109,7 @@ export async function setupDevToolsBridge(
       }
     },
 
-    getConnectionState: () => {
-      // Get connection state from the Convex client
-      const state = owner.getPrimary()?.client.connectionState()
-      return {
-        isConnected: state?.isWebSocketConnected ?? false,
-        hasEverConnected: !!(state?.hasInflightRequests || state?.isWebSocketConnected),
-        connectionRetries: 0, // Not exposed by Convex client
-        inflightRequests: state?.hasInflightRequests ? 1 : 0, // Simplified
-      }
-    },
+    getConnectionState: readConnectionState,
 
     getAuthWaterfall: (): AuthWaterfall | null => {
       // Return the SSR auth waterfall timing data (hydrated from server)

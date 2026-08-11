@@ -2,9 +2,10 @@ import { ConvexError, v } from 'convex/values'
 
 import { renameTeamInputSchema, teamMembershipInputSchema } from '../shared/inputSchemas'
 import { query, mutation } from './_generated/server'
+import { roleAllowsOrganizationPermissions } from './betterAuth/schemaPlugins'
 import {
-  hasOrganizationPermissions,
   requireAuthenticatedSession,
+  requireAuthenticatedUser,
   requireOrgMembership,
   requireTeamAccess,
 } from './lib/authz'
@@ -21,26 +22,23 @@ export const getCapabilities = query({
       throw new ConvexError('Team not found')
     }
 
-    const { auth, headers, actor } = await requireAuthenticatedSession(ctx)
-    await requireOrgMembership(ctx, {
+    const actor = await requireAuthenticatedUser(ctx)
+    const { member } = await requireOrgMembership(ctx, {
       organizationId: team.organizationId,
     })
 
-    const [canViewProjects, canCreateProjectPermission, canUpdateProject, canDeleteProject] =
-      await Promise.all([
-        hasOrganizationPermissions(auth, headers, team.organizationId, {
-          project: ['read'],
-        }),
-        hasOrganizationPermissions(auth, headers, team.organizationId, {
-          project: ['create'],
-        }),
-        hasOrganizationPermissions(auth, headers, team.organizationId, {
-          project: ['update'],
-        }),
-        hasOrganizationPermissions(auth, headers, team.organizationId, {
-          project: ['delete'],
-        }),
-      ])
+    const canViewProjects = roleAllowsOrganizationPermissions(member.role, {
+      project: ['read'],
+    })
+    const canCreateProjectPermission = roleAllowsOrganizationPermissions(member.role, {
+      project: ['create'],
+    })
+    const canUpdateProject = roleAllowsOrganizationPermissions(member.role, {
+      project: ['update'],
+    })
+    const canDeleteProject = roleAllowsOrganizationPermissions(member.role, {
+      project: ['delete'],
+    })
 
     if (canViewProjects || canCreateProjectPermission || canUpdateProject || canDeleteProject) {
       await requireTeamAccess(ctx, {

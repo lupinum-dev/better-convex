@@ -112,10 +112,10 @@
       </div>
     </section>
 
-    <!-- Section 5: Options Demo -->
+    <!-- Section 4: Execution Options -->
     <section class="section">
-      <h2>4. Query Options</h2>
-      <p class="description">Different configuration options</p>
+      <h2>4. Query Execution</h2>
+      <p class="description">Compare server-rendered and client-only queries</p>
 
       <div class="options-grid">
         <div class="option-card">
@@ -123,14 +123,6 @@
           <p>Non-blocking query execution</p>
           <span class="badge" :class="{ loading: lazyPending }">
             {{ lazyPending ? 'Loading...' : `${lazyData?.length ?? 0} notes` }}
-          </span>
-        </div>
-
-        <div class="option-card">
-          <h4>initialData: []</h4>
-          <p>Shows placeholder immediately</p>
-          <span class="badge success">
-            {{ initialDataDemo?.length ?? 0 }} notes (initialData: [])
           </span>
         </div>
 
@@ -260,13 +252,10 @@ const { data: skipDemoData, pending: skipDemoPending } = await useConvexQuery(
   skipArgs,
 )
 
-// ========== Section 5: Options Demo ==========
+// ========== Section 4: Execution Options ==========
 
 // Client-only query example
 const { data: lazyData, pending: lazyPending } = await useConvexQuery(api.notes.list, {})
-
-// Initial data (factory function that provides initial value)
-const { data: initialDataDemo } = await useConvexQuery(api.notes.list, {}, { initialData: [] })
 
 // Client-only
 const { data: clientOnlyData, pending: clientOnlyPending } = await useConvexQuery(

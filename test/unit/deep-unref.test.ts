@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ref } from 'vue'
 
-import { deepUnref } from '../../src/runtime/utils/deep-unref'
+import { deepUnref } from '../../packages/vue/src/internal/deep-unref'
 
 describe('deepUnref', () => {
   it('unwraps refs inside nested plain objects and arrays', () => {

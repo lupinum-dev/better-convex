@@ -1,12 +1,13 @@
 import type { ConvexClient } from 'convex/browser'
 import type { FunctionArgs, FunctionReference } from 'convex/server'
+import type { GenericId } from 'convex/values'
 
 import { ConvexCallError } from '../errors'
 
 export interface UploadProgressInfo {
-  loaded: number
-  total: number
-  percent: number
+  readonly loaded: number
+  readonly total: number
+  readonly percent: number
 }
 
 export interface UploadFileViaXhrOptions {
@@ -18,6 +19,12 @@ function createAbortError(): Error {
   return new DOMException('Upload cancelled', 'AbortError')
 }
 
+export function isUploadAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
+  )
+}
+
 // The XHR upload endpoint is a library-owned HTTP boundary (architecture invariant): it
 // knows the source, so it constructs `transport` errors directly. Network
 // failures, unexpected upstream statuses, and unusable/malformed responses are
@@ -25,14 +32,13 @@ function createAbortError(): Error {
 // it as a non-error cancel rather than a call failure.
 function createUploadTransportError(
   message: string,
-  extra?: { status?: number; code?: string; cause?: unknown },
+  extra?: { status?: number; code?: string },
 ): ConvexCallError {
   return new ConvexCallError({
     kind: 'transport',
     message,
     status: extra?.status,
     code: extra?.code,
-    cause: extra?.cause,
   })
 }
 
@@ -44,28 +50,59 @@ export async function requestUploadUrl<Mutation extends FunctionReference<'mutat
   mutationArgs: FunctionArgs<Mutation>,
 ): Promise<string> {
   if (!client) {
-    throw new Error('ConvexClient not available - file uploads only work on client side')
+    throw new ConvexCallError({
+      kind: 'unknown',
+      message: 'ConvexClient not available - file uploads only work on client side',
+    })
   }
 
   const postUrl = await client.mutation(mutation, mutationArgs)
   if (typeof postUrl !== 'string') {
-    throw new TypeError('generateUploadUrl mutation must return a string URL')
+    throw new ConvexCallError({
+      kind: 'unknown',
+      message: 'generateUploadUrl mutation must return a string URL',
+    })
   }
   return postUrl
+}
+
+export async function executeFileUpload<Mutation extends FunctionReference<'mutation'>>(
+  client: Pick<ConvexClient, 'mutation'> | null,
+  mutation: Mutation,
+  mutationArgs: FunctionArgs<Mutation>,
+  file: File,
+  options?: UploadFileViaXhrOptions,
+): Promise<GenericId<'_storage'>> {
+  const signal = options?.signal
+  let rejectAbort: ((reason: unknown) => void) | null = null
+  const aborted = new Promise<never>((_, reject) => {
+    rejectAbort = reject
+  })
+  const onAbort = () => rejectAbort?.(signal?.reason ?? createAbortError())
+
+  if (signal?.aborted) throw signal.reason ?? createAbortError()
+  signal?.addEventListener('abort', onAbort, { once: true })
+
+  try {
+    const postUrl = await Promise.race([requestUploadUrl(client, mutation, mutationArgs), aborted])
+    return await uploadFileViaXhr(postUrl, file, options)
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
+  }
 }
 
 export function uploadFileViaXhr(
   postUrl: string,
   file: File,
   options?: UploadFileViaXhrOptions,
-): Promise<string> {
+): Promise<GenericId<'_storage'>> {
   const { signal, onProgress } = options ?? {}
 
   if (signal?.aborted) {
     return Promise.reject(createAbortError())
   }
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<GenericId<'_storage'>>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
 
     const cleanup = () => {
@@ -115,13 +152,9 @@ export function uploadFileViaXhr(
             reject(createUploadTransportError('Upload endpoint response missing valid storageId'))
             return
           }
-          resolve(response.storageId)
-        } catch (parseError) {
-          reject(
-            createUploadTransportError('Invalid response from upload endpoint', {
-              cause: parseError,
-            }),
-          )
+          resolve(response.storageId as GenericId<'_storage'>)
+        } catch {
+          reject(createUploadTransportError('Invalid response from upload endpoint'))
         }
       } else {
         reject(

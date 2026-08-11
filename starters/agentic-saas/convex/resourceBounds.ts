@@ -1,9 +1,0 @@
-export const maxAgentNameLength = 120
-export const maxAgentThreadIdLength = 512
-export const maxDraftTitleLength = 200
-export const maxDraftBodyLength = 20_000
-export const maxDeletionReasonLength = 1_000
-export const maxUsageLabelLength = 200
-export const maxPendingReviewsPerQueue = 100
-export const maxUsageEventsPerRun = 100
-export const retentionPageSize = 100

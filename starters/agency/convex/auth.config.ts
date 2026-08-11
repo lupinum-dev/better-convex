@@ -1,6 +1,6 @@
-import { getAuthConfigProvider } from '@convex-dev/better-auth/auth-config'
+import { getConvexAuthProvider } from 'better-convex-nuxt/convex-auth'
 import type { AuthConfig } from 'convex/server'
 
 export default {
-  providers: [getAuthConfigProvider()],
+  providers: [getConvexAuthProvider()],
 } satisfies AuthConfig

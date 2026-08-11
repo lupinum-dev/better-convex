@@ -12,12 +12,6 @@ describe('server entrypoint exports', () => {
   })
 
   it('exports exactly the supported runtime surface', () => {
-    expect(Object.keys(serverApi).sort()).toEqual([
-      'createClassifiedConvexFetch',
-      'exchangeConvexToken',
-      'normalizeServerConvexBoundaryError',
-      'normalizeSiteUrl',
-      'serverConvex',
-    ])
+    expect(Object.keys(serverApi).sort()).toEqual(['serverConvex'])
   })
 })

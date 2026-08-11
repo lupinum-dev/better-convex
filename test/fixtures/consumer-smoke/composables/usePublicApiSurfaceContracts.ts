@@ -1,7 +1,9 @@
 import { defineConvexAuthClient } from 'better-convex-nuxt/auth-client'
 import type { ConvexAuthClientDefinition } from 'better-convex-nuxt/auth-client'
 import type { OptimisticLocalStore } from 'convex/browser'
+import type { GenericId } from 'convex/values'
 import type { ComputedRef, Ref } from 'vue'
+import { ref } from 'vue'
 
 import { api } from '#convex/api'
 
@@ -9,26 +11,23 @@ function assertType<T>(_value: T): void {}
 
 export async function usePublicApiSurfaceContracts(file: File) {
   const auth = useConvexAuth()
-  assertType<Ref<boolean>>(auth.isAuthenticated)
-  assertType<'disabled' | 'loading' | 'anonymous' | 'authenticated' | 'error'>(auth.status.value)
+  assertType<Ref<boolean>>(auth.isPending)
+  assertType<'loading' | 'anonymous' | 'authenticated' | 'error'>(auth.status.value)
+  assertType<string | undefined>(auth.user.value?.id)
+  assertType<Error | undefined>(auth.error.value)
 
   const config = useConvexConfig()
   assertType<string | undefined>(config.url)
   // @ts-expect-error `useConvexConfig()` returns a read-only projection
   //  — every field is `readonly`, so assignment must not compile.
   config.url = 'https://mutated.convex.cloud'
-  if (config.auth !== false) {
-    assertType<string>(config.auth.proxy.trustedClientIpHeader)
-    // @ts-expect-error `auth.client` is build-only and never reaches runtime config.
-    void config.auth.client
-    // @ts-expect-error nested auth fields are also read-only.
-    config.auth.proxy.trustedClientIpHeader = 'mutated'
-  }
-
-  // Canonical/profile user helper: positional args are required, even for a
-  // no-argument query . Not an alias for `useConvexAuth().user`.
-  const user = useConvexUser(api.auth.viewer, {})
-  assertType<'none' | 'session' | 'better-auth' | 'projection'>(user.source.value)
+  assertType<string | undefined>(config.siteUrl)
+  // @ts-expect-error auth and proxy policy are internal runtime concerns
+  void config.auth
+  // @ts-expect-error query transport policy is per call, not global runtime config
+  void config.defaults
+  // @ts-expect-error upload orchestration is application-owned
+  void config.upload
 
   // The stable client handle exposes exactly query, mutation, action, and onUpdate.
   const convex = useConvex()
@@ -46,90 +45,63 @@ export async function usePublicApiSurfaceContracts(file: File) {
     ),
   )
 
-  const list = await useConvexQuery(api.tasks.list, {}, { initialData: [] })
+  const liveList = useConvexQuery(api.tasks.list)
+  assertType<Promise<unknown>>(liveList)
+  assertType<ComputedRef<string[] | undefined>>(liveList.data)
+  const list = await liveList
   assertType<ComputedRef<boolean>>(list.isStale)
   assertType<string[]>(list.data.value ?? [])
 
   const skipped = await useConvexQuery(api.tasks.list, 'skip')
   assertType<'idle' | 'pending' | 'success' | 'error'>(skipped.status.value)
 
-  const sharedList = defineSharedConvexQuery({
-    key: 'consumer-smoke:tasks',
-    query: api.tasks.list,
-    args: {},
-    options: { initialData: [] },
-  })
-  assertType<string[]>(sharedList().data.value ?? [])
-
-  const paginated = await useConvexPaginatedQuery(
-    api.tasks.listPaginated,
-    {},
-    { initialNumItems: 5 },
-  )
-  assertType<string[]>(paginated.results.value)
+  const paginated = useConvexPaginatedQuery(api.tasks.listPaginated, {}, { initialNumItems: 5 })
+  assertType<Promise<unknown>>(paginated)
+  assertType<ComputedRef<readonly string[] | undefined>>(paginated.data)
+  assertType<'idle' | 'pending' | 'success' | 'error'>(paginated.status.value)
+  assertType<boolean>(paginated.isLoading.value)
+  assertType<boolean>(paginated.canLoadMore.value)
+  assertType<Error | undefined>(paginated.error.value)
   assertType<boolean>(paginated.isStale.value)
+  paginated.loadMore(5)
+  assertType<Promise<void>>(paginated.refresh())
+  const settledPagination = await paginated
+  assertType<readonly string[]>(settledPagination.data.value ?? [])
+  // @ts-expect-error legacy tuple vocabulary was removed
+  void settledPagination.results
+  // @ts-expect-error Nuxt hydration settlement is private
+  void settledPagination.firstPageSettled
 
   const createTask = useConvexMutation(api.tasks.create, {
     optimisticUpdate(store, args) {
       assertType<OptimisticLocalStore>(store)
       assertType<string>(args.text)
-      updateQuery({
-        query: api.tasks.list,
-        args: {},
-        store,
-        updater: (current) => [...(current ?? []), args.text],
-      })
-      setQueryData({ query: api.tasks.list, args: {}, store, value: [args.text] })
-      updateAllQueries({
-        query: api.tasks.list,
-        store,
-        updater: (current) => current ?? [],
-      })
-      deleteFromQuery({
-        query: api.tasks.list,
-        args: {},
-        store,
-        shouldDelete: (item) => item === args.text,
-      })
-      insertAtTop({ query: api.tasks.listPaginated, store, item: args.text })
-      insertAtPosition({
-        query: api.tasks.listPaginated,
-        store,
-        item: args.text,
-        sortOrder: 'asc',
-        sortKeyFromItem: (item) => item,
-      })
-      insertAtBottomIfLoaded({ query: api.tasks.listPaginated, store, item: args.text })
-      updateInPaginatedQuery({
-        query: api.tasks.listPaginated,
-        store,
-        updateValue: (item) => (item === args.text ? item.toUpperCase() : item),
-      })
-      deleteFromPaginatedQuery({
-        query: api.tasks.listPaginated,
-        store,
-        shouldDelete: (item) => item === args.text,
-      })
+      const current = store.getQuery(api.tasks.list, {})
+      store.setQuery(api.tasks.list, {}, current ? [...current, args.text] : current)
     },
   })
   assertType<string>(await createTask({ text: 'callable' }))
-  assertType<boolean>((await createTask.safe({ text: 'safe' })).ok)
+  assertType<boolean>(createTask.pending.value)
+  // @ts-expect-error callable lifecycle state is readonly
+  createTask.data.value = 'mutated'
+  // @ts-expect-error one rejected-Promise protocol; `.safe` was removed
+  void createTask.safe({ text: 'removed' })
 
   const sendEmail = useConvexAction(api.emails.send)
   assertType<{ ok: boolean }>(await sendEmail({ to: 'team@example.com', subject: 'Smoke' }))
-  assertType<boolean>((await sendEmail.safe({ to: 'team@example.com', subject: 'Smoke' })).ok)
+  // @ts-expect-error actions have no callback options or alternate execution protocol
+  void sendEmail.safe({ to: 'team@example.com', subject: 'Removed' })
 
   const upload = useConvexFileUpload(api.files.generateUploadUrl)
-  assertType<string>(await upload.upload(file))
-  assertType<ComputedRef<string | null>>(useConvexStorageUrl(api.files.getUrl, upload.data))
-  // Auth transport mode is the three-literal ConvexAuthMode.
-  assertType<ComputedRef<string | null>>(
-    useConvexStorageUrl(api.files.getUrl, upload.data, { auth: 'required' }),
+  assertType<GenericId<'_storage'>>(await upload.upload(file))
+  assertType<ComputedRef<GenericId<'_storage'> | undefined>>(upload.data)
+  assertType<number>(upload.progress.value.percent)
+  const uploadedUrl = useConvexQuery(
+    api.files.getUrl,
+    () => (upload.data.value ? { storageId: upload.data.value } : 'skip'),
+    { auth: 'required' },
   )
-
-  const queue = useConvexUploadQueue(api.files.generateUploadUrl)
-  assertType<string[]>(await queue.enqueue(file))
-  assertType<boolean>((await queue.enqueueSafe(file)).ok)
+  assertType<ComputedRef<string | null | undefined>>(uploadedUrl.data)
 
   // The framework-free typed client definition comes from the auth-client entry. The
   // plugin-typed narrowing of `useConvexAuth().client` is proven end-to-end in
@@ -139,23 +111,71 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<ConvexAuthClientDefinition<[]>>(emptyDefinition)
 }
 
+function _callableContracts() {
+  // @ts-expect-error optimistic updates must complete synchronously
+  useConvexMutation(api.tasks.create, {
+    async optimisticUpdate() {},
+  })
+
+  const thenableUpdate = () => ({ then() {} })
+  // @ts-expect-error arbitrary Promise-like returns are also forbidden
+  useConvexMutation(api.tasks.create, {
+    optimisticUpdate: thenableUpdate,
+  })
+
+  useConvexMutation(api.tasks.create, {
+    // @ts-expect-error completion belongs in ordinary await/catch control flow
+    onSuccess() {},
+  })
+  // @ts-expect-error actions expose no options bag
+  useConvexAction(api.emails.send, { onError() {} })
+}
+void _callableContracts
+
+function _uploadContracts(file: File) {
+  const noArgs = useConvexFileUpload(api.files.generateUploadUrl)
+  void noArgs.upload(file)
+  void noArgs.upload(file, {})
+
+  const requiredArgs = useConvexFileUpload(api.files.generateWorkspaceUploadUrl)
+  void requiredArgs.upload(file, { workspaceId: 'workspace_1' })
+  // @ts-expect-error generated validator-required args cannot be omitted
+  void requiredArgs.upload(file)
+  // @ts-expect-error generated validator-derived args reject the wrong shape
+  void requiredArgs.upload(file, {})
+
+  // @ts-expect-error generateUploadUrl must return string
+  useConvexFileUpload(api.files.invalidUploadUrl)
+  // @ts-expect-error completion is observed through await/catch, not callbacks
+  useConvexFileUpload(api.files.generateUploadUrl, { onSuccess: () => {} })
+  // @ts-expect-error progress is readonly state, not a callback
+  useConvexFileUpload(api.files.generateUploadUrl, { onProgress: () => {} })
+}
+
 /**
  * Public call-arity contracts. These calls pin the required args position and
  * accepted query argument shapes against the packed package.
  */
 async function _requiredArgsContracts() {
-  // --- useConvexQuery: args are ALWAYS positional and required, even for a
-  // no-argument Convex function (decision 9) ---
-  // Positive: no-arg queries require an explicit `{}`.
+  // --- useConvexQuery: exactly-empty functions may omit args. ---
+  // Positive: both the concise and explicit forms compile.
+  void useConvexQuery(api.tasks.list)
   void useConvexQuery(api.tasks.list, {})
+  void useConvexQuery(api.tasks.list, {}, { server: false })
   // Positive: the skip sentinel is the only other legal args-slot value.
   void useConvexQuery(api.tasks.list, 'skip')
-  // @ts-expect-error args are always positional; the slot cannot be omitted
-  void useConvexQuery(api.tasks.list)
   // @ts-expect-error null is not the skip sentinel
   void useConvexQuery(api.tasks.list, null)
   // @ts-expect-error undefined is not the skip sentinel
   void useConvexQuery(api.tasks.list, undefined)
+  // @ts-expect-error a ref containing null is not the skip sentinel
+  void useConvexQuery(api.tasks.list, ref(null))
+  // @ts-expect-error a ref containing undefined is not the skip sentinel
+  void useConvexQuery(api.tasks.list, ref(undefined))
+  // @ts-expect-error a getter returning null is not the skip sentinel
+  void useConvexQuery(api.tasks.list, () => null)
+  // @ts-expect-error a getter returning undefined is not the skip sentinel
+  void useConvexQuery(api.tasks.list, () => undefined)
   // Positive: correct required args compile.
   void useConvexQuery(api.files.getUrl, { storageId: 'file_1' })
   // @ts-expect-error required args must not be omittable
@@ -196,45 +216,33 @@ async function _requiredArgsContracts() {
 
   // --- useConvexPaginatedQuery ---
   // Positive: no extra-args paginated query still requires the explicit `{}`.
+  void useConvexPaginatedQuery(api.tasks.listPaginated, {}, { initialNumItems: 5 })
+  void useConvexPaginatedQuery(api.tasks.listPaginated, 'skip', { initialNumItems: 5 })
+  // @ts-expect-error pagination options and initialNumItems are required
   void useConvexPaginatedQuery(api.tasks.listPaginated, {})
   // @ts-expect-error paginated queries never omit the args slot either
   void useConvexPaginatedQuery(api.tasks.listPaginated)
-  // @ts-expect-error options object must not be accepted in the args slot (follow-up)
-  void useConvexPaginatedQuery(api.tasks.listPaginated, { initialNumItems: 5 })
+  // @ts-expect-error null is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, null, { initialNumItems: 5 })
+  // @ts-expect-error undefined is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, undefined, { initialNumItems: 5 })
+  // @ts-expect-error a ref containing null is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, ref(null), { initialNumItems: 5 })
+  // @ts-expect-error a ref containing undefined is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, ref(undefined), { initialNumItems: 5 })
+  // @ts-expect-error a getter returning null is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, () => null, { initialNumItems: 5 })
+  // @ts-expect-error a getter returning undefined is not the paginated skip sentinel
+  void useConvexPaginatedQuery(api.tasks.listPaginated, () => undefined, { initialNumItems: 5 })
   // Positive: correct required extra args compile.
-  void useConvexPaginatedQuery(api.tasks.listPaginatedByOwner, { owner: 'user_1' })
+  void useConvexPaginatedQuery(
+    api.tasks.listPaginatedByOwner,
+    { owner: 'user_1' },
+    { initialNumItems: 5 },
+  )
   // @ts-expect-error required paginated args must not be omittable
   void useConvexPaginatedQuery(api.tasks.listPaginatedByOwner)
   // @ts-expect-error wrong paginated arg shape must not compile
-  void useConvexPaginatedQuery(api.tasks.listPaginatedByOwner, { wrong: 1 })
-
-  // --- useConvexUser: canonical/profile query helper follows the same
-  // positional explicit-args grammar; it is not an alias for
-  // `useConvexAuth().user` ---
-  // Positive: no-arg canonical user query still requires the explicit `{}`.
-  void useConvexUser(api.auth.viewer, {})
-  // @ts-expect-error canonical user queries require positional args
-  void useConvexUser(api.auth.viewer)
-  // @ts-expect-error required args must not be omittable
-  void useConvexUser(api.files.getUrl)
-  // @ts-expect-error wrong arg shape must not compile
-  void useConvexUser(api.files.getUrl, { wrong: 1 })
-
-  // --- defineSharedConvexQuery: args field always required, including `{}`
-  // for a no-argument query ---
-  defineSharedConvexQuery({ key: 'contract:list', query: api.tasks.list, args: {} })
-  // @ts-expect-error shared queries always declare args, even for no-arg queries
-  defineSharedConvexQuery({ key: 'contract:list', query: api.tasks.list })
-  // @ts-expect-error required args field must not be omittable
-  defineSharedConvexQuery({ key: 'contract:getUrl', query: api.files.getUrl })
-  // @ts-expect-error wrong args field shape must not compile
-  defineSharedConvexQuery({ key: 'contract:getUrl', query: api.files.getUrl, args: { wrong: 1 } })
-
-  // --- useConvexStorageUrl: query must accept { storageId } and return string | null ---
-  // Positive: correctly-typed getUrl query, with optional auth passthrough.
-  void useConvexStorageUrl(api.files.getUrl, 'file_1')
-  void useConvexStorageUrl(api.files.getUrl, 'file_1', { auth: 'required' })
-  // @ts-expect-error mistyped getUrl query (wrong args/return) must not compile
-  void useConvexStorageUrl(api.tasks.list, 'file_1')
+  void useConvexPaginatedQuery(api.tasks.listPaginatedByOwner, { wrong: 1 }, { initialNumItems: 5 })
 }
 void _requiredArgsContracts

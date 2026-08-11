@@ -45,14 +45,6 @@ const options = computed<{
           <span class="badge" :class="statusClass">{{ query.status }}</span>
         </div>
         <div class="detail-row">
-          <span class="detail-label">Data Source</span>
-          <span class="detail-value">{{ query.dataSource }}</span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Updates</span>
-          <span class="detail-value">{{ query.updateCount }}</span>
-        </div>
-        <div class="detail-row">
           <span class="detail-label">Last Updated</span>
           <span class="detail-value">{{ lastUpdatedTime }}</span>
         </div>

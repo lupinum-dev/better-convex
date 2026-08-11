@@ -8,7 +8,10 @@ import {
   toAuthenticatedIdentity,
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
-import { createConvexQueryState } from '../../src/runtime/composables/useConvexQuery'
+import {
+  createConvexQueryState,
+  useConvexQuery,
+} from '../../src/runtime/composables/useConvexQuery'
 import { makeMockOwner } from '../helpers/mock-client-owner'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
@@ -22,35 +25,36 @@ describe('useConvexQuery auth execution gate', () => {
   it('keeps the returned promise pending until auth settles and the query completes', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:await-auth')
-    primary.setQueryHandler('notes:await-auth', async () => ({ owner: 'u1' }))
-
     const { result, flush } = await captureInNuxt(
       () => {
         const pending = useState<boolean>('convex:pending', () => true)
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = true
         identity.value = LOADING_IDENTITY
-        const state = createConvexQueryState(query, {}, { auth: 'required', subscribe: false })
-        return { state, pending, identity }
+        const queryState = useConvexQuery(query, {}, { auth: 'required' })
+        return { queryState, pending, identity }
       },
       { owner: makeMockOwner(primary) },
     )
 
     let resolved = false
-    void result.state.resolvePromise.then(() => {
+    void result.queryState.then(() => {
       resolved = true
     })
     await Promise.resolve()
     expect(resolved).toBe(false)
-    expect(result.state.resultData.status.value).toBe('pending')
+    expect(result.queryState.status.value).toBe('pending')
 
     result.identity.value = toAuthenticatedIdentity('jwt-u1', { id: 'u1' })
     result.pending.value = false
     await flush()
-    await result.state.resolvePromise
+    expect(primary.activeListenerCount(query, {})).toBe(1)
+    expect(resolved).toBe(false)
+
+    primary.emitQueryResult(query, {}, { owner: 'u1' })
+    await result.queryState
     expect(resolved).toBe(true)
-    expect(primary.calls.query.length).toBeGreaterThan(0)
-    expect(result.state.resultData.status.value).not.toBe('pending')
+    expect(result.queryState.status.value).toBe('success')
   })
 
   it('required waits while auth is loading, then subscribes with the signed-in identity', async () => {
@@ -64,7 +68,7 @@ describe('useConvexQuery auth execution gate', () => {
         // Reset shared auth state (leaks across tests via one app's useState).
         pending.value = true
         identity.value = LOADING_IDENTITY
-        const q = createConvexQueryState(query, {}, { auth: 'required' }, true).resultData
+        const q = createConvexQueryState(query, {}, { auth: 'required' }).resultData
         return { q, pending, identity }
       },
       { owner: makeMockOwner(primary) },
@@ -92,7 +96,7 @@ describe('useConvexQuery auth execution gate', () => {
         // Reset shared auth state (leaks across tests via one app's useState).
         pending.value = true
         identity.value = LOADING_IDENTITY
-        const q = createConvexQueryState(query, {}, { auth: 'required' }, true).resultData
+        const q = createConvexQueryState(query, {}, { auth: 'required' }).resultData
         return { q, pending, identity }
       },
       { owner: makeMockOwner(primary) },
@@ -117,7 +121,7 @@ describe('useConvexQuery auth execution gate', () => {
         // Reset shared auth state (leaks across tests via one app's useState).
         pending.value = true
         identity.value = LOADING_IDENTITY
-        const q = createConvexQueryState(query, {}, { auth: 'optional' }, true).resultData
+        const q = createConvexQueryState(query, {}, { auth: 'optional' }).resultData
         return { q, pending, identity }
       },
       { owner: makeMockOwner(primary) },
@@ -139,7 +143,7 @@ describe('useConvexQuery auth execution gate', () => {
     const optionalQuery = mockFnRef<'query'>('notes:disabled-optional')
 
     const required = await captureInNuxt(
-      () => createConvexQueryState(requiredQuery, {}, { auth: 'required' }, true).resultData,
+      () => createConvexQueryState(requiredQuery, {}, { auth: 'required' }).resultData,
       { owner: makeMockOwner(requiredClient), convexConfig: { auth: false } },
     )
     await required.flush()
@@ -147,7 +151,7 @@ describe('useConvexQuery auth execution gate', () => {
     expect(required.result.status.value).toBe('idle')
 
     const optional = await captureInNuxt(
-      () => createConvexQueryState(optionalQuery, {}, { auth: 'optional' }, true).resultData,
+      () => createConvexQueryState(optionalQuery, {}, { auth: 'optional' }).resultData,
       { owner: makeMockOwner(optionalClient), convexConfig: { auth: false } },
     )
     await optional.flush()

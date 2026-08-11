@@ -33,54 +33,55 @@ describe('validateServerConvexOptions — explicit principal forces required', (
       credential: { type: 'cookie', value: 'c=1' },
     })
   })
-
-  it('allows an explicit principal combined with an explicit required', () => {
-    expect(validateServerConvexOptions({ auth: 'required', authToken: 'jwt' })).toEqual({
-      auth: 'required',
-      authToken: 'jwt',
-    })
-    expect(
-      validateServerConvexOptions({
-        auth: 'required',
-        credential: { type: 'bearer', value: 'b' },
-      }),
-    ).toEqual({ auth: 'required', credential: { type: 'bearer', value: 'b' } })
-  })
 })
 
 describe('validateServerConvexOptions — rejected combinations', () => {
   it('rejects authToken and credential together (mutually exclusive)', () => {
     expect(() =>
+      // @ts-expect-error the public union rejects two explicit principals
       validateServerConvexOptions({ authToken: 'jwt', credential: { type: 'cookie', value: 'c' } }),
     ).toThrow(ServerConvexValidationError)
   })
 
-  it('rejects an explicit authToken combined with optional (no silent downgrade)', () => {
-    expect(() => validateServerConvexOptions({ auth: 'optional', authToken: 'jwt' })).toThrow(
-      ServerConvexValidationError,
-    )
-  })
+  it.each(['required', 'optional', 'none'] as const)(
+    'rejects redundant or contradictory auth=%s with an explicit token',
+    (auth) => {
+      expect(() =>
+        // @ts-expect-error an explicit token already implies required auth
+        validateServerConvexOptions({ auth, authToken: 'jwt' }),
+      ).toThrow(ServerConvexValidationError)
+    },
+  )
 
-  it('rejects an explicit authToken combined with none', () => {
-    expect(() => validateServerConvexOptions({ auth: 'none', authToken: 'jwt' })).toThrow(
-      ServerConvexValidationError,
-    )
-  })
+  it.each(['required', 'optional', 'none'] as const)(
+    'rejects redundant or contradictory auth=%s with an explicit credential',
+    (auth) => {
+      expect(() =>
+        validateServerConvexOptions({
+          auth,
+          // @ts-expect-error an explicit credential already implies required auth
+          credential: { type: 'cookie', value: 'better-auth.session_token=b' },
+        }),
+      ).toThrow(ServerConvexValidationError)
+    },
+  )
 
-  it('rejects an explicit credential combined with optional', () => {
+  it('rejects invalid auth modes supplied by JavaScript or a cast', () => {
     expect(() =>
-      validateServerConvexOptions({ auth: 'optional', credential: { type: 'cookie', value: 'c' } }),
-    ).toThrow(ServerConvexValidationError)
+      // @ts-expect-error deliberately exercising the runtime boundary
+      validateServerConvexOptions({ auth: 'sometimes' }),
+    ).toThrow("auth must be one of 'required', 'optional', or 'none'")
   })
 
-  it('rejects an explicit credential combined with none', () => {
-    expect(() =>
-      validateServerConvexOptions({
-        auth: 'none',
-        credential: { type: 'bearer', value: 'b' },
-      }),
-    ).toThrow(ServerConvexValidationError)
-  })
+  it.each([null, [], 'required'])(
+    'rejects non-object options supplied at runtime: %j',
+    (options) => {
+      expect(() =>
+        // @ts-expect-error deliberately exercising the JavaScript/cast boundary
+        validateServerConvexOptions(options),
+      ).toThrow('serverConvex options must be an object')
+    },
+  )
 })
 
 describe('validateServerConvexOptions — empty and control-character values', () => {
@@ -115,6 +116,15 @@ describe('validateServerConvexOptions — empty and control-character values', (
       // @ts-expect-error deliberately invalid credential type
       validateServerConvexOptions({ credential: { type: 'basic', value: 'x' } }),
     ).toThrow(ServerConvexValidationError)
+  })
+
+  it('rejects a Better Auth session token presented as a bearer credential', () => {
+    expect(() =>
+      validateServerConvexOptions({
+        // @ts-expect-error bearer credentials are deliberately absent from the public type
+        credential: { type: 'bearer', value: 'session-token' },
+      }),
+    ).toThrow('credential must be a cookie credential')
   })
 })
 

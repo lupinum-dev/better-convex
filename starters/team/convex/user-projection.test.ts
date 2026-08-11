@@ -10,17 +10,16 @@ async function createAuthUser(
   return (await t.run(async (ctx) => {
     const now = Date.now()
     return await ctx.runMutation(components.betterAuth.adapter.create, {
-      input: {
-        model: 'user',
-        data: {
-          ...fields,
-          emailVerified: true,
-          createdAt: now,
-          updatedAt: now,
-        },
+      model: 'user',
+      data: {
+        id: `user_${fields.email}`,
+        ...fields,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
       },
     })
-  })) as { _id: string }
+  })) as { id: string }
 }
 
 describe('team user projection', () => {
@@ -39,7 +38,7 @@ describe('team user projection', () => {
     await t.run(async (ctx) => {
       for (const email of ['stale@example.com', 'duplicate@example.com']) {
         await ctx.db.insert('users', {
-          authUserId: staleAuthUser._id,
+          authUserId: staleAuthUser.id,
           name: 'Stale Ada',
           email,
           image: 'https://example.com/stale.png',
@@ -54,14 +53,14 @@ describe('team user projection', () => {
 
     const users = await t.run(async (ctx) => await ctx.db.query('users').collect())
     expect(users).toHaveLength(2)
-    expect(users.filter((user) => user.authUserId === staleAuthUser._id)).toEqual([
+    expect(users.filter((user) => user.authUserId === staleAuthUser.id)).toEqual([
       expect.objectContaining({
         name: 'Canonical Ada',
         email: 'ada@example.com',
         image: 'https://example.com/ada.png',
       }),
     ])
-    expect(users.filter((user) => user.authUserId === missingAuthUser._id)).toEqual([
+    expect(users.filter((user) => user.authUserId === missingAuthUser.id)).toEqual([
       expect.objectContaining({ name: 'Grace', email: 'grace@example.com' }),
     ])
   })
@@ -82,7 +81,7 @@ describe('team user projection', () => {
 
     await t.mutation(internal.auth.onDelete, {
       model: 'user',
-      doc: { _id: 'auth-user-delete' },
+      doc: { id: 'auth-user-delete' },
     })
 
     expect(await t.run(async (ctx) => await ctx.db.query('users').collect())).toEqual([])

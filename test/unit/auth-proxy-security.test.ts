@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { isCrossOriginAuthRequest, isSameOrigin } from '../../src/runtime/server/api/auth/security'
+import {
+  OAUTH_TOKEN_CORS_MAX_BODY_BYTES,
+  hasPublicAuthCorsCredentials,
+  isAllowedPublicOAuthTokenCorsPost,
+  isAllowedPublicOAuthTokenCorsPreflight,
+  isCrossOriginAuthRequest,
+  isSameOrigin,
+} from '../../src/runtime/server/api/auth/security'
 
 const INIT_PATH = '/sign-in/social'
 
@@ -136,5 +143,142 @@ describe('auth proxy origin boundary', () => {
     expect(
       isCrossOriginAuthRequest(providerPost, 'GET', 'https://app.example.com', '/callback/apple'),
     ).toBe(true)
+  })
+})
+
+describe('public OAuth token browser transport boundary', () => {
+  const publicOrigin = 'https://app.example.com'
+  const clientOrigin = 'http://127.0.0.1:6274'
+  const postHeaders = () =>
+    new Headers({
+      'content-length': '128',
+      'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      origin: clientOrigin,
+      'sec-fetch-site': 'cross-site',
+    })
+
+  it('recognizes every explicit credential header case-insensitively', () => {
+    expect(hasPublicAuthCorsCredentials(new Headers())).toBe(false)
+    for (const [name, value] of [
+      ['Authorization', ''],
+      ['COOKIE', 'better-auth.session_token=secret'],
+      ['DPoP', 'proof'],
+      ['Proxy-Authorization', 'Basic secret'],
+    ] as const) {
+      expect(hasPublicAuthCorsCredentials(new Headers({ [name]: value })), name).toBe(true)
+    }
+  })
+
+  it('admits only one credential-free, bounded cross-origin form POST', () => {
+    expect(
+      isAllowedPublicOAuthTokenCorsPost(
+        postHeaders(),
+        'POST',
+        publicOrigin,
+        '/oauth2/token',
+        false,
+      ),
+    ).toBe(true)
+
+    for (const [name, mutate] of [
+      ['cookie', (headers: Headers) => headers.set('cookie', 'better-auth.session_token=secret')],
+      ['authorization', (headers: Headers) => headers.set('authorization', 'Basic secret')],
+      ['DPoP', (headers: Headers) => headers.set('dpop', 'proof')],
+      ['proxy authorization', (headers: Headers) => headers.set('proxy-authorization', 'Basic x')],
+      ['JSON', (headers: Headers) => headers.set('content-type', 'application/json')],
+      [
+        'oversize body',
+        (headers: Headers) =>
+          headers.set('content-length', String(OAUTH_TOKEN_CORS_MAX_BODY_BYTES + 1)),
+      ],
+      ['invalid length', (headers: Headers) => headers.set('content-length', '+1')],
+      [
+        'preflight marker',
+        (headers: Headers) => headers.set('access-control-request-method', 'POST'),
+      ],
+    ] as const) {
+      const headers = postHeaders()
+      mutate(headers)
+      expect(
+        isAllowedPublicOAuthTokenCorsPost(headers, 'POST', publicOrigin, '/oauth2/token', false),
+        name,
+      ).toBe(false)
+    }
+  })
+
+  it('rejects every method, path, query, same-origin, or malformed-Origin expansion', () => {
+    for (const [method, path, query] of [
+      ['GET', '/oauth2/token', false],
+      ['PUT', '/oauth2/token', false],
+      ['POST', '/oauth2/token/', false],
+      ['POST', '/oauth2/revoke', false],
+      ['POST', '/get-session', false],
+      ['POST', '/oauth2/token', true],
+    ] as const) {
+      expect(
+        isAllowedPublicOAuthTokenCorsPost(postHeaders(), method, publicOrigin, path, query),
+      ).toBe(false)
+    }
+
+    for (const origin of [
+      publicOrigin,
+      `${clientOrigin}/`,
+      'https://user@example.test',
+      'null',
+      'file://client',
+      'not-an-origin',
+    ]) {
+      const headers = postHeaders()
+      headers.set('origin', origin)
+      expect(
+        isAllowedPublicOAuthTokenCorsPost(headers, 'POST', publicOrigin, '/oauth2/token', false),
+        origin,
+      ).toBe(false)
+    }
+  })
+
+  it('admits only the exact public-token preflight surface', () => {
+    const preflight = new Headers({
+      'access-control-request-headers': 'Content-Type',
+      'access-control-request-method': 'POST',
+      origin: clientOrigin,
+    })
+    expect(
+      isAllowedPublicOAuthTokenCorsPreflight(
+        preflight,
+        'OPTIONS',
+        publicOrigin,
+        '/oauth2/token',
+        false,
+      ),
+    ).toBe(true)
+
+    for (const [name, mutate] of [
+      [
+        'authorization request header',
+        (headers: Headers) =>
+          headers.set('access-control-request-headers', 'content-type, authorization'),
+      ],
+      [
+        'private network',
+        (headers: Headers) => headers.set('access-control-request-private-network', 'true'),
+      ],
+      ['wrong method', (headers: Headers) => headers.set('access-control-request-method', 'PUT')],
+      ['cookie', (headers: Headers) => headers.set('cookie', 'secret=1')],
+      ['authorization', (headers: Headers) => headers.set('authorization', 'Basic secret')],
+    ] as const) {
+      const headers = new Headers(preflight)
+      mutate(headers)
+      expect(
+        isAllowedPublicOAuthTokenCorsPreflight(
+          headers,
+          'OPTIONS',
+          publicOrigin,
+          '/oauth2/token',
+          false,
+        ),
+        name,
+      ).toBe(false)
+    }
   })
 })

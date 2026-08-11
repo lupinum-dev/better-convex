@@ -1,147 +1,82 @@
-import { normalizeAuthProxyBodyLimit } from './config-defaults'
+import { isExactLoopbackHost, normalizeAuthOrigin } from '../shared/auth-origin'
+import { normalizeLocalRedirectPath } from './auth-route-protection'
 
-// ============================================================================
-// Public auth-only build option types
-//
-// Every auth-only build option lives inside `ConvexAuthOptions` so that
-// `auth: false` structurally excludes them. There is no top-level `authRoute`,
-// cross-origin, cache, custom-route, or top-level auth-only inputs.
-// ============================================================================
-
-/** Auth proxy body-size limits. */
-export interface AuthProxyDefaults {
-  /**
-   * Maximum allowed request body size for the auth proxy.
-   * @default 1_048_576 (1 MiB)
-   */
-  maxRequestBodyBytes?: number
-  /**
-   * Maximum allowed upstream response body size for the auth proxy.
-   * @default 1_048_576 (1 MiB)
-   */
-  maxResponseBodyBytes?: number
+/** Build-time authentication options. An object opts the application into auth. */
+export interface ConvexAuthOptions {
+  /** Exact public Nuxt application origin used by the same-origin auth proxy. */
+  origin: string
+  /** Optional build-time Better Auth client definition. Never copied to runtime config. */
+  client?: string
   /** Trusted ingress-owned header containing exactly one client IP address. */
   trustedClientIpHeader?: string
+  /** Local route used when protected navigation needs authentication. */
+  redirectTo?: string
 }
 
-/** High-verbosity auth trace channels (require `logging: 'debug'`). */
-export interface ConvexDebugOptions {
-  /** Enable detailed auth flow logs on both client and server plugins. */
-  authFlow?: boolean
-  /** Enable detailed auth flow logs on the client plugin only. */
-  clientAuthFlow?: boolean
-  /** Enable detailed auth flow logs on the server plugin only. */
-  serverAuthFlow?: boolean
-}
-
-/** Opt-in route protection redirect behavior. */
-export interface ConvexRouteProtectionConfig {
-  redirectTo: string
-  preserveReturnTo: boolean
-}
-
-/**
- * Authentication installation options .
- *
- * Provide this object (or omit `auth` entirely) to install authentication with
- * defaults. Set `auth: false` for a Convex-only build. There is no `enabled`
- * toggle: the false-or-options grammar makes contradictory states impossible.
- */
-export interface ConvexAuthOptions {
-  /** Build-only path to the single client definition. Never copied to runtime config. */
-  client?: string
-  /** Auth proxy body-size limits. */
-  proxy?: AuthProxyDefaults
-  /** High-verbosity auth trace channels. */
-  debug?: ConvexDebugOptions
-  /** Opt-in route protection redirect behavior. */
-  routeProtection?: Partial<ConvexRouteProtectionConfig>
-}
-
-/**
- * The normalized runtime auth shape . A discriminated value: `false`
- * for a Convex-only build, or a fully materialized options object. The build-only
- * `client` path is intentionally absent — it never reaches runtime config.
- */
+/** Internal materialized auth policy. `false` exists only for a no-auth build. */
 export type NormalizedConvexAuthConfig =
   | false
-  | {
-      proxy: Readonly<{
-        maxRequestBodyBytes: number
-        maxResponseBodyBytes: number
-        trustedClientIpHeader: string
-      }>
-      debug: Readonly<Required<ConvexDebugOptions>>
-      routeProtection: ConvexRouteProtectionConfig
-    }
+  | Readonly<{
+      origin: string
+      trustedClientIpHeader: string
+      redirectTo: string
+    }>
 
-const DEFAULT_ROUTE_PROTECTION: ConvexRouteProtectionConfig = {
-  redirectTo: '/auth/signin',
-  preserveReturnTo: true,
-}
+const DEFAULT_AUTH_REDIRECT = '/auth/signin'
 
-function normalizeProxy(input: unknown) {
-  const proxy = (input && typeof input === 'object' ? input : {}) as AuthProxyDefaults
-  const trustedClientIpHeader =
-    typeof proxy.trustedClientIpHeader === 'string' ? proxy.trustedClientIpHeader.trim() : ''
-  if (trustedClientIpHeader) {
-    try {
-      new Headers().set(trustedClientIpHeader, 'validation')
-    } catch {
-      throw new TypeError('auth.proxy.trustedClientIpHeader must be a valid HTTP header name')
-    }
+function normalizeTrustedClientIpHeader(input: unknown): string {
+  if (input === undefined) return ''
+  if (typeof input !== 'string') {
+    throw new TypeError('auth.trustedClientIpHeader must be a valid HTTP header name')
   }
-  return Object.freeze({
-    maxRequestBodyBytes: normalizeAuthProxyBodyLimit(proxy.maxRequestBodyBytes),
-    maxResponseBodyBytes: normalizeAuthProxyBodyLimit(proxy.maxResponseBodyBytes),
-    trustedClientIpHeader: trustedClientIpHeader.toLowerCase(),
-  })
-}
-
-function normalizeDebug(input: unknown): Readonly<Required<ConvexDebugOptions>> {
-  const debug = (input && typeof input === 'object' ? input : {}) as ConvexDebugOptions
-  return Object.freeze({
-    authFlow: debug.authFlow === true,
-    clientAuthFlow: debug.clientAuthFlow === true,
-    serverAuthFlow: debug.serverAuthFlow === true,
-  })
-}
-
-function normalizeRouteProtection(input: unknown): ConvexRouteProtectionConfig {
-  const rp = (
-    input && typeof input === 'object' ? input : {}
-  ) as Partial<ConvexRouteProtectionConfig>
-  return {
-    redirectTo:
-      typeof rp.redirectTo === 'string' ? rp.redirectTo : DEFAULT_ROUTE_PROTECTION.redirectTo,
-    preserveReturnTo:
-      typeof rp.preserveReturnTo === 'boolean'
-        ? rp.preserveReturnTo
-        : DEFAULT_ROUTE_PROTECTION.preserveReturnTo,
+  const header = input.trim().toLowerCase()
+  if (!header) return ''
+  try {
+    new Headers().set(header, 'validation')
+  } catch {
+    throw new TypeError('auth.trustedClientIpHeader must be a valid HTTP header name')
   }
+  if (header.startsWith('x-bcn-')) {
+    throw new TypeError('auth.trustedClientIpHeader must not use the reserved x-bcn-* namespace')
+  }
+  return header
 }
 
 /**
- * Normalize the public `auth?: false | ConvexAuthOptions` input into the
- * discriminated runtime value. `false` stays `false`; anything else (including
- * `undefined` and `{}`) installs authentication with defaults. The build-only
- * `client` field is stripped here and never enters runtime config.
+ * Normalize the build grammar. Omission is a genuine Convex-only build; an
+ * object opts into auth and must name its one exact public application origin.
+ * `false` remains a Nuxt-layer tombstone for removing inherited auth options.
  */
 export function normalizeConvexAuthConfig(
   input: false | ConvexAuthOptions | undefined | unknown,
 ): NormalizedConvexAuthConfig {
-  if (input === false) return false
-
-  const options = (input && typeof input === 'object' ? input : {}) as ConvexAuthOptions
-
-  return {
-    proxy: normalizeProxy(options.proxy),
-    debug: normalizeDebug(options.debug),
-    routeProtection: normalizeRouteProtection(options.routeProtection),
+  if (input === undefined || input === false) return false
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new TypeError('auth must be false or an object with an origin')
   }
+
+  const options = input as Partial<ConvexAuthOptions>
+  if (typeof options.origin !== 'string') {
+    throw new TypeError('auth.origin must be a non-empty string URL origin')
+  }
+  const origin = normalizeAuthOrigin(options.origin, 'auth.origin')
+  const trustedClientIpHeader = normalizeTrustedClientIpHeader(options.trustedClientIpHeader)
+  if (!trustedClientIpHeader && !isExactLoopbackHost(new URL(origin).hostname)) {
+    throw new TypeError(
+      'auth.trustedClientIpHeader is required outside exact loopback development origins',
+    )
+  }
+
+  const redirectTo = normalizeLocalRedirectPath(options.redirectTo ?? DEFAULT_AUTH_REDIRECT)
+  if (!redirectTo) {
+    throw new TypeError('auth.redirectTo must be a safe local application path')
+  }
+
+  return Object.freeze({ origin, trustedClientIpHeader, redirectTo })
 }
 
-/** Derive the internal `authEnabled` boolean from the normalized value. */
-export function isConvexAuthEnabled(config: NormalizedConvexAuthConfig): boolean {
+export function isConvexAuthEnabled(
+  config: NormalizedConvexAuthConfig,
+): config is Exclude<NormalizedConvexAuthConfig, false> {
   return config !== false
 }

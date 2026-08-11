@@ -9,7 +9,7 @@ const { message } = defineProps<{
   message: string
 }>()
 
-const { signIn, signUp } = useConvexAuth()
+const { client, isPending } = useConvexAuth()
 const route = useRoute()
 
 const mode = ref<'signIn' | 'signUp'>('signUp')
@@ -18,7 +18,6 @@ const email = ref('')
 const password = ref('')
 const error = ref<string | null>(null)
 const info = ref<string | null>(null)
-const loading = ref(false)
 const signInFailure =
   'Sign in could not be completed. Check your credentials and verify your email if required.'
 const callbackURL = computed(() => normalizeLocalCallbackURL(route.fullPath))
@@ -34,7 +33,7 @@ const canSubmit = computed(() => {
 })
 
 const submitLabel = computed(() => {
-  if (loading.value) return mode.value === 'signIn' ? 'Signing in...' : 'Creating account...'
+  if (isPending.value) return mode.value === 'signIn' ? 'Signing in...' : 'Creating account...'
   return mode.value === 'signIn' ? 'Sign in' : 'Create account'
 })
 const passwordAutocomplete = computed(() =>
@@ -47,13 +46,13 @@ watch(mode, () => {
 })
 
 async function submitAuth() {
-  if (!canSubmit.value) return
+  if (isPending.value || !canSubmit.value) return
 
-  loading.value = true
   error.value = null
   info.value = null
 
   try {
+    if (!client) throw new Error('Authentication client unavailable')
     if (mode.value === 'signUp') {
       const parsed = signUpInputSchema.safeParse({
         name: name.value,
@@ -66,7 +65,7 @@ async function submitAuth() {
         return
       }
 
-      const { error: signUpError } = await signUp.email({
+      const { error: signUpError } = await client.signUp.email({
         ...parsed.data,
       })
 
@@ -90,7 +89,7 @@ async function submitAuth() {
       return
     }
 
-    const result = await signIn.email({
+    const result = await client.signIn.email({
       ...parsed.data,
     })
 
@@ -104,8 +103,6 @@ async function submitAuth() {
       'Signed in. If your email is not verified yet, check your inbox for a verification link.'
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Authentication failed'
-  } finally {
-    loading.value = false
   }
 }
 </script>
@@ -156,7 +153,7 @@ async function submitAuth() {
       <p v-if="info" class="auth-info">{{ info }}</p>
       <p v-if="error" class="auth-error">{{ error }}</p>
 
-      <button type="submit" :disabled="loading || !canSubmit">
+      <button type="submit" :disabled="isPending || !canSubmit">
         {{ submitLabel }}
       </button>
     </form>

@@ -34,7 +34,7 @@ if (import.meta.client) {
     status: status.value,
     pending: pending.value,
     error: error.value?.message ?? null,
-    hasData: data.value !== null && data.value !== undefined,
+    hasData: data.value !== undefined,
     dataLength: Array.isArray(data.value) ? data.value.length : null,
   })
 
@@ -58,7 +58,7 @@ if (import.meta.client) {
 const capturedAtRender = {
   pending: pending.value,
   status: status.value,
-  hasData: data.value !== null && data.value !== undefined,
+  hasData: data.value !== undefined,
   dataLength: Array.isArray(data.value) ? data.value.length : null,
 }
 </script>
@@ -107,9 +107,7 @@ const capturedAtRender = {
         </div>
         <div class="state-item">
           <span class="label">hasData:</span>
-          <span data-testid="current-has-data" class="value">{{
-            data !== null && data !== undefined
-          }}</span>
+          <span data-testid="current-has-data" class="value">{{ data !== undefined }}</span>
         </div>
         <div class="state-item">
           <span class="label">dataLength:</span>

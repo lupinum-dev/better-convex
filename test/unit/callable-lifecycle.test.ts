@@ -1,42 +1,44 @@
 import { ConvexError } from 'convex/values'
 import { describe, expect, it, vi } from 'vitest'
 
+import { ConvexCallError } from '../../packages/vue/src/errors'
+import {
+  createCallableController,
+  type CallableControllerHandlers,
+} from '../../packages/vue/src/internal/callable-controller'
 import {
   createIdentityChangedError,
   isIdentityChangedError,
-} from '../../src/runtime/client/identity-changed-error'
-import { ConvexCallError } from '../../src/runtime/errors'
-import {
-  createCallableLifecycle,
-  type CallableLifecycleHandlers,
-} from '../../src/runtime/utils/callable-lifecycle'
+} from '../../packages/vue/src/internal/identity-changed-error'
 
 function makeLifecycle<Result = string>(
-  handlers: CallableLifecycleHandlers<Record<string, unknown>, Result>,
+  handlers: CallableControllerHandlers<Record<string, unknown>, Result>,
   getIdentityGeneration: () => number = () => 0,
+  subscribeIdentityChange?: (listener: () => void) => () => void,
+  operation: 'mutation' | 'action' = 'mutation',
 ) {
-  return createCallableLifecycle<Record<string, unknown>, Result>({
-    devtoolsKind: 'mutation',
-    fnName: 'test:fn',
-    hasOptimisticUpdate: false,
+  return createCallableController<Record<string, unknown>, Result>({
+    operation,
     getIdentityGeneration,
+    subscribeIdentityChange,
     handlers,
   })
 }
 
-describe('callable lifecycle: throwing / .safe() equivalence ', () => {
+describe('callable lifecycle: one throwing error protocol', () => {
   const rawFailures: Array<{ name: string; make: () => unknown }> = [
     { name: 'plain Error', make: () => new Error('boom') },
-    { name: 'ConvexError', make: () => new ConvexError({ code: 'X', reason: 'y' }) },
+    {
+      name: 'ConvexError',
+      make: () => new ConvexError({ code: 'X', reason: 'y' }),
+    },
     { name: 'string', make: () => 'bare string failure' },
     { name: 'opaque object', make: () => ({ unrelated: 1 }) },
   ]
 
   for (const { name, make } of rawFailures) {
-    it(`produces an equal toJSON() and both instanceof for ${name}`, async () => {
-      const lifecycle = makeLifecycle({
-        invoke: () => Promise.reject(make()),
-      })
+    it(`normalizes ${name} to ConvexCallError`, async () => {
+      const lifecycle = makeLifecycle({ invoke: () => Promise.reject(make()) })
 
       let thrown: unknown
       try {
@@ -44,132 +46,291 @@ describe('callable lifecycle: throwing / .safe() equivalence ', () => {
       } catch (error) {
         thrown = error
       }
-      const safe = await lifecycle.safe({})
 
       expect(thrown).toBeInstanceOf(ConvexCallError)
-      expect(safe.ok).toBe(false)
-      if (safe.ok) throw new Error('expected error result')
-      expect(safe.error).toBeInstanceOf(ConvexCallError)
-      expect((thrown as ConvexCallError).toJSON()).toEqual(safe.error.toJSON())
+      expect(lifecycle.status.value).toBe('error')
+      expect(lifecycle.error.value).toBe(thrown)
     })
   }
+
+  it('commits successful data and clears the previous error', async () => {
+    let shouldFail = true
+    const failure = new ConvexCallError({ kind: 'server', message: 'remote failure' })
+    const lifecycle = makeLifecycle({
+      invoke: async () => {
+        if (shouldFail) throw failure
+        return 'committed'
+      },
+    })
+
+    await expect(lifecycle.run({})).rejects.toBe(failure)
+    expect(lifecycle.error.value).toBe(failure)
+
+    shouldFail = false
+    await expect(lifecycle.run({})).resolves.toBe('committed')
+    expect(lifecycle.data.value).toBe('committed')
+    expect(lifecycle.error.value).toBeUndefined()
+  })
+
+  it('keeps diagnostics non-authoritative on success and failure', async () => {
+    const remoteFailure = new ConvexCallError({ kind: 'server', message: 'remote failure' })
+    let shouldFail = false
+    const startEvent = vi.fn(() => {
+      throw new Error('diagnostics unavailable')
+    })
+    const finishEvent = vi.fn(() => {
+      throw new Error('diagnostics unavailable')
+    })
+    const failEvent = vi.fn(() => {
+      throw new Error('diagnostics unavailable')
+    })
+    const lifecycle = createCallableController<Record<string, unknown>, string>({
+      operation: 'mutation',
+      getIdentityGeneration: () => 0,
+      handlers: {
+        invoke: async () => {
+          if (shouldFail) throw remoteFailure
+          return 'committed'
+        },
+      },
+      observer: { startEvent, finishEvent, failEvent },
+    })
+
+    await expect(lifecycle.run({ value: 'ok' })).resolves.toBe('committed')
+    shouldFail = true
+    await expect(lifecycle.run({ value: 'fail' })).rejects.toBe(remoteFailure)
+
+    expect(startEvent).toHaveBeenCalledTimes(2)
+    expect(finishEvent).toHaveBeenCalledWith(undefined, 'committed', expect.any(Number))
+    expect(failEvent).toHaveBeenCalledWith(undefined, remoteFailure, expect.any(Number))
+  })
 })
 
-describe('callable lifecycle: identity-change stale rejection (architecture invariant)', () => {
-  it('rejects a mid-flight completion under a changed identity as IDENTITY_CHANGED and fires no callbacks', async () => {
+describe('callable lifecycle: newest invocation and identity retirement', () => {
+  it('lets only the newest out-of-order completion own state', async () => {
+    let resolveFirst!: (value: string) => void
+    let resolveSecond!: (value: string) => void
+    let invocation = 0
+    const lifecycle = makeLifecycle({
+      invoke: () => {
+        invocation += 1
+        return invocation === 1
+          ? new Promise<string>((resolve) => {
+              resolveFirst = resolve
+            })
+          : new Promise<string>((resolve) => {
+              resolveSecond = resolve
+            })
+      },
+    })
+
+    const first = lifecycle.run({ call: 1 })
+    const second = lifecycle.run({ call: 2 })
+    resolveSecond('newest')
+    await expect(second).resolves.toBe('newest')
+    resolveFirst('older')
+    await expect(first).resolves.toBe('older')
+
+    expect(lifecycle.status.value).toBe('success')
+    expect(lifecycle.data.value).toBe('newest')
+  })
+
+  it('rejects a mid-flight completion from a retired identity and masks its state', async () => {
     let generation = 0
     let releaseInvoke!: (value: string) => void
-    const onSuccess = vi.fn()
-    const onError = vi.fn()
-    const logSuccess = vi.fn()
-    const logError = vi.fn()
-
+    let notifyIdentityChange!: () => void
     const lifecycle = makeLifecycle(
       {
         invoke: () =>
           new Promise<string>((resolve) => {
             releaseInvoke = resolve
           }),
-        onSuccess,
-        onError,
-        logSuccess,
-        logError,
       },
       () => generation,
+      (listener) => {
+        notifyIdentityChange = listener
+        return () => {}
+      },
     )
 
     const pending = lifecycle.run({})
-
-    // Identity switches while the wire call is still in flight.
     generation = 1
-    lifecycle.onIdentityMaybeChanged()
-
-    // The wire call then succeeds — but under the retired identity, so it is
-    // retired rather than committed.
+    notifyIdentityChange()
     releaseInvoke('wire-ok')
+
+    await expect(pending).rejects.toMatchObject({
+      code: 'IDENTITY_CHANGED',
+      kind: 'authentication',
+    })
+    expect(lifecycle.status.value).toBe('idle')
+    expect(lifecycle.error.value).toBeUndefined()
+    expect(lifecycle.data.value).toBeUndefined()
+  })
+
+  it('passes owner-produced identity retirement through and remains masked', async () => {
+    const lifecycle = makeLifecycle({
+      invoke: () => Promise.reject(createIdentityChangedError('mutation')),
+    })
 
     let rejection: unknown
     try {
-      await pending
+      await lifecycle.run({})
     } catch (error) {
       rejection = error
     }
 
     expect(isIdentityChangedError(rejection)).toBe(true)
-    expect(onSuccess).not.toHaveBeenCalled()
-    expect(onError).not.toHaveBeenCalled()
-    expect(logSuccess).not.toHaveBeenCalled()
-    expect(logError).not.toHaveBeenCalled()
-
-    // State is masked, not showing the stale result or a spurious error.
     expect(lifecycle.status.value).toBe('idle')
-    expect(lifecycle.error.value).toBeNull()
+    expect(lifecycle.error.value).toBeUndefined()
+  })
+
+  it('does not let an older identity rejection mask a newer in-flight call', async () => {
+    let rejectFirst!: (error: Error) => void
+    let resolveSecond!: (value: string) => void
+    let invocation = 0
+    const lifecycle = makeLifecycle({
+      invoke: () => {
+        invocation += 1
+        return invocation === 1
+          ? new Promise<string>((_resolve, reject) => {
+              rejectFirst = reject
+            })
+          : new Promise<string>((resolve) => {
+              resolveSecond = resolve
+            })
+      },
+    })
+
+    const first = lifecycle.run({})
+    const second = lifecycle.run({})
+    rejectFirst(createIdentityChangedError('mutation'))
+    await expect(first).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
+    expect(lifecycle.status.value).toBe('pending')
+
+    resolveSecond('newer')
+    await expect(second).resolves.toBe('newer')
+    expect(lifecycle.status.value).toBe('success')
+    expect(lifecycle.data.value).toBe('newer')
+  })
+
+  it('never exposes an unknown upstream message through state', async () => {
+    const sentinel = 'CALLABLE_STATE_SECRET_2f03'
+    const lifecycle = makeLifecycle({
+      invoke: () => Promise.reject(new Error(`${sentinel}\n    at privateFrame (secret.ts:1:1)`)),
+    })
+
+    await expect(lifecycle.run({})).rejects.toMatchObject({ message: 'Unknown Convex error' })
+    expect(lifecycle.error.value?.message).toBe('Unknown Convex error')
+    expect(JSON.stringify(lifecycle.error.value)).not.toContain(sentinel)
+  })
+})
+
+describe('callable lifecycle: settlement and disposal', () => {
+  it.each(['mutation', 'action'] as const)(
+    'does not dispatch a %s across a settlement-time identity change',
+    async (operation) => {
+      let generation = 0
+      let releaseSettlement!: () => void
+      let notifyIdentityChange!: () => void
+      const invoke = vi.fn(async () => 'alice-result')
+      const lifecycle = makeLifecycle(
+        {
+          settle: () =>
+            new Promise<void>((resolve) => {
+              releaseSettlement = resolve
+            }),
+          invoke,
+        },
+        () => generation,
+        (listener) => {
+          notifyIdentityChange = listener
+          return () => {}
+        },
+        operation,
+      )
+
+      const pending = lifecycle.run({ request: 'before-settlement' })
+      expect(lifecycle.pending.value).toBe(true)
+      expect(invoke).not.toHaveBeenCalled()
+
+      generation = 1
+      notifyIdentityChange()
+      releaseSettlement()
+
+      await expect(pending).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
+      expect(invoke).not.toHaveBeenCalled()
+      expect(lifecycle.status.value).toBe('idle')
+    },
+  )
+
+  it('keeps an internal retirement reset final while settlement is pending', async () => {
+    let releaseSettlement!: () => void
+    const lifecycle = makeLifecycle({
+      settle: () =>
+        new Promise<void>((resolve) => {
+          releaseSettlement = resolve
+        }),
+      invoke: async () => 'wire-result',
+    })
+
+    const pending = lifecycle.run({})
+    lifecycle.reset()
+    releaseSettlement()
+
+    await expect(pending).resolves.toBe('wire-result')
+    expect(lifecycle.status.value).toBe('idle')
     expect(lifecycle.data.value).toBeUndefined()
   })
 
-  it('.safe() returns the IDENTITY_CHANGED error for a stale call, never the old result', async () => {
-    let generation = 0
-    let releaseInvoke!: (value: string) => void
+  it('normalizes a settlement failure without dispatching', async () => {
+    const invoke = vi.fn(async () => 'unreachable')
+    const lifecycle = makeLifecycle({
+      settle: async () => {
+        throw new ConvexCallError({
+          kind: 'authentication',
+          message: 'Authentication failed',
+        })
+      },
+      invoke,
+    })
 
-    const lifecycle = makeLifecycle(
-      {
+    await expect(lifecycle.run({})).rejects.toMatchObject({ kind: 'authentication' })
+    expect(invoke).not.toHaveBeenCalled()
+    expect(lifecycle.status.value).toBe('error')
+  })
+
+  it('disposal retires pending state and releases identity observation once', async () => {
+    let generation = 1
+    let notifyIdentityChange: (() => void) | undefined
+    let releaseInvoke!: (value: string) => void
+    const stopIdentity = vi.fn()
+    const lifecycle = createCallableController<Record<string, unknown>, string>({
+      operation: 'mutation',
+      getIdentityGeneration: () => generation,
+      subscribeIdentityChange(listener) {
+        notifyIdentityChange = listener
+        return stopIdentity
+      },
+      handlers: {
         invoke: () =>
           new Promise<string>((resolve) => {
             releaseInvoke = resolve
           }),
       },
-      () => generation,
-    )
-
-    const pending = lifecycle.safe({})
-    generation = 1
-    lifecycle.onIdentityMaybeChanged()
-    releaseInvoke('wire-ok')
-
-    const result = await pending
-    expect(result.ok).toBe(false)
-    if (result.ok) throw new Error('expected error result')
-    expect(result.error.code).toBe('IDENTITY_CHANGED')
-    expect(result.error.kind).toBe('authentication')
-  })
-
-  it('passes an owner-produced IDENTITY_CHANGED rejection through without callbacks (count rejections)', async () => {
-    const onError = vi.fn()
-    let rejections = 0
-
-    const lifecycle = makeLifecycle({
-      // The client owner rejects a retired-generation in-flight call itself.
-      invoke: () => Promise.reject(createIdentityChangedError('mutation')),
-      onError,
     })
 
-    const attempts = 3
-    for (let i = 0; i < attempts; i++) {
-      try {
-        await lifecycle.run({})
-      } catch (error) {
-        if (isIdentityChangedError(error)) rejections += 1
-      }
-    }
+    const pending = lifecycle.run({})
+    lifecycle.dispose()
+    lifecycle.dispose()
+    releaseInvoke('late-result')
 
-    expect(rejections).toBe(attempts)
-    expect(onError).not.toHaveBeenCalled()
-    // No error is committed to visible state for an identity-boundary rejection.
-    expect(lifecycle.error.value).toBeNull()
-    expect(lifecycle.status.value).toBe('pending')
-  })
+    await expect(pending).resolves.toBe('late-result')
+    expect(lifecycle.status.value).toBe('idle')
+    expect(lifecycle.data.value).toBeUndefined()
+    expect(stopIdentity).toHaveBeenCalledTimes(1)
 
-  it('commits and reports a genuine (non-identity) failure with one onError call', async () => {
-    const onError = vi.fn()
-    const lifecycle = makeLifecycle({
-      invoke: () => Promise.reject(new Error('genuine failure')),
-      onError,
-    })
-
-    await expect(lifecycle.run({})).rejects.toBeInstanceOf(ConvexCallError)
-    expect(onError).toHaveBeenCalledTimes(1)
-    expect(onError.mock.calls[0]?.[0]).toBeInstanceOf(ConvexCallError)
-    expect(lifecycle.status.value).toBe('error')
-    expect(lifecycle.error.value?.message).toBe('genuine failure')
+    generation = 2
+    notifyIdentityChange?.()
+    await expect(lifecycle.run({})).rejects.toMatchObject({ code: 'CALL_DISPOSED' })
   })
 })

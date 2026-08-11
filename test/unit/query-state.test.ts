@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  computeConvexQueryPending,
-  computeConvexQueryStale,
-  computePaginatedQueryStale,
-  computePaginatedQueryStatus,
-  type PaginatedQueryStatusState,
-} from '../../src/runtime/utils/query-state'
+  computePaginationStale,
+  computePaginationStatus,
+  type PaginationStatusState,
+} from '../../packages/vue/src/internal/pagination-state'
+import { computeConvexQueryPending } from '../../src/runtime/utils/query-state'
 
-const readyPaginatedState: PaginatedQueryStatusState = {
+const readyPaginatedState: PaginationStatusState = {
   disabled: false,
   refresh: 'idle',
   hasError: false,
@@ -79,119 +78,84 @@ describe('query state helpers', () => {
     })
   })
 
-  describe('computeConvexQueryStale', () => {
-    it('requires previous data, previous args, pending state, and changed args', () => {
-      expect(
-        computeConvexQueryStale({
-          keepPreviousData: true,
-          isSkipped: false,
-          hasLastSettledData: true,
-          hasLastSettledArgsHash: true,
-          pending: true,
-          argsHash: 'next',
-          lastSettledArgsHash: 'previous',
-        }),
-      ).toBe(true)
-    })
-
-    it('is false without keepPreviousData or while skipped', () => {
-      expect(
-        computeConvexQueryStale({
-          keepPreviousData: false,
-          isSkipped: false,
-          hasLastSettledData: true,
-          hasLastSettledArgsHash: true,
-          pending: true,
-          argsHash: 'next',
-          lastSettledArgsHash: 'previous',
-        }),
-      ).toBe(false)
-
-      expect(
-        computeConvexQueryStale({
-          keepPreviousData: true,
-          isSkipped: true,
-          hasLastSettledData: true,
-          hasLastSettledArgsHash: true,
-          pending: true,
-          argsHash: 'next',
-          lastSettledArgsHash: 'previous',
-        }),
-      ).toBe(false)
-    })
-  })
-
-  describe('computePaginatedQueryStatus', () => {
+  describe('computePaginationStatus', () => {
     it('returns idle when skipped', () => {
-      expect(computePaginatedQueryStatus({ ...readyPaginatedState, disabled: true })).toBe('idle')
+      expect(computePaginationStatus({ ...readyPaginatedState, disabled: true })).toBe('idle')
     })
 
     it('prioritizes manual refresh loading before existing data state', () => {
       expect(
-        computePaginatedQueryStatus({
+        computePaginationStatus({
           ...readyPaginatedState,
           refresh: 'pending',
         }),
-      ).toBe('loading-first-page')
+      ).toBe('pending')
     })
 
     it('returns error for any query error', () => {
-      expect(computePaginatedQueryStatus({ ...readyPaginatedState, hasError: true })).toBe('error')
+      expect(computePaginationStatus({ ...readyPaginatedState, hasError: true })).toBe('error')
+      expect(
+        computePaginationStatus({
+          ...readyPaginatedState,
+          disabled: true,
+          hasError: true,
+        }),
+      ).toBe('error')
     })
 
     it('reports first-page loading until the first page is ready', () => {
       expect(
-        computePaginatedQueryStatus({
+        computePaginationStatus({
           ...readyPaginatedState,
           firstPage: { state: 'loading' },
         }),
-      ).toBe('loading-first-page')
+      ).toBe('pending')
     })
 
-    it('distinguishes ready, loading-more, and exhausted', () => {
-      expect(computePaginatedQueryStatus(readyPaginatedState)).toBe('ready')
+    it('collapses ready and exhausted pages into success while work stays pending', () => {
+      expect(computePaginationStatus(readyPaginatedState)).toBe('success')
       expect(
-        computePaginatedQueryStatus({ ...readyPaginatedState, nextPage: { state: 'loading' } }),
-      ).toBe('loading-more')
+        computePaginationStatus({ ...readyPaginatedState, nextPage: { state: 'loading' } }),
+      ).toBe('pending')
       expect(
-        computePaginatedQueryStatus({ ...readyPaginatedState, nextPage: { state: 'exhausted' } }),
-      ).toBe('exhausted')
+        computePaginationStatus({ ...readyPaginatedState, nextPage: { state: 'exhausted' } }),
+      ).toBe('success')
       expect(
-        computePaginatedQueryStatus({
+        computePaginationStatus({
           ...readyPaginatedState,
           firstPage: { state: 'ready', isDone: true },
         }),
-      ).toBe('exhausted')
+      ).toBe('success')
     })
 
     it('keeps a first-page-only exhausted result out of loading-more', () => {
       expect(
-        computePaginatedQueryStatus({
+        computePaginationStatus({
           ...readyPaginatedState,
           firstPage: { state: 'ready', isDone: true },
           nextPage: { state: 'loading' },
         }),
-      ).toBe('loading-more')
+      ).toBe('pending')
     })
   })
 
-  describe('computePaginatedQueryStale', () => {
+  describe('computePaginationStale', () => {
     it('is stale only when previous rows are shown during first-page reload', () => {
       expect(
-        computePaginatedQueryStale({
+        computePaginationStale({
           keepPreviousData: true,
-          status: 'loading-first-page',
-          transformedResultCount: 0,
-          lastSettledResultCount: 3,
+          status: 'pending',
+          hasCurrentData: false,
+          hasLastSettledData: true,
         }),
       ).toBe(true)
 
       expect(
-        computePaginatedQueryStale({
+        computePaginationStale({
           keepPreviousData: true,
-          status: 'loading-more',
-          transformedResultCount: 0,
-          lastSettledResultCount: 3,
+          status: 'success',
+          hasCurrentData: false,
+          hasLastSettledData: true,
         }),
       ).toBe(false)
     })

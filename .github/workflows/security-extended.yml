@@ -1,15 +1,23 @@
-name: security-extended
+name: auth-security-extended
 
 on:
   schedule:
-    - cron: '41 2 * * 2'
-  workflow_dispatch:
+    - cron: '41 2 * * *'
+    - cron: '23 3 1 * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: auth-security-extended-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
+env:
+  RELEASE_NODE_VERSION: '22.14.0'
+
 jobs:
-  extended-e2e:
+  static-and-negative:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -18,29 +26,92 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-      - run: corepack enable
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:no-old-auth-runtime
+      - run: pnpm check:auth-logical-ids
+      - run: pnpm check:auth-provenance --source-only
+      - run: pnpm check:auth-upstream
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: pnpm check:auth-advisories
+      - run: pnpm test:auth-adapter
+      - run: pnpm test:oauth
+      - run: pnpm test:auth-fuzz
+      - run: pnpm test:auth-sentinels
+
+  pinned-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check:auth-backend --install
+      - run: pnpm check:auth-schema
+      - run: pnpm test:auth-concurrency
+        env:
+          BCN_AUTH_CONCURRENCY_LOAD: nightly
+      - run: pnpm test:auth-export-sentinels
+      - run: pnpm test:auth-mfa
+
+  oauth-mcp-interop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check:auth-backend --install
+      - run: pnpm test:mcp-auth
+      - run: pnpm test:mcp-conformance
+
+  extended-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check:auth-backend --install
       - run: pnpm test:e2e:full
       - run: pnpm test:dast:proxy
 
-  nuxt-compatibility:
+  monthly-clean-consumers:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '23 3 1 * *'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        nuxt-version: ['4.4.0', 'latest']
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-      - run: corepack enable
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
-      - name: Select Nuxt compatibility target
-        run: pnpm update "nuxt@${{ matrix.nuxt-version }}" "@nuxt/kit@${{ matrix.nuxt-version }}" "@nuxt/schema@${{ matrix.nuxt-version }}" --lockfile=false
-      - run: pnpm check
+      - run: pnpm check:candidate-apps

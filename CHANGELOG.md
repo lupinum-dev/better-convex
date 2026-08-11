@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- Hard-cut Better Convex to one Vue-owned client lifecycle, one integrated
+  Better Auth client, identity-partitioned SSR/query state, and direct callable
+  mutation/action contracts without compatibility shims.
+- Make authentication opt-in, keep no-auth installs free of Better Auth, and
+  expose an opaque token-free attachment for embedded Vue consumers.
+- Ship provider-neutral MCP request handling on the official server, exact
+  OAuth resource verification, provider-owned live access checks, and the
+  experimental Vue MCP App client boundary.
+- Replace repeated release rehearsals with one clean hosted source
+  certification followed by immutable artifact checks, protected staging, and
+  exact npm byte comparison.
+
+## v0.8.0-beta.28
+
+- Bind all three publishable package manifests to the canonical
+  `https://github.com/lupinum-dev/better-convex-nuxt` repository and make that
+  provenance identity a release-certification invariant.
+- Build the MCP workspace entry directly through the root `unbuild` authority
+  during Nuxt prepack so pnpm cannot create a nested package lockfile.
+- Preserve the exact Nuxt `4.5.1`, Vite `8.1.5`, Vue `3.5.40`, and experimental
+  MCP `2026-07-28` boundaries.
+
+## v0.1.0-beta.16 (`better-convex-mcp`)
+
+- Declare and certify the canonical repository URL required for npm trusted
+  publishing and signed provenance.
+
+## v0.8.0-beta.26
+
+- Build the MCP source-test entry through the root workspace's installed
+  `unbuild` command and explicit package directory. The source checkout stays
+  read-only while the same public MCP entry is compiled before tests.
+
 ## v0.6.1
 
 [compare changes](https://github.com/lupinum-dev/better-convex-nuxt/compare/v0.6.0...v0.6.1)
@@ -140,8 +173,9 @@ consumers will need source changes.
 - `serverConvex` is now the only public server call API. Removed
   `serverConvexQuery`, `serverConvexMutation`, `serverConvexAction`, and
   `useConvexCall`.
-- Cookie and bearer credential exchange is bounded, never follows a redirect
-  with the credential attached, and never logs secrets.
+- Better Auth cookie credential exchange is bounded, never follows a redirect
+  with the credential attached, and never logs secrets. Raw Better Auth session
+  tokens are not accepted as public bearer credentials.
 - Removed the built-in `permissions` module option (both the `true` and
   `false` states) and the `createPermissions` permissions runtime. Permission
   rules are application/Convex policy, not library machinery. Replace package

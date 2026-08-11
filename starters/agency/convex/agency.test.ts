@@ -65,16 +65,16 @@ describe('agency starter invariants', () => {
 
     await t.mutation(internal.auth.onCreate, {
       model: 'user',
-      doc: { _id: 'auth-user-1', name: 'Ada', email: 'ada@example.com' },
+      doc: { id: 'auth-user-1', name: 'Ada', email: 'ada@example.com' },
     })
     await t.mutation(internal.auth.onCreate, {
       model: 'user',
-      doc: { _id: 'auth-user-1', name: 'Ada', email: 'ada@example.com' },
+      doc: { id: 'auth-user-1', name: 'Ada', email: 'ada@example.com' },
     })
     await t.mutation(internal.auth.onUpdate, {
       model: 'user',
-      oldDoc: { _id: 'auth-user-1', name: 'Ada', email: 'ada@example.com' },
-      newDoc: { _id: 'auth-user-1', name: 'Ada Lovelace', email: 'ada@example.com' },
+      oldDoc: { id: 'auth-user-1', name: 'Ada', email: 'ada@example.com' },
+      newDoc: { id: 'auth-user-1', name: 'Ada Lovelace', email: 'ada@example.com' },
     })
 
     const users = await t.run(async (ctx) => await ctx.db.query('users').collect())
@@ -90,18 +90,17 @@ describe('agency starter invariants', () => {
     const t = initConvexTest()
     const authUser = (await t.run(async (ctx) => {
       return await ctx.runMutation(components.betterAuth.adapter.create, {
-        input: {
-          model: 'user',
-          data: {
-            name: 'Grace Hopper',
-            email: 'grace@example.com',
-            emailVerified: true,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
+        model: 'user',
+        data: {
+          id: 'auth-user-grace',
+          name: 'Grace Hopper',
+          email: 'grace@example.com',
+          emailVerified: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         },
       })
-    })) as { _id: string }
+    })) as { id: string }
 
     const result = await t.mutation(internal.auth.rebuildUserProjectionBatch, {
       cursor: null,
@@ -111,7 +110,7 @@ describe('agency starter invariants', () => {
     const users = await t.run(async (ctx) => await ctx.db.query('users').collect())
     expect(users).toHaveLength(1)
     expect(users[0]).toMatchObject({
-      subject: authUser._id,
+      subject: authUser.id,
       name: 'Grace Hopper',
       email: 'grace@example.com',
     })
@@ -121,30 +120,29 @@ describe('agency starter invariants', () => {
     const t = initConvexTest()
     const authUser = (await t.run(async (ctx) => {
       return await ctx.runMutation(components.betterAuth.adapter.create, {
-        input: {
-          model: 'user',
-          data: {
-            name: 'Canonical Name',
-            email: 'duplicate@example.com',
-            emailVerified: true,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
+        model: 'user',
+        data: {
+          id: 'auth-user-duplicate',
+          name: 'Canonical Name',
+          email: 'duplicate@example.com',
+          emailVerified: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
         },
       })
-    })) as { _id: string }
+    })) as { id: string }
 
     const seeded = await t.run(async (ctx) => {
       const now = Date.now()
       const firstActorId = await ctx.db.insert('users', {
-        subject: authUser._id,
+        subject: authUser.id,
         name: 'First actor',
         email: 'first@example.com',
         createdAt: now,
         updatedAt: now,
       })
       const secondActorId = await ctx.db.insert('users', {
-        subject: authUser._id,
+        subject: authUser.id,
         name: 'Second actor',
         email: 'second@example.com',
         createdAt: now,
@@ -212,7 +210,7 @@ describe('agency starter invariants', () => {
       t.mutation(internal.auth.onCreate, {
         model: 'user',
         doc: {
-          _id: authUser._id,
+          id: authUser.id,
           name: 'Canonical Name',
           email: 'duplicate@example.com',
         },
@@ -222,12 +220,12 @@ describe('agency starter invariants', () => {
       t.mutation(internal.auth.onUpdate, {
         model: 'user',
         oldDoc: {
-          _id: authUser._id,
+          id: authUser.id,
           name: 'Old Name',
           email: 'duplicate@example.com',
         },
         newDoc: {
-          _id: authUser._id,
+          id: authUser.id,
           name: 'Canonical Name',
           email: 'duplicate@example.com',
         },
@@ -241,14 +239,14 @@ describe('agency starter invariants', () => {
     await expect(
       t.mutation(internal.auth.onDelete, {
         model: 'user',
-        doc: { _id: authUser._id },
+        doc: { id: authUser.id },
       }),
     ).rejects.toThrow(duplicateError)
 
     const rows = await t.run(async (ctx) => ({
       actors: await ctx.db
         .query('users')
-        .withIndex('by_subject', (q) => q.eq('subject', authUser._id))
+        .withIndex('by_subject', (q) => q.eq('subject', authUser.id))
         .collect(),
       agencyOrganization: await ctx.db.get(seeded.agencyOrganizationId),
       clientOrganization: await ctx.db.get(seeded.clientOrganizationId),
@@ -305,7 +303,7 @@ describe('agency starter invariants', () => {
     await t.mutation(internal.auth.onDelete, {
       model: 'user',
       doc: {
-        _id: 'deleted-user',
+        id: 'deleted-user',
         name: 'deleted-user',
         email: 'deleted-user@example.com',
       },

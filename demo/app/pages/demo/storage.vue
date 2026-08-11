@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { api } from '@@/convex/_generated/api'
-import type { Id } from '@@/convex/_generated/dataModel'
 
 definePageMeta({
   middleware: 'auth',
@@ -34,11 +33,6 @@ const deleteError = deleteFile.error
 // Combined error from any operation
 const operationError = computed(() => deleteError.value || saveError.value)
 
-function clearErrors() {
-  deleteError.value = null
-  saveError.value = null
-}
-
 // File input ref
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -64,7 +58,7 @@ async function uploadFile(file: File) {
     const storageId = await upload(file)
     if (storageId) {
       await saveFile({
-        storageId: storageId as Id<'_storage'>,
+        storageId,
         filename: file.name,
       })
     }
@@ -99,7 +93,7 @@ function formatFileSize(bytes: number) {
       color="secondary"
       variant="subtle"
       title="How it works"
-      description="useConvexFileUpload handles the entire upload flow: generating upload URLs, uploading to Convex storage, and tracking progress. useConvexStorageUrl converts storage IDs to accessible URLs."
+      description="useConvexFileUpload handles upload URL generation, transfer, and progress. Each preview uses an ordinary useConvexQuery so loading, missing, and error states stay distinct."
     />
 
     <!-- Operation Error -->
@@ -110,8 +104,6 @@ function formatFileSize(bytes: number) {
       color="error"
       variant="subtle"
       :title="operationError.message"
-      :close-icon="'i-lucide-x'"
-      @close="clearErrors"
     />
 
     <!-- Upload Zone -->
@@ -135,8 +127,8 @@ function formatFileSize(bytes: number) {
         @click="fileInputRef?.click()"
       >
         <div v-if="uploadStatus === 'pending'" @click.stop>
-          <UProgress :value="progress" color="primary" class="mb-4" />
-          <p class="text-sm text-muted mb-3">Uploading... {{ progress }}%</p>
+          <UProgress :value="progress.percent" color="primary" class="mb-4" />
+          <p class="text-sm text-muted mb-3">Uploading... {{ progress.percent }}%</p>
           <UButton
             icon="i-lucide-x"
             color="neutral"

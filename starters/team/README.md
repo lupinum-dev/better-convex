@@ -121,7 +121,8 @@ codegen, Nuxt type checking, and production build.
 starter change, because it validates Convex functions and component code against
 the local Convex runtime.
 
-For browser development, run `pnpm convex:dev` and `pnpm dev` in separate
+For first-time browser development, run `pnpm convex:configure`; use
+`pnpm convex:dev` on later runs. Run it and `pnpm dev` in separate
 terminals. Nuxt auth routes proxy to the local Convex HTTP site, so Nuxt alone
 cannot complete Better Auth token exchange. Signed-out `401` responses from auth
 token and organization-list endpoints are expected.
@@ -161,27 +162,48 @@ Recommended first browser flows for a production app:
 
 ## Auth Environment
 
-Set these in Convex before using auth routes:
+Set the auth origin and both independent secrets before using auth routes:
 
 ```bash
-pnpm exec convex env set SITE_URL http://localhost:3000
-pnpm exec convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
+export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"
+(
+  set -eu
+  umask 077
+  sed '/^BCN_AUTH_PROXY_IP_SECRET=/d' .env.local > .env.local.next
+  printf 'BCN_AUTH_PROXY_IP_SECRET=%s\n' "$BCN_AUTH_PROXY_IP_SECRET" >> .env.local.next
+  mv .env.local.next .env.local
+)
+pnpm exec better-convex-nuxt-convex env set SITE_URL http://localhost:3000
+printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex-nuxt-convex env set BETTER_AUTH_SECRETS
+printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt-convex env set BCN_AUTH_PROXY_IP_SECRET
 ```
+
+In production, inject the same `BCN_AUTH_PROXY_IP_SECRET` into Nuxt with your
+secret manager. Do not print or commit it.
 
 Email delivery with Resend:
 
 ```bash
-pnpm exec convex env set RESEND_API_KEY your_resend_api_key
-pnpm exec convex env set RESEND_FROM_EMAIL invites@example.com
+printf '%s' "$RESEND_API_KEY" | pnpm exec better-convex-nuxt-convex env set RESEND_API_KEY
+pnpm exec better-convex-nuxt-convex env set RESEND_FROM_EMAIL invites@example.com
 ```
+
+Load `RESEND_API_KEY` from your secret manager without printing it or placing it
+in shell history.
 
 Without Resend configured, localhost/test runs log verification and invitation
 links for manual testing. Non-local deployments fail fast instead of pretending
 email was sent.
 
-Also configure the Nuxt public Convex URLs, for example in `.env`:
+Also configure the Nuxt public Convex URLs in the `.env.local` created by
+`pnpm convex:configure`:
 
 ```bash
 NUXT_PUBLIC_CONVEX_URL=
 NUXT_PUBLIC_CONVEX_SITE_URL=
 ```
+
+For non-loopback deployments, also set
+`BCN_AUTH_TRUSTED_CLIENT_IP_HEADER` to a header the ingress overwrites with
+exactly one client IP. Public traffic must not reach the Nuxt origin around that
+ingress unless the origin independently authenticates ingress requests.

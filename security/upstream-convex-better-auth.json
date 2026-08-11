@@ -1,0 +1,477 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/get-convex/better-auth",
+    "commit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+    "tag": "v0.12.5",
+    "license": "Apache-2.0",
+    "noticeFilePresent": false
+  },
+  "importedAt": "2026-07-16",
+  "adapterContractTests": {
+    "schemaVersion": 1,
+    "npmArtifacts": [
+      {
+        "name": "@better-auth/core",
+        "version": "1.7.0-rc.2",
+        "integrity": "sha512-NreNGg68j4qUVVYTcC1DtvRTwSJdCavH5igrMyTO5ghZxnzL4G539uRIzOZmJ64MLzOyOwzWH+JHqpVaj0ZRxw==",
+        "typePaths": [
+          "src/db/adapter/index.ts",
+          "src/db/adapter/types.ts",
+          "src/db/adapter/factory.ts"
+        ]
+      },
+      {
+        "name": "better-auth",
+        "version": "1.7.0-rc.2",
+        "integrity": "sha512-5KZrqbAsoQA8q1edmufaoF/CBbMjGb/BoPqyMTzXFyDeXNhk8pXO2xJkiDDeZcSGtyhUKXiDnD7hxh4sJVgYZw==",
+        "typePaths": ["dist/adapters/index.d.mts"]
+      }
+    ],
+    "upstreamRepository": "https://github.com/better-auth/better-auth",
+    "upstreamTag": "v1.7.0-rc.2",
+    "upstreamCommit": "cc708e51bcb1d4c367d2bc6182e6fd7fd722ece8",
+    "sourceTestPaths": [
+      "packages/core/src/db/adapter/factory.test.ts",
+      "packages/core/src/db/adapter/get-id-field.test.ts",
+      "packages/test-utils/src/adapter/suites/basic.ts",
+      "packages/test-utils/src/adapter/suites/case-insensitive.ts",
+      "packages/kysely-adapter/src/increment-one.test.ts"
+    ],
+    "intentionalAdaptations": [
+      "Run the supported CRUD/filter/count subset against the Convex component and an independent deterministic in-memory reference model; joins, numeric IDs, UUID IDs, offsets, and transactions are intentionally unsupported.",
+      "Exercise Better Auth factory transformation separately for forceAllowId and logical-to-physical field names before the component boundary.",
+      "Extend the upstream increment contract with Convex-specific concurrent decrement, overflow, set-overlap, return-value, trigger, and transaction-rollback proofs.",
+      "Require public count to delegate once to the component's single-snapshot count query, require count and fully paginated findMany to select the same rows, and reject atomic bulk/relationship plans above the reviewed 128-row transaction budget before any write or trigger effect."
+    ]
+  },
+  "monitoring": {
+    "reviewedAt": "2026-07-16",
+    "reviewExpiresAfterDays": 31,
+    "apiRepository": "get-convex/better-auth",
+    "defaultBranch": {
+      "name": "main",
+      "head": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "compareStatus": "identical",
+      "sourceSeamChanges": [],
+      "disposition": "irrelevant",
+      "reviewComplete": true,
+      "rationale": "The reviewed default branch still resolves to the imported v0.12.5 commit, so no enumerated source seam has changed."
+    },
+    "releases": {
+      "items": [],
+      "disposition": "irrelevant",
+      "reviewComplete": true,
+      "rationale": "The upstream repository currently publishes no GitHub Release objects; package advisories are checked separately against the exact resolved tuple."
+    },
+    "securityAdvisories": {
+      "items": [],
+      "disposition": "irrelevant",
+      "reviewComplete": true,
+      "rationale": "The upstream repository currently publishes no repository security advisories; the authoritative dependency advisory gate remains mandatory."
+    },
+    "issue395": {
+      "number": 395,
+      "state": "open",
+      "title": "@better-auth/oauth-provider breaks convex()'s /api/auth/convex/token at runtime (login bounces to /login) — OIDC-provider collision?",
+      "updatedAt": "2026-07-04T00:16:27Z",
+      "url": "https://github.com/get-convex/better-auth/issues/395",
+      "disposition": "already implemented",
+      "reviewComplete": true,
+      "rationale": "Better Convex Nuxt mounts the official OAuth Provider without the deprecated Convex OIDC provider and keeps authenticated /api/auth/convex/token issuance covered by the exact regression suite.",
+      "evidence": [
+        "test/security/convex-auth-oauth-provider-integration.test.ts",
+        "test/security/convex-auth-oauth-security.test.ts"
+      ]
+    },
+    "pull380": {
+      "number": 380,
+      "state": "open",
+      "merged": false,
+      "title": "Plan oauth-provider migration (#1)",
+      "updatedAt": "2026-05-20T05:08:31Z",
+      "url": "https://github.com/get-convex/better-auth/pull/380",
+      "headSha": "1e89632a581df7fac57997b3beb6a17acea0dc31",
+      "baseSha": "be73010d45299b907d80498abb5e3ea2cc0d2967",
+      "disposition": "architectural review required",
+      "reviewComplete": true,
+      "rationale": "The proposal was reviewed as architecture input. Its migration and compatibility direction is intentionally not imported because this unreleased integration uses one greenfield hard cut and the pinned official provider API."
+    }
+  },
+  "authorizedSourceSeams": [
+    "src/client/index.ts",
+    "src/client/create-client.ts",
+    "src/client/adapter.ts",
+    "src/client/create-api.ts",
+    "src/client/adapter-utils.ts",
+    "src/client/create-schema.ts",
+    "src/component/adapter.ts",
+    "src/component/schema.ts",
+    "src/component/convex.config.ts",
+    "src/component/_generated/**",
+    "src/auth-options.ts",
+    "src/plugins/convex/index.ts",
+    "src/plugins/convex/client.ts",
+    "src/auth-config.ts",
+    "src/utils/index.ts",
+    "src/test.ts"
+  ],
+  "authorizedTargetSeams": [
+    "src/runtime/convex-auth/**",
+    "src/runtime/auth-client/convex-client-plugin.ts",
+    "internal/convex-auth/schema-options.ts"
+  ],
+  "omittedAreas": [
+    "src/nextjs/**",
+    "src/react/**",
+    "src/react-start/**",
+    "src/plugins/cross-domain/**",
+    "examples/**",
+    "docs/**",
+    "scripts/**",
+    "src/testProfiles/**"
+  ],
+  "records": [
+    {
+      "sourcePath": "src/client/adapter.ts",
+      "targetPath": "src/runtime/convex-auth/adapter/create-adapter.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "70daca2ff67e790be91a69c92e35b9c9c373ff5b23402d796a3a50429cc002bc",
+      "targetSha256": "c194fb250751c1cd4b61358fa0aa10fbae0bea435c4e58db06402c88f372cee4",
+      "classification": "adapted",
+      "modificationSummary": "Reworked the adapter factory around logical IDs, indexed parent-reference validation, one atomic relationship-aware component mutation per write, one-call delegation to the component's single-snapshot count query, and fail-closed versioned encryption of provider ID tokens at the sole storage boundary without leaking crypto failures.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": true
+    },
+    {
+      "sourcePath": "src/client/create-api.ts",
+      "targetPath": "src/runtime/convex-auth/adapter/define-functions.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "7f537e1081bc22ee50d15df7b24e73e8869aa78a17af4aca18a5b0d261b186e3",
+      "targetSha256": "1d804c5cad5712d7f248b526e590b823327107d9297f43f798799f363a72081d",
+      "classification": "adapted",
+      "modificationSummary": "Rebuilt component functions with strict validation, indexed parent checks, cycle-safe cascade/restrict/set-null deletion plans, failure-atomic triggers, complete single-snapshot count semantics, guarded one-time consumption, native increments, and authenticated additive signing-key initialization and rotation.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": true
+    },
+    {
+      "sourcePath": "src/client/create-api.ts",
+      "targetPath": "src/runtime/convex-auth/adapter/relationships.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "7f537e1081bc22ee50d15df7b24e73e8869aa78a17af4aca18a5b0d261b186e3",
+      "targetSha256": "31ee572078281ac4c16249980e928214384a8cb8329578a6225a35891f2f27c5",
+      "classification": "rewritten",
+      "modificationSummary": "Extracted one precomputed, cycle-safe relationship engine for indexed parent validation and table-qualified atomic cascade, restrict, and set-null planning.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/client/create-schema.ts",
+      "targetPath": "src/runtime/convex-auth/adapter/generate-schema.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "cf79c73cfc264d11781d5474534be035c5474cef9e701dc2c9a601263ad97d6d",
+      "targetSha256": "4601a3ca208507cada377f09ce3c048406708ad5ffba9d2ebc31ad9ea1284b87",
+      "classification": "adapted",
+      "modificationSummary": "Rewrote deterministic schema and metadata generation for logical IDs, canonical nullability, explicit supported deletion policies, indexed relationship lookups, collision-safe adapter indexes, and a stable model fingerprint.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": true
+    },
+    {
+      "sourcePath": "src/client/create-schema.ts",
+      "targetPath": "src/runtime/convex-auth/adapter/metadata.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "cf79c73cfc264d11781d5474534be035c5474cef9e701dc2c9a601263ad97d6d",
+      "targetSha256": "763d8bc4d5dd61ee9eb041bfec7de882831b3974b54ba3ad247d13abebb09187",
+      "classification": "rewritten",
+      "modificationSummary": "Split logical-to-physical field and executable relationship metadata into one typed contract shared by generation and adapter operations, with one fail-closed mismatch result for malformed or divergent schemas.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/client/adapter-utils.ts",
+      "targetPath": "src/runtime/convex-auth/adapter/query.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "153cf11f2c01180985a8c521a281161c2cf16204044e02b139bc5095fca73d0b",
+      "targetSha256": "7dd1a4bcf9420d81dfc5b3234ca4a23b48c2e80f89b711b0818bb6423a7bac69",
+      "classification": "adapted",
+      "modificationSummary": "Rebuilt filtering, capped and cap-free atomic collection, bounded-memory count paging, index selection, sorting, and pagination around fail-closed logical-field semantics and explicit unsupported-query rejection.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": true
+    },
+    {
+      "sourcePath": "src/component/_generated/api.ts",
+      "targetPath": "src/runtime/convex-auth/component/_generated/api.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "b976c0527c29a708ac5706403b3fbf30afcf5fb7c14b18fc7b69a5f544f4a391",
+      "targetSha256": "1db4cd29f6b14d3359a7c07ef2945636ce9d83a843f33becbfca14a2e6e02998",
+      "classification": "regenerated",
+      "modificationSummary": "Regenerated the component API declarations from the Better Convex Nuxt component.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/component/_generated/component.ts",
+      "targetPath": "src/runtime/convex-auth/component/_generated/component.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "e337fe2ab868c4ba560868d24bcc725a7ca7e5672505adf57df6e5b6e61dbf4e",
+      "targetSha256": "d1548890a6af6d6b25fcb7ffc2e0a0636d5d72d924e295adc3d9d9a412120ebf",
+      "classification": "regenerated",
+      "modificationSummary": "Regenerated the public ComponentApi declaration including relationship-aware writes, guarded consume, atomic increment, and authenticated signing-key initialization and rotation operations.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/component/_generated/dataModel.ts",
+      "targetPath": "src/runtime/convex-auth/component/_generated/dataModel.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "db177073d16a4393c7a96bcdc3a2a904e88c2432d54d138ca7715cc431982c17",
+      "targetSha256": "d1cb88366d72709c3ed3ebb29a2dea3de4d651fd23d67aa68c83213e826454d4",
+      "classification": "regenerated",
+      "modificationSummary": "Regenerated the component data model declarations from the curated schema.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/component/_generated/server.ts",
+      "targetPath": "src/runtime/convex-auth/component/_generated/server.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "3d296c7ea648719166514dc26b9bab1294de32d3a064c36fb67d918ec79568f7",
+      "targetSha256": "a3bc50f06aaaa042212b7e436ec19f0f2b020ea153f1ad6e0ef1dd4c7aa43907",
+      "classification": "regenerated",
+      "modificationSummary": "Regenerated the component server declarations from the Better Convex Nuxt component.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/component/adapter.ts",
+      "targetPath": "src/runtime/convex-auth/component/adapter.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "1a373c633a7090ea60d0e0942a6cb0c6cff65c842c8ca8950e1546cfa50dcbe5",
+      "targetSha256": "d6774a795555d6e6f06c463e38a47317ebccc04694c61bba95c42e0344b555b4",
+      "classification": "rewritten",
+      "modificationSummary": "Reduced the component adapter to a thin call into the single shared function definition, including the one atomic signing-key rotation path.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/component/convex.config.ts",
+      "targetPath": "src/runtime/convex-auth/component/convex.config.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "dde87a365e4fdf2dcd22b9c2cc51d2bb70c3b2f4c816407e2d9fb8593124ac3f",
+      "targetSha256": "9a99c7e32fd0d4c1106dba0a0e4c553a74fae27109ea5aadb387c09323541fd5",
+      "classification": "rewritten",
+      "modificationSummary": "Rewrote the fixed component definition for the curated Better Convex Nuxt schema and functions.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/client/create-schema.ts",
+      "targetPath": "src/runtime/convex-auth/component/schemaMetadata.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "cf79c73cfc264d11781d5474534be035c5474cef9e701dc2c9a601263ad97d6d",
+      "targetSha256": "6dbcadd5aa640cb1bcc194f7223d78cc7c2f1900a845a3e437df6508ef400dba",
+      "classification": "regenerated",
+      "modificationSummary": "Generated adapter metadata with explicit indexed relationship and deletion policies for the exact maintained Better Auth, OAuth provider, JWKS, and database rate-limit schema.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/auth-options.ts",
+      "targetPath": "internal/convex-auth/schema-options.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "36b0218291f4b1ab577d2161a277e95fd62ce7e55e32e6f4d43ae41e001e7478",
+      "targetSha256": "29589312b7ca8bde102217febfaca3b9dac2bf34633c15f58a6ce289591a254c",
+      "classification": "rewritten",
+      "modificationSummary": "Rewrote one deterministic greenfield Better Auth, JWT, OAuth, and database rate-limit schema profile.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/component/schema.ts",
+      "targetPath": "src/runtime/convex-auth/component/schema.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "cd186a315c6208e28d1ac0c1e231bb7d388de4cfab0720a5207236b77d24dca7",
+      "targetSha256": "cd6092db9894a7cca39c91403aec9099c88538dbb60548f7b51d01ac655c86d3",
+      "classification": "regenerated",
+      "modificationSummary": "Regenerated the fresh-install component schema and relationship indexes from the fixed supported Better Auth, OAuth provider, JWKS, and database rate-limit profile.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/utils/index.ts",
+      "targetPath": "src/runtime/convex-auth/context.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "d0f0f9be8cb39d34eea0bb3229a1953a4941e0f822154415e69970f29c0ce3c6",
+      "targetSha256": "dfcbe21cb143ef04ce5229b2acdc83650f5c5ffff4dfed89b074df23b21cd82e",
+      "classification": "rewritten",
+      "modificationSummary": "Retained only the context types and writable-context guard required by the integrated adapter.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/client/create-client.ts",
+      "targetPath": "src/runtime/convex-auth/create-auth-component.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "610a4d7edfbb0fd3ab412d61e8103b9e416edaaf8e2719189c9cff345597150d",
+      "targetSha256": "261d1148e6831f0ae4e4ea55eb0743e0b62791e58d26b3745210470d636e596a",
+      "classification": "adapted",
+      "modificationSummary": "Reduced the component client to one maintained adapter and route surface with live persisted-session checks, provider-owned OAuth access revalidation, signed proxy-IP resolution, in-process final-session validation, and authenticated atomic JWKS initialization and rotation.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": true
+    },
+    {
+      "sourcePath": "src/client/index.ts",
+      "targetPath": "src/runtime/convex-auth/index.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "300f9ebf00a0f236954653984709abfb70e93f1b1b9a37fabba4ee44661d2cf5",
+      "targetSha256": "9df6b39cd603525e20a2b63ccb44eb914b2e3da8f30c2b359a5520e5a1d90b74",
+      "classification": "rewritten",
+      "modificationSummary": "Replaced the compatibility barrel with the fixed narrow Better Convex Nuxt API, exposing only the maintained auth component, provider, OAuth resource verifier, and rebuildable user-projection helper.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/auth-config.ts",
+      "targetPath": "src/runtime/convex-auth/origin.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "ba229d68100df0f0879abc70950b657cf86d8044f9dc4860b57a040d183fb8e3",
+      "targetSha256": "1a5f9881f755024129cb568e1e549321968aa5156e96cc1a7dd787c46d2eb3de",
+      "classification": "rewritten",
+      "modificationSummary": "Replaced inferred and forwarded origins with strict SITE_URL and CONVEX_SITE_URL lookup through the shared parser.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/index.ts",
+      "targetPath": "src/runtime/convex-auth/plugin.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
+      "targetSha256": "82e28e3a75dcf453fcba192130d5d8b00439906c4c11e989facdc6bd8f60c4d1",
+      "classification": "rewritten",
+      "modificationSummary": "Rewrote the Convex plugin as the composition, request-guard, and session-issuance owner; exact pinned OAuth Provider option/install/admin compatibility now lives in a separate fail-closed module rather than being presented as generic provider configuration.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/index.ts",
+      "targetPath": "src/runtime/convex-auth/internal-session.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
+      "targetSha256": "b460bed5247da1abedf6a59b51bb98ee164e683892986f41784c8f619b1eba07",
+      "classification": "rewritten",
+      "modificationSummary": "Isolated the upstream bearer-assisted session-token flow behind one fixed in-process header that both public HTTP boundaries strip before dispatch.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/index.ts",
+      "targetPath": "src/runtime/convex-auth/jwks-rotation.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
+      "targetSha256": "0ddb85f88138f55a9c87451b2dca9ce4725df483267e077d37c0b0aaead6260c",
+      "classification": "rewritten",
+      "modificationSummary": "Replaced public lazy key creation and destructive rollover with pinned Better Auth RS256 generation, encrypted-private and public-only JWK validation, authenticated atomic winner initialization, additive rotation, and bounded grace-period retention.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/index.ts",
+      "targetPath": "src/runtime/convex-auth/oauth-security.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
+      "targetSha256": "219f10e3de565a043f049ae4b9bf785a5200f0a49970f1e1db212591b2625fc8",
+      "classification": "rewritten",
+      "modificationSummary": "Added provider security and token invariants behind a local structural profile that does not expose provider-private types: mandatory fail-closed privilege callbacks, bounded request parsing, canonical exact HTTPS or HTTP-loopback redirects, client/resource binding, S256 PKCE, projected metadata, access-token claim validation, and the documented time-bounded URL.canParse capability fill.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/index.ts",
+      "targetPath": "src/runtime/convex-auth/oauth-provider-compat.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
+      "targetSha256": "e2a38197066806090b7f5559cf9701fabf0e92c0df1fb63df123bad8dbec24f9",
+      "classification": "rewritten",
+      "modificationSummary": "Isolated the exact-version Better Auth OAuth Provider compatibility firewall: plugin order and installed callback identity, disabled upstream routes, fixed JWT/JWKS and storage profile, production proxy requirement, and safe administrator client/resource mutations.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/client.ts",
+      "targetPath": "src/runtime/auth-client/convex-client-plugin.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "264c661d223741568227b1d81fe66a3a826850a8022143bb69f63bad72697f35",
+      "targetSha256": "acc9ac0363b8a26c2b99ce65d5a494faf12f77b103f714a913ac862d22e1f7d3",
+      "classification": "rewritten",
+      "modificationSummary": "Replaced upstream type inference with one internal fixed GET action for the maintained same-origin Convex session-token route.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/index.ts",
+      "targetPath": "src/runtime/convex-auth/oauth-resource.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
+      "targetSha256": "b7a81142d5b7b5c5b5233f9e81d0c9721121c86fcd0c07822f15aa0122b8a994",
+      "classification": "rewritten",
+      "modificationSummary": "Added bounded compact-JWT and canonical-JWKS validation around pinned-provider JOSE verification, with HTTPS-only production endpoints and exact loopback HTTP development endpoints, followed by exact issuer, audience, client, subject, scope, session, and token-class binding.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/index.ts",
+      "targetPath": "src/runtime/convex-auth/oauth-live-access.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
+      "targetSha256": "3c4c40db6f907e8d40948873b34b858e3f7b863e00fc3d712a97aec5da5f5f44",
+      "classification": "rewritten",
+      "modificationSummary": "Separated verified-token parsing from provider-owned live authority and rechecks the current session, user, client, resource, client-resource link, consent, expiry, and scopes through the component adapter before every MCP request.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/auth-config.ts",
+      "targetPath": "src/runtime/convex-auth/provider.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "ba229d68100df0f0879abc70950b657cf86d8044f9dc4860b57a040d183fb8e3",
+      "targetSha256": "121a4b645f672b9767741a85f04cf07b7dbe82fb5759f9e129b23e75dfaee81f",
+      "classification": "rewritten",
+      "modificationSummary": "Rewrote the Convex JWT provider so issuer and JWKS authority resolve only from the validated Convex deployment site origin.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/test.ts",
+      "targetPath": "src/runtime/convex-auth/test.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "239c30774d3fa877fea3e4aa56fa85d0ec4bd56758157bf33178966c12d1e942",
+      "targetSha256": "24b393e37f562112b7f5b1e0368fcc278d8a01c4175c3260263aa534e2cfc68d",
+      "classification": "adapted",
+      "modificationSummary": "Compiled the component test registration helper against the exact packaged curated schema and explicit generated component modules.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": true
+    },
+    {
+      "sourcePath": "src/client/create-client.ts",
+      "targetPath": "src/runtime/convex-auth/types.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "610a4d7edfbb0fd3ab412d61e8103b9e416edaaf8e2719189c9cff345597150d",
+      "targetSha256": "e9c2fb8c10276f789f895197d2fd7f0a06992aa37bfaa72c609fd230404295e2",
+      "classification": "rewritten",
+      "modificationSummary": "Consolidated only the maintained trigger, relationship-aware write, auth-factory, guarded-consume, atomic-increment, and authenticated signing-key lifecycle component API types.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/client/create-client.ts",
+      "targetPath": "src/runtime/convex-auth/user-projection.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "610a4d7edfbb0fd3ab412d61e8103b9e416edaaf8e2719189c9cff345597150d",
+      "targetSha256": "0d1985eb55e713ecca00bd5858f0332c21c083ef26ca73e644f2d3617af4a9d0",
+      "classification": "rewritten",
+      "modificationSummary": "Extracted the optional application-user trigger path into one explicitly derived and rebuildable projection helper whose validated indexed auth key is owned by the helper and cannot be overridden by consumer callbacks.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    }
+  ]
+}

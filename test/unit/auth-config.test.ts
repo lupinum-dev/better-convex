@@ -3,95 +3,125 @@ import { describe, expect, it } from 'vitest'
 import type { ModuleOptions } from '../../src/module'
 import { isConvexAuthEnabled, normalizeConvexAuthConfig } from '../../src/runtime/utils/auth-config'
 
-describe('auth config normalization ', () => {
-  it('installs auth with defaults when omitted', () => {
-    const auth = normalizeConvexAuthConfig(undefined)
-    expect(auth).not.toBe(false)
-    if (auth === false) throw new Error('expected enabled')
-    expect(auth.proxy.trustedClientIpHeader).toBe('')
-    expect(auth.routeProtection).toEqual({ redirectTo: '/auth/signin', preserveReturnTo: true })
+describe('auth config normalization', () => {
+  it('keeps omission and false as Convex-only builds', () => {
+    expect(normalizeConvexAuthConfig(undefined)).toBe(false)
+    expect(normalizeConvexAuthConfig(false)).toBe(false)
+    expect(isConvexAuthEnabled(false)).toBe(false)
+  })
+
+  it('requires one explicit canonical application origin to enable auth', () => {
+    expect(() => normalizeConvexAuthConfig({})).toThrow('auth.origin')
+    expect(() => normalizeConvexAuthConfig({ origin: '' })).toThrow('auth.origin')
+    expect(() => normalizeConvexAuthConfig({ origin: 'https://app.example.test/path' })).toThrow()
+
+    const auth = normalizeConvexAuthConfig({
+      origin: 'https://app.example.test/',
+      trustedClientIpHeader: 'CF-Connecting-IP',
+    })
+    if (auth === false) throw new Error('expected auth enabled')
+    expect(auth).toEqual({
+      origin: 'https://app.example.test',
+      trustedClientIpHeader: 'cf-connecting-ip',
+      redirectTo: '/auth/signin',
+    })
     expect(isConvexAuthEnabled(auth)).toBe(true)
   })
 
-  it('omitted and {} normalize to the same enabled configuration', () => {
-    expect(normalizeConvexAuthConfig(undefined)).toEqual(normalizeConvexAuthConfig({}))
-  })
-
-  it('disables auth entirely for false', () => {
-    const auth = normalizeConvexAuthConfig(false)
-    expect(auth).toBe(false)
-    expect(isConvexAuthEnabled(auth)).toBe(false)
-  })
-
-  it('materializes proxy, debug, and routeProtection overrides', () => {
+  it('normalizes the local redirect and strips the build-only client path', () => {
     const auth = normalizeConvexAuthConfig({
-      proxy: { maxRequestBodyBytes: 10, trustedClientIpHeader: 'CF-Connecting-IP' },
-      debug: { clientAuthFlow: true },
-      routeProtection: { redirectTo: '/login', preserveReturnTo: false },
+      origin: 'http://localhost:3000',
+      client: './convex-auth.ts',
+      redirectTo: '/account/login?source=protected',
     })
-    if (auth === false) throw new Error('expected enabled')
-    expect(auth.proxy.maxRequestBodyBytes).toBe(10)
-    expect(auth.proxy.trustedClientIpHeader).toBe('cf-connecting-ip')
-    expect(auth.debug).toEqual({ authFlow: false, clientAuthFlow: true, serverAuthFlow: false })
-    expect(auth.routeProtection).toEqual({ redirectTo: '/login', preserveReturnTo: false })
-  })
-
-  it('strips the build-only client path from the runtime shape', () => {
-    const auth = normalizeConvexAuthConfig({ client: './auth-client.ts' })
-    if (auth === false) throw new Error('expected enabled')
+    if (auth === false) throw new Error('expected auth enabled')
+    expect(auth.redirectTo).toBe('/account/login?source=protected')
     expect('client' in auth).toBe(false)
   })
 
-  it('rejects malformed trusted ingress header names', () => {
+  it.each(['https://evil.example', '//evil.example', '/%2f%2fevil.example', '/bad\\path'])(
+    'rejects an unsafe redirect target: %s',
+    (redirectTo) => {
+      expect(() =>
+        normalizeConvexAuthConfig({
+          origin: 'http://localhost:3000',
+          redirectTo,
+        }),
+      ).toThrow('safe local application path')
+    },
+  )
+
+  it('rejects malformed or reserved trusted ingress header names', () => {
     expect(() =>
-      normalizeConvexAuthConfig({ proxy: { trustedClientIpHeader: 'bad\nheader' } }),
+      normalizeConvexAuthConfig({
+        origin: 'https://app.example.test',
+        trustedClientIpHeader: 'bad\nheader',
+      }),
     ).toThrow('valid HTTP header name')
+    expect(() =>
+      normalizeConvexAuthConfig({
+        origin: 'https://app.example.test',
+        trustedClientIpHeader: 'X-BCN-Verified-Client-IP',
+      }),
+    ).toThrow('reserved x-bcn-* namespace')
+  })
+
+  it('requires an ingress-owned client IP header outside exact loopback development', () => {
+    for (const origin of ['https://app.example.test', 'https://192.0.2.1']) {
+      expect(() => normalizeConvexAuthConfig({ origin })).toThrow(
+        'trustedClientIpHeader is required',
+      )
+    }
+
+    for (const origin of ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://[::1]:3000']) {
+      const auth = normalizeConvexAuthConfig({ origin })
+      if (auth === false) throw new Error('expected auth enabled')
+      expect(auth.trustedClientIpHeader).toBe('')
+    }
   })
 })
-
-// ============================================================================
-// Module-options type contracts. These assertions protect the supported
-// configuration grammar and the `auth: false` exclusion.
-// (`pnpm run test:types` / `pnpm vitest run --project=unit
-// test/unit/auth-config.test.ts` under vitest's typecheck, and
-// `pnpm run typecheck:module`).
-// ============================================================================
 
 function assertModuleOptions(_options: ModuleOptions): void {}
 
 function _moduleOptionsTypeContracts() {
-  // Positive: omitted auth and `auth: {}` both install auth with defaults.
   assertModuleOptions({})
-  assertModuleOptions({ auth: {} })
-  assertModuleOptions({ auth: { routeProtection: { redirectTo: '/login' } } })
-  assertModuleOptions({ auth: { proxy: { trustedClientIpHeader: 'cf-connecting-ip' } } })
-  // Positive: `auth: false` is a Convex-only build.
   assertModuleOptions({ auth: false })
+  assertModuleOptions({ auth: { origin: 'http://localhost:3000' } })
+  assertModuleOptions({
+    auth: {
+      origin: 'https://app.example.test',
+      client: './convex-auth.ts',
+      trustedClientIpHeader: 'cf-connecting-ip',
+      redirectTo: '/login',
+    },
+  })
 
-  // @ts-expect-error there is no `enabled` toggle; the grammar is `false | options`
-  assertModuleOptions({ auth: { enabled: false } })
-  // @ts-expect-error route is fixed at /api/auth
-  assertModuleOptions({ auth: { route: '/custom/auth' } })
-  // @ts-expect-error the browser proxy is same-origin only
-  assertModuleOptions({ auth: { trustedOrigins: ['https://a.example'] } })
+  // @ts-expect-error enabling auth requires the exact application origin
+  assertModuleOptions({ auth: {} })
+  // @ts-expect-error old origin vocabulary was removed
+  assertModuleOptions({ auth: { publicOrigin: 'https://app.example.test' } })
+  assertModuleOptions({
+    auth: {
+      origin: 'https://app.example.test',
+      // @ts-expect-error proxy implementation knobs are internal
+      proxy: { maxRequestBodyBytes: 10 },
+    },
+  })
+  assertModuleOptions({
+    auth: {
+      origin: 'https://app.example.test',
+      // @ts-expect-error route policy is flat and preserve-return is fixed
+      routeProtection: { redirectTo: '/login' },
+    },
+  })
+  // @ts-expect-error there is no redundant enabled toggle
+  assertModuleOptions({ auth: { origin: 'https://app.example.test', enabled: false } })
 }
 
-// `auth: false` structurally excludes every auth-only field ("the
-// type offers no nested auth-only fields in that branch"). Once narrowed to
-// the `false` arm, none of `ConvexAuthOptions`' fields are reachable — this is
-// the actual exclusion mechanism (a discriminated `false | options` value, not
-// an options object with a redundant `enabled` toggle).
-function _authFalseBranchExcludesNestedFields(auth: ModuleOptions['auth']) {
-  if (auth === false) {
-    // @ts-expect-error the `false` branch has no `proxy` (or any auth-only) field
-    return auth.proxy
-  }
-  return auth?.proxy
-}
-void _authFalseBranchExcludesNestedFields
+void _moduleOptionsTypeContracts
 
-describe('auth config type contracts ', () => {
-  it('is a type-only assertion module; see _moduleOptionsTypeContracts', () => {
+describe('auth config type contracts', () => {
+  it('keeps invalid build states out of ModuleOptions', () => {
     expect(true).toBe(true)
   })
 })

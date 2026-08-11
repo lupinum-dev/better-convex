@@ -1,3 +1,5 @@
+import { inspect } from 'node:util'
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 type StorageMap = Map<string, unknown>
@@ -39,7 +41,6 @@ describe('devtools auth proxy registry', () => {
       duration: 80,
       status: 500,
       success: false,
-      error: 'boom',
     })
 
     const stats = await registry.getAuthProxyStats()
@@ -48,6 +49,43 @@ describe('devtools auth proxy registry', () => {
     expect(stats.errorCount).toBe(1)
     expect(stats.avgDuration).toBe(40)
     expect(stats.recentRequests.map((r) => r.id)).toEqual(['2', '1'])
+  })
+
+  it('persists only reviewed fields and drops raw error diagnostics', async () => {
+    const registry = await import('../../src/runtime/devtools/auth-proxy-registry')
+    const sentinels = {
+      message: 'DEVTOOLS_AUTH_MESSAGE_SENTINEL_29d3ad',
+      cause: 'DEVTOOLS_AUTH_CAUSE_SENTINEL_145b9f',
+      stack: 'DEVTOOLS_AUTH_STACK_SENTINEL_7dfb84',
+    }
+    const rawError = new Error(sentinels.message, { cause: new Error(sentinels.cause) })
+    rawError.stack = sentinels.stack
+
+    await registry.recordAuthProxyRequest({
+      id: 'sentinel',
+      path: '/convex/token',
+      method: 'GET',
+      timestamp: 1,
+      status: 502,
+      success: false,
+      error: rawError,
+      cause: rawError.cause,
+      stack: rawError.stack,
+    } as never)
+
+    const stats = await registry.getAuthProxyStats()
+    const rendered = inspect(stats, { depth: null })
+    expect(stats.recentRequests).toEqual([
+      {
+        id: 'sentinel',
+        path: '/convex/token',
+        method: 'GET',
+        timestamp: 1,
+        status: 502,
+        success: false,
+      },
+    ])
+    for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
   })
 
   it('clears stored stats', async () => {

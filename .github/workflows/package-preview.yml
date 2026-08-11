@@ -1,0 +1,119 @@
+name: package-preview
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch: {}
+
+concurrency:
+  group: package-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_NODE_VERSION: '22.14.0'
+  RELEASE_NPM_VERSION: '11.18.0'
+
+jobs:
+  preview:
+    # Fork code is never executed by this upload path. Maintainers can instead
+    # review it and move it to an in-repository branch before opening a PR.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install pinned release tooling
+        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
+
+      - name: Install dependencies from the frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the disposable Vue/Nuxt preview set
+        id: artifact
+        run: node scripts/build-package-preview.mjs
+
+      - name: Upload the exact prebuilt tarball to pkg.pr.new
+        id: publish
+        run: >-
+          pnpm exec pkg-pr-new publish
+          --no-compact
+          --comment=update
+          --commentWithSha
+          --no-template
+          --packageManager=pnpm,npm
+          "${{ steps.artifact.outputs.tarball }}"
+
+      - name: Verify the hosted preview bytes
+        env:
+          ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
+          PACKAGE_NAME: ${{ steps.artifact.outputs.package_name }}
+          PREVIEW_SHA: ${{ steps.publish.outputs.sha }}
+          PREVIEW_URL: ${{ steps.publish.outputs.urls }}
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ -z "$PREVIEW_URL" || "$PREVIEW_URL" == *" "* ]]; then
+            echo 'Expected exactly one hosted preview URL.' >&2
+            exit 1
+          fi
+          if [[ "$PREVIEW_SHA" != "$SOURCE_COMMIT" ]]; then
+            echo 'pkg.pr.new returned a preview SHA different from the source commit.' >&2
+            exit 1
+          fi
+          EXPECTED_PREVIEW_URL="https://pkg.pr.new/${GITHUB_REPOSITORY}/${PACKAGE_NAME}@${SOURCE_COMMIT}"
+          if [[ "$PREVIEW_URL" != "$EXPECTED_PREVIEW_URL" ]]; then
+            echo 'pkg.pr.new returned an unexpected commit-addressed URL.' >&2
+            exit 1
+          fi
+          curl --fail --location --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 2 \
+            --proto '=https' --tlsv1.2 \
+            --output "$RUNNER_TEMP/better-convex-nuxt-preview.tgz" \
+            "$PREVIEW_URL"
+          echo "$ARTIFACT_SHA256  $RUNNER_TEMP/better-convex-nuxt-preview.tgz" | sha256sum --check --strict
+
+      - name: Retain the disposable preview tarballs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-preview-${{ github.run_id }}
+          path: ${{ steps.artifact.outputs.directory }}/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Write preview summary
+        env:
+          ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
+          PREVIEW_SHA: ${{ steps.publish.outputs.sha }}
+          PREVIEW_URLS: ${{ steps.publish.outputs.urls }}
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          {
+            echo '## Commit-addressed package preview'
+            echo
+            echo "Source commit: \`$SOURCE_COMMIT\`"
+            echo
+            echo "Preview commit: \`$PREVIEW_SHA\`"
+            echo
+            echo "Tarball SHA-256: \`$ARTIFACT_SHA256\`"
+            echo
+            echo 'Install URL:'
+            echo
+            echo "\`$PREVIEW_URLS\`"
+          } >> "$GITHUB_STEP_SUMMARY"

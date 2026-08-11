@@ -7,12 +7,10 @@ const props = withDefaults(
     label: string
     delayed?: boolean
     delayMs?: number
-    transformMode?: 'raw' | 'label'
   }>(),
   {
     delayed: false,
     delayMs: 50,
-    transformMode: 'raw',
   },
 )
 
@@ -23,20 +21,7 @@ const queryArgs = computed<Record<string, never> | 'skip'>(() =>
   ready.value ? emptyQueryArgs : 'skip',
 )
 
-const result = await (props.transformMode === 'label'
-  ? useConvexQuery<typeof subscriptionDedupCounterQuery, Record<string, never> | 'skip', string>(
-      subscriptionDedupCounterQuery,
-      queryArgs,
-      {
-        server: false,
-        transform: (value: number) => `count:${value}`,
-      },
-    )
-  : useConvexQuery<typeof subscriptionDedupCounterQuery, Record<string, never> | 'skip', number>(
-      subscriptionDedupCounterQuery,
-      queryArgs,
-      { server: false },
-    ))
+const result = await useConvexQuery(subscriptionDedupCounterQuery, queryArgs, { server: false })
 
 const { data, status, error } = result
 

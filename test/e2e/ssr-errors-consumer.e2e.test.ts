@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 
 import { $fetch, createPage, setup, url } from '@nuxt/test-utils/e2e'
+import { convexToJson } from 'convex/values'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
@@ -13,18 +14,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
  *   - the real `executeQueryHttp` HTTP boundary and `normalizeConvexError`.
  *
  * The Convex backend is a deterministic local HTTP mock (no live
- * credentials): it always answers `POST /api/query` with an unexpected 500
- * upstream response whose body carries a sentinel secret. That drives the
- * "unexpected upstream HTTP response" golden fixture (`kind: 'transport'`)
- * through the real boundary, which builds the `ConvexCallError` itself with a
- * FIXED public message/status and stores the raw rejection only as `cause`.
+ * credentials): it always answers `POST /api/query` with a structured 560
+ * application error whose wire message carries a sentinel and UDF frame. The
+ * public error must preserve only the application-owned structured fields.
  */
 
 const MOCK_PORT = 4988
 const NUXT_PORT = 4611
 const SENTINEL_SECRET = 'ssr-errors-consumer-sentinel-8f21c6ad'
-const PUBLIC_TRANSPORT_MESSAGE =
-  'The request to Convex failed before a usable response was received.'
+const PUBLIC_APPLICATION_MESSAGE = 'Convex application error'
 
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0
@@ -41,14 +39,11 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
   let mockServer: Server
 
   beforeAll(async () => {
-    // Deterministic stand-in for Convex: always an unexpected 500 upstream
-    // response. The sentinel lives only in the raw response body, which the
-    // real `executeQueryHttp` boundary only ever attaches as `cause` — never
-    // as a public field.
+    // Deterministic stand-in for a structured Convex application failure.
     mockServer = createServer((req, res) => {
       // The always-on client-core plugin (`src/runtime/plugin.client.ts`)
       // eagerly opens a WebSocket to `convex.url` for the app's primary
-      // client, independent of this page's `subscribe: false` query option.
+      // client, independent of this page's query lifecycle.
       // That connection attempt (a plain GET Upgrade request our HTTP mock
       // does not implement) is irrelevant background noise for this test —
       // only the real query boundary's `POST /api/query` matters — so it must
@@ -64,11 +59,16 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
         body += chunk
       })
       req.on('end', () => {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.writeHead(560, { 'Content-Type': 'application/json' })
         res.end(
           JSON.stringify({
-            internalDebug: `unexpected failure, request body was: ${body}`,
-            secret: SENTINEL_SECRET,
+            status: 'error',
+            errorMessage: `Uncaught ConvexError: ${SENTINEL_SECRET}; request=${body}\n    at handler (../convex/private.ts:42:11)`,
+            errorData: convexToJson({
+              code: 'PROJECT_ARCHIVED',
+              status: 409,
+              detail: 'Archived projects cannot be edited',
+            }),
           }),
         )
       })
@@ -142,20 +142,24 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
     const htmlSentinel = countOccurrences(ssrHtml, SENTINEL_SECRET)
     const payloadSentinel = countOccurrences(payloadBody, SENTINEL_SECRET)
     const browserSentinel = countOccurrences(allBrowserBytes, SENTINEL_SECRET)
-    const htmlPublicMessage = countOccurrences(ssrHtml, PUBLIC_TRANSPORT_MESSAGE)
-    const payloadPublicMessage = countOccurrences(payloadBody, PUBLIC_TRANSPORT_MESSAGE)
-    const browserPublicMessage = countOccurrences(allBrowserBytes, PUBLIC_TRANSPORT_MESSAGE)
+    const htmlPublicMessage = countOccurrences(ssrHtml, PUBLIC_APPLICATION_MESSAGE)
+    const payloadPublicMessage = countOccurrences(payloadBody, PUBLIC_APPLICATION_MESSAGE)
+    const browserPublicMessage = countOccurrences(allBrowserBytes, PUBLIC_APPLICATION_MESSAGE)
 
     // (identity + equal public fields) revived through the composable-owned
     // error state as a real ConvexCallError instance.
     expect(revived.present).toBe(true)
     expect(revived.isConvexCallError).toBe(true)
     expect(revived.name).toBe('ConvexCallError')
-    expect(revived.kind).toBe('transport')
-    expect(revived.message).toBe(PUBLIC_TRANSPORT_MESSAGE)
-    expect(revived.status).toBe(500)
-    expect(revived.code).toBeNull()
-    expect(revived.data).toBeNull()
+    expect(revived.kind).toBe('server')
+    expect(revived.message).toBe(PUBLIC_APPLICATION_MESSAGE)
+    expect(revived.status).toBe(409)
+    expect(revived.code).toBe('PROJECT_ARCHIVED')
+    expect(revived.data).toEqual({
+      code: 'PROJECT_ARCHIVED',
+      status: 409,
+      detail: 'Archived projects cannot be edited',
+    })
     // cause never survives the payload round-trip
     expect(revived.causeIsUndefined).toBe(true)
     // JSON.stringify(error) on the REVIVED client instance is clean too.

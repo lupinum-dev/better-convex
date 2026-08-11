@@ -3,7 +3,11 @@
 export default defineNuxtConfig({
   modules: ['better-convex-nuxt'],
   convex: {
-    url: 'https://server-consumer.convex.cloud',
-    siteUrl: 'https://server-consumer.convex.site',
+    url: process.env.SERVER_CONSUMER_CONVEX_URL ?? 'https://server-consumer.convex.cloud',
+    siteUrl: process.env.SERVER_CONSUMER_CONVEX_SITE_URL ?? 'https://server-consumer.convex.site',
+    auth: {
+      origin: process.env.SITE_URL ?? 'https://server-consumer.example.test',
+      trustedClientIpHeader: 'x-test-client-ip',
+    },
   },
 })

@@ -1,3 +1,5 @@
+import { inspect } from 'node:util'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -110,7 +112,7 @@ describe('client Convex token exchange deadline', () => {
     try {
       await expect(fetchConvexToken(source)).resolves.toEqual({
         identity: null,
-        authError: 'unavailable',
+        authError: 'Authentication is temporarily unavailable',
         definitive: false,
       })
       expect(signals).toHaveLength(MAX_FETCH_ATTEMPTS)
@@ -119,5 +121,62 @@ describe('client Convex token exchange deadline', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it.each(['error envelope', 'rejection'] as const)(
+    'drops raw message, cause, and stack sentinels from an upstream %s',
+    async (mode) => {
+      const sentinels = {
+        message: `BROWSER_AUTH_MESSAGE_SENTINEL_${mode}`,
+        cause: `BROWSER_AUTH_CAUSE_SENTINEL_${mode}`,
+        stack: `BROWSER_AUTH_STACK_SENTINEL_${mode}`,
+      }
+      const rawError = new Error(sentinels.message, { cause: new Error(sentinels.cause) })
+      rawError.stack = sentinels.stack
+      const source = {
+        convex: {
+          token: async () => {
+            if (mode === 'rejection') throw rawError
+            return { data: null, error: rawError }
+          },
+        },
+      } satisfies ConvexTokenSource
+
+      const outcome = await fetchConvexToken(source, { maxAttempts: 1 })
+      const rendered = inspect(outcome, { depth: null })
+
+      expect(outcome).toEqual({
+        identity: null,
+        authError: 'Authentication is temporarily unavailable',
+        definitive: false,
+      })
+      for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
+    },
+  )
+})
+
+describe('client Convex token exchange outcomes', () => {
+  it('settles a nullable successful response as clean anonymous state', async () => {
+    const source = {
+      convex: { token: async () => ({ data: { token: null }, error: null }) },
+    } satisfies ConvexTokenSource
+
+    await expect(fetchConvexToken(source)).resolves.toEqual({
+      identity: null,
+      authError: null,
+      definitive: true,
+    })
+  })
+
+  it.each([401, 403])('reports rejected credentials from HTTP %s', async (status) => {
+    const source = {
+      convex: { token: async () => ({ data: null, error: { status } }) },
+    } satisfies ConvexTokenSource
+
+    await expect(fetchConvexToken(source)).resolves.toEqual({
+      identity: null,
+      authError: 'Authentication credentials are invalid or expired',
+      definitive: true,
+    })
   })
 })

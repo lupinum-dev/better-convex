@@ -15,9 +15,8 @@ import { describe, expect, it } from 'vitest'
  *
  * This test inspects BOTH:
  *   - source: `src/runtime/errors/**`
- *   - built output: `dist/runtime/errors/**` (built here if absent — this
- *     test must never pass vacuously because the dist directory happens to
- *     be missing).
+ *   - built output: `dist/runtime/errors/**` (rebuilt here unconditionally so
+ *     stale or missing dist bytes can never make the guard pass vacuously).
  *
  * The scan is AST-based (TypeScript compiler API, `allowJs` for the built
  * `.js` output) so it catches static imports, `export ... from` re-exports,
@@ -197,24 +196,20 @@ describe('errors subpath purity guard ', () => {
   })
 
   it('built output (dist/runtime/errors/**) imports nothing framework-coupled', () => {
-    // This must NEVER pass vacuously because dist is missing: build it here
-    // if absent, and hard-fail with guidance if the build itself fails.
-    if (!existsSync(DIST_ERRORS_DIR)) {
-      try {
-        execFileSync('pnpm', ['exec', 'nuxt-module-build', 'build'], {
-          cwd: repoRoot,
-          stdio: 'pipe',
-        })
-      } catch (error) {
-        throw new Error(
-          `[errors-subpath-purity] dist/runtime/errors is missing and the on-demand ` +
-            `build ("pnpm exec nuxt-module-build build") failed. Run ` +
-            `"pnpm exec nuxt-module-build build" manually and re-run this test — it ` +
-            `must never pass vacuously with a missing dist. Underlying error: ` +
-            `${error instanceof Error ? error.message : String(error)}`,
-          { cause: error },
-        )
-      }
+    // Rebuild unconditionally so a passing test always describes current
+    // source bytes rather than an ignored dist left by an earlier command.
+    try {
+      execFileSync('pnpm', ['exec', 'nuxt-module-build', 'build'], {
+        cwd: repoRoot,
+        stdio: 'pipe',
+      })
+    } catch (error) {
+      throw new Error(
+        `[errors-subpath-purity] the current package build failed. Run ` +
+          `"pnpm exec nuxt-module-build build" manually and re-run this test. ` +
+          `Underlying error: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      )
     }
 
     expect(existsSync(DIST_ERRORS_DIR)).toBe(true)
@@ -223,7 +218,7 @@ describe('errors subpath purity guard ', () => {
 
     const violations = scanDir(DIST_ERRORS_DIR)
     expect(violations).toEqual([])
-  }, 120000) // vitest's 5s default; give it real headroom instead of flaking. // The on-demand build (only runs when dist is absent) can take well over
+  }, 120000)
 
   it('sanity: the disallowed-specifier scanner actually detects a planted violation', () => {
     // Guards against the scanner itself silently matching nothing (a purity

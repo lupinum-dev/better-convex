@@ -29,6 +29,11 @@ function eventFromStream(stream: ReadableStream<Uint8Array>) {
 }
 
 describe('auth proxy body size guards', () => {
+  it('fixes both auth proxy body limits at one MiB', () => {
+    expect(DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES).toBe(1_048_576)
+    expect(DEFAULT_MAX_PROXY_RESPONSE_BODY_BYTES).toBe(1_048_576)
+  })
+
   it('ignores missing and malformed content-length headers', () => {
     expect(getRequestBodySizeError(null)).toBeNull()
     expect(getRequestBodySizeError('not-a-number')).toBeNull()
@@ -53,7 +58,7 @@ describe('auth proxy body size guards', () => {
     expect(getResponseBodySizeError(String(DEFAULT_MAX_PROXY_RESPONSE_BODY_BYTES))).toBeNull()
   })
 
-  it('supports custom configured limits', () => {
+  it('supports stricter internal limits without exposing module configuration', () => {
     expect(getRequestBodySizeError('11', 10)?.maxBytes).toBe(10)
     expect(getResponseBodySizeError('11', 10)?.maxBytes).toBe(10)
   })

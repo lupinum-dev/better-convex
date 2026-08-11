@@ -1,7 +1,18 @@
-import { createApi } from '@convex-dev/better-auth'
+import { defineAuthAdapterFunctions } from 'better-convex-nuxt/convex-auth'
 
-import { createAuthOptions } from '../auth'
 import schema from './schema'
+import schemaMetadata from './schemaMetadata'
 
-export const { create, findOne, findMany, updateOne, updateMany, deleteOne, deleteMany } =
-  createApi(schema, createAuthOptions)
+export const {
+  consumeOne,
+  count,
+  create,
+  deleteMany,
+  deleteOne,
+  findMany,
+  findOne,
+  incrementOne,
+  rotateSigningKey,
+  updateMany,
+  updateOne,
+} = defineAuthAdapterFunctions({ metadata: schemaMetadata, schema })

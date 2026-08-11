@@ -1,10 +1,19 @@
-import { mutationGeneric as mutation, queryGeneric as query } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
+
+import { mutation, query } from './_generated/server'
+
+const todoValidator = v.object({
+  _id: v.id('todos'),
+  _creationTime: v.number(),
+  text: v.string(),
+  completed: v.boolean(),
+})
 
 export const list = query({
   args: {},
+  returns: v.array(todoValidator),
   handler: async (ctx) => {
-    return await ctx.db.query('todos').withIndex('by_created').order('desc').take(50)
+    return await ctx.db.query('todos').order('desc').take(50)
   },
 })
 
@@ -12,6 +21,7 @@ export const create = mutation({
   args: {
     text: v.string(),
   },
+  returns: v.id('todos'),
   handler: async (ctx, args) => {
     const text = args.text.trim()
     if (!text || text.length > 200) {
@@ -21,7 +31,6 @@ export const create = mutation({
     return await ctx.db.insert('todos', {
       text,
       completed: false,
-      createdAt: Date.now(),
     })
   },
 })
@@ -30,6 +39,7 @@ export const toggle = mutation({
   args: {
     id: v.id('todos'),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const todo = await ctx.db.get(args.id)
     if (!todo) {
@@ -39,6 +49,7 @@ export const toggle = mutation({
     await ctx.db.patch(args.id, {
       completed: !todo.completed,
     })
+    return null
   },
 })
 
@@ -46,6 +57,7 @@ export const remove = mutation({
   args: {
     id: v.id('todos'),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const todo = await ctx.db.get(args.id)
     if (!todo) {
@@ -53,5 +65,6 @@ export const remove = mutation({
     }
 
     await ctx.db.delete(args.id)
+    return null
   },
 })

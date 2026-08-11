@@ -15,16 +15,19 @@ import {
   isInviteRole,
   isOrganizationRole,
 } from '../shared/organizationRoles'
-import { mutation, query } from './_generated/server'
+import { components } from './_generated/api'
+import { mutation, query, type QueryCtx } from './_generated/server'
+import { roleAllowsOrganizationPermissions } from './betterAuth/schemaPlugins'
 import {
-  getAppAuth,
   getAuthenticatedSessionOrNull,
   hasOrganizationPermissions,
   requireAuthenticatedSession,
+  requireAuthenticatedUser,
   requireOrgMembership,
 } from './lib/authz'
 import {
   getBetterAuthMember,
+  getBetterAuthOrganization,
   getBetterAuthPendingInvitationByEmail,
   getBetterAuthTeam,
   listBetterAuthOrganizationInvitationsPage,
@@ -33,6 +36,27 @@ import {
 import { requireBoundedPageSize } from './lib/pagination'
 import { organizationActorRateLimitKey, rateLimiter } from './lib/rateLimits'
 import { parseWithConvexError } from './lib/validation'
+
+async function collectBetterAuthRows<T extends Record<string, unknown>>(
+  ctx: QueryCtx,
+  model: string,
+  where: { field: string; value: string }[],
+): Promise<T[]> {
+  const rows: T[] = []
+  let cursor: string | null = null
+  let isDone = false
+  while (!isDone) {
+    const result = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
+      model,
+      where,
+      paginationOpts: { cursor, numItems: 100 },
+    })) as unknown as { continueCursor: string; isDone: boolean; page: T[] }
+    rows.push(...result.page)
+    cursor = result.continueCursor
+    isDone = result.isDone
+  }
+  return rows
+}
 
 function slugify(value: string) {
   const slug = value
@@ -100,8 +124,31 @@ export const listMine = query({
     const authState = await getAuthenticatedSessionOrNull(ctx)
     if (!authState) return []
 
-    const { auth, headers, actor } = authState
-    const organizations = await auth.api.listOrganizations({ headers })
+    const { actor } = authState
+    const memberships: { organizationId: string }[] = []
+    let cursor: string | null = null
+    let isDone = false
+    while (!isDone) {
+      const page = (await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'member',
+        where: [{ field: 'userId', value: actor.authUserId }],
+        paginationOpts: { cursor, numItems: 100 },
+      })) as {
+        continueCursor: string
+        isDone: boolean
+        page: { organizationId: string }[]
+      }
+      memberships.push(...page.page)
+      cursor = page.continueCursor
+      isDone = page.isDone
+    }
+    const organizations = (
+      await Promise.all(
+        memberships.map((membership) =>
+          getBetterAuthOrganization(ctx, { organizationId: membership.organizationId }),
+        ),
+      )
+    ).filter((organization) => organization !== null)
 
     return await Promise.all(
       organizations.map(async (organization) => {
@@ -125,7 +172,7 @@ export const getCapabilities = query({
     organizationId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { auth, headers, actor } = await requireAuthenticatedSession(ctx)
+    const actor = await requireAuthenticatedUser(ctx)
     const member = await getBetterAuthMember(ctx, {
       organizationId: args.organizationId,
       userId: actor.authUserId,
@@ -135,29 +182,21 @@ export const getCapabilities = query({
       throw new ConvexError('User is not an organization member')
     }
 
-    const [
-      canManageOrganization,
-      canManageMembers,
-      canManageTeams,
-      canCreateProjectPermission,
-      canDeleteProject,
-    ] = await Promise.all([
-      hasOrganizationPermissions(auth, headers, args.organizationId, {
-        organization: ['update'],
-      }),
-      hasOrganizationPermissions(auth, headers, args.organizationId, {
-        member: ['create', 'update', 'delete'],
-      }),
-      hasOrganizationPermissions(auth, headers, args.organizationId, {
-        team: ['create', 'update'],
-      }),
-      hasOrganizationPermissions(auth, headers, args.organizationId, {
-        project: ['create'],
-      }),
-      hasOrganizationPermissions(auth, headers, args.organizationId, {
-        project: ['delete'],
-      }),
-    ])
+    const canManageOrganization = roleAllowsOrganizationPermissions(member.role, {
+      organization: ['update'],
+    })
+    const canManageMembers = roleAllowsOrganizationPermissions(member.role, {
+      member: ['create', 'update', 'delete'],
+    })
+    const canManageTeams = roleAllowsOrganizationPermissions(member.role, {
+      team: ['create', 'update'],
+    })
+    const canCreateProjectPermission = roleAllowsOrganizationPermissions(member.role, {
+      project: ['create'],
+    })
+    const canDeleteProject = roleAllowsOrganizationPermissions(member.role, {
+      project: ['delete'],
+    })
 
     return {
       role: member.role,
@@ -230,19 +269,27 @@ export const listTeams = query({
     organizationId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { auth, headers } = await getAppAuth(ctx)
-    await requireOrgMembership(ctx, { organizationId: args.organizationId })
-
-    const canManageTeams = await hasOrganizationPermissions(auth, headers, args.organizationId, {
+    const { actor, member } = await requireOrgMembership(ctx, {
+      organizationId: args.organizationId,
+    })
+    const canManageTeams = roleAllowsOrganizationPermissions(member.role, {
       team: ['create', 'update'],
     })
-
     const teams = canManageTeams
-      ? await auth.api.listOrganizationTeams({
-          headers,
-          query: { organizationId: args.organizationId },
-        })
-      : await auth.api.listUserTeams({ headers })
+      ? await collectBetterAuthRows<{ id: string; name: string; organizationId: string }>(
+          ctx,
+          'team',
+          [{ field: 'organizationId', value: args.organizationId }],
+        )
+      : (
+          await Promise.all(
+            (
+              await collectBetterAuthRows<{ teamId: string }>(ctx, 'teamMember', [
+                { field: 'userId', value: actor.authUserId },
+              ])
+            ).map((teamMember) => getBetterAuthTeam(ctx, { teamId: teamMember.teamId })),
+          )
+        ).filter((team) => team !== null)
 
     return teams
       .filter((team) => team.organizationId === args.organizationId)
@@ -287,9 +334,10 @@ export const listMembers = query({
   },
   handler: async (ctx, args) => {
     requireBoundedPageSize(args.paginationOpts.numItems)
-    const { auth, headers } = await getAppAuth(ctx)
-    await requireOrgMembership(ctx, { organizationId: args.organizationId })
-    const allowed = await hasOrganizationPermissions(auth, headers, args.organizationId, {
+    const { member } = await requireOrgMembership(ctx, {
+      organizationId: args.organizationId,
+    })
+    const allowed = roleAllowsOrganizationPermissions(member.role, {
       member: ['update'],
     })
     if (!allowed) {
@@ -318,9 +366,10 @@ export const listInvitations = query({
   },
   handler: async (ctx, args) => {
     requireBoundedPageSize(args.paginationOpts.numItems)
-    const { auth, headers } = await getAppAuth(ctx)
-    await requireOrgMembership(ctx, { organizationId: args.organizationId })
-    const allowed = await hasOrganizationPermissions(auth, headers, args.organizationId, {
+    const { member } = await requireOrgMembership(ctx, {
+      organizationId: args.organizationId,
+    })
+    const allowed = roleAllowsOrganizationPermissions(member.role, {
       member: ['update'],
     })
     if (!allowed) {
@@ -395,7 +444,7 @@ export const cancelInvitation = mutation({
       return { ok: true }
     }
 
-    const invitationId = invitation.id ?? invitation._id
+    const invitationId = invitation.id
     if (!invitationId) {
       throw new ConvexError('Invitation row is missing an id')
     }

@@ -124,11 +124,9 @@ describe('team public authorization matrix', () => {
     const expiredSeed = await signUpBetterAuthUser(t, { label: 'expired_matrix_user' })
     await t.run(async (ctx) => {
       await ctx.runMutation(components.betterAuth.adapter.updateOne, {
-        input: {
-          model: 'session',
-          where: [{ field: '_id', value: expiredSeed.sessionId }],
-          update: { expiresAt: Date.now() - 1 },
-        },
+        model: 'session',
+        where: [{ field: 'id', value: expiredSeed.sessionId }],
+        update: { expiresAt: Date.now() - 1 },
       })
     })
     const expired = asActor(t, {
@@ -204,13 +202,11 @@ describe('team public authorization matrix', () => {
 
     await t.run(async (ctx) => {
       await ctx.runMutation(components.betterAuth.adapter.deleteOne, {
-        input: {
-          model: 'member',
-          where: [
-            { field: 'organizationId', value: organizationId },
-            { field: 'userId', value: viewerSeed.authUserId },
-          ],
-        },
+        model: 'member',
+        where: [
+          { field: 'organizationId', value: organizationId },
+          { field: 'userId', value: viewerSeed.authUserId },
+        ],
       })
     })
 

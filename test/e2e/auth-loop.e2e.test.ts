@@ -46,13 +46,14 @@ describe('Auth loop (full stack)', async () => {
 
   await setup({
     rootDir: playgroundCwd,
-    env: local?.env,
+    env: local ? { ...local.env, SITE_URL: 'http://localhost:3050' } : undefined,
     port: 3050,
     nuxtConfig: local
       ? {
           convex: {
             url: local.env.NUXT_PUBLIC_CONVEX_URL,
             siteUrl: local.env.NUXT_PUBLIC_CONVEX_SITE_URL,
+            auth: { origin: 'http://localhost:3050' },
           },
         }
       : undefined,

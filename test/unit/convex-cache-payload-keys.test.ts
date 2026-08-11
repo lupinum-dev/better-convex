@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   purgeConvexIdentityPayloadKeys,
   readAuthMode,
+  retainAnonymousConvexQueryErrors,
   withAuthDimension,
 } from '../../src/runtime/utils/convex-cache'
 import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
@@ -72,5 +73,20 @@ describe('sign-out identity purge (namespace scan, no registry)', () => {
         'some.other.key',
       ].sort(),
     )
+  })
+
+  it('retains only anonymous errors on every credential-generation change', () => {
+    const retained = retainAnonymousConvexQueryErrors({
+      'convex:notes:list:h:auth:required:user:alice': 'alice error',
+      'convex:notes:list:h:auth:optional:user:alice': 'optional error',
+      'convex:notes:public:h:auth:none': 'public error',
+      'convex-paginated:feed:h:auth:none': 'public page error',
+      unrelated: 'foreign error',
+    })
+
+    expect(retained).toEqual({
+      'convex:notes:public:h:auth:none': 'public error',
+      'convex-paginated:feed:h:auth:none': 'public page error',
+    })
   })
 })

@@ -1,0 +1,72 @@
+{
+  "name": "better-convex-vue",
+  "version": "0.8.0-beta.40",
+  "description": "Identity-safe Convex lifecycle primitives for Vue 3 and Vite",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lupinum-dev/better-convex-nuxt"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.mts",
+      "import": "./dist/errors.mjs"
+    },
+    "./embedded": {
+      "types": "./dist/embedded.d.mts",
+      "import": "./dist/embedded.mjs"
+    },
+    "./mcp-app": {
+      "types": "./dist/mcp-app.d.mts",
+      "import": "./dist/mcp-app.mjs"
+    }
+  },
+  "scripts": {
+    "build": "unbuild",
+    "prepack": "pnpm run build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "ohash": "^2.0.11"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "convex": "1.42.2",
+    "typescript": "~5.9.3",
+    "unbuild": "3.6.1",
+    "vue": "3.5.40",
+    "vue-tsc": "^3.3.7",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "convex": "1.42.2",
+    "vue": "^3.5.0",
+    "zod": "4.4.3"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/ext-apps": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  }
+}

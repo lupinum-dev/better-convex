@@ -3,8 +3,8 @@
  *
  * Levels:
  * - false: No logs (production default)
- * - 'info': Auth, mutations, actions, uploads, connection events
- * - 'debug': All above + query updates, timing, debug messages
+ * - 'info': Auth and upload events
+ * - 'debug': Auth/uploads plus timing and debug messages
  *
  * Output:
  * - Server: ANSI-styled single-line logs for easy grep/scanning
@@ -26,30 +26,6 @@ export interface AuthEvent {
   error?: unknown
 }
 
-export interface QueryEvent {
-  name: string
-  event: 'subscribe' | 'update' | 'unsubscribe' | 'error'
-  count?: number // item count for updates
-  args?: unknown
-  data?: unknown // only logged in debug mode
-  error?: unknown
-}
-
-export interface MutationEvent {
-  name: string
-  event: 'optimistic' | 'success' | 'error'
-  args?: unknown
-  duration?: number
-  error?: unknown
-}
-
-export interface ActionEvent {
-  name: string
-  event: 'success' | 'error'
-  duration?: number
-  error?: unknown
-}
-
 export interface UploadEvent {
   name: string // function name
   event: 'success' | 'error'
@@ -66,9 +42,6 @@ export interface UploadEvent {
 export interface Logger {
   // Semantic methods - primary API
   auth(event: AuthEvent): void
-  query(event: QueryEvent): void
-  mutation(event: MutationEvent): void
-  action(event: ActionEvent): void
   upload(event: UploadEvent): void
 
   // Generic fallback for edge cases
@@ -84,9 +57,6 @@ export interface Logger {
 
 const noopLogger: Logger = Object.freeze({
   auth: () => {},
-  query: () => {},
-  mutation: () => {},
-  action: () => {},
   upload: () => {},
   debug: () => {},
   time: () => () => {},
@@ -103,7 +73,6 @@ const ANSI = {
   green: '\x1B[32m',
   yellow: '\x1B[33m',
   red: '\x1B[31m',
-  magenta: '\x1B[35m',
 }
 
 // ============================================================================
@@ -114,9 +83,6 @@ const ICONS = {
   success: '✔',
   error: '✖',
   warning: '⚠',
-  query: '📡',
-  mutation: '🚀',
-  action: '⚡',
   upload: '📤',
 }
 
@@ -178,89 +144,7 @@ function createServerLogger(level: 'info' | 'debug'): Logger {
       }
 
       if (event.error) {
-        console.error(msg, event.error)
-      } else {
-        console.log(msg)
-      }
-    },
-
-    query(event: QueryEvent): void {
-      // Queries are debug-only (too noisy for info)
-      if (!isDebug) return
-
-      const icon = event.event === 'error' ? `${ANSI.red}${ICONS.error}${ANSI.reset}` : ICONS.query
-      let msg = `${PREFIX} ${icon} ${event.name}`
-
-      switch (event.event) {
-        case 'subscribe':
-          msg += `  ${ANSI.dim}subscribe${ANSI.reset}`
-          break
-        case 'update':
-          msg += `  ${ANSI.dim}update${event.count !== undefined ? ` (${event.count} items)` : ''}${ANSI.reset}`
-          break
-        case 'unsubscribe':
-          msg += `  ${ANSI.dim}unsubscribe${ANSI.reset}`
-          break
-        case 'error':
-          msg += `  ${ANSI.red}error${ANSI.reset}`
-          break
-      }
-
-      if (event.error) {
-        console.error(msg, event.error)
-      } else {
-        console.log(msg)
-      }
-    },
-
-    mutation(event: MutationEvent): void {
-      const icon =
-        event.event === 'error'
-          ? `${ANSI.red}${ICONS.error}${ANSI.reset}`
-          : `${ANSI.green}${ICONS.mutation}${ANSI.reset}`
-
-      let msg = `${PREFIX} ${icon} ${event.name}`
-
-      if (event.event === 'optimistic') {
-        msg += `  ${ANSI.magenta}optimistic${ANSI.reset}`
-      } else if (event.event === 'success') {
-        msg += `  ${ANSI.green}success${ANSI.reset}`
-        if (event.duration !== undefined) {
-          msg += ` ${ANSI.dim}${formatDuration(event.duration)}${ANSI.reset}`
-        }
-      } else {
-        msg += `  ${ANSI.red}error${ANSI.reset}`
-      }
-
-      // Show args only in debug mode
-      if (isDebug && event.args !== undefined) {
-        console.log(msg, event.args)
-      } else if (event.error) {
-        console.error(msg, event.error)
-      } else {
-        console.log(msg)
-      }
-    },
-
-    action(event: ActionEvent): void {
-      const icon =
-        event.event === 'error'
-          ? `${ANSI.red}${ICONS.error}${ANSI.reset}`
-          : `${ANSI.green}${ICONS.action}${ANSI.reset}`
-
-      let msg = `${PREFIX} ${icon} ${event.name}`
-
-      if (event.event === 'success') {
-        msg += `  ${ANSI.green}success${ANSI.reset}`
-        if (event.duration !== undefined) {
-          msg += ` ${ANSI.dim}${formatDuration(event.duration)}${ANSI.reset}`
-        }
-      } else {
-        msg += `  ${ANSI.red}error${ANSI.reset}`
-      }
-
-      if (event.error) {
-        console.error(msg, event.error)
+        console.error(msg, '[Omitted]')
       } else {
         console.log(msg)
       }
@@ -287,10 +171,7 @@ function createServerLogger(level: 'info' | 'debug'): Logger {
         }
       } else {
         msg += `  ${ANSI.red}error${ANSI.reset}`
-        if (event.error) {
-          const errMsg = typeof event.error === 'string' ? event.error : JSON.stringify(event.error)
-          msg += ` ${ANSI.red}${errMsg}${ANSI.reset}`
-        }
+        if (event.error) msg += ` ${ANSI.red}[Omitted]${ANSI.reset}`
       }
 
       console.log(msg)
@@ -298,11 +179,10 @@ function createServerLogger(level: 'info' | 'debug'): Logger {
 
     debug(message: string, data?: unknown): void {
       if (!isDebug) return
-      if (data !== undefined) {
-        console.log(`${PREFIX} ${ANSI.dim}[debug]${ANSI.reset} ${message}`, data)
-      } else {
-        console.log(`${PREFIX} ${ANSI.dim}[debug]${ANSI.reset} ${message}`)
-      }
+      // Generic debug payloads have no reviewed schema. Keep the message only;
+      // structured diagnostics belong in a semantic event's safe details.
+      void data
+      console.log(`${PREFIX} ${ANSI.dim}[debug]${ANSI.reset} ${message}`)
     },
 
     time(label: string): () => void {
@@ -348,97 +228,10 @@ function createBrowserLogger(level: 'info' | 'debug'): Logger {
           iconStyle,
         )
         if (event.details) console.log(event.details)
-        if (event.error) console.error(event.error)
+        if (event.error) console.error('[Omitted]')
         console.groupEnd()
       } else {
         console.log(`%cConvex%c Auth | %c${icon} ${event.phase}`, CSS.badge, '', iconStyle)
-      }
-    },
-
-    query(event: QueryEvent): void {
-      // Queries are debug-only (too noisy for info)
-      if (!isDebug) return
-
-      const icon = event.event === 'error' ? ICONS.error : ICONS.query
-      const iconStyle = event.event === 'error' ? CSS.error : CSS.dim
-
-      let label = `%cConvex%c ${icon} %c${event.name}`
-      const styles = [CSS.badge, iconStyle, CSS.name]
-
-      if (event.event === 'update' && event.count !== undefined) {
-        label += `%c (${event.count} items)`
-        styles.push(CSS.dim)
-      } else if (event.event !== 'update') {
-        label += `%c ${event.event}`
-        styles.push(CSS.dim)
-      }
-
-      const hasData = event.data !== undefined || event.args !== undefined || event.error
-
-      if (hasData) {
-        console.groupCollapsed(label, ...styles)
-        if (event.args !== undefined) console.log('Args:', event.args)
-        if (event.data !== undefined) console.log('Data:', event.data)
-        if (event.error) console.error('Error:', event.error)
-        console.groupEnd()
-      } else {
-        console.log(label, ...styles)
-      }
-    },
-
-    mutation(event: MutationEvent): void {
-      const icon = event.event === 'error' ? ICONS.error : ICONS.mutation
-
-      let label = `%cConvex%c ${icon} %c${event.name}`
-      const styles = [CSS.badge, '', CSS.name]
-
-      if (event.event === 'optimistic') {
-        label += `%c optimistic`
-        styles.push('color: #a855f7; font-weight: bold;') // purple for optimistic
-      } else if (event.duration !== undefined) {
-        label += `%c (${formatDuration(event.duration)})`
-        styles.push(CSS.dim)
-      }
-
-      if (event.event === 'error') {
-        label += `%c Failed`
-        styles.push(CSS.error)
-      }
-
-      const hasDetails = (isDebug && event.args !== undefined) || event.error
-
-      if (hasDetails) {
-        console.groupCollapsed(label, ...styles)
-        if (isDebug && event.args !== undefined) console.log('Args:', event.args)
-        if (event.error) console.error('Error:', event.error)
-        console.groupEnd()
-      } else {
-        console.log(label, ...styles)
-      }
-    },
-
-    action(event: ActionEvent): void {
-      const icon = event.event === 'error' ? ICONS.error : ICONS.action
-
-      let label = `%cConvex%c ${icon} %c${event.name}`
-      const styles = [CSS.badge, '', CSS.name]
-
-      if (event.duration !== undefined) {
-        label += `%c (${formatDuration(event.duration)})`
-        styles.push(CSS.dim)
-      }
-
-      if (event.event === 'error') {
-        label += `%c Failed`
-        styles.push(CSS.error)
-      }
-
-      if (event.error) {
-        console.groupCollapsed(label, ...styles)
-        console.error('Error:', event.error)
-        console.groupEnd()
-      } else {
-        console.log(label, ...styles)
       }
     },
 
@@ -468,7 +261,7 @@ function createBrowserLogger(level: 'info' | 'debug'): Logger {
 
       if (event.error) {
         console.groupCollapsed(label, ...styles)
-        console.error('Error:', event.error)
+        console.error('Error:', '[Omitted]')
         console.groupEnd()
       } else {
         console.log(label, ...styles)
@@ -477,11 +270,8 @@ function createBrowserLogger(level: 'info' | 'debug'): Logger {
 
     debug(message: string, data?: unknown): void {
       if (!isDebug) return
-      if (data !== undefined) {
-        console.log(`%cConvex%c [debug] ${message}`, CSS.badge, CSS.dim, data)
-      } else {
-        console.log(`%cConvex%c [debug] ${message}`, CSS.badge, CSS.dim)
-      }
+      void data
+      console.log(`%cConvex%c [debug] ${message}`, CSS.badge, CSS.dim)
     },
 
     time(label: string): () => void {
@@ -514,8 +304,6 @@ export function createLogger(level: LogLevel): Logger {
       phase?: string
       name?: string
       filename?: string
-      args?: unknown
-      data?: unknown
       details?: unknown
       error?: unknown
     },
@@ -529,23 +317,16 @@ export function createLogger(level: LogLevel): Logger {
       ...(event.filename === undefined
         ? {}
         : { filename: String(sanitizeDiagnosticValue(event.filename)) }),
-      ...(event.args === undefined ? {} : { args: '[Omitted]' }),
-      ...(event.data === undefined ? {} : { data: '[Omitted]' }),
       ...(event.details === undefined ? {} : { details: sanitizeDiagnosticValue(event.details) }),
-      ...(event.error === undefined ? {} : { error: sanitizeDiagnosticValue(event.error) }),
+      // Error objects/messages often contain transport data and credentials.
+      // Callers must put a stable, reviewed code in `details` instead.
+      ...(event.error === undefined ? {} : { error: '[Omitted]' }),
     }) as T
 
   const safeLogger: Logger = {
     auth: (event) => sink.auth(sanitizeEvent(event)),
-    query: (event) => sink.query(sanitizeEvent(event)),
-    mutation: (event) => sink.mutation(sanitizeEvent(event)),
-    action: (event) => sink.action(sanitizeEvent(event)),
     upload: (event) => sink.upload(sanitizeEvent(event)),
-    debug: (message, data) =>
-      sink.debug(
-        String(sanitizeDiagnosticValue(message)),
-        data === undefined ? undefined : sanitizeDiagnosticValue(data),
-      ),
+    debug: (message, data) => sink.debug(String(sanitizeDiagnosticValue(message)), data),
     time: (label) => sink.time(String(sanitizeDiagnosticValue(label))),
   }
   return Object.freeze(safeLogger)

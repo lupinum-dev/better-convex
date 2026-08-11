@@ -1,0 +1,8 @@
+
+.convex/
+.env
+.env.*
+!.env.example
+.nuxt/
+.output/
+node_modules/

@@ -1,62 +1,296 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { escapeEmailHtml } from '../../starters/team/convex/lib/authEmail'
+
 const repoRoot = join(import.meta.dirname, '../..')
-const authApps = [
-  'demo',
-  'playground',
-  'starters/agency',
-  'starters/agentic-saas',
-  'starters/mcp-agent',
-  'starters/team',
-] as const
+const authApps = ['demo', 'playground', 'starters/agency', 'starters/team'] as const
 const passwordApps = authApps.filter((app) => app !== 'demo')
+const authEnvExamples = [
+  'demo/.env.example',
+  'starters/agency/.env.example',
+  'starters/mcp-oauth-agent/.env.example',
+  'starters/team/.env.example',
+] as const
 const passwordForms = [
   'playground/pages/auth/signup.vue',
   'starters/agency/app/pages/agency.vue',
-  'starters/agentic-saas/app/pages/index.vue',
-  'starters/mcp-agent/app/components/demo/AuthSection.vue',
   'starters/team/app/components/AuthPanel.vue',
 ] as const
 const passwordRecipeDocs = ['docs/content/docs/3.get-started/5.add-authentication.md'] as const
+const proxySecretExamples = [
+  ...authEnvExamples,
+  'docs/content/docs/3.get-started/5.add-authentication.md',
+  'docs/content/docs/7.operations/1.environment-variables.md',
+] as const
+const proxySecretDocs = [
+  'docs/content/docs/3.get-started/5.add-authentication.md',
+  'docs/content/docs/7.operations/1.environment-variables.md',
+] as const
 const genericSignInForms = [
   'playground/pages/auth/signin.vue',
   'starters/team/app/components/AuthPanel.vue',
-  'starters/mcp-agent/app/composables/useMcpDemoAuth.ts',
-  'starters/agentic-saas/app/pages/index.vue',
 ] as const
+const convexManagedEnvDocs = [
+  'starters/mcp-oauth-agent/README.md',
+  'docs/content/docs/3.get-started/5.add-authentication.md',
+  'docs/content/docs/4.build/3.authentication/2.better-auth-setup.md',
+  'docs/content/docs/7.operations/1.environment-variables.md',
+  'docs/content/docs/7.operations/2.deployment.md',
+  'docs/content/docs/7.operations/4.troubleshooting.md',
+  'RELEASING.md',
+  'test/TESTING.md',
+] as const
+const generatedDirectoryNames = new Set([
+  '.audit',
+  '.claude',
+  '.git',
+  '.nuxt',
+  '.output',
+  '.release-artifacts',
+  'coverage',
+  'dist',
+  'node_modules',
+])
 
 function read(path: string): string {
   return readFileSync(join(repoRoot, path), 'utf8')
 }
 
+function maintainedMarkdown(): { path: string; source: string }[] {
+  const paths: string[] = []
+  const visit = (path: string) => {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      const absolute = join(path, entry.name)
+      if (entry.isDirectory()) {
+        if (!generatedDirectoryNames.has(entry.name)) visit(absolute)
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        paths.push(relative(repoRoot, absolute))
+      }
+    }
+  }
+
+  visit(repoRoot)
+
+  return [...new Set(paths)].sort().map((path) => ({ path, source: read(path) }))
+}
+
+function shellTokens(line: string): string[] {
+  return (line.match(/"[^"]*"|'[^']*'|\S+/gu) ?? []).map((token) => {
+    const quote = token[0]
+    return (quote === '"' || quote === "'") && token.at(-1) === quote ? token.slice(1, -1) : token
+  })
+}
+
+function setsConvexManagedSiteUrl(line: string): boolean {
+  const tokens = shellTokens(line)
+  const after = (index: number, predicate: (token: string) => boolean) =>
+    tokens.findIndex((token, candidate) => candidate > index && predicate(token))
+  const convex = tokens.findIndex(
+    (token) =>
+      token === 'convex' ||
+      token === 'better-convex-nuxt-convex' ||
+      token.endsWith('/convex') ||
+      token.endsWith('/convex/bin/main.js'),
+  )
+  const env = after(convex, (token) => token === 'env')
+  const set = after(env, (token) => token === 'set')
+  const name = after(set, (token) => token === 'CONVEX_SITE_URL')
+
+  return convex >= 0 && env >= 0 && set >= 0 && name >= 0
+}
+
+const RAW_CONVEX_COMMAND =
+  /(?:^|\s)(?:pnpm\s+exec\s+)?convex\s+(?:codegen|deploy|deployment|dev|env|import|project|run)\b/u
+const RAW_CONVEX_MAIN_COMMAND =
+  /(?:^|\s)node(?:\.exe)?\s+--\s+\S*node_modules\/convex\/bin\/main\.js\s+(?:codegen|deploy|deployment|dev|env|import|project|run)\b/u
+
 describe('shipped Better Auth factory invariants', () => {
+  it('escapes every user-controlled transactional-email HTML delimiter', () => {
+    expect(escapeEmailHtml(`<img src=x onerror="alert('x')"> & invited`)).toBe(
+      '&lt;img src=x onerror=&quot;alert(&#39;x&#39;)&quot;&gt; &amp; invited',
+    )
+  })
+
   it.each(authApps)('%s fails closed on runtime secret and unsafe application origins', (app) => {
     const auth = read(`${app}/convex/auth.ts`)
 
-    expect(auth).toContain("throw new Error('SITE_URL is required')")
-    expect(auth).toContain("throw new Error('BETTER_AUTH_SECRET is required')")
-    expect(auth).toContain('secret.trim() !== secret')
-    expect(auth).toContain('secret.length < 32')
-    expect(auth).not.toContain('estimatedEntropy')
-    expect(auth).toContain('generated by a secure random source')
-    expect(auth).toContain('SITE_URL must be an exact origin')
-    expect(auth).toContain('SITE_URL must use HTTPS except for loopback HTTP')
-    expect(auth).toContain("host.endsWith('.localhost')")
-    expect(auth).toContain("host === '[::1]'")
-    expect(auth).toContain('isIpv4Loopback(host)')
+    expect(auth).toContain("requireAuthOrigin('SITE_URL')")
+    expect(auth).toContain("requireAuthOrigin('CONVEX_SITE_URL')")
+    expect(auth).toContain("throw new Error('BETTER_AUTH_SECRETS is required')")
+    expect(auth).not.toContain('BETTER_AUTH_SECRET ??')
+    expect(auth).not.toContain('secret: process.env')
     expect(auth).toContain('trustedOrigins: [siteUrl]')
-    expect(auth).not.toContain('trustedOrigins: isLocalSite')
-    expect(auth).not.toContain('localTrustedOrigins')
+    expect(auth).toContain("ipAddressHeaders: ['x-bcn-verified-client-ip']")
+    expect(auth).toContain("throw new Error('AUTH_CONFIG_INVALID')")
+  })
+
+  it('keeps Better Auth secrets out of Nuxt env examples and clears legacy schema aliases', () => {
+    const schemaCli = read('src/runtime/cli/auth-schema.ts')
+
+    for (const path of authEnvExamples) {
+      expect(read(path)).not.toMatch(/^BETTER_AUTH_SECRETS=/mu)
+    }
+    expect(schemaCli).toContain("'AUTH_SECRET'")
+    expect(schemaCli).toContain("'BETTER_AUTH_SECRET'")
+    expect(schemaCli).toContain("'BETTER_AUTH_SECRETS'")
+  })
+
+  it.each(proxySecretExamples)('%s leaves copyable proxy secrets blank', (path) => {
+    const source = read(path)
+
+    expect(source).toMatch(/^BCN_AUTH_PROXY_IP_SECRET=$/mu)
+    expect(source).not.toMatch(/^BCN_AUTH_PROXY_IP_SECRET=.+$/mu)
+  })
+
+  it.each(authApps)('%s wires the required production client-IP boundary', (app) => {
+    const config = read(`${app}/nuxt.config.ts`)
+
+    expect(config).toContain('trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER')
+  })
+
+  it.each(authEnvExamples)('%s documents the ingress header without guessing a default', (path) => {
+    const source = read(path)
+
+    expect(source).toMatch(/^BCN_AUTH_TRUSTED_CLIENT_IP_HEADER=$/mu)
+    expect(source).not.toMatch(/^BCN_AUTH_TRUSTED_CLIENT_IP_HEADER=.+$/mu)
+  })
+
+  it.each(proxySecretDocs)('%s provisions one shared proxy secret without printing it', (path) => {
+    const source = read(path)
+
+    expect(source).toContain('export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"')
+    expect(source).toContain(
+      'printf \'%s\' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt-convex env set BCN_AUTH_PROXY_IP_SECRET',
+    )
+    expect(source).toContain('same shell')
+    expect(source).toContain('Do not print or commit it')
+  })
+
+  it.each(convexManagedEnvDocs)(
+    '%s does not tell operators to override Convex built-ins',
+    (path) => {
+      const source = read(path)
+
+      expect(source).not.toMatch(/convex env set CONVEX_SITE_URL/u)
+      expect(source).toMatch(
+        /CONVEX_SITE_URL[\s\S]{0,160}(built-in|built in)|(built-in|built in)[\s\S]{0,160}CONVEX_SITE_URL/u,
+      )
+    },
+  )
+
+  it('keeps Convex-managed environment names out of every shipped Markdown command', () => {
+    const offenders: string[] = []
+
+    for (const { path, source } of maintainedMarkdown()) {
+      const logicalLines = source.replace(/\\\r?\n\s*/gu, ' ').split(/\r?\n/u)
+      for (const [index, line] of logicalLines.entries()) {
+        if (setsConvexManagedSiteUrl(line)) {
+          offenders.push(`${path}:${index + 1}`)
+        }
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  it.each([
+    'convex env set CONVEX_SITE_URL https://deployment.convex.site',
+    'pnpm exec convex env --prod set --deployment app CONVEX_SITE_URL value',
+    '/workspace/node_modules/.bin/convex --verbose env set "CONVEX_SITE_URL" value',
+    'node -- node_modules/convex/bin/main.js env set CONVEX_SITE_URL value --env-file .env.local',
+  ])('detects forbidden Convex built-in provisioning syntax: %s', (command) => {
+    expect(setsConvexManagedSiteUrl(command)).toBe(true)
+  })
+
+  it.each([
+    'convex env set SITE_URL https://app.example.com',
+    'convex env list --names-only',
+    'Convex injects the CONVEX_SITE_URL built-in',
+  ])('does not reject unrelated setup text: %s', (line) => {
+    expect(setsConvexManagedSiteUrl(line)).toBe(false)
+  })
+
+  it('keeps raw stateful Convex commands out of supported guides', () => {
+    const offenders: string[] = []
+
+    for (const { path, source } of maintainedMarkdown().filter(
+      ({ path }) => path !== 'test/TESTING.md',
+    )) {
+      for (const [index, line] of source
+        .replace(/\\\r?\n\s*/gu, ' ')
+        .split(/\r?\n/u)
+        .entries()) {
+        if (RAW_CONVEX_COMMAND.test(line) || RAW_CONVEX_MAIN_COMMAND.test(line)) {
+          offenders.push(`${path}:${index + 1}`)
+        }
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  it('keeps starter package scripts on explicit dotenv and deployment authorities', () => {
+    for (const starter of ['agency', 'mcp-oauth-agent', 'public', 'team']) {
+      const manifest = JSON.parse(read(`starters/${starter}/package.json`)) as {
+        scripts?: Record<string, string>
+      }
+      for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+        if (/\b(?:nuxt|nuxi)\s+(?:build|dev|prepare|preview|typecheck)\b/u.test(command)) {
+          expect(command, `${starter}:${name}`).toContain('--dotenv .env.local')
+        }
+        const convexCommand: string | undefined = (
+          {
+            'convex:codegen': 'codegen',
+            'convex:configure': 'configure',
+            'convex:dev': 'dev',
+          } as Record<string, string>
+        )[name]
+        if (convexCommand) {
+          expect(command, `${starter}:${name}`).toMatch(
+            new RegExp(`(?:^|&& )better-convex-nuxt-convex ${convexCommand}$`, 'u'),
+          )
+        }
+        if (name === 'convex:local:once') {
+          expect(command, `${starter}:${name}`).toMatch(
+            /^better-convex-nuxt-convex dev --anonymous --once\b/u,
+          )
+        }
+      }
+    }
+  })
+
+  it('uses one explicit .env.local authority in the generic setup guides', () => {
+    for (const path of [
+      'README.md',
+      'docs/content/docs/3.get-started/2.installation.md',
+      'docs/content/docs/3.get-started/3.first-realtime-page.md',
+      'docs/content/docs/3.get-started/5.add-authentication.md',
+      'docs/content/docs/3.get-started/7.project-structure.md',
+      'docs/content/docs/7.operations/1.environment-variables.md',
+    ]) {
+      const source = read(path)
+
+      expect(source).toContain('.env.local')
+      expect(source).not.toContain('[.env]')
+      expect(source).not.toMatch(/^├── \.env\s/mu)
+    }
+
+    expect(read('docs/content/docs/3.get-started/2.installation.md')).toContain(
+      'nuxt prepare --dotenv .env.local',
+    )
+    expect(read('docs/content/docs/3.get-started/3.first-realtime-page.md')).toContain(
+      'nuxt dev --dotenv .env.local',
+    )
   })
 
   it.each(authApps)('%s registers only the lazy Better Auth HTTP ceremony', (app) => {
     const http = read(`${app}/convex/http.ts`)
 
-    expect(http).toContain('authComponent.registerRoutesLazy(http, createAuth)')
-    expect(http).not.toMatch(/authComponent\.registerRoutes\(/)
+    expect(http).toContain('authComponent.registerRoutes(http, createAuth)')
+    expect(http).not.toContain('registerRoutesLazy')
   })
 
   it.each(passwordApps)('%s enforces the supported 15-character password floor', (app) => {
@@ -68,16 +302,6 @@ describe('shipped Better Auth factory invariants', () => {
   it.each(passwordForms)('%s matches the backend password floor', (form) => {
     expect(read(form)).toContain('minlength="15"')
     expect(read(form)).not.toContain('minlength="8"')
-  })
-
-  it('does not prefill reusable passwords in maintained starter UI', () => {
-    const agentic = read('starters/agentic-saas/app/pages/index.vue')
-    const mcp = read('starters/mcp-agent/app/composables/useMcpDemoAuth.ts')
-
-    expect(agentic).toContain("const ownerPassword = ref('')")
-    expect(mcp).toContain("const password = ref('')")
-    expect(agentic).not.toContain("const ownerPassword = ref('Password")
-    expect(mcp).not.toContain("const password = ref('Password")
   })
 
   it.each(passwordRecipeDocs)('%s keeps copyable password factories hardened', (path) => {
@@ -124,12 +348,6 @@ describe('shipped Better Auth factory invariants', () => {
     expect(operationsGuide).not.toContain("console.error('Sign in failed:', error.message)")
     expect(read('playground/pages/auth/signin.vue')).not.toContain('result.error.message')
     expect(read('starters/team/app/components/AuthPanel.vue')).not.toContain('result.error.message')
-    expect(read('starters/mcp-agent/app/composables/useMcpDemoAuth.ts')).not.toContain(
-      'result.error.message',
-    )
-    expect(read('starters/agentic-saas/app/pages/index.vue')).not.toContain(
-      "new Error(error.message || 'Sign in failed')",
-    )
   })
 
   it('documents password blocklist and distributed abuse-control ownership', () => {
@@ -173,14 +391,6 @@ describe('shipped Better Auth factory invariants', () => {
     expect(auth).not.toContain('http://127.0.0.1:*')
   })
 
-  it('keeps schema-only placeholders out of the MCP request factory', () => {
-    const auth = read('starters/mcp-agent/convex/auth.ts')
-
-    expect(auth).not.toContain('localSecret')
-    expect(auth).not.toContain('createAuthOptions')
-    expect(auth).not.toMatch(/BETTER_AUTH_SECRET\s*\?\?/)
-  })
-
   it('pins the conservative demo OAuth storage and account-linking policy', () => {
     const auth = read('demo/convex/auth.ts')
 
@@ -200,25 +410,15 @@ describe('shipped Better Auth factory invariants', () => {
     // Agency users are stable domain actors referenced by tenant and audit
     // records, not disposable display projections. Assert the required
     // lifecycle behavior without coupling this guard to the generic helper.
-    expect(auth).toContain('syncAgencyUserActor(ctx, user, true)')
-    expect(auth).toContain('syncAgencyUserActor(ctx, user, false)')
-    expect(auth).toContain('syncAgencyUserActor(ctx, { _id: user._id }, false)')
+    expect(auth).toContain('syncAgencyUserActor(ctx, user as BetterAuthUserProjectionSource, true)')
+    expect(auth).toContain(
+      'syncAgencyUserActor(ctx, user as BetterAuthUserProjectionSource, false)',
+    )
+    expect(auth).toContain('syncAgencyUserActor(ctx, { id: String(user.id) }, false)')
     expect(auth).toContain('rebuildUserProjectionBatch = internalMutation')
     expect(page).toContain('useConvexAuth()')
-    expect(page).toContain('await signUp.email')
-    expect(page).toContain('await signIn.email')
+    expect(page).toContain('await authClient.signUp.email')
+    expect(page).toContain('await authClient.signIn.email')
     expect(page).not.toContain('await refresh()')
-  })
-
-  it('escapes dynamic Team transactional-email HTML at the delivery boundary', () => {
-    const auth = read('starters/team/convex/auth.ts')
-    const delivery = read('starters/team/convex/lib/authEmail.ts')
-
-    expect(auth).toContain('escapeEmailHtml(inviterName)')
-    expect(auth).toContain('escapeEmailHtml(data.organization.name)')
-    expect(auth).toContain('escapeEmailHtml(link)')
-    expect(auth).toContain('escapeEmailHtml(data.url)')
-    expect(delivery).toMatch(/value\.replace\(\s*\/\[&<>"'\]\/g/)
-    expect(delivery).not.toContain("process.env.ALLOW_TEST_RESET === 'true'")
   })
 })

@@ -1,4 +1,4 @@
-import type { FunctionReference } from 'convex/server'
+import { makeFunctionReference, type FunctionReference } from 'convex/server'
 
 type OnResult = (value: unknown) => void
 type OnError = (error: Error) => void
@@ -247,5 +247,5 @@ export class MockConvexClient {
 export function mockFnRef<TKind extends 'query' | 'mutation' | 'action'>(
   path: string,
 ): FunctionReference<TKind> {
-  return { _path: path } as unknown as FunctionReference<TKind>
+  return makeFunctionReference<TKind>(path)
 }

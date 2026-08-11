@@ -1,7 +1,7 @@
 /**
  * Files Functions - Storage demo
  *
- * Demonstrates file uploads with useConvexFileUpload and useConvexStorageUrl.
+ * Demonstrates file uploads with useConvexFileUpload and an ordinary URL query.
  */
 
 import { v } from 'convex/values'

@@ -23,12 +23,12 @@ It does not attempt to become a general-purpose Vue form framework. Backend vali
 
 Better Convex Nuxt already provides a strong mutation primitive:
 
-- callable and `.safe()` execution paths;
+- direct Promise-returning execution;
 - normalized `ConvexCallError` failures;
 - preserved structured `ConvexError.data`;
 - reactive status, pending, data, and error state;
 - identity-generation protection;
-- success and error callbacks.
+- readonly lifecycle state.
 
 Applications still repeatedly write the layer between that primitive and a form:
 
@@ -256,8 +256,8 @@ Validation must support both synchronous and asynchronous Standard Schema result
 3. validate current values;
 4. stop without calling Convex when validation fails;
 5. combine parsed values with typed extra arguments;
-6. execute the mutation through `useConvexMutation().safe()`;
-7. map a failed normalized error;
+6. execute the mutation through `useConvexMutation().execute()`;
+7. catch and map a failed normalized error;
 8. run the success callback;
 9. reset values when `resetOnSuccess` is enabled;
 10. release the submission guard in `finally`.

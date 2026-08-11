@@ -5,16 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ConvexCallError } from '../../src/runtime/errors'
 import { ServerConvexValidationError } from '../../src/runtime/server/utils/server-convex-options'
-import {
-  exchangeConvexToken,
-  normalizeSiteUrl,
-  readToken,
-} from '../../src/runtime/server/utils/token-exchange'
+import { exchangeConvexToken as exchangeRequestToken } from '../../src/runtime/server/utils/token-exchange'
 
 // ---------------------------------------------------------------------------
-// Loopback HTTP harness. We drive the real `exchangeConvexToken` -> global
-// fetch path against a real node:http server on 127.0.0.1 (http loopback is
-// permitted by normalizeSiteUrl).
+// Loopback HTTP harness. We drive the real request-bound exchange through
+// global fetch against a real node:http server on 127.0.0.1.
 // ---------------------------------------------------------------------------
 
 interface RecordedRequest {
@@ -22,6 +17,8 @@ interface RecordedRequest {
   url: string | undefined
   cookie: string | undefined
   authorization: string | undefined
+  clientIp: string | undefined
+  clientIpSignature: string | undefined
 }
 
 interface Harness {
@@ -39,6 +36,14 @@ async function startServer(handler: Handler, requests: RecordedRequest[]): Promi
       url: req.url,
       cookie: req.headers['cookie'],
       authorization: req.headers['authorization'],
+      clientIp:
+        typeof req.headers['x-bcn-client-ip'] === 'string'
+          ? req.headers['x-bcn-client-ip']
+          : undefined,
+      clientIpSignature:
+        typeof req.headers['x-bcn-client-ip-signature'] === 'string'
+          ? req.headers['x-bcn-client-ip-signature']
+          : undefined,
     })
     handler(req, res)
   })
@@ -64,6 +69,7 @@ async function harness(handler: Handler): Promise<Harness> {
 
 afterEach(async () => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
   while (openHarnesses.length) {
     const created = openHarnesses.pop()
     if (created) await created.close()
@@ -78,7 +84,18 @@ function jsonResponse(res: http.ServerResponse, status: number, body: unknown): 
 const COOKIE =
   'private_app_cookie=DO_NOT_FORWARD; better-auth.session_token=SUPERSECRET_SESSION_abc123'
 const FORWARDED_COOKIE = 'better-auth.session_token=SUPERSECRET_SESSION_abc123'
-const BEARER = 'BEARER_SECRET_xyz789'
+const PROXY_IP_SECRET = 'token-exchange-proxy-secret-with-32-bytes'
+
+function exchangeConvexToken(
+  input: Omit<Parameters<typeof exchangeRequestToken>[0], 'event' | 'trustedClientIpHeader'>,
+) {
+  vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
+  return exchangeRequestToken({
+    ...input,
+    event: { headers: new Headers({ 'cf-connecting-ip': '203.0.113.20' }) } as never,
+    trustedClientIpHeader: 'cf-connecting-ip',
+  })
+}
 
 describe('exchangeConvexToken — success', () => {
   it('exchanges a cookie credential and returns the token (GET /api/auth/convex/token)', async () => {
@@ -95,20 +112,8 @@ describe('exchangeConvexToken — success', () => {
     expect(server.requests[0]!.url).toBe('/api/auth/convex/token')
     expect(server.requests[0]!.cookie).toBe(FORWARDED_COOKIE)
     expect(server.requests[0]!.authorization).toBeUndefined()
-  })
-
-  it('exchanges a bearer credential and sends Authorization: Bearer', async () => {
-    const server = await harness((_req, res) => jsonResponse(res, 200, { token: 'jwt.bearer.ok' }))
-
-    const result = await exchangeConvexToken({
-      siteUrl: server.siteUrl,
-      credential: { type: 'bearer', value: BEARER },
-    })
-
-    expect(result.token).toBe('jwt.bearer.ok')
-    expect(result.error).toBeNull()
-    expect(server.requests[0]!.authorization).toBe(`Bearer ${BEARER}`)
-    expect(server.requests[0]!.cookie).toBeUndefined()
+    expect(server.requests[0]!.clientIp).toBe('203.0.113.20')
+    expect(server.requests[0]!.clientIpSignature).toMatch(/^[\w-]{43}$/u)
   })
 })
 
@@ -220,7 +225,7 @@ describe('exchangeConvexToken — HTTP failure classification', () => {
   })
 
   it('classifies a fetch failure (connection refused) as transport', async () => {
-    // A closed loopback port: normalizeSiteUrl accepts it, fetch fails.
+    // A closed loopback port is a transport failure.
     const result = await exchangeConvexToken({
       siteUrl: 'http://127.0.0.1:1',
       credential: { type: 'cookie', value: COOKIE },
@@ -333,7 +338,21 @@ describe('exchangeConvexToken — synchronous credential validation (before netw
         // @ts-expect-error direct JavaScript callers still require runtime validation
         credential: { type: 'basic', value: 'credential' },
       }),
-    ).toThrow('credential must be a cookie or bearer credential')
+    ).toThrow('credential must be a cookie credential')
+
+    expect(server.requests).toHaveLength(0)
+  })
+
+  it('rejects a bearer credential before any network access', async () => {
+    const server = await harness((_req, res) => jsonResponse(res, 200, { token: 'nope' }))
+
+    expect(() =>
+      exchangeConvexToken({
+        siteUrl: server.siteUrl,
+        // @ts-expect-error bearer credentials are deliberately absent from the public type
+        credential: { type: 'bearer', value: 'session-token' },
+      }),
+    ).toThrow('credential must be a cookie credential')
 
     expect(server.requests).toHaveLength(0)
   })
@@ -349,52 +368,6 @@ describe('exchangeConvexToken — synchronous credential validation (before netw
     ).toThrow('credential must contain a non-empty supported Better Auth session cookie')
 
     expect(server.requests).toHaveLength(0)
-  })
-})
-
-describe('normalizeSiteUrl — origin and loopback rules', () => {
-  const ACCEPT: Array<[string, string]> = [
-    ['https://example.convex.site', 'https://example.convex.site'],
-    ['http://localhost:3000', 'http://localhost:3000'],
-    ['http://app.localhost:3000', 'http://app.localhost:3000'],
-    ['http://127.0.0.1:3210', 'http://127.0.0.1:3210'],
-    ['http://127.5.6.7', 'http://127.5.6.7'],
-    ['http://127.255.255.255', 'http://127.255.255.255'], // top of 127.0.0.0/8
-    ['http://[::1]:3000', 'http://[::1]:3000'],
-  ]
-
-  it.each(ACCEPT)('accepts %s', (input, origin) => {
-    expect(normalizeSiteUrl(input)).toBe(origin)
-  })
-
-  const REJECT: string[] = [
-    'http://example.convex.site', // http non-loopback
-    'http://192.168.1.10', // private non-loopback
-    'http://128.0.0.1', // just outside 127.0.0.0/8
-    'http://256.0.0.1', // not a valid loopback octet, non-loopback host
-    'https://user:pass@example.convex.site', // embedded credentials
-    'https://example.convex.site/api/auth', // non-root path
-    'https://example.convex.site/?x=1', // query string
-    'https://example.convex.site/#frag', // fragment
-    'ftp://example.convex.site', // non-http(s) scheme
-    'not-a-url',
-  ]
-
-  it.each(REJECT)('rejects %s', (input) => {
-    expect(() => normalizeSiteUrl(input)).toThrow(ServerConvexValidationError)
-  })
-})
-
-describe('readToken', () => {
-  it('extracts a non-empty string token', () => {
-    expect(readToken({ token: 'abc' })).toBe('abc')
-  })
-  it('returns null for empty/missing/non-string token', () => {
-    expect(readToken({ token: '' })).toBeNull()
-    expect(readToken({})).toBeNull()
-    expect(readToken({ token: 123 })).toBeNull()
-    expect(readToken(null)).toBeNull()
-    expect(readToken('str')).toBeNull()
   })
 })
 

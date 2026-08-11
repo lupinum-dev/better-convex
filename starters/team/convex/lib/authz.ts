@@ -4,6 +4,7 @@ import { canAccessAllTeams, canViewOrganizationActivity } from '../../shared/org
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 import { authComponent, createAuth, type AppAuth } from '../auth'
+import { roleAllowsOrganizationPermissions } from '../betterAuth/schemaPlugins'
 import { getBetterAuthMember, getBetterAuthTeam, getBetterAuthTeamMember } from './betterAuthRows'
 
 export type ProjectPermission = 'create' | 'read' | 'update' | 'delete'
@@ -25,34 +26,42 @@ export type ProjectAccess = TeamAccess & {
   project: Doc<'projects'>
 }
 
-export async function getAppAuth(ctx: Ctx) {
+export async function getAppAuth(ctx: MutationCtx) {
   return await authComponent.getAuth(createAuth, ctx)
 }
 
-export async function getAuthenticatedSessionOrNull(ctx: Ctx) {
-  const { auth, headers } = await getAppAuth(ctx)
-  const session = await auth.api.getSession({ headers })
-  if (!session) return null
-
+export async function getAuthenticatedUserOrNull(ctx: Ctx) {
+  const user = await authComponent.safeGetAuthUser(ctx)
+  if (!user || typeof user.id !== 'string') return null
   const actor = {
     kind: 'user' as const,
-    authUserId: session.user.id,
+    authUserId: user.id,
   }
-
-  return { auth, headers, session, actor }
+  return { actor, user: user as { id: string } & Record<string, unknown> }
 }
 
-export async function requireAuthenticatedSession(ctx: Ctx) {
-  const authState = await getAuthenticatedSessionOrNull(ctx)
-  if (!authState) {
-    throw new ConvexError('Unauthenticated')
-  }
+export async function getAuthenticatedSessionOrNull(ctx: Ctx) {
+  const authenticated = await getAuthenticatedUserOrNull(ctx)
+  return authenticated ? { ...authenticated, session: { user: authenticated.user } } : null
+}
 
-  return authState
+export async function requireAuthenticatedSession(ctx: MutationCtx) {
+  const authenticated = await getAuthenticatedUserOrNull(ctx)
+  if (!authenticated) throw new ConvexError('Unauthenticated')
+  const { auth, headers } = await getAppAuth(ctx)
+
+  return {
+    ...authenticated,
+    auth,
+    headers,
+    session: { user: authenticated.user },
+  }
 }
 
 export async function requireAuthenticatedUser(ctx: Ctx): Promise<AccessActor> {
-  const { actor } = await requireAuthenticatedSession(ctx)
+  const authenticated = await getAuthenticatedUserOrNull(ctx)
+  if (!authenticated) throw new ConvexError('Unauthenticated')
+  const { actor } = authenticated
   return actor
 }
 
@@ -80,10 +89,14 @@ export async function requireOrgPermission(
     permission: ProjectPermission
   },
 ) {
-  const { auth, headers, actor } = await requireAuthenticatedSession(ctx)
-  const allowed = await hasOrganizationPermissions(auth, headers, args.organizationId, {
-    project: [args.permission],
+  const actor = await requireAuthenticatedUser(ctx)
+  const member = await getBetterAuthMember(ctx, {
+    organizationId: args.organizationId,
+    userId: actor.authUserId,
   })
+  const allowed = Boolean(
+    member && roleAllowsOrganizationPermissions(member.role, { project: [args.permission] }),
+  )
 
   if (!allowed) {
     throw new ConvexError(`Missing project:${args.permission} permission`)

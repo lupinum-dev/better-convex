@@ -1,22 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import { ref } from 'vue'
 
-import { isConvexArgsSkipped, normalizeConvexArgs } from '../../src/runtime/utils/query-args'
+import {
+  isConvexArgsSkipped,
+  normalizeConvexArgs,
+} from '../../packages/vue/src/internal/query-args'
 
 describe('query args normalization', () => {
-  it('uses an empty object when no args parameter is provided', () => {
-    expect(normalizeConvexArgs(undefined)).toEqual({})
-  })
-
-  it('preserves reactive skip sentinels and disabled states', () => {
+  it('preserves the explicit reactive skip sentinel', () => {
     expect(normalizeConvexArgs(ref('skip'))).toBe('skip')
-    expect(normalizeConvexArgs(() => null)).toBeNull()
-    expect(normalizeConvexArgs(() => undefined)).toBeUndefined()
 
     expect(isConvexArgsSkipped('skip')).toBe(true)
-    expect(isConvexArgsSkipped(null)).toBe(true)
-    expect(isConvexArgsSkipped(undefined)).toBe(true)
+    expect(isConvexArgsSkipped(null)).toBe(false)
+    expect(isConvexArgsSkipped(undefined)).toBe(false)
     expect(isConvexArgsSkipped({})).toBe(false)
+  })
+
+  it('rejects direct, ref, and getter nullish arguments', () => {
+    const invalidArgs = [null, undefined, ref(null), ref(undefined), () => null, () => undefined]
+
+    for (const args of invalidArgs) {
+      expect(() => normalizeConvexArgs(args as never)).toThrow(
+        '[better-convex-vue] query arguments cannot be null or undefined; pass {} or the literal "skip"',
+      )
+    }
   })
 
   it('deeply unwraps nested refs', () => {

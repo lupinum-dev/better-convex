@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
 import net from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
 import { stripVTControlCharacters } from 'node:util'
@@ -10,7 +9,7 @@ const rootUrl = process.env.STARTER_BROWSER_URL ?? 'http://localhost:3000'
 const convexCloudPort = Number(process.env.STARTER_CONVEX_CLOUD_PORT ?? 3210)
 const convexSitePort = Number(process.env.STARTER_CONVEX_SITE_PORT ?? 3211)
 const nuxtPort = Number(new URL(rootUrl).port || 80)
-const defaultAuthSecret = 'starter-browser-smoke-secret-local-only-32chars'
+const defaultAuthSecrets = '0:starter-browser-smoke-secret-local-only-32chars'
 const browserViewport = process.argv.includes('--mobile')
   ? 'mobile'
   : (process.env.STARTER_BROWSER_VIEWPORT ?? 'desktop')
@@ -18,8 +17,22 @@ const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const processes = []
 let devServerOutput = ''
 
+function starterEnvironment() {
+  return {
+    ...process.env,
+    SITE_URL: rootUrl,
+    BETTER_AUTH_SECRETS: process.env.BETTER_AUTH_SECRETS ?? defaultAuthSecrets,
+    VITE_CONVEX_URL: `http://127.0.0.1:${convexCloudPort}`,
+    VITE_CONVEX_SITE_URL: `http://127.0.0.1:${convexSitePort}`,
+    NUXT_PUBLIC_CONVEX_URL: `http://127.0.0.1:${convexCloudPort}`,
+    NUXT_PUBLIC_CONVEX_SITE_URL: `http://127.0.0.1:${convexSitePort}`,
+  }
+}
+
 function stripAnsi(value) {
-  return stripVTControlCharacters(value)
+  const text = stripVTControlCharacters(value)
+  const secret = process.env.BETTER_AUTH_SECRETS ?? defaultAuthSecrets
+  return secret ? text.replaceAll(secret, '[REDACTED]') : text
 }
 
 function getDevServerOutput() {
@@ -51,15 +64,7 @@ function startProcess(name, args, readyPattern, timeoutMs = 60_000) {
   return new Promise((resolve, reject) => {
     const child = spawn(pnpm, args, {
       cwd: process.cwd(),
-      env: {
-        ...process.env,
-        SITE_URL: rootUrl,
-        BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? defaultAuthSecret,
-        VITE_CONVEX_URL: `http://127.0.0.1:${convexCloudPort}`,
-        VITE_CONVEX_SITE_URL: `http://127.0.0.1:${convexSitePort}`,
-        NUXT_PUBLIC_CONVEX_URL: `http://127.0.0.1:${convexCloudPort}`,
-        NUXT_PUBLIC_CONVEX_SITE_URL: `http://127.0.0.1:${convexSitePort}`,
-      },
+      env: starterEnvironment(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
@@ -95,15 +100,14 @@ function startProcess(name, args, readyPattern, timeoutMs = 60_000) {
   })
 }
 
-function runProcess(name, args, timeoutMs = 30_000) {
+function runProcess(name, args, timeoutMs = 30_000, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(pnpm, args, {
       cwd: process.cwd(),
-      env: {
-        ...process.env,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      env: options.env ?? starterEnvironment(),
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
+    child.stdin.end(options.input === undefined ? undefined : `${options.input}\n`)
 
     let output = ''
     const timer = setTimeout(() => {
@@ -163,40 +167,24 @@ function getBrowserContextOptions() {
   }
 }
 
-async function readConvexDeploymentRef() {
-  const envText = await readFile('.env.local', 'utf8')
-  const match = envText.match(/^CONVEX_DEPLOYMENT=(.+)$/m)
-  if (!match?.[1]) {
-    throw new Error('CONVEX_DEPLOYMENT was not written to .env.local')
-  }
-
-  return match[1].trim()
-}
-
 async function configureConvexAuthEnv() {
-  const deployment = await readConvexDeploymentRef()
-  const authSecret = process.env.BETTER_AUTH_SECRET ?? defaultAuthSecret
+  const authSecrets = process.env.BETTER_AUTH_SECRETS ?? defaultAuthSecrets
+  const env = starterEnvironment()
+  delete env.BETTER_AUTH_SECRETS
+  const options = { env }
 
-  await runProcess('convex-env', [
-    'exec',
-    'convex',
-    'env',
-    'set',
-    '--deployment',
-    deployment,
-    'SITE_URL',
-    rootUrl,
-  ])
-  await runProcess('convex-env', [
-    'exec',
-    'convex',
-    'env',
-    'set',
-    '--deployment',
-    deployment,
-    'BETTER_AUTH_SECRET',
-    authSecret,
-  ])
+  await runProcess(
+    'convex-env',
+    ['exec', 'better-convex-nuxt-convex', 'env', 'set', 'SITE_URL', rootUrl],
+    30_000,
+    options,
+  )
+  await runProcess(
+    'convex-env',
+    ['exec', 'better-convex-nuxt-convex', 'env', 'set', 'BETTER_AUTH_SECRETS'],
+    30_000,
+    { ...options, input: authSecrets },
+  )
 }
 
 async function submitNamedForm(page, placeholder, value) {
@@ -779,7 +767,21 @@ async function main() {
   await assertPortFree(convexSitePort, 'Convex site')
 
   try {
-    await startProcess('convex', ['exec', 'convex', 'dev'], /Convex functions ready/, 90_000)
+    await startProcess(
+      'convex',
+      [
+        'exec',
+        'better-convex-nuxt-convex',
+        'dev',
+        '--anonymous',
+        '--local-cloud-port',
+        String(convexCloudPort),
+        '--local-site-port',
+        String(convexSitePort),
+      ],
+      /Convex functions ready/,
+      90_000,
+    )
     await configureConvexAuthEnv()
     await startProcess(
       'nuxt',

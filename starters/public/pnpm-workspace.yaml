@@ -1,2 +1,0 @@
-# Standalone starter workspace. The committed dependency resolves from npm;
-# release verification installs the exact candidate tarball in a clean copy.

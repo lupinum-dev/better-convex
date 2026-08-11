@@ -1,4 +1,4 @@
-import { emailOTPClient, genericOAuthClient, twoFactorClient } from 'better-auth/client/plugins'
+import { emailOTPClient, oauthPopupClient, twoFactorClient } from 'better-auth/client/plugins'
 import { describe, expect, it } from 'vitest'
 
 describe('pinned Better Auth plugin session contracts', () => {
@@ -28,7 +28,7 @@ describe('pinned Better Auth plugin session contracts', () => {
     }
   })
 
-  it('retains the generic OAuth client plugin identity used by the typed fixture', () => {
-    expect(genericOAuthClient().id).toBe('generic-oauth-client')
+  it('retains the OAuth popup client plugin identity used by the typed fixture', () => {
+    expect(oauthPopupClient().id).toBe('oauth-popup')
   })
 })

@@ -5,8 +5,10 @@ import { afterAll, describe, expect, it } from 'vitest'
 
 import { ensureLocalConvex } from '../helpers/local-convex'
 
+const publicOrigin = 'http://localhost:3050'
 const local = await ensureLocalConvex({
   cwd: fileURLToPath(new URL('../../playground', import.meta.url)),
+  authOrigin: publicOrigin,
 })
 
 describe('Realtime subscription (full stack)', async () => {
@@ -16,23 +18,36 @@ describe('Realtime subscription (full stack)', async () => {
 
   await setup({
     rootDir: fileURLToPath(new URL('../../playground', import.meta.url)),
-    env: local.env,
+    env: { ...local.env, SITE_URL: publicOrigin },
+    port: 3050,
     nuxtConfig: {
       convex: {
         url: local.env.NUXT_PUBLIC_CONVEX_URL,
         siteUrl: local.env.NUXT_PUBLIC_CONVEX_SITE_URL,
+        auth: { origin: publicOrigin },
       },
     },
   })
 
   it('syncs added note across tabs', async () => {
-    const page1 = await createPage('/labs/realtime')
-    const page2 = await createPage('/labs/realtime')
+    const page1 = await createPage('/')
+    const page2 = await createPage('/')
+    await Promise.all([
+      page1.goto(`${publicOrigin}/labs/realtime`),
+      page2.goto(`${publicOrigin}/labs/realtime`),
+    ])
 
     // Both pages must have completed their initial subscription render before we
     // mutate, so the cross-tab delivery we assert on is genuinely a live update.
     await page1.waitForSelector('[data-testid="realtime-page"]')
     await page2.waitForSelector('[data-testid="realtime-page"]')
+    for (const page of [page1, page2]) {
+      await page.waitForFunction(() => {
+        const status = document.querySelector('[data-testid="status"]')?.textContent?.trim()
+        return status === 'success' || status === 'error'
+      })
+      expect(await page.textContent('[data-testid="status"]')).toBe('success')
+    }
 
     // Assert on note IDENTITY, not the absolute count: `notes.list` is
     // `.order('desc').take(50)`, so once the shared (never-reset) backend holds

@@ -64,7 +64,7 @@ describe('plugin.server token exchange failure policy', () => {
 
     useRuntimeConfigMock.mockReturnValue({
       public: {
-        convex: { logging: false, debug: {} },
+        convex: { logging: false },
       },
     })
 
@@ -97,13 +97,9 @@ describe('plugin.server token exchange failure policy', () => {
       url: 'https://demo.convex.cloud',
       siteUrl: 'https://demo.convex.site',
       auth: {
-        proxy: {
-          maxRequestBodyBytes: 1024 * 1024,
-          maxResponseBodyBytes: 1024 * 1024,
-          trustedClientIpHeader: '',
-        },
-        debug: { authFlow: false, clientAuthFlow: false, serverAuthFlow: false },
-        routeProtection: { redirectTo: '/auth/signin', preserveReturnTo: true },
+        origin: 'http://localhost:3000',
+        trustedClientIpHeader: '',
+        redirectTo: '/auth/signin',
       },
     })
 
@@ -111,7 +107,7 @@ describe('plugin.server token exchange failure policy', () => {
     isJwtUsableMock.mockReturnValue(true)
   })
 
-  it('treats 500 token exchange as misconfig (dev throw + detailed error, prod generic error)', async () => {
+  it('settles token-exchange failures with the same fixed error in every environment', async () => {
     fetchWithTimeoutMock.mockImplementation(async (url: string) => {
       if (url.endsWith('/api/auth/get-session')) {
         return createResponse(200, { user: null })
@@ -123,22 +119,41 @@ describe('plugin.server token exchange failure policy', () => {
     })
 
     const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
-    const run = plugin()
+    await expect(plugin()).resolves.toBeUndefined()
+    expect(stateStore.get('convex:authError')?.value).toBe(
+      'Authentication is temporarily unavailable',
+    )
+  })
 
-    if (import.meta.dev) {
-      // Dev: hard-fails the SSR render, and the client-visible error carries
-      // implementation detail to speed up local debugging.
-      await expect(run).rejects.toThrow(/token exchange/i)
-      expect(String(stateStore.get('convex:authError')?.value ?? '')).toMatch(
-        /convex\/token|token exchange/i,
-      )
-    } else {
-      // Prod: never leak secret/file hints or raw upstream text to the client.
-      await expect(run).resolves.toBeUndefined()
-      expect(stateStore.get('convex:authError')?.value).toBe(
-        'Authentication is temporarily unavailable',
-      )
-    }
+  it.each([
+    ['missing', undefined],
+    ['malformed', '198.51.100.10, 203.0.113.20'],
+  ])('fails closed when the configured ingress client IP header is %s', async (_, value) => {
+    const runtimeConfig = getConvexRuntimeConfigMock()
+    getConvexRuntimeConfigMock.mockReturnValue({
+      ...runtimeConfig,
+      auth: {
+        ...runtimeConfig.auth,
+        trustedClientIpHeader: 'cf-connecting-ip',
+      },
+    })
+    const event = useRequestEventMock()
+    useRequestEventMock.mockReturnValue({
+      ...event,
+      headers: new Headers({
+        cookie: 'better-auth.session_token=abc',
+        ...(value ? { 'cf-connecting-ip': value } : {}),
+      }),
+    })
+
+    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
+    await expect(plugin()).resolves.toBeUndefined()
+
+    expect(fetchWithTimeoutMock).not.toHaveBeenCalled()
+    expect(stateStore.get('convex:authError')?.value).toBe(
+      'Authentication is temporarily unavailable',
+    )
+    expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
   })
 
   it('isolates a non-session Better Auth cookie response when siteUrl is missing', async () => {
@@ -212,5 +227,26 @@ describe('plugin.server token exchange failure policy', () => {
       key: 'user:user-1',
     })
     expect(setHeaderMock).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
+  })
+
+  it('emits correlated server traces without logging the incoming cookie or exchanged JWT', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const cookieSentinel = 'BCN_SSR_COOKIE_SENTINEL'
+    const jwtSentinel = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZW50aW5lbCJ9.signature'
+    useRuntimeConfigMock.mockReturnValue({ public: { convex: { logging: 'debug' } } })
+    useRequestEventMock.mockReturnValue({
+      ...useRequestEventMock(),
+      headers: new Headers({ cookie: `better-auth.session_token=${cookieSentinel}` }),
+    })
+    fetchWithTimeoutMock.mockResolvedValueOnce(createResponse(200, { token: jwtSentinel }))
+
+    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
+    await expect(plugin()).resolves.toBeUndefined()
+
+    const output = JSON.stringify(log.mock.calls)
+    expect(output).toContain('ssr.auth.started')
+    expect(output).toContain('ssr.auth.completed')
+    expect(output).not.toContain(cookieSentinel)
+    expect(output).not.toContain(jwtSentinel)
   })
 })

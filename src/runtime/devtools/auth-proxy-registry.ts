@@ -22,7 +22,17 @@ async function setRequests(requests: AuthProxyRequest[]): Promise<void> {
 
 export async function recordAuthProxyRequest(request: AuthProxyRequest): Promise<void> {
   const requests = await getRequests()
-  requests.unshift(request)
+  // Persist only the reviewed fixed-shape fields. Development diagnostics are
+  // not an escape hatch for raw Error objects or caller-added properties.
+  requests.unshift({
+    id: request.id,
+    path: request.path,
+    method: request.method,
+    timestamp: request.timestamp,
+    ...(request.status === undefined ? {} : { status: request.status }),
+    ...(request.duration === undefined ? {} : { duration: request.duration }),
+    ...(request.success === undefined ? {} : { success: request.success }),
+  })
   if (requests.length > MAX_REQUESTS) {
     requests.length = MAX_REQUESTS
   }

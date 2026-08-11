@@ -10,7 +10,7 @@ type MutationSubscriber = (entries: MutationEntry[]) => void
 export interface DevtoolsSink {
   getQueries(): QueryRegistryEntry[]
   getQuery(id: string): QueryRegistryEntry | undefined
-  upsertQuery(entry: Omit<QueryRegistryEntry, 'lastUpdated' | 'updateCount'>): void
+  upsertQuery(entry: Omit<QueryRegistryEntry, 'lastUpdated'>): void
   removeQuery(id: string): void
   subscribeToQueries(callback: QuerySubscriber): () => void
   registerMutation(entry: Omit<MutationEntry, 'id'>): string
@@ -68,7 +68,6 @@ export function createDevtoolsSink(): DevtoolsSink {
     },
     upsertQuery(entry) {
       if (disposed) return
-      const existing = queries.get(entry.id)
       queries.delete(entry.id)
       queries.set(entry.id, {
         ...entry,
@@ -76,10 +75,6 @@ export function createDevtoolsSink(): DevtoolsSink {
         data: sanitizeDiagnosticValue(entry.data),
         error: entry.error === undefined ? undefined : String(sanitizeDiagnosticValue(entry.error)),
         lastUpdated: Date.now(),
-        updateCount:
-          entry.dataSource === 'websocket'
-            ? (existing?.updateCount ?? 0) + 1
-            : (existing?.updateCount ?? 0),
       })
       while (queries.size > MAX_QUERIES) queries.delete(queries.keys().next().value!)
       notifyQueries()

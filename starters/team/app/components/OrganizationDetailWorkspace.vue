@@ -50,10 +50,10 @@ const {
   organizationId: organizationId.value,
 }))
 const {
-  results: membersData,
+  data: membersData,
   isLoading: membersPending,
   error: membersQueryError,
-  hasNextPage: hasMoreMembers,
+  canLoadMore: hasMoreMembers,
   loadMore: loadMoreMembers,
 } = await useConvexPaginatedQuery(
   api.organizations.listMembers,
@@ -67,10 +67,10 @@ const {
   { initialNumItems: 25, auth: 'required' },
 )
 const {
-  results: invitationsData,
+  data: invitationsData,
   isLoading: invitationsPending,
   error: invitationsQueryError,
-  hasNextPage: hasMoreInvitations,
+  canLoadMore: hasMoreInvitations,
   loadMore: loadMoreInvitations,
 } = await useConvexPaginatedQuery(
   api.organizations.listInvitations,
@@ -93,8 +93,8 @@ const inviteError = ref<string | null>(null)
 const cancelInvitationEmail = ref<string | null>(null)
 
 const teams = computed(() => teamsData.value ?? [])
-const members = computed(() => membersData.value)
-const invitations = computed<PendingInvitation[]>(() => invitationsData.value)
+const members = computed(() => membersData.value ?? [])
+const invitations = computed<readonly PendingInvitation[]>(() => invitationsData.value ?? [])
 const teamsError = computed(() =>
   teamsQueryError.value ? errorMessage(teamsQueryError.value, 'Teams could not be loaded') : null,
 )

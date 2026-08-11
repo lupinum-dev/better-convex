@@ -14,8 +14,7 @@ type BetterAuthPageResult<T extends Record<string, unknown>> = {
   continueCursor: string
 }
 type BetterAuthRowWithId = {
-  _id?: string
-  id?: string
+  id: string
 }
 
 export type BetterAuthMember = BetterAuthRowWithId & {
@@ -25,8 +24,9 @@ export type BetterAuthMember = BetterAuthRowWithId & {
 }
 
 export type BetterAuthTeam = BetterAuthRowWithId & {
+  memberCount: number
   organizationId: string
-  name?: string
+  name: string
 }
 
 export type BetterAuthOrganization = BetterAuthRowWithId & {
@@ -92,12 +92,8 @@ async function findBetterAuthRow<T extends Record<string, unknown>>(
 }
 
 function getBetterAuthRowId(row: BetterAuthRowWithId, label: string) {
-  const id = row.id ?? row._id
-  if (!id) {
-    throw new Error(`Better Auth ${label} row missing id`)
-  }
-
-  return id
+  if (!row.id) throw new Error(`Better Auth ${label} row missing id`)
+  return row.id
 }
 
 async function listBetterAuthRowsPage<T extends Record<string, unknown>>(
@@ -141,7 +137,7 @@ export async function getBetterAuthTeam(
     ctx,
     'team',
     [
-      { field: '_id', value: args.teamId },
+      { field: 'id', value: args.teamId },
       args.organizationId ? { field: 'organizationId', value: args.organizationId } : null,
     ].filter((where): where is { field: string; value: string } => where !== null),
   )
@@ -154,7 +150,7 @@ export async function getBetterAuthOrganization(
   },
 ) {
   return await findBetterAuthRow<BetterAuthOrganization>(ctx, 'organization', [
-    { field: '_id', value: args.organizationId },
+    { field: 'id', value: args.organizationId },
   ])
 }
 
@@ -178,8 +174,12 @@ export async function getBetterAuthInvitation(
   },
 ) {
   return await findBetterAuthRow<BetterAuthInvitation>(ctx, 'invitation', [
-    { field: '_id', value: args.invitationId },
+    { field: 'id', value: args.invitationId },
   ])
+}
+
+async function getBetterAuthUser(ctx: Ctx, userId: string) {
+  return await findBetterAuthRow<BetterAuthUser>(ctx, 'user', [{ field: 'id', value: userId }])
 }
 
 export async function getBetterAuthPendingInvitationByEmail(
@@ -218,16 +218,9 @@ export async function listBetterAuthOrganizationInvitationsPage(
         .filter((teamId): teamId is string => typeof teamId === 'string' && teamId.length > 0),
     ),
   )
-  const teams =
-    teamIds.length === 0
-      ? []
-      : (
-          await listBetterAuthRowsPage<BetterAuthTeam>(ctx, {
-            model: 'team',
-            where: [{ field: '_id', operator: 'in', value: teamIds }],
-            paginationOpts: { cursor: null, numItems: teamIds.length },
-          })
-        ).page
+  const teams = (
+    await Promise.all(teamIds.map((teamId) => getBetterAuthTeam(ctx, { teamId, organizationId })))
+  ).filter((team) => team !== null)
   const teamsById = new Map(teams.map((team) => [getBetterAuthRowId(team, 'team'), team]))
 
   return {
@@ -264,32 +257,27 @@ export async function listBetterAuthOrganizationMembersPage(
   })
 
   const userIds = Array.from(new Set(members.page.map((member) => member.userId)))
-  const users =
-    userIds.length === 0
-      ? []
-      : (
-          await listBetterAuthRowsPage<BetterAuthUser>(ctx, {
-            model: 'user',
-            where: [{ field: '_id', operator: 'in', value: userIds }],
-            paginationOpts: { cursor: null, numItems: userIds.length },
-          })
-        ).page
-  const teamMembers =
-    !args.teamId || userIds.length === 0
-      ? []
-      : (
-          await listBetterAuthRowsPage<BetterAuthTeamMember>(ctx, {
-            model: 'teamMember',
-            where: [
-              { field: 'teamId', value: args.teamId },
-              { field: 'userId', operator: 'in', value: userIds },
-            ],
-            paginationOpts: { cursor: null, numItems: userIds.length },
-          })
-        ).page
+  const teamId = args.teamId
+  const [userRows, teamMemberRows] = await Promise.all([
+    Promise.all(userIds.map((userId) => getBetterAuthUser(ctx, userId))),
+    teamId
+      ? Promise.all(
+          userIds.map((userId) =>
+            getBetterAuthTeamMember(ctx, {
+              teamId,
+              userId,
+            }),
+          ),
+        )
+      : [],
+  ])
+  const users = userRows.filter((user) => user !== null)
 
   const usersById = new Map(users.map((user) => [getBetterAuthRowId(user, 'user'), user]))
-  const teamMemberUserIds = new Set(teamMembers.map((member) => member.userId))
+  const teamMemberUserIds = new Set<string>()
+  for (const member of teamMemberRows) {
+    if (member !== null) teamMemberUserIds.add(member.userId)
+  }
 
   return {
     ...members,

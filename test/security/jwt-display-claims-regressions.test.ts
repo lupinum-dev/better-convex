@@ -1,3 +1,4 @@
+import type { H3Event } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveServerAuthSnapshot } from '../../src/runtime/server/utils/auth-snapshot'
@@ -30,7 +31,7 @@ describe('JWT display-claim boundary', () => {
     })
   })
 
-  it('cannot mutate prototypes through special property names at any depth', () => {
+  it('does not project attacker-controlled custom properties', () => {
     const payload = JSON.parse(`{
       "sub":"user-1",
       "__proto__":{"polluted":"top"},
@@ -44,27 +45,11 @@ describe('JWT display-claim boundary', () => {
       }
     }`) as Record<string, unknown>
 
-    const user = decodeUserFromJwt(makeJwt(payload))
-    expect(user).not.toBeNull()
-    if (!user) throw new Error('Expected a decoded display user')
-    const profile = Reflect.get(user, 'profile') as Record<string, unknown>
-    const nested = profile.nested as Record<string, unknown>
-
-    expect(Object.getPrototypeOf(user)).toBe(Object.prototype)
-    expect(Object.getPrototypeOf(profile)).toBe(Object.prototype)
-    expect(Object.getPrototypeOf(nested)).toBe(Object.prototype)
-    expect(Object.hasOwn(user, '__proto__')).toBe(false)
-    expect(Object.hasOwn(user, 'constructor')).toBe(false)
-    expect(Object.hasOwn(user, 'prototype')).toBe(false)
-    expect(Object.hasOwn(profile, '__proto__')).toBe(false)
-    expect(Object.hasOwn(profile, 'constructor')).toBe(false)
-    expect(Object.hasOwn(nested, 'prototype')).toBe(false)
-    expect(profile.safe).toBe('visible')
-    expect(nested.unicode).toBe('Grüße 👋')
+    expect(decodeUserFromJwt(makeJwt(payload))).toEqual({ id: 'user-1' })
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })
 
-  it('omits oversized, wide, and deep custom values without losing the identity', () => {
+  it('omits all custom values without losing the identity', () => {
     const tooDeep = { level: { level: { level: { level: { value: 'hidden' } } } } }
     const token = makeJwt({
       sub: 'user-1',
@@ -75,11 +60,7 @@ describe('JWT display-claim boundary', () => {
       boundedArray: Array.from({ length: 64 }, (_, index) => index),
     })
 
-    expect(decodeUserFromJwt(token)).toEqual({
-      id: 'user-1',
-      safe: 'visible',
-      boundedArray: Array.from({ length: 64 }, (_, index) => index),
-    })
+    expect(decodeUserFromJwt(token)).toEqual({ id: 'user-1' })
   })
 
   it('normalizes display fields by type instead of coercing attacker values', () => {
@@ -96,7 +77,7 @@ describe('JWT display-claim boundary', () => {
       }),
     )
 
-    expect(user).toEqual({ id: 'user-1', locale: '日本語' })
+    expect(user).toEqual({ id: 'user-1' })
   })
 
   it.each([null, [], 'user-1', 42, true])('rejects a non-object JWT payload (%j)', (payload) => {
@@ -141,10 +122,7 @@ describe('JWT display-claim boundary', () => {
     const token = makeJwt({ sub: 'browser-user', locale: '日本語 👋' })
     vi.stubGlobal('Buffer', undefined)
     try {
-      expect(decodeUserFromJwt(token)).toEqual({
-        id: 'browser-user',
-        locale: '日本語 👋',
-      })
+      expect(decodeUserFromJwt(token)).toEqual({ id: 'browser-user' })
       expect(decodeJwtPayload('e30.e31.signature')).toBeNull()
     } finally {
       vi.unstubAllGlobals()
@@ -195,19 +173,18 @@ describe('server JWT hydration boundary', () => {
     )
 
     const snapshot = await resolveServerAuthSnapshot({
+      event: { headers: new Headers() } as unknown as H3Event,
       siteUrl: 'https://demo.convex.site',
       cookieHeader: 'better-auth.session_token=session-secret',
       requestId: 'jwt-retention-test',
       trackWaterfall: true,
-      throwOnMisconfig: true,
-      revealAuthErrorDetails: true,
+      trustedClientIpHeader: '',
     })
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
-    expect(snapshot.devError?.message).toMatch(
-      /expired or malformed token|invalid display identity/i,
-    )
+    expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
+    expect(snapshot.waterfall?.error).toBe('AUTH_TOKEN_EXCHANGE_FAILED')
     expect(globalThis.fetch).toHaveBeenCalledOnce()
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'https://demo.convex.site/api/auth/convex/token',
@@ -231,12 +208,12 @@ describe('server JWT hydration boundary', () => {
     )
 
     const snapshot = await resolveServerAuthSnapshot({
+      event: { headers: new Headers() } as unknown as H3Event,
       siteUrl: 'https://demo.convex.site',
       cookieHeader: 'better-auth.session_token=session-secret',
       requestId: 'jwt-provisional-test',
       trackWaterfall: true,
-      throwOnMisconfig: true,
-      revealAuthErrorDetails: true,
+      trustedClientIpHeader: '',
     })
 
     expect(snapshot).toMatchObject({ token, user: { id: 'user-1' }, authError: null })

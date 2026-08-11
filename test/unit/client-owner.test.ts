@@ -1,13 +1,15 @@
 import type { ConnectionState } from 'convex/browser'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { AuthIdentityPort, AuthIdentitySnapshot } from '../../src/runtime/auth/identity-port'
 import {
   createConvexClientOwner,
   type OwnedConvexClient,
-} from '../../src/runtime/client/client-owner'
-import { IDENTITY_CHANGED } from '../../src/runtime/client/identity-changed-error'
-import { createDevtoolsSink } from '../../src/runtime/devtools/sink'
+} from '../../packages/vue/src/internal/client-owner'
+import { IDENTITY_CHANGED } from '../../packages/vue/src/internal/identity-changed-error'
+import type {
+  ClientIdentityPort,
+  ClientIdentitySnapshot,
+} from '../../packages/vue/src/internal/identity-port'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 
 type RuntimeUnsubscribe = ReturnType<OwnedConvexClient['onUpdate']> & {
@@ -76,22 +78,25 @@ function resetCounts() {
 }
 
 /** Minimal fake auth port emitting identity-generation transitions on demand. */
-function fakePort(initial: Partial<AuthIdentitySnapshot> = {}) {
-  let snap: AuthIdentitySnapshot = {
+function fakePort(initial: Partial<ClientIdentitySnapshot> = {}) {
+  let snap: ClientIdentitySnapshot = {
     authEnabled: true,
     settled: true,
     identityKey: 'anonymous',
-    authEpoch: 0,
     identityGeneration: 0,
     error: null,
     ...initial,
   }
   const listeners = new Set<() => void>()
+  const settlementWaiters = new Set<() => void>()
   const initializePrimary = vi.fn(async () => {})
   const failPrimary = vi.fn()
-  const port: AuthIdentityPort = {
+  const port: ClientIdentityPort = {
     snapshot: () => snap,
-    waitForInitialSettlement: () => Promise.resolve(),
+    waitForInitialSettlement: () => {
+      if (snap.settled) return Promise.resolve()
+      return new Promise<void>((resolve) => settlementWaiters.add(resolve))
+    },
     subscribe: (l) => {
       listeners.add(l)
       return () => listeners.delete(l)
@@ -99,8 +104,12 @@ function fakePort(initial: Partial<AuthIdentitySnapshot> = {}) {
     initializePrimary,
     failPrimary,
   }
-  const emit = (next: Partial<AuthIdentitySnapshot>) => {
+  const emit = (next: Partial<ClientIdentitySnapshot>) => {
     snap = { ...snap, ...next }
+    if (snap.settled) {
+      for (const resolve of [...settlementWaiters]) resolve()
+      settlementWaiters.clear()
+    }
     for (const l of [...listeners]) l()
   }
   return { port, emit, initializePrimary, failPrimary, current: () => snap }
@@ -136,19 +145,11 @@ describe('createConvexClientOwner', () => {
   })
 
   describe('replacePrimary', () => {
-    it('clears identity-owned diagnostics when publishing a replacement', async () => {
+    it('notifies adapter observers only when publishing a replacement', async () => {
       resetCounts()
       const o = owner()
-      const sink = createDevtoolsSink()
-      o.attachDevtoolsSink(sink)
-      sink.registerMutation({
-        name: 'notes:create',
-        type: 'mutation',
-        args: {},
-        state: 'pending',
-        hasOptimisticUpdate: false,
-        startedAt: 1,
-      })
+      const observer = vi.fn()
+      const unsubscribe = o.subscribeIdentityChange(observer)
 
       await o.replacePrimary({
         identityGeneration: 1,
@@ -156,7 +157,14 @@ describe('createConvexClientOwner', () => {
         initialize: async () => {},
       })
 
-      expect(sink.getMutations()).toEqual([])
+      expect(observer).toHaveBeenCalledTimes(1)
+      unsubscribe()
+      await o.replacePrimary({
+        identityGeneration: 2,
+        isCurrent: () => true,
+        initialize: async () => {},
+      })
+      expect(observer).toHaveBeenCalledTimes(1)
       await o.dispose()
     })
 
@@ -175,6 +183,32 @@ describe('createConvexClientOwner', () => {
       expect(a.closeCalls).toBe(1) // A retired exactly once
       expect(b.closeCalls).toBe(0)
       expect(CountingClient.created).toBe(2) // A + B, no anonymous
+    })
+
+    it('contains retired client close rejection', async () => {
+      class RejectingCloseClient extends MockConvexClient {
+        close = async (): Promise<void> => {
+          throw new Error('close failed')
+        }
+      }
+      let factoryCalls = 0
+      const o = createConvexClientOwner({
+        primaryFactory: () => {
+          factoryCalls += 1
+          return (factoryCalls === 1
+            ? new RejectingCloseClient()
+            : new CountingClient()) as unknown as OwnedConvexClient
+        },
+      })
+
+      const replacement = await o.replacePrimary({
+        identityGeneration: 1,
+        isCurrent: () => true,
+        initialize: async () => {},
+      })
+      expect(replacement).toBe(o.getPrimary()?.client)
+      await Promise.resolve()
+      await o.dispose()
     })
 
     it('rejects an in-flight consumer-held mutation with IDENTITY_CHANGED on retirement', async () => {
@@ -379,6 +413,87 @@ describe('createConvexClientOwner', () => {
   })
 
   describe('handle dispatch generation guard', () => {
+    const rawCallCases = [
+      {
+        method: 'query',
+        invoke: (o: ReturnType<typeof owner>, path: string) =>
+          o.handle.query(mockFnRef<'query'>(path), {}),
+        prepare: (client: CountingClient, path: string, value: string) =>
+          client.setQueryHandler(path, () => value),
+        calls: (client: CountingClient) => client.calls.query,
+      },
+      {
+        method: 'mutation',
+        invoke: (o: ReturnType<typeof owner>, path: string) =>
+          o.handle.mutation(mockFnRef<'mutation'>(path), {}),
+        prepare: (client: CountingClient, path: string, value: string) =>
+          client.setMutationHandler(path, () => value),
+        calls: (client: CountingClient) => client.calls.mutation,
+      },
+      {
+        method: 'action',
+        invoke: (o: ReturnType<typeof owner>, path: string) =>
+          o.handle.action(mockFnRef<'action'>(path), {}),
+        prepare: (client: CountingClient, path: string, value: string) =>
+          client.setActionHandler(path, () => value),
+        calls: (client: CountingClient) => client.calls.action,
+      },
+    ] as const
+
+    for (const rawCall of rawCallCases) {
+      it(`rejects a raw ${rawCall.method} entered while generation A is unsettled before generation B can dispatch it`, async () => {
+        resetCounts()
+        const { port, emit } = fakePort({ settled: false })
+        const o = owner()
+        o.attachIdentityPort(port)
+        const stableHandle = o.handle
+        const a = o.getPrimary()!.client as unknown as CountingClient
+        const path = `${rawCall.method}:crossing`
+
+        const pending = rawCall.invoke(o, path)
+        const rejection = expect(pending).rejects.toMatchObject({
+          code: IDENTITY_CHANGED,
+        })
+        expect(rawCall.calls(a)).toHaveLength(0)
+
+        emit({
+          settled: true,
+          identityKey: 'user:bob',
+          identityGeneration: 1,
+        })
+
+        await rejection
+        await vi.waitFor(() => expect(o.getPrimary()?.identityGeneration).toBe(1))
+        const b = o.getPrimary()!.client as unknown as CountingClient
+        expect(rawCall.calls(a)).toHaveLength(0)
+        expect(rawCall.calls(b)).toHaveLength(0)
+        expect(o.handle).toBe(stableHandle)
+
+        rawCall.prepare(b, path, 'generation-b')
+        await expect(rawCall.invoke(o, path)).resolves.toBe('generation-b')
+        expect(rawCall.calls(b)).toHaveLength(1)
+        await o.dispose()
+      })
+
+      it(`waits and runs a raw ${rawCall.method} when auth settles in the same generation`, async () => {
+        resetCounts()
+        const { port, emit } = fakePort({ settled: false })
+        const o = owner()
+        o.attachIdentityPort(port)
+        const a = o.getPrimary()!.client as unknown as CountingClient
+        const path = `${rawCall.method}:same-generation`
+        rawCall.prepare(a, path, 'generation-a')
+
+        const pending = rawCall.invoke(o, path)
+        expect(rawCall.calls(a)).toHaveLength(0)
+        emit({ settled: true, identityKey: 'anonymous', identityGeneration: 0 })
+
+        await expect(pending).resolves.toBe('generation-a')
+        expect(rawCall.calls(a)).toHaveLength(1)
+        await o.dispose()
+      })
+    }
+
     it('resolves normally when the generation is unchanged', async () => {
       resetCounts()
       const o = owner()
@@ -387,36 +502,35 @@ describe('createConvexClientOwner', () => {
       await expect(o.handle.query(mockFnRef<'query'>('q'), {})).resolves.toBe('ok')
     })
 
-    it('does not reject same-user rotation (no replacement, generation stable)', async () => {
+    it('does not reject a same-generation notification', async () => {
       resetCounts()
       const { port, emit } = fakePort()
       const o = owner()
-      o.attachAuthPort(port)
+      o.attachIdentityPort(port)
       const a = o.getPrimary()!.client as unknown as CountingClient
       a.setQueryHandler('q', () => 'ok')
-      // Same-user token rotation: epoch bumps, generation unchanged.
-      emit({ authEpoch: 1 })
+      emit({})
       await Promise.resolve()
       expect(o.getPrimary()!.client).toBe(a as unknown as OwnedConvexClient)
       expect(CountingClient.created).toBe(1) // no replacement client created
     })
   })
 
-  describe('attachAuthPort reactive replacement', () => {
-    it('replaces the primary exactly on identityGeneration changes, not epoch-only changes', async () => {
+  describe('attachIdentityPort reactive replacement', () => {
+    it('replaces the primary exactly on identityGeneration changes', async () => {
       resetCounts()
       const { port, emit, initializePrimary } = fakePort()
       const o = owner()
-      o.attachAuthPort(port)
+      o.attachIdentityPort(port)
 
-      // epoch-only change → no replacement
-      emit({ authEpoch: 1 })
+      // Same-generation notification → no replacement.
+      emit({})
       await Promise.resolve()
       expect(CountingClient.created).toBe(1)
       expect(initializePrimary).not.toHaveBeenCalled()
 
       // identity change → replacement
-      emit({ identityGeneration: 1, authEpoch: 2, identityKey: 'user:alice' })
+      emit({ identityGeneration: 1, identityKey: 'user:alice' })
       await Promise.resolve()
       await Promise.resolve()
       expect(initializePrimary).toHaveBeenCalledTimes(1)
@@ -491,36 +605,15 @@ describe('createConvexClientOwner', () => {
       expect(callback).not.toHaveBeenCalled()
     })
 
-    it('disposes the attached diagnostics sink and rejects late attachment', async () => {
+    it('drops identity observers on disposal and makes late subscriptions inert', async () => {
       resetCounts()
       const o = owner()
-      const attached = createDevtoolsSink()
-      expect(o.attachDevtoolsSink(attached)).toBeTypeOf('function')
+      const observer = vi.fn()
+      o.subscribeIdentityChange(observer)
 
       await o.dispose()
-      expect(
-        attached.registerMutation({
-          name: 'after-dispose',
-          type: 'mutation',
-          args: {},
-          state: 'pending',
-          hasOptimisticUpdate: false,
-          startedAt: 1,
-        }),
-      ).toBe('')
-
-      const late = createDevtoolsSink()
-      expect(o.attachDevtoolsSink(late)).toBeNull()
-      expect(
-        late.registerMutation({
-          name: 'late',
-          type: 'mutation',
-          args: {},
-          state: 'pending',
-          hasOptimisticUpdate: false,
-          startedAt: 2,
-        }),
-      ).toBe('')
+      expect(o.subscribeIdentityChange(observer)).toBeTypeOf('function')
+      expect(observer).not.toHaveBeenCalled()
     })
 
     it('closes every allocated client and is idempotent (create/close balance)', async () => {
@@ -600,17 +693,17 @@ describe('createConvexClientOwner', () => {
     const { port, emit, initializePrimary, failPrimary } = fakePort()
     initializePrimary.mockRejectedValue(new Error('persistent confirmation failure'))
     const o = owner()
-    o.attachAuthPort(port)
+    o.attachIdentityPort(port)
 
-    emit({ identityKey: 'user:alice', identityGeneration: 1, authEpoch: 1 })
+    emit({ identityKey: 'user:alice', identityGeneration: 1 })
     await vi.waitFor(() => expect(initializePrimary).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(o.getPrimary()).toBeNull())
     await vi.waitFor(() => expect(failPrimary).toHaveBeenCalledWith(1, expect.any(Error)))
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-    // Epoch-only notifications cannot spin a persistently broken client factory
+    // Same-generation notifications cannot spin a persistently broken client factory
     // or confirmation path. Recovery requires a real new identity generation.
-    emit({ authEpoch: 2 })
+    emit({})
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     expect(initializePrimary).toHaveBeenCalledTimes(1)
     expect(failPrimary).toHaveBeenCalledTimes(1)

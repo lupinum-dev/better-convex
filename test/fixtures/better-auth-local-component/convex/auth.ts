@@ -1,34 +1,75 @@
-import { apiKey } from '@better-auth/api-key'
-import { createClient, type GenericCtx, type AuthFunctions } from '@convex-dev/better-auth'
-import { convex } from '@convex-dev/better-auth/plugins'
-import { betterAuth, type BetterAuthOptions } from 'better-auth/minimal'
-import { admin, organization } from 'better-auth/plugins'
-import type { GenericDataModel } from 'convex/server'
+import { betterAuth } from 'better-auth'
+import {
+  convexAuth,
+  createAuthComponent,
+  getConvexAuthProvider,
+  requireAuthOrigin,
+  type AuthCtx,
+} from 'better-convex-nuxt/convex-auth'
 
 import { components } from './_generated/api'
-import schema from './betterAuth/schema'
+import type { DataModel } from './_generated/dataModel'
+import { createLocalAuthPlugins } from './betterAuth/schemaPlugins'
 
-const authConfig = {
-  providers: [],
-}
+export const authComponent = createAuthComponent<DataModel>(components.betterAuth)
 
-const authFunctions: AuthFunctions = {}
-
-export const authComponent = createClient<GenericDataModel, typeof schema>(components.betterAuth, {
-  local: { schema },
-  authFunctions,
-  triggers: {},
-})
-
-export function createAuthOptions(ctx: GenericCtx<GenericDataModel>): BetterAuthOptions {
-  return {
-    database: authComponent.adapter(ctx),
-    plugins: [convex({ authConfig }), admin(), organization(), apiKey()],
+function assertAuthSecretsConfigured(): void {
+  if (!process.env.BETTER_AUTH_SECRETS) {
+    throw new Error('BETTER_AUTH_SECRETS is required')
   }
 }
 
-export function createAuth(ctx: GenericCtx<GenericDataModel>) {
-  return betterAuth(createAuthOptions(ctx))
-}
+// Pre-traffic operator ceremony: provision/rotate the one official JWT key graph.
+export const { rotateSigningKey } = authComponent.jwksOperatorFunctions(createAuth)
 
-export const { onCreate, onUpdate, onDelete } = authComponent.triggersApi()
+export async function createAuth(ctx: AuthCtx<DataModel>) {
+  try {
+    const siteUrl = requireAuthOrigin('SITE_URL')
+    const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
+    const authIssuer = `${siteUrl}/api/auth`
+    assertAuthSecretsConfigured()
+
+    const auth = betterAuth({
+      account: { encryptOAuthTokens: true, storeAccountCookie: false },
+      advanced: {
+        ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] },
+      },
+      basePath: '/api/auth',
+      baseURL: siteUrl,
+      database: authComponent.adapter(ctx),
+      disabledPaths: [
+        '/token',
+        '/get-access-token',
+        '/refresh-token',
+        '/.well-known/openid-configuration',
+        '/oauth2/register',
+        '/oauth2/introspect',
+        '/oauth2/userinfo',
+        '/oauth2/end-session',
+      ],
+      plugins: [
+        ...createLocalAuthPlugins(authIssuer),
+        convexAuth({
+          authConfig: { providers: [getConvexAuthProvider()] },
+          sessionJwt: {
+            audience: 'convex',
+            expirationTime: '15m',
+            issuer: convexSiteUrl,
+          },
+        }),
+      ],
+      rateLimit: {
+        enabled: true,
+        modelName: 'rateLimit',
+        storage: 'database',
+      },
+      trustedOrigins: [siteUrl],
+      verification: { storeIdentifier: 'hashed' },
+    })
+
+    await auth.$context
+    return auth
+  } catch {
+    throw new Error('AUTH_CONFIG_INVALID')
+  }
+}

@@ -10,6 +10,7 @@ import {
   BETTER_AUTH_SESSION_COOKIE_NAME,
   filterBetterAuthCookies,
   getBetterAuthSessionToken,
+  hasBetterAuthCookie,
   hasSetCookieDomainAttribute,
   isBetterAuthCookieName,
   isBetterAuthSetCookie,
@@ -26,28 +27,32 @@ describe('configuration and cookie security regressions', () => {
   })
 
   it.each([
-    ['https://DEMO.convex.site:443/', 'https://demo.convex.site'],
+    ['https://demo.convex.site/', 'https://demo.convex.site'],
     ['https://demo.convex.site:444/', 'https://demo.convex.site:444'],
-    ['https://bücher.example/', 'https://xn--bcher-kva.example'],
-    ['https://demo.convex.site./', 'https://demo.convex.site.'],
+    ['https://xn--bcher-kva.example/', 'https://xn--bcher-kva.example'],
     ['http://localhost:3211/', 'http://localhost:3211'],
-    ['http://preview.localhost:3211/', 'http://preview.localhost:3211'],
-    ['http://127.1:3211/', 'http://127.0.0.1:3211'],
-    ['http://2130706433:3211/', 'http://127.0.0.1:3211'],
-    ['http://[0:0:0:0:0:0:0:1]:3211/', 'http://[::1]:3211'],
-  ])('canonicalizes the configured origin %s', (input, expected) => {
+    ['http://127.0.0.1:3211/', 'http://127.0.0.1:3211'],
+    ['http://[::1]:3211/', 'http://[::1]:3211'],
+  ])('accepts a canonical configured origin %s', (input, expected) => {
     expect(normalizeConvexSiteUrl(input)).toBe(expected)
   })
 
   it.each([
     'http://example.test',
     'http://localhost.',
+    'http://preview.localhost:3211/',
+    'http://127.1:3211/',
+    'http://2130706433:3211/',
+    'http://[0:0:0:0:0:0:0:1]:3211/',
     'http://127.0.0.1.example.test',
     'http://[::ffff:127.0.0.1]',
     'https://example.test/path',
     'https://example.test/?query=1',
     'https://example.test/#fragment',
     'https://user@example.test',
+    'https://DEMO.convex.site:443/',
+    'https://demo.convex.site./',
+    'https://bücher.example/',
     'ftp://example.test',
   ])('rejects a non-origin or non-loopback HTTP destination: %s', (input) => {
     expect(() => normalizeConvexSiteUrl(input)).toThrow()
@@ -87,14 +92,15 @@ describe('configuration and cookie security regressions', () => {
     ['__Secure-better-auth.session_token=secure', 'secure'],
     ['better-auth.session_token=stale; __Secure-better-auth.session_token=current', 'current'],
     ['__Secure-better-auth.session_token=current; better-auth.session_token=stale', 'current'],
-  ])('matches pinned Better Auth session-cookie selection for %s', (cookie, expected) => {
+  ])('matches supported Better Auth session-cookie selection for %s', (cookie, expected) => {
     expect(getBetterAuthSessionToken(cookie)).toBe(expected)
     expect(getPinnedSessionCookie(new Headers({ cookie }))).toBe(expected)
   })
 
   it('matches pinned duplicate/path ordering while preserving duplicate wire pairs', () => {
-    // Browsers send longer-path cookies before shorter-path cookies. Better Auth
-    // 1.6.23 uses the last duplicate, so custom cookie paths are unsupported.
+    // Browsers send longer-path cookies before shorter-path cookies. The
+    // supported Better Auth tuple uses the last duplicate, so custom cookie
+    // paths are unsupported.
     const cookie =
       'better-auth.session_token=longer-path; better-auth.session_token=root-path; better-auth.state=first; better-auth.state=second'
     expect(getBetterAuthSessionToken(cookie)).toBe('root-path')
@@ -126,6 +132,13 @@ describe('configuration and cookie security regressions', () => {
     expect(filterBetterAuthCookies(header)).toBe(supported.join('; '))
   })
 
+  it('detects supported credentials even when a cookie pair is malformed', () => {
+    expect(hasBetterAuthCookie('unrelated=value; better-auth.session_token')).toBe(true)
+    expect(hasBetterAuthCookie('__Secure-better-auth.session_token=invalid')).toBe(true)
+    expect(hasBetterAuthCookie('better-auth.two_factor=pending')).toBe(true)
+    expect(hasBetterAuthCookie('unrelated=value')).toBe(false)
+  })
+
   it.each([
     'custom.session_token',
     '__Secure-custom.session_token',
@@ -154,7 +167,7 @@ describe('configuration and cookie security regressions', () => {
     expect(filterBetterAuthCookies('better-auth.session_token=line\nbreak')).toBeNull()
   })
 
-  it('keeps parsing and filtering property-aligned with Better Auth 1.6.23', () => {
+  it('keeps parsing and filtering property-aligned with the supported Better Auth tuple', () => {
     let state = 99_353_829
     const random = (): number => {
       state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0

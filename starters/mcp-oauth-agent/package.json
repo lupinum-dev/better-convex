@@ -1,0 +1,31 @@
+{
+  "name": "better-convex-nuxt-starter-mcp-oauth-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --dotenv .env.local",
+    "build": "nuxt build --dotenv .env.local",
+    "convex:configure": "nuxi prepare --dotenv .env.local && better-convex-nuxt-convex configure",
+    "convex:codegen": "nuxi prepare --dotenv .env.local && better-convex-nuxt-convex codegen",
+    "convex:dev": "nuxi prepare --dotenv .env.local && better-convex-nuxt-convex dev",
+    "typecheck": "nuxt typecheck --dotenv .env.local",
+    "verify": "pnpm convex:codegen && pnpm typecheck && pnpm build"
+  },
+  "dependencies": {
+    "@better-auth/oauth-provider": "1.7.0-rc.2",
+    "@modelcontextprotocol/server": "2.0.0",
+    "better-auth": "1.7.0-rc.2",
+    "better-convex-mcp": "0.1.0-beta.28",
+    "better-convex-nuxt": "0.8.0-beta.40",
+    "convex": "1.42.2",
+    "nuxt": "4.5.1",
+    "vue": "3.5.40",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "~5.9.3",
+    "vue-tsc": "^3.3.7"
+  },
+  "packageManager": "pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1"
+}

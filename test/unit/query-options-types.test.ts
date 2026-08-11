@@ -1,16 +1,19 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
 import { describe, expectTypeOf, it } from 'vitest'
-import type { ComputedRef, MaybeRefOrGetter } from 'vue'
+import type { ComputedRef } from 'vue'
 
-import type { DefineSharedConvexQueryOptions } from '../../src/runtime/composables/defineSharedConvexQuery'
 import type {
-  ConvexPaginatedQueryArgs,
-  UseConvexPaginatedQueryOptions,
+  NuxtConvexPaginatedQuery,
+  PaginatedQueryArgs,
+  UseConvexPaginatedQueryState,
+  UseNuxtConvexPaginatedQueryOptions,
 } from '../../src/runtime/composables/useConvexPaginatedQuery'
 import type {
   ConvexQueryArgs,
-  UseConvexQueryData,
+  NuxtConvexQuery,
+  UseConvexQueryState,
   UseConvexQueryOptions,
+  UseNuxtConvexQueryOptions,
 } from '../../src/runtime/composables/useConvexQuery'
 import type { ConvexCallError } from '../../src/runtime/errors'
 import type { ConvexAuthMode } from '../../src/runtime/utils/auth-status'
@@ -19,26 +22,37 @@ import type { ConvexAuthMode } from '../../src/runtime/utils/auth-status'
 // erased at compile time, so these never trigger a runtime `#imports` resolve
 // in the node/unit vitest environment while still type-checking call arity.
 declare const useConvexQuery: typeof import('../../src/runtime/composables/useConvexQuery').useConvexQuery
-declare const useConvexUser: typeof import('../../src/runtime/composables/useConvexUser').useConvexUser
 declare const useConvexPaginatedQuery: typeof import('../../src/runtime/composables/useConvexPaginatedQuery').useConvexPaginatedQuery
-declare const defineSharedConvexQuery: typeof import('../../src/runtime/composables/defineSharedConvexQuery').defineSharedConvexQuery
 
 type Assert<T extends true> = T
 type HasKey<T, K extends PropertyKey> = K extends keyof T ? true : false
 type IsEqual<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 
-type QueryOptions = UseConvexQueryOptions<string[]>
-type PaginatedOptions = UseConvexPaginatedQueryOptions<{ id: string }>
+type QueryOptions = UseNuxtConvexQueryOptions
+type PaginatedOptions = UseNuxtConvexPaginatedQueryOptions
 type QueryArgs = ConvexQueryArgs<{ id: string }>
-type PaginatedArgs = ConvexPaginatedQueryArgs<{ id: string }>
-type QueryData = UseConvexQueryData<string>
-
-type _QueryUsesInitialData = Assert<
-  IsEqual<QueryOptions['initialData'], string[] | (() => string[] | undefined) | undefined>
+type ExamplePaginatedReference = FunctionReference<
+  'query',
+  'public',
+  { id: string; paginationOpts: PaginationOptions },
+  PaginationResult<{ id: string }>
 >
-type _PaginatedUsesInitialData = Assert<
-  IsEqual<PaginatedOptions['initialData'], { id: string }[] | (() => { id: string }[]) | undefined>
+type PaginatedArgs = PaginatedQueryArgs<ExamplePaginatedReference> | 'skip'
+type QueryData = UseConvexQueryState<string>
+type PaginatedData = UseConvexPaginatedQueryState<{ id: string }>
+
+type _VueQueryOptionBudget = Assert<
+  IsEqual<keyof UseConvexQueryOptions, 'auth' | 'keepPreviousData'>
+>
+type _NuxtQueryOptionBudget = Assert<
+  IsEqual<keyof QueryOptions, 'auth' | 'keepPreviousData' | 'server'>
+>
+type _NuxtPaginationOptionBudget = Assert<
+  IsEqual<keyof PaginatedOptions, 'auth' | 'initialNumItems' | 'keepPreviousData' | 'server'>
+>
+type _NuxtPaginationDoesNotExposeAdapterInitialPage = Assert<
+  IsEqual<HasKey<PaginatedOptions, 'initialPage'>, false>
 >
 
 type _QueryHasNoDefaultOption = Assert<IsEqual<HasKey<QueryOptions, 'default'>, false>>
@@ -55,25 +69,38 @@ type _PaginatedHasAuthOption = Assert<IsEqual<PaginatedOptions['auth'], ConvexAu
 type _AuthModeLiterals = Assert<IsEqual<ConvexAuthMode, 'required' | 'optional' | 'none'>>
 type _QueryArgsUseOnlySkipSentinel = Assert<IsEqual<QueryArgs, { id: string } | 'skip'>>
 type _PaginatedArgsUseOnlySkipSentinel = Assert<IsEqual<PaginatedArgs, { id: string } | 'skip'>>
-// defineSharedConvexQuery's public `args` field dialect is 'skip' only.
-type SharedQueryArgs = DefineSharedConvexQueryOptions<
-  FunctionReference<'query', 'public', { id: string }, string>,
-  { id: string } | 'skip'
->['args']
-type _SharedQueryArgsUseOnlySkipSentinel = Assert<
-  IsEqual<SharedQueryArgs, MaybeRefOrGetter<{ id: string } | 'skip'>>
->
 
-type _QueryDataIsReadonlyComputed = Assert<IsEqual<QueryData['data'], ComputedRef<string | null>>>
-type _QueryErrorIsComputedErrorNull = Assert<
-  IsEqual<QueryData['error'], ComputedRef<ConvexCallError | null>>
+type _QueryDataIsReadonlyComputed = Assert<
+  IsEqual<QueryData['data'], ComputedRef<string | undefined>>
+>
+type _QueryErrorIsComputedErrorUndefined = Assert<
+  IsEqual<QueryData['error'], ComputedRef<ConvexCallError | undefined>>
+>
+type _QueryHasNoClear = Assert<IsEqual<HasKey<QueryData, 'clear'>, false>>
+type _NuxtQueryIsNativePromiseContract = Assert<
+  NuxtConvexQuery<string> extends Promise<UseConvexQueryState<string>> ? true : false
+>
+type _PaginationDataIsReadonlyComputed = Assert<
+  IsEqual<PaginatedData['data'], ComputedRef<readonly { id: string }[] | undefined>>
+>
+type _PaginationErrorIsComputedErrorUndefined = Assert<
+  IsEqual<PaginatedData['error'], ComputedRef<ConvexCallError | undefined>>
+>
+type _PaginationHasNoHydrationProtocol = Assert<
+  IsEqual<HasKey<PaginatedData, 'firstPageSettled'>, false>
+>
+type _NuxtPaginationIsNativePromiseContract = Assert<
+  NuxtConvexPaginatedQuery<{ id: string }> extends Promise<
+    UseConvexPaginatedQueryState<{ id: string }>
+  >
+    ? true
+    : false
 >
 
 // ============================================================================
-// Negative-space call-arity contracts (decision 9), mirrored against `src`.
-// These lines exercise the always-required positional args slot; reverting the
-// rest-tuple change breaks the `@ts-expect-error` lines. `_arityContracts` is
-// never called.
+// Negative-space call-arity contracts mirrored against `src`. Exactly-empty
+// queries may omit args; validators with any declared key keep the positional
+// args slot. `_arityContracts` is never called.
 // ============================================================================
 
 // Convex codegen emits `{}` for argless functions.
@@ -111,18 +138,16 @@ declare const reqArgPaginated: FunctionReference<
 
 async function _arityContracts() {
   // --- Public type assertions -----------------------------------------------
+  void useConvexQuery(noArgQuery)
   void useConvexQuery(noArgQuery, {})
   void useConvexQuery(noArgQuery, 'skip')
-  // @ts-expect-error args are always positional
-  void useConvexQuery(noArgQuery)
+  void useConvexQuery(noArgQuery, {}, { server: false })
   // @ts-expect-error null is not the skip sentinel
   void useConvexQuery(noArgQuery, null)
+  // @ts-expect-error undefined is not the skip sentinel
+  void useConvexQuery(noArgQuery, undefined)
   // @ts-expect-error options cannot occupy an exact-empty args slot
   void useConvexQuery(noArgQuery, { server: false })
-  // @ts-expect-error shared queries always declare args
-  void defineSharedConvexQuery({ key: 'settings', query: noArgQuery })
-  // @ts-expect-error canonical user queries require positional args
-  void useConvexUser(noArgQuery)
 
   // --- useConvexQuery: required / wrong-shape ----------------------------
   void useConvexQuery(reqArgQuery, { id: 'x' })
@@ -154,36 +179,21 @@ async function _arityContracts() {
   void useConvexQuery(unionOptArgQuery, { wrong: 1 })
 
   // --- useConvexPaginatedQuery -------------------------------------------
+  void useConvexPaginatedQuery(noArgPaginated, {}, { initialNumItems: 10 })
+  void useConvexPaginatedQuery(noArgPaginated, 'skip', { initialNumItems: 10 })
+  // @ts-expect-error pagination options are required
   void useConvexPaginatedQuery(noArgPaginated, {})
   // @ts-expect-error no-arg paginated queries still require the args slot
   void useConvexPaginatedQuery(noArgPaginated)
-  // @ts-expect-error options object must not be accepted in the args slot
-  void useConvexPaginatedQuery(noArgPaginated, { initialNumItems: 5 })
-  void useConvexPaginatedQuery(reqArgPaginated, { owner: 'x' })
+  // @ts-expect-error null is not the paginated skip sentinel
+  void useConvexPaginatedQuery(noArgPaginated, null, { initialNumItems: 10 })
+  // @ts-expect-error undefined is not the paginated skip sentinel
+  void useConvexPaginatedQuery(noArgPaginated, undefined, { initialNumItems: 10 })
+  void useConvexPaginatedQuery(reqArgPaginated, { owner: 'x' }, { initialNumItems: 10 })
   // @ts-expect-error required paginated args must not be omittable
   void useConvexPaginatedQuery(reqArgPaginated)
   // @ts-expect-error wrong paginated arg shape must not compile
-  void useConvexPaginatedQuery(reqArgPaginated, { wrong: 1 })
-
-  // --- useConvexUser -----------------------------------------------------
-  void useConvexUser(reqArgQuery, { id: 'x' })
-  // @ts-expect-error required args must not be omittable
-  void useConvexUser(reqArgQuery)
-  // @ts-expect-error wrong arg shape must not compile
-  void useConvexUser(reqArgQuery, { wrong: 1 })
-
-  // --- defineSharedConvexQuery: args field always required ---------------
-  defineSharedConvexQuery({ key: 'k1', query: noArgQuery, args: {} })
-  defineSharedConvexQuery({ key: 'k2', query: reqArgQuery, args: { id: 'x' } })
-  // @ts-expect-error no-arg shared queries still declare args
-  defineSharedConvexQuery({ key: 'k1b', query: noArgQuery })
-  // @ts-expect-error required args field must not be omittable
-  defineSharedConvexQuery({ key: 'k3', query: reqArgQuery })
-  // @ts-expect-error wrong args field shape must not compile
-  defineSharedConvexQuery({ key: 'k4', query: reqArgQuery, args: { wrong: 1 } })
-  defineSharedConvexQuery({ key: 'k5', query: reqArgQuery, args: 'skip' })
-  // @ts-expect-error null is not the skip sentinel (decision 9)
-  defineSharedConvexQuery({ key: 'k6', query: reqArgQuery, args: null })
+  void useConvexPaginatedQuery(reqArgPaginated, { wrong: 1 }, { initialNumItems: 10 })
 }
 
 describe('query option type contracts', () => {

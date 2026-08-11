@@ -1,14 +1,15 @@
 <script setup lang="ts">
 const router = useRouter()
-const { isAuthenticated, signIn } = useConvexAuth()
+const { status, isPending, error: authError, client } = useConvexAuth()
 
-const isLoading = ref(false)
+const signInError = ref<string | null>(null)
+const visibleError = computed(() => signInError.value ?? authError.value?.message ?? null)
 
 // Redirect to demo if already authenticated
 watch(
-  isAuthenticated,
-  (authenticated) => {
-    if (authenticated) {
+  status,
+  (nextStatus) => {
+    if (nextStatus === 'authenticated') {
       router.push('/demo')
     }
   },
@@ -21,14 +22,16 @@ const providers = [
     icon: 'i-simple-icons-github',
     color: 'neutral' as const,
     onClick: async () => {
-      isLoading.value = true
+      if (isPending.value) return
+      signInError.value = null
       try {
-        await signIn.social({
+        if (!client) throw new Error('Authentication client unavailable')
+        await client.signIn.social({
           provider: 'github',
           callbackURL: '/demo',
         })
       } catch {
-        isLoading.value = false
+        signInError.value = 'Sign in could not be completed.'
       }
     },
   },
@@ -43,8 +46,9 @@ const providers = [
         description="Sign in to explore real-time features"
         icon="i-lucide-flask-conical"
         :providers="providers"
-        :loading="isLoading"
+        :loading="isPending || status === 'loading'"
       >
+        <UAlert v-if="visibleError" color="error" :description="visibleError" />
         <template #footer>
           <p class="text-xs text-muted">
             Your GitHub profile will be used for display purposes only.

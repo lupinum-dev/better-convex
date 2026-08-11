@@ -1,0 +1,2682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Superseded research: OAuth Provider, MCP &amp; SSO Strategy for Better Convex Nuxt</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit;font-family:system-ui,sans-serif}.superseded{box-sizing:border-box;width:100%;max-width:736px;margin:0 auto 1rem;padding:.75rem 1rem;border:2px solid #d97706;background:#fffbeb;color:#451a03;line-height:1.45}.superseded a{color:inherit;font-weight:700}iframe{display:block;width:100%;max-width:736px;height:calc(100vh - 9rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<aside class="superseded" role="note"><strong>Superseded historical research snapshot.</strong> This 16 July 2026 report is retained only as provenance. Its migration, compatibility-fallback, companion-package, and legacy-provider recommendations are not supported implementation guidance. The reviewed greenfield hard cut in <a href="../../plan.md">plan.md</a> is authoritative: one fresh component, no migration, no dual path, and no compatibility shim.</aside>
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="OAuth Provider, MCP &amp; SSO Strategy for Better Convex Nuxt" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;OAuth Provider, MCP &amp;amp; SSO Strategy for Better Convex Nuxt&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(--background) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: light-dark(rgb(255 255 255), rgb(24 24 24));
+  --foreground: light-dark(rgb(26 28 31), rgb(255 255 255));
+  --card: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(rgb(255 255 255), rgb(45 45 45));
+  --popover-foreground: var(--foreground);
+  --primary: light-dark(rgb(51 156 255), rgb(131 195 255));
+  --primary-foreground: light-dark(rgb(255 255 255), rgb(13 13 13));
+  --secondary: light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%));
+  --secondary-foreground: var(--foreground);
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: light-dark(
+    rgb(26 28 31 / 49.4%),
+    rgb(255 255 255 / 49.8%)
+  );
+  --accent: light-dark(rgb(229 242 255), rgb(13 39 63));
+  --accent-foreground: var(--primary);
+  --destructive: light-dark(rgb(226 85 7), rgb(255 133 73));
+  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%));
+  --input: light-dark(
+    rgb(26 28 31 / 11.8%),
+    color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+  );
+  --ring: light-dark(rgb(51 156 255), rgb(131 195 255 / 76%));
+  --font-size-base: 14px;
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: 12.5px;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+  --color-background-primary: var(--background);
+  --color-text-primary: var(--foreground);
+  --color-border-secondary: var(--border);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--viz-font-weight-medium);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed=&quot;true&quot;],
+    [aria-selected=&quot;true&quot;],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div id=&quot;oauth-provider-strategy-report&quot;&gt;
+  &lt;style&gt;
+    #oauth-provider-strategy-report {
+      color: var(--foreground);
+      background: transparent;
+      padding: 1rem;
+    }
+
+    #oauth-provider-strategy-report * {
+      box-sizing: border-box;
+    }
+
+    #oauth-provider-strategy-report .report-shell {
+      max-width: 70rem;
+      margin: 0 auto;
+    }
+
+    #oauth-provider-strategy-report .hero {
+      padding: 2rem 0 2.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #oauth-provider-strategy-report .eyebrow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 1rem;
+      color: var(--muted-foreground);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #oauth-provider-strategy-report .hero h1 {
+      max-width: 18ch;
+      margin: 0;
+    }
+
+    #oauth-provider-strategy-report .lede {
+      max-width: 64ch;
+      margin: 1rem 0 0;
+      color: var(--muted-foreground);
+    }
+
+    #oauth-provider-strategy-report .verdict {
+      margin-top: 1.5rem;
+      padding: 1.25rem 0 1.25rem 1.25rem;
+      border-left: 4px solid var(--viz-series-1);
+    }
+
+    #oauth-provider-strategy-report .verdict p {
+      margin: 0.35rem 0 0;
+      max-width: 68ch;
+    }
+
+    #oauth-provider-strategy-report .status-row,
+    #oauth-provider-strategy-report .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-top: 1.25rem;
+    }
+
+    #oauth-provider-strategy-report .toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      padding: 1rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #oauth-provider-strategy-report .toc a {
+      color: var(--muted-foreground);
+      text-decoration: none;
+    }
+
+    #oauth-provider-strategy-report .toc a:hover {
+      color: var(--foreground);
+      text-decoration: underline;
+    }
+
+    #oauth-provider-strategy-report .report-section {
+      padding: 2.5rem 0;
+      border-bottom: 1px solid var(--border);
+      scroll-margin-top: 1rem;
+    }
+
+    #oauth-provider-strategy-report .section-heading {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    #oauth-provider-strategy-report .section-heading h2,
+    #oauth-provider-strategy-report .section-heading p {
+      margin: 0;
+    }
+
+    #oauth-provider-strategy-report .section-heading p {
+      max-width: 68ch;
+      color: var(--muted-foreground);
+    }
+
+    #oauth-provider-strategy-report .decision-grid,
+    #oauth-provider-strategy-report .two-col,
+    #oauth-provider-strategy-report .three-col {
+      display: grid;
+      gap: 1rem;
+    }
+
+    #oauth-provider-strategy-report .decision-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #oauth-provider-strategy-report .two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #oauth-provider-strategy-report .three-col {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    #oauth-provider-strategy-report .card {
+      min-width: 0;
+    }
+
+    #oauth-provider-strategy-report .card h3,
+    #oauth-provider-strategy-report .card p {
+      margin-top: 0;
+    }
+
+    #oauth-provider-strategy-report .card p:last-child,
+    #oauth-provider-strategy-report .card ul:last-child {
+      margin-bottom: 0;
+    }
+
+    #oauth-provider-strategy-report .decision-word {
+      display: block;
+      margin-bottom: 0.4rem;
+      color: var(--muted-foreground);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    #oauth-provider-strategy-report .callout {
+      margin: 1.25rem 0;
+      padding: 0.25rem 0 0.25rem 1rem;
+      border-left: 3px solid var(--border);
+    }
+
+    #oauth-provider-strategy-report .callout.recommended {
+      border-left-color: var(--viz-series-1);
+    }
+
+    #oauth-provider-strategy-report .callout.warning {
+      border-left-color: var(--viz-series-3);
+    }
+
+    #oauth-provider-strategy-report .callout.danger {
+      border-left-color: var(--destructive);
+    }
+
+    #oauth-provider-strategy-report .callout p {
+      margin: 0.35rem 0;
+    }
+
+    #oauth-provider-strategy-report .trust-map,
+    #oauth-provider-strategy-report .architecture-map,
+    #oauth-provider-strategy-report .collision-map {
+      display: grid;
+      gap: 0.75rem;
+      margin: 1.5rem 0;
+    }
+
+    #oauth-provider-strategy-report .trust-map {
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr) auto minmax(0, 1fr);
+      align-items: stretch;
+    }
+
+    #oauth-provider-strategy-report .architecture-map {
+      grid-template-columns: minmax(0, 0.9fr) auto minmax(0, 1.25fr) auto minmax(0, 1fr);
+      align-items: center;
+    }
+
+    #oauth-provider-strategy-report .collision-map {
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+    }
+
+    #oauth-provider-strategy-report .diagram-node {
+      min-width: 0;
+      padding: 1rem;
+      border-radius: 0.75rem;
+      background: color-mix(in srgb, var(--muted) 68%, transparent);
+    }
+
+    #oauth-provider-strategy-report .diagram-node.primary {
+      background: color-mix(in srgb, var(--viz-series-1) 15%, transparent);
+    }
+
+    #oauth-provider-strategy-report .diagram-node.secondary {
+      background: color-mix(in srgb, var(--viz-series-2) 15%, transparent);
+    }
+
+    #oauth-provider-strategy-report .diagram-node.warning {
+      background: color-mix(in srgb, var(--viz-series-3) 15%, transparent);
+    }
+
+    #oauth-provider-strategy-report .diagram-node.danger {
+      background: color-mix(in srgb, var(--destructive) 12%, transparent);
+    }
+
+    #oauth-provider-strategy-report .diagram-node h3,
+    #oauth-provider-strategy-report .diagram-node p {
+      margin-top: 0;
+    }
+
+    #oauth-provider-strategy-report .diagram-node p:last-child {
+      margin-bottom: 0;
+    }
+
+    #oauth-provider-strategy-report .diagram-arrow {
+      align-self: center;
+      color: var(--muted-foreground);
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    #oauth-provider-strategy-report .diagram-caption {
+      margin-top: 0.5rem;
+      color: var(--muted-foreground);
+    }
+
+    #oauth-provider-strategy-report .matrix {
+      margin-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    #oauth-provider-strategy-report .matrix-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) minmax(7rem, 0.7fr);
+      gap: 1rem;
+      padding: 1rem 0;
+      border-bottom: 1px solid var(--border);
+      align-items: start;
+    }
+
+    #oauth-provider-strategy-report .matrix-row.header {
+      color: var(--muted-foreground);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    #oauth-provider-strategy-report .matrix-row.recommended {
+      background: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--viz-series-1) 10%, transparent),
+        transparent
+      );
+    }
+
+    #oauth-provider-strategy-report .matrix-row &gt; * {
+      min-width: 0;
+      margin: 0;
+    }
+
+    #oauth-provider-strategy-report .matrix-row ul {
+      margin: 0;
+      padding-left: 1.1rem;
+    }
+
+    #oauth-provider-strategy-report .timeline {
+      display: grid;
+      gap: 0;
+      margin-top: 1.25rem;
+      counter-reset: phase;
+    }
+
+    #oauth-provider-strategy-report .timeline-item {
+      display: grid;
+      grid-template-columns: 2.25rem minmax(0, 1fr);
+      gap: 1rem;
+      position: relative;
+      padding-bottom: 1.5rem;
+    }
+
+    #oauth-provider-strategy-report .timeline-item::before {
+      counter-increment: phase;
+      content: counter(phase);
+      display: grid;
+      place-items: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 999px;
+      color: var(--primary-foreground);
+      background: var(--primary);
+    }
+
+    #oauth-provider-strategy-report .timeline-item:not(:last-child)::after {
+      content: &quot;&quot;;
+      position: absolute;
+      left: 1.08rem;
+      top: 2.35rem;
+      bottom: 0.1rem;
+      width: 1px;
+      background: var(--border);
+    }
+
+    #oauth-provider-strategy-report .timeline-item h3,
+    #oauth-provider-strategy-report .timeline-item p {
+      margin-top: 0;
+    }
+
+    #oauth-provider-strategy-report .timeline-item p:last-child,
+    #oauth-provider-strategy-report .timeline-item ul:last-child {
+      margin-bottom: 0;
+    }
+
+    #oauth-provider-strategy-report .sequence {
+      display: grid;
+      gap: 0;
+      margin: 1.25rem 0;
+      border-top: 1px solid var(--border);
+    }
+
+    #oauth-provider-strategy-report .sequence-step {
+      display: grid;
+      grid-template-columns: 3rem minmax(0, 1fr);
+      gap: 1rem;
+      padding: 0.85rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #oauth-provider-strategy-report .sequence-number {
+      color: var(--muted-foreground);
+    }
+
+    #oauth-provider-strategy-report .sequence-step p {
+      margin: 0;
+    }
+
+    #oauth-provider-strategy-report .ownership-list {
+      display: grid;
+      gap: 0;
+      border-top: 1px solid var(--border);
+      margin-top: 1rem;
+    }
+
+    #oauth-provider-strategy-report .ownership-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr);
+      gap: 1rem;
+      padding: 0.85rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #oauth-provider-strategy-report .ownership-row p {
+      margin: 0;
+    }
+
+    #oauth-provider-strategy-report .checklist {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    #oauth-provider-strategy-report .checklist li {
+      position: relative;
+      padding-left: 1.75rem;
+      margin: 0.6rem 0;
+    }
+
+    #oauth-provider-strategy-report .checklist li::before {
+      content: &quot;□&quot;;
+      position: absolute;
+      left: 0;
+      color: var(--muted-foreground);
+    }
+
+    #oauth-provider-strategy-report pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--muted) 70%, transparent);
+    }
+
+    #oauth-provider-strategy-report .source-group {
+      padding: 1rem 0;
+      border-top: 1px solid var(--border);
+    }
+
+    #oauth-provider-strategy-report .source-group h3 {
+      margin-top: 0;
+    }
+
+    #oauth-provider-strategy-report .source-group ul {
+      margin-bottom: 0;
+    }
+
+    #oauth-provider-strategy-report .source-group li {
+      margin: 0.55rem 0;
+      overflow-wrap: anywhere;
+    }
+
+    #oauth-provider-strategy-report .footnote {
+      color: var(--muted-foreground);
+    }
+
+    #oauth-provider-strategy-report .closing {
+      padding: 2.5rem 0 1rem;
+    }
+
+    #oauth-provider-strategy-report .closing h2 {
+      max-width: 22ch;
+    }
+
+    @media (max-width: 720px) {
+      #oauth-provider-strategy-report {
+        padding: 0.75rem;
+      }
+
+      #oauth-provider-strategy-report .decision-grid,
+      #oauth-provider-strategy-report .two-col,
+      #oauth-provider-strategy-report .three-col {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #oauth-provider-strategy-report .trust-map,
+      #oauth-provider-strategy-report .architecture-map,
+      #oauth-provider-strategy-report .collision-map {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #oauth-provider-strategy-report .diagram-arrow {
+        transform: rotate(90deg);
+      }
+
+      #oauth-provider-strategy-report .matrix-row,
+      #oauth-provider-strategy-report .ownership-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.45rem;
+      }
+
+      #oauth-provider-strategy-report .matrix-row.header {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.5rem;
+      }
+    }
+
+    @media print {
+      #oauth-provider-strategy-report .toc {
+        display: none;
+      }
+
+      #oauth-provider-strategy-report .report-section,
+      #oauth-provider-strategy-report .hero {
+        break-inside: avoid;
+      }
+
+      #oauth-provider-strategy-report a {
+        color: inherit;
+      }
+    }
+  &lt;/style&gt;
+
+  &lt;main class=&quot;report-shell&quot;&gt;
+    &lt;header class=&quot;hero&quot;&gt;
+      &lt;div class=&quot;eyebrow text-small&quot;&gt;
+        &lt;span&gt;Strategic research&lt;/span&gt;
+        &lt;span aria-hidden=&quot;true&quot;&gt;•&lt;/span&gt;
+        &lt;span&gt;Research snapshot: 16 July 2026&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;h1&gt;OAuth Provider, MCP &amp;amp; SSO for Better Convex Nuxt&lt;/h1&gt;
+      &lt;p class=&quot;lede&quot;&gt;
+        A build-versus-buy, upstream-versus-fork, package-boundary, security, and
+        rollout recommendation for making modern agentic applications a first-class
+        capability without turning the Nuxt integration into a second identity platform.
+      &lt;/p&gt;
+
+      &lt;div class=&quot;verdict&quot; aria-label=&quot;Executive verdict&quot;&gt;
+        &lt;strong&gt;Proceed—but own the integration, not the OAuth protocol implementation.&lt;/strong&gt;
+        &lt;p&gt;
+          Modernize the Convex Better Auth component around Better Auth 1.7 and its
+          official OAuth Provider, contribute that work upstream, and ship a public
+          OAuth/MCP starter first. Do not adopt PR #380 as-is, do not run old and new
+          providers side by side, and do not build a custom authorization server unless
+          the official provider is proven structurally unusable.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;status-row&quot; aria-label=&quot;Current package status&quot;&gt;
+        &lt;span class=&quot;viz-badge&quot;&gt;Better Auth stable 1.6.23&lt;/span&gt;
+        &lt;span class=&quot;viz-badge&quot;&gt;Better Auth RC 1.7.0-rc.1&lt;/span&gt;
+        &lt;span class=&quot;viz-badge&quot;&gt;@convex-dev/better-auth 0.12.5&lt;/span&gt;
+        &lt;span class=&quot;viz-badge&quot;&gt;MCP spec 2025-11-25&lt;/span&gt;
+      &lt;/div&gt;
+    &lt;/header&gt;
+
+    &lt;nav class=&quot;toc text-small&quot; aria-label=&quot;Report contents&quot;&gt;
+      &lt;a href=&quot;#decision&quot;&gt;Decision&lt;/a&gt;
+      &lt;a href=&quot;#boundaries&quot;&gt;Trust boundaries&lt;/a&gt;
+      &lt;a href=&quot;#current-state&quot;&gt;Current blockers&lt;/a&gt;
+      &lt;a href=&quot;#version-gate&quot;&gt;Version gate&lt;/a&gt;
+      &lt;a href=&quot;#options&quot;&gt;Options&lt;/a&gt;
+      &lt;a href=&quot;#pr-380&quot;&gt;PR #380&lt;/a&gt;
+      &lt;a href=&quot;#architecture&quot;&gt;Architecture&lt;/a&gt;
+      &lt;a href=&quot;#package&quot;&gt;Package shape&lt;/a&gt;
+      &lt;a href=&quot;#flows&quot;&gt;Agent flows&lt;/a&gt;
+      &lt;a href=&quot;#sso&quot;&gt;SSO&lt;/a&gt;
+      &lt;a href=&quot;#security&quot;&gt;Security&lt;/a&gt;
+      &lt;a href=&quot;#roadmap&quot;&gt;Roadmap&lt;/a&gt;
+      &lt;a href=&quot;#custom-fallback&quot;&gt;Custom fallback&lt;/a&gt;
+      &lt;a href=&quot;#sources&quot;&gt;Sources&lt;/a&gt;
+    &lt;/nav&gt;
+
+    &lt;section id=&quot;decision&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;1. The decision&lt;/h2&gt;
+        &lt;p&gt;
+          This is strategically worth doing. The library should make delegated agent
+          access easy, interoperable, and secure—but the capability must stay aligned
+          with the library’s existing source-of-truth boundaries.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;decision-grid&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;span class=&quot;decision-word text-small&quot;&gt;Own&lt;/span&gt;
+          &lt;h3&gt;The developer experience&lt;/h3&gt;
+          &lt;p&gt;
+            Own setup, Nuxt routing, Convex integration, discovery, resource verification,
+            starter code, consent UX, test fixtures, and a tested compatibility matrix.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;span class=&quot;decision-word text-small&quot;&gt;Reuse&lt;/span&gt;
+          &lt;h3&gt;The protocol engine&lt;/h3&gt;
+          &lt;p&gt;
+            Use &lt;code&gt;@better-auth/oauth-provider&lt;/code&gt; and the 1.7 extension surface.
+            OAuth grant, replay, rotation, registration, and security-patch ownership
+            should remain upstream.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;span class=&quot;decision-word text-small&quot;&gt;Keep out of core&lt;/span&gt;
+          &lt;h3&gt;Stateful OAuth configuration&lt;/h3&gt;
+          &lt;p&gt;
+            Ordinary &lt;code&gt;better-convex-nuxt&lt;/code&gt; users should not inherit OAuth tables,
+            migrations, consent pages, or protocol endpoints when they only need sessions.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;span class=&quot;decision-word text-small&quot;&gt;Separate&lt;/span&gt;
+          &lt;h3&gt;Inbound enterprise SSO&lt;/h3&gt;
+          &lt;p&gt;
+            OAuth Provider, inbound OIDC/SAML SSO, and enterprise-managed MCP authorization
+            are different trust directions. They can share identity, but not one package
+            or one data model.
+          &lt;/p&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout recommended&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Recommended product position&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          “Better Convex Nuxt gives you a proven path from web sessions to delegated
+          agents and MCP—using standards-compliant OAuth infrastructure, Convex-native
+          authorization, and production acceptance tests.”
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout warning&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Do not claim production readiness on the current stable tuple.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Better Auth’s complete resource-indicator fix is in the 1.7 prerelease line,
+          while &lt;code&gt;@convex-dev/better-auth@0.12.5&lt;/code&gt; explicitly peers on
+          &lt;code&gt;better-auth &amp;lt;1.7.0&lt;/code&gt;. The correct near-term label is experimental,
+          exactly pinned, and release-gated by real Convex cloud interoperability.
+        &lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;boundaries&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;2. Three directions of trust&lt;/h2&gt;
+        &lt;p&gt;
+          “OAuth,” “SSO,” and “agent auth” sound adjacent, but conflating them is how a
+          library accidentally creates two identity systems and unclear authorization.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;trust-map&quot; role=&quot;group&quot; aria-label=&quot;Three trust directions: inbound SSO, delegated OAuth for agents, and enterprise-managed MCP authorization&quot;&gt;
+        &lt;div class=&quot;diagram-node secondary&quot;&gt;
+          &lt;h3&gt;Inbound SSO&lt;/h3&gt;
+          &lt;p&gt;&lt;strong&gt;Customer IdP → your app&lt;/strong&gt;&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            Okta, Entra, Google Workspace, or another enterprise IdP authenticates a user
+            into the application.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;diagram-arrow&quot; aria-hidden=&quot;true&quot;&gt;→&lt;/div&gt;
+        &lt;div class=&quot;diagram-node primary&quot;&gt;
+          &lt;h3&gt;Your application identity plane&lt;/h3&gt;
+          &lt;p&gt;&lt;strong&gt;Better Auth + Convex&lt;/strong&gt;&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            Better Auth owns users and sessions. Convex owns organizations, roles,
+            delegations, approvals, and domain authorization.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;diagram-arrow&quot; aria-hidden=&quot;true&quot;&gt;←&lt;/div&gt;
+        &lt;div class=&quot;diagram-node warning&quot;&gt;
+          &lt;h3&gt;Delegated agent OAuth&lt;/h3&gt;
+          &lt;p&gt;&lt;strong&gt;MCP client / agent → your app&lt;/strong&gt;&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            The app acts as authorization server; an MCP resource accepts scoped,
+            resource-bound access tokens.
+          &lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;A third flow sits across both:&lt;/strong&gt; Enterprise-Managed Authorization (EMA).&lt;/p&gt;
+        &lt;p&gt;
+          The user signs into an MCP host through the enterprise IdP. The client retains
+          that login identity assertion, uses it to request an ID-JAG from the IdP, and
+          exchanges the ID-JAG at the MCP authorization server for a resource-bound access
+          token. EMA is now a stable MCP extension, but it is a later enterprise
+          phase—not a reason to merge SSO and OAuth Provider today.
+        &lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;current-state&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;3. What is actually blocked today&lt;/h2&gt;
+        &lt;p&gt;
+          The current failure is not “Convex cannot do OAuth.” It is a set of concrete
+          component-composition and adapter-contract problems that can be fixed.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Blocker A — endpoint-key collision breaks the Convex session token&lt;/h3&gt;
+      &lt;div class=&quot;collision-map&quot; role=&quot;group&quot; aria-label=&quot;Current Convex plugin and official OAuth Provider collide on endpoint object keys&quot;&gt;
+        &lt;div class=&quot;diagram-node primary&quot;&gt;
+          &lt;h3&gt;Current &lt;code&gt;convex()&lt;/code&gt;&lt;/h3&gt;
+          &lt;p&gt;Embeds legacy &lt;code&gt;oidcProvider&lt;/code&gt; + JWT behavior.&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            Endpoint object keys include &lt;code&gt;getToken&lt;/code&gt;, &lt;code&gt;getJwks&lt;/code&gt;,
+            and &lt;code&gt;getOpenIdConfig&lt;/code&gt;, serving paths such as
+            &lt;code&gt;/convex/token&lt;/code&gt;.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;diagram-arrow&quot; aria-hidden=&quot;true&quot;&gt;×&lt;/div&gt;
+        &lt;div class=&quot;diagram-node danger&quot;&gt;
+          &lt;h3&gt;Official OAuth Provider + &lt;code&gt;jwt()&lt;/code&gt;&lt;/h3&gt;
+          &lt;p&gt;Registers the same endpoint object keys.&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            Better Auth’s shallow endpoint merge overwrites earlier definitions. The
+            authenticated &lt;code&gt;/convex/token&lt;/code&gt; route disappears and the app bounces
+            back to login.
+          &lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+      &lt;p class=&quot;diagram-caption text-small&quot;&gt;
+        Source inspection refines the hypothesis in
+        &lt;a href=&quot;https://github.com/get-convex/better-auth/issues/395&quot;&gt;issue #395&lt;/a&gt;:
+        the collision is in endpoint map keys, not proof that Convex JWTs and OAuth access
+        tokens are fundamentally incompatible.
+      &lt;/p&gt;
+
+      &lt;div class=&quot;callout warning&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;There are two linked composition problems.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          OAuth Provider expects &lt;code&gt;getPlugin(&quot;jwt&quot;)&lt;/code&gt;, while
+          &lt;code&gt;convex()&lt;/code&gt; hides its internal JWT behavior behind plugin id
+          &lt;code&gt;convex&lt;/code&gt;. Adding a second explicit &lt;code&gt;jwt()&lt;/code&gt; satisfies that
+          lookup but introduces the endpoint/JWKS collisions above. Namespacing endpoint
+          keys alone is therefore insufficient: the fix needs one composed graph that
+          exposes and reuses the existing JWT implementation and one JWKS source.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Blocker B — refresh-token rotation is broken and not safely atomic&lt;/h3&gt;
+      &lt;div class=&quot;two-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Null semantics&lt;/h3&gt;
+          &lt;p&gt;
+            OAuth Provider creates a refresh token without a &lt;code&gt;revoked&lt;/code&gt; field,
+            then rotates it with a guard equivalent to &lt;code&gt;revoked == null&lt;/code&gt;.
+            Convex distinguishes an absent field from explicit &lt;code&gt;null&lt;/code&gt;, so the
+            first refresh can fail with &lt;code&gt;invalid_grant&lt;/code&gt;.
+          &lt;/p&gt;
+          &lt;p&gt;
+            This is documented in
+            &lt;a href=&quot;https://github.com/get-convex/better-auth/issues/399&quot;&gt;get-convex/better-auth#399&lt;/a&gt;
+            and
+            &lt;a href=&quot;https://github.com/better-auth/better-auth/issues/10309&quot;&gt;better-auth#10309&lt;/a&gt;.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Atomic adapter operations&lt;/h3&gt;
+          &lt;p&gt;
+            Better Auth 1.7 requires custom adapters to implement
+            &lt;code&gt;incrementOne&lt;/code&gt; and &lt;code&gt;consumeOne&lt;/code&gt;. The old fallback is
+            removed; missing &lt;code&gt;consumeOne&lt;/code&gt; throws at runtime.
+          &lt;/p&gt;
+          &lt;p&gt;
+            The Convex adapter currently relies on the 1.6 fallback path, which is also not
+            a correct concurrent compare-and-swap. Native Convex mutations can implement
+            both operations transactionally.
+          &lt;/p&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Blocker C — the Nuxt boundary intentionally rejects legacy provider cookies&lt;/h3&gt;
+      &lt;p&gt;
+        This repository’s proxy accepts only the Better Auth cookie namespace and only
+        registers &lt;code&gt;/api/auth/**&lt;/code&gt;. The embedded legacy OIDC provider emits
+        unprefixed prompt cookies, while MCP needs root/path-aware discovery and protected
+        resource metadata. Those constraints are correct security defaults; the solution
+        is a modern provider integration and explicit routes, not a generic cookie or
+        proxy bypass.
+      &lt;/p&gt;
+
+      &lt;div class=&quot;ownership-list&quot; aria-label=&quot;Current repository evidence&quot;&gt;
+        &lt;div class=&quot;ownership-row&quot;&gt;
+          &lt;p&gt;&lt;code&gt;src/ARCHITECTURE.md&lt;/code&gt;&lt;/p&gt;
+          &lt;p&gt;Better Auth owns users/sessions; Convex functions own product authorization.&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;ownership-row&quot;&gt;
+          &lt;p&gt;&lt;code&gt;SECURITY.md&lt;/code&gt;&lt;/p&gt;
+          &lt;p&gt;The current proxy fails closed on non-Better-Auth cookies and unsupported OIDC/MCP prompt cookies.&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;ownership-row&quot;&gt;
+          &lt;p&gt;&lt;code&gt;starters/mcp-agent&lt;/code&gt;&lt;/p&gt;
+          &lt;p&gt;Already has strong service-actor, tenant, approval, and audit patterns—but intentionally no public OAuth.&lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;version-gate&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;4. The 1.7 version gate changes the strategy&lt;/h2&gt;
+        &lt;p&gt;
+          PR #380 is useful design research, but the release target should be the Better
+          Auth 1.7 architecture rather than a polished 1.6 fork.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;three-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Stable today&lt;/h3&gt;
+          &lt;p&gt;&lt;code&gt;better-auth@1.6.23&lt;/code&gt;&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            The old OIDC/MCP path is deprecated. A complete resource-indicator fix is not
+            available on this stable line.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Target architecture&lt;/h3&gt;
+          &lt;p&gt;&lt;code&gt;1.7.0-rc.1&lt;/code&gt;&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            Protected resources, resource-bound tokens, DPoP, CIMD, back-channel logout,
+            a dedicated MCP package, and required atomic adapter operations.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Convex component today&lt;/h3&gt;
+          &lt;p&gt;&lt;code&gt;@convex-dev/better-auth@0.12.5&lt;/code&gt;&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            Peer range is &lt;code&gt;&amp;gt;=1.6.11 &amp;lt;1.7.0&lt;/code&gt;. Supporting 1.7 requires an
+            intentional component and schema cutover.
+          &lt;/p&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout danger&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Security release gate&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Better Auth’s June 2026 bulletin lists the complete OAuth resource-indicator fix
+          at &lt;code&gt;@better-auth/oauth-provider@1.7.0-beta.4&lt;/code&gt;. MCP requires
+          &lt;code&gt;resource&lt;/code&gt; in authorization and token requests and requires the MCP
+          resource server to validate that the token was issued for it. That makes
+          production MCP Provider support on 1.6 a poor foundation.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;What 1.7 gives this project&lt;/h3&gt;
+      &lt;ul&gt;
+        &lt;li&gt;Explicit protected resources with per-resource scopes, claims, lifetimes, and client linkage.&lt;/li&gt;
+        &lt;li&gt;Resource target capture and narrowing, preventing later widening to another MCP server.&lt;/li&gt;
+        &lt;li&gt;DPoP support and request-aware access-token verification.&lt;/li&gt;
+        &lt;li&gt;Client ID Metadata Documents through &lt;code&gt;@better-auth/cimd&lt;/code&gt;.&lt;/li&gt;
+        &lt;li&gt;&lt;code&gt;@better-auth/mcp&lt;/code&gt; built on the OAuth Provider instead of a second legacy path.&lt;/li&gt;
+        &lt;li&gt;Back-channel logout and stronger refresh/code replay modeling.&lt;/li&gt;
+        &lt;li&gt;An OAuth Provider extension surface for future grants and enterprise flows without a core fork.&lt;/li&gt;
+      &lt;/ul&gt;
+
+      &lt;p class=&quot;footnote text-small&quot;&gt;
+        OAuth 2.1 itself remains an IETF Internet-Draft (draft-15 at this research
+        snapshot). Product language should say “aligned with the current MCP
+        authorization profile and OAuth security BCP,” not imply that OAuth 2.1 is a
+        finalized RFC.
+      &lt;/p&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;options&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;5. Options and trade-offs&lt;/h2&gt;
+        &lt;p&gt;
+          The best answer is not the option with the most ownership. It is the smallest
+          system that gives applications a reliable agent-auth capability without adding
+          a second source of identity truth.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;matrix&quot; role=&quot;table&quot; aria-label=&quot;OAuth Provider implementation options&quot;&gt;
+        &lt;div class=&quot;matrix-row header&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;columnheader&quot;&gt;Option&lt;/div&gt;
+          &lt;div role=&quot;columnheader&quot;&gt;Trade-off&lt;/div&gt;
+          &lt;div role=&quot;columnheader&quot;&gt;Verdict&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Keep private bearer/service actors only&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;
+            Simplest for first-party automations, but does not provide delegated user
+            authorization, public MCP onboarding, consent, discovery, or third-party app
+            interoperability.
+          &lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;span class=&quot;viz-badge&quot;&gt;Keep as separate mode&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;matrix-row recommended&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Upstream Better Auth 1.7 integration&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;
+            Fix the Convex adapter and plugin composition, replace the legacy embedded
+            provider, and reuse official OAuth/MCP packages. Lowest long-term protocol
+            ownership and best ecosystem alignment.
+          &lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;span class=&quot;viz-badge&quot;&gt;Recommended&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Thin experimental companion / Local Install&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;
+            Useful when upstream review is slower than product need. It should contain only
+            composition, schema, route/resource helpers, migrations, and tests, with exact
+            version pins and an upstream-delete plan. This is viable only after upstream
+            exposes a safe composition seam; otherwise it must be a temporary drop-in
+            replacement for the component, never another plugin installed beside
+            &lt;code&gt;convex()&lt;/code&gt;.
+          &lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;span class=&quot;viz-badge&quot;&gt;Best bridge&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Fork all of &lt;code&gt;@convex-dev/better-auth&lt;/code&gt;&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;
+            Delivers control quickly, but inherits active Better Auth schema, type, adapter,
+            and security changes. The fork can silently become permanent infrastructure.
+          &lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;span class=&quot;viz-badge&quot;&gt;Time-box only&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Build a custom Convex authorization server&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;
+            Maximum control and Convex-native state, but the project then owns redirect,
+            PKCE, consent, registration, code replay, refresh families, revocation,
+            discovery, audience binding, rate limits, and every security advisory.
+          &lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;span class=&quot;viz-badge&quot;&gt;Last resort&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Standalone open-source authorization server&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;
+            Keycloak, Ory Hydra, ZITADEL, Logto, or &lt;code&gt;node-oidc-provider&lt;/code&gt; reduce
+            protocol invention, but add deployment, persistence, login/consent bridging,
+            and often a second identity administration surface.
+          &lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;span class=&quot;viz-badge&quot;&gt;Documented escape hatch&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Managed authorization server&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;
+            WorkOS Connect/AuthKit or Auth0 can accelerate production MCP auth and enterprise
+            features. The cost is vendor coupling, configuration, and careful mapping back
+            to canonical Better Auth/Convex users and permissions.
+          &lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;span class=&quot;viz-badge&quot;&gt;Valid buy option&lt;/span&gt;&lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout recommended&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Recommended hierarchy&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Upstream integration first → one thin temporary companion if necessary →
+          external authorization server for apps that prefer buy/self-host →
+          fully custom server only after a documented proof that the official provider
+          cannot meet the release criteria.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout warning&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;An external authorization server is not automatically MCP-conformant.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          It must pass the same resource-indicator, discovery, registration, audience, and
+          real-client tests. For example, Keycloak’s current documentation describes MCP
+          2025-11-25 as only partially supported because native RFC 8707
+          &lt;code&gt;resource&lt;/code&gt; handling is still incomplete.
+        &lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;pr-380&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;6. How to use PR #380&lt;/h2&gt;
+        &lt;p&gt;
+          Treat it as a valuable patch source and architecture experiment, not a branch to
+          merge or fork unchanged.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;two-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;What it gets right&lt;/h3&gt;
+          &lt;ul&gt;
+            &lt;li&gt;Replaces the deprecated embedded OIDC provider with the official OAuth Provider.&lt;/li&gt;
+            &lt;li&gt;Preserves &lt;code&gt;/convex/token&lt;/code&gt;, JWKS, the Convex JWT cookie, and static JWKS behavior.&lt;/li&gt;
+            &lt;li&gt;Adds root/path-aware discovery, protected-resource metadata, CORS challenge exposure, and MCP helpers.&lt;/li&gt;
+            &lt;li&gt;Documents the schema cutover from old OAuth application/token tables.&lt;/li&gt;
+            &lt;li&gt;Recognizes that real-cloud OAuth/MCP acceptance is still required.&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Why not as-is&lt;/h3&gt;
+          &lt;ul&gt;
+            &lt;li&gt;It pins Better Auth and OAuth Provider to 1.6.11.&lt;/li&gt;
+            &lt;li&gt;It predates the refresh-token adapter blocker and 1.7 atomic adapter contract.&lt;/li&gt;
+            &lt;li&gt;It manually composes plugin internals and overrides plugin lookup, increasing coupling.&lt;/li&gt;
+            &lt;li&gt;It is open, conflicted, large, and has no decisive maintainer review.&lt;/li&gt;
+            &lt;li&gt;Its public model predates protected resources, CIMD, DPoP, and the dedicated MCP package.&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Split the useful work into reviewable upstream changes&lt;/h3&gt;
+      &lt;ol&gt;
+        &lt;li&gt;Namespace endpoint keys, expose/reuse the internal JWT plugin, and add a single-JWKS coexistence regression test for &lt;code&gt;/convex/token&lt;/code&gt;.&lt;/li&gt;
+        &lt;li&gt;Fix absent-versus-null semantics and implement native atomic &lt;code&gt;incrementOne&lt;/code&gt;/&lt;code&gt;consumeOne&lt;/code&gt;.&lt;/li&gt;
+        &lt;li&gt;Remove the embedded legacy OIDC path in one hard cutover with explicit schema migration.&lt;/li&gt;
+        &lt;li&gt;Compose the official 1.7 OAuth Provider/JWT/MCP graph without duplicate providers or JWKS stores.&lt;/li&gt;
+        &lt;li&gt;Add discovery/resource helpers and a real-cloud acceptance suite using real MCP clients.&lt;/li&gt;
+      &lt;/ol&gt;
+
+      &lt;div class=&quot;callout warning&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;The 1.7 schema migration is manual in important places.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Better Auth does not copy legacy &lt;code&gt;oauthApplication&lt;/code&gt; rows into
+          &lt;code&gt;oauthClient&lt;/code&gt;; clients must be field-mapped or re-registered. The
+          renamed &lt;code&gt;oauthAccessToken.token&lt;/code&gt; column can also make migration fail
+          against the legacy access-token table, so old access tokens need an explicit
+          drop, rename, and invalidation plan before cutover.
+        &lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;architecture&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;7. Recommended target architecture&lt;/h2&gt;
+        &lt;p&gt;
+          One identity plane, two credential types, and one final authorization decision
+          in Convex application code.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;architecture-map&quot; role=&quot;group&quot; aria-label=&quot;Recommended architecture from web and MCP clients through Better Auth and Convex authorization&quot;&gt;
+        &lt;div class=&quot;diagram-node secondary&quot;&gt;
+          &lt;h3&gt;Clients&lt;/h3&gt;
+          &lt;p&gt;Nuxt browser / SSR&lt;/p&gt;
+          &lt;p&gt;MCP host or agent&lt;/p&gt;
+          &lt;p&gt;Machine client&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;diagram-arrow&quot; aria-hidden=&quot;true&quot;&gt;→&lt;/div&gt;
+        &lt;div class=&quot;diagram-node primary&quot;&gt;
+          &lt;h3&gt;Identity &amp;amp; OAuth plane&lt;/h3&gt;
+          &lt;p&gt;&lt;strong&gt;Better Auth on Convex&lt;/strong&gt;&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            Sessions, OAuth clients, consent, grants, codes, access/refresh tokens, JWKS,
+            authorization-server metadata, and MCP provider integration.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;diagram-arrow&quot; aria-hidden=&quot;true&quot;&gt;→&lt;/div&gt;
+        &lt;div class=&quot;diagram-node warning&quot;&gt;
+          &lt;h3&gt;Application authorization plane&lt;/h3&gt;
+          &lt;p&gt;&lt;strong&gt;Convex domain functions&lt;/strong&gt;&lt;/p&gt;
+          &lt;p class=&quot;text-small&quot;&gt;
+            Organizations, memberships, agent delegations, capabilities, approvals,
+            execution-time checks, audit events, and tool-level policy.
+          &lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;two-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Web path&lt;/h3&gt;
+          &lt;p&gt;
+            Better Auth session cookie → Nuxt auth proxy → &lt;code&gt;/convex/token&lt;/code&gt; →
+            short-lived Convex session JWT → normal Convex queries and mutations.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Agent path&lt;/h3&gt;
+          &lt;p&gt;
+            OAuth access token → MCP/resource verifier → normalized principal → live
+            Convex authorization → approved tool/domain function.
+          &lt;/p&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout danger&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Invariant: a Convex session JWT is not an MCP access token.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          They have different audiences, issuance flows, exposure boundaries, revocation
+          behavior, and clients. Never “reuse” the browser’s Convex JWT as a public agent
+          credential and never pass an MCP bearer token through to an unrelated upstream
+          API.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout recommended&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Configure one canonical public origin.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Issuer URLs, redirects, MCP resource identifiers, protected-resource metadata,
+          and future DPoP &lt;code&gt;htu&lt;/code&gt; checks must derive from one explicit public
+          origin. Do not infer competing values independently from proxy headers,
+          &lt;code&gt;CONVEX_SITE_URL&lt;/code&gt;, and Nuxt request URLs.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;The only reusable principal the OAuth layer should expose&lt;/h3&gt;
+      &lt;pre&gt;&lt;code&gt;type OAuthPrincipal = {
+  subject: string
+  clientId: string
+  resource: string
+  scopes: readonly string[]
+  sessionId?: string
+}&lt;/code&gt;&lt;/pre&gt;
+      &lt;p&gt;
+        The app resolves this principal against canonical Convex state at execution time.
+        The OAuth package must not own organizations, product roles, agency relationships,
+        tool definitions, or business capabilities.
+      &lt;/p&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;package&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;8. How the package should look&lt;/h2&gt;
+        &lt;p&gt;
+          Start with fewer packages than the feature map suggests. A starter can prove the
+          API and acceptance criteria before a public abstraction becomes permanent.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Preferred shape if upstream accepts the component work&lt;/h3&gt;
+      &lt;pre&gt;&lt;code&gt;better-convex-nuxt
+├── core Nuxt module                 # unchanged responsibility
+├── docs/agent-oauth                 # setup, threat model, compatibility
+├── starters/mcp-agent               # existing private service-actor mode
+└── starters/mcp-oauth               # new delegated public OAuth mode
+
+@convex-dev/better-auth
+└── official Better Auth 1.7 OAuth/JWT/MCP composition&lt;/code&gt;&lt;/pre&gt;
+
+      &lt;p&gt;
+        In this outcome, there is no new OAuth package in this repository. The Nuxt module
+        receives only proven routing/proxy changes, while the stateful provider remains in
+        the Better Auth Convex component where it belongs.
+      &lt;/p&gt;
+
+      &lt;h3&gt;Contingency shape if upstream timing blocks real applications&lt;/h3&gt;
+      &lt;pre&gt;&lt;code&gt;@lupinum/convex-oauth-provider   # illustrative name; temporary drop-in replacement
+├── /server                      # provider composition and exact version contract
+├── /resource                    # bearer/DPoP request verification helpers
+├── /mcp                         # @better-auth/mcp convenience integration
+├── /schema                      # Local Install schema and migration contract
+├── /test                        # conformance + Convex cloud fixtures
+└── compatibility.json           # exact tested dependency tuple&lt;/code&gt;&lt;/pre&gt;
+
+      &lt;div class=&quot;callout warning&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Do not split &lt;code&gt;convex-oauth&lt;/code&gt; and &lt;code&gt;convex-mcp&lt;/code&gt; initially.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          That creates two APIs and two release surfaces before there is evidence they
+          evolve independently. One temporary replacement package plus one starter is the
+          simpler bridge.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout danger&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Never install the contingency package beside the current component.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Until an upstream composition seam exists, it must replace
+          &lt;code&gt;@convex-dev/better-auth&lt;/code&gt; in a hard cutover. Running the replacement
+          and current &lt;code&gt;convex()&lt;/code&gt; together would recreate the duplicate JWT,
+          endpoint, schema, and JWKS problems this work is meant to remove.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Illustrative application configuration&lt;/h3&gt;
+      &lt;pre&gt;&lt;code&gt;const auth = createAuth({
+  plugins: [
+    convex({
+      authConfig,
+      oauth: {
+        loginPage: &quot;/login&quot;,
+        consentPage: &quot;/oauth/consent&quot;,
+        resources: [{
+          resource: publicMcpUrl,
+          scopes: [&quot;tools:read&quot;, &quot;tools:execute&quot;],
+        }],
+      },
+    }),
+  ],
+})&lt;/code&gt;&lt;/pre&gt;
+      &lt;p class=&quot;footnote text-small&quot;&gt;
+        The exact API should be designed with the upstream maintainers. The important
+        shape is a single composed provider/JWT graph and a single JWKS source—not the
+        spelling of this illustrative option.
+      &lt;/p&gt;
+
+      &lt;h3&gt;What the starter should include&lt;/h3&gt;
+      &lt;ul&gt;
+        &lt;li&gt;Login, consent, error, and account-selection pages with safe continuation handling.&lt;/li&gt;
+        &lt;li&gt;Authorization-server discovery and RFC 9728 protected-resource metadata.&lt;/li&gt;
+        &lt;li&gt;Pre-registered client and CIMD examples; DCR off by default.&lt;/li&gt;
+        &lt;li&gt;Authorization code + S256 PKCE + refresh rotation.&lt;/li&gt;
+        &lt;li&gt;MCP token verification and &lt;code&gt;OAuthPrincipal&lt;/code&gt; construction.&lt;/li&gt;
+        &lt;li&gt;Tenant, scope, delegation, approval, audit, and redaction checks reused from the current MCP starter.&lt;/li&gt;
+        &lt;li&gt;A real-cloud acceptance harness and a deliberately small public API.&lt;/li&gt;
+      &lt;/ul&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;flows&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;9. How agent authorization works end to end&lt;/h2&gt;
+        &lt;p&gt;
+          Interactive delegated agents, machine agents, and enterprise-managed agents
+          should use different grants while converging on the same resource-server and
+          Convex authorization boundary.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Interactive delegated MCP flow&lt;/h3&gt;
+      &lt;div class=&quot;sequence&quot; aria-label=&quot;Interactive MCP authorization sequence&quot;&gt;
+        &lt;div class=&quot;sequence-step&quot;&gt;
+          &lt;div class=&quot;sequence-number&quot;&gt;01&lt;/div&gt;
+          &lt;p&gt;
+            The MCP client calls the protected server without a token. The server responds
+            with &lt;code&gt;401&lt;/code&gt; and a &lt;code&gt;WWW-Authenticate&lt;/code&gt; challenge pointing to
+            protected-resource metadata.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;sequence-step&quot;&gt;
+          &lt;div class=&quot;sequence-number&quot;&gt;02&lt;/div&gt;
+          &lt;p&gt;
+            The client reads RFC 9728 metadata, discovers the authorization server, and
+            selects pre-registration, CIMD, or DCR in that priority order.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;sequence-step&quot;&gt;
+          &lt;div class=&quot;sequence-number&quot;&gt;03&lt;/div&gt;
+          &lt;p&gt;
+            The client starts authorization code flow with exact redirect URI,
+            &lt;code&gt;resource=https://…/mcp&lt;/code&gt;, requested scopes, and S256 PKCE.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;sequence-step&quot;&gt;
+          &lt;div class=&quot;sequence-number&quot;&gt;04&lt;/div&gt;
+          &lt;p&gt;
+            Better Auth authenticates the user and presents consent. The app may resolve
+            organization/delegation choices, but does not duplicate membership state into
+            OAuth tables.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;sequence-step&quot;&gt;
+          &lt;div class=&quot;sequence-number&quot;&gt;05&lt;/div&gt;
+          &lt;p&gt;
+            The client exchanges the one-use code with the same &lt;code&gt;resource&lt;/code&gt; and
+            PKCE verifier. The server issues a short-lived, audience-bound access token and
+            an opaque rotating refresh token when &lt;code&gt;offline_access&lt;/code&gt; is allowed.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;sequence-step&quot;&gt;
+          &lt;div class=&quot;sequence-number&quot;&gt;06&lt;/div&gt;
+          &lt;p&gt;
+            The MCP server verifies issuer, signature, expiry, resource/audience, client,
+            scopes, and optional DPoP proof; it then constructs &lt;code&gt;OAuthPrincipal&lt;/code&gt;.
+          &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;sequence-step&quot;&gt;
+          &lt;div class=&quot;sequence-number&quot;&gt;07&lt;/div&gt;
+          &lt;p&gt;
+            Convex checks the current organization membership, delegation, capability,
+            approval state, and tool-specific policy immediately before execution.
+          &lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;two-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Machine-to-machine agents&lt;/h3&gt;
+          &lt;p&gt;
+            Use the MCP OAuth Client Credentials extension with pre-registered clients.
+            Prefer &lt;code&gt;private_key_jwt&lt;/code&gt; over shared secrets where supported. This
+            represents a machine principal, not a delegated end user, so scopes and
+            tenancy must be explicitly assigned.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Enterprise-managed agents&lt;/h3&gt;
+          &lt;p&gt;
+            Add EMA later: the MCP client authenticates to the enterprise IdP and retains
+            its login identity assertion; it then uses that assertion to request an
+            ID-JAG from the IdP and exchanges the ID-JAG at the MCP authorization server.
+            The authorization server validates the ID-JAG and issues a normal
+            resource-bound token. Implement this through the 1.7 provider extension
+            surface rather than a general token-exchange endpoint.
+          &lt;/p&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Client registration posture&lt;/h3&gt;
+      &lt;ol&gt;
+        &lt;li&gt;&lt;strong&gt;Pre-registration&lt;/strong&gt; for known products, first-party hosts, and machine clients.&lt;/li&gt;
+        &lt;li&gt;&lt;strong&gt;CIMD&lt;/strong&gt; for open MCP clients with no pre-existing relationship.&lt;/li&gt;
+        &lt;li&gt;&lt;strong&gt;DCR&lt;/strong&gt; only as an opt-in compatibility fallback with strict rate, redirect, privilege, and trust policy.&lt;/li&gt;
+        &lt;li&gt;&lt;strong&gt;Manual credentials&lt;/strong&gt; when a client supports neither standard.&lt;/li&gt;
+      &lt;/ol&gt;
+
+      &lt;div class=&quot;callout warning&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;CIMD and DCR are network-facing trust surfaces.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Fetching client metadata can be abused for SSRF and localhost impersonation.
+          Require HTTPS metadata, validate exact document identity and redirect URIs,
+          block private/link-local targets, cap redirects and response size, cache safely,
+          and show the redirect hostname clearly during consent.
+        &lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;sso&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;10. SSO should be a separate track&lt;/h2&gt;
+        &lt;p&gt;
+          Inbound SSO is strategically useful for B2B applications, but its current
+          Convex-compatible choices are less mature than OAuth Provider.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;matrix&quot; role=&quot;table&quot; aria-label=&quot;Identity direction comparison&quot;&gt;
+        &lt;div class=&quot;matrix-row header&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;columnheader&quot;&gt;Capability&lt;/div&gt;
+          &lt;div role=&quot;columnheader&quot;&gt;Meaning&lt;/div&gt;
+          &lt;div role=&quot;columnheader&quot;&gt;Package&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;OAuth/OIDC Provider&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;Other apps and agents obtain tokens from your application.&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;OAuth track&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Inbound enterprise SSO&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;Your application trusts a customer’s Okta, Entra, Google Workspace, or broker.&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;Separate OIDC package&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;matrix-row&quot; role=&quot;row&quot;&gt;
+          &lt;div role=&quot;cell&quot;&gt;&lt;strong&gt;Enterprise-managed MCP auth&lt;/strong&gt;&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;An enterprise IdP centrally authorizes MCP server access through the client.&lt;/div&gt;
+          &lt;div role=&quot;cell&quot;&gt;Future OAuth extension&lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Official Better Auth SSO&lt;/h3&gt;
+      &lt;p&gt;
+        &lt;code&gt;@better-auth/sso&lt;/code&gt; supports OIDC and SAML, but imports
+        &lt;code&gt;samlify&lt;/code&gt; and Node-specific APIs. Convex currently marks it incompatible
+        even with Local Install. SAML therefore should run in Nitro/Node or an external
+        identity broker—not inside Convex’s default runtime.
+      &lt;/p&gt;
+
+      &lt;h3&gt;PR #281 and &lt;code&gt;startino/better-auth-oidc&lt;/code&gt;&lt;/h3&gt;
+      &lt;p&gt;
+        PR #281 proposed an OIDC-only Convex-compatible extraction and was closed unmerged
+        on 22 April 2026. Maintainer direction was to keep it as a separately maintained
+        community package rather than component core.
+      &lt;/p&gt;
+
+      &lt;div class=&quot;two-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Why the community package is interesting&lt;/h3&gt;
+          &lt;ul&gt;
+            &lt;li&gt;Removes Node-only SAML dependencies.&lt;/li&gt;
+            &lt;li&gt;Provides OIDC discovery, PKCE, provider storage, cross-domain session transfer, and organization provisioning.&lt;/li&gt;
+            &lt;li&gt;Demonstrates the correct packaging direction: optional, OIDC-only, Local Install compatible.&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Why not adopt it as-is&lt;/h3&gt;
+          &lt;ul&gt;
+            &lt;li&gt;Default branch is &lt;code&gt;alpha&lt;/code&gt;; npm is &lt;code&gt;0.1.10&lt;/code&gt; with a very broad Better Auth peer range.&lt;/li&gt;
+            &lt;li&gt;Only two narrow tests are present; there is no broad security/conformance suite.&lt;/li&gt;
+            &lt;li&gt;Provider registration checks organization membership, not an explicit admin/owner role.&lt;/li&gt;
+            &lt;li&gt;Registration calls discovery with &lt;code&gt;isTrustedOrigin: () =&amp;gt; true&lt;/code&gt;, defeating the intended trust check.&lt;/li&gt;
+            &lt;li&gt;The cross-domain one-time token uses find-then-delete rather than an atomic consume, permitting a concurrent replay window.&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout danger&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;SSO provider registration is a privileged security operation.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Better Auth’s June 2026 advisories included critical URL-validation and high
+          registration-authorization fixes for SSO. Admin gating, SSRF-safe discovery,
+          verified domain ownership, safe account linking, and atomic one-time-token
+          consumption are release invariants, not polish.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Recommended SSO path&lt;/h3&gt;
+      &lt;ol&gt;
+        &lt;li&gt;Ask Better Auth for an official OIDC-only, isolate-safe entry point or package.&lt;/li&gt;
+        &lt;li&gt;
+          If two production applications need it before upstream exists, publish a separate
+          OIDC-only package based on current official source—not the February snapshot—
+          with exact version pins and a dedicated security suite.
+        &lt;/li&gt;
+        &lt;li&gt;Keep SAML outside Convex and document a Nitro/external-broker integration.&lt;/li&gt;
+        &lt;li&gt;
+          Choose exactly one organization source of truth: Better Auth Organization or the
+          app’s canonical Convex organization model, never synchronized peer tables without
+          a rebuild story.
+        &lt;/li&gt;
+      &lt;/ol&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;security&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;11. Security model and release invariants&lt;/h2&gt;
+        &lt;p&gt;
+          The OAuth package authenticates and constrains a principal. Product authorization
+          remains live, explicit, and revocable in Convex.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;One source of truth per concept&lt;/h3&gt;
+      &lt;div class=&quot;ownership-list&quot;&gt;
+        &lt;div class=&quot;ownership-row&quot;&gt;
+          &lt;p&gt;&lt;strong&gt;Users and web sessions&lt;/strong&gt;&lt;/p&gt;
+          &lt;p&gt;Better Auth.&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;ownership-row&quot;&gt;
+          &lt;p&gt;&lt;strong&gt;OAuth clients, grants, codes, tokens, consent&lt;/strong&gt;&lt;/p&gt;
+          &lt;p&gt;Official Better Auth OAuth Provider tables in the Convex component.&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;ownership-row&quot;&gt;
+          &lt;p&gt;&lt;strong&gt;Organizations, roles, memberships&lt;/strong&gt;&lt;/p&gt;
+          &lt;p&gt;One chosen canonical model; no dual Better Auth/app ownership.&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;ownership-row&quot;&gt;
+          &lt;p&gt;&lt;strong&gt;Agent delegation and capabilities&lt;/strong&gt;&lt;/p&gt;
+          &lt;p&gt;Application Convex tables and functions, checked at execution time.&lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;ownership-row&quot;&gt;
+          &lt;p&gt;&lt;strong&gt;MCP tool authorization&lt;/strong&gt;&lt;/p&gt;
+          &lt;p&gt;Resource token verification followed by application policy—not scopes alone.&lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Minimum production acceptance criteria&lt;/h3&gt;
+      &lt;div class=&quot;two-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Protocol and storage&lt;/h3&gt;
+          &lt;ul class=&quot;checklist&quot;&gt;
+            &lt;li&gt;Authorization code with mandatory S256 PKCE.&lt;/li&gt;
+            &lt;li&gt;Exact redirect matching and issuer validation.&lt;/li&gt;
+            &lt;li&gt;&lt;code&gt;resource&lt;/code&gt; in both authorization and token requests.&lt;/li&gt;
+            &lt;li&gt;Exact audience/resource validation at the MCP resource.&lt;/li&gt;
+            &lt;li&gt;Single-use authorization codes under concurrency.&lt;/li&gt;
+            &lt;li&gt;Atomic refresh rotation, replay detection, and family revocation.&lt;/li&gt;
+            &lt;li&gt;Opaque-token revocation/introspection, refresh revocation, logout, and consent withdrawal.&lt;/li&gt;
+            &lt;li&gt;Short-lived access tokens and separately protected refresh tokens.&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Integration and abuse resistance&lt;/h3&gt;
+          &lt;ul class=&quot;checklist&quot;&gt;
+            &lt;li&gt;&lt;code&gt;/convex/token&lt;/code&gt; and social login remain unchanged.&lt;/li&gt;
+            &lt;li&gt;Root/path-aware metadata works behind Nuxt and Convex public URLs.&lt;/li&gt;
+            &lt;li&gt;&lt;code&gt;WWW-Authenticate&lt;/code&gt; is visible through CORS/proxy layers.&lt;/li&gt;
+            &lt;li&gt;CIMD/DCR cannot reach private, link-local, or untrusted network targets.&lt;/li&gt;
+            &lt;li&gt;Wrong audience, scope, issuer, client, tenant, and token type are rejected.&lt;/li&gt;
+            &lt;li&gt;No token passthrough and no bearer tokens in URLs or logs.&lt;/li&gt;
+            &lt;li&gt;Tenant/delegation changes take effect without waiting for token expiry.&lt;/li&gt;
+            &lt;li&gt;Dependency advisories and exact package versions are continuously checked.&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Interoperability gates&lt;/h3&gt;
+      &lt;ul&gt;
+        &lt;li&gt;Real deployed Convex—not only a local backend or mocked route tests.&lt;/li&gt;
+        &lt;li&gt;MCP Inspector plus at least two real hosts used by the target applications.&lt;/li&gt;
+        &lt;li&gt;Authorization → token → refresh → MCP call → refresh/opaque-token revocation → denied future use.&lt;/li&gt;
+        &lt;li&gt;Browser/Nuxt proxy, callback, cookie, origin, and CORS behavior.&lt;/li&gt;
+        &lt;li&gt;OpenID Provider conformance where the exported OIDC surface applies.&lt;/li&gt;
+        &lt;li&gt;Migration test proving old clients/tokens are explicitly migrated or invalidated.&lt;/li&gt;
+      &lt;/ul&gt;
+
+      &lt;div class=&quot;callout warning&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;JWT access-token revocation has a deliberate limit.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Better Auth 1.7 reports a valid self-contained JWT access token as
+          &lt;code&gt;unsupported_token_type&lt;/code&gt; at the revocation endpoint because there is
+          no stored token row to revoke. Immediate denial requires opaque tokens with
+          introspection or another stateful revocation check. Otherwise revoke refresh
+          credentials, keep JWT lifetimes short, and rely on live Convex policy checks to
+          deny domain operations immediately.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Defer until the base is proven&lt;/h3&gt;
+      &lt;p&gt;
+        DPoP, broad token exchange, device flow, PAR, JAR, RAR, FAPI, mTLS, CIBA, and
+        dynamic machine-client registration should not be in the first stable release.
+        DPoP is valuable but requires database-backed replay storage and exact public URL
+        canonicalization through the proxy.
+      &lt;/p&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;roadmap&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;12. Recommended implementation roadmap&lt;/h2&gt;
+        &lt;p&gt;
+          Each phase has an exit criterion. Do not create the next package or protocol
+          surface until the previous layer proves that it is needed.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;timeline&quot;&gt;
+        &lt;div class=&quot;timeline-item&quot;&gt;
+          &lt;div&gt;
+            &lt;h3&gt;Foundation PRs&lt;/h3&gt;
+            &lt;p&gt;
+              Namespace endpoint keys; fix Convex null semantics; implement native atomic
+              &lt;code&gt;incrementOne&lt;/code&gt; and &lt;code&gt;consumeOne&lt;/code&gt;; add concurrency tests.
+            &lt;/p&gt;
+            &lt;p&gt;&lt;strong&gt;Exit:&lt;/strong&gt; current login and refresh invariants pass without fallback races.&lt;/p&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;timeline-item&quot;&gt;
+          &lt;div&gt;
+            &lt;h3&gt;Better Auth 1.7 spike&lt;/h3&gt;
+            &lt;p&gt;
+              Rebase the useful PR #380 ideas onto 1.7 RC, hard-delete the legacy provider
+              path, regenerate schema, and preserve the Convex JWT contract.
+            &lt;/p&gt;
+            &lt;p&gt;
+              &lt;strong&gt;Exit:&lt;/strong&gt; social login, &lt;code&gt;/convex/token&lt;/code&gt;, authorization
+              code + PKCE, resource-bound token, refresh, and one MCP call pass on real cloud.
+            &lt;/p&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;timeline-item&quot;&gt;
+          &lt;div&gt;
+            &lt;h3&gt;Experimental public starter&lt;/h3&gt;
+            &lt;p&gt;
+              Add &lt;code&gt;starters/mcp-oauth&lt;/code&gt;, consent UI, protected-resource metadata,
+              pre-registration, CIMD, Convex authorization, and a compatibility matrix.
+            &lt;/p&gt;
+            &lt;p&gt;
+              &lt;strong&gt;Exit:&lt;/strong&gt; MCP Inspector and two target hosts pass, with an
+              explicitly pinned experimental release.
+            &lt;/p&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;timeline-item&quot;&gt;
+          &lt;div&gt;
+            &lt;h3&gt;Production hardening&lt;/h3&gt;
+            &lt;p&gt;
+              Promote after Better Auth 1.7 stable, audit DCR/CIMD trust policy, add
+              revocation/replay/advisory tests, client credentials, operational docs, and
+              conformance checks.
+            &lt;/p&gt;
+            &lt;p&gt;&lt;strong&gt;Exit:&lt;/strong&gt; the full production acceptance checklist is green.&lt;/p&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;timeline-item&quot;&gt;
+          &lt;div&gt;
+            &lt;h3&gt;Enterprise track&lt;/h3&gt;
+            &lt;p&gt;
+              Add EMA only when target clients demand it. Build OIDC-only inbound SSO only
+              when real B2B applications justify a separate security lifecycle; keep SAML
+              external.
+            &lt;/p&gt;
+            &lt;p&gt;&lt;strong&gt;Exit:&lt;/strong&gt; two production consumers and a maintained upstream-sync plan.&lt;/p&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;h3&gt;Decision gates&lt;/h3&gt;
+      &lt;div class=&quot;three-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;If upstream accepts&lt;/h3&gt;
+          &lt;p&gt;
+            Do not publish a companion provider package. Maintain docs, starter, Nuxt
+            compatibility, and acceptance tests only.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;If upstream is slow&lt;/h3&gt;
+          &lt;p&gt;
+            Publish one temporary Local Install companion after a bounded spike and real
+            application demand. Pin exact versions and document deletion on upstream
+            support.
+          &lt;/p&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;If official provider is impossible&lt;/h3&gt;
+          &lt;p&gt;
+            Prefer a managed or standalone authorization server. Build a custom Convex
+            server only with an explicit protocol scope, threat model, and permanent
+            security-maintenance commitment.
+          &lt;/p&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;custom-fallback&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;13. If a custom Convex OAuth server becomes unavoidable&lt;/h2&gt;
+        &lt;p&gt;
+          This is not the recommended plan, but it needs a clear minimum bar so “custom”
+          never means “a few token endpoints.”
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;p&gt;
+        Start with the smallest public-client profile: authorization code only, mandatory
+        S256 PKCE, exact redirects, a single canonical resource per grant, pre-registered
+        clients, explicit consent, short-lived access tokens, and opaque hashed refresh
+        tokens. Add CIMD only after SSRF controls and DCR only for a client that actually
+        requires it.
+      &lt;/p&gt;
+
+      &lt;div class=&quot;two-col&quot;&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Required state invariants&lt;/h3&gt;
+          &lt;ul&gt;
+            &lt;li&gt;Authorization code is short-lived and atomically consumed once.&lt;/li&gt;
+            &lt;li&gt;Refresh tokens rotate atomically; replay revokes the token family.&lt;/li&gt;
+            &lt;li&gt;Stored bearer material is hashed or encrypted according to retrieval needs.&lt;/li&gt;
+            &lt;li&gt;Consent binds user, client, scopes, and resource.&lt;/li&gt;
+            &lt;li&gt;Audience can narrow but never widen during refresh.&lt;/li&gt;
+            &lt;li&gt;Revocation and client deletion deny future use immediately where stateful checks apply.&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+        &lt;article class=&quot;card&quot;&gt;
+          &lt;h3&gt;Required endpoints and controls&lt;/h3&gt;
+          &lt;ul&gt;
+            &lt;li&gt;RFC 8414 authorization-server metadata and RFC 9728 protected-resource metadata.&lt;/li&gt;
+            &lt;li&gt;Authorize, token, introspection, revocation, JWKS, and consent management.&lt;/li&gt;
+            &lt;li&gt;Rate limits, abuse controls, redirect validation, audit events, and key rotation.&lt;/li&gt;
+            &lt;li&gt;PKCE downgrade, mix-up, replay, resource-confusion, and registration-abuse tests.&lt;/li&gt;
+            &lt;li&gt;Migration, backup, recovery, and emergency token invalidation procedures.&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/article&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;callout danger&quot;&gt;
+        &lt;p&gt;&lt;strong&gt;Owning this path is a security product commitment.&lt;/strong&gt;&lt;/p&gt;
+        &lt;p&gt;
+          Libraries such as &lt;code&gt;jose&lt;/code&gt; or &lt;code&gt;oauth4webapi&lt;/code&gt; provide
+          cryptographic and client/resource primitives; they do not provide a complete
+          authorization server’s grant, consent, registration, replay, and lifecycle
+          invariants.
+        &lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section id=&quot;sources&quot; class=&quot;report-section&quot;&gt;
+      &lt;div class=&quot;section-heading&quot;&gt;
+        &lt;h2&gt;14. Research sources&lt;/h2&gt;
+        &lt;p&gt;
+          Primary project documentation, standards, source code, security advisories, and
+          the linked upstream work were prioritized. Status and versions are a snapshot as
+          of 16 July 2026.
+        &lt;/p&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;source-group&quot;&gt;
+        &lt;h3&gt;Convex Better Auth upstream&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/get-convex/better-auth/issues/395&quot;&gt;Issue #395 — OAuth Provider breaks &lt;code&gt;/convex/token&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/get-convex/better-auth/issues/399&quot;&gt;Issue #399 — null semantics break refresh rotation&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/get-convex/better-auth/pull/380&quot;&gt;PR #380 — migration to official OAuth Provider&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/get-convex/better-auth/pull/281&quot;&gt;PR #281 — Convex-compatible OIDC-only SSO proposal&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://labs.convex.dev/better-auth/features/local-install&quot;&gt;Convex Better Auth — Local Install&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://labs.convex.dev/better-auth/supported-plugins&quot;&gt;Convex Better Auth — supported and incompatible plugins&lt;/a&gt;&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;source-group&quot;&gt;
+        &lt;h3&gt;Better Auth OAuth, MCP, SSO, and security&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;&lt;a href=&quot;https://better-auth.com/docs/plugins/oauth-provider&quot;&gt;OAuth 2.1 Provider documentation&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://better-auth.com/docs/guides/1-7-upgrade-guide&quot;&gt;Better Auth 1.7 upgrade guide&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://better-auth.com/blog/1-7-rc&quot;&gt;Better Auth 1.7 RC overview&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://better-auth.com/blog/security-update-june-2026&quot;&gt;June 2026 security update&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://better-auth.com/docs/plugins/sso&quot;&gt;Better Auth SSO documentation&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/better-auth/better-auth/issues/10309&quot;&gt;Better Auth issue #10309 — refresh rotation and missing/null fields&lt;/a&gt;&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;source-group&quot;&gt;
+        &lt;h3&gt;MCP and OAuth standards&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;&lt;a href=&quot;https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization&quot;&gt;MCP 2025-11-25 authorization specification&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://modelcontextprotocol.io/extensions/auth/overview&quot;&gt;MCP authorization extensions overview&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials&quot;&gt;MCP OAuth Client Credentials extension&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization&quot;&gt;MCP Enterprise-Managed Authorization extension&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://blog.modelcontextprotocol.io/posts/enterprise-managed-auth/&quot;&gt;EMA stable-release announcement&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://www.rfc-editor.org/rfc/rfc9700.html&quot;&gt;RFC 9700 — OAuth 2.0 Security Best Current Practice&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://www.rfc-editor.org/rfc/rfc9728.html&quot;&gt;RFC 9728 — Protected Resource Metadata&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://www.rfc-editor.org/rfc/rfc8707.html&quot;&gt;RFC 8707 — Resource Indicators&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://www.rfc-editor.org/rfc/rfc9449.html&quot;&gt;RFC 9449 — DPoP&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/&quot;&gt;OAuth 2.1 Internet-Draft&lt;/a&gt;&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;source-group&quot;&gt;
+        &lt;h3&gt;Convex architecture and external authorization-server options&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;&lt;a href=&quot;https://docs.convex.dev/components/authoring&quot;&gt;Convex component authoring and authentication boundary&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://docs.convex.dev/auth/overview&quot;&gt;Convex authentication overview&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://docs.convex.dev/auth/advanced/custom-auth&quot;&gt;Convex custom OIDC provider integration&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://docs.convex.dev/auth/advanced/custom-jwt&quot;&gt;Convex custom JWT provider&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://workos.com/blog/how-to-add-authentication-to-your-mcp-server&quot;&gt;WorkOS — adding OAuth to an MCP server&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://auth0.com/ai/docs/mcp/intro/overview&quot;&gt;Auth0 — secure MCP overview&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://www.keycloak.org/securing-apps/mcp-authz-server&quot;&gt;Keycloak — MCP authorization-server integration&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/ory/hydra&quot;&gt;Ory Hydra&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/panva/node-oidc-provider&quot;&gt;panva &lt;code&gt;node-oidc-provider&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;source-group&quot;&gt;
+        &lt;h3&gt;Community OIDC-only SSO&lt;/h3&gt;
+        &lt;ul&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/startino/better-auth-oidc&quot;&gt;startino/better-auth-oidc&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/startino/better-auth-oidc/blob/alpha/src/routes/sso.ts&quot;&gt;Provider registration and OTT implementation&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;https://github.com/startino/better-auth-oidc/blob/alpha/src/oidc/discovery.ts&quot;&gt;OIDC discovery implementation&lt;/a&gt;&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;closing&quot;&gt;
+      &lt;h2&gt;Final recommendation&lt;/h2&gt;
+      &lt;p&gt;
+        Yes, make OAuth/MCP a strategic Better Convex Nuxt capability. Start now with the
+        upstream 1.7 foundation and a real-cloud starter. Promote it only after the atomic
+        adapter work, resource-bound token flow, migration, and real-client acceptance
+        gates pass.
+      &lt;/p&gt;
+      &lt;p&gt;
+        Do not put a hand-written OAuth server into the Nuxt module. Do not keep the legacy
+        and modern provider paths side by side. Do not fork indefinitely. Keep inbound SSO
+        optional and separate. This path gives the library the modern agent experience it
+        needs while preserving the simplest maintainable system.
+      &lt;/p&gt;
+    &lt;/section&gt;
+  &lt;/main&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+</body>
+</html>

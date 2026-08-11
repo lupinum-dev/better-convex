@@ -13,9 +13,9 @@ const projectRenamePending = ref(false)
 
 const props = defineProps<{
   teamId: string
-  projects: ProjectSummary[]
+  projects: readonly ProjectSummary[]
   projectsLoading: boolean
-  projectStatus: string
+  canLoadMore: boolean
   canCreateProject?: boolean
   canUpdateProject?: boolean
   canDeleteProject?: boolean
@@ -129,6 +129,6 @@ async function submitRename(project: ProjectSummary) {
     <section v-else-if="projectsLoading" class="empty">Loading projects...</section>
     <section v-else class="empty">No projects yet.</section>
 
-    <button v-if="projectStatus === 'ready'" class="button" @click="onLoadMore">Load more</button>
+    <button v-if="canLoadMore" class="button" @click="onLoadMore">Load more</button>
   </section>
 </template>

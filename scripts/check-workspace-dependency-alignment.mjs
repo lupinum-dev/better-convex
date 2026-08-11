@@ -2,8 +2,12 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
+
 const rootDir = process.cwd()
 const rootPackage = readPackage('package.json')
+const workspaceSource = readFileSync(resolve(rootDir, 'pnpm-workspace.yaml'), 'utf8')
+const playgroundPackage = readPackage('playground/package.json')
 const distributedAppManifests = [
   'demo/package.json',
   ...readdirSync(resolve(rootDir, 'starters'), { withFileTypes: true })
@@ -11,14 +15,7 @@ const distributedAppManifests = [
     .map((entry) => `starters/${entry.name}/package.json`),
 ]
 
-const alignedDependencies = ['@convex-dev/better-auth', 'better-auth', 'convex', 'nuxt', 'vue-tsc']
-
-const rootSpecifiers = new Map(
-  alignedDependencies.flatMap((name) => {
-    const specifier = dependencySpecifier(rootPackage, name)
-    return specifier ? [[name, specifier]] : []
-  }),
-)
+const rootSpecifiers = new Map(Object.entries(supportedDependencyTuple))
 
 const manifestPaths = [
   'demo/package.json',
@@ -31,6 +28,15 @@ const manifestPaths = [
 
 const failures = []
 
+const workspacePackagesBlock =
+  workspaceSource.match(/^packages:\s*(?:#.*)?\r?\n((?:[ \t].*(?:\r?\n|$))*)/mu)?.[1] ?? ''
+if (!/^\s+-\s+['"]?playground['"]?\s*(?:#.*)?$/mu.test(workspacePackagesBlock)) {
+  failures.push('pnpm-workspace.yaml must list playground under packages')
+}
+if (playgroundPackage.dependencies?.['better-convex-nuxt'] !== 'workspace:*') {
+  failures.push('playground/package.json must declare better-convex-nuxt@workspace:*')
+}
+
 for (const manifestPath of manifestPaths) {
   const packageJson = readPackage(manifestPath)
   for (const [name, expected] of rootSpecifiers) {
@@ -38,6 +44,14 @@ for (const manifestPath of manifestPaths) {
     if (actual && normalizeSpecifier(actual) !== normalizeSpecifier(expected)) {
       failures.push(`${manifestPath} declares ${name}@${actual}; expected ${expected}`)
     }
+  }
+  if (dependencySpecifier(packageJson, '@convex-dev/better-auth')) {
+    failures.push(`${manifestPath} still declares the removed @convex-dev/better-auth package`)
+  }
+  if (dependencySpecifier(packageJson, 'kysely')) {
+    failures.push(
+      `${manifestPath} declares kysely directly; Better Auth owns its database dependency`,
+    )
   }
 }
 
