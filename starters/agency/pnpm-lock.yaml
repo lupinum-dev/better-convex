@@ -15,8 +15,8 @@ importers:
         specifier: 1.7.0-rc.2
         version: 1.7.0-rc.2(vitest@4.1.10(@types/node@25.9.5)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3))
       better-convex-nuxt:
-        specifier: 0.8.0-beta.38
-        version: 0.8.0-beta.38(a0d2c722c31fd30d00e4e46b2210868a)
+        specifier: 0.8.0-beta.39
+        version: 0.8.0-beta.39(a0d2c722c31fd30d00e4e46b2210868a)
       convex:
         specifier: 1.42.2
         version: 1.42.2
@@ -1655,8 +1655,8 @@ packages:
       zod:
         optional: true
 
-  better-convex-nuxt@0.8.0-beta.38:
-    resolution: {integrity: sha512-o6k4N7ORf3RhkxyqWTsXAWsdk8S245aVztaFgP5adlWEqzb3e1dW80koGnFaiVUN4EHf/W3r7vNBrRApzx3s/g==}
+  better-convex-nuxt@0.8.0-beta.39:
+    resolution: {integrity: sha512-YnvBm+BoBsiauL6kME8caVLwvuDoBKolTAJCpCjaESjynjpsIiBV6zVVTTOpsHJSMOu2CmB/1XVtux0ImLsa1Q==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -1670,8 +1670,8 @@ packages:
       better-auth:
         optional: true
 
-  better-convex-vue@0.8.0-beta.38:
-    resolution: {integrity: sha512-u33kSYEoWOfaQc0fjmqtmX/5x2tdfiIrpvJ+A1yFq1Oi0aFIIS5BJ6Gl4irKm2kpEdHxhvlomkvb04OItc2V5w==}
+  better-convex-vue@0.8.0-beta.39:
+    resolution: {integrity: sha512-PGcWchF7voFGJsK+EaD/LH1aGypf5d+yvqWU1RDipQPKqyr1zubPfGeMJr6vmDT8+Yab8s50+50mytH4DLia/w==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5
@@ -5477,10 +5477,10 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  better-convex-nuxt@0.8.0-beta.38(a0d2c722c31fd30d00e4e46b2210868a):
+  better-convex-nuxt@0.8.0-beta.39(a0d2c722c31fd30d00e4e46b2210868a):
     dependencies:
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
-      better-convex-vue: 0.8.0-beta.38(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3)
+      better-convex-vue: 0.8.0-beta.39(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3)
       convex: 1.42.2
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2)(typescript@5.9.3)(zod@4.4.3)
       defu: 6.1.7
@@ -5506,7 +5506,7 @@ snapshots:
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.38(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3):
+  better-convex-vue@0.8.0-beta.39(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3):
     dependencies:
       convex: 1.42.2
       ohash: 2.0.11

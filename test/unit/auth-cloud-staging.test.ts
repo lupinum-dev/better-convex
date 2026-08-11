@@ -264,7 +264,7 @@ describe('protected cloud-staging gate', () => {
           package: 'better-convex-mcp',
           runtimeFingerprint: null,
           sourceCommit,
-          version: '0.1.0-beta.26',
+          version: '0.1.0-beta.27',
         },
         tarballPath: '/artifacts/better-convex-mcp.tgz',
       },
@@ -273,7 +273,7 @@ describe('protected cloud-staging gate', () => {
           package: 'better-convex-nuxt',
           runtimeFingerprint,
           sourceCommit,
-          version: '0.8.0-beta.38',
+          version: '0.8.0-beta.39',
         },
         tarballPath: '/artifacts/better-convex-nuxt.tgz',
       },
@@ -282,7 +282,7 @@ describe('protected cloud-staging gate', () => {
           package: 'better-convex-vue',
           runtimeFingerprint: null,
           sourceCommit,
-          version: '0.8.0-beta.38',
+          version: '0.8.0-beta.39',
         },
         tarballPath: '/artifacts/better-convex-vue.tgz',
       },
@@ -303,7 +303,7 @@ describe('protected cloud-staging gate', () => {
       'better-convex-vue': 'file:/artifacts/better-convex-vue.tgz',
     })
     expect(bound.workspace).toContain(
-      'better-convex-vue@0.8.0-beta.38: file:/artifacts/better-convex-vue.tgz',
+      'better-convex-vue@0.8.0-beta.39: file:/artifacts/better-convex-vue.tgz',
     )
     expect(() =>
       assertCloudArtifactFamily({

@@ -202,7 +202,7 @@ describe('candidate app lock contract', () => {
     } finally {
       rmSync(fixture, { force: true, recursive: true })
     }
-  })
+  }, 30_000)
 
   it('rejects an ordinary placeholder Nuxt pack before registry or lock work', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'bcn-candidate-lock-tarballs-'))

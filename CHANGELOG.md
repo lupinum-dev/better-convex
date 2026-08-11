@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.8.0-beta.39
+
+- Retire unpublished beta.38 after immutable family certification exposed a
+  second filesystem-heavy candidate-lock invariant still inheriting Vitest's
+  five-second default under full-suite contention.
+- Preserve beta.38/beta.26 as failed immutable evidence and never publish or
+  reuse those coordinates. Reserve beta.39/beta.27 with the invariant's
+  existing work unchanged and an explicit 30-second test bound.
+
+## v0.1.0-beta.27 (`better-convex-mcp`)
+
+- Retire unpublished beta.26 with the failed beta.38 family. The MCP runtime
+  and public API are unchanged.
+
 ## v0.8.0-beta.38
 
 - Retire the unpublished beta.37 Vue/Nuxt candidate after protected cloud
