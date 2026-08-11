@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## v0.8.0-beta.40
+
+- Retire unpublished beta.39 after its protected cloud-staging proof exposed a
+  dependency on the Convex CLI's intentionally unstable human-readable
+  `deployments` output. Convex emits that output on stderr, while the verifier
+  captured stdout, so the gate failed before fixture deployment or data writes.
+- Preserve beta.39/beta.27 as failed immutable evidence and never publish or
+  reuse those coordinates. Reserve beta.40/beta.28 with deployment authority
+  read from Convex's authenticated machine-readable management response.
+
+## v0.1.0-beta.28 (`better-convex-mcp`)
+
+- Retire unpublished beta.27 with the failed beta.39 family. The MCP runtime
+  and public API are unchanged.
+
 ## v0.8.0-beta.39
 
 - Retire unpublished beta.38 after immutable family certification exposed a

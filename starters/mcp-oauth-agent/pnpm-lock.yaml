@@ -18,11 +18,11 @@ importers:
         specifier: 1.7.0-rc.2
         version: 1.7.0-rc.2(vue@3.5.40(typescript@5.9.3))
       better-convex-mcp:
-        specifier: 0.1.0-beta.27
-        version: 0.1.0-beta.27
+        specifier: 0.1.0-beta.28
+        version: 0.1.0-beta.28
       better-convex-nuxt:
-        specifier: 0.8.0-beta.39
-        version: 0.8.0-beta.39(70f3bc4e4417fc834fe6d0621c0dcb5a)
+        specifier: 0.8.0-beta.40
+        version: 0.8.0-beta.40(70f3bc4e4417fc834fe6d0621c0dcb5a)
       convex:
         specifier: 1.42.2
         version: 1.42.2
@@ -1507,12 +1507,12 @@ packages:
       zod:
         optional: true
 
-  better-convex-mcp@0.1.0-beta.27:
-    resolution: {integrity: sha512-KChkBu0gaHY+i1eV7tMFF7dE3GjVVcd6a40wXHTgqaac0H8XbRvOnNe8aKCaxq7nOOq2G4xiR6Ss2iTwb00zXA==}
+  better-convex-mcp@0.1.0-beta.28:
+    resolution: {integrity: sha512-1Jrcdi88FR5mJeuYXZlFLCUntaj7UXUxEicPIcIMLa8Dvh6qkmfzddASCS0HDC03d2KMrhSB/1UPyF0NCxnuzA==}
     engines: {node: '>=22.14.0'}
 
-  better-convex-nuxt@0.8.0-beta.39:
-    resolution: {integrity: sha512-YnvBm+BoBsiauL6kME8caVLwvuDoBKolTAJCpCjaESjynjpsIiBV6zVVTTOpsHJSMOu2CmB/1XVtux0ImLsa1Q==}
+  better-convex-nuxt@0.8.0-beta.40:
+    resolution: {integrity: sha512-3s5KuMXFb1Ndqhsld/JiNrJMBXFWtTKOS5TuBQyV+zXmwVgGpYEwlOVfzoc8lAHd4AmkmwhWz2J0tnyhgtsAFg==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -1526,8 +1526,8 @@ packages:
       better-auth:
         optional: true
 
-  better-convex-vue@0.8.0-beta.39:
-    resolution: {integrity: sha512-PGcWchF7voFGJsK+EaD/LH1aGypf5d+yvqWU1RDipQPKqyr1zubPfGeMJr6vmDT8+Yab8s50+50mytH4DLia/w==}
+  better-convex-vue@0.8.0-beta.40:
+    resolution: {integrity: sha512-tWNf/44lV/7SrC1GC/kGSraIJWTOjb0OcFHGu2qZqffglQffztOMO8iDWSYftI7QhaZCRzssj5UDZ58nvp9Gsg==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5
@@ -5132,14 +5132,14 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  better-convex-mcp@0.1.0-beta.27:
+  better-convex-mcp@0.1.0-beta.28:
     dependencies:
       '@modelcontextprotocol/server': 2.0.0
 
-  better-convex-nuxt@0.8.0-beta.39(70f3bc4e4417fc834fe6d0621c0dcb5a):
+  better-convex-nuxt@0.8.0-beta.40(70f3bc4e4417fc834fe6d0621c0dcb5a):
     dependencies:
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
-      better-convex-vue: 0.8.0-beta.39(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3)
+      better-convex-vue: 0.8.0-beta.40(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3)
       convex: 1.42.2
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2)(typescript@5.9.3)(zod@4.4.3)
       defu: 6.1.7
@@ -5165,7 +5165,7 @@ snapshots:
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.39(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3):
+  better-convex-vue@0.8.0-beta.40(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))(zod@4.4.3):
     dependencies:
       convex: 1.42.2
       ohash: 2.0.11

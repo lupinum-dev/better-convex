@@ -16,7 +16,8 @@ import {
   normalizeCloudPrewriteProof,
   parseCloudArtifactArguments,
   parseCloudStagingEnvironment,
-  parseConvexDeploymentDescription,
+  readCloudDeployment,
+  normalizeCloudDeploymentAuthority,
   verifyCloudSessionToken,
 } from '../../scripts/run-auth-cloud-staging.mjs'
 import packagedSchemaMetadata from '../../src/runtime/convex-auth/component/schemaMetadata'
@@ -47,17 +48,6 @@ function stagingEnvironment(overrides: Record<string, string> = {}) {
     CONVEX_DEPLOY_KEY: `prod:${deploymentName}|${'x'.repeat(48)}`,
     ...overrides,
   }
-}
-
-function deploymentDescription(
-  overrides: Partial<Record<'deployment' | 'project' | 'team' | 'type' | 'url', string>> = {},
-) {
-  return `Currently configured deployment:
-  URL: ${overrides.url ?? convexUrl}
-  Deployment: ${overrides.deployment ?? deploymentName} (${overrides.type ?? 'prod'})
-  Team: ${overrides.team ?? 'better-convex'}
-  Project: ${overrides.project ?? 'bcn-auth-staging'}
-`
 }
 
 describe('protected cloud-staging gate', () => {
@@ -123,9 +113,14 @@ describe('protected cloud-staging gate', () => {
     ).toThrow('AUTH_CLOUD_STAGING_INGRESS_LEASE_INVALID')
   })
 
-  it('binds the deployment key to the named Convex project and production deployment', () => {
+  it('binds the deployment key to machine-readable Convex project authority', () => {
     const expected = parseCloudStagingEnvironment(stagingEnvironment())
-    expect(parseConvexDeploymentDescription(deploymentDescription(), expected)).toEqual({
+    expect(
+      normalizeCloudDeploymentAuthority(
+        { team: 'better-convex', project: 'bcn-auth-staging' },
+        expected,
+      ),
+    ).toEqual({
       deploymentName,
       project: 'bcn-auth-staging',
       team: 'better-convex',
@@ -133,23 +128,59 @@ describe('protected cloud-staging gate', () => {
     })
 
     expect(() =>
-      parseConvexDeploymentDescription(
-        deploymentDescription({ project: 'some-other-project' }),
+      normalizeCloudDeploymentAuthority(
+        { team: 'better-convex', project: 'some-other-project' },
         expected,
       ),
     ).toThrow('AUTH_CLOUD_STAGING_PROJECT_MISMATCH')
     expect(() =>
-      parseConvexDeploymentDescription(deploymentDescription({ type: 'dev' }), expected),
-    ).toThrow('AUTH_CLOUD_STAGING_DEPLOYMENT_MISMATCH')
-    expect(() =>
-      parseConvexDeploymentDescription(deploymentDescription({ team: 'wrong-team' }), expected),
-    ).toThrow('AUTH_CLOUD_STAGING_TEAM_MISMATCH')
-    expect(() =>
-      parseConvexDeploymentDescription(
-        `${deploymentDescription()}  Project: bcn-auth-staging\n`,
+      normalizeCloudDeploymentAuthority(
+        { team: 'wrong-team', project: 'bcn-auth-staging' },
         expected,
       ),
-    ).toThrow('AUTH_CLOUD_STAGING_PROJECT_MISSING')
+    ).toThrow('AUTH_CLOUD_STAGING_TEAM_MISMATCH')
+    expect(() => normalizeCloudDeploymentAuthority(null, expected)).toThrow(
+      'AUTH_CLOUD_STAGING_DEPLOYMENT_AUTHORITY_INVALID',
+    )
+  })
+
+  it('reads deployment authority from the bounded authenticated management response', async () => {
+    const expected = parseCloudStagingEnvironment(stagingEnvironment())
+    const requests: Array<{ input: string; init: RequestInit }> = []
+    const deployment = await readCloudDeployment(expected, async (input, init) => {
+      requests.push({ input: String(input), init: init ?? {} })
+      return new Response(JSON.stringify({ team: 'better-convex', project: 'bcn-auth-staging' }))
+    })
+
+    expect(deployment).toEqual({
+      deploymentName,
+      project: 'bcn-auth-staging',
+      team: 'better-convex',
+      type: 'prod',
+    })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({
+      input: 'https://api.convex.dev/api/deployment/team_and_project_for_key',
+      init: {
+        body: JSON.stringify({ deployKey: expected.adminKey }),
+        method: 'POST',
+        redirect: 'error',
+      },
+    })
+    expect(new Headers(requests[0]?.init.headers).get('authorization')).toBe(
+      `Bearer ${expected.adminKey}`,
+    )
+    expect(requests[0]?.init.signal).toBeInstanceOf(AbortSignal)
+
+    await expect(
+      readCloudDeployment(expected, async () => new Response('{}', { status: 401 })),
+    ).rejects.toThrow('AUTH_CLOUD_STAGING_DEPLOYMENT_LOOKUP_FAILED')
+    await expect(
+      readCloudDeployment(expected, async () => new Response('not-json')),
+    ).rejects.toThrow('AUTH_CLOUD_STAGING_DEPLOYMENT_AUTHORITY_INVALID')
+    await expect(
+      readCloudDeployment(expected, async () => new Response('x'.repeat(8 * 1024 + 1))),
+    ).rejects.toThrow('AUTH_CLOUD_STAGING_DEPLOYMENT_AUTHORITY_INVALID')
   })
 
   it('requires the exact build-generated public-origin fingerprint', () => {
@@ -264,7 +295,7 @@ describe('protected cloud-staging gate', () => {
           package: 'better-convex-mcp',
           runtimeFingerprint: null,
           sourceCommit,
-          version: '0.1.0-beta.27',
+          version: '0.1.0-beta.28',
         },
         tarballPath: '/artifacts/better-convex-mcp.tgz',
       },
@@ -273,7 +304,7 @@ describe('protected cloud-staging gate', () => {
           package: 'better-convex-nuxt',
           runtimeFingerprint,
           sourceCommit,
-          version: '0.8.0-beta.39',
+          version: '0.8.0-beta.40',
         },
         tarballPath: '/artifacts/better-convex-nuxt.tgz',
       },
@@ -282,7 +313,7 @@ describe('protected cloud-staging gate', () => {
           package: 'better-convex-vue',
           runtimeFingerprint: null,
           sourceCommit,
-          version: '0.8.0-beta.39',
+          version: '0.8.0-beta.40',
         },
         tarballPath: '/artifacts/better-convex-vue.tgz',
       },
@@ -303,7 +334,7 @@ describe('protected cloud-staging gate', () => {
       'better-convex-vue': 'file:/artifacts/better-convex-vue.tgz',
     })
     expect(bound.workspace).toContain(
-      'better-convex-vue@0.8.0-beta.39: file:/artifacts/better-convex-vue.tgz',
+      'better-convex-vue@0.8.0-beta.40: file:/artifacts/better-convex-vue.tgz',
     )
     expect(() =>
       assertCloudArtifactFamily({

@@ -45,6 +45,7 @@ const MODEL_NAME = /^[A-Za-z][A-Za-z0-9]*$/u
 const MAX_COMMAND_OUTPUT = 1024 * 1024
 const MAX_JWKS_BYTES = 64 * 1024
 const MAX_FINGERPRINT_BYTES = 4 * 1024
+const MAX_DEPLOYMENT_AUTHORITY_BYTES = 8 * 1024
 const MAX_SIGNUP_BYTES = 64 * 1024
 const MAX_REPORT_BYTES = 64 * 1024
 const RUNTIME_FINGERPRINT_HEADER = 'x-bcn-runtime-fingerprint'
@@ -171,48 +172,14 @@ export function parseCloudStagingEnvironment(env) {
   })
 }
 
-function oneMatch(source, pattern, code) {
-  const matches = [...source.matchAll(pattern)]
-  assert(matches.length === 1, code)
-  return matches[0]
-}
-
-export function parseConvexDeploymentDescription(source, expected) {
-  assert(
-    typeof source === 'string' && source.length <= MAX_COMMAND_OUTPUT,
-    'AUTH_CLOUD_STAGING_DEPLOYMENT_DESCRIPTION_INVALID',
-  )
-  const url = oneMatch(
-    source,
-    /^\s*URL:\s*(\S+)\s*$/gmu,
-    'AUTH_CLOUD_STAGING_DEPLOYMENT_URL_MISSING',
-  )[1]
-  const deployment = oneMatch(
-    source,
-    /^\s*Deployment:\s*([a-z0-9-]+)\s*\(([^)]+)\)\s*$/gmu,
-    'AUTH_CLOUD_STAGING_DEPLOYMENT_NAME_MISSING',
-  )
-  const team = oneMatch(
-    source,
-    /^\s*Team:\s*([a-z0-9-]+)\s*$/gmu,
-    'AUTH_CLOUD_STAGING_TEAM_MISSING',
-  )[1]
-  const project = oneMatch(
-    source,
-    /^\s*Project:\s*([a-z0-9-]+)\s*$/gmu,
-    'AUTH_CLOUD_STAGING_PROJECT_MISSING',
-  )[1]
-  assert(url === expected.convexUrl, 'AUTH_CLOUD_STAGING_DEPLOYMENT_URL_MISMATCH')
-  assert(
-    deployment[1] === expected.deploymentName && deployment[2] === 'prod',
-    'AUTH_CLOUD_STAGING_DEPLOYMENT_MISMATCH',
-  )
-  assert(team === expected.team, 'AUTH_CLOUD_STAGING_TEAM_MISMATCH')
-  assert(project === PROJECT, 'AUTH_CLOUD_STAGING_PROJECT_MISMATCH')
+export function normalizeCloudDeploymentAuthority(value, expected) {
+  assert(isRecord(value), 'AUTH_CLOUD_STAGING_DEPLOYMENT_AUTHORITY_INVALID')
+  assert(value.team === expected.team, 'AUTH_CLOUD_STAGING_TEAM_MISMATCH')
+  assert(value.project === PROJECT, 'AUTH_CLOUD_STAGING_PROJECT_MISMATCH')
   return Object.freeze({
-    deploymentName: deployment[1],
-    project,
-    team,
+    deploymentName: expected.deploymentName,
+    project: value.project,
+    team: value.team,
     type: 'prod',
   })
 }
@@ -231,14 +198,40 @@ function runConvexCli(args, adminKey, failureCode, cwd = root) {
   }
 }
 
-function readCloudDeployment(config, cwd) {
-  const description = runConvexCli(
-    ['deployments'],
-    config.adminKey,
-    'AUTH_CLOUD_STAGING_DEPLOYMENT_LOOKUP_FAILED',
-    cwd,
-  )
-  return parseConvexDeploymentDescription(description, config)
+export async function readCloudDeployment(config, fetchImplementation = fetch) {
+  let response
+  try {
+    response = await fetchImplementation(
+      'https://api.convex.dev/api/deployment/team_and_project_for_key',
+      {
+        method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.timeout(5_000),
+        headers: {
+          Authorization: `Bearer ${config.adminKey}`,
+          'Content-Type': 'application/json',
+          'Convex-Client': 'better-convex-cloud-staging-proof',
+        },
+        body: JSON.stringify({ deployKey: config.adminKey }),
+      },
+    )
+  } catch {
+    fail('AUTH_CLOUD_STAGING_DEPLOYMENT_LOOKUP_FAILED')
+  }
+  assert(response.ok, 'AUTH_CLOUD_STAGING_DEPLOYMENT_LOOKUP_FAILED')
+  let value
+  try {
+    value = JSON.parse(
+      await readBoundedResponse(
+        response,
+        MAX_DEPLOYMENT_AUTHORITY_BYTES,
+        'AUTH_CLOUD_STAGING_DEPLOYMENT_AUTHORITY_INVALID',
+      ),
+    )
+  } catch {
+    fail('AUTH_CLOUD_STAGING_DEPLOYMENT_AUTHORITY_INVALID')
+  }
+  return normalizeCloudDeploymentAuthority(value, config)
 }
 
 function readArtifactIdentity(artifactManifest, packageId) {
@@ -1356,7 +1349,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     await assertClosedPublicIngress(config)
     await fetchCloudRuntimeFingerprint(config, artifact.identity)
     fixture = await prepareCloudFixture(artifacts)
-    deployment = readCloudDeployment(config, fixture.directory)
+    deployment = await readCloudDeployment(config)
     deployCloudFixture(config, fixture, artifact.identity)
 
     const client = new ConvexHttpClient(config.convexUrl)
