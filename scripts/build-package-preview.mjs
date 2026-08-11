@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 
 import { buildAndPackReleaseTarball } from './pack-release-tarball.mjs'
@@ -25,11 +25,15 @@ try {
   const vue = buildAndPackReleaseTarball('vue', outputDirectory, { repositoryRoot: root })
   const nuxt = buildAndPackReleaseTarball('nuxt', outputDirectory, { repositoryRoot: root })
   const bytes = readFileSync(nuxt.tarballPath)
-  console.log(`directory=${relative(root, outputDirectory)}`)
-  console.log('package_name=better-convex-nuxt')
-  console.log(`sha256=${createHash('sha256').update(bytes).digest('hex')}`)
-  console.log(`tarball=${relative(root, nuxt.tarballPath)}`)
-  console.log(`vue_tarball=${relative(root, vue.tarballPath)}`)
+  const output = [
+    `directory=${relative(root, outputDirectory)}`,
+    'package_name=better-convex-nuxt',
+    `sha256=${createHash('sha256').update(bytes).digest('hex')}`,
+    `tarball=${relative(root, nuxt.tarballPath)}`,
+    `vue_tarball=${relative(root, vue.tarballPath)}`,
+  ].join('\n')
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`)
+  console.log(output)
 } catch (error) {
   rmSync(outputDirectory, { force: true, recursive: true })
   throw error

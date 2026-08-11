@@ -85,7 +85,7 @@ describe('pkg.pr.new package preview workflow', () => {
     expect(runs).toEqual(
       expect.arrayContaining([
         'pnpm install --frozen-lockfile',
-        'node scripts/build-package-preview.mjs >> "$GITHUB_OUTPUT"',
+        'node scripts/build-package-preview.mjs',
       ]),
     )
     expect(read('scripts/build-package-preview.mjs')).toContain("buildAndPackReleaseTarball('vue'")

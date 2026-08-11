@@ -381,9 +381,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
   it('keeps CI source-only and package previews non-authoritative', () => {
     expect(preparationCommands(ciWorkflow, 'release-gate')).toEqual([])
     expect(preparationCommands(previewWorkflow, 'preview')).toEqual([])
-    expect(runs(previewWorkflow, 'preview')).toContain(
-      'node scripts/build-package-preview.mjs >> "$GITHUB_OUTPUT"',
-    )
+    expect(runs(previewWorkflow, 'preview')).toContain('node scripts/build-package-preview.mjs')
     expect(requireJob(ciWorkflow, 'release-gate')['timeout-minutes']).toBe(5)
     expect(needs(ciWorkflow, 'release-gate')).toEqual([
       'secrets',

@@ -47,7 +47,7 @@ jobs:
 
       - name: Build the disposable Vue/Nuxt preview set
         id: artifact
-        run: node scripts/build-package-preview.mjs >> "$GITHUB_OUTPUT"
+        run: node scripts/build-package-preview.mjs
 
       - name: Upload the exact prebuilt tarball to pkg.pr.new
         id: publish
