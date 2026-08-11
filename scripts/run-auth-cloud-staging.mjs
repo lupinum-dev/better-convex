@@ -247,11 +247,15 @@ function readArtifactIdentity(artifactManifest, packageId) {
   })
   const path = resolve(root, artifactManifest)
   try {
-    execFileSync(process.execPath, ['scripts/release.mjs', 'verify', path], {
-      cwd: root,
-      env: commandEnvironment(),
-      stdio: 'inherit',
-    })
+    execFileSync(
+      process.execPath,
+      ['scripts/release.mjs', 'verify', path, '--package', packageId],
+      {
+        cwd: root,
+        env: commandEnvironment(),
+        stdio: 'inherit',
+      },
+    )
   } catch {
     fail('AUTH_CLOUD_STAGING_ARTIFACT_VERIFY_FAILED')
   }

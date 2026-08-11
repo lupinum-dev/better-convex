@@ -21,13 +21,13 @@ describe('package artifact coordinate CLI', () => {
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-nuxt',
-      'directory=.release-artifacts/nuxt/0.8.0-beta.37',
-      'evidence=.release-artifacts/nuxt/0.8.0-beta.37/artifact.json',
+      'directory=.release-artifacts/nuxt/0.8.0-beta.38',
+      'evidence=.release-artifacts/nuxt/0.8.0-beta.38/artifact.json',
       'package_id=nuxt',
       'package_name=better-convex-nuxt',
-      'tarball=.release-artifacts/nuxt/0.8.0-beta.37/better-convex-nuxt-0.8.0-beta.37.tgz',
-      'tarball_filename=better-convex-nuxt-0.8.0-beta.37.tgz',
-      'version=0.8.0-beta.37',
+      'tarball=.release-artifacts/nuxt/0.8.0-beta.38/better-convex-nuxt-0.8.0-beta.38.tgz',
+      'tarball_filename=better-convex-nuxt-0.8.0-beta.38.tgz',
+      'version=0.8.0-beta.38',
     ])
   })
 
@@ -38,13 +38,13 @@ describe('package artifact coordinate CLI', () => {
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-vue',
-      'directory=.release-artifacts/vue/0.8.0-beta.37',
-      'evidence=.release-artifacts/vue/0.8.0-beta.37/artifact.json',
+      'directory=.release-artifacts/vue/0.8.0-beta.38',
+      'evidence=.release-artifacts/vue/0.8.0-beta.38/artifact.json',
       'package_id=vue',
       'package_name=better-convex-vue',
-      'tarball=.release-artifacts/vue/0.8.0-beta.37/better-convex-vue-0.8.0-beta.37.tgz',
-      'tarball_filename=better-convex-vue-0.8.0-beta.37.tgz',
-      'version=0.8.0-beta.37',
+      'tarball=.release-artifacts/vue/0.8.0-beta.38/better-convex-vue-0.8.0-beta.38.tgz',
+      'tarball_filename=better-convex-vue-0.8.0-beta.38.tgz',
+      'version=0.8.0-beta.38',
     ])
   })
 
@@ -55,13 +55,13 @@ describe('package artifact coordinate CLI', () => {
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-mcp',
-      'directory=.release-artifacts/mcp/0.1.0-beta.25',
-      'evidence=.release-artifacts/mcp/0.1.0-beta.25/artifact.json',
+      'directory=.release-artifacts/mcp/0.1.0-beta.26',
+      'evidence=.release-artifacts/mcp/0.1.0-beta.26/artifact.json',
       'package_id=mcp',
       'package_name=better-convex-mcp',
-      'tarball=.release-artifacts/mcp/0.1.0-beta.25/better-convex-mcp-0.1.0-beta.25.tgz',
-      'tarball_filename=better-convex-mcp-0.1.0-beta.25.tgz',
-      'version=0.1.0-beta.25',
+      'tarball=.release-artifacts/mcp/0.1.0-beta.26/better-convex-mcp-0.1.0-beta.26.tgz',
+      'tarball_filename=better-convex-mcp-0.1.0-beta.26.tgz',
+      'version=0.1.0-beta.26',
     ])
   })
 

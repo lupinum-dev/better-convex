@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## v0.8.0-beta.38
+
+- Retire the unpublished beta.37 Vue/Nuxt candidate after protected cloud
+  staging proved the expanded three-package verifier omitted the required
+  package discriminator for Vue and MCP evidence.
+- Preserve beta.37/beta.25 as failed immutable local evidence and never publish
+  or reuse those coordinates. Reserve beta.38/beta.26 with every artifact
+  verified against its own package identity before fixture installation.
+
+## v0.1.0-beta.26 (`better-convex-mcp`)
+
+- Retire unpublished beta.25 with the failed beta.37 family and pass the MCP
+  package discriminator into pre-publication cloud-staging verification. The
+  MCP runtime and public API are unchanged.
+
 ## v0.8.0-beta.37
 
 - Retire the unpublished beta.36 Vue/Nuxt candidate after the first protected

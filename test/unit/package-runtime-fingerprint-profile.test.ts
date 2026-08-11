@@ -98,7 +98,7 @@ describe('package runtime-fingerprint profiles', () => {
       const expected = derivePackageRuntimeFingerprint('nuxt', version, first.tarball)
       expect(derivePackageRuntimeFingerprint('nuxt', version, second.tarball)).toBe(expected)
       expect(derivePackageRuntimeFingerprint('nuxt', version, altered.tarball)).not.toBe(expected)
-      expect(derivePackageRuntimeFingerprint('nuxt', '0.8.0-beta.37', first.tarball)).not.toBe(
+      expect(derivePackageRuntimeFingerprint('nuxt', '0.8.0-beta.38', first.tarball)).not.toBe(
         expected,
       )
       expect(derivePackageRuntimeFingerprint('vue', version, 'not-read')).toBeNull()
