@@ -33,7 +33,7 @@ describe('MCP package documentation', () => {
     )
     expect(normalizedGuide).toContain('The protocol is stable; this integration remains prerelease')
     expect(guide).toContain(
-      'better-convex-mcp@0.1.0-beta.20 @modelcontextprotocol/server@2.0.0 zod@4.4.3',
+      'better-convex-mcp@0.1.0-beta.21 @modelcontextprotocol/server@2.0.0 zod@4.4.3',
     )
   })
 

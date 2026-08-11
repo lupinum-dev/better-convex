@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -105,6 +106,12 @@ function createReleaseControlFixture() {
     mkdirSync(dirname(destination), { recursive: true })
     writeFileSync(destination, read(relativePath))
   }
+  mkdirSync(join(repository, 'scripts/package-check'), { recursive: true })
+  writeFileSync(
+    join(repository, 'scripts/package-check/tarball.mjs'),
+    "export function inspectTarballArchive() { throw new Error('not used by release-control fixture') }\n",
+  )
+  symlinkSync(join(root, 'node_modules'), join(repository, 'node_modules'), 'dir')
   return { repository, temporaryDirectory }
 }
 
@@ -132,9 +139,49 @@ describe('trusted prerelease workflow', () => {
     const fakeBin = join(temporaryDirectory, 'bin')
     mkdirSync(fakeBin)
     const fakeNode = join(fakeBin, 'node')
+    const fakeNodeDriver = join(fakeBin, 'node-driver.mjs')
+    const fakeGit = join(fakeBin, 'git')
     const executionLog = join(temporaryDirectory, 'executed.log')
-    writeFileSync(fakeNode, '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$BCN_RELEASE_FAMILY_TEST_LOG"\n')
+    writeFileSync(
+      fakeNode,
+      `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeNodeDriver)} "$@"\n`,
+    )
+    writeFileSync(
+      fakeNodeDriver,
+      `import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+const args = process.argv.slice(2)
+appendFileSync(process.env.BCN_RELEASE_FAMILY_TEST_LOG, args.join(' ') + '\\n')
+if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
+  const packageId = args[args.indexOf('--package') + 1]
+  const module = await import(pathToFileURL(resolve('scripts/package-artifact-coordinates.mjs')).href)
+  const coordinates = module.getPackageArtifactCoordinates(packageId, { repositoryRoot: process.cwd() })
+  const workspace = JSON.parse(readFileSync(resolve('package.json'), 'utf8'))
+  const integrity = 'sha512-' + Buffer.alloc(64).toString('base64')
+  const evidence = {
+    schemaVersion: 3,
+    packageId: coordinates.packageId,
+    packageName: coordinates.packageName,
+    packageDirectory: coordinates.packageDirectory,
+    version: coordinates.version,
+    profiles: coordinates.profiles,
+    sourceCommit: '0'.repeat(40),
+    packageManager: workspace.packageManager,
+    node: 'fixture', npm: 'fixture', pnpm: 'fixture', sourceTree: 'clean',
+    runtimeFingerprint: packageId === 'nuxt' ? 'bcn-release-v1-' + '0'.repeat(64) : null,
+    tarball: { file: coordinates.files.tarball, bytes: 1, sha256: '1'.repeat(64), integrity },
+    contents: { file: coordinates.files.contents, bytes: 1, sha256: '2'.repeat(64) },
+    sbom: { file: coordinates.files.sbom, bytes: 1, sha256: '3'.repeat(64) },
+  }
+  mkdirSync(coordinates.directory, { recursive: true })
+  writeFileSync(coordinates.paths.evidence, JSON.stringify(evidence) + '\\n')
+}
+`,
+    )
+    writeFileSync(fakeGit, '#!/bin/sh\nexit 0\n')
     chmodSync(fakeNode, 0o755)
+    chmodSync(fakeGit, 0o755)
 
     try {
       const result = spawnSync(
@@ -151,11 +198,19 @@ describe('trusted prerelease workflow', () => {
         },
       )
       expect(result.status, result.stderr).toBe(0)
-      expect(readFileSync(executionLog, 'utf8').trim().split('\n')).toEqual([
-        'scripts/release.mjs prepare --package mcp',
-        'scripts/prepare-candidate-set.mjs prepare',
+      const commands = readFileSync(executionLog, 'utf8').trim().split('\n')
+      expect(commands.slice(0, 4)).toEqual([
+        'scripts/prepare-candidate-app-locks.mjs check',
+        'scripts/release.mjs artifact --package vue',
+        'scripts/release.mjs artifact --package nuxt',
+        'scripts/release.mjs artifact --package mcp',
       ])
-      expect(existsSync(join(repository, '.release-artifacts'))).toBe(false)
+      expect(commands.slice(4)).toEqual(
+        expect.arrayContaining([
+          'scripts/verify-release.mjs --package vue --artifact-manifest .release-artifacts/vue/0.8.0-beta.33/artifact.json',
+          'scripts/verify-release.mjs --package nuxt --artifact-manifest .release-artifacts/nuxt/0.8.0-beta.33/artifact.json',
+        ]),
+      )
     } finally {
       rmSync(temporaryDirectory, { force: true, recursive: true })
     }
@@ -376,10 +431,37 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
 
   it('prevents release prepack from mutating dependency state', () => {
     const release = read('scripts/release.mjs')
+    const packer = read('scripts/pack-release-tarball.mjs')
 
-    expect(release).toContain("npm_config_verify_deps_before_run: 'false'")
-    expect(release).toContain("PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: 'false'")
+    expect(release).toContain('buildAndPackReleaseTarball(')
+    expect(packer).toContain("npm_config_verify_deps_before_run: 'false'")
+    expect(packer).toContain("PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: 'false'")
     expect(release).toContain('env: options.env ? { ...process.env, ...options.env } : process.env')
+  })
+
+  it('shares one build-pack path and binds locks before immutable rename', () => {
+    const packageJson = JSON.parse(read('package.json')) as {
+      scripts?: Record<string, string>
+    }
+    const release = read('scripts/release.mjs')
+    const preflight = read('scripts/prepare-candidate-app-locks.mjs')
+    const updater = read('scripts/update-candidate-app-locks.mjs')
+
+    expect(release).toContain('buildAndPackReleaseTarball(')
+    expect(preflight).toContain('buildAndPackReleaseTarball(')
+    expect(release.indexOf('assertCandidateAppLocksBindArtifact(')).toBeLessThan(
+      release.indexOf('renameSync(stagingDirectory, artifactCoordinates.directory)'),
+    )
+    expect(packageJson.scripts?.['update:candidate-app-locks']).toBe(
+      'node scripts/prepare-candidate-app-locks.mjs update',
+    )
+    expect(packageJson.scripts?.['check:candidate-app-locks']).toBe(
+      'node scripts/prepare-candidate-app-locks.mjs check',
+    )
+    expect(updater).toContain('if (options.check) {')
+    expect(updater.indexOf('if (options.check) {')).toBeLessThan(
+      updater.indexOf('await runPnpm(profile, validationDir, registry, false)'),
+    )
   })
 
   it('keeps the source security job artifact-free and blocking', () => {

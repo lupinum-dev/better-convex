@@ -1,6 +1,6 @@
 {
   "name": "better-convex-nuxt",
-  "version": "0.8.0-beta.32",
+  "version": "0.8.0-beta.33",
   "description": "Full-featured Convex integration for Nuxt with SSR, real-time subscriptions, and authentication",
   "keywords": [
     "authentication",
@@ -142,7 +142,8 @@
     "check:no-starter-generated-artifacts": "node scripts/check-no-starter-generated-artifacts.mjs",
     "check:workspace-deps": "node scripts/check-workspace-dependency-alignment.mjs",
     "check:candidate-apps": "node scripts/check-candidate-apps.mjs --package nuxt",
-    "update:candidate-app-locks": "node scripts/update-candidate-app-locks.mjs",
+    "update:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs update",
+    "check:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs check",
     "check:consumer-smoke": "nuxt-module-build prepare && nuxt-module-build build && pnpm run check:consumer-smoke:dist",
     "check:consumer-smoke:dist": "nuxi prepare --cwd test/fixtures/consumer-smoke && nuxi typecheck --cwd test/fixtures/consumer-smoke",
     "check:missing-convex-api": "nuxi prepare --cwd test/fixtures/missing-convex-api && nuxi typecheck --cwd test/fixtures/missing-convex-api",
@@ -180,7 +181,7 @@
   },
   "dependencies": {
     "@nuxt/kit": "4.5.1",
-    "better-convex-vue": "0.8.0-beta.32",
+    "better-convex-vue": "0.8.0-beta.33",
     "convex-helpers": "0.1.114",
     "defu": "^6.1.5",
     "h3": "1.15.11",

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   lstatSync,
@@ -18,6 +18,11 @@ import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 
 import {
+  assertCandidateAppLocksBindArtifact,
+  packageArtifactIdentity,
+} from './candidate-app-locks.mjs'
+import { buildAndPackReleaseTarball } from './pack-release-tarball.mjs'
+import {
   assertPackageArtifactWriteTarget,
   assertPackageManifestMatchesCommit,
   getPackageArtifactCoordinates,
@@ -32,12 +37,11 @@ import {
   selectProductionManifestContract,
 } from './package-check/production-manifest-contract.mjs'
 import { buildContentManifest, packAndExtract } from './package-check/tarball.mjs'
-import { getPackageRuntimeFingerprintProfile } from './package-runtime-fingerprint-profile.mjs'
+import { assertPackedRuntimeFingerprintBinding } from './package-runtime-fingerprint-profile.mjs'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const { command, packageId: releasePackageId, verifyPath } = parseArguments(process.argv.slice(2))
 const artifactCoordinates = getPackageArtifactCoordinates(releasePackageId)
-const packageRoot = artifactCoordinates.sourceDirectory
 const packageJson = JSON.parse(readFileSync(artifactCoordinates.manifestPath, 'utf8'))
 const workspacePackageJson = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'))
 const reviewedManifestContract = selectProductionManifestContract(releasePackageId, packageJson)
@@ -53,8 +57,6 @@ if (
 const version = artifactCoordinates.version
 const tag = `v${version}`
 const expectedArtifactFiles = artifactCoordinates.files
-const { profile: runtimeFingerprintProfile } = getPackageRuntimeFingerprintProfile(releasePackageId)
-const maxPackedFingerprintFileBytes = 16 * 1024 * 1024
 
 function parseArguments(args) {
   const command = args[0]
@@ -176,53 +178,6 @@ function verifyFileEvidence(directory, evidence, label) {
   return path
 }
 
-function verifyRuntimeFingerprintBinding(tarballPath, runtimeFingerprint) {
-  if (runtimeFingerprintProfile.mode === 'forbidden') return
-  for (const packagePath of runtimeFingerprintProfile.packedFiles) {
-    let source
-    try {
-      source = execFileSync('tar', ['-xOf', tarballPath, `package/${packagePath}`], {
-        encoding: 'utf8',
-        maxBuffer: maxPackedFingerprintFileBytes,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-    } catch {
-      throw new Error(`Artifact tarball is missing bounded fingerprint input ${packagePath}.`)
-    }
-    if (
-      source.split(runtimeFingerprint).length !== 2 ||
-      source.includes(runtimeFingerprintProfile.token)
-    ) {
-      throw new Error(`Artifact runtime fingerprint is not bound to packed ${packagePath}.`)
-    }
-  }
-  for (const binding of runtimeFingerprintProfile.moduleBindings) {
-    let moduleSource
-    try {
-      moduleSource = execFileSync('tar', ['-xOf', tarballPath, `package/${binding.packedFile}`], {
-        encoding: 'utf8',
-        maxBuffer: maxPackedFingerprintFileBytes,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-    } catch {
-      throw new Error(
-        `Artifact tarball is missing bounded fingerprint input ${binding.packedFile}.`,
-      )
-    }
-    const escapedImport = binding.helperImport.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-    const importPattern = new RegExp(
-      `import\\s*\\{\\s*getPackedRuntimeFingerprint\\s*\\}\\s*from\\s*['"]${escapedImport}['"]`,
-      'gu',
-    )
-    const bindings = moduleSource.match(importPattern) ?? []
-    if (bindings.length !== 1 || moduleSource.includes(runtimeFingerprintProfile.token)) {
-      throw new Error(
-        `Artifact runtime fingerprint helper is not bound to packed ${binding.packedFile}.`,
-      )
-    }
-  }
-}
-
 function requireReviewedCandidateManifest(packageDir) {
   const manifestPath = join(packageDir, 'package.json')
   const candidate = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -330,7 +285,12 @@ function verifyArtifact(evidenceFile) {
   if (integrity(tarballPath) !== evidence.tarball.integrity) {
     throw new Error('Artifact tarball SRI does not match its bytes.')
   }
-  verifyRuntimeFingerprintBinding(tarballPath, evidence.runtimeFingerprint)
+  if (
+    assertPackedRuntimeFingerprintBinding(releasePackageId, version, tarballPath) !==
+    evidence.runtimeFingerprint
+  ) {
+    throw new Error('Artifact runtime fingerprint does not match its deterministic coordinate.')
+  }
 
   const { packageDir, scratchDir, archiveEntries } = packAndExtract(releasePackageId, tarballPath)
   try {
@@ -357,62 +317,17 @@ function verifyArtifact(evidenceFile) {
   return { evidence, tarballPath }
 }
 
-function packBoundRuntimeArtifact(artifactsDir) {
-  const runtimeFingerprint =
-    runtimeFingerprintProfile.mode === 'required'
-      ? `bcn-release-v1-${randomBytes(32).toString('hex')}`
-      : null
-  const originals = (
-    runtimeFingerprintProfile.mode === 'required' ? runtimeFingerprintProfile.buildFiles : []
-  ).map((relativePath) => {
-    const path = join(packageRoot, relativePath)
-    const source = readFileSync(path, 'utf8')
-    if (source.split(runtimeFingerprintProfile.token).length !== 2) {
-      throw new Error(`Release fingerprint token must occur exactly once in ${path}.`)
-    }
-    return { path, source }
-  })
-
-  try {
-    for (const { path, source } of originals) {
-      writeFileSync(path, source.replace(runtimeFingerprintProfile.token, runtimeFingerprint))
-    }
-    // npm must not rerun prepack here: dist above is the one reviewed build.
-    const packResult = JSON.parse(
-      output('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', artifactsDir], {
-        cwd: packageRoot,
-      }),
-    )
-    if (!Array.isArray(packResult) || packResult.length !== 1) {
-      throw new Error('npm pack must produce exactly one package result.')
-    }
-    return { packResult, runtimeFingerprint }
-  } finally {
-    // Keep the checkout/build output reusable even when packing fails midway.
-    for (const { path, source } of originals) writeFileSync(path, source)
-  }
-}
-
 /**
  * Builds and packs exactly once. The returned tarball is the only releasable
  * package input; later jobs verify or publish these bytes and never repack the
  * repository directory.
  */
 function createArtifact() {
-  const distDir = join(packageRoot, 'dist')
   const sourceCommit = output('git', ['rev-parse', 'HEAD'])
   if (!/^[0-9a-f]{40}$/u.test(sourceCommit)) throw new Error('Could not resolve source commit.')
   assertReleaseTagIsUnusedOrCurrent(sourceCommit)
   assertPackageManifestMatchesCommit(releasePackageId, sourceCommit)
   assertPackageArtifactWriteTarget(releasePackageId)
-  rmSync(distDir, { recursive: true, force: true })
-  run('pnpm', ['run', 'prepack'], {
-    cwd: packageRoot,
-    env: {
-      npm_config_verify_deps_before_run: 'false',
-      PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: 'false',
-    },
-  })
 
   assertPackageArtifactWriteTarget(releasePackageId)
   mkdirSync(artifactCoordinates.packageArtifactDirectory, { recursive: true })
@@ -422,19 +337,11 @@ function createArtifact() {
   )
   let committed = false
   try {
-    const { packResult, runtimeFingerprint } = packBoundRuntimeArtifact(stagingDirectory)
-    if (packResult[0].filename !== expectedArtifactFiles.tarball) {
-      throw new Error(
-        `npm pack produced unexpected artifact filename: ${String(packResult[0].filename)}.`,
-      )
-    }
-    if (packResult[0].name !== packageJson.name || packResult[0].version !== version) {
-      throw new Error(
-        `npm pack produced unexpected identity: ${String(packResult[0].name)}@${String(packResult[0].version)}.`,
-      )
-    }
-    const tarballPath = join(stagingDirectory, packResult[0].filename)
-    if (!existsSync(tarballPath)) throw new Error(`Expected tarball is missing: ${tarballPath}`)
+    const { packResult, runtimeFingerprint, tarballPath } = buildAndPackReleaseTarball(
+      releasePackageId,
+      stagingDirectory,
+      { repositoryRoot: repoRoot },
+    )
 
     const contentsPath = join(stagingDirectory, expectedArtifactFiles.contents)
     const packageExportArguments = [
@@ -467,6 +374,10 @@ function createArtifact() {
     if (packResult[0].integrity && packResult[0].integrity !== tarballIntegrity) {
       throw new Error('npm pack integrity does not match the independently computed tarball SRI.')
     }
+    assertCandidateAppLocksBindArtifact(
+      packageArtifactIdentity(releasePackageId, version, tarballIntegrity),
+      { repositoryRoot: repoRoot },
+    )
     const evidence = {
       schemaVersion: packageArtifactEvidenceSchemaVersion,
       packageId: artifactCoordinates.packageId,

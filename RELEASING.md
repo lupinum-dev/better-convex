@@ -107,8 +107,20 @@ Local artifacts are disposable rehearsal outputs. Do not upload one to npm.
 
 `pnpm release:prepare` is the sole clean-checkout preparation command for the
 vNext package family. MCP remains outside the closed Vue/Nuxt candidate-set
-schema; the command owns the ordering because the Nuxt maintained-consumer
-matrix requires the exact same-commit MCP companion artifact.
+schema. The command first validates every standalone candidate lock, then mints
+the Vue/Nuxt set followed by MCP, and only then verifies and certifies all three
+exact artifacts.
+
+After a release-version or candidate-manifest change, run
+`pnpm update:candidate-app-locks`. Update mode intentionally accepts those
+tracked edits, builds the canonical Vue/Nuxt/MCP tarballs, refreshes all five
+standalone locks, and frozen-installs each result. `pnpm
+check:candidate-app-locks` is the clean-tree, non-refreshing gate: it parses the
+committed locks, serves only the canonical candidate tarballs from a temporary
+registry, and runs frozen installs without resolving a new dependency graph.
+The protected Node/Linux release run remains the final byte authority; every
+staged package SRI must match the committed reachable lock graph before an
+immutable artifact directory can be renamed into place.
 
 ## Trusted prerelease workflow
 
@@ -118,7 +130,7 @@ prerelease version in the root `package.json`. The workflow then:
 1. records `governanceMode: solo-maintainer`, the human tag actor, the checked-out
    commit author, tag, and source commit in the protected run; it does not invent
    a deputy, licensing reviewer, notification drill, or independent review;
-2. uses Node `22.14.0`, npm `11.5.1`, the Corepack-verified
+2. uses Node `22.14.0`, npm `11.18.0`, Corepack `0.34.5`, and the Corepack-verified
    `pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1`,
    a frozen pnpm lock, and commit-pinned GitHub Actions;
 3. builds and packs the statically reviewed Vue/Nuxt candidate set once and the

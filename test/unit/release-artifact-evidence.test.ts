@@ -24,6 +24,7 @@ import {
   buildContentManifest,
   inspectTarballArchive,
 } from '../../scripts/package-check/tarball.mjs'
+import { derivePackageRuntimeFingerprint } from '../../scripts/package-runtime-fingerprint-profile.mjs'
 
 const root = resolve(import.meta.dirname, '../..')
 const temporaryDirectories: string[] = []
@@ -51,6 +52,24 @@ function writeFixtureTarball(file: string, packedRoot: string) {
     },
     files.sort(),
   )
+}
+
+function bindFixtureTarball(file: string, packedRoot: string, version: string) {
+  const fingerprintPath = join(packedRoot, 'package/dist/runtime/shared/release-fingerprint.js')
+  const source = readFileSync(fingerprintPath, 'utf8').replace(
+    /__BCN_RELEASE_RUNTIME_FINGERPRINT__|bcn-release-v1-[0-9a-f]{64}/u,
+    '__BCN_RELEASE_RUNTIME_FINGERPRINT__',
+  )
+  writeFileSync(fingerprintPath, source)
+  writeFixtureTarball(file, packedRoot)
+  const runtimeFingerprint = derivePackageRuntimeFingerprint('nuxt', version, file)
+  if (!runtimeFingerprint) throw new Error('Nuxt fixture requires a runtime fingerprint')
+  writeFileSync(
+    fingerprintPath,
+    source.replace('__BCN_RELEASE_RUNTIME_FINGERPRINT__', runtimeFingerprint),
+  )
+  writeFixtureTarball(file, packedRoot)
+  return runtimeFingerprint
 }
 
 function contentManifest(tarballPath: string, packageDir: string) {
@@ -96,7 +115,6 @@ function createArtifactFixture() {
   }).trim()
   const npm = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim()
   const pnpm = execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim()
-  const runtimeFingerprint = `bcn-release-v1-${'a'.repeat(64)}`
   const tarballName = canonicalNpmTarballFilename(packageJson.name, packageJson.version)
   const contentsName = 'contents.json'
   const sbomName = 'sbom.cdx.json'
@@ -108,10 +126,14 @@ function createArtifactFixture() {
   )
   writeFileSync(
     join(packedPackage, 'dist', 'runtime', 'shared', 'release-fingerprint.js'),
-    `const value = '${runtimeFingerprint}'\n`,
+    "const value = '__BCN_RELEASE_RUNTIME_FINGERPRINT__'\n",
   )
   writeFileSync(join(packedPackage, 'package.json'), `${JSON.stringify(packageJson)}\n`)
-  writeFixtureTarball(join(directory, tarballName), join(directory, 'packed'))
+  const runtimeFingerprint = bindFixtureTarball(
+    join(directory, tarballName),
+    join(directory, 'packed'),
+    packageJson.version,
+  )
   const tarball = readFileSync(join(directory, tarballName))
   const extractedRoot = join(directory, 'extracted')
   mkdirSync(extractedRoot)
@@ -182,7 +204,11 @@ function replacePackedManifest(
   writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`)
 
   const tarballPath = join(fixture.directory, fixture.tarballName)
-  writeFixtureTarball(tarballPath, join(fixture.directory, 'packed'))
+  fixture.evidence.runtimeFingerprint = bindFixtureTarball(
+    tarballPath,
+    join(fixture.directory, 'packed'),
+    fixture.evidence.version,
+  )
   const tarball = readFileSync(tarballPath)
   fixture.evidence.tarball.bytes = tarball.length
   fixture.evidence.tarball.sha256 = sha256(tarball)
@@ -602,6 +628,8 @@ describe('immutable release artifact evidence', () => {
     const mismatched = createArtifactFixture()
     mismatched.evidence.runtimeFingerprint = `bcn-release-v1-${'b'.repeat(64)}`
     writeFileSync(mismatched.evidencePath, `${JSON.stringify(mismatched.evidence)}\n`)
-    expect(verify(mismatched.evidencePath).stderr).toContain('runtime fingerprint is not bound')
+    expect(verify(mismatched.evidencePath).stderr).toContain(
+      'runtime fingerprint does not match its deterministic coordinate',
+    )
   }, 120_000)
 })

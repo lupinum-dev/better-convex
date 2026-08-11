@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import { getPackageArtifactCoordinates } from './package-artifact-coordinates.mjs'
 import {
   assertCandidateSetManifest,
   candidateSetPackageIds,
@@ -50,6 +51,27 @@ function verifySet(manifest) {
   for (const entry of evidence.packages) {
     run('node', ['scripts/release.mjs', 'verify', entry.evidence, '--package', entry.packageId])
   }
+  return evidence
+}
+
+function checkCandidateAppLocks() {
+  run('node', ['scripts/prepare-candidate-app-locks.mjs', 'check'])
+}
+
+function certifyPackage(packageId, evidence) {
+  run('node', [
+    'scripts/verify-release.mjs',
+    '--package',
+    packageId,
+    '--artifact-manifest',
+    evidence,
+  ])
+}
+
+function certifySet(manifest) {
+  const evidence = verifySet(manifest)
+  for (const entry of evidence.packages) certifyPackage(entry.packageId, entry.evidence)
+  verifySet(manifest)
   return evidence
 }
 
@@ -103,25 +125,20 @@ function createSet() {
 }
 
 if (command === 'family') {
-  run('node', ['scripts/release.mjs', 'prepare', '--package', 'mcp'])
-  run('node', ['scripts/prepare-candidate-set.mjs', 'prepare'])
+  checkCandidateAppLocks()
+  const manifest = createSet()
+  const mcpCoordinates = getPackageArtifactCoordinates('mcp', { repositoryRoot: root })
+  run('node', ['scripts/release.mjs', 'artifact', '--package', 'mcp'])
+  certifySet(manifest)
+  run('node', ['scripts/release.mjs', 'verify', mcpCoordinates.paths.evidence, '--package', 'mcp'])
+  certifyPackage('mcp', mcpCoordinates.paths.evidence)
+  run('node', ['scripts/release.mjs', 'verify', mcpCoordinates.paths.evidence, '--package', 'mcp'])
   console.log('\nPrepared the immutable MCP + Vue/Nuxt release family.')
 } else if (command === 'verify') {
   verifySet(suppliedManifest)
 } else {
+  checkCandidateAppLocks()
   const manifest = createSet()
-  if (command === 'prepare') {
-    const evidence = verifySet(manifest)
-    for (const entry of evidence.packages) {
-      run('node', [
-        'scripts/verify-release.mjs',
-        '--package',
-        entry.packageId,
-        '--artifact-manifest',
-        entry.evidence,
-      ])
-    }
-    verifySet(manifest)
-  }
+  if (command === 'prepare') certifySet(manifest)
   console.log(`\nImmutable candidate set: ${manifest}`)
 }

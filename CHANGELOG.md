@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v0.8.0-beta.33
+
+- Retire the unpublished beta.32 Vue/Nuxt candidate set after its full release
+  rehearsal exposed stale extended E2E assertions for the removed boolean auth
+  state and raw signout path. Commit `fd9b49af` corrects the matrix to exercise
+  the canonical string auth state and integrated signout contract.
+- Never rebuild or publish beta.32; reserve one fresh closed Vue/Nuxt candidate
+  set from the corrected clean source commit.
+
+## v0.1.0-beta.21 (`better-convex-mcp`)
+
+- Retire the unpublished beta.20 MCP candidate with the failed beta.32 release
+  family because protected workflows build all packages from one clean source
+  commit. Never rebuild or publish beta.20; reserve one fresh coordinate without
+  changing the MCP runtime or public API.
+
 ## v0.8.0-beta.32
 
 - Retire the unpublished beta.31 Vue/Nuxt candidate set after its full clean

@@ -8,7 +8,7 @@ continues to own tools, resources, roles, permissions, and effects.
 ## Install
 
 ```bash
-pnpm add better-convex-mcp@0.1.0-beta.20 @modelcontextprotocol/server@2.0.0 zod@4.4.3
+pnpm add better-convex-mcp@0.1.0-beta.21 @modelcontextprotocol/server@2.0.0 zod@4.4.3
 ```
 
 ## Handle one request
