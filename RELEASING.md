@@ -99,6 +99,8 @@ Required secrets:
 The Convex key must be deployment-scoped. The Vercel project and organization
 IDs bind the deploy to the dedicated staging project. The staging origin must
 reject unleased fingerprint and auth requests at the edge.
+`CONVEX_SITE_URL` is a Convex built-in deployment value: the workflow verifies
+it but never sets or overrides it.
 
 ## Immutable artifacts and artifact-only verification
 
