@@ -18,6 +18,7 @@ import { join, resolve } from 'node:path'
 
 import {
   assertCandidateAppLockTextBindsArtifact,
+  candidateAppInstallArgs,
   candidateAppLockProfiles,
   packageArtifactIdentity,
 } from './candidate-app-locks.mjs'
@@ -112,10 +113,7 @@ const updatedLocks = new Map()
 
 function runPnpm(profile, directory, registry, frozen) {
   return new Promise((resolvePromise, reject) => {
-    const installArgs = frozen
-      ? ['install', '--frozen-lockfile', '--ignore-scripts']
-      : ['install', '--lockfile-only', '--no-frozen-lockfile', '--ignore-scripts']
-    if (profile.strictPeerDependencies) installArgs.push('--strict-peer-dependencies')
+    const installArgs = candidateAppInstallArgs(profile, frozen)
     console.log(`\n> pnpm ${installArgs.join(' ')} (${directory})`)
     const child = spawn('pnpm', installArgs, {
       cwd: resolve(repoRoot, directory),

@@ -9,6 +9,7 @@ import { parse, stringify } from 'yaml'
 
 import {
   assertCandidateAppLocksBindArtifact,
+  candidateAppInstallArgs,
   candidateAppLockProfiles,
   packageArtifactIdentity,
 } from '../../scripts/candidate-app-locks.mjs'
@@ -117,6 +118,21 @@ describe('candidate app lock contract', () => {
           ).packageManager.startsWith('pnpm@11.5.0'),
         ),
     ).toBe(true)
+
+    const [demoProfile, ...starterProfiles] = candidateAppLockProfiles
+    if (!demoProfile) throw new Error('Missing demo lock profile')
+    for (const [frozen, baseArgs] of [
+      [false, ['install', '--lockfile-only', '--no-frozen-lockfile', '--ignore-scripts']],
+      [true, ['install', '--frozen-lockfile', '--ignore-scripts']],
+    ] as const) {
+      expect(candidateAppInstallArgs(demoProfile, frozen)).toEqual(baseArgs)
+      for (const profile of starterProfiles) {
+        expect(candidateAppInstallArgs(profile, frozen)).toEqual([
+          ...baseArgs,
+          '--strict-peer-dependencies',
+        ])
+      }
+    }
   })
 
   it('rejects orphan package SRI blocks and broken direct or companion snapshots', () => {
@@ -156,7 +172,7 @@ describe('candidate app lock contract', () => {
     } finally {
       rmSync(fixture, { force: true, recursive: true })
     }
-  })
+  }, 30_000)
 
   it('accepts the shared exact SRI and rejects one altered maintained lock', () => {
     const artifacts = ['mcp', 'nuxt', 'vue'].map((packageId) =>

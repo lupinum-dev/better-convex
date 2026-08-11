@@ -7,7 +7,7 @@ server calls, or optional Better Auth integration.
 ## Install
 
 ```bash
-pnpm add better-convex-vue@0.8.0-beta.33 convex@1.42.2 vue@^3.5.0
+pnpm add better-convex-vue@0.8.0-beta.34 convex@1.42.2 vue@^3.5.0
 ```
 
 ```ts

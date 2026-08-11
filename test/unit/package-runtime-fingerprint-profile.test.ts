@@ -86,7 +86,7 @@ describe('package runtime-fingerprint profiles', () => {
   })
 
   it('derives and independently binds one reproducible packed-payload coordinate', () => {
-    const version = '0.8.0-beta.33'
+    const version = '0.8.0-beta.34'
     const firstDirectory = mkdtempSync(join(tmpdir(), 'bcn-fingerprint-a-'))
     const secondDirectory = mkdtempSync(join(tmpdir(), 'bcn-fingerprint-b-'))
     const alteredDirectory = mkdtempSync(join(tmpdir(), 'bcn-fingerprint-altered-'))
@@ -98,11 +98,11 @@ describe('package runtime-fingerprint profiles', () => {
       const expected = derivePackageRuntimeFingerprint('nuxt', version, first.tarball)
       expect(derivePackageRuntimeFingerprint('nuxt', version, second.tarball)).toBe(expected)
       expect(derivePackageRuntimeFingerprint('nuxt', version, altered.tarball)).not.toBe(expected)
-      expect(derivePackageRuntimeFingerprint('nuxt', '0.8.0-beta.34', first.tarball)).not.toBe(
+      expect(derivePackageRuntimeFingerprint('nuxt', '0.8.0-beta.35', first.tarball)).not.toBe(
         expected,
       )
       expect(derivePackageRuntimeFingerprint('vue', version, 'not-read')).toBeNull()
-      expect(derivePackageRuntimeFingerprint('mcp', '0.1.0-beta.21', 'not-read')).toBeNull()
+      expect(derivePackageRuntimeFingerprint('mcp', '0.1.0-beta.22', 'not-read')).toBeNull()
 
       expect(bindPackageRuntimeFingerprintBuild('nuxt', expected, first.packageRoot)).toBe(expected)
       expect(

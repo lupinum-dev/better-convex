@@ -225,7 +225,7 @@ describe('vNext Convex-native MCP topology probe', () => {
       peerDependencies: Record<string, string>
     }
     expect(fixtureManifest.dependencies).toEqual({
-      'better-convex-mcp': '0.1.0-beta.21',
+      'better-convex-mcp': '0.1.0-beta.22',
       '@modelcontextprotocol/server': mcpManifest.dependencies['@modelcontextprotocol/server'],
       convex: rootManifest.peerDependencies.convex,
       zod: rootManifest.devDependencies.zod,

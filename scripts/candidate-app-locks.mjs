@@ -37,6 +37,18 @@ export const candidateAppLockProfiles = Object.freeze(
   ),
 )
 
+/** Exact install command policy for one maintained application lock. */
+export function candidateAppInstallArgs(profile, frozen) {
+  if (!candidateAppLockProfiles.includes(profile) || typeof frozen !== 'boolean') {
+    throw new TypeError('Candidate app install arguments require a maintained profile and mode.')
+  }
+  const args = frozen
+    ? ['install', '--frozen-lockfile', '--ignore-scripts']
+    : ['install', '--lockfile-only', '--no-frozen-lockfile', '--ignore-scripts']
+  if (profile.strictPeerDependencies) args.push('--strict-peer-dependencies')
+  return args
+}
+
 /** Assert one pnpm lock binds an exact reviewed package tarball SRI. */
 export function assertCandidateAppLockTextBindsArtifact(lockSource, profile, artifact) {
   assertArtifactIdentity(artifact)

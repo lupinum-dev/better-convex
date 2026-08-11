@@ -17,14 +17,17 @@ pnpm check:auth-backend --install
 pnpm release:prepare
 ```
 
-The preparation command first builds and certifies the independent MCP package,
-then builds the closed Vue/Nuxt candidate set and verifies Nuxt against both
-retained companions. Each package builds once and invokes
-`npm pack --ignore-scripts` once. Source-integrity and source-runtime gates then
-run from the reviewed checkout; artifact-dependent package, provenance, and
-clean-consumer gates install or inspect the immutable tarballs. The auth gate is
-hybrid and passes the Nuxt and Vue tarballs explicitly to its package-aware
-sub-gates. Nothing repacks a candidate.
+The preparation command first builds disposable canonical scratch packages to
+validate every standalone candidate lock. It then mints the closed Vue/Nuxt set
+followed by MCP, certifies the set, and finally certifies MCP. Each immutable
+artifact uses one reviewed build and produces one final candidate tarball. The
+Nuxt packer additionally creates one disposable placeholder preimage to derive
+the deterministic runtime fingerprint before packing the final bound bytes.
+Source-integrity and source-runtime gates run from the reviewed checkout;
+artifact-dependent package, provenance, and clean-consumer gates install or
+inspect the immutable tarballs. The auth gate is hybrid and passes the Nuxt and
+Vue tarballs explicitly to its package-aware sub-gates. Scratch and preimage
+packages are not candidates, and nothing repacks a final candidate.
 
 The command writes three immutable package-qualified evidence sets under
 `.release-artifacts/{mcp,vue,nuxt}/<package-version>/` and one Vue/Nuxt set
@@ -37,8 +40,9 @@ set contains:
 - a strict schema-v3 artifact evidence manifest that binds the source commit,
   reviewed descriptor ID, npm name, canonical package directory, version, exact
   certification-profile tuple, workspace-root package-manager authority,
-  tarball SHA-256 and SRI, content manifest, SBOM, and a random build-generated
-  runtime fingerprint embedded in the packed module and endpoint handler.
+  tarball SHA-256 and SRI, content manifest, SBOM, and a deterministic
+  payload-derived runtime fingerprint embedded in the packed module and endpoint
+  handler.
 
 Verification accepts only the exact version-derived artifact filenames and
 re-extracts the tarball to recompute its complete path/mode/size/hash manifest.
@@ -133,9 +137,10 @@ prerelease version in the root `package.json`. The workflow then:
 2. uses Node `22.14.0`, npm `11.18.0`, Corepack `0.34.5`, and the Corepack-verified
    `pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1`,
    a frozen pnpm lock, and commit-pinned GitHub Actions;
-3. builds and packs the statically reviewed Vue/Nuxt candidate set once and the
-   statically reviewed MCP candidate once, without accepting package paths or
-   release profiles from workflow input;
+3. builds each statically reviewed package once and produces one final immutable
+   tarball per package, with Nuxt deriving its deterministic fingerprint from a
+   disposable normalized preimage before final packing, without accepting
+   package paths or release profiles from workflow input;
 4. passes those immutable artifacts to a separate job, installs the
    manifest-reviewed local backend there, runs source-integrity/runtime gates
    from the checkout, and runs artifact-dependent provenance, package-entry,

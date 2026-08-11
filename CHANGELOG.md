@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## v0.8.0-beta.34
+
+- Retire the unpublished beta.33 Vue/Nuxt candidate set after its immutable
+  artifacts were minted from commit `442e910a` but full Nuxt certification
+  failed in the broad source test gate. The candidate-lock corruption matrix
+  exceeded Vitest's default five-second timeout under the parallel suite. The
+  isolated-consumer static sentinel also treated the updater's frozen and
+  refresh base argument arrays as missing `--strict-peer-dependencies`; the
+  updater appends that flag only for the four pnpm 11 starter profiles because
+  the pnpm 10 demo intentionally uses default peer handling.
+- Preserve the exact beta.33 artifacts as failed evidence and never rebuild or
+  publish that coordinate. Reserve beta.34 for the durable, profile-aware
+  certification correction from one clean source commit.
+
+## v0.1.0-beta.22 (`better-convex-mcp`)
+
+- Retire the unpublished beta.21 MCP artifact minted from commit `442e910a`.
+  The coordinated `release:prepare` family stopped at the failed Nuxt source
+  gate before MCP completed full certification.
+- Preserve the exact beta.21 evidence and never rebuild or publish it. Reserve
+  beta.22 with the corrected family even though the MCP runtime and public API
+  are unchanged.
+
 ## v0.8.0-beta.33
 
 - Retire the unpublished beta.32 Vue/Nuxt candidate set after its full release
