@@ -33,9 +33,6 @@ import {
 import { runExternalAuthorizationCodeRace } from './run-oauth-code-concurrency.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const artifactCoordinates = getPackageArtifactCoordinates('nuxt', {
-  repositoryRoot: root,
-})
 const sourceCloudFixture = join(root, 'starters', 'mcp-oauth-agent')
 const reportPath = join(root, '.release-artifacts', 'bcn-auth-staging.report.json')
 const convexCli = join(root, 'node_modules', 'convex', 'bin', 'main.js')
@@ -244,7 +241,10 @@ function readCloudDeployment(config, cwd) {
   return parseConvexDeploymentDescription(description, config)
 }
 
-function readArtifactIdentity(artifactManifest) {
+function readArtifactIdentity(artifactManifest, packageId) {
+  const artifactCoordinates = getPackageArtifactCoordinates(packageId, {
+    repositoryRoot: root,
+  })
   const path = resolve(root, artifactManifest)
   try {
     execFileSync(process.execPath, ['scripts/release.mjs', 'verify', path], {
@@ -270,6 +270,23 @@ function readArtifactIdentity(artifactManifest) {
     identity: selectPackageArtifactRuntimeIdentity(evidence),
     tarballPath,
   })
+}
+
+export function assertCloudArtifactFamily(artifacts) {
+  const { mcp, nuxt, vue } = artifacts
+  assert(
+    nuxt?.identity?.package === 'better-convex-nuxt' &&
+      vue?.identity?.package === 'better-convex-vue' &&
+      mcp?.identity?.package === 'better-convex-mcp' &&
+      nuxt.identity.version === vue.identity.version &&
+      nuxt.identity.sourceCommit === vue.identity.sourceCommit &&
+      nuxt.identity.sourceCommit === mcp.identity.sourceCommit &&
+      RUNTIME_FINGERPRINT.test(nuxt.identity.runtimeFingerprint) &&
+      vue.identity.runtimeFingerprint === null &&
+      mcp.identity.runtimeFingerprint === null,
+    'AUTH_CLOUD_STAGING_ARTIFACT_FAMILY_MISMATCH',
+  )
+  return artifacts
 }
 
 function isRecord(value) {
@@ -567,7 +584,18 @@ export const cleanup = internalMutation({
 `
 }
 
-async function prepareCloudFixture(artifact) {
+export function bindCloudFixtureArtifacts(fixturePackage, artifacts) {
+  const nextPackage = structuredClone(fixturePackage)
+  for (const packageId of ['mcp', 'nuxt', 'vue']) {
+    const artifact = artifacts[packageId]
+    nextPackage.dependencies[artifact.identity.package] = `file:${artifact.tarballPath}`
+  }
+  const vue = artifacts.vue
+  const workspace = `packages:\n  - .\n\noverrides:\n  better-convex-vue@${vue.identity.version}: file:${vue.tarballPath}\n`
+  return Object.freeze({ package: nextPackage, workspace })
+}
+
+async function prepareCloudFixture(artifacts) {
   const temporaryRoot = mkdtempSync(join(tmpdir(), 'bcn-auth-cloud-'))
   const fixtureDirectory = join(temporaryRoot, 'mcp-oauth-agent')
   try {
@@ -593,8 +621,9 @@ async function prepareCloudFixture(artifact) {
     )
     const packagePath = join(fixtureDirectory, 'package.json')
     const fixturePackage = JSON.parse(readFileSync(packagePath, 'utf8'))
-    fixturePackage.dependencies['better-convex-nuxt'] = `file:${artifact.tarballPath}`
-    writeFileSync(packagePath, `${JSON.stringify(fixturePackage, null, 2)}\n`)
+    const boundFixture = bindCloudFixtureArtifacts(fixturePackage, artifacts)
+    writeFileSync(packagePath, `${JSON.stringify(boundFixture.package, null, 2)}\n`)
+    writeFileSync(join(fixtureDirectory, 'pnpm-workspace.yaml'), boundFixture.workspace)
     runFixtureCommand(
       'pnpm',
       ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
@@ -604,9 +633,10 @@ async function prepareCloudFixture(artifact) {
 
     const installedRoot = join(fixtureDirectory, 'node_modules', 'better-convex-nuxt')
     const installedPackage = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'))
+    const nuxtArtifact = artifacts.nuxt
     assert(
-      installedPackage.name === artifact.identity.package &&
-        installedPackage.version === artifact.identity.version,
+      installedPackage.name === nuxtArtifact.identity.package &&
+        installedPackage.version === nuxtArtifact.identity.version,
       'AUTH_CLOUD_STAGING_INSTALLED_ARTIFACT_MISMATCH',
     )
     assertInstalledArtifactFingerprint(
@@ -615,7 +645,7 @@ async function prepareCloudFixture(artifact) {
         join(installedRoot, 'dist', 'runtime', 'shared', 'release-fingerprint.js'),
         'utf8',
       ),
-      artifact.identity,
+      nuxtArtifact.identity,
     )
 
     const metadataPath = join(
@@ -647,7 +677,7 @@ async function prepareCloudFixture(artifact) {
     const appTables = readStarterAppTables(fixtureDirectory)
     writeFileSync(
       join(fixtureDirectory, 'convex', 'releaseProof.ts'),
-      generatedReleaseProofSource(artifact.identity.runtimeFingerprint, authModels, appTables),
+      generatedReleaseProofSource(nuxtArtifact.identity.runtimeFingerprint, authModels, appTables),
     )
     return Object.freeze({
       appTables,
@@ -1236,11 +1266,25 @@ async function runCloudRaces(config, artifact) {
   }
 }
 
-function parseArguments(argv) {
-  if (argv.length !== 2 || argv[0] !== '--artifact-manifest' || !argv[1]) {
-    fail('Usage: node scripts/run-auth-cloud-staging.mjs --artifact-manifest <artifact.json>')
+export function parseCloudArtifactArguments(argv) {
+  if (
+    argv.length !== 6 ||
+    argv[0] !== '--artifact-manifest' ||
+    !argv[1] ||
+    argv[2] !== '--vue-artifact-manifest' ||
+    !argv[3] ||
+    argv[4] !== '--mcp-artifact-manifest' ||
+    !argv[5]
+  ) {
+    fail(
+      'Usage: node scripts/run-auth-cloud-staging.mjs --artifact-manifest <nuxt-artifact.json> --vue-artifact-manifest <vue-artifact.json> --mcp-artifact-manifest <mcp-artifact.json>',
+    )
   }
-  return { artifactManifest: argv[1] }
+  return Object.freeze({
+    mcpArtifactManifest: argv[5],
+    nuxtArtifactManifest: argv[1],
+    vueArtifactManifest: argv[3],
+  })
 }
 
 function containsCompactJwt(value) {
@@ -1286,9 +1330,15 @@ function writeReport(report, secrets) {
 export async function main(argv = process.argv.slice(2), env = process.env) {
   rmSync(reportPath, { force: true })
   const startedAt = new Date().toISOString()
-  const { artifactManifest } = parseArguments(argv)
+  const { mcpArtifactManifest, nuxtArtifactManifest, vueArtifactManifest } =
+    parseCloudArtifactArguments(argv)
   const config = parseCloudStagingEnvironment(env)
-  const artifact = readArtifactIdentity(artifactManifest)
+  const artifacts = assertCloudArtifactFamily({
+    mcp: readArtifactIdentity(mcpArtifactManifest, 'mcp'),
+    nuxt: readArtifactIdentity(nuxtArtifactManifest, 'nuxt'),
+    vue: readArtifactIdentity(vueArtifactManifest, 'vue'),
+  })
+  const artifact = artifacts.nuxt
   let fixture
   let cleanupRequired = false
   let deployment
@@ -1301,7 +1351,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     // approval. A stale or source-built host cannot pass this package-owned URL.
     await assertClosedPublicIngress(config)
     await fetchCloudRuntimeFingerprint(config, artifact.identity)
-    fixture = await prepareCloudFixture(artifact)
+    fixture = await prepareCloudFixture(artifacts)
     deployment = readCloudDeployment(config, fixture.directory)
     deployCloudFixture(config, fixture, artifact.identity)
 

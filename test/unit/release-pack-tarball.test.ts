@@ -25,7 +25,7 @@ describe('canonical release tarball packing', () => {
     mkdirSync(secondDestination)
     writeFileSync(
       join(repository, 'package.json'),
-      '{"name":"better-convex-nuxt","version":"0.8.0-beta.36","repository":{"url":"https://github.com/lupinum-dev/better-convex-nuxt"}}\n',
+      '{"name":"better-convex-nuxt","version":"0.8.0-beta.37","repository":{"url":"https://github.com/lupinum-dev/better-convex-nuxt"}}\n',
     )
     mkdirSync(join(repository, 'dist'))
     writeFileSync(join(repository, 'dist/stale.js'), 'stale\n')

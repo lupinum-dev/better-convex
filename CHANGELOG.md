@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v0.8.0-beta.37
+
+- Retire the unpublished beta.36 Vue/Nuxt candidate after the first protected
+  cloud-staging rehearsal proved that its pre-publication fixture replaced only
+  the Nuxt dependency while still resolving the unpublished Vue and MCP
+  packages from npm.
+- Preserve beta.36/beta.24 as failed immutable local evidence and never publish
+  or reuse those coordinates. Reserve beta.37/beta.25 with the staging runner
+  bound to all three verified tarballs from one source commit.
+
+## v0.1.0-beta.25 (`better-convex-mcp`)
+
+- Retire unpublished beta.24 with the failed beta.36 family and require the
+  protected staging fixture to install the exact MCP candidate before registry
+  publication. The MCP runtime and public API are unchanged.
+
 ## v0.8.0-beta.36
 
 - Retire the unpublished beta.35 Vue/Nuxt candidate after clean Ubuntu CI

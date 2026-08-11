@@ -155,11 +155,11 @@ from child environments.
 The protected prerelease workflow supplies one deployment-scoped key and a
 one-time bootstrap identity for the dedicated, pre-provisioned Convex project
 `bcn-auth-staging`. Before any Convex deployment or data write, the runner
-reverifies the downloaded artifact and proves the host edge returns `403` for
+reverifies the downloaded Nuxt, Vue, and MCP artifacts and proves the host edge returns `403` for
 unleased fingerprint, auth read/write, and MCP probes. Leased traffic must return
 the package-owned runtime fingerprint from the diagnostic endpoint and the real
-auth/MCP paths. The runner then clean-installs that exact tarball into the
-maintained OAuth/MCP starter, verifies the installed package, deploys the
+auth/MCP paths. The runner then clean-installs those exact tarballs into the
+maintained OAuth/MCP starter, verifies the installed packages, deploys the
 fixture, and requires one current `betterAuth` mount with zero rows in every
 discovered auth model and application table. Only then does it create the
 bootstrap account, cryptographically verify a session JWT and require Convex to

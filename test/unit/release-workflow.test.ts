@@ -207,8 +207,8 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       ])
       expect(commands.slice(4)).toEqual(
         expect.arrayContaining([
-          'scripts/verify-release.mjs --package vue --artifact-manifest .release-artifacts/vue/0.8.0-beta.36/artifact.json',
-          'scripts/verify-release.mjs --package nuxt --artifact-manifest .release-artifacts/nuxt/0.8.0-beta.36/artifact.json',
+          'scripts/verify-release.mjs --package vue --artifact-manifest .release-artifacts/vue/0.8.0-beta.37/artifact.json',
+          'scripts/verify-release.mjs --package nuxt --artifact-manifest .release-artifacts/nuxt/0.8.0-beta.37/artifact.json',
         ]),
       )
     } finally {
@@ -542,6 +542,21 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     const proofStep = steps(workflow, 'bcn-auth-staging').find((step) =>
       normalizedRun(step)?.startsWith('pnpm test:auth-cloud-staging '),
     )
+    if (!proofStep) throw new Error('Missing protected cloud-staging proof step')
+    expect(normalizedRun(proofStep)).toContain(
+      '--artifact-manifest "${{ steps.nuxt.outputs.evidence }}"',
+    )
+    expect(normalizedRun(proofStep)).toContain(
+      '--vue-artifact-manifest "${{ steps.vue.outputs.evidence }}"',
+    )
+    expect(normalizedRun(proofStep)).toContain(
+      '--mcp-artifact-manifest "${{ steps.mcp.outputs.evidence }}"',
+    )
+    expect(
+      steps(workflow, 'bcn-auth-staging').some(
+        (step) => step.with?.name === '${{ steps.mcp.outputs.artifact_name }}',
+      ),
+    ).toBe(true)
     expect(proofStep?.env).toEqual({
       BCN_AUTH_STAGING_CONVEX_SITE_URL: '${{ vars.BCN_AUTH_STAGING_CONVEX_SITE_URL }}',
       BCN_AUTH_STAGING_CONVEX_URL: '${{ vars.BCN_AUTH_STAGING_CONVEX_URL }}',

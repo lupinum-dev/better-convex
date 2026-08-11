@@ -6,12 +6,15 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  assertCloudArtifactFamily,
   assertCloudRuntimeFingerprint,
   assertCloudRouteFingerprint,
   assertInstalledArtifactFingerprint,
   assertSingleBetterAuthMount,
+  bindCloudFixtureArtifacts,
   normalizeAuthorizationCodeEvidence,
   normalizeCloudPrewriteProof,
+  parseCloudArtifactArguments,
   parseCloudStagingEnvironment,
   parseConvexDeploymentDescription,
   verifyCloudSessionToken,
@@ -23,6 +26,14 @@ const convexUrl = `https://${deploymentName}.convex.cloud`
 const root = resolve(import.meta.dirname, '../..')
 const reportPath = resolve(root, '.release-artifacts/bcn-auth-staging.report.json')
 const runtimeFingerprint = `bcn-release-v1-${'a'.repeat(64)}`
+const invalidArtifactArguments = [
+  '--artifact-manifest',
+  'does-not-exist.nuxt.artifact.json',
+  '--vue-artifact-manifest',
+  'does-not-exist.vue.artifact.json',
+  '--mcp-artifact-manifest',
+  'does-not-exist.mcp.artifact.json',
+]
 
 function stagingEnvironment(overrides: Record<string, string> = {}) {
   return {
@@ -245,6 +256,71 @@ describe('protected cloud-staging gate', () => {
     ).toThrow('AUTH_CLOUD_STAGING_INSTALLED_ARTIFACT_MISMATCH')
   })
 
+  it('binds the pre-publication fixture to one exact three-package artifact family', () => {
+    const sourceCommit = 'b'.repeat(40)
+    const artifacts = {
+      mcp: {
+        identity: {
+          package: 'better-convex-mcp',
+          runtimeFingerprint: null,
+          sourceCommit,
+          version: '0.1.0-beta.25',
+        },
+        tarballPath: '/artifacts/better-convex-mcp.tgz',
+      },
+      nuxt: {
+        identity: {
+          package: 'better-convex-nuxt',
+          runtimeFingerprint,
+          sourceCommit,
+          version: '0.8.0-beta.37',
+        },
+        tarballPath: '/artifacts/better-convex-nuxt.tgz',
+      },
+      vue: {
+        identity: {
+          package: 'better-convex-vue',
+          runtimeFingerprint: null,
+          sourceCommit,
+          version: '0.8.0-beta.37',
+        },
+        tarballPath: '/artifacts/better-convex-vue.tgz',
+      },
+    }
+    expect(assertCloudArtifactFamily(artifacts)).toBe(artifacts)
+    const bound = bindCloudFixtureArtifacts(
+      {
+        dependencies: {
+          'better-convex-mcp': 'registry-value',
+          'better-convex-nuxt': 'registry-value',
+        },
+      },
+      artifacts,
+    )
+    expect(bound.package.dependencies).toMatchObject({
+      'better-convex-mcp': 'file:/artifacts/better-convex-mcp.tgz',
+      'better-convex-nuxt': 'file:/artifacts/better-convex-nuxt.tgz',
+      'better-convex-vue': 'file:/artifacts/better-convex-vue.tgz',
+    })
+    expect(bound.workspace).toContain(
+      'better-convex-vue@0.8.0-beta.37: file:/artifacts/better-convex-vue.tgz',
+    )
+    expect(() =>
+      assertCloudArtifactFamily({
+        ...artifacts,
+        vue: {
+          ...artifacts.vue,
+          identity: { ...artifacts.vue.identity, sourceCommit: 'c'.repeat(40) },
+        },
+      }),
+    ).toThrow('AUTH_CLOUD_STAGING_ARTIFACT_FAMILY_MISMATCH')
+    expect(parseCloudArtifactArguments(invalidArtifactArguments)).toEqual({
+      mcpArtifactManifest: 'does-not-exist.mcp.artifact.json',
+      nuxtArtifactManifest: 'does-not-exist.nuxt.artifact.json',
+      vueArtifactManifest: 'does-not-exist.vue.artifact.json',
+    })
+  })
+
   it('fails closed unless every app and component model is empty before writes', () => {
     const authModels = Object.keys(packagedSchemaMetadata.models)
     const appTables = [
@@ -300,7 +376,7 @@ describe('protected cloud-staging gate', () => {
     const environment = stagingEnvironment()
     const result = spawnSync(
       process.execPath,
-      ['scripts/run-auth-cloud-staging.mjs', '--artifact-manifest', 'does-not-exist.artifact.json'],
+      ['scripts/run-auth-cloud-staging.mjs', ...invalidArtifactArguments],
       {
         cwd: root,
         encoding: 'utf8',
@@ -322,11 +398,7 @@ describe('protected cloud-staging gate', () => {
     try {
       const result = spawnSync(
         process.execPath,
-        [
-          'scripts/run-auth-cloud-staging.mjs',
-          '--artifact-manifest',
-          'does-not-exist.artifact.json',
-        ],
+        ['scripts/run-auth-cloud-staging.mjs', ...invalidArtifactArguments],
         {
           cwd: root,
           encoding: 'utf8',

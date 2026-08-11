@@ -220,9 +220,9 @@ development keys, a team/project slug other than the protected identity, or
 URL/key mismatches fail closed.
 
 After the live host fingerprint matches, the job copies the maintained
-`mcp-oauth-agent` starter into a clean temporary directory, replaces its package
-dependency with the manifest-selected absolute `.tgz` path, installs with
-lifecycle scripts disabled, and verifies the installed module and shared runtime
+`mcp-oauth-agent` starter into a clean temporary directory, replaces its three
+Better Convex dependencies with the manifest-selected absolute `.tgz` paths,
+installs with lifecycle scripts disabled, and verifies the installed module and shared runtime
 fingerprint helper carry the same fingerprint. It statically requires exactly
 one current component mount named `betterAuth`, generates bounded internal
 state-proof functions from every packaged auth model and every starter

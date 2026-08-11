@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       better-convex-nuxt:
-        specifier: 0.8.0-beta.36
-        version: 0.8.0-beta.36(@standard-schema/spec@1.1.0)(convex@1.42.2)(magic-string@1.1.0)(magicast@0.5.4)(nuxt@4.5.1(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@oxc-project/types@0.143.0)(@types/node@25.9.5)(@vue/compiler-sfc@3.5.41)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.4)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.3)(rollup@4.62.4))(rollup@4.62.4)(srvx@0.11.22)(terser@5.49.2)(typescript@5.9.3)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue-tsc@3.3.9(typescript@5.9.3))(yaml@2.9.0))(rolldown@1.2.3)(typescript@5.9.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3))
+        specifier: 0.8.0-beta.37
+        version: 0.8.0-beta.37(@standard-schema/spec@1.1.0)(convex@1.42.2)(magic-string@1.1.0)(magicast@0.5.4)(nuxt@4.5.1(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@oxc-project/types@0.143.0)(@types/node@25.9.5)(@vue/compiler-sfc@3.5.41)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.4)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.3)(rollup@4.62.4))(rollup@4.62.4)(srvx@0.11.22)(terser@5.49.2)(typescript@5.9.3)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue-tsc@3.3.9(typescript@5.9.3))(yaml@2.9.0))(rolldown@1.2.3)(typescript@5.9.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3))
       convex:
         specifier: 1.42.2
         version: 1.42.2
@@ -1479,8 +1479,8 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
-  better-convex-nuxt@0.8.0-beta.36:
-    resolution: {integrity: sha512-vHHw+/MXeM61ph0poG+Gj5KZaWXsDhugq1ubXhQRoFaZlcGjxwJKprntwGoFjY19YIv6Q9YFkuMalhIRqlr1yA==}
+  better-convex-nuxt@0.8.0-beta.37:
+    resolution: {integrity: sha512-Os413PzqgnT0zhEcwFsiOypbVeSLZcpejtu7BqYLzkZSQ+K4WwrnS853pzOSliH9wR8Gat1ePc+jMrzkYk1ZOA==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -1494,8 +1494,8 @@ packages:
       better-auth:
         optional: true
 
-  better-convex-vue@0.8.0-beta.36:
-    resolution: {integrity: sha512-h8Vf8xs55qoDZeXYECB8hNNLHFXkSKN2Qsav2Sn1U9mib8mTa48j2BD5sc1oMrXj4VIo82qRa94N26EFVnBnoA==}
+  better-convex-vue@0.8.0-beta.37:
+    resolution: {integrity: sha512-KllJP4zeJ1da21PsEOCkEAOmoD6QnhIkyoGOzCih580WuXPRYpbURBWIw2Vpf7k86ueQeylLv8JjQIqvSZ6Bmg==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5
@@ -5179,10 +5179,10 @@ snapshots:
 
   baseline-browser-mapping@2.11.13: {}
 
-  better-convex-nuxt@0.8.0-beta.36(@standard-schema/spec@1.1.0)(convex@1.42.2)(magic-string@1.1.0)(magicast@0.5.4)(nuxt@4.5.1(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@oxc-project/types@0.143.0)(@types/node@25.9.5)(@vue/compiler-sfc@3.5.41)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.4)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.3)(rollup@4.62.4))(rollup@4.62.4)(srvx@0.11.22)(terser@5.49.2)(typescript@5.9.3)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue-tsc@3.3.9(typescript@5.9.3))(yaml@2.9.0))(rolldown@1.2.3)(typescript@5.9.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3)):
+  better-convex-nuxt@0.8.0-beta.37(@standard-schema/spec@1.1.0)(convex@1.42.2)(magic-string@1.1.0)(magicast@0.5.4)(nuxt@4.5.1(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@oxc-project/types@0.143.0)(@types/node@25.9.5)(@vue/compiler-sfc@3.5.41)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.4)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.3)(rollup@4.62.4))(rollup@4.62.4)(srvx@0.11.22)(terser@5.49.2)(typescript@5.9.3)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0))(vue-tsc@3.3.9(typescript@5.9.3))(yaml@2.9.0))(rolldown@1.2.3)(typescript@5.9.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))(vue@3.5.40(typescript@5.9.3)):
     dependencies:
       '@nuxt/kit': 4.5.1(magic-string@1.1.0)(magicast@0.5.4)(rolldown@1.2.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
-      better-convex-vue: 0.8.0-beta.36(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))
+      better-convex-vue: 0.8.0-beta.37(convex@1.42.2)(vue@3.5.40(typescript@5.9.3))
       convex: 1.42.2
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.42.2)(typescript@5.9.3)
       defu: 6.1.7
@@ -5205,7 +5205,7 @@ snapshots:
       - vue
       - zod
 
-  better-convex-vue@0.8.0-beta.36(convex@1.42.2)(vue@3.5.40(typescript@5.9.3)):
+  better-convex-vue@0.8.0-beta.37(convex@1.42.2)(vue@3.5.40(typescript@5.9.3)):
     dependencies:
       convex: 1.42.2
       ohash: 2.0.11
