@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v0.8.0-beta.36
+
+- Retire the unpublished beta.35 Vue/Nuxt candidate after clean Ubuntu CI
+  exposed a stale architecture-checker path for the deleted global auth
+  components directory. Local worktrees preserved the empty directory, while
+  Git correctly omitted it from fresh checkouts.
+- Preserve beta.35/beta.23 as failed local evidence and never publish or reuse
+  those coordinates. Reserve beta.36/beta.24 with the obsolete directory
+  authority removed; the runtime and public API are unchanged.
+
+## v0.1.0-beta.24 (`better-convex-mcp`)
+
+- Retire unpublished beta.23 with the failed beta.35 family and reserve a fresh
+  MCP coordinate from the corrected clean source. The MCP runtime and public
+  API are unchanged.
+
 ## v0.8.0-beta.35
 
 - Retire the unpublished beta.34 Vue/Nuxt candidate after the first clean

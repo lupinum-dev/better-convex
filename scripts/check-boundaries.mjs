@@ -52,7 +52,7 @@ const PARSEABLE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.vue'])
 const SERVER_RUNTIME_DIR = p('src/runtime/server')
 
 /**
- * Browser runtime: composables, components, route middleware, and the
+ * Browser runtime: composables, route middleware, and the
  * client-only auth engine/plugin. `plugin.server.ts` is intentionally
  * excluded — it is a distinct SSR-entry group (see below): Nuxt's
  * `.server.ts` suffix means it never ships to the browser bundle, and it is
@@ -60,7 +60,6 @@ const SERVER_RUNTIME_DIR = p('src/runtime/server')
  */
 const BROWSER_RUNTIME_DIRS = [
   p('src/runtime/composables'),
-  p('src/runtime/components'),
   p('src/runtime/middleware'),
   p('src/runtime/auth'),
 ]
@@ -309,7 +308,7 @@ const RULES = [
   {
     name: 'server-no-browser-imports',
     description:
-      'src/runtime/server/** must never import composables, components, middleware, the auth engine, Vue, or the client plugin.',
+      'src/runtime/server/** must never import composables, middleware, the auth engine, Vue, or the client plugin.',
     from: isServerRuntime,
     disallow: (edge) => {
       if (edge.isRelative) {
@@ -321,7 +320,7 @@ const RULES = [
   {
     name: 'browser-no-server-imports',
     description:
-      'Browser runtime (composables, components, middleware, auth engine, client plugin) must never import src/runtime/server/**.',
+      'Browser runtime (composables, middleware, auth engine, client plugin) must never import src/runtime/server/**.',
     from: (absPath) => isBrowserRuntime(absPath),
     disallow: (edge) =>
       edge.isRelative && edge.resolvedAbsPath !== null && isServerRuntime(edge.resolvedAbsPath),
