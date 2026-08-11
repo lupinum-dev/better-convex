@@ -1691,7 +1691,7 @@ packages:
         optional: true
 
   better-convex-nuxt@0.8.0-beta.40:
-    resolution: {integrity: sha512-BkeQ3CFTCrXA/032lSzvK/wR59ae1sLPpqtssWqMjZZmPBHrxQudE183EcrwBbN/TIWPV6px2+NDrHEWgwrpPQ==}
+    resolution: {integrity: sha512-Kl3FPfwxABaXwWRcpCFAJVlcoT0/lh7iiu2rq3SvYlqBRfwMgkKlLIePMDyfmrrrbmpQ/VaOHR+pSR6TxL71dg==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
