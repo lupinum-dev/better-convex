@@ -85,18 +85,13 @@ describe('pkg.pr.new package preview workflow', () => {
     expect(runs).toEqual(
       expect.arrayContaining([
         'pnpm install --frozen-lockfile',
-        'pnpm release:artifact:set',
-        'node scripts/release.mjs verify "${{ steps.artifact.outputs.evidence }}"',
+        'node scripts/build-package-preview.mjs >> "$GITHUB_OUTPUT"',
       ]),
     )
-    expect(
-      runs.some((run) =>
-        run.startsWith(
-          'node scripts/print-package-artifact-coordinates.mjs --package nuxt >> "$GITHUB_OUTPUT"',
-        ),
-      ),
-    ).toBe(true)
+    expect(read('scripts/build-package-preview.mjs')).toContain("buildAndPackReleaseTarball('vue'")
+    expect(read('scripts/build-package-preview.mjs')).toContain("buildAndPackReleaseTarball('nuxt'")
     expect(runs).not.toContain('pnpm release:prepare')
+    expect(runs).not.toContain('pnpm release:artifact:set')
     expect(runs).not.toContain('pnpm release:certify:source core')
     expect(runs.some((run) => /(?:npm|pnpm) pack/u.test(run))).toBe(false)
   })
@@ -113,7 +108,7 @@ describe('pkg.pr.new package preview workflow', () => {
     expect(runs.some((run) => /\b(?:npx|pnpm dlx|yarn dlx|bunx)\b/u.test(run))).toBe(false)
   })
 
-  it('retains exact evidence and verifies the reported SHA-bound install URL', () => {
+  it('retains both disposable tarballs and verifies the reported SHA-bound install URL', () => {
     const upload = steps.find((step) =>
       step.uses?.toString().startsWith('actions/upload-artifact@'),
     )

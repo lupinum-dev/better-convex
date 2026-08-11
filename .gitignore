@@ -18,6 +18,7 @@ node_modules
 # Generated dirs
 dist
 .release-artifacts
+.package-preview
 .audit
 .artifacts/mcp-conformance/**
 

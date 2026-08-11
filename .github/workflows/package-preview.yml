@@ -46,39 +46,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build the disposable Vue/Nuxt preview set
-        run: pnpm release:artifact:set
-
-      - name: Resolve the verified tarball identity
         id: artifact
-        env:
-          EXPECTED_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          node scripts/print-package-artifact-coordinates.mjs --package nuxt >> "$GITHUB_OUTPUT"
-          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
-          import { readFileSync } from 'node:fs'
-
-          import { getPackageArtifactCoordinates } from './scripts/package-artifact-coordinates.mjs'
-
-          const coordinates = getPackageArtifactCoordinates('nuxt')
-          const evidencePath = coordinates.relativePaths.evidence
-          const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'))
-          const expectedSourceCommit = process.env.EXPECTED_SOURCE_COMMIT
-
-          if (!/^[0-9a-f]{40}$/u.test(expectedSourceCommit ?? '')) {
-            throw new Error('The preview source commit is not a full Git SHA.')
-          }
-          if (evidence.sourceCommit !== expectedSourceCommit) {
-            throw new Error('Artifact evidence is not bound to the checked-out preview commit.')
-          }
-          if (evidence.tarball?.file !== coordinates.files.tarball) {
-            throw new Error('Artifact evidence selected an unexpected tarball.')
-          }
-          if (!/^[0-9a-f]{64}$/u.test(evidence.tarball.sha256 ?? '')) {
-            throw new Error('Artifact evidence has no valid tarball SHA-256.')
-          }
-
-          console.log(`sha256=${evidence.tarball.sha256}`)
-          NODE
+        run: node scripts/build-package-preview.mjs >> "$GITHUB_OUTPUT"
 
       - name: Upload the exact prebuilt tarball to pkg.pr.new
         id: publish
@@ -119,10 +88,7 @@ jobs:
             "$PREVIEW_URL"
           echo "$ARTIFACT_SHA256  $RUNNER_TEMP/better-convex-nuxt-preview.tgz" | sha256sum --check --strict
 
-      - name: Reverify that preview upload did not alter the candidate bytes
-        run: node scripts/release.mjs verify "${{ steps.artifact.outputs.evidence }}"
-
-      - name: Retain the preview evidence set
+      - name: Retain the disposable preview tarballs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-preview-${{ github.run_id }}
