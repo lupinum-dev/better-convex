@@ -7,14 +7,14 @@ import { getPackageArtifactCoordinates } from './package-artifact-coordinates.mj
 const arguments_ = process.argv.slice(2)
 if (arguments_.length !== 4 || arguments_[0] !== '--package' || arguments_[2] !== '--tag') {
   throw new Error(
-    'Usage: publish-registry-package --package <reviewed-package-id> --tag next-staging',
+    'Usage: publish-registry-package --package <reviewed-package-id> --tag candidate-<workflow-run-id>',
   )
 }
 
 const packageId = arguments_[1]
 const tag = arguments_[3]
-if (tag !== 'next-staging') {
-  throw new Error('Candidate publication is restricted to the next-staging tag.')
+if (!/^candidate-[1-9]\d*$/u.test(tag)) {
+  throw new Error('Candidate publication requires a workflow-run-specific candidate tag.')
 }
 
 const coordinates = getPackageArtifactCoordinates(packageId)

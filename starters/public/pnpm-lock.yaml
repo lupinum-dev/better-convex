@@ -1480,7 +1480,7 @@ packages:
     hasBin: true
 
   better-convex-nuxt@0.8.0-beta.40:
-    resolution: {integrity: sha512-3s5KuMXFb1Ndqhsld/JiNrJMBXFWtTKOS5TuBQyV+zXmwVgGpYEwlOVfzoc8lAHd4AmkmwhWz2J0tnyhgtsAFg==}
+    resolution: {integrity: sha512-BkeQ3CFTCrXA/032lSzvK/wR59ae1sLPpqtssWqMjZZmPBHrxQudE183EcrwBbN/TIWPV6px2+NDrHEWgwrpPQ==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -3360,8 +3360,8 @@ packages:
   unwasm@0.5.3:
     resolution: {integrity: sha512-keBgTSfp3r6+s9ZcSma+0chwxQdmLbB5+dAD9vjtB21UTMYuKAxHXCU1K2CbCtnP09EaWeRvACnXk0EJtUx+hw==}
 
-  update-browserslist-db@1.3.0:
-    resolution: {integrity: sha512-x/M6q3w4Ybp91CNaS4S69UnliqR3BzRpOT6LWbksjth0S/+jhfaPJsWjt/TewpT8j9eLIojUf5jr29WextHroA==}
+  update-browserslist-db@1.3.1:
+    resolution: {integrity: sha512-ZZ61DsRsOnakl74HAmp3oSN4aXUmEWXf+i/yv0h7tIBfICc3VdrFErQKUUKPgu3AMsTUMbcongALEN4l6GSUrQ==}
     hasBin: true
     peerDependencies:
       browserslist: '>= 4.21.0'
@@ -5239,7 +5239,7 @@ snapshots:
       caniuse-lite: 1.0.30001809
       electron-to-chromium: 1.5.403
       node-releases: 2.0.53
-      update-browserslist-db: 1.3.0(browserslist@4.28.8)
+      update-browserslist-db: 1.3.1(browserslist@4.28.8)
 
   buffer-crc32@1.0.0: {}
 
@@ -7179,7 +7179,7 @@ snapshots:
       pathe: 2.0.3
       pkg-types: 2.3.1
 
-  update-browserslist-db@1.3.0(browserslist@4.28.8):
+  update-browserslist-db@1.3.1(browserslist@4.28.8):
     dependencies:
       browserslist: 4.28.8
       escalade: 3.2.0

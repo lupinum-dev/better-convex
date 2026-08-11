@@ -10,15 +10,51 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  checks: read
   contents: read
 
 env:
-  BCN_STAGING_DIST_TAG: 'next-staging'
+  BCN_CANDIDATE_DIST_TAG: candidate-${{ github.run_id }}
   RELEASE_NODE_VERSION: '22.14.0'
   RELEASE_NPM_VERSION: '11.18.0'
 
 jobs:
+  preflight-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+      - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Run the disposable lock and package smoke
+        run: pnpm release:smoke
+
+  source-certification:
+    needs: preflight-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+      - name: Require the exact commit's authoritative hosted certification
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assert-hosted-source-certification.mjs
+
   build-candidates:
+    needs: staging-readiness
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -80,7 +116,7 @@ jobs:
           retention-days: 90
 
   release-security:
-    needs: build-candidates
+    needs: source-certification
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -109,8 +145,36 @@ jobs:
       - name: Analyze the exact release source
         uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
 
+  staging-readiness:
+    needs: release-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: bcn-auth-staging
+    concurrency:
+      group: bcn-auth-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Prove staging authority, ingress policy, and empty ownership without writes
+        env:
+          BCN_AUTH_STAGING_CONVEX_SITE_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_SITE_URL }}
+          BCN_AUTH_STAGING_CONVEX_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_URL }}
+          BCN_AUTH_STAGING_INGRESS_LEASE: ${{ secrets.BCN_AUTH_STAGING_INGRESS_LEASE }}
+          BCN_AUTH_STAGING_ORIGIN: ${{ vars.BCN_AUTH_STAGING_ORIGIN }}
+          BCN_AUTH_STAGING_TEAM: ${{ vars.BCN_AUTH_STAGING_TEAM }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY }}
+        run: pnpm test:auth-cloud-staging --readiness-only
+
   verify-candidates:
-    needs: [build-candidates, release-security]
+    needs: build-candidates
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
@@ -127,9 +191,6 @@ jobs:
         run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm check:auth-backend --install
-
       - name: Resolve the reviewed candidate coordinates
         id: candidate_set
         run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
@@ -158,7 +219,7 @@ jobs:
           name: ${{ steps.mcp.outputs.artifact_name }}
           path: ${{ steps.mcp.outputs.directory }}
 
-      - name: Verify source integrity and the exact Vue/Nuxt candidate set
+      - name: Verify the exact Vue/Nuxt candidate set bytes
         run: pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -179,7 +240,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Verify source integrity and the exact MCP candidate
+      - name: Verify the exact MCP candidate bytes
         run: >-
           pnpm release:verify
           --package mcp
@@ -187,24 +248,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Record the experimental release boundary
+      - name: Record the artifact-only verification boundary
         run: |
           {
-            echo '## Experimental next-staging release'
+            echo '## Exact artifact verification'
             echo
-            echo '- MCP 2026-07-28 support targets the published draft/RC; stable final conformance is not claimed.'
-            echo '- Real-host MCP proof is deferred.'
-            echo '- Strict Ginko npm compatibility is deferred to the Ginko release workflow.'
-            echo '- Better Convex protected cloud staging is observational and does not gate this experimental tag.'
-            echo
-            echo 'Security, authorization, immutable artifact, provenance, and registry byte-equality gates remain mandatory.'
+            echo 'Full source certification completed once before minting.'
+            echo 'This job verifies only immutable bytes, package identity, exports, dependency closure, and clean consumers.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   bcn-auth-staging:
     needs: verify-candidates
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    continue-on-error: true
     environment: bcn-auth-staging
     concurrency:
       group: bcn-auth-staging
@@ -222,7 +278,7 @@ jobs:
           package-manager-cache: false
 
       - name: Install pinned cloud-gate tooling
-        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
+        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 vercel@58.9.1 && corepack enable
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
@@ -255,7 +311,24 @@ jobs:
           name: ${{ steps.mcp.outputs.artifact_name }}
           path: ${{ steps.mcp.outputs.directory }}
 
-      - name: Install and deploy the exact candidate, then run protected cloud-staging races
+      - name: Deploy the exact Nuxt artifact to the dedicated staging host
+        env:
+          BCN_AUTH_STAGING_CONVEX_SITE_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_SITE_URL }}
+          BCN_AUTH_STAGING_CONVEX_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_URL }}
+          BCN_AUTH_STAGING_INGRESS_LEASE: ${{ secrets.BCN_AUTH_STAGING_INGRESS_LEASE }}
+          BCN_AUTH_STAGING_ORIGIN: ${{ vars.BCN_AUTH_STAGING_ORIGIN }}
+          BCN_AUTH_STAGING_TEAM: ${{ vars.BCN_AUTH_STAGING_TEAM }}
+          BCN_AUTH_STAGING_VERCEL_ORG_ID: ${{ vars.BCN_AUTH_STAGING_VERCEL_ORG_ID }}
+          BCN_AUTH_STAGING_VERCEL_PROJECT_ID: ${{ vars.BCN_AUTH_STAGING_VERCEL_PROJECT_ID }}
+          BCN_AUTH_STAGING_VERCEL_TOKEN: ${{ secrets.BCN_AUTH_STAGING_VERCEL_TOKEN }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY }}
+        run: >-
+          node scripts/deploy-auth-staging-host.mjs
+          --artifact-manifest "${{ steps.nuxt.outputs.evidence }}"
+          --vue-artifact-manifest "${{ steps.vue.outputs.evidence }}"
+          --mcp-artifact-manifest "${{ steps.mcp.outputs.evidence }}"
+
+      - name: Run protected cloud-staging races against the exact deployment
         env:
           BCN_AUTH_STAGING_CONVEX_SITE_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_SITE_URL }}
           BCN_AUTH_STAGING_CONVEX_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_URL }}
@@ -281,7 +354,7 @@ jobs:
           retention-days: 90
 
   publish-vue-staging:
-    needs: verify-candidates
+    needs: bcn-auth-staging
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm-release
@@ -312,7 +385,7 @@ jobs:
       - name: Publish exact Vue bytes or resume after its verified package-name bootstrap
         env:
           NPM_CONFIG_PROVENANCE: 'true'
-        run: node scripts/publish-registry-package.mjs --package vue --tag "$BCN_STAGING_DIST_TAG"
+        run: node scripts/publish-registry-package.mjs --package vue --tag "$BCN_CANDIDATE_DIST_TAG"
       - name: Compare Vue registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package vue
 
@@ -375,7 +448,7 @@ jobs:
       - name: Publish exact Nuxt bytes or resume after verified prior publication
         env:
           NPM_CONFIG_PROVENANCE: 'true'
-        run: node scripts/publish-registry-package.mjs --package nuxt --tag "$BCN_STAGING_DIST_TAG"
+        run: node scripts/publish-registry-package.mjs --package nuxt --tag "$BCN_CANDIDATE_DIST_TAG"
       - name: Compare Nuxt registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package nuxt
 
@@ -409,7 +482,7 @@ jobs:
       - name: Publish exact MCP bytes or resume after its verified package-name bootstrap
         env:
           NPM_CONFIG_PROVENANCE: 'true'
-        run: node scripts/publish-registry-package.mjs --package mcp --tag "$BCN_STAGING_DIST_TAG"
+        run: node scripts/publish-registry-package.mjs --package mcp --tag "$BCN_CANDIDATE_DIST_TAG"
       - name: Compare MCP registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package mcp
 
@@ -422,6 +495,6 @@ jobs:
     steps:
       - name: Record the safe promotion boundary
         run: >-
-          echo "All registry bytes match under ${BCN_STAGING_DIST_TAG}.
+          echo "All registry bytes match under ${BCN_CANDIDATE_DIST_TAG}.
           Shared user-facing dist-tags require a separate interactive maintainer action
           after reviewing the complete set; trusted-publishing OIDC cannot mutate dist-tags."

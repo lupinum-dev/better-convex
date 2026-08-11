@@ -154,11 +154,15 @@ from child environments.
 `test:auth-cloud-staging` is intentionally not a local or general CI command.
 The protected prerelease workflow supplies one deployment-scoped key and a
 one-time bootstrap identity for the dedicated, pre-provisioned Convex project
-`bcn-auth-staging`. Before any Convex deployment or data write, the runner
-reverifies the downloaded Nuxt, Vue, and MCP artifacts and proves the host edge returns `403` for
-unleased fingerprint, auth read/write, and MCP probes. Leased traffic must return
-the package-owned runtime fingerprint from the diagnostic endpoint and the real
-auth/MCP paths. The runner then clean-installs those exact tarballs into the
+`bcn-auth-staging`. A separate read-only readiness stage first verifies the
+machine-readable Convex team/project authority, closed ingress, current host,
+and zero staging rows. After source certification and immutable artifact
+creation, the workflow deploys a clean host bound to the exact Nuxt, Vue, and
+MCP tarballs through the dedicated Vercel project. Before any Convex deployment
+or data write, the runner reverifies those artifacts and proves the host edge
+returns `403` for unleased fingerprint and auth probes. Leased traffic must
+return the package-owned runtime fingerprint from the diagnostic endpoint and
+the real auth/MCP paths. The runner then clean-installs those exact tarballs into the
 maintained OAuth/MCP starter, verifies the installed packages, deploys the
 fixture, and requires one current `betterAuth` mount with zero rows in every
 discovered auth model and application table. Only then does it create the
@@ -166,13 +170,11 @@ bootstrap account, cryptographically verify a session JWT and require Convex to
 accept it, run same-ID, increment, public Better Auth lockout/reset,
 authorization-code, and JWKS races, delete the rehearsal-owned rows, and
 re-prove zero state before writing a bounded non-secret report. It does not
-create, preview, or destroy cloud infrastructure. The dedicated deployment key,
+create or destroy cloud infrastructure. The dedicated deployment key,
 edge lease, workflow concurrency group, and no-manual-writer policy must remain
 exclusive for cleanup to be safe. Public read-only protocol metadata and JWKS
 remain available for standards clients and Convex verification, and their bytes
-are never treated as write authority. Provider-specific Nuxt deployment evidence
-and proof that an older unmounted component never retained data remain external
-release gates; the current component API cannot manufacture either record.
+are never treated as write authority.
 
 The artifact-aware `check:candidate-apps` gate builds every maintained consumer
 from the candidate tarball. Its production `mcp-oauth-agent` build additionally

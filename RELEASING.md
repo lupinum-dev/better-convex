@@ -1,340 +1,202 @@
-# Releasing Better Convex Nuxt
+# Releasing Better Convex
 
-Public packages are published only by `.github/workflows/publish-prerelease.yml`
-through npm trusted publishing. A workstation may build an artifact for review,
-but it must never publish, promote, or repack a public release.
+Public packages are published only by
+`.github/workflows/publish-prerelease.yml` through npm trusted publishing. A
+workstation may run disposable checks, but it must never publish, promote, or
+create authoritative release evidence.
 
-## Local artifact rehearsal
+## The one release path
 
-Start from a clean reviewed, non-shallow checkout with tags. Its package version
-must have a matching `CHANGELOG.md` section and must not reuse a tag owned by a
-different commit. Then run:
+The order is fixed:
+
+1. Run the fast disposable lock/package smoke.
+2. Require one successful clean-Linux source certification for the exact Git
+   commit.
+3. Perform a read-only staging readiness check.
+4. Mint the Vue, Nuxt, and MCP artifacts once.
+5. Verify only those artifact bytes and clean consumers.
+6. Deploy the exact Nuxt artifact to the dedicated Vercel staging host.
+7. Run the protected Convex/Vercel proof and prove complete cleanup.
+8. Publish through npm trusted publishing under a run-specific candidate tag.
+9. Download each package from npm and compare it with the certified SRI.
+10. Stop before moving `latest`, `next`, or another shared dist-tag.
+
+Source certification never runs after immutable minting. Artifact verification
+never invokes the full source suite. A generic Vercel preview is a developer
+convenience and is not release authority.
+
+## Fast local smoke
+
+From a clean checkout with the reviewed Node, npm, Corepack, and pnpm versions:
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm exec playwright install chromium
-pnpm check:auth-backend --install
-pnpm release:prepare
+pnpm release:smoke
 ```
 
-The preparation command first builds disposable canonical scratch packages to
-validate every standalone candidate lock. It then mints the closed Vue/Nuxt set
-followed by MCP, certifies the set, and finally certifies MCP. Each immutable
-artifact uses one reviewed build and produces one final candidate tarball. The
-Nuxt packer additionally creates one disposable placeholder preimage to derive
-the deterministic runtime fingerprint before packing the final bound bytes.
-Source-integrity and source-runtime gates run from the reviewed checkout;
-artifact-dependent package, provenance, and clean-consumer gates install or
-inspect the immutable tarballs. The auth gate is hybrid and passes the Nuxt and
-Vue tarballs explicitly to its package-aware sub-gates. Scratch and preimage
-packages are not candidates, and nothing repacks a final candidate.
+`release:smoke` validates the workspace versions and standalone locks, builds
+disposable release-equivalent Vue/Nuxt/MCP tarballs, verifies their exports and
+dependency closure, installs representative clean consumers, and runs the
+packaging and cloud-verifier regression tests. It creates no immutable artifact
+directory and must leave the checkout clean.
 
-The command writes three immutable package-qualified evidence sets under
-`.release-artifacts/{mcp,vue,nuxt}/<package-version>/` and one Vue/Nuxt set
-manifest under `.release-artifacts/set/<package-version>/`. Each package evidence
-set contains:
+Use the smoke loop while correcting pre-mint failures. Do not run the complete
+release family locally as a second certification pass.
 
-- the npm tarball;
-- a deterministic path/mode/size/SHA-256 content manifest;
-- a CycloneDX SBOM;
-- a strict schema-v3 artifact evidence manifest that binds the source commit,
-  reviewed descriptor ID, npm name, canonical package directory, version, exact
-  certification-profile tuple, workspace-root package-manager authority,
-  tarball SHA-256 and SRI, content manifest, SBOM, and a deterministic
-  payload-derived runtime fingerprint embedded in the packed module and endpoint
-  handler.
+## Hosted source certification
 
-Verification accepts only the exact version-derived artifact filenames and
-re-extracts the tarball to recompute its complete path/mode/size/hash manifest.
-The closed Nuxt SBOM profile requires the package identity, raw export/install
-surface, dependencies, peers, Node engine, and package-manager declaration;
-rejects unreviewed optional/bundled/platform/publish modes and consumer install
-or publish lifecycle hooks; and compares the candidate contract exactly with
-reviewed source. Export semantics and runtime/type purity remain independently
-checked by the package-entry gates. Verification regenerates the canonical
-production SBOM with the extracted package manifest as its root. The SBOM
-embeds a profile- and schema-bound digest of that production manifest contract.
-A sidecar whose own hash is valid but whose content does not match those
-independent results is rejected.
+The `release-gate` check is the sole full source certification. Independent
+Linux jobs run the core, auth, end-to-end, and secret-scanning lanes in
+parallel. `release-gate` is a small fail-closed aggregator: it succeeds only
+when every lane succeeds.
 
-vNext accepts no legacy evidence-schema fallback. Historical schema-v2 beta
-evidence remains verifiable only from its immutable tagged source checkout.
+The protected tag workflow reads GitHub's check-run API and requires a
+successful `release-gate` produced by GitHub Actions for the exact tagged
+commit. It does not rerun those source suites.
 
-The npm tarball contains neither `pnpm-lock.yaml` nor a resolved dependency
-tree. After the exact candidate/source contract comparison, transitive package
-components are therefore resolved from the release checkout's frozen lockfile;
-the extracted candidate remains the SBOM root. Consumer-owned peer transitive
-dependencies belong in each consuming application's resolved SBOM.
+The source lanes are defined by `scripts/release-source-certification.mjs`:
 
-## Commit-addressed package previews
+- `core`: formatting, lint, types, boundaries, the broad test matrix, ASVS,
+  SBOM, and package contracts;
+- `auth`: the complete auth/OAuth/MCP verification matrix;
+- `e2e`: the full application E2E, proxy DAST, and advisory gates.
 
-`.github/workflows/package-preview.yml` is a developer preview transport, not
-a public npm release path. Each pull-request commit from an in-repository branch
-runs the complete `release:prepare` graph, selects the version-derived
-`.release-artifacts/nuxt/<package-version>/better-convex-nuxt-<package-version>.tgz`
-bound to that exact commit, and passes the prebuilt tarball directly to the
-lockfile-pinned `pkg-pr-new` CLI. The path comes from the repository's reviewed
-`nuxt` package descriptor; the workflow does not search the artifact directory
-or accept a caller-selected package path. pkg.pr.new uploads prebuilt tarballs
-as-is; the workflow verifies the candidate again after upload and retains its
-evidence set for 14 days. It has read-only repository permission and receives no
-npm credential or OIDC publication authority.
+## Read-only staging readiness
 
-Install the pkg.pr.new GitHub App on this repository before the first preview.
-The workflow deliberately ignores pull requests from forks. A maintainer can
-review a fork commit, move it to an in-repository branch, and open a pull request
-there. Maintainers may also run the workflow manually against a selected
-reviewed ref.
-
-The pkg.pr.new comment and job summary report a commit-SHA URL. Install that
-exact URL in an external clean consumer; do not record a floating PR or branch
-URL as evidence. A later commit produces a new URL and cancels an obsolete
-in-progress build for the same pull request. The preview URL proves only that
-the commit-addressed candidate can be installed from pkg.pr.new. It does not
-prove npm trusted publishing, protected cloud staging, registry byte equality,
-or any other release blocker described below, and it must never be promoted or
-republished as an official package.
-
-Verify a transferred artifact set without rebuilding it:
+Before any artifact is minted, the protected `bcn-auth-staging` environment
+runs:
 
 ```bash
-node scripts/release.mjs verify .release-artifacts/nuxt/X.Y.Z-beta.N/artifact.json
+pnpm test:auth-cloud-staging --readiness-only
 ```
 
-That low-level command may verify an intact evidence set after it has been
-transferred to another directory. The repository's `release:verify` orchestration
-is intentionally stricter: it accepts only the current package version's
-statically reviewed `nuxt` coordinate and cannot be pointed at another package
-or release path.
+This mode performs no deployment, mutation, cleanup, account creation, or
+report write. It verifies the authenticated machine-readable Convex deployment
+authority, exact team/project/deployment, configured origins, closed public
+ingress, the leased host fingerprint endpoint, and zero rows in every currently
+mounted staging proof table.
 
-Local artifacts are disposable rehearsal outputs. Do not upload one to npm.
+The environment is dedicated release infrastructure. Its concurrency group is
+exclusive; operators must not use it during a release.
 
-`pnpm release:prepare` is the sole clean-checkout preparation command for the
-vNext package family. MCP remains outside the closed Vue/Nuxt candidate-set
-schema. The command first validates every standalone candidate lock, then mints
-the Vue/Nuxt set followed by MCP, and only then verifies and certifies all three
-exact artifacts.
+Required GitHub environment variables:
 
-After a release-version or candidate-manifest change, run
-`pnpm update:candidate-app-locks`. Update mode intentionally accepts those
-tracked edits, builds the canonical Vue/Nuxt/MCP tarballs, refreshes all five
-standalone locks, and frozen-installs each result. `pnpm
-check:candidate-app-locks` is the clean-tree, non-refreshing gate: it parses the
-committed locks, serves only the canonical candidate tarballs from a temporary
-registry, and runs frozen installs without resolving a new dependency graph.
-The protected Node/Linux release run remains the final byte authority; every
-staged package SRI must match the committed reachable lock graph before an
-immutable artifact directory can be renamed into place.
+- `BCN_AUTH_STAGING_CONVEX_URL`
+- `BCN_AUTH_STAGING_CONVEX_SITE_URL`
+- `BCN_AUTH_STAGING_ORIGIN`
+- `BCN_AUTH_STAGING_TEAM`
+- `BCN_AUTH_STAGING_VERCEL_ORG_ID`
+- `BCN_AUTH_STAGING_VERCEL_PROJECT_ID`
 
-## Trusted prerelease workflow
+Required secrets:
 
-The protected `v*-*` tag must point at the reviewed commit and exactly match the
-prerelease version in the root `package.json`. The workflow then:
+- `BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY`
+- `BCN_AUTH_STAGING_INGRESS_LEASE`
+- `BCN_AUTH_STAGING_VERCEL_TOKEN`
+- `BCN_AUTH_STAGING_EMAIL`
+- `BCN_AUTH_STAGING_PASSWORD`
 
-1. records `governanceMode: solo-maintainer`, the human tag actor, the checked-out
-   commit author, tag, and source commit in the protected run; it does not invent
-   a deputy, licensing reviewer, notification drill, or independent review;
-2. uses Node `22.14.0`, npm `11.18.0`, Corepack `0.34.5`, and the Corepack-verified
-   `pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1`,
-   a frozen pnpm lock, and commit-pinned GitHub Actions;
-3. builds each statically reviewed package once and produces one final immutable
-   tarball per package, with Nuxt deriving its deterministic fingerprint from a
-   disposable normalized preimage before final packing, without accepting
-   package paths or release profiles from workflow input;
-4. passes those immutable artifacts to a separate job, installs the
-   manifest-reviewed local backend there, runs source-integrity/runtime gates
-   from the checkout, and runs artifact-dependent provenance, package-entry,
-   and maintained clean-consumer gates against the exact tarballs;
-5. enters the protected `bcn-auth-staging` environment, reverifies the
-   downloaded Nuxt set, proves the public Nuxt fingerprint and auth routes are
-   closed to unleased traffic, requires the candidate fingerprint from the
-   already-deployed public Nuxt origin and real auth responses, clean-installs
-   and deploys its Convex fixture, proves zero persisted staging state, verifies
-   the application-owned Convex `/mcp` resource challenge, and runs the reduced
-   critical races;
-6. waits for approval in the protected `npm-release` environment;
-7. grants `id-token: write` only to protected publication jobs, publishes Vue
-   through npm OIDC under `next-staging`, and byte-compares the registry
-   tarball;
-8. installs the unchanged Nuxt candidate in a tracked production npm consumer
-   against that exact registry Vue version, verifies lock provenance and both
-   installed byte trees, then publishes and compares Nuxt;
-9. publishes and compares MCP through its separate static lane;
-10. stops before changing `latest`, `next`, or another shared user-facing
-    dist-tag.
+The Convex key must be deployment-scoped. The Vercel project and organization
+IDs bind the deploy to the dedicated staging project. The staging origin must
+reject unleased fingerprint and auth requests at the edge.
 
-npm trusted-publishing OIDC authenticates `npm publish` and
-`npm stage publish`, not `npm dist-tag`. Shared tag promotion is therefore a
-separate interactive maintainer action after the complete staged-tag set has
-matching registry bytes. Do not add a long-lived automation token to collapse
-that authority boundary.
+## Immutable artifacts and artifact-only verification
 
-### Protected cloud-staging gate
+The protected workflow creates exactly one final tarball for each package and
+stores immutable evidence under:
 
-`bcn-auth-staging` is a dedicated, pre-provisioned Convex production deployment;
-the workflow neither creates nor destroys it. The repository can deploy Convex
-functions with a deployment-scoped key, but deploying the Nuxt host is
-provider-specific. Before approving this protected job, the host operator must
-build and deploy the application from the exact downloaded candidate tarball.
-The public Nuxt origin must expose that candidate's package-owned
-`/api/_better-convex-nuxt/release-fingerprint` response. A source build or a
-different/stale tarball does not register or cannot match that route, so the job
-fails before deploying Convex functions or writing application data. Environment
-variables cannot assert or override the fingerprint.
+```text
+.release-artifacts/vue/<version>/
+.release-artifacts/nuxt/<version>/
+.release-artifacts/mcp/<version>/
+.release-artifacts/set/<nuxt-version>/
+```
 
-This fixed deployment is safe to clean only while the workflow has exclusive
-ingress and operator ownership. The host edge must reject requests without the
-protected `__Host-bcn-staging-lease` cookie with an exact `403` before Nuxt for
-the fingerprint and auth read/write probes. The application-owned MCP resource
-is served separately from the Convex site origin; the workflow proves that
-resource with an unauthenticated `401` and its exact RFC 9728
-`resource_metadata` challenge. The protected workflow proves the Nuxt ingress
-behavior before deployment, then sends the lease only from in-memory HTTP and
-browser contexts. The lease is a staging perimeter control, not an
-application credential or supported runtime option. The deployment key must be
-reserved for this workflow, the environment concurrency group must remain
-exclusive, and operators must not invoke Convex functions or write staging data
-during a run. If any of those conditions cannot be guaranteed, publication is
-blocked; broad cleanup is not safe on a shared environment. Read-only public
-protocol metadata and `/api/auth/jwks` remain reachable without the lease so
-Convex and standards clients can resolve signing keys; the runner separately
-requires the JWKS response to carry the candidate fingerprint and contain no
-private key material.
+Each package evidence set contains the tarball, content manifest, CycloneDX
+SBOM, source commit, package identity, SHA-256, and SRI. Nuxt also records its
+deterministic payload-derived runtime fingerprint.
 
-The protected GitHub environment must provide the root HTTPS origins
-`BCN_AUTH_STAGING_CONVEX_URL`, `BCN_AUTH_STAGING_CONVEX_SITE_URL`, and
-`BCN_AUTH_STAGING_ORIGIN`, plus the exact Convex team slug as
-`BCN_AUTH_STAGING_TEAM`, as variables. It must provide a production,
-deployment-scoped `BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY` plus the one-time OAuth
-owner bootstrap identity's `BCN_AUTH_STAGING_EMAIL` and
-`BCN_AUTH_STAGING_PASSWORD` as secrets. It must also provide a random base64url
-`BCN_AUTH_STAGING_INGRESS_LEASE` secret containing 43–128 characters and
-configure the host edge to require the matching cookie. This account must not
-already exist: the job creates it only after the zero-state proof and removes it
-during cleanup.
-The deployment's persistent application-owned `SITE_URL` must match the
-protected public-origin variable. Its deployment-owned built-in
-`CONVEX_SITE_URL` must match the protected site URL variable; the workflow must
-not try to persist or override that reserved value. Project keys, preview keys,
-development keys, a team/project slug other than the protected identity, or
-URL/key mismatches fail closed.
+`scripts/verify-release.mjs` is intentionally artifact-only. It recomputes the
+evidence, checks exports and dependency closure, and frozen-installs clean
+consumers against the selected tarballs. It cannot invoke `check`,
+`verify:auth`, E2E, DAST, or another source certification suite.
 
-After the live host fingerprint matches, the job copies the maintained
-`mcp-oauth-agent` starter into a clean temporary directory, replaces its three
-Better Convex dependencies with the manifest-selected absolute `.tgz` paths,
-installs with lifecycle scripts disabled, and verifies the installed module and shared runtime
-fingerprint helper carry the same fingerprint. It statically requires exactly
-one current component mount named `betterAuth`, generates bounded internal
-state-proof functions from every packaged auth model and every starter
-application table, and runs `convex deploy` against the named deployment. Before
-any account or race write, every mounted auth-model and app-table count must be
-zero. A non-empty or malformed proof fails without deleting the unexpected
-state.
+Immutable artifact directories cannot be overwritten or repacked. A transferred
+artifact can be checked without rebuilding it:
 
-Once the zero-state proof passes, the job owns the rehearsal data: it creates the
-temporary OAuth administrator, runs the same-ID, increment, official JWKS
-rotation, provider-owned authorization-code/PKCE races, and the real Better Auth
-database-backed lockout/reset path. It exchanges a final persisted session for a
-short-lived RS256 JWT, verifies its exact claims and published-key signature, and
-requires the named Convex deployment to accept that token with the matching
-subject and `convex-session` class. The real auth responses must carry the
-candidate fingerprint. The MCP resource does not carry a Nuxt runtime
-fingerprint: its package-byte binding comes from the separately certified
-`better-convex-mcp` artifact and its installed-byte consumer gates. It then
-deletes every row from all discovered mounted auth models and application
-tables. It must re-prove zero state before writing and uploading
-`bcn-auth-staging-report`. The report contains artifact coordinates, public
-topology, booleans, and counts—never credentials, codes, verifiers, tokens, or
-key material.
+```bash
+node scripts/release.mjs verify \
+  .release-artifacts/nuxt/X.Y.Z-beta.N/artifact.json \
+  --package nuxt
+```
 
-Convex does not expose a repository-controlled inventory of data retained by
-components that are no longer mounted. The single-mount and zero-row proof
-therefore covers the deployed fixture's current `betterAuth` mount, not hidden
-state from an earlier unmounted component. Evidence that this dedicated
-deployment was provisioned clean and has never hosted another component remains
-an external publication blocker, as does the provider-specific Nuxt deployment
-record for the exact tarball. A passing report is not a substitute for either
-record.
+## Protected staging proof
 
-### One-time package-name bootstrap
+After artifact-only verification, the workflow copies the maintained staging
+host fixture and binds all three Better Convex dependencies to the exact
+downloaded tarballs. The pinned Vercel CLI deploys that fixture only to the
+configured staging project. The workflow waits until the protected origin
+serves the exact Nuxt runtime fingerprint.
 
-An npm trusted publisher is configured on an existing package. When a reviewed
-package name does not exist yet, the solo owner must first publish one exact
-certified prerelease tarball manually with npm account 2FA:
+The cloud proof then:
 
-1. finish `pnpm release:prepare` and every per-package verification gate;
-2. inspect the retained tarball instead of repacking the package directory;
-3. publish only that tarball under `next-staging`;
-4. compare the registry tarball with the retained candidate bytes;
-5. immediately configure `publish-prerelease.yml` and `npm-release` as the
-   package's trusted publisher, then disallow traditional publish tokens.
+- verifies the same artifact family again;
+- deploys the exact fixture contract to the dedicated Convex deployment;
+- proves zero pre-write state;
+- exercises auth, session JWT, MCP authorization, rate limiting, JWKS rotation,
+  and bounded concurrency races;
+- deletes all fixture rows; and
+- proves zero post-cleanup state before writing the non-secret report.
 
-This exception creates the package settings needed for OIDC. It is not a second
-recurring release lane, does not promote `latest`, and must not be used again
-once the trusted publisher exists. An agent must stop before the interactive
-2FA publication; the human owner performs and records that action.
-After the bootstrap, rerun the protected workflow from the same tag and source
-commit. Its static publication command detects that exact version, skips a
-second publish, and still requires the downloaded registry tarball to be
-byte-for-byte equal to the retained candidate. A lookup error other than an
-authoritative registry `E404`, an unexpected version, or unequal bytes fails
-closed.
+Any non-empty readiness or cleanup proof blocks publication. Staging is not
+`continue-on-error` and publication jobs depend on its success.
 
-Before the coordinated prerelease, the npm package owner must configure
-`publish-prerelease.yml` as every existing package's only trusted publisher,
-allow `npm publish`, protect the `bcn-auth-staging` and `npm-release`
-environments and release-tag pattern, set npm publishing access to **Require
-two-factor authentication and disallow tokens**, revoke existing automation
-write tokens, and enable private vulnerability reporting. The protected run
-records `governanceMode: solo-maintainer`, the human tag actor, checked-out
-commit author, tag, and source commit. It does not invent a deputy, separate
-licensing reviewer, notification drill, or independent review. npm account
-configuration and real staging credentials are external release blockers, not
-defaults the repository can silently provide.
+## Publication and registry equality
 
-The solo owner must not let the `npm-release` jobs proceed until the release
-record for the downloaded artifact hash contains the empty production-like
-rehearsal, separate `bcn-auth-staging` race report, and no unresolved P0/P1
-finding. The record must state explicitly that no independent audit occurred;
-independent approval
-remains mandatory before stable auth publication. Repository tests cannot
-manufacture cloud, delivery, or human review evidence; a missing record blocks
-publication.
+Only the three npm jobs receive `id-token: write`, and only through the
+protected `npm-release` environment. They publish the retained tarballs under a
+run-specific `candidate-<run-id>` tag, download the registry packages, and
+compare exact bytes/SRI.
 
-## Security release governance
+No shared user-facing dist-tag is moved by this workflow. After all three
+registry comparisons pass, a maintainer may separately move the intended
+shared tag. Never move a shared tag before exact registry equality is proven.
 
-Every release needs a matching `CHANGELOG.md` entry. When a change affects the
-auth schema, adapter invariants, cookie/proxy contract, claims, issuer or
-resource binding, OAuth metadata or grants, disabled routes, token lifetimes,
-JWKS behavior, secret format, or revocation semantics, the entry must state:
+## Failure, retry, and version rules
 
-- the exact affected and fixed versions;
-- whether the change is a hard cut and whether local-component schema/codegen
-  must be regenerated;
-- the deployment order and any required session, client-secret, consent,
-  provider-credential, or signing-key action;
-- protocol or interoperability impact and the gates that verified it;
-- any residual bearer/cache window or temporary mitigation.
+Before immutable minting:
 
-Security-sensitive notes require the BCN Security Owner and independent
-auth/security reviewer to approve the affected range, operator instructions,
-and disclosure timing. Those are human approvals; a green workflow cannot
-supply them. Follow the compromise and package-version runbooks in
-`SECURITY.md`.
+- fix source, test, timeout, lock, readiness, or infrastructure failures on the
+  same reserved coordinates;
+- rerun the exact failing test in isolation before changing a timeout;
+- raise a timeout only when measured bounded work legitimately needs it; and
+- never retire a coordinate for an ordinary pre-mint failure.
 
-For an affected published range, fix forward on a new version first. An
-authorized npm owner may then deprecate the exact vulnerable range with a
-concise upgrade message and must save registry evidence in the private incident
-record. Do not unpublish, reuse a version, move `latest` to untested bytes, or
-publish from a workstation.
+After immutable minting:
 
-## Failure and forward fix
+- a deterministic failure that requires a source or package change retires the
+  coordinates;
+- an infrastructure interruption gets one retry against the same downloaded
+  artifact hashes;
+- a second identical failure pauses publication for investigation; and
+- do not create a second successor in the same release attempt. Diagnose the
+  pipeline instead.
 
-Do not unpublish or reuse a version. If any gate or candidate deployment fails,
-leave `latest` unchanged, correct the source, obtain independent review, assign
-a new prerelease version, and rerun the complete workflow to create new bytes.
-For a solo prerelease, record the maintainer's corrective review instead of
-claiming independent review.
-Stable publication remains blocked until Better Auth 1.7 stable exists, the
-1.0 eligibility criteria in `internal/RFC-better-convex-vnext.md` pass, and the
-independent human security approval required by `SECURITY.md` is recorded.
+Never delete, replace, rebuild, repack, or publish a retired immutable
+coordinate. The internal decisions ledger and retained evidence directories
+record private rehearsal failures. `CHANGELOG.md` contains only versions that
+were actually published to npm.
+
+## Package previews
+
+`.github/workflows/package-preview.yml` builds a disposable Vue/Nuxt set and
+uploads the exact Nuxt tarball to pkg.pr.new for same-repository pull requests.
+It does not run source certification, create release authority, publish to npm,
+or gate a release. Vercel's generic PR previews are likewise non-authoritative.
+
+## Public history
+
+The release pull request is squash-merged after the hosted source certification
+is green. Public launch notes name only the final published coordinates.
+Unpublished rehearsal numbers remain private release evidence, not changelog or
+launch material.

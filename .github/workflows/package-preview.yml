@@ -45,16 +45,8 @@ jobs:
       - name: Install dependencies from the frozen lockfile
         run: pnpm install --frozen-lockfile
 
-      - name: Install browser
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install and verify reviewed local backend
-        run: pnpm check:auth-backend --install
-
-      - name: Build and verify the immutable release family
-        run: pnpm release:prepare
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - name: Build the disposable Vue/Nuxt preview set
+        run: pnpm release:artifact:set
 
       - name: Resolve the verified tarball identity
         id: artifact
@@ -127,7 +119,7 @@ jobs:
             "$PREVIEW_URL"
           echo "$ARTIFACT_SHA256  $RUNNER_TEMP/better-convex-nuxt-preview.tgz" | sha256sum --check --strict
 
-      - name: Reverify that preview upload did not alter the candidate
+      - name: Reverify that preview upload did not alter the candidate bytes
         run: node scripts/release.mjs verify "${{ steps.artifact.outputs.evidence }}"
 
       - name: Retain the preview evidence set

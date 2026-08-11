@@ -161,33 +161,7 @@ function main() {
     mcpCoordinates.paths.tarball,
   ])
 
-  console.log('\n[release-verify] Source-integrity and source-runtime behavior gates')
-  // These gates intentionally exercise the checked-out source. They never pack
-  // and must not be described as tests of installed candidate bytes.
-  run('pnpm', ['run', 'check'])
-  run('pnpm', ['run', 'check:asvs'])
-  run('pnpm', ['run', 'check:sbom'])
-  run('pnpm', ['run', 'test:e2e:full'], {
-    env: { ...process.env, CONVEX_E2E_AUTO_START: 'true', BCN_E2E_REQUIRE_LOCAL: 'true' },
-  })
-  run('pnpm', ['run', 'test:dast:proxy'])
-  run('pnpm', ['run', 'check:auth-advisories'])
-
-  console.log(
-    '\n[release-verify] Hybrid auth gates (source behavior plus explicit candidate input)',
-  )
-  run('pnpm', ['run', 'verify:auth'], {
-    env: {
-      ...process.env,
-      BCN_MCP_RELEASE_TARBALL: mcpCoordinates.paths.tarball,
-      BCN_RELEASE_TARBALL: tarball,
-      BCN_RELEASE_VUE_TARBALL: vueCoordinates.paths.tarball,
-    },
-  })
-
-  console.log('\n[release-verify] Artifact-dependent package and consumer gates')
-  // These gates consume the one manifest-selected tarball and are forbidden
-  // from discovering or packing a replacement candidate.
+  console.log('\n[release-verify] Artifact-only package and clean-consumer gates')
   run(
     'node',
     [
@@ -217,7 +191,7 @@ function main() {
   ])
 
   console.log(
-    `\n[release-verify] PASS: source gates ran from the checkout; artifact-dependent gates consumed ${tarball}; no gate repacked the candidate.`,
+    `\n[release-verify] PASS: artifact-dependent gates consumed ${tarball}; no source suite ran and no gate repacked the candidate.`,
   )
 }
 

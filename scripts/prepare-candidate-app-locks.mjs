@@ -1,17 +1,12 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-import { buildAndPackReleaseTarball } from './pack-release-tarball.mjs'
+import { withReleasePreflightTarballs } from './release-preflight-tarballs.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
-const mode = process.argv[2]
-if (!['check', 'update'].includes(mode) || process.argv.length !== 3) {
-  throw new Error('Usage: prepare-candidate-app-locks.mjs check|update')
-}
 
 function run(executable, args, { capture = false, environment = process.env } = {}) {
   console.log(`\n> ${[executable, ...args].join(' ')}`)
@@ -30,19 +25,10 @@ function ensureClean() {
   }
 }
 
-if (mode === 'check') ensureClean()
-const scratchDirectory = mkdtempSync(join(tmpdir(), 'bcn-candidate-lock-inputs-'))
-try {
-  // Use the same build + bind + pack function as immutable artifact creation;
-  // ordinary placeholder packs are never a supported lock input.
-  const tarballs = Object.fromEntries(
-    ['vue', 'nuxt', 'mcp'].map((packageId) => {
-      const packed = buildAndPackReleaseTarball(packageId, scratchDirectory, {
-        repositoryRoot,
-      })
-      return [packageId, packed.tarballPath]
-    }),
-  )
+export function verifyCandidateAppLocks(mode, tarballs) {
+  if (!['check', 'update'].includes(mode)) {
+    throw new Error('Candidate lock mode must be check or update.')
+  }
   if (mode === 'check') ensureClean()
   run('node', [
     'scripts/update-candidate-app-locks.mjs',
@@ -55,6 +41,18 @@ try {
     ...(mode === 'check' ? ['--check'] : []),
   ])
   if (mode === 'check') ensureClean()
-} finally {
-  rmSync(scratchDirectory, { force: true, recursive: true })
+}
+
+export function prepareCandidateAppLocks(mode) {
+  return withReleasePreflightTarballs((tarballs) => verifyCandidateAppLocks(mode, tarballs), {
+    repositoryRoot,
+  })
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const mode = process.argv[2]
+  if (!['check', 'update'].includes(mode) || process.argv.length !== 3) {
+    throw new Error('Usage: prepare-candidate-app-locks.mjs check|update')
+  }
+  prepareCandidateAppLocks(mode)
 }

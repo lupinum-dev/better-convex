@@ -43,8 +43,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install browser
         run: pnpm exec playwright install --with-deps chromium
-      - name: Verify supported Node baseline
-        run: pnpm verify
+      - name: Certify core source lane
+        run: pnpm release:certify:source core
 
   auth-contracts:
     runs-on: ubuntu-latest
@@ -59,16 +59,12 @@ jobs:
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check:no-old-auth-runtime
-      - run: pnpm check:auth-logical-ids
-      - run: pnpm check:auth-provenance --source-only
-      - run: pnpm check:auth-upstream
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check:auth-backend --install
+      - name: Certify auth source lane
+        run: pnpm release:certify:source auth
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - run: pnpm test:auth-adapter
-      - run: pnpm test:oauth
-      - run: pnpm test:auth-fuzz
-      - run: pnpm test:auth-sentinels
 
   auth-real-backend:
     runs-on: ubuntu-latest
@@ -85,32 +81,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm check:auth-backend --install
-      - run: pnpm check:auth-schema
-      - run: pnpm test:auth-concurrency
-      - run: pnpm test:auth-export-sentinels
-      - run: pnpm test:auth-mfa
+      - name: Certify end-to-end source lane
+        run: pnpm release:certify:source e2e
 
   release-gate:
+    needs: [secrets, compatibility, auth-contracts, auth-real-backend]
+    if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22.14.0'
-          package-manager-cache: false
-      - name: Install pinned release tooling
-        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Install browser
-        run: pnpm exec playwright install --with-deps chromium
-      - name: Install and verify reviewed local backend
-        run: pnpm check:auth-backend --install
-      - name: Build and verify the immutable MCP + Vue/Nuxt release family
-        run: pnpm release:prepare
+      - name: Require every independent source lane
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          AUTH_CONTRACTS: ${{ needs.auth-contracts.result }}
+          AUTH_REAL_BACKEND: ${{ needs.auth-real-backend.result }}
+          COMPATIBILITY: ${{ needs.compatibility.result }}
+          SECRETS: ${{ needs.secrets.result }}
+        run: |
+          for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND"; do
+            test "$result" = success
+          done

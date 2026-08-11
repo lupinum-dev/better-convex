@@ -14,7 +14,10 @@ import {
   bindCloudFixtureArtifacts,
   normalizeAuthorizationCodeEvidence,
   normalizeCloudPrewriteProof,
+  normalizeCloudReadinessProof,
   parseCloudArtifactArguments,
+  parseCloudReadinessArguments,
+  parseCloudStagingAuthorityEnvironment,
   parseCloudStagingEnvironment,
   readCloudDeployment,
   normalizeCloudDeploymentAuthority,
@@ -111,6 +114,26 @@ describe('protected cloud-staging gate', () => {
         stagingEnvironment({ BCN_AUTH_STAGING_INGRESS_LEASE: 'too-short' }),
       ),
     ).toThrow('AUTH_CLOUD_STAGING_INGRESS_LEASE_INVALID')
+  })
+
+  it('separates read-only authority from write credentials', () => {
+    const {
+      BCN_AUTH_STAGING_EMAIL: _email,
+      BCN_AUTH_STAGING_PASSWORD: _password,
+      ...environment
+    } = stagingEnvironment()
+    expect(parseCloudStagingAuthorityEnvironment(environment)).toMatchObject({
+      deploymentName,
+      origin: 'https://auth-staging.example.test',
+      team: 'better-convex',
+    })
+    expect(() => parseCloudStagingEnvironment(environment)).toThrow(
+      'AUTH_CLOUD_STAGING_BCN_AUTH_STAGING_EMAIL_MISSING',
+    )
+    expect(parseCloudReadinessArguments(['--readiness-only'])).toBe(true)
+    expect(() => parseCloudReadinessArguments([])).toThrow(
+      'Usage: node scripts/run-auth-cloud-staging.mjs --readiness-only',
+    )
   })
 
   it('binds the deployment key to machine-readable Convex project authority', () => {
@@ -375,12 +398,19 @@ describe('protected cloud-staging gate', () => {
       schemaVersion: 1,
     }
     expect(normalizeCloudPrewriteProof(proof, expected)).toBe(true)
+    expect(normalizeCloudReadinessProof(proof)).toBe(true)
     expect(() =>
       normalizeCloudPrewriteProof(
         { ...proof, authCounts: { ...proof.authCounts, oauthAccessToken: 1 } },
         expected,
       ),
     ).toThrow('AUTH_CLOUD_STAGING_PREWRITE_STATE_NOT_EMPTY')
+    expect(() =>
+      normalizeCloudReadinessProof({
+        ...proof,
+        authCounts: { ...proof.authCounts, oauthAccessToken: 1 },
+      }),
+    ).toThrow('AUTH_CLOUD_STAGING_READINESS_STATE_NOT_EMPTY')
     expect(() =>
       normalizeCloudPrewriteProof(
         { ...proof, appCounts: { ...proof.appCounts, users: 1 } },

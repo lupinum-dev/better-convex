@@ -110,6 +110,8 @@
     "release:artifact": "node scripts/release.mjs artifact",
     "release:artifact:set": "node scripts/prepare-candidate-set.mjs artifact",
     "release:prepare": "node scripts/prepare-candidate-set.mjs family",
+    "release:smoke": "node scripts/release-smoke.mjs",
+    "release:certify:source": "node scripts/release-source-certification.mjs",
     "release:verify:set": "node scripts/prepare-candidate-set.mjs verify",
     "verify": "pnpm check && pnpm check:asvs && pnpm check:sbom && pnpm check:contracts",
     "verify:auth": "pnpm check:auth-backend && pnpm check:no-old-auth-runtime && pnpm check:auth-logical-ids && pnpm check:auth-provenance --source-only && pnpm check:auth-upstream && pnpm check:auth-schema && pnpm test:auth-adapter && pnpm test:oauth && pnpm test:auth-fuzz && pnpm test:auth-sentinels && pnpm test:auth-concurrency && pnpm test:auth-export-sentinels && pnpm test:auth-mfa && pnpm test:mcp-auth && pnpm test:mcp-conformance",

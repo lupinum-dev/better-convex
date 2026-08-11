@@ -102,7 +102,7 @@ function requiredEnvironment(env, name) {
   return value
 }
 
-export function parseCloudStagingEnvironment(env) {
+export function parseCloudStagingAuthorityEnvironment(env) {
   const adminKey = requiredEnvironment(env, 'CONVEX_DEPLOY_KEY')
   const keyMatch = /^prod:([^|]+)\|[^\s|]{32,}$/u.exec(adminKey)
   assert(keyMatch && DEPLOYMENT_NAME.test(keyMatch[1]), 'AUTH_CLOUD_STAGING_DEPLOY_KEY_INVALID')
@@ -137,9 +137,25 @@ export function parseCloudStagingEnvironment(env) {
     'AUTH_CLOUD_STAGING_ORIGIN_INVALID',
   )
 
+  const ingressLease = requiredEnvironment(env, 'BCN_AUTH_STAGING_INGRESS_LEASE')
+  assert(INGRESS_LEASE.test(ingressLease), 'AUTH_CLOUD_STAGING_INGRESS_LEASE_INVALID')
+
+  return Object.freeze({
+    adminKey,
+    convexSiteUrl: convexSiteUrl.origin,
+    convexUrl: convexUrl.origin,
+    deploymentName,
+    ingressCookie: `${INGRESS_COOKIE_NAME}=${ingressLease}`,
+    ingressLease,
+    origin: origin.origin,
+    team,
+  })
+}
+
+export function parseCloudStagingEnvironment(env) {
+  const authority = parseCloudStagingAuthorityEnvironment(env)
   const email = requiredEnvironment(env, 'BCN_AUTH_STAGING_EMAIL')
   const password = requiredEnvironment(env, 'BCN_AUTH_STAGING_PASSWORD')
-  const ingressLease = requiredEnvironment(env, 'BCN_AUTH_STAGING_INGRESS_LEASE')
   assert(
     email.length <= 320 &&
       ![...email].some((character) => {
@@ -156,19 +172,11 @@ export function parseCloudStagingEnvironment(env) {
       !password.includes('\n'),
     'AUTH_CLOUD_STAGING_PASSWORD_INVALID',
   )
-  assert(INGRESS_LEASE.test(ingressLease), 'AUTH_CLOUD_STAGING_INGRESS_LEASE_INVALID')
 
   return Object.freeze({
-    adminKey,
-    convexSiteUrl: convexSiteUrl.origin,
-    convexUrl: convexUrl.origin,
-    deploymentName,
+    ...authority,
     email,
-    ingressCookie: `${INGRESS_COOKIE_NAME}=${ingressLease}`,
-    ingressLease,
-    origin: origin.origin,
     password,
-    team,
   })
 }
 
@@ -234,7 +242,7 @@ export async function readCloudDeployment(config, fetchImplementation = fetch) {
   return normalizeCloudDeploymentAuthority(value, config)
 }
 
-function readArtifactIdentity(artifactManifest, packageId) {
+export function readArtifactIdentity(artifactManifest, packageId) {
   const artifactCoordinates = getPackageArtifactCoordinates(packageId, {
     repositoryRoot: root,
   })
@@ -363,7 +371,7 @@ async function fetchWithTimeout(url, init, failureCode) {
   }
 }
 
-async function assertClosedPublicIngress(config) {
+export async function assertClosedPublicIngress(config) {
   const probes = [
     { method: 'GET', path: '/api/_better-convex-nuxt/release-fingerprint' },
     { method: 'GET', path: '/api/auth/get-session' },
@@ -400,7 +408,7 @@ async function assertClosedPublicIngress(config) {
   }
 }
 
-async function fetchCloudRuntimeFingerprint(config, artifact) {
+async function readCloudRuntimeFingerprint(config) {
   const endpoint = `${config.origin}/api/_better-convex-nuxt/release-fingerprint`
   const response = await fetchWithTimeout(
     endpoint,
@@ -421,11 +429,6 @@ async function fetchCloudRuntimeFingerprint(config, artifact) {
       /^application\/json(?:;|$)/iu.test(response.headers.get('content-type') ?? ''),
     'AUTH_CLOUD_STAGING_RUNTIME_FINGERPRINT_RESPONSE_INVALID',
   )
-  assertCloudRouteFingerprint(
-    response,
-    artifact,
-    'AUTH_CLOUD_STAGING_RUNTIME_FINGERPRINT_RESPONSE_INVALID',
-  )
   let value
   try {
     value = JSON.parse(
@@ -439,6 +442,19 @@ async function fetchCloudRuntimeFingerprint(config, artifact) {
     if (error instanceof Error && error.message.startsWith('AUTH_CLOUD_STAGING_')) throw error
     fail('AUTH_CLOUD_STAGING_RUNTIME_FINGERPRINT_RESPONSE_INVALID')
   }
+  assert(
+    isRecord(value) &&
+      Object.keys(value).sort().join(',') === 'runtimeFingerprint,schemaVersion' &&
+      value.schemaVersion === 1 &&
+      RUNTIME_FINGERPRINT.test(value.runtimeFingerprint) &&
+      response.headers.get(RUNTIME_FINGERPRINT_HEADER) === value.runtimeFingerprint,
+    'AUTH_CLOUD_STAGING_RUNTIME_FINGERPRINT_RESPONSE_INVALID',
+  )
+  return Object.freeze(value)
+}
+
+export async function fetchCloudRuntimeFingerprint(config, artifact) {
+  const value = await readCloudRuntimeFingerprint(config)
   assertCloudRuntimeFingerprint(value, artifact)
 }
 
@@ -735,6 +751,30 @@ function normalizeCloudEmptyProof(value, expected, code) {
 
 export function normalizeCloudPrewriteProof(value, expected) {
   return normalizeCloudEmptyProof(value, expected, 'AUTH_CLOUD_STAGING_PREWRITE_STATE_NOT_EMPTY')
+}
+
+export function normalizeCloudReadinessProof(value) {
+  const code = 'AUTH_CLOUD_STAGING_READINESS_STATE_NOT_EMPTY'
+  assert(
+    isRecord(value) &&
+      Object.keys(value).sort().join(',') ===
+        'appCounts,authCounts,componentMounts,runtimeFingerprint,schemaVersion' &&
+      value.schemaVersion === 1 &&
+      RUNTIME_FINGERPRINT.test(value.runtimeFingerprint) &&
+      Array.isArray(value.componentMounts) &&
+      value.componentMounts.length === 1 &&
+      value.componentMounts[0] === COMPONENT_PATH,
+    code,
+  )
+  for (const counts of [value.authCounts, value.appCounts]) {
+    assert(
+      isRecord(counts) &&
+        Object.keys(counts).length <= 128 &&
+        Object.values(counts).every((count) => Number.isSafeInteger(count) && count === 0),
+      code,
+    )
+  }
+  return true
 }
 
 function extractSessionCookie(response) {
@@ -1284,6 +1324,13 @@ export function parseCloudArtifactArguments(argv) {
   })
 }
 
+export function parseCloudReadinessArguments(argv) {
+  if (argv.length !== 1 || argv[0] !== '--readiness-only') {
+    fail('Usage: node scripts/run-auth-cloud-staging.mjs --readiness-only')
+  }
+  return true
+}
+
 function containsCompactJwt(value) {
   if (typeof value === 'string') return /[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}/u.test(value)
   if (Array.isArray(value)) return value.some(containsCompactJwt)
@@ -1344,8 +1391,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   let rateLimit
   let sessionJwt
   try {
-    // A provider-specific host deployment happens before protected-environment
-    // approval. A stale or source-built host cannot pass this package-owned URL.
+    // The protected workflow deploys the exact package artifact before this proof.
+    // A stale or source-built host cannot pass this package-owned URL.
     await assertClosedPublicIngress(config)
     await fetchCloudRuntimeFingerprint(config, artifact.identity)
     fixture = await prepareCloudFixture(artifacts)
@@ -1456,6 +1503,28 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   return report
 }
 
+export async function runCloudStagingReadiness(argv = process.argv.slice(2), env = process.env) {
+  parseCloudReadinessArguments(argv)
+  const config = parseCloudStagingAuthorityEnvironment(env)
+  const deployment = await readCloudDeployment(config)
+  await assertClosedPublicIngress(config)
+  await readCloudRuntimeFingerprint(config)
+
+  const client = new ConvexHttpClient(config.convexUrl)
+  client.setAdminAuth(config.adminKey)
+  let state
+  try {
+    state = await client.query(releaseProofFunctions.inspect, {})
+  } catch {
+    fail('AUTH_CLOUD_STAGING_READINESS_PROOF_FAILED')
+  }
+  normalizeCloudReadinessProof(state)
+  console.log(
+    `[auth-cloud-staging] READINESS PASS: ${deployment.team}/${deployment.project}/${deployment.deploymentName}`,
+  )
+  return Object.freeze({ deployment, runtimeFingerprint: state.runtimeFingerprint })
+}
+
 function safeError(error, secrets) {
   let text = error instanceof Error ? error.message : String(error)
   for (const secret of secrets.filter(Boolean)) text = text.replaceAll(secret, '[REDACTED]')
@@ -1463,7 +1532,9 @@ function safeError(error, secrets) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch((error) => {
+  const operation =
+    process.argv.slice(2)[0] === '--readiness-only' ? runCloudStagingReadiness : main
+  operation().catch((error) => {
     console.error(
       safeError(error, [
         process.env.CONVEX_DEPLOY_KEY,

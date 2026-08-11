@@ -118,8 +118,17 @@ function ensureCleanWorkingTree() {
 
 function requirePreparedChangelog() {
   const changelog = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8')
-  if (!changelog.includes(`## ${tag}`)) {
-    throw new Error(`CHANGELOG.md must contain a prepared ${tag} release entry.`)
+  const unreleased = changelog
+    .split(/^## Unreleased\s*$/mu)[1]
+    ?.split(/^## /mu)[0]
+    ?.trim()
+  if (!unreleased || !/^- /mu.test(unreleased)) {
+    throw new Error('CHANGELOG.md must contain non-empty Unreleased notes before minting.')
+  }
+  if (changelog.includes(`## ${tag}`)) {
+    throw new Error(
+      `CHANGELOG.md must not present unpublished ${tag} as published before registry equality.`,
+    )
   }
 }
 

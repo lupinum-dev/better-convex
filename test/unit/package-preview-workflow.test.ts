@@ -81,12 +81,11 @@ describe('pkg.pr.new package preview workflow', () => {
     expect(structuredWorkflow).not.toContain('npm publish')
   })
 
-  it('builds the release family once and verifies the selected Nuxt artifact', () => {
+  it('builds only a disposable Vue/Nuxt preview set', () => {
     expect(runs).toEqual(
       expect.arrayContaining([
         'pnpm install --frozen-lockfile',
-        'pnpm check:auth-backend --install',
-        'pnpm release:prepare',
+        'pnpm release:artifact:set',
         'node scripts/release.mjs verify "${{ steps.artifact.outputs.evidence }}"',
       ]),
     )
@@ -97,7 +96,8 @@ describe('pkg.pr.new package preview workflow', () => {
         ),
       ),
     ).toBe(true)
-    expect(runs.filter((run) => run === 'pnpm release:prepare')).toHaveLength(1)
+    expect(runs).not.toContain('pnpm release:prepare')
+    expect(runs).not.toContain('pnpm release:certify:source core')
     expect(runs.some((run) => /(?:npm|pnpm) pack/u.test(run))).toBe(false)
   })
 

@@ -12,8 +12,9 @@ prerelease candidates. The Nuxt candidate uses Node
 `0.1.114`.
 Each package manifest is canonical for its own dependencies and peers; each
 reviewed release descriptor binds its package manifest into that package's
-artifact proof. `pnpm release:prepare` certifies the three package candidates
-from one checkout. Convex and Nuxt are exact required peers of the Nuxt package.
+artifact proof. The hosted `release-gate` certifies source once before the
+protected workflow mints the three package candidates. Post-mint verification
+is artifact-only. Convex and Nuxt are exact required peers of the Nuxt package.
 Better Auth and the OAuth Provider are exact optional peers installed only by
 auth-enabled applications. Better Auth owns its Kysely dependency; Better Convex
 does not redeclare it. An auth-enabled application resolves one physical

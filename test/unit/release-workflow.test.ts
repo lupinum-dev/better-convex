@@ -26,6 +26,7 @@ const releaseControlFixtureFiles = [
   'scripts/package-certification-manifest.mjs',
   'scripts/package-runtime-fingerprint-profile.mjs',
   'scripts/prepare-candidate-set.mjs',
+  'scripts/release-preflight-tarballs.mjs',
   'scripts/verify-release.mjs',
 ]
 
@@ -252,11 +253,14 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     }
   })
 
-  it('passes both immutable companion candidates into hybrid auth verification', () => {
+  it('keeps post-mint verification artifact-only', () => {
     const verifier = read('scripts/verify-release.mjs')
 
-    expect(verifier).toContain('BCN_MCP_RELEASE_TARBALL: mcpCoordinates.paths.tarball')
-    expect(verifier).toContain('BCN_RELEASE_VUE_TARBALL: vueCoordinates.paths.tarball')
+    expect(verifier).toContain("'scripts/check-package-exports.mjs'")
+    expect(verifier).toContain("'scripts/check-candidate-apps.mjs'")
+    expect(verifier).not.toContain("run('pnpm', ['run', 'check'])")
+    expect(verifier).not.toContain("run('pnpm', ['run', 'verify:auth'])")
+    expect(verifier).not.toContain("run('pnpm', ['run', 'test:e2e:full'])")
   })
 
   it('rejects unreviewed verifier and registry coordinates before network work', () => {
@@ -294,11 +298,19 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
 
     const publisher = spawnSync(
       process.execPath,
-      ['scripts/publish-registry-package.mjs', '--package', 'unreviewed', '--tag', 'next-staging'],
+      ['scripts/publish-registry-package.mjs', '--package', 'unreviewed', '--tag', 'candidate-123'],
       { cwd: root, encoding: 'utf8' },
     )
     expect(publisher.status).toBe(1)
     expect(publisher.stderr).toContain('Unknown package certification descriptor')
+
+    const sharedTagPublisher = spawnSync(
+      process.execPath,
+      ['scripts/publish-registry-package.mjs', '--package', 'vue', '--tag', 'next-staging'],
+      { cwd: root, encoding: 'utf8' },
+    )
+    expect(sharedTagPublisher.status).toBe(1)
+    expect(sharedTagPublisher.stderr).toContain('requires a workflow-run-specific candidate tag')
   })
 
   it('publishes only after an authoritative registry E404 and resumes exact versions', () => {
@@ -331,7 +343,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     const runPublisher = (mode: string) =>
       spawnSync(
         process.execPath,
-        ['scripts/publish-registry-package.mjs', '--package', 'vue', '--tag', 'next-staging'],
+        ['scripts/publish-registry-package.mjs', '--package', 'vue', '--tag', 'candidate-123'],
         {
           cwd: root,
           encoding: 'utf8',
@@ -359,18 +371,24 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       const missing = runPublisher('missing')
       expect(missing.status, missing.stderr).toBe(0)
       expect(readFileSync(executionLog, 'utf8')).toContain(
-        `publish ${resolve(root, `.release-artifacts/vue/${version}/better-convex-vue-${version}.tgz`)} --tag next-staging --access public --registry https://registry.npmjs.org`,
+        `publish ${resolve(root, `.release-artifacts/vue/${version}/better-convex-vue-${version}.tgz`)} --tag candidate-123 --access public --registry https://registry.npmjs.org`,
       )
     } finally {
       rmSync(temporaryDirectory, { force: true, recursive: true })
     }
   })
 
-  it('uses the one canonical preparation command in CI and preview workflows', () => {
-    expect(preparationCommands(ciWorkflow, 'release-gate')).toEqual(['pnpm release:prepare'])
-    expect(preparationCommands(previewWorkflow, 'preview')).toEqual(['pnpm release:prepare'])
-    expect(requireJob(ciWorkflow, 'release-gate')['timeout-minutes']).toBe(120)
-    expect(steps(ciWorkflow, 'release-gate')[0]?.with?.['fetch-depth']).toBe(0)
+  it('keeps CI source-only and package previews non-authoritative', () => {
+    expect(preparationCommands(ciWorkflow, 'release-gate')).toEqual([])
+    expect(preparationCommands(previewWorkflow, 'preview')).toEqual([])
+    expect(runs(previewWorkflow, 'preview')).toContain('pnpm release:artifact:set')
+    expect(requireJob(ciWorkflow, 'release-gate')['timeout-minutes']).toBe(5)
+    expect(needs(ciWorkflow, 'release-gate')).toEqual([
+      'secrets',
+      'compatibility',
+      'auth-contracts',
+      'auth-real-backend',
+    ])
   })
 
   it('models the exact blocking publication DAG', () => {
@@ -379,11 +397,14 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
         Object.keys(workflow.jobs ?? {}).map((jobId) => [jobId, needs(workflow, jobId)]),
       ),
     ).toEqual({
-      'build-candidates': [],
-      'release-security': ['build-candidates'],
-      'verify-candidates': ['build-candidates', 'release-security'],
+      'preflight-smoke': [],
+      'source-certification': ['preflight-smoke'],
+      'release-security': ['source-certification'],
+      'staging-readiness': ['release-security'],
+      'build-candidates': ['staging-readiness'],
+      'verify-candidates': ['build-candidates'],
       'bcn-auth-staging': ['verify-candidates'],
-      'publish-vue-staging': ['verify-candidates'],
+      'publish-vue-staging': ['bcn-auth-staging'],
       'registry-vue-nuxt-gate': ['publish-vue-staging'],
       'publish-nuxt-staging': ['registry-vue-nuxt-gate'],
       'publish-mcp-staging': ['publish-nuxt-staging'],
@@ -394,6 +415,38 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
         'publish-mcp-staging',
       ],
     })
+  })
+
+  it('runs each expensive source suite once before immutable minting', () => {
+    const source = read('scripts/release-source-certification.mjs')
+    const verifier = read('scripts/verify-release.mjs')
+    const allSourceRuns = [
+      ...runs(ciWorkflow, 'compatibility'),
+      ...runs(ciWorkflow, 'auth-contracts'),
+      ...runs(ciWorkflow, 'auth-real-backend'),
+    ]
+    expect(allSourceRuns.filter((run) => run === 'pnpm release:certify:source core')).toHaveLength(
+      1,
+    )
+    expect(allSourceRuns.filter((run) => run === 'pnpm release:certify:source auth')).toHaveLength(
+      1,
+    )
+    expect(allSourceRuns.filter((run) => run === 'pnpm release:certify:source e2e')).toHaveLength(1)
+    expect(source.match(/\['run', 'verify'\]/gu)).toHaveLength(1)
+    expect(source.match(/\['run', 'verify:auth'\]/gu)).toHaveLength(1)
+    expect(source.match(/\['run', 'test:e2e:full'\]/gu)).toHaveLength(1)
+    expect(verifier).not.toMatch(/verify:auth|test:e2e:full|test:dast:proxy/u)
+    expect(needs(workflow, 'build-candidates')).toEqual(['staging-readiness'])
+  })
+
+  it('keeps staging readiness read-only and before artifact creation', () => {
+    const readinessRuns = runs(workflow, 'staging-readiness')
+    expect(readinessRuns).toContain('pnpm test:auth-cloud-staging --readiness-only')
+    expect(readinessRuns.join('\n')).not.toMatch(
+      /release\.mjs artifact|convex deploy|vercel deploy/u,
+    )
+    expect(needs(workflow, 'staging-readiness')).toEqual(['release-security'])
+    expect(needs(workflow, 'build-candidates')).toEqual(['staging-readiness'])
   })
 
   it('builds and transfers each immutable candidate through its reviewed coordinate', () => {
@@ -429,6 +482,34 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     )
   })
 
+  it('retries post-mint work against transferred bytes without rebuilding', () => {
+    const postMintJobs = [
+      'verify-candidates',
+      'bcn-auth-staging',
+      'publish-vue-staging',
+      'registry-vue-nuxt-gate',
+      'publish-nuxt-staging',
+      'publish-mcp-staging',
+    ]
+    const postMintRuns = postMintJobs.flatMap((jobId) => runs(workflow, jobId))
+    expect(postMintRuns.join('\n')).not.toMatch(
+      /release:artifact|prepare-candidate-set\.mjs|release\.mjs artifact/u,
+    )
+    for (const jobId of ['verify-candidates', 'bcn-auth-staging']) {
+      expect(
+        steps(workflow, jobId)
+          .filter((step) => step.uses?.toString().startsWith('actions/download-artifact@'))
+          .map((step) => step.with?.name),
+      ).toEqual([
+        '${{ steps.candidate_set.outputs.artifact_name }}',
+        '${{ steps.mcp.outputs.artifact_name }}',
+      ])
+    }
+    expect(
+      postMintRuns.filter((run) => run.startsWith('node scripts/compare-registry-package.mjs ')),
+    ).toHaveLength(3)
+  })
+
   it('prevents release prepack from mutating dependency state', () => {
     const release = read('scripts/release.mjs')
     const packer = read('scripts/pack-release-tarball.mjs')
@@ -445,10 +526,12 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     }
     const release = read('scripts/release.mjs')
     const preflight = read('scripts/prepare-candidate-app-locks.mjs')
+    const sharedPreflight = read('scripts/release-preflight-tarballs.mjs')
     const updater = read('scripts/update-candidate-app-locks.mjs')
 
     expect(release).toContain('buildAndPackReleaseTarball(')
-    expect(preflight).toContain('buildAndPackReleaseTarball(')
+    expect(preflight).toContain('withReleasePreflightTarballs(')
+    expect(sharedPreflight).toContain('buildAndPackReleaseTarball(')
     expect(release.indexOf('assertCandidateAppLocksBindArtifact(')).toBeLessThan(
       release.indexOf('renameSync(stagingDirectory, artifactCoordinates.directory)'),
     )
@@ -475,7 +558,8 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
         step.uses?.toString().startsWith('actions/download-artifact@'),
       ),
     ).toBe(false)
-    expect(needs(workflow, 'verify-candidates')).toContain('release-security')
+    expect(needs(workflow, 'build-candidates')).toContain('staging-readiness')
+    expect(needs(workflow, 'staging-readiness')).toContain('release-security')
     expect(uses(workflow)).toEqual(
       expect.arrayContaining([
         'trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55',
@@ -485,14 +569,10 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     )
   })
 
-  it('pins every action and confines the experimental waiver to cloud staging', () => {
+  it('pins every action and makes every protected stage blocking', () => {
     expect(uses(workflow).every((action) => /^[^@\s]+@[0-9a-f]{40}$/u.test(action))).toBe(true)
-    for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
-      if (jobId === 'bcn-auth-staging') {
-        expect(job['continue-on-error']).toBe(true)
-      } else {
-        expect(job['continue-on-error']).toBeUndefined()
-      }
+    for (const job of Object.values(workflow.jobs ?? {})) {
+      expect(job['continue-on-error']).toBeUndefined()
       expect(job.if).not.toBe('always()')
       for (const step of job.steps ?? []) {
         expect(step['continue-on-error']).toBeUndefined()
@@ -501,7 +581,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     }
   })
 
-  it('publishes only through three protected OIDC jobs under the staging tag', () => {
+  it('publishes only through three protected OIDC jobs under a run-specific tag', () => {
     const oidcJobs = Object.entries(workflow.jobs ?? {})
       .filter(([, job]) => job.permissions?.['id-token'] === 'write')
       .map(([jobId, job]) => ({ jobId, job }))
@@ -511,7 +591,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'publish-mcp-staging',
     ])
     expect(oidcJobs.every(({ job }) => job.environment === 'npm-release')).toBe(true)
-    expect(workflow.env?.BCN_STAGING_DIST_TAG).toBe('next-staging')
+    expect(workflow.env?.BCN_CANDIDATE_DIST_TAG).toBe('candidate-${{ github.run_id }}')
 
     const publishRuns = oidcJobs.flatMap(({ job }) =>
       (job.steps ?? [])
@@ -524,7 +604,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     expect(publishRuns).toHaveLength(3)
     expect(
       publishRuns.every(
-        (run) => run.includes('--package ') && run.includes('--tag "$BCN_STAGING_DIST_TAG"'),
+        (run) => run.includes('--package ') && run.includes('--tag "$BCN_CANDIDATE_DIST_TAG"'),
       ),
     ).toBe(true)
 
@@ -534,11 +614,11 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     expect(structuredWorkflow).not.toContain('NPM_TOKEN')
   })
 
-  it('keeps cloud staging observable without blocking the experimental publication', () => {
+  it('makes exact-host cloud staging block publication', () => {
     const staging = requireJob(workflow, 'bcn-auth-staging')
     expect(staging.environment).toBe('bcn-auth-staging')
     expect(staging.concurrency?.group).toBe('bcn-auth-staging')
-    expect(staging['continue-on-error']).toBe(true)
+    expect(staging['continue-on-error']).toBeUndefined()
     const proofStep = steps(workflow, 'bcn-auth-staging').find((step) =>
       normalizedRun(step)?.startsWith('pnpm test:auth-cloud-staging '),
     )
@@ -574,9 +654,21 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
           step.with?.path === '.release-artifacts/bcn-auth-staging.report.json',
       ),
     ).toBe(true)
-    expect(needs(workflow, 'publish-vue-staging')).toEqual(['verify-candidates'])
-    expect(runs(workflow, 'verify-candidates')).toContainEqual(
-      expect.stringContaining('Experimental next-staging release'),
+    expect(
+      runs(workflow, 'bcn-auth-staging').some((run) =>
+        run.startsWith('node scripts/deploy-auth-staging-host.mjs '),
+      ),
+    ).toBe(true)
+    const stagingRuns = runs(workflow, 'bcn-auth-staging')
+    const deployIndex = stagingRuns.findIndex((run) =>
+      run.startsWith('node scripts/deploy-auth-staging-host.mjs '),
     )
+    const proofIndex = stagingRuns.findIndex((run) =>
+      run.startsWith('pnpm test:auth-cloud-staging '),
+    )
+    expect(deployIndex).toBeGreaterThanOrEqual(0)
+    expect(deployIndex).toBeLessThan(proofIndex)
+    expect(stagingRuns.join('\n')).not.toContain('retention-days:')
+    expect(needs(workflow, 'publish-vue-staging')).toEqual(['bcn-auth-staging'])
   })
 })

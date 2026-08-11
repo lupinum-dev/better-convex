@@ -168,24 +168,14 @@ describe('real OAuth transport quota evidence', () => {
 
     const workflowJobs = [
       {
-        jobId: 'auth-real-backend',
+        jobId: 'auth-contracts',
         path: '.github/workflows/ci.yml',
-        run: 'pnpm test:auth-concurrency',
-      },
-      {
-        jobId: 'release-gate',
-        path: '.github/workflows/ci.yml',
-        run: 'pnpm release:prepare',
+        run: 'pnpm release:certify:source auth',
       },
       {
         jobId: 'pinned-backend',
         path: '.github/workflows/security-extended.yml',
         run: 'pnpm test:auth-concurrency',
-      },
-      {
-        jobId: 'verify-candidates',
-        path: '.github/workflows/publish-prerelease.yml',
-        run: 'pnpm release:verify',
       },
     ]
     for (const job of workflowJobs) {
