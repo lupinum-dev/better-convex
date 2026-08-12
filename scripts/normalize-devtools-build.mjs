@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const outputDir = fileURLToPath(new URL('../src/runtime/devtools/.output/public/', import.meta.url))
+const outputDir = fileURLToPath(new URL('../src/runtime/devtools/ui/dist/', import.meta.url))
 
 function filesBelow(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
