@@ -20,6 +20,7 @@ The order is fixed:
 8. Publish through npm trusted publishing under a run-specific candidate tag.
 9. Download each package from npm and compare it with the certified SRI.
 10. Stop before moving `latest`, `next`, or another shared dist-tag.
+11. Create or update the GitHub prerelease from the matching changelog entry.
 
 Source certification never runs after immutable minting. Artifact verification
 never invokes the full source suite. A generic Vercel preview is a developer
@@ -156,9 +157,15 @@ Any non-empty readiness or cleanup proof blocks publication. Staging is not
 ## Publication and registry equality
 
 Only the three npm jobs receive `id-token: write`, and only through the
-protected `npm-release` environment. They publish the retained tarballs under a
-run-specific `candidate-<run-id>` tag, download the registry packages, and
-compare exact bytes/SRI.
+protected `npm` environment. Each job downloads one retained artifact, selects
+exactly one expected tarball, and publishes it with npm provenance and disabled
+package scripts. These jobs do not check out the repository, install
+dependencies, or run repository code.
+
+Separate jobs without an OIDC token download each registry package and compare
+it with the certified artifact. The Vue gate also installs the unchanged Nuxt
+artifact with the registry Vue package in a clean consumer. Publication uses a
+run-specific `candidate-<run-id>` tag.
 
 No shared user-facing dist-tag is moved by this workflow. After all three
 registry comparisons pass, a maintainer may separately move the intended
@@ -184,6 +191,12 @@ After immutable minting:
 - do not create a second successor in the same release attempt. Diagnose the
   pipeline instead.
 
+The publish jobs are safe to rerun after an ambiguous registry response. Before
+publication, each job reads the package identity from its retained tarball and
+checks npm. If the version exists, the job continues only when its registry SRI
+equals the retained tarball SRI. If the version does not exist, the job
+publishes the same retained tarball. Never rebuild it.
+
 Never delete, replace, rebuild, repack, or publish a retired immutable
 coordinate. The internal decisions ledger and retained evidence directories
 record private rehearsal failures. `CHANGELOG.md` contains only versions that
@@ -197,6 +210,15 @@ It does not run source certification, create release authority, publish to npm,
 or gate a release. Vercel's generic PR previews are likewise non-authoritative.
 
 ## Public history
+
+Run `pnpm changelog` to draft release notes from Conventional Commits. Review
+the generated entry before it enters the release pull request. Changelogen does
+not publish, push, tag, or own the three-package version family.
+
+The tag must match the Nuxt package version, and `CHANGELOG.md` must contain a
+matching `## v<version>` section. After registry equality succeeds, the
+workflow creates or updates the GitHub prerelease from that section. The job
+runs no package install and no repository script.
 
 The release pull request is squash-merged after the hosted source certification
 is green. Public launch notes name only the final published coordinates.

@@ -15,12 +15,12 @@
     "vue3",
     "websocket"
   ],
-  "homepage": "https://better-convex-nuxt.vercel.app",
+  "homepage": "https://better-convex-nuxt.lupinum.com",
   "bugs": {
     "url": "https://github.com/lupinum-dev/better-convex-nuxt/issues"
   },
   "license": "MIT",
-  "author": "Matthias Amon",
+  "author": "Lupinum OG",
   "repository": {
     "type": "git",
     "url": "https://github.com/lupinum-dev/better-convex-nuxt"
@@ -100,6 +100,7 @@
   },
   "scripts": {
     "build:devtools": "nuxi build src/runtime/devtools/ui --preset static && node scripts/normalize-devtools-build.mjs",
+    "changelog": "changelogen --output CHANGELOG.md --hideAuthorEmail",
     "build:package": "pnpm --dir packages/vue build && nuxt-module-build prepare && pnpm run build:devtools && nuxt-module-build build",
     "prepack": "pnpm exec unbuild packages/mcp && pnpm run build:package && pnpm run check:package-exports:dist --dist-only && pnpm run check:single-runtime-owners:dist",
     "dev": "pnpm run dev:prepare && nuxi dev --cwd playground --dotenv .env.local --port 4578",
@@ -208,6 +209,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "@vitest/browser-playwright": "^4.1.8",
     "better-auth": "1.7.0-rc.2",
+    "changelogen": "0.6.2",
     "convex": "1.42.2",
     "convex-test": "^0.0.54",
     "eslint": "^10.7.0",

@@ -7,10 +7,10 @@
 
 Convex for Nuxt 4, without the integration glue: SSR-to-realtime queries, request-scoped server calls, mutation-scoped optimistic updates, uploads, one structured error model, and optional Better Auth.
 
-- [Documentation](https://better-convex-nuxt.vercel.app)
-- [Choose your path](https://better-convex-nuxt.vercel.app/docs/get-started/choose-your-path)
-- [Understand the model](https://better-convex-nuxt.vercel.app/docs/understand/mental-model)
-- [Compare Nuxt integrations](https://better-convex-nuxt.vercel.app/docs/overview/comparison)
+- [Documentation](https://better-convex-nuxt.lupinum.com)
+- [Choose your path](https://better-convex-nuxt.lupinum.com/docs/get-started/choose-your-path)
+- [Understand the model](https://better-convex-nuxt.lupinum.com/docs/understand/mental-model)
+- [Compare Nuxt integrations](https://better-convex-nuxt.lupinum.com/docs/overview/comparison)
 
 > [!NOTE]
 > This package is pre-1.0. The current auth architecture is a greenfield hard cut: do not point it at an existing Better Auth component database. Minor releases may make deliberate hard cutovers; read the changelog before upgrading.
@@ -43,7 +43,7 @@ server or grant application authority.
 - **Application behavior:** mutation-scoped optimistic updates, pagination, uploads, connection state, DevTools, and structured errors use the same runtime model.
 - **Explicit security ownership:** the library transports identity; Convex functions remain the source of truth for authorization.
 
-See [limitations and trade-offs](https://better-convex-nuxt.vercel.app/docs/overview/limitations) before adopting the module.
+See [limitations and trade-offs](https://better-convex-nuxt.lupinum.com/docs/overview/limitations) before adopting the module.
 
 ## Install
 
@@ -144,7 +144,7 @@ export default defineNuxtConfig({
 })
 ```
 
-`trustedClientIpHeader` may be omitted only for an exact loopback development origin. Better Auth and the OAuth Provider are optional exact peers owned by the auth-enabled application; Better Auth supplies its own Kysely runtime, so do not add a standalone Kysely peer for Better Convex. The server definition, Convex HTTP routes, secret, and optional typed client are covered in the [authentication setup guide](https://better-convex-nuxt.vercel.app/docs/get-started/add-authentication). OAuth authorization-server applications follow the [delegated OAuth and MCP guide](https://better-convex-nuxt.vercel.app/docs/build/authentication/delegated-oauth-and-mcp).
+`trustedClientIpHeader` may be omitted only for an exact loopback development origin. Better Auth and the OAuth Provider are optional exact peers owned by the auth-enabled application; Better Auth supplies its own Kysely runtime, so do not add a standalone Kysely peer for Better Convex. The server definition, Convex HTTP routes, secret, and optional typed client are covered in the [authentication setup guide](https://better-convex-nuxt.lupinum.com/docs/get-started/add-authentication). OAuth authorization-server applications follow the [delegated OAuth and MCP guide](https://better-convex-nuxt.lupinum.com/docs/build/authentication/delegated-oauth-and-mcp).
 
 Render auth UI with ordinary Vue conditionals over `useConvexAuth().status`, `isPending`, and `error`; the module does not register auth UI components.
 
@@ -152,7 +152,7 @@ Route protection is navigation UX. Every protected Convex function must still va
 
 ## Public API
 
-The generated [API surface](https://better-convex-nuxt.vercel.app/docs/reference/api-surface) is the source of truth for composables, server aliases, and package exports. The main entry points are:
+The generated [API surface](https://better-convex-nuxt.lupinum.com/docs/reference/api-surface) is the source of truth for composables, server aliases, and package exports. The main entry points are:
 
 - `useConvexQuery` with `data`, `status`, `pending`, `error`, `isStale`, and `refresh()`
 - `useConvexPaginatedQuery` with `data`, `status`, `isLoading`, `canLoadMore`, `error`, `isStale`, `loadMore()`, and `refresh()`
@@ -172,7 +172,13 @@ pnpm dev
 pnpm verify
 ```
 
-Bug reports and focused pull requests are welcome through GitHub. Run `pnpm verify` before opening a pull request; security vulnerabilities must follow [SECURITY.md](./SECURITY.md) instead of a public issue.
+Bug reports and focused pull requests are welcome through GitHub. Run `pnpm verify` before opening a pull request. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before you start a large change. Security vulnerabilities must follow [SECURITY.md](./SECURITY.md) instead of a public issue.
+
+## Support
+
+Open a [GitHub issue](https://github.com/lupinum-dev/better-convex-nuxt/issues)
+for a reproducible defect. Discuss usage with the community in the
+[Lupinum OSS Discord](https://discord.gg/RPH6SeA36N).
 
 ## Acknowledgements
 
@@ -180,7 +186,8 @@ File upload composables were inspired by [nuxt-convex](https://github.com/onmax/
 
 ## License
 
-[MIT](./LICENSE)
+Better Convex is developed by [Lupinum OG](https://lupinum.com) and released
+under the [MIT License](./LICENSE).
 
 <!-- Badges -->
 

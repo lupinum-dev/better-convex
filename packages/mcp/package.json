@@ -2,7 +2,12 @@
   "name": "better-convex-mcp",
   "version": "0.1.0-beta.28",
   "description": "Provider-neutral MCP integration for Convex applications",
+  "homepage": "https://better-convex-nuxt.lupinum.com",
+  "bugs": {
+    "url": "https://github.com/lupinum-dev/better-convex-nuxt/issues"
+  },
   "license": "MIT",
+  "author": "Lupinum OG",
   "repository": {
     "type": "git",
     "url": "https://github.com/lupinum-dev/better-convex-nuxt"

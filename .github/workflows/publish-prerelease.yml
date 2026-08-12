@@ -357,37 +357,36 @@ jobs:
     needs: bcn-auth-staging
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: npm-release
+    environment: npm
     permissions:
-      contents: read
+      actions: read
       id-token: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          node-version: '24.11.0'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
-      - run: pnpm install --frozen-lockfile
-      - id: candidate_set
-        run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
-      - id: vue
-        run: node scripts/print-package-artifact-coordinates.mjs --package vue >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ${{ steps.candidate_set.outputs.artifact_name }}
-          path: ${{ steps.candidate_set.outputs.directory }}
-      - name: Reverify the unchanged candidate set before first publication
-        run: pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"
-      - name: Publish exact Vue bytes or resume after its verified package-name bootstrap
-        env:
-          NPM_CONFIG_PROVENANCE: 'true'
-        run: node scripts/publish-registry-package.mjs --package vue --tag "$BCN_CANDIDATE_DIST_TAG"
-      - name: Compare Vue registry bytes with the approved candidate
-        run: node scripts/compare-registry-package.mjs --package vue
+          name: release-candidate-vue-nuxt-set
+          path: .release-artifacts
+      - name: Publish the certified Vue tarball
+        run: |
+          set -euo pipefail
+          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'better-convex-vue-*.tgz' -print)
+          test "${#TARBALLS[@]}" -eq 1
+          TARBALL="${TARBALLS[0]}"
+          tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"
+          PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
+          VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
+          LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
+          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>/dev/null); then
+            test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
+            echo "$PACKAGE@$VERSION already contains the certified bytes."
+          else
+            npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+          fi
 
   registry-vue-nuxt-gate:
     needs: publish-vue-staging
@@ -420,10 +419,43 @@ jobs:
     needs: registry-vue-nuxt-gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: npm-release
+    environment: npm
+    permissions:
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.11.0'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-vue-nuxt-set
+          path: .release-artifacts
+      - name: Publish the certified Nuxt tarball
+        run: |
+          set -euo pipefail
+          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'better-convex-nuxt-*.tgz' -print)
+          test "${#TARBALLS[@]}" -eq 1
+          TARBALL="${TARBALLS[0]}"
+          tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"
+          PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
+          VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
+          LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
+          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>/dev/null); then
+            test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
+            echo "$PACKAGE@$VERSION already contains the certified bytes."
+          else
+            npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+          fi
+
+  registry-nuxt-gate:
+    needs: publish-nuxt-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -431,35 +463,59 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.RELEASE_NODE_VERSION }}
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
       - id: candidate_set
         run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
-      - id: nuxt
-        run: node scripts/print-package-artifact-coordinates.mjs --package nuxt >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ steps.candidate_set.outputs.artifact_name }}
           path: ${{ steps.candidate_set.outputs.directory }}
-      - name: Reverify Nuxt bytes after the registry Vue gate
-        run: node scripts/release.mjs verify "${{ steps.nuxt.outputs.evidence }}" --package nuxt
-      - name: Publish exact Nuxt bytes or resume after verified prior publication
-        env:
-          NPM_CONFIG_PROVENANCE: 'true'
-        run: node scripts/publish-registry-package.mjs --package nuxt --tag "$BCN_CANDIDATE_DIST_TAG"
       - name: Compare Nuxt registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package nuxt
 
   publish-mcp-staging:
-    needs: publish-nuxt-staging
+    needs: registry-nuxt-gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: npm-release
+    environment: npm
+    permissions:
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.11.0'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-mcp
+          path: .release-artifacts
+      - name: Publish the certified MCP tarball
+        run: |
+          set -euo pipefail
+          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'better-convex-mcp-*.tgz' -print)
+          test "${#TARBALLS[@]}" -eq 1
+          TARBALL="${TARBALLS[0]}"
+          tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"
+          PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
+          VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
+          LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
+          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>/dev/null); then
+            test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
+            echo "$PACKAGE@$VERSION already contains the certified bytes."
+          else
+            npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+          fi
+
+  registry-mcp-gate:
+    needs: publish-mcp-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -467,7 +523,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.RELEASE_NODE_VERSION }}
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
@@ -477,17 +532,11 @@ jobs:
         with:
           name: ${{ steps.mcp.outputs.artifact_name }}
           path: ${{ steps.mcp.outputs.directory }}
-      - name: Reverify MCP bytes before its separate publication lane
-        run: node scripts/release.mjs verify "${{ steps.mcp.outputs.evidence }}" --package mcp
-      - name: Publish exact MCP bytes or resume after its verified package-name bootstrap
-        env:
-          NPM_CONFIG_PROVENANCE: 'true'
-        run: node scripts/publish-registry-package.mjs --package mcp --tag "$BCN_CANDIDATE_DIST_TAG"
       - name: Compare MCP registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package mcp
 
   staged-candidate-set-complete:
-    needs: [publish-vue-staging, registry-vue-nuxt-gate, publish-nuxt-staging, publish-mcp-staging]
+    needs: [registry-vue-nuxt-gate, registry-nuxt-gate, registry-mcp-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -498,3 +547,35 @@ jobs:
           echo "All registry bytes match under ${BCN_CANDIDATE_DIST_TAG}.
           Shared user-facing dist-tags require a separate interactive maintainer action
           after reviewing the complete set; trusted-publishing OIDC cannot mutate dist-tags."
+
+  github-prerelease:
+    needs: staged-candidate-set-complete
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: npm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Create or update the GitHub prerelease from the changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+          EXPECTED_VERSION=$(node -e "const p = require('./package.json'); process.stdout.write(p.version)")
+          test "$VERSION" = "$EXPECTED_VERSION"
+          awk -v heading="## $TAG" '
+            $0 == heading { capture = 1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          test -s "$RUNNER_TEMP/release-notes.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+          else
+            gh release create "$TAG" --verify-tag --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+          fi

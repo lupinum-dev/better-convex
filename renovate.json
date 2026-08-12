@@ -1,18 +1,19 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", ":dependencyDashboard", "schedule:weekly"],
+  "automerge": false,
   "enabledManagers": ["npm", "github-actions"],
   "timezone": "Europe/Vienna",
   "labels": ["dependencies", "renovate"],
   "minimumReleaseAge": "3 days",
+  "pinDigests": true,
   "rangeStrategy": "bump",
   "prConcurrentLimit": 8,
   "prHourlyLimit": 2,
   "rebaseWhen": "conflicted",
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["before 5am on monday"],
-    "automerge": true
+    "schedule": ["before 5am on monday"]
   },
   "postUpdateOptions": ["pnpmDedupe"],
   "packageRules": [
@@ -21,15 +22,9 @@
       "automerge": false
     },
     {
-      "description": "Automerge low-risk updates after CI passes.",
-      "matchUpdateTypes": ["patch", "pin", "digest"],
-      "automerge": true
-    },
-    {
       "matchManagers": ["github-actions"],
       "groupName": "github actions",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
-      "automerge": true
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"]
     },
     {
       "matchPackageNames": ["/^@nuxt\\//", "/^nuxt$/", "/^@nuxtjs\\//"],
