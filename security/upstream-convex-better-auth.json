@@ -56,7 +56,7 @@
       "sourceSeamChanges": [],
       "disposition": "irrelevant",
       "reviewComplete": true,
-      "rationale": "The one upstream commit after the imported v0.12.5 baseline changes only e2e/backendHarness.js from provision.convex.dev to api.convex.dev. It does not change an authorized source seam or the imported runtime."
+      "rationale": "The only upstream commit after the imported v0.12.5 baseline changes e2e/backendHarness.js from provision.convex.dev to api.convex.dev. This file is outside every authorized source seam, so the imported authentication runtime and its security contracts do not require a change."
     },
     "releases": {
       "items": [],

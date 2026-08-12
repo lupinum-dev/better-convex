@@ -49,19 +49,27 @@ function recordedObservation() {
 
 describe('auth upstream monitoring', () => {
   it('accepts the current reviewed canonical ledger within its monthly window', () => {
-    expect(validateMonitoringLedger(ledger, new Date('2026-08-12T12:00:00Z'))).toEqual([])
+    const reviewedAt = new Date(`${ledger.monitoring.reviewedAt}T12:00:00Z`)
+    expect(validateMonitoringLedger(ledger, reviewedAt)).toEqual([])
   })
 
   it('fails closed when the monthly review expires or a patch remains required', () => {
-    expect(validateMonitoringLedger(ledger, new Date('2026-09-13T00:00:01Z'))).toContain(
-      'upstream monitoring review expired on 2026-08-12; complete the monthly review',
+    const reviewExpiredAt = new Date(`${ledger.monitoring.reviewedAt}T00:00:00Z`)
+    reviewExpiredAt.setUTCDate(
+      reviewExpiredAt.getUTCDate() + ledger.monitoring.reviewExpiresAfterDays + 1,
+    )
+    expect(validateMonitoringLedger(ledger, reviewExpiredAt)).toContain(
+      `upstream monitoring review expired on ${ledger.monitoring.reviewedAt}; complete the monthly review`,
     )
 
     const patchRequired = structuredClone(ledger)
     patchRequired.monitoring.issue395.disposition = 'patch required'
-    expect(validateMonitoringLedger(patchRequired, new Date('2026-08-12T12:00:00Z'))).toContain(
-      'issue #395 still requires an imported security patch',
-    )
+    expect(
+      validateMonitoringLedger(
+        patchRequired,
+        new Date(`${ledger.monitoring.reviewedAt}T12:00:00Z`),
+      ),
+    ).toContain('issue #395 still requires an imported security patch')
   })
 
   it('detects remote issue, PR, release, advisory, branch, and seam drift', () => {
@@ -87,7 +95,7 @@ describe('auth upstream monitoring', () => {
       url: 'https://github.com/get-convex/better-auth/security/advisories/GHSA-xxxx-yyyy-zzzz',
     })
     current.defaultBranch.head = 'e'.repeat(40)
-    current.defaultBranch.compareStatus = 'identical'
+    current.defaultBranch.compareStatus = 'behind'
     current.defaultBranch.sourceSeamChanges.push({
       filename: 'src/client/adapter.ts',
       status: 'modified',
