@@ -381,11 +381,15 @@ jobs:
           PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
           VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
           LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>/dev/null); then
+          REGISTRY_ERROR="$RUNNER_TEMP/npm-view-vue-error"
+          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>"$REGISTRY_ERROR"); then
             test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
             echo "$PACKAGE@$VERSION already contains the certified bytes."
-          else
+          elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
             npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+          else
+            cat "$REGISTRY_ERROR" >&2
+            exit 1
           fi
 
   registry-vue-nuxt-gate:
@@ -443,11 +447,15 @@ jobs:
           PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
           VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
           LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>/dev/null); then
+          REGISTRY_ERROR="$RUNNER_TEMP/npm-view-nuxt-error"
+          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>"$REGISTRY_ERROR"); then
             test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
             echo "$PACKAGE@$VERSION already contains the certified bytes."
-          else
+          elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
             npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+          else
+            cat "$REGISTRY_ERROR" >&2
+            exit 1
           fi
 
   registry-nuxt-gate:
@@ -503,11 +511,15 @@ jobs:
           PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
           VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
           LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>/dev/null); then
+          REGISTRY_ERROR="$RUNNER_TEMP/npm-view-mcp-error"
+          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>"$REGISTRY_ERROR"); then
             test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
             echo "$PACKAGE@$VERSION already contains the certified bytes."
-          else
+          elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
             npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+          else
+            cat "$REGISTRY_ERROR" >&2
+            exit 1
           fi
 
   registry-mcp-gate:

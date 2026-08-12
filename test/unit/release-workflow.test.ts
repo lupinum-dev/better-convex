@@ -632,6 +632,10 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain(
         'npm view "$PACKAGE@$VERSION" dist.integrity',
       )
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain("grep -q '\\bE404\\b'")
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain(
+        'cat "$REGISTRY_ERROR" >&2 exit 1',
+      )
       expect(job.permissions).toEqual({ actions: 'read', 'id-token': 'write' })
     }
 
