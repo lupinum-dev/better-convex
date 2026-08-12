@@ -5,3 +5,5 @@ onlyBuiltDependencies:
   - sharp
   - unrs-resolver
   - vue-demi
+overrides:
+  tar: 7.5.22
