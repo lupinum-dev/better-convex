@@ -105,7 +105,7 @@ const composableMeta = {
   useConvexAttachment: {
     kind: 'Composable',
     purpose: 'Returns the frozen token-free runtime boundary for an embedded Vue application.',
-    guide: '/docs/reference/composables#useconvexattachment',
+    guide: '/docs/reference/composables',
   },
   useConvexAuth: {
     kind: 'Composable',
