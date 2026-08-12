@@ -1,10 +1,13 @@
-const siteUrl = (process.env.SITE_URL || 'https://better-convex-nuxt.vercel.app').replace(/\/$/, '')
+const siteUrl = (process.env.SITE_URL || 'https://better-convex-nuxt.lupinum.com').replace(/\/$/, '')
 
 export default defineNuxtConfig({
   extends: ['@lupinum/ginko-docs'],
   modules: ['@nuxt/eslint'],
   site: { url: siteUrl },
-  components: [{ path: '~/components/content', global: true }],
+  i18n: {
+    baseUrl: siteUrl,
+    locales: [{ code: 'en', language: 'en-US', name: 'English' }],
+  },
   css: ['~/assets/css/main.css'],
   app: {
     head: {
