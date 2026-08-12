@@ -1,6 +1,9 @@
 import { defineGinkoDocsConfig } from '@lupinum/ginko-docs/content'
 
-const siteUrl = (process.env.SITE_URL || 'https://better-convex-nuxt.lupinum.com').replace(/\/$/, '')
+const siteUrl = (process.env.SITE_URL || 'https://better-convex-nuxt.lupinum.com').replace(
+  /\/$/,
+  '',
+)
 
 export default defineGinkoDocsConfig({
   site: {

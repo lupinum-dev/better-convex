@@ -1,4 +1,7 @@
-const siteUrl = (process.env.SITE_URL || 'https://better-convex-nuxt.lupinum.com').replace(/\/$/, '')
+const siteUrl = (process.env.SITE_URL || 'https://better-convex-nuxt.lupinum.com').replace(
+  /\/$/,
+  '',
+)
 
 export default defineNuxtConfig({
   extends: ['@lupinum/ginko-docs'],
