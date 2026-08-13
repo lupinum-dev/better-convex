@@ -13,6 +13,10 @@ Use this package when a Convex HTTP Action must handle MCP transport, request bo
 
 The package returns a credential-free access context. Every tool and resource must still reload and enforce current application authorization in Convex.
 
+## Requirements
+
+The package requires Node.js 22.14 or newer. OAuth mode requires the documented transport and protected-resource metadata routes. Preconfigured bearer mode exposes only the transport routes.
+
 ## Installation
 
 ```bash
@@ -54,9 +58,7 @@ export const handleMcp = httpAction(async (_ctx, request) =>
 )
 ```
 
-## Exports and requirements
-
-The package requires Node.js 22.14 or newer. OAuth mode requires the documented transport and protected-resource metadata routes. Preconfigured bearer mode exposes only the transport routes.
+## Exports
 
 `runMcpTool()` only converts unexpected throws inside a wrapped tool callback. It is not a general authorization or SDK sanitizer.
 
@@ -64,6 +66,10 @@ The package requires Node.js 22.14 or newer. OAuth mode requires the documented 
 
 Read the [MCP and delegated OAuth guide](https://better-convex.lupinum.com/docs/build/authentication/delegated-oauth-and-mcp).
 
-## Support, security, and license
+## Support and security
 
-Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report vulnerabilities through the [private security process](https://github.com/lupinum-dev/better-convex/security/policy). This package uses the [MIT License](https://github.com/lupinum-dev/better-convex/blob/main/LICENSE).
+Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report vulnerabilities through the [private security process](https://github.com/lupinum-dev/better-convex/security/policy).
+
+## License
+
+This package uses the [MIT License](https://github.com/lupinum-dev/better-convex/blob/main/LICENSE).

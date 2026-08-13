@@ -11,6 +11,10 @@
 
 Use this package when Vue must own the Convex client lifecycle. Use `@lupinum/better-convex-nuxt` when Nuxt must own SSR, Nitro calls, generated aliases, or optional Better Auth.
 
+## Requirements
+
+The package requires Node.js 22.14 or newer, Vue 3.5, and Convex 1.42.2.
+
 ## Installation
 
 ```bash
@@ -39,9 +43,9 @@ const notes = useConvexQuery(api.notes.list, {})
 const rename = useConvexMutation(api.notes.rename)
 ```
 
-## Exports and requirements
+## Exports
 
-The package requires Node.js 22.14 or newer, Vue 3.5, and Convex 1.42.2. Pass `'skip'` to pause a query. A Convex `null` result remains valid data.
+Pass `'skip'` to pause a query. A Convex `null` result remains valid data.
 
 Advanced hosts can use the `embedded` export. MCP App UIs can use the `mcp-app` export with its exact optional peers.
 
@@ -49,6 +53,10 @@ Advanced hosts can use the `embedded` export. MCP App UIs can use the `mcp-app` 
 
 Read the [Vue documentation](https://better-convex.lupinum.com/docs/get-started/choose-your-path).
 
-## Support, security, and license
+## Support and security
 
-Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report vulnerabilities through the [private security process](https://github.com/lupinum-dev/better-convex/security/policy). This package uses the [MIT License](https://github.com/lupinum-dev/better-convex/blob/main/LICENSE).
+Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report vulnerabilities through the [private security process](https://github.com/lupinum-dev/better-convex/security/policy).
+
+## License
+
+This package uses the [MIT License](https://github.com/lupinum-dev/better-convex/blob/main/LICENSE).

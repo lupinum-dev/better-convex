@@ -72,6 +72,28 @@ describe('public README consistency', () => {
     const positions = sections.map((section) => rootReadme.indexOf(`## ${section}`))
     expect(positions.every((position) => position >= 0)).toBe(true)
     expect(positions).toEqual([...positions].sort((left, right) => left - right))
+
+    const packageSections = [
+      'Purpose',
+      'Requirements',
+      'Installation',
+      'Quick start',
+      'Exports',
+      'Documentation',
+      'Support and security',
+      'License',
+    ]
+    for (const file of readmes.slice(1)) {
+      const source = readFileSync(resolve(repositoryRoot, file), 'utf8')
+      const packagePositions = packageSections.map((section) => source.indexOf(`## ${section}`))
+      expect(
+        packagePositions.every((position) => position >= 0),
+        file,
+      ).toBe(true)
+      expect(packagePositions, file).toEqual(
+        [...packagePositions].sort((left, right) => left - right),
+      )
+    }
   })
 })
 
