@@ -388,6 +388,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'compatibility',
       'auth-contracts',
       'auth-real-backend',
+      'deployable-app-audits',
     ])
   })
 
