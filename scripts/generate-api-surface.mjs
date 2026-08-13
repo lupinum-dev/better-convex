@@ -197,7 +197,7 @@ Regenerate this page with:
 node scripts/generate-api-surface.mjs
 \`\`\`
 
-## Nuxt Aliases
+## Nuxt aliases
 
 | Alias | Points To | Supported Contexts |
 | ----- | --------- | ------------------ |
@@ -213,7 +213,7 @@ import { api } from '#convex/api'
 
 Before Convex codegen creates \`convex/_generated/api\`, this alias points to a typed placeholder that keeps imports working and fails with a codegen message if accessed.
 
-## Published Package Entries
+## Published package entries
 
 | Import Specifier | Runtime Exports | Type Exports |
 | ---------------- | --------------- | ------------ |
@@ -231,7 +231,7 @@ import { serverConvex } from '#convex/server'
 import { createUserProjectionTriggers } from '@lupinum/better-convex-nuxt/convex-auth'
 \`\`\`
 
-## Core Composable Auto-Imports
+## Core composable auto-imports
 
 These composables are available in every build. Omitting \`convex.auth\` keeps Better Auth, its proxy, its middleware, its page metadata, and \`useConvexAuth\` out of the application surface.
 
@@ -243,7 +243,7 @@ ${toRows(composableImports, composableMeta)}
 
 \`useConvexPaginatedQuery\` requires a positive \`initialNumItems\`. Its state is \`data\`, \`status\`, \`isLoading\`, \`canLoadMore\`, \`error\`, \`isStale\`, \`loadMore()\`, and \`refresh()\`.
 
-## Auth-Enabled Auto-Imports
+## Auth-enabled auto-imports
 
 Auth is an explicit opt-in:
 
@@ -267,7 +267,7 @@ ${toRows(authImports, composableMeta)}
 
 Render auth UI with ordinary Vue conditionals over \`status\`, \`isPending\`, and \`error\`. The module does not register auth UI components.
 
-## Server Auto-Imports
+## Server auto-imports
 
 | Name | Kind | Purpose | Learn More |
 | ---- | ---- | ------- | ---------- |

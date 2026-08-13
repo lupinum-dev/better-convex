@@ -83,6 +83,8 @@ jobs:
       - run: pnpm check:auth-backend --install
       - name: Certify end-to-end source lane
         run: pnpm release:certify:source e2e
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
   deployable-app-audits:
     runs-on: ubuntu-latest
