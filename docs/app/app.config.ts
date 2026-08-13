@@ -9,13 +9,14 @@ export default {
         en: 'Convex for Nuxt 4, without the integration glue.',
       },
       logo: { light: '/favicon.svg', dark: '/favicon.svg' },
-      localeSwitcher: 'dropdown',
       docsSidebarSwitcher: 'tabs',
     },
     social: {
       github: 'https://github.com/lupinum-dev/better-convex-nuxt',
       discord: 'https://discord.gg/RPH6SeA36N',
     },
+    feedback: { enabled: true },
+    analytics: { plausible: { scriptId: 'XxT9ZOr0ZLg10B4KV40xH' } },
     repository: {
       url: 'https://github.com/lupinum-dev/better-convex-nuxt',
       branch: 'main',

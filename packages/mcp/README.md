@@ -1,4 +1,4 @@
-# better-convex-mcp
+# @lupinum/better-convex-mcp
 
 A small provider-neutral boundary for serving an official MCP server from a
 Convex HTTP Action. It owns request bounds, exact issuer/resource verification,

@@ -1,4 +1,4 @@
-# better-convex-vue
+# @lupinum/better-convex-vue
 
 Identity-safe Convex lifecycle primitives for standalone Vue 3 applications.
 Use `@lupinum/better-convex-nuxt` instead when Nuxt should own SSR, generated aliases,

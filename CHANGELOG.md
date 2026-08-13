@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.8.0-beta.40
 
 - Move all publishable packages to the `@lupinum` npm scope. This is a hard
   cutover: use `@lupinum/better-convex-nuxt`, `@lupinum/better-convex-vue`, and
