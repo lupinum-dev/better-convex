@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -17,6 +18,164 @@ describe('package license consistency', () => {
 
     for (const file of ['packages/mcp/LICENSE', 'packages/vue/LICENSE']) {
       expect(readFileSync(resolve(repositoryRoot, file), 'utf8'), file).toBe(canonical)
+    }
+  })
+})
+
+describe('public README consistency', () => {
+  const readmes = ['README.md', 'packages/vue/README.md', 'packages/mcp/README.md']
+
+  it('keeps the public READMEs on the Lupinum structure', () => {
+    for (const file of readmes) {
+      const source = readFileSync(resolve(repositoryRoot, file), 'utf8')
+      const h1Count = (source.match(/^# /gmu)?.length ?? 0) + (source.match(/<h1\b/gu)?.length ?? 0)
+
+      expect(h1Count, file).toBe(1)
+      expect(source, file).toContain('width="128"')
+      expect(source, file).toContain('https://better-convex.lupinum.com')
+      expect(source, file).toContain('https://github.com/lupinum-dev/better-convex')
+      expect(source, file).toContain('MIT License')
+      expect(source, file).toContain('npm/v/')
+      expect(source, file).toContain('actions/workflows/ci.yml')
+      expect(source, file).toContain('license-MIT')
+      expect(source, file).toContain('> [!WARNING]')
+      expect(source, file).not.toMatch(/\b(?:TODO|TBD|PLACEHOLDER)\b/iu)
+
+      for (const match of source.matchAll(/^## (.+)$/gmu)) {
+        const heading = match[1]!.trim()
+        const unexpected = heading
+          .split(/\s+/u)
+          .slice(1)
+          .filter(
+            (word) =>
+              /^[A-Z][A-Za-z-]*$/u.test(word) &&
+              !['Better', 'Convex', 'MCP', 'Nuxt', 'Vue'].includes(word),
+          )
+        expect(unexpected, `${file}: ${heading}`).toEqual([])
+      }
+    }
+
+    const rootReadme = readFileSync(resolve(repositoryRoot, 'README.md'), 'utf8')
+    const sections = [
+      'Why use Better Convex?',
+      'When to use it',
+      'Requirements',
+      'Installation',
+      'Quick start',
+      'Server calls and mutations',
+      'Authentication',
+      'Packages',
+      'Documentation',
+      'Contributing and development',
+      'Support and security',
+      'License',
+    ]
+    const positions = sections.map((section) => rootReadme.indexOf(`## ${section}`))
+    expect(positions.every((position) => position >= 0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((left, right) => left - right))
+
+    const packageSections = [
+      'Purpose',
+      'Requirements',
+      'Installation',
+      'Quick start',
+      'Exports',
+      'Documentation',
+      'Support and security',
+      'License',
+    ]
+    for (const file of readmes.slice(1)) {
+      const source = readFileSync(resolve(repositoryRoot, file), 'utf8')
+      const packagePositions = packageSections.map((section) => source.indexOf(`## ${section}`))
+      expect(
+        packagePositions.every((position) => position >= 0),
+        file,
+      ).toBe(true)
+      expect(packagePositions, file).toEqual(
+        [...packagePositions].sort((left, right) => left - right),
+      )
+    }
+  })
+
+  it('uses Better Convex as the documentation product name', () => {
+    expect(readFileSync(resolve(repositoryRoot, 'docs/app/app.config.ts'), 'utf8')).toContain(
+      "name: { en: 'Better Convex' }",
+    )
+    expect(readFileSync(resolve(repositoryRoot, 'docs/content.config.ts'), 'utf8')).toContain(
+      "name: 'Better Convex'",
+    )
+    expect(readFileSync(resolve(repositoryRoot, 'docs/content/docs/index.md'), 'utf8')).toContain(
+      'title: Better Convex documentation',
+    )
+  })
+})
+
+describe('contributor intake consistency', () => {
+  it('keeps documentation reports, release notes, and risk visible', () => {
+    const trackedFiles = new Set(
+      execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8' })
+        .trim()
+        .split('\n'),
+    )
+    for (const path of [
+      '.github/ISSUE_TEMPLATE/bug.md',
+      '.github/ISSUE_TEMPLATE/config.yml',
+      '.github/ISSUE_TEMPLATE/documentation.md',
+      '.github/ISSUE_TEMPLATE/proposal.md',
+      '.github/pull_request_template.md',
+    ]) {
+      expect(trackedFiles.has(path), `${path} must be tracked`).toBe(true)
+    }
+    expect(
+      readFileSync(resolve(repositoryRoot, '.github/ISSUE_TEMPLATE/documentation.md'), 'utf8'),
+    ).toContain('name: Documentation report')
+
+    const pullRequestTemplate = readFileSync(
+      resolve(repositoryRoot, '.github/pull_request_template.md'),
+      'utf8',
+    )
+    for (const heading of [
+      'Result',
+      'Verification',
+      'Documentation and compatibility',
+      'Release note',
+      'Risk',
+    ]) {
+      expect(pullRequestTemplate).toContain(`## ${heading}`)
+    }
+    expect(pullRequestTemplate).toContain(
+      '- [ ] I ran `pnpm verify`, or I explained why it does not apply.',
+    )
+    expect(pullRequestTemplate).toContain(
+      '- [ ] I updated versions, migration guidance, and compatibility notes when the public contract changed.',
+    )
+
+    const maintaining = readFileSync(resolve(repositoryRoot, 'MAINTAINING.md'), 'utf8')
+    for (const heading of [
+      'Quick fixes',
+      'Large changes',
+      'Dependencies',
+      'Releases',
+      'Roll back a defective release',
+      'Respond to a credential incident',
+      'Documentation',
+    ]) {
+      expect(maintaining).toContain(`## ${heading}`)
+    }
+  })
+})
+
+describe('documentation service configuration', () => {
+  it('keeps analytics, feedback, support, and legal links configured', () => {
+    const config = readFileSync(resolve(repositoryRoot, 'docs/app/app.config.ts'), 'utf8')
+    for (const marker of [
+      "plausible: { scriptId: '03E34LSIgT0kGko07f39A' }",
+      'feedback: { enabled: true }',
+      'https://discord.gg/RPH6SeA36N',
+      'https://lupinum.com/impressum',
+      'https://lupinum.com/datenschutz',
+    ]) {
+      expect(config).toContain(marker)
     }
   })
 })

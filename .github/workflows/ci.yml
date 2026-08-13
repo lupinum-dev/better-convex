@@ -41,6 +41,9 @@ jobs:
         run: npm install --global corepack@0.34.5 && corepack enable
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: corepack pnpm@10.23.0 install --frozen-lockfile --ignore-scripts
       - name: Install browser
         run: pnpm exec playwright install --with-deps chromium
       - name: Certify core source lane

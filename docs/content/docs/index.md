@@ -1,5 +1,5 @@
 ---
-title: Better Convex Nuxt documentation
+title: Better Convex documentation
 description: Choose a learning path for SSR-ready Convex queries, Better Auth, server calls, writes, uploads, and production operation in Nuxt 4.
 ---
 

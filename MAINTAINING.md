@@ -15,6 +15,20 @@ pnpm check
 pnpm verify
 ```
 
+Use `pnpm docs:build` for documentation changes. Use `pnpm audit:all` after a
+dependency update. Use `pnpm release:verify` only for an exact release candidate.
+
+## Quick fixes
+
+Keep one cause and one verification path in the pull request. Add a regression
+test when the defect can return. Run `pnpm verify` before handoff.
+
+## Large changes
+
+Open an issue first. Split the work by public behavior and package ownership.
+Keep application authorization in Convex and server-only code outside browser
+bundles.
+
 ## Dependencies
 
 Renovate opens weekly dependency pull requests. It must not merge them
@@ -40,11 +54,25 @@ tag before publication succeeds. If a publication step fails, preserve the
 evidence and follow the failure rules in `RELEASING.md`; never rebuild different
 bytes for the same version.
 
+## Roll back a defective release
+
+Restore the last known-good dist-tag and publish a forward fix. Do not
+unpublish unless npm policy and a confirmed security incident require it.
+
+## Respond to a credential incident
+
+Revoke the credential before you investigate the release. Remove it from
+repository and environment scope, rotate every equivalent credential, and
+record the affected release artifacts. Restore publishing only after the source
+and retained artifacts are verified.
+
 ## Documentation
 
 Use [docs/WRITING.md](./docs/WRITING.md). Keep quickstarts executable and keep
 security constraints next to the affected action. The generated API and ASVS
-documents must remain reproducible from their owning scripts.
+documents must remain reproducible from their owning scripts. Update public
+documentation in the same pull request as the changed contract. Run
+`pnpm docs:build` and `pnpm verify` before merge.
 
 ## Audit external settings
 
@@ -61,8 +89,7 @@ GitHub must have:
   workflow permissions read-only;
 - Issues enabled for public reports, with Wikis and Discussions disabled so
   versioned repository documentation remains authoritative;
-- protected `v*` release tags;
-- protected `staging` and `npm` environments with the restrictions in
+- protected `bcn-auth-staging` and `npm` environments with the restrictions in
   [RELEASING.md](./RELEASING.md);
 - private vulnerability reporting, secret scanning, push protection, automated
   security fixes, and the committed advanced CodeQL workflow;
@@ -70,6 +97,8 @@ GitHub must have:
 
 npm must bind each of the three `@lupinum/better-convex-*` packages to
 `publish-prerelease.yml` and the `npm` environment through trusted publishing.
+Both protected environments allow release deployments only from `main`. The
+`npm` environment requires a human reviewer and contains no package token.
 
 The repository and GitHub environments must not contain `CONVEX_DEPLOY_KEY`.
 The repository does not deploy the example application. Run its Convex backend
@@ -77,5 +106,10 @@ only in a maintainer-owned development deployment. This keeps deployment
 credentials outside repository workflows and avoids executing dependencies with
 a production-capable key.
 
-Vercel must deploy the documentation from `main` to
-`better-convex.lupinum.com` and create pull-request previews.
+Vercel must deploy the `docs/` app from `main` to
+`better-convex.lupinum.com` and create pull-request previews. Set the Vercel
+Root Directory to `docs`. Do not set an Output Directory override; Nuxt emits
+the Vercel Build Output API files. The docs app owns its lockfile and does not
+need source files outside the Root Directory. Do not set an Install Command
+override. Vercel detects pnpm from the documentation lockfile and installs it
+before it runs the committed build command.

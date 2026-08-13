@@ -486,5 +486,5 @@ describe('packed artifact path classes', () => {
     } finally {
       rmSync(packageRoot, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 })

@@ -4,9 +4,9 @@ export default {
   ginkoDocs: {
     site: {
       url: siteUrl,
-      name: { en: 'Better Convex Nuxt' },
+      name: { en: 'Better Convex' },
       description: {
-        en: 'Convex for Nuxt 4, without the integration glue.',
+        en: 'Convex integration for Nuxt, Vue, and MCP consumers.',
       },
       logo: { light: '/favicon.svg', dark: '/favicon.svg' },
       docsSidebarSwitcher: 'tabs',
