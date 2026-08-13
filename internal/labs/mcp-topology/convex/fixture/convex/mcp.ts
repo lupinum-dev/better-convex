@@ -1,4 +1,10 @@
 import {
+  handleMcpRequest,
+  runMcpTool,
+  type McpAccessContext,
+  type McpAccessVerifier,
+} from '@lupinum/better-convex-mcp'
+import {
   CLIENT_CAPABILITIES_META_KEY,
   inputRequired,
   ResourceTemplate,
@@ -7,12 +13,6 @@ import {
   type McpServer,
   type ServerContext,
 } from '@modelcontextprotocol/server'
-import {
-  handleMcpRequest,
-  runMcpTool,
-  type McpAccessContext,
-  type McpAccessVerifier,
-} from 'better-convex-mcp'
 import { z } from 'zod'
 
 import { internal } from './_generated/api'

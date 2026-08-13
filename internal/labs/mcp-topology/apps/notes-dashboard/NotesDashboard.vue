@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { useMcpApp } from '@lupinum/better-convex-vue/mcp-app'
 import type {
   McpUiToolInputNotification,
   McpUiToolResultNotification,
 } from '@modelcontextprotocol/ext-apps'
-import { useMcpApp } from 'better-convex-vue/mcp-app'
 import { computed, ref, watch, watchEffect } from 'vue'
 
 interface DashboardNote {

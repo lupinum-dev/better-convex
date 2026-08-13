@@ -1,4 +1,4 @@
-import { useConvexConnectionState as useVueConvexConnectionState } from 'better-convex-vue'
+import { useConvexConnectionState as useVueConvexConnectionState } from '@lupinum/better-convex-vue'
 import { computed, readonly, ref } from 'vue'
 
 export type { ConnectionState } from 'convex/browser'

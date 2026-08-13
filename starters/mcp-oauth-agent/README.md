@@ -7,7 +7,7 @@ short-lived OAuth access tokens. Convex remains the product-authorization author
 
 It is a delegated-human example, not a universal machine-identity model. For
 controlled service automation, supply a provider-neutral bearer verifier to
-`better-convex-mcp` and keep credential state and authorization in the
+`@lupinum/better-convex-mcp` and keep credential state and authorization in the
 application. Do not combine service credentials with this OAuth profile or add
 an `MCP_SERVER_SECRET` bridge.
 
@@ -18,7 +18,7 @@ an `MCP_SERVER_SECRET` bridge.
 - OAuth supports only authorization code, mandatory PKCE, exact HTTPS or RFC
   8252 loopback-IP redirects, explicit consent, the fixed
   `mcp:read`/`mcp:write` scopes, and the exact Convex HTTP Actions `/mcp` resource.
-- There is no Nuxt MCP relay. The official MCP SDK and `better-convex-mcp`
+- There is no Nuxt MCP relay. The official MCP SDK and `@lupinum/better-convex-mcp`
   terminate the bearer in one deployment-owned Convex HTTP Action.
 - The action verifies the issuer, resource, token class, algorithm, subject,
   session, client, and scopes. Five explicit official-SDK registrations map to
@@ -313,6 +313,6 @@ pnpm build
 
 The supported tuple is exact: Better Auth and OAuth Provider `1.7.0-rc.2`,
 Convex `1.42.2`, Better Convex Nuxt `0.8.0-beta.40`,
-`better-convex-mcp@0.1.0-beta.28`, and official MCP server SDK `2.0.0`.
+`@lupinum/better-convex-mcp@0.1.0-beta.28`, and official MCP server SDK `2.0.0`.
 Better Auth owns its Kysely runtime; this starter does not add a standalone
 Kysely dependency.

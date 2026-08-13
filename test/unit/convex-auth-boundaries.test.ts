@@ -70,7 +70,7 @@ describe('Convex auth dependency boundaries', () => {
       'fs',
       'node:crypto',
       'convex/browser',
-      'better-convex-nuxt/server',
+      '@lupinum/better-convex-nuxt/server',
     ]) {
       expect(boundary.disallow(bare(specifier)), specifier).toBe(true)
     }
@@ -87,7 +87,7 @@ describe('Convex auth dependency boundaries', () => {
     expect(moduleBoundary.disallow(backendEdge)).toBe(true)
     expect(browserBoundary.from(resolve('src/runtime/auth-client/index.ts'))).toBe(true)
     expect(browserBoundary.disallow(backendEdge)).toBe(true)
-    expect(browserBoundary.disallow(bare('better-convex-nuxt/convex-auth'))).toBe(true)
+    expect(browserBoundary.disallow(bare('@lupinum/better-convex-nuxt/convex-auth'))).toBe(true)
   })
 
   it('keeps the shared origin parser dependency-free', () => {
@@ -182,7 +182,7 @@ describe('private client lifecycle dependency boundary', () => {
       'fs',
       '~/runtime/utils/logger',
       '@/runtime/auth/client-engine',
-      'better-convex-nuxt/server',
+      '@lupinum/better-convex-nuxt/server',
       '<computed dynamic import>',
     ]) {
       expect(boundary.disallow(bare(specifier)), specifier).toBe(true)
@@ -216,10 +216,10 @@ describe('workspace package dependency direction', () => {
   it('discovers the root and current workspace package ownership', () => {
     const packages = discoverWorkspacePackages()
     expect(packages.map((item) => item.name).sort()).toEqual([
-      'better-convex-mcp',
-      'better-convex-nuxt',
+      '@lupinum/better-convex-mcp',
+      '@lupinum/better-convex-nuxt',
+      '@lupinum/better-convex-vue',
       'better-convex-nuxt-playground',
-      'better-convex-vue',
     ])
   })
 

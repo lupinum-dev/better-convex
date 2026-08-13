@@ -1,4 +1,4 @@
-# better-convex-mcp
+# @lupinum/better-convex-mcp
 
 A small provider-neutral boundary for serving an official MCP server from a
 Convex HTTP Action. It owns request bounds, exact issuer/resource verification,
@@ -8,13 +8,13 @@ continues to own tools, resources, roles, permissions, and effects.
 ## Install
 
 ```bash
-pnpm add better-convex-mcp@0.1.0-beta.28 @modelcontextprotocol/server@2.0.0 zod@4.4.3
+pnpm add @lupinum/better-convex-mcp@0.1.0-beta.28 @modelcontextprotocol/server@2.0.0 zod@4.4.3
 ```
 
 ## Handle one request
 
 ```ts
-import { handleMcpRequest } from 'better-convex-mcp'
+import { handleMcpRequest } from '@lupinum/better-convex-mcp'
 import { z } from 'zod'
 
 import { httpAction } from './_generated/server'

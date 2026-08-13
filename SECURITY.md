@@ -4,8 +4,8 @@
 
 Security fixes are provided for the latest published minor release. Older minors are unsupported after a newer minor is published.
 
-The current package family consists of the `better-convex-nuxt@0.8.0-beta.40`,
-`better-convex-vue@0.8.0-beta.40`, and `better-convex-mcp@0.1.0-beta.28`
+The current package family consists of the `@lupinum/better-convex-nuxt@0.8.0-beta.40`,
+`@lupinum/better-convex-vue@0.8.0-beta.40`, and `@lupinum/better-convex-mcp@0.1.0-beta.28`
 prerelease candidates. The Nuxt candidate uses Node
 `^22.12.0 || ^24.11.0 || >=26.0.0`, Nuxt `4.5.1`, Convex `1.42.2`, Better Auth
 `1.7.0-rc.2`, `@better-auth/oauth-provider` `1.7.0-rc.2`, and Convex Helpers

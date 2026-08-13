@@ -16,7 +16,7 @@ runtime. Public usage belongs in the generated API reference and guides.
 | Auth transitions and identity generation                 | Provider-neutral Vue auth adapter/runtime   |
 | Query transport, wire deduplication, and transport cache | Pinned Convex client                        |
 | SSR payload and Vue-visible query state                  | Each query composable                       |
-| Public error shape and normalization                     | `better-convex-vue/errors`                  |
+| Public error shape and normalization                     | `@lupinum/better-convex-vue/errors`         |
 | Public runtime configuration                             | Module schema and runtime config normalizer |
 
 The module does not maintain a second session store, authorization model,
@@ -24,7 +24,7 @@ subscription registry, or raw-client public surface.
 
 ## Module graph
 
-The Nuxt client plugin installs one `better-convex-vue` runtime per Nuxt
+The Nuxt client plugin installs one `@lupinum/better-convex-vue` runtime per Nuxt
 application. When auth is enabled, the Better Auth adapter supplies only a
 provider-neutral session snapshot and token callback; the Vue runtime owns
 client replacement and identity generations. The server plugin exchanges the
@@ -68,7 +68,7 @@ Better Auth establishes identity. Convex functions still enforce every
 authorization rule from canonical backend state.
 
 Delegated MCP traffic enters the deployment-owned Convex HTTP Action directly.
-The official-SDK-backed `better-convex-mcp` handler is the only bearer verifier;
+The official-SDK-backed `@lupinum/better-convex-mcp` handler is the only bearer verifier;
 the Nuxt package owns no MCP relay or protocol parser. Explicit application tool
 registrations map to named internal operations. Each effect recomputes access
 from current provider and application state; token scopes are only a ceiling.
@@ -121,18 +121,18 @@ identity or authorization source.
 
 The supported package entry points are:
 
-- `better-convex-vue`
-- `better-convex-vue/errors`
-- `better-convex-vue/embedded`
+- `@lupinum/better-convex-vue`
+- `@lupinum/better-convex-vue/errors`
+- `@lupinum/better-convex-vue/embedded`
 
-- `better-convex-nuxt`
-- `better-convex-nuxt/auth-client`
-- `better-convex-nuxt/convex-auth`
-- `better-convex-nuxt/convex-auth/convex.config`
-- `better-convex-nuxt/convex-auth/_generated/component.js`
-- `better-convex-nuxt/convex-auth/test`
-- `better-convex-nuxt/errors`
-- `better-convex-nuxt/server`
+- `@lupinum/better-convex-nuxt`
+- `@lupinum/better-convex-nuxt/auth-client`
+- `@lupinum/better-convex-nuxt/convex-auth`
+- `@lupinum/better-convex-nuxt/convex-auth/convex.config`
+- `@lupinum/better-convex-nuxt/convex-auth/_generated/component.js`
+- `@lupinum/better-convex-nuxt/convex-auth/test`
+- `@lupinum/better-convex-nuxt/errors`
+- `@lupinum/better-convex-nuxt/server`
 
 Anything else under `src/runtime` is internal. Internal files may change
 without compatibility wrappers; released exports and documented behavior

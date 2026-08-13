@@ -28,7 +28,7 @@ function createRepository() {
   writeFileSync(
     join(root, 'package.json'),
     `${JSON.stringify({
-      name: 'better-convex-nuxt',
+      name: '@lupinum/better-convex-nuxt',
       repository: {
         type: 'git',
         url: 'https://github.com/lupinum-dev/better-convex-nuxt',
@@ -41,24 +41,24 @@ function createRepository() {
 
 describe('package artifact coordinates', () => {
   it.each([
-    ['better-convex-nuxt', '0.8.0-beta.0'],
-    ['better-convex-nuxt', '0.8.0-beta.15'],
-    ['better-convex-nuxt', '0.8.0-beta.20'],
-    ['better-convex-nuxt', '0.8.0-beta.31'],
-    ['better-convex-nuxt', '0.8.0-beta.32'],
-    ['better-convex-nuxt', '0.8.0-beta.33'],
-    ['better-convex-nuxt', '0.8.0-beta.34'],
-    ['better-convex-vue', '0.8.0-beta.20'],
-    ['better-convex-vue', '0.8.0-beta.31'],
-    ['better-convex-vue', '0.8.0-beta.32'],
-    ['better-convex-vue', '0.8.0-beta.33'],
-    ['better-convex-vue', '0.8.0-beta.34'],
-    ['better-convex-mcp', '0.1.0-beta.0'],
-    ['better-convex-mcp', '0.1.0-beta.8'],
-    ['better-convex-mcp', '0.1.0-beta.19'],
-    ['better-convex-mcp', '0.1.0-beta.20'],
-    ['better-convex-mcp', '0.1.0-beta.21'],
-    ['better-convex-mcp', '0.1.0-beta.22'],
+    ['@lupinum/better-convex-nuxt', '0.8.0-beta.0'],
+    ['@lupinum/better-convex-nuxt', '0.8.0-beta.15'],
+    ['@lupinum/better-convex-nuxt', '0.8.0-beta.20'],
+    ['@lupinum/better-convex-nuxt', '0.8.0-beta.31'],
+    ['@lupinum/better-convex-nuxt', '0.8.0-beta.32'],
+    ['@lupinum/better-convex-nuxt', '0.8.0-beta.33'],
+    ['@lupinum/better-convex-nuxt', '0.8.0-beta.34'],
+    ['@lupinum/better-convex-vue', '0.8.0-beta.20'],
+    ['@lupinum/better-convex-vue', '0.8.0-beta.31'],
+    ['@lupinum/better-convex-vue', '0.8.0-beta.32'],
+    ['@lupinum/better-convex-vue', '0.8.0-beta.33'],
+    ['@lupinum/better-convex-vue', '0.8.0-beta.34'],
+    ['@lupinum/better-convex-mcp', '0.1.0-beta.0'],
+    ['@lupinum/better-convex-mcp', '0.1.0-beta.8'],
+    ['@lupinum/better-convex-mcp', '0.1.0-beta.19'],
+    ['@lupinum/better-convex-mcp', '0.1.0-beta.20'],
+    ['@lupinum/better-convex-mcp', '0.1.0-beta.21'],
+    ['@lupinum/better-convex-mcp', '0.1.0-beta.22'],
   ])('rejects every identity below the release floor for %s@%s', (packageName, version) => {
     expect(() => assertReleaseEligiblePackageVersion(packageName, version)).toThrow(
       'predates the minimum releasable version',
@@ -66,16 +66,16 @@ describe('package artifact coordinates', () => {
   })
 
   it('accepts the release floor, successors, and unrelated package versions', () => {
-    expect(assertReleaseEligiblePackageVersion('better-convex-nuxt', '0.8.0-beta.40')).toBe(
+    expect(
+      assertReleaseEligiblePackageVersion('@lupinum/better-convex-nuxt', '0.8.0-beta.40'),
+    ).toBe('0.8.0-beta.40')
+    expect(assertReleaseEligiblePackageVersion('@lupinum/better-convex-vue', '0.8.0-beta.40')).toBe(
       '0.8.0-beta.40',
     )
-    expect(assertReleaseEligiblePackageVersion('better-convex-vue', '0.8.0-beta.40')).toBe(
-      '0.8.0-beta.40',
-    )
-    expect(assertReleaseEligiblePackageVersion('better-convex-mcp', '0.1.0-beta.28')).toBe(
+    expect(assertReleaseEligiblePackageVersion('@lupinum/better-convex-mcp', '0.1.0-beta.28')).toBe(
       '0.1.0-beta.28',
     )
-    expect(assertReleaseEligiblePackageVersion('better-convex-mcp', '0.1.0')).toBe('0.1.0')
+    expect(assertReleaseEligiblePackageVersion('@lupinum/better-convex-mcp', '0.1.0')).toBe('0.1.0')
     expect(assertReleaseEligiblePackageVersion('unrelated-package', '0.8.0-beta.6')).toBe(
       '0.8.0-beta.6',
     )
@@ -89,7 +89,7 @@ describe('package artifact coordinates', () => {
 
     expect(coordinates).toMatchObject({
       packageId: 'nuxt',
-      packageName: 'better-convex-nuxt',
+      packageName: '@lupinum/better-convex-nuxt',
       packageDirectory: '.',
       profiles: {
         build: 'nuxt-module-build',
@@ -106,14 +106,14 @@ describe('package artifact coordinates', () => {
         contents: 'contents.json',
         evidence: 'artifact.json',
         sbom: 'sbom.cdx.json',
-        tarball: 'better-convex-nuxt-0.8.0-beta.40.tgz',
+        tarball: 'lupinum-better-convex-nuxt-0.8.0-beta.40.tgz',
       },
     })
     expect(coordinates.relativePaths).toEqual({
       contents: '.release-artifacts/nuxt/0.8.0-beta.40/contents.json',
       evidence: '.release-artifacts/nuxt/0.8.0-beta.40/artifact.json',
       sbom: '.release-artifacts/nuxt/0.8.0-beta.40/sbom.cdx.json',
-      tarball: '.release-artifacts/nuxt/0.8.0-beta.40/better-convex-nuxt-0.8.0-beta.40.tgz',
+      tarball: '.release-artifacts/nuxt/0.8.0-beta.40/lupinum-better-convex-nuxt-0.8.0-beta.40.tgz',
     })
     expect(new Set(Object.values(coordinates.paths)).size).toBe(4)
     for (const path of Object.values(coordinates.paths)) {
@@ -130,7 +130,7 @@ describe('package artifact coordinates', () => {
   })
 
   it.each([
-    'better-convex-nuxt',
+    '@lupinum/better-convex-nuxt',
     'NUXT',
     '.',
     './nuxt',
@@ -180,16 +180,16 @@ describe('package artifact coordinates', () => {
       'Invalid package version',
     )
     expect(() =>
-      canonicalNpmTarballFilename('better-convex-nuxt', `1.0.0-${'a'.repeat(230)}`),
+      canonicalNpmTarballFilename('@lupinum/better-convex-nuxt', `1.0.0-${'a'.repeat(230)}`),
     ).toThrow('Invalid npm tarball filename')
   })
 
   it('derives npm canonical tarball basenames without using them as package directories', () => {
-    expect(canonicalNpmTarballFilename('better-convex-mcp', '1.2.3-beta.4')).toBe(
-      'better-convex-mcp-1.2.3-beta.4.tgz',
+    expect(canonicalNpmTarballFilename('@lupinum/better-convex-mcp', '1.2.3-beta.4')).toBe(
+      'lupinum-better-convex-mcp-1.2.3-beta.4.tgz',
     )
-    expect(canonicalNpmTarballFilename('better-convex-vue', '1.0.0-RC.1')).toBe(
-      'better-convex-vue-1.0.0-RC.1.tgz',
+    expect(canonicalNpmTarballFilename('@lupinum/better-convex-vue', '1.0.0-RC.1')).toBe(
+      'lupinum-better-convex-vue-1.0.0-RC.1.tgz',
     )
     expect(canonicalNpmTarballFilename('@scope/name', '1.0.0')).toBe(
       canonicalNpmTarballFilename('scope-name', '1.0.0'),

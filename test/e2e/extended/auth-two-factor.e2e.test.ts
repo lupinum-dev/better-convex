@@ -456,8 +456,9 @@ async function ensureFixturePackageLink(): Promise<void> {
   // CLI choose unoccupied ports when other isolated suites run concurrently.
   await removeFixtureRuntimeState()
   const fixtureNodeModules = join(fixtureCwd, 'node_modules')
-  const packageLink = join(fixtureNodeModules, 'better-convex-nuxt')
-  await mkdir(fixtureNodeModules, { recursive: true })
+  const packageScope = join(fixtureNodeModules, '@lupinum')
+  const packageLink = join(packageScope, 'better-convex-nuxt')
+  await mkdir(packageScope, { recursive: true })
   try {
     await symlink(repoRoot, packageLink, 'dir')
   } catch (error) {
@@ -472,7 +473,7 @@ async function removeFixtureRuntimeState(): Promise<void> {
   await Promise.all([
     rm(join(fixtureCwd, '.convex'), { force: true, recursive: true }),
     rm(join(fixtureCwd, '.env.local'), { force: true }),
-    rm(join(fixtureCwd, 'node_modules', 'better-convex-nuxt'), {
+    rm(join(fixtureCwd, 'node_modules', '@lupinum/better-convex-nuxt'), {
       force: true,
       recursive: true,
     }),

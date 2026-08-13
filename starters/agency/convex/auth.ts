@@ -1,5 +1,3 @@
-import { betterAuth } from 'better-auth'
-import { jwt } from 'better-auth/plugins'
 import {
   convexAuth,
   createAuthComponent,
@@ -8,7 +6,9 @@ import {
   type AuthCtx,
   type AuthFunctions,
   type BetterAuthUserProjectionSource,
-} from 'better-convex-nuxt/convex-auth'
+} from '@lupinum/better-convex-nuxt/convex-auth'
+import { betterAuth } from 'better-auth'
+import { jwt } from 'better-auth/plugins'
 import { ConvexError, v } from 'convex/values'
 
 import { components, internal } from './_generated/api'

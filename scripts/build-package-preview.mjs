@@ -27,7 +27,7 @@ try {
   const bytes = readFileSync(nuxt.tarballPath)
   const output = [
     `directory=${relative(root, outputDirectory)}`,
-    'package_name=better-convex-nuxt',
+    'package_name=@lupinum/better-convex-nuxt',
     `sha256=${createHash('sha256').update(bytes).digest('hex')}`,
     `tarball=${relative(root, nuxt.tarballPath)}`,
     `vue_tarball=${relative(root, vue.tarballPath)}`,

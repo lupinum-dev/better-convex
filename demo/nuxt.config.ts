@@ -3,7 +3,7 @@ const siteUrl = (process.env.SITE_URL || 'http://localhost:3000/').replace(/\/$/
 const ogImageUrl = `${siteUrl}og-image.png`
 
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/ui', 'better-convex-nuxt'],
+  modules: ['@nuxt/eslint', '@nuxt/ui', '@lupinum/better-convex-nuxt'],
 
   devtools: {
     enabled: true,

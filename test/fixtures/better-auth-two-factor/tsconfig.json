@@ -7,8 +7,8 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "better-convex-nuxt/convex-auth": ["../../../src/runtime/convex-auth/index.ts"],
-      "better-convex-nuxt/convex-auth/_generated/component.js": [
+      "@lupinum/better-convex-nuxt/convex-auth": ["../../../src/runtime/convex-auth/index.ts"],
+      "@lupinum/better-convex-nuxt/convex-auth/_generated/component.js": [
         "../../../src/runtime/convex-auth/component/_generated/component.ts"
       ]
     },

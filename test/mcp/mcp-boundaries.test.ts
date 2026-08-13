@@ -19,7 +19,7 @@ describe('delegated MCP static trust boundaries', () => {
     const tools = readFileSync(join(starter, 'convex/mcpTools.ts'), 'utf8')
     expect(action.match(/createBetterAuthMcpAccessVerifier\(/g)).toHaveLength(1)
     expect(action).toContain('authComponent.validateOAuthAccess(ctx, access)')
-    expect(action).toContain("from 'better-convex-mcp'")
+    expect(action).toContain("from '@lupinum/better-convex-mcp'")
     expect(action).toContain("from '@modelcontextprotocol/server'")
     expect(action.match(/server\.registerTool\(/g)).toHaveLength(5)
     expect(action).not.toMatch(/run(?:Query|Mutation|Action)\([^,\n]*(?:message|input)\./)
@@ -46,7 +46,7 @@ describe('delegated MCP static trust boundaries', () => {
 
   it('keeps OAuth cryptography in the shared package verifier', () => {
     const action = readFileSync(join(starter, 'convex/mcp.ts'), 'utf8')
-    expect(action).toContain("from 'better-convex-nuxt/convex-auth'")
+    expect(action).toContain("from '@lupinum/better-convex-nuxt/convex-auth'")
     expect(action).toContain('createBetterAuthMcpAccessVerifier')
     expect(action).not.toContain('@better-auth/oauth-provider/resource-client')
     expect(action).not.toMatch(/jose|subtle|createRemoteJWKSet|jwtVerify/)

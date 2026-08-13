@@ -1,6 +1,6 @@
-import { useConvex as useVueConvex, type ConvexClientHandle } from 'better-convex-vue'
+import { useConvex as useVueConvex, type ConvexClientHandle } from '@lupinum/better-convex-vue'
 
-export type { ConvexClientHandle } from 'better-convex-vue'
+export type { ConvexClientHandle } from '@lupinum/better-convex-vue'
 
 /** Access the Vue-owned stable, replacement-safe Convex client handle. */
 export function useConvex(): ConvexClientHandle {

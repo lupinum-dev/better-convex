@@ -371,7 +371,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       const missing = runPublisher('missing')
       expect(missing.status, missing.stderr).toBe(0)
       expect(readFileSync(executionLog, 'utf8')).toContain(
-        `publish ${resolve(root, `.release-artifacts/vue/${version}/better-convex-vue-${version}.tgz`)} --tag candidate-123 --access public --registry https://registry.npmjs.org`,
+        `publish ${resolve(root, `.release-artifacts/vue/${version}/lupinum-better-convex-vue-${version}.tgz`)} --tag candidate-123 --access public --registry https://registry.npmjs.org`,
       )
     } finally {
       rmSync(temporaryDirectory, { force: true, recursive: true })
@@ -388,6 +388,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'compatibility',
       'auth-contracts',
       'auth-real-backend',
+      'deployable-app-audits',
     ])
   })
 

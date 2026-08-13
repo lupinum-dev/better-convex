@@ -44,12 +44,12 @@ function run(command, args) {
 const args = parseArguments(process.argv.slice(2))
 const vueCandidate = inspectConsumerCandidate({
   packageId: 'vue',
-  packageName: 'better-convex-vue',
+  packageName: '@lupinum/better-convex-vue',
   tarballPath: args['vue-tarball'],
 })
 const mcpCandidate = inspectConsumerCandidate({
   packageId: 'mcp',
-  packageName: 'better-convex-mcp',
+  packageName: '@lupinum/better-convex-mcp',
   tarballPath: args['mcp-tarball'],
 })
 const officialClientVersion = repositoryManifest.devDependencies?.['@modelcontextprotocol/client']
@@ -81,12 +81,12 @@ try {
         type: 'module',
         packageManager: repositoryManifest.packageManager,
         dependencies: {
-          'better-convex-mcp': 'file:./better-convex-mcp.tgz',
+          '@lupinum/better-convex-mcp': 'file:./better-convex-mcp.tgz',
           '@modelcontextprotocol/client': officialClientVersion,
           '@modelcontextprotocol/ext-apps': officialAppsVersion,
           '@modelcontextprotocol/sdk': officialSdkVersion,
           '@modelcontextprotocol/server': officialServerVersion,
-          'better-convex-vue': 'file:./better-convex-vue.tgz',
+          '@lupinum/better-convex-vue': 'file:./better-convex-vue.tgz',
           vue: reviewedVueVersion,
           zod: officialZodVersion,
         },
@@ -121,8 +121,8 @@ try {
     throw new Error('Packed MCP App consumer lock does not bind both candidate tarballs.')
   }
 
-  const installedVue = join(scratchRoot, 'node_modules/better-convex-vue')
-  const installedMcp = join(scratchRoot, 'node_modules/better-convex-mcp')
+  const installedVue = join(scratchRoot, 'node_modules/@lupinum/better-convex-vue')
+  const installedMcp = join(scratchRoot, 'node_modules/@lupinum/better-convex-mcp')
   vueCandidate.assertInstalled(installedVue)
   mcpCandidate.assertInstalled(installedMcp)
 
@@ -136,7 +136,7 @@ try {
   type UseMcpAppOptions,
   type UseMcpAppReturn,
   useMcpApp,
-} from 'better-convex-vue/mcp-app'
+} from '@lupinum/better-convex-vue/mcp-app'
 
 declare const options: UseMcpAppOptions
 const app: UseMcpAppReturn = useMcpApp(options)

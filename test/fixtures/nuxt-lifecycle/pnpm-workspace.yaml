@@ -1,4 +1,4 @@
 overrides:
-  better-convex-vue: file:./better-convex-vue.tgz
+  '@lupinum/better-convex-vue': file:./better-convex-vue.tgz
 
 onlyBuiltDependencies: []

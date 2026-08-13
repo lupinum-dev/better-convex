@@ -220,7 +220,7 @@ export function createConvexAuthAdapter<
 
   return createAdapterFactory({
     config: {
-      adapterId: 'better-convex-nuxt',
+      adapterId: '@lupinum/better-convex-nuxt',
       adapterName: 'Better Convex Nuxt',
       debugLogs: adapterOptions.debugLogs ?? false,
       transaction: false,

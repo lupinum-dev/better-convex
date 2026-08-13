@@ -58,14 +58,14 @@ describe('package-profile SBOM generation', () => {
         }>
         metadata: { component: { name: string } }
       }
-      expect(sbom.metadata.component.name).toBe('better-convex-nuxt')
+      expect(sbom.metadata.component.name).toBe('@lupinum/better-convex-nuxt')
       for (const peer of ['convex', 'nuxt']) {
         expect(sbom.components).toContainEqual(
           expect.objectContaining({
             name: peer,
             properties: [
               {
-                name: 'better-convex-nuxt:dependency-kind',
+                name: '@lupinum/better-convex-nuxt:dependency-kind',
                 value: 'required-peer',
               },
             ],
@@ -78,7 +78,7 @@ describe('package-profile SBOM generation', () => {
             name: peer,
             properties: [
               {
-                name: 'better-convex-nuxt:dependency-kind',
+                name: '@lupinum/better-convex-nuxt:dependency-kind',
                 value: 'optional-peer',
               },
             ],
@@ -106,7 +106,7 @@ describe('package-profile SBOM generation', () => {
         }>
         metadata: { component: { name: string } }
       }
-      expect(sbom.metadata.component.name).toBe('better-convex-vue')
+      expect(sbom.metadata.component.name).toBe('@lupinum/better-convex-vue')
       expect(sbom.components.map(({ name }) => name).sort()).toEqual([
         '@modelcontextprotocol/ext-apps',
         '@modelcontextprotocol/sdk',
@@ -125,7 +125,7 @@ describe('package-profile SBOM generation', () => {
             version,
             properties: [
               {
-                name: 'better-convex-vue:dependency-kind',
+                name: '@lupinum/better-convex-vue:dependency-kind',
                 value: 'optional-peer',
               },
             ],
@@ -144,7 +144,7 @@ describe('package-profile SBOM generation', () => {
             name: peer,
             properties: [
               {
-                name: 'better-convex-vue:dependency-kind',
+                name: '@lupinum/better-convex-vue:dependency-kind',
                 value: 'required-peer',
               },
             ],
@@ -167,7 +167,7 @@ describe('package-profile SBOM generation', () => {
         components: Array<{ name: string; version: string }>
         metadata: { component: { name: string } }
       }
-      expect(sbom.metadata.component.name).toBe('better-convex-mcp')
+      expect(sbom.metadata.component.name).toBe('@lupinum/better-convex-mcp')
       expect(sbom.components.map(({ name }) => name).sort()).toEqual([
         '@modelcontextprotocol/core',
         '@modelcontextprotocol/server',

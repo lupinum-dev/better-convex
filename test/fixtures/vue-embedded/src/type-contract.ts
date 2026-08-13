@@ -8,7 +8,7 @@ import {
   type BetterConvexIdentitySnapshot as _RemovedIdentitySnapshot,
   // @ts-expect-error the call-error taxonomy lives only on /errors
   type ConvexCallErrorKind as _RemovedRootErrorKind,
-} from 'better-convex-vue'
+} from '@lupinum/better-convex-vue'
 import {
   createBetterConvexAttachment,
   type BetterConvexAttachment,
@@ -18,7 +18,7 @@ import {
   type BetterConvexIdentitySnapshot as _RemovedEmbeddedSnapshot,
   // @ts-expect-error the root-only client handle is not duplicated by /embedded
   type ConvexClientHandle as _RemovedEmbeddedClient,
-} from 'better-convex-vue/embedded'
+} from '@lupinum/better-convex-vue/embedded'
 
 declare const attachment: BetterConvexAttachment
 declare const attachmentInput: Parameters<typeof createBetterConvexAttachment>[0]

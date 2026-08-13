@@ -104,12 +104,15 @@ try {
       consumerRoot,
     )
     const installed = JSON.parse(
-      readFileSync(join(consumerRoot, 'node_modules/better-convex-vue/package.json'), 'utf8'),
+      readFileSync(
+        join(consumerRoot, 'node_modules/@lupinum/better-convex-vue/package.json'),
+        'utf8',
+      ),
     )
     if (installed.version !== candidate.version) {
       throw new Error(`Unexpected installed Vue package version: ${String(installed.version)}`)
     }
-    const installedRoot = join(consumerRoot, 'node_modules/better-convex-vue')
+    const installedRoot = join(consumerRoot, 'node_modules/@lupinum/better-convex-vue')
     candidate.assertInstalled(installedRoot)
     assertNoRetiredIdentityFields(installedRoot)
   }

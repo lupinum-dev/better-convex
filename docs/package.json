@@ -18,10 +18,16 @@
     "vue-router": "5.2.0"
   },
   "devDependencies": {
-    "@nuxt/eslint": "^1.12.1",
-    "eslint": "^9.39.2",
+    "@nuxt/eslint": "^1.17.0",
+    "eslint": "^9.39.5",
     "typescript": "^5.9.3",
-    "vue-tsc": "^3.2.2"
+    "vue-tsc": "^3.3.9"
   },
-  "packageManager": "pnpm@10.23.0"
+  "packageManager": "pnpm@10.23.0",
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.1",
+      "sharp": "0.35.0"
+    }
+  }
 }

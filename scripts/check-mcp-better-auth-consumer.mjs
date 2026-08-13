@@ -9,7 +9,7 @@ const repositoryRoot = resolve(import.meta.dirname, '..')
 const tarballPath = parseTarball(process.argv.slice(2))
 const candidate = inspectConsumerCandidate({
   packageId: 'mcp',
-  packageName: 'better-convex-mcp',
+  packageName: '@lupinum/better-convex-mcp',
   tarballPath,
 })
 

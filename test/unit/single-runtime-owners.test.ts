@@ -33,12 +33,12 @@ describe('Nuxt client-engine absence gate', () => {
     write(
       root,
       'src/runtime/composables/useConvexMutation.ts',
-      "import { useConvexMutation } from 'better-convex-vue'\n",
+      "import { useConvexMutation } from '@lupinum/better-convex-vue'\n",
     )
     write(
       root,
       'dist/runtime/composables/useConvexMutation.js',
-      "import { useConvexMutation } from 'better-convex-vue'\n",
+      "import { useConvexMutation } from '@lupinum/better-convex-vue'\n",
     )
 
     expect(findNuxtClientEngineViolations(root, { dist: true })).toEqual([])
@@ -50,14 +50,14 @@ describe('Nuxt client-engine absence gate', () => {
     write(
       root,
       'src/runtime/private.ts',
-      "import 'better-convex-vue/internal'\ncreateClientOwner()\n",
+      "import '@lupinum/better-convex-vue/internal'\ncreateClientOwner()\n",
     )
     write(root, 'dist/runtime/plugin.js', 'createCallableController()\n')
 
     expect(findNuxtClientEngineViolations(root, { dist: true })).toEqual(
       expect.arrayContaining([
         'removed path exists: src/runtime/client-core',
-        'src/runtime/private.ts: forbidden better-convex-vue/internal',
+        'src/runtime/private.ts: forbidden @lupinum/better-convex-vue/internal',
         'src/runtime/private.ts: forbidden createClientOwner',
         'dist/runtime/plugin.js: forbidden createCallableController',
       ]),
@@ -66,7 +66,11 @@ describe('Nuxt client-engine absence gate', () => {
 
   it('fails a requested dist proof when no build exists', () => {
     const root = createRoot()
-    write(root, 'src/runtime/plugin.ts', "import { createBetterConvex } from 'better-convex-vue'\n")
+    write(
+      root,
+      'src/runtime/plugin.ts',
+      "import { createBetterConvex } from '@lupinum/better-convex-vue'\n",
+    )
 
     expect(findNuxtClientEngineViolations(root, { dist: true })).toContain(
       'dist root is missing: dist',
@@ -79,7 +83,11 @@ describe('single runtime-owner gate', () => {
   const createRoot = () => {
     const root = mkdtempSync(join(tmpdir(), 'bcn-single-runtime-owner-'))
     directories.push(root)
-    write(root, 'src/runtime/plugin.ts', "import { createBetterConvex } from 'better-convex-vue'\n")
+    write(
+      root,
+      'src/runtime/plugin.ts',
+      "import { createBetterConvex } from '@lupinum/better-convex-vue'\n",
+    )
     write(
       root,
       'packages/mcp/src/handler.ts',
@@ -146,7 +154,7 @@ describe('single runtime-owner gate', () => {
     write(
       root,
       'dist/runtime/plugin.mjs',
-      "import { createBetterConvex } from 'better-convex-vue'\n",
+      "import { createBetterConvex } from '@lupinum/better-convex-vue'\n",
     )
     write(
       root,

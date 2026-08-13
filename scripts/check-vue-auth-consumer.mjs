@@ -96,7 +96,7 @@ try {
     consumerRoot,
   )
   symlinkSync(join(consumerRoot, 'node_modules'), join(scratchRoot, 'node_modules'), 'dir')
-  candidate.assertInstalled(join(consumerRoot, 'node_modules/better-convex-vue'))
+  candidate.assertInstalled(join(consumerRoot, 'node_modules/@lupinum/better-convex-vue'))
   run('pnpm', ['run', 'typecheck'], consumerRoot)
   run('pnpm', ['run', 'build'], consumerRoot)
   const assetsDirectory = join(consumerRoot, 'dist/assets')

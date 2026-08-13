@@ -1,7 +1,7 @@
 /**
  * Standalone packed-probe consumer (packed consumer fixture).
  *
- * Imports ONLY `better-convex-nuxt/errors` — no other subpath, no Nuxt, no Vue
+ * Imports ONLY `@lupinum/better-convex-nuxt/errors` — no other subpath, no Nuxt, no Vue
  * — and exercises the framework-free contract from a real node_modules-
  * resident install of the packed tarball. Runnable standalone:
  *
@@ -15,8 +15,8 @@ import {
   ConvexCallError,
   isSerializedConvexCallError,
   normalizeConvexError,
-} from 'better-convex-nuxt/errors'
-import type { ConvexCallErrorKind } from 'better-convex-nuxt/errors'
+} from '@lupinum/better-convex-nuxt/errors'
+import type { ConvexCallErrorKind } from '@lupinum/better-convex-nuxt/errors'
 
 const typedKind: ConvexCallErrorKind = 'server'
 void typedKind

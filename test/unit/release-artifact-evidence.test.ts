@@ -226,7 +226,7 @@ function productionContractDigest(sbom: Record<string, unknown>) {
   const component = metadata.component as Record<string, unknown>
   const properties = component.properties as Array<{ name: string; value: string }>
   return properties.find(
-    ({ name }) => name === 'better-convex-nuxt:production-manifest-contract-sha256',
+    ({ name }) => name === '@lupinum/better-convex-nuxt:production-manifest-contract-sha256',
   )?.value
 }
 
@@ -249,7 +249,7 @@ describe('immutable release artifact evidence', () => {
     expect(fixture.evidence).toMatchObject({
       schemaVersion: 3,
       packageId: 'nuxt',
-      packageName: 'better-convex-nuxt',
+      packageName: '@lupinum/better-convex-nuxt',
       packageDirectory: '.',
       version: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version,
       profiles: {

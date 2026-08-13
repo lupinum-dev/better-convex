@@ -83,9 +83,29 @@ jobs:
       - run: pnpm check:auth-backend --install
       - name: Certify end-to-end source lane
         run: pnpm release:certify:source e2e
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  deployable-app-audits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - name: Audit docs production dependencies
+        working-directory: docs
+        run: corepack pnpm@10.23.0 audit --prod
+      - name: Audit demo production dependencies
+        working-directory: demo
+        run: corepack pnpm@10.30.3 audit --prod
 
   release-gate:
-    needs: [secrets, compatibility, auth-contracts, auth-real-backend]
+    needs: [secrets, compatibility, auth-contracts, auth-real-backend, deployable-app-audits]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

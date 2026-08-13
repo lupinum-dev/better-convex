@@ -374,7 +374,7 @@ jobs:
       - name: Publish the certified Vue tarball
         run: |
           set -euo pipefail
-          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'better-convex-vue-*.tgz' -print)
+          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-vue-*.tgz' -print)
           test "${#TARBALLS[@]}" -eq 1
           TARBALL="${TARBALLS[0]}"
           tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"
@@ -440,7 +440,7 @@ jobs:
       - name: Publish the certified Nuxt tarball
         run: |
           set -euo pipefail
-          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'better-convex-nuxt-*.tgz' -print)
+          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-nuxt-*.tgz' -print)
           test "${#TARBALLS[@]}" -eq 1
           TARBALL="${TARBALLS[0]}"
           tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"
@@ -504,7 +504,7 @@ jobs:
       - name: Publish the certified MCP tarball
         run: |
           set -euo pipefail
-          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'better-convex-mcp-*.tgz' -print)
+          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-mcp-*.tgz' -print)
           test "${#TARBALLS[@]}" -eq 1
           TARBALL="${TARBALLS[0]}"
           tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"

@@ -1,5 +1,5 @@
-import { ConvexCallError } from 'better-convex-nuxt/errors'
-import { serverConvex } from 'better-convex-nuxt/server'
+import { ConvexCallError } from '@lupinum/better-convex-nuxt/errors'
+import { serverConvex } from '@lupinum/better-convex-nuxt/server'
 import { makeFunctionReference } from 'convex/server'
 
 type ProbeOperation = 'query' | 'mutation' | 'action'

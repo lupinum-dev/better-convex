@@ -90,15 +90,18 @@ try {
   )
 
   const installedManifest = JSON.parse(
-    readFileSync(join(consumerRoot, 'node_modules/better-convex-vue/package.json'), 'utf8'),
+    readFileSync(
+      join(consumerRoot, 'node_modules/@lupinum/better-convex-vue/package.json'),
+      'utf8',
+    ),
   )
   if (
-    installedManifest.name !== 'better-convex-vue' ||
+    installedManifest.name !== '@lupinum/better-convex-vue' ||
     installedManifest.version !== candidate.version
   ) {
     throw new Error('Anonymous consumer installed an unexpected Vue package identity')
   }
-  candidate.assertInstalled(join(consumerRoot, 'node_modules/better-convex-vue'))
+  candidate.assertInstalled(join(consumerRoot, 'node_modules/@lupinum/better-convex-vue'))
   const graph = JSON.parse(
     execFileSync('pnpm', ['list', '--prod', '--depth', 'Infinity', '--json'], {
       cwd: consumerRoot,

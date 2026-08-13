@@ -1,4 +1,4 @@
-import { getConvexAuthProvider } from 'better-convex-nuxt/convex-auth'
+import { getConvexAuthProvider } from '@lupinum/better-convex-nuxt/convex-auth'
 import type { AuthConfig } from 'convex/server'
 
 export default {

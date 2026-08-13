@@ -1,14 +1,14 @@
 // Typed-client contract checked by `nuxi typecheck` against the packed
-// `better-convex-nuxt/auth-client` entry with the MODULE-GENERATED registry
+// `@lupinum/better-convex-nuxt/auth-client` entry with the MODULE-GENERATED registry
 // (`.nuxt/types/better-convex-nuxt-auth-client.d.ts`, produced by `nuxi prepare`
 // from this app's `convex-auth.ts`) active.
 import type { apiKeyClient } from '@better-auth/api-key/client'
-import type { BetterAuthClientOptions, BetterAuthClientPlugin } from 'better-auth/client'
 import type {
   BaseAuthClient,
   InferRegisteredConvexAuthClient,
   IntegratedAuthClient,
-} from 'better-convex-nuxt/auth-client'
+} from '@lupinum/better-convex-nuxt/auth-client'
+import type { BetterAuthClientOptions, BetterAuthClientPlugin } from 'better-auth/client'
 
 // --- tiny type-assertion kit ---
 type IsAny<T> = 0 extends 1 & T ? true : false

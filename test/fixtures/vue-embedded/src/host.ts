@@ -1,8 +1,8 @@
 import {
   createBetterConvexAttachment,
   type BetterConvexAttachment,
-} from 'better-convex-vue/embedded'
-import { ConvexCallError } from 'better-convex-vue/errors'
+} from '@lupinum/better-convex-vue/embedded'
+import { ConvexCallError } from '@lupinum/better-convex-vue/errors'
 import type { ConnectionState } from 'convex/browser'
 import { shallowRef } from 'vue'
 

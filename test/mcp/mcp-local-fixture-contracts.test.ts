@@ -97,7 +97,7 @@ describe('self-contained MCP OAuth fixture contracts', () => {
       "cp(join(root, 'package.json'), join(installedModule, 'package.json'))",
     )
     expect(fixtureSource).not.toContain("await symlink(root, installedModule, 'dir')")
-    expect(fixtureSource).toContain("name === 'better-convex-mcp' && mcpReleaseTarball")
+    expect(fixtureSource).toContain("name === '@lupinum/better-convex-mcp' && mcpReleaseTarball")
     expect(fixtureSource).not.toMatch(/(?:npm|pnpm)[^\n]+\bpack\b/u)
   })
 
@@ -131,7 +131,7 @@ describe('self-contained MCP OAuth fixture contracts', () => {
     expect(fixtureSource).toContain('productManifest.peerDependencies')
     expect(fixtureSource).toContain('starterManifest.dependencies')
     expect(fixtureSource).toContain('starterManifest.devDependencies')
-    expect(fixtureSource).toContain("dependencyNames.delete('better-convex-nuxt')")
+    expect(fixtureSource).toContain("dependencyNames.delete('@lupinum/better-convex-nuxt')")
     expect(fixtureSource).toContain('const installedSource = await realpath(source)')
     expect(fixtureSource).toContain("await symlink(installedSource, destination, 'dir')")
     expect(fixtureSource).toContain('await mkdir(dirname(destination),')
@@ -141,8 +141,8 @@ describe('self-contained MCP OAuth fixture contracts', () => {
   })
 
   it('builds uncommitted workspace dist before a non-release fixture resolves package exports', () => {
-    const mcpBuild = fixtureSource.indexOf("['--filter', 'better-convex-mcp', 'build']")
-    const vueBuild = fixtureSource.indexOf("['--filter', 'better-convex-vue', 'build']")
+    const mcpBuild = fixtureSource.indexOf("['--filter', '@lupinum/better-convex-mcp', 'build']")
+    const vueBuild = fixtureSource.indexOf("['--filter', '@lupinum/better-convex-vue', 'build']")
     const prepare = fixtureSource.indexOf("['exec', 'nuxt-module-build', 'prepare']")
     const build = fixtureSource.indexOf("['exec', 'nuxt-module-build', 'build']")
     const vueErrorsAccess = fixtureSource.indexOf(
@@ -156,7 +156,7 @@ describe('self-contained MCP OAuth fixture contracts', () => {
       "access(join(root, 'dist/runtime/convex-auth/component/convex.config.js'))",
     )
     const installedModule = fixtureSource.indexOf(
-      "const installedModule = join(modules, 'better-convex-nuxt')",
+      "const installedModule = join(modules, '@lupinum/better-convex-nuxt')",
     )
     const buildCall = fixtureSource.indexOf('await ensureWorkspacePackageBuild()')
     const workspaceCopy = fixtureSource.indexOf(
@@ -211,7 +211,7 @@ describe('self-contained MCP OAuth fixture contracts', () => {
 
   it('uses only the installed package signer for direct-transport client-IP evidence', () => {
     expect(fixtureSource).toContain(
-      'node_modules/better-convex-nuxt/dist/runtime/shared/client-ip.js',
+      'node_modules/@lupinum/better-convex-nuxt/dist/runtime/shared/client-ip.js',
     )
     expect(fixtureSource).toContain('installedClientIpModule.normalizeClientIp(ip)')
     expect(fixtureSource).toContain('installedClientIpModule.signClientIp(')

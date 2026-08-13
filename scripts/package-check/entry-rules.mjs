@@ -30,8 +30,8 @@ const NUXT_CHECKER_ENTRY_RULES = [
       runtimeExternalSpecifiers: ['@nuxt/kit', 'defu', 'node:fs'],
       typeExternalSpecifiers: [
         '@nuxt/schema',
-        'better-convex-vue',
-        'better-convex-vue/errors',
+        '@lupinum/better-convex-vue',
+        '@lupinum/better-convex-vue/errors',
         'convex/browser',
         'convex/server',
         'convex/values',
@@ -43,8 +43,8 @@ const NUXT_CHECKER_ENTRY_RULES = [
   {
     subpath: './errors',
     purity: {
-      runtimeExternalSpecifiers: ['better-convex-vue/errors'],
-      typeExternalSpecifiers: ['better-convex-vue/errors'],
+      runtimeExternalSpecifiers: ['@lupinum/better-convex-vue/errors'],
+      typeExternalSpecifiers: ['@lupinum/better-convex-vue/errors'],
     },
     packedProbe: probeErrorsEntry,
   },
@@ -116,8 +116,8 @@ const NUXT_CHECKER_ENTRY_RULES = [
       // directly importable by Node because server integrations can load it at
       // request time, outside Nuxt's transform pipeline. Lazy Nitro runtime
       // APIs remain valid for authenticated cache operations after import.
-      runtimeExternalSpecifiers: ['better-convex-vue/errors', 'convex/browser'],
-      typeExternalSpecifiers: ['better-convex-vue/errors', 'convex/server', 'h3'],
+      runtimeExternalSpecifiers: ['@lupinum/better-convex-vue/errors', 'convex/browser'],
+      typeExternalSpecifiers: ['@lupinum/better-convex-vue/errors', 'convex/server', 'h3'],
     },
     packedProbe: probeServerEntry,
   },

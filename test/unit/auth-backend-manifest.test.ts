@@ -2,9 +2,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  installBackendBinary,
   loadBackendManifest,
   selectBackendArtifact,
   validateBackendManifest,
@@ -101,5 +102,22 @@ describe('local Convex backend manifest', () => {
         platform: 'darwin',
       }),
     ).rejects.toThrow('pnpm check:auth-backend --install')
+  })
+
+  it('retries transient backend download failures without bypassing verification', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'bcn-backend-download-'))
+    temporaryDirectories.push(directory)
+    const manifest = await loadBackendManifest()
+    const fetchImplementation = vi.fn().mockRejectedValue(new Error('temporary network failure'))
+
+    await expect(
+      installBackendBinary(manifest, {
+        arch: 'arm64',
+        fetch: fetchImplementation,
+        filename: path.join(directory, 'convex-local-backend'),
+        platform: 'darwin',
+      }),
+    ).rejects.toThrow('backend archive download failed after 3 attempts')
+    expect(fetchImplementation).toHaveBeenCalledTimes(3)
   })
 })

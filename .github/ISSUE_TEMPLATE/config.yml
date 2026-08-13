@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support and questions
+    url: https://discord.gg/RPH6SeA36N
+    about: Ask for help in the Lupinum OSS Discord.
+  - name: Security report
+    url: https://github.com/lupinum-dev/better-convex-nuxt/security/advisories/new
+    about: Report a vulnerability privately.

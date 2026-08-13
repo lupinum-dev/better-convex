@@ -227,7 +227,7 @@ describe('packed artifact path classes', () => {
       writeArtifact(
         packageRoot,
         'package.json',
-        '{"name":"better-convex-nuxt","version":"1.0.0","bin":{"fixture":"dist/cli.mjs"}}\n',
+        '{"name":"@lupinum/better-convex-nuxt","version":"1.0.0","bin":{"fixture":"dist/cli.mjs"}}\n',
       )
       writeArtifact(packageRoot, 'dist/cli.mjs', '#!/usr/bin/env node\n')
       chmodSync(join(packageRoot, 'package.json'), 0o644)
@@ -357,7 +357,7 @@ describe('packed artifact path classes', () => {
         packageRoot,
         'package.json',
         JSON.stringify({
-          name: 'better-convex-nuxt',
+          name: '@lupinum/better-convex-nuxt',
           type: 'module',
           dependencies: {},
         }),

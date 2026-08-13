@@ -1,5 +1,5 @@
 // The "typed empty fallback": a built-in-style empty definition with no
 // additional plugins.
-import { defineConvexAuthClient } from 'better-convex-nuxt/auth-client'
+import { defineConvexAuthClient } from '@lupinum/better-convex-nuxt/auth-client'
 
 export default defineConvexAuthClient()

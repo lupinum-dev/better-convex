@@ -33,8 +33,8 @@ const workspacePackagesBlock =
 if (!/^\s+-\s+['"]?playground['"]?\s*(?:#.*)?$/mu.test(workspacePackagesBlock)) {
   failures.push('pnpm-workspace.yaml must list playground under packages')
 }
-if (playgroundPackage.dependencies?.['better-convex-nuxt'] !== 'workspace:*') {
-  failures.push('playground/package.json must declare better-convex-nuxt@workspace:*')
+if (playgroundPackage.dependencies?.['@lupinum/better-convex-nuxt'] !== 'workspace:*') {
+  failures.push('playground/package.json must declare @lupinum/better-convex-nuxt@workspace:*')
 }
 
 for (const manifestPath of manifestPaths) {
@@ -58,17 +58,19 @@ for (const manifestPath of manifestPaths) {
 for (const manifestPath of distributedAppManifests) {
   const appDir = manifestPath.slice(0, -'/package.json'.length)
   const packageJson = readPackage(manifestPath)
-  const expected = rootSpecifiers.get('better-convex-nuxt') ?? rootPackage.version
-  const actual = dependencySpecifier(packageJson, 'better-convex-nuxt')
+  const expected = rootSpecifiers.get('@lupinum/better-convex-nuxt') ?? rootPackage.version
+  const actual = dependencySpecifier(packageJson, '@lupinum/better-convex-nuxt')
   if (actual !== expected) {
-    failures.push(`${manifestPath} declares better-convex-nuxt@${actual}; expected ${expected}`)
+    failures.push(
+      `${manifestPath} declares @lupinum/better-convex-nuxt@${actual}; expected ${expected}`,
+    )
   }
 
   const workspacePath = resolve(rootDir, appDir, 'pnpm-workspace.yaml')
   if (existsSync(workspacePath)) {
     const workspace = readFileSync(workspacePath, 'utf8')
-    if (/better-convex-nuxt\s*:\s*(?:file|link|workspace):/u.test(workspace)) {
-      failures.push(`${appDir}/pnpm-workspace.yaml overrides better-convex-nuxt locally`)
+    if (/@lupinum\/better-convex-nuxt\s*:\s*(?:file|link|workspace):/u.test(workspace)) {
+      failures.push(`${appDir}/pnpm-workspace.yaml overrides @lupinum/better-convex-nuxt locally`)
     }
   }
 
@@ -81,18 +83,18 @@ for (const manifestPath of distributedAppManifests) {
   if (/\/private\/|\/Users\/|\/home\/|[A-Z]:\\\\Users\\\\/u.test(lock)) {
     failures.push(`${appDir}/pnpm-lock.yaml contains a source-machine absolute path`)
   }
-  if (/better-convex-nuxt@(?:file|link):/u.test(lock)) {
-    failures.push(`${appDir}/pnpm-lock.yaml resolves better-convex-nuxt from a local path`)
+  if (/@lupinum\/better-convex-nuxt@(?:file|link):/u.test(lock)) {
+    failures.push(`${appDir}/pnpm-lock.yaml resolves @lupinum/better-convex-nuxt from a local path`)
   }
   const lockedSpecifier = lock.match(
-    /\n {6}better-convex-nuxt:\n {8}specifier: ['"]?([^'"\n]+)['"]?/u,
+    /\n {6}'?@lupinum\/better-convex-nuxt'?:\n {8}specifier: ['"]?([^'"\n]+)['"]?/u,
   )?.[1]
   if (lockedSpecifier !== actual) {
     failures.push(
-      `${appDir}/pnpm-lock.yaml records better-convex-nuxt@${lockedSpecifier ?? '<missing>'}; manifest declares ${actual}`,
+      `${appDir}/pnpm-lock.yaml records @lupinum/better-convex-nuxt@${lockedSpecifier ?? '<missing>'}; manifest declares ${actual}`,
     )
   }
-  if (!lock.includes(`\n  better-convex-nuxt@${actual}:`)) {
+  if (!lock.includes(`\n  '@lupinum/better-convex-nuxt@${actual}':`)) {
     failures.push(`${appDir}/pnpm-lock.yaml has no registry package entry for ${actual}`)
   }
 }

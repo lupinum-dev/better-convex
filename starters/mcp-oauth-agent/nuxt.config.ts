@@ -1,5 +1,5 @@
 export default defineNuxtConfig({
-  modules: ['better-convex-nuxt'],
+  modules: ['@lupinum/better-convex-nuxt'],
   compatibilityDate: '2026-07-16',
   routeRules: {
     '/login': {

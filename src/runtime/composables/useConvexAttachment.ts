@@ -1,4 +1,4 @@
-import type { BetterConvexAttachment } from 'better-convex-vue/embedded'
+import type { BetterConvexAttachment } from '@lupinum/better-convex-vue/embedded'
 
 import { useNuxtApp } from '#app'
 

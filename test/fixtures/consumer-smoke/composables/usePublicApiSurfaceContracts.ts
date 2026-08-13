@@ -1,5 +1,5 @@
-import { defineConvexAuthClient } from 'better-convex-nuxt/auth-client'
-import type { ConvexAuthClientDefinition } from 'better-convex-nuxt/auth-client'
+import { defineConvexAuthClient } from '@lupinum/better-convex-nuxt/auth-client'
+import type { ConvexAuthClientDefinition } from '@lupinum/better-convex-nuxt/auth-client'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { GenericId } from 'convex/values'
 import type { ComputedRef, Ref } from 'vue'

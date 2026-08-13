@@ -45,7 +45,7 @@ export function validatePinnedOAuthProviderRuntime(
     .map((plugin, index) => (plugin.id === 'jwt' ? index : -1))
     .filter((index) => index >= 0)
   const convexIndexes = configuredPlugins
-    .map((plugin, index) => (plugin.id === 'better-convex-nuxt' ? index : -1))
+    .map((plugin, index) => (plugin.id === '@lupinum/better-convex-nuxt' ? index : -1))
     .filter((index) => index >= 0)
   const oauthIndexes = configuredPlugins
     .map((plugin, index) => (plugin.id === 'oauth-provider' ? index : -1))

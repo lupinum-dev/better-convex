@@ -24,9 +24,9 @@ describe('package artifact coordinate CLI', () => {
       'directory=.release-artifacts/nuxt/0.8.0-beta.40',
       'evidence=.release-artifacts/nuxt/0.8.0-beta.40/artifact.json',
       'package_id=nuxt',
-      'package_name=better-convex-nuxt',
-      'tarball=.release-artifacts/nuxt/0.8.0-beta.40/better-convex-nuxt-0.8.0-beta.40.tgz',
-      'tarball_filename=better-convex-nuxt-0.8.0-beta.40.tgz',
+      'package_name=@lupinum/better-convex-nuxt',
+      'tarball=.release-artifacts/nuxt/0.8.0-beta.40/lupinum-better-convex-nuxt-0.8.0-beta.40.tgz',
+      'tarball_filename=lupinum-better-convex-nuxt-0.8.0-beta.40.tgz',
       'version=0.8.0-beta.40',
     ])
   })
@@ -41,9 +41,9 @@ describe('package artifact coordinate CLI', () => {
       'directory=.release-artifacts/vue/0.8.0-beta.40',
       'evidence=.release-artifacts/vue/0.8.0-beta.40/artifact.json',
       'package_id=vue',
-      'package_name=better-convex-vue',
-      'tarball=.release-artifacts/vue/0.8.0-beta.40/better-convex-vue-0.8.0-beta.40.tgz',
-      'tarball_filename=better-convex-vue-0.8.0-beta.40.tgz',
+      'package_name=@lupinum/better-convex-vue',
+      'tarball=.release-artifacts/vue/0.8.0-beta.40/lupinum-better-convex-vue-0.8.0-beta.40.tgz',
+      'tarball_filename=lupinum-better-convex-vue-0.8.0-beta.40.tgz',
       'version=0.8.0-beta.40',
     ])
   })
@@ -58,9 +58,9 @@ describe('package artifact coordinate CLI', () => {
       'directory=.release-artifacts/mcp/0.1.0-beta.28',
       'evidence=.release-artifacts/mcp/0.1.0-beta.28/artifact.json',
       'package_id=mcp',
-      'package_name=better-convex-mcp',
-      'tarball=.release-artifacts/mcp/0.1.0-beta.28/better-convex-mcp-0.1.0-beta.28.tgz',
-      'tarball_filename=better-convex-mcp-0.1.0-beta.28.tgz',
+      'package_name=@lupinum/better-convex-mcp',
+      'tarball=.release-artifacts/mcp/0.1.0-beta.28/lupinum-better-convex-mcp-0.1.0-beta.28.tgz',
+      'tarball_filename=lupinum-better-convex-mcp-0.1.0-beta.28.tgz',
       'version=0.1.0-beta.28',
     ])
   })

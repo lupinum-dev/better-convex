@@ -17,7 +17,7 @@ import {
 function writePackedFixture(directory: string, moduleSuffix = '') {
   const packageRoot = join(directory, 'package')
   mkdirSync(join(packageRoot, 'dist/runtime/shared'), { recursive: true })
-  writeFileSync(join(packageRoot, 'package.json'), '{"name":"better-convex-nuxt"}\n')
+  writeFileSync(join(packageRoot, 'package.json'), '{"name":"@lupinum/better-convex-nuxt"}\n')
   writeFileSync(
     join(packageRoot, 'dist/module.mjs'),
     `import { getPackedRuntimeFingerprint } from '../dist/runtime/shared/release-fingerprint.js'\n${moduleSuffix}`,

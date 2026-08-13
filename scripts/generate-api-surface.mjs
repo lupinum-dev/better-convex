@@ -197,7 +197,7 @@ Regenerate this page with:
 node scripts/generate-api-surface.mjs
 \`\`\`
 
-## Nuxt Aliases
+## Nuxt aliases
 
 | Alias | Points To | Supported Contexts |
 | ----- | --------- | ------------------ |
@@ -213,7 +213,7 @@ import { api } from '#convex/api'
 
 Before Convex codegen creates \`convex/_generated/api\`, this alias points to a typed placeholder that keeps imports working and fails with a codegen message if accessed.
 
-## Published Package Entries
+## Published package entries
 
 | Import Specifier | Runtime Exports | Type Exports |
 | ---------------- | --------------- | ------------ |
@@ -228,10 +228,10 @@ import { serverConvex } from '#convex/server'
 \`createUserProjectionTriggers\` runs inside your \`convex/\` functions. Import it from the Better Auth integration subpath:
 
 \`\`\`ts
-import { createUserProjectionTriggers } from 'better-convex-nuxt/convex-auth'
+import { createUserProjectionTriggers } from '@lupinum/better-convex-nuxt/convex-auth'
 \`\`\`
 
-## Core Composable Auto-Imports
+## Core composable auto-imports
 
 These composables are available in every build. Omitting \`convex.auth\` keeps Better Auth, its proxy, its middleware, its page metadata, and \`useConvexAuth\` out of the application surface.
 
@@ -243,13 +243,13 @@ ${toRows(composableImports, composableMeta)}
 
 \`useConvexPaginatedQuery\` requires a positive \`initialNumItems\`. Its state is \`data\`, \`status\`, \`isLoading\`, \`canLoadMore\`, \`error\`, \`isStale\`, \`loadMore()\`, and \`refresh()\`.
 
-## Auth-Enabled Auto-Imports
+## Auth-enabled auto-imports
 
 Auth is an explicit opt-in:
 
 \`\`\`ts [nuxt.config.ts]
 export default defineNuxtConfig({
-  modules: ['better-convex-nuxt'],
+  modules: ['@lupinum/better-convex-nuxt'],
   convex: {
     auth: {
       origin: process.env.SITE_URL ?? 'http://localhost:3000',
@@ -259,7 +259,7 @@ export default defineNuxtConfig({
 })
 \`\`\`
 
-Only an auth-enabled build auto-imports the following API. Define its typed Better Auth client with \`defineConvexAuthClient\` from \`better-convex-nuxt/auth-client\`, then access the integrated client through \`useConvexAuth().client\`.
+Only an auth-enabled build auto-imports the following API. Define its typed Better Auth client with \`defineConvexAuthClient\` from \`@lupinum/better-convex-nuxt/auth-client\`, then access the integrated client through \`useConvexAuth().client\`.
 
 | Name | Kind | Purpose | Learn More |
 | ---- | ---- | ------- | ---------- |
@@ -267,7 +267,7 @@ ${toRows(authImports, composableMeta)}
 
 Render auth UI with ordinary Vue conditionals over \`status\`, \`isPending\`, and \`error\`. The module does not register auth UI components.
 
-## Server Auto-Imports
+## Server auto-imports
 
 | Name | Kind | Purpose | Learn More |
 | ---- | ---- | ------- | ---------- |

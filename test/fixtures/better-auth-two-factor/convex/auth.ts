@@ -1,11 +1,11 @@
-import { betterAuth } from 'better-auth'
 import {
   convexAuth,
   createAuthComponent,
   getConvexAuthProvider,
   requireAuthOrigin,
   type AuthCtx,
-} from 'better-convex-nuxt/convex-auth'
+} from '@lupinum/better-convex-nuxt/convex-auth'
+import { betterAuth } from 'better-auth'
 
 import { components } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'

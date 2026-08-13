@@ -115,7 +115,7 @@ function configureSharedJwks(
     .map((plugin, index) => (plugin.id === 'jwt' ? index : -1))
     .filter((index) => index >= 0)
   const convexIndexes = configuredPlugins
-    .map((plugin, index) => (plugin.id === 'better-convex-nuxt' ? index : -1))
+    .map((plugin, index) => (plugin.id === '@lupinum/better-convex-nuxt' ? index : -1))
     .filter((index) => index >= 0)
   if (
     jwtIndexes.length !== 1 ||
@@ -550,7 +550,7 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
   let providerRuntimeOptions: Record<string, unknown> | undefined
 
   return {
-    id: 'better-convex-nuxt',
+    id: '@lupinum/better-convex-nuxt',
     rateLimit: [
       {
         pathMatcher: (path) => path === '/convex/token',

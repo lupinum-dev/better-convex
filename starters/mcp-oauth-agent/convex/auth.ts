@@ -1,6 +1,4 @@
 import { oauthProvider, type OAuthOptions, type Scope } from '@better-auth/oauth-provider'
-import { betterAuth } from 'better-auth'
-import { jwt } from 'better-auth/plugins'
 import {
   convexAuth,
   createAuthComponent,
@@ -8,7 +6,9 @@ import {
   requireAuthOrigin,
   type AuthCtx,
   type AuthFunctions,
-} from 'better-convex-nuxt/convex-auth'
+} from '@lupinum/better-convex-nuxt/convex-auth'
+import { betterAuth } from 'better-auth'
+import { jwt } from 'better-auth/plugins'
 
 import { components, internal } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'

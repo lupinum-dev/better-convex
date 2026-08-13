@@ -5,7 +5,7 @@ import {
   type PaginatedQueryReference,
   type UseConvexPaginatedQueryOptions,
   type UseConvexPaginatedQueryState,
-} from 'better-convex-vue'
+} from '@lupinum/better-convex-vue'
 import type { PaginationResult } from 'convex/server'
 import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
