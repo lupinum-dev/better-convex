@@ -633,9 +633,11 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
         'npm view "$PACKAGE@$VERSION" dist.integrity',
       )
       expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain("grep -q '\\bE404\\b'")
-      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain(
-        'cat "$REGISTRY_ERROR" >&2 exit 1',
-      )
+      const rawPublishRun = (job.steps ?? []).find(
+        (step) => typeof step.run === 'string' && step.run.includes('npm publish '),
+      )?.run
+      expect(rawPublishRun).toBeTypeOf('string')
+      expect(rawPublishRun).toMatch(/cat "\$REGISTRY_ERROR" >&2(?:\r?\n|;)\s*exit 1\b/u)
       expect(job.permissions).toEqual({ actions: 'read', 'id-token': 'write' })
     }
 
@@ -651,6 +653,55 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     expect(githubReleaseRuns).toContain('gh release create')
     expect(githubReleaseRuns).toContain('gh release edit')
     expect(githubReleaseRuns).not.toMatch(/pnpm|npm install|node scripts\//u)
+  })
+
+  it('does not publish from any OIDC workflow branch after a non-404 registry error', () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'bcn-workflow-registry-error-'))
+    const fakeBin = join(temporaryDirectory, 'bin')
+    const fakeNpm = join(fakeBin, 'npm')
+    const executionLog = join(temporaryDirectory, 'executed.log')
+    mkdirSync(fakeBin)
+    writeFileSync(
+      fakeNpm,
+      `#!/bin/sh
+if [ "$1" = "view" ]; then
+  printf '{"error":{"code":"E500"}}\\n' >&2
+  exit 1
+fi
+printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
+`,
+    )
+    chmodSync(fakeNpm, 0o755)
+
+    try {
+      for (const jobId of ['publish-vue-staging', 'publish-nuxt-staging', 'publish-mcp-staging']) {
+        const rawRun = steps(workflow, jobId).find(
+          (step) => typeof step.run === 'string' && step.run.includes('npm publish '),
+        )?.run
+        if (typeof rawRun !== 'string') throw new Error(`Missing publish run for ${jobId}`)
+        const guardedBranch = rawRun.slice(rawRun.indexOf('REGISTRY_ERROR='))
+        const result = spawnSync('/bin/sh', ['-c', guardedBranch], {
+          cwd: temporaryDirectory,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            BCN_CANDIDATE_DIST_TAG: 'candidate-test',
+            BCN_FAKE_NPM_LOG: executionLog,
+            LOCAL_INTEGRITY: 'sha512-local',
+            PACKAGE: 'example-package',
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+            RUNNER_TEMP: temporaryDirectory,
+            TARBALL: 'example.tgz',
+            VERSION: '1.0.0',
+          },
+        })
+        expect(result.status, `${jobId}: ${result.stderr}`).toBe(1)
+        expect(result.stderr).toContain('E500')
+        expect(existsSync(executionLog)).toBe(false)
+      }
+    } finally {
+      rmSync(temporaryDirectory, { force: true, recursive: true })
+    }
   })
 
   it('makes exact-host cloud staging block publication', () => {
