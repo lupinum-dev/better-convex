@@ -160,6 +160,15 @@ export function selectProductionManifestContract(packageId, manifest) {
       `Production package manifest name ${String(manifest.name)} does not match ${descriptor.packageName}.`,
     )
   }
+  if (manifest.author !== 'Lupinum OG <info@lupinum.com> (https://lupinum.com)') {
+    throw new Error('Production package manifest must identify Lupinum OG as the package author.')
+  }
+  if (manifest.homepage !== 'https://better-convex-nuxt.lupinum.com') {
+    throw new Error('Production package manifest must link to the canonical documentation site.')
+  }
+  if (manifest.bugs?.url !== 'https://github.com/lupinum-dev/better-convex-nuxt/issues') {
+    throw new Error('Production package manifest must link to the canonical issue tracker.')
+  }
   for (const field of profile.requiredPackageFields) {
     if (!Object.hasOwn(manifest, field)) {
       throw new Error(`Production package manifest is missing required field ${field}.`)

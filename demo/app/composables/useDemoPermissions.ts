@@ -30,7 +30,7 @@ export async function useDemoPermissions() {
   const { data: context, status } = await useConvexQuery(api.auth.getPermissionContext, {})
 
   function can(permission: Permission, resource?: Resource): boolean {
-    return checkPermission(context.value, permission, resource)
+    return checkPermission(context.value ?? null, permission, resource)
   }
 
   return {
