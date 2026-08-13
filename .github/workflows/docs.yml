@@ -59,7 +59,7 @@ jobs:
             --no-progress
             --include-mail=false
             --accept 100..=103,200..=299,403
-            --scheme https
-            --scheme http
+            --base-url https://better-convex-nuxt.lupinum.com
+            --exclude '^https://better-convex-nuxt\.lupinum\.com/'
             docs/content
           fail: true
