@@ -21,6 +21,60 @@ describe('package license consistency', () => {
   })
 })
 
+describe('public README consistency', () => {
+  const readmes = ['README.md', 'packages/vue/README.md', 'packages/mcp/README.md']
+
+  it('keeps the public READMEs on the Lupinum structure', () => {
+    for (const file of readmes) {
+      const source = readFileSync(resolve(repositoryRoot, file), 'utf8')
+      const h1Count = (source.match(/^# /gmu)?.length ?? 0) + (source.match(/<h1\b/gu)?.length ?? 0)
+
+      expect(h1Count, file).toBe(1)
+      expect(source, file).toContain('width="128"')
+      expect(source, file).toContain('https://better-convex.lupinum.com')
+      expect(source, file).toContain('https://github.com/lupinum-dev/better-convex')
+      expect(source, file).toContain('MIT License')
+      expect(source, file).not.toMatch(/\b(?:TODO|TBD|PLACEHOLDER)\b/iu)
+
+      for (const match of source.matchAll(/^## (.+)$/gmu)) {
+        const heading = match[1]!.trim()
+        const unexpected = heading
+          .split(/\s+/u)
+          .slice(1)
+          .filter(
+            (word) =>
+              /^[A-Z][A-Za-z-]*$/u.test(word) &&
+              !['Better', 'Convex', 'MCP', 'Nuxt', 'Vue'].includes(word),
+          )
+        expect(unexpected, `${file}: ${heading}`).toEqual([])
+      }
+    }
+
+    const rootReadme = readFileSync(resolve(repositoryRoot, 'README.md'), 'utf8')
+    for (const badge of ['npm/v/', 'actions/workflows/ci.yml', 'license-MIT']) {
+      expect(rootReadme).toContain(badge)
+    }
+
+    const sections = [
+      'Why use Better Convex?',
+      'When to use it',
+      'Requirements',
+      'Installation',
+      'Quick start',
+      'Server calls and mutations',
+      'Authentication',
+      'Packages',
+      'Documentation',
+      'Contributing and development',
+      'Support and security',
+      'License',
+    ]
+    const positions = sections.map((section) => rootReadme.indexOf(`## ${section}`))
+    expect(positions.every((position) => position >= 0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((left, right) => left - right))
+  })
+})
+
 function cloneNuxtManifest() {
   return structuredClone(nuxtPackageJson)
 }

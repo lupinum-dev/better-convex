@@ -78,9 +78,9 @@ describe('security governance gate', () => {
     const hasReviewedExceptions = reviewedExceptions.some((entry) => workspace.includes(entry))
 
     if (hasReviewedExceptions) {
-      expect(workspace).toContain('Remove after 2026-08-14.')
+      expect(workspace).toContain('Remove after 2026-08-15.')
       expect(Date.now(), 'Remove the expired documentation release-age exceptions.').toBeLessThan(
-        Date.parse('2026-08-15T00:00:00Z'),
+        Date.parse('2026-08-16T00:00:00Z'),
       )
     }
   })

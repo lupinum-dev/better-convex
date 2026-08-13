@@ -1,19 +1,27 @@
-# @lupinum/better-convex-vue
+<p align="center"><img src="https://raw.githubusercontent.com/lupinum-dev/better-convex/main/docs/public/web-app-manifest-512x512.png" width="128" alt="Better Convex icon"></p>
 
-Identity-safe Convex lifecycle primitives for standalone Vue 3 applications.
-Use `@lupinum/better-convex-nuxt` instead when Nuxt should own SSR, generated aliases,
-server calls, or optional Better Auth integration.
+<h1 align="center">@lupinum/better-convex-vue</h1>
 
-## Install
+<p align="center">Use identity-safe Convex queries and calls in plain or embedded Vue applications.</p>
+
+> [!WARNING]
+> This package is beta software. Read the changelog before every upgrade.
+
+## Purpose
+
+Use this package when Vue must own the Convex client lifecycle. Use `@lupinum/better-convex-nuxt` when Nuxt must own SSR, Nitro calls, generated aliases, or optional Better Auth.
+
+## Installation
 
 ```bash
 pnpm add @lupinum/better-convex-vue@0.8.0-beta.40 convex@1.42.2 vue@^3.5.0
 ```
 
+## Quick start
+
 ```ts
 import { createApp } from 'vue'
 import { createBetterConvex } from '@lupinum/better-convex-vue'
-
 import App from './App.vue'
 
 createApp(App)
@@ -21,41 +29,26 @@ createApp(App)
   .mount('#app')
 ```
 
-Use generated Convex references directly inside `setup`:
+Use generated Convex references inside `setup`:
 
 ```ts
 import { useConvexMutation, useConvexQuery } from '@lupinum/better-convex-vue'
-import type { Id } from '../convex/_generated/dataModel'
 import { api } from '../convex/_generated/api'
 
-const notes = useConvexQuery(api.notes.list)
+const notes = useConvexQuery(api.notes.list, {})
 const rename = useConvexMutation(api.notes.rename)
-
-async function renameNote(id: Id<'notes'>, title: string) {
-  await rename({ id, title })
-}
 ```
 
-`notes.data.value === undefined` means no value has settled; a Convex `null`
-result remains valid data. Pass `'skip'` explicitly to skip a query. Mutations
-and actions reject normally, while their readonly `status`, `pending`, `data`,
-and `error` refs describe the newest invocation.
+## Exports and requirements
 
-Pagination requires an initial page size:
+The package requires Node.js 22.14 or newer, Vue 3.5, and Convex 1.42.2. Pass `'skip'` to pause a query. A Convex `null` result remains valid data.
 
-```ts
-import { useConvexPaginatedQuery } from '@lupinum/better-convex-vue'
-import type { Id } from '../convex/_generated/dataModel'
-import { api } from '../convex/_generated/api'
+Advanced hosts can use the `embedded` export. MCP App UIs can use the `mcp-app` export with its exact optional peers.
 
-function useWorkspaceNotes(workspaceId: Id<'workspaces'>) {
-  return useConvexPaginatedQuery(api.notes.listPaginated, { workspaceId }, { initialNumItems: 20 })
-}
-```
+## Documentation
 
-Advanced cross-bundle hosts use `@lupinum/better-convex-vue/embedded`. MCP App UIs use
-`@lupinum/better-convex-vue/mcp-app` and must additionally install its exact optional
-peers: `@modelcontextprotocol/ext-apps@1.7.5`,
-`@modelcontextprotocol/sdk@1.30.0`, and `zod@4.4.3`.
+Read the [Vue documentation](https://better-convex.lupinum.com/docs/get-started/choose-your-path).
 
-Documentation: <https://better-convex-nuxt.vercel.app>
+## Support, security, and license
+
+Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report vulnerabilities through the [private security process](https://github.com/lupinum-dev/better-convex/security/policy). This package uses the [MIT License](https://github.com/lupinum-dev/better-convex/blob/main/LICENSE).

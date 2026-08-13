@@ -2,6 +2,8 @@ packages:
   - playground
   - packages/*
 
+minimumReleaseAge: 1440
+
 linkWorkspacePackages: true
 shamefullyHoist: true
 strictPeerDependencies: true
