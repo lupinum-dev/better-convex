@@ -116,6 +116,19 @@ describe('contributor intake consistency', () => {
     ]) {
       expect(pullRequestTemplate).toContain(`## ${heading}`)
     }
+
+    const maintaining = readFileSync(resolve(repositoryRoot, 'MAINTAINING.md'), 'utf8')
+    for (const heading of [
+      'Quick fixes',
+      'Large changes',
+      'Dependencies',
+      'Releases',
+      'Roll back a defective release',
+      'Respond to a credential incident',
+      'Documentation',
+    ]) {
+      expect(maintaining).toContain(`## ${heading}`)
+    }
   })
 })
 
