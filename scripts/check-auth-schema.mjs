@@ -380,8 +380,9 @@ async function main() {
     symlinkSync(path.join(root, 'node_modules'), path.join(isolatedRoot, 'node_modules'), 'dir')
     for (const consumer of ['playground', 'test/fixtures/better-auth-local-component']) {
       const modules = path.join(isolatedRoot, consumer, 'node_modules')
-      mkdirSync(modules, { recursive: true })
-      symlinkSync(isolatedRoot, path.join(modules, '@lupinum/better-convex-nuxt'), 'dir')
+      const packageScope = path.join(modules, '@lupinum')
+      mkdirSync(packageScope, { recursive: true })
+      symlinkSync(isolatedRoot, path.join(packageScope, 'better-convex-nuxt'), 'dir')
     }
 
     run('pnpm', ['exec', 'jiti', 'scripts/generate-auth-schema.mjs', '--check'], isolatedRoot)
