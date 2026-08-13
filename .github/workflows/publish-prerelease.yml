@@ -1,12 +1,15 @@
 name: publish-prerelease
 
 on:
-  push:
-    tags:
-      - 'v*-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact Nuxt and Vue prerelease version
+        required: true
+        type: string
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-better-convex
   cancel-in-progress: false
 
 permissions:
@@ -14,7 +17,7 @@ permissions:
   contents: read
 
 env:
-  BCN_CANDIDATE_DIST_TAG: candidate-${{ github.run_id }}
+  BCN_RELEASE_DIST_TAG: next
   RELEASE_NODE_VERSION: '22.14.0'
   RELEASE_NPM_VERSION: '11.18.0'
 
@@ -31,6 +34,13 @@ jobs:
         with:
           node-version: ${{ env.RELEASE_NODE_VERSION }}
           package-manager-cache: false
+      - name: Require current main and the exact prerelease version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
+          case "$RELEASE_VERSION" in *-*) ;; *) exit 1 ;; esac
       - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
       - name: Run the disposable lock and package smoke
@@ -75,7 +85,7 @@ jobs:
         env:
           BCN_GOVERNANCE_MODE: solo-maintainer
           RELEASE_OWNER: ${{ github.actor }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: v${{ inputs.version }}
         run: pnpm check:security-governance --prerelease
 
       - run: pnpm install --frozen-lockfile
@@ -353,7 +363,7 @@ jobs:
           include-hidden-files: true
           retention-days: 90
 
-  publish-vue-staging:
+  publish-vue:
     needs: bcn-auth-staging
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -386,14 +396,14 @@ jobs:
             test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
             echo "$PACKAGE@$VERSION already contains the certified bytes."
           elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
-            npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+            npm publish "$TARBALL" --tag "$BCN_RELEASE_DIST_TAG" --access public --ignore-scripts --provenance
           else
             cat "$REGISTRY_ERROR" >&2
             exit 1
           fi
 
   registry-vue-nuxt-gate:
-    needs: publish-vue-staging
+    needs: publish-vue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -419,7 +429,7 @@ jobs:
           node scripts/check-nuxt-registry-vue-consumer.mjs
           --artifact-set "${{ steps.candidate_set.outputs.evidence }}"
 
-  publish-nuxt-staging:
+  publish-nuxt:
     needs: registry-vue-nuxt-gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -452,14 +462,14 @@ jobs:
             test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
             echo "$PACKAGE@$VERSION already contains the certified bytes."
           elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
-            npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+            npm publish "$TARBALL" --tag "$BCN_RELEASE_DIST_TAG" --access public --ignore-scripts --provenance
           else
             cat "$REGISTRY_ERROR" >&2
             exit 1
           fi
 
   registry-nuxt-gate:
-    needs: publish-nuxt-staging
+    needs: publish-nuxt
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -483,7 +493,7 @@ jobs:
       - name: Compare Nuxt registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package nuxt
 
-  publish-mcp-staging:
+  publish-mcp:
     needs: registry-nuxt-gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -516,14 +526,14 @@ jobs:
             test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
             echo "$PACKAGE@$VERSION already contains the certified bytes."
           elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
-            npm publish "$TARBALL" --tag "$BCN_CANDIDATE_DIST_TAG" --access public --ignore-scripts --provenance
+            npm publish "$TARBALL" --tag "$BCN_RELEASE_DIST_TAG" --access public --ignore-scripts --provenance
           else
             cat "$REGISTRY_ERROR" >&2
             exit 1
           fi
 
   registry-mcp-gate:
-    needs: publish-mcp-staging
+    needs: publish-mcp
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -547,24 +557,20 @@ jobs:
       - name: Compare MCP registry bytes with the approved candidate
         run: node scripts/compare-registry-package.mjs --package mcp
 
-  staged-candidate-set-complete:
+  published-package-set-complete:
     needs: [registry-vue-nuxt-gate, registry-nuxt-gate, registry-mcp-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
     steps:
-      - name: Record the safe promotion boundary
-        run: >-
-          echo "All registry bytes match under ${BCN_CANDIDATE_DIST_TAG}.
-          Shared user-facing dist-tags require a separate interactive maintainer action
-          after reviewing the complete set; trusted-publishing OIDC cannot mutate dist-tags."
+      - name: Record the verified package set
+        run: echo "All registry bytes and provenance match under ${BCN_RELEASE_DIST_TAG}."
 
   github-prerelease:
-    needs: staged-candidate-set-complete
+    needs: published-package-set-complete
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    environment: npm
     permissions:
       contents: write
     steps:
@@ -576,7 +582,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="$GITHUB_REF_NAME"
+          TAG="v${{ inputs.version }}"
           VERSION="${TAG#v}"
           EXPECTED_VERSION=$(node -e "const p = require('./package.json'); process.stdout.write(p.version)")
           test "$VERSION" = "$EXPECTED_VERSION"
@@ -589,5 +595,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
           else
-            gh release create "$TAG" --verify-tag --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
           fi

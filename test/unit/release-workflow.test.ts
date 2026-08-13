@@ -56,6 +56,7 @@ interface WorkflowJob {
 interface Workflow {
   env?: Record<string, unknown>
   jobs?: Record<string, WorkflowJob>
+  on?: Record<string, unknown>
   permissions?: Record<string, unknown>
 }
 
@@ -296,87 +297,6 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     )
     expect(comparator.status).toBe(1)
     expect(comparator.stderr).toContain('Unknown package certification descriptor')
-
-    const publisher = spawnSync(
-      process.execPath,
-      ['scripts/publish-registry-package.mjs', '--package', 'unreviewed', '--tag', 'candidate-123'],
-      { cwd: root, encoding: 'utf8' },
-    )
-    expect(publisher.status).toBe(1)
-    expect(publisher.stderr).toContain('Unknown package certification descriptor')
-
-    const sharedTagPublisher = spawnSync(
-      process.execPath,
-      ['scripts/publish-registry-package.mjs', '--package', 'vue', '--tag', 'next-staging'],
-      { cwd: root, encoding: 'utf8' },
-    )
-    expect(sharedTagPublisher.status).toBe(1)
-    expect(sharedTagPublisher.stderr).toContain('requires a workflow-run-specific candidate tag')
-  })
-
-  it('publishes only after an authoritative registry E404 and resumes exact versions', () => {
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'bcn-registry-publish-'))
-    const fakeBin = join(temporaryDirectory, 'bin')
-    const fakeNpm = join(fakeBin, 'npm')
-    const executionLog = join(temporaryDirectory, 'executed.log')
-    const version = (JSON.parse(read('packages/vue/package.json')) as { version: string }).version
-    mkdirSync(fakeBin)
-    writeFileSync(
-      fakeNpm,
-      `#!/bin/sh
-if [ "$1" = "view" ]; then
-  if [ "$BCN_FAKE_NPM_MODE" = "present" ]; then
-    printf '"%s"\\n' "$BCN_FAKE_NPM_VERSION"
-    exit 0
-  fi
-  if [ "$BCN_FAKE_NPM_MODE" = "missing" ]; then
-    printf '{"error":{"code":"E404"}}\\n' >&2
-    exit 1
-  fi
-  printf '{"error":{"code":"E500"}}\\n' >&2
-  exit 1
-fi
-printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
-`,
-    )
-    chmodSync(fakeNpm, 0o755)
-
-    const runPublisher = (mode: string) =>
-      spawnSync(
-        process.execPath,
-        ['scripts/publish-registry-package.mjs', '--package', 'vue', '--tag', 'candidate-123'],
-        {
-          cwd: root,
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            BCN_FAKE_NPM_LOG: executionLog,
-            BCN_FAKE_NPM_MODE: mode,
-            BCN_FAKE_NPM_VERSION: version,
-            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
-          },
-        },
-      )
-
-    try {
-      const present = runPublisher('present')
-      expect(present.status, present.stderr).toBe(0)
-      expect(present.stdout).toContain('publication is skipped')
-      expect(existsSync(executionLog)).toBe(false)
-
-      const unavailable = runPublisher('unavailable')
-      expect(unavailable.status).toBe(1)
-      expect(unavailable.stderr).toContain('without an authoritative E404')
-      expect(existsSync(executionLog)).toBe(false)
-
-      const missing = runPublisher('missing')
-      expect(missing.status, missing.stderr).toBe(0)
-      expect(readFileSync(executionLog, 'utf8')).toContain(
-        `publish ${resolve(root, `.release-artifacts/vue/${version}/lupinum-better-convex-vue-${version}.tgz`)} --tag candidate-123 --access public --registry https://registry.npmjs.org`,
-      )
-    } finally {
-      rmSync(temporaryDirectory, { force: true, recursive: true })
-    }
   })
 
   it('keeps CI source-only and package previews non-authoritative', () => {
@@ -416,18 +336,18 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'build-candidates': ['staging-readiness'],
       'verify-candidates': ['build-candidates'],
       'bcn-auth-staging': ['verify-candidates'],
-      'publish-vue-staging': ['bcn-auth-staging'],
-      'registry-vue-nuxt-gate': ['publish-vue-staging'],
-      'publish-nuxt-staging': ['registry-vue-nuxt-gate'],
-      'registry-nuxt-gate': ['publish-nuxt-staging'],
-      'publish-mcp-staging': ['registry-nuxt-gate'],
-      'registry-mcp-gate': ['publish-mcp-staging'],
-      'staged-candidate-set-complete': [
+      'publish-vue': ['bcn-auth-staging'],
+      'registry-vue-nuxt-gate': ['publish-vue'],
+      'publish-nuxt': ['registry-vue-nuxt-gate'],
+      'registry-nuxt-gate': ['publish-nuxt'],
+      'publish-mcp': ['registry-nuxt-gate'],
+      'registry-mcp-gate': ['publish-mcp'],
+      'published-package-set-complete': [
         'registry-vue-nuxt-gate',
         'registry-nuxt-gate',
         'registry-mcp-gate',
       ],
-      'github-prerelease': ['staged-candidate-set-complete'],
+      'github-prerelease': ['published-package-set-complete'],
     })
   })
 
@@ -506,11 +426,11 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     const postMintJobs = [
       'verify-candidates',
       'bcn-auth-staging',
-      'publish-vue-staging',
+      'publish-vue',
       'registry-vue-nuxt-gate',
-      'publish-nuxt-staging',
+      'publish-nuxt',
       'registry-nuxt-gate',
-      'publish-mcp-staging',
+      'publish-mcp',
       'registry-mcp-gate',
     ]
     const postMintRuns = postMintJobs.flatMap((jobId) => runs(workflow, jobId))
@@ -607,17 +527,28 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     }
   })
 
-  it('publishes only through three protected OIDC jobs under a run-specific tag', () => {
+  it('publishes only through three protected OIDC jobs under next', () => {
+    expect(workflow.on).toEqual({
+      workflow_dispatch: {
+        inputs: {
+          version: {
+            description: 'Exact Nuxt and Vue prerelease version',
+            required: true,
+            type: 'string',
+          },
+        },
+      },
+    })
     const oidcJobs = Object.entries(workflow.jobs ?? {})
       .filter(([, job]) => job.permissions?.['id-token'] === 'write')
       .map(([jobId, job]) => ({ jobId, job }))
     expect(oidcJobs.map(({ jobId }) => jobId)).toEqual([
-      'publish-vue-staging',
-      'publish-nuxt-staging',
-      'publish-mcp-staging',
+      'publish-vue',
+      'publish-nuxt',
+      'publish-mcp',
     ])
     expect(oidcJobs.every(({ job }) => job.environment === 'npm')).toBe(true)
-    expect(workflow.env?.BCN_CANDIDATE_DIST_TAG).toBe('candidate-${{ github.run_id }}')
+    expect(workflow.env?.BCN_RELEASE_DIST_TAG).toBe('next')
 
     const publishRuns = oidcJobs.flatMap(({ job }) =>
       (job.steps ?? [])
@@ -628,7 +559,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     expect(
       publishRuns.every(
         (run) =>
-          run.includes('--tag "$BCN_CANDIDATE_DIST_TAG"') &&
+          run.includes('--tag "$BCN_RELEASE_DIST_TAG"') &&
           run.includes('--ignore-scripts') &&
           run.includes('--provenance'),
       ),
@@ -659,10 +590,11 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     expect(structuredWorkflow).not.toContain('NPM_TOKEN')
 
     const githubRelease = requireJob(workflow, 'github-prerelease')
-    expect(githubRelease.environment).toBe('npm')
+    expect(githubRelease.environment).toBeUndefined()
     expect(githubRelease.permissions).toEqual({ contents: 'write' })
     const githubReleaseRuns = runs(workflow, 'github-prerelease').join('\n')
     expect(githubReleaseRuns).toContain('gh release create')
+    expect(githubReleaseRuns).toContain('--target "$GITHUB_SHA"')
     expect(githubReleaseRuns).toContain('gh release edit')
     expect(githubReleaseRuns).not.toMatch(/pnpm|npm install|node scripts\//u)
   })
@@ -686,7 +618,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     chmodSync(fakeNpm, 0o755)
 
     try {
-      for (const jobId of ['publish-vue-staging', 'publish-nuxt-staging', 'publish-mcp-staging']) {
+      for (const jobId of ['publish-vue', 'publish-nuxt', 'publish-mcp']) {
         const rawRun = steps(workflow, jobId).find(
           (step) => typeof step.run === 'string' && step.run.includes('npm publish '),
         )?.run
@@ -697,7 +629,7 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
           encoding: 'utf8',
           env: {
             ...process.env,
-            BCN_CANDIDATE_DIST_TAG: 'candidate-test',
+            BCN_RELEASE_DIST_TAG: 'next',
             BCN_FAKE_NPM_LOG: executionLog,
             LOCAL_INTEGRITY: 'sha512-local',
             PACKAGE: 'example-package',
@@ -771,6 +703,6 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
     expect(deployIndex).toBeGreaterThanOrEqual(0)
     expect(deployIndex).toBeLessThan(proofIndex)
     expect(stagingRuns.join('\n')).not.toContain('retention-days:')
-    expect(needs(workflow, 'publish-vue-staging')).toEqual(['bcn-auth-staging'])
+    expect(needs(workflow, 'publish-vue')).toEqual(['bcn-auth-staging'])
   })
 })

@@ -20,9 +20,9 @@ export function validateSecurityGovernance(input) {
   if (governanceMode !== 'solo-maintainer') {
     failures.push('BCN_GOVERNANCE_MODE must be solo-maintainer for this prerelease')
   }
-  if (!releaseOwner) failures.push('RELEASE_OWNER must identify the tag actor')
+  if (!releaseOwner) failures.push('RELEASE_OWNER must identify the release actor')
   if (/(?:\[bot\]|github-actions)$/iu.test(releaseOwner)) {
-    failures.push('RELEASE_OWNER must identify a human tag actor')
+    failures.push('RELEASE_OWNER must identify a human release actor')
   }
   if (!commitAuthor) failures.push('the checked-out release commit must have an author')
 

@@ -22,7 +22,7 @@ describe('security governance gate', () => {
     expect(validateSecurityGovernance(validInput)).toEqual([])
   })
 
-  it('fails closed without the exact governance mode or a human tag actor', () => {
+  it('fails closed without the exact governance mode or a human release actor', () => {
     expect(
       validateSecurityGovernance({
         ...validInput,
@@ -34,16 +34,16 @@ describe('security governance gate', () => {
         ...validInput,
         releaseOwner: 'github-actions[bot]',
       }),
-    ).toEqual(['RELEASE_OWNER must identify a human tag actor'])
+    ).toEqual(['RELEASE_OWNER must identify a human release actor'])
     expect(validateSecurityGovernance({ ...validInput, releaseOwner: ' ' })).toEqual([
-      'RELEASE_OWNER must identify the tag actor',
+      'RELEASE_OWNER must identify the release actor',
     ])
     expect(validateSecurityGovernance({ ...validInput, commitAuthor: ' ' })).toEqual([
       'the checked-out release commit must have an author',
     ])
   })
 
-  it('keeps prerelease tag validation in the direct workflow script', () => {
+  it('keeps prerelease release identity validation in the direct workflow script', () => {
     expect(validatePrereleaseIdentity('v0.7.0-beta.0', '0.7.0-beta.0')).toEqual([])
     expect(validatePrereleaseIdentity('v0.7.0', '0.7.0')).not.toEqual([])
     expect(validatePrereleaseIdentity('v0.7.0-beta.1', '0.7.0-beta.0')).not.toEqual([])
@@ -61,7 +61,7 @@ describe('security governance gate', () => {
     expect(gate?.env).toEqual({
       BCN_GOVERNANCE_MODE: 'solo-maintainer',
       RELEASE_OWNER: '${{ github.actor }}',
-      RELEASE_TAG: '${{ github.ref_name }}',
+      RELEASE_TAG: 'v${{ inputs.version }}',
     })
 
     const scheduled = readFileSync(resolve(root, '.github/workflows/security-extended.yml'), 'utf8')

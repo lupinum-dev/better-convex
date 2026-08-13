@@ -17,10 +17,9 @@ The order is fixed:
 5. Verify only those artifact bytes and clean consumers.
 6. Deploy the exact Nuxt artifact to the dedicated Vercel staging host.
 7. Run the protected Convex/Vercel proof and prove complete cleanup.
-8. Publish through npm trusted publishing under a run-specific candidate tag.
+8. Publish through npm trusted publishing under `next`.
 9. Download each package from npm and compare it with the certified SRI.
-10. Stop before moving `latest`, `next`, or another shared dist-tag.
-11. Create or update the GitHub prerelease from the matching changelog entry.
+10. Create the Git tag and GitHub prerelease from the matching changelog entry.
 
 Source certification never runs after immutable minting. Artifact verification
 never invokes the full source suite. A generic Vercel preview is a developer
@@ -51,9 +50,10 @@ Linux jobs run the core, auth, end-to-end, and secret-scanning lanes in
 parallel. `release-gate` is a small fail-closed aggregator: it succeeds only
 when every lane succeeds.
 
-The protected tag workflow reads GitHub's check-run API and requires a
-successful `release-gate` produced by GitHub Actions for the exact tagged
-commit. It does not rerun those source suites.
+The protected workflow is dispatched from `main` with the exact Nuxt and Vue
+prerelease version. It reads GitHub's check-run API and requires a successful
+`release-gate` produced by GitHub Actions for the exact dispatch commit. It does
+not rerun those source suites.
 
 The source lanes are defined by `scripts/release-source-certification.mjs`:
 
@@ -164,12 +164,9 @@ dependencies, or run repository code.
 
 Separate jobs without an OIDC token download each registry package and compare
 it with the certified artifact. The Vue gate also installs the unchanged Nuxt
-artifact with the registry Vue package in a clean consumer. Publication uses a
-run-specific `candidate-<run-id>` tag.
-
-No shared user-facing dist-tag is moved by this workflow. After all three
-registry comparisons pass, a maintainer may separately move the intended
-shared tag. Never move a shared tag before exact registry equality is proven.
+artifact with the registry Vue package in a clean consumer. Prerelease
+publication uses `next`. A stable workflow may use `latest` only after a
+separate stable-release review.
 
 ## Failure, retry, and version rules
 
@@ -204,10 +201,11 @@ were actually published to npm.
 
 ## Package previews
 
-`.github/workflows/package-preview.yml` builds a disposable Vue/Nuxt set and
-uploads the exact Nuxt tarball to pkg.pr.new for same-repository pull requests.
-It does not run source certification, create release authority, publish to npm,
-or gate a release. Vercel's generic PR previews are likewise non-authoritative.
+`.github/workflows/package-preview.yml` builds disposable Nuxt, Vue, and MCP
+tarballs and uploads all three exact artifacts to pkg.pr.new for
+same-repository pull requests. It does not run source certification, create
+release authority, publish to npm, or gate a release. Vercel's generic PR
+previews are likewise non-authoritative.
 
 ## Public history
 
@@ -215,10 +213,10 @@ Run `pnpm changelog` to draft release notes from Conventional Commits. Review
 the generated entry before it enters the release pull request. Changelogen does
 not publish, push, tag, or own the three-package version family.
 
-The tag must match the Nuxt package version, and `CHANGELOG.md` must contain a
-matching `## v<version>` section. After registry equality succeeds, the
-workflow creates or updates the GitHub prerelease from that section. The job
-runs no package install and no repository script.
+The dispatch version must match the Nuxt package version, and `CHANGELOG.md`
+must contain a matching `## v<version>` section. After registry equality
+succeeds, the workflow creates the Git tag and GitHub prerelease from that
+section. The job runs no package install and no repository script.
 
 The release pull request is squash-merged after the hosted source certification
 is green. Public launch notes name only the final published coordinates.
