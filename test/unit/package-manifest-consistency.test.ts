@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -111,6 +112,20 @@ describe('public README consistency', () => {
 
 describe('contributor intake consistency', () => {
   it('keeps documentation reports, release notes, and risk visible', () => {
+    const trackedFiles = new Set(
+      execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8' })
+        .trim()
+        .split('\n'),
+    )
+    for (const path of [
+      '.github/ISSUE_TEMPLATE/bug.md',
+      '.github/ISSUE_TEMPLATE/config.yml',
+      '.github/ISSUE_TEMPLATE/documentation.md',
+      '.github/ISSUE_TEMPLATE/proposal.md',
+      '.github/pull_request_template.md',
+    ]) {
+      expect(trackedFiles.has(path), `${path} must be tracked`).toBe(true)
+    }
     expect(
       readFileSync(resolve(repositoryRoot, '.github/ISSUE_TEMPLATE/documentation.md'), 'utf8'),
     ).toContain('name: Documentation report')
@@ -128,6 +143,12 @@ describe('contributor intake consistency', () => {
     ]) {
       expect(pullRequestTemplate).toContain(`## ${heading}`)
     }
+    expect(pullRequestTemplate).toContain(
+      '- [ ] I ran `pnpm verify`, or I explained why it does not apply.',
+    )
+    expect(pullRequestTemplate).toContain(
+      '- [ ] I updated versions, migration guidance, and compatibility notes when the public contract changed.',
+    )
 
     const maintaining = readFileSync(resolve(repositoryRoot, 'MAINTAINING.md'), 'utf8')
     for (const heading of [
@@ -140,6 +161,21 @@ describe('contributor intake consistency', () => {
       'Documentation',
     ]) {
       expect(maintaining).toContain(`## ${heading}`)
+    }
+  })
+})
+
+describe('documentation service configuration', () => {
+  it('keeps analytics, feedback, support, and legal links configured', () => {
+    const config = readFileSync(resolve(repositoryRoot, 'docs/app/app.config.ts'), 'utf8')
+    for (const marker of [
+      "plausible: { scriptId: '03E34LSIgT0kGko07f39A' }",
+      'feedback: { enabled: true }',
+      'https://discord.gg/RPH6SeA36N',
+      'https://lupinum.com/impressum',
+      'https://lupinum.com/datenschutz',
+    ]) {
+      expect(config).toContain(marker)
     }
   })
 })
