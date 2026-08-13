@@ -39,6 +39,7 @@ interface WorkflowStep {
   run?: unknown
   uses?: unknown
   with?: Record<string, unknown>
+  'working-directory'?: unknown
 }
 
 interface WorkflowJob {
@@ -390,6 +391,16 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'auth-real-backend',
       'deployable-app-audits',
     ])
+  })
+
+  it('installs the independent documentation workspace before core certification', () => {
+    const documentationInstall = steps(ciWorkflow, 'compatibility').find(
+      (step) => step.name === 'Install documentation dependencies',
+    )
+    expect(documentationInstall).toMatchObject({
+      'working-directory': 'docs',
+      run: 'corepack pnpm@10.23.0 install --frozen-lockfile --ignore-scripts',
+    })
   })
 
   it('models the exact blocking publication DAG', () => {
