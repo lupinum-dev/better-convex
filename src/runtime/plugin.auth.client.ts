@@ -1,5 +1,5 @@
+import { createBetterConvex } from '@lupinum/better-convex-vue'
 import { createAuthClient } from 'better-auth/vue'
-import { createBetterConvex } from 'better-convex-vue'
 import { computed } from 'vue'
 
 import { clearNuxtData, defineNuxtPlugin, useRuntimeConfig, useState } from '#app'

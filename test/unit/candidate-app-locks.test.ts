@@ -144,7 +144,7 @@ describe('candidate app lock contract', () => {
       copyLocks(fixture)
       const demoPath = join(fixture, 'demo/pnpm-lock.yaml')
       const demo = parse(readFileSync(demoPath, 'utf8'))
-      demo.importers['.'].dependencies['better-convex-nuxt'].version = '9.9.9'
+      demo.importers['.'].dependencies['@lupinum/better-convex-nuxt'].version = '9.9.9'
       writeFileSync(demoPath, stringify(demo))
       expect(() => assertCandidateAppLocksBindArtifact(nuxt, { repositoryRoot: fixture })).toThrow(
         'direct importer and exact snapshot',
@@ -152,9 +152,10 @@ describe('candidate app lock contract', () => {
 
       copyFileSync(join(root, 'demo/pnpm-lock.yaml'), demoPath)
       const companion = parse(readFileSync(demoPath, 'utf8'))
-      const nuxtResolution = companion.importers['.'].dependencies['better-convex-nuxt'].version
-      companion.snapshots[`better-convex-nuxt@${nuxtResolution}`].dependencies[
-        'better-convex-vue'
+      const nuxtResolution =
+        companion.importers['.'].dependencies['@lupinum/better-convex-nuxt'].version
+      companion.snapshots[`@lupinum/better-convex-nuxt@${nuxtResolution}`].dependencies[
+        '@lupinum/better-convex-vue'
       ] = '9.9.9'
       writeFileSync(demoPath, stringify(companion))
       expect(() => assertCandidateAppLocksBindArtifact(vue, { repositoryRoot: fixture })).toThrow(
@@ -164,7 +165,7 @@ describe('candidate app lock contract', () => {
       copyFileSync(join(root, 'demo/pnpm-lock.yaml'), demoPath)
       const mcpPath = join(fixture, 'starters/mcp-oauth-agent/pnpm-lock.yaml')
       const mcpLock = parse(readFileSync(mcpPath, 'utf8'))
-      mcpLock.importers['.'].dependencies['better-convex-mcp'].version = '9.9.9'
+      mcpLock.importers['.'].dependencies['@lupinum/better-convex-mcp'].version = '9.9.9'
       writeFileSync(mcpPath, stringify(mcpLock))
       expect(() => assertCandidateAppLocksBindArtifact(mcp, { repositoryRoot: fixture })).toThrow(
         'direct importer and exact snapshot',
@@ -197,7 +198,7 @@ describe('candidate app lock contract', () => {
         ),
       )
       expect(() => assertCandidateAppLocksBindArtifact(nuxt, { repositoryRoot: fixture })).toThrow(
-        'does not bind better-convex-nuxt@',
+        'does not bind @lupinum/better-convex-nuxt@',
       )
     } finally {
       rmSync(fixture, { force: true, recursive: true })

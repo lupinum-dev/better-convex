@@ -2,7 +2,7 @@ import {
   useConvexMutation as useVueConvexMutation,
   type UseConvexCall,
   type UseConvexMutationOptions as VueMutationOptions,
-} from 'better-convex-vue'
+} from '@lupinum/better-convex-vue'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'

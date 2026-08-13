@@ -1,6 +1,6 @@
+import { createBetterConvex } from '@lupinum/better-convex-vue'
+import { createBetterConvexAttachment } from '@lupinum/better-convex-vue/embedded'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { createBetterConvex } from 'better-convex-vue'
-import { createBetterConvexAttachment } from 'better-convex-vue/embedded'
 import { defineComponent, h, nextTick, watch, type ComponentPublicInstance } from 'vue'
 
 import { useNuxtApp, useRuntimeConfig, useState } from '#imports'

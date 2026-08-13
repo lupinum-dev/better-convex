@@ -21,7 +21,7 @@ const repositoryUrl = 'https://github.com/lupinum-dev/better-convex-nuxt'
 const reviewedDescriptors = [
   {
     id: 'nuxt',
-    packageName: 'better-convex-nuxt',
+    packageName: '@lupinum/better-convex-nuxt',
     packageDirectory: '.',
     profiles: {
       build: 'nuxt-module-build',
@@ -35,7 +35,7 @@ const reviewedDescriptors = [
   },
   {
     id: 'vue',
-    packageName: 'better-convex-vue',
+    packageName: '@lupinum/better-convex-vue',
     packageDirectory: 'packages/vue',
     profiles: {
       build: 'vue-unbuild',
@@ -49,7 +49,7 @@ const reviewedDescriptors = [
   },
   {
     id: 'mcp',
-    packageName: 'better-convex-mcp',
+    packageName: '@lupinum/better-convex-mcp',
     packageDirectory: 'packages/mcp',
     profiles: {
       build: 'mcp-unbuild',

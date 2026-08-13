@@ -38,7 +38,7 @@ const reviewedPackageManifest = JSON.parse(
 
 const sbomProfiles = Object.freeze({
   'nuxt-production-dependencies': Object.freeze({
-    componentPropertyNamespace: 'better-convex-nuxt',
+    componentPropertyNamespace: '@lupinum/better-convex-nuxt',
     generatorName: 'better-convex-nuxt-sbom-generator',
     requiredComponents: Object.freeze([
       ...new Set([...requiredStatefulPeerNames, ...requiredPhysicalRuntimeNames, 'convex-helpers']),
@@ -50,12 +50,12 @@ const sbomProfiles = Object.freeze({
     ),
   }),
   'vue-production-dependencies': Object.freeze({
-    componentPropertyNamespace: 'better-convex-vue',
+    componentPropertyNamespace: '@lupinum/better-convex-vue',
     generatorName: 'better-convex-vue-sbom-generator',
     requiredComponents: Object.freeze(['convex', 'ohash', 'vue']),
   }),
   'mcp-production-dependencies': Object.freeze({
-    componentPropertyNamespace: 'better-convex-mcp',
+    componentPropertyNamespace: '@lupinum/better-convex-mcp',
     generatorName: 'better-convex-mcp-sbom-generator',
     requiredComponents: Object.freeze(['@modelcontextprotocol/server']),
   }),

@@ -586,7 +586,7 @@ export function probeAuthClientTyping(ctx) {
  * `/server` probe: installs the packed tarball into the committed
  * `test/fixtures/server-consumer` fixture and runs typechecking plus a
  * production Nitro lifecycle against a deterministic local Convex-protocol
- * server. This proves the real `better-convex-nuxt/server` subpath resolves
+ * server. This proves the real `@lupinum/better-convex-nuxt/server` subpath resolves
  * from the packed package and preserves query/mutation/action error boundaries.
  */
 export function probeServerEntry(ctx) {

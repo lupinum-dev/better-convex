@@ -23,7 +23,7 @@ const normalizedGuide = guide.replace(/\s+/gu, ' ')
 
 describe('MCP package documentation', () => {
   it('states the exact prerelease package and final protocol authority', () => {
-    expect(guide).toContain('`better-convex-mcp`')
+    expect(guide).toContain('`@lupinum/better-convex-mcp`')
     expect(guide).toContain(`\`${mcpManifest.version}\``)
     expect(guide).toContain(
       `\`@modelcontextprotocol/server@${mcpManifest.dependencies['@modelcontextprotocol/server']}\``,
@@ -33,7 +33,7 @@ describe('MCP package documentation', () => {
     )
     expect(normalizedGuide).toContain('The protocol is stable; this integration remains prerelease')
     expect(guide).toContain(
-      'better-convex-mcp@0.1.0-beta.28 @modelcontextprotocol/server@2.0.0 zod@4.4.3',
+      '@lupinum/better-convex-mcp@0.1.0-beta.28 @modelcontextprotocol/server@2.0.0 zod@4.4.3',
     )
   })
 
@@ -61,7 +61,7 @@ describe('MCP package documentation', () => {
     )
     expect(guide).toContain('automatic Convex-function exposure')
     expect(guide).toContain('prompts, Tasks, or a URL approval workflow')
-    expect(normalizedGuide).toContain('client entry lives in `better-convex-vue/mcp-app`')
+    expect(normalizedGuide).toContain('client entry lives in `@lupinum/better-convex-vue/mcp-app`')
     expect(normalizedGuide).toContain('adds no server capability or authority')
     expect(guide).toContain('second Nitro MCP topology')
     expect(guide).toContain('hand-written MCP parser')

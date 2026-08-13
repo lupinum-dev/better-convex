@@ -5,7 +5,7 @@ const lifecycleMock = fileURLToPath(
 )
 
 export default defineNuxtConfig({
-  modules: ['better-convex-nuxt'],
+  modules: ['@lupinum/better-convex-nuxt'],
   convex: {
     url: 'https://nuxt-lifecycle.invalid',
   },

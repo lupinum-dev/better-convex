@@ -3,7 +3,7 @@ import {
   useConvex,
   useConvexConnectionState,
   useConvexQuery,
-} from 'better-convex-vue'
+} from '@lupinum/better-convex-vue'
 import { makeFunctionReference } from 'convex/server'
 import { createApp, defineComponent, h, shallowRef } from 'vue'
 

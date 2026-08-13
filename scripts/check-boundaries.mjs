@@ -156,8 +156,8 @@ function isForbiddenConvexAuthBareSpecifier(specifier) {
     specifier.startsWith('$app') ||
     specifier.startsWith('$lib') ||
     specifier === 'convex/browser' ||
-    specifier === 'better-convex-nuxt' ||
-    specifier.startsWith('better-convex-nuxt/') ||
+    specifier === '@lupinum/better-convex-nuxt' ||
+    specifier.startsWith('@lupinum/better-convex-nuxt/') ||
     specifier === 'vue' ||
     specifier.startsWith('@vue/') ||
     specifier === 'vue-router' ||
@@ -292,7 +292,7 @@ const RULES = [
     from: isModuleBuild,
     disallow: (edge) =>
       (edge.isRelative && edge.resolvedAbsPath !== null && isConvexAuth(edge.resolvedAbsPath)) ||
-      (!edge.isRelative && edge.specifier.startsWith('better-convex-nuxt/convex-auth')),
+      (!edge.isRelative && edge.specifier.startsWith('@lupinum/better-convex-nuxt/convex-auth')),
     typeOnlyExempt: false,
   },
   {
@@ -302,7 +302,7 @@ const RULES = [
     from: (absPath) => isBrowserRuntime(absPath) || inDir(absPath, AUTH_CLIENT_DIR),
     disallow: (edge) =>
       (edge.isRelative && edge.resolvedAbsPath !== null && isConvexAuth(edge.resolvedAbsPath)) ||
-      (!edge.isRelative && edge.specifier.startsWith('better-convex-nuxt/convex-auth')),
+      (!edge.isRelative && edge.specifier.startsWith('@lupinum/better-convex-nuxt/convex-auth')),
     typeOnlyExempt: false,
   },
   {

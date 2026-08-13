@@ -13,8 +13,8 @@
     "types": ["node", "vitest/globals"],
     "baseUrl": "../..",
     "paths": {
-      "better-convex-mcp": ["packages/mcp/src/index.ts"],
-      "better-convex-nuxt/convex-auth": ["src/runtime/convex-auth/index.ts"]
+      "@lupinum/better-convex-mcp": ["packages/mcp/src/index.ts"],
+      "@lupinum/better-convex-nuxt/convex-auth": ["src/runtime/convex-auth/index.ts"]
     }
   },
   "include": ["./*.test.ts"]

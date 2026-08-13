@@ -189,7 +189,7 @@ function copyIsolatedPlayground() {
   mkdirSync(nodeModules)
   symlinkSync(join(root, 'src'), join(parent, 'src'), 'dir')
   symlinkSync(join(root, 'node_modules', 'better-auth'), join(nodeModules, 'better-auth'), 'dir')
-  symlinkSync(root, join(nodeModules, 'better-convex-nuxt'), 'dir')
+  symlinkSync(root, join(nodeModules, '@lupinum/better-convex-nuxt'), 'dir')
   symlinkSync(join(root, 'node_modules', 'convex'), join(nodeModules, 'convex'), 'dir')
   return { cwd, parent }
 }

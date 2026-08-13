@@ -315,7 +315,7 @@ describe('protected cloud-staging gate', () => {
     const artifacts = {
       mcp: {
         identity: {
-          package: 'better-convex-mcp',
+          package: '@lupinum/better-convex-mcp',
           runtimeFingerprint: null,
           sourceCommit,
           version: '0.1.0-beta.28',
@@ -324,7 +324,7 @@ describe('protected cloud-staging gate', () => {
       },
       nuxt: {
         identity: {
-          package: 'better-convex-nuxt',
+          package: '@lupinum/better-convex-nuxt',
           runtimeFingerprint,
           sourceCommit,
           version: '0.8.0-beta.40',
@@ -333,7 +333,7 @@ describe('protected cloud-staging gate', () => {
       },
       vue: {
         identity: {
-          package: 'better-convex-vue',
+          package: '@lupinum/better-convex-vue',
           runtimeFingerprint: null,
           sourceCommit,
           version: '0.8.0-beta.40',
@@ -345,19 +345,19 @@ describe('protected cloud-staging gate', () => {
     const bound = bindCloudFixtureArtifacts(
       {
         dependencies: {
-          'better-convex-mcp': 'registry-value',
-          'better-convex-nuxt': 'registry-value',
+          '@lupinum/better-convex-mcp': 'registry-value',
+          '@lupinum/better-convex-nuxt': 'registry-value',
         },
       },
       artifacts,
     )
     expect(bound.package.dependencies).toMatchObject({
-      'better-convex-mcp': 'file:/artifacts/better-convex-mcp.tgz',
-      'better-convex-nuxt': 'file:/artifacts/better-convex-nuxt.tgz',
-      'better-convex-vue': 'file:/artifacts/better-convex-vue.tgz',
+      '@lupinum/better-convex-mcp': 'file:/artifacts/better-convex-mcp.tgz',
+      '@lupinum/better-convex-nuxt': 'file:/artifacts/better-convex-nuxt.tgz',
+      '@lupinum/better-convex-vue': 'file:/artifacts/better-convex-vue.tgz',
     })
     expect(bound.workspace).toContain(
-      'better-convex-vue@0.8.0-beta.40: file:/artifacts/better-convex-vue.tgz',
+      "'@lupinum/better-convex-vue@0.8.0-beta.40': file:/artifacts/better-convex-vue.tgz",
     )
     expect(() =>
       assertCloudArtifactFamily({

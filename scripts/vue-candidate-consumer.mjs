@@ -36,7 +36,7 @@ export function prepareVueCandidate(args, scratchRoot) {
 
   const inspected = inspectConsumerCandidate({
     packageId: 'vue',
-    packageName: 'better-convex-vue',
+    packageName: '@lupinum/better-convex-vue',
     tarballPath,
   })
 

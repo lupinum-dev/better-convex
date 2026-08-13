@@ -14,8 +14,8 @@
   },
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.0-rc.2",
+    "@lupinum/better-convex-nuxt": "0.8.0-beta.40",
     "better-auth": "1.7.0-rc.2",
-    "better-convex-nuxt": "0.8.0-beta.40",
     "convex": "1.42.2",
     "nuxt": "4.5.1",
     "vue": "3.5.40"

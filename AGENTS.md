@@ -8,9 +8,9 @@ unreleased path.
 
 This repository owns three packages:
 
-- `better-convex-nuxt` for Nuxt, Nitro, SSR, and optional Better Auth support.
-- `better-convex-vue` for the shared Vue client lifecycle.
-- `better-convex-mcp` for the explicit provider-neutral MCP boundary.
+- `@lupinum/better-convex-nuxt` for Nuxt, Nitro, SSR, and optional Better Auth support.
+- `@lupinum/better-convex-vue` for the shared Vue client lifecycle.
+- `@lupinum/better-convex-mcp` for the explicit provider-neutral MCP boundary.
 
 Convex functions remain the source of truth for application authorization. Do
 not move backend authorization into Vue, Nuxt middleware, MCP transport, or

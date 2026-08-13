@@ -280,9 +280,9 @@ export function readArtifactIdentity(artifactManifest, packageId) {
 export function assertCloudArtifactFamily(artifacts) {
   const { mcp, nuxt, vue } = artifacts
   assert(
-    nuxt?.identity?.package === 'better-convex-nuxt' &&
-      vue?.identity?.package === 'better-convex-vue' &&
-      mcp?.identity?.package === 'better-convex-mcp' &&
+    nuxt?.identity?.package === '@lupinum/better-convex-nuxt' &&
+      vue?.identity?.package === '@lupinum/better-convex-vue' &&
+      mcp?.identity?.package === '@lupinum/better-convex-mcp' &&
       nuxt.identity.version === vue.identity.version &&
       nuxt.identity.sourceCommit === vue.identity.sourceCommit &&
       nuxt.identity.sourceCommit === mcp.identity.sourceCommit &&
@@ -466,7 +466,7 @@ export function assertSingleBetterAuthMount(source) {
   const uses = source.match(/\bapp\.use\s*\(/gu) ?? []
   const imports =
     source.match(
-      /import\s+betterAuth\s+from\s+['"]better-convex-nuxt\/convex-auth\/convex\.config['"]/gu,
+      /import\s+betterAuth\s+from\s+['"]@lupinum\/better-convex-nuxt\/convex-auth\/convex\.config['"]/gu,
     ) ?? []
   const mounts =
     source.match(/app\.use\(\s*betterAuth\s*,\s*\{\s*name:\s*['"]betterAuth['"]\s*\}\s*\)/gu) ?? []
@@ -604,7 +604,7 @@ export function bindCloudFixtureArtifacts(fixturePackage, artifacts) {
     nextPackage.dependencies[artifact.identity.package] = `file:${artifact.tarballPath}`
   }
   const vue = artifacts.vue
-  const workspace = `packages:\n  - .\n\noverrides:\n  better-convex-vue@${vue.identity.version}: file:${vue.tarballPath}\n`
+  const workspace = `packages:\n  - .\n\noverrides:\n  '@lupinum/better-convex-vue@${vue.identity.version}': file:${vue.tarballPath}\n`
   return Object.freeze({ package: nextPackage, workspace })
 }
 
@@ -644,7 +644,7 @@ async function prepareCloudFixture(artifacts) {
       'AUTH_CLOUD_STAGING_FIXTURE_INSTALL_FAILED',
     )
 
-    const installedRoot = join(fixtureDirectory, 'node_modules', 'better-convex-nuxt')
+    const installedRoot = join(fixtureDirectory, 'node_modules', '@lupinum/better-convex-nuxt')
     const installedPackage = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'))
     const nuxtArtifact = artifacts.nuxt
     assert(

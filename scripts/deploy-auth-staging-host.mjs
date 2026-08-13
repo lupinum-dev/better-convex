@@ -58,7 +58,7 @@ function bindFixture(destination, artifacts) {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   writeFileSync(
     join(destination, 'pnpm-workspace.yaml'),
-    `packages:\n  - .\n\noverrides:\n  better-convex-vue@${artifacts.vue.identity.version}: file:./vendor/${basename(artifacts.vue.tarballPath)}\n`,
+    `packages:\n  - .\n\noverrides:\n  '@lupinum/better-convex-vue@${artifacts.vue.identity.version}': file:./vendor/${basename(artifacts.vue.tarballPath)}\n`,
   )
 }
 

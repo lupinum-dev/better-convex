@@ -18,7 +18,7 @@ export interface BetterConvexVueRuntime {
   readonly identity: AttachedClientIdentityState
 }
 
-const BETTER_CONVEX_KEY: InjectionKey<BetterConvexVueRuntime> = Symbol('better-convex-vue')
+const BETTER_CONVEX_KEY: InjectionKey<BetterConvexVueRuntime> = Symbol('@lupinum/better-convex-vue')
 // Private cross-package seam used by the Nuxt owner to reconcile one provider
 // operation with the already-installed Convex runtime. It is intentionally not
 // part of BetterConvexPlugin or any package export.

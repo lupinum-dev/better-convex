@@ -25,7 +25,7 @@ describe('canonical release tarball packing', () => {
     mkdirSync(secondDestination)
     writeFileSync(
       join(repository, 'package.json'),
-      '{"name":"better-convex-nuxt","version":"0.8.0-beta.40","repository":{"url":"https://github.com/lupinum-dev/better-convex-nuxt"}}\n',
+      '{"name":"@lupinum/better-convex-nuxt","version":"0.8.0-beta.40","repository":{"url":"https://github.com/lupinum-dev/better-convex-nuxt"}}\n',
     )
     mkdirSync(join(repository, 'dist'))
     writeFileSync(join(repository, 'dist/stale.js'), 'stale\n')
@@ -67,7 +67,7 @@ const walk = (directory, prefix) => {
 walk(join(process.cwd(), 'dist'), 'dist')
 files.sort()
 mkdirSync(destination, { recursive: true })
-const filename = manifest.name + '-' + manifest.version + '.tgz'
+const filename = manifest.name.replace(/^@/, '').replaceAll('/', '-') + '-' + manifest.version + '.tgz'
 const output = join(destination, filename)
 tar.c({ cwd: process.cwd(), file: output, gzip: true, mtime: new Date(0), noDirRecurse: true, portable: true, prefix: 'package/', strict: true, sync: true }, files)
 const bytes = readFileSync(output)

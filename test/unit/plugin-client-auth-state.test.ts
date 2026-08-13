@@ -94,7 +94,7 @@ vi.mock('better-auth/vue', () => ({
   createAuthClient: createAuthClientMock,
 }))
 
-vi.mock('better-convex-vue', () => ({
+vi.mock('@lupinum/better-convex-vue', () => ({
   createBetterConvex: createBetterConvexMock,
 }))
 

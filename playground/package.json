@@ -4,8 +4,8 @@
   "type": "module",
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.0-rc.2",
-    "better-auth": "1.7.0-rc.2",
-    "better-convex-nuxt": "workspace:*"
+    "@lupinum/better-convex-nuxt": "workspace:*",
+    "better-auth": "1.7.0-rc.2"
   },
   "peerDependencies": {
     "convex": "1.42.2"

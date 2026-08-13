@@ -5,7 +5,7 @@ import {
   useConvexPaginatedQuery,
   useConvexQuery,
   type BetterConvexAuthAdapter,
-} from 'better-convex-vue'
+} from '@lupinum/better-convex-vue'
 import {
   makeFunctionReference,
   type FunctionReference,

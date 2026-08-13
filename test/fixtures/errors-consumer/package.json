@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "better-convex-nuxt": "file:./better-convex-nuxt.tgz",
+    "@lupinum/better-convex-nuxt": "file:./better-convex-nuxt.tgz",
     "convex": "1.42.2",
     "nuxt": "4.5.1",
     "typescript": "5.9.3"

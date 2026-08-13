@@ -22,7 +22,7 @@ Do not use filler such as `simply`, `just`, `obviously`, `easy`, `seamless`, or
 
 - **Application**: the user's Nuxt or Vue application.
 - **Package**: one published Better Convex package.
-- **Module**: the `better-convex-nuxt` Nuxt module.
+- **Module**: the `@lupinum/better-convex-nuxt` Nuxt module.
 - **Convex function**: a query, mutation, action, or HTTP action owned by the
   application backend.
 - **Session**: the persisted Better Auth session.

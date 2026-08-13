@@ -1,4 +1,4 @@
-import { handleMcpRequest } from 'better-convex-mcp'
+import { handleMcpRequest } from '@lupinum/better-convex-mcp'
 import { z } from 'zod'
 
 const resource = new URL('https://packed-mcp.invalid/mcp')

@@ -51,7 +51,7 @@ export type {
   ConvexClientHandle,
   OptimisticUpdate,
   UseConvexCall,
-} from 'better-convex-vue'
+} from '@lupinum/better-convex-vue'
 export type { ConvexRuntimeConfig } from './runtime/utils/runtime-config'
 export type { UseConvexAuthReturn } from './runtime/utils/auth-contract'
 export type {
@@ -76,13 +76,13 @@ export type UseConvexQueryOptions =
 export type UseConvexQueryParameters<
   Query extends import('convex/server').FunctionReference<'query'>,
   Options extends UseConvexQueryOptions = UseConvexQueryOptions,
-> = import('better-convex-vue').UseConvexQueryParameters<Query, Options>
+> = import('@lupinum/better-convex-vue').UseConvexQueryParameters<Query, Options>
 
 /** Per-call pagination options for the Nuxt composable, including its SSR policy. */
 export type UseConvexPaginatedQueryOptions =
   import('./runtime/composables/useConvexPaginatedQuery').UseNuxtConvexPaginatedQueryOptions
 
-const logger = useLogger('better-convex-nuxt')
+const logger = useLogger('@lupinum/better-convex-nuxt')
 
 function hasGeneratedConvexApi(aliasPath: string): boolean {
   return (
@@ -179,7 +179,7 @@ export interface ModuleOptions {
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
-    name: 'better-convex-nuxt',
+    name: '@lupinum/better-convex-nuxt',
     configKey: 'convex',
     compatibility: {
       nuxt: '4.5.1',
@@ -196,7 +196,7 @@ export default defineNuxtModule<ModuleOptions>({
     const resolver = createResolver(import.meta.url)
     const generatedConvexApiAlias = resolver.resolve(nuxt.options.rootDir, 'convex/_generated/api')
     const missingConvexApiTemplate = addTemplate({
-      filename: 'better-convex-nuxt/convex-api-missing.ts',
+      filename: '@lupinum/better-convex-nuxt/convex-api-missing.ts',
       write: true,
       getContents: getMissingConvexApiTemplateContents,
     })
@@ -283,7 +283,7 @@ export default defineNuxtModule<ModuleOptions>({
       // (the module's established namespace), NOT `#build/*`: Nuxt's built-in
       // `#build` prefix resolves independently of this template destination.
       const authClientTemplate = addTemplate({
-        filename: 'better-convex-nuxt/auth-client.mjs',
+        filename: '@lupinum/better-convex-nuxt/auth-client.mjs',
         write: true,
         getContents: () => `export { default } from ${JSON.stringify(authClientDefinitionPath)}\n`,
       })
@@ -291,7 +291,7 @@ export default defineNuxtModule<ModuleOptions>({
 
       // Register a declaration that augments the auth-client registry with the
       // resolved definition's type ("Generated type registry"). The
-      // augmentation targets `better-convex-nuxt/auth-client` — the module where
+      // augmentation targets `@lupinum/better-convex-nuxt/auth-client` — the module where
       // `ConvexAuthClientRegistry` and `InferRegisteredConvexAuthClient` are
       // declared — so the inference reads the merged registry (covered by the
       // packed auth-client typing fixture). `addTypeTemplate` registers the
@@ -302,7 +302,7 @@ export default defineNuxtModule<ModuleOptions>({
           [
             `import type definition from ${JSON.stringify(authClientDefinitionPath)}`,
             ``,
-            `declare module 'better-convex-nuxt/auth-client' {`,
+            `declare module '@lupinum/better-convex-nuxt/auth-client' {`,
             `  interface ConvexAuthClientRegistry {`,
             `    definition: typeof definition`,
             `  }`,

@@ -1,4 +1,7 @@
-import { useConvexAction as useVueConvexAction, type UseConvexCall } from 'better-convex-vue'
+import {
+  useConvexAction as useVueConvexAction,
+  type UseConvexCall,
+} from '@lupinum/better-convex-vue'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'
 

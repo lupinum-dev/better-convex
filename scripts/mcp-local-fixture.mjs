@@ -133,12 +133,12 @@ async function stopProcess(child) {
 }
 
 async function ensureWorkspacePackageBuild() {
-  await runCommand('pnpm', ['--filter', 'better-convex-mcp', 'build'], {
+  await runCommand('pnpm', ['--filter', '@lupinum/better-convex-mcp', 'build'], {
     cwd: root,
     env: cleanEnvironment(),
     secrets: [],
   })
-  await runCommand('pnpm', ['--filter', 'better-convex-vue', 'build'], {
+  await runCommand('pnpm', ['--filter', '@lupinum/better-convex-vue', 'build'], {
     cwd: root,
     env: cleanEnvironment(),
     secrets: [],
@@ -202,19 +202,19 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
   ]) {
     for (const name of Object.keys(dependencies ?? {})) dependencyNames.add(name)
   }
-  dependencyNames.delete('better-convex-nuxt')
+  dependencyNames.delete('@lupinum/better-convex-nuxt')
   for (const name of [...dependencyNames].sort()) {
     if (!/^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/iu.test(name)) {
       throw new Error('Invalid fixture dependency name')
     }
-    if (name === 'better-convex-mcp' && mcpReleaseTarball) continue
+    if (name === '@lupinum/better-convex-mcp' && mcpReleaseTarball) continue
     const source = join(root, 'node_modules', name)
     const destination = join(modules, name)
     const installedSource = await realpath(source)
     await mkdir(dirname(destination), { mode: 0o700, recursive: true })
     await symlink(installedSource, destination, 'dir')
   }
-  const installedModule = join(modules, 'better-convex-nuxt')
+  const installedModule = join(modules, '@lupinum/better-convex-nuxt')
   if (releaseTarball) {
     await mkdir(installedModule, { mode: 0o700 })
     await runCommand(
@@ -223,7 +223,7 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
       { cwd, env: cleanEnvironment(), secrets: [] },
     )
     const manifest = JSON.parse(await readFile(join(installedModule, 'package.json'), 'utf8'))
-    if (manifest.name !== 'better-convex-nuxt' || typeof manifest.version !== 'string') {
+    if (manifest.name !== '@lupinum/better-convex-nuxt' || typeof manifest.version !== 'string') {
       throw new Error('BCN_RELEASE_TARBALL did not contain the expected package')
     }
   } else {
@@ -235,7 +235,7 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
     ])
   }
   if (mcpReleaseTarball) {
-    const installedMcp = join(modules, 'better-convex-mcp')
+    const installedMcp = join(modules, '@lupinum/better-convex-mcp')
     await mkdir(installedMcp, { mode: 0o700, recursive: true })
     await runCommand(
       'tar',
@@ -248,7 +248,7 @@ async function linkDependencies(cwd, releaseTarball, mcpReleaseTarball) {
       ),
     )
     if (
-      installedManifest.name !== 'better-convex-mcp' ||
+      installedManifest.name !== '@lupinum/better-convex-mcp' ||
       installedManifest.version !== sourceManifest.version ||
       installedManifest.dependencies?.['@modelcontextprotocol/server'] !==
         sourceManifest.dependencies?.['@modelcontextprotocol/server']
@@ -379,8 +379,9 @@ export async function startLocalMcpOAuthFixture(options = {}) {
     })
     await linkDependencies(cwd, releaseTarball, mcpReleaseTarball)
     const installedClientIpModule = await import(
-      pathToFileURL(join(cwd, 'node_modules/better-convex-nuxt/dist/runtime/shared/client-ip.js'))
-        .href
+      pathToFileURL(
+        join(cwd, 'node_modules/@lupinum/better-convex-nuxt/dist/runtime/shared/client-ip.js'),
+      ).href
     )
     if (
       typeof installedClientIpModule.normalizeClientIp !== 'function' ||

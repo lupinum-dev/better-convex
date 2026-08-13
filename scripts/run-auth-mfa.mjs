@@ -7,7 +7,7 @@ import { join } from 'node:path'
 const root = process.cwd()
 const fixturePackageLink = join(
   root,
-  'test/fixtures/better-auth-two-factor/node_modules/better-convex-nuxt',
+  'test/fixtures/better-auth-two-factor/node_modules/@lupinum/better-convex-nuxt',
 )
 
 function run(command, args, options = {}) {

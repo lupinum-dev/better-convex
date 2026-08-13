@@ -1,7 +1,7 @@
 # Maintaining Better Convex
 
-The repository publishes `better-convex-nuxt`, `better-convex-vue`, and
-`better-convex-mcp`. Each package manifest owns its package contract. Keep the
+The repository publishes `@lupinum/better-convex-nuxt`, `@lupinum/better-convex-vue`, and
+`@lupinum/better-convex-mcp`. Each package manifest owns its package contract. Keep the
 coupled Vue and Nuxt versions aligned. Change the MCP version only when its own
 public contract changes.
 

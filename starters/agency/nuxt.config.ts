@@ -1,5 +1,5 @@
 export default {
-  modules: ['better-convex-nuxt'],
+  modules: ['@lupinum/better-convex-nuxt'],
   pages: true,
   devtools: { enabled: true },
   compatibilityDate: '2026-06-21',

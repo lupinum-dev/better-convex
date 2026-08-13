@@ -129,16 +129,17 @@ let vueCandidate
 try {
   nuxtCandidate = inspectConsumerCandidate({
     packageId: 'nuxt',
-    packageName: 'better-convex-nuxt',
+    packageName: '@lupinum/better-convex-nuxt',
     tarballPath: options.nuxtTarball,
   })
   vueCandidate = inspectConsumerCandidate({
     packageId: 'vue',
-    packageName: 'better-convex-vue',
+    packageName: '@lupinum/better-convex-vue',
     tarballPath: options.vueTarball,
   })
   if (
-    nuxtCandidate.manifest.dependencies?.['better-convex-vue'] !== vueCandidate.manifest.version
+    nuxtCandidate.manifest.dependencies?.['@lupinum/better-convex-vue'] !==
+    vueCandidate.manifest.version
   ) {
     throw new Error('Nuxt candidate does not depend on the exact supplied Vue candidate version')
   }
@@ -165,8 +166,8 @@ try {
   for (const filename of ['better-convex-nuxt.tgz', 'better-convex-vue.tgz']) {
     if (!lock.includes(filename)) throw new Error(`Lifecycle consumer lock omits ${filename}`)
   }
-  nuxtCandidate.assertInstalled(join(consumerRoot, 'node_modules/better-convex-nuxt'))
-  vueCandidate.assertInstalled(join(consumerRoot, 'node_modules/better-convex-vue'))
+  nuxtCandidate.assertInstalled(join(consumerRoot, 'node_modules/@lupinum/better-convex-nuxt'))
+  vueCandidate.assertInstalled(join(consumerRoot, 'node_modules/@lupinum/better-convex-vue'))
 
   run('pnpm', ['run', 'typecheck'], consumerRoot)
   run('pnpm', ['run', 'build'], consumerRoot, {

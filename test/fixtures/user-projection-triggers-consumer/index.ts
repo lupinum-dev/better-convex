@@ -1,6 +1,6 @@
 /**
  * Standalone packed-probe consumer (architecture invariant) for
- * `better-convex-nuxt/convex-auth`.
+ * `@lupinum/better-convex-nuxt/convex-auth`.
  *
  * Imports the projection helper from its auth integration subpath and
  * exercises it against an in-memory fake `ctx.db` from a
@@ -15,7 +15,7 @@ import {
   createUserProjectionTriggers,
   type BetterAuthUserProjectionSource,
   type CreateUserProjectionTriggersOptions,
-} from 'better-convex-nuxt/convex-auth'
+} from '@lupinum/better-convex-nuxt/convex-auth'
 
 function fail(message: string): never {
   console.error(`user-projection-triggers-consumer FAILED: ${message}`)

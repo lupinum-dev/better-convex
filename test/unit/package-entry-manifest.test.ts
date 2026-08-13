@@ -62,7 +62,7 @@ describe('package entry manifest', () => {
 
     expect(manifest).toMatchObject({
       packageId: 'nuxt',
-      packageName: 'better-convex-nuxt',
+      packageName: '@lupinum/better-convex-nuxt',
       packageDirectory: '.',
       profileId: 'nuxt-public-entries',
     })
@@ -81,7 +81,7 @@ describe('package entry manifest', () => {
 
     expect(manifest).toMatchObject({
       packageId: 'vue',
-      packageName: 'better-convex-vue',
+      packageName: '@lupinum/better-convex-vue',
       packageDirectory: 'packages/vue',
       profileId: 'vue-public-entries',
     })
@@ -114,7 +114,7 @@ describe('package entry manifest', () => {
 
     expect(manifest).toMatchObject({
       packageId: 'mcp',
-      packageName: 'better-convex-mcp',
+      packageName: '@lupinum/better-convex-mcp',
       packageDirectory: 'packages/mcp',
       profileId: 'mcp-public-entries',
     })
@@ -447,7 +447,7 @@ describe('package entry manifest', () => {
       '~/server',
       '@/server',
       'convex/browser',
-      'better-convex-nuxt/server',
+      '@lupinum/better-convex-nuxt/server',
       'vue',
     ]) {
       expect(runtimeAllowed.has(specifier), specifier).toBe(false)

@@ -99,7 +99,8 @@ const candidates = [
 ]
 const [nuxtCandidate, vueCandidate] = candidates
 if (
-  nuxtCandidate.packageJson.dependencies?.['better-convex-vue'] !== vueCandidate.packageJson.version
+  nuxtCandidate.packageJson.dependencies?.['@lupinum/better-convex-vue'] !==
+  vueCandidate.packageJson.version
 ) {
   throw new Error('Candidate tarballs do not form the reviewed exact Vue/Nuxt/MCP package set.')
 }

@@ -4,7 +4,7 @@ import {
   type UseConvexQueryOptions,
   type UseConvexQueryParameters,
   type UseConvexQueryState,
-} from 'better-convex-vue'
+} from '@lupinum/better-convex-vue'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import {
   computed,

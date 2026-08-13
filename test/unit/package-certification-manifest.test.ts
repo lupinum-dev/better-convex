@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 function createRepository(
-  name = 'better-convex-nuxt',
+  name = '@lupinum/better-convex-nuxt',
   options: { directory?: string; private?: boolean } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), 'bcn-certification-manifest-'))
@@ -39,13 +39,13 @@ function createRepository(
   mkdirSync(vuePackageDirectory, { recursive: true })
   writeFileSync(
     join(vuePackageDirectory, 'package.json'),
-    `${JSON.stringify({ name: 'better-convex-vue', repository, version: '1.0.0' })}\n`,
+    `${JSON.stringify({ name: '@lupinum/better-convex-vue', repository, version: '1.0.0' })}\n`,
   )
   const mcpPackageDirectory = join(root, 'packages/mcp')
   mkdirSync(mcpPackageDirectory, { recursive: true })
   writeFileSync(
     join(mcpPackageDirectory, 'package.json'),
-    `${JSON.stringify({ name: 'better-convex-mcp', repository, version: '1.0.0' })}\n`,
+    `${JSON.stringify({ name: '@lupinum/better-convex-mcp', repository, version: '1.0.0' })}\n`,
   )
   return root
 }
@@ -67,7 +67,7 @@ describe('package certification manifest', () => {
     expect(packageCertificationDescriptors).toEqual([
       {
         id: 'nuxt',
-        packageName: 'better-convex-nuxt',
+        packageName: '@lupinum/better-convex-nuxt',
         packageDirectory: '.',
         profiles: {
           build: 'nuxt-module-build',
@@ -81,7 +81,7 @@ describe('package certification manifest', () => {
       },
       {
         id: 'vue',
-        packageName: 'better-convex-vue',
+        packageName: '@lupinum/better-convex-vue',
         packageDirectory: 'packages/vue',
         profiles: {
           build: 'vue-unbuild',
@@ -95,7 +95,7 @@ describe('package certification manifest', () => {
       },
       {
         id: 'mcp',
-        packageName: 'better-convex-mcp',
+        packageName: '@lupinum/better-convex-mcp',
         packageDirectory: 'packages/mcp',
         profiles: {
           build: 'mcp-unbuild',
@@ -116,7 +116,7 @@ describe('package certification manifest', () => {
     expect(getPackageCertificationDescriptor('mcp')).toBe(packageCertificationDescriptors[2])
   })
 
-  it.each(['react', 'better-convex-nuxt', '.', '../playground', 'packages/vue', 'NUXT'])(
+  it.each(['react', '@lupinum/better-convex-nuxt', '.', '../playground', 'packages/vue', 'NUXT'])(
     'rejects unknown or path-like selector %j',
     (selector) => {
       expect(() => getPackageCertificationDescriptor(selector)).toThrow(
@@ -242,7 +242,7 @@ describe('package certification manifest', () => {
         [descriptor, { ...cloneDescriptor(), id: 'vue', packageDirectory: 'packages/vue' }],
         { repositoryRoot: root },
       ),
-    ).toThrow('duplicate package name: better-convex-nuxt')
+    ).toThrow('duplicate package name: @lupinum/better-convex-nuxt')
 
     expect(() =>
       validatePackageCertificationDescriptors(
@@ -251,7 +251,7 @@ describe('package certification manifest', () => {
           {
             ...cloneDescriptor(),
             id: 'vue',
-            packageName: 'better-convex-vue',
+            packageName: '@lupinum/better-convex-vue',
           },
         ],
         { repositoryRoot: root },
@@ -265,14 +265,14 @@ describe('package certification manifest', () => {
       getPackageCertificationDescriptor('nuxt', {
         repositoryRoot: wrongNameRoot,
       }),
-    ).toThrow('declares renamed-package; descriptor nuxt requires better-convex-nuxt')
+    ).toThrow('declares renamed-package; descriptor nuxt requires @lupinum/better-convex-nuxt')
     expect(() =>
       validatePackageCertificationDescriptors(cloneDescriptors(), {
         repositoryRoot: wrongNameRoot,
       }),
-    ).toThrow('declares renamed-package; descriptor nuxt requires better-convex-nuxt')
+    ).toThrow('declares renamed-package; descriptor nuxt requires @lupinum/better-convex-nuxt')
 
-    const privateRoot = createRepository('better-convex-nuxt', {
+    const privateRoot = createRepository('@lupinum/better-convex-nuxt', {
       private: true,
     })
     expect(() =>
@@ -284,7 +284,7 @@ describe('package certification manifest', () => {
     const missingRepositoryRoot = createRepository()
     writeFileSync(
       join(missingRepositoryRoot, 'package.json'),
-      `${JSON.stringify({ name: 'better-convex-nuxt', version: '1.0.0' })}\n`,
+      `${JSON.stringify({ name: '@lupinum/better-convex-nuxt', version: '1.0.0' })}\n`,
     )
     expect(() =>
       validatePackageCertificationDescriptors(cloneDescriptors(), {
@@ -313,7 +313,7 @@ describe('package certification manifest', () => {
       }),
     ).toThrow('descriptor nuxt has unreviewed packageName')
 
-    const movedRoot = createRepository('better-convex-nuxt', {
+    const movedRoot = createRepository('@lupinum/better-convex-nuxt', {
       directory: 'packages/rogue',
     })
     const movedDescriptor = {
@@ -349,7 +349,7 @@ describe('package certification manifest', () => {
     descriptor.packageName = 'changed-after-validation'
     descriptor.profiles.build = 'changed-after-validation'
 
-    expect(validated[0].packageName).toBe('better-convex-nuxt')
+    expect(validated[0].packageName).toBe('@lupinum/better-convex-nuxt')
     expect(validated[0].profiles.build).toBe('nuxt-module-build')
     expect(Object.isFrozen(validated)).toBe(true)
     expect(Object.isFrozen(validated[0])).toBe(true)

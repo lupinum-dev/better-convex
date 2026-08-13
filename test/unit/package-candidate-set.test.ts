@@ -30,7 +30,7 @@ function createRepository(version = '0.8.0-beta.40') {
   writeFileSync(
     join(root, 'package.json'),
     `${JSON.stringify({
-      name: 'better-convex-nuxt',
+      name: '@lupinum/better-convex-nuxt',
       repository: {
         type: 'git',
         url: 'https://github.com/lupinum-dev/better-convex-nuxt',
@@ -42,7 +42,7 @@ function createRepository(version = '0.8.0-beta.40') {
   writeFileSync(
     join(root, 'packages/vue/package.json'),
     `${JSON.stringify({
-      name: 'better-convex-vue',
+      name: '@lupinum/better-convex-vue',
       repository: {
         type: 'git',
         url: 'https://github.com/lupinum-dev/better-convex-nuxt',
@@ -161,7 +161,7 @@ describe('package candidate set', () => {
     writeFileSync(
       join(root, 'packages/vue/package.json'),
       `${JSON.stringify({
-        name: 'better-convex-vue',
+        name: '@lupinum/better-convex-vue',
         repository: {
           type: 'git',
           url: 'https://github.com/lupinum-dev/better-convex-nuxt',

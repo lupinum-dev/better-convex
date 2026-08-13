@@ -1,4 +1,4 @@
-import type { BetterConvexAuthAdapter } from 'better-convex-vue'
+import type { BetterConvexAuthAdapter } from '@lupinum/better-convex-vue'
 import { watch, type Ref } from 'vue'
 
 import type { ConvexUser } from '../utils/types'

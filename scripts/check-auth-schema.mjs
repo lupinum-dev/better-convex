@@ -301,7 +301,7 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
       manifest.dependencies[name],
     ]),
   )
-  manifest.dependencies['better-convex-nuxt'] = 'file:./better-convex-nuxt.tgz'
+  manifest.dependencies['@lupinum/better-convex-nuxt'] = 'file:./better-convex-nuxt.tgz'
   delete manifest.devDependencies
   delete manifest.scripts
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
@@ -310,7 +310,7 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
     [
       'strictPeerDependencies: true',
       'overrides:',
-      "  'better-convex-vue': 'file:./better-convex-vue.tgz'",
+      "  '@lupinum/better-convex-vue': 'file:./better-convex-vue.tgz'",
       '',
     ].join('\n'),
   )
@@ -381,7 +381,7 @@ async function main() {
     for (const consumer of ['playground', 'test/fixtures/better-auth-local-component']) {
       const modules = path.join(isolatedRoot, consumer, 'node_modules')
       mkdirSync(modules, { recursive: true })
-      symlinkSync(isolatedRoot, path.join(modules, 'better-convex-nuxt'), 'dir')
+      symlinkSync(isolatedRoot, path.join(modules, '@lupinum/better-convex-nuxt'), 'dir')
     }
 
     run('pnpm', ['exec', 'jiti', 'scripts/generate-auth-schema.mjs', '--check'], isolatedRoot)

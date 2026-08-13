@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Move all publishable packages to the `@lupinum` npm scope. This is a hard
+  cutover: use `@lupinum/better-convex-nuxt`, `@lupinum/better-convex-vue`, and
+  `@lupinum/better-convex-mcp`.
 - Hard-cut Better Convex to one Vue-owned client lifecycle, one integrated
   Better Auth client, identity-partitioned SSR/query state, and direct callable
   mutation/action contracts without compatibility shims.

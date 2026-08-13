@@ -17,7 +17,7 @@ const removedMcpPaths = [
 ]
 const forbiddenNuxtMarkers = [
   'packages/vue/src/',
-  'better-convex-vue/internal',
+  '@lupinum/better-convex-vue/internal',
   'src/runtime/client-core',
   'attachClientIdentity',
   'createBetterConvexBrowserRuntime',
