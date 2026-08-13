@@ -10,6 +10,10 @@ export default {
       },
       logo: { light: '/favicon.svg', dark: '/favicon.svg' },
       docsSidebarSwitcher: 'tabs',
+      legalLinks: [
+        { label: { en: 'Legal notice' }, to: 'https://lupinum.com/impressum' },
+        { label: { en: 'Privacy' }, to: 'https://lupinum.com/datenschutz' },
+      ],
     },
     social: {
       github: 'https://github.com/lupinum-dev/better-convex-nuxt',
