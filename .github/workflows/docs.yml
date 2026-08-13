@@ -59,6 +59,7 @@ jobs:
             --no-progress
             --include-mail=false
             --accept 100..=103,200..=299,403
-            --exclude '^/'
+            --scheme https
+            --scheme http
             docs/content
           fail: true
