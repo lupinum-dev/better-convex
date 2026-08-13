@@ -318,10 +318,22 @@ function addCompanionCandidates(appDir, manifest, companions, label) {
   }
 }
 
-function addPnpmCompanionOverrides(appDir, companions) {
-  if (companions.length === 0) return
+function addPnpmCandidatePolicy(appDir, candidateManifest, companions) {
   const workspacePath = join(appDir, 'pnpm-workspace.yaml')
   const current = existsSync(workspacePath) ? readFileSync(workspacePath, 'utf8') : ''
+  const candidates = [{ descriptor: packageDescriptor, manifest: candidateManifest }, ...companions]
+  const releaseAgeRules = candidates
+    .map(({ descriptor, manifest }) => `  - '${descriptor.packageName}@${manifest.version}'`)
+    .join('\n')
+  const releaseAgeHeader = /^minimumReleaseAgeExclude:\s*$/mu
+  let next = releaseAgeHeader.test(current)
+    ? current.replace(releaseAgeHeader, (header) => `${header}\n${releaseAgeRules}`)
+    : `${current}${current.endsWith('\n') || current.length === 0 ? '' : '\n'}minimumReleaseAgeExclude:\n${releaseAgeRules}\n`
+
+  if (companions.length === 0) {
+    writeFileSync(workspacePath, next)
+    return
+  }
   for (const companion of companions) {
     if (current.includes(`${companion.descriptor.packageName}:`)) {
       throw new Error(
@@ -333,9 +345,9 @@ function addPnpmCompanionOverrides(appDir, companions) {
     .map((companion) => `  '${companion.descriptor.packageName}': 'file:./${companion.filename}'`)
     .join('\n')
   const overrideHeader = /^overrides:\s*$/mu
-  const next = overrideHeader.test(current)
-    ? current.replace(overrideHeader, (header) => `${header}\n${rules}`)
-    : `${current}${current.endsWith('\n') || current.length === 0 ? '' : '\n'}overrides:\n${rules}\n`
+  next = overrideHeader.test(next)
+    ? next.replace(overrideHeader, (header) => `${header}\n${rules}`)
+    : `${next}${next.endsWith('\n') || next.length === 0 ? '' : '\n'}overrides:\n${rules}\n`
   writeFileSync(workspacePath, next)
 }
 
@@ -703,7 +715,10 @@ try {
       const appCompanions = [...companionCandidates, ...fixtureCompanions]
       addCompanionCandidates(appDir, manifest, appCompanions, app.path)
       writeJson(manifestPath, manifest)
-      addPnpmCompanionOverrides(appDir, appCompanions)
+      // These exact local tarballs are the subject of this test. They can be
+      // unpublished, so registry release-age checks cannot classify them. All
+      // other lockfile entries remain subject to the application's policy.
+      addPnpmCandidatePolicy(appDir, candidateManifest, appCompanions)
 
       console.log(
         `\n=== ${app.path} against ${candidateManifest.name}@${candidateManifest.version} ===`,
