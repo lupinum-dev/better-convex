@@ -11,7 +11,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   app: {
     head: {
-      title: 'Better Convex Nuxt',
+      title: 'Better Convex',
       meta: [
         {
           name: 'description',

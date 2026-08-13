@@ -105,5 +105,8 @@ only in a maintainer-owned development deployment. This keeps deployment
 credentials outside repository workflows and avoids executing dependencies with
 a production-capable key.
 
-Vercel must deploy the documentation from `main` to
-`better-convex.lupinum.com` and create pull-request previews.
+Vercel must deploy the `docs/` app from `main` to
+`better-convex.lupinum.com` and create pull-request previews. Set the Vercel
+Root Directory to `docs`. Do not set an Output Directory override; Nuxt emits
+the Vercel Build Output API files. The docs app owns its lockfile and does not
+need source files outside the Root Directory.

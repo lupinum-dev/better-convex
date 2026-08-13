@@ -1,14 +1,4 @@
-onlyBuiltDependencies:
-  - '@parcel/watcher'
-  - better-sqlite3
-  - esbuild
-  - sharp
-  - unrs-resolver
-  - vue-demi
+packages:
+  - .
+
 minimumReleaseAge: 1440
-minimumReleaseAgeExclude:
-  # Reviewed first-party release candidates. Remove after 2026-08-15.
-  - '@lupinum/ginko-content@0.4.0-rc.1'
-  - '@lupinum/ginko-docs@0.3.0-rc.3'
-overrides:
-  tar: 7.5.22

@@ -34,6 +34,10 @@ describe('public README consistency', () => {
       expect(source, file).toContain('https://better-convex.lupinum.com')
       expect(source, file).toContain('https://github.com/lupinum-dev/better-convex')
       expect(source, file).toContain('MIT License')
+      expect(source, file).toContain('npm/v/')
+      expect(source, file).toContain('actions/workflows/ci.yml')
+      expect(source, file).toContain('license-MIT')
+      expect(source, file).toContain('> [!WARNING]')
       expect(source, file).not.toMatch(/\b(?:TODO|TBD|PLACEHOLDER)\b/iu)
 
       for (const match of source.matchAll(/^## (.+)$/gmu)) {
@@ -51,10 +55,6 @@ describe('public README consistency', () => {
     }
 
     const rootReadme = readFileSync(resolve(repositoryRoot, 'README.md'), 'utf8')
-    for (const badge of ['npm/v/', 'actions/workflows/ci.yml', 'license-MIT']) {
-      expect(rootReadme).toContain(badge)
-    }
-
     const sections = [
       'Why use Better Convex?',
       'When to use it',
@@ -95,6 +95,18 @@ describe('public README consistency', () => {
       )
     }
   })
+
+  it('uses Better Convex as the documentation product name', () => {
+    expect(readFileSync(resolve(repositoryRoot, 'docs/app/app.config.ts'), 'utf8')).toContain(
+      "name: { en: 'Better Convex' }",
+    )
+    expect(readFileSync(resolve(repositoryRoot, 'docs/content.config.ts'), 'utf8')).toContain(
+      "name: 'Better Convex'",
+    )
+    expect(readFileSync(resolve(repositoryRoot, 'docs/content/docs/index.md'), 'utf8')).toContain(
+      'title: Better Convex documentation',
+    )
+  })
 })
 
 describe('contributor intake consistency', () => {
@@ -110,7 +122,7 @@ describe('contributor intake consistency', () => {
     for (const heading of [
       'Result',
       'Verification',
-      'Documentation and boundaries',
+      'Documentation and compatibility',
       'Release note',
       'Risk',
     ]) {

@@ -6,7 +6,7 @@
 
 <!-- List the exact commands, security gates, and consumer checks that passed. -->
 
-## Documentation and boundaries
+## Documentation and compatibility
 
 - [ ] I updated public documentation when behavior changed.
 - [ ] I added tests for the changed invariant or failure boundary.

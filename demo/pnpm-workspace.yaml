@@ -1,17 +1,4 @@
-ignoredBuiltDependencies:
-  - '@parcel/watcher'
-  - '@tailwindcss/oxide'
-  - esbuild
-  - unrs-resolver
-  - vue-demi
+packages:
+  - .
+
 minimumReleaseAge: 1440
-overrides:
-  '@nuxt/schema': 4.4.7
-  'brace-expansion@>=5.0.0 <5.0.9': 5.0.9
-  'esbuild@>=0.27.3 <0.28.1': 0.28.1
-  'minimatch@>=5.0.0 <10.2.5': 10.2.5
-  'postcss@<=8.5.22': 8.5.26
-  'shell-quote@<=1.8.4': 1.9.0
-  'svgo@>=4.0.0 <4.0.2': 4.0.2
-  'tar@<=7.5.20': 7.5.22
-  c12: 3.3.4

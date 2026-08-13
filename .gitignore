@@ -27,6 +27,7 @@ dist
 .output
 .data
 .vercel_build_output
+.vercel
 .build-*
 .netlify
 

@@ -4,6 +4,12 @@
 
 <p align="center">Serve a bounded, provider-neutral MCP endpoint from a Convex HTTP Action.</p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@lupinum/better-convex-mcp"><img src="https://img.shields.io/npm/v/@lupinum/better-convex-mcp?label=npm" alt="npm version"></a>
+  <a href="https://github.com/lupinum-dev/better-convex/actions/workflows/ci.yml"><img src="https://github.com/lupinum-dev/better-convex/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/lupinum-dev/better-convex/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+</p>
+
 > [!WARNING]
 > This package is experimental beta software. Applications remain responsible for tools, roles, permissions, and effects.
 
