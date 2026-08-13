@@ -36,7 +36,7 @@ const optimisticAdd = useConvexMutation(api.tasks.add, {
     const current = localStore.getQuery(api.tasks.list, {})
     const now = Date.now()
     const optimisticTask = {
-      _id: `temp-${now}` as Id<'tasks'>,
+      _id: `temp-${now}` as Id<'demoTasks'>,
       _creationTime: now,
       title: `${args.title} (optimistic)`,
       completed: false,
