@@ -45,3 +45,27 @@ bytes for the same version.
 Use [docs/WRITING.md](./docs/WRITING.md). Keep quickstarts executable and keep
 security constraints next to the affected action. The generated API and ASVS
 documents must remain reproducible from their owning scripts.
+
+## Audit external settings
+
+Review these settings in January and July, and after an ownership or release
+workflow change.
+
+GitHub must have:
+
+- a protected `main` branch with pull requests, linear history, resolved review
+  threads, and the repository's required CI, CodeQL, starter, and preview checks;
+- squash merge as the only merge method, auto-merge enabled, and merged branches
+  deleted automatically;
+- protected `v*-*` release tags;
+- protected `staging` and `npm` environments with the restrictions in
+  [RELEASING.md](./RELEASING.md);
+- private vulnerability reporting, secret scanning, push protection, automated
+  security fixes, and the committed advanced CodeQL workflow;
+- Renovate for routine dependency updates and CodeRabbit as an advisory reviewer.
+
+npm must bind each of the three `@lupinum/better-convex-*` packages to
+`publish-prerelease.yml` and the `npm` environment through trusted publishing.
+
+Vercel must deploy the documentation from `main` to
+`better-convex-nuxt.lupinum.com` and create pull-request previews.
