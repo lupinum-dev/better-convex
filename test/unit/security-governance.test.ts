@@ -68,4 +68,20 @@ describe('security governance gate', () => {
     expect(scheduled).not.toContain('check:security-governance')
     expect(scheduled).not.toContain('BCN_SECURITY_OWNER')
   })
+
+  it('expires the reviewed documentation release-age exceptions', () => {
+    const workspace = readFileSync(resolve(root, 'docs/pnpm-workspace.yaml'), 'utf8')
+    const reviewedExceptions = [
+      '@lupinum/ginko-content@0.4.0-rc.1',
+      '@lupinum/ginko-docs@0.3.0-rc.3',
+    ]
+    const hasReviewedExceptions = reviewedExceptions.some((entry) => workspace.includes(entry))
+
+    if (hasReviewedExceptions) {
+      expect(workspace).toContain('Remove after 2026-08-14.')
+      expect(Date.now(), 'Remove the expired documentation release-age exceptions.').toBeLessThan(
+        Date.parse('2026-08-15T00:00:00Z'),
+      )
+    }
+  })
 })

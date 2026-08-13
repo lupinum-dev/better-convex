@@ -407,13 +407,15 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'publish-vue-staging': ['bcn-auth-staging'],
       'registry-vue-nuxt-gate': ['publish-vue-staging'],
       'publish-nuxt-staging': ['registry-vue-nuxt-gate'],
-      'publish-mcp-staging': ['publish-nuxt-staging'],
+      'registry-nuxt-gate': ['publish-nuxt-staging'],
+      'publish-mcp-staging': ['registry-nuxt-gate'],
+      'registry-mcp-gate': ['publish-mcp-staging'],
       'staged-candidate-set-complete': [
-        'publish-vue-staging',
         'registry-vue-nuxt-gate',
-        'publish-nuxt-staging',
-        'publish-mcp-staging',
+        'registry-nuxt-gate',
+        'registry-mcp-gate',
       ],
+      'github-prerelease': ['staged-candidate-set-complete'],
     })
   })
 
@@ -495,7 +497,9 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'publish-vue-staging',
       'registry-vue-nuxt-gate',
       'publish-nuxt-staging',
+      'registry-nuxt-gate',
       'publish-mcp-staging',
+      'registry-mcp-gate',
     ]
     const postMintRuns = postMintJobs.flatMap((jobId) => runs(workflow, jobId))
     expect(postMintRuns.join('\n')).not.toMatch(
@@ -512,7 +516,11 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       ])
     }
     expect(
-      postMintRuns.filter((run) => run.startsWith('node scripts/compare-registry-package.mjs ')),
+      postMintRuns.filter(
+        (run) =>
+          run.startsWith('node scripts/compare-registry-package.mjs ') ||
+          run.startsWith('node scripts/check-nuxt-registry-vue-consumer.mjs '),
+      ),
     ).toHaveLength(3)
   })
 
@@ -596,28 +604,104 @@ printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
       'publish-nuxt-staging',
       'publish-mcp-staging',
     ])
-    expect(oidcJobs.every(({ job }) => job.environment === 'npm-release')).toBe(true)
+    expect(oidcJobs.every(({ job }) => job.environment === 'npm')).toBe(true)
     expect(workflow.env?.BCN_CANDIDATE_DIST_TAG).toBe('candidate-${{ github.run_id }}')
 
     const publishRuns = oidcJobs.flatMap(({ job }) =>
       (job.steps ?? [])
         .map(normalizedRun)
-        .filter(
-          (run): run is string =>
-            run?.startsWith('node scripts/publish-registry-package.mjs ') ?? false,
-        ),
+        .filter((run): run is string => run?.includes('npm publish ') ?? false),
     )
     expect(publishRuns).toHaveLength(3)
     expect(
       publishRuns.every(
-        (run) => run.includes('--package ') && run.includes('--tag "$BCN_CANDIDATE_DIST_TAG"'),
+        (run) =>
+          run.includes('--tag "$BCN_CANDIDATE_DIST_TAG"') &&
+          run.includes('--ignore-scripts') &&
+          run.includes('--provenance'),
       ),
     ).toBe(true)
+    for (const { job } of oidcJobs) {
+      expect(
+        (job.steps ?? []).some((step) => step.uses?.toString().startsWith('actions/checkout@')),
+      ).toBe(false)
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).not.toMatch(
+        /pnpm|corepack|npm install|node scripts\//u,
+      )
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain('LOCAL_INTEGRITY="sha512-')
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain(
+        'npm view "$PACKAGE@$VERSION" dist.integrity',
+      )
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain("grep -q '\\bE404\\b'")
+      const rawPublishRun = (job.steps ?? []).find(
+        (step) => typeof step.run === 'string' && step.run.includes('npm publish '),
+      )?.run
+      expect(rawPublishRun).toBeTypeOf('string')
+      expect(rawPublishRun).toMatch(/cat "\$REGISTRY_ERROR" >&2(?:\r?\n|;)\s*exit 1\b/u)
+      expect(job.permissions).toEqual({ actions: 'read', 'id-token': 'write' })
+    }
 
     const structuredWorkflow = JSON.stringify(workflow)
     expect(structuredWorkflow).not.toContain('npm dist-tag')
     expect(structuredWorkflow).not.toContain('NODE_AUTH_TOKEN')
     expect(structuredWorkflow).not.toContain('NPM_TOKEN')
+
+    const githubRelease = requireJob(workflow, 'github-prerelease')
+    expect(githubRelease.environment).toBe('npm')
+    expect(githubRelease.permissions).toEqual({ contents: 'write' })
+    const githubReleaseRuns = runs(workflow, 'github-prerelease').join('\n')
+    expect(githubReleaseRuns).toContain('gh release create')
+    expect(githubReleaseRuns).toContain('gh release edit')
+    expect(githubReleaseRuns).not.toMatch(/pnpm|npm install|node scripts\//u)
+  })
+
+  it('does not publish from any OIDC workflow branch after a non-404 registry error', () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'bcn-workflow-registry-error-'))
+    const fakeBin = join(temporaryDirectory, 'bin')
+    const fakeNpm = join(fakeBin, 'npm')
+    const executionLog = join(temporaryDirectory, 'executed.log')
+    mkdirSync(fakeBin)
+    writeFileSync(
+      fakeNpm,
+      `#!/bin/sh
+if [ "$1" = "view" ]; then
+  printf '{"error":{"code":"E500"}}\\n' >&2
+  exit 1
+fi
+printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
+`,
+    )
+    chmodSync(fakeNpm, 0o755)
+
+    try {
+      for (const jobId of ['publish-vue-staging', 'publish-nuxt-staging', 'publish-mcp-staging']) {
+        const rawRun = steps(workflow, jobId).find(
+          (step) => typeof step.run === 'string' && step.run.includes('npm publish '),
+        )?.run
+        if (typeof rawRun !== 'string') throw new Error(`Missing publish run for ${jobId}`)
+        const guardedBranch = rawRun.slice(rawRun.indexOf('REGISTRY_ERROR='))
+        const result = spawnSync('/bin/sh', ['-c', guardedBranch], {
+          cwd: temporaryDirectory,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            BCN_CANDIDATE_DIST_TAG: 'candidate-test',
+            BCN_FAKE_NPM_LOG: executionLog,
+            LOCAL_INTEGRITY: 'sha512-local',
+            PACKAGE: 'example-package',
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+            RUNNER_TEMP: temporaryDirectory,
+            TARBALL: 'example.tgz',
+            VERSION: '1.0.0',
+          },
+        })
+        expect(result.status, `${jobId}: ${result.stderr}`).toBe(1)
+        expect(result.stderr).toContain('E500')
+        expect(existsSync(executionLog)).toBe(false)
+      }
+    } finally {
+      rmSync(temporaryDirectory, { force: true, recursive: true })
+    }
   })
 
   it('makes exact-host cloud staging block publication', () => {

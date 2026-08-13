@@ -1,4 +1,4 @@
-const siteUrl = 'https://better-convex-nuxt.vercel.app'
+const siteUrl = 'https://better-convex-nuxt.lupinum.com'
 
 export default {
   ginkoDocs: {
@@ -14,6 +14,7 @@ export default {
     },
     social: {
       github: 'https://github.com/lupinum-dev/better-convex-nuxt',
+      discord: 'https://discord.gg/RPH6SeA36N',
     },
     repository: {
       url: 'https://github.com/lupinum-dev/better-convex-nuxt',

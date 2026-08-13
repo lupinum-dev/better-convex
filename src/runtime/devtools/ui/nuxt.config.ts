@@ -31,8 +31,8 @@ const config = {
   nitro: {
     preset: 'static',
     output: {
-      dir: '../.output',
-      publicDir: '../.output/public',
+      dir: '../../../../node_modules/.cache/nuxt/devtools-output',
+      publicDir: './dist',
     },
   },
 

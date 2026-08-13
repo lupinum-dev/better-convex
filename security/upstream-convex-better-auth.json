@@ -46,17 +46,17 @@
     ]
   },
   "monitoring": {
-    "reviewedAt": "2026-07-16",
+    "reviewedAt": "2026-08-12",
     "reviewExpiresAfterDays": 31,
     "apiRepository": "get-convex/better-auth",
     "defaultBranch": {
       "name": "main",
-      "head": "c628916b451a6b4cff0f5464f134475464b1a6da",
-      "compareStatus": "identical",
+      "head": "2f9fcf6c3966bb27d38b2b83e80a1e914ab2a3ee",
+      "compareStatus": "ahead",
       "sourceSeamChanges": [],
       "disposition": "irrelevant",
       "reviewComplete": true,
-      "rationale": "The reviewed default branch still resolves to the imported v0.12.5 commit, so no enumerated source seam has changed."
+      "rationale": "The only upstream commit after the imported v0.12.5 baseline changes e2e/backendHarness.js from provision.convex.dev to api.convex.dev. This file is outside every authorized source seam, so the imported authentication runtime and its security contracts do not require a change."
     },
     "releases": {
       "items": [],
