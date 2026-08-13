@@ -33,7 +33,7 @@ function createRepository(version = '0.8.0-beta.40') {
       name: '@lupinum/better-convex-nuxt',
       repository: {
         type: 'git',
-        url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+        url: 'https://github.com/lupinum-dev/better-convex',
       },
       version,
     })}\n`,
@@ -45,7 +45,7 @@ function createRepository(version = '0.8.0-beta.40') {
       name: '@lupinum/better-convex-vue',
       repository: {
         type: 'git',
-        url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+        url: 'https://github.com/lupinum-dev/better-convex',
       },
       version,
     })}\n`,
@@ -164,7 +164,7 @@ describe('package candidate set', () => {
         name: '@lupinum/better-convex-vue',
         repository: {
           type: 'git',
-          url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+          url: 'https://github.com/lupinum-dev/better-convex',
         },
         version: '0.8.0-beta.41',
       })}\n`,

@@ -15,15 +15,15 @@
     "vue3",
     "websocket"
   ],
-  "homepage": "https://better-convex-nuxt.lupinum.com",
+  "homepage": "https://better-convex.lupinum.com",
   "bugs": {
-    "url": "https://github.com/lupinum-dev/better-convex-nuxt/issues"
+    "url": "https://github.com/lupinum-dev/better-convex/issues"
   },
   "license": "MIT",
   "author": "Lupinum OG <info@lupinum.com> (https://lupinum.com)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lupinum-dev/better-convex-nuxt"
+    "url": "https://github.com/lupinum-dev/better-convex"
   },
   "bin": {
     "better-convex-nuxt-auth-schema": "./dist/runtime/cli/auth-schema.js",

@@ -25,7 +25,7 @@ describe('hosted source certification', () => {
     await expect(
       assertHostedSourceCertification({
         fetchImplementation,
-        repository: 'lupinum-dev/better-convex-nuxt',
+        repository: 'lupinum-dev/better-convex',
         sha,
         token,
       }),
@@ -56,7 +56,7 @@ describe('hosted source certification', () => {
               override,
             ),
           ),
-        repository: 'lupinum-dev/better-convex-nuxt',
+        repository: 'lupinum-dev/better-convex',
         sha,
         token,
       }),
@@ -67,7 +67,7 @@ describe('hosted source certification', () => {
     const error = await assertHostedSourceCertification({
       fetchImplementation: async () =>
         new Response('x', { headers: { 'content-length': String(65 * 1024) } }),
-      repository: 'lupinum-dev/better-convex-nuxt',
+      repository: 'lupinum-dev/better-convex',
       sha,
       token,
     }).catch((caught) => caught)

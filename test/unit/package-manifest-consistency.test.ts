@@ -11,6 +11,16 @@ const repositoryRoot = resolve(import.meta.dirname, '../..')
 const nuxtPackageJson = JSON.parse(readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8'))
 const nuxtProfile = getPackageCheckerProfile('nuxt')
 
+describe('package license consistency', () => {
+  it('keeps every package license identical to the repository license', () => {
+    const canonical = readFileSync(resolve(repositoryRoot, 'LICENSE'), 'utf8')
+
+    for (const file of ['packages/mcp/LICENSE', 'packages/vue/LICENSE']) {
+      expect(readFileSync(resolve(repositoryRoot, file), 'utf8'), file).toBe(canonical)
+    }
+  })
+})
+
 function cloneNuxtManifest() {
   return structuredClone(nuxtPackageJson)
 }

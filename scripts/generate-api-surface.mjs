@@ -46,8 +46,7 @@ function normalizeRepoUrl(input) {
 }
 
 const repoBase =
-  normalizeRepoUrl(packageJson?.repository?.url) ??
-  'https://github.com/lupinum-dev/better-convex-nuxt'
+  normalizeRepoUrl(packageJson?.repository?.url) ?? 'https://github.com/lupinum-dev/better-convex'
 
 function extractNamesFromRegistry(registryName) {
   const registry = apiSurfaceRegistry[registryName]

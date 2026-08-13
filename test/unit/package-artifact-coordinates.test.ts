@@ -31,7 +31,7 @@ function createRepository() {
       name: '@lupinum/better-convex-nuxt',
       repository: {
         type: 'git',
-        url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+        url: 'https://github.com/lupinum-dev/better-convex',
       },
       version: '0.8.0-beta.40',
     })}\n`,

@@ -20,7 +20,7 @@
 ## v0.8.0-beta.28
 
 - Bind all three publishable package manifests to the canonical
-  `https://github.com/lupinum-dev/better-convex-nuxt` repository and make that
+  `https://github.com/lupinum-dev/better-convex` repository and make that
   provenance identity a release-certification invariant.
 - Build the MCP workspace entry directly through the root `unbuild` authority
   during Nuxt prepack so pnpm cannot create a nested package lockfile.
@@ -40,7 +40,7 @@
 
 ## v0.6.1
 
-[compare changes](https://github.com/lupinum-dev/better-convex-nuxt/compare/v0.6.0...v0.6.1)
+[compare changes](https://github.com/lupinum-dev/better-convex/compare/v0.6.0...v0.6.1)
 
 ### 🔒 Dependency and CI hardening
 
@@ -67,7 +67,7 @@
 
 ## v0.6.0
 
-[compare changes](https://github.com/lupinum-dev/better-convex-nuxt/compare/v0.5.0...v0.6.0)
+[compare changes](https://github.com/lupinum-dev/better-convex/compare/v0.5.0...v0.6.0)
 
 This is the vNext hard cutover. It replaces the pre-0.6 auth, query-argument,
 error, and server-call surfaces outright — there is no compatibility shim and
@@ -207,15 +207,15 @@ consumers will need source changes.
 
 ## v0.5.0
 
-[compare changes](https://github.com/lupinum-dev/better-convex-nuxt/compare/v0.4.0...v0.5.0)
+[compare changes](https://github.com/lupinum-dev/better-convex/compare/v0.4.0...v0.5.0)
 
 ### 🩹 Fixes
 
-- Remove unnecessary override for parent workspace in pnpm configuration ([7f6b2bb0](https://github.com/lupinum-dev/better-convex-nuxt/commit/7f6b2bb0))
+- Remove unnecessary override for parent workspace in pnpm configuration ([7f6b2bb0](https://github.com/lupinum-dev/better-convex/commit/7f6b2bb0))
 
 ### 💅 Refactors
 
-- Simplify landing feature syntax in documentation ([eef25d41](https://github.com/lupinum-dev/better-convex-nuxt/commit/eef25d41))
+- Simplify landing feature syntax in documentation ([eef25d41](https://github.com/lupinum-dev/better-convex/commit/eef25d41))
 
 ### ❤️ Contributors
 
@@ -223,27 +223,27 @@ consumers will need source changes.
 
 ## v0.4.0
 
-[compare changes](https://github.com/lupinum-dev/better-convex-nuxt/compare/v0.3.4...v0.4.0)
+[compare changes](https://github.com/lupinum-dev/better-convex/compare/v0.3.4...v0.4.0)
 
 Reconstructed from the tagged commit range and the published `0.4.0` npm
 release; this section was missing from the changelog until the vNext Phase 6
 repair. No new facts beyond what the commit range and the release itself
-show — see the [`v0.4.0` GitHub release](https://github.com/lupinum-dev/better-convex-nuxt/releases/tag/v0.4.0)
+show — see the [`v0.4.0` GitHub release](https://github.com/lupinum-dev/better-convex/releases/tag/v0.4.0)
 and the [published package](https://www.npmjs.com/package/better-convex-nuxt/v/0.4.0)
 for the authoritative record if this summary is ever in question.
 
 ### 🚀 Enhancements
 
-- Export `ConvexUser` from the module entrypoint ([c78b6926](https://github.com/lupinum-dev/better-convex-nuxt/commit/c78b6926))
+- Export `ConvexUser` from the module entrypoint ([c78b6926](https://github.com/lupinum-dev/better-convex/commit/c78b6926))
 - Harden starters and add the MCP approval flow, including Convex Nuxt runtime
   contract hardening, SSR-safe mutation callables, extracted server auth
   snapshot/shared-query/upload-queue/paginated-query internals, unified live
   query subscriptions, and a Better Auth Organization-backed team starter
-  ([6fbf0bd5](https://github.com/lupinum-dev/better-convex-nuxt/commit/6fbf0bd5))
+  ([6fbf0bd5](https://github.com/lupinum-dev/better-convex/commit/6fbf0bd5))
 
 ### 🩹 Fixes
 
-- Prepare starters and demo for the `0.4.0` release ([d18763fb](https://github.com/lupinum-dev/better-convex-nuxt/commit/d18763fb))
+- Prepare starters and demo for the `0.4.0` release ([d18763fb](https://github.com/lupinum-dev/better-convex/commit/d18763fb))
 
 ### ❤️ Contributors
 
@@ -251,14 +251,14 @@ for the authoritative record if this summary is ever in question.
 
 ## v0.3.4
 
-[compare changes](https://github.com/lupinum-dev/better-convex-nuxt/compare/v0.3.0...v0.3.4)
+[compare changes](https://github.com/lupinum-dev/better-convex/compare/v0.3.0...v0.3.4)
 
 ### 🏡 Chore
 
-- **release:** V0.3.1 ([134fbdc](https://github.com/lupinum-dev/better-convex-nuxt/commit/134fbdc))
-- Update .npmignore and nuxt.config.ts ([5133e3e](https://github.com/lupinum-dev/better-convex-nuxt/commit/5133e3e))
-- Refine .npmignore to exclude additional unnecessary files ([1ad761a](https://github.com/lupinum-dev/better-convex-nuxt/commit/1ad761a))
-- Bump version to v0.3.3 to fix npm release pipeline ([638c188](https://github.com/lupinum-dev/better-convex-nuxt/commit/638c188))
+- **release:** V0.3.1 ([134fbdc](https://github.com/lupinum-dev/better-convex/commit/134fbdc))
+- Update .npmignore and nuxt.config.ts ([5133e3e](https://github.com/lupinum-dev/better-convex/commit/5133e3e))
+- Refine .npmignore to exclude additional unnecessary files ([1ad761a](https://github.com/lupinum-dev/better-convex/commit/1ad761a))
+- Bump version to v0.3.3 to fix npm release pipeline ([638c188](https://github.com/lupinum-dev/better-convex/commit/638c188))
 
 ### ❤️ Contributors
 
@@ -266,80 +266,80 @@ for the authoritative record if this summary is ever in question.
 
 ## v0.3.1
 
-[compare changes](https://github.com/lupinum-dev/better-convex-nuxt/compare/v0.3.0...v0.3.1)
+[compare changes](https://github.com/lupinum-dev/better-convex/compare/v0.3.0...v0.3.1)
 
 ## v0.3.0
 
-[compare changes](https://github.com/lupinum-dev/better-convex-nuxt/compare/v0.2.12...v0.3.0)
+[compare changes](https://github.com/lupinum-dev/better-convex/compare/v0.2.12...v0.3.0)
 
 ### 🚀 Enhancements
 
-- Enhance permissions handling and DevTools integration ([2c3ec80](https://github.com/lupinum-dev/better-convex-nuxt/commit/2c3ec80))
-- Add guard pages for pending authentication and enhance query handling ([8fd90d9](https://github.com/lupinum-dev/better-convex-nuxt/commit/8fd90d9))
-- Enhance defineSharedConvexQuery with fingerprinting and duplicate key handling ([5b8e339](https://github.com/lupinum-dev/better-convex-nuxt/commit/5b8e339))
-- Api polish, prepare for release ([a9fb1c3](https://github.com/lupinum-dev/better-convex-nuxt/commit/a9fb1c3))
-- Api polish ([83728a5](https://github.com/lupinum-dev/better-convex-nuxt/commit/83728a5))
-- Add consumer smoke test setup ([5cacd7c](https://github.com/lupinum-dev/better-convex-nuxt/commit/5cacd7c))
+- Enhance permissions handling and DevTools integration ([2c3ec80](https://github.com/lupinum-dev/better-convex/commit/2c3ec80))
+- Add guard pages for pending authentication and enhance query handling ([8fd90d9](https://github.com/lupinum-dev/better-convex/commit/8fd90d9))
+- Enhance defineSharedConvexQuery with fingerprinting and duplicate key handling ([5b8e339](https://github.com/lupinum-dev/better-convex/commit/5b8e339))
+- Api polish, prepare for release ([a9fb1c3](https://github.com/lupinum-dev/better-convex/commit/a9fb1c3))
+- Api polish ([83728a5](https://github.com/lupinum-dev/better-convex/commit/83728a5))
+- Add consumer smoke test setup ([5cacd7c](https://github.com/lupinum-dev/better-convex/commit/5cacd7c))
 
 ### 🩹 Fixes
 
-- Enhance testing commands and improve local environment setup ([b0c2a09](https://github.com/lupinum-dev/better-convex-nuxt/commit/b0c2a09))
-- Update TypeScript comment in nuxt.config.ts for clarity ([1eabe82](https://github.com/lupinum-dev/better-convex-nuxt/commit/1eabe82))
-- Update CI workflow for module packing and verification ([55323c0](https://github.com/lupinum-dev/better-convex-nuxt/commit/55323c0))
+- Enhance testing commands and improve local environment setup ([b0c2a09](https://github.com/lupinum-dev/better-convex/commit/b0c2a09))
+- Update TypeScript comment in nuxt.config.ts for clarity ([1eabe82](https://github.com/lupinum-dev/better-convex/commit/1eabe82))
+- Update CI workflow for module packing and verification ([55323c0](https://github.com/lupinum-dev/better-convex/commit/55323c0))
 
 ### 💅 Refactors
 
-- Auth ([157fd65](https://github.com/lupinum-dev/better-convex-nuxt/commit/157fd65))
-- Enhance authentication configuration and documentation ([d09c42a](https://github.com/lupinum-dev/better-convex-nuxt/commit/d09c42a))
-- Streamline Convex configuration and enhance authentication handling ([2d09cdb](https://github.com/lupinum-dev/better-convex-nuxt/commit/2d09cdb))
-- Unify Convex configuration access across composables ([b78a514](https://github.com/lupinum-dev/better-convex-nuxt/commit/b78a514))
-- ⚠️ Modernize Nuxt 4/Vue 3.5 runtime, harden auth proxy, and add cache-reuse recipe/demo ([7e7eb57](https://github.com/lupinum-dev/better-convex-nuxt/commit/7e7eb57))
-- Update error handling and improve component structure ([6cefde9](https://github.com/lupinum-dev/better-convex-nuxt/commit/6cefde9))
-- Migrate to useConvexAuth for authentication handling ([16f82c7](https://github.com/lupinum-dev/better-convex-nuxt/commit/16f82c7))
-- Finish release Candidate ([a50ea1d](https://github.com/lupinum-dev/better-convex-nuxt/commit/a50ea1d))
-- Split useConvexQuery => useConvexQueryLazy ([03852a9](https://github.com/lupinum-dev/better-convex-nuxt/commit/03852a9))
-- Streamline Convex URL handling and improve site URL derivation ([0ff5c2f](https://github.com/lupinum-dev/better-convex-nuxt/commit/0ff5c2f))
-- Update mutation handling and query arguments in playground components ([4f1c399](https://github.com/lupinum-dev/better-convex-nuxt/commit/4f1c399))
-- Improve runtime configuration handling for Convex ([4d10fdc](https://github.com/lupinum-dev/better-convex-nuxt/commit/4d10fdc))
+- Auth ([157fd65](https://github.com/lupinum-dev/better-convex/commit/157fd65))
+- Enhance authentication configuration and documentation ([d09c42a](https://github.com/lupinum-dev/better-convex/commit/d09c42a))
+- Streamline Convex configuration and enhance authentication handling ([2d09cdb](https://github.com/lupinum-dev/better-convex/commit/2d09cdb))
+- Unify Convex configuration access across composables ([b78a514](https://github.com/lupinum-dev/better-convex/commit/b78a514))
+- ⚠️ Modernize Nuxt 4/Vue 3.5 runtime, harden auth proxy, and add cache-reuse recipe/demo ([7e7eb57](https://github.com/lupinum-dev/better-convex/commit/7e7eb57))
+- Update error handling and improve component structure ([6cefde9](https://github.com/lupinum-dev/better-convex/commit/6cefde9))
+- Migrate to useConvexAuth for authentication handling ([16f82c7](https://github.com/lupinum-dev/better-convex/commit/16f82c7))
+- Finish release Candidate ([a50ea1d](https://github.com/lupinum-dev/better-convex/commit/a50ea1d))
+- Split useConvexQuery => useConvexQueryLazy ([03852a9](https://github.com/lupinum-dev/better-convex/commit/03852a9))
+- Streamline Convex URL handling and improve site URL derivation ([0ff5c2f](https://github.com/lupinum-dev/better-convex/commit/0ff5c2f))
+- Update mutation handling and query arguments in playground components ([4f1c399](https://github.com/lupinum-dev/better-convex/commit/4f1c399))
+- Improve runtime configuration handling for Convex ([4d10fdc](https://github.com/lupinum-dev/better-convex/commit/4d10fdc))
 
 ### 📖 Documentation
 
-- Enhance documentation for HTTP-only mode in Convex queries ([b15f832](https://github.com/lupinum-dev/better-convex-nuxt/commit/b15f832))
-- Update data fetching and pagination examples for reactive arguments ([d0fadb9](https://github.com/lupinum-dev/better-convex-nuxt/commit/d0fadb9))
-- Enhance permissions setup and introduce upload queue functionality ([4228ae4](https://github.com/lupinum-dev/better-convex-nuxt/commit/4228ae4))
-- Update import paths and enhance documentation for file storage and query handling ([6e17d3e](https://github.com/lupinum-dev/better-convex-nuxt/commit/6e17d3e))
-- Enhance authentication and data fetching documentation ([1e35508](https://github.com/lupinum-dev/better-convex-nuxt/commit/1e35508))
-- Update API surface documentation and generation script ([252ac6d](https://github.com/lupinum-dev/better-convex-nuxt/commit/252ac6d))
-- Update query/mutation handling ([5b657bc](https://github.com/lupinum-dev/better-convex-nuxt/commit/5b657bc))
-- Update mutation handling to use `execute()` instead of `mutate()` ([ae179a9](https://github.com/lupinum-dev/better-convex-nuxt/commit/ae179a9))
+- Enhance documentation for HTTP-only mode in Convex queries ([b15f832](https://github.com/lupinum-dev/better-convex/commit/b15f832))
+- Update data fetching and pagination examples for reactive arguments ([d0fadb9](https://github.com/lupinum-dev/better-convex/commit/d0fadb9))
+- Enhance permissions setup and introduce upload queue functionality ([4228ae4](https://github.com/lupinum-dev/better-convex/commit/4228ae4))
+- Update import paths and enhance documentation for file storage and query handling ([6e17d3e](https://github.com/lupinum-dev/better-convex/commit/6e17d3e))
+- Enhance authentication and data fetching documentation ([1e35508](https://github.com/lupinum-dev/better-convex/commit/1e35508))
+- Update API surface documentation and generation script ([252ac6d](https://github.com/lupinum-dev/better-convex/commit/252ac6d))
+- Update query/mutation handling ([5b657bc](https://github.com/lupinum-dev/better-convex/commit/5b657bc))
+- Update mutation handling to use `execute()` instead of `mutate()` ([ae179a9](https://github.com/lupinum-dev/better-convex/commit/ae179a9))
 
 ### 🏡 Chore
 
-- **release:** V0.2.12 ([df71928](https://github.com/lupinum-dev/better-convex-nuxt/commit/df71928))
-- Bump deps ([d8bbdbd](https://github.com/lupinum-dev/better-convex-nuxt/commit/d8bbdbd))
-- Add Nuxt test-utils configuration and update dependencies ([e7c5f5c](https://github.com/lupinum-dev/better-convex-nuxt/commit/e7c5f5c))
-- Update testing configurations and enhance test scripts ([78c5f0f](https://github.com/lupinum-dev/better-convex-nuxt/commit/78c5f0f))
-- Polish and prepare beta ([5c03668](https://github.com/lupinum-dev/better-convex-nuxt/commit/5c03668))
-- Update pnpm-lock.yaml to include @vitejs/plugin-vue ([3a95bd9](https://github.com/lupinum-dev/better-convex-nuxt/commit/3a95bd9))
-- Add Playwright browser installation step in CI workflow ([d979e22](https://github.com/lupinum-dev/better-convex-nuxt/commit/d979e22))
-- Update playground for new API ([3746396](https://github.com/lupinum-dev/better-convex-nuxt/commit/3746396))
-- Enhance playground configuration and logging ([a288f22](https://github.com/lupinum-dev/better-convex-nuxt/commit/a288f22))
-- Update project configuration and improve mutation handling ([96645b1](https://github.com/lupinum-dev/better-convex-nuxt/commit/96645b1))
-- Clean up nuxt.config.ts by removing unnecessary whitespace ([62dc1d1](https://github.com/lupinum-dev/better-convex-nuxt/commit/62dc1d1))
-- Update deps & format ([16e0b8f](https://github.com/lupinum-dev/better-convex-nuxt/commit/16e0b8f))
-- Update dependencies and Renovate configuration ([1e7e9e0](https://github.com/lupinum-dev/better-convex-nuxt/commit/1e7e9e0))
-- Prepare package version for release ([7dd3ee7](https://github.com/lupinum-dev/better-convex-nuxt/commit/7dd3ee7))
+- **release:** V0.2.12 ([df71928](https://github.com/lupinum-dev/better-convex/commit/df71928))
+- Bump deps ([d8bbdbd](https://github.com/lupinum-dev/better-convex/commit/d8bbdbd))
+- Add Nuxt test-utils configuration and update dependencies ([e7c5f5c](https://github.com/lupinum-dev/better-convex/commit/e7c5f5c))
+- Update testing configurations and enhance test scripts ([78c5f0f](https://github.com/lupinum-dev/better-convex/commit/78c5f0f))
+- Polish and prepare beta ([5c03668](https://github.com/lupinum-dev/better-convex/commit/5c03668))
+- Update pnpm-lock.yaml to include @vitejs/plugin-vue ([3a95bd9](https://github.com/lupinum-dev/better-convex/commit/3a95bd9))
+- Add Playwright browser installation step in CI workflow ([d979e22](https://github.com/lupinum-dev/better-convex/commit/d979e22))
+- Update playground for new API ([3746396](https://github.com/lupinum-dev/better-convex/commit/3746396))
+- Enhance playground configuration and logging ([a288f22](https://github.com/lupinum-dev/better-convex/commit/a288f22))
+- Update project configuration and improve mutation handling ([96645b1](https://github.com/lupinum-dev/better-convex/commit/96645b1))
+- Clean up nuxt.config.ts by removing unnecessary whitespace ([62dc1d1](https://github.com/lupinum-dev/better-convex/commit/62dc1d1))
+- Update deps & format ([16e0b8f](https://github.com/lupinum-dev/better-convex/commit/16e0b8f))
+- Update dependencies and Renovate configuration ([1e7e9e0](https://github.com/lupinum-dev/better-convex/commit/1e7e9e0))
+- Prepare package version for release ([7dd3ee7](https://github.com/lupinum-dev/better-convex/commit/7dd3ee7))
 
 ### ✅ Tests
 
-- Improve selector logic in useConvexConnectionState behavior tests ([e7fddb2](https://github.com/lupinum-dev/better-convex-nuxt/commit/e7fddb2))
-- Enhance connection state behavior tests with improved waiting logic ([b3285a7](https://github.com/lupinum-dev/better-convex-nuxt/commit/b3285a7))
-- Harden dedup, permission guard, and optimistic update coverage ([6a33a8a](https://github.com/lupinum-dev/better-convex-nuxt/commit/6a33a8a))
-- Add end-to-end test for plugin server misconfiguration overlay ([b33601e](https://github.com/lupinum-dev/better-convex-nuxt/commit/b33601e))
+- Improve selector logic in useConvexConnectionState behavior tests ([e7fddb2](https://github.com/lupinum-dev/better-convex/commit/e7fddb2))
+- Enhance connection state behavior tests with improved waiting logic ([b3285a7](https://github.com/lupinum-dev/better-convex/commit/b3285a7))
+- Harden dedup, permission guard, and optimistic update coverage ([6a33a8a](https://github.com/lupinum-dev/better-convex/commit/6a33a8a))
+- Add end-to-end test for plugin server misconfiguration overlay ([b33601e](https://github.com/lupinum-dev/better-convex/commit/b33601e))
 
 #### ⚠️ Breaking Changes
 
-- ⚠️ Modernize Nuxt 4/Vue 3.5 runtime, harden auth proxy, and add cache-reuse recipe/demo ([7e7eb57](https://github.com/lupinum-dev/better-convex-nuxt/commit/7e7eb57))
+- ⚠️ Modernize Nuxt 4/Vue 3.5 runtime, harden auth proxy, and add cache-reuse recipe/demo ([7e7eb57](https://github.com/lupinum-dev/better-convex/commit/7e7eb57))
 
 ### ❤️ Contributors
 

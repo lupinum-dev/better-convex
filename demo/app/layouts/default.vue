@@ -76,7 +76,7 @@ const isLoginPage = computed(() => route.path === '/')
           <!-- External Links -->
           <div class="space-y-1 border-t border-default pt-4">
             <a
-              href="https://github.com/lupinum-dev/better-convex-nuxt"
+              href="https://github.com/lupinum-dev/better-convex"
               target="_blank"
               rel="noopener noreferrer"
               class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-muted hover:text-default hover:bg-elevated"
@@ -113,7 +113,7 @@ const isLoginPage = computed(() => route.path === '/')
       </template>
       <template #right>
         <UButton
-          to="https://github.com/lupinum-dev/better-convex-nuxt"
+          to="https://github.com/lupinum-dev/better-convex"
           target="_blank"
           icon="i-simple-icons-github"
           aria-label="GitHub"

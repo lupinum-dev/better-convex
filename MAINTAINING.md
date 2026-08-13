@@ -61,7 +61,7 @@ GitHub must have:
   workflow permissions read-only;
 - Issues enabled for public reports, with Wikis and Discussions disabled so
   versioned repository documentation remains authoritative;
-- protected `v*-*` release tags;
+- protected `v*` release tags;
 - protected `staging` and `npm` environments with the restrictions in
   [RELEASING.md](./RELEASING.md);
 - private vulnerability reporting, secret scanning, push protection, automated
@@ -71,5 +71,11 @@ GitHub must have:
 npm must bind each of the three `@lupinum/better-convex-*` packages to
 `publish-prerelease.yml` and the `npm` environment through trusted publishing.
 
+The repository and GitHub environments must not contain `CONVEX_DEPLOY_KEY`.
+The repository does not deploy the example application. Run its Convex backend
+only in a maintainer-owned development deployment. This keeps deployment
+credentials outside repository workflows and avoids executing dependencies with
+a production-capable key.
+
 Vercel must deploy the documentation from `main` to
-`better-convex-nuxt.lupinum.com` and create pull-request previews.
+`better-convex.lupinum.com` and create pull-request previews.

@@ -16,8 +16,8 @@ importers:
         specifier: 0.4.0-rc.1
         version: 0.4.0-rc.1(e20831ebb2ca2df8c9b747a2507b2dde)
       '@lupinum/ginko-docs':
-        specifier: 0.3.0-rc.3
-        version: 0.3.0-rc.3(414cc70daeba8ae98fab5818057d3416)
+        specifier: 0.3.0-rc.4
+        version: 0.3.0-rc.4(414cc70daeba8ae98fab5818057d3416)
       nuxt:
         specifier: 4.5.1
         version: 4.5.1(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@oxc-project/types@0.144.0)(@parcel/watcher@2.5.6)(@types/node@26.2.0)(@vitejs/devtools-kit@0.4.9(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(cac@7.0.0)(srvx@0.12.5)(typescript@5.9.3)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(@vue/compiler-sfc@3.5.41)(better-sqlite3@12.11.1)(cac@7.0.0)(db0@0.3.4(better-sqlite3@12.11.1))(esbuild@0.28.1)(eslint@9.39.5(jiti@2.7.0))(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.4)(optionator@0.9.4)(oxc-parser@0.143.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.4)(rollup@4.62.4))(rollup@4.62.4)(srvx@0.12.5)(terser@5.50.0)(typescript@5.9.3)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue-tsc@3.3.9(typescript@5.9.3))(yaml@2.9.0)
@@ -875,8 +875,8 @@ packages:
       vitest:
         optional: true
 
-  '@lupinum/ginko-docs@0.3.0-rc.3':
-    resolution: {integrity: sha512-4SAbTM8rPkw6u6IJwaVCxhl6XRuhoES0VunRfTKvxSmcJTpkc/K+a9/v3A/OV1n2y+FDxHeIZGj7IicGMKeEKQ==}
+  '@lupinum/ginko-docs@0.3.0-rc.4':
+    resolution: {integrity: sha512-84N13scJMQjClP1j/TmHK7oFyYtJlkq7yQnNTChsaU1PQ9Ji3KsQrq1ZsysLZbaRArFNpZbZ6DdBMfSqyD7a9Q==}
     engines: {node: ^22.18.0 || ^24.11.0 || >=26.0.0}
     peerDependencies:
       '@lupinum/ginko-content': '>=0.4.0-rc.1 <0.5.0'
@@ -7221,7 +7221,7 @@ snapshots:
       - webpack
       - xml2js
 
-  '@lupinum/ginko-docs@0.3.0-rc.3(414cc70daeba8ae98fab5818057d3416)':
+  '@lupinum/ginko-docs@0.3.0-rc.4(414cc70daeba8ae98fab5818057d3416)':
     dependencies:
       '@iconify-json/circle-flags': 1.2.10
       '@iconify-json/logos': 1.2.12
