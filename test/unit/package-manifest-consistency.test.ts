@@ -97,6 +97,28 @@ describe('public README consistency', () => {
   })
 })
 
+describe('contributor intake consistency', () => {
+  it('keeps documentation reports, release notes, and risk visible', () => {
+    expect(
+      readFileSync(resolve(repositoryRoot, '.github/ISSUE_TEMPLATE/documentation.md'), 'utf8'),
+    ).toContain('name: Documentation report')
+
+    const pullRequestTemplate = readFileSync(
+      resolve(repositoryRoot, '.github/pull_request_template.md'),
+      'utf8',
+    )
+    for (const heading of [
+      'Result',
+      'Verification',
+      'Documentation and boundaries',
+      'Release note',
+      'Risk',
+    ]) {
+      expect(pullRequestTemplate).toContain(`## ${heading}`)
+    }
+  })
+})
+
 function cloneNuxtManifest() {
   return structuredClone(nuxtPackageJson)
 }

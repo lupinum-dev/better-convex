@@ -14,3 +14,11 @@
 - [ ] I kept server-only code outside browser bundles.
 - [ ] I kept this pull request focused on one concern.
 - [ ] I did not include credentials, tokens, private data, or generated artifacts.
+
+## Release note
+
+<!-- State the changelog entry. Write "None" and explain why when no package release note is required. -->
+
+## Risk
+
+<!-- State the main failure mode and the evidence that controls it. -->
