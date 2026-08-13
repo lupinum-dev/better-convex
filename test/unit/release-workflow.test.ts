@@ -595,7 +595,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     const githubReleaseRuns = runs(workflow, 'github-prerelease').join('\n')
     expect(githubReleaseRuns).toContain('gh release create')
     expect(githubReleaseRuns).toContain('--target "$GITHUB_SHA"')
-    expect(githubReleaseRuns).toContain('gh release edit')
+    expect(githubReleaseRuns).not.toContain('gh release edit')
     expect(githubReleaseRuns).not.toMatch(/pnpm|npm install|node scripts\//u)
   })
 

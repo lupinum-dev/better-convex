@@ -41,6 +41,16 @@ jobs:
           test "$GITHUB_REF" = refs/heads/main
           test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
           case "$RELEASE_VERSION" in *-*) ;; *) exit 1 ;; esac
+      - name: Require an unused release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/tags/v$RELEASE_VERSION")
+          test "$status" = 404
       - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
       - name: Run the disposable lock and package smoke
@@ -592,8 +602,4 @@ jobs:
             capture { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
           test -s "$RUNNER_TEMP/release-notes.md"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
-          else
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
-          fi
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
