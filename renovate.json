@@ -5,7 +5,7 @@
   "enabledManagers": ["npm", "github-actions"],
   "timezone": "Europe/Vienna",
   "labels": ["dependencies", "renovate"],
-  "minimumReleaseAge": "3 days",
+  "minimumReleaseAge": "1 day",
   "pinDigests": true,
   "rangeStrategy": "bump",
   "prConcurrentLimit": 8,

@@ -81,34 +81,34 @@ describe('pkg.pr.new package preview workflow', () => {
     expect(structuredWorkflow).not.toContain('npm publish')
   })
 
-  it('builds only a disposable Vue/Nuxt preview set', () => {
+  it('builds only a disposable Vue, Nuxt, and MCP preview set', () => {
     expect(runs).toEqual(
       expect.arrayContaining([
         'pnpm install --frozen-lockfile',
         'node scripts/build-package-preview.mjs',
       ]),
     )
-    expect(read('scripts/build-package-preview.mjs')).toContain("buildAndPackReleaseTarball('vue'")
-    expect(read('scripts/build-package-preview.mjs')).toContain("buildAndPackReleaseTarball('nuxt'")
+    expect(read('scripts/build-package-preview.mjs')).toContain(
+      "const packages = ['vue', 'nuxt', 'mcp'].map",
+    )
     expect(runs).not.toContain('pnpm release:prepare')
     expect(runs).not.toContain('pnpm release:artifact:set')
     expect(runs).not.toContain('pnpm release:certify:source core')
     expect(runs.some((run) => /(?:npm|pnpm) pack/u.test(run))).toBe(false)
   })
 
-  it('uses the pinned preview CLI once on the prebuilt tarball', () => {
-    expect(packageJson.devDependencies?.['pkg-pr-new']).toBe('0.0.78')
-    expect(lockfile.importers?.['.']?.devDependencies?.['pkg-pr-new']?.specifier).toBe('0.0.78')
-    expect(lockfile.packages?.['pkg-pr-new@0.0.78']?.resolution?.integrity).toMatch(/^sha512-/u)
+  it('uses the pinned preview CLI once on the prebuilt tarballs', () => {
+    expect(packageJson.devDependencies?.['pkg-pr-new']).toBe('0.0.87')
+    expect(lockfile.importers?.['.']?.devDependencies?.['pkg-pr-new']?.specifier).toBe('0.0.87')
+    expect(lockfile.packages?.['pkg-pr-new@0.0.87']?.resolution?.integrity).toMatch(/^sha512-/u)
 
-    const publish = runs.filter((run) => run.startsWith('pnpm exec pkg-pr-new publish '))
-    expect(publish).toEqual([
-      'pnpm exec pkg-pr-new publish --no-compact --comment=update --commentWithSha --no-template --packageManager=pnpm,npm "${{ steps.artifact.outputs.tarball }}"',
-    ])
+    const publish = runs.filter((run) => run.includes('pnpm exec pkg-pr-new publish '))
+    expect(publish).toHaveLength(1)
+    expect(publish[0]).toContain('"${TARBALLS[@]}"')
     expect(runs.some((run) => /\b(?:npx|pnpm dlx|yarn dlx|bunx)\b/u.test(run))).toBe(false)
   })
 
-  it('retains both disposable tarballs and verifies the reported SHA-bound install URL', () => {
+  it('retains all disposable tarballs and verifies the reported SHA-bound install URLs', () => {
     const upload = steps.find((step) =>
       step.uses?.toString().startsWith('actions/upload-artifact@'),
     )
@@ -116,18 +116,17 @@ describe('pkg.pr.new package preview workflow', () => {
       name: 'package-preview-${{ github.run_id }}',
       path: '${{ steps.artifact.outputs.directory }}/',
     })
-    const hostedVerification = steps.find((step) => step.name === 'Verify the hosted preview bytes')
+    const hostedVerification = steps.find(
+      (step) => step.name === 'Verify the hosted preview URLs and bytes',
+    )
     expect(hostedVerification?.env).toEqual({
-      ARTIFACT_SHA256: '${{ steps.artifact.outputs.sha256 }}',
-      PACKAGE_NAME: '${{ steps.artifact.outputs.package_name }}',
       PREVIEW_SHA: '${{ steps.publish.outputs.sha }}',
-      PREVIEW_URL: '${{ steps.publish.outputs.urls }}',
+      PREVIEW_URLS: '${{ steps.publish.outputs.urls }}',
       SOURCE_COMMIT: '${{ github.event.pull_request.head.sha || github.sha }}',
     })
     const verificationCommand = normalizedRun(hostedVerification ?? {})
-    expect(verificationCommand).toContain('sha256sum --check --strict')
-    expect(verificationCommand).toContain(
-      'EXPECTED_PREVIEW_URL="https://pkg.pr.new/${GITHUB_REPOSITORY}/${PACKAGE_NAME}@${SOURCE_COMMIT}"',
+    expect(verificationCommand).toBe(
+      'node scripts/verify-package-preview.mjs "${{ steps.artifact.outputs.manifest }}"',
     )
   })
 

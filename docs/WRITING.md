@@ -35,6 +35,13 @@ interchangeable terms.
 
 ## Structure public pages
 
+Public root and package READMEs use the shared Lupinum structure. Start with a
+128 px product icon, centered product name, one-sentence value statement, npm,
+CI, and MIT badges, and a release warning when the package is not stable. Then
+explain why and when to use the package before installation and the smallest
+useful example. End with documentation, contribution, support, security, and
+license information.
+
 - Put `title` and `description` in frontmatter.
 - Do not add a body-level `#` heading.
 - Organize pages by reader intent.

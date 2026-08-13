@@ -15,6 +15,13 @@ pnpm check
 pnpm verify
 ```
 
+Use `pnpm docs:build` for documentation changes. Use `pnpm audit:all` after a
+dependency update. Use `pnpm release:verify` only for an exact release candidate.
+
+For a small fix, keep one cause and one verification path in the pull request.
+For a large change, open an issue first and split the work by public behavior.
+Update public documentation in the same pull request as the changed contract.
+
 ## Dependencies
 
 Renovate opens weekly dependency pull requests. It must not merge them
@@ -39,6 +46,14 @@ Do not publish from a workstation. Do not add an `NPM_TOKEN`. Do not create a
 tag before publication succeeds. If a publication step fails, preserve the
 evidence and follow the failure rules in `RELEASING.md`; never rebuild different
 bytes for the same version.
+
+If a release is defective, restore the last known-good dist-tag and publish a
+forward fix. Do not unpublish unless npm policy and a confirmed security
+incident require it.
+
+If a credential is exposed, revoke it before you investigate the release.
+Remove it from repository and environment scope, rotate every equivalent
+credential, and record the affected release artifacts.
 
 ## Documentation
 

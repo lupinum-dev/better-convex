@@ -4,6 +4,7 @@ ignoredBuiltDependencies:
   - esbuild
   - unrs-resolver
   - vue-demi
+minimumReleaseAge: 1440
 overrides:
   '@nuxt/schema': 4.4.7
   'brace-expansion@>=5.0.0 <5.0.9': 5.0.9
