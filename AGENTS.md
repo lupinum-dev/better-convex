@@ -31,6 +31,14 @@ code changes. Run the affected security or consumer gate when a change touches
 authentication, package exports, generated schemas, release evidence, or
 package boundaries.
 
+Use the canonical repository gates when the change needs them:
+
+```bash
+pnpm docs:build
+pnpm audit:all
+pnpm release:verify
+```
+
 Do not weaken a security check to make an unsupported configuration pass. Read
 `SECURITY.md` before you change authentication, OAuth, MCP, proxy, session,
 token, key, secret, or authorization behavior.
