@@ -61,7 +61,7 @@ GitHub must have:
   workflow permissions read-only;
 - Issues enabled for public reports, with Wikis and Discussions disabled so
   versioned repository documentation remains authoritative;
-- protected `v*-*` release tags;
+- protected `v*` release tags;
 - protected `staging` and `npm` environments with the restrictions in
   [RELEASING.md](./RELEASING.md);
 - a main-only `convex-demo` environment that owns `CONVEX_DEPLOY_KEY`;
