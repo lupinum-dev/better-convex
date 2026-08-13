@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  path_filters:
+    - "!release-artifacts/**"
+    - "!reports/**"
+    - "!test-results/**"
+    - "!**/fixtures/baselines/**"
+    - "!**/*.pdf"
+    - "!**/*.png"
+    - "!**/*.woff"
+    - "!**/*.woff2"
+  path_instructions:
+    - path: ".github/workflows/**"
+      instructions: |
+        Review permission boundaries, untrusted shell input, immutable action pins, artifact identity, source commit binding, and OIDC isolation. A token-capable publication or repository-write job must not install dependencies or run repository code.
+    - path: "**/*.md"
+      instructions: |
+        Follow the repository writing guide and its explicit exemptions. Use short sentences and American English. Do not rewrite code, API names, legal text, quotations, changelog history, generated reports, or historical evidence.
+    - path: "**/*.test.*"
+      instructions: |
+        Prefer invariant and failure tests. Check that the test fails before the fix and proves the public contract.
+    - path: "**/*.spec.*"
+      instructions: |
+        Prefer invariant and failure tests. Check that the test fails before the fix and proves the public contract.
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    ignore_usernames:
+      - renovate[bot]
+      - github-actions[bot]
+
+chat:
+  auto_reply: true
