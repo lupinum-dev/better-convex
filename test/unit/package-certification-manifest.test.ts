@@ -13,7 +13,7 @@ import {
 const temporaryDirectories: string[] = []
 const repository = {
   type: 'git',
-  url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+  url: 'https://github.com/lupinum-dev/better-convex',
 }
 
 afterEach(() => {

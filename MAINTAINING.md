@@ -64,7 +64,6 @@ GitHub must have:
 - protected `v*` release tags;
 - protected `staging` and `npm` environments with the restrictions in
   [RELEASING.md](./RELEASING.md);
-- a main-only `convex-demo` environment that owns `CONVEX_DEPLOY_KEY`;
 - private vulnerability reporting, secret scanning, push protection, automated
   security fixes, and the committed advanced CodeQL workflow;
 - Renovate for routine dependency updates and CodeRabbit as an advisory reviewer.
@@ -72,9 +71,11 @@ GitHub must have:
 npm must bind each of the three `@lupinum/better-convex-*` packages to
 `publish-prerelease.yml` and the `npm` environment through trusted publishing.
 
-The repository must not contain `CONVEX_DEPLOY_KEY`. Store that key only in the
-`convex-demo` environment. The demo deployment job is the only job that may use
-that environment.
+The repository and GitHub environments must not contain `CONVEX_DEPLOY_KEY`.
+The repository does not deploy the example application. Run its Convex backend
+only in a maintainer-owned development deployment. This keeps deployment
+credentials outside repository workflows and avoids executing dependencies with
+a production-capable key.
 
 Vercel must deploy the documentation from `main` to
-`better-convex-nuxt.lupinum.com` and create pull-request previews.
+`better-convex.lupinum.com` and create pull-request previews.

@@ -16,7 +16,7 @@ const profileFields = Object.freeze([
 const identifierPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 const packageNamePattern = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u
 const packageDirectoryPattern = /^(?:\.|packages\/[a-z0-9]+(?:-[a-z0-9]+)*)$/u
-const repositoryUrl = 'https://github.com/lupinum-dev/better-convex-nuxt'
+const repositoryUrl = 'https://github.com/lupinum-dev/better-convex'
 
 const reviewedDescriptors = [
   {

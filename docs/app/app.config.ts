@@ -1,4 +1,4 @@
-const siteUrl = 'https://better-convex-nuxt.lupinum.com'
+const siteUrl = 'https://better-convex.lupinum.com'
 
 export default {
   ginkoDocs: {
@@ -16,13 +16,13 @@ export default {
       ],
     },
     social: {
-      github: 'https://github.com/lupinum-dev/better-convex-nuxt',
+      github: 'https://github.com/lupinum-dev/better-convex',
       discord: 'https://discord.gg/RPH6SeA36N',
     },
     feedback: { enabled: true },
-    analytics: { plausible: { scriptId: 'XxT9ZOr0ZLg10B4KV40xH' } },
+    analytics: { plausible: { scriptId: '03E34LSIgT0kGko07f39A' } },
     repository: {
-      url: 'https://github.com/lupinum-dev/better-convex-nuxt',
+      url: 'https://github.com/lupinum-dev/better-convex',
       branch: 'main',
       contentDirectory: 'docs/content',
     },
@@ -38,7 +38,7 @@ export default {
       },
       secondary: {
         label: { en: 'View on GitHub' },
-        to: { en: 'https://github.com/lupinum-dev/better-convex-nuxt' },
+        to: { en: 'https://github.com/lupinum-dev/better-convex' },
       },
       features: [
         {
