@@ -17,6 +17,7 @@ const digestPattern = /^[a-f0-9]{64}$/
 const versionPattern = /^precompiled-\d{4}-\d{2}-\d{2}-[a-f0-9]{7}$/
 const maximumArchiveBytes = 128 * 1024 * 1024
 const downloadTimeoutMs = 120_000
+const downloadAttemptLimit = 3
 const backendExecutable = 'convex-local-backend'
 
 function fail(message) {
@@ -157,7 +158,7 @@ async function listZipEntries(filename) {
   })
 }
 
-async function downloadArchive(url, filename, fetchImplementation = globalThis.fetch) {
+async function downloadArchiveOnce(url, filename, fetchImplementation) {
   if (typeof fetchImplementation !== 'function') fail('this Node.js runtime does not provide fetch')
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), downloadTimeoutMs)
@@ -197,6 +198,24 @@ async function downloadArchive(url, filename, fetchImplementation = globalThis.f
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function downloadArchive(url, filename, fetchImplementation = globalThis.fetch) {
+  let lastError
+  for (let attempt = 1; attempt <= downloadAttemptLimit; attempt += 1) {
+    await rm(filename, { force: true })
+    try {
+      await downloadArchiveOnce(url, filename, fetchImplementation)
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < downloadAttemptLimit) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1_000))
+      }
+    }
+  }
+  const reason = lastError instanceof Error ? lastError.message : String(lastError)
+  fail(`backend archive download failed after ${downloadAttemptLimit} attempts: ${reason}`)
 }
 
 export async function installBackendBinary(manifest, options = {}) {
