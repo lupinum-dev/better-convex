@@ -28,6 +28,24 @@ const manifestPaths = [
 
 const failures = []
 
+for (const workspacePath of [
+  'pnpm-workspace.yaml',
+  'docs/pnpm-workspace.yaml',
+  'demo/pnpm-workspace.yaml',
+]) {
+  const workspace = readFileSync(resolve(rootDir, workspacePath), 'utf8')
+  if (!/^minimumReleaseAge:\s*1440\s*$/mu.test(workspace)) {
+    failures.push(`${workspacePath} must quarantine fresh dependencies for 24 hours`)
+  }
+  if (/^minimumReleaseAgeExclude:/mu.test(workspace)) {
+    failures.push(`${workspacePath} must not contain a committed dependency-age exception`)
+  }
+}
+
+if (existsSync(resolve(rootDir, 'packages/mcp/pnpm-workspace.yaml'))) {
+  failures.push('packages/mcp must use the root workspace policy and lockfile')
+}
+
 const workspacePackagesBlock =
   workspaceSource.match(/^packages:\s*(?:#.*)?\r?\n((?:[ \t].*(?:\r?\n|$))*)/mu)?.[1] ?? ''
 if (!/^\s+-\s+['"]?playground['"]?\s*(?:#.*)?$/mu.test(workspacePackagesBlock)) {
