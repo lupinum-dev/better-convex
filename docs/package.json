@@ -12,8 +12,8 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@lupinum/ginko-content": "0.4.0-rc.1",
-    "@lupinum/ginko-docs": "0.3.0-rc.4",
+    "@lupinum/ginko-content": "0.4.0-rc.2",
+    "@lupinum/ginko-docs": "0.3.0-rc.5",
     "nuxt": "4.5.1",
     "vue-router": "5.2.0"
   },
