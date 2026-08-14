@@ -118,8 +118,9 @@ jobs:
           AUTH_CONTRACTS: ${{ needs.auth-contracts.result }}
           AUTH_REAL_BACKEND: ${{ needs.auth-real-backend.result }}
           COMPATIBILITY: ${{ needs.compatibility.result }}
+          DEPLOYABLE_APP_AUDITS: ${{ needs.deployable-app-audits.result }}
           SECRETS: ${{ needs.secrets.result }}
         run: |
-          for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND"; do
+          for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$DEPLOYABLE_APP_AUDITS"; do
             test "$result" = success
           done
