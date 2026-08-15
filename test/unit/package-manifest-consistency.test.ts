@@ -162,6 +162,12 @@ describe('contributor intake consistency', () => {
     ]) {
       expect(maintaining).toContain(`## ${heading}`)
     }
+
+    const releasing = readFileSync(resolve(repositoryRoot, 'RELEASING.md'), 'utf8')
+    expect(releasing).toContain('## First-package bootstrap')
+    expect(releasing).toContain('npm cannot configure trusted publishing before a package exists')
+    expect(releasing).toContain('--access public --tag next --ignore-scripts')
+    expect(releasing).toMatch(/Later versions have no workstation\s+publication path\./u)
   })
 })
 

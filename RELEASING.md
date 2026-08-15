@@ -1,9 +1,17 @@
 # Releasing Better Convex
 
-Public packages are published only by
+Normal package versions are published only by
 `.github/workflows/publish-prerelease.yml` through npm trusted publishing. A
-workstation may run disposable checks, but it must never publish, promote, or
-create authoritative release evidence.
+workstation may run disposable checks, but it must not publish, promote, tag,
+or create authoritative release evidence.
+
+npm cannot configure trusted publishing before a package exists. The first
+version of each new package therefore has one narrow exception: after the
+protected workflow certifies and retains the exact tarball, the owning human
+may publish that file once with two-factor authentication. Do not rebuild or
+repack it. The protected workflow must then verify the registry bytes and
+create the Git tag and GitHub prerelease. Later versions have no workstation
+publication path.
 
 ## The one release path
 
@@ -17,7 +25,8 @@ The order is fixed:
 5. Verify only those artifact bytes and clean consumers.
 6. Deploy the exact Nuxt artifact to the dedicated Vercel staging host.
 7. Run the protected Convex/Vercel proof and prove complete cleanup.
-8. Publish through npm trusted publishing under `next`.
+8. Publish through npm trusted publishing under `next`, or complete the
+   first-package bootstrap described below.
 9. Download each package from npm and compare it with the certified SRI.
 10. Create the Git tag and GitHub prerelease from the matching changelog entry.
 
@@ -178,6 +187,31 @@ it with the certified artifact. The Vue gate also installs the unchanged Nuxt
 artifact with the registry Vue package in a clean consumer. Prerelease
 publication uses `next`. A stable workflow may use `latest` only after a
 separate stable-release review.
+
+## First-package bootstrap
+
+Use this section only while an `@lupinum/better-convex-*` package does not yet
+exist and npm therefore rejects its trusted-publisher configuration.
+
+1. Dispatch the protected workflow with all missing packages listed in
+   `bootstrap_packages`.
+2. Approve and complete the protected staging proof. Do not approve the `npm`
+   environment yet.
+3. Download the three retained tarballs and their evidence from that exact
+   workflow run.
+4. Verify each tarball against its retained SHA-256 and SRI. Do not run
+   `npm pack` or rebuild any package.
+5. Sign in to npm with the owning human account and two-factor authentication.
+6. Publish each exact file with `--access public --tag next --ignore-scripts`.
+7. Configure each package's trusted publisher for
+   `publish-prerelease.yml` and the protected `npm` environment.
+8. Approve the waiting `npm` environment.
+
+The workflow must detect the existing versions, require registry SRI equality,
+verify `next`, record each lane as `bootstrap`, and create the Git tag and
+GitHub prerelease from the certified source commit. The first versions do not
+have GitHub OIDC provenance. This is a recorded npm bootstrap limitation, not
+permission to publish another version from a workstation.
 
 ## Failure, retry, and version rules
 
