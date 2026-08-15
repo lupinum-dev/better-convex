@@ -388,6 +388,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     const verifyRuns = runs(workflow, 'verify-candidates')
     const orderedVerificationRuns = [
       'pnpm exec playwright install --with-deps chromium',
+      'pnpm check:auth-backend --install',
       'pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"',
       'pnpm release:verify --package vue --artifact-manifest "${{ steps.vue.outputs.evidence }}"',
       'pnpm release:verify --package nuxt --artifact-manifest "${{ steps.nuxt.outputs.evidence }}"',
