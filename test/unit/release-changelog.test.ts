@@ -1,6 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
-import { requirePreparedReleaseNotes } from '../../scripts/release-changelog.mjs'
+import {
+  getReleaseFamilyTag,
+  requirePreparedReleaseNotes,
+} from '../../scripts/release-changelog.mjs'
 
 describe('prepared release changelog', () => {
   const tag = 'v0.8.0-beta.40'
@@ -12,6 +18,35 @@ describe('prepared release changelog', () => {
         tag,
       ),
     ).toBe('- Ship the certified package set.')
+  })
+
+  it('uses one root release tag for packages with different npm versions', () => {
+    const workspace = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
+      version: string
+    }
+    const mcp = JSON.parse(readFileSync(resolve('packages/mcp/package.json'), 'utf8')) as {
+      version: string
+    }
+    const changelog = readFileSync(resolve('CHANGELOG.md'), 'utf8')
+
+    expect(mcp.version).not.toBe(workspace.version)
+    expect(getReleaseFamilyTag(workspace.version)).toBe(tag)
+    expect(requirePreparedReleaseNotes(changelog, tag)).toContain('@lupinum/better-convex-mcp')
+  })
+
+  it.each([
+    null,
+    undefined,
+    '',
+    ' 0.8.0',
+    '0.8',
+    'v0.8.0',
+    '0.8.0 beta.40',
+    '01.2.3',
+    '1.2.3-01',
+    '1.2.3-alpha..1',
+  ])('rejects malformed release-family version %j', (version) => {
+    expect(() => getReleaseFamilyTag(version)).toThrow(/release-family version/u)
   })
 
   it.each([

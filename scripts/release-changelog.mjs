@@ -1,3 +1,13 @@
+import { validatePackageArtifactVersion } from './package-artifact-coordinates.mjs'
+
+export function getReleaseFamilyTag(workspaceVersion) {
+  try {
+    return `v${validatePackageArtifactVersion(workspaceVersion)}`
+  } catch {
+    throw new Error('Workspace package.json must declare a canonical release-family version.')
+  }
+}
+
 export function requirePreparedReleaseNotes(changelog, tag) {
   const heading = `## ${tag}`
   const lines = changelog.split(/\r?\n/u)
