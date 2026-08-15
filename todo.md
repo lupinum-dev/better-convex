@@ -1,5 +1,10 @@
 # Better Convex vNext remediation plan
 
+> **Historical remediation record.** This file is not a current task list or
+> release authority. Use `AGENTS.md`, `MAINTAINING.md`, and `RELEASING.md` for
+> current work. Git history preserves this record until the documentation
+> cleanup removes it from the working tree.
+
 Status: active  
 Plan authority: target `c4064387d6c7af5efb7726a6efc566a3d73db689` on `vnext`  
 Baseline: `a6e76f1f61a483de5dbd3a19003ab35abcf75fad`  

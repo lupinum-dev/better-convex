@@ -40,7 +40,6 @@ const convexManagedEnvDocs = [
   'docs/content/docs/7.operations/1.environment-variables.md',
   'docs/content/docs/7.operations/2.deployment.md',
   'docs/content/docs/7.operations/4.troubleshooting.md',
-  'RELEASING.md',
   'test/TESTING.md',
 ] as const
 const generatedDirectoryNames = new Set([

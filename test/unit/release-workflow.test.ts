@@ -349,11 +349,9 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'preflight-smoke': [],
       'source-certification': ['preflight-smoke'],
       'release-security': ['source-certification'],
-      'staging-readiness': ['release-security'],
-      'build-candidates': ['staging-readiness'],
+      'build-candidates': ['release-security'],
       'verify-candidates': ['build-candidates'],
-      'bcn-auth-staging': ['verify-candidates'],
-      'publish-vue': ['bcn-auth-staging'],
+      'publish-vue': ['verify-candidates'],
       'registry-vue-nuxt-gate': ['publish-vue'],
       'publish-nuxt': ['registry-vue-nuxt-gate'],
       'registry-nuxt-gate': ['publish-nuxt'],
@@ -396,17 +394,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'pnpm --dir packages/vue build && node scripts/run-e2e.mjs --full',
     )
     expect(verifier).not.toMatch(/verify:auth|test:e2e:full|test:dast:proxy/u)
-    expect(needs(workflow, 'build-candidates')).toEqual(['staging-readiness'])
-  })
-
-  it('keeps staging readiness read-only and before artifact creation', () => {
-    const readinessRuns = runs(workflow, 'staging-readiness')
-    expect(readinessRuns).toContain('pnpm test:auth-cloud-staging --readiness-only')
-    expect(readinessRuns.join('\n')).not.toMatch(
-      /release\.mjs artifact|convex deploy|vercel deploy/u,
-    )
-    expect(needs(workflow, 'staging-readiness')).toEqual(['release-security'])
-    expect(needs(workflow, 'build-candidates')).toEqual(['staging-readiness'])
+    expect(needs(workflow, 'build-candidates')).toEqual(['release-security'])
   })
 
   it('builds and transfers each immutable candidate through its reviewed coordinate', () => {
@@ -445,7 +433,6 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
   it('retries post-mint work against transferred bytes without rebuilding', () => {
     const postMintJobs = [
       'verify-candidates',
-      'bcn-auth-staging',
       'publish-vue',
       'registry-vue-nuxt-gate',
       'publish-nuxt',
@@ -457,16 +444,14 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(postMintRuns.join('\n')).not.toMatch(
       /release:artifact|prepare-candidate-set\.mjs|release\.mjs artifact/u,
     )
-    for (const jobId of ['verify-candidates', 'bcn-auth-staging']) {
-      expect(
-        steps(workflow, jobId)
-          .filter((step) => step.uses?.toString().startsWith('actions/download-artifact@'))
-          .map((step) => step.with?.name),
-      ).toEqual([
-        '${{ steps.candidate_set.outputs.artifact_name }}',
-        '${{ steps.mcp.outputs.artifact_name }}',
-      ])
-    }
+    expect(
+      steps(workflow, 'verify-candidates')
+        .filter((step) => step.uses?.toString().startsWith('actions/download-artifact@'))
+        .map((step) => step.with?.name),
+    ).toEqual([
+      '${{ steps.candidate_set.outputs.artifact_name }}',
+      '${{ steps.mcp.outputs.artifact_name }}',
+    ])
     expect(
       postMintRuns.filter(
         (run) =>
@@ -525,8 +510,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
         step.uses?.toString().startsWith('actions/download-artifact@'),
       ),
     ).toBe(false)
-    expect(needs(workflow, 'build-candidates')).toContain('staging-readiness')
-    expect(needs(workflow, 'staging-readiness')).toContain('release-security')
+    expect(needs(workflow, 'build-candidates')).toEqual(['release-security'])
     expect(uses(workflow)).toEqual(
       expect.arrayContaining([
         'trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55',
@@ -633,63 +617,5 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'This first npm version was created from the exact CI-certified artifact',
     )
     expect(githubReleaseRuns).not.toMatch(/pnpm|npm install|node scripts\//u)
-  })
-
-  it('makes exact-host cloud staging block publication', () => {
-    const staging = requireJob(workflow, 'bcn-auth-staging')
-    expect(staging.environment).toBe('bcn-auth-staging')
-    expect(staging.concurrency?.group).toBe('bcn-auth-staging')
-    expect(staging['continue-on-error']).toBeUndefined()
-    const proofStep = steps(workflow, 'bcn-auth-staging').find((step) =>
-      normalizedRun(step)?.startsWith('pnpm test:auth-cloud-staging '),
-    )
-    if (!proofStep) throw new Error('Missing protected cloud-staging proof step')
-    expect(normalizedRun(proofStep)).toContain(
-      '--artifact-manifest "${{ steps.nuxt.outputs.evidence }}"',
-    )
-    expect(normalizedRun(proofStep)).toContain(
-      '--vue-artifact-manifest "${{ steps.vue.outputs.evidence }}"',
-    )
-    expect(normalizedRun(proofStep)).toContain(
-      '--mcp-artifact-manifest "${{ steps.mcp.outputs.evidence }}"',
-    )
-    expect(
-      steps(workflow, 'bcn-auth-staging').some(
-        (step) => step.with?.name === '${{ steps.mcp.outputs.artifact_name }}',
-      ),
-    ).toBe(true)
-    expect(proofStep?.env).toEqual({
-      BCN_AUTH_STAGING_CONVEX_SITE_URL: '${{ vars.BCN_AUTH_STAGING_CONVEX_SITE_URL }}',
-      BCN_AUTH_STAGING_CONVEX_URL: '${{ vars.BCN_AUTH_STAGING_CONVEX_URL }}',
-      BCN_AUTH_STAGING_EMAIL: '${{ secrets.BCN_AUTH_STAGING_EMAIL }}',
-      BCN_AUTH_STAGING_INGRESS_LEASE: '${{ secrets.BCN_AUTH_STAGING_INGRESS_LEASE }}',
-      BCN_AUTH_STAGING_ORIGIN: '${{ vars.BCN_AUTH_STAGING_ORIGIN }}',
-      BCN_AUTH_STAGING_PASSWORD: '${{ secrets.BCN_AUTH_STAGING_PASSWORD }}',
-      BCN_AUTH_STAGING_TEAM: '${{ vars.BCN_AUTH_STAGING_TEAM }}',
-      CONVEX_DEPLOY_KEY: '${{ secrets.BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY }}',
-    })
-    expect(
-      steps(workflow, 'bcn-auth-staging').some(
-        (step) =>
-          step.with?.name === 'bcn-auth-staging-report' &&
-          step.with?.path === '.release-artifacts/bcn-auth-staging.report.json',
-      ),
-    ).toBe(true)
-    expect(
-      runs(workflow, 'bcn-auth-staging').some((run) =>
-        run.startsWith('node scripts/deploy-auth-staging-host.mjs '),
-      ),
-    ).toBe(true)
-    const stagingRuns = runs(workflow, 'bcn-auth-staging')
-    const deployIndex = stagingRuns.findIndex((run) =>
-      run.startsWith('node scripts/deploy-auth-staging-host.mjs '),
-    )
-    const proofIndex = stagingRuns.findIndex((run) =>
-      run.startsWith('pnpm test:auth-cloud-staging '),
-    )
-    expect(deployIndex).toBeGreaterThanOrEqual(0)
-    expect(deployIndex).toBeLessThan(proofIndex)
-    expect(stagingRuns.join('\n')).not.toContain('retention-days:')
-    expect(needs(workflow, 'publish-vue')).toEqual(['bcn-auth-staging'])
   })
 })

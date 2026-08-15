@@ -42,7 +42,7 @@ ledger. Do not add another handwritten advisory list.
 
 Follow [RELEASING.md](./RELEASING.md). The protected workflow is the only normal
 publication path. It must publish only retained artifacts that passed source,
-consumer, security, staging, and registry checks.
+consumer, security, and registry checks.
 
 Use `pnpm changelog` to draft the public notes from Conventional Commits. Review
 the result and remove internal rehearsal details. `CHANGELOG.md` records only
@@ -89,7 +89,7 @@ GitHub must have:
   workflow permissions read-only;
 - Issues enabled for public reports, with Wikis and Discussions disabled so
   versioned repository documentation remains authoritative;
-- protected `bcn-auth-staging` and `npm` environments with the restrictions in
+- a protected `npm` environment with the restrictions in
   [RELEASING.md](./RELEASING.md);
 - private vulnerability reporting, secret scanning, push protection, automated
   security fixes, and the committed advanced CodeQL workflow;
@@ -97,8 +97,8 @@ GitHub must have:
 
 npm must bind each of the three `@lupinum/better-convex-*` packages to
 `publish-prerelease.yml` and the `npm` environment through trusted publishing.
-Both protected environments allow release deployments only from `main`. The
-`npm` environment requires a human reviewer and contains no package token.
+The protected environment allows release deployments only from `main`,
+requires a human reviewer, and contains no package token.
 
 The repository and GitHub environments must not contain `CONVEX_DEPLOY_KEY`.
 The repository does not deploy the example application. Run its Convex backend
