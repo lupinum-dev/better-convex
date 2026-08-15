@@ -42,7 +42,7 @@ ledger. Do not add another handwritten advisory list.
 
 Follow [RELEASING.md](./RELEASING.md). The protected workflow is the only normal
 publication path. It must publish only retained artifacts that passed source,
-consumer, security, staging, and registry checks.
+consumer, security, and registry checks.
 
 Use `pnpm changelog` to draft the public notes from Conventional Commits. Review
 the result and remove internal rehearsal details. `CHANGELOG.md` records only
