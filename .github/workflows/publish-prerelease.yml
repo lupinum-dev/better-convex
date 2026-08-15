@@ -190,6 +190,10 @@ jobs:
         run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Install the packed-consumer browser
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Resolve the reviewed candidate coordinates
         id: candidate_set
         run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"

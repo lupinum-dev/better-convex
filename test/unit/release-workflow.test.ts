@@ -385,13 +385,20 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       '${{ steps.candidate_set.outputs.artifact_name }}',
       '${{ steps.mcp.outputs.artifact_name }}',
     ])
-    expect(runs(workflow, 'verify-candidates')).toEqual(
+    const verifyRuns = runs(workflow, 'verify-candidates')
+    expect(verifyRuns).toEqual(
       expect.arrayContaining([
+        'pnpm exec playwright install --with-deps chromium',
         'pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"',
         'pnpm release:verify --package vue --artifact-manifest "${{ steps.vue.outputs.evidence }}"',
         'pnpm release:verify --package nuxt --artifact-manifest "${{ steps.nuxt.outputs.evidence }}"',
         'pnpm release:verify --package mcp --artifact-manifest "${{ steps.mcp.outputs.evidence }}"',
       ]),
+    )
+    expect(verifyRuns.indexOf('pnpm exec playwright install --with-deps chromium')).toBeLessThan(
+      verifyRuns.indexOf(
+        'pnpm release:verify --package vue --artifact-manifest "${{ steps.vue.outputs.evidence }}"',
+      ),
     )
   })
 
