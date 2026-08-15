@@ -300,6 +300,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
   })
 
   it('keeps CI source-only and package previews non-authoritative', () => {
+    expect(ciWorkflow.env?.RELEASE_NPM_VERSION).toBe('11.18.0')
     expect(preparationCommands(ciWorkflow, 'release-gate')).toEqual([])
     expect(preparationCommands(previewWorkflow, 'preview')).toEqual([])
     expect(runs(previewWorkflow, 'preview')).toContain('node scripts/build-package-preview.mjs')
@@ -323,6 +324,9 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'auth-real-backend',
       'deployable-app-audits',
       'release-smoke',
+    ])
+    expect(runs(ciWorkflow, 'release-gate')).toEqual([
+      'for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$DEPLOYABLE_APP_AUDITS" "$RELEASE_SMOKE"; do test "$result" = success done',
     ])
   })
 
