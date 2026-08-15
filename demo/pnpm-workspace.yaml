@@ -2,3 +2,7 @@ packages:
   - .
 
 minimumReleaseAge: 1440
+
+overrides:
+  # Remove when fontless requires esbuild 0.28.1 or newer.
+  'fontless>esbuild': 0.28.2

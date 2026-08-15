@@ -488,6 +488,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'node scripts/prepare-candidate-app-locks.mjs check',
     )
     expect(updater).toContain('if (options.check) {')
+    expect(updater).toContain("[packageJson.version]: '2000-01-01T00:00:00.000Z'")
     expect(updater.indexOf('if (options.check) {')).toBeLessThan(
       updater.indexOf('await runPnpm(profile, validationDir, registry, false)'),
     )

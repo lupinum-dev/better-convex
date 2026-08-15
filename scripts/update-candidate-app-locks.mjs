@@ -149,6 +149,11 @@ const server = createServer(async (request, response) => {
         JSON.stringify({
           name: packageJson.name,
           'dist-tags': { latest: packageJson.version },
+          time: {
+            created: '2000-01-01T00:00:00.000Z',
+            modified: '2000-01-01T00:00:00.000Z',
+            [packageJson.version]: '2000-01-01T00:00:00.000Z',
+          },
           versions: {
             [packageJson.version]: {
               ...packageJson,
