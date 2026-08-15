@@ -386,20 +386,16 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       '${{ steps.mcp.outputs.artifact_name }}',
     ])
     const verifyRuns = runs(workflow, 'verify-candidates')
-    expect(verifyRuns).toEqual(
-      expect.arrayContaining([
-        'pnpm exec playwright install --with-deps chromium',
-        'pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"',
-        'pnpm release:verify --package vue --artifact-manifest "${{ steps.vue.outputs.evidence }}"',
-        'pnpm release:verify --package nuxt --artifact-manifest "${{ steps.nuxt.outputs.evidence }}"',
-        'pnpm release:verify --package mcp --artifact-manifest "${{ steps.mcp.outputs.evidence }}"',
-      ]),
-    )
-    expect(verifyRuns.indexOf('pnpm exec playwright install --with-deps chromium')).toBeLessThan(
-      verifyRuns.indexOf(
-        'pnpm release:verify --package vue --artifact-manifest "${{ steps.vue.outputs.evidence }}"',
-      ),
-    )
+    const orderedVerificationRuns = [
+      'pnpm exec playwright install --with-deps chromium',
+      'pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"',
+      'pnpm release:verify --package vue --artifact-manifest "${{ steps.vue.outputs.evidence }}"',
+      'pnpm release:verify --package nuxt --artifact-manifest "${{ steps.nuxt.outputs.evidence }}"',
+      'pnpm release:verify --package mcp --artifact-manifest "${{ steps.mcp.outputs.evidence }}"',
+    ]
+    const verificationIndexes = orderedVerificationRuns.map((run) => verifyRuns.indexOf(run))
+    expect(verificationIndexes.every((index) => index >= 0)).toBe(true)
+    expect(verificationIndexes).toEqual([...verificationIndexes].sort((left, right) => left - right))
   })
 
   it('retries post-mint work against transferred bytes without rebuilding', () => {
