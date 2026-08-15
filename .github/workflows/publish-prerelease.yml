@@ -7,6 +7,11 @@ on:
         description: Exact Nuxt and Vue prerelease version
         required: true
         type: string
+      bootstrap_packages:
+        description: Comma-separated packages explicitly authorized for first-version bootstrap recovery
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: publish-better-convex
@@ -36,11 +41,13 @@ jobs:
           package-manager-cache: false
       - name: Require current main and the exact prerelease version
         env:
+          BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
           test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
           case "$RELEASE_VERSION" in *-*) ;; *) exit 1 ;; esac
+          node -e "const allowed=new Set(['@lupinum/better-convex-vue','@lupinum/better-convex-nuxt','@lupinum/better-convex-mcp']); const requested=(process.env.BOOTSTRAP_PACKAGES||'').split(',').map(value=>value.trim()).filter(Boolean); if(new Set(requested).size!==requested.length||requested.some(name=>!allowed.has(name))) throw new Error('bootstrap_packages must contain unique Better Convex package names.')"
       - name: Require an unused release tag
         env:
           GH_TOKEN: ${{ github.token }}
@@ -381,6 +388,9 @@ jobs:
     permissions:
       actions: read
       id-token: write
+    outputs:
+      mode: ${{ steps.publish.outputs.mode }}
+      package: ${{ steps.publish.outputs.package }}
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -392,6 +402,9 @@ jobs:
           name: release-candidate-vue-nuxt-set
           path: .release-artifacts
       - name: Publish the certified Vue tarball
+        id: publish
+        env:
+          BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
         run: |
           set -euo pipefail
           mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-vue-*.tgz' -print)
@@ -401,16 +414,67 @@ jobs:
           PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
           VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
           LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          REGISTRY_ERROR="$RUNNER_TEMP/npm-view-vue-error"
-          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>"$REGISTRY_ERROR"); then
-            test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
-            echo "$PACKAGE@$VERSION already contains the certified bytes."
-          elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
-            npm publish "$TARBALL" --tag "$BCN_RELEASE_DIST_TAG" --access public --ignore-scripts --provenance
-          else
-            cat "$REGISTRY_ERROR" >&2
-            exit 1
-          fi
+          test "$PACKAGE" = '@lupinum/better-convex-vue'
+          export TARBALL PACKAGE VERSION LOCAL_INTEGRITY
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process'
+          import { appendFileSync } from 'node:fs'
+          const fail = message => { throw new Error(message) }
+          const run = (args, inherit = false) => spawnSync('npm', args, {
+            encoding: 'utf8',
+            stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+          })
+          const view = (spec, field) => {
+            const result = run(['view', spec, field, '--json'])
+            if (result.status === 0) return JSON.parse(result.stdout.trim() || 'null')
+            if (/E404|404 Not Found/.test(result.stderr)) return null
+            fail(`npm view failed for ${spec} ${field}: ${result.stderr.trim()}`)
+          }
+          const { PACKAGE: packageName, VERSION: version, LOCAL_INTEGRITY: integrity } = process.env
+          const spec = `${packageName}@${version}`
+          const existing = view(spec, 'dist.integrity')
+          if (existing && existing !== integrity) fail(`${spec} exists with different bytes.`)
+          let mode
+          if (existing) {
+            const attestations = view(spec, 'dist.attestations')
+            const published = view(packageName, 'versions')
+            const versions = Array.isArray(published) ? published : [published]
+            if (!attestations && (versions.length !== 1 || versions[0] !== version)) {
+              fail(`${spec} is not the first package version and has no provenance.`)
+            }
+            const authorized = new Set((process.env.BOOTSTRAP_PACKAGES ?? '').split(',').map(value => value.trim()).filter(Boolean))
+            if (!attestations && !authorized.has(packageName)) {
+              fail(`${spec} requires explicit bootstrap authorization.`)
+            }
+            mode = attestations ? 'oidc' : 'bootstrap'
+          } else {
+            const result = run([
+              'publish', process.env.TARBALL, '--tag', process.env.BCN_RELEASE_DIST_TAG,
+              '--access', 'public', '--ignore-scripts', '--provenance',
+            ], true)
+            if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
+            mode = 'oidc'
+          }
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            const registryIntegrity = view(spec, 'dist.integrity')
+            const attestations = view(spec, 'dist.attestations')
+            const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
+            const published = mode === 'bootstrap' ? view(packageName, 'versions') : null
+            const versions = Array.isArray(published) ? published : [published]
+            const remainsFirstVersion = mode !== 'bootstrap' || (versions.length === 1 && versions[0] === version)
+            if (
+              registryIntegrity === integrity && channel === version && remainsFirstVersion &&
+              (mode === 'bootstrap' || (mode === 'oidc' && attestations))
+            ) {
+              appendFileSync(process.env.GITHUB_OUTPUT, `mode=${mode}\n`)
+              appendFileSync(process.env.GITHUB_OUTPUT, `package=${packageName}\n`)
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
+              process.exit(0)
+            }
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
+          }
+          fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
+          NODE
 
   registry-vue-nuxt-gate:
     needs: publish-vue
@@ -447,6 +511,9 @@ jobs:
     permissions:
       actions: read
       id-token: write
+    outputs:
+      mode: ${{ steps.publish.outputs.mode }}
+      package: ${{ steps.publish.outputs.package }}
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -458,6 +525,9 @@ jobs:
           name: release-candidate-vue-nuxt-set
           path: .release-artifacts
       - name: Publish the certified Nuxt tarball
+        id: publish
+        env:
+          BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
         run: |
           set -euo pipefail
           mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-nuxt-*.tgz' -print)
@@ -467,16 +537,67 @@ jobs:
           PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
           VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
           LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          REGISTRY_ERROR="$RUNNER_TEMP/npm-view-nuxt-error"
-          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>"$REGISTRY_ERROR"); then
-            test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
-            echo "$PACKAGE@$VERSION already contains the certified bytes."
-          elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
-            npm publish "$TARBALL" --tag "$BCN_RELEASE_DIST_TAG" --access public --ignore-scripts --provenance
-          else
-            cat "$REGISTRY_ERROR" >&2
-            exit 1
-          fi
+          test "$PACKAGE" = '@lupinum/better-convex-nuxt'
+          export TARBALL PACKAGE VERSION LOCAL_INTEGRITY
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process'
+          import { appendFileSync } from 'node:fs'
+          const fail = message => { throw new Error(message) }
+          const run = (args, inherit = false) => spawnSync('npm', args, {
+            encoding: 'utf8',
+            stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+          })
+          const view = (spec, field) => {
+            const result = run(['view', spec, field, '--json'])
+            if (result.status === 0) return JSON.parse(result.stdout.trim() || 'null')
+            if (/E404|404 Not Found/.test(result.stderr)) return null
+            fail(`npm view failed for ${spec} ${field}: ${result.stderr.trim()}`)
+          }
+          const { PACKAGE: packageName, VERSION: version, LOCAL_INTEGRITY: integrity } = process.env
+          const spec = `${packageName}@${version}`
+          const existing = view(spec, 'dist.integrity')
+          if (existing && existing !== integrity) fail(`${spec} exists with different bytes.`)
+          let mode
+          if (existing) {
+            const attestations = view(spec, 'dist.attestations')
+            const published = view(packageName, 'versions')
+            const versions = Array.isArray(published) ? published : [published]
+            if (!attestations && (versions.length !== 1 || versions[0] !== version)) {
+              fail(`${spec} is not the first package version and has no provenance.`)
+            }
+            const authorized = new Set((process.env.BOOTSTRAP_PACKAGES ?? '').split(',').map(value => value.trim()).filter(Boolean))
+            if (!attestations && !authorized.has(packageName)) {
+              fail(`${spec} requires explicit bootstrap authorization.`)
+            }
+            mode = attestations ? 'oidc' : 'bootstrap'
+          } else {
+            const result = run([
+              'publish', process.env.TARBALL, '--tag', process.env.BCN_RELEASE_DIST_TAG,
+              '--access', 'public', '--ignore-scripts', '--provenance',
+            ], true)
+            if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
+            mode = 'oidc'
+          }
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            const registryIntegrity = view(spec, 'dist.integrity')
+            const attestations = view(spec, 'dist.attestations')
+            const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
+            const published = mode === 'bootstrap' ? view(packageName, 'versions') : null
+            const versions = Array.isArray(published) ? published : [published]
+            const remainsFirstVersion = mode !== 'bootstrap' || (versions.length === 1 && versions[0] === version)
+            if (
+              registryIntegrity === integrity && channel === version && remainsFirstVersion &&
+              (mode === 'bootstrap' || (mode === 'oidc' && attestations))
+            ) {
+              appendFileSync(process.env.GITHUB_OUTPUT, `mode=${mode}\n`)
+              appendFileSync(process.env.GITHUB_OUTPUT, `package=${packageName}\n`)
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
+              process.exit(0)
+            }
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
+          }
+          fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
+          NODE
 
   registry-nuxt-gate:
     needs: publish-nuxt
@@ -511,6 +632,9 @@ jobs:
     permissions:
       actions: read
       id-token: write
+    outputs:
+      mode: ${{ steps.publish.outputs.mode }}
+      package: ${{ steps.publish.outputs.package }}
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -522,6 +646,9 @@ jobs:
           name: release-candidate-mcp
           path: .release-artifacts
       - name: Publish the certified MCP tarball
+        id: publish
+        env:
+          BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
         run: |
           set -euo pipefail
           mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-mcp-*.tgz' -print)
@@ -531,16 +658,67 @@ jobs:
           PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
           VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
           LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          REGISTRY_ERROR="$RUNNER_TEMP/npm-view-mcp-error"
-          if REGISTRY_INTEGRITY=$(npm view "$PACKAGE@$VERSION" dist.integrity 2>"$REGISTRY_ERROR"); then
-            test "$REGISTRY_INTEGRITY" = "$LOCAL_INTEGRITY"
-            echo "$PACKAGE@$VERSION already contains the certified bytes."
-          elif grep -q '\bE404\b' "$REGISTRY_ERROR"; then
-            npm publish "$TARBALL" --tag "$BCN_RELEASE_DIST_TAG" --access public --ignore-scripts --provenance
-          else
-            cat "$REGISTRY_ERROR" >&2
-            exit 1
-          fi
+          test "$PACKAGE" = '@lupinum/better-convex-mcp'
+          export TARBALL PACKAGE VERSION LOCAL_INTEGRITY
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process'
+          import { appendFileSync } from 'node:fs'
+          const fail = message => { throw new Error(message) }
+          const run = (args, inherit = false) => spawnSync('npm', args, {
+            encoding: 'utf8',
+            stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+          })
+          const view = (spec, field) => {
+            const result = run(['view', spec, field, '--json'])
+            if (result.status === 0) return JSON.parse(result.stdout.trim() || 'null')
+            if (/E404|404 Not Found/.test(result.stderr)) return null
+            fail(`npm view failed for ${spec} ${field}: ${result.stderr.trim()}`)
+          }
+          const { PACKAGE: packageName, VERSION: version, LOCAL_INTEGRITY: integrity } = process.env
+          const spec = `${packageName}@${version}`
+          const existing = view(spec, 'dist.integrity')
+          if (existing && existing !== integrity) fail(`${spec} exists with different bytes.`)
+          let mode
+          if (existing) {
+            const attestations = view(spec, 'dist.attestations')
+            const published = view(packageName, 'versions')
+            const versions = Array.isArray(published) ? published : [published]
+            if (!attestations && (versions.length !== 1 || versions[0] !== version)) {
+              fail(`${spec} is not the first package version and has no provenance.`)
+            }
+            const authorized = new Set((process.env.BOOTSTRAP_PACKAGES ?? '').split(',').map(value => value.trim()).filter(Boolean))
+            if (!attestations && !authorized.has(packageName)) {
+              fail(`${spec} requires explicit bootstrap authorization.`)
+            }
+            mode = attestations ? 'oidc' : 'bootstrap'
+          } else {
+            const result = run([
+              'publish', process.env.TARBALL, '--tag', process.env.BCN_RELEASE_DIST_TAG,
+              '--access', 'public', '--ignore-scripts', '--provenance',
+            ], true)
+            if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
+            mode = 'oidc'
+          }
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            const registryIntegrity = view(spec, 'dist.integrity')
+            const attestations = view(spec, 'dist.attestations')
+            const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
+            const published = mode === 'bootstrap' ? view(packageName, 'versions') : null
+            const versions = Array.isArray(published) ? published : [published]
+            const remainsFirstVersion = mode !== 'bootstrap' || (versions.length === 1 && versions[0] === version)
+            if (
+              registryIntegrity === integrity && channel === version && remainsFirstVersion &&
+              (mode === 'bootstrap' || (mode === 'oidc' && attestations))
+            ) {
+              appendFileSync(process.env.GITHUB_OUTPUT, `mode=${mode}\n`)
+              appendFileSync(process.env.GITHUB_OUTPUT, `package=${packageName}\n`)
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
+              process.exit(0)
+            }
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
+          }
+          fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
+          NODE
 
   registry-mcp-gate:
     needs: publish-mcp
@@ -568,14 +746,33 @@ jobs:
         run: node scripts/compare-registry-package.mjs --package mcp
 
   published-package-set-complete:
-    needs: [registry-vue-nuxt-gate, registry-nuxt-gate, registry-mcp-gate]
+    needs:
+      - publish-vue
+      - registry-vue-nuxt-gate
+      - publish-nuxt
+      - registry-nuxt-gate
+      - publish-mcp
+      - registry-mcp-gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
+    outputs:
+      vue-mode: ${{ needs.publish-vue.outputs.mode }}
+      nuxt-mode: ${{ needs.publish-nuxt.outputs.mode }}
+      mcp-mode: ${{ needs.publish-mcp.outputs.mode }}
+      vue-package: ${{ needs.publish-vue.outputs.package }}
+      nuxt-package: ${{ needs.publish-nuxt.outputs.package }}
+      mcp-package: ${{ needs.publish-mcp.outputs.package }}
     steps:
       - name: Record the verified package set
-        run: echo "All registry bytes and provenance match under ${BCN_RELEASE_DIST_TAG}."
+        env:
+          VUE_MODE: ${{ needs.publish-vue.outputs.mode }}
+          NUXT_MODE: ${{ needs.publish-nuxt.outputs.mode }}
+          MCP_MODE: ${{ needs.publish-mcp.outputs.mode }}
+        run: >-
+          echo "All registry bytes match under ${BCN_RELEASE_DIST_TAG}.
+          Publication modes: Vue=${VUE_MODE}, Nuxt=${NUXT_MODE}, MCP=${MCP_MODE}."
 
   github-prerelease:
     needs: published-package-set-complete
@@ -590,6 +787,12 @@ jobs:
       - name: Create or update the GitHub prerelease from the changelog
         env:
           GH_TOKEN: ${{ github.token }}
+          VUE_MODE: ${{ needs.published-package-set-complete.outputs.vue-mode }}
+          NUXT_MODE: ${{ needs.published-package-set-complete.outputs.nuxt-mode }}
+          MCP_MODE: ${{ needs.published-package-set-complete.outputs.mcp-mode }}
+          VUE_PACKAGE: ${{ needs.published-package-set-complete.outputs.vue-package }}
+          NUXT_PACKAGE: ${{ needs.published-package-set-complete.outputs.nuxt-package }}
+          MCP_PACKAGE: ${{ needs.published-package-set-complete.outputs.mcp-package }}
         run: |
           set -euo pipefail
           TAG="v${{ inputs.version }}"
@@ -602,4 +805,27 @@ jobs:
             capture { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
           test -s "$RUNNER_TEMP/release-notes.md"
-          gh release create "$TAG" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+          bootstrap_packages=()
+          [ "$VUE_MODE" = bootstrap ] && bootstrap_packages+=("$VUE_PACKAGE")
+          [ "$NUXT_MODE" = bootstrap ] && bootstrap_packages+=("$NUXT_PACKAGE")
+          [ "$MCP_MODE" = bootstrap ] && bootstrap_packages+=("$MCP_PACKAGE")
+          if [ "${#bootstrap_packages[@]}" -gt 0 ]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTICE'
+
+          > [!NOTE]
+          > This first npm version was created from the exact CI-certified artifact before npm trusted publishing could be configured. npm does not provide GitHub OIDC provenance for this bootstrap publication. The protected workflow verified the registry bytes. Later versions use trusted publishing with provenance.
+          NOTICE
+            bootstrap_list=$(IFS=,; echo "${bootstrap_packages[*]}")
+            printf '> Bootstrap packages: %s\n' "$bootstrap_list" >> "$RUNNER_TEMP/release-notes.md"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            read -r tag_type tag_sha < <(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '[.object.type, .object.sha] | @tsv')
+            while [ "$tag_type" = tag ]; do
+              read -r tag_type tag_sha < <(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '[.object.type, .object.sha] | @tsv')
+            done
+            test "$tag_type" = commit
+            test "$tag_sha" = "$GITHUB_SHA"
+            gh release edit "$TAG" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+          fi

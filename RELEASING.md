@@ -191,8 +191,14 @@ After immutable minting:
 The publish jobs are safe to rerun after an ambiguous registry response. Before
 publication, each job reads the package identity from its retained tarball and
 checks npm. If the version exists, the job continues only when its registry SRI
-equals the retained tarball SRI. If the version does not exist, the job
-publishes the same retained tarball. Never rebuild it.
+equals the retained tarball SRI. Missing provenance is accepted only when the
+version remains that package's sole published version and the dispatch names
+that package in `bootstrap_packages`. This explicit input authorizes only the
+known first-version recovery. Every other missing-provenance state stops the
+workflow. The workflow records each lane as `bootstrap` or `oidc` and names
+bootstrap packages in the GitHub prerelease. If the version does not exist, the
+job publishes the same retained tarball with OIDC and requires provenance.
+Never rebuild it.
 
 Never delete, replace, rebuild, repack, or publish a retired immutable
 coordinate. The internal decisions ledger and retained evidence directories
