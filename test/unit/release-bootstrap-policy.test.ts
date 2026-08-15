@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
@@ -9,134 +10,190 @@ const workflow = readFileSync(
   resolve(import.meta.dirname, '../../.github/workflows/publish-prerelease.yml'),
   'utf8',
 )
-const programs = extractPrograms(workflow).map((program) =>
-  dedent(program).replace(
+const [program] = extractPrograms(workflow).map((source) =>
+  dedent(source).replace(
     'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)',
     'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 0)',
   ),
 )
-const lanes = [
-  ['vue', '@lupinum/better-convex-vue'],
-  ['nuxt', '@lupinum/better-convex-nuxt'],
-  ['mcp', '@lupinum/better-convex-mcp'],
+const packages = [
+  ['vue', '@lupinum/better-convex-vue', '0.8.0-beta.40'],
+  ['nuxt', '@lupinum/better-convex-nuxt', '0.8.0-beta.40'],
+  ['mcp', '@lupinum/better-convex-mcp', '0.1.0-beta.28'],
 ] as const
 
+interface PackageState {
+  addLaterVersion?: boolean
+  attestations: Record<string, string> | null
+  existing: boolean
+  integrity: string
+  packageName: string
+  publishProvenance: boolean
+  publishes: number
+  registryError?: boolean
+  registryIntegrity: string
+  tag: string
+  tarball: string
+  version: string
+  versions: string[]
+  versionViews: number
+}
+
 describe('first-package publication recovery', () => {
-  it('rejects every unsafe registry state', () => {
-    expect(programs).toHaveLength(lanes.length)
-    const [lane, packageName] = lanes[0]
-    const program = programs[0]
-    if (!program) throw new Error('Vue publish program is missing.')
-    runScenario(program, lane, packageName, 'missing package uses OIDC', {
-      expectedMode: 'oidc',
-      expectedPublishes: 1,
-    })
-    runScenario(program, lane, packageName, 'different bytes fail', {
-      existing: true,
-      differentBytes: true,
-      expectedError: 'exists with different bytes',
-    })
-    runScenario(program, lane, packageName, 'wrong dist-tag fails', {
-      existing: true,
-      attested: true,
-      wrongTag: true,
-      expectedError: 'did not expose the required bytes',
-    })
-    runScenario(program, lane, packageName, 'later unproven versions fail', {
-      existing: true,
-      extraVersion: true,
-      authorizeBootstrap: true,
-      expectedError: 'is not the first package version and has no provenance',
-    })
-    runScenario(program, lane, packageName, 'unauthorized bootstrap fails', {
-      existing: true,
-      expectedError: 'requires explicit bootstrap authorization',
-    })
-    runScenario(program, lane, packageName, 'bootstrap status is rechecked', {
-      existing: true,
-      laterVersionDuringVerification: true,
-      authorizeBootstrap: true,
-      expectedError: 'did not expose the required bytes',
-    })
-    runScenario(program, lane, packageName, 'fresh publication requires provenance', {
-      publishProvenance: false,
-      expectedError: 'did not expose the required bytes',
-    })
-    runScenario(program, lane, packageName, 'registry errors stop publication', {
-      registryError: true,
-      expectedError: 'npm view failed',
+  it('publishes every missing package with OIDC and reports each result', () => {
+    runScenario('missing packages use OIDC', {
+      states: Object.fromEntries(packages.map(([, name]) => [name, { existing: false }])),
+      expectedModes: { mcp: 'oidc', nuxt: 'oidc', vue: 'oidc' },
+      expectedPublishes: 3,
     })
   }, 30_000)
 
-  it('uses the same verified program and reports each lane independently', () => {
-    expect(new Set(programs).size).toBe(1)
-    for (const [index, [lane, packageName]] of lanes.entries()) {
-      const program = programs[index]
-      if (!program) throw new Error(`${lane} publish program is missing.`)
-      runScenario(program, lane, packageName, 'matching bootstrap bytes', {
-        existing: true,
-        authorizeBootstrap: true,
-        expectedMode: 'bootstrap',
-        expectedPublishes: 0,
-      })
-      runScenario(program, lane, packageName, 'attested rerun stays idempotent', {
-        existing: true,
-        attested: true,
-        extraVersion: true,
-        expectedMode: 'oidc',
-        expectedPublishes: 0,
-      })
-    }
+  it('accepts matching first-version bootstrap bytes only when explicitly authorized', () => {
+    runScenario('matching bootstrap set', {
+      bootstrapPackages: packages.map(([, name]) => name).join(','),
+      states: Object.fromEntries(
+        packages.map(([, name]) => [name, { attested: false, existing: true }]),
+      ),
+      expectedModes: { mcp: 'bootstrap', nuxt: 'bootstrap', vue: 'bootstrap' },
+      expectedPublishes: 0,
+    })
+  }, 30_000)
+
+  it('recovers a partial set without republishing matching packages', () => {
+    runScenario('mixed recovery', {
+      bootstrapPackages: '@lupinum/better-convex-nuxt',
+      states: {
+        '@lupinum/better-convex-vue': { attested: true, existing: true },
+        '@lupinum/better-convex-nuxt': { attested: false, existing: true },
+        '@lupinum/better-convex-mcp': { existing: false },
+      },
+      expectedModes: { mcp: 'oidc', nuxt: 'bootstrap', vue: 'oidc' },
+      expectedPublishes: 1,
+    })
+  }, 30_000)
+
+  it('rejects unsafe registry and bootstrap states', () => {
+    const vue = '@lupinum/better-convex-vue'
+    runScenario('different bytes', {
+      states: { [vue]: { differentBytes: true, existing: true } },
+      expectedError: 'exists with different bytes',
+    })
+    runScenario('unauthorized bootstrap', {
+      states: { [vue]: { attested: false, existing: true } },
+      expectedError: 'requires explicit bootstrap authorization',
+    })
+    runScenario('later version without provenance', {
+      bootstrapPackages: vue,
+      states: {
+        [vue]: { attested: false, existing: true, extraVersion: true },
+      },
+      expectedError: 'is not the first package version and has no provenance',
+    })
+    runScenario('wrong dist-tag', {
+      states: { [vue]: { attested: true, existing: true, wrongTag: true } },
+      expectedError: 'did not expose the required bytes',
+    })
+    runScenario('bootstrap status changes during verification', {
+      bootstrapPackages: vue,
+      states: {
+        [vue]: { addLaterVersion: true, attested: false, existing: true },
+      },
+      expectedError: 'did not expose the required bytes',
+    })
+    runScenario('new publication lacks provenance', {
+      states: { [vue]: { existing: false, publishProvenance: false } },
+      expectedError: 'did not expose the required bytes',
+    })
+    runScenario('registry error', {
+      states: { [vue]: { registryError: true } },
+      expectedError: 'npm view failed',
+    })
+    runScenario('unknown bootstrap package', {
+      bootstrapPackages: '@lupinum/not-a-package',
+      expectedError: 'unique Better Convex package names',
+    })
+    runScenario('duplicate bootstrap package', {
+      bootstrapPackages: `${vue},${vue}`,
+      expectedError: 'unique Better Convex package names',
+    })
   }, 30_000)
 })
 
 function runScenario(
-  program: string,
-  lane: string,
-  packageName: string,
   scenario: string,
   options: {
-    authorizeBootstrap?: boolean
-    attested?: boolean
-    differentBytes?: boolean
-    existing?: boolean
+    bootstrapPackages?: string
     expectedError?: string
-    expectedMode?: 'bootstrap' | 'oidc'
+    expectedModes?: Record<string, 'bootstrap' | 'oidc'>
     expectedPublishes?: number
-    extraVersion?: boolean
-    laterVersionDuringVerification?: boolean
-    publishProvenance?: boolean
-    registryError?: boolean
-    wrongTag?: boolean
+    states?: Record<
+      string,
+      {
+        addLaterVersion?: boolean
+        attested?: boolean
+        differentBytes?: boolean
+        existing?: boolean
+        extraVersion?: boolean
+        publishProvenance?: boolean
+        registryError?: boolean
+        wrongTag?: boolean
+      }
+    >
   },
 ) {
-  const root = mkdtempSync(join(tmpdir(), `bcn-${lane}-publish-`))
+  if (!program) throw new Error('Publish program is missing.')
+  const root = mkdtempSync(join(tmpdir(), 'bcn-package-set-publish-'))
   try {
     const bin = join(root, 'bin')
+    const artifacts = join(root, '.release-artifacts')
     mkdirSync(bin)
-    const version = lane === 'mcp' ? '0.1.0-beta.28' : '0.8.0-beta.40'
-    const integrity = `sha512-${Buffer.alloc(64, lane).toString('base64')}`
-    const versions = [version]
-    if (options.extraVersion) versions.push(`${version}.1`)
-    const statePath = join(root, 'registry.json')
-    writeFileSync(
-      statePath,
-      JSON.stringify({
-        packageName,
-        version,
+    const packageStates: Record<string, PackageState> = {}
+    for (const [lane, packageName, version] of packages) {
+      const directory = join(artifacts, lane, version)
+      mkdirSync(directory, { recursive: true })
+      const tarball = `${lane}.tgz`
+      const bytes = Buffer.from(`certified ${packageName} ${version}`)
+      writeFileSync(join(directory, tarball), bytes)
+      const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`
+      const stateOptions = options.states?.[packageName] ?? {
+        attested: true,
+        existing: true,
+      }
+      const versions: string[] = [version]
+      if (stateOptions.extraVersion) versions.push(`${version}.1`)
+      packageStates[packageName] = {
+        addLaterVersion: stateOptions.addLaterVersion,
+        attestations:
+          stateOptions.attested === false ? null : { url: 'https://npm.example/provenance' },
+        existing: stateOptions.existing !== false,
         integrity,
-        existing: options.existing === true,
-        registryIntegrity: options.differentBytes ? 'sha512-different' : integrity,
-        attestations: options.attested ? { url: 'https://registry.example/provenance' } : null,
+        packageName,
+        publishProvenance: stateOptions.publishProvenance !== false,
+        publishes: 0,
+        registryError: stateOptions.registryError,
+        registryIntegrity: stateOptions.differentBytes ? 'sha512-different' : integrity,
+        tag: stateOptions.wrongTag ? '0.0.0' : version,
+        tarball,
+        version,
         versions,
         versionViews: 0,
-        addLaterVersion: options.laterVersionDuringVerification === true,
-        tag: options.wrongTag ? '0.0.0' : version,
-        publishProvenance: options.publishProvenance !== false,
-        registryError: options.registryError === true,
-        publishes: 0,
-      }),
-    )
+      }
+      writeFileSync(
+        join(directory, 'artifact.json'),
+        JSON.stringify({
+          packageName,
+          sourceCommit: 'a'.repeat(40),
+          tarball: {
+            file: tarball,
+            integrity,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+          },
+          version,
+        }),
+      )
+    }
+    const statePath = join(root, 'registry.json')
+    writeFileSync(statePath, JSON.stringify({ packages: packageStates }))
     const fakeNpm = join(bin, 'npm')
     writeFileSync(fakeNpm, fakeNpmProgram())
     chmodSync(fakeNpm, 0o755)
@@ -150,28 +207,31 @@ function runScenario(
         ...process.env,
         PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
         BCN_RELEASE_DIST_TAG: 'next',
-        BOOTSTRAP_PACKAGES: options.authorizeBootstrap ? packageName : '',
+        BOOTSTRAP_PACKAGES: options.bootstrapPackages ?? '',
         FAKE_NPM_STATE: statePath,
         GITHUB_OUTPUT: output,
+        GITHUB_SHA: 'a'.repeat(40),
         GITHUB_STEP_SUMMARY: join(root, 'summary.md'),
-        LOCAL_INTEGRITY: integrity,
-        PACKAGE: packageName,
-        TARBALL: `${lane}.tgz`,
-        VERSION: version,
+        RELEASE_VERSION: '0.8.0-beta.40',
       },
     })
     const diagnostic = `${result.stdout}\n${result.stderr}`
     if (options.expectedError) {
-      expect(result.status, `${lane}: ${scenario} unexpectedly succeeded.`).not.toBe(0)
-      expect(diagnostic, `${lane}: ${scenario}`).toContain(options.expectedError)
+      expect(result.status, `${scenario} unexpectedly succeeded.`).not.toBe(0)
+      expect(diagnostic, scenario).toContain(options.expectedError)
       return
     }
-    expect(result.status, `${lane}: ${scenario}: ${diagnostic}`).toBe(0)
-    expect(readFileSync(output, 'utf8')).toContain(`mode=${options.expectedMode}`)
-    const state = JSON.parse(readFileSync(statePath, 'utf8')) as {
-      publishes: number
+    expect(result.status, `${scenario}: ${diagnostic}`).toBe(0)
+    const outputs = readFileSync(output, 'utf8')
+    for (const [lane, mode] of Object.entries(options.expectedModes ?? {})) {
+      expect(outputs).toContain(`${lane}_mode=${mode}`)
     }
-    expect(state.publishes).toBe(options.expectedPublishes)
+    const state = JSON.parse(readFileSync(statePath, 'utf8')) as {
+      packages: Record<string, PackageState>
+    }
+    expect(Object.values(state.packages).reduce((sum, value) => sum + value.publishes, 0)).toBe(
+      options.expectedPublishes,
+    )
   } finally {
     rmSync(root, { force: true, recursive: true })
   }
@@ -180,7 +240,7 @@ function runScenario(
 function dedent(value: string) {
   const lines = value.split('\n')
   const indentation = Math.min(
-    ...lines.filter(Boolean).map((line) => line.match(/^\s*/)?.[0].length ?? 0),
+    ...lines.filter(Boolean).map((line) => line.match(/^\s*/u)?.[0].length ?? 0),
   )
   return lines.map((line) => line.slice(indentation)).join('\n')
 }
@@ -201,30 +261,36 @@ function extractPrograms(source: string) {
 function fakeNpmProgram() {
   return `#!/usr/bin/env node
 const fs = require('node:fs')
+const path = require('node:path')
 const statePath = process.env.FAKE_NPM_STATE
 const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
 const args = process.argv.slice(2)
 const save = () => fs.writeFileSync(statePath, JSON.stringify(state))
 const output = value => process.stdout.write(JSON.stringify(value) + '\\n')
 if (args[0] === 'view') {
-  if (state.registryError) {
-    process.stderr.write('E500 registry unavailable\\n')
-    process.exit(1)
-  }
   const spec = args[1]
   const field = args[2]
-  const versioned = spec.includes('@', 1) && spec.lastIndexOf('@') > spec.indexOf('/')
+  const slash = spec.indexOf('/')
+  const separator = spec.lastIndexOf('@')
+  const packageName = separator > slash ? spec.slice(0, separator) : spec
+  const record = state.packages[packageName]
+  if (!record || record.registryError) {
+    process.stderr.write(record ? 'E500 registry unavailable\\n' : 'E404 404 Not Found\\n')
+    process.exit(1)
+  }
   let value
-  if (!state.existing) value = undefined
-  else if (field === 'dist.integrity') value = state.registryIntegrity
-  else if (field === 'dist.attestations') value = state.attestations
+  if (!record.existing) value = undefined
+  else if (field === 'dist.integrity') value = record.registryIntegrity
+  else if (field === 'dist.attestations') value = record.attestations
   else if (field === 'versions') {
-    if (state.addLaterVersion && state.versionViews > 0 && state.versions.length === 1) state.versions.push(state.version + '.1')
-    state.versionViews += 1
+    if (record.addLaterVersion && record.versionViews > 0 && record.versions.length === 1) {
+      record.versions.push(record.version + '.1')
+    }
+    record.versionViews += 1
     save()
-    value = state.versions
-  } else if (field.startsWith('dist-tags.')) value = state.tag
-  if (value === undefined || value === null || (!state.existing && versioned)) {
+    value = record.versions
+  } else if (field.startsWith('dist-tags.')) value = record.tag
+  if (value === undefined || value === null) {
     process.stderr.write('E404 404 Not Found\\n')
     process.exit(1)
   }
@@ -232,12 +298,15 @@ if (args[0] === 'view') {
   process.exit(0)
 }
 if (args[0] === 'publish') {
-  state.existing = true
-  state.registryIntegrity = state.integrity
-  state.attestations = state.publishProvenance ? { url: 'https://registry.example/provenance' } : null
-  state.versions = [state.version]
-  state.tag = state.version
-  state.publishes += 1
+  const tarball = path.basename(args[1])
+  const record = Object.values(state.packages).find(value => value.tarball === tarball)
+  if (!record) throw new Error('Unknown tarball: ' + tarball)
+  record.existing = true
+  record.registryIntegrity = record.integrity
+  record.attestations = record.publishProvenance ? { url: 'https://npm.example/provenance' } : null
+  record.versions = [record.version]
+  record.tag = record.version
+  record.publishes += 1
   save()
   process.exit(0)
 }

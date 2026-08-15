@@ -265,7 +265,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(verifier).not.toContain("run('pnpm', ['run', 'test:e2e:full'])")
   })
 
-  it('rejects unreviewed verifier and registry coordinates before network work', () => {
+  it('rejects unreviewed verifier coordinates before network work', () => {
     const verifier = spawnSync(
       process.execPath,
       ['scripts/verify-release.mjs', '--artifact-manifest', 'unreviewed/artifact.json'],
@@ -275,28 +275,6 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(verifier.stderr).toContain(
       'artifact manifest must be the reviewed nuxt coordinate: .release-artifacts/nuxt/',
     )
-
-    const registryConsumer = spawnSync(
-      process.execPath,
-      [
-        'scripts/check-nuxt-registry-vue-consumer.mjs',
-        '--artifact-set',
-        '../unreviewed/artifact-set.json',
-      ],
-      { cwd: root, encoding: 'utf8' },
-    )
-    expect(registryConsumer.status).toBe(1)
-    expect(registryConsumer.stderr).toContain(
-      'Candidate-set manifest is not at the reviewed artifact coordinate',
-    )
-
-    const comparator = spawnSync(
-      process.execPath,
-      ['scripts/compare-registry-package.mjs', '--package', 'unreviewed'],
-      { cwd: root, encoding: 'utf8' },
-    )
-    expect(comparator.status).toBe(1)
-    expect(comparator.stderr).toContain('Unknown package certification descriptor')
   })
 
   it('keeps CI source-only and package previews non-authoritative', () => {
@@ -351,21 +329,8 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'release-security': ['source-certification'],
       'build-candidates': ['release-security'],
       'verify-candidates': ['build-candidates'],
-      'publish-vue': ['verify-candidates'],
-      'registry-vue-nuxt-gate': ['publish-vue'],
-      'publish-nuxt': ['registry-vue-nuxt-gate'],
-      'registry-nuxt-gate': ['publish-nuxt'],
-      'publish-mcp': ['registry-nuxt-gate'],
-      'registry-mcp-gate': ['publish-mcp'],
-      'published-package-set-complete': [
-        'publish-vue',
-        'registry-vue-nuxt-gate',
-        'publish-nuxt',
-        'registry-nuxt-gate',
-        'publish-mcp',
-        'registry-mcp-gate',
-      ],
-      'github-prerelease': ['published-package-set-complete'],
+      'publish-packages': ['verify-candidates'],
+      'github-prerelease': ['publish-packages'],
     })
   })
 
@@ -431,15 +396,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
   })
 
   it('retries post-mint work against transferred bytes without rebuilding', () => {
-    const postMintJobs = [
-      'verify-candidates',
-      'publish-vue',
-      'registry-vue-nuxt-gate',
-      'publish-nuxt',
-      'registry-nuxt-gate',
-      'publish-mcp',
-      'registry-mcp-gate',
-    ]
+    const postMintJobs = ['verify-candidates', 'publish-packages', 'github-prerelease']
     const postMintRuns = postMintJobs.flatMap((jobId) => runs(workflow, jobId))
     expect(postMintRuns.join('\n')).not.toMatch(
       /release:artifact|prepare-candidate-set\.mjs|release\.mjs artifact/u,
@@ -452,13 +409,10 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       '${{ steps.candidate_set.outputs.artifact_name }}',
       '${{ steps.mcp.outputs.artifact_name }}',
     ])
-    expect(
-      postMintRuns.filter(
-        (run) =>
-          run.startsWith('node scripts/compare-registry-package.mjs ') ||
-          run.startsWith('node scripts/check-nuxt-registry-vue-consumer.mjs '),
-      ),
-    ).toHaveLength(3)
+    expect(postMintRuns.join('\n')).not.toContain('node scripts/compare-registry-package.mjs')
+    expect(postMintRuns.join('\n')).not.toContain(
+      'node scripts/check-nuxt-registry-vue-consumer.mjs',
+    )
   })
 
   it('prevents release prepack from mutating dependency state', () => {
@@ -532,7 +486,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     }
   })
 
-  it('publishes only through three protected OIDC jobs under next', () => {
+  it('publishes the complete set through one protected OIDC job under next', () => {
     expect(workflow.on).toEqual({
       workflow_dispatch: {
         inputs: {
@@ -554,27 +508,18 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     const oidcJobs = Object.entries(workflow.jobs ?? {})
       .filter(([, job]) => job.permissions?.['id-token'] === 'write')
       .map(([jobId, job]) => ({ jobId, job }))
-    expect(oidcJobs.map(({ jobId }) => jobId)).toEqual([
-      'publish-vue',
-      'publish-nuxt',
-      'publish-mcp',
-    ])
+    expect(oidcJobs.map(({ jobId }) => jobId)).toEqual(['publish-packages'])
     expect(oidcJobs.every(({ job }) => job.environment === 'npm')).toBe(true)
     expect(workflow.env?.BCN_RELEASE_DIST_TAG).toBe('next')
 
     const publishRuns = oidcJobs.flatMap(({ job }) =>
       (job.steps ?? [])
         .map(normalizedRun)
-        .filter((run): run is string => run?.includes("'publish', process.env.TARBALL") ?? false),
+        .filter((run): run is string => run?.includes("'publish', candidate.tarball") ?? false),
     )
-    expect(publishRuns).toHaveLength(3)
-    expect(
-      publishRuns.every(
-        (run) =>
-          run.includes('process.env.BCN_RELEASE_DIST_TAG') &&
-          run.includes("'--ignore-scripts', '--provenance'"),
-      ),
-    ).toBe(true)
+    expect(publishRuns).toHaveLength(1)
+    expect(publishRuns[0]).toContain('process.env.BCN_RELEASE_DIST_TAG')
+    expect(publishRuns[0]).toContain("'--ignore-scripts', '--provenance'")
     for (const { job } of oidcJobs) {
       expect(
         (job.steps ?? []).some((step) => step.uses?.toString().startsWith('actions/checkout@')),
@@ -582,7 +527,14 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       expect((job.steps ?? []).map(normalizedRun).join('\n')).not.toMatch(
         /pnpm|corepack|npm install|node scripts\//u,
       )
-      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain('LOCAL_INTEGRITY="sha512-')
+      expect(
+        (job.steps ?? []).filter((step) =>
+          step.uses?.toString().startsWith('actions/download-artifact@'),
+        ),
+      ).toHaveLength(2)
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain(
+        "createHash('sha512').update(bytes)",
+      )
       expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain(
         "view(spec, 'dist.integrity')",
       )
@@ -591,8 +543,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       )
       expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain('versions.length !== 1')
       const rawPublishRun = (job.steps ?? []).find(
-        (step) =>
-          typeof step.run === 'string' && step.run.includes("'publish', process.env.TARBALL"),
+        (step) => typeof step.run === 'string' && step.run.includes("'publish', candidate.tarball"),
       )?.run
       expect(rawPublishRun).toBeTypeOf('string')
       expect(rawPublishRun).toContain('npm view failed for')
@@ -606,11 +557,22 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
 
     const githubRelease = requireJob(workflow, 'github-prerelease')
     expect(githubRelease.environment).toBeUndefined()
-    expect(githubRelease.permissions).toEqual({ contents: 'write' })
+    expect(githubRelease.permissions).toEqual({
+      actions: 'read',
+      contents: 'write',
+    })
+    expect(
+      steps(workflow, 'github-prerelease').filter((step) =>
+        step.uses?.toString().startsWith('actions/download-artifact@'),
+      ),
+    ).toHaveLength(2)
     const githubReleaseRuns = runs(workflow, 'github-prerelease').join('\n')
     expect(githubReleaseRuns).toContain('gh release create')
     expect(githubReleaseRuns).toContain('--target "$GITHUB_SHA"')
     expect(githubReleaseRuns).toContain('gh release edit')
+    expect(githubReleaseRuns).toContain('gh release upload')
+    expect(githubReleaseRuns).toContain('release_assets')
+    expect(githubReleaseRuns).toContain('vue-nuxt-artifact-set.json')
     expect(githubReleaseRuns).toContain('git/ref/tags/$TAG')
     expect(githubReleaseRuns).toContain('test "$tag_sha" = "$GITHUB_SHA"')
     expect(githubReleaseRuns).toContain(
