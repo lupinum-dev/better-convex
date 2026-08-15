@@ -668,7 +668,7 @@ packages:
     resolution: {integrity: sha512-GaHYm+c0O9MjZRu0ongGBRbinu8gVAMd2UZjji6jVmqKtZluZnptXGWhz1E8j8D2HJ3f/yMxKAUC0b+57wncIw==}
 
   '@lupinum/better-convex-nuxt@0.8.0-beta.40':
-    resolution: {integrity: sha512-3aQ2yKN/WrrmgeUR9MyGDQtqZvSIDVhybduwCOcqH9w/I8/LYomqO6RKmkE/E+WvZt6FQHSZGop9pfUu58dphg==}
+    resolution: {integrity: sha512-k8iUcodZ8227ZHCViWknYA05gmdCfyCCROuLtfGNjJjiqNHiIJDhASueRZdnr52NiqI1pqsTz7hXeX8+HS058A==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -683,7 +683,7 @@ packages:
         optional: true
 
   '@lupinum/better-convex-vue@0.8.0-beta.40':
-    resolution: {integrity: sha512-VvJ/oNtT8RbDYd9l33om9HGJ9n/DWATIPwMcQl7+KHG2bGhjcFGvAylAr1zSDC2kXuikmBNUgUc9u490G4JH1w==}
+    resolution: {integrity: sha512-yaHE0TeU710NiD8BHy1936p8csh/6tDpCt1JMF/j+QwhjjCxxs+fZZR0PLY1PBiGBa+ZKQHOFhYN1VdIGie1sA==}
     engines: {node: '>=22.14.0'}
     peerDependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5

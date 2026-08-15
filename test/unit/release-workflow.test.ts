@@ -303,6 +303,18 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(preparationCommands(ciWorkflow, 'release-gate')).toEqual([])
     expect(preparationCommands(previewWorkflow, 'preview')).toEqual([])
     expect(runs(previewWorkflow, 'preview')).toContain('node scripts/build-package-preview.mjs')
+    expect(runs(ciWorkflow, 'release-smoke')).toContain('pnpm release:smoke')
+    expect(runs(ciWorkflow, 'release-smoke')).toContain(
+      'npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable',
+    )
+    expect(
+      steps(ciWorkflow, 'release-smoke').find(
+        (step) => step.name === 'Retain the Linux candidate locks for review',
+      ),
+    ).toMatchObject({
+      if: 'failure()',
+      uses: 'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f',
+    })
     expect(requireJob(ciWorkflow, 'release-gate')['timeout-minutes']).toBe(5)
     expect(needs(ciWorkflow, 'release-gate')).toEqual([
       'secrets',
@@ -310,6 +322,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'auth-contracts',
       'auth-real-backend',
       'deployable-app-audits',
+      'release-smoke',
     ])
   })
 

@@ -107,8 +107,49 @@ jobs:
         working-directory: demo
         run: corepack pnpm@10.30.3 audit --prod
 
+  release-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.14.0'
+          package-manager-cache: false
+      - name: Install the release toolchain
+        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Verify release-equivalent packages and candidate locks
+        run: pnpm release:smoke
+      - name: Prepare Linux candidate locks after a mismatch
+        if: failure()
+        run: pnpm update:candidate-app-locks
+      - name: Retain the Linux candidate locks for review
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: candidate-locks-${{ github.sha }}
+          path: |
+            demo/pnpm-lock.yaml
+            starters/agency/pnpm-lock.yaml
+            starters/mcp-oauth-agent/pnpm-lock.yaml
+            starters/public/pnpm-lock.yaml
+            starters/team/pnpm-lock.yaml
+          if-no-files-found: error
+          retention-days: 2
+
   release-gate:
-    needs: [secrets, compatibility, auth-contracts, auth-real-backend, deployable-app-audits]
+    needs:
+      [
+        secrets,
+        compatibility,
+        auth-contracts,
+        auth-real-backend,
+        deployable-app-audits,
+        release-smoke,
+      ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -119,8 +160,9 @@ jobs:
           AUTH_REAL_BACKEND: ${{ needs.auth-real-backend.result }}
           COMPATIBILITY: ${{ needs.compatibility.result }}
           DEPLOYABLE_APP_AUDITS: ${{ needs.deployable-app-audits.result }}
+          RELEASE_SMOKE: ${{ needs.release-smoke.result }}
           SECRETS: ${{ needs.secrets.result }}
         run: |
-          for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$DEPLOYABLE_APP_AUDITS"; do
+          for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$DEPLOYABLE_APP_AUDITS" "$RELEASE_SMOKE"; do
             test "$result" = success
           done
