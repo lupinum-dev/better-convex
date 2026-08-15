@@ -395,7 +395,9 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     ]
     const verificationIndexes = orderedVerificationRuns.map((run) => verifyRuns.indexOf(run))
     expect(verificationIndexes.every((index) => index >= 0)).toBe(true)
-    expect(verificationIndexes).toEqual([...verificationIndexes].sort((left, right) => left - right))
+    expect(verificationIndexes).toEqual(
+      [...verificationIndexes].sort((left, right) => left - right),
+    )
   })
 
   it('retries post-mint work against transferred bytes without rebuilding', () => {
