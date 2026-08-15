@@ -38,7 +38,7 @@ import {
 } from './package-check/production-manifest-contract.mjs'
 import { buildContentManifest, packAndExtract } from './package-check/tarball.mjs'
 import { assertPackedRuntimeFingerprintBinding } from './package-runtime-fingerprint-profile.mjs'
-import { requirePreparedReleaseNotes } from './release-changelog.mjs'
+import { getReleaseFamilyTag, requirePreparedReleaseNotes } from './release-changelog.mjs'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const { command, packageId: releasePackageId, verifyPath } = parseArguments(process.argv.slice(2))
@@ -56,7 +56,7 @@ if (
   throw new Error('Workspace package.json must declare the release package manager.')
 }
 const version = artifactCoordinates.version
-const tag = `v${version}`
+const tag = getReleaseFamilyTag(workspacePackageJson.version)
 const expectedArtifactFiles = artifactCoordinates.files
 
 function parseArguments(args) {
