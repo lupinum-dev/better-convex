@@ -201,8 +201,13 @@ exist and npm therefore rejects its trusted-publisher configuration.
    workflow run.
 4. Verify each tarball against its retained SHA-256 and SRI. Do not run
    `npm pack` or rebuild any package.
-5. Sign in to npm with the owning human account and two-factor authentication.
-6. Publish each exact file with `--access public --tag next --ignore-scripts`.
+5. Confirm that the owning npm account requires two-factor authentication for
+   authorization and writes. Do not use an access token that bypasses two-factor
+   authentication.
+6. Sign in to npm with that account. Publish each exact file with
+   `--access public --tag next --ignore-scripts`. Let npm request the one-time
+   password interactively for every publication. Do not put a one-time password
+   in a command, shell history, script, or log.
 7. Configure each package's trusted publisher for
    `publish-prerelease.yml` and the protected `npm` environment.
 8. Approve the waiting `npm` environment.
