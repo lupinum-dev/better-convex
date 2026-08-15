@@ -38,6 +38,7 @@ import {
 } from './package-check/production-manifest-contract.mjs'
 import { buildContentManifest, packAndExtract } from './package-check/tarball.mjs'
 import { assertPackedRuntimeFingerprintBinding } from './package-runtime-fingerprint-profile.mjs'
+import { requirePreparedReleaseNotes } from './release-changelog.mjs'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const { command, packageId: releasePackageId, verifyPath } = parseArguments(process.argv.slice(2))
@@ -118,18 +119,7 @@ function ensureCleanWorkingTree() {
 
 function requirePreparedChangelog() {
   const changelog = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8')
-  const unreleased = changelog
-    .split(/^## Unreleased\s*$/mu)[1]
-    ?.split(/^## /mu)[0]
-    ?.trim()
-  if (!unreleased || !/^- /mu.test(unreleased)) {
-    throw new Error('CHANGELOG.md must contain non-empty Unreleased notes before minting.')
-  }
-  if (changelog.includes(`## ${tag}`)) {
-    throw new Error(
-      `CHANGELOG.md must not present unpublished ${tag} as published before registry equality.`,
-    )
-  }
+  requirePreparedReleaseNotes(changelog, tag)
 }
 
 function assertReleaseTagIsUnusedOrCurrent(currentCommit) {
