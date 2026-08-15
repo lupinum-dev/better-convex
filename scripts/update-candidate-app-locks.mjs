@@ -20,6 +20,7 @@ import {
   assertCandidateAppLockTextBindsArtifact,
   candidateAppInstallArgs,
   candidateAppLockProfiles,
+  createCandidateRegistryMetadata,
   packageArtifactIdentity,
 } from './candidate-app-locks.mjs'
 import { getPackageArtifactCoordinates } from './package-artifact-coordinates.mjs'
@@ -143,23 +144,8 @@ const server = createServer(async (request, response) => {
         url.pathname === tarballPathname,
     )
     if (candidate && url.pathname.toLowerCase() === candidate.metadataPath.toLowerCase()) {
-      const { integrity, packageJson } = candidate
       response.setHeader('content-type', 'application/json')
-      response.end(
-        JSON.stringify({
-          name: packageJson.name,
-          'dist-tags': { latest: packageJson.version },
-          versions: {
-            [packageJson.version]: {
-              ...packageJson,
-              dist: {
-                integrity,
-                tarball: new URL(candidate.tarballPathname.slice(1), registry).href,
-              },
-            },
-          },
-        }),
-      )
+      response.end(JSON.stringify(createCandidateRegistryMetadata({ ...candidate, registry })))
       return
     }
     if (candidate) {

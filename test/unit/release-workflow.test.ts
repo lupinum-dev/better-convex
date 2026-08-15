@@ -488,6 +488,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'node scripts/prepare-candidate-app-locks.mjs check',
     )
     expect(updater).toContain('if (options.check) {')
+    expect(updater).toContain('createCandidateRegistryMetadata({ ...candidate, registry })')
     expect(updater.indexOf('if (options.check) {')).toBeLessThan(
       updater.indexOf('await runPnpm(profile, validationDir, registry, false)'),
     )

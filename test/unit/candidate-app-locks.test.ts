@@ -9,8 +9,10 @@ import { parse, stringify } from 'yaml'
 
 import {
   assertCandidateAppLocksBindArtifact,
+  assertCandidateRegistryTime,
   candidateAppInstallArgs,
   candidateAppLockProfiles,
+  createCandidateRegistryMetadata,
   packageArtifactIdentity,
 } from '../../scripts/candidate-app-locks.mjs'
 import { getMaintainedCandidateProfile } from '../../scripts/maintained-candidate-apps.mjs'
@@ -41,6 +43,32 @@ function copyLocks(destination: string) {
     copyFileSync(join(root, relativePath), output)
   }
 }
+
+it('emits complete publication times for local candidate registry metadata', () => {
+  const version = '1.2.3'
+  const metadata = JSON.parse(
+    JSON.stringify(
+      createCandidateRegistryMetadata({
+        integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`,
+        packageJson: { name: '@lupinum/example', version },
+        registry: 'http://127.0.0.1:4873/',
+        tarballPathname: '/@lupinum/example/-/example-1.2.3.tgz',
+      }),
+    ),
+  )
+
+  expect(metadata.time).toEqual({
+    created: '2000-01-01T00:00:00.000Z',
+    modified: '2000-01-01T00:00:00.000Z',
+    [version]: '2000-01-01T00:00:00.000Z',
+  })
+  expect(() => assertCandidateRegistryTime(metadata, version)).not.toThrow()
+
+  metadata.time[version] = undefined
+  expect(() => assertCandidateRegistryTime(metadata, version)).toThrow(
+    'Candidate registry metadata has invalid publication time for 1.2.3.',
+  )
+})
 
 function writeCandidateTarball(
   directory: string,

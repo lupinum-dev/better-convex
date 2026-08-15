@@ -8,6 +8,7 @@ import { getPackageCertificationDescriptor } from './package-certification-manif
 
 const defaultRepositoryRoot = resolve(import.meta.dirname, '..')
 const integrityPattern = /^sha512-[A-Za-z0-9+/]{86}==$/u
+const candidatePublishedAt = '2000-01-01T00:00:00.000Z'
 const packageNames = Object.freeze(
   Object.fromEntries(
     ['mcp', 'nuxt', 'vue'].map((packageId) => {
@@ -47,6 +48,46 @@ export function candidateAppInstallArgs(profile, frozen) {
     : ['install', '--lockfile-only', '--no-frozen-lockfile', '--ignore-scripts']
   if (profile.strictPeerDependencies) args.push('--strict-peer-dependencies')
   return args
+}
+
+/** Build the npm metadata served for one local release candidate. */
+export function createCandidateRegistryMetadata({
+  integrity,
+  packageJson,
+  registry,
+  tarballPathname,
+}) {
+  const metadata = {
+    name: packageJson.name,
+    'dist-tags': { latest: packageJson.version },
+    time: {
+      created: candidatePublishedAt,
+      modified: candidatePublishedAt,
+      [packageJson.version]: candidatePublishedAt,
+    },
+    versions: {
+      [packageJson.version]: {
+        ...packageJson,
+        dist: {
+          integrity,
+          tarball: new URL(tarballPathname.slice(1), registry).href,
+        },
+      },
+    },
+  }
+  assertCandidateRegistryTime(metadata, packageJson.version)
+  return metadata
+}
+
+/** Reject metadata that cannot satisfy pnpm's dependency-age policy. */
+export function assertCandidateRegistryTime(metadata, version) {
+  if (
+    metadata?.time?.created !== candidatePublishedAt ||
+    metadata.time.modified !== candidatePublishedAt ||
+    metadata.time[version] !== candidatePublishedAt
+  ) {
+    throw new Error(`Candidate registry metadata has invalid publication time for ${version}.`)
+  }
 }
 
 /** Assert one pnpm lock binds an exact reviewed package tarball SRI. */

@@ -16,6 +16,9 @@
 - Replace repeated release rehearsals with one clean hosted source
   certification followed by immutable artifact checks, protected staging, and
   exact npm byte comparison.
+- Refresh every maintained candidate lock against the final package bytes, make
+  the local candidate registry compatible with the 24-hour dependency policy,
+  and replace the demo's vulnerable `fontless` esbuild version.
 
 ## v0.8.0-beta.28
 
