@@ -172,7 +172,6 @@
     "test:e2e": "node scripts/run-e2e.mjs",
     "test:e2e:full": "pnpm --dir packages/vue build && node scripts/run-e2e.mjs --full",
     "test:auth-adapter": "nuxt-module-build prepare && vitest run --project=auth-adapter",
-    "test:auth-cloud-staging": "node scripts/run-auth-cloud-staging.mjs",
     "test:auth-concurrency": "node scripts/run-auth-concurrency.mjs && node scripts/run-oauth-transport-quota.mjs && node scripts/run-oauth-code-concurrency.mjs",
     "test:auth-export-sentinels": "node scripts/run-auth-export-sentinels.mjs",
     "test:auth-fuzz": "nuxt-module-build prepare && vitest run --project=auth-fuzz",

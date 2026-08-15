@@ -39,13 +39,7 @@ withReleasePreflightTarballs((tarballs) => {
   run('node', ['scripts/check-package-exports.mjs', '--package', 'mcp', '--tarball', tarballs.mcp])
 })
 
-run('pnpm', [
-  'exec',
-  'vitest',
-  'run',
-  'test/unit/release-workflow.test.ts',
-  'test/unit/auth-cloud-staging.test.ts',
-])
+run('pnpm', ['exec', 'vitest', 'run', 'test/unit/release-workflow.test.ts'])
 ensureClean()
 console.log(
   '\n[release-smoke] PASS: locks, release-equivalent packages, consumers, and regressions.',

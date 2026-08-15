@@ -1,5 +1,9 @@
 # Better Convex vNext implementation ledger
 
+> **Historical implementation record.** This ledger does not describe the
+> current release process. Use the root agent, maintenance, and release guides
+> for current instructions.
+
 This is the canonical executable ledger for
 [`RFC-better-convex-vnext.md`](./RFC-better-convex-vnext.md). It records work and proof; it does not
 replace the RFC's product decisions.

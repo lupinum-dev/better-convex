@@ -20,15 +20,12 @@ The order is fixed:
 1. Run the fast disposable lock/package smoke.
 2. Require one successful clean-Linux source certification for the exact Git
    commit.
-3. Perform a read-only staging readiness check.
-4. Mint the Vue, Nuxt, and MCP artifacts once.
-5. Verify only those artifact bytes and clean consumers.
-6. Deploy the exact Nuxt artifact to the dedicated Vercel staging host.
-7. Run the protected Convex/Vercel proof and prove complete cleanup.
-8. Publish through npm trusted publishing under `next`, or complete the
+3. Mint the Vue, Nuxt, and MCP artifacts once.
+4. Verify only those artifact bytes and clean consumers.
+5. Publish through npm trusted publishing under `next`, or complete the
    first-package bootstrap described below.
-9. Download each package from npm and compare it with the certified SRI.
-10. Create the Git tag and GitHub prerelease from the matching changelog entry.
+6. Download each package from npm and compare it with the certified SRI.
+7. Create the Git tag and GitHub prerelease from the matching changelog entry.
 
 Source certification never runs after immutable minting. Artifact verification
 never invokes the full source suite. A generic Vercel preview is a developer
@@ -48,7 +45,7 @@ npx --yes --package npm@11.18.0 -- pnpm release:smoke
 `release:smoke` validates the workspace versions and standalone locks, builds
 disposable release-equivalent Vue/Nuxt/MCP tarballs, verifies their exports and
 dependency closure, installs representative clean consumers, and runs the
-packaging and cloud-verifier regression tests. It creates no immutable artifact
+packaging and release-workflow regression tests. It creates no immutable artifact
 directory and must leave the checkout clean.
 
 Pull-request CI repeats this smoke with the same npm version. It prevents a
@@ -82,47 +79,6 @@ The source lanes are defined by `scripts/release-source-certification.mjs`:
 - `auth`: the complete auth/OAuth/MCP verification matrix;
 - `e2e`: the full application E2E, proxy DAST, and advisory gates.
 
-## Read-only staging readiness
-
-Before any artifact is minted, the protected `bcn-auth-staging` environment
-runs:
-
-```bash
-pnpm test:auth-cloud-staging --readiness-only
-```
-
-This mode performs no deployment, mutation, cleanup, account creation, or
-report write. It verifies the authenticated machine-readable Convex deployment
-authority, exact team/project/deployment, configured origins, closed public
-ingress, the leased host fingerprint endpoint, and zero rows in every currently
-mounted staging proof table.
-
-The environment is dedicated release infrastructure. Its concurrency group is
-exclusive; operators must not use it during a release.
-
-Required GitHub environment variables:
-
-- `BCN_AUTH_STAGING_CONVEX_URL`
-- `BCN_AUTH_STAGING_CONVEX_SITE_URL`
-- `BCN_AUTH_STAGING_ORIGIN`
-- `BCN_AUTH_STAGING_TEAM`
-- `BCN_AUTH_STAGING_VERCEL_ORG_ID`
-- `BCN_AUTH_STAGING_VERCEL_PROJECT_ID`
-
-Required secrets:
-
-- `BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY`
-- `BCN_AUTH_STAGING_INGRESS_LEASE`
-- `BCN_AUTH_STAGING_VERCEL_TOKEN`
-- `BCN_AUTH_STAGING_EMAIL`
-- `BCN_AUTH_STAGING_PASSWORD`
-
-The Convex key must be deployment-scoped. The Vercel project and organization
-IDs bind the deploy to the dedicated staging project. The staging origin must
-reject unleased fingerprint and auth requests at the edge.
-`CONVEX_SITE_URL` is a Convex built-in deployment value: the workflow verifies
-it but never sets or overrides it.
-
 ## Immutable artifacts and artifact-only verification
 
 The protected workflow creates exactly one final tarball for each package and
@@ -153,27 +109,6 @@ node scripts/release.mjs verify \
   --package nuxt
 ```
 
-## Protected staging proof
-
-After artifact-only verification, the workflow copies the maintained staging
-host fixture and binds all three Better Convex dependencies to the exact
-downloaded tarballs. The pinned Vercel CLI deploys that fixture only to the
-configured staging project. The workflow waits until the protected origin
-serves the exact Nuxt runtime fingerprint.
-
-The cloud proof then:
-
-- verifies the same artifact family again;
-- deploys the exact fixture contract to the dedicated Convex deployment;
-- proves zero pre-write state;
-- exercises auth, session JWT, MCP authorization, rate limiting, JWKS rotation,
-  and bounded concurrency races;
-- deletes all fixture rows; and
-- proves zero post-cleanup state before writing the non-secret report.
-
-Any non-empty readiness or cleanup proof blocks publication. Staging is not
-`continue-on-error` and publication jobs depend on its success.
-
 ## Publication and registry equality
 
 Only the three npm jobs receive `id-token: write`, and only through the
@@ -195,8 +130,8 @@ exist and npm therefore rejects its trusted-publisher configuration.
 
 1. Dispatch the protected workflow with all missing packages listed in
    `bootstrap_packages`.
-2. Approve and complete the protected staging proof. Do not approve the `npm`
-   environment yet.
+2. Wait for the workflow to retain and verify all three artifacts. Do not
+   approve the `npm` environment yet.
 3. Download the three retained tarballs and their evidence from that exact
    workflow run.
 4. Verify each tarball against its retained SHA-256 and SRI. Do not run

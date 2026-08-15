@@ -1,11 +1,11 @@
 # Better Convex Nuxt Auth Platform Plan
 
 > **Historical 0.7 record.** This document describes the completed 0.7 design and its
-> detached-checkout release commands. It is not the vNext implementation contract. The normative vNext
-> design is [`internal/RFC-better-convex-vnext.md`](./internal/RFC-better-convex-vnext.md), executable
-> status lives only in [`internal/VNEXT-TASKS.md`](./internal/VNEXT-TASKS.md), and current release
-> instructions live in [`RELEASING.md`](./RELEASING.md). In particular, the flat artifact paths below
-> apply only to historical 0.7 evidence.
+> detached-checkout release commands. It is not the current implementation or release contract. The
+> normative vNext design is [`internal/RFC-better-convex-vnext.md`](./internal/RFC-better-convex-vnext.md).
+> Current operational instructions live in [`AGENTS.md`](./AGENTS.md),
+> [`MAINTAINING.md`](./MAINTAINING.md), and [`RELEASING.md`](./RELEASING.md). In particular, the flat
+> artifact paths below apply only to historical 0.7 evidence.
 
 | Field                       | Decision                                                                                                                                                                           |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

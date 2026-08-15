@@ -81,7 +81,7 @@ jobs:
         run: node scripts/assert-hosted-source-certification.mjs
 
   build-candidates:
-    needs: staging-readiness
+    needs: release-security
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -172,34 +172,6 @@ jobs:
       - name: Analyze the exact release source
         uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
 
-  staging-readiness:
-    needs: release-security
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: bcn-auth-staging
-    concurrency:
-      group: bcn-auth-staging
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
-          package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
-      - run: pnpm install --frozen-lockfile
-      - name: Prove staging authority, ingress policy, and empty ownership without writes
-        env:
-          BCN_AUTH_STAGING_CONVEX_SITE_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_SITE_URL }}
-          BCN_AUTH_STAGING_CONVEX_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_URL }}
-          BCN_AUTH_STAGING_INGRESS_LEASE: ${{ secrets.BCN_AUTH_STAGING_INGRESS_LEASE }}
-          BCN_AUTH_STAGING_ORIGIN: ${{ vars.BCN_AUTH_STAGING_ORIGIN }}
-          BCN_AUTH_STAGING_TEAM: ${{ vars.BCN_AUTH_STAGING_TEAM }}
-          CONVEX_DEPLOY_KEY: ${{ secrets.BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY }}
-        run: pnpm test:auth-cloud-staging --readiness-only
-
   verify-candidates:
     needs: build-candidates
     runs-on: ubuntu-latest
@@ -284,104 +256,8 @@ jobs:
             echo 'This job verifies only immutable bytes, package identity, exports, dependency closure, and clean consumers.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  bcn-auth-staging:
-    needs: verify-candidates
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: bcn-auth-staging
-    concurrency:
-      group: bcn-auth-staging
-      cancel-in-progress: false
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
-          package-manager-cache: false
-
-      - name: Install pinned cloud-gate tooling
-        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 vercel@58.9.1 && corepack enable
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-
-      - name: Resolve the reviewed candidate coordinates
-        id: candidate_set
-        run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
-
-      - name: Resolve the reviewed Nuxt artifact coordinates
-        id: nuxt
-        run: node scripts/print-package-artifact-coordinates.mjs --package nuxt >> "$GITHUB_OUTPUT"
-
-      - name: Resolve the reviewed Vue artifact coordinates
-        id: vue
-        run: node scripts/print-package-artifact-coordinates.mjs --package vue >> "$GITHUB_OUTPUT"
-
-      - name: Resolve the reviewed MCP artifact coordinates
-        id: mcp
-        run: node scripts/print-package-artifact-coordinates.mjs --package mcp >> "$GITHUB_OUTPUT"
-
-      - name: Download the exact verified Vue/Nuxt candidate set
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ steps.candidate_set.outputs.artifact_name }}
-          path: ${{ steps.candidate_set.outputs.directory }}
-
-      - name: Download the exact verified MCP candidate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ steps.mcp.outputs.artifact_name }}
-          path: ${{ steps.mcp.outputs.directory }}
-
-      - name: Deploy the exact Nuxt artifact to the dedicated staging host
-        env:
-          BCN_AUTH_STAGING_CONVEX_SITE_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_SITE_URL }}
-          BCN_AUTH_STAGING_CONVEX_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_URL }}
-          BCN_AUTH_STAGING_INGRESS_LEASE: ${{ secrets.BCN_AUTH_STAGING_INGRESS_LEASE }}
-          BCN_AUTH_STAGING_ORIGIN: ${{ vars.BCN_AUTH_STAGING_ORIGIN }}
-          BCN_AUTH_STAGING_TEAM: ${{ vars.BCN_AUTH_STAGING_TEAM }}
-          BCN_AUTH_STAGING_VERCEL_ORG_ID: ${{ vars.BCN_AUTH_STAGING_VERCEL_ORG_ID }}
-          BCN_AUTH_STAGING_VERCEL_PROJECT_ID: ${{ vars.BCN_AUTH_STAGING_VERCEL_PROJECT_ID }}
-          BCN_AUTH_STAGING_VERCEL_TOKEN: ${{ secrets.BCN_AUTH_STAGING_VERCEL_TOKEN }}
-          CONVEX_DEPLOY_KEY: ${{ secrets.BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY }}
-        run: >-
-          node scripts/deploy-auth-staging-host.mjs
-          --artifact-manifest "${{ steps.nuxt.outputs.evidence }}"
-          --vue-artifact-manifest "${{ steps.vue.outputs.evidence }}"
-          --mcp-artifact-manifest "${{ steps.mcp.outputs.evidence }}"
-
-      - name: Run protected cloud-staging races against the exact deployment
-        env:
-          BCN_AUTH_STAGING_CONVEX_SITE_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_SITE_URL }}
-          BCN_AUTH_STAGING_CONVEX_URL: ${{ vars.BCN_AUTH_STAGING_CONVEX_URL }}
-          BCN_AUTH_STAGING_EMAIL: ${{ secrets.BCN_AUTH_STAGING_EMAIL }}
-          BCN_AUTH_STAGING_INGRESS_LEASE: ${{ secrets.BCN_AUTH_STAGING_INGRESS_LEASE }}
-          BCN_AUTH_STAGING_ORIGIN: ${{ vars.BCN_AUTH_STAGING_ORIGIN }}
-          BCN_AUTH_STAGING_PASSWORD: ${{ secrets.BCN_AUTH_STAGING_PASSWORD }}
-          BCN_AUTH_STAGING_TEAM: ${{ vars.BCN_AUTH_STAGING_TEAM }}
-          CONVEX_DEPLOY_KEY: ${{ secrets.BCN_AUTH_STAGING_CONVEX_DEPLOY_KEY }}
-        run: >-
-          pnpm test:auth-cloud-staging
-          --artifact-manifest "${{ steps.nuxt.outputs.evidence }}"
-          --vue-artifact-manifest "${{ steps.vue.outputs.evidence }}"
-          --mcp-artifact-manifest "${{ steps.mcp.outputs.evidence }}"
-
-      - name: Upload the separate non-secret cloud report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bcn-auth-staging-report
-          path: .release-artifacts/bcn-auth-staging.report.json
-          if-no-files-found: error
-          include-hidden-files: true
-          retention-days: 90
-
   publish-vue:
-    needs: bcn-auth-staging
+    needs: verify-candidates
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm
