@@ -111,17 +111,16 @@ node scripts/release.mjs verify \
 
 ## Publication and registry equality
 
-Only the three npm jobs receive `id-token: write`, and only through the
-protected `npm` environment. Each job downloads one retained artifact, selects
-exactly one expected tarball, and publishes it with npm provenance and disabled
-package scripts. These jobs do not check out the repository, install
-dependencies, or run repository code.
+One job receives `id-token: write`, and only through the protected `npm`
+environment. It downloads all three retained artifacts and publishes Vue, Nuxt,
+and MCP in dependency order. It uses npm provenance and disables package
+scripts. The job does not check out the repository, install dependencies, or
+run repository code.
 
-Separate jobs without an OIDC token download each registry package and compare
-it with the certified artifact. The Vue gate also installs the unchanged Nuxt
-artifact with the registry Vue package in a clean consumer. Prerelease
-publication uses `next`. A stable workflow may use `latest` only after a
-separate stable-release review.
+The job reads npm after each publish and requires the certified integrity,
+provenance mode, and `next` tag. Clean registry-consumer tests run before this
+protected job against the exact candidate tarballs. A stable workflow may use
+`latest` only after a separate stable-release review.
 
 ## First-package bootstrap
 

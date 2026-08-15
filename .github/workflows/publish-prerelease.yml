@@ -256,290 +256,106 @@ jobs:
             echo 'This job verifies only immutable bytes, package identity, exports, dependency closure, and clean consumers.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  publish-vue:
+  publish-packages:
     needs: verify-candidates
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     environment: npm
     permissions:
       actions: read
       id-token: write
     outputs:
-      mode: ${{ steps.publish.outputs.mode }}
-      package: ${{ steps.publish.outputs.package }}
+      vue-mode: ${{ steps.publish.outputs.vue_mode }}
+      nuxt-mode: ${{ steps.publish.outputs.nuxt_mode }}
+      mcp-mode: ${{ steps.publish.outputs.mcp_mode }}
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.11.0'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Download the verified Vue and Nuxt artifact set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-candidate-vue-nuxt-set
           path: .release-artifacts
-      - name: Publish the certified Vue tarball
-        id: publish
-        env:
-          BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
-        run: |
-          set -euo pipefail
-          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-vue-*.tgz' -print)
-          test "${#TARBALLS[@]}" -eq 1
-          TARBALL="${TARBALLS[0]}"
-          tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"
-          PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
-          VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
-          LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          test "$PACKAGE" = '@lupinum/better-convex-vue'
-          export TARBALL PACKAGE VERSION LOCAL_INTEGRITY
-          node --input-type=module <<'NODE'
-          import { spawnSync } from 'node:child_process'
-          import { appendFileSync } from 'node:fs'
-          const fail = message => { throw new Error(message) }
-          const run = (args, inherit = false) => spawnSync('npm', args, {
-            encoding: 'utf8',
-            stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-          })
-          const view = (spec, field) => {
-            const result = run(['view', spec, field, '--json'])
-            if (result.status === 0) return JSON.parse(result.stdout.trim() || 'null')
-            if (/E404|404 Not Found/.test(result.stderr)) return null
-            fail(`npm view failed for ${spec} ${field}: ${result.stderr.trim()}`)
-          }
-          const { PACKAGE: packageName, VERSION: version, LOCAL_INTEGRITY: integrity } = process.env
-          const spec = `${packageName}@${version}`
-          const existing = view(spec, 'dist.integrity')
-          if (existing && existing !== integrity) fail(`${spec} exists with different bytes.`)
-          let mode
-          if (existing) {
-            const attestations = view(spec, 'dist.attestations')
-            const published = view(packageName, 'versions')
-            const versions = Array.isArray(published) ? published : [published]
-            if (!attestations && (versions.length !== 1 || versions[0] !== version)) {
-              fail(`${spec} is not the first package version and has no provenance.`)
-            }
-            const authorized = new Set((process.env.BOOTSTRAP_PACKAGES ?? '').split(',').map(value => value.trim()).filter(Boolean))
-            if (!attestations && !authorized.has(packageName)) {
-              fail(`${spec} requires explicit bootstrap authorization.`)
-            }
-            mode = attestations ? 'oidc' : 'bootstrap'
-          } else {
-            const result = run([
-              'publish', process.env.TARBALL, '--tag', process.env.BCN_RELEASE_DIST_TAG,
-              '--access', 'public', '--ignore-scripts', '--provenance',
-            ], true)
-            if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
-            mode = 'oidc'
-          }
-          for (let attempt = 0; attempt < 12; attempt += 1) {
-            const registryIntegrity = view(spec, 'dist.integrity')
-            const attestations = view(spec, 'dist.attestations')
-            const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
-            const published = mode === 'bootstrap' ? view(packageName, 'versions') : null
-            const versions = Array.isArray(published) ? published : [published]
-            const remainsFirstVersion = mode !== 'bootstrap' || (versions.length === 1 && versions[0] === version)
-            if (
-              registryIntegrity === integrity && channel === version && remainsFirstVersion &&
-              (mode === 'bootstrap' || (mode === 'oidc' && attestations))
-            ) {
-              appendFileSync(process.env.GITHUB_OUTPUT, `mode=${mode}\n`)
-              appendFileSync(process.env.GITHUB_OUTPUT, `package=${packageName}\n`)
-              appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
-              process.exit(0)
-            }
-            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
-          }
-          fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
-          NODE
-
-  registry-vue-nuxt-gate:
-    needs: publish-vue
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
-          package-manager-cache: false
-      - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
-      - run: pnpm install --frozen-lockfile
-      - id: candidate_set
-        run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ steps.candidate_set.outputs.artifact_name }}
-          path: ${{ steps.candidate_set.outputs.directory }}
-      - name: Install unchanged Nuxt with registry Vue and compare both installed packages
-        run: >-
-          node scripts/check-nuxt-registry-vue-consumer.mjs
-          --artifact-set "${{ steps.candidate_set.outputs.evidence }}"
-
-  publish-nuxt:
-    needs: registry-vue-nuxt-gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: npm
-    permissions:
-      actions: read
-      id-token: write
-    outputs:
-      mode: ${{ steps.publish.outputs.mode }}
-      package: ${{ steps.publish.outputs.package }}
-    steps:
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24.11.0'
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: release-candidate-vue-nuxt-set
-          path: .release-artifacts
-      - name: Publish the certified Nuxt tarball
-        id: publish
-        env:
-          BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
-        run: |
-          set -euo pipefail
-          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-nuxt-*.tgz' -print)
-          test "${#TARBALLS[@]}" -eq 1
-          TARBALL="${TARBALLS[0]}"
-          tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"
-          PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
-          VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
-          LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          test "$PACKAGE" = '@lupinum/better-convex-nuxt'
-          export TARBALL PACKAGE VERSION LOCAL_INTEGRITY
-          node --input-type=module <<'NODE'
-          import { spawnSync } from 'node:child_process'
-          import { appendFileSync } from 'node:fs'
-          const fail = message => { throw new Error(message) }
-          const run = (args, inherit = false) => spawnSync('npm', args, {
-            encoding: 'utf8',
-            stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-          })
-          const view = (spec, field) => {
-            const result = run(['view', spec, field, '--json'])
-            if (result.status === 0) return JSON.parse(result.stdout.trim() || 'null')
-            if (/E404|404 Not Found/.test(result.stderr)) return null
-            fail(`npm view failed for ${spec} ${field}: ${result.stderr.trim()}`)
-          }
-          const { PACKAGE: packageName, VERSION: version, LOCAL_INTEGRITY: integrity } = process.env
-          const spec = `${packageName}@${version}`
-          const existing = view(spec, 'dist.integrity')
-          if (existing && existing !== integrity) fail(`${spec} exists with different bytes.`)
-          let mode
-          if (existing) {
-            const attestations = view(spec, 'dist.attestations')
-            const published = view(packageName, 'versions')
-            const versions = Array.isArray(published) ? published : [published]
-            if (!attestations && (versions.length !== 1 || versions[0] !== version)) {
-              fail(`${spec} is not the first package version and has no provenance.`)
-            }
-            const authorized = new Set((process.env.BOOTSTRAP_PACKAGES ?? '').split(',').map(value => value.trim()).filter(Boolean))
-            if (!attestations && !authorized.has(packageName)) {
-              fail(`${spec} requires explicit bootstrap authorization.`)
-            }
-            mode = attestations ? 'oidc' : 'bootstrap'
-          } else {
-            const result = run([
-              'publish', process.env.TARBALL, '--tag', process.env.BCN_RELEASE_DIST_TAG,
-              '--access', 'public', '--ignore-scripts', '--provenance',
-            ], true)
-            if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
-            mode = 'oidc'
-          }
-          for (let attempt = 0; attempt < 12; attempt += 1) {
-            const registryIntegrity = view(spec, 'dist.integrity')
-            const attestations = view(spec, 'dist.attestations')
-            const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
-            const published = mode === 'bootstrap' ? view(packageName, 'versions') : null
-            const versions = Array.isArray(published) ? published : [published]
-            const remainsFirstVersion = mode !== 'bootstrap' || (versions.length === 1 && versions[0] === version)
-            if (
-              registryIntegrity === integrity && channel === version && remainsFirstVersion &&
-              (mode === 'bootstrap' || (mode === 'oidc' && attestations))
-            ) {
-              appendFileSync(process.env.GITHUB_OUTPUT, `mode=${mode}\n`)
-              appendFileSync(process.env.GITHUB_OUTPUT, `package=${packageName}\n`)
-              appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
-              process.exit(0)
-            }
-            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
-          }
-          fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
-          NODE
-
-  registry-nuxt-gate:
-    needs: publish-nuxt
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
-          package-manager-cache: false
-      - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
-      - run: pnpm install --frozen-lockfile
-      - id: candidate_set
-        run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ steps.candidate_set.outputs.artifact_name }}
-          path: ${{ steps.candidate_set.outputs.directory }}
-      - name: Compare Nuxt registry bytes with the approved candidate
-        run: node scripts/compare-registry-package.mjs --package nuxt
-
-  publish-mcp:
-    needs: registry-nuxt-gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: npm
-    permissions:
-      actions: read
-      id-token: write
-    outputs:
-      mode: ${{ steps.publish.outputs.mode }}
-      package: ${{ steps.publish.outputs.package }}
-    steps:
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24.11.0'
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Download the verified MCP artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-candidate-mcp
           path: .release-artifacts
-      - name: Publish the certified MCP tarball
+      - name: Publish and verify the complete certified package set
         id: publish
         env:
           BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          set -euo pipefail
-          mapfile -t TARBALLS < <(find .release-artifacts -type f -name 'lupinum-better-convex-mcp-*.tgz' -print)
-          test "${#TARBALLS[@]}" -eq 1
-          TARBALL="${TARBALLS[0]}"
-          tar -xOf "$TARBALL" package/package.json > "$RUNNER_TEMP/package.json"
-          PACKAGE=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.name)" "$RUNNER_TEMP/package.json")
-          VERSION=$(node -e "const p = require(process.argv[1]); process.stdout.write(p.version)" "$RUNNER_TEMP/package.json")
-          LOCAL_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
-          test "$PACKAGE" = '@lupinum/better-convex-mcp'
-          export TARBALL PACKAGE VERSION LOCAL_INTEGRITY
           node --input-type=module <<'NODE'
           import { spawnSync } from 'node:child_process'
-          import { appendFileSync } from 'node:fs'
+          import { createHash } from 'node:crypto'
+          import { appendFileSync, readFileSync, readdirSync } from 'node:fs'
+          import { basename, dirname, join } from 'node:path'
+
           const fail = message => { throw new Error(message) }
+          const expectedOrder = [
+            ['vue', '@lupinum/better-convex-vue'],
+            ['nuxt', '@lupinum/better-convex-nuxt'],
+            ['mcp', '@lupinum/better-convex-mcp'],
+          ]
+          const allowed = new Set(expectedOrder.map(([, packageName]) => packageName))
+          const requested = (process.env.BOOTSTRAP_PACKAGES ?? '')
+            .split(',').map(value => value.trim()).filter(Boolean)
+          if (new Set(requested).size !== requested.length || requested.some(name => !allowed.has(name))) {
+            fail('bootstrap_packages must contain unique Better Convex package names.')
+          }
+          const authorized = new Set(requested)
+          const files = []
+          const walk = directory => {
+            for (const entry of readdirSync(directory, { withFileTypes: true })) {
+              const path = join(directory, entry.name)
+              if (entry.isDirectory()) walk(path)
+              else if (entry.isFile()) files.push(path)
+            }
+          }
+          walk('.release-artifacts')
+          const evidenceByPackage = new Map()
+          for (const path of files.filter(path => basename(path) === 'artifact.json')) {
+            const evidence = JSON.parse(readFileSync(path, 'utf8'))
+            if (!allowed.has(evidence.packageName) || evidenceByPackage.has(evidence.packageName)) {
+              fail('Artifact set contains an unknown or duplicate package.')
+            }
+            if (evidence.sourceCommit !== process.env.GITHUB_SHA) {
+              fail(`${evidence.packageName} is not bound to the release source.`)
+            }
+            if (
+              (evidence.packageName === '@lupinum/better-convex-vue' ||
+                evidence.packageName === '@lupinum/better-convex-nuxt') &&
+              evidence.version !== process.env.RELEASE_VERSION
+            ) {
+              fail(`${evidence.packageName} has the wrong release version.`)
+            }
+            const tarball = join(dirname(path), evidence.tarball?.file ?? '')
+            if (basename(tarball) !== evidence.tarball?.file || !files.includes(tarball)) {
+              fail(`${evidence.packageName} has invalid tarball evidence.`)
+            }
+            const bytes = readFileSync(tarball)
+            const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`
+            const sha256 = createHash('sha256').update(bytes).digest('hex')
+            if (integrity !== evidence.tarball.integrity || sha256 !== evidence.tarball.sha256) {
+              fail(`${evidence.packageName} tarball does not match its certified digest.`)
+            }
+            evidenceByPackage.set(evidence.packageName, {
+              id: expectedOrder.find(([, name]) => name === evidence.packageName)?.[0],
+              integrity,
+              packageName: evidence.packageName,
+              tarball,
+              version: evidence.version,
+            })
+          }
+          if (evidenceByPackage.size !== expectedOrder.length) {
+            fail('Artifact set does not contain exactly three certified packages.')
+          }
+
           const run = (args, inherit = false) => spawnSync('npm', args, {
             encoding: 'utf8',
             stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
@@ -547,128 +363,100 @@ jobs:
           const view = (spec, field) => {
             const result = run(['view', spec, field, '--json'])
             if (result.status === 0) return JSON.parse(result.stdout.trim() || 'null')
-            if (/E404|404 Not Found/.test(result.stderr)) return null
+            if (/E404|404 Not Found/u.test(result.stderr)) return null
             fail(`npm view failed for ${spec} ${field}: ${result.stderr.trim()}`)
           }
-          const { PACKAGE: packageName, VERSION: version, LOCAL_INTEGRITY: integrity } = process.env
-          const spec = `${packageName}@${version}`
-          const existing = view(spec, 'dist.integrity')
-          if (existing && existing !== integrity) fail(`${spec} exists with different bytes.`)
-          let mode
-          if (existing) {
-            const attestations = view(spec, 'dist.attestations')
-            const published = view(packageName, 'versions')
-            const versions = Array.isArray(published) ? published : [published]
-            if (!attestations && (versions.length !== 1 || versions[0] !== version)) {
-              fail(`${spec} is not the first package version and has no provenance.`)
+          const hasAttestations = value => Array.isArray(value)
+            ? value.length > 0
+            : Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
+          const normalizeVersions = value => value == null ? [] : Array.isArray(value) ? value : [value]
+          const modes = new Map()
+
+          for (const [id, packageName] of expectedOrder) {
+            const candidate = evidenceByPackage.get(packageName)
+            if (!candidate || candidate.id !== id) fail(`Missing certified ${id} package.`)
+            const spec = `${packageName}@${candidate.version}`
+            const existing = view(spec, 'dist.integrity')
+            if (existing && existing !== candidate.integrity) fail(`${spec} exists with different bytes.`)
+            let mode
+            if (existing) {
+              const attestations = view(spec, 'dist.attestations')
+              const versions = normalizeVersions(view(packageName, 'versions'))
+              if (!hasAttestations(attestations) && (versions.length !== 1 || versions[0] !== candidate.version)) {
+                fail(`${spec} is not the first package version and has no provenance.`)
+              }
+              if (!hasAttestations(attestations) && !authorized.has(packageName)) {
+                fail(`${spec} requires explicit bootstrap authorization.`)
+              }
+              mode = hasAttestations(attestations) ? 'oidc' : 'bootstrap'
+            } else {
+              const result = run([
+                'publish', candidate.tarball, '--access', 'public',
+                '--tag', process.env.BCN_RELEASE_DIST_TAG,
+                '--ignore-scripts', '--provenance',
+              ], true)
+              if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
+              mode = 'oidc'
             }
-            const authorized = new Set((process.env.BOOTSTRAP_PACKAGES ?? '').split(',').map(value => value.trim()).filter(Boolean))
-            if (!attestations && !authorized.has(packageName)) {
-              fail(`${spec} requires explicit bootstrap authorization.`)
+            for (let attempt = 0; attempt < 12; attempt += 1) {
+              const registryIntegrity = view(spec, 'dist.integrity')
+              const attestations = view(spec, 'dist.attestations')
+              const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
+              const versions = mode === 'bootstrap'
+                ? normalizeVersions(view(packageName, 'versions'))
+                : []
+              const remainsFirstVersion = mode !== 'bootstrap' ||
+                (versions.length === 1 && versions[0] === candidate.version)
+              if (
+                registryIntegrity === candidate.integrity &&
+                channel === candidate.version &&
+                remainsFirstVersion &&
+                (mode === 'bootstrap' || hasAttestations(attestations))
+              ) {
+                modes.set(id, mode)
+                appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
+                break
+              }
+              if (attempt === 11) {
+                fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
+              }
+              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
             }
-            mode = attestations ? 'oidc' : 'bootstrap'
-          } else {
-            const result = run([
-              'publish', process.env.TARBALL, '--tag', process.env.BCN_RELEASE_DIST_TAG,
-              '--access', 'public', '--ignore-scripts', '--provenance',
-            ], true)
-            if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
-            mode = 'oidc'
           }
-          for (let attempt = 0; attempt < 12; attempt += 1) {
-            const registryIntegrity = view(spec, 'dist.integrity')
-            const attestations = view(spec, 'dist.attestations')
-            const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
-            const published = mode === 'bootstrap' ? view(packageName, 'versions') : null
-            const versions = Array.isArray(published) ? published : [published]
-            const remainsFirstVersion = mode !== 'bootstrap' || (versions.length === 1 && versions[0] === version)
-            if (
-              registryIntegrity === integrity && channel === version && remainsFirstVersion &&
-              (mode === 'bootstrap' || (mode === 'oidc' && attestations))
-            ) {
-              appendFileSync(process.env.GITHUB_OUTPUT, `mode=${mode}\n`)
-              appendFileSync(process.env.GITHUB_OUTPUT, `package=${packageName}\n`)
-              appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
-              process.exit(0)
-            }
-            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
+          for (const [id] of expectedOrder) {
+            const mode = modes.get(id)
+            if (!mode) fail(`Missing ${id} publication result.`)
+            appendFileSync(process.env.GITHUB_OUTPUT, `${id}_mode=${mode}\n`)
           }
-          fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
           NODE
 
-  registry-mcp-gate:
-    needs: publish-mcp
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
-          package-manager-cache: false
-      - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
-      - run: pnpm install --frozen-lockfile
-      - id: mcp
-        run: node scripts/print-package-artifact-coordinates.mjs --package mcp >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ steps.mcp.outputs.artifact_name }}
-          path: ${{ steps.mcp.outputs.directory }}
-      - name: Compare MCP registry bytes with the approved candidate
-        run: node scripts/compare-registry-package.mjs --package mcp
-
-  published-package-set-complete:
-    needs:
-      - publish-vue
-      - registry-vue-nuxt-gate
-      - publish-nuxt
-      - registry-nuxt-gate
-      - publish-mcp
-      - registry-mcp-gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      vue-mode: ${{ needs.publish-vue.outputs.mode }}
-      nuxt-mode: ${{ needs.publish-nuxt.outputs.mode }}
-      mcp-mode: ${{ needs.publish-mcp.outputs.mode }}
-      vue-package: ${{ needs.publish-vue.outputs.package }}
-      nuxt-package: ${{ needs.publish-nuxt.outputs.package }}
-      mcp-package: ${{ needs.publish-mcp.outputs.package }}
-    steps:
-      - name: Record the verified package set
-        env:
-          VUE_MODE: ${{ needs.publish-vue.outputs.mode }}
-          NUXT_MODE: ${{ needs.publish-nuxt.outputs.mode }}
-          MCP_MODE: ${{ needs.publish-mcp.outputs.mode }}
-        run: >-
-          echo "All registry bytes match under ${BCN_RELEASE_DIST_TAG}.
-          Publication modes: Vue=${VUE_MODE}, Nuxt=${NUXT_MODE}, MCP=${MCP_MODE}."
-
   github-prerelease:
-    needs: published-package-set-complete
+    needs: publish-packages
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Download the verified Vue and Nuxt artifact set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-vue-nuxt-set
+          path: .release-artifacts
+      - name: Download the verified MCP artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-mcp
+          path: .release-artifacts
       - name: Create or update the GitHub prerelease from the changelog
         env:
           GH_TOKEN: ${{ github.token }}
-          VUE_MODE: ${{ needs.published-package-set-complete.outputs.vue-mode }}
-          NUXT_MODE: ${{ needs.published-package-set-complete.outputs.nuxt-mode }}
-          MCP_MODE: ${{ needs.published-package-set-complete.outputs.mcp-mode }}
-          VUE_PACKAGE: ${{ needs.published-package-set-complete.outputs.vue-package }}
-          NUXT_PACKAGE: ${{ needs.published-package-set-complete.outputs.nuxt-package }}
-          MCP_PACKAGE: ${{ needs.published-package-set-complete.outputs.mcp-package }}
+          VUE_MODE: ${{ needs.publish-packages.outputs.vue-mode }}
+          NUXT_MODE: ${{ needs.publish-packages.outputs.nuxt-mode }}
+          MCP_MODE: ${{ needs.publish-packages.outputs.mcp-mode }}
         run: |
           set -euo pipefail
           TAG="v${{ inputs.version }}"
@@ -682,9 +470,9 @@ jobs:
           ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
           test -s "$RUNNER_TEMP/release-notes.md"
           bootstrap_packages=()
-          [ "$VUE_MODE" = bootstrap ] && bootstrap_packages+=("$VUE_PACKAGE")
-          [ "$NUXT_MODE" = bootstrap ] && bootstrap_packages+=("$NUXT_PACKAGE")
-          [ "$MCP_MODE" = bootstrap ] && bootstrap_packages+=("$MCP_PACKAGE")
+          [ "$VUE_MODE" = bootstrap ] && bootstrap_packages+=("@lupinum/better-convex-vue")
+          [ "$NUXT_MODE" = bootstrap ] && bootstrap_packages+=("@lupinum/better-convex-nuxt")
+          [ "$MCP_MODE" = bootstrap ] && bootstrap_packages+=("@lupinum/better-convex-mcp")
           if [ "${#bootstrap_packages[@]}" -gt 0 ]; then
             cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTICE'
 
@@ -694,6 +482,27 @@ jobs:
             bootstrap_list=$(IFS=,; echo "${bootstrap_packages[*]}")
             printf '> Bootstrap packages: %s\n' "$bootstrap_list" >> "$RUNNER_TEMP/release-notes.md"
           fi
+          mapfile -t tarballs < <(find .release-artifacts -type f -name '*.tgz' | sort)
+          test "${#tarballs[@]}" -eq 3
+          vue_evidence=$(find .release-artifacts -path '*/vue/*/artifact.json' -type f -print -quit)
+          nuxt_evidence=$(find .release-artifacts -path '*/nuxt/*/artifact.json' -type f -print -quit)
+          mcp_evidence=$(find .release-artifacts -path '*/mcp/*/artifact.json' -type f -print -quit)
+          set_evidence=$(find .release-artifacts -name 'artifact-set.json' -type f -print -quit)
+          test -n "$vue_evidence"
+          test -n "$nuxt_evidence"
+          test -n "$mcp_evidence"
+          test -n "$set_evidence"
+          cp "$vue_evidence" "$RUNNER_TEMP/vue-artifact.json"
+          cp "$nuxt_evidence" "$RUNNER_TEMP/nuxt-artifact.json"
+          cp "$mcp_evidence" "$RUNNER_TEMP/mcp-artifact.json"
+          cp "$set_evidence" "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
+          release_assets=(
+            "${tarballs[@]}"
+            "$RUNNER_TEMP/vue-artifact.json"
+            "$RUNNER_TEMP/nuxt-artifact.json"
+            "$RUNNER_TEMP/mcp-artifact.json"
+            "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
+          )
           if gh release view "$TAG" >/dev/null 2>&1; then
             read -r tag_type tag_sha < <(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '[.object.type, .object.sha] | @tsv')
             while [ "$tag_type" = tag ]; do
@@ -702,6 +511,7 @@ jobs:
             test "$tag_type" = commit
             test "$tag_sha" = "$GITHUB_SHA"
             gh release edit "$TAG" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+            gh release upload "$TAG" "${release_assets[@]}" --clobber
           else
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+            gh release create "$TAG" "${release_assets[@]}" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
           fi
