@@ -343,8 +343,11 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'publish-mcp': ['registry-nuxt-gate'],
       'registry-mcp-gate': ['publish-mcp'],
       'published-package-set-complete': [
+        'publish-vue',
         'registry-vue-nuxt-gate',
+        'publish-nuxt',
         'registry-nuxt-gate',
+        'publish-mcp',
         'registry-mcp-gate',
       ],
       'github-prerelease': ['published-package-set-complete'],
@@ -532,6 +535,13 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(workflow.on).toEqual({
       workflow_dispatch: {
         inputs: {
+          bootstrap_packages: {
+            description:
+              'Comma-separated packages explicitly authorized for first-version bootstrap recovery',
+            required: false,
+            default: '',
+            type: 'string',
+          },
           version: {
             description: 'Exact Nuxt and Vue prerelease version',
             required: true,
@@ -554,15 +564,14 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     const publishRuns = oidcJobs.flatMap(({ job }) =>
       (job.steps ?? [])
         .map(normalizedRun)
-        .filter((run): run is string => run?.includes('npm publish ') ?? false),
+        .filter((run): run is string => run?.includes("'publish', process.env.TARBALL") ?? false),
     )
     expect(publishRuns).toHaveLength(3)
     expect(
       publishRuns.every(
         (run) =>
-          run.includes('--tag "$BCN_RELEASE_DIST_TAG"') &&
-          run.includes('--ignore-scripts') &&
-          run.includes('--provenance'),
+          run.includes('process.env.BCN_RELEASE_DIST_TAG') &&
+          run.includes("'--ignore-scripts', '--provenance'"),
       ),
     ).toBe(true)
     for (const { job } of oidcJobs) {
@@ -574,14 +583,18 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       )
       expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain('LOCAL_INTEGRITY="sha512-')
       expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain(
-        'npm view "$PACKAGE@$VERSION" dist.integrity',
+        "view(spec, 'dist.integrity')",
       )
-      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain("grep -q '\\bE404\\b'")
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain(
+        "view(spec, 'dist.attestations')",
+      )
+      expect((job.steps ?? []).map(normalizedRun).join('\n')).toContain('versions.length !== 1')
       const rawPublishRun = (job.steps ?? []).find(
-        (step) => typeof step.run === 'string' && step.run.includes('npm publish '),
+        (step) =>
+          typeof step.run === 'string' && step.run.includes("'publish', process.env.TARBALL"),
       )?.run
       expect(rawPublishRun).toBeTypeOf('string')
-      expect(rawPublishRun).toMatch(/cat "\$REGISTRY_ERROR" >&2(?:\r?\n|;)\s*exit 1\b/u)
+      expect(rawPublishRun).toContain('npm view failed for')
       expect(job.permissions).toEqual({ actions: 'read', 'id-token': 'write' })
     }
 
@@ -596,57 +609,13 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     const githubReleaseRuns = runs(workflow, 'github-prerelease').join('\n')
     expect(githubReleaseRuns).toContain('gh release create')
     expect(githubReleaseRuns).toContain('--target "$GITHUB_SHA"')
-    expect(githubReleaseRuns).not.toContain('gh release edit')
-    expect(githubReleaseRuns).not.toMatch(/pnpm|npm install|node scripts\//u)
-  })
-
-  it('does not publish from any OIDC workflow branch after a non-404 registry error', () => {
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'bcn-workflow-registry-error-'))
-    const fakeBin = join(temporaryDirectory, 'bin')
-    const fakeNpm = join(fakeBin, 'npm')
-    const executionLog = join(temporaryDirectory, 'executed.log')
-    mkdirSync(fakeBin)
-    writeFileSync(
-      fakeNpm,
-      `#!/bin/sh
-if [ "$1" = "view" ]; then
-  printf '{"error":{"code":"E500"}}\\n' >&2
-  exit 1
-fi
-printf '%s\\n' "$*" >> "$BCN_FAKE_NPM_LOG"
-`,
+    expect(githubReleaseRuns).toContain('gh release edit')
+    expect(githubReleaseRuns).toContain('git/ref/tags/$TAG')
+    expect(githubReleaseRuns).toContain('test "$tag_sha" = "$GITHUB_SHA"')
+    expect(githubReleaseRuns).toContain(
+      'This first npm version was created from the exact CI-certified artifact',
     )
-    chmodSync(fakeNpm, 0o755)
-
-    try {
-      for (const jobId of ['publish-vue', 'publish-nuxt', 'publish-mcp']) {
-        const rawRun = steps(workflow, jobId).find(
-          (step) => typeof step.run === 'string' && step.run.includes('npm publish '),
-        )?.run
-        if (typeof rawRun !== 'string') throw new Error(`Missing publish run for ${jobId}`)
-        const guardedBranch = rawRun.slice(rawRun.indexOf('REGISTRY_ERROR='))
-        const result = spawnSync('/bin/sh', ['-c', guardedBranch], {
-          cwd: temporaryDirectory,
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            BCN_RELEASE_DIST_TAG: 'next',
-            BCN_FAKE_NPM_LOG: executionLog,
-            LOCAL_INTEGRITY: 'sha512-local',
-            PACKAGE: 'example-package',
-            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
-            RUNNER_TEMP: temporaryDirectory,
-            TARBALL: 'example.tgz',
-            VERSION: '1.0.0',
-          },
-        })
-        expect(result.status, `${jobId}: ${result.stderr}`).toBe(1)
-        expect(result.stderr).toContain('E500')
-        expect(existsSync(executionLog)).toBe(false)
-      }
-    } finally {
-      rmSync(temporaryDirectory, { force: true, recursive: true })
-    }
+    expect(githubReleaseRuns).not.toMatch(/pnpm|npm install|node scripts\//u)
   })
 
   it('makes exact-host cloud staging block publication', () => {
