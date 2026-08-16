@@ -493,11 +493,11 @@ jobs:
           test "${#tarballs[@]}" -eq 3
           vue_evidence=$(find .release-artifacts -path '*/vue/*/artifact.json' -type f -print -quit)
           nuxt_evidence=$(find .release-artifacts -path '*/nuxt/*/artifact.json' -type f -print -quit)
-          mcp_evidence=$(find .release-artifacts -path '*/mcp/*/artifact.json' -type f -print -quit)
+          mcp_evidence=".release-artifacts/artifact.json"
           set_evidence=$(find .release-artifacts -name 'artifact-set.json' -type f -print -quit)
           test -n "$vue_evidence"
           test -n "$nuxt_evidence"
-          test -n "$mcp_evidence"
+          test -f "$mcp_evidence"
           test -n "$set_evidence"
           cp "$vue_evidence" "$RUNNER_TEMP/vue-artifact.json"
           cp "$nuxt_evidence" "$RUNNER_TEMP/nuxt-artifact.json"

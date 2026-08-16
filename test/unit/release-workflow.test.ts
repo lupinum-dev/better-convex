@@ -579,6 +579,8 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(githubReleaseRuns).toContain('gh release upload')
     expect(githubReleaseRuns).toContain('release_assets')
     expect(githubReleaseRuns).toContain('vue-nuxt-artifact-set.json')
+    expect(githubReleaseRuns).toContain('mcp_evidence=".release-artifacts/artifact.json"')
+    expect(githubReleaseRuns).toContain('test -f "$mcp_evidence"')
     expect(githubReleaseRuns).toContain('git/ref/tags/$TAG')
     expect(githubReleaseRuns).toContain('test "$tag_sha" = "$GITHUB_SHA"')
     expect(githubReleaseRuns).toContain(
