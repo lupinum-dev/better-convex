@@ -60,8 +60,8 @@ if (compatibilitySteps[verifierIndex]?.env?.GITHUB_TOKEN) {
 const installIndex = compatibilitySteps.findIndex((step) =>
   /(?:^|\s)(?:pnpm|corepack pnpm\S*) install(?:\s|$)/u.test(step?.run ?? ''),
 )
-if (verifierIndex < 0 || installIndex < 0 || verifierIndex > installIndex) {
-  failures.push('CI must verify pinned Action commits upstream')
+if (verifierIndex < 0 || installIndex < 0 || verifierIndex < installIndex) {
+  failures.push('CI must verify pinned Action commits after the frozen install')
 }
 if (renovate.minimumReleaseAge !== '1 day') {
   failures.push('Renovate must match the 24-hour pnpm quarantine')
