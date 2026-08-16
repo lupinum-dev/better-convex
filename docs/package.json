@@ -23,11 +23,5 @@
     "typescript": "^5.9.3",
     "vue-tsc": "^3.3.9"
   },
-  "packageManager": "pnpm@11.21.0",
-  "pnpm": {
-    "overrides": {
-      "esbuild": "0.28.1",
-      "sharp": "0.35.0"
-    }
-  }
+  "packageManager": "pnpm@11.21.0"
 }

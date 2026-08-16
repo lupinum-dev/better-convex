@@ -33,9 +33,13 @@ const manifestPaths = [
 
 const failures = []
 for (const manifestPath of ['package.json', 'docs/package.json', 'demo/package.json']) {
-  const packageManager = readPackage(manifestPath).packageManager ?? ''
+  const manifest = readPackage(manifestPath)
+  const packageManager = manifest.packageManager ?? ''
   if (!/^pnpm@(?:1[1-9]|[2-9]\d)\./u.test(packageManager)) {
     failures.push(`${manifestPath} must use pnpm 11 or newer for strict dependency quarantine`)
+  }
+  if (manifest.pnpm) {
+    failures.push(`${manifestPath} must keep pnpm settings in pnpm-workspace.yaml`)
   }
 }
 const compatibilitySteps = ci?.jobs?.compatibility?.steps ?? []
