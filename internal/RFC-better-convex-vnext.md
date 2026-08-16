@@ -1,6 +1,6 @@
 # RFC: Better Convex vNext — Vue-First, MCP-Native Platform
 
-- Status: Proposed; implementation gated by architecture probes and the MCP `2026-07-28` final release
+- Status: Accepted and implemented in `v0.8.0-beta.40`; this file is a design record, not an operational runbook
 - Date: 2026-07-20
 - Target: Post-`better-convex-nuxt@0.7` Better Convex monorepo; no 0.7 release requirement
 - Scope: Product architecture, protocol boundaries, security invariants, proof plan, Ginko CMS alignment, and release gates

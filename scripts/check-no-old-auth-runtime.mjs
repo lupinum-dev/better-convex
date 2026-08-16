@@ -19,7 +19,6 @@ const excludedDirectories = new Set([
 ])
 const historicalInputs = new Set([
   'THIRD_PARTY_NOTICES.md',
-  'plan.md',
   'scripts/check-no-old-auth-runtime.mjs',
   'scripts/check-workspace-dependency-alignment.mjs',
   'security/upstream-convex-better-auth.json',

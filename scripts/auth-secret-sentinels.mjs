@@ -6,7 +6,8 @@ const TEST_CLIENT_IP = '192.0.2.61'
 /**
  * The one closed raw-location registry for the Section 9.6 gate. Locations are
  * semantic leaf paths, not caller-provided exceptions. Adding a location here
- * is therefore a security-design change that must update plan.md first.
+ * is therefore a security-design change that must update SECURITY.md and its
+ * invariant tests in the same pull request.
  */
 export const secretSentinelDefinitions = Object.freeze([
   definition('better-auth-current-secret', [

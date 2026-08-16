@@ -13,9 +13,9 @@
 - Ship provider-neutral MCP request handling on the official server, exact
   OAuth resource verification, provider-owned live access checks, and the
   experimental Vue MCP App client boundary.
-- Replace repeated release rehearsals with one clean hosted source
-  certification followed by immutable artifact checks, protected staging, and
-  exact npm byte comparison.
+- Replace repeated release rehearsals with one source certification followed
+  by immutable artifact checks, protected npm publication, and exact registry
+  byte comparison.
 - Refresh every maintained candidate lock against the final package bytes, make
   the local candidate registry compatible with the 24-hour dependency policy,
   and replace the demo's vulnerable `fontless` esbuild version.
