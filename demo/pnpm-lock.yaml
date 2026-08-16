@@ -841,7 +841,7 @@ packages:
     resolution: {integrity: sha512-GaHYm+c0O9MjZRu0ongGBRbinu8gVAMd2UZjji6jVmqKtZluZnptXGWhz1E8j8D2HJ3f/yMxKAUC0b+57wncIw==}
 
   '@lupinum/better-convex-nuxt@0.8.0-beta.40':
-    resolution: {integrity: sha512-swuygLlp6jpl4BADuH0aWY/XIgs2wOcUtteO+TJn5a0tJ69PohjySMjuxwZc4gcqv1YUl3ghwbMamsDBtlK/qg==}
+    resolution: {integrity: sha512-/l/3LJNJFVPQzmfpDSe3WWzhSyYvdg8N5iXkmolTzuKOiKKRyufij2IES1ocEzkUnM5DBr9KxClZJZndgMixzQ==}
     engines: {node: ^22.12.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
