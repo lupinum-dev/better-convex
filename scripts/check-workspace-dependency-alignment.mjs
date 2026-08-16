@@ -2,12 +2,15 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { parse } from 'yaml'
+
 import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
 
 const rootDir = process.cwd()
 const rootPackage = readPackage('package.json')
 const workspaceSource = readFileSync(resolve(rootDir, 'pnpm-workspace.yaml'), 'utf8')
 const ciWorkflow = readFileSync(resolve(rootDir, '.github/workflows/ci.yml'), 'utf8')
+const ci = parse(ciWorkflow)
 const renovate = readPackage('renovate.json')
 const playgroundPackage = readPackage('playground/package.json')
 const distributedAppManifests = [
@@ -29,7 +32,20 @@ const manifestPaths = [
 ].filter((path) => existsSync(resolve(rootDir, path)))
 
 const failures = []
-if (!ciWorkflow.includes('node scripts/verify-action-shas.mjs')) {
+for (const manifestPath of ['package.json', 'docs/package.json', 'demo/package.json']) {
+  const packageManager = readPackage(manifestPath).packageManager ?? ''
+  if (!/^pnpm@(?:1[1-9]|[2-9]\d)\./u.test(packageManager)) {
+    failures.push(`${manifestPath} must use pnpm 11 or newer for strict dependency quarantine`)
+  }
+}
+const compatibilitySteps = ci?.jobs?.compatibility?.steps ?? []
+const verifierIndex = compatibilitySteps.findIndex(
+  (step) => step?.run?.trim() === 'node scripts/verify-action-shas.mjs' && step?.if == null,
+)
+const installIndex = compatibilitySteps.findIndex((step) =>
+  /(?:^|\s)(?:pnpm|corepack pnpm\S*) install(?:\s|$)/u.test(step?.run ?? ''),
+)
+if (verifierIndex < 0 || installIndex < 0 || verifierIndex > installIndex) {
   failures.push('CI must verify pinned Action commits upstream')
 }
 if (renovate.minimumReleaseAge !== '1 day') {
