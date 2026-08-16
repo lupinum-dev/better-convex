@@ -382,6 +382,8 @@ jobs:
           const pollDelayMs = Number(process.env.REGISTRY_POLL_DELAY_MS ?? 5000)
           if (!Number.isSafeInteger(pollAttempts) || pollAttempts < 1) fail('Invalid registry poll attempt count.')
           if (!Number.isSafeInteger(pollDelayMs) || pollDelayMs < 0) fail('Invalid registry poll delay.')
+          if (pollAttempts * pollDelayMs > 20 * 60 * 1000) fail('Registry poll window exceeds 20 minutes.')
+          let remainingPollRetries = pollAttempts
 
           for (const [id, packageName] of expectedOrder) {
             const candidate = evidenceByPackage.get(packageName)
@@ -409,7 +411,7 @@ jobs:
               if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
               mode = 'oidc'
             }
-            for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
+            while (true) {
               const registryIntegrity = view(spec, 'dist.integrity')
               const attestations = view(spec, 'dist.attestations')
               const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
@@ -428,6 +430,8 @@ jobs:
                 appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
                 break
               }
+              if (remainingPollRetries === 0) break
+              remainingPollRetries -= 1
               Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pollDelayMs)
             }
             if (!modes.has(id)) fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)

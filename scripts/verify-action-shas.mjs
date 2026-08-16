@@ -17,8 +17,15 @@ async function workflowFiles(directory) {
 const references = new Set()
 for (const path of await workflowFiles('.github/workflows')) {
   const source = await readFile(path, 'utf8')
-  for (const match of source.matchAll(/uses:\s*([^\s#]+)@([0-9a-f]{40})(?:\s|$)/gu)) {
-    if (!match[1].startsWith('./')) references.add(`${match[1]}@${match[2]}`)
+  for (const match of source.matchAll(/^\s*(?:-\s*)?uses:\s*(['"]?)([^'"\s#]+)\1(?:\s+#.*)?$/gmu)) {
+    const value = match[2]
+    if (value.startsWith('./')) continue
+    const separator = value.lastIndexOf('@')
+    const sha = value.slice(separator + 1)
+    if (separator < 1 || !/^[0-9a-f]{40}$/u.test(sha)) {
+      throw new Error(`${path}: external action must use a full commit SHA: ${value}`)
+    }
+    references.add(value)
   }
 }
 if (references.size === 0) throw new Error('No pinned action references were found.')

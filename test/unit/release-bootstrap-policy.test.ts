@@ -112,6 +112,38 @@ describe('first-package publication recovery', () => {
       expectedError: 'unique Better Convex package names',
     })
   }, 30_000)
+
+  it('bounds registry polling across the complete package set', () => {
+    for (const [value, expectedError] of [
+      ['0', 'Invalid registry poll attempt count'],
+      ['-1', 'Invalid registry poll attempt count'],
+      ['1.5', 'Invalid registry poll attempt count'],
+    ] as const) {
+      runScenario(`invalid poll attempts: ${value}`, {
+        expectedError,
+        pollAttempts: value,
+      })
+    }
+    runScenario('negative poll delay', {
+      expectedError: 'Invalid registry poll delay',
+      pollDelayMs: '-1',
+    })
+    runScenario('fractional poll delay', {
+      expectedError: 'Invalid registry poll delay',
+      pollDelayMs: '0.5',
+    })
+    runScenario('unsafe poll window', {
+      expectedError: 'Registry poll window exceeds 20 minutes',
+      pollAttempts: '241',
+      pollDelayMs: '5000',
+    })
+    runScenario('one immediate retry is valid', {
+      expectedModes: { mcp: 'oidc', nuxt: 'oidc', vue: 'oidc' },
+      expectedPublishes: 0,
+      pollAttempts: '1',
+      pollDelayMs: '0',
+    })
+  }, 30_000)
 })
 
 function runScenario(
@@ -121,6 +153,8 @@ function runScenario(
     expectedError?: string
     expectedModes?: Record<string, 'bootstrap' | 'oidc'>
     expectedPublishes?: number
+    pollAttempts?: string
+    pollDelayMs?: string
     states?: Record<
       string,
       {
@@ -208,8 +242,8 @@ function runScenario(
         GITHUB_SHA: 'a'.repeat(40),
         GITHUB_STEP_SUMMARY: join(root, 'summary.md'),
         RELEASE_VERSION: '0.8.0-beta.40',
-        REGISTRY_POLL_ATTEMPTS: '5',
-        REGISTRY_POLL_DELAY_MS: '0',
+        REGISTRY_POLL_ATTEMPTS: options.pollAttempts ?? '5',
+        REGISTRY_POLL_DELAY_MS: options.pollDelayMs ?? '0',
       },
     })
     const diagnostic = `${result.stdout}\n${result.stderr}`
