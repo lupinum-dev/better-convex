@@ -41,6 +41,14 @@ for (const manifestPath of ['package.json', 'docs/package.json', 'demo/package.j
   if (manifest.pnpm) {
     failures.push(`${manifestPath} must keep pnpm settings in pnpm-workspace.yaml`)
   }
+  if (packageManager !== rootPackage.packageManager) {
+    failures.push(`${manifestPath} must use the root packageManager ${rootPackage.packageManager}`)
+  }
+}
+for (const [name, command] of Object.entries(rootPackage.scripts ?? {})) {
+  if (/\bcorepack\s+pnpm@/u.test(command)) {
+    failures.push(`${name} must use the root packageManager without an embedded version`)
+  }
 }
 const compatibilitySteps = ci?.jobs?.compatibility?.steps ?? []
 const verifierIndex = compatibilitySteps.findIndex(

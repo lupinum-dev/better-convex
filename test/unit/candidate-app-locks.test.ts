@@ -19,6 +19,9 @@ import { getMaintainedCandidateProfile } from '../../scripts/maintained-candidat
 import { getPackageArtifactCoordinates } from '../../scripts/package-artifact-coordinates.mjs'
 
 const root = resolve(import.meta.dirname, '../..')
+const rootPackageManager = JSON.parse(
+  readFileSync(join(root, 'package.json'), 'utf8'),
+).packageManager
 
 function currentArtifact(packageId: 'mcp' | 'nuxt' | 'vue') {
   const coordinates = getPackageArtifactCoordinates(packageId)
@@ -135,15 +138,15 @@ describe('candidate app lock contract', () => {
       candidateAppLockProfiles.slice(1).every((profile) => profile.strictPeerDependencies),
     ).toBe(true)
     expect(JSON.parse(readFileSync(join(root, 'demo/package.json'), 'utf8')).packageManager).toBe(
-      'pnpm@10.30.3',
+      rootPackageManager,
     )
     expect(
       candidateAppLockProfiles
         .slice(1)
-        .every(({ directory }) =>
-          JSON.parse(
-            readFileSync(join(root, directory, 'package.json'), 'utf8'),
-          ).packageManager.startsWith('pnpm@11.5.0'),
+        .every(
+          ({ directory }) =>
+            JSON.parse(readFileSync(join(root, directory, 'package.json'), 'utf8'))
+              .packageManager === rootPackageManager,
         ),
     ).toBe(true)
 
