@@ -46,6 +46,9 @@ const compatibilitySteps = ci?.jobs?.compatibility?.steps ?? []
 const verifierIndex = compatibilitySteps.findIndex(
   (step) => step?.run?.trim() === 'node scripts/verify-action-shas.mjs' && step?.if == null,
 )
+if (compatibilitySteps[verifierIndex]?.env?.GITHUB_TOKEN) {
+  failures.push('Action SHA verification must not receive GITHUB_TOKEN')
+}
 const installIndex = compatibilitySteps.findIndex((step) =>
   /(?:^|\s)(?:pnpm|corepack pnpm\S*) install(?:\s|$)/u.test(step?.run ?? ''),
 )
