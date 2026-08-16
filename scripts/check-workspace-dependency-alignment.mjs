@@ -7,6 +7,8 @@ import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
 const rootDir = process.cwd()
 const rootPackage = readPackage('package.json')
 const workspaceSource = readFileSync(resolve(rootDir, 'pnpm-workspace.yaml'), 'utf8')
+const ciWorkflow = readFileSync(resolve(rootDir, '.github/workflows/ci.yml'), 'utf8')
+const renovate = readPackage('renovate.json')
 const playgroundPackage = readPackage('playground/package.json')
 const distributedAppManifests = [
   'demo/package.json',
@@ -27,6 +29,12 @@ const manifestPaths = [
 ].filter((path) => existsSync(resolve(rootDir, path)))
 
 const failures = []
+if (!ciWorkflow.includes('node scripts/verify-action-shas.mjs')) {
+  failures.push('CI must verify pinned Action commits upstream')
+}
+if (renovate.minimumReleaseAge !== '1 day') {
+  failures.push('Renovate must match the 24-hour pnpm quarantine')
+}
 
 for (const workspacePath of [
   'pnpm-workspace.yaml',
@@ -36,6 +44,12 @@ for (const workspacePath of [
   const workspace = readFileSync(resolve(rootDir, workspacePath), 'utf8')
   if (!/^minimumReleaseAge:\s*1440\s*$/mu.test(workspace)) {
     failures.push(`${workspacePath} must quarantine fresh dependencies for 24 hours`)
+  }
+  if (!/^minimumReleaseAgeStrict:\s*true\s*$/mu.test(workspace)) {
+    failures.push(`${workspacePath} must apply the quarantine to transitive dependencies`)
+  }
+  if (!/^minimumReleaseAgeIgnoreMissingTime:\s*false\s*$/mu.test(workspace)) {
+    failures.push(`${workspacePath} must fail when registry publication time is missing`)
   }
   if (/^minimumReleaseAgeExclude:/mu.test(workspace)) {
     failures.push(`${workspacePath} must not contain a committed dependency-age exception`)

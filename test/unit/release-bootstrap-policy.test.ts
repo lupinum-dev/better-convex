@@ -10,12 +10,7 @@ const workflow = readFileSync(
   resolve(import.meta.dirname, '../../.github/workflows/publish-prerelease.yml'),
   'utf8',
 )
-const [program] = extractPrograms(workflow).map((source) =>
-  dedent(source).replace(
-    'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)',
-    'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 0)',
-  ),
-)
+const [program] = extractPrograms(workflow).map((source) => dedent(source))
 const packages = [
   ['vue', '@lupinum/better-convex-vue', '0.8.0-beta.40'],
   ['nuxt', '@lupinum/better-convex-nuxt', '0.8.0-beta.40'],
@@ -213,6 +208,8 @@ function runScenario(
         GITHUB_SHA: 'a'.repeat(40),
         GITHUB_STEP_SUMMARY: join(root, 'summary.md'),
         RELEASE_VERSION: '0.8.0-beta.40',
+        REGISTRY_POLL_ATTEMPTS: '5',
+        REGISTRY_POLL_DELAY_MS: '0',
       },
     })
     const diagnostic = `${result.stdout}\n${result.stderr}`

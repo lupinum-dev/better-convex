@@ -2,3 +2,5 @@ packages:
   - .
 
 minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false

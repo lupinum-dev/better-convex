@@ -378,6 +378,10 @@ jobs:
             : Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
           const normalizeVersions = value => value == null ? [] : Array.isArray(value) ? value : [value]
           const modes = new Map()
+          const pollAttempts = Number(process.env.REGISTRY_POLL_ATTEMPTS ?? 240)
+          const pollDelayMs = Number(process.env.REGISTRY_POLL_DELAY_MS ?? 5000)
+          if (!Number.isSafeInteger(pollAttempts) || pollAttempts < 1) fail('Invalid registry poll attempt count.')
+          if (!Number.isSafeInteger(pollDelayMs) || pollDelayMs < 0) fail('Invalid registry poll delay.')
 
           for (const [id, packageName] of expectedOrder) {
             const candidate = evidenceByPackage.get(packageName)
@@ -405,7 +409,7 @@ jobs:
               if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
               mode = 'oidc'
             }
-            for (let attempt = 0; attempt < 12; attempt += 1) {
+            for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
               const registryIntegrity = view(spec, 'dist.integrity')
               const attestations = view(spec, 'dist.attestations')
               const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
@@ -424,11 +428,9 @@ jobs:
                 appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
                 break
               }
-              if (attempt === 11) {
-                fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
-              }
-              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
+              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pollDelayMs)
             }
+            if (!modes.has(id)) fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
           }
           for (const [id] of expectedOrder) {
             const mode = modes.get(id)
