@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -19,6 +20,7 @@ import {
   createCandidateSetEvidence,
   getCandidateSetCoordinates,
 } from './package-candidate-set.mjs'
+import { requirePreparedReleaseNotes } from './release-changelog.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const command = process.argv[2]
@@ -108,6 +110,21 @@ function createSet() {
     writeFileSync(
       join(stagingDirectory, 'artifact-set.json'),
       `${JSON.stringify(evidence, null, 2)}\n`,
+    )
+    const tag = `v${coordinates.version}`
+    writeFileSync(
+      join(stagingDirectory, 'release.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          sourceSha: evidence.sourceCommit,
+          tag,
+          version: coordinates.version,
+          notes: requirePreparedReleaseNotes(readFileSync(join(root, 'CHANGELOG.md'), 'utf8'), tag),
+        },
+        null,
+        2,
+      )}\n`,
     )
     ensureClean()
     renameSync(stagingDirectory, coordinates.directory)
