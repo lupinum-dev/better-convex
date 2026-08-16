@@ -125,7 +125,11 @@ describe('candidate app lock contract', () => {
       ...maintained,
     ])
     expect(candidateAppLockProfiles).toMatchObject([
-      { directory: 'demo', packageIds: ['nuxt', 'vue'], strictPeerDependencies: false },
+      {
+        directory: 'demo',
+        packageIds: ['nuxt', 'vue'],
+        strictPeerDependencies: false,
+      },
       { directory: 'starters/agency', packageIds: ['nuxt', 'vue'] },
       {
         directory: 'starters/mcp-oauth-agent',
@@ -140,6 +144,7 @@ describe('candidate app lock contract', () => {
     expect(JSON.parse(readFileSync(join(root, 'demo/package.json'), 'utf8')).packageManager).toBe(
       rootPackageManager,
     )
+    expect(rootPackageManager).toMatch(/^pnpm@\d+\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/u)
     expect(
       candidateAppLockProfiles
         .slice(1)

@@ -16,9 +16,6 @@ import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
 const root = resolve(import.meta.dirname, '../..')
-const documentationPackageManager = JSON.parse(
-  readFileSync(join(root, 'docs/package.json'), 'utf8'),
-).packageManager
 const releaseControlFixtureFiles = [
   'CHANGELOG.md',
   'package.json',
@@ -319,7 +316,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     )
     expect(documentationInstall).toMatchObject({
       'working-directory': 'docs',
-      run: `corepack ${documentationPackageManager} install --frozen-lockfile --ignore-scripts`,
+      run: 'corepack pnpm install --frozen-lockfile --ignore-scripts',
     })
   })
 
@@ -404,6 +401,16 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(verificationIndexes).toEqual(
       [...verificationIndexes].sort((left, right) => left - right),
     )
+    const candidateSetVerifier = readFileSync(
+      join(root, 'scripts/prepare-candidate-set.mjs'),
+      'utf8',
+    )
+    expect(candidateSetVerifier).toContain(
+      'Release metadata does not match the reviewed candidate set.',
+    )
+    expect(
+      candidateSetVerifier.indexOf("join(dirname(resolve(root, manifest)), 'release.json')"),
+    ).toBeLessThan(candidateSetVerifier.indexOf('for (const entry of evidence.packages)'))
   })
 
   it('retries post-mint work against transferred bytes without rebuilding', () => {

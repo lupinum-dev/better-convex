@@ -33,16 +33,16 @@ jobs:
           package-manager-cache: false
       - name: Install docs dependencies without lifecycle scripts
         working-directory: docs
-        run: corepack pnpm@11.21.0 install --frozen-lockfile --ignore-scripts
+        run: corepack pnpm install --frozen-lockfile --ignore-scripts
       - name: Audit the deployable docs dependency graph
         working-directory: docs
-        run: corepack pnpm@11.21.0 audit --prod
+        run: corepack pnpm audit --prod
       - name: Type-check docs
         working-directory: docs
-        run: corepack pnpm@11.21.0 typecheck
+        run: corepack pnpm typecheck
       - name: Build docs
         working-directory: docs
-        run: corepack pnpm@11.21.0 build
+        run: corepack pnpm build
 
   link-check:
     runs-on: ubuntu-latest

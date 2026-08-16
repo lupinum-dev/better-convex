@@ -11,7 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import { getPackageArtifactCoordinates } from './package-artifact-coordinates.mjs'
 import {
@@ -44,12 +44,33 @@ function run(executable, args, options = {}) {
 }
 
 function ensureClean() {
-  const status = run('git', ['status', '--porcelain'], { capture: true }).trim()
+  const status = run('git', ['status', '--porcelain'], {
+    capture: true,
+  }).trim()
   if (status) throw new Error(`Candidate-set creation requires a clean working tree:\n${status}`)
 }
 
 function verifySet(manifest) {
   const evidence = assertCandidateSetManifest(manifest, root)
+  const releaseMetadataPath = join(dirname(resolve(root, manifest)), 'release.json')
+  const releaseMetadataStats = existsSync(releaseMetadataPath)
+    ? lstatSync(releaseMetadataPath)
+    : undefined
+  if (!releaseMetadataStats?.isFile() || releaseMetadataStats.isSymbolicLink()) {
+    throw new Error('Release metadata must be a regular file.')
+  }
+  const releaseMetadata = JSON.parse(readFileSync(releaseMetadataPath, 'utf8'))
+  if (
+    Object.keys(releaseMetadata).sort().join(',') !== 'notes,schemaVersion,sourceSha,tag,version' ||
+    releaseMetadata.schemaVersion !== 1 ||
+    releaseMetadata.sourceSha !== evidence.sourceCommit ||
+    releaseMetadata.tag !== `v${evidence.version}` ||
+    releaseMetadata.version !== evidence.version ||
+    typeof releaseMetadata.notes !== 'string' ||
+    !releaseMetadata.notes.trim()
+  ) {
+    throw new Error('Release metadata does not match the reviewed candidate set.')
+  }
   for (const entry of evidence.packages) {
     run('node', ['scripts/release.mjs', 'verify', entry.evidence, '--package', entry.packageId])
   }
@@ -144,7 +165,9 @@ function createSet() {
 if (command === 'family') {
   checkCandidateAppLocks()
   const manifest = createSet()
-  const mcpCoordinates = getPackageArtifactCoordinates('mcp', { repositoryRoot: root })
+  const mcpCoordinates = getPackageArtifactCoordinates('mcp', {
+    repositoryRoot: root,
+  })
   run('node', ['scripts/release.mjs', 'artifact', '--package', 'mcp'])
   certifySet(manifest)
   run('node', ['scripts/release.mjs', 'verify', mcpCoordinates.paths.evidence, '--package', 'mcp'])

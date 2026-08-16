@@ -45,7 +45,7 @@ jobs:
         run: node scripts/verify-action-shas.mjs
       - name: Install documentation dependencies
         working-directory: docs
-        run: corepack pnpm@11.21.0 install --frozen-lockfile --ignore-scripts
+        run: corepack pnpm install --frozen-lockfile --ignore-scripts
       - name: Install browser
         run: pnpm exec playwright install --with-deps chromium
       - name: Certify core source lane
@@ -104,10 +104,10 @@ jobs:
           package-manager-cache: false
       - name: Audit docs production dependencies
         working-directory: docs
-        run: corepack pnpm@11.21.0 audit --prod
+        run: corepack pnpm audit --prod
       - name: Audit demo production dependencies
         working-directory: demo
-        run: corepack pnpm@11.21.0 audit --prod
+        run: corepack pnpm audit --prod
 
   release-smoke:
     runs-on: ubuntu-latest

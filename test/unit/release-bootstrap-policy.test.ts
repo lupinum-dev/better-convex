@@ -20,6 +20,7 @@ const packages = [
 interface PackageState {
   addLaterVersion?: boolean
   attestations: Record<string, string> | null
+  delayedTag?: boolean
   existing: boolean
   integrity: string
   packageName: string
@@ -28,6 +29,7 @@ interface PackageState {
   registryError?: boolean
   registryIntegrity: string
   tag: string
+  tagViews: number
   tarball: string
   version: string
   versions: string[]
@@ -142,6 +144,13 @@ describe('first-package publication recovery', () => {
       expectedPublishes: 0,
       pollAttempts: '1',
       pollDelayMs: '0',
+      states: {
+        '@lupinum/better-convex-vue': {
+          attested: true,
+          delayedTag: true,
+          existing: true,
+        },
+      },
     })
   }, 30_000)
 })
@@ -160,6 +169,7 @@ function runScenario(
       {
         addLaterVersion?: boolean
         attested?: boolean
+        delayedTag?: boolean
         differentBytes?: boolean
         existing?: boolean
         extraVersion?: boolean
@@ -195,6 +205,7 @@ function runScenario(
         attestations:
           stateOptions.attested === false ? null : { url: 'https://npm.example/provenance' },
         existing: stateOptions.existing !== false,
+        delayedTag: stateOptions.delayedTag,
         integrity,
         packageName,
         publishProvenance: stateOptions.publishProvenance !== false,
@@ -202,6 +213,7 @@ function runScenario(
         registryError: stateOptions.registryError,
         registryIntegrity: stateOptions.differentBytes ? 'sha512-different' : integrity,
         tag: stateOptions.wrongTag ? '0.0.0' : version,
+        tagViews: 0,
         tarball,
         version,
         versions,
@@ -320,7 +332,12 @@ if (args[0] === 'view') {
     record.versionViews += 1
     save()
     value = record.versions
-  } else if (field.startsWith('dist-tags.')) value = record.tag
+  } else if (field.startsWith('dist-tags.')) {
+    if (record.delayedTag && record.tagViews === 0) value = '0.0.0'
+    else value = record.tag
+    record.tagViews += 1
+    save()
+  }
   if (value === undefined || value === null) {
     process.stderr.write('E404 404 Not Found\\n')
     process.exit(1)
