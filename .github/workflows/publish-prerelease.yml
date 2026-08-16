@@ -378,6 +378,12 @@ jobs:
             : Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
           const normalizeVersions = value => value == null ? [] : Array.isArray(value) ? value : [value]
           const modes = new Map()
+          const pollAttempts = Number(process.env.REGISTRY_POLL_ATTEMPTS ?? 240)
+          const pollDelayMs = Number(process.env.REGISTRY_POLL_DELAY_MS ?? 5000)
+          if (!Number.isSafeInteger(pollAttempts) || pollAttempts < 1) fail('Invalid registry poll attempt count.')
+          if (!Number.isSafeInteger(pollDelayMs) || pollDelayMs < 0) fail('Invalid registry poll delay.')
+          if (pollAttempts * pollDelayMs > 20 * 60 * 1000) fail('Registry poll window exceeds 20 minutes.')
+          let remainingPollRetries = pollAttempts
 
           for (const [id, packageName] of expectedOrder) {
             const candidate = evidenceByPackage.get(packageName)
@@ -405,7 +411,7 @@ jobs:
               if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
               mode = 'oidc'
             }
-            for (let attempt = 0; attempt < 12; attempt += 1) {
+            while (true) {
               const registryIntegrity = view(spec, 'dist.integrity')
               const attestations = view(spec, 'dist.attestations')
               const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
@@ -424,11 +430,11 @@ jobs:
                 appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
                 break
               }
-              if (attempt === 11) {
-                fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
-              }
-              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
+              if (remainingPollRetries === 0) break
+              remainingPollRetries -= 1
+              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pollDelayMs)
             }
+            if (!modes.has(id)) fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
           }
           for (const [id] of expectedOrder) {
             const mode = modes.get(id)
@@ -445,9 +451,6 @@ jobs:
       actions: read
       contents: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
       - name: Download the verified Vue and Nuxt artifact set
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -464,17 +467,25 @@ jobs:
           VUE_MODE: ${{ needs.publish-packages.outputs.vue-mode }}
           NUXT_MODE: ${{ needs.publish-packages.outputs.nuxt-mode }}
           MCP_MODE: ${{ needs.publish-packages.outputs.mcp-mode }}
+          TAG: v${{ inputs.version }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          TAG="v${{ inputs.version }}"
-          VERSION="${TAG#v}"
-          EXPECTED_VERSION=$(node -e "const p = require('./package.json'); process.stdout.write(p.version)")
-          test "$VERSION" = "$EXPECTED_VERSION"
-          awk -v heading="## $TAG" '
-            $0 == heading { capture = 1; next }
-            capture && /^## / { exit }
-            capture { print }
-          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          release_metadata=$(find .release-artifacts -name 'release.json' -type f -print -quit)
+          test -n "$release_metadata"
+          RELEASE_METADATA="$release_metadata" RELEASE_NOTES="$RUNNER_TEMP/release-notes.md" node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs'
+          const metadata = JSON.parse(readFileSync(process.env.RELEASE_METADATA, 'utf8'))
+          if (
+            metadata.schemaVersion !== 1 ||
+            metadata.version !== process.env.VERSION ||
+            metadata.tag !== process.env.TAG ||
+            metadata.sourceSha !== process.env.GITHUB_SHA ||
+            typeof metadata.notes !== 'string' ||
+            !metadata.notes.trim()
+          ) throw new Error('Certified release metadata is invalid.')
+          writeFileSync(process.env.RELEASE_NOTES, `${metadata.notes.trim()}\n`)
+          NODE
           test -s "$RUNNER_TEMP/release-notes.md"
           bootstrap_packages=()
           [ "$VUE_MODE" = bootstrap ] && bootstrap_packages+=("@lupinum/better-convex-vue")
@@ -503,12 +514,14 @@ jobs:
           cp "$nuxt_evidence" "$RUNNER_TEMP/nuxt-artifact.json"
           cp "$mcp_evidence" "$RUNNER_TEMP/mcp-artifact.json"
           cp "$set_evidence" "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
+          cp "$release_metadata" "$RUNNER_TEMP/release.json"
           release_assets=(
             "${tarballs[@]}"
             "$RUNNER_TEMP/vue-artifact.json"
             "$RUNNER_TEMP/nuxt-artifact.json"
             "$RUNNER_TEMP/mcp-artifact.json"
             "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
+            "$RUNNER_TEMP/release.json"
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
             read -r tag_type tag_sha < <(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '[.object.type, .object.sha] | @tsv')

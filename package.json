@@ -106,8 +106,8 @@
     "dev": "pnpm run dev:prepare && nuxi dev --cwd playground --dotenv .env.local --port 4578",
     "dev:build": "nuxi build --cwd playground --dotenv .env.local",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare --cwd playground --dotenv .env.local",
-    "audit:all": "pnpm audit && corepack pnpm@10.23.0 --dir docs audit && corepack pnpm@10.30.3 --dir demo audit",
-    "docs:build": "corepack pnpm@10.23.0 --dir docs build",
+    "audit:all": "pnpm audit && pnpm --dir docs audit && pnpm --dir demo audit",
+    "docs:build": "pnpm --dir docs build",
     "docs:api-surface": "node scripts/generate-api-surface.mjs",
     "docs:asvs": "node scripts/generate-asvs-evidence.mjs",
     "release:artifact": "node scripts/release.mjs artifact",
@@ -249,5 +249,5 @@
   "engines": {
     "node": "^22.12.0 || ^24.11.0 || >=26.0.0"
   },
-  "packageManager": "pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1"
+  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
 }

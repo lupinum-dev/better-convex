@@ -3,6 +3,8 @@ packages:
   - packages/*
 
 minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
 
 linkWorkspacePackages: true
 shamefullyHoist: true

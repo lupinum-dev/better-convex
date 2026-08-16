@@ -2,11 +2,16 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { parse } from 'yaml'
+
 import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
 
 const rootDir = process.cwd()
 const rootPackage = readPackage('package.json')
 const workspaceSource = readFileSync(resolve(rootDir, 'pnpm-workspace.yaml'), 'utf8')
+const ciWorkflow = readFileSync(resolve(rootDir, '.github/workflows/ci.yml'), 'utf8')
+const ci = parse(ciWorkflow)
+const renovate = readPackage('renovate.json')
 const playgroundPackage = readPackage('playground/package.json')
 const distributedAppManifests = [
   'demo/package.json',
@@ -27,6 +32,51 @@ const manifestPaths = [
 ].filter((path) => existsSync(resolve(rootDir, path)))
 
 const failures = []
+const packageManagerManifestPaths = [
+  'package.json',
+  'docs/package.json',
+  ...distributedAppManifests,
+]
+for (const manifestPath of packageManagerManifestPaths) {
+  const manifest = readPackage(manifestPath)
+  const packageManager = manifest.packageManager ?? ''
+  if (!/^pnpm@(?:1[1-9]|[2-9]\d)\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/u.test(packageManager)) {
+    failures.push(`${manifestPath} must use an integrity-qualified pnpm 11 or newer descriptor`)
+  }
+  if (manifest.pnpm) {
+    failures.push(`${manifestPath} must keep pnpm settings in pnpm-workspace.yaml`)
+  }
+  if (packageManager !== rootPackage.packageManager) {
+    failures.push(`${manifestPath} must use the root packageManager ${rootPackage.packageManager}`)
+  }
+}
+for (const [name, command] of Object.entries(rootPackage.scripts ?? {})) {
+  if (/\bcorepack\s+pnpm@/u.test(command)) {
+    failures.push(`${name} must use the root packageManager without an embedded version`)
+  }
+}
+for (const workflowPath of ['.github/workflows/ci.yml', '.github/workflows/docs.yml']) {
+  const workflow = readFileSync(resolve(rootDir, workflowPath), 'utf8')
+  if (/\bcorepack\s+pnpm@/u.test(workflow)) {
+    failures.push(`${workflowPath} must use the root packageManager without an embedded version`)
+  }
+}
+const compatibilitySteps = ci?.jobs?.compatibility?.steps ?? []
+const verifierIndex = compatibilitySteps.findIndex(
+  (step) => step?.run?.trim() === 'node scripts/verify-action-shas.mjs' && step?.if == null,
+)
+if (compatibilitySteps[verifierIndex]?.env?.GITHUB_TOKEN) {
+  failures.push('Action SHA verification must not receive GITHUB_TOKEN')
+}
+const installIndex = compatibilitySteps.findIndex((step) =>
+  /(?:^|\s)(?:pnpm|corepack pnpm\S*) install(?:\s|$)/u.test(step?.run ?? ''),
+)
+if (verifierIndex < 0 || installIndex < 0 || verifierIndex < installIndex) {
+  failures.push('CI must verify pinned Action commits after the frozen install')
+}
+if (renovate.minimumReleaseAge !== '1 day') {
+  failures.push('Renovate must match the 24-hour pnpm quarantine')
+}
 
 for (const workspacePath of [
   'pnpm-workspace.yaml',
@@ -36,6 +86,12 @@ for (const workspacePath of [
   const workspace = readFileSync(resolve(rootDir, workspacePath), 'utf8')
   if (!/^minimumReleaseAge:\s*1440\s*$/mu.test(workspace)) {
     failures.push(`${workspacePath} must quarantine fresh dependencies for 24 hours`)
+  }
+  if (!/^minimumReleaseAgeStrict:\s*true\s*$/mu.test(workspace)) {
+    failures.push(`${workspacePath} must apply the quarantine to transitive dependencies`)
+  }
+  if (!/^minimumReleaseAgeIgnoreMissingTime:\s*false\s*$/mu.test(workspace)) {
+    failures.push(`${workspacePath} must fail when registry publication time is missing`)
   }
   if (/^minimumReleaseAgeExclude:/mu.test(workspace)) {
     failures.push(`${workspacePath} must not contain a committed dependency-age exception`)

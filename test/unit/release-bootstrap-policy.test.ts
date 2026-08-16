@@ -10,12 +10,7 @@ const workflow = readFileSync(
   resolve(import.meta.dirname, '../../.github/workflows/publish-prerelease.yml'),
   'utf8',
 )
-const [program] = extractPrograms(workflow).map((source) =>
-  dedent(source).replace(
-    'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)',
-    'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 0)',
-  ),
-)
+const [program] = extractPrograms(workflow).map((source) => dedent(source))
 const packages = [
   ['vue', '@lupinum/better-convex-vue', '0.8.0-beta.40'],
   ['nuxt', '@lupinum/better-convex-nuxt', '0.8.0-beta.40'],
@@ -25,6 +20,7 @@ const packages = [
 interface PackageState {
   addLaterVersion?: boolean
   attestations: Record<string, string> | null
+  delayedTag?: boolean
   existing: boolean
   integrity: string
   packageName: string
@@ -33,6 +29,7 @@ interface PackageState {
   registryError?: boolean
   registryIntegrity: string
   tag: string
+  tagViews: number
   tarball: string
   version: string
   versions: string[]
@@ -117,6 +114,45 @@ describe('first-package publication recovery', () => {
       expectedError: 'unique Better Convex package names',
     })
   }, 30_000)
+
+  it('bounds registry polling across the complete package set', () => {
+    for (const [value, expectedError] of [
+      ['0', 'Invalid registry poll attempt count'],
+      ['-1', 'Invalid registry poll attempt count'],
+      ['1.5', 'Invalid registry poll attempt count'],
+    ] as const) {
+      runScenario(`invalid poll attempts: ${value}`, {
+        expectedError,
+        pollAttempts: value,
+      })
+    }
+    runScenario('negative poll delay', {
+      expectedError: 'Invalid registry poll delay',
+      pollDelayMs: '-1',
+    })
+    runScenario('fractional poll delay', {
+      expectedError: 'Invalid registry poll delay',
+      pollDelayMs: '0.5',
+    })
+    runScenario('unsafe poll window', {
+      expectedError: 'Registry poll window exceeds 20 minutes',
+      pollAttempts: '241',
+      pollDelayMs: '5000',
+    })
+    runScenario('one immediate retry is valid', {
+      expectedModes: { mcp: 'oidc', nuxt: 'oidc', vue: 'oidc' },
+      expectedPublishes: 0,
+      pollAttempts: '1',
+      pollDelayMs: '0',
+      states: {
+        '@lupinum/better-convex-vue': {
+          attested: true,
+          delayedTag: true,
+          existing: true,
+        },
+      },
+    })
+  }, 30_000)
 })
 
 function runScenario(
@@ -126,11 +162,14 @@ function runScenario(
     expectedError?: string
     expectedModes?: Record<string, 'bootstrap' | 'oidc'>
     expectedPublishes?: number
+    pollAttempts?: string
+    pollDelayMs?: string
     states?: Record<
       string,
       {
         addLaterVersion?: boolean
         attested?: boolean
+        delayedTag?: boolean
         differentBytes?: boolean
         existing?: boolean
         extraVersion?: boolean
@@ -166,6 +205,7 @@ function runScenario(
         attestations:
           stateOptions.attested === false ? null : { url: 'https://npm.example/provenance' },
         existing: stateOptions.existing !== false,
+        delayedTag: stateOptions.delayedTag,
         integrity,
         packageName,
         publishProvenance: stateOptions.publishProvenance !== false,
@@ -173,6 +213,7 @@ function runScenario(
         registryError: stateOptions.registryError,
         registryIntegrity: stateOptions.differentBytes ? 'sha512-different' : integrity,
         tag: stateOptions.wrongTag ? '0.0.0' : version,
+        tagViews: 0,
         tarball,
         version,
         versions,
@@ -213,6 +254,8 @@ function runScenario(
         GITHUB_SHA: 'a'.repeat(40),
         GITHUB_STEP_SUMMARY: join(root, 'summary.md'),
         RELEASE_VERSION: '0.8.0-beta.40',
+        REGISTRY_POLL_ATTEMPTS: options.pollAttempts ?? '5',
+        REGISTRY_POLL_DELAY_MS: options.pollDelayMs ?? '0',
       },
     })
     const diagnostic = `${result.stdout}\n${result.stderr}`
@@ -289,7 +332,12 @@ if (args[0] === 'view') {
     record.versionViews += 1
     save()
     value = record.versions
-  } else if (field.startsWith('dist-tags.')) value = record.tag
+  } else if (field.startsWith('dist-tags.')) {
+    if (record.delayedTag && record.tagViews === 0) value = '0.0.0'
+    else value = record.tag
+    record.tagViews += 1
+    save()
+  }
   if (value === undefined || value === null) {
     process.stderr.write('E404 404 Not Found\\n')
     process.exit(1)

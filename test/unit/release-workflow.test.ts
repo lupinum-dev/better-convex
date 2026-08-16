@@ -17,6 +17,7 @@ import { parse } from 'yaml'
 
 const root = resolve(import.meta.dirname, '../..')
 const releaseControlFixtureFiles = [
+  'CHANGELOG.md',
   'package.json',
   'packages/mcp/package.json',
   'packages/vue/package.json',
@@ -26,6 +27,7 @@ const releaseControlFixtureFiles = [
   'scripts/package-certification-manifest.mjs',
   'scripts/package-runtime-fingerprint-profile.mjs',
   'scripts/prepare-candidate-set.mjs',
+  'scripts/release-changelog.mjs',
   'scripts/release-preflight-tarballs.mjs',
   'scripts/verify-release.mjs',
 ]
@@ -314,7 +316,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     )
     expect(documentationInstall).toMatchObject({
       'working-directory': 'docs',
-      run: 'corepack pnpm@10.23.0 install --frozen-lockfile --ignore-scripts',
+      run: 'corepack pnpm install --frozen-lockfile --ignore-scripts',
     })
   })
 
@@ -399,6 +401,16 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(verificationIndexes).toEqual(
       [...verificationIndexes].sort((left, right) => left - right),
     )
+    const candidateSetVerifier = readFileSync(
+      join(root, 'scripts/prepare-candidate-set.mjs'),
+      'utf8',
+    )
+    expect(candidateSetVerifier).toContain(
+      'Release metadata does not match the reviewed candidate set.',
+    )
+    expect(
+      candidateSetVerifier.indexOf("join(dirname(resolve(root, manifest)), 'release.json')"),
+    ).toBeLessThan(candidateSetVerifier.indexOf('for (const entry of evidence.packages)'))
   })
 
   it('retries post-mint work against transferred bytes without rebuilding', () => {
@@ -568,6 +580,11 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       contents: 'write',
     })
     expect(
+      steps(workflow, 'github-prerelease').some((step) =>
+        step.uses?.toString().startsWith('actions/checkout@'),
+      ),
+    ).toBe(false)
+    expect(
       steps(workflow, 'github-prerelease').filter((step) =>
         step.uses?.toString().startsWith('actions/download-artifact@'),
       ),
@@ -579,6 +596,8 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(githubReleaseRuns).toContain('gh release upload')
     expect(githubReleaseRuns).toContain('release_assets')
     expect(githubReleaseRuns).toContain('vue-nuxt-artifact-set.json')
+    expect(githubReleaseRuns).toContain("-name 'release.json'")
+    expect(githubReleaseRuns).toContain('"$RUNNER_TEMP/release.json"')
     expect(githubReleaseRuns).toContain('mcp_evidence=".release-artifacts/artifact.json"')
     expect(githubReleaseRuns).toContain('test -f "$mcp_evidence"')
     expect(githubReleaseRuns).toContain('git/ref/tags/$TAG')

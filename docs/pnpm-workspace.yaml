@@ -2,3 +2,16 @@ packages:
   - .
 
 minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+
+allowBuilds:
+  '@parcel/watcher': true
+  better-sqlite3: true
+  esbuild: true
+  unrs-resolver: true
+  vue-demi: true
+
+overrides:
+  esbuild: 0.28.1
+  sharp: 0.35.0

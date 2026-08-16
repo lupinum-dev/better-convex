@@ -948,7 +948,7 @@ Repository sources of truth:
 - `test/TESTING.md` — exact test commands and fixture ownership;
 - `RELEASING.md` — immutable artifacts, previews, protected staging, and npm
   publication;
-- `plan.md` — phase acceptance criteria and external/human blockers;
+- `MAINTAINING.md` — current operational procedures and external controls;
 - `security/asvs-5.0.0-l2-evidence.json` — machine-readable ASVS evidence;
 - `security/upstream-convex-better-auth.json` — imported-source provenance and
   upstream review.
