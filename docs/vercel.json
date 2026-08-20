@@ -5,6 +5,6 @@
   "git": {
     "deploymentEnabled": true
   },
-  "ignoreCommand": "if [ -z \"$VERCEL_GIT_PREVIOUS_SHA\" ]; then exit 1; fi; git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- .",
+  "ignoreCommand": "node scripts/vercel-ignore.mjs",
   "outputDirectory": null
 }
