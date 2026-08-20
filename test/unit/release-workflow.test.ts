@@ -279,7 +279,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     )
   })
 
-  it('keeps CI source-only and package previews non-authoritative', () => {
+  it('keeps CI source-only and package previews non-authoritative', async () => {
     expect(ciWorkflow.env?.RELEASE_NPM_VERSION).toBe('11.18.0')
     expect(preparationCommands(ciWorkflow, 'release-gate')).toEqual([])
     expect(preparationCommands(previewWorkflow, 'preview')).toEqual([])
@@ -298,6 +298,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     })
     expect(requireJob(ciWorkflow, 'release-gate')['timeout-minutes']).toBe(5)
     expect(needs(ciWorkflow, 'release-gate')).toEqual([
+      'classify',
       'secrets',
       'compatibility',
       'auth-contracts',
@@ -306,8 +307,63 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'release-smoke',
     ])
     expect(runs(ciWorkflow, 'release-gate')).toEqual([
-      'for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$DEPLOYABLE_APP_AUDITS" "$RELEASE_SMOKE"; do test "$result" = success done',
+      'test "$CLASSIFY_RESULT" = success case "$FULL" in true | false) ;; *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;; esac test "$SECRETS" = success test "$DEPLOYABLE_APP_AUDITS" = success for result in "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi done',
     ])
+    const classifyScript = steps(ciWorkflow, 'classify').find(
+      (step) => step.name === 'Select required lanes',
+    )?.with?.script
+    if (typeof classifyScript !== 'string') throw new Error('Missing CI classifier script.')
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+      ...args: string[]
+    ) => (...args: unknown[]) => Promise<void>
+    for (const scenario of [
+      {
+        name: 'public docs',
+        event: 'pull_request',
+        paths: ['docs/content/1.index.md'],
+        full: 'false',
+      },
+      {
+        name: 'package source',
+        event: 'pull_request',
+        paths: ['packages/vue/src/index.ts'],
+        full: 'true',
+      },
+      {
+        name: 'empty pull request',
+        event: 'pull_request',
+        paths: [],
+        full: 'true',
+      },
+      {
+        name: 'mixed public docs and source',
+        event: 'pull_request',
+        paths: ['docs/content/1.index.md', 'packages/vue/src/index.ts'],
+        full: 'true',
+      },
+      {
+        name: 'workflow policy',
+        event: 'pull_request',
+        paths: ['.github/workflows/ci.yml'],
+        full: 'true',
+      },
+      { name: 'main certification', event: 'push', paths: [], full: 'true' },
+    ]) {
+      const outputs = new Map<string, string>()
+      await new AsyncFunction('context', 'github', 'core', classifyScript)(
+        {
+          eventName: scenario.event,
+          issue: { number: 1 },
+          repo: { owner: 'lupinum-dev', repo: 'better-convex' },
+        },
+        {
+          paginate: async () => scenario.paths.map((filename) => ({ filename })),
+          rest: { pulls: { listFiles() {} } },
+        },
+        { setOutput: (name: string, value: string) => outputs.set(name, value) },
+      )
+      expect(outputs.get('full'), scenario.name).toBe(scenario.full)
+    }
   })
 
   it('installs the independent documentation workspace before core certification', () => {

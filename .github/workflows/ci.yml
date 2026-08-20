@@ -13,6 +13,37 @@ env:
   RELEASE_NPM_VERSION: '11.18.0'
 
 jobs:
+  classify:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      pull-requests: read
+    outputs:
+      full: ${{ steps.paths.outputs.full }}
+    steps:
+      - name: Select required lanes
+        id: paths
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const runAll = context.eventName !== 'pull_request'
+            const files = runAll
+              ? []
+              : await github.paginate(github.rest.pulls.listFiles, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.issue.number,
+                  per_page: 100,
+                })
+            const paths = files.map((file) => file.filename)
+            const publicDocsOnly =
+              paths.length > 0 &&
+              paths.every((path) =>
+                /^(?:docs\/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
+              )
+            core.setOutput('full', String(runAll || !publicDocsOnly))
+
   secrets:
     runs-on: ubuntu-latest
     steps:
@@ -29,6 +60,8 @@ jobs:
           extra_args: --only-verified
 
   compatibility:
+    needs: classify
+    if: needs.classify.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -52,6 +85,8 @@ jobs:
         run: pnpm release:certify:source core
 
   auth-contracts:
+    needs: classify
+    if: needs.classify.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -72,6 +107,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
   auth-real-backend:
+    needs: classify
+    if: needs.classify.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -110,6 +147,8 @@ jobs:
         run: corepack pnpm audit --prod
 
   release-smoke:
+    needs: classify
+    if: needs.classify.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -145,6 +184,7 @@ jobs:
   release-gate:
     needs:
       [
+        classify,
         secrets,
         compatibility,
         auth-contracts,
@@ -158,6 +198,8 @@ jobs:
     steps:
       - name: Require every independent source lane
         env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          FULL: ${{ needs.classify.outputs.full }}
           AUTH_CONTRACTS: ${{ needs.auth-contracts.result }}
           AUTH_REAL_BACKEND: ${{ needs.auth-real-backend.result }}
           COMPATIBILITY: ${{ needs.compatibility.result }}
@@ -165,6 +207,13 @@ jobs:
           RELEASE_SMOKE: ${{ needs.release-smoke.result }}
           SECRETS: ${{ needs.secrets.result }}
         run: |
-          for result in "$SECRETS" "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$DEPLOYABLE_APP_AUDITS" "$RELEASE_SMOKE"; do
-            test "$result" = success
+          test "$CLASSIFY_RESULT" = success
+          case "$FULL" in
+            true | false) ;;
+            *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;;
+          esac
+          test "$SECRETS" = success
+          test "$DEPLOYABLE_APP_AUDITS" = success
+          for result in "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do
+            if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi
           done
