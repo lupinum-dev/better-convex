@@ -317,14 +317,33 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       ...args: string[]
     ) => (...args: unknown[]) => Promise<void>
     for (const scenario of [
-      { name: 'public docs', event: 'pull_request', paths: ['docs/content/1.index.md'], full: 'false' },
-      { name: 'package source', event: 'pull_request', paths: ['packages/vue/src/index.ts'], full: 'true' },
-      { name: 'workflow policy', event: 'pull_request', paths: ['.github/workflows/ci.yml'], full: 'true' },
+      {
+        name: 'public docs',
+        event: 'pull_request',
+        paths: ['docs/content/1.index.md'],
+        full: 'false',
+      },
+      {
+        name: 'package source',
+        event: 'pull_request',
+        paths: ['packages/vue/src/index.ts'],
+        full: 'true',
+      },
+      {
+        name: 'workflow policy',
+        event: 'pull_request',
+        paths: ['.github/workflows/ci.yml'],
+        full: 'true',
+      },
       { name: 'main certification', event: 'push', paths: [], full: 'true' },
     ]) {
       const outputs = new Map<string, string>()
       await new AsyncFunction('context', 'github', 'core', classifyScript)(
-        { eventName: scenario.event, issue: { number: 1 }, repo: { owner: 'lupinum-dev', repo: 'better-convex' } },
+        {
+          eventName: scenario.event,
+          issue: { number: 1 },
+          repo: { owner: 'lupinum-dev', repo: 'better-convex' },
+        },
         {
           paginate: async () => scenario.paths.map((filename) => ({ filename })),
           rest: { pulls: { listFiles() {} } },
