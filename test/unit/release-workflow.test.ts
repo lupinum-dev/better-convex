@@ -307,7 +307,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'release-smoke',
     ])
     expect(runs(ciWorkflow, 'release-gate')).toEqual([
-      'test "$CLASSIFY_RESULT" = success test "$SECRETS" = success test "$DEPLOYABLE_APP_AUDITS" = success for result in "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi done',
+      'test "$CLASSIFY_RESULT" = success case "$FULL" in true | false) ;; *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;; esac test "$SECRETS" = success test "$DEPLOYABLE_APP_AUDITS" = success for result in "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi done',
     ])
     const classifyScript = steps(ciWorkflow, 'classify').find(
       (step) => step.name === 'Select required lanes',
@@ -327,6 +327,18 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
         name: 'package source',
         event: 'pull_request',
         paths: ['packages/vue/src/index.ts'],
+        full: 'true',
+      },
+      {
+        name: 'empty pull request',
+        event: 'pull_request',
+        paths: [],
+        full: 'true',
+      },
+      {
+        name: 'mixed public docs and source',
+        event: 'pull_request',
+        paths: ['docs/content/1.index.md', 'packages/vue/src/index.ts'],
         full: 'true',
       },
       {

@@ -208,6 +208,10 @@ jobs:
           SECRETS: ${{ needs.secrets.result }}
         run: |
           test "$CLASSIFY_RESULT" = success
+          case "$FULL" in
+            true | false) ;;
+            *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;;
+          esac
           test "$SECRETS" = success
           test "$DEPLOYABLE_APP_AUDITS" = success
           for result in "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do
