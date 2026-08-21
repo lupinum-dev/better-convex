@@ -1,11 +1,11 @@
 import { defineBuildConfig } from 'unbuild'
 
 export default defineBuildConfig({
-  entries: ['src/index', 'src/errors', 'src/embedded', 'src/mcp-app'],
+  entries: ['src/index', 'src/errors', 'src/embedded'],
   declaration: true,
   clean: true,
   rollup: {
     emitCJS: false,
   },
-  externals: ['@modelcontextprotocol/ext-apps', 'convex', 'vue'],
+  externals: ['convex', 'vue'],
 })

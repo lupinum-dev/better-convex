@@ -35,7 +35,7 @@ export default defineNuxtConfig({
                 // surface contract) has no node_modules copy in the linked
                 // fixture, so map it to the built entry. Installed CI resolves it
                 // through the package `exports` map instead.
-                '@lupinum/better-convex-nuxt/auth-client': [
+                '@lupinum/better-convex-nuxt/better-auth/client': [
                   '../../../../dist/runtime/auth-client/index.d.ts',
                 ],
               },

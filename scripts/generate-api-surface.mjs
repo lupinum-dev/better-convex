@@ -227,7 +227,7 @@ import { serverConvex } from '#convex/server'
 \`createUserProjectionTriggers\` runs inside your \`convex/\` functions. Import it from the Better Auth integration subpath:
 
 \`\`\`ts
-import { createUserProjectionTriggers } from '@lupinum/better-convex-nuxt/convex-auth'
+import { createUserProjectionTriggers } from '@lupinum/better-convex-nuxt/better-auth/server'
 \`\`\`
 
 ## Core composable auto-imports
@@ -258,7 +258,7 @@ export default defineNuxtConfig({
 })
 \`\`\`
 
-Only an auth-enabled build auto-imports the following API. Define its typed Better Auth client with \`defineConvexAuthClient\` from \`@lupinum/better-convex-nuxt/auth-client\`, then access the integrated client through \`useConvexAuth().client\`.
+Only an auth-enabled build auto-imports the following API. Define its typed Better Auth client with \`defineConvexAuthClient\` from \`@lupinum/better-convex-nuxt/better-auth/client\`, then access the integrated client through \`useConvexAuth().client\`.
 
 | Name | Kind | Purpose | Learn More |
 | ---- | ---- | ------- | ---------- |

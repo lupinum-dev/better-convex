@@ -9,7 +9,7 @@ const { message } = defineProps<{
   message: string
 }>()
 
-const { client, isPending } = useConvexAuth()
+const { client, pending } = useConvexAuth()
 const route = useRoute()
 
 const mode = ref<'signIn' | 'signUp'>('signUp')
@@ -33,7 +33,7 @@ const canSubmit = computed(() => {
 })
 
 const submitLabel = computed(() => {
-  if (isPending.value) return mode.value === 'signIn' ? 'Signing in...' : 'Creating account...'
+  if (pending.value) return mode.value === 'signIn' ? 'Signing in...' : 'Creating account...'
   return mode.value === 'signIn' ? 'Sign in' : 'Create account'
 })
 const passwordAutocomplete = computed(() =>
@@ -46,7 +46,7 @@ watch(mode, () => {
 })
 
 async function submitAuth() {
-  if (isPending.value || !canSubmit.value) return
+  if (pending.value || !canSubmit.value) return
 
   error.value = null
   info.value = null
@@ -153,7 +153,7 @@ async function submitAuth() {
       <p v-if="info" class="auth-info">{{ info }}</p>
       <p v-if="error" class="auth-error">{{ error }}</p>
 
-      <button type="submit" :disabled="isPending || !canSubmit">
+      <button type="submit" :disabled="pending || !canSubmit">
         {{ submitLabel }}
       </button>
     </form>

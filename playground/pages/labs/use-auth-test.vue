@@ -7,7 +7,7 @@
         <span>status</span><strong data-testid="auth-state">{{ status }}</strong>
       </div>
       <div class="row">
-        <span>isPending</span><strong>{{ isPending }}</strong>
+        <span>pending</span><strong>{{ pending }}</strong>
       </div>
       <ClientOnly>
         <div class="row">
@@ -36,14 +36,9 @@
     </div>
 
     <div class="panel actions">
-      <button class="btn" :disabled="isPending" @click="callSignIn">Call signIn.email()</button>
-      <button class="btn" :disabled="isPending" @click="callSignUp">Call signUp.email()</button>
-      <button
-        class="btn"
-        data-testid="integrated-signout"
-        :disabled="isPending"
-        @click="callSignOut"
-      >
+      <button class="btn" :disabled="pending" @click="callSignIn">Call signIn.email()</button>
+      <button class="btn" :disabled="pending" @click="callSignUp">Call signUp.email()</button>
+      <button class="btn" data-testid="integrated-signout" :disabled="pending" @click="callSignOut">
         Integrated Better Auth signOut()
       </button>
       <pre class="result">{{ resultText }}</pre>
@@ -58,7 +53,7 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { status, isPending, user, client } = useConvexAuth()
+const { status, pending, user, client } = useConvexAuth()
 const publicSession = client?.useSession()
 const publicSessionUserId = computed(() => publicSession?.value.data?.user.id ?? null)
 const permissionArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))

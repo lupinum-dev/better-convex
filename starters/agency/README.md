@@ -61,9 +61,9 @@ export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"
   printf 'BCN_AUTH_PROXY_IP_SECRET=%s\n' "$BCN_AUTH_PROXY_IP_SECRET" >> .env.local.next
   mv .env.local.next .env.local
 )
-pnpm exec better-convex-nuxt-convex env set SITE_URL http://localhost:3000
-printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex-nuxt-convex env set BETTER_AUTH_SECRETS
-printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt-convex env set BCN_AUTH_PROXY_IP_SECRET
+pnpm exec better-convex convex env set SITE_URL http://localhost:3000
+printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
+printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
 ```
 
 `SITE_URL` must be the exact public Nuxt origin, without a path, query, or

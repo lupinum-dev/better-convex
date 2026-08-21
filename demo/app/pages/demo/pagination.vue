@@ -17,7 +17,7 @@ const {
   status: infiniteStatus,
   canLoadMore: infiniteCanLoadMore,
   loadMore: infiniteLoadMore,
-  isLoading: infiniteLoading,
+  pending: infiniteLoading,
 } = await useConvexPaginatedQuery(api.messages.listPaginated, {}, { initialNumItems: 10 })
 
 const loadMoreRef = ref<HTMLElement | null>(null)
@@ -50,7 +50,7 @@ const {
   status: buttonStatus,
   canLoadMore: buttonCanLoadMore,
   loadMore: buttonLoadMore,
-  isLoading: buttonLoading,
+  pending: buttonLoading,
 } = await useConvexPaginatedQuery(api.messages.listPaginated, {}, { initialNumItems: 5 })
 
 // ============================================

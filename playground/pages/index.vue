@@ -14,8 +14,8 @@
           <span class="status authenticated">
             Logged in as <strong>{{ user?.name || user?.email }}</strong>
           </span>
-          <button class="btn btn-sm" :disabled="isPending" @click="handleSignOut">
-            {{ isPending ? 'Signing out...' : 'Sign Out' }}
+          <button class="btn btn-sm" :disabled="pending" @click="handleSignOut">
+            {{ pending ? 'Signing out...' : 'Sign Out' }}
           </button>
         </template>
         <template v-else-if="status === 'anonymous'">
@@ -166,11 +166,11 @@
 </template>
 
 <script setup lang="ts">
-const { user, status, isPending, error: authError, client } = useConvexAuth()
+const { user, status, pending, error: authError, client } = useConvexAuth()
 
 const debugInfo = computed(() => ({
   status: status.value,
-  isPending: isPending.value,
+  pending: pending.value,
   error: authError.value?.message,
   user: user.value,
 }))

@@ -15,7 +15,7 @@ import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
 
 function controller(overrides: Partial<NuxtConvexAuthController> = {}): NuxtConvexAuthController {
   return {
-    isPending: computed(() => false),
+    pending: computed(() => false),
     client: {},
     ready: vi.fn(async () => 'anonymous' as const),
     dispose: vi.fn(),

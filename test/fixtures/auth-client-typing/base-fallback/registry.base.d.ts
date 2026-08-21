@@ -4,7 +4,7 @@
 // InferRegisteredConvexAuthClient collapses to the base client here.
 import type definition from './convex-auth.base'
 
-declare module '@lupinum/better-convex-nuxt/auth-client' {
+declare module '@lupinum/better-convex-nuxt/better-auth/client' {
   interface ConvexAuthClientRegistry {
     definition: typeof definition
   }

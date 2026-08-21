@@ -6,7 +6,7 @@
 
 /// <reference types="vite/client" />
 
-import betterAuth from '@lupinum/better-convex-nuxt/convex-auth/test'
+import betterAuth from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
 
 import schema from './schema'

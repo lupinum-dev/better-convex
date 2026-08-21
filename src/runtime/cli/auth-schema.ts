@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import { constants } from 'node:fs'
+import { constants, realpathSync } from 'node:fs'
 import { access, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { BetterAuthOptions } from 'better-auth'
 import { getAuthTables } from 'better-auth/db'
@@ -33,7 +34,7 @@ function usage(): string {
     'Generate a paired Better Convex Nuxt local auth schema and metadata descriptor.',
     '',
     'Usage:',
-    '  better-convex-nuxt-auth-schema --config <schema-options.ts> [--output <directory>] [--check]',
+    '  better-convex auth schema --config <schema-options.ts> [--output <directory>] [--check]',
     '',
     'The config must default-export environment-independent BetterAuthOptions using:',
     `  baseURL: ${SCHEMA_BASE_URL}`,
@@ -183,8 +184,8 @@ async function generate(options: CliOptions): Promise<number> {
   return 0
 }
 
-async function main(): Promise<number> {
-  const options = parseArgs(process.argv.slice(2))
+export async function runAuthSchemaCommand(arguments_: readonly string[]): Promise<number> {
+  const options = parseArgs([...arguments_])
   if (options.help) {
     console.log(usage())
     return 0
@@ -192,11 +193,20 @@ async function main(): Promise<number> {
   return await generate(options)
 }
 
-try {
-  process.exitCode = await main()
-} catch (error) {
-  console.error(
-    `[better-convex-nuxt-auth-schema] ${error instanceof Error ? error.message : 'failed'}`,
-  )
-  process.exitCode = 1
+let invokedAsScript = false
+if (process.argv[1]) {
+  try {
+    invokedAsScript = realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    // An unresolved entry path cannot identify this module as the executable.
+  }
+}
+
+if (invokedAsScript) {
+  try {
+    process.exitCode = await runAuthSchemaCommand(process.argv.slice(2))
+  } catch (error) {
+    console.error(`[better-convex] ${error instanceof Error ? error.message : 'failed'}`)
+    process.exitCode = 1
+  }
 }

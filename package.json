@@ -1,6 +1,6 @@
 {
   "name": "@lupinum/better-convex-nuxt",
-  "version": "0.8.0-beta.40",
+  "version": "1.0.0-beta.1",
   "description": "Full-featured Convex integration for Nuxt with SSR, real-time subscriptions, and authentication",
   "keywords": [
     "authentication",
@@ -26,8 +26,7 @@
     "url": "https://github.com/lupinum-dev/better-convex"
   },
   "bin": {
-    "better-convex-nuxt-auth-schema": "./dist/runtime/cli/auth-schema.js",
-    "better-convex-nuxt-convex": "./dist/runtime/cli/convex.js"
+    "better-convex": "./dist/runtime/cli/index.js"
   },
   "files": [
     "dist",
@@ -42,19 +41,19 @@
       ".": [
         "./dist/types.d.mts"
       ],
-      "auth-client": [
+      "better-auth/client": [
         "./dist/runtime/auth-client/index.d.ts"
       ],
-      "convex-auth": [
+      "better-auth/server": [
         "./dist/runtime/convex-auth/index.d.ts"
       ],
-      "convex-auth/convex.config": [
+      "better-auth/convex.config": [
         "./dist/runtime/convex-auth/component/convex.config.d.ts"
       ],
-      "convex-auth/_generated/component.js": [
+      "better-auth/_generated/component.js": [
         "./dist/runtime/convex-auth/component/_generated/component.d.ts"
       ],
-      "convex-auth/test": [
+      "better-auth/test": [
         "./dist/runtime/convex-auth/test.d.ts"
       ],
       "errors": [
@@ -70,22 +69,22 @@
       "types": "./dist/types.d.mts",
       "import": "./dist/module.mjs"
     },
-    "./auth-client": {
+    "./better-auth/client": {
       "types": "./dist/runtime/auth-client/index.d.ts",
       "import": "./dist/runtime/auth-client/index.js"
     },
-    "./convex-auth": {
+    "./better-auth/server": {
       "types": "./dist/runtime/convex-auth/index.d.ts",
       "import": "./dist/runtime/convex-auth/index.js"
     },
-    "./convex-auth/convex.config": {
+    "./better-auth/convex.config": {
       "types": "./dist/runtime/convex-auth/component/convex.config.d.ts",
       "import": "./dist/runtime/convex-auth/component/convex.config.js"
     },
-    "./convex-auth/_generated/component.js": {
+    "./better-auth/_generated/component.js": {
       "types": "./dist/runtime/convex-auth/component/_generated/component.d.ts"
     },
-    "./convex-auth/test": {
+    "./better-auth/test": {
       "types": "./dist/runtime/convex-auth/test.d.ts",
       "import": "./dist/runtime/convex-auth/test.js"
     },
@@ -164,7 +163,7 @@
     "typecheck:server": "nuxt-module-build prepare && tsc --noEmit -p src/runtime/server/tsconfig.json",
     "typecheck:mcp-tests": "tsc -p test/mcp/tsconfig.json",
     "typecheck:fixtures": "pnpm run check:better-auth-local-component && pnpm run check:better-auth-two-factor && pnpm run check:auth-security-plugins",
-    "typecheck": "pnpm --dir packages/vue build && pnpm run typecheck:module && pnpm run typecheck:server && pnpm run typecheck:mcp-tests && pnpm run typecheck:fixtures",
+    "typecheck": "pnpm --dir packages/vue build && pnpm --dir packages/mcp build && pnpm run typecheck:module && pnpm run typecheck:server && pnpm run typecheck:mcp-tests && pnpm run typecheck:fixtures",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "pnpm --dir packages/vue build && nuxt-module-build prepare && vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser",
@@ -186,8 +185,8 @@
     "test:types": "pnpm run typecheck:module"
   },
   "dependencies": {
-    "@lupinum/better-convex-vue": "0.8.0-beta.40",
-    "@nuxt/kit": "4.5.1",
+    "@lupinum/better-convex-vue": "1.0.0-beta.1",
+    "@nuxt/kit": "4.5.2",
     "convex-helpers": "0.1.114",
     "defu": "^6.1.5",
     "h3": "1.15.11",
@@ -206,7 +205,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@nuxt/eslint-config": "^1.16.0",
     "@nuxt/module-builder": "1.0.2",
-    "@nuxt/schema": "4.5.1",
+    "@nuxt/schema": "4.5.2",
     "@nuxt/test-utils": "^4.0.3",
     "@types/node": "22.20.1",
     "@vitejs/plugin-vue": "^6.0.8",
@@ -219,7 +218,7 @@
     "happy-dom": "^20.8.9",
     "jose": "6.2.3",
     "mcp-remote": "0.1.38",
-    "nuxt": "4.5.1",
+    "nuxt": "4.5.2",
     "oxfmt": "^0.59.0",
     "pkg-pr-new": "0.0.87",
     "playwright": "^1.61.1",
@@ -235,8 +234,8 @@
   "peerDependencies": {
     "@better-auth/oauth-provider": "1.7.0-rc.2",
     "better-auth": "1.7.0-rc.2",
-    "convex": "1.42.2",
-    "nuxt": "4.5.1"
+    "convex": ">=1.42.2 <2",
+    "nuxt": ">=4.5.2 <5"
   },
   "peerDependenciesMeta": {
     "@better-auth/oauth-provider": {
@@ -247,7 +246,7 @@
     }
   },
   "engines": {
-    "node": "^22.12.0 || ^24.11.0 || >=26.0.0"
+    "node": "^22.14.0 || ^24.0.0"
   },
   "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
 }

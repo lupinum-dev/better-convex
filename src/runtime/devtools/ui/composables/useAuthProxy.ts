@@ -8,13 +8,13 @@ import type { AuthProxyStats } from '../../types'
  */
 export function useAuthProxy() {
   const proxyStats = ref<AuthProxyStats | null>(null)
-  const isLoading = ref(false)
+  const pending = ref(false)
   const error = ref<string | null>(null)
   let intervalId: ReturnType<typeof setInterval> | null = null
 
   async function fetchProxyStats() {
     try {
-      isLoading.value = true
+      pending.value = true
       error.value = null
 
       const response = await fetch('/__convex_devtools__/proxy-stats')
@@ -27,7 +27,7 @@ export function useAuthProxy() {
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch proxy stats'
     } finally {
-      isLoading.value = false
+      pending.value = false
     }
   }
 
@@ -57,7 +57,7 @@ export function useAuthProxy() {
 
   return {
     proxyStats,
-    isLoading,
+    pending,
     error,
     refresh: fetchProxyStats,
     clear: clearProxyStats,

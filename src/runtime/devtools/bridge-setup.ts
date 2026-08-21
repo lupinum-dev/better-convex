@@ -75,7 +75,7 @@ export async function setupDevToolsBridge(
 
       return {
         isAuthenticated: !!(hasToken && hasUser),
-        isPending: false, // Could be enhanced to track pending state
+        pending: false,
         user: plainUser,
         tokenStatus: hasToken ? 'valid' : 'none',
       }

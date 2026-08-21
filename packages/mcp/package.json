@@ -1,6 +1,6 @@
 {
   "name": "@lupinum/better-convex-mcp",
-  "version": "0.1.0-beta.28",
+  "version": "1.0.0-beta.1",
   "description": "Provider-neutral MCP integration for Convex applications",
   "homepage": "https://better-convex.lupinum.com",
   "bugs": {
@@ -21,6 +21,10 @@
     ".": {
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs"
+    },
+    "./vue": {
+      "types": "./dist/vue.d.mts",
+      "import": "./dist/vue.mjs"
     }
   },
   "scripts": {
@@ -32,10 +36,29 @@
     "@modelcontextprotocol/server": "2.0.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "typescript": "~5.9.3",
-    "unbuild": "3.6.1"
+    "unbuild": "3.6.1",
+    "vue": "3.5.40"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "vue": ">=3.5.0 <4"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/ext-apps": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": "^22.14.0 || ^24.0.0"
   }
 }

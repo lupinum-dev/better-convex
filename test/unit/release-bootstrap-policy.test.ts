@@ -12,9 +12,9 @@ const workflow = readFileSync(
 )
 const [program] = extractPrograms(workflow).map((source) => dedent(source))
 const packages = [
-  ['vue', '@lupinum/better-convex-vue', '0.8.0-beta.40'],
-  ['nuxt', '@lupinum/better-convex-nuxt', '0.8.0-beta.40'],
-  ['mcp', '@lupinum/better-convex-mcp', '0.1.0-beta.28'],
+  ['vue', '@lupinum/better-convex-vue', '1.0.0-beta.1'],
+  ['nuxt', '@lupinum/better-convex-nuxt', '1.0.0-beta.1'],
+  ['mcp', '@lupinum/better-convex-mcp', '1.0.0-beta.1'],
 ] as const
 
 interface PackageState {
@@ -253,7 +253,7 @@ function runScenario(
         GITHUB_OUTPUT: output,
         GITHUB_SHA: 'a'.repeat(40),
         GITHUB_STEP_SUMMARY: join(root, 'summary.md'),
-        RELEASE_VERSION: '0.8.0-beta.40',
+        RELEASE_VERSION: '1.0.0-beta.1',
         REGISTRY_POLL_ATTEMPTS: options.pollAttempts ?? '5',
         REGISTRY_POLL_DELAY_MS: options.pollDelayMs ?? '0',
       },

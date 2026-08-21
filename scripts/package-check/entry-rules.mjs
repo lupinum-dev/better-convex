@@ -49,7 +49,7 @@ const NUXT_CHECKER_ENTRY_RULES = [
     packedProbe: probeErrorsEntry,
   },
   {
-    subpath: './auth-client',
+    subpath: './better-auth/client',
     purity: {
       runtimeExternalSpecifiers: [],
       typeExternalSpecifiers: ['better-auth/client', 'better-auth/vue'],
@@ -57,7 +57,7 @@ const NUXT_CHECKER_ENTRY_RULES = [
     packedProbe: probeAuthClientTyping,
   },
   {
-    subpath: './convex-auth',
+    subpath: './better-auth/server',
     purity: {
       runtimeExternalSpecifiers: [
         '@better-auth/oauth-provider',
@@ -84,21 +84,21 @@ const NUXT_CHECKER_ENTRY_RULES = [
     packedProbe: probeCreateUserProjectionTriggers,
   },
   {
-    subpath: './convex-auth/convex.config',
+    subpath: './better-auth/convex.config',
     purity: {
       runtimeExternalSpecifiers: ['convex/server'],
       typeExternalSpecifiers: ['convex/server'],
     },
   },
   {
-    subpath: './convex-auth/_generated/component.js',
+    subpath: './better-auth/_generated/component.js',
     purity: {
       runtimeExternalSpecifiers: [],
       typeExternalSpecifiers: ['convex/server'],
     },
   },
   {
-    subpath: './convex-auth/test',
+    subpath: './better-auth/test',
     purity: {
       runtimeExternalSpecifiers: [
         'better-auth/plugins',
@@ -151,13 +151,6 @@ const VUE_CHECKER_ENTRY_RULES = [
       typeExternalSpecifiers: ['convex/browser'],
     },
   },
-  {
-    subpath: './mcp-app',
-    purity: {
-      runtimeExternalSpecifiers: ['@modelcontextprotocol/ext-apps', 'vue'],
-      typeExternalSpecifiers: ['@modelcontextprotocol/ext-apps', 'vue'],
-    },
-  },
 ]
 
 const MCP_CHECKER_ENTRY_RULES = [
@@ -166,6 +159,13 @@ const MCP_CHECKER_ENTRY_RULES = [
     purity: {
       runtimeExternalSpecifiers: ['@modelcontextprotocol/server'],
       typeExternalSpecifiers: ['@modelcontextprotocol/server'],
+    },
+  },
+  {
+    subpath: './vue',
+    purity: {
+      runtimeExternalSpecifiers: ['@modelcontextprotocol/ext-apps', 'vue'],
+      typeExternalSpecifiers: ['@modelcontextprotocol/ext-apps', 'vue'],
     },
   },
 ]
@@ -197,7 +197,7 @@ const checkerProfiles = {
     sourceScan: {
       allowedVirtualImports: [],
       allowedVirtualPrefixes: [],
-      allowedFrameworkPackages: [],
+      allowedFrameworkPackages: ['vue'],
     },
     rules: MCP_CHECKER_ENTRY_RULES,
   },

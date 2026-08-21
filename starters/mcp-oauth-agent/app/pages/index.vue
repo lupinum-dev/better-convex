@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { api } from '#convex/api'
 
-const { status, isPending, error: authError, client } = useConvexAuth()
+const { status, pending, error: authError, client } = useConvexAuth()
 const currentUserArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
 const { data: currentUser } = await useConvexQuery(api.users.getCurrent, currentUserArgs, {
   auth: 'required',
@@ -26,8 +26,8 @@ async function handleSignOut() {
         Signed in as {{ currentUser.email }}
       </p>
       <p v-else data-testid="signed-in-user">Finishing account setup…</p>
-      <button type="button" :disabled="isPending" @click="handleSignOut">
-        {{ isPending ? 'Signing out…' : 'Sign out' }}
+      <button type="button" :disabled="pending" @click="handleSignOut">
+        {{ pending ? 'Signing out…' : 'Sign out' }}
       </button>
     </template>
     <NuxtLink v-else-if="status === 'anonymous'" to="/login">Sign in</NuxtLink>

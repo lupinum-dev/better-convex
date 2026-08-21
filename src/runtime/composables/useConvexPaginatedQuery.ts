@@ -191,12 +191,12 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
     const status = computed<'idle' | 'pending' | 'success' | 'error'>(() =>
       error.value ? 'error' : result.status.value,
     )
-    const isLoading = computed(() => status.value === 'pending')
+    const pending = computed(() => status.value === 'pending')
     const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
       ...result,
       error,
       status,
-      isLoading,
+      pending,
     })
     return {
       resultData,
@@ -306,7 +306,7 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
   const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
     data,
     status,
-    isLoading: computed(() => status.value === 'pending'),
+    pending: computed(() => status.value === 'pending'),
     isStale: computed(() => false),
     canLoadMore: computed(
       () => status.value === 'success' && asyncData.data.value?.isDone === false,

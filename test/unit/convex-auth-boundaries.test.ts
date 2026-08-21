@@ -87,7 +87,9 @@ describe('Convex auth dependency boundaries', () => {
     expect(moduleBoundary.disallow(backendEdge)).toBe(true)
     expect(browserBoundary.from(resolve('src/runtime/auth-client/index.ts'))).toBe(true)
     expect(browserBoundary.disallow(backendEdge)).toBe(true)
-    expect(browserBoundary.disallow(bare('@lupinum/better-convex-nuxt/convex-auth'))).toBe(true)
+    expect(browserBoundary.disallow(bare('@lupinum/better-convex-nuxt/better-auth/server'))).toBe(
+      true,
+    )
   })
 
   it('keeps the shared origin parser dependency-free', () => {

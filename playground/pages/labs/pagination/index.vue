@@ -15,7 +15,7 @@ definePageMeta({
  * - Basic paginated query test (from /test-paginated-query)
  */
 
-const { data, status, isLoading, canLoadMore, loadMore, error } = await useConvexPaginatedQuery(
+const { data, status, pending, canLoadMore, loadMore, error } = await useConvexPaginatedQuery(
   api.notes.listPaginated,
   {},
   { initialNumItems: 3, auth: 'none' },
@@ -99,7 +99,7 @@ function handleLoadMore() {
         :disabled="!canLoadMore"
         @click="handleLoadMore"
       >
-        {{ isLoading ? 'Loading...' : 'Load More' }}
+        {{ pending ? 'Loading...' : 'Load More' }}
       </button>
     </section>
 
@@ -111,8 +111,8 @@ function handleLoadMore() {
           <span data-testid="status" class="value">{{ status }}</span>
         </div>
         <div class="state-item">
-          <span class="label">isLoading:</span>
-          <span data-testid="is-loading" class="value">{{ isLoading }}</span>
+          <span class="label">pending:</span>
+          <span data-testid="is-loading" class="value">{{ pending }}</span>
         </div>
         <div class="state-item">
           <span class="label">result count:</span>
@@ -140,7 +140,7 @@ function handleLoadMore() {
     <section class="notes-section">
       <h2>Notes</h2>
 
-      <div v-if="isLoading && notes.length === 0" class="loading" data-testid="loading">
+      <div v-if="pending && notes.length === 0" class="loading" data-testid="loading">
         Loading first page...
       </div>
 
@@ -174,7 +174,7 @@ function handleLoadMore() {
         </li>
       </ul>
 
-      <div v-if="isLoading && notes.length > 0" class="loading-more" data-testid="loading-more">
+      <div v-if="pending && notes.length > 0" class="loading-more" data-testid="loading-more">
         Loading more...
       </div>
 

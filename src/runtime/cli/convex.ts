@@ -226,10 +226,10 @@ function usage(): string {
     'Run the pinned Convex CLI with one explicit deployment authority.',
     '',
     'Usage:',
-    '  better-convex-nuxt-convex configure',
-    '  better-convex-nuxt-convex dev --anonymous [options]',
-    '  better-convex-nuxt-convex <codegen|deploy|dev|env|run> [options]',
-    '  better-convex-nuxt-convex deployment select <selector>',
+    '  better-convex convex configure',
+    '  better-convex convex dev --anonymous [options]',
+    '  better-convex convex <codegen|deploy|dev|env|run> [options]',
+    '  better-convex convex deployment select <selector>',
     '',
     'File-bound commands use only .env.local. Configure, anonymous dev, and',
     'deployment select clear inherited and dotenv authority before Convex runs.',
@@ -243,6 +243,10 @@ export async function runConvexCommand(
   const cwd = resolve(options.cwd ?? process.cwd())
   const inherited = options.inheritedEnvironment ?? process.env
   const [command, ...commandArguments] = arguments_
+  if (arguments_.length === 1 && (command === '--help' || command === '-h')) {
+    console.log(usage())
+    return 0
+  }
   let convexArguments: string[]
   let environment: Record<string, string>
 
@@ -320,17 +324,9 @@ if (process.argv[1]) {
 
 if (invokedAsScript) {
   try {
-    const arguments_ = process.argv.slice(2)
-    if (arguments_.length === 1 && (arguments_[0] === '--help' || arguments_[0] === '-h')) {
-      console.log(usage())
-      process.exitCode = 0
-    } else {
-      process.exitCode = await runConvexCommand(arguments_)
-    }
+    process.exitCode = await runConvexCommand(process.argv.slice(2))
   } catch (error) {
-    console.error(
-      `[better-convex-nuxt-convex] ${error instanceof Error ? error.message : 'failed'}`,
-    )
+    console.error(`[better-convex] ${error instanceof Error ? error.message : 'failed'}`)
     process.exitCode = 1
   }
 }

@@ -8,7 +8,7 @@ import {
   type UseMcpAppOptions,
   type UseMcpAppReturn,
   useMcpApp,
-} from '../../packages/vue/src/mcp-app'
+} from '../../packages/mcp/src/vue'
 
 const harness = vi.hoisted(() => {
   type Listener = (value: unknown) => void

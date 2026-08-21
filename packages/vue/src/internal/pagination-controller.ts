@@ -43,7 +43,7 @@ export interface PaginationController<Item> {
   pages: Readonly<Ref<PaginationPageState<Item>[]>>
   data: ComputedRef<readonly Item[] | undefined>
   status: ComputedRef<PaginationStatus>
-  isLoading: ComputedRef<boolean>
+  pending: ComputedRef<boolean>
   isStale: ComputedRef<boolean>
   canLoadMore: ComputedRef<boolean>
   error: ComputedRef<ConvexCallError | undefined>
@@ -517,7 +517,7 @@ export function createPaginationController<Item>(
   const data = computed<readonly Item[] | undefined>(() =>
     isStale.value ? lastSettledResults.value : currentData.value,
   )
-  const isLoading = computed(() => status.value === 'pending')
+  const pending = computed(() => status.value === 'pending')
   const canLoadMore = computed(() => {
     if (status.value !== 'success') return false
     return getLastLoadedPaginationResult(firstPage(), pages.value)?.isDone === false
@@ -761,7 +761,7 @@ export function createPaginationController<Item>(
     pages,
     data,
     status,
-    isLoading,
+    pending,
     isStale,
     canLoadMore,
     error,

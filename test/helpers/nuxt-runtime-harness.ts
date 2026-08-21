@@ -309,7 +309,7 @@ export function installIdentityPortHarness() {
   if (!nuxtApp.$convexRuntime) throw new Error('Convex runtime was not installed')
   setCurrentIdentityObserver(port)
   nuxtApp.$convexRuntime.attachAuthController({
-    isPending: { value: false } as never,
+    pending: { value: false } as never,
     client: {},
     ready: async () => 'authenticated',
     dispose: () => {},

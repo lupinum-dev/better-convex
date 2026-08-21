@@ -502,7 +502,7 @@ describe('better-convex-vue package runtime', () => {
       settled: false,
     })
     expect(query.status.value).toBe('pending')
-    expect(query.isLoading.value).toBe(true)
+    expect(query.pending.value).toBe(true)
 
     host.emit({
       ...host.attachment.identity.snapshot(),
@@ -510,7 +510,7 @@ describe('better-convex-vue package runtime', () => {
       error: normalizeConvexError(new Error('private authentication detail')),
     })
     expect(query.status.value).toBe('error')
-    expect(query.isLoading.value).toBe(false)
+    expect(query.pending.value).toBe(false)
     expect(query.error.value).toBeDefined()
     scope.stop()
   })
@@ -609,9 +609,9 @@ describe('better-convex-vue package runtime', () => {
       'canLoadMore',
       'data',
       'error',
-      'isLoading',
       'isStale',
       'loadMore',
+      'pending',
       'refresh',
       'status',
     ])

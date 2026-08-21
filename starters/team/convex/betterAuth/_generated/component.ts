@@ -3,7 +3,7 @@
  *
  * THIS CODE IS AUTOMATICALLY GENERATED.
  *
- * To regenerate, run `pnpm exec better-convex-nuxt-convex codegen --component-dir src/runtime/convex-auth/component`.
+ * To regenerate, run `pnpm exec better-convex convex codegen --component-dir src/runtime/convex-auth/component`.
  * @module
  */
 

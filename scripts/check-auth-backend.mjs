@@ -33,11 +33,8 @@ export function validateBackendManifest(value, packageManifest) {
   if (typeof value.convexVersion !== 'string' || value.convexVersion.length === 0) {
     fail('convexVersion is required')
   }
-  if (
-    packageManifest?.peerDependencies?.convex !== value.convexVersion ||
-    packageManifest?.devDependencies?.convex !== value.convexVersion
-  ) {
-    fail('manifest convexVersion must equal the exact peer and development dependency')
+  if (packageManifest?.devDependencies?.convex !== value.convexVersion) {
+    fail('manifest convexVersion must equal the exact development dependency')
   }
   if (!Array.isArray(value.artifacts) || value.artifacts.length === 0) {
     fail('artifacts must be a non-empty array')
@@ -164,7 +161,7 @@ async function downloadArchiveOnce(url, filename, fetchImplementation) {
   const timer = setTimeout(() => controller.abort(), downloadTimeoutMs)
   try {
     const response = await fetchImplementation(url, {
-      headers: { 'user-agent': 'better-convex-nuxt-auth-backend-verifier' },
+      headers: { 'user-agent': 'better-convex auth schema-backend-verifier' },
       redirect: 'follow',
       signal: controller.signal,
     })

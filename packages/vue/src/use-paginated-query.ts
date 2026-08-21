@@ -56,7 +56,7 @@ export interface UseConvexPaginatedQueryOptions {
 export interface UseConvexPaginatedQueryState<Item> {
   readonly data: ComputedRef<readonly Item[] | undefined>
   readonly status: ComputedRef<'idle' | 'pending' | 'success' | 'error'>
-  readonly isLoading: ComputedRef<boolean>
+  readonly pending: ComputedRef<boolean>
   readonly canLoadMore: ComputedRef<boolean>
   readonly error: ComputedRef<ConvexCallError | undefined>
   readonly isStale: ComputedRef<boolean>
@@ -211,7 +211,7 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   return Object.freeze({
     data: controller.data,
     status: controller.status,
-    isLoading: controller.isLoading,
+    pending: controller.pending,
     isStale: controller.isStale,
     canLoadMore: controller.canLoadMore,
     loadMore: controller.loadMore,

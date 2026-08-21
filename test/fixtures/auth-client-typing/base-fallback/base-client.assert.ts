@@ -1,6 +1,6 @@
 /// <reference path="./registry.base.d.ts" />
 // With the empty fallback registered, narrowing exposes only the base client.
-import type { InferRegisteredConvexAuthClient } from '@lupinum/better-convex-nuxt/auth-client'
+import type { InferRegisteredConvexAuthClient } from '@lupinum/better-convex-nuxt/better-auth/client'
 
 type IsAny<T> = 0 extends 1 & T ? true : false
 type Expect<T extends true> = T

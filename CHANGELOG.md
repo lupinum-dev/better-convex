@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.0-beta.1
+
+- Align `@lupinum/better-convex-nuxt`, `@lupinum/better-convex-vue`, and
+  `@lupinum/better-convex-mcp` on the first 1.0 beta contract.
+- Replace the old auth export paths and separate executables with the focused
+  `better-auth/*` entries and one `better-convex` command.
+- Move the Vue MCP App integration to `@lupinum/better-convex-mcp/vue` so the
+  Vue runtime remains identity-safe and provider-neutral.
+- Standardize public reactive progress on `pending` and adopt bounded Nuxt,
+  Convex, Vue, and Node compatibility ranges backed by exact tested versions.
+
 ## v0.8.0-beta.40
 
 - Move all publishable packages to the `@lupinum` npm scope. This is a hard

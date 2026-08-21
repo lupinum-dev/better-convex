@@ -51,7 +51,7 @@ const {
 }))
 const {
   data: membersData,
-  isLoading: membersPending,
+  pending: membersPending,
   error: membersQueryError,
   canLoadMore: hasMoreMembers,
   loadMore: loadMoreMembers,
@@ -68,7 +68,7 @@ const {
 )
 const {
   data: invitationsData,
-  isLoading: invitationsPending,
+  pending: invitationsPending,
   error: invitationsQueryError,
   canLoadMore: hasMoreInvitations,
   loadMore: loadMoreInvitations,

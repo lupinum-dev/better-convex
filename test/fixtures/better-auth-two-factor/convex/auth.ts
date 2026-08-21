@@ -4,7 +4,7 @@ import {
   getConvexAuthProvider,
   requireAuthOrigin,
   type AuthCtx,
-} from '@lupinum/better-convex-nuxt/convex-auth'
+} from '@lupinum/better-convex-nuxt/better-auth/server'
 import { betterAuth } from 'better-auth'
 
 import { components } from './_generated/api'

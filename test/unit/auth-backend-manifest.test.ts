@@ -63,7 +63,7 @@ describe('local Convex backend manifest', () => {
         devDependencies: { convex: '1.42.3' },
         peerDependencies: { convex: '1.42.3' },
       }),
-    ).toThrow('must equal the exact peer and development dependency')
+    ).toThrow('must equal the exact development dependency')
     expect(() =>
       validateBackendManifest(
         {

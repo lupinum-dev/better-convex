@@ -10,7 +10,7 @@
     "@lupinum/better-convex-nuxt": "file:./better-convex-nuxt.tgz",
     "@lupinum/better-convex-vue": "file:./better-convex-vue.tgz",
     "convex": "1.42.2",
-    "nuxt": "4.5.1",
+    "nuxt": "4.5.2",
     "vue": "3.5.40"
   },
   "devDependencies": {

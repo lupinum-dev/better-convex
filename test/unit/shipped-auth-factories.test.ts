@@ -90,7 +90,7 @@ function setsConvexManagedSiteUrl(line: string): boolean {
   const convex = tokens.findIndex(
     (token) =>
       token === 'convex' ||
-      token === 'better-convex-nuxt-convex' ||
+      token === 'better-convex convex' ||
       token.endsWith('/convex') ||
       token.endsWith('/convex/bin/main.js'),
   )
@@ -162,7 +162,7 @@ describe('shipped Better Auth factory invariants', () => {
 
     expect(source).toContain('export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"')
     expect(source).toContain(
-      'printf \'%s\' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt-convex env set BCN_AUTH_PROXY_IP_SECRET',
+      'printf \'%s\' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET',
     )
     expect(source).toContain('same shell')
     expect(source).toContain('Do not print or commit it')
@@ -222,7 +222,14 @@ describe('shipped Better Auth factory invariants', () => {
         .replace(/\\\r?\n\s*/gu, ' ')
         .split(/\r?\n/u)
         .entries()) {
-        if (RAW_CONVEX_COMMAND.test(line) || RAW_CONVEX_MAIN_COMMAND.test(line)) {
+        const withoutReviewedWrapper = line.replace(
+          /\bbetter-convex\s+convex\b/gu,
+          'better-convex-wrapper',
+        )
+        if (
+          RAW_CONVEX_COMMAND.test(withoutReviewedWrapper) ||
+          RAW_CONVEX_MAIN_COMMAND.test(withoutReviewedWrapper)
+        ) {
           offenders.push(`${path}:${index + 1}`)
         }
       }
@@ -249,12 +256,12 @@ describe('shipped Better Auth factory invariants', () => {
         )[name]
         if (convexCommand) {
           expect(command, `${starter}:${name}`).toMatch(
-            new RegExp(`(?:^|&& )better-convex-nuxt-convex ${convexCommand}$`, 'u'),
+            new RegExp(`(?:^|&& )better-convex convex ${convexCommand}$`, 'u'),
           )
         }
         if (name === 'convex:local:once') {
           expect(command, `${starter}:${name}`).toMatch(
-            /^better-convex-nuxt-convex dev --anonymous --once\b/u,
+            /^better-convex convex dev --anonymous --once\b/u,
           )
         }
       }

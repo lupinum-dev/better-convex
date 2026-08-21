@@ -309,10 +309,10 @@ describe('package manifest consistency', () => {
     )
 
     const typesOnlyImport = cloneNuxtManifest()
-    typesOnlyImport.exports['./convex-auth/_generated/component.js'].import =
+    typesOnlyImport.exports['./better-auth/_generated/component.js'].import =
       './dist/runtime/convex-auth/component/_generated/component.js'
     expect(check(typesOnlyImport)).toContain(
-      'package.json exports["./convex-auth/_generated/component.js"] is types-only and must not declare an import target',
+      'package.json exports["./better-auth/_generated/component.js"] is types-only and must not declare an import target',
     )
   })
 
@@ -376,10 +376,10 @@ describe('package manifest consistency', () => {
 
   it('rejects bin targets that traverse outside the artifact root', () => {
     const manifest = cloneNuxtManifest()
-    manifest.bin['better-convex-nuxt-convex'] = './dist/../../outside.js'
+    manifest.bin['better-convex'] = './dist/../../outside.js'
 
     expect(check(manifest)).toContain(
-      'package.json bin["better-convex-nuxt-convex"] must point inside ./dist/: ./dist/../../outside.js',
+      'package.json bin["better-convex"] must point inside ./dist/: ./dist/../../outside.js',
     )
   })
 
@@ -391,15 +391,13 @@ describe('package manifest consistency', () => {
     )
 
     const missing = cloneNuxtManifest()
-    delete missing.bin['better-convex-nuxt-auth-schema']
-    expect(check(missing)).toContain(
-      'package.json bin is missing reviewed command "better-convex-nuxt-auth-schema"',
-    )
+    delete missing.bin['better-convex']
+    expect(check(missing)).toContain('package.json bin is missing reviewed command "better-convex"')
 
     const retargeted = cloneNuxtManifest()
-    retargeted.bin['better-convex-nuxt-auth-schema'] = './dist/runtime/cli/convex.js'
+    retargeted.bin['better-convex'] = './dist/runtime/cli/convex.js'
     expect(check(retargeted)).toContain(
-      'package.json bin["better-convex-nuxt-auth-schema"] must be "./dist/runtime/cli/auth-schema.js" (manifest source of truth)',
+      'package.json bin["better-convex"] must be "./dist/runtime/cli/index.js" (manifest source of truth)',
     )
   })
 })

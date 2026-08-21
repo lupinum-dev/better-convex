@@ -5,20 +5,20 @@
   "scripts": {
     "dev": "nuxt dev --dotenv .env.local",
     "build": "nuxt build --dotenv .env.local",
-    "convex:configure": "nuxi prepare --dotenv .env.local && better-convex-nuxt-convex configure",
-    "convex:codegen": "nuxi prepare --dotenv .env.local && better-convex-nuxt-convex codegen",
-    "convex:dev": "nuxi prepare --dotenv .env.local && better-convex-nuxt-convex dev",
+    "convex:configure": "nuxi prepare --dotenv .env.local && better-convex convex configure",
+    "convex:codegen": "nuxi prepare --dotenv .env.local && better-convex convex codegen",
+    "convex:dev": "nuxi prepare --dotenv .env.local && better-convex convex dev",
     "typecheck": "nuxt typecheck --dotenv .env.local",
     "verify": "pnpm convex:codegen && pnpm typecheck && pnpm build"
   },
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.0-rc.2",
-    "@lupinum/better-convex-mcp": "0.1.0-beta.28",
-    "@lupinum/better-convex-nuxt": "0.8.0-beta.40",
+    "@lupinum/better-convex-mcp": "1.0.0-beta.1",
+    "@lupinum/better-convex-nuxt": "1.0.0-beta.1",
     "@modelcontextprotocol/server": "2.0.0",
     "better-auth": "1.7.0-rc.2",
     "convex": "1.42.2",
-    "nuxt": "4.5.1",
+    "nuxt": "4.5.2",
     "vue": "3.5.40",
     "zod": "4.4.3"
   },

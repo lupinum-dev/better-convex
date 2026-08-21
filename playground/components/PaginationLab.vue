@@ -24,7 +24,7 @@ const paginatedResult = await useConvexPaginatedQuery(
     server: props.serverOption,
   },
 )
-const { data, status, isLoading, canLoadMore, loadMore, error } = paginatedResult
+const { data, status, pending, canLoadMore, loadMore, error } = paginatedResult
 const items = computed(() => data.value ?? [])
 
 if (import.meta.client) {
@@ -35,19 +35,19 @@ if (import.meta.client) {
     server: props.serverOption,
     elapsed: fmtMs(performance.now() - setupStartedAt),
     status: status.value,
-    isLoading: isLoading.value,
+    pending: pending.value,
     error: error.value?.message ?? null,
     resultCount: items.value.length,
   })
 
   watch(
-    [status, isLoading, items, error],
+    [status, pending, items, error],
     ([nextStatus, nextLoading, nextResults, nextError], [prevStatus, prevLoading]) => {
       console.info(`[PaginationLab:${props.pageId}] state change`, {
         mode: 'blocking',
         elapsed: fmtMs(performance.now() - setupStartedAt),
         status: `${String(prevStatus)} -> ${String(nextStatus)}`,
-        isLoading: `${String(prevLoading)} -> ${String(nextLoading)}`,
+        pending: `${String(prevLoading)} -> ${String(nextLoading)}`,
         error: nextError?.message ?? null,
         resultCount: nextResults.length,
       })
@@ -58,7 +58,7 @@ if (import.meta.client) {
 // Capture state at script execution time (frozen snapshot)
 const capturedAtRender = {
   status: status.value,
-  isLoading: isLoading.value,
+  pending: pending.value,
   hasData: items.value.length > 0,
   dataLength: items.value.length,
 }
@@ -79,10 +79,8 @@ const capturedAtRender = {
           <span data-testid="initial-status" class="value">{{ capturedAtRender.status }}</span>
         </div>
         <div class="state-item">
-          <span class="label">isLoading:</span>
-          <span data-testid="initial-is-loading" class="value">{{
-            capturedAtRender.isLoading
-          }}</span>
+          <span class="label">pending:</span>
+          <span data-testid="initial-is-loading" class="value">{{ capturedAtRender.pending }}</span>
         </div>
         <div class="state-item">
           <span class="label">hasData:</span>
@@ -105,8 +103,8 @@ const capturedAtRender = {
           <span data-testid="current-status" class="value">{{ status }}</span>
         </div>
         <div class="state-item">
-          <span class="label">isLoading:</span>
-          <span data-testid="current-is-loading" class="value">{{ isLoading }}</span>
+          <span class="label">pending:</span>
+          <span data-testid="current-is-loading" class="value">{{ pending }}</span>
         </div>
         <div class="state-item">
           <span class="label">hasData:</span>
@@ -125,7 +123,7 @@ const capturedAtRender = {
       </button>
     </section>
 
-    <section v-if="isLoading" class="loading-section">
+    <section v-if="pending" class="loading-section">
       <h2>Loading...</h2>
       <div class="skeleton">
         <div class="skeleton-item" />

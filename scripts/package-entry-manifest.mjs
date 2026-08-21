@@ -65,7 +65,7 @@ const nuxtPackageEntries = [
   },
   {
     kind: 'runtime',
-    subpath: './auth-client',
+    subpath: './better-auth/client',
     distJs: 'dist/runtime/auth-client/index.js',
     distDts: 'dist/runtime/auth-client/index.d.ts',
     valueExports: ['defineConvexAuthClient'],
@@ -81,7 +81,7 @@ const nuxtPackageEntries = [
   },
   {
     kind: 'runtime',
-    subpath: './convex-auth',
+    subpath: './better-auth/server',
     distJs: 'dist/runtime/convex-auth/index.js',
     distDts: 'dist/runtime/convex-auth/index.d.ts',
     valueExports: [
@@ -109,7 +109,7 @@ const nuxtPackageEntries = [
   },
   {
     kind: 'runtime',
-    subpath: './convex-auth/convex.config',
+    subpath: './better-auth/convex.config',
     distJs: 'dist/runtime/convex-auth/component/convex.config.js',
     distDts: 'dist/runtime/convex-auth/component/convex.config.d.ts',
     valueExports: ['default'],
@@ -119,7 +119,7 @@ const nuxtPackageEntries = [
   },
   {
     kind: 'types-only',
-    subpath: './convex-auth/_generated/component.js',
+    subpath: './better-auth/_generated/component.js',
     distDts: 'dist/runtime/convex-auth/component/_generated/component.d.ts',
     valueExports: [],
     typeExports: ['ComponentApi'],
@@ -128,7 +128,7 @@ const nuxtPackageEntries = [
   },
   {
     kind: 'runtime',
-    subpath: './convex-auth/test',
+    subpath: './better-auth/test',
     distJs: 'dist/runtime/convex-auth/test.js',
     distDts: 'dist/runtime/convex-auth/test.d.ts',
     valueExports: ['default', 'register'],
@@ -156,8 +156,7 @@ const nuxtPackageEntries = [
 ]
 
 const nuxtPackageBins = {
-  'better-convex-nuxt-auth-schema': './dist/runtime/cli/auth-schema.js',
-  'better-convex-nuxt-convex': './dist/runtime/cli/convex.js',
+  'better-convex': './dist/runtime/cli/index.js',
 }
 
 const vuePackageEntries = [
@@ -226,30 +225,6 @@ const vuePackageEntries = [
     exactDeclaredExports: true,
     forbiddenNames: ['attachClientIdentity', 'createAttachedBrowserFacade'],
   },
-  {
-    kind: 'runtime',
-    subpath: './mcp-app',
-    distJs: 'dist/mcp-app.mjs',
-    distDts: 'dist/mcp-app.d.mts',
-    valueExports: ['useMcpApp'],
-    typeExports: [
-      'McpAppError',
-      'McpAppErrorCode',
-      'McpAppHostVersion',
-      'McpAppPhase',
-      'UseMcpAppOptions',
-      'UseMcpAppReturn',
-    ],
-    exactDeclaredExports: true,
-    forbiddenNames: [
-      'callTool',
-      'createMcpAppPlugin',
-      'openLink',
-      'useMcpHostContext',
-      'useMcpToolInput',
-      'useMcpToolResult',
-    ],
-  },
 ]
 
 const mcpPackageEntries = [
@@ -273,6 +248,30 @@ const mcpPackageEntries = [
       'registerConvexTools',
       'requireMcpScope',
       'withBetterConvex',
+    ],
+  },
+  {
+    kind: 'runtime',
+    subpath: './vue',
+    distJs: 'dist/vue.mjs',
+    distDts: 'dist/vue.d.mts',
+    valueExports: ['useMcpApp'],
+    typeExports: [
+      'McpAppError',
+      'McpAppErrorCode',
+      'McpAppHostVersion',
+      'McpAppPhase',
+      'UseMcpAppOptions',
+      'UseMcpAppReturn',
+    ],
+    exactDeclaredExports: true,
+    forbiddenNames: [
+      'callTool',
+      'createMcpAppPlugin',
+      'openLink',
+      'useMcpHostContext',
+      'useMcpToolInput',
+      'useMcpToolResult',
     ],
   },
 ]

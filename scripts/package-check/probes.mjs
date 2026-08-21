@@ -264,7 +264,12 @@ export function probeRootEntry(ctx) {
   probeRootEntryWithoutAuth(ctx)
   const dir = mkdtempSync(join(tmpdir(), 'bcn-root-probe-'))
 
-  const consumerPeers = ctx.packageManifest.peerDependencies
+  const consumerPeers = Object.fromEntries(
+    Object.entries(ctx.packageManifest.peerDependencies).map(([name, range]) => [
+      name,
+      supportedDependencyTuple[name] ?? range,
+    ]),
+  )
 
   writeJson(join(dir, 'package.json'), {
     name: 'root-entry-probe',
@@ -299,11 +304,11 @@ export function probeRootEntry(ctx) {
       "import { realpathSync } from 'node:fs'",
       "import { createRequire } from 'node:module'",
       `import mod from '${ctx.packageName}'`,
-      `import authComponent from '${ctx.packageName}/convex-auth/convex.config'`,
+      `import authComponent from '${ctx.packageName}/better-auth/convex.config'`,
       'import {',
       '  convexAuth, createAuthComponent, defineAuthAdapterFunctions,',
       '  getConvexAuthProvider, requireAuthOrigin, verifyOAuthBearerToken,',
-      `} from '${ctx.packageName}/convex-auth'`,
+      `} from '${ctx.packageName}/better-auth/server'`,
       "if (typeof mod !== 'function' && typeof mod !== 'object') throw new Error('default export did not resolve')",
       "if (!authComponent || (typeof authComponent !== 'function' && typeof authComponent !== 'object')) throw new Error('auth component config did not resolve')",
       'for (const [name, value] of Object.entries({',
@@ -355,16 +360,16 @@ export function probeRootEntry(ctx) {
       `} from '${ctx.packageName}'`,
       'import type {',
       '  BaseAuthClient, ConvexAuthClientRegistry, InferRegisteredConvexAuthClient, IntegratedAuthClient,',
-      `} from '${ctx.packageName}/auth-client'`,
+      `} from '${ctx.packageName}/better-auth/client'`,
       `import type { ConvexCallErrorKind } from '${ctx.packageName}/errors'`,
       `import type { ServerConvexOptions } from '${ctx.packageName}/server'`,
-      '// @ts-expect-error auth client machinery is available only from /auth-client',
+      '// @ts-expect-error auth client machinery is available only from /better-auth/client',
       `import type { BaseAuthClient as RemovedRootBaseAuthClient } from '${ctx.packageName}'`,
-      '// @ts-expect-error auth client machinery is available only from /auth-client',
+      '// @ts-expect-error auth client machinery is available only from /better-auth/client',
       `import type { ConvexAuthClientRegistry as RemovedRootAuthRegistry } from '${ctx.packageName}'`,
-      '// @ts-expect-error auth client machinery is available only from /auth-client',
+      '// @ts-expect-error auth client machinery is available only from /better-auth/client',
       `import type { InferRegisteredConvexAuthClient as RemovedRootAuthInference } from '${ctx.packageName}'`,
-      '// @ts-expect-error auth client machinery is available only from /auth-client',
+      '// @ts-expect-error auth client machinery is available only from /better-auth/client',
       `import type { IntegratedAuthClient as RemovedRootIntegratedAuthClient } from '${ctx.packageName}'`,
       '// @ts-expect-error the generic ConvexUser projection wrapper was deleted',
       `import type { ConvexUser as RemovedRootConvexUser } from '${ctx.packageName}'`,
@@ -375,11 +380,11 @@ export function probeRootEntry(ctx) {
       "import type { FunctionReference } from 'convex/server'",
       'import type {',
       '  AuthComponentTriggers, AuthCtx, AuthFunctions, CreateAuth, VerifyOAuthBearerTokenOptions,',
-      `} from '${ctx.packageName}/convex-auth'`,
-      `import { createAuthComponent } from '${ctx.packageName}/convex-auth'`,
-      `import authComponent from '${ctx.packageName}/convex-auth/convex.config'`,
-      `import type { ComponentApi } from '${ctx.packageName}/convex-auth/_generated/component.js'`,
-      `import authTest, { register } from '${ctx.packageName}/convex-auth/test'`,
+      `} from '${ctx.packageName}/better-auth/server'`,
+      `import { createAuthComponent } from '${ctx.packageName}/better-auth/server'`,
+      `import authComponent from '${ctx.packageName}/better-auth/convex.config'`,
+      `import type { ComponentApi } from '${ctx.packageName}/better-auth/_generated/component.js'`,
+      `import authTest, { register } from '${ctx.packageName}/better-auth/test'`,
       `import mod from '${ctx.packageName}'`,
       '',
       'const _opts: ModuleOptions | undefined = undefined',
@@ -488,7 +493,9 @@ export function probeRootEntry(ctx) {
       'pnpm',
       [
         'exec',
-        'better-convex-nuxt-auth-schema',
+        'better-convex',
+        'auth',
+        'schema',
         '--config',
         'schema-options.ts',
         '--output',
@@ -500,7 +507,9 @@ export function probeRootEntry(ctx) {
       'pnpm',
       [
         'exec',
-        'better-convex-nuxt-auth-schema',
+        'better-convex',
+        'auth',
+        'schema',
         '--config',
         'schema-options.ts',
         '--output',
@@ -509,7 +518,7 @@ export function probeRootEntry(ctx) {
       ],
       { cwd: dir },
     )
-    const convexHelp = run('pnpm', ['exec', 'better-convex-nuxt-convex', '--help'], {
+    const convexHelp = run('pnpm', ['exec', 'better-convex', 'convex', '--help'], {
       cwd: dir,
       stdio: 'pipe',
     })
@@ -549,7 +558,7 @@ export function probeErrorsEntry(ctx) {
 }
 
 /**
- * `/auth-client` probe. Installs the
+ * `/better-auth/client` probe. Installs the
  * packed tarball into the committed `test/fixtures/auth-client-typing` fixture
  * so the module and consumer share ONE `better-auth` copy, then:
  *   - `nuxi prepare` generates the REAL registry declaration from the fixture's
@@ -571,7 +580,9 @@ export function probeAuthClientTyping(ctx) {
     run('pnpm', ['run', 'typecheck'], { cwd: fixtureDir })
     run('pnpm', ['run', 'typecheck:base-fallback'], { cwd: fixtureDir })
   } catch (error) {
-    ctx.failures.push(`[./auth-client] packed auth-client-typing probe failed: ${error.message}`)
+    ctx.failures.push(
+      `[./better-auth/client] packed auth-client-typing probe failed: ${error.message}`,
+    )
   } finally {
     rmSync(join(fixtureDir, 'node_modules'), { recursive: true, force: true })
     rmSync(join(fixtureDir, '.nuxt'), { recursive: true, force: true })
@@ -622,7 +633,7 @@ export function probeServerEntry(ctx) {
 }
 
 /**
- * `/convex-auth` projection probe: installs the packed package into a
+ * `/better-auth/server` projection probe: installs the packed package into a
  * standalone Convex-oriented consumer and executes the projection helper's
  * type and runtime contracts from the public auth integration boundary.
  */
@@ -638,7 +649,7 @@ export function probeCreateUserProjectionTriggers(ctx) {
     run('pnpm', ['run', 'start'], { cwd: fixtureDir })
   } catch (error) {
     ctx.failures.push(
-      `[./convex-auth] packed user-projection-triggers-consumer probe failed: ${error.message}`,
+      `[./better-auth/server] packed user-projection-triggers-consumer probe failed: ${error.message}`,
     )
   } finally {
     rmSync(join(fixtureDir, 'node_modules'), { recursive: true, force: true })

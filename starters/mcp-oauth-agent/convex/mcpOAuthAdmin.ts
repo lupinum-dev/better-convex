@@ -1,5 +1,5 @@
 import type { oauthProvider } from '@better-auth/oauth-provider'
-import type { AuthCtx } from '@lupinum/better-convex-nuxt/convex-auth'
+import type { AuthCtx } from '@lupinum/better-convex-nuxt/better-auth/server'
 import type { BetterAuthPlugin } from 'better-auth'
 import {
   APIError,

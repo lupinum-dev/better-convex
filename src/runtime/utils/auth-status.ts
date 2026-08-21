@@ -16,9 +16,9 @@ import { isAuthenticatedIdentityKey, type ConvexIdentityKey } from './identity-k
 export type ConvexAuthMode = 'required' | 'optional' | 'none'
 
 /**
- * Current usable identity . Orthogonal to `isPending`, which tracks
+ * Current usable identity . Orthogonal to `pending`, which tracks
  * auth work in flight. A background refresh keeps `status === 'authenticated'`
- * while `isPending === true`.
+ * while `pending === true`.
  */
 export type ConvexAuthStatus = 'loading' | 'anonymous' | 'authenticated' | 'error'
 

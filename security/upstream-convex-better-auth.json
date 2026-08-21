@@ -214,7 +214,7 @@
       "targetPath": "src/runtime/convex-auth/component/_generated/component.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "e337fe2ab868c4ba560868d24bcc725a7ca7e5672505adf57df6e5b6e61dbf4e",
-      "targetSha256": "d1548890a6af6d6b25fcb7ffc2e0a0636d5d72d924e295adc3d9d9a412120ebf",
+      "targetSha256": "243a84a79d14e4b35dce8096fc6435ff3a765a1a1c6ccf4078eff71dac111772",
       "classification": "regenerated",
       "modificationSummary": "Regenerated the public ComponentApi declaration including relationship-aware writes, guarded consume, atomic increment, and authenticated signing-key initialization and rotation operations.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",

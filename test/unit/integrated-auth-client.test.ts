@@ -194,14 +194,14 @@ describe('integrated Better Auth client', () => {
     const first = integrated.operation('first')
     const second = integrated.operation('second')
     expect(invoked).toEqual(['first', 'second'])
-    expect(tracker.isPending.value).toBe(true)
+    expect(tracker.pending.value).toBe(true)
 
     releases[1]?.()
     await second
-    expect(tracker.isPending.value).toBe(true)
+    expect(tracker.pending.value).toBe(true)
     releases[0]?.()
     await first
-    expect(tracker.isPending.value).toBe(false)
+    expect(tracker.pending.value).toBe(false)
   })
 
   it('keeps the root non-thenable', async () => {

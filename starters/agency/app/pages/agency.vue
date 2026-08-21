@@ -5,7 +5,7 @@ import { api } from '#convex/api'
 
 defineOptions({ name: 'AgencyPage' })
 
-const { status, isPending, user, error: authLifecycleError, client: authClient } = useConvexAuth()
+const { status, pending, user, error: authLifecycleError, client: authClient } = useConvexAuth()
 const authMode = ref<'signUp' | 'signIn'>('signUp')
 const name = ref('')
 const email = ref('')
@@ -21,7 +21,7 @@ const clientArgs = computed(() =>
 const { data: clients } = await useConvexQuery(api.organizationLinks.listClients, clientArgs)
 
 async function submitAuth() {
-  if (isPending.value) return
+  if (pending.value) return
   if (password.value.length < 15 || !email.value.trim()) return
   if (authMode.value === 'signUp' && !name.value.trim()) return
 
@@ -97,16 +97,16 @@ async function handleSignOut() {
       </label>
       <p v-if="authNotice" class="notice">{{ authNotice }}</p>
       <p v-if="operationError" class="error">{{ operationError }}</p>
-      <button :disabled="isPending" type="submit">
-        {{ isPending ? 'Working...' : authMode === 'signUp' ? 'Create account' : 'Sign in' }}
+      <button :disabled="pending" type="submit">
+        {{ pending ? 'Working...' : authMode === 'signUp' ? 'Create account' : 'Sign in' }}
       </button>
     </form>
 
     <template v-else-if="status === 'authenticated'">
       <div class="session-row">
         <span>{{ user?.email ?? 'Signed in' }}</span>
-        <button type="button" :disabled="isPending" @click="handleSignOut">
-          {{ isPending ? 'Signing out...' : 'Sign out' }}
+        <button type="button" :disabled="pending" @click="handleSignOut">
+          {{ pending ? 'Signing out...' : 'Sign out' }}
         </button>
       </div>
 

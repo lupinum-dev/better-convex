@@ -182,7 +182,7 @@ export default defineNuxtModule<ModuleOptions>({
     name: '@lupinum/better-convex-nuxt',
     configKey: 'convex',
     compatibility: {
-      nuxt: '4.5.1',
+      nuxt: '>=4.5.2 <5',
     },
   },
   defaults: {
@@ -283,7 +283,7 @@ export default defineNuxtModule<ModuleOptions>({
       // (the module's established namespace), NOT `#build/*`: Nuxt's built-in
       // `#build` prefix resolves independently of this template destination.
       const authClientTemplate = addTemplate({
-        filename: '@lupinum/better-convex-nuxt/auth-client.mjs',
+        filename: '@lupinum/better-convex-nuxt/better-auth/client.mjs',
         write: true,
         getContents: () => `export { default } from ${JSON.stringify(authClientDefinitionPath)}\n`,
       })
@@ -291,18 +291,18 @@ export default defineNuxtModule<ModuleOptions>({
 
       // Register a declaration that augments the auth-client registry with the
       // resolved definition's type ("Generated type registry"). The
-      // augmentation targets `@lupinum/better-convex-nuxt/auth-client` — the module where
+      // augmentation targets `@lupinum/better-convex-nuxt/better-auth/client` — the module where
       // `ConvexAuthClientRegistry` and `InferRegisteredConvexAuthClient` are
       // declared — so the inference reads the merged registry (covered by the
       // packed auth-client typing fixture). `addTypeTemplate` registers the
       // reference for us.
       addTypeTemplate({
-        filename: 'types/better-convex-nuxt-auth-client.d.ts',
+        filename: 'types/better-convex auth schema-client.d.ts',
         getContents: () =>
           [
             `import type definition from ${JSON.stringify(authClientDefinitionPath)}`,
             ``,
-            `declare module '@lupinum/better-convex-nuxt/auth-client' {`,
+            `declare module '@lupinum/better-convex-nuxt/better-auth/client' {`,
             `  interface ConvexAuthClientRegistry {`,
             `    definition: typeof definition`,
             `  }`,
@@ -359,7 +359,7 @@ export default defineNuxtModule<ModuleOptions>({
       // Auth-only page metadata. A no-auth build does not advertise a policy it
       // cannot execute.
       addTemplate({
-        filename: 'types/better-convex-nuxt-auth.d.ts',
+        filename: 'types/better-convex auth schema.d.ts',
         getContents: () =>
           getTypeAugmentationTemplateContents(
             resolver.resolve('./runtime/utils/auth-route-protection'),

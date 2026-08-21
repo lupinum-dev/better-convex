@@ -7,7 +7,7 @@ import type { Logger } from './utils/logger'
 
 /** Nuxt-owned Better Auth presentation; it never controls a Convex client. */
 export interface NuxtConvexAuthController {
-  readonly isPending: ComputedRef<boolean>
+  readonly pending: ComputedRef<boolean>
   readonly client: object
   ready(options?: { timeoutMs?: number }): Promise<ConvexAuthStatus>
   dispose(): void

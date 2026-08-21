@@ -31,8 +31,8 @@
           {{ visibleError }}
         </div>
 
-        <button type="submit" class="btn btn-primary" :disabled="isPending">
-          {{ isPending ? 'Signing in...' : 'Sign In' }}
+        <button type="submit" class="btn btn-primary" :disabled="pending">
+          {{ pending ? 'Signing in...' : 'Sign In' }}
         </button>
       </form>
 
@@ -45,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-const { client, isPending, error: authError } = useConvexAuth()
+const { client, pending, error: authError } = useConvexAuth()
 
 const form = reactive({
   email: '',
@@ -58,7 +58,7 @@ const signInFailure =
   'Sign in could not be completed. Check your credentials and verify your email if required.'
 
 async function handleSignIn() {
-  if (isPending.value) return
+  if (pending.value) return
   error.value = null
 
   try {

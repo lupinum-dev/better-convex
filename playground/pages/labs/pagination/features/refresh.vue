@@ -11,7 +11,7 @@ definePageMeta({
  * Tests that refresh() re-fetches all currently loaded pages via HTTP.
  */
 
-const { data, status, isLoading, canLoadMore, loadMore, refresh, error } =
+const { data, status, pending, canLoadMore, loadMore, refresh, error } =
   await useConvexPaginatedQuery(api.notes.listPaginated, {}, { initialNumItems: 3, auth: 'none' })
 const items = computed(() => data.value ?? [])
 
@@ -41,8 +41,8 @@ async function handleRefresh() {
           <span data-testid="status" class="value">{{ status }}</span>
         </div>
         <div class="state-item">
-          <span class="label">isLoading:</span>
-          <span data-testid="is-loading" class="value">{{ isLoading }}</span>
+          <span class="label">pending:</span>
+          <span data-testid="is-loading" class="value">{{ pending }}</span>
         </div>
         <div class="state-item">
           <span class="label">result count:</span>

@@ -3,7 +3,10 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { supportedDependencyTuple } from '../../scripts/supported-dependency-tuple.mjs'
+import {
+  supportedDependencyTuple,
+  supportedPeerRanges,
+} from '../../scripts/supported-dependency-tuple.mjs'
 
 const root = join(import.meta.dirname, '../..')
 
@@ -17,10 +20,10 @@ describe('supported version alignment', () => {
     const securityContract = readFileSync(join(root, 'SECURITY.md'), 'utf8')
 
     const nuxtVersion = supportedDependencyTuple.nuxt
-    expect(manifest.peerDependencies.nuxt).toBe(nuxtVersion)
+    expect(manifest.peerDependencies.nuxt).toBe(supportedPeerRanges.nuxt)
     expect(manifest.dependencies['@nuxt/kit']).toBe(nuxtVersion)
     expect(supportedDependencyTuple['@nuxt/kit']).toBe(nuxtVersion)
-    expect(moduleSource).toContain(`nuxt: '${nuxtVersion}'`)
+    expect(moduleSource).toContain(`nuxt: '${supportedPeerRanges.nuxt}'`)
     expect(securityContract).toContain(`Nuxt \`${nuxtVersion}\``)
   })
 
@@ -39,7 +42,7 @@ describe('supported version alignment', () => {
       expect(manifest.dependencies?.[name]).toBeUndefined()
     }
 
-    expect(manifest.peerDependencies.convex).toBe(supportedDependencyTuple.convex)
+    expect(manifest.peerDependencies.convex).toBe(supportedPeerRanges.convex)
     expect(manifest.devDependencies.convex).toBe(supportedDependencyTuple.convex)
     expect(manifest.dependencies?.convex).toBeUndefined()
     for (const dependencies of [

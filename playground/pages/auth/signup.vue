@@ -37,8 +37,8 @@
           {{ visibleError }}
         </div>
 
-        <button type="submit" class="btn btn-primary" :disabled="isPending">
-          {{ isPending ? 'Creating account...' : 'Create Account' }}
+        <button type="submit" class="btn btn-primary" :disabled="pending">
+          {{ pending ? 'Creating account...' : 'Create Account' }}
         </button>
       </form>
 
@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-const { client, isPending, error: authError } = useConvexAuth()
+const { client, pending, error: authError } = useConvexAuth()
 
 const form = reactive({
   name: '',
@@ -63,7 +63,7 @@ const error = ref<string | null>(null)
 const visibleError = computed(() => error.value ?? authError.value?.message ?? null)
 
 async function handleSignUp() {
-  if (isPending.value) return
+  if (pending.value) return
   error.value = null
 
   try {

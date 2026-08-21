@@ -4,10 +4,10 @@
 
 Security fixes are provided for the latest published minor release. Older minors are unsupported after a newer minor is published.
 
-The current package family consists of the `@lupinum/better-convex-nuxt@0.8.0-beta.40`,
-`@lupinum/better-convex-vue@0.8.0-beta.40`, and `@lupinum/better-convex-mcp@0.1.0-beta.28`
+The current package family consists of the `@lupinum/better-convex-nuxt@1.0.0-beta.1`,
+`@lupinum/better-convex-vue@1.0.0-beta.1`, and `@lupinum/better-convex-mcp@1.0.0-beta.1`
 prerelease candidates. The Nuxt candidate uses Node
-`^22.12.0 || ^24.11.0 || >=26.0.0`, Nuxt `4.5.1`, Convex `1.42.2`, Better Auth
+`^22.12.0 || ^24.11.0 || >=26.0.0`, Nuxt `4.5.2`, Convex `1.42.2`, Better Auth
 `1.7.0-rc.2`, `@better-auth/oauth-provider` `1.7.0-rc.2`, and Convex Helpers
 `0.1.114`.
 Each package manifest is canonical for its own dependencies and peers; each
@@ -120,7 +120,7 @@ The operational contract is documented in the [delegated OAuth and MCP guide](./
 
 ## Schema-changing Better Auth plugins
 
-The packaged schema contains the maintained core/JWT/OAuth profile. Plugins that add tables or fields—such as organizations, admin, API keys, or two-factor authentication—use one fresh application-owned local component. The checked-in schema and metadata are generated together from the same build-only options with `better-convex-nuxt-auth-schema`.
+The packaged schema contains the maintained core/JWT/OAuth profile. Plugins that add tables or fields—such as organizations, admin, API keys, or two-factor authentication—use one fresh application-owned local component. The checked-in schema and metadata are generated together from the same build-only options with `better-convex auth schema`.
 
 Do not copy the adapter, mount both packaged and local components, or enable a runtime plugin absent from the generated schema. Two-factor must be ordered before `convexAuth()` and must prove that a first-factor-only session cannot obtain a Convex token.
 

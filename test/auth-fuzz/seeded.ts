@@ -8,7 +8,7 @@ export const REVIEWED_AUTH_FUZZ_SEEDS = [
 ] as const
 
 const UINT32_MAX = 4_294_967_295
-const DEFAULT_FAILURE_FILE = join(tmpdir(), 'better-convex-nuxt-auth-fuzz-last-failure.json')
+const DEFAULT_FAILURE_FILE = join(tmpdir(), 'better-convex auth schema-fuzz-last-failure.json')
 
 export interface SeededRandom {
   integer(maxExclusive: number): number

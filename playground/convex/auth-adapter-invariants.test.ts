@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
-import type { ComponentApi } from '@lupinum/better-convex-nuxt/convex-auth/_generated/component.js'
-import authTest from '@lupinum/better-convex-nuxt/convex-auth/test'
+import type { ComponentApi } from '@lupinum/better-convex-nuxt/better-auth/_generated/component.js'
+import authTest from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
 import { componentsGeneric, makeFunctionReference } from 'convex/server'
 import { describe, expect, it } from 'vitest'

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const router = useRouter()
-const { status, isPending, error: authError, client } = useConvexAuth()
+const { status, pending, error: authError, client } = useConvexAuth()
 
 const signInError = ref<string | null>(null)
 const visibleError = computed(() => signInError.value ?? authError.value?.message ?? null)
@@ -22,7 +22,7 @@ const providers = [
     icon: 'i-simple-icons-github',
     color: 'neutral' as const,
     onClick: async () => {
-      if (isPending.value) return
+      if (pending.value) return
       signInError.value = null
       try {
         if (!client) throw new Error('Authentication client unavailable')
@@ -46,7 +46,7 @@ const providers = [
         description="Sign in to explore real-time features"
         icon="i-lucide-flask-conical"
         :providers="providers"
-        :loading="isPending || status === 'loading'"
+        :loading="pending || status === 'loading'"
       >
         <UAlert v-if="visibleError" color="error" :description="visibleError" />
         <template #footer>

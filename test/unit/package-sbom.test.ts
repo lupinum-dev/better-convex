@@ -91,7 +91,7 @@ describe('package-profile SBOM generation', () => {
     }
   }, 120_000)
 
-  it('roots the Vue SBOM in its base graph and optional MCP App peers', () => {
+  it('roots the Vue SBOM in its focused runtime graph', () => {
     const directory = mkdtempSync(join(tmpdir(), 'bcv-sbom-output-'))
     try {
       const output = join(directory, 'sbom.cdx.json')
@@ -107,31 +107,7 @@ describe('package-profile SBOM generation', () => {
         metadata: { component: { name: string } }
       }
       expect(sbom.metadata.component.name).toBe('@lupinum/better-convex-vue')
-      expect(sbom.components.map(({ name }) => name).sort()).toEqual([
-        '@modelcontextprotocol/ext-apps',
-        '@modelcontextprotocol/sdk',
-        'convex',
-        'ohash',
-        'vue',
-        'zod',
-      ])
-      for (const [name, version] of [
-        ['@modelcontextprotocol/ext-apps', '1.7.5'],
-        ['@modelcontextprotocol/sdk', '1.30.0'],
-        ['zod', '4.4.3'],
-      ] as const) {
-        expect(sbom.components.find((component) => component.name === name)).toEqual(
-          expect.objectContaining({
-            version,
-            properties: [
-              {
-                name: '@lupinum/better-convex-vue:dependency-kind',
-                value: 'optional-peer',
-              },
-            ],
-          }),
-        )
-      }
+      expect(sbom.components.map(({ name }) => name).sort()).toEqual(['convex', 'ohash', 'vue'])
       expect(sbom.components.find(({ name }) => name === 'convex')?.version).toBe(
         vuePackageManifest.devDependencies.convex,
       )
@@ -156,7 +132,7 @@ describe('package-profile SBOM generation', () => {
     }
   }, 120_000)
 
-  it('roots the MCP SBOM in the exact official server SDK', () => {
+  it('roots the MCP SBOM in the official server and optional Vue App peers', () => {
     const directory = mkdtempSync(join(tmpdir(), 'bcm-sbom-output-'))
     try {
       const output = join(directory, 'sbom.cdx.json')
@@ -164,13 +140,20 @@ describe('package-profile SBOM generation', () => {
       expect(result.status, result.stderr).toBe(0)
 
       const sbom = JSON.parse(readFileSync(output, 'utf8')) as {
-        components: Array<{ name: string; version: string }>
+        components: Array<{
+          name: string
+          version: string
+          properties?: Array<{ name: string; value: string }>
+        }>
         metadata: { component: { name: string } }
       }
       expect(sbom.metadata.component.name).toBe('@lupinum/better-convex-mcp')
       expect(sbom.components.map(({ name }) => name).sort()).toEqual([
         '@modelcontextprotocol/core',
+        '@modelcontextprotocol/ext-apps',
+        '@modelcontextprotocol/sdk',
         '@modelcontextprotocol/server',
+        'vue',
         'zod',
       ])
       expect(sbom.components).toContainEqual(
@@ -179,6 +162,19 @@ describe('package-profile SBOM generation', () => {
           version: mcpPackageManifest.dependencies['@modelcontextprotocol/server'],
         }),
       )
+      for (const peer of ['@modelcontextprotocol/ext-apps', '@modelcontextprotocol/sdk', 'vue']) {
+        expect(sbom.components).toContainEqual(
+          expect.objectContaining({
+            name: peer,
+            properties: [
+              {
+                name: '@lupinum/better-convex-mcp:dependency-kind',
+                value: 'optional-peer',
+              },
+            ],
+          }),
+        )
+      }
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

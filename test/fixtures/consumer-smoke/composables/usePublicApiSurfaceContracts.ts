@@ -1,5 +1,5 @@
-import { defineConvexAuthClient } from '@lupinum/better-convex-nuxt/auth-client'
-import type { ConvexAuthClientDefinition } from '@lupinum/better-convex-nuxt/auth-client'
+import { defineConvexAuthClient } from '@lupinum/better-convex-nuxt/better-auth/client'
+import type { ConvexAuthClientDefinition } from '@lupinum/better-convex-nuxt/better-auth/client'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { GenericId } from 'convex/values'
 import type { ComputedRef, Ref } from 'vue'
@@ -11,7 +11,7 @@ function assertType<T>(_value: T): void {}
 
 export async function usePublicApiSurfaceContracts(file: File) {
   const auth = useConvexAuth()
-  assertType<Ref<boolean>>(auth.isPending)
+  assertType<Ref<boolean>>(auth.pending)
   assertType<'loading' | 'anonymous' | 'authenticated' | 'error'>(auth.status.value)
   assertType<string | undefined>(auth.user.value?.id)
   assertType<Error | undefined>(auth.error.value)
@@ -59,7 +59,7 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<Promise<unknown>>(paginated)
   assertType<ComputedRef<readonly string[] | undefined>>(paginated.data)
   assertType<'idle' | 'pending' | 'success' | 'error'>(paginated.status.value)
-  assertType<boolean>(paginated.isLoading.value)
+  assertType<boolean>(paginated.pending.value)
   assertType<boolean>(paginated.canLoadMore.value)
   assertType<Error | undefined>(paginated.error.value)
   assertType<boolean>(paginated.isStale.value)
