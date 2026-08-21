@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
+import {
+  handleMcpRequest,
+  type HandleMcpRequestOptions,
+  type McpRequestTools,
+} from '../../packages/mcp/src/handler'
 import type { McpAccessVerifier } from '../../packages/mcp/src/index'
 
 const resource = new URL('https://lifecycle.example.test/mcp')
@@ -119,5 +123,43 @@ describe('request-scoped MCP lifecycle', () => {
     expect(response.status).toBe(500)
     expect(closeCount).toBe(1)
     expect(await response.text()).not.toContain('configuration-failure-sentinel')
+  })
+
+  it('isolates tool failure hooks between requests', async () => {
+    const observedA: unknown[] = []
+    const observedB: unknown[] = []
+    let toolsA: McpRequestTools | undefined
+    let toolsB: McpRequestTools | undefined
+    const optionsA = {
+      ...options((_access, _server, tools) => {
+        toolsA = tools
+      }),
+      onToolError(metadata: unknown) {
+        observedA.push(metadata)
+      },
+    } satisfies HandleMcpRequestOptions
+    const optionsB = {
+      ...options((_access, _server, tools) => {
+        toolsB = tools
+      }),
+      onToolError(metadata: unknown) {
+        observedB.push(metadata)
+      },
+    } satisfies HandleMcpRequestOptions
+
+    await Promise.all([
+      handleMcpRequest(toolsListRequest('hook-a'), optionsA),
+      handleMcpRequest(toolsListRequest('hook-b'), optionsB),
+    ])
+    expect(toolsA).toBeDefined()
+    expect(toolsB).toBeDefined()
+    expect(toolsA).not.toBe(toolsB)
+    await toolsA!.runTool('notes.read', () => {
+      throw new Error('request-a-secret')
+    })
+
+    expect(observedA).toEqual([{ kind: 'tool', name: 'notes.read' }])
+    expect(observedB).toEqual([])
+    expect(JSON.stringify(observedA)).not.toContain('request-a-secret')
   })
 })
