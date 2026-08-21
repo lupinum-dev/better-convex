@@ -8,7 +8,7 @@ import { defineEventHandler, setHeader, getRequestURL, createError, type H3Event
 
 import { useRuntimeConfig } from '#imports'
 
-import { getAuthProxyStats, clearAuthProxyStats } from './auth-proxy-registry'
+import { getAuthProxyStats } from './auth-proxy-registry'
 import { isPathInsideDirectory, resolveDevtoolsFilePath } from './path-utils'
 
 // MIME type mapping
@@ -48,13 +48,6 @@ export default defineEventHandler(async (event: H3Event) => {
     setHeader(event, 'Content-Type', 'application/json')
     setHeader(event, 'Cache-Control', 'no-cache')
     return JSON.stringify(await getAuthProxyStats())
-  }
-
-  // API endpoint: Clear auth proxy stats
-  if (pathname === '/proxy-stats/clear' && event.method === 'POST') {
-    await clearAuthProxyStats()
-    setHeader(event, 'Content-Type', 'application/json')
-    return JSON.stringify({ success: true })
   }
 
   // Default to index.html

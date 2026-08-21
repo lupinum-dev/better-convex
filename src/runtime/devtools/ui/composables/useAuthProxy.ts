@@ -1,16 +1,16 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 
 import type { AuthProxyStats } from '../../types'
 
 /**
  * Composable for fetching auth proxy stats from the DevTools server endpoint.
- * The auth proxy runs on the Nitro server, so we poll the endpoint directly.
+ * The auth proxy runs on the Nitro server, so diagnostics refresh only on
+ * panel activation or an explicit user request.
  */
 export function useAuthProxy() {
   const proxyStats = ref<AuthProxyStats | null>(null)
   const pending = ref(false)
   const error = ref<string | null>(null)
-  let intervalId: ReturnType<typeof setInterval> | null = null
 
   async function fetchProxyStats() {
     try {
@@ -31,28 +31,8 @@ export function useAuthProxy() {
     }
   }
 
-  async function clearProxyStats() {
-    try {
-      await fetch('/__convex_devtools__/proxy-stats/clear', { method: 'POST' })
-      await fetchProxyStats()
-    } catch {
-      // Ignore errors
-    }
-  }
-
   onMounted(async () => {
-    // Initial fetch
     await fetchProxyStats()
-
-    // Poll for updates every 3 seconds
-    intervalId = setInterval(fetchProxyStats, 3000)
-  })
-
-  onUnmounted(() => {
-    if (intervalId) {
-      clearInterval(intervalId)
-      intervalId = null
-    }
   })
 
   return {
@@ -60,6 +40,5 @@ export function useAuthProxy() {
     pending,
     error,
     refresh: fetchProxyStats,
-    clear: clearProxyStats,
   }
 }

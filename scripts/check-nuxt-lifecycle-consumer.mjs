@@ -1,13 +1,22 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn } from 'node:child_process'
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { chromium } from 'playwright'
 
+import { applyCompatibilityProfile } from './compatibility-profile.mjs'
 import { inspectConsumerCandidate } from './package-consumer-candidate.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -18,24 +27,28 @@ function parseArguments(args) {
   const values = new Map()
   for (let index = 0; index < args.length; index += 1) {
     const name = args[index]
-    if (!['--nuxt-tarball', '--vue-tarball'].includes(name) || values.has(name)) {
+    if (
+      !['--nuxt-tarball', '--vue-tarball', '--dependency-profile'].includes(name) ||
+      values.has(name)
+    ) {
       throw new Error(
         'Usage: check-nuxt-lifecycle-consumer.mjs --nuxt-tarball <path> --vue-tarball <path>',
       )
     }
     const value = args[index + 1]
     if (!value || value.startsWith('--')) throw new Error(`Missing value for ${name}`)
-    values.set(name, resolve(repositoryRoot, value))
+    values.set(name, name === '--dependency-profile' ? value : resolve(repositoryRoot, value))
     index += 1
   }
-  if (values.size !== 2) {
+  if (!values.has('--nuxt-tarball') || !values.has('--vue-tarball')) {
     throw new Error(
-      'Usage: check-nuxt-lifecycle-consumer.mjs --nuxt-tarball <path> --vue-tarball <path>',
+      'Usage: check-nuxt-lifecycle-consumer.mjs --nuxt-tarball <path> --vue-tarball <path> [--dependency-profile <profile>]',
     )
   }
   return Object.freeze({
     nuxtTarball: values.get('--nuxt-tarball'),
     vueTarball: values.get('--vue-tarball'),
+    dependencyProfile: values.get('--dependency-profile'),
   })
 }
 
@@ -145,6 +158,10 @@ try {
   }
 
   cpSync(fixtureRoot, consumerRoot, { recursive: true })
+  const consumerManifestPath = join(consumerRoot, 'package.json')
+  const consumerManifest = JSON.parse(readFileSync(consumerManifestPath, 'utf8'))
+  applyCompatibilityProfile(consumerManifest, options.dependencyProfile)
+  writeFileSync(consumerManifestPath, `${JSON.stringify(consumerManifest, null, 2)}\n`)
   cpSync(browserRuntimeFixture, join(scratchRoot, 'browser-runtime'), {
     recursive: true,
   })

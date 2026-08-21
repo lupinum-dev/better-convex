@@ -3,7 +3,6 @@ import { computed } from 'vue'
 
 import type { EnhancedAuthState, AuthWaterfall, ConvexUser } from '../../types'
 import AuthWaterfallComponent from './AuthWaterfall.vue'
-import JsonViewer from './JsonViewer.vue'
 
 const props = defineProps<{
   authState: EnhancedAuthState | null
@@ -60,11 +59,6 @@ const expirationDisplay = computed(() => {
           <div class="token-stat-value">{{ expirationDisplay }}</div>
           <div class="token-stat-label">Expires</div>
         </div>
-      </div>
-
-      <div class="claims-section">
-        <div class="detail-title">JWT Claims</div>
-        <JsonViewer :data="authState.claims" max-height="300px" />
       </div>
     </div>
 

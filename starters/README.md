@@ -1,7 +1,12 @@
 # Better Convex Nuxt Starters
 
-These starters are separate apps, not one configurable template. Use the
-smallest starter that matches the product you are building.
+The public examples have two canonical paths:
+
+- `public`: the minimal Convex + Nuxt baseline without authentication.
+- `mcp-oauth-agent`: the complete Better Auth, OAuth, and MCP reference.
+
+`team` and `agency` remain maintained contract fixtures. They prove distinct
+authorization ownership models, but they are not additional onboarding paths.
 
 The shared identity rule across the repo is narrower and deliberate: **Better
 Auth owns human identity and sessions; Convex product data refers to people by
@@ -11,11 +16,12 @@ its product-specific client/workspace delegation directly in Convex. None keeps
 a second copy of Better Auth user or session state. Experimental agent work
 remains under `internal/labs` until a real provider-backed path is proven.
 
-| Starter  | Authorization model              | Status                                  |
-| -------- | -------------------------------- | --------------------------------------- |
-| `public` | none (no auth)                   | Stable baseline                         |
-| `team`   | Better Auth Organization         | Canonical human B2B reference           |
-| `agency` | app-owned client/workspace graph | Intentional product-authorization model |
+| Starter           | Authorization model              | Status                           |
+| ----------------- | -------------------------------- | -------------------------------- |
+| `public`          | none (no auth)                   | Stable baseline                  |
+| `mcp-oauth-agent` | delegated OAuth + MCP            | Canonical full reference         |
+| `team`            | Better Auth Organization         | Maintained authorization fixture |
+| `agency`          | app-owned client/workspace graph | Maintained authorization fixture |
 
 ## `public`
 

@@ -5,6 +5,13 @@ authorization server, Better Convex Nuxt exposes it through the same-origin
 `/api/auth` proxy, and the deployment-owned Convex `/mcp` HTTP Action accepts
 short-lived OAuth access tokens. Convex remains the product-authorization authority.
 
+This is a specialized conformance and provisioning fixture. Normal applications
+must use `createBetterConvexAuth(...)`, which owns the reviewed plugin order,
+routes, JWT policy, triggers, and signing keys. This starter adds a narrow,
+fixture-only provider administration overlay so the black-box release runner can
+preregister disposable OAuth clients. Do not copy that low-level assembly into a
+normal application, and do not treat it as a generic plugin escape hatch.
+
 It is a delegated-human example, not a universal machine-identity model. For
 controlled service automation, supply a provider-neutral bearer verifier to
 `@lupinum/better-convex-mcp` and keep credential state and authorization in the

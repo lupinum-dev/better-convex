@@ -322,7 +322,7 @@
       "evidence": [
         "scripts/release.mjs",
         "scripts/verify-release.mjs",
-        "test/unit/release-artifact-evidence.test.ts"
+        "test/release-control/release-artifact-evidence.test.ts"
       ]
     },
     {

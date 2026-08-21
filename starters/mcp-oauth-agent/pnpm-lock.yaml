@@ -674,7 +674,7 @@ packages:
         optional: true
 
   '@lupinum/better-convex-nuxt@1.0.0-beta.1':
-    resolution: {integrity: sha512-xdKe7NKvbRemDMnZHGLZc1ud4Jl5oV6QRrT/F6bI7wK7k41vA7Cr8+TNMDYvdfJj2tji9ZqoThfgEyoe6sf2mQ==}
+    resolution: {integrity: sha512-4MPFUnvFUsL4lT+2ojHl01waHKpJbaOEEcQ6SFNFGpkPRrxf1gbSTOiY26+3ceIEdHVREB/X2QaiFwVjMBATFg==}
     engines: {node: ^22.14.0 || ^24.0.0}
     hasBin: true
     peerDependencies:

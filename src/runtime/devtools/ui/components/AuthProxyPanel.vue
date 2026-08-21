@@ -9,7 +9,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  clear: []
+  refresh: []
 }>()
 
 function formatTime(timestamp: number): string {
@@ -32,9 +32,7 @@ const hasRequests = computed(() => props.stats && props.stats.totalRequests > 0)
   <div class="auth-card proxy-panel">
     <div class="proxy-header">
       <div class="detail-title">Auth Proxy (SSR)</div>
-      <button v-if="hasRequests" class="btn btn-secondary btn-small" @click="emit('clear')">
-        Clear
-      </button>
+      <button class="btn btn-secondary btn-small" @click="emit('refresh')">Refresh</button>
     </div>
 
     <div v-if="loading" class="loading">

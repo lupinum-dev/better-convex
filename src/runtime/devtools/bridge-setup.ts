@@ -5,16 +5,15 @@
  * and the DevTools iframe using BroadcastChannel.
  */
 
-import { toRaw } from 'vue'
+import { toRaw, watchEffect } from 'vue'
 import type { Ref } from 'vue'
 
-import { decodeJwtPayload } from '../utils/convex-shared'
+import { createDevtoolsAuthState } from './auth-diagnostics'
 import type { DevtoolsSink } from './sink'
 import { createAppDevtoolsTransport, cloneDevtoolsPayload } from './transport'
 import type {
   ConvexDevToolsBridge,
   ConvexUser,
-  JWTClaims,
   EnhancedAuthState,
   AuthState,
   AuthWaterfall,
@@ -36,6 +35,7 @@ type HotImportMeta = ImportMeta & {
  * @param convexUser - Ref to the current user data
  * @param convexAuthWaterfall - Ref to the SSR auth waterfall timing data
  * @param readConnectionState - Safe projection of the active Vue runtime connection
+ * @param readAuthState - Canonical auth controller projection
  * @param providedInstanceId - Stable application identifier used for explicit UI selection
  */
 export async function setupDevToolsBridge(
@@ -44,12 +44,9 @@ export async function setupDevToolsBridge(
   convexUser: Ref<unknown>,
   convexAuthWaterfall: Ref<AuthWaterfall | null>,
   readConnectionState: () => ConnectionState,
+  readAuthState: () => Pick<AuthState, 'isAuthenticated' | 'pending'>,
   providedInstanceId?: string,
 ): Promise<() => void> {
-  const decodeJWT = (token: string): JWTClaims | null => {
-    return decodeJwtPayload(token) as JWTClaims | null
-  }
-
   const bridge: ConvexDevToolsBridge = {
     version: '1.1.0',
 
@@ -66,47 +63,28 @@ export async function setupDevToolsBridge(
     getAuthState: (): AuthState => {
       // Use toRaw to unwrap Vue proxy (BroadcastChannel can't clone proxies)
       const rawUser = toRaw(convexUser.value) as ConvexUser | null
-      const hasToken = !!convexToken.value
       // Check for valid user by looking for required fields (more stable than Object.keys().length)
       // Object.keys() on Vue proxies can be unreliable and cause flickering
       const hasUser = !!(rawUser && typeof rawUser === 'object' && (rawUser.id || rawUser.email))
       // Create a plain object copy to avoid proxy cloning issues
       const plainUser = hasUser ? cloneDevtoolsPayload(rawUser) : null
 
+      const state = createDevtoolsAuthState(readAuthState(), convexToken.value, plainUser)
       return {
-        isAuthenticated: !!(hasToken && hasUser),
-        pending: false,
-        user: plainUser,
-        tokenStatus: hasToken ? 'valid' : 'none',
+        isAuthenticated: state.isAuthenticated,
+        pending: state.pending,
+        tokenStatus: state.tokenStatus,
+        user: state.user,
       }
     },
 
     getEnhancedAuthState: (): EnhancedAuthState => {
-      const baseState = bridge.getAuthState()
-      const token = convexToken.value
-
-      if (!token) {
-        return {
-          ...baseState,
-          claims: undefined,
-          issuedAt: undefined,
-          expiresAt: undefined,
-          expiresInSeconds: undefined,
-        }
-      }
-
-      const claims = decodeJWT(token)
-      const now = Math.floor(Date.now() / 1000)
-      const expiresAt = claims?.exp
-      const expiresInSeconds = expiresAt ? Math.max(0, expiresAt - now) : undefined
-
-      return {
-        ...baseState,
-        claims: claims ?? undefined,
-        issuedAt: claims?.iat ? claims.iat * 1000 : undefined,
-        expiresAt: expiresAt ? expiresAt * 1000 : undefined,
-        expiresInSeconds,
-      }
+      const rawUser = toRaw(convexUser.value) as ConvexUser | null
+      const hasUser = Boolean(
+        rawUser && typeof rawUser === 'object' && (rawUser.id || rawUser.email),
+      )
+      const plainUser = hasUser ? cloneDevtoolsPayload(rawUser) : null
+      return createDevtoolsAuthState(readAuthState(), convexToken.value, plainUser)
     },
 
     getConnectionState: readConnectionState,
@@ -120,8 +98,7 @@ export async function setupDevToolsBridge(
     },
 
     getAuthProxyStats: async () => {
-      // Fetch auth proxy stats from the DevTools server endpoint
-      // The proxy runs on the Nitro server, so we need to poll the endpoint
+      // The proxy runs on the Nitro server, so it is read through the DevTools endpoint.
       try {
         const response = await fetch('/__convex_devtools__/proxy-stats')
         if (!response.ok) return null
@@ -135,6 +112,16 @@ export async function setupDevToolsBridge(
   // Generate a unique instance ID for this tab/window to prevent cross-tab interference
   const instanceId = providedInstanceId ?? Math.random().toString(36).slice(2, 10)
   const transport = createAppDevtoolsTransport('convex-devtools')
+  const stopAuthDiagnostics = watchEffect(() => {
+    transport.postMessage({
+      type: 'CONVEX_DEVTOOLS_AUTH',
+      authState: bridge.getEnhancedAuthState(),
+      connectionState: bridge.getConnectionState(),
+      authWaterfall: bridge.getAuthWaterfall(),
+      instanceId,
+      transport: transport.kind,
+    })
+  })
 
   // Handle messages from DevTools iframe via transport (BroadcastChannel or postMessage fallback)
   const onMessage = (event: { data: unknown }) => {
@@ -248,6 +235,7 @@ export async function setupDevToolsBridge(
     disposed = true
     unsubscribeMutations()
     unsubscribeQueries()
+    stopAuthDiagnostics()
     transport.removeEventListener('message', onMessage)
     transport.close()
   }

@@ -44,7 +44,7 @@ run('pnpm', [
   'vitest',
   'run',
   'test/unit/release-changelog.test.ts',
-  'test/unit/release-workflow.test.ts',
+  'test/release-control/release-workflow.test.ts',
 ])
 ensureClean()
 console.log(

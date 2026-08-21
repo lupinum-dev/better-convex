@@ -42,6 +42,7 @@ export default defineNuxtPlugin({
         waterfall,
         instanceId: instanceId.value,
         logger,
+        readAuthState: () => ({ isAuthenticated: false, pending: false }),
         onDispose: (dispose) => nuxtApp.vueApp.onUnmount(dispose),
       })
     }

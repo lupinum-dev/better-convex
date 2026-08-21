@@ -212,3 +212,16 @@ The release pull request is squash-merged after the hosted source certification
 is green. Public launch notes name only the final published coordinates.
 Unpublished rehearsal numbers remain private release evidence, not changelog or
 launch material.
+
+## 1.0 beta and release-candidate soak
+
+Publish `1.0.0-beta.1` only after source certification and all three packed
+artifact gates pass. Install those exact artifacts into Luis without a local
+peer-dependency patch, then run its typecheck and production build.
+
+Keep the beta contract in Luis plus fresh Nuxt, Vue, and OAuth/MCP consumers for
+seven complete days. A breaking public API change restarts the seven-day clock.
+A compatible fix requires a fresh 48-hour soak. Promote the same public contract
+to `1.0.0-rc.1` only when no release-blocking defect, local package override, or
+undocumented consumer patch remains. Record the artifact hashes, consumer commit
+SHAs, start time, and end time in the release pull request.

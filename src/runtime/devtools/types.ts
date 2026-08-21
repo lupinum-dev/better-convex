@@ -18,6 +18,7 @@ export interface QueryRegistryEntry {
   lastUpdated: number
   options?: {
     immediate: boolean
+    lazy: boolean
     server: boolean
     subscribe: boolean
     auth: ConvexAuthMode
@@ -56,25 +57,6 @@ export interface MutationEntry {
 }
 
 // ============================================================================
-// JWT and Auth Types
-// ============================================================================
-
-export interface JWTClaims {
-  /** Subject (user ID) */
-  sub?: string
-  /** Issued at timestamp (seconds) */
-  iat?: number
-  /** Expiration timestamp (seconds) */
-  exp?: number
-  /** Issuer */
-  iss?: string
-  /** Audience */
-  aud?: string | string[]
-  /** Any additional claims */
-  [key: string]: unknown
-}
-
-// ============================================================================
 // User and Auth State Types
 // ============================================================================
 
@@ -86,8 +68,6 @@ export interface AuthState {
 }
 
 export interface EnhancedAuthState extends AuthState {
-  /** Decoded JWT claims */
-  claims?: JWTClaims
   /** Token issued at timestamp (ms) */
   issuedAt?: number
   /** Token expiration timestamp (ms) */
@@ -196,7 +176,7 @@ export interface ConvexDevToolsBridge {
   subscribeToMutations: (callback: (mutations: MutationEntry[]) => void) => () => void
   /** Get auth state */
   getAuthState: () => AuthState
-  /** Get enhanced auth state with JWT claims */
+  /** Get auth state with bounded token timing */
   getEnhancedAuthState: () => EnhancedAuthState
   /** Get connection state */
   getConnectionState: () => ConnectionState
