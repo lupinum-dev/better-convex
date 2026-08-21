@@ -17,7 +17,7 @@ import type { ClientCallStatus } from './internal/call-state'
 import { normalizeConvexArgs, isConvexArgsSkipped } from './internal/query-args'
 import { createQueryController, type QueryIsolationTag } from './internal/query-controller'
 import { decideQueryExecution } from './internal/query-execution'
-import { useBetterConvexRuntime } from './runtime-context'
+import { useBetterConvexRuntime, type BetterConvexVueRuntime } from './runtime-context'
 
 export type ConvexAuthMode = 'required' | 'optional' | 'none'
 export type ConvexQuerySkip = 'skip'
@@ -27,6 +27,7 @@ export type ConvexCallStatus = ClientCallStatus
 export interface UseConvexQueryOptions {
   readonly auth?: ConvexAuthMode
   readonly keepPreviousData?: boolean
+  readonly immediate?: boolean
 }
 
 export interface UseConvexQueryState<Data> {
@@ -35,6 +36,7 @@ export interface UseConvexQueryState<Data> {
   readonly pending: ComputedRef<boolean>
   readonly error: ComputedRef<ConvexCallError | undefined>
   readonly isStale: ComputedRef<boolean>
+  execute(): Promise<void>
   refresh(): Promise<void>
 }
 
@@ -64,6 +66,7 @@ type InternalQueryParameters<Query extends FunctionReference<'query'>> = [
   args?: MaybeRefOrGetter<ConvexQueryArgs<FunctionArgs<Query>>>,
   options?: UseConvexQueryOptions,
   hydrationSeed?: QueryHydrationSeed<FunctionReturnType<Query>>,
+  runtimeOverride?: BetterConvexVueRuntime,
 ]
 
 export function useConvexQuery<Query extends FunctionReference<'query'>>(
@@ -77,11 +80,12 @@ export function useConvexQuery<Query extends FunctionReference<'query'>>(
   // Nuxt passes an SSR seed in a fourth runtime-only slot. It is intentionally
   // absent from the public declaration: hydration is adapter machinery, not a
   // second public source of query data.
-  const [providedArgs, options, hydrationSeed] = parameters as InternalQueryParameters<Query>
+  const [providedArgs, options, hydrationSeed, runtimeOverride] =
+    parameters as InternalQueryParameters<Query>
   const args = (parameters.length === 0 ? {} : providedArgs) as MaybeRefOrGetter<
     ConvexQueryArgs<FunctionArgs<Query>>
   >
-  const runtime = useBetterConvexRuntime()
+  const runtime = runtimeOverride ?? useBetterConvexRuntime()
   const auth = options?.auth ?? 'optional'
   const currentArgs = computed(() => normalizeConvexArgs(args))
   const argsHash = computed(() => hash(currentArgs.value))
@@ -90,16 +94,18 @@ export function useConvexQuery<Query extends FunctionReference<'query'>>(
   const raw = shallowRef<Raw | typeof noQueryValue>(initialValue)
   const boundaryError = shallowRef<ConvexCallError | undefined>(undefined)
   const loading = ref(false)
+  const started = ref(options?.immediate !== false)
   const identity = runtime.identity.snapshot
   const functionName = getFunctionName(query)
 
-  const gate = computed(() =>
-    decideQueryExecution({
+  const gate = computed(() => {
+    if (!started.value) return 'idle' as const
+    return decideQueryExecution({
       auth,
       skipped: isConvexArgsSkipped(currentArgs.value),
       identity: identity.value,
-    }),
-  )
+    })
+  })
   const tag = computed<QueryIsolationTag>(() => ({
     identityKey: auth === 'none' ? 'anonymous' : (identity.value.identityKey ?? 'anonymous'),
     identityGeneration: auth === 'none' ? 0 : identity.value.identityGeneration,
@@ -201,6 +207,10 @@ export function useConvexQuery<Query extends FunctionReference<'query'>>(
   }
 
   async function refresh(): Promise<void> {
+    if (!started.value) {
+      started.value = true
+      reconcile()
+    }
     if (gate.value !== 'execute' || isConvexArgsSkipped(currentArgs.value)) return
     const sequence = ++refreshSequence
     const operation = controller.beginOperation()
@@ -223,6 +233,26 @@ export function useConvexQuery<Query extends FunctionReference<'query'>>(
     } finally {
       if (isCurrentRefresh()) loading.value = false
     }
+  }
+
+  async function execute(): Promise<void> {
+    if (!started.value) {
+      started.value = true
+      reconcile()
+    }
+    if (gate.value !== 'execute' || !controller.isAwaitingFirstValue()) return
+    await new Promise<void>((resolve) => {
+      let stopWaiting = () => {}
+      stopWaiting = watch(
+        [loading, boundaryError],
+        ([isLoading]) => {
+          if (isLoading) return
+          stopWaiting()
+          resolve()
+        },
+        { immediate: true, flush: 'sync' },
+      )
+    })
   }
 
   const stop = watch([argsHash, gate, () => identity.value.identityGeneration], reconcile, {
@@ -261,6 +291,7 @@ export function useConvexQuery<Query extends FunctionReference<'query'>>(
     pending,
     status,
     isStale,
+    execute,
     refresh,
   })
 }

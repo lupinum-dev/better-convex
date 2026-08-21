@@ -841,7 +841,7 @@ packages:
     resolution: {integrity: sha512-GaHYm+c0O9MjZRu0ongGBRbinu8gVAMd2UZjji6jVmqKtZluZnptXGWhz1E8j8D2HJ3f/yMxKAUC0b+57wncIw==}
 
   '@lupinum/better-convex-nuxt@1.0.0-beta.1':
-    resolution: {integrity: sha512-62PHKfBsFm+iFXxDxKsVvJ8QCr+CdVA1cDVr56zLQWWRut6WSoSaXeuhmq5ku3H2w/eYO2f7sM24r/NPEt85+Q==}
+    resolution: {integrity: sha512-qhu6v9bHvPgzL0Felp/0QejorMaTPzA+z5VtAagM2DqjfH8LNxzuIuX/NAJ+NcVdve/PQzO25K5ambXWhgLDXg==}
     engines: {node: ^22.14.0 || ^24.0.0}
     hasBin: true
     peerDependencies:
@@ -856,7 +856,7 @@ packages:
         optional: true
 
   '@lupinum/better-convex-vue@1.0.0-beta.1':
-    resolution: {integrity: sha512-k0t/v/S9+77BaCtRm8KTECEW5+BrSOIPRuIWuuA0OvxxOENi4g3mmaDJ/JnNWl6vQXFJSl+ZUpmPUjWswYXS8A==}
+    resolution: {integrity: sha512-YRoIF0xAF2ZIANof/0odiuKL9/M+iKauv6SloqMuMIQ83A4hoN5tegr4ozFNvBTAH5lOYm6fW97jU3UVVnh0rg==}
     engines: {node: ^22.14.0 || ^24.0.0}
     peerDependencies:
       convex: '>=1.42.2 <2'

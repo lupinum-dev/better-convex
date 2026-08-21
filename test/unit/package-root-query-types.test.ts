@@ -47,10 +47,16 @@ describe('Nuxt package-root query type contract', () => {
   it('uses one Nuxt-facing options name and exports nameable state contracts', () => {
     expectTypeOf<keyof ConvexRuntimeConfig>().toEqualTypeOf<'siteUrl' | 'url'>()
     expectTypeOf<keyof UseConvexQueryOptions>().toEqualTypeOf<
-      'auth' | 'keepPreviousData' | 'server'
+      'auth' | 'keepPreviousData' | 'immediate' | 'lazy' | 'server'
     >()
     expectTypeOf<keyof UseConvexPaginatedQueryOptions>().toEqualTypeOf<
-      'auth' | 'initialNumItems' | 'keepPreviousData' | 'server'
+      | 'auth'
+      | 'initialCursor'
+      | 'initialNumItems'
+      | 'keepPreviousData'
+      | 'immediate'
+      | 'lazy'
+      | 'server'
     >()
     expectTypeOf<NuxtConvexQuery<string>>().toMatchTypeOf<Promise<UseConvexQueryState<string>>>()
     expectTypeOf<NuxtConvexQuery<string>>().toMatchTypeOf<UseConvexQueryState<string>>()

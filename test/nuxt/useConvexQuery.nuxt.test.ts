@@ -12,6 +12,7 @@ import {
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
 import { createConvexPaginatedQueryState } from '../../src/runtime/composables/useConvexPaginatedQuery'
+import { useConvexQueries } from '../../src/runtime/composables/useConvexQueries'
 import {
   createConvexQueryState,
   useConvexQuery,
@@ -33,6 +34,46 @@ function useConvexQueryState<
 }
 
 describe('useConvexQuery composables (Nuxt runtime)', () => {
+  it('replaces dynamic keyed controllers after in-place option and query changes', async () => {
+    const convex = new MockConvexClient()
+    const first = mockFnRef<'query'>('notes:multi:first')
+    const replacement = mockFnRef<'query'>('notes:multi:replacement')
+    const { result, flush } = await captureInNuxt(
+      () => {
+        const entry = reactive<{
+          query: typeof first
+          auth: 'none' | 'optional'
+          keepPreviousData: boolean
+        }>({
+          query: first,
+          auth: 'none',
+          keepPreviousData: false,
+        })
+        return { entry, queries: useConvexQueries(reactive({ alpha: entry })) }
+      },
+      { convex, convexConfig: { auth: false } },
+    )
+
+    await waitFor(() => convex.activeListenerCount(first, {}) === 1)
+    const initialState = result.queries.states.value.alpha
+
+    result.entry.auth = 'optional'
+    await flush()
+    expect(result.queries.states.value.alpha).not.toBe(initialState)
+    expect(convex.activeListenerCount(first, {})).toBe(1)
+
+    const authState = result.queries.states.value.alpha
+    result.entry.keepPreviousData = true
+    await flush()
+    expect(result.queries.states.value.alpha).not.toBe(authState)
+    expect(convex.activeListenerCount(first, {})).toBe(1)
+
+    result.entry.query = replacement as typeof first
+    await flush()
+    expect(convex.activeListenerCount(first, {})).toBe(0)
+    expect(convex.activeListenerCount(replacement, {})).toBe(1)
+  })
+
   it('does not add one identity observer listener per query composable', async () => {
     const query = mockFnRef<'query'>('notes:list:no-identity-mirror')
     const paginated = mockFnRef<'query'>('notes:page:no-identity-mirror')
@@ -283,6 +324,39 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(result.status.value).toBe('idle')
   })
 
+  it('does not fetch or subscribe a deferred query until execute', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:deferred')
+    const { result } = await captureInNuxt(
+      () => useConvexQueryState(query, {}, { auth: 'none', immediate: false }),
+      { convex },
+    )
+
+    expect(result.status.value).toBe('idle')
+    expect(result.pending.value).toBe(false)
+    expect(convex.calls.onUpdate).toHaveLength(0)
+    const execution = result.execute()
+    expect(convex.calls.onUpdate).toHaveLength(1)
+    convex.emitQueryResult(query, {}, { ready: true })
+    await execution
+    expect(result.data.value).toEqual({ ready: true })
+    expect(result.status.value).toBe('success')
+  })
+
+  it('rejects lazy plus deferred options at runtime after an unsafe cast', async () => {
+    const query = mockFnRef<'query'>('notes:list:invalid-lifecycle')
+    await expect(
+      captureInNuxt(
+        () =>
+          useConvexQueryState(query, {}, {
+            immediate: false,
+            lazy: true,
+          } as never),
+        { convex: new MockConvexClient() },
+      ),
+    ).rejects.toThrow('lazy: true cannot be combined with immediate: false')
+  })
+
   it('settles an awaited skipped query without rejecting', async () => {
     const query = mockFnRef<'query'>('notes:list:disabled-awaited')
     const { result } = await captureInNuxt(() => useConvexQuery(query, 'skip'), {
@@ -310,7 +384,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(convex.calls.onUpdate.length).toBe(0)
   })
 
-  it('exposes refresh but omits clear and execute from query state', async () => {
+  it('exposes execute and refresh but omits clear from query state', async () => {
     const query = mockFnRef<'query'>('notes:list:return-shape')
     const { result } = await captureInNuxt(() => useConvexQueryState(query, 'skip'), {
       convex: new MockConvexClient(),
@@ -318,7 +392,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
 
     expect(typeof result.refresh).toBe('function')
     expect('clear' in (result as unknown as Record<string, unknown>)).toBe(false)
-    expect('execute' in (result as unknown as Record<string, unknown>)).toBe(false)
+    expect(typeof result.execute).toBe('function')
   })
 
   it('does not subscribe while private auth is pending', async () => {
