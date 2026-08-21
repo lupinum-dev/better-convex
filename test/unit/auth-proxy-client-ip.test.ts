@@ -30,18 +30,22 @@ async function invokeRegisteredAuthRoute({
   directClientIp,
   headers,
   method = 'GET',
+  failure,
 }: {
   body?: string
   directClientIp: string | null
   headers?: HeadersInit
   method?: 'GET' | 'POST'
+  failure?: 'config' | 'handler'
 }) {
   let handledRequest: Request | undefined
   const component = createAuthComponent({ adapter: {} } as never)
   const http = httpRouter()
   component.registerRoutes(http, async () => ({
-    $context: Promise.resolve(),
+    $context:
+      failure === 'config' ? Promise.reject(new Error('private-config-cause')) : Promise.resolve(),
     handler: async (request: Request) => {
+      if (failure === 'handler') throw new Error('private-handler-cause')
       handledRequest = request
       return new Response(null, { status: 204 })
     },
@@ -209,7 +213,9 @@ describe('authenticated proxy client-IP handoff', () => {
     expect(result.response.status).toBe(500)
     expect(result.getRequestMetadata).not.toHaveBeenCalled()
     expect(result.handledRequest).toBeUndefined()
-    await expect(result.response.json()).resolves.toEqual({ code: 'AUTH_CONFIG_INVALID' })
+    await expect(result.response.json()).resolves.toEqual({
+      code: 'AUTH_REQUEST_METADATA_INVALID',
+    })
   })
 
   it.each([
@@ -234,7 +240,9 @@ describe('authenticated proxy client-IP handoff', () => {
     expect(result.response.status).toBe(500)
     expect(result.getRequestMetadata).not.toHaveBeenCalled()
     expect(result.handledRequest).toBeUndefined()
-    await expect(result.response.json()).resolves.toEqual({ code: 'AUTH_CONFIG_INVALID' })
+    await expect(result.response.json()).resolves.toEqual({
+      code: 'AUTH_REQUEST_METADATA_INVALID',
+    })
   })
 
   it('fails closed when Nuxt and Convex proxy secrets drift', async () => {
@@ -253,7 +261,9 @@ describe('authenticated proxy client-IP handoff', () => {
     expect(result.response.status).toBe(500)
     expect(result.getRequestMetadata).not.toHaveBeenCalled()
     expect(result.handledRequest).toBeUndefined()
-    await expect(result.response.json()).resolves.toEqual({ code: 'AUTH_CONFIG_INVALID' })
+    await expect(result.response.json()).resolves.toEqual({
+      code: 'AUTH_REQUEST_METADATA_INVALID',
+    })
   })
 
   it('fails closed when trusted Convex request metadata lacks a valid IP', async () => {
@@ -267,6 +277,25 @@ describe('authenticated proxy client-IP handoff', () => {
     expect(result.response.status).toBe(500)
     expect(result.getRequestMetadata).toHaveBeenCalledOnce()
     expect(result.handledRequest).toBeUndefined()
-    await expect(result.response.json()).resolves.toEqual({ code: 'AUTH_CONFIG_INVALID' })
+    await expect(result.response.json()).resolves.toEqual({
+      code: 'AUTH_REQUEST_METADATA_INVALID',
+    })
+  })
+
+  it.each([
+    ['config', 'AUTH_CONFIG_INVALID'],
+    ['handler', 'AUTH_HANDLER_FAILED'],
+  ] as const)('classifies %s failures without exposing their causes', async (failure, code) => {
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
+    const result = await invokeRegisteredAuthRoute({
+      directClientIp: '198.51.100.7',
+      failure,
+    })
+
+    expect(result.response.status).toBe(500)
+    const body = await result.response.text()
+    expect(JSON.parse(body)).toEqual({ code })
+    expect(body).not.toContain('private-')
   })
 })

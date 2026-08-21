@@ -7,7 +7,6 @@
     "typecheck": "nuxi typecheck"
   },
   "devDependencies": {
-    "@better-auth/api-key": "1.7.0-rc.2",
     "@better-auth/core": "1.7.0-rc.2",
     "@types/node": "22.20.1",
     "better-auth": "1.7.0-rc.2",

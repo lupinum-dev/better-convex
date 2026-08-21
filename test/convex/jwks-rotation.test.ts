@@ -45,6 +45,23 @@ afterEach(() => {
 })
 
 describe('additive JWKS rotation on the Convex component', () => {
+  it('creates the initial key once when provisioning is retried', async () => {
+    const test = initRotationTest()
+
+    const created = await test.mutation(auth.rotateSigningKey, {
+      next: candidate('K1'),
+      onlyIfEmpty: true,
+    })
+    const reused = await test.mutation(auth.rotateSigningKey, {
+      next: candidate('K2'),
+      onlyIfEmpty: true,
+    })
+
+    expect(created).toMatchObject({ created: true, newKid: 'K1' })
+    expect(reused).toMatchObject({ created: false, newKid: 'K1' })
+    expect(await allKeys(test)).toEqual([expect.objectContaining({ expiresAt: null, id: 'K1' })])
+  })
+
   it('serializes concurrent K2/K3 commits without deleting either candidate', async () => {
     const test = initRotationTest()
     const k1 = await test.mutation(auth.rotateSigningKey, {

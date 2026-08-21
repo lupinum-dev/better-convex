@@ -562,11 +562,11 @@ export function probeErrorsEntry(ctx) {
  * packed tarball into the committed `test/fixtures/auth-client-typing` fixture
  * so the module and consumer share ONE `better-auth` copy, then:
  *   - `nuxi prepare` generates the REAL registry declaration from the fixture's
- *     `convex-auth.ts` (apiKeyClient) definition;
+ *     `convex-auth.ts` (organizationClient) definition;
  *   - `nuxi typecheck` proves the narrowed `InferRegisteredConvexAuthClient`
- *     exposes a typed `apiKey.create` method;
+ *     exposes a typed `organization.list` method;
  *   - `tsc` over the separate `base-fallback` program proves the empty-fallback
- *     registration exposes only the base client, with no `apiKey` method.
+ *     registration exposes only the base client, with no `organization` method.
  */
 export function probeAuthClientTyping(ctx) {
   const fixtureDir = resolve(ctx.repositoryRoot, 'test/fixtures/auth-client-typing')

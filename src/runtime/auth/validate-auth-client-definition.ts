@@ -21,6 +21,15 @@ const FORBIDDEN_OWN_KEYS = ['baseURL', 'basePath', 'fetchOptions'] as const
 
 /** The stable id of the single Convex client plugin the library prepends. */
 const CONVEX_PLUGIN_ID = 'convex'
+const ADMITTED_PLUGIN_IDS = new Set([
+  'organization',
+  'two-factor',
+  'email-otp',
+  'oauth-popup',
+  'oauth-provider-client',
+])
+const ADMITTED_PLUGIN_LABEL =
+  'organization, two-factor, email-otp, oauth-popup, and oauth-provider-client'
 
 export class ConvexAuthClientDefinitionError extends TypeError {
   constructor(message: string) {
@@ -65,17 +74,30 @@ export function validateConvexAuthClientDefinition<Plugins extends AuthClientPlu
         '`plugins` must be an array of Better Auth client plugins.',
       )
     }
+    const seenPluginIds = new Set<string>()
     for (const [index, plugin] of plugins.entries()) {
       if (!isRecord(plugin) || typeof (plugin as { id?: unknown }).id !== 'string') {
         throw new ConvexAuthClientDefinitionError(
           `plugins[${index}] is not a valid Better Auth client plugin (missing string \`id\`).`,
         )
       }
-      if ((plugin as { id: string }).id === CONVEX_PLUGIN_ID) {
+      const id = (plugin as { id: string }).id
+      if (id === CONVEX_PLUGIN_ID) {
         throw new ConvexAuthClientDefinitionError(
           `plugins[${index}] uses the reserved id \`${CONVEX_PLUGIN_ID}\`; the module prepends the Convex client plugin itself.`,
         )
       }
+      if (!ADMITTED_PLUGIN_IDS.has(id)) {
+        throw new ConvexAuthClientDefinitionError(
+          `plugins[${index}] uses unsupported id \`${id}\`; only ${ADMITTED_PLUGIN_LABEL} are supported.`,
+        )
+      }
+      if (seenPluginIds.has(id)) {
+        throw new ConvexAuthClientDefinitionError(
+          `plugins[${index}] duplicates the already configured capability \`${id}\`.`,
+        )
+      }
+      seenPluginIds.add(id)
     }
   }
 

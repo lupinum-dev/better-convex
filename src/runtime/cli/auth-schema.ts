@@ -21,6 +21,13 @@ const CLEARED_ENVIRONMENT = [
   'BETTER_AUTH_SECRETS',
   'BCN_AUTH_PROXY_IP_SECRET',
 ] as const
+const SUPPORTED_SCHEMA_PLUGIN_IDS = new Set([
+  'organization',
+  'two-factor',
+  'email-otp',
+  'jwt',
+  'oauth-provider',
+])
 
 interface CliOptions {
   check: boolean
@@ -89,6 +96,20 @@ function requireSchemaOptions(value: unknown): BetterAuthOptions {
     throw new Error(
       'Schema config must use the reserved environment-independent baseURL and secret.',
     )
+  }
+  const plugins = value.plugins
+  if (plugins !== undefined) {
+    if (!Array.isArray(plugins)) throw new Error('Schema config plugins must be an array.')
+    const seen = new Set<string>()
+    for (const [index, plugin] of plugins.entries()) {
+      const id = isRecord(plugin) && typeof plugin.id === 'string' ? plugin.id : undefined
+      if (!id || !SUPPORTED_SCHEMA_PLUGIN_IDS.has(id) || seen.has(id)) {
+        throw new Error(
+          `Schema config plugin at index ${index} is unsupported; the 1.0 profile admits organization, two-factor, email-otp, jwt, and oauth-provider once each.`,
+        )
+      }
+      seen.add(id)
+    }
   }
   return value as BetterAuthOptions
 }

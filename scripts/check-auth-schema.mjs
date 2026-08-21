@@ -48,6 +48,7 @@ const bulkEvidence = {
   measure: makeFunctionReference('bulkEvidence:measure'),
   seed: makeFunctionReference('bulkEvidence:seed'),
 }
+const releaseCommandTimeoutMs = 300_000
 
 function fail(message) {
   throw new Error(`[auth-schema] ${message}`)
@@ -59,7 +60,7 @@ function run(command, arguments_, cwd, env = process.env) {
     env,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: 180_000,
+    timeout: releaseCommandTimeoutMs,
   })
   if (result.error) throw result.error
   if (result.status !== 0) {
@@ -74,7 +75,7 @@ function output(command, arguments_, cwd, env = process.env) {
     env,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: 180_000,
+    timeout: releaseCommandTimeoutMs,
   })
   if (result.error) throw result.error
   if (result.status !== 0) {

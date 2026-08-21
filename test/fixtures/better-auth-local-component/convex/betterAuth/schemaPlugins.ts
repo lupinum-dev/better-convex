@@ -1,5 +1,4 @@
-import { apiKey } from '@better-auth/api-key'
-import { admin, jwt, organization } from 'better-auth/plugins'
+import { jwt, organization } from 'better-auth/plugins'
 
 /**
  * The schema-changing plugin list is shared by schema generation and runtime
@@ -7,9 +6,7 @@ import { admin, jwt, organization } from 'better-auth/plugins'
  */
 export function createLocalAuthPlugins(authIssuer: string) {
   return [
-    admin(),
     organization(),
-    apiKey(),
     jwt({
       disableSettingJwtHeader: true,
       jwks: {

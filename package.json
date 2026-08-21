@@ -148,6 +148,7 @@
     "check:no-starter-generated-artifacts": "node scripts/check-no-starter-generated-artifacts.mjs",
     "check:workspace-deps": "node scripts/check-workspace-dependency-alignment.mjs",
     "check:candidate-apps": "node scripts/check-candidate-apps.mjs --package nuxt",
+    "check:compatibility-matrix": "node scripts/check-candidate-apps.mjs --package nuxt --dependency-profile",
     "update:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs update",
     "check:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs check",
     "check:consumer-smoke": "nuxt-module-build prepare && nuxt-module-build build && pnpm run check:consumer-smoke:dist",
@@ -166,7 +167,7 @@
     "typecheck": "pnpm --dir packages/vue build && pnpm --dir packages/mcp build && pnpm run typecheck:module && pnpm run typecheck:server && pnpm run typecheck:mcp-tests && pnpm run typecheck:fixtures",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "test": "pnpm --dir packages/vue build && nuxt-module-build prepare && vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser",
+    "test": "pnpm --dir packages/vue build && nuxt-module-build prepare && vitest run --project=unit --project=release-control --project=security --project=convex --project=nuxt --project=browser",
     "test:browser": "nuxt-module-build prepare && vitest run --project=browser",
     "test:e2e": "node scripts/run-e2e.mjs",
     "test:e2e:full": "pnpm --dir packages/vue build && node scripts/run-e2e.mjs --full",
@@ -194,7 +195,6 @@
     "ohash": "^2.0.11"
   },
   "devDependencies": {
-    "@better-auth/api-key": "1.7.0-rc.2",
     "@better-auth/core": "1.7.0-rc.2",
     "@better-auth/oauth-provider": "1.7.0-rc.2",
     "@edge-runtime/vm": "^5.0.0",

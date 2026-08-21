@@ -238,7 +238,13 @@ function usage(): string {
 
 export async function runConvexCommand(
   arguments_: readonly string[],
-  options: { cwd?: string; inheritedEnvironment?: NodeJS.ProcessEnv } = {},
+  options: {
+    cwd?: string
+    inheritedEnvironment?: NodeJS.ProcessEnv
+    input?: string
+    onStdout?: (output: string) => void
+    quiet?: boolean
+  } = {},
 ): Promise<number> {
   const cwd = resolve(options.cwd ?? process.cwd())
   const inherited = options.inheritedEnvironment ?? process.env
@@ -305,10 +311,16 @@ export async function runConvexCommand(
   const result = spawnSync(process.execPath, ['--', convexCli, ...convexArguments], {
     cwd,
     env: environment,
-    stdio: 'inherit',
+    input: options.input,
+    stdio: options.quiet ? ['pipe', 'pipe', 'pipe'] : 'inherit',
   })
   if (result.error || result.status === null) {
     throw new Error('The Convex CLI could not be started or did not exit normally.')
+  }
+  if (options.onStdout) {
+    const stdout =
+      typeof result.stdout === 'string' ? result.stdout : result.stdout?.toString('utf8')
+    options.onStdout(stdout ?? '')
   }
   return result.status
 }

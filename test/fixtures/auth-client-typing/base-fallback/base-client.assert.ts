@@ -20,7 +20,7 @@ export function assertBaseClient() {
   const _signIn = client.signIn
   void _signIn
 
-  // apiKey is NOT part of the base client after the same narrowing.
+  // organization is NOT part of the base client after the same narrowing.
   // @ts-expect-error base client has no apiKey namespace.
-  client.apiKey.create({ name: 'x' })
+  client.organization.list()
 }

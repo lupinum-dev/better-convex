@@ -37,10 +37,10 @@ export interface ConvexAuthClientDefinition<Plugins extends AuthClientPlugins> {
  *
  * @example
  * ```ts
- * // app/convex-auth.ts — import your plugin clients (organizationClient,
- * // apiKeyClient) and defineConvexAuthClient, then:
+ * // app/convex-auth.ts — import the matching admitted plugin clients and
+ * // defineConvexAuthClient, then:
  * export default defineConvexAuthClient({
- *   plugins: [organizationClient(), apiKeyClient()],
+ *   plugins: [organizationClient(), twoFactorClient()],
  * })
  * ```
  */

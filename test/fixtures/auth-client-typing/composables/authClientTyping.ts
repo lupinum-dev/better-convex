@@ -2,13 +2,13 @@
 // `@lupinum/better-convex-nuxt/better-auth/client` entry with the MODULE-GENERATED registry
 // (`.nuxt/types/better-convex auth schema-client.d.ts`, produced by `nuxi prepare`
 // from this app's `convex-auth.ts`) active.
-import type { apiKeyClient } from '@better-auth/api-key/client'
 import type {
   BaseAuthClient,
   InferRegisteredConvexAuthClient,
   IntegratedAuthClient,
 } from '@lupinum/better-convex-nuxt/better-auth/client'
 import type { BetterAuthClientOptions, BetterAuthClientPlugin } from 'better-auth/client'
+import type { organizationClient } from 'better-auth/client/plugins'
 
 // --- tiny type-assertion kit ---
 type IsAny<T> = 0 extends 1 & T ? true : false
@@ -26,32 +26,14 @@ type _clientIsRegisteredType = Expect<
 >
 
 // -----------------------------------------------------------------------------
-// (a) The registered apiKey-plugin definition makes the narrowed non-null client
-//     expose apiKey.create with correct parameter/return types (not `any`).
+// (a) The registered organization definition exposes typed plugin methods.
 // -----------------------------------------------------------------------------
 export function assertPluginClient() {
   if (!client) return
 
-  type CreateFn = typeof client.apiKey.create
-  type _createNotAny = Expect<Equal<IsAny<CreateFn>, false>>
-
-  const created = client.apiKey.create({
-    name: 'release-gate-key',
-    expiresIn: 60 * 60 * 24,
-    metadata: { scope: 'gate' },
-  })
-  created.then((res) => {
-    if (res.data) {
-      const id: string = res.data.id
-      const key: string = res.data.key
-      void id
-      void key
-    }
-  })
-
-  // Params are typed (not any): an unknown field is rejected.
-  // @ts-expect-error `notAField` is not part of apiKey.create input.
-  client.apiKey.create({ name: 'x', notAField: true })
+  type ListFn = typeof client.organization.list
+  type _listNotAny = Expect<Equal<IsAny<ListFn>, false>>
+  void client.organization.list()
 
   // The integrated contract removes all direct provider state/fetch bypasses.
   // @ts-expect-error direct Better Fetch access is intentionally hidden.
@@ -67,15 +49,20 @@ export function assertPluginClient() {
 //     plugins array (spread of a readonly tuple). better-auth's `plugins` option
 //     is a mutable array; [convexPlugin, ...consumerPlugins] must stay assignable.
 // -----------------------------------------------------------------------------
-type ApiKeyPlugin = ReturnType<typeof apiKeyClient>
+type OrganizationPlugin = ReturnType<typeof organizationClient>
 type ConvexPluginStandIn = BetterAuthClientPlugin
-type MergedMutable = [ConvexPluginStandIn, ApiKeyPlugin]
+type MergedMutable = [ConvexPluginStandIn, OrganizationPlugin]
 type PluginsSlot = NonNullable<BetterAuthClientOptions['plugins']>
 type _mergedAssignable = Expect<MergedMutable extends PluginsSlot ? true : false>
 type _readonlyRejected = Expect<
-  Equal<readonly [ConvexPluginStandIn, ApiKeyPlugin] extends PluginsSlot ? true : false, false>
+  Equal<
+    readonly [ConvexPluginStandIn, OrganizationPlugin] extends PluginsSlot ? true : false,
+    false
+  >
 >
 
 // Sanity: the base (no-plugin) client is a strict structural subset — it does
-// not carry the apiKey namespace (the full negative assertion lives in base-fallback/).
-type _baseHasNoApiKey = Expect<Equal<'apiKey' extends keyof BaseAuthClient ? true : false, false>>
+// not carry the organization namespace (the full negative assertion lives in base-fallback/).
+type _baseHasNoOrganization = Expect<
+  Equal<'organization' extends keyof BaseAuthClient ? true : false, false>
+>

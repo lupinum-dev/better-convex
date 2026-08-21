@@ -1,15 +1,9 @@
 import {
-  convexAuth,
-  createAuthComponent,
+  createBetterConvexAuth,
   createUserProjectionTriggers,
-  getConvexAuthProvider,
-  requireAuthOrigin,
-  type AuthCtx,
   type AuthFunctions,
   type BetterAuthUserProjectionSource,
 } from '@lupinum/better-convex-nuxt/better-auth/server'
-import { betterAuth } from 'better-auth'
-import { jwt } from 'better-auth/plugins'
 import { v } from 'convex/values'
 
 import { components, internal } from './_generated/api'
@@ -20,7 +14,6 @@ function requireAuthEnvironment(): {
   githubClientId: string
   githubClientSecret: string
 } {
-  if (!process.env.BETTER_AUTH_SECRETS) throw new Error('BETTER_AUTH_SECRETS is required')
   const githubClientId = process.env.GITHUB_CLIENT_ID
   if (!githubClientId) throw new Error('GITHUB_CLIENT_ID is required')
   const githubClientSecret = process.env.GITHUB_CLIENT_SECRET
@@ -77,7 +70,7 @@ const userProjection = createUserProjectionTriggers<BetterAuthUserProjectionSour
 })
 
 // Better Auth owns the canonical user. This table is a rebuildable display projection.
-export const authComponent = createAuthComponent<DataModel>(components.betterAuth, {
+export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
   triggers: {
     user: {
@@ -93,10 +86,16 @@ export const authComponent = createAuthComponent<DataModel>(components.betterAut
         userProjection.user.onDelete(ctx, user as BetterAuthUserProjectionSource),
     },
   },
+  socialProviders: () => {
+    const { githubClientId, githubClientSecret } = requireAuthEnvironment()
+    return { github: { clientId: githubClientId, clientSecret: githubClientSecret } }
+  },
 })
 
+export const { authComponent, createAuth } = betterConvexAuth
+
 // Export trigger handlers for the component
-export const { onCreate, onUpdate, onDelete } = authComponent.triggerFunctions()
+export const { onCreate, onUpdate, onDelete } = betterConvexAuth.triggerFunctions()
 
 /** Reconcile one bounded page of the display-only user projection. */
 export const rebuildUserProjectionBatch = internalMutation({
@@ -116,74 +115,8 @@ export const rebuildUserProjectionBatch = internalMutation({
   },
 })
 
-// Factory function to create auth instance per request
 // Pre-traffic operator ceremony: provision/rotate the one official JWT key graph.
-export const { rotateSigningKey } = authComponent.jwksOperatorFunctions(createAuth)
-
-export async function createAuth(ctx: AuthCtx<DataModel>) {
-  try {
-    const siteUrl = requireAuthOrigin('SITE_URL')
-    const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
-    const { githubClientId, githubClientSecret } = requireAuthEnvironment()
-    const authIssuer = `${siteUrl}/api/auth`
-    const auth = betterAuth({
-      account: {
-        encryptOAuthTokens: true,
-        storeAccountCookie: false,
-        accountLinking: {
-          allowDifferentEmails: false,
-          allowUnlinkingAll: false,
-          disableImplicitLinking: true,
-          trustedProviders: [],
-        },
-      },
-      advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
-      basePath: '/api/auth',
-      baseURL: siteUrl,
-      database: authComponent.adapter(ctx),
-      disabledPaths: [
-        '/token',
-        '/get-access-token',
-        '/refresh-token',
-        '/.well-known/openid-configuration',
-        '/oauth2/register',
-        '/oauth2/introspect',
-        '/oauth2/userinfo',
-        '/oauth2/end-session',
-      ],
-      plugins: [
-        jwt({
-          disableSettingJwtHeader: true,
-          jwks: {
-            disablePrivateKeyEncryption: false,
-            gracePeriod: 21 * 60,
-            keyPairConfig: { alg: 'RS256' },
-          },
-          jwt: { audience: authIssuer, expirationTime: '10m', issuer: authIssuer },
-        }),
-        convexAuth({
-          authConfig: { providers: [getConvexAuthProvider()] },
-          sessionJwt: {
-            audience: 'convex',
-            expirationTime: '15m',
-            issuer: convexSiteUrl,
-          },
-        }),
-      ],
-      rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
-      session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
-      socialProviders: {
-        github: { clientId: githubClientId, clientSecret: githubClientSecret },
-      },
-      trustedOrigins: [siteUrl],
-      verification: { storeIdentifier: 'hashed' },
-    })
-    await auth.$context
-    return auth
-  } catch {
-    throw new Error('AUTH_CONFIG_INVALID')
-  }
-}
+export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()
 
 // ============================================
 // GET PERMISSION CONTEXT

@@ -3,13 +3,7 @@ import { jwt, twoFactor } from 'better-auth/plugins'
 /** Shared by runtime configuration and deterministic local schema generation. */
 export function createTwoFactorAuthPlugins(authIssuer: string) {
   return [
-    twoFactor({
-      accountLockout: {
-        durationSeconds: 60,
-        maxFailedAttempts: 3,
-      },
-      issuer: 'Better Convex Nuxt MFA Fixture',
-    }),
+    twoFactor(createTwoFactorOptions()),
     jwt({
       disableSettingJwtHeader: true,
       jwks: {
@@ -24,4 +18,14 @@ export function createTwoFactorAuthPlugins(authIssuer: string) {
       },
     }),
   ]
+}
+
+export function createTwoFactorOptions() {
+  return {
+    accountLockout: {
+      durationSeconds: 60,
+      maxFailedAttempts: 3,
+    },
+    issuer: 'Better Convex Nuxt MFA Fixture',
+  }
 }

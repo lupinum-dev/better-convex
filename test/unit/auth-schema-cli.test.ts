@@ -85,4 +85,25 @@ describe('auth schema CLI authority', () => {
     expect(result.signal).toBeNull()
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
   })
+
+  it('rejects schema-changing plugins outside the reviewed 1.0 profile', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'bcn-auth-schema-unsupported-'))
+    const config = join(directory, 'schemaOptions.ts')
+    writeFileSync(
+      config,
+      `export default {
+  baseURL: 'https://schema.invalid',
+  secret: 'schema-generation-only-value-never-used-at-runtime',
+  plugins: [{ id: 'admin' }],
+}\n`,
+    )
+
+    try {
+      const result = runCli(config, directory)
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('Schema config plugin at index 0 is unsupported')
+    } finally {
+      rmSync(directory, { force: true, recursive: true })
+    }
+  })
 })

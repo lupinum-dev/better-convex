@@ -1,27 +1,19 @@
 import {
-  convexAuth,
-  createAuthComponent,
+  createBetterConvexAuth,
   createUserProjectionTriggers,
-  getConvexAuthProvider,
   requireAuthOrigin,
-  type AuthCtx,
   type AuthFunctions,
   type BetterAuthUserProjectionSource,
 } from '@lupinum/better-convex-nuxt/better-auth/server'
-import { betterAuth } from 'better-auth'
 import { v } from 'convex/values'
 
 import { components, internal } from './_generated/api'
 import type { DataModel, Doc } from './_generated/dataModel'
 import { internalMutation } from './_generated/server'
-import { createTeamAuthPlugins } from './betterAuth/schemaPlugins'
+import { createTeamOrganizationOptions } from './betterAuth/schemaPlugins'
 import { escapeEmailHtml, sendStarterEmail } from './lib/authEmail'
 
 const authFunctions: AuthFunctions = internal.auth
-
-function assertAuthSecretsConfigured(): void {
-  if (!process.env.BETTER_AUTH_SECRETS) throw new Error('BETTER_AUTH_SECRETS is required')
-}
 
 type InvitationEmailData = {
   id: string
@@ -131,7 +123,7 @@ const userProjection = createUserProjectionTriggers<BetterAuthUserProjectionSour
   rebuildDoc: ({ user, existing, now }) => userProjectionPatch(user, existing, now),
 })
 
-export const authComponent = createAuthComponent<DataModel>(components.betterAuth, {
+export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
   triggers: {
     user: {
@@ -147,84 +139,36 @@ export const authComponent = createAuthComponent<DataModel>(components.betterAut
         userProjection.user.onDelete(ctx, user as BetterAuthUserProjectionSource),
     },
   },
+  defineSessionClaims: ({ user }) => ({
+    email: user.email,
+    emailVerified: user.emailVerified,
+    image: user.image ?? undefined,
+    name: user.name,
+  }),
+  emailAndPassword: { requireEmailVerification: true },
+  emailVerification: {
+    autoSignInAfterVerification: true,
+    sendOnSignIn: true,
+    sendOnSignUp: true,
+    async sendVerificationEmail(data) {
+      await sendVerificationEmail(requireAuthOrigin('SITE_URL'), data as VerificationEmailData)
+    },
+  },
+  organization: createTeamOrganizationOptions({
+    async sendInvitationEmail(data) {
+      await sendInvitationEmail(requireAuthOrigin('SITE_URL'), data as InvitationEmailData)
+    },
+  }),
 })
 
+export const { authComponent, createAuth } = betterConvexAuth
+
 // Pre-traffic operator ceremony: provision/rotate the one official JWT key graph.
-export const { rotateSigningKey } = authComponent.jwksOperatorFunctions(createAuth)
-
-export async function createAuth(ctx: AuthCtx<DataModel>) {
-  try {
-    const siteUrl = requireAuthOrigin('SITE_URL')
-    const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
-    const authIssuer = `${siteUrl}/api/auth`
-    assertAuthSecretsConfigured()
-
-    const auth = betterAuth({
-      account: { encryptOAuthTokens: true, storeAccountCookie: false },
-      advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
-      basePath: '/api/auth',
-      baseURL: siteUrl,
-      database: authComponent.adapter(ctx),
-      disabledPaths: [
-        '/token',
-        '/get-access-token',
-        '/refresh-token',
-        '/.well-known/openid-configuration',
-        '/oauth2/register',
-        '/oauth2/introspect',
-        '/oauth2/userinfo',
-        '/oauth2/end-session',
-      ],
-      emailAndPassword: {
-        autoSignIn: false,
-        enabled: true,
-        minPasswordLength: 15,
-        requireEmailVerification: true,
-      },
-      emailVerification: {
-        autoSignInAfterVerification: true,
-        sendOnSignIn: true,
-        sendOnSignUp: true,
-        async sendVerificationEmail(data) {
-          await sendVerificationEmail(siteUrl, data as VerificationEmailData)
-        },
-      },
-      plugins: [
-        ...createTeamAuthPlugins(authIssuer, {
-          async sendInvitationEmail(data) {
-            await sendInvitationEmail(siteUrl, data as InvitationEmailData)
-          },
-        }),
-        convexAuth({
-          authConfig: { providers: [getConvexAuthProvider()] },
-          sessionJwt: {
-            audience: 'convex',
-            expirationTime: '15m',
-            issuer: convexSiteUrl,
-            definePayload: ({ user }) => ({
-              email: user.email,
-              emailVerified: user.emailVerified,
-              image: user.image ?? undefined,
-              name: user.name,
-            }),
-          },
-        }),
-      ],
-      rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
-      session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
-      trustedOrigins: [siteUrl],
-      verification: { storeIdentifier: 'hashed' },
-    })
-    await auth.$context
-    return auth
-  } catch {
-    throw new Error('AUTH_CONFIG_INVALID')
-  }
-}
+export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()
 
 export type AppAuth = Awaited<ReturnType<typeof createAuth>>
 
-export const { onCreate, onUpdate, onDelete } = authComponent.triggerFunctions()
+export const { onCreate, onUpdate, onDelete } = betterConvexAuth.triggerFunctions()
 
 /** Reconcile one bounded page of the display-only user projection. */
 export const rebuildUserProjectionBatch = internalMutation({

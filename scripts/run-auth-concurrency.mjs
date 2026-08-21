@@ -616,7 +616,7 @@ async function runMain() {
     )
     const forgedBodies = await Promise.all(forged.map((response) => response.json()))
     assert(
-      forgedBodies.every((body) => body?.code === 'AUTH_CONFIG_INVALID'),
+      forgedBodies.every((body) => body?.code === 'AUTH_REQUEST_METADATA_INVALID'),
       'AUTH_FORGED_IP_REJECTION_DISCLOSED_DETAILS',
     )
     const direct = await Promise.all(Array.from({ length: 4 }, () => directSignIn(siteUrl)))

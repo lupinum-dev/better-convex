@@ -8,7 +8,6 @@ const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.me
  * one reproducible floor/latest tuple.
  */
 export const supportedDependencyTuple = Object.freeze({
-  '@better-auth/api-key': requiredDevDependency('@better-auth/api-key'),
   '@better-auth/core': requiredDevDependency('@better-auth/core'),
   '@better-auth/oauth-provider': requiredOptionalPeerDependency('@better-auth/oauth-provider'),
   '@nuxt/kit': requiredRuntimeDependency('@nuxt/kit'),
@@ -104,7 +103,7 @@ function validateTuple() {
   }
 
   const betterAuthVersion = supportedDependencyTuple['better-auth']
-  for (const name of ['@better-auth/api-key', '@better-auth/core', '@better-auth/oauth-provider']) {
+  for (const name of ['@better-auth/core', '@better-auth/oauth-provider']) {
     if (supportedDependencyTuple[name] !== betterAuthVersion) {
       throw new Error(
         `${name}@${supportedDependencyTuple[name]} must match better-auth@${betterAuthVersion}.`,

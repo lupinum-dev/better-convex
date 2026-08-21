@@ -270,6 +270,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             privateKey: string;
             publicKey: string;
           };
+          onlyIfEmpty?: boolean;
         },
         any,
         Name

@@ -5,7 +5,7 @@
  * consistent behavior across the module.
  */
 
-import { isBetterAuthCookieName } from '../shared/auth-cookie'
+import { isBetterAuthCookieName, trimOptionalWhitespace } from '../shared/auth-cookie'
 
 export { hasBetterAuthCookie, isBetterAuthCookieName } from '../shared/auth-cookie'
 
@@ -171,21 +171,6 @@ interface ParsedCookiePair {
 // Auth's parser here would make Better Auth mandatory. Keep the supported
 // boundary small and verify this parser against the pinned Better Auth parser.
 
-function trimOptionalWhitespace(value: string): string {
-  let start = 0
-  let end = value.length
-  while (start < end && (value.charCodeAt(start) === 0x20 || value.charCodeAt(start) === 0x09)) {
-    start += 1
-  }
-  while (
-    end > start &&
-    (value.charCodeAt(end - 1) === 0x20 || value.charCodeAt(end - 1) === 0x09)
-  ) {
-    end -= 1
-  }
-  return start === 0 && end === value.length ? value : value.slice(start, end)
-}
-
 function parseCookiePair(input: string): ParsedCookiePair | null {
   const wire = trimOptionalWhitespace(input)
   const separator = wire.indexOf('=')
@@ -243,6 +228,24 @@ export function filterBetterAuthCookies(cookieHeader: string | null | undefined)
 export function isBetterAuthSetCookie(setCookie: string): boolean {
   const cookiePair = parseCookiePair(setCookie.split(';', 1)[0] ?? '')
   return cookiePair ? isBetterAuthCookieName(cookiePair.name) : false
+}
+
+export function getSetCookieName(setCookie: string): string | null {
+  return parseCookiePair(setCookie.split(';', 1)[0] ?? '')?.name ?? null
+}
+
+/** Keep the final Set-Cookie value for each exact cookie name. */
+export function deduplicateSetCookies(cookies: readonly string[]): readonly string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (let index = cookies.length - 1; index >= 0; index -= 1) {
+    const cookie = cookies[index]!
+    const name = getSetCookieName(cookie)
+    if (name === null || seen.has(name)) continue
+    seen.add(name)
+    result.push(cookie)
+  }
+  return result.reverse()
 }
 
 /** Domain cookies are outside the supported host-only Better Auth contract. */

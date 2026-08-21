@@ -37,6 +37,14 @@ interface CreateAuthComponentOptions<DataModel extends GenericDataModel> {
   triggers?: AuthComponentTriggers<DataModel>
 }
 
+class AuthRequestMetadataError extends Error {
+  readonly code = 'AUTH_REQUEST_METADATA_INVALID'
+}
+
+function authFailure(code: string): Response {
+  return Response.json({ code }, { status: 500 })
+}
+
 function rewriteToPublicOrigin(
   request: Request,
   publicOrigin: string,
@@ -65,13 +73,13 @@ async function resolveVerifiedClientIp(
   const signature = request.headers.get(CLIENT_IP_SIGNATURE_HEADER)
   if (clientIp === null && signature === null) {
     const directClientIp = normalizeClientIp(await getDirectClientIp())
-    if (!directClientIp) throw new TypeError('Trusted request metadata did not contain a client IP')
+    if (!directClientIp) throw new AuthRequestMetadataError()
     return directClientIp
   }
 
   const forwardedClientIp = await verifySignedClientIp(clientIp, signature, proxyIpSecret)
   if (!forwardedClientIp) {
-    throw new TypeError('Signed client IP headers are incomplete or invalid')
+    throw new AuthRequestMetadataError()
   }
   return forwardedClientIp
 }
@@ -168,25 +176,39 @@ export function createAuthComponent<
       }),
     }),
 
-    jwksOperatorFunctions: <Auth>(createAuth: CreateAuth<DataModel, Auth>) => ({
-      rotateSigningKey: internalActionGeneric({
-        args: {},
-        handler: async (ctx) => {
-          const auth = await createAuth(ctx)
-          if (!auth || typeof auth !== 'object' || !('$context' in auth)) {
-            throw new Error('AUTH_JWT_PLUGIN_REQUIRED')
-          }
-          const authContext = await (
-            auth as { $context: Promise<Parameters<typeof rotateSigningKeyWithOfficialJwt>[0]> }
-          ).$context
-          const jwtPlugin = authContext.getPlugin('jwt')
-          if (!jwtPlugin) throw new Error('AUTH_JWT_PLUGIN_REQUIRED')
-          return rotateSigningKeyWithOfficialJwt(authContext, jwtPlugin.options, async (next) =>
-            ctx.runMutation(component.adapter.rotateSigningKey, { next }),
-          )
-        },
-      }),
-    }),
+    jwksOperatorFunctions: <Auth>(createAuth: CreateAuth<DataModel, Auth>) => {
+      const signingKeyAction = (mode: 'ensure' | 'rotate') =>
+        internalActionGeneric({
+          args: {},
+          handler: async (ctx) => {
+            const auth = await createAuth(ctx)
+            if (!auth || typeof auth !== 'object' || !('$context' in auth)) {
+              throw new Error('AUTH_JWT_PLUGIN_REQUIRED')
+            }
+            const authContext = await (
+              auth as { $context: Promise<Parameters<typeof rotateSigningKeyWithOfficialJwt>[0]> }
+            ).$context
+            const jwtPlugin = authContext.getPlugin('jwt')
+            if (!jwtPlugin) throw new Error('AUTH_JWT_PLUGIN_REQUIRED')
+            const metadata = await rotateSigningKeyWithOfficialJwt(
+              authContext,
+              jwtPlugin.options,
+              async (next) =>
+                ctx.runMutation(component.adapter.rotateSigningKey, {
+                  next,
+                  onlyIfEmpty: mode === 'ensure',
+                }),
+            )
+            return mode === 'ensure'
+              ? { created: metadata.created !== false, kid: metadata.newKid }
+              : metadata
+          },
+        })
+      return {
+        ensureSigningKey: signingKeyAction('ensure'),
+        rotateSigningKey: signingKeyAction('rotate'),
+      }
+    },
 
     registerRoutes: <
       Auth extends {
@@ -198,18 +220,35 @@ export function createAuthComponent<
       createAuth: CreateAuth<DataModel, Auth>,
     ) => {
       const handler = httpActionGeneric(async (ctx, request) => {
+        let publicOrigin: string
         try {
-          const publicOrigin = requireAuthOrigin('SITE_URL')
-          const verifiedClientIp = await resolveVerifiedClientIp(
+          publicOrigin = requireAuthOrigin('SITE_URL')
+        } catch {
+          return authFailure('AUTH_CONFIG_INVALID')
+        }
+
+        let verifiedClientIp: string
+        try {
+          verifiedClientIp = await resolveVerifiedClientIp(
             request,
             async () => (await ctx.meta.getRequestMetadata()).ip,
             process.env.BCN_AUTH_PROXY_IP_SECRET,
           )
-          const auth = await createAuth(ctx as unknown as AuthCtx<DataModel>)
+        } catch {
+          return authFailure('AUTH_REQUEST_METADATA_INVALID')
+        }
+
+        let auth: Auth
+        try {
+          auth = await createAuth(ctx as unknown as AuthCtx<DataModel>)
           await auth.$context
+        } catch {
+          return authFailure('AUTH_CONFIG_INVALID')
+        }
+        try {
           return await auth.handler(rewriteToPublicOrigin(request, publicOrigin, verifiedClientIp))
         } catch {
-          return Response.json({ code: 'AUTH_CONFIG_INVALID' }, { status: 500 })
+          return authFailure('AUTH_HANDLER_FAILED')
         }
       })
       http.route({ handler, method: 'GET', pathPrefix: '/api/auth/' })
