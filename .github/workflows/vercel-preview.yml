@@ -21,6 +21,7 @@ jobs:
       checks: write
       contents: read
       issues: write
+      # GitHub requires this scope to comment on pull requests.
       pull-requests: write
     concurrency:
       group: vercel-preview-${{ github.repository }}-${{ github.event.issue.number }}
