@@ -561,6 +561,78 @@ export function probeErrorsEntry(ctx) {
   }
 }
 
+/** `/test` probe: typechecks and runs the deterministic test runtime from the exact tarball. */
+export function probeConsumerTestRuntime(ctx) {
+  const dir = mkdtempSync(join(tmpdir(), 'bcn-test-runtime-probe-'))
+  writeJson(join(dir, 'package.json'), {
+    name: 'test-runtime-probe',
+    private: true,
+    type: 'module',
+    packageManager: ctx.packageManifest.packageManager,
+    scripts: {
+      build: 'tsc',
+      start: 'node dist/index.js',
+    },
+    dependencies: {
+      ...requiredConsumerPeers(ctx.packageManifest),
+      ...companionDependencies(ctx),
+      [ctx.packageName]: `file:${ctx.tarballPath}`,
+    },
+    devDependencies: {
+      typescript: ctx.packageManifest.devDependencies.typescript,
+    },
+  })
+  const companionOverrides = ctx.companionTarballs
+    .map((companion) => `  '${companion.packageName}': 'file:${companion.tarballPath}'`)
+    .join('\n')
+  writeFile(
+    join(dir, 'pnpm-workspace.yaml'),
+    ['# isolated packed test-runtime consumer', 'overrides:', companionOverrides, ''].join('\n'),
+  )
+  writeJson(join(dir, 'tsconfig.json'), {
+    compilerOptions: {
+      target: 'ES2022',
+      lib: ['ES2022', 'DOM'],
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      strict: true,
+      outDir: 'dist',
+      skipLibCheck: true,
+    },
+    include: ['index.ts'],
+  })
+  writeFile(
+    join(dir, 'index.ts'),
+    [
+      `import { setupBetterConvexTest } from '${ctx.packageName}/test'`,
+      "import { makeFunctionReference, type FunctionReference } from 'convex/server'",
+      '',
+      "const list = makeFunctionReference<'query'>('notes:list') as FunctionReference<",
+      "  'query', 'public', { owner: string }, string[]",
+      '>',
+      'const convex = setupBetterConvexTest()',
+      "const query = convex.query(list, { owner: 'test-user' })",
+      "query.resolve(['proof'])",
+      '// @ts-expect-error query results retain the generated function return type',
+      'query.resolve(42)',
+      "if (convex.auth.status.value !== 'authenticated') throw new Error('auth preset failed')",
+      "if (query.calls.length !== 0) throw new Error('unexpected query calls')",
+      "console.log('consumer-test-runtime OK')",
+      '',
+    ].join('\n'),
+  )
+
+  try {
+    installStrict(dir)
+    run('pnpm', ['run', 'build'], { cwd: dir })
+    run('pnpm', ['run', 'start'], { cwd: dir })
+  } catch (error) {
+    ctx.failures.push(`[./test] packed consumer-test-runtime probe failed: ${error.message}`)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 /**
  * `/better-auth/client` probe. Installs the
  * packed tarball into the committed `test/fixtures/auth-client-typing` fixture

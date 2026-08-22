@@ -19,6 +19,7 @@ import {
 const nuxtEntrySubpaths = [
   '.',
   './errors',
+  './test',
   './better-auth/client',
   './better-auth/server',
   './better-auth/convex.config',
@@ -69,7 +70,7 @@ describe('package entry manifest', () => {
     expect('sourceRoots' in manifest).toBe(false)
     expect(getPackageCheckerProfile('nuxt').sourceRoots).toEqual(['src/module.ts', 'src/runtime'])
     expect(manifest.entries.map((entry: PackageEntry) => entry.subpath)).toEqual(nuxtEntrySubpaths)
-    expect(manifest.entries).toHaveLength(8)
+    expect(manifest.entries).toHaveLength(9)
     expect(manifest.bins).toEqual({
       'better-convex': './dist/runtime/cli/index.js',
     })
