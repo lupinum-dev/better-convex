@@ -34,6 +34,7 @@ check(
     'ignored-build-step',
     'reusedExistingPreview',
     'sha=${encodeURIComponent(commitSha)}&state=READY',
+    "candidate.readyState === 'READY'",
     'reportBestEffort',
   ].every((boundary) => previewWorkflow.includes(boundary)),
   'Keep preview authorization, API resilience, exact-SHA reuse, and neutral skip handling.',

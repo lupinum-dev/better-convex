@@ -275,7 +275,10 @@ jobs:
                   { retries: 3 },
                 )
                 const existingDeployment = existingDeployments.deployments?.find(
-                  (candidate) => candidate.uid !== deployment.id && candidate.state === 'READY' && candidate.url,
+                  (candidate) =>
+                    candidate.uid !== deployment.id &&
+                    candidate.readyState === 'READY' &&
+                    candidate.url,
                 )
 
                 if (existingDeployment) {
