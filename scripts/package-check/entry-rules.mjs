@@ -52,7 +52,12 @@ const NUXT_CHECKER_ENTRY_RULES = [
     subpath: './better-auth/client',
     purity: {
       runtimeExternalSpecifiers: [],
-      typeExternalSpecifiers: ['better-auth/client', 'better-auth/vue'],
+      typeExternalSpecifiers: [
+        '@better-auth/oauth-provider/client',
+        'better-auth/client',
+        'better-auth/client/plugins',
+        'better-auth/vue',
+      ],
     },
     packedProbe: probeAuthClientTyping,
   },
@@ -62,6 +67,7 @@ const NUXT_CHECKER_ENTRY_RULES = [
       runtimeExternalSpecifiers: [
         '@better-auth/oauth-provider',
         '@better-auth/oauth-provider/resource-client',
+        'better-auth',
         'better-auth/adapters',
         'better-auth/api',
         'better-auth/crypto',

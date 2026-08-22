@@ -4,9 +4,10 @@
 // lives in `test/fixtures/auth-client-typing/`; this file pins the same typing
 // mechanism against the source entry plus the runtime validation helper.
 
-import type { apiKeyClient } from '@better-auth/api-key/client'
-import { apiKeyClient as apiKeyClientRuntime } from '@better-auth/api-key/client'
+import { oauthProviderClient } from '@better-auth/oauth-provider/client'
 import type { BetterAuthClientOptions, BetterAuthClientPlugin } from 'better-auth/client'
+import type { organizationClient } from 'better-auth/client/plugins'
+import { organizationClient as organizationClientRuntime } from 'better-auth/client/plugins'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -28,54 +29,36 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 
 // -----------------------------------------------------------------------------
-// Register an apiKey-plugin definition in the GLOBAL registry for this program.
+// Register an organization-plugin definition in the GLOBAL registry for this program.
 // `InferRegisteredConvexAuthClient` reads the registry; `BaseAuthClient` is the
 // no-plugin client and is independent of it, so one TypeScript program checks
 // both the plugin-typed and base-fallback paths. The packed fixture checks the
 // true empty-registry fallback in a separate program.
 // -----------------------------------------------------------------------------
-const _apiKeyDefinition = defineConvexAuthClient({ plugins: [apiKeyClientRuntime()] })
+const _organizationDefinition = defineConvexAuthClient({ plugins: [organizationClientRuntime()] })
 
 declare module '../../src/runtime/auth-client' {
   interface ConvexAuthClientRegistry {
-    definition: typeof _apiKeyDefinition
+    definition: typeof _organizationDefinition
   }
 }
 
-// (a) The registered apiKey definition makes the narrowed non-null client expose
-//     apiKey.create with typed params/return — not `any`.
+// (a) The registered organization definition exposes typed plugin methods.
 declare const registeredClient: InferRegisteredConvexAuthClient | null
 declare const integratedClient: IntegratedAuthClient<InferRegisteredConvexAuthClient>
 export function _assertPluginClient() {
   if (!registeredClient) return
 
-  type CreateFn = typeof registeredClient.apiKey.create
-  type _createNotAny = Expect<Equal<IsAny<CreateFn>, false>>
-
-  const created = registeredClient.apiKey.create({
-    name: 'ci-key',
-    expiresIn: 60 * 60 * 24,
-    metadata: { scope: 'ci' },
-  })
-  void created.then((res) => {
-    if (res.data) {
-      const id: string = res.data.id
-      const key: string = res.data.key
-      void id
-      void key
-    }
-  })
-
-  // Params are typed (not any): an unknown field is rejected.
-  // @ts-expect-error `notAField` is not part of apiKey.create input.
-  void registeredClient.apiKey.create({ name: 'x', notAField: true })
+  type ListFn = typeof registeredClient.organization.list
+  type _listNotAny = Expect<Equal<IsAny<ListFn>, false>>
+  void registeredClient.organization.list()
 }
 
 export function _assertIntegratedClient() {
   const session = integratedClient.useSession()
-  const create = integratedClient.apiKey.create({ name: 'ci-key' })
+  const list = integratedClient.organization.list()
   void session.value.isPending
-  void create.then
+  void list.then
   // @ts-expect-error the integrated client has no raw fetch escape.
   void integratedClient.$fetch
   // @ts-expect-error the integrated client has no raw store escape.
@@ -84,37 +67,43 @@ export function _assertIntegratedClient() {
   void integratedClient.hydrateSession
 }
 
-// (b) The base fallback client exposes only the base surface — apiKey is absent.
+// (b) The base fallback client exposes only the base surface — organization is absent.
 type _baseNotAny = Expect<Equal<IsAny<BaseAuthClient>, false>>
-type _baseHasNoApiKey = Expect<Equal<'apiKey' extends keyof BaseAuthClient ? true : false, false>>
+type _baseHasNoOrganization = Expect<
+  Equal<'organization' extends keyof BaseAuthClient ? true : false, false>
+>
 declare const baseClient: BaseAuthClient
 export function _assertBaseClient() {
   // Base client still carries the core Better Auth surface.
   const _signIn = baseClient.signIn
   void _signIn
   // @ts-expect-error the base client has no apiKey namespace.
-  baseClient.apiKey.create({ name: 'x' })
+  baseClient.organization.list()
 }
 
 // (c) The definition generic preserves the plugin tuple, and the merged
 //     [convexPlugin, ...consumerPlugins] array is MUTABLE (spread of a readonly
 //     tuple) so it stays assignable to better-auth's mutable `plugins` slot.
-type ApiKeyPlugin = ReturnType<typeof apiKeyClient>
+type OrganizationPlugin = ReturnType<typeof organizationClient>
 type ConvexPluginStandIn = BetterAuthClientPlugin
 type PluginsSlot = NonNullable<BetterAuthClientOptions['plugins']>
-type MergedMutable = [ConvexPluginStandIn, ApiKeyPlugin]
+type MergedMutable = [ConvexPluginStandIn, OrganizationPlugin]
 type _mergedAssignable = Expect<MergedMutable extends PluginsSlot ? true : false>
 // A readonly tuple must NOT be silently accepted where the mutable array is
 // required — the spread (MutablePlugins) is what makes it mutable.
 type _readonlyRejected = Expect<
-  Equal<readonly [ConvexPluginStandIn, ApiKeyPlugin] extends PluginsSlot ? true : false, false>
+  Equal<
+    readonly [ConvexPluginStandIn, OrganizationPlugin] extends PluginsSlot ? true : false,
+    false
+  >
 >
 // The definition holds the tuple; extracting it back yields the same tuple.
 type _defTuple = Expect<
-  Equal<
-    typeof _apiKeyDefinition extends ConvexAuthClientDefinition<infer P> ? P : never,
-    readonly [ApiKeyPlugin]
-  >
+  typeof _organizationDefinition extends ConvexAuthClientDefinition<infer P>
+    ? P extends readonly [OrganizationPlugin]
+      ? true
+      : false
+    : false
 >
 
 describe('defineConvexAuthClient', () => {
@@ -136,7 +125,7 @@ describe('defineConvexAuthClient', () => {
   })
 
   it('preserves the plugin tuple through a mutable merged array', () => {
-    const definition = defineConvexAuthClient({ plugins: [apiKeyClientRuntime()] })
+    const definition = defineConvexAuthClient({ plugins: [organizationClientRuntime()] })
     const convexStandIn = { id: 'convex' } as unknown as BetterAuthClientPlugin
     // The resolved plugins array is [convexPlugin, ...consumerPlugins] — a
     // MUTABLE array, so `push` works after the merge (tuple mutability is pinned
@@ -156,6 +145,9 @@ describe('validateConvexAuthClientDefinition', () => {
     const options = { plugins: [{ id: 'organization' }] }
     expect(ok(options)).toBe(options)
     expect(validateConvexAuthClientDefinition({ options: {} })).toEqual({})
+
+    const oauthDefinition = defineConvexAuthClient({ plugins: [oauthProviderClient()] })
+    expect(validateConvexAuthClientDefinition(oauthDefinition)).toBe(oauthDefinition.options)
   })
 
   it('rejects a non-definition value', () => {
@@ -182,6 +174,16 @@ describe('validateConvexAuthClientDefinition', () => {
     expect(() => ok({ plugins: [{ id: 'convex' }] })).toThrow(ConvexAuthClientDefinitionError)
     expect(() => ok({ plugins: [{ id: 'organization' }, { id: 'convex' }] })).toThrow(
       /reserved id `convex`/,
+    )
+  })
+
+  it('rejects a plugin outside the reviewed server capability profile', () => {
+    expect(() => ok({ plugins: [{ id: 'api-key' }] })).toThrow(/unsupported id `api-key`/)
+  })
+
+  it('rejects a duplicated reviewed capability', () => {
+    expect(() => ok({ plugins: [{ id: 'organization' }, { id: 'organization' }] })).toThrow(
+      /duplicates the already configured capability `organization`/,
     )
   })
 })

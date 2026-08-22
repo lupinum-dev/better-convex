@@ -75,13 +75,7 @@ export function createTeamAuthPlugins(
   callbacks: Pick<OrganizationOptions, 'sendInvitationEmail'> = {},
 ) {
   return [
-    organization({
-      ac: accessControl,
-      roles: organizationRoleConfig,
-      requireEmailVerificationOnInvitation: true,
-      teams: { enabled: true },
-      ...callbacks,
-    }),
+    organization(createTeamOrganizationOptions(callbacks)),
     jwt({
       disableSettingJwtHeader: true,
       jwks: {
@@ -92,4 +86,16 @@ export function createTeamAuthPlugins(
       jwt: { audience: authIssuer, expirationTime: '10m', issuer: authIssuer },
     }),
   ]
+}
+
+export function createTeamOrganizationOptions(
+  callbacks: Pick<OrganizationOptions, 'sendInvitationEmail'> = {},
+) {
+  return {
+    ac: accessControl,
+    roles: organizationRoleConfig,
+    requireEmailVerificationOnInvitation: true,
+    teams: { enabled: true },
+    ...callbacks,
+  } as const satisfies OrganizationOptions
 }

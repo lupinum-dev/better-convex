@@ -5,10 +5,12 @@ import {
 } from 'better-auth/cookies'
 import { describe, expect, it } from 'vitest'
 
+import { getSessionCookieFlagViolation } from '../../src/runtime/shared/auth-cookie'
 import {
   BETTER_AUTH_SECURE_SESSION_COOKIE_NAME,
   BETTER_AUTH_SESSION_COOKIE_NAME,
   filterBetterAuthCookies,
+  deduplicateSetCookies,
   getBetterAuthSessionToken,
   hasBetterAuthCookie,
   hasSetCookieDomainAttribute,
@@ -259,5 +261,40 @@ describe('configuration and cookie security regressions', () => {
         'better-auth.session_token=value; Expires=Wed, 21 Oct 2037 07:28:00 GMT; Path=/; Secure',
       ),
     ).toBe(false)
+  })
+
+  it('enforces session cookie flags and keeps only the final value per cookie name', () => {
+    expect(
+      getSessionCookieFlagViolation(
+        '__Secure-better-auth.session_token=value; Path=/; HttpOnly',
+        '__Secure-better-auth.session_token',
+      ),
+    ).toBe('secure-missing')
+    expect(
+      getSessionCookieFlagViolation(
+        'better-auth.session_token=value; Path=/; SameSite=Lax',
+        'better-auth.session_token',
+      ),
+    ).toBe('httponly-missing')
+    expect(
+      getSessionCookieFlagViolation(
+        'better-auth.session_token=value; Path=/; HttpOnly; SameSite=None',
+        'better-auth.session_token',
+      ),
+    ).toBe('samesite-none-unsupported')
+    expect(
+      getSessionCookieFlagViolation(
+        '__Secure-better-auth.session_token=value; Path=/; Secure; HttpOnly; SameSite=Lax',
+        '__Secure-better-auth.session_token',
+      ),
+    ).toBeNull()
+
+    expect(
+      deduplicateSetCookies([
+        'better-auth.session_token=old; Path=/; HttpOnly',
+        'better-auth.csrf=one; Path=/',
+        'better-auth.session_token=new; Path=/; HttpOnly',
+      ]),
+    ).toEqual(['better-auth.csrf=one; Path=/', 'better-auth.session_token=new; Path=/; HttpOnly'])
   })
 })

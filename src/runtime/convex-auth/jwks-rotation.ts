@@ -33,6 +33,7 @@ export interface SigningKeyCandidate {
 }
 
 export interface SigningKeyRotationMetadata {
+  created?: boolean
   createdAt: number
   newKid: string
   previousKids: string[]

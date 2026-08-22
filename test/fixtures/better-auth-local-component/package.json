@@ -3,7 +3,6 @@
   "private": true,
   "type": "module",
   "peerDependencies": {
-    "@better-auth/api-key": "1.7.0-rc.2",
     "@better-auth/oauth-provider": "1.7.0-rc.2",
     "better-auth": "1.7.0-rc.2",
     "convex": "1.42.2"

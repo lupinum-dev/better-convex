@@ -1,5 +1,12 @@
 export { defineAuthAdapterFunctions } from './adapter/define-functions'
 export { createAuthComponent } from './create-auth-component'
+export { createBetterConvexAuth } from './create-better-convex-auth'
+export type {
+  BetterConvexAuth,
+  BetterConvexAuthInstance,
+  BetterConvexOrganizationAuthInstance,
+  CreateBetterConvexAuthOptions,
+} from './create-better-convex-auth'
 export { requireAuthOrigin } from './origin'
 export { convexAuth } from './plugin'
 export { getConvexAuthProvider } from './provider'

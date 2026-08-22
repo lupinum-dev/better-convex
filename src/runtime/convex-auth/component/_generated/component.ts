@@ -38,6 +38,7 @@ type SigningKeyCandidate = {
   publicKey: string
 }
 type SigningKeyRotationMetadata = {
+  created?: boolean
   createdAt: number
   newKid: string
   previousKids: string[]
@@ -143,7 +144,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
     rotateSigningKey: FunctionReference<
       'mutation',
       'internal',
-      { next: SigningKeyCandidate },
+      { next: SigningKeyCandidate; onlyIfEmpty?: boolean },
       SigningKeyRotationMetadata,
       Name
     >

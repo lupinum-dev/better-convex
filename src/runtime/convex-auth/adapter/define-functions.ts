@@ -520,15 +520,11 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     }),
 
     rotateSigningKey: mutationGeneric({
-      args: { next: signingKeyCandidateValidator },
+      args: { next: signingKeyCandidateValidator, onlyIfEmpty: v.optional(v.boolean()) },
       handler: async (ctx, args) => {
         const next = normalizeSigningKeyCandidate(args.next)
         const rotationNow = Date.now()
         const rows = await collectAuthRows(ctx, schema, metadata, { model: 'jwks' }, 10_000)
-        if (rows.some((row) => row.id === next.id)) {
-          throw new Error('AUTH_UNIQUE_CONFLICT:jwks.id')
-        }
-
         const keysCurrentAtCommit = rows
           .filter((row) => {
             const expiresAt = row.expiresAt
@@ -538,6 +534,20 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
             const byCreatedAt = Number(left.createdAt) - Number(right.createdAt)
             return byCreatedAt || String(left.id).localeCompare(String(right.id))
           })
+        if (args.onlyIfEmpty && keysCurrentAtCommit.length > 0) {
+          const current = keysCurrentAtCommit.at(-1)!
+          return {
+            created: false,
+            createdAt: Number(current.createdAt),
+            newKid: String(current.id),
+            previousKids: [],
+            previousVerifyUntil: rotationNow + JWKS_GRACE_PERIOD_SECONDS * 1_000,
+            rotatedAt: rotationNow,
+          }
+        }
+        if (rows.some((row) => row.id === next.id)) {
+          throw new Error('AUTH_UNIQUE_CONFLICT:jwks.id')
+        }
         const latestCreatedAt = rows.reduce((latest, row) => {
           if (typeof row.createdAt !== 'number' || !Number.isSafeInteger(row.createdAt)) {
             throw new TypeError('AUTH_JWKS_CREATED_AT_INVALID')
@@ -562,6 +572,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         }
 
         return {
+          ...(args.onlyIfEmpty ? { created: true } : {}),
           createdAt,
           newKid: next.id,
           previousKids: keysCurrentAtCommit.map((key) => String(key.id)),

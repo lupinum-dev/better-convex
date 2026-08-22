@@ -7,7 +7,6 @@ import { escapeEmailHtml } from '../../starters/team/convex/lib/authEmail'
 
 const repoRoot = join(import.meta.dirname, '../..')
 const authApps = ['demo', 'playground', 'starters/agency', 'starters/team'] as const
-const passwordApps = authApps.filter((app) => app !== 'demo')
 const authEnvExamples = [
   'demo/.env.example',
   'starters/agency/.env.example',
@@ -19,16 +18,12 @@ const passwordForms = [
   'starters/agency/app/pages/agency.vue',
   'starters/team/app/components/AuthPanel.vue',
 ] as const
-const passwordRecipeDocs = ['docs/content/docs/3.get-started/5.add-authentication.md'] as const
 const proxySecretExamples = [
   ...authEnvExamples,
   'docs/content/docs/3.get-started/5.add-authentication.md',
   'docs/content/docs/7.operations/1.environment-variables.md',
 ] as const
-const proxySecretDocs = [
-  'docs/content/docs/3.get-started/5.add-authentication.md',
-  'docs/content/docs/7.operations/1.environment-variables.md',
-] as const
+const proxySecretDocs = ['docs/content/docs/7.operations/1.environment-variables.md'] as const
 const genericSignInForms = [
   'playground/pages/auth/signin.vue',
   'starters/team/app/components/AuthPanel.vue',
@@ -113,17 +108,13 @@ describe('shipped Better Auth factory invariants', () => {
     )
   })
 
-  it.each(authApps)('%s fails closed on runtime secret and unsafe application origins', (app) => {
+  it.each(authApps)('%s uses the owned Better Auth factory', (app) => {
     const auth = read(`${app}/convex/auth.ts`)
 
-    expect(auth).toContain("requireAuthOrigin('SITE_URL')")
-    expect(auth).toContain("requireAuthOrigin('CONVEX_SITE_URL')")
-    expect(auth).toContain("throw new Error('BETTER_AUTH_SECRETS is required')")
+    expect(auth).toContain('createBetterConvexAuth<DataModel>')
     expect(auth).not.toContain('BETTER_AUTH_SECRET ??')
     expect(auth).not.toContain('secret: process.env')
-    expect(auth).toContain('trustedOrigins: [siteUrl]')
-    expect(auth).toContain("ipAddressHeaders: ['x-bcn-verified-client-ip']")
-    expect(auth).toContain("throw new Error('AUTH_CONFIG_INVALID')")
+    expect(auth).not.toContain('betterAuth({')
   })
 
   it('keeps Better Auth secrets out of Nuxt env examples and clears legacy schema aliases', () => {
@@ -295,14 +286,8 @@ describe('shipped Better Auth factory invariants', () => {
   it.each(authApps)('%s registers only the lazy Better Auth HTTP ceremony', (app) => {
     const http = read(`${app}/convex/http.ts`)
 
-    expect(http).toContain('authComponent.registerRoutes(http, createAuth)')
+    expect(http).toContain('betterConvexAuth.registerRoutes(http)')
     expect(http).not.toContain('registerRoutesLazy')
-  })
-
-  it.each(passwordApps)('%s enforces the supported 15-character password floor', (app) => {
-    const auth = read(`${app}/convex/auth.ts`)
-    expect(auth).toContain('minPasswordLength: 15')
-    expect(auth).toContain('autoSignIn: false')
   })
 
   it.each(passwordForms)('%s matches the backend password floor', (form) => {
@@ -310,16 +295,18 @@ describe('shipped Better Auth factory invariants', () => {
     expect(read(form)).not.toContain('minlength="8"')
   })
 
-  it.each(passwordRecipeDocs)('%s keeps copyable password factories hardened', (path) => {
-    const source = read(path)
-    const factoryCount = source.match(/emailAndPassword:\s*\{/g)?.length ?? 0
+  it('keeps the owned password factory hardened', () => {
+    const source = read('src/runtime/convex-auth/create-better-convex-auth.ts')
 
-    expect(factoryCount).toBeGreaterThan(0)
-    expect(source.match(/minPasswordLength:\s*15/g)).toHaveLength(factoryCount)
-    expect(source.match(/autoSignIn:\s*false/g)).toHaveLength(factoryCount)
-    expect(source.match(/secret\.length < 32/g)).toHaveLength(factoryCount)
+    expect(source).toContain('emailAndPassword:')
+    expect(source).toContain('minPasswordLength: 15')
+    expect(source).toContain('autoSignIn: false')
+    expect(source).toContain('value.length < 32')
+    expect(source).toContain('trustedOrigins: [siteUrl]')
+    expect(source).toContain("ipAddressHeaders: ['x-bcn-verified-client-ip']")
+    expect(source).toContain("throw new Error('AUTH_CONFIG_INVALID')")
     expect(source).not.toContain('estimatedEntropy')
-    expect(source.match(/at least 32 random characters/g)).toHaveLength(factoryCount)
+    expect(source).toContain('unique versioned secrets of 32 characters')
   })
 
   it('keeps canonical signup recipes on the explicit sign-in ceremony', () => {
@@ -391,22 +378,25 @@ describe('shipped Better Auth factory invariants', () => {
 
   it('does not trust wildcard origins in the runnable playground', () => {
     const auth = read('playground/convex/auth.ts')
+    const factory = read('src/runtime/convex-auth/create-better-convex-auth.ts')
 
-    expect(auth).toContain('trustedOrigins: [siteUrl]')
+    expect(auth).toContain('createBetterConvexAuth<DataModel>')
+    expect(factory).toContain('trustedOrigins: [siteUrl]')
     expect(auth).not.toContain('http://localhost:*')
     expect(auth).not.toContain('http://127.0.0.1:*')
   })
 
   it('pins the conservative demo OAuth storage and account-linking policy', () => {
     const auth = read('demo/convex/auth.ts')
+    const factory = read('src/runtime/convex-auth/create-better-convex-auth.ts')
 
     expect(auth).toContain("throw new Error('GITHUB_CLIENT_ID is required')")
     expect(auth).toContain("throw new Error('GITHUB_CLIENT_SECRET is required')")
-    expect(auth).toContain('encryptOAuthTokens: true')
-    expect(auth).toContain('disableImplicitLinking: true')
-    expect(auth).toContain('trustedProviders: []')
-    expect(auth).toContain('allowDifferentEmails: false')
-    expect(auth).toContain('allowUnlinkingAll: false')
+    expect(factory).toContain('encryptOAuthTokens: true')
+    expect(factory).toContain('disableImplicitLinking: true')
+    expect(factory).toContain('trustedProviders: []')
+    expect(factory).toContain('allowDifferentEmails: false')
+    expect(factory).toContain('allowUnlinkingAll: false')
   })
 
   it('keeps the agency identity-to-domain-user path rebuildable and usable', () => {

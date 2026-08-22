@@ -16,13 +16,9 @@ type BetterAuthDataModel = DataModelFromSchemaDefinition<typeof schema>
 type _HasLogicalUserId = Assert<
   'id' extends keyof BetterAuthDataModel['user']['document'] ? true : false
 >
-type _HasAdminUserFields = Assert<
-  'role' extends keyof BetterAuthDataModel['user']['document'] ? true : false
->
 type _HasOrganizationTable = Assert<HasTable<BetterAuthDataModel, 'organization'>>
 type _HasMemberTable = Assert<HasTable<BetterAuthDataModel, 'member'>>
 type _HasInvitationTable = Assert<HasTable<BetterAuthDataModel, 'invitation'>>
-type _HasApiKeyTable = Assert<HasTable<BetterAuthDataModel, 'apikey'>>
 type _HasJwksTable = Assert<HasTable<BetterAuthDataModel, 'jwks'>>
 type _HasRateLimitTable = Assert<HasTable<BetterAuthDataModel, 'rateLimit'>>
 

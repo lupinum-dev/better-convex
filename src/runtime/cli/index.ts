@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { runAuthSchemaCommand } from './auth-schema'
 import { runConvexCommand } from './convex'
+import { runInitCommand } from './init'
 
 function usage(): string {
   return [
@@ -46,7 +47,7 @@ export async function runBetterConvexCommand(arguments_: readonly string[]): Pro
     return await runAuthSchemaCommand(rest)
   }
   if (command === 'init') {
-    throw new Error('Project initialization is not available in this source layer yet.')
+    return await runInitCommand(subcommand ? [subcommand, ...rest] : rest)
   }
   throw new Error(`Unknown command: ${command}`)
 }

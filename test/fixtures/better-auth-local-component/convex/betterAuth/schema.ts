@@ -11,10 +11,6 @@ export const tables = {
     image: v.union(v.null(), v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-    role: v.union(v.null(), v.string()),
-    banned: v.union(v.null(), v.boolean()),
-    banReason: v.union(v.null(), v.string()),
-    banExpires: v.union(v.null(), v.number()),
   })
     .index('id', ['id'])
     .index('name', ['name'])
@@ -29,7 +25,6 @@ export const tables = {
     ipAddress: v.union(v.null(), v.string()),
     userAgent: v.union(v.null(), v.string()),
     userId: v.string(),
-    impersonatedBy: v.union(v.null(), v.string()),
     activeOrganizationId: v.union(v.null(), v.string()),
   })
     .index('id', ['id'])
@@ -115,35 +110,6 @@ export const tables = {
     .index('status', ['status'])
     .index('createdAt', ['createdAt'])
     .index('inviterId', ['inviterId']),
-  apikey: defineTable({
-    id: v.string(),
-    configId: v.string(),
-    name: v.union(v.null(), v.string()),
-    start: v.union(v.null(), v.string()),
-    referenceId: v.string(),
-    prefix: v.union(v.null(), v.string()),
-    key: v.string(),
-    refillInterval: v.union(v.null(), v.number()),
-    refillAmount: v.union(v.null(), v.number()),
-    lastRefillAt: v.union(v.null(), v.number()),
-    enabled: v.union(v.null(), v.boolean()),
-    rateLimitEnabled: v.union(v.null(), v.boolean()),
-    rateLimitTimeWindow: v.union(v.null(), v.number()),
-    rateLimitMax: v.union(v.null(), v.number()),
-    requestCount: v.union(v.null(), v.number()),
-    remaining: v.union(v.null(), v.number()),
-    lastRequest: v.union(v.null(), v.number()),
-    expiresAt: v.union(v.null(), v.number()),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-    permissions: v.union(v.null(), v.string()),
-    metadata: v.union(v.null(), v.string()),
-  })
-    .index('id', ['id'])
-    .index('configId', ['configId'])
-    .index('referenceId', ['referenceId'])
-    .index('key', ['key'])
-    .index('createdAt', ['createdAt']),
   jwks: defineTable({
     id: v.string(),
     publicKey: v.string(),
@@ -167,7 +133,7 @@ export const tables = {
 
 const schema = defineSchema(tables)
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:d754757a23ebe121',
+  value: 'bcn-auth-schema-v2:e6703a3fad02a4b6',
 })
 
 export default schema

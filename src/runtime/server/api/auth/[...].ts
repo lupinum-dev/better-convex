@@ -10,6 +10,7 @@ import {
 } from 'h3'
 
 import type { AuthProxyRequest } from '../../../devtools/types'
+import { getSessionCookieFlagViolation } from '../../../shared/auth-cookie'
 import { normalizeClientIp } from '../../../shared/client-ip'
 import {
   getPackedRuntimeFingerprint,
@@ -24,7 +25,12 @@ import {
 } from '../../../utils/auth-errors'
 import { createLogger } from '../../../utils/logger'
 import { getConvexRuntimeConfig } from '../../../utils/runtime-config'
-import { hasSetCookieDomainAttribute, isBetterAuthSetCookie } from '../../../utils/shared-helpers'
+import {
+  deduplicateSetCookies,
+  getSetCookieName,
+  hasSetCookieDomainAttribute,
+  isBetterAuthSetCookie,
+} from '../../../utils/shared-helpers'
 import { normalizeConvexSiteUrl } from '../../../utils/site-url'
 import { DEFAULT_SERVER_FETCH_TIMEOUT_MS } from '../../utils/http'
 import {
@@ -53,6 +59,7 @@ const AUTH_ROUTE = '/api/auth'
 const ALLOWED_METHODS = new Set(['GET', 'POST'])
 const SAFE_CAUGHT_PROXY_FAILURES = new Map<string, number>([
   ['BCN_AUTH_PROXY_COOKIE_DOMAIN_UNSUPPORTED', 502],
+  ['BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED', 502],
   ['BCN_AUTH_PROXY_COOKIE_NAME_UNSUPPORTED', 502],
   ['BCN_AUTH_PROXY_METADATA_COOKIE_REJECTED', 502],
   ['BCN_AUTH_PROXY_REQUEST_BODY_TOO_LARGE', 413],
@@ -70,16 +77,28 @@ export interface AuthProxyHandlerOptions {
   publicMetadataCors?: boolean
 }
 
-function safeCaughtProxyFailure(error: unknown): { code: string; statusCode: number } | null {
+function safeCaughtProxyFailure(
+  error: unknown,
+): { code: string; statusCode: number; data: Record<string, unknown> } | null {
   if (!error || typeof error !== 'object') return null
   const statusCode = 'statusCode' in error ? error.statusCode : undefined
   const data = 'data' in error ? error.data : undefined
-  const code =
-    data && typeof data === 'object' && 'code' in data && typeof data.code === 'string'
-      ? data.code
-      : undefined
+  if (!data || typeof data !== 'object') return null
+  const code = 'code' in data && typeof data.code === 'string' ? data.code : undefined
   if (!code || SAFE_CAUGHT_PROXY_FAILURES.get(code) !== statusCode) return null
-  return { code, statusCode: statusCode as number }
+  const violation = 'violation' in data ? data.violation : undefined
+  const safeViolation =
+    code === 'BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED' &&
+    (violation === 'secure-missing' ||
+      violation === 'httponly-missing' ||
+      violation === 'samesite-none-unsupported')
+      ? violation
+      : undefined
+  return {
+    code,
+    data: { code, ...(safeViolation === undefined ? {} : { violation: safeViolation }) },
+    statusCode: statusCode as number,
+  }
 }
 
 function toError(reason: unknown, fallback: string): Error {
@@ -482,6 +501,14 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
             data: { code: 'BCN_AUTH_PROXY_COOKIE_DOMAIN_UNSUPPORTED' },
           })
         }
+        const violation = getSessionCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '')
+        if (violation) {
+          throw createError({
+            statusCode: 502,
+            message: 'Auth proxy upstream returned a cookie with unsupported security flags',
+            data: { code: 'BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED', violation },
+          })
+        }
       }
 
       if (!isSupportedProxyResponseContentEncoding(response.headers.get('content-encoding'))) {
@@ -519,7 +546,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       )
 
       setResponseStatus(event, response.status, response.statusText)
-      for (const cookie of responseCookies) {
+      for (const cookie of deduplicateSetCookies(responseCookies)) {
         appendResponseHeader(event, 'set-cookie', cookie)
       }
       const responseConnection = response.headers.get('connection')
@@ -568,7 +595,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         throw createError({
           statusCode: safeFailure.statusCode,
           message: 'Auth proxy request failed',
-          data: { code: safeFailure.code },
+          data: safeFailure.data,
         })
       }
       await recordAuthProxyRequestInDev({
