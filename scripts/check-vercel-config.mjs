@@ -36,7 +36,7 @@ check(
 )
 check(config.framework === 'nuxtjs', 'Select the Nuxt framework explicitly.')
 check(
-  config.git?.deploymentEnabled?.['*'] === false &&
+  config.git?.deploymentEnabled?.['**'] === false &&
     config.git.deploymentEnabled.main === true &&
     Object.keys(config.git.deploymentEnabled).length === 2,
   'Deploy main automatically and require /vercel for pull-request previews.',
