@@ -21,7 +21,7 @@ jobs:
       checks: write
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
     concurrency:
       group: vercel-preview-${{ github.repository }}-${{ github.event.issue.number }}
       cancel-in-progress: false
