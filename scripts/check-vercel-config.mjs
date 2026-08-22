@@ -23,9 +23,12 @@ check(
   'Report exact-commit preview status without canceling requested builds.',
 )
 check(
-  ['getCollaboratorPermissionLevel', 'AbortSignal.timeout', 'ignored-build-step', 'reusedExistingPreview'].every(
-    (boundary) => previewWorkflow.includes(boundary),
-  ),
+  [
+    'getCollaboratorPermissionLevel',
+    'AbortSignal.timeout',
+    'ignored-build-step',
+    'reusedExistingPreview',
+  ].every((boundary) => previewWorkflow.includes(boundary)),
   'Keep preview authorization, API resilience, exact-SHA reuse, and neutral skip handling.',
 )
 check(
