@@ -222,12 +222,11 @@ describe('vNext Convex-native MCP topology probe', () => {
     ) as { dependencies: Record<string, string> }
     const rootManifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')) as {
       devDependencies: Record<string, string>
-      peerDependencies: Record<string, string>
     }
     expect(fixtureManifest.dependencies).toEqual({
       '@lupinum/better-convex-mcp': '1.0.0-beta.1',
       '@modelcontextprotocol/server': mcpManifest.dependencies['@modelcontextprotocol/server'],
-      convex: rootManifest.peerDependencies.convex,
+      convex: rootManifest.devDependencies.convex,
       zod: rootManifest.devDependencies.zod,
     })
     const sources = await Promise.all(
