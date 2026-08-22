@@ -4,9 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact Nuxt and Vue prerelease version
+        description: Exact version of the selected release target
         required: true
         type: string
+      target:
+        description: Coupled Vue/Nuxt set or independently versioned MCP package
+        required: true
+        default: vue-nuxt
+        type: choice
+        options:
+          - vue-nuxt
+          - mcp
       bootstrap_packages:
         description: Comma-separated packages explicitly authorized for first-version bootstrap recovery
         required: false
@@ -22,7 +30,6 @@ permissions:
   contents: read
 
 env:
-  BCN_RELEASE_DIST_TAG: next
   RELEASE_NODE_VERSION: '22.14.0'
   RELEASE_NPM_VERSION: '11.18.0'
 
@@ -39,24 +46,32 @@ jobs:
         with:
           node-version: ${{ env.RELEASE_NODE_VERSION }}
           package-manager-cache: false
-      - name: Require current main and the exact prerelease version
+      - name: Require current main and the exact target version
         env:
           BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
           RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TARGET: ${{ inputs.target }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
-          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
-          case "$RELEASE_VERSION" in *-*) ;; *) exit 1 ;; esac
+          if [ "$RELEASE_TARGET" = vue-nuxt ]; then
+            test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
+          elif [ "$RELEASE_TARGET" = mcp ]; then
+            test "$(node -p "require('./packages/mcp/package.json').version")" = "$RELEASE_VERSION"
+          else
+            exit 1
+          fi
           node -e "const allowed=new Set(['@lupinum/better-convex-vue','@lupinum/better-convex-nuxt','@lupinum/better-convex-mcp']); const requested=(process.env.BOOTSTRAP_PACKAGES||'').split(',').map(value=>value.trim()).filter(Boolean); if(new Set(requested).size!==requested.length||requested.some(name=>!allowed.has(name))) throw new Error('bootstrap_packages must contain unique Better Convex package names.')"
       - name: Require an unused release tag
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TARGET: ${{ inputs.target }}
         run: |
+          if [ "$RELEASE_TARGET" = mcp ]; then TAG="mcp-v$RELEASE_VERSION"; else TAG="v$RELEASE_VERSION"; fi
           status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
             --header "Authorization: Bearer $GH_TOKEN" \
             --header "Accept: application/vnd.github+json" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/tags/v$RELEASE_VERSION")
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")
           test "$status" = 404
       - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
@@ -84,6 +99,8 @@ jobs:
     needs: release-security
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      BCN_RELEASE_TARGET: ${{ inputs.target }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -98,12 +115,13 @@ jobs:
       - name: Install pinned release tooling
         run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
 
-      - name: Verify protected prerelease identity
+      - name: Verify protected release identity
         env:
           BCN_GOVERNANCE_MODE: solo-maintainer
           RELEASE_OWNER: ${{ github.actor }}
-          RELEASE_TAG: v${{ inputs.version }}
-        run: pnpm check:security-governance --prerelease
+          RELEASE_TAG: ${{ inputs.target == 'mcp' && format('mcp-v{0}', inputs.version) || format('v{0}', inputs.version) }}
+          RELEASE_TARGET: ${{ inputs.target }}
+        run: pnpm check:security-governance --release
 
       - run: pnpm install --frozen-lockfile
 
@@ -132,6 +150,10 @@ jobs:
 
       - name: Build the immutable MCP candidate once
         run: node scripts/release.mjs artifact --package mcp
+
+      - name: Retain independently versioned MCP release notes
+        if: inputs.target == 'mcp'
+        run: node scripts/release-target.mjs write-mcp-metadata
 
       - name: Upload the immutable MCP candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -376,6 +398,7 @@ jobs:
           const hasAttestations = value => Array.isArray(value)
             ? value.length > 0
             : Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
+          const releaseChannel = version => version.includes('-') ? 'next' : 'latest'
           const normalizeVersions = value => value == null ? [] : Array.isArray(value) ? value : [value]
           const modes = new Map()
           const pollAttempts = Number(process.env.REGISTRY_POLL_ATTEMPTS ?? 240)
@@ -389,6 +412,7 @@ jobs:
             const candidate = evidenceByPackage.get(packageName)
             if (!candidate || candidate.id !== id) fail(`Missing certified ${id} package.`)
             const spec = `${packageName}@${candidate.version}`
+            const channelName = releaseChannel(candidate.version)
             const existing = view(spec, 'dist.integrity')
             if (existing && existing !== candidate.integrity) fail(`${spec} exists with different bytes.`)
             let mode
@@ -405,7 +429,7 @@ jobs:
             } else {
               const result = run([
                 'publish', candidate.tarball, '--access', 'public',
-                '--tag', process.env.BCN_RELEASE_DIST_TAG,
+                '--tag', channelName,
                 '--ignore-scripts', '--provenance',
               ], true)
               if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
@@ -414,7 +438,7 @@ jobs:
             while (true) {
               const registryIntegrity = view(spec, 'dist.integrity')
               const attestations = view(spec, 'dist.attestations')
-              const channel = view(packageName, `dist-tags.${process.env.BCN_RELEASE_DIST_TAG}`)
+              const channel = view(packageName, `dist-tags.${channelName}`)
               const versions = mode === 'bootstrap'
                 ? normalizeVersions(view(packageName, 'versions'))
                 : []
@@ -434,7 +458,7 @@ jobs:
               remainingPollRetries -= 1
               Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pollDelayMs)
             }
-            if (!modes.has(id)) fail(`${spec} did not expose the required bytes, provenance mode, and ${process.env.BCN_RELEASE_DIST_TAG}.`)
+            if (!modes.has(id)) fail(`${spec} did not expose the required bytes, provenance mode, and ${channelName}.`)
           }
           for (const [id] of expectedOrder) {
             const mode = modes.get(id)
@@ -467,11 +491,18 @@ jobs:
           VUE_MODE: ${{ needs.publish-packages.outputs.vue-mode }}
           NUXT_MODE: ${{ needs.publish-packages.outputs.nuxt-mode }}
           MCP_MODE: ${{ needs.publish-packages.outputs.mcp-mode }}
-          TAG: v${{ inputs.version }}
+          RELEASE_TARGET: ${{ inputs.target }}
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          release_metadata=$(find .release-artifacts -name 'release.json' -type f -print -quit)
+          if [ "$RELEASE_TARGET" = mcp ]; then
+            TAG="mcp-v$VERSION"
+            release_metadata=$(find .release-artifacts -name 'mcp-release.json' -type f -print -quit)
+          else
+            TAG="v$VERSION"
+            release_metadata=$(find .release-artifacts -name 'release.json' -type f -print -quit)
+          fi
+          export TAG
           test -n "$release_metadata"
           RELEASE_METADATA="$release_metadata" RELEASE_NOTES="$RUNNER_TEMP/release-notes.md" node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs'
@@ -523,6 +554,11 @@ jobs:
             "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
             "$RUNNER_TEMP/release.json"
           )
+          release_flags=()
+          edit_flags=(--prerelease=false)
+          case "$VERSION" in
+            *-*) release_flags+=(--prerelease); edit_flags=(--prerelease) ;;
+          esac
           if gh release view "$TAG" >/dev/null 2>&1; then
             read -r tag_type tag_sha < <(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '[.object.type, .object.sha] | @tsv')
             while [ "$tag_type" = tag ]; do
@@ -530,8 +566,8 @@ jobs:
             done
             test "$tag_type" = commit
             test "$tag_sha" = "$GITHUB_SHA"
-            gh release edit "$TAG" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+            gh release edit "$TAG" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${edit_flags[@]}"
             gh release upload "$TAG" "${release_assets[@]}" --clobber
           else
-            gh release create "$TAG" "${release_assets[@]}" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease
+            gh release create "$TAG" "${release_assets[@]}" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${release_flags[@]}"
           fi

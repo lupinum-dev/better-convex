@@ -582,7 +582,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     }
   })
 
-  it('publishes the complete set through one protected OIDC job under next', () => {
+  it('publishes the complete set through one protected OIDC job on derived channels', () => {
     expect(workflow.on).toEqual({
       workflow_dispatch: {
         inputs: {
@@ -594,9 +594,16 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
             type: 'string',
           },
           version: {
-            description: 'Exact Nuxt and Vue prerelease version',
+            description: 'Exact version of the selected release target',
             required: true,
             type: 'string',
+          },
+          target: {
+            description: 'Coupled Vue/Nuxt set or independently versioned MCP package',
+            required: true,
+            default: 'vue-nuxt',
+            type: 'choice',
+            options: ['vue-nuxt', 'mcp'],
           },
         },
       },
@@ -606,7 +613,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       .map(([jobId, job]) => ({ jobId, job }))
     expect(oidcJobs.map(({ jobId }) => jobId)).toEqual(['publish-packages'])
     expect(oidcJobs.every(({ job }) => job.environment === 'npm')).toBe(true)
-    expect(workflow.env?.BCN_RELEASE_DIST_TAG).toBe('next')
+    expect(workflow.env?.BCN_RELEASE_DIST_TAG).toBeUndefined()
 
     const publishRuns = oidcJobs.flatMap(({ job }) =>
       (job.steps ?? [])
@@ -614,7 +621,8 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
         .filter((run): run is string => run?.includes("'publish', candidate.tarball") ?? false),
     )
     expect(publishRuns).toHaveLength(1)
-    expect(publishRuns[0]).toContain('process.env.BCN_RELEASE_DIST_TAG')
+    expect(publishRuns[0]).toContain("version.includes('-') ? 'next' : 'latest'")
+    expect(publishRuns[0]).toContain('const channelName = releaseChannel(candidate.version)')
     expect(publishRuns[0]).toContain("'--ignore-scripts', '--provenance'")
     for (const { job } of oidcJobs) {
       expect(
@@ -675,11 +683,13 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(githubReleaseRuns).toContain('release_assets')
     expect(githubReleaseRuns).toContain('vue-nuxt-artifact-set.json')
     expect(githubReleaseRuns).toContain("-name 'release.json'")
+    expect(githubReleaseRuns).toContain("-name 'mcp-release.json'")
     expect(githubReleaseRuns).toContain('"$RUNNER_TEMP/release.json"')
     expect(githubReleaseRuns).toContain('mcp_evidence=".release-artifacts/artifact.json"')
     expect(githubReleaseRuns).toContain('test -f "$mcp_evidence"')
     expect(githubReleaseRuns).toContain('git/ref/tags/$TAG')
     expect(githubReleaseRuns).toContain('test "$tag_sha" = "$GITHUB_SHA"')
+    expect(githubReleaseRuns).toContain('edit_flags=(--prerelease=false)')
     expect(githubReleaseRuns).toContain(
       'This first npm version was created from the exact CI-certified artifact',
     )

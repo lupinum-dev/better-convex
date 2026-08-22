@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
 import {
-  validatePrereleaseIdentity,
+  validateReleaseIdentity,
   validateSecurityGovernance,
 } from '../../scripts/check-security-governance.mjs'
 
@@ -28,7 +28,7 @@ describe('security governance gate', () => {
         ...validInput,
         governanceMode: 'committee',
       }),
-    ).toEqual(['BCN_GOVERNANCE_MODE must be solo-maintainer for this prerelease'])
+    ).toEqual(['BCN_GOVERNANCE_MODE must be solo-maintainer for this release'])
     expect(
       validateSecurityGovernance({
         ...validInput,
@@ -43,10 +43,11 @@ describe('security governance gate', () => {
     ])
   })
 
-  it('keeps prerelease release identity validation in the direct workflow script', () => {
-    expect(validatePrereleaseIdentity('v0.7.0-beta.0', '0.7.0-beta.0')).toEqual([])
-    expect(validatePrereleaseIdentity('v0.7.0', '0.7.0')).not.toEqual([])
-    expect(validatePrereleaseIdentity('v0.7.0-beta.1', '0.7.0-beta.0')).not.toEqual([])
+  it('validates stable and prerelease identities for each release target', () => {
+    expect(validateReleaseIdentity('v0.7.0-beta.0', '0.7.0-beta.0', 'vue-nuxt')).toEqual([])
+    expect(validateReleaseIdentity('v0.7.0', '0.7.0', 'vue-nuxt')).toEqual([])
+    expect(validateReleaseIdentity('mcp-v1.0.0', '1.0.0', 'mcp')).toEqual([])
+    expect(validateReleaseIdentity('v1.0.0', '1.0.0', 'mcp')).not.toEqual([])
   })
 
   it('runs only in the prerelease workflow with GitHub-owned release identity', () => {
@@ -57,11 +58,13 @@ describe('security governance gate', () => {
     }
     const gate = Object.values(prerelease.jobs ?? {})
       .flatMap((job) => job.steps ?? [])
-      .find((step) => step.run === 'pnpm check:security-governance --prerelease')
+      .find((step) => step.run === 'pnpm check:security-governance --release')
     expect(gate?.env).toEqual({
       BCN_GOVERNANCE_MODE: 'solo-maintainer',
       RELEASE_OWNER: '${{ github.actor }}',
-      RELEASE_TAG: 'v${{ inputs.version }}',
+      RELEASE_TAG:
+        "${{ inputs.target == 'mcp' && format('mcp-v{0}', inputs.version) || format('v{0}', inputs.version) }}",
+      RELEASE_TARGET: '${{ inputs.target }}',
     })
 
     const scheduled = readFileSync(resolve(root, '.github/workflows/security-extended.yml'), 'utf8')

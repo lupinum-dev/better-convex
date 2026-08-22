@@ -18,7 +18,7 @@ export function validateSecurityGovernance(input) {
   const commitAuthor = normalizedName(input?.commitAuthor)
 
   if (governanceMode !== 'solo-maintainer') {
-    failures.push('BCN_GOVERNANCE_MODE must be solo-maintainer for this prerelease')
+    failures.push('BCN_GOVERNANCE_MODE must be solo-maintainer for this release')
   }
   if (!releaseOwner) failures.push('RELEASE_OWNER must identify the release actor')
   if (/(?:\[bot\]|github-actions)$/iu.test(releaseOwner)) {
@@ -29,24 +29,25 @@ export function validateSecurityGovernance(input) {
   return failures
 }
 
-export function validatePrereleaseIdentity(releaseTag, packageVersion) {
+export function validateReleaseIdentity(releaseTag, packageVersion, releaseTarget) {
+  const prefix = releaseTarget === 'mcp' ? 'mcp-v' : releaseTarget === 'vue-nuxt' ? 'v' : undefined
   if (
+    !prefix ||
     typeof releaseTag !== 'string' ||
     typeof packageVersion !== 'string' ||
-    releaseTag !== `v${packageVersion}` ||
-    !packageVersion.includes('-')
+    releaseTag !== `${prefix}${packageVersion}`
   ) {
-    return ['tag must exactly match a prerelease package version']
+    return ['tag must exactly match the selected release target version']
   }
   return []
 }
 
 function parseArguments(arguments_) {
-  const prerelease = arguments_.includes('--prerelease')
-  const unknown = arguments_.filter((argument) => argument !== '--prerelease')
+  const release = arguments_.includes('--release')
+  const unknown = arguments_.filter((argument) => argument !== '--release')
   if (unknown.length > 0) throw new Error(`unknown governance-check option: ${unknown[0]}`)
-  if (!prerelease) throw new Error('the governance check is only defined for --prerelease')
-  return { prerelease }
+  if (!release) throw new Error('the governance check is only defined for --release')
+  return { release }
 }
 
 function run() {
@@ -61,8 +62,16 @@ function run() {
     releaseOwner: process.env.RELEASE_OWNER,
   }
   const failures = validateSecurityGovernance(governance)
-  const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'))
-  failures.push(...validatePrereleaseIdentity(process.env.RELEASE_TAG, packageJson.version))
+  const manifest =
+    process.env.RELEASE_TARGET === 'mcp' ? 'packages/mcp/package.json' : 'package.json'
+  const packageJson = JSON.parse(readFileSync(resolve(repoRoot, manifest), 'utf8'))
+  failures.push(
+    ...validateReleaseIdentity(
+      process.env.RELEASE_TAG,
+      packageJson.version,
+      process.env.RELEASE_TARGET,
+    ),
+  )
 
   if (failures.length > 0) {
     console.error(`Security governance check failed with ${failures.length} issue(s):`)
@@ -79,7 +88,7 @@ function run() {
       sourceCommit: process.env.GITHUB_SHA ?? null,
     }),
   )
-  console.log('Solo-maintainer prerelease governance check passed.')
+  console.log('Solo-maintainer release governance check passed.')
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) run()
