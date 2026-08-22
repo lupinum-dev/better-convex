@@ -55,7 +55,3 @@ export async function getAuthProxyStats(): Promise<AuthProxyStats> {
     recentRequests: [...requests],
   }
 }
-
-export async function clearAuthProxyStats(): Promise<void> {
-  await setRequests([])
-}

@@ -87,20 +87,4 @@ describe('devtools auth proxy registry', () => {
     ])
     for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
   })
-
-  it('clears stored stats', async () => {
-    const registry = await import('../../src/runtime/devtools/auth-proxy-registry')
-    await registry.recordAuthProxyRequest({
-      id: '1',
-      path: '/convex/token',
-      method: 'GET',
-      timestamp: Date.now(),
-      success: true,
-    })
-    await registry.clearAuthProxyStats()
-
-    const stats = await registry.getAuthProxyStats()
-    expect(stats.totalRequests).toBe(0)
-    expect(stats.recentRequests).toEqual([])
-  })
 })

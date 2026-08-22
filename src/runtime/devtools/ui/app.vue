@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 
 import { useAuth } from './composables/useAuth'
 import { useAuthProxy } from './composables/useAuthProxy'
@@ -13,18 +13,10 @@ const bridge = useBridge()
 const { queries, selectedQueryId, selectQuery, getSelectedQuery } = useQueries(bridge)
 const { mutations, toggleExpanded, isExpanded } = useMutations(bridge)
 const { authState, connectionState, authWaterfall } = useAuth(bridge)
-const { proxyStats, pending: proxyPending, clear: clearProxyStats } = useAuthProxy()
+const { proxyStats, pending: proxyPending, refresh: refreshProxyStats } = useAuthProxy()
 
 // UI state
-const activeTab = ref<'queries' | 'mutations' | 'auth'>('queries')
-const loading = ref(true)
-
-onMounted(() => {
-  // Short delay to allow connection
-  setTimeout(() => {
-    loading.value = false
-  }, 500)
-})
+const activeTab = ref<'queries' | 'operations' | 'auth' | 'agents'>('queries')
 
 function switchTab(tab: typeof activeTab.value) {
   activeTab.value = tab
@@ -86,57 +78,55 @@ function selectApplication(event: Event) {
       </div>
     </header>
 
-    <!-- Loading -->
-    <div v-if="loading" class="loading">
-      <div class="spinner" />
-      <span>Connecting to application...</span>
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button
+        class="tab"
+        :class="{ active: activeTab === 'queries' }"
+        @click="switchTab('queries')"
+      >
+        Queries <span class="tab-badge">{{ queries.length }}</span>
+      </button>
+      <button
+        class="tab"
+        :class="{ active: activeTab === 'operations' }"
+        @click="switchTab('operations')"
+      >
+        Operations <span class="tab-badge">{{ mutations.length }}</span>
+      </button>
+      <button class="tab" :class="{ active: activeTab === 'auth' }" @click="switchTab('auth')">
+        Auth
+      </button>
+      <button class="tab" :class="{ active: activeTab === 'agents' }" @click="switchTab('agents')">
+        Agents
+      </button>
+    </nav>
+
+    <!-- Queries Tab -->
+    <div v-show="activeTab === 'queries'" class="tab-content active">
+      <div class="master-detail">
+        <QueryList :queries="queries" :selected-id="selectedQueryId" @select="selectQuery" />
+        <QueryDetail :query="getSelectedQuery()" />
+      </div>
     </div>
 
-    <!-- Main Content -->
-    <template v-else>
-      <!-- Tabs -->
-      <nav class="tabs">
-        <button
-          class="tab"
-          :class="{ active: activeTab === 'queries' }"
-          @click="switchTab('queries')"
-        >
-          Queries <span class="tab-badge">{{ queries.length }}</span>
-        </button>
-        <button
-          class="tab"
-          :class="{ active: activeTab === 'mutations' }"
-          @click="switchTab('mutations')"
-        >
-          Mutations <span class="tab-badge">{{ mutations.length }}</span>
-        </button>
-        <button class="tab" :class="{ active: activeTab === 'auth' }" @click="switchTab('auth')">
-          Auth
-        </button>
-      </nav>
+    <!-- Operations Tab -->
+    <div v-show="activeTab === 'operations'" class="tab-content active">
+      <MutationTimeline :mutations="mutations" :is-expanded="isExpanded" @toggle="toggleExpanded" />
+    </div>
 
-      <!-- Queries Tab -->
-      <div v-show="activeTab === 'queries'" class="tab-content active">
-        <div class="master-detail">
-          <QueryList :queries="queries" :selected-id="selectedQueryId" @select="selectQuery" />
-          <QueryDetail :query="getSelectedQuery()" />
-        </div>
-      </div>
+    <!-- Auth Tab -->
+    <div v-show="activeTab === 'auth'" class="tab-content active" style="overflow-y: auto">
+      <AuthPanel :auth-state="authState" :waterfall="authWaterfall" />
+      <AuthProxyPanel :stats="proxyStats" :loading="proxyPending" @refresh="refreshProxyStats" />
+    </div>
 
-      <!-- Mutations Tab -->
-      <div v-show="activeTab === 'mutations'" class="tab-content active">
-        <MutationTimeline
-          :mutations="mutations"
-          :is-expanded="isExpanded"
-          @toggle="toggleExpanded"
-        />
-      </div>
-
-      <!-- Auth Tab -->
-      <div v-show="activeTab === 'auth'" class="tab-content active" style="overflow-y: auto">
-        <AuthPanel :auth-state="authState" :waterfall="authWaterfall" />
-        <AuthProxyPanel :stats="proxyStats" :loading="proxyPending" @clear="clearProxyStats" />
-      </div>
-    </template>
+    <div v-show="activeTab === 'agents'" class="tab-content active" style="overflow-y: auto">
+      <AgentDiagnosticsPanel
+        :stats="proxyStats"
+        :loading="proxyPending"
+        @refresh="refreshProxyStats"
+      />
+    </div>
   </div>
 </template>

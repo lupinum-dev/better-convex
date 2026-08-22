@@ -10,6 +10,14 @@
   Vue runtime remains identity-safe and provider-neutral.
 - Standardize public reactive progress on `pending` and adopt bounded Nuxt,
   Convex, Vue, and Node compatibility ranges backed by exact tested versions.
+- Add deferred and lazy query lifecycles, dynamic keyed multi-query state, and
+  resumable pagination with generation-safe reset and overlap handling.
+- Add one reviewed `createBetterConvexAuth` factory and an idempotent,
+  confirmation-gated development initializer that never prints generated secrets.
+- Harden cookie forwarding, auth failure classification, serialized error revival,
+  OAuth/MCP routing, and request-scoped sanitized MCP tool failure hooks.
+- Focus DevTools on query gates, operation timelines, auth/proxy state, and
+  sanitized agent boundary diagnostics without polling or editing controls.
 
 ## v0.8.0-beta.40
 

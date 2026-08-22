@@ -17,6 +17,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 
+import { applyCompatibilityProfile } from './compatibility-profile.mjs'
 import { getMaintainedCandidateProfile } from './maintained-candidate-apps.mjs'
 import { canonicalNpmTarballFilename } from './package-artifact-coordinates.mjs'
 import { getPackageCertificationDescriptor } from './package-certification-manifest.mjs'
@@ -67,14 +68,24 @@ const deterministicEnvironment = {
 }
 
 const options = parseArguments(process.argv.slice(2))
-const { descriptor: packageDescriptor, profile: candidateProfile } = getMaintainedCandidateProfile(
-  options.packageId,
-)
-const suppliedTarball = options.tarball ? resolve(repoRoot, options.tarball) : undefined
-if (options.vueTarball && !candidateProfile.companionPackages?.includes('vue')) {
+const maintainedProfile = getMaintainedCandidateProfile(options.packageId)
+const certificationContext = Object.freeze({
+  dependencyProfile: options.dependencyProfile,
+  descriptor: maintainedProfile.descriptor,
+  mcpTarball: options.mcpTarball,
+  packageId: options.packageId,
+  profile: maintainedProfile.profile,
+  suppliedTarball: options.tarball ? resolve(repoRoot, options.tarball) : undefined,
+  vueTarball: options.vueTarball,
+})
+applyCompatibilityProfile({}, certificationContext.dependencyProfile)
+if (
+  certificationContext.vueTarball &&
+  !certificationContext.profile.companionPackages?.includes('vue')
+) {
   throw new Error('--vue-tarball is valid only for a reviewed profile with the Vue companion')
 }
-if (options.mcpTarball && options.packageId !== 'nuxt') {
+if (certificationContext.mcpTarball && certificationContext.packageId !== 'nuxt') {
   throw new Error('--mcp-tarball is valid only for the reviewed Nuxt consumer profile')
 }
 
@@ -82,7 +93,15 @@ function parseArguments(args) {
   const values = new Map()
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
-    if (!['--package', '--tarball', '--vue-tarball', '--mcp-tarball'].includes(argument)) {
+    if (
+      ![
+        '--package',
+        '--tarball',
+        '--vue-tarball',
+        '--mcp-tarball',
+        '--dependency-profile',
+      ].includes(argument)
+    ) {
       throw new Error(`Unknown candidate-app argument: ${String(argument)}`)
     }
     const value = args[index + 1]
@@ -93,7 +112,7 @@ function parseArguments(args) {
   }
   if (!values.has('--package')) {
     throw new Error(
-      'Usage: check-candidate-apps.mjs --package <reviewed-id> [--tarball <path>] [--vue-tarball <path>] [--mcp-tarball <path>]',
+      'Usage: check-candidate-apps.mjs --package <reviewed-id> [--tarball <path>] [--vue-tarball <path>] [--mcp-tarball <path>] [--dependency-profile <profile>]',
     )
   }
   return {
@@ -101,6 +120,7 @@ function parseArguments(args) {
     tarball: values.get('--tarball'),
     vueTarball: values.get('--vue-tarball'),
     mcpTarball: values.get('--mcp-tarball'),
+    dependencyProfile: values.get('--dependency-profile'),
   }
 }
 
@@ -195,10 +215,10 @@ function packageFingerprint(directory) {
 }
 
 function prepareCompanionCandidates(mainManifest) {
-  return candidateProfile.companionPackages.map((packageId) => {
+  return certificationContext.profile.companionPackages.map((packageId) => {
     const descriptor = getPackageCertificationDescriptor(packageId)
     const packageRoot = resolve(repoRoot, descriptor.packageDirectory)
-    const suppliedCompanion = packageId === 'vue' ? options.vueTarball : undefined
+    const suppliedCompanion = packageId === 'vue' ? certificationContext.vueTarball : undefined
     let tarballPath
     let filename
     if (suppliedCompanion) {
@@ -236,7 +256,7 @@ function prepareCompanionCandidates(mainManifest) {
     }
     if (mainManifest.dependencies?.[descriptor.packageName] !== manifest.version) {
       throw new Error(
-        `${packageDescriptor.packageName} must depend on exact ${descriptor.packageName}@${manifest.version}`,
+        `${certificationContext.descriptor.packageName} must depend on exact ${descriptor.packageName}@${manifest.version}`,
       )
     }
     return {
@@ -321,7 +341,10 @@ function addCompanionCandidates(appDir, manifest, companions, label) {
 function addPnpmCandidatePolicy(appDir, candidateManifest, companions) {
   const workspacePath = join(appDir, 'pnpm-workspace.yaml')
   const current = existsSync(workspacePath) ? readFileSync(workspacePath, 'utf8') : ''
-  const candidates = [{ descriptor: packageDescriptor, manifest: candidateManifest }, ...companions]
+  const candidates = [
+    { descriptor: certificationContext.descriptor, manifest: candidateManifest },
+    ...companions,
+  ]
   const releaseAgeRules = candidates
     .map(({ descriptor, manifest }) => `  - '${descriptor.packageName}@${manifest.version}'`)
     .join('\n')
@@ -413,10 +436,13 @@ function assertNoRepositoryOverride(app) {
   const workspacePath = join(repoRoot, app.path, 'pnpm-workspace.yaml')
   if (!existsSync(workspacePath)) return
   const workspace = readFileSync(workspacePath, 'utf8')
-  const escapedName = packageDescriptor.packageName.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const escapedName = certificationContext.descriptor.packageName.replace(
+    /[.*+?^${}()|[\]\\]/gu,
+    '\\$&',
+  )
   if (new RegExp(`${escapedName}\\s*:\\s*(?:file|link|workspace):`, 'u').test(workspace)) {
     throw new Error(
-      `${app.path}/pnpm-workspace.yaml must not override ${packageDescriptor.packageName} to the repository`,
+      `${app.path}/pnpm-workspace.yaml must not override ${certificationContext.descriptor.packageName} to the repository`,
     )
   }
 }
@@ -438,10 +464,10 @@ function verifyNpmConsumer(
   integrity,
   companions,
 ) {
-  const fixture = candidateProfile.npmConsumer
+  const fixture = certificationContext.profile.npmConsumer
   const appDir = join(scratchDir, 'apps', fixture.name)
   copyApp(fixture, appDir)
-  const localTarball = join(appDir, candidateProfile.tarballFilename)
+  const localTarball = join(appDir, certificationContext.profile.tarballFilename)
   copyFileSync(tarballPath, localTarball)
   if (sha512(localTarball) !== integrity) {
     throw new Error('npm consumer: copied candidate tarball differs from the release artifact')
@@ -449,9 +475,11 @@ function verifyNpmConsumer(
 
   const manifestPath = join(appDir, 'package.json')
   const manifest = readJson(manifestPath)
+  applyCompatibilityProfile(manifest, certificationContext.dependencyProfile)
   manifest.devDependencies = {
     ...manifest.devDependencies,
-    [packageDescriptor.packageName]: `file:./${candidateProfile.tarballFilename}`,
+    [certificationContext.descriptor.packageName]:
+      `file:./${certificationContext.profile.tarballFilename}`,
   }
   addCompanionCandidates(appDir, manifest, companions, 'npm consumer')
   writeJson(manifestPath, manifest)
@@ -464,11 +492,15 @@ function verifyNpmConsumer(
   })
 
   const lock = readFileSync(join(appDir, 'package-lock.json'), 'utf8')
-  if (!lock.includes(candidateProfile.tarballFilename)) {
+  if (!lock.includes(certificationContext.profile.tarballFilename)) {
     throw new Error('npm consumer: package-lock does not resolve the candidate tarball')
   }
   verifyInstalledCompanions(appDir, lock, companions, 'npm consumer')
-  const installedPackageDir = join(appDir, 'node_modules', packageDescriptor.packageName)
+  const installedPackageDir = join(
+    appDir,
+    'node_modules',
+    certificationContext.descriptor.packageName,
+  )
   const installedManifest = readJson(join(installedPackageDir, 'package.json'))
   if (installedManifest.version !== candidateManifest.version) {
     throw new Error(
@@ -623,9 +655,9 @@ async function assertProductionSourceMapsArePrivate(appDir) {
 const scratchDir = mkdtempSync(join(tmpdir(), 'bcn-candidate-apps-'))
 
 try {
-  let tarballPath = suppliedTarball
+  let tarballPath = certificationContext.suppliedTarball
   if (!tarballPath) {
-    const packageRoot = resolve(repoRoot, packageDescriptor.packageDirectory)
+    const packageRoot = resolve(repoRoot, certificationContext.descriptor.packageDirectory)
     run('pnpm', ['run', 'prepack'], { cwd: packageRoot })
     const packResult = JSON.parse(
       run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', scratchDir], {
@@ -640,19 +672,19 @@ try {
     throw new Error(`Candidate tarball does not exist: ${tarballPath}`)
   }
 
-  if (candidateProfile.kind === 'runners') {
+  if (certificationContext.profile.kind === 'runners') {
     run(process.execPath, [
       'scripts/check-package-exports.mjs',
       '--package',
-      packageDescriptor.id,
+      certificationContext.descriptor.id,
       '--tarball',
       tarballPath,
     ])
-    for (const runner of candidateProfile.runners) {
+    for (const runner of certificationContext.profile.runners) {
       run(process.execPath, [runner, '--tarball', tarballPath])
     }
     console.log(
-      `\nCandidate runner matrix passed (${candidateProfile.runners.length} maintained consumers, one exact tarball).`,
+      `\nCandidate runner matrix passed (${certificationContext.profile.runners.length} maintained consumers, one exact tarball).`,
     )
   } else {
     const extractedDir = join(scratchDir, 'extracted')
@@ -660,23 +692,26 @@ try {
     run('tar', ['-xzf', tarballPath, '-C', extractedDir])
     const extractedPackageDir = join(extractedDir, 'package')
     const candidateManifest = readJson(join(extractedPackageDir, 'package.json'))
-    if (candidateManifest.name !== packageDescriptor.packageName) {
+    if (candidateManifest.name !== certificationContext.descriptor.packageName) {
       throw new Error(
-        `Candidate package is ${String(candidateManifest.name)}; expected ${packageDescriptor.packageName}`,
+        `Candidate package is ${String(candidateManifest.name)}; expected ${certificationContext.descriptor.packageName}`,
       )
     }
     const expectedFingerprint = packageFingerprint(extractedPackageDir)
     const tarballIntegrity = sha512(tarballPath)
     const companionCandidates = prepareCompanionCandidates(candidateManifest)
 
-    for (const app of candidateProfile.pnpmApps) {
+    for (const app of certificationContext.profile.pnpmApps) {
       assertNoRepositoryOverride(app)
       const sourceDir = join(repoRoot, app.path)
       const sourceManifest = readJson(join(sourceDir, 'package.json'))
-      const sourceVersion = dependencySpecifier(sourceManifest, packageDescriptor.packageName)
+      const sourceVersion = dependencySpecifier(
+        sourceManifest,
+        certificationContext.descriptor.packageName,
+      )
       if (sourceVersion !== candidateManifest.version) {
         throw new Error(
-          `${app.path}/package.json declares ${packageDescriptor.packageName}@${sourceVersion ?? '<missing>'}; expected ${candidateManifest.version}`,
+          `${app.path}/package.json declares ${certificationContext.descriptor.packageName}@${sourceVersion ?? '<missing>'}; expected ${candidateManifest.version}`,
         )
       }
       const sourceLockPath = join(sourceDir, 'pnpm-lock.yaml')
@@ -685,7 +720,7 @@ try {
       }
       const appDir = join(scratchDir, 'apps', app.name)
       copyApp(app, appDir)
-      const localTarball = join(appDir, candidateProfile.tarballFilename)
+      const localTarball = join(appDir, certificationContext.profile.tarballFilename)
       copyFileSync(tarballPath, localTarball)
       if (sha512(localTarball) !== tarballIntegrity) {
         throw new Error(`${app.path}: copied candidate tarball differs from the release artifact`)
@@ -693,21 +728,22 @@ try {
 
       const manifestPath = join(appDir, 'package.json')
       const manifest = readJson(manifestPath)
-      if (manifest.dependencies?.[packageDescriptor.packageName]) {
-        manifest.dependencies[packageDescriptor.packageName] =
-          `file:./${candidateProfile.tarballFilename}`
-      } else if (manifest.devDependencies?.[packageDescriptor.packageName]) {
-        manifest.devDependencies[packageDescriptor.packageName] =
-          `file:./${candidateProfile.tarballFilename}`
+      applyCompatibilityProfile(manifest, certificationContext.dependencyProfile)
+      if (manifest.dependencies?.[certificationContext.descriptor.packageName]) {
+        manifest.dependencies[certificationContext.descriptor.packageName] =
+          `file:./${certificationContext.profile.tarballFilename}`
+      } else if (manifest.devDependencies?.[certificationContext.descriptor.packageName]) {
+        manifest.devDependencies[certificationContext.descriptor.packageName] =
+          `file:./${certificationContext.profile.tarballFilename}`
       } else {
         throw new Error(
-          `${app.path}/package.json does not declare ${packageDescriptor.packageName}`,
+          `${app.path}/package.json does not declare ${certificationContext.descriptor.packageName}`,
         )
       }
       const fixtureCompanions = (app.companionPackages ?? []).map((packageId) =>
         prepareFixtureCompanionCandidate(
           packageId,
-          packageId === 'mcp' ? options.mcpTarball : undefined,
+          packageId === 'mcp' ? certificationContext.mcpTarball : undefined,
           sourceManifest,
           app.name,
         ),
@@ -748,12 +784,16 @@ try {
       )
 
       const lock = readFileSync(join(appDir, 'pnpm-lock.yaml'), 'utf8')
-      if (!lock.includes(candidateProfile.tarballFilename)) {
+      if (!lock.includes(certificationContext.profile.tarballFilename)) {
         throw new Error(`${app.path}: the fresh lock does not resolve the candidate tarball`)
       }
       verifyInstalledCompanions(appDir, lock, appCompanions, app.path)
 
-      const installedPackageDir = join(appDir, 'node_modules', packageDescriptor.packageName)
+      const installedPackageDir = join(
+        appDir,
+        'node_modules',
+        certificationContext.descriptor.packageName,
+      )
       const installedManifest = readJson(join(installedPackageDir, 'package.json'))
       if (installedManifest.version !== candidateManifest.version) {
         throw new Error(
@@ -807,14 +847,18 @@ try {
 
     const vueCandidate = companionCandidates.find((candidate) => candidate.descriptor.id === 'vue')
     if (!vueCandidate) throw new Error('Nuxt candidate profile requires one Vue companion')
-    for (const runner of candidateProfile.browserRunners) {
-      run(process.execPath, [
+    for (const runner of certificationContext.profile.browserRunners) {
+      const runnerArguments = [
         runner,
         '--nuxt-tarball',
         tarballPath,
         '--vue-tarball',
         vueCandidate.tarballPath,
-      ])
+      ]
+      if (certificationContext.dependencyProfile) {
+        runnerArguments.push('--dependency-profile', certificationContext.dependencyProfile)
+      }
+      run(process.execPath, runnerArguments)
     }
 
     if (!agencyConvexDeployKey) {
@@ -823,7 +867,7 @@ try {
       )
     }
     console.log(
-      `\nCandidate app matrix passed (${candidateProfile.pnpmApps.length} pnpm apps, one npm consumer, and ${candidateProfile.browserRunners.length} production browser runner; one exact package set).`,
+      `\nCandidate app matrix passed (${certificationContext.profile.pnpmApps.length} pnpm apps, one npm consumer, and ${certificationContext.profile.browserRunners.length} production browser runner; one exact package set).`,
     )
   }
 } finally {

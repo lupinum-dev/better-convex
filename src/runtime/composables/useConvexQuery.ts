@@ -214,7 +214,7 @@ function createClientConvexQueryState<
         status: currentStatus,
         data,
         error: currentError?.message,
-        options: { immediate, server, subscribe: true, auth },
+        options: { immediate, lazy, server, subscribe: true, auth },
       })
     },
     { immediate: true },

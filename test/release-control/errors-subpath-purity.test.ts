@@ -218,7 +218,7 @@ describe('errors subpath purity guard ', () => {
 
     const violations = scanDir(DIST_ERRORS_DIR)
     expect(violations).toEqual([])
-  }, 120000)
+  }, 240_000)
 
   it('sanity: the disallowed-specifier scanner actually detects a planted violation', () => {
     // Guards against the scanner itself silently matching nothing (a purity

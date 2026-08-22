@@ -22,6 +22,7 @@ const lastUpdatedTime = computed(() => {
 
 const options = computed<{
   immediate?: boolean
+  lazy?: boolean
   server?: boolean
   subscribe?: boolean
   auth?: 'required' | 'optional' | 'none'
@@ -53,6 +54,12 @@ const options = computed<{
       <div class="detail-section">
         <div class="detail-title">Options</div>
         <div class="options-grid">
+          <div class="option-item">
+            <span class="option-icon" :class="options.lazy ? 'enabled' : 'disabled'">
+              <span>{{ options.lazy ? '✓' : '×' }}</span>
+            </span>
+            <span>lazy navigation</span>
+          </div>
           <div class="option-item">
             <span class="option-icon" :class="options.immediate ? 'enabled' : 'disabled'">
               <svg

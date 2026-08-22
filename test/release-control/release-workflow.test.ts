@@ -51,6 +51,7 @@ interface WorkflowJob {
   if?: unknown
   needs?: string | string[]
   permissions?: Record<string, unknown>
+  strategy?: { matrix?: { include?: unknown } }
   steps?: WorkflowStep[]
   'timeout-minutes'?: unknown
 }
@@ -224,7 +225,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     } finally {
       rmSync(temporaryDirectory, { force: true, recursive: true })
     }
-  })
+  }, 15_000)
 
   it('names a missing retained companion and the command that produces it', () => {
     const { repository, temporaryDirectory } = createReleaseControlFixture()
@@ -284,7 +285,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     )
   })
 
-  it('keeps CI source-only and package previews non-authoritative', async () => {
+  it('keeps CI package previews non-authoritative and certifies packed compatibility', async () => {
     expect(ciWorkflow.env?.RELEASE_NPM_VERSION).toBe('11.18.0')
     expect(preparationCommands(ciWorkflow, 'release-gate')).toEqual([])
     expect(preparationCommands(previewWorkflow, 'preview')).toEqual([])
@@ -293,6 +294,21 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(runs(ciWorkflow, 'release-smoke')).toContain(
       'npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable',
     )
+    expect(runs(ciWorkflow, 'dependency-matrix')).toContain(
+      'pnpm run check:compatibility-matrix "${{ matrix.profile }}"',
+    )
+    expect(runs(ciWorkflow, 'dependency-matrix')).toContain(
+      'pnpm exec playwright install --with-deps chromium',
+    )
+    expect(runs(ciWorkflow, 'dependency-matrix')).not.toContain(
+      'pnpm add --workspace-root --save-dev --lockfile=false',
+    )
+    expect(requireJob(ciWorkflow, 'dependency-matrix').strategy?.matrix?.include).toEqual([
+      { profile: 'floor', node: '22.14.0' },
+      { profile: 'latest-compatible', node: '22.14.0' },
+      { profile: 'floor', node: '24' },
+      { profile: 'latest-compatible', node: '24' },
+    ])
     expect(
       steps(ciWorkflow, 'release-smoke').find(
         (step) => step.name === 'Retain the Linux candidate locks for review',
@@ -306,13 +322,14 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'classify',
       'secrets',
       'compatibility',
+      'dependency-matrix',
       'auth-contracts',
       'auth-real-backend',
       'deployable-app-audits',
       'release-smoke',
     ])
     expect(runs(ciWorkflow, 'release-gate')).toEqual([
-      'test "$CLASSIFY_RESULT" = success case "$FULL" in true | false) ;; *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;; esac test "$SECRETS" = success test "$DEPLOYABLE_APP_AUDITS" = success for result in "$COMPATIBILITY" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi done',
+      'test "$CLASSIFY_RESULT" = success case "$FULL" in true | false) ;; *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;; esac test "$SECRETS" = success test "$DEPLOYABLE_APP_AUDITS" = success for result in "$COMPATIBILITY" "$DEPENDENCY_MATRIX" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi done',
     ])
     const classifyScript = steps(ciWorkflow, 'classify').find(
       (step) => step.name === 'Select required lanes',

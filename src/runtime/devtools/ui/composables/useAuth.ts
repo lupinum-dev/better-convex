@@ -6,7 +6,7 @@ import type { DevtoolsBridgeController } from './useBridge'
 /**
  * Keys to ignore when comparing auth state (these change frequently but don't affect UI)
  */
-const VOLATILE_AUTH_KEYS = new Set(['expiresInSeconds', 'expiresAt', 'issuedAt', 'claims'])
+const VOLATILE_AUTH_KEYS = new Set(['expiresInSeconds', 'expiresAt', 'issuedAt'])
 
 /**
  * Check if two objects have the same values (shallow comparison for our use case)
@@ -45,7 +45,7 @@ export function useAuth(bridge: DevtoolsBridgeController) {
   const authState = ref<EnhancedAuthState | null>(null)
   const connectionState = ref<ConnectionState | null>(null)
   const authWaterfall = ref<AuthWaterfall | null>(null)
-  let intervalId: ReturnType<typeof setInterval> | null = null
+  let cleanup: (() => void) | null = null
 
   async function updateConnectionState() {
     try {
@@ -81,14 +81,34 @@ export function useAuth(bridge: DevtoolsBridgeController) {
   }
 
   onMounted(async () => {
-    // Initial fetch
     await Promise.all([updateConnectionState(), updateAuthState(), updateAuthWaterfall()])
-
-    // Poll for updates (reduced frequency since auth doesn't change often)
-    intervalId = setInterval(() => {
-      void updateConnectionState()
-      void updateAuthState()
-    }, 2000) // Increased to 2 seconds
+    const transport = bridge.getTransport()
+    if (!transport) return
+    const handler = (event: { data: unknown }) => {
+      if (!event.data || typeof event.data !== 'object') return
+      const message = event.data as {
+        type?: string
+        instanceId?: string | null
+        authState?: EnhancedAuthState
+        connectionState?: ConnectionState
+        authWaterfall?: AuthWaterfall | null
+      }
+      if (
+        message.type !== 'CONVEX_DEVTOOLS_AUTH' ||
+        message.instanceId !== bridge.boundInstanceId.value
+      ) {
+        return
+      }
+      if (message.authState && hasChanged(authState.value, message.authState, VOLATILE_AUTH_KEYS)) {
+        authState.value = message.authState
+      }
+      if (message.connectionState && hasChanged(connectionState.value, message.connectionState)) {
+        connectionState.value = message.connectionState
+      }
+      authWaterfall.value = message.authWaterfall ?? null
+    }
+    transport.addEventListener('message', handler)
+    cleanup = () => transport.removeEventListener('message', handler)
   })
 
   watch(bridge.boundInstanceId, () => {
@@ -101,10 +121,7 @@ export function useAuth(bridge: DevtoolsBridgeController) {
   })
 
   onUnmounted(() => {
-    if (intervalId) {
-      clearInterval(intervalId)
-      intervalId = null
-    }
+    cleanup?.()
   })
 
   return {

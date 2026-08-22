@@ -45,6 +45,19 @@ export default defineConfig({
         },
       },
 
+      // Release-control tests invoke real package builds, mutate dist, or pack
+      // artifacts. They share those outputs, so parallel execution is unsafe.
+      {
+        test: {
+          name: 'release-control',
+          include: ['test/release-control/**/*.test.ts'],
+          environment: 'node',
+          fileParallelism: false,
+          sequence: { groupOrder: 1 },
+          testTimeout: 240_000,
+        },
+      },
+
       // The shared adapter's pure model and its convex-test backend contract.
       {
         resolve: {

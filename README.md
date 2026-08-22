@@ -29,9 +29,10 @@ Do not use Better Convex as an authorization layer. Every Convex function must s
 
 ## Requirements
 
-- Node.js `^22.12.0 || ^24.11.0 || >=26.0.0` for the Nuxt package.
-- Nuxt `4.5.2` and Convex `1.42.2` for the current Nuxt beta.
-- Vue `^3.5.0` and Convex `1.42.2` for the Vue package.
+- Node.js `^22.14 || ^24`.
+- Nuxt `>=4.5.2 <5`, tested at the floor and latest Nuxt 4.
+- Convex `>=1.42.2 <2`, tested at the floor and latest 1.x.
+- Vue `>=3.5 <4`.
 
 Better Auth is optional. Auth-enabled applications must install the exact peer versions in the package manifest.
 
@@ -79,7 +80,7 @@ const { data: tasks, status, error } = await useConvexQuery(api.tasks.list, {})
 </template>
 ```
 
-Queries use SSR and realtime updates by default. Pass an explicit arguments object. Use the literal `'skip'` to pause a query.
+Queries use SSR and realtime updates by default. Queries with empty validators may omit the arguments object. Use the literal `'skip'` to pause a query.
 
 ## Server calls and mutations
 
@@ -111,6 +112,10 @@ Authentication is off when `convex.auth` is omitted. An auth-enabled application
 The module transports identity through a bounded same-origin proxy. Convex functions remain the source of truth for authorization. Route middleware is navigation behavior, not backend access control.
 
 Read the [authentication setup guide](https://better-convex.lupinum.com/docs/get-started/add-authentication) before you enable auth.
+
+For a development setup, run `pnpm exec better-convex init`. It shows the exact
+file diff before writing and asks separately before creating development secrets
+or the first signing key. It refuses production provisioning.
 
 ## Packages
 

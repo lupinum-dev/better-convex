@@ -2,7 +2,7 @@ import type { Ref } from 'vue'
 
 import type { ConvexRuntimeContext } from '../runtime-context'
 import type { Logger } from '../utils/logger'
-import type { AuthWaterfall, ConnectionState } from './types'
+import type { AuthState, AuthWaterfall, ConnectionState } from './types'
 
 interface NuxtDevtoolsClientInput {
   runtime: ConvexRuntimeContext
@@ -11,6 +11,7 @@ interface NuxtDevtoolsClientInput {
   waterfall: Ref<AuthWaterfall | null>
   instanceId: string
   logger: Logger
+  readAuthState(): Pick<AuthState, 'isAuthenticated' | 'pending'>
   onDispose(dispose: () => void): void
 }
 
@@ -49,6 +50,7 @@ export function setupNuxtDevtoolsClient(input: NuxtDevtoolsClientInput): void {
           input.user,
           input.waterfall,
           () => readConnection(input.runtime),
+          input.readAuthState,
           input.instanceId,
         )
       } catch (error) {

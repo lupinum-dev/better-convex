@@ -240,7 +240,7 @@ ${toRows(composableImports, composableMeta)}
 
 \`useConvexQuery\` accepts \`auth\`, \`keepPreviousData\`, and Nuxt's \`server\` option. Its state is \`data\`, \`status\`, \`pending\`, \`error\`, \`isStale\`, and \`refresh()\`. These option and state lists are exhaustive.
 
-\`useConvexPaginatedQuery\` requires a positive \`initialNumItems\`. Its state is \`data\`, \`status\`, \`isLoading\`, \`canLoadMore\`, \`error\`, \`isStale\`, \`loadMore()\`, and \`refresh()\`.
+\`useConvexPaginatedQuery\` requires a positive \`initialNumItems\`. Its state is \`data\`, \`status\`, \`pending\`, \`pageStatus\`, \`canLoadMore\`, \`cursor\`, \`error\`, \`isStale\`, \`execute()\`, \`loadMore()\`, \`refresh()\`, and \`reset()\`.
 
 ## Auth-enabled auto-imports
 
@@ -264,7 +264,7 @@ Only an auth-enabled build auto-imports the following API. Define its typed Bett
 | ---- | ---- | ------- | ---------- |
 ${toRows(authImports, composableMeta)}
 
-Render auth UI with ordinary Vue conditionals over \`status\`, \`isPending\`, and \`error\`. The module does not register auth UI components.
+Render auth UI with ordinary Vue conditionals over \`status\`, \`pending\`, and \`error\`. The module does not register auth UI components.
 
 ## Server auto-imports
 
