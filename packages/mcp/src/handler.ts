@@ -21,6 +21,7 @@ import {
   verifyAndNormalizeMcpAccess,
 } from './access.js'
 import type { McpAccessContext, McpAccessVerifier, VerifiedMcpAccess } from './index.js'
+import { runMcpTool, type McpToolErrorMetadata } from './tools.js'
 import {
   boundMcpResponse,
   McpTransportFailure,
@@ -28,6 +29,10 @@ import {
   prepareBoundedMcpRequest,
   runMcpRequestDeadline,
 } from './transport.js'
+
+export interface McpRequestTools {
+  runTool(name: string, operation: Parameters<typeof runMcpTool>[0]): ReturnType<typeof runMcpTool>
+}
 
 export interface HandleMcpRequestOptions {
   readonly serverInfo: {
@@ -54,7 +59,12 @@ export interface HandleMcpRequestOptions {
         readonly verifier: McpAccessVerifier
         readonly requiredScopes?: readonly string[]
       }
-  readonly configureServer: (access: McpAccessContext, server: McpServer) => void | Promise<void>
+  readonly configureServer: (
+    access: McpAccessContext,
+    server: McpServer,
+    tools: McpRequestTools,
+  ) => void | Promise<void>
+  readonly onToolError?: (metadata: McpToolErrorMetadata) => void | Promise<void>
 }
 
 export async function handleMcpRequest(
@@ -96,7 +106,16 @@ export async function handleMcpRequest(
         async () => {
           const server = new McpServer(options.serverInfo)
           try {
-            await options.configureServer(authenticated.access, server)
+            const tools: McpRequestTools = Object.freeze({
+              runTool: (name: string, operation: Parameters<typeof runMcpTool>[0]) =>
+                runMcpTool(operation, {
+                  name,
+                  ...(options.onToolError === undefined
+                    ? {}
+                    : { onToolError: options.onToolError }),
+                }),
+            })
+            await options.configureServer(authenticated.access, server, tools)
             return hardenUnaryServer(server)
           } catch (error) {
             await server.close().catch(() => {})
@@ -202,11 +221,9 @@ function protectedResourceMetadataResponse(
 ): Response | undefined {
   const actual = new URL(request.url)
   const expected = new URL(resourceMetadataUrl)
-  const normalizedPath = (value: string) =>
-    value.length > 1 && value.endsWith('/') ? value.slice(0, -1) : value
   if (
     actual.origin !== expected.origin ||
-    normalizedPath(actual.pathname) !== normalizedPath(expected.pathname)
+    normalizeRoutingPath(actual.pathname) !== normalizeRoutingPath(expected.pathname)
   ) {
     return undefined
   }
@@ -215,7 +232,13 @@ function protectedResourceMetadataResponse(
 
 function requestBoundaryResponse(request: Request, expectedResource: URL): Response | undefined {
   const url = new URL(request.url)
-  if (url.href !== expectedResource.href) return emptyFailure(404)
+  if (
+    url.origin !== expectedResource.origin ||
+    normalizeRoutingPath(url.pathname) !== normalizeRoutingPath(expectedResource.pathname) ||
+    url.search !== expectedResource.search
+  ) {
+    return emptyFailure(404)
+  }
   if (request.method !== 'POST') return emptyFailure(405)
   if (request.headers.has('content-encoding')) return emptyFailure(415)
   const originRejected = originValidationResponse(request, [])
@@ -227,6 +250,10 @@ function requestBoundaryResponse(request: Request, expectedResource: URL): Respo
     return emptyFailure(415)
   }
   return undefined
+}
+
+function normalizeRoutingPath(pathname: string): string {
+  return pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
 }
 
 function emptyFailure(status: number): Response {
@@ -287,6 +314,15 @@ async function authenticateRequest(
   )
 }
 
+export class McpUnsupportedCapabilityError extends Error {
+  readonly code = 'MCP_UNSUPPORTED_SERVER_CAPABILITY'
+
+  constructor(readonly unsupportedCapabilities: readonly string[]) {
+    super(`MCP server advertised unsupported capabilities: ${unsupportedCapabilities.join(', ')}`)
+    this.name = 'McpUnsupportedCapabilityError'
+  }
+}
+
 function hardenUnaryServer(server: McpServer): McpServer {
   const protocol = server.server
   const capabilities = protocol.getCapabilities()
@@ -294,7 +330,7 @@ function hardenUnaryServer(server: McpServer): McpServer {
     (capability) => capability !== 'tools' && capability !== 'resources',
   )
   if (unsupported.length > 0) {
-    throw new TypeError('MCP_UNSUPPORTED_SERVER_CAPABILITY')
+    throw new McpUnsupportedCapabilityError(Object.freeze([...unsupported]))
   }
   protocol.registerCapabilities({
     ...(capabilities.resources === undefined

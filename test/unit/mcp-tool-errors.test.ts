@@ -75,8 +75,7 @@ describe('MCP tool failure projection', () => {
     expect(result).not.toHaveProperty('cause')
   })
 
-  it('is a one-argument boundary and never inspects a hostile cause', async () => {
-    expect(runMcpTool).toHaveLength(1)
+  it('never inspects a hostile cause', async () => {
     let getters = 0
     const cause = Object.create(null) as Record<string, unknown>
     for (const key of ['name', 'message', 'stack', 'data', 'constructor']) {
@@ -95,6 +94,45 @@ describe('MCP tool failure projection', () => {
       content: [{ type: 'text', text: 'Tool execution failed' }],
       isError: true,
     })
+  })
+
+  it('reports only frozen operation metadata to a request-scoped hook', async () => {
+    const observed: unknown[] = []
+    const result = await runMcpTool(
+      () => {
+        throw new Error('raw-tool-cause-sentinel')
+      },
+      {
+        name: 'notes.search',
+        onToolError(metadata) {
+          observed.push(metadata)
+        },
+      },
+    )
+
+    expect(result).toMatchObject({ isError: true })
+    expect(observed).toEqual([{ kind: 'tool', name: 'notes.search' }])
+    expect(Object.isFrozen(observed[0])).toBe(true)
+    expect(JSON.stringify(observed)).not.toContain('raw-tool-cause-sentinel')
+  })
+
+  it('contains diagnostic hook failures and rejects unsafe operation names', async () => {
+    await expect(
+      runMcpTool(
+        () => {
+          throw new Error('operation')
+        },
+        {
+          name: 'notes.search',
+          onToolError() {
+            throw new Error('observer-sentinel')
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ isError: true })
+    await expect(runMcpTool(() => ({ content: [] }), { name: 'bad\nname' })).rejects.toThrow(
+      'Invalid MCP tool name',
+    )
   })
 
   it('keeps cross-tenant denial indistinguishable and contains unknown throws through the SDK', async () => {

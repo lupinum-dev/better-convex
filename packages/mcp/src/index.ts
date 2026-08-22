@@ -40,6 +40,7 @@ export interface McpAccessVerifier {
   verifyAccessToken(token: string, expected: McpVerificationExpectation): Promise<VerifiedMcpAccess>
 }
 
-export { handleMcpRequest } from './handler.js'
-export type { HandleMcpRequestOptions } from './handler.js'
+export { handleMcpRequest, McpUnsupportedCapabilityError } from './handler.js'
+export type { HandleMcpRequestOptions, McpRequestTools } from './handler.js'
 export { runMcpTool } from './tools.js'
+export type { McpToolErrorMetadata, RunMcpToolOptions } from './tools.js'

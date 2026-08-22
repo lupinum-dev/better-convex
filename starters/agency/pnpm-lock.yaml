@@ -683,7 +683,7 @@ packages:
         optional: true
 
   '@lupinum/better-convex-vue@1.0.0-beta.1':
-    resolution: {integrity: sha512-YRoIF0xAF2ZIANof/0odiuKL9/M+iKauv6SloqMuMIQ83A4hoN5tegr4ozFNvBTAH5lOYm6fW97jU3UVVnh0rg==}
+    resolution: {integrity: sha512-J0vKijpxDZj9XvBLvv87lUibT6CXq6TzvbB+v6kYFWFG7WuFNLS/SDg1w8hvNN02Dqa8plD9VS8uF5tRYKUKqw==}
     engines: {node: ^22.14.0 || ^24.0.0}
     peerDependencies:
       convex: '>=1.42.2 <2'

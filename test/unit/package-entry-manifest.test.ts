@@ -125,12 +125,15 @@ describe('package entry manifest', () => {
     })
     expect(manifest.entries[0]).toMatchObject({
       kind: 'runtime',
-      valueExports: ['handleMcpRequest', 'runMcpTool'],
+      valueExports: ['handleMcpRequest', 'McpUnsupportedCapabilityError', 'runMcpTool'],
       typeExports: [
         'HandleMcpRequestOptions',
         'McpAccessContext',
         'McpAccessVerifier',
+        'McpRequestTools',
+        'McpToolErrorMetadata',
         'McpVerificationExpectation',
+        'RunMcpToolOptions',
         'VerifiedMcpAccess',
       ],
     })

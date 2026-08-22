@@ -217,7 +217,7 @@ export function isSerializedConvexCallError(value: unknown): value is Serialized
   if (value.name !== 'ConvexCallError') return false
   if (!isConvexCallErrorKind(value.kind)) return false
   if (typeof value.message !== 'string') return false
-  if (value.code !== undefined && typeof value.code !== 'string') return false
-  if (value.status !== undefined && typeof value.status !== 'number') return false
+  if (value.code !== undefined && asNonEmptyString(value.code) === undefined) return false
+  if (value.status !== undefined && asFiniteNumber(value.status) === undefined) return false
   return true
 }
