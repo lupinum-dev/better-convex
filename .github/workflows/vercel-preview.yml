@@ -206,7 +206,7 @@ jobs:
                 }),
               })
 
-              const inspectorUrl = absoluteUrl(deployment.inspectorUrl)
+              let inspectorUrl = absoluteUrl(deployment.inspectorUrl)
               await updateStatusComment(
                 [
                   '⏳ **Vercel preview is building**',
@@ -248,7 +248,25 @@ jobs:
               const wasIgnored =
                 deployment.readyState === 'CANCELED' &&
                 deployment.errorLink?.includes('ignored-build-step')
+              let reusedExistingPreview = false
               if (wasIgnored) {
+                const existingDeployments = await requestVercel(
+                  `/v7/deployments?projectId=${encodeURIComponent(vercelProjectId)}&sha=${encodeURIComponent(commitSha)}&state=READY&limit=10`,
+                  {},
+                  { retries: 3 },
+                )
+                const existingDeployment = existingDeployments.deployments?.find(
+                  (candidate) => candidate.uid !== deployment.id && candidate.state === 'READY' && candidate.url,
+                )
+
+                if (existingDeployment) {
+                  deployment = existingDeployment
+                  inspectorUrl = absoluteUrl(existingDeployment.inspectorUrl)
+                  reusedExistingPreview = true
+                }
+              }
+
+              if (wasIgnored && !reusedExistingPreview) {
                 await updateStatusComment(
                   [
                     '⏭️ **Vercel preview was not needed**',
@@ -300,7 +318,9 @@ jobs:
                   `Commit: [\`${shortSha}\`](${commitUrl})`,
                   `[Open preview](${previewUrl}) · ${inspectorUrl ? `[View build details](${inspectorUrl})` : `[View workflow](${runUrl})`}`,
                   '',
-                  'The exact pull request commit built and deployed successfully. Package checks are reported separately.',
+                  reusedExistingPreview
+                    ? 'The exact pull request commit already had a successful deployment, so Vercel reused it without rebuilding. Package checks are reported separately.'
+                    : 'The exact pull request commit built and deployed successfully. Package checks are reported separately.',
                 ].join('\n') + outdatedMessage,
               )
 
