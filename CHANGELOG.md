@@ -2,6 +2,8 @@
 
 ## v1.0.0-beta.1
 
+- Support stable `latest` releases and independent `mcp-v*` releases without
+  changing the trusted publishing workflow identity or rebuilding artifacts.
 - Align `@lupinum/better-convex-nuxt`, `@lupinum/better-convex-vue`, and
   `@lupinum/better-convex-mcp` on the first 1.0 beta contract.
 - Replace the old auth export paths and separate executables with the focused

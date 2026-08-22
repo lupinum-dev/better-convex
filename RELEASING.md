@@ -10,7 +10,7 @@ version of each new package therefore has one narrow exception: after the
 protected workflow certifies and retains the exact tarball, the owning human
 may publish that file once with two-factor authentication. Do not rebuild or
 repack it. The protected workflow must then verify the registry bytes and
-create the Git tag and GitHub prerelease. Later versions have no workstation
+create the Git tag and GitHub Release. Later versions have no workstation
 publication path.
 
 ## The one release path
@@ -22,10 +22,11 @@ The order is fixed:
    commit.
 3. Mint the Vue, Nuxt, and MCP artifacts once.
 4. Verify only those artifact bytes and clean consumers.
-5. Publish through npm trusted publishing under `next`, or complete the
+5. Publish through npm trusted publishing under the channel derived from each
+   package version (`latest` for stable, `next` for prerelease), or complete the
    first-package bootstrap described below.
 6. Download each package from npm and compare it with the certified SRI.
-7. Create the Git tag and GitHub prerelease from the matching changelog entry.
+7. Create the Git tag and GitHub Release from the matching changelog entry.
 
 Source certification never runs after immutable minting. Artifact verification
 never invokes the full source suite. A generic Vercel preview is a developer
@@ -67,8 +68,10 @@ Linux jobs run the core, auth, end-to-end, and secret-scanning lanes in
 parallel. `release-gate` is a small fail-closed aggregator: it succeeds only
 when every lane succeeds.
 
-The protected workflow is dispatched from `main` with the exact Nuxt and Vue
-prerelease version. It reads GitHub's check-run API and requires a successful
+The protected workflow is dispatched from `main` with `vue-nuxt` or `mcp` and
+that target's exact version. Vue and Nuxt share the root version and `v<version>`
+tag. MCP can move independently and uses `mcp-v<version>`. The workflow reads
+GitHub's check-run API and requires a successful
 `release-gate` produced by GitHub Actions for the exact dispatch commit. It does
 not rerun those source suites.
 
@@ -118,9 +121,9 @@ scripts. The job does not check out the repository, install dependencies, or
 run repository code.
 
 The job reads npm after each publish and requires the certified integrity,
-provenance mode, and `next` tag. Clean registry-consumer tests run before this
-protected job against the exact candidate tarballs. A stable workflow may use
-`latest` only after a separate stable-release review.
+provenance mode, and version-derived channel. Clean registry-consumer tests run
+before this protected job against the exact candidate tarballs. Stable package
+versions use `latest`; prerelease package versions use `next`.
 
 ## First-package bootstrap
 
@@ -129,26 +132,27 @@ exist and npm therefore rejects its trusted-publisher configuration.
 
 1. Dispatch the protected workflow with all missing packages listed in
    `bootstrap_packages`.
-2. Wait for the workflow to retain and verify all three artifacts. Do not
+2. Wait for the workflow to retain and verify the selected target artifacts. Do not
    approve the `npm` environment yet.
-3. Download the three retained tarballs and their evidence from that exact
+3. Download the retained tarball or tarballs and their evidence from that exact
    workflow run.
 4. Verify each tarball against its retained SHA-256 and SRI. Do not run
    `npm pack` or rebuild any package.
 5. Confirm that the owning npm account requires two-factor authentication for
    authorization and writes. Do not use an access token that bypasses two-factor
    authentication.
-6. Sign in to npm with that account. Publish each exact file with
-   `--access public --tag next --ignore-scripts`. Let npm request the one-time
-   password interactively for every publication. Do not put a one-time password
-   in a command, shell history, script, or log.
+6. Sign in to npm with that account. Publish each exact file with `--access
+public --tag <channel> --ignore-scripts`, where `<channel>` is `latest` for
+   a stable version and `next` for a prerelease. Let npm request the one-time
+   password interactively for every publication. Do not put a one-time
+   password in a command, shell history, script, or log.
 7. Configure each package's trusted publisher for
    `publish-prerelease.yml` and the protected `npm` environment.
 8. Approve the waiting `npm` environment.
 
 The workflow must detect the existing versions, require registry SRI equality,
-verify `next`, record each lane as `bootstrap`, and create the Git tag and
-GitHub prerelease from the certified source commit. The first versions do not
+verify the version-derived channel, record each lane as `bootstrap`, and create
+the Git tag and GitHub Release from the certified source commit. The first versions do not
 have GitHub OIDC provenance. This is a recorded npm bootstrap limitation, not
 permission to publish another version from a workstation.
 
@@ -180,7 +184,7 @@ version remains that package's sole published version and the dispatch names
 that package in `bootstrap_packages`. This explicit input authorizes only the
 known first-version recovery. Every other missing-provenance state stops the
 workflow. The workflow records each lane as `bootstrap` or `oidc` and names
-bootstrap packages in the GitHub prerelease. If the version does not exist, the
+bootstrap packages in the GitHub Release. If the version does not exist, the
 job publishes the same retained tarball with OIDC and requires provenance.
 Never rebuild it.
 
@@ -203,10 +207,12 @@ Run `pnpm changelog` to draft release notes from Conventional Commits. Review
 the generated entry before it enters the release pull request. Changelogen does
 not publish, push, tag, or own the three-package version family.
 
-The dispatch version must match the Nuxt package version, and `CHANGELOG.md`
-must contain a matching `## v<version>` section. After registry equality
-succeeds, the workflow creates the Git tag and GitHub prerelease from that
-section. The job runs no package install and no repository script.
+For `vue-nuxt`, the dispatch version must match the coupled root version and
+`CHANGELOG.md` must contain `## v<version>`. For `mcp`, it must match the MCP
+manifest and the heading is `## mcp-v<version>`. After registry equality
+succeeds, the workflow creates the target's Git tag and GitHub Release from
+that section. The privileged job runs no package install and no repository
+script.
 
 The release pull request is squash-merged after the hosted source certification
 is green. Public launch notes name only the final published coordinates.

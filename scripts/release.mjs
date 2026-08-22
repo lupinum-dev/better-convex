@@ -56,7 +56,14 @@ if (
   throw new Error('Workspace package.json must declare the release package manager.')
 }
 const version = artifactCoordinates.version
-const tag = getReleaseFamilyTag(workspacePackageJson.version)
+const releaseTarget = process.env.BCN_RELEASE_TARGET ?? 'vue-nuxt'
+if (!['vue-nuxt', 'mcp'].includes(releaseTarget)) throw new Error('BCN_RELEASE_TARGET is invalid.')
+const isSelectedTarget =
+  releaseTarget === 'mcp' ? releasePackageId === 'mcp' : releasePackageId !== 'mcp'
+const tag =
+  releaseTarget === 'mcp' && releasePackageId === 'mcp'
+    ? `mcp-v${version}`
+    : getReleaseFamilyTag(workspacePackageJson.version)
 const expectedArtifactFiles = artifactCoordinates.files
 
 function parseArguments(args) {
@@ -324,7 +331,7 @@ function verifyArtifact(evidenceFile) {
 function createArtifact() {
   const sourceCommit = output('git', ['rev-parse', 'HEAD'])
   if (!/^[0-9a-f]{40}$/u.test(sourceCommit)) throw new Error('Could not resolve source commit.')
-  assertReleaseTagIsUnusedOrCurrent(sourceCommit)
+  if (isSelectedTarget) assertReleaseTagIsUnusedOrCurrent(sourceCommit)
   assertPackageManifestMatchesCommit(releasePackageId, sourceCommit)
   assertPackageArtifactWriteTarget(releasePackageId)
 
@@ -427,7 +434,7 @@ function main() {
     return
   }
   ensureCleanWorkingTree()
-  requirePreparedChangelog()
+  if (isSelectedTarget) requirePreparedChangelog()
   const artifact = createArtifact()
   if (command === 'prepare') {
     run('node', [

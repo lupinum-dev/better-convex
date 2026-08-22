@@ -173,7 +173,9 @@ describe('contributor intake consistency', () => {
     const bootstrap = releasing.slice(bootstrapStart, bootstrapEnd)
     const afterBootstrap = releasing.slice(bootstrapEnd)
     expect(bootstrap).toContain('npm therefore rejects its trusted-publisher configuration')
-    expect(bootstrap).toContain('--access public --tag next --ignore-scripts')
+    expect(bootstrap).toMatch(/--access\s+public --tag <channel> --ignore-scripts/u)
+    expect(bootstrap).toContain('`latest` for')
+    expect(bootstrap).toContain('`next` for a prerelease')
     expect(bootstrap).toContain('two-factor authentication for')
     expect(bootstrap).toContain('authorization and writes')
     expect(bootstrap).toContain('Do not use an access token that bypasses two-factor')
@@ -181,7 +183,7 @@ describe('contributor intake consistency', () => {
     expect(afterBootstrap).not.toMatch(
       /(?:workstation|owning human).{0,120}(?:publish|tag|release)/su,
     )
-    expect(afterBootstrap).not.toContain('--access public --tag next --ignore-scripts')
+    expect(afterBootstrap).not.toMatch(/--access\s+public --tag <channel> --ignore-scripts/u)
     expect(releasing).toMatch(/Later versions have no workstation\s+publication path\./u)
   })
 })
