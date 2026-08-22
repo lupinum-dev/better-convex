@@ -1,0 +1,426 @@
+name: Vercel preview
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/vercel' &&
+      (github.event.comment.author_association == 'OWNER' ||
+      github.event.comment.author_association == 'MEMBER' ||
+      github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      checks: write
+      contents: read
+      issues: write
+      # GitHub requires this scope to comment on pull requests.
+      pull-requests: write
+    concurrency:
+      group: vercel-preview-${{ github.repository }}-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Deploy exact pull request commit
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const issueNumber = context.issue.number
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`
+            const vercelOrgId = process.env.VERCEL_ORG_ID
+            const vercelProjectId = process.env.VERCEL_PROJECT_ID
+            const vercelToken = process.env.VERCEL_TOKEN
+            const jobStart = Date.now()
+
+            let checkRunId
+            let commitSha
+            let deployment
+            let statusCommentId
+
+            const absoluteUrl = (value) => {
+              if (!value) return undefined
+              return value.startsWith('http://') || value.startsWith('https://')
+                ? value
+                : `https://${value}`
+            }
+
+            const updateStatusComment = async (body) => {
+              if (!statusCommentId) {
+                const { data: comment } = await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                  body,
+                })
+                statusCommentId = comment.id
+                return
+              }
+
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: statusCommentId,
+                body,
+              })
+            }
+
+            const reportBestEffort = async (label, operation) => {
+              try {
+                return await operation()
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error)
+                core.warning(`${label}: ${message}`)
+                return undefined
+              }
+            }
+
+            const reportStatusComment = (label, body) =>
+              reportBestEffort(label, () => updateStatusComment(body))
+            const updateCheckBestEffort = (label, parameters) =>
+              reportBestEffort(label, () => github.rest.checks.update(parameters))
+
+            const requestVercel = async (path, options = {}, { retries = 0 } = {}) => {
+              const separator = path.includes('?') ? '&' : '?'
+              const url = `https://api.vercel.com${path}${separator}teamId=${encodeURIComponent(vercelOrgId)}`
+
+              for (let attempt = 0; ; attempt += 1) {
+                try {
+                  const response = await fetch(url, {
+                    ...options,
+                    signal: AbortSignal.timeout(30_000),
+                    headers: {
+                      Authorization: `Bearer ${vercelToken}`,
+                      'Content-Type': 'application/json',
+                      ...options.headers,
+                    },
+                  })
+
+                  const payload = await response.json().catch(() => ({}))
+                  if (!response.ok) {
+                    const apiMessage = payload.error?.message || payload.message || response.statusText
+                    const apiError = new Error(`Vercel API request failed (${response.status}): ${apiMessage}`)
+                    apiError.retryable = response.status === 429 || response.status >= 500
+                    throw apiError
+                  }
+
+                  return payload
+                } catch (error) {
+                  const retryable =
+                    error?.retryable ||
+                    error?.name === 'TimeoutError' ||
+                    error?.name === 'AbortError' ||
+                    error instanceof TypeError
+                  if (!retryable || attempt >= retries) throw error
+                  await new Promise((resolve) => setTimeout(resolve, 5_000 * 2 ** attempt))
+                }
+              }
+            }
+
+            try {
+              for (const [name, value] of Object.entries({
+                VERCEL_ORG_ID: vercelOrgId,
+                VERCEL_PROJECT_ID: vercelProjectId,
+                VERCEL_TOKEN: vercelToken,
+              })) {
+                if (!value) throw new Error(`${name} is not configured.`)
+              }
+
+              const { data: pullRequest } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: issueNumber,
+              })
+
+              if (pullRequest.state !== 'open') throw new Error('The pull request is not open.')
+              if (pullRequest.head.repo?.full_name !== `${owner}/${repo}`) {
+                throw new Error('Fork pull requests cannot request a Vercel preview.')
+              }
+
+              const { data: actorPermission } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner,
+                repo,
+                username: context.actor,
+              })
+              if (!new Set(['admin', 'maintain', 'write']).has(actorPermission.permission)) {
+                throw new Error('A write-level repository role is required to request a Vercel preview.')
+              }
+
+              commitSha = pullRequest.head.sha
+              const shortSha = commitSha.slice(0, 7)
+              const commitUrl = `${context.serverUrl}/${owner}/${repo}/commit/${commitSha}`
+
+              await updateStatusComment(
+                [
+                  '⏳ **Vercel preview is starting**',
+                  '',
+                  `Commit: [\`${shortSha}\`](${commitUrl})`,
+                  '',
+                  'This comment will update when the deployment finishes.',
+                ].join('\n'),
+              )
+
+              const { data: checkRun } = await github.rest.checks.create({
+                owner,
+                repo,
+                name: 'Vercel Preview',
+                head_sha: commitSha,
+                status: 'in_progress',
+                started_at: new Date().toISOString(),
+                details_url: runUrl,
+                output: {
+                  title: 'Vercel preview is starting',
+                  summary: `Deploying pull request #${issueNumber} at ${shortSha}.`,
+                },
+              })
+              checkRunId = checkRun.id
+
+              deployment = await requestVercel('/v13/deployments', {
+                method: 'POST',
+                body: JSON.stringify({
+                  name: repo,
+                  project: vercelProjectId,
+                  gitSource: {
+                    type: 'github',
+                    repoId: pullRequest.head.repo.id,
+                    ref: pullRequest.head.ref,
+                    sha: commitSha,
+                  },
+                  gitMetadata: {
+                    remoteUrl: pullRequest.head.repo.html_url,
+                    commitAuthorName: pullRequest.user.login,
+                    commitMessage: pullRequest.title,
+                    commitRef: pullRequest.head.ref,
+                    commitSha,
+                    dirty: false,
+                    ci: true,
+                    ciType: 'github-actions',
+                    ciGitProviderUsername: context.actor,
+                    ciGitRepoVisibility: pullRequest.head.repo.visibility,
+                  },
+                  meta: {
+                    githubCommitOrg: owner,
+                    githubCommitRef: pullRequest.head.ref,
+                    githubCommitRepo: repo,
+                    githubCommitSha: commitSha,
+                    githubPrId: String(issueNumber),
+                    githubRepoId: String(pullRequest.head.repo.id),
+                  },
+                }),
+              })
+
+              let inspectorUrl = absoluteUrl(deployment.inspectorUrl)
+              await reportStatusComment(
+                'Could not report the building deployment',
+                [
+                  '⏳ **Vercel preview is building**',
+                  '',
+                  `Commit: [\`${shortSha}\`](${commitUrl})`,
+                  inspectorUrl ? `[View build details](${inspectorUrl})` : `[View workflow](${runUrl})`,
+                  '',
+                  'This comment will update when the deployment finishes.',
+                ].join('\n'),
+              )
+
+              await updateCheckBestEffort(
+                'Could not update the building check',
+                {
+                  owner,
+                  repo,
+                  check_run_id: checkRunId,
+                  details_url: inspectorUrl || runUrl,
+                  output: {
+                    title: 'Vercel preview is building',
+                    summary: `Vercel is building pull request #${issueNumber} at ${shortSha}.`,
+                  },
+                },
+              )
+
+              const terminalStates = new Set(['BLOCKED', 'CANCELED', 'ERROR', 'READY'])
+              const deadline = jobStart + 45 * 60 * 1000
+
+              while (!terminalStates.has(deployment.readyState)) {
+                if (Date.now() >= deadline) {
+                  throw new Error('Timed out while waiting for the Vercel deployment.')
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, 15_000))
+                deployment = await requestVercel(
+                  `/v13/deployments/${deployment.id}`,
+                  {},
+                  { retries: 3 },
+                )
+              }
+
+              const wasIgnored =
+                deployment.readyState === 'CANCELED' &&
+                deployment.errorLink?.includes('ignored-build-step')
+              let reusedExistingPreview = false
+              if (wasIgnored) {
+                const existingDeployments = await requestVercel(
+                  `/v7/deployments?projectId=${encodeURIComponent(vercelProjectId)}&sha=${encodeURIComponent(commitSha)}&state=READY&limit=10`,
+                  {},
+                  { retries: 3 },
+                )
+                const existingDeployment = existingDeployments.deployments?.find(
+                  (candidate) =>
+                    candidate.uid !== deployment.id &&
+                    candidate.readyState === 'READY' &&
+                    candidate.url,
+                )
+
+                if (existingDeployment) {
+                  deployment = existingDeployment
+                  inspectorUrl = absoluteUrl(existingDeployment.inspectorUrl)
+                  reusedExistingPreview = true
+                }
+              }
+
+              if (wasIgnored && !reusedExistingPreview) {
+                await reportStatusComment(
+                  'Could not report the skipped deployment',
+                  [
+                    '⏭️ **Vercel preview was not needed**',
+                    '',
+                    `Commit: [\`${shortSha}\`](${commitUrl})`,
+                    inspectorUrl ? `[View build details](${inspectorUrl})` : `[View workflow](${runUrl})`,
+                    '',
+                    'Vercel found no changes that affect the documentation site. Package checks are reported separately.',
+                  ].join('\n'),
+                )
+
+                await updateCheckBestEffort(
+                  'Could not complete the skipped deployment check',
+                  {
+                    owner,
+                    repo,
+                    check_run_id: checkRunId,
+                    status: 'completed',
+                    conclusion: 'neutral',
+                    completed_at: new Date().toISOString(),
+                    details_url: inspectorUrl || runUrl,
+                    output: {
+                      title: 'Vercel preview was not needed',
+                      summary: `Commit ${shortSha} does not change the documentation site.`,
+                    },
+                  },
+                )
+                return
+              }
+
+              if (deployment.readyState !== 'READY') {
+                throw new Error(`Vercel deployment finished with state ${deployment.readyState}.`)
+              }
+
+              const previewUrl = absoluteUrl(deployment.url)
+              if (!previewUrl) throw new Error('Vercel did not return a preview URL.')
+
+              const currentPullRequest = await reportBestEffort(
+                'Could not refresh the pull request before reporting the preview',
+                async () =>
+                  (
+                    await github.rest.pulls.get({
+                      owner,
+                      repo,
+                      pull_number: issueNumber,
+                    })
+                  ).data,
+              )
+              const isOutdated = currentPullRequest
+                ? currentPullRequest.head.sha !== commitSha
+                : false
+              const outdatedMessage = isOutdated
+                ? `\n\n⚠️ The pull request is now at \`${currentPullRequest.head.sha.slice(0, 7)}\`. Run \`/vercel\` again for the latest commit.`
+                : ''
+
+              await reportStatusComment(
+                'Could not report the ready deployment',
+                [
+                  '✅ **Vercel preview is ready**',
+                  '',
+                  `Commit: [\`${shortSha}\`](${commitUrl})`,
+                  `[Open preview](${previewUrl}) · ${inspectorUrl ? `[View build details](${inspectorUrl})` : `[View workflow](${runUrl})`}`,
+                  '',
+                  reusedExistingPreview
+                    ? 'The exact pull request commit already had a successful deployment, so Vercel reused it without rebuilding. Package checks are reported separately.'
+                    : 'The exact pull request commit built and deployed successfully. Package checks are reported separately.',
+                ].join('\n') + outdatedMessage,
+              )
+
+              await updateCheckBestEffort(
+                'Could not complete the successful deployment check',
+                {
+                  owner,
+                  repo,
+                  check_run_id: checkRunId,
+                  status: 'completed',
+                  conclusion: 'success',
+                  completed_at: new Date().toISOString(),
+                  details_url: previewUrl,
+                  output: {
+                    title: isOutdated ? 'Preview ready for an older commit' : 'Vercel preview is ready',
+                    summary: isOutdated
+                      ? `Commit ${shortSha} deployed successfully, but the pull request has newer changes.`
+                      : `Pull request #${issueNumber} at ${shortSha} deployed successfully.`,
+                  },
+                },
+              )
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              const shortSha = commitSha?.slice(0, 7)
+              const inspectorUrl = absoluteUrl(deployment?.inspectorUrl)
+              const commitLine = shortSha ? `Commit: \`${shortSha}\`` : undefined
+
+              try {
+                await updateStatusComment(
+                  [
+                    '❌ **Vercel preview failed**',
+                    '',
+                    commitLine,
+                    inspectorUrl ? `[View build details](${inspectorUrl})` : `[View workflow](${runUrl})`,
+                    '',
+                    'The preview did not deploy. Open the build details for the failure output.',
+                  ]
+                    .filter(Boolean)
+                    .join('\n'),
+                )
+              } catch (commentError) {
+                core.warning(`Could not update the pull request comment: ${commentError}`)
+              }
+
+              if (checkRunId) {
+                try {
+                  await github.rest.checks.update({
+                    owner,
+                    repo,
+                    check_run_id: checkRunId,
+                    status: 'completed',
+                    conclusion: 'failure',
+                    completed_at: new Date().toISOString(),
+                    details_url: inspectorUrl || runUrl,
+                    output: {
+                      title: 'Vercel preview failed',
+                      summary: shortSha
+                        ? `Pull request #${issueNumber} at ${shortSha} did not deploy.`
+                        : `Pull request #${issueNumber} did not deploy.`,
+                    },
+                  })
+                } catch (checkError) {
+                  core.warning(`Could not update the check run: ${checkError}`)
+                }
+              }
+
+              core.setFailed(message)
+            }
