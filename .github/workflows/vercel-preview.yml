@@ -1,0 +1,115 @@
+name: Vercel preview
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: vercel-preview-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/vercel' &&
+      (github.event.comment.author_association == 'OWNER' ||
+      github.event.comment.author_association == 'MEMBER' ||
+      github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Resolve trusted pull request
+        id: pull-request
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { owner, repo } = context.repo
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: context.issue.number,
+            })
+
+            if (pullRequest.state !== 'open') {
+              throw new Error('The pull request is not open.')
+            }
+
+            if (pullRequest.head.repo.full_name !== `${owner}/${repo}`) {
+              throw new Error('Fork pull requests cannot access the Vercel deployment secret.')
+            }
+
+            core.setOutput('sha', pullRequest.head.sha)
+
+      - name: Check out pull request commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ steps.pull-request.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.18.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Build Vercel output on GitHub
+        env:
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_ORG_ID"
+          test -n "$VERCEL_PROJECT_ID"
+          test -n "$VERCEL_TOKEN"
+          pnpm dlx vercel@59.3.0 pull --yes --environment=preview --token "$VERCEL_TOKEN"
+          pnpm dlx vercel@59.3.0 build --token "$VERCEL_TOKEN"
+
+      - name: Upload prebuilt preview
+        id: deploy
+        env:
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          deployment_url="$(pnpm dlx vercel@59.3.0 deploy --prebuilt --yes --token "$VERCEL_TOKEN")"
+          case "$deployment_url" in
+            https://*) ;;
+            *) echo "Vercel did not return a deployment URL." >&2; exit 1 ;;
+          esac
+          printf 'url=%s\n' "$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: `Vercel preview: ${process.env.PREVIEW_URL}`,
+            })
+
+      - name: Comment failure
+        if: failure()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: `Vercel preview failed: ${process.env.RUN_URL}`,
+            })
