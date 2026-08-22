@@ -623,6 +623,9 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(publishRuns).toHaveLength(1)
     expect(publishRuns[0]).toContain("version.includes('-') ? 'next' : 'latest'")
     expect(publishRuns[0]).toContain('const channelName = releaseChannel(candidate.version)')
+    expect(publishRuns[0]).toContain("process.env.RELEASE_TARGET === 'mcp'")
+    expect(publishRuns[0]).toContain("packageOrder.filter(([id]) => id === 'mcp')")
+    expect(publishRuns[0]).toContain("packageOrder.filter(([id]) => id !== 'mcp')")
     expect(publishRuns[0]).toContain("'--ignore-scripts', '--provenance'")
     for (const { job } of oidcJobs) {
       expect(
@@ -684,6 +687,8 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
     expect(githubReleaseRuns).toContain('vue-nuxt-artifact-set.json')
     expect(githubReleaseRuns).toContain("-name 'release.json'")
     expect(githubReleaseRuns).toContain("-name 'mcp-release.json'")
+    expect(githubReleaseRuns).toContain('test "${#tarballs[@]}" -eq 1')
+    expect(githubReleaseRuns).toContain('test "${#tarballs[@]}" -eq 2')
     expect(githubReleaseRuns).toContain('"$RUNNER_TEMP/release.json"')
     expect(githubReleaseRuns).toContain('mcp_evidence=".release-artifacts/artifact.json"')
     expect(githubReleaseRuns).toContain('test -f "$mcp_evidence"')

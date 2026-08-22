@@ -126,13 +126,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Resolve the reviewed Vue/Nuxt candidate-set coordinates
+        if: inputs.target == 'vue-nuxt'
         id: candidate_set
         run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
 
       - name: Build the immutable Vue/Nuxt candidate set once
+        if: inputs.target == 'vue-nuxt'
         run: pnpm release:artifact:set
 
       - name: Upload the immutable Vue/Nuxt candidate set
+        if: inputs.target == 'vue-nuxt'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.candidate_set.outputs.artifact_name }}
@@ -145,10 +148,12 @@ jobs:
           retention-days: 90
 
       - name: Resolve the reviewed MCP artifact coordinates
+        if: inputs.target == 'mcp'
         id: mcp
         run: node scripts/print-package-artifact-coordinates.mjs --package mcp >> "$GITHUB_OUTPUT"
 
       - name: Build the immutable MCP candidate once
+        if: inputs.target == 'mcp'
         run: node scripts/release.mjs artifact --package mcp
 
       - name: Retain independently versioned MCP release notes
@@ -156,6 +161,7 @@ jobs:
         run: node scripts/release-target.mjs write-mcp-metadata
 
       - name: Upload the immutable MCP candidate
+        if: inputs.target == 'mcp'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.mcp.outputs.artifact_name }}
@@ -220,39 +226,47 @@ jobs:
         run: pnpm check:auth-backend --install
 
       - name: Resolve the reviewed candidate coordinates
+        if: inputs.target == 'vue-nuxt'
         id: candidate_set
         run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
 
       - name: Resolve the reviewed MCP coordinates
+        if: inputs.target == 'mcp'
         id: mcp
         run: node scripts/print-package-artifact-coordinates.mjs --package mcp >> "$GITHUB_OUTPUT"
 
       - name: Resolve the reviewed Vue coordinates
+        if: inputs.target == 'vue-nuxt'
         id: vue
         run: node scripts/print-package-artifact-coordinates.mjs --package vue >> "$GITHUB_OUTPUT"
 
       - name: Resolve the reviewed Nuxt coordinates
+        if: inputs.target == 'vue-nuxt'
         id: nuxt
         run: node scripts/print-package-artifact-coordinates.mjs --package nuxt >> "$GITHUB_OUTPUT"
 
       - name: Download the exact Vue/Nuxt candidate set
+        if: inputs.target == 'vue-nuxt'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ steps.candidate_set.outputs.artifact_name }}
           path: ${{ steps.candidate_set.outputs.directory }}
 
       - name: Download the exact MCP candidate
+        if: inputs.target == 'mcp'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ steps.mcp.outputs.artifact_name }}
           path: ${{ steps.mcp.outputs.directory }}
 
       - name: Verify the exact Vue/Nuxt candidate set bytes
+        if: inputs.target == 'vue-nuxt'
         run: pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Certify the exact Vue candidate
+        if: inputs.target == 'vue-nuxt'
         run: >-
           pnpm release:verify
           --package vue
@@ -261,6 +275,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Certify the exact Nuxt candidate
+        if: inputs.target == 'vue-nuxt'
         run: >-
           pnpm release:verify
           --package nuxt
@@ -269,6 +284,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verify the exact MCP candidate bytes
+        if: inputs.target == 'mcp'
         run: >-
           pnpm release:verify
           --package mcp
@@ -304,11 +320,13 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Download the verified Vue and Nuxt artifact set
+        if: inputs.target == 'vue-nuxt'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-candidate-vue-nuxt-set
           path: .release-artifacts
       - name: Download the verified MCP artifact
+        if: inputs.target == 'mcp'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-candidate-mcp
@@ -318,6 +336,7 @@ jobs:
         env:
           BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
           RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TARGET: ${{ inputs.target }}
         run: |
           node --input-type=module <<'NODE'
           import { spawnSync } from 'node:child_process'
@@ -326,11 +345,14 @@ jobs:
           import { basename, dirname, join } from 'node:path'
 
           const fail = message => { throw new Error(message) }
-          const expectedOrder = [
+          const packageOrder = [
             ['vue', '@lupinum/better-convex-vue'],
             ['nuxt', '@lupinum/better-convex-nuxt'],
             ['mcp', '@lupinum/better-convex-mcp'],
           ]
+          const expectedOrder = process.env.RELEASE_TARGET === 'mcp'
+            ? packageOrder.filter(([id]) => id === 'mcp')
+            : packageOrder.filter(([id]) => id !== 'mcp')
           const allowed = new Set(expectedOrder.map(([, packageName]) => packageName))
           const requested = (process.env.BOOTSTRAP_PACKAGES ?? '')
             .split(',').map(value => value.trim()).filter(Boolean)
@@ -476,11 +498,13 @@ jobs:
       contents: write
     steps:
       - name: Download the verified Vue and Nuxt artifact set
+        if: inputs.target == 'vue-nuxt'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-candidate-vue-nuxt-set
           path: .release-artifacts
       - name: Download the verified MCP artifact
+        if: inputs.target == 'mcp'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-candidate-mcp
@@ -532,28 +556,31 @@ jobs:
             printf '> Bootstrap packages: %s\n' "$bootstrap_list" >> "$RUNNER_TEMP/release-notes.md"
           fi
           mapfile -t tarballs < <(find .release-artifacts -type f -name '*.tgz' | sort)
-          test "${#tarballs[@]}" -eq 3
-          vue_evidence=$(find .release-artifacts -path '*/vue/*/artifact.json' -type f -print -quit)
-          nuxt_evidence=$(find .release-artifacts -path '*/nuxt/*/artifact.json' -type f -print -quit)
-          mcp_evidence=".release-artifacts/artifact.json"
-          set_evidence=$(find .release-artifacts -name 'artifact-set.json' -type f -print -quit)
-          test -n "$vue_evidence"
-          test -n "$nuxt_evidence"
-          test -f "$mcp_evidence"
-          test -n "$set_evidence"
-          cp "$vue_evidence" "$RUNNER_TEMP/vue-artifact.json"
-          cp "$nuxt_evidence" "$RUNNER_TEMP/nuxt-artifact.json"
-          cp "$mcp_evidence" "$RUNNER_TEMP/mcp-artifact.json"
-          cp "$set_evidence" "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
           cp "$release_metadata" "$RUNNER_TEMP/release.json"
-          release_assets=(
-            "${tarballs[@]}"
-            "$RUNNER_TEMP/vue-artifact.json"
-            "$RUNNER_TEMP/nuxt-artifact.json"
-            "$RUNNER_TEMP/mcp-artifact.json"
-            "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
-            "$RUNNER_TEMP/release.json"
-          )
+          release_assets=("${tarballs[@]}" "$RUNNER_TEMP/release.json")
+          if [ "$RELEASE_TARGET" = mcp ]; then
+            test "${#tarballs[@]}" -eq 1
+            mcp_evidence=".release-artifacts/artifact.json"
+            test -f "$mcp_evidence"
+            cp "$mcp_evidence" "$RUNNER_TEMP/mcp-artifact.json"
+            release_assets+=("$RUNNER_TEMP/mcp-artifact.json")
+          else
+            test "${#tarballs[@]}" -eq 2
+            vue_evidence=$(find .release-artifacts -path '*/vue/*/artifact.json' -type f -print -quit)
+            nuxt_evidence=$(find .release-artifacts -path '*/nuxt/*/artifact.json' -type f -print -quit)
+            set_evidence=$(find .release-artifacts -name 'artifact-set.json' -type f -print -quit)
+            test -n "$vue_evidence"
+            test -n "$nuxt_evidence"
+            test -n "$set_evidence"
+            cp "$vue_evidence" "$RUNNER_TEMP/vue-artifact.json"
+            cp "$nuxt_evidence" "$RUNNER_TEMP/nuxt-artifact.json"
+            cp "$set_evidence" "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
+            release_assets+=(
+              "$RUNNER_TEMP/vue-artifact.json"
+              "$RUNNER_TEMP/nuxt-artifact.json"
+              "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
+            )
+          fi
           release_flags=()
           edit_flags=(--prerelease=false)
           case "$VERSION" in

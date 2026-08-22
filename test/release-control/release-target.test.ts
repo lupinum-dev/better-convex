@@ -18,4 +18,11 @@ describe('release target policy', () => {
       version: '2.0.0',
     })
   })
+
+  it('rejects malformed versions and unknown targets', () => {
+    expect(() => releaseCoordinates('vue-nuxt', 'not-a-version', '2.0.0')).toThrow()
+    expect(() => releaseCoordinates('other', '1.0.0', '2.0.0')).toThrow(
+      'Release target must be vue-nuxt or mcp.',
+    )
+  })
 })

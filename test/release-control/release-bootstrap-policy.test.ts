@@ -38,21 +38,37 @@ interface PackageState {
 
 describe('first-package publication recovery', () => {
   it('publishes every missing package with OIDC and reports each result', () => {
-    runScenario('missing packages use OIDC', {
+    runScenario('missing Vue/Nuxt packages use OIDC', {
       states: Object.fromEntries(packages.map(([, name]) => [name, { existing: false }])),
-      expectedModes: { mcp: 'oidc', nuxt: 'oidc', vue: 'oidc' },
-      expectedPublishes: 3,
+      expectedModes: { nuxt: 'oidc', vue: 'oidc' },
+      expectedPublishes: 2,
+    })
+    runScenario('missing MCP package uses OIDC', {
+      expectedModes: { mcp: 'oidc' },
+      expectedPublishes: 1,
+      states: { '@lupinum/better-convex-mcp': { existing: false } },
+      target: 'mcp',
     })
   }, 30_000)
 
   it('accepts matching first-version bootstrap bytes only when explicitly authorized', () => {
     runScenario('matching bootstrap set', {
-      bootstrapPackages: packages.map(([, name]) => name).join(','),
+      bootstrapPackages: packages
+        .slice(0, 2)
+        .map(([, name]) => name)
+        .join(','),
       states: Object.fromEntries(
         packages.map(([, name]) => [name, { attested: false, existing: true }]),
       ),
-      expectedModes: { mcp: 'bootstrap', nuxt: 'bootstrap', vue: 'bootstrap' },
+      expectedModes: { nuxt: 'bootstrap', vue: 'bootstrap' },
       expectedPublishes: 0,
+    })
+    runScenario('matching MCP bootstrap', {
+      bootstrapPackages: '@lupinum/better-convex-mcp',
+      expectedModes: { mcp: 'bootstrap' },
+      expectedPublishes: 0,
+      states: { '@lupinum/better-convex-mcp': { attested: false, existing: true } },
+      target: 'mcp',
     })
   }, 30_000)
 
@@ -62,10 +78,9 @@ describe('first-package publication recovery', () => {
       states: {
         '@lupinum/better-convex-vue': { attested: true, existing: true },
         '@lupinum/better-convex-nuxt': { attested: false, existing: true },
-        '@lupinum/better-convex-mcp': { existing: false },
       },
-      expectedModes: { mcp: 'oidc', nuxt: 'bootstrap', vue: 'oidc' },
-      expectedPublishes: 1,
+      expectedModes: { nuxt: 'bootstrap', vue: 'oidc' },
+      expectedPublishes: 0,
     })
   }, 30_000)
 
@@ -140,7 +155,7 @@ describe('first-package publication recovery', () => {
       pollDelayMs: '5000',
     })
     runScenario('one immediate retry is valid', {
-      expectedModes: { mcp: 'oidc', nuxt: 'oidc', vue: 'oidc' },
+      expectedModes: { nuxt: 'oidc', vue: 'oidc' },
       expectedPublishes: 0,
       pollAttempts: '1',
       pollDelayMs: '0',
@@ -164,6 +179,7 @@ function runScenario(
     expectedPublishes?: number
     pollAttempts?: string
     pollDelayMs?: string
+    target?: 'mcp' | 'vue-nuxt'
     states?: Record<
       string,
       {
@@ -187,7 +203,11 @@ function runScenario(
     const artifacts = join(root, '.release-artifacts')
     mkdirSync(bin)
     const packageStates: Record<string, PackageState> = {}
-    for (const [lane, packageName, version] of packages) {
+    const target = options.target ?? 'vue-nuxt'
+    const targetPackages = packages.filter(([lane]) =>
+      target === 'mcp' ? lane === 'mcp' : lane !== 'mcp',
+    )
+    for (const [lane, packageName, version] of targetPackages) {
       const directory = join(artifacts, lane, version)
       mkdirSync(directory, { recursive: true })
       const tarball = `${lane}.tgz`
@@ -254,6 +274,7 @@ function runScenario(
         GITHUB_SHA: 'a'.repeat(40),
         GITHUB_STEP_SUMMARY: join(root, 'summary.md'),
         RELEASE_VERSION: '1.0.0-beta.1',
+        RELEASE_TARGET: target,
         REGISTRY_POLL_ATTEMPTS: options.pollAttempts ?? '5',
         REGISTRY_POLL_DELAY_MS: options.pollDelayMs ?? '0',
       },
