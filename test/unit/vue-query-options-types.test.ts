@@ -111,7 +111,9 @@ function typeContracts() {
 
 describe('better-convex-vue query type contracts', () => {
   it('uses the minimal readonly state and exact argument optionality', () => {
-    expectTypeOf<keyof UseConvexQueryOptions>().toEqualTypeOf<'auth' | 'keepPreviousData'>()
+    expectTypeOf<keyof UseConvexQueryOptions>().toEqualTypeOf<
+      'auth' | 'keepPreviousData' | 'immediate'
+    >()
     expectTypeOf<UseConvexQueryState<string>['data']>().toEqualTypeOf<
       ComputedRef<string | undefined>
     >()
@@ -120,7 +122,7 @@ describe('better-convex-vue query type contracts', () => {
     >()
     expectTypeOf<UseConvexQueryState<string>>().not.toHaveProperty('clear')
     expectTypeOf<keyof UseConvexPaginatedQueryOptions>().toEqualTypeOf<
-      'auth' | 'initialNumItems' | 'keepPreviousData'
+      'auth' | 'initialCursor' | 'initialNumItems' | 'keepPreviousData' | 'immediate'
     >()
     expectTypeOf<UseConvexPaginatedQueryState<string>['data']>().toEqualTypeOf<
       ComputedRef<readonly string[] | undefined>

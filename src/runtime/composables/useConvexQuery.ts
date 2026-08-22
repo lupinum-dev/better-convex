@@ -35,15 +35,24 @@ import { computeConvexQueryPending } from '../utils/query-state'
 import { normalizeConvexReactiveArgs } from '../utils/reactive-args'
 import { getConvexRuntimeConfig } from '../utils/runtime-config'
 import type { ConvexCallStatus } from '../utils/types'
+import { createNuxtAwaitableState } from './nuxt-awaitable-state'
+import { resolveQueryLifecycleOptions } from './query-lifecycle-options'
 
 export type { ConvexAuthMode, ConvexCallStatus }
 export type ConvexQuerySkip = 'skip'
 export type ConvexQueryArgs<Args> = Args | ConvexQuerySkip
 
-export interface UseNuxtConvexQueryOptions extends UseConvexQueryOptions {
+interface UseNuxtConvexQueryBaseOptions extends Omit<UseConvexQueryOptions, 'immediate'> {
   /** Disable the SSR fetch for a genuinely browser-only query. */
   readonly server?: boolean
 }
+
+/** `lazy` starts normally, so it is deliberately incompatible with a deferred query. */
+export type UseNuxtConvexQueryOptions = UseNuxtConvexQueryBaseOptions &
+  (
+    | { readonly immediate?: true; readonly lazy?: boolean }
+    | { readonly immediate: false; readonly lazy?: false }
+  )
 
 export type { UseConvexQueryOptions, UseConvexQueryParameters, UseConvexQueryState }
 
@@ -56,6 +65,14 @@ interface BuildConvexQueryResult<DataT> {
 
 interface SsrQueryPayload<T> {
   value: T
+}
+
+interface ResolvedNuxtConvexQueryOptions {
+  readonly auth: ConvexAuthMode
+  readonly immediate: boolean
+  readonly keepPreviousData: UseConvexQueryOptions['keepPreviousData']
+  readonly lazy: boolean
+  readonly server: boolean
 }
 
 function waitForClientTerminal(status: ComputedRef<string>): Promise<void> {
@@ -81,178 +98,171 @@ function waitForClientTerminal(status: ComputedRef<string>): Promise<void> {
   })
 }
 
-function asNuxtConvexQuery<Data>(
-  state: UseConvexQueryState<Data>,
-  initialSettlement: Promise<void>,
-): NuxtConvexQuery<Data> {
-  const awaitedState = Object.freeze({ ...state }) as UseConvexQueryState<Data>
-  const promise = initialSettlement.then(
-    () => awaitedState,
-    () => awaitedState,
-  )
-
-  void Object.assign(promise, state)
-  void Object.defineProperties(promise, {
-    then: { enumerable: true, value: promise.then.bind(promise) },
-    catch: { enumerable: true, value: promise.catch.bind(promise) },
-    finally: { enumerable: true, value: promise.finally.bind(promise) },
-  })
-  return promise as NuxtConvexQuery<Data>
-}
-
-export function createConvexQueryState<
+function createClientConvexQueryState<
   Query extends FunctionReference<'query'>,
   Args extends ConvexQueryArgs<FunctionArgs<Query>> = FunctionArgs<Query>,
 >(
   query: Query,
   args: MaybeRefOrGetter<Args>,
-  options?: UseNuxtConvexQueryOptions,
+  options: ResolvedNuxtConvexQueryOptions,
 ): BuildConvexQueryResult<FunctionReturnType<Query>> {
   type RawT = FunctionReturnType<Query>
-  const config = getConvexRuntimeConfig()
-  const server = options?.server ?? true
-  const auth = options?.auth ?? 'optional'
-
-  if (import.meta.client) {
-    const authContext = createConvexQueryAuthContext()
-    const currentBoundary = computed(() => {
-      const currentArgs = normalizeConvexReactiveArgs(toValue(args)) as Args
-      const gate = createQueryExecutionGate({
-        authStatus: authContext.status.value,
-        authMode: auth,
-        identityKey: authContext.identityKey.value,
-        skipped: currentArgs === 'skip',
-      })
-      const key =
-        gate.outcome === 'execute'
-          ? withAuthDimension(
-              createConvexQueryKey(query, currentArgs as FunctionArgs<Query>),
-              auth,
-              gate.cacheIdentity,
-            )
-          : `convex:${gate.outcome}:${getFunctionName(query)}`
-      return { args: currentArgs, gate, key }
-    })
-    const hydrationBoundary = currentBoundary.value
-    const hydrationKey = hydrationBoundary.key
-    const nuxtApp = useNuxtApp()
-    const runtime = readConvexRuntimeContext(nuxtApp)
-    const hydrationIdentityMatches =
-      hydrationBoundary.gate.outcome === 'execute' &&
+  const { auth, immediate, keepPreviousData, lazy, server } = options
+  const authContext = createConvexQueryAuthContext()
+  const currentBoundary = computed(() => {
+    const currentArgs = normalizeConvexReactiveArgs(toValue(args)) as Args
+    const gate = immediate
+      ? createQueryExecutionGate({
+          authStatus: authContext.status.value,
+          authMode: auth,
+          identityKey: authContext.identityKey.value,
+          skipped: currentArgs === 'skip',
+        })
+      : ({ outcome: 'idle', cacheIdentity: 'anonymous' } as const)
+    const key =
+      gate.outcome === 'execute'
+        ? withAuthDimension(
+            createConvexQueryKey(query, currentArgs as FunctionArgs<Query>),
+            auth,
+            gate.cacheIdentity,
+          )
+        : `convex:${gate.outcome}:${getFunctionName(query)}`
+    return { args: currentArgs, gate, key }
+  })
+  const hydrationBoundary = currentBoundary.value
+  const hydrationKey = hydrationBoundary.key
+  const nuxtApp = useNuxtApp()
+  const runtime = readConvexRuntimeContext(nuxtApp)
+  const hydrationIdentityMatches =
+    hydrationBoundary.gate.outcome === 'execute' &&
+    matchesConvexHydrationIdentity(
+      auth,
+      hydrationBoundary.gate.cacheIdentity,
+      runtime?.attachment.identity.snapshot(),
+    )
+  const hydrationRetired = ref(false)
+  const matchesHydrationBoundary = () => {
+    const boundary = currentBoundary.value
+    return (
+      hydrationIdentityMatches &&
+      boundary.key === hydrationKey &&
+      boundary.gate.outcome === 'execute' &&
       matchesConvexHydrationIdentity(
         auth,
-        hydrationBoundary.gate.cacheIdentity,
+        boundary.gate.cacheIdentity,
         runtime?.attachment.identity.snapshot(),
       )
-    const hydrationRetired = ref(false)
-    const matchesHydrationBoundary = () => {
-      const boundary = currentBoundary.value
-      return (
-        hydrationIdentityMatches &&
-        boundary.key === hydrationKey &&
-        boundary.gate.outcome === 'execute' &&
-        matchesConvexHydrationIdentity(
-          auth,
-          boundary.gate.cacheIdentity,
-          runtime?.attachment.identity.snapshot(),
-        )
-      )
-    }
-    const hydrationBoundaryMatches = computed(
-      () => !hydrationRetired.value && matchesHydrationBoundary(),
     )
-    const stopHydrationBoundaryRetirement = watch(
-      currentBoundary,
-      () => {
-        if (!matchesHydrationBoundary()) hydrationRetired.value = true
-      },
-      { flush: 'sync' },
-    )
-    const hydratedPayload = nuxtApp.payload.data[hydrationKey] as
-      | SsrQueryPayload<RawT>
-      | null
-      | undefined
-    const hasHydratedData =
-      hydrationIdentityMatches &&
-      hydratedPayload !== null &&
-      hydratedPayload !== undefined &&
-      Object.hasOwn(hydratedPayload, 'value')
-    const hydratedErrors = useState<Record<string, ConvexCallError | undefined>>(
-      'convex:query-errors',
-      () => ({}),
-    )
-    const result = Reflect.apply(useVueConvexQuery, undefined, [
-      query,
-      args,
-      { auth, keepPreviousData: options?.keepPreviousData },
-      hasHydratedData ? { value: hydratedPayload.value } : undefined,
-    ]) as UseConvexQueryState<RawT>
-    const clearHydratedError = () => {
-      if (!(hydrationKey in hydratedErrors.value)) return
-      const { [hydrationKey]: _removed, ...rest } = hydratedErrors.value
-      hydratedErrors.value = rest
-    }
-    const stopHydratedErrorReconciliation = watch(
-      [result.error, result.pending, hydrationBoundaryMatches],
-      ([error, pending, boundaryMatches]) => {
-        if (boundaryMatches && (error || !pending)) clearHydratedError()
-      },
-      { flush: 'sync' },
-    )
-    const error = computed(
-      () =>
-        result.error.value ??
-        (hydrationBoundaryMatches.value ? hydratedErrors.value[hydrationKey] : undefined),
-    )
-    const pending = computed(() => (error.value ? false : result.pending.value))
-    const status = computed<ConvexCallStatus>(() =>
-      error.value ? 'error' : (result.status.value as ConvexCallStatus),
-    )
-    const stopDevtools = watch(
-      [status, result.data, error],
-      ([currentStatus, data, currentError]) => {
-        runtime?.getDevtoolsSink()?.upsertQuery({
-          id: hydrationKey,
-          name: getFunctionName(query),
-          args: currentBoundary.value.args,
-          status: currentStatus,
-          data,
-          error: currentError?.message,
-          options: { immediate: true, server, subscribe: true, auth },
-        })
-      },
-      { immediate: true },
-    )
-    onScopeDispose(() => {
-      stopHydrationBoundaryRetirement()
-      stopHydratedErrorReconciliation()
-      stopDevtools()
-      runtime?.getDevtoolsSink()?.removeQuery(hydrationKey)
-    })
-    return {
-      resultData: Object.freeze({
-        ...result,
-        error,
-        pending,
-        status,
-      }),
-      resolvePromise:
-        !server || hasHydratedData || error.value || status.value !== 'pending'
-          ? Promise.resolve()
-          : waitForClientTerminal(status),
-    }
   }
+  const hydrationBoundaryMatches = computed(
+    () => !hydrationRetired.value && matchesHydrationBoundary(),
+  )
+  const stopHydrationBoundaryRetirement = watch(
+    currentBoundary,
+    () => {
+      if (!matchesHydrationBoundary()) hydrationRetired.value = true
+    },
+    { flush: 'sync' },
+  )
+  const hydratedPayload = nuxtApp.payload.data[hydrationKey] as
+    | SsrQueryPayload<RawT>
+    | null
+    | undefined
+  const hasHydratedData =
+    hydrationIdentityMatches &&
+    hydratedPayload !== null &&
+    hydratedPayload !== undefined &&
+    Object.hasOwn(hydratedPayload, 'value')
+  const hydratedErrors = useState<Record<string, ConvexCallError | undefined>>(
+    'convex:query-errors',
+    () => ({}),
+  )
+  const result = Reflect.apply(useVueConvexQuery, undefined, [
+    query,
+    args,
+    { auth, keepPreviousData, immediate },
+    hasHydratedData ? { value: hydratedPayload.value } : undefined,
+  ]) as UseConvexQueryState<RawT>
+  const clearHydratedError = () => {
+    if (!(hydrationKey in hydratedErrors.value)) return
+    const { [hydrationKey]: _removed, ...rest } = hydratedErrors.value
+    hydratedErrors.value = rest
+  }
+  const stopHydratedErrorReconciliation = watch(
+    [result.error, result.pending, hydrationBoundaryMatches],
+    ([error, pending, boundaryMatches]) => {
+      if (boundaryMatches && (error || !pending)) clearHydratedError()
+    },
+    { flush: 'sync' },
+  )
+  const error = computed(
+    () =>
+      result.error.value ??
+      (hydrationBoundaryMatches.value ? hydratedErrors.value[hydrationKey] : undefined),
+  )
+  const pending = computed(() => (error.value ? false : result.pending.value))
+  const status = computed<ConvexCallStatus>(() =>
+    error.value ? 'error' : (result.status.value as ConvexCallStatus),
+  )
+  const stopDevtools = watch(
+    [status, result.data, error],
+    ([currentStatus, data, currentError]) => {
+      runtime?.getDevtoolsSink()?.upsertQuery({
+        id: hydrationKey,
+        name: getFunctionName(query),
+        args: currentBoundary.value.args,
+        status: currentStatus,
+        data,
+        error: currentError?.message,
+        options: { immediate, server, subscribe: true, auth },
+      })
+    },
+    { immediate: true },
+  )
+  onScopeDispose(() => {
+    stopHydrationBoundaryRetirement()
+    stopHydratedErrorReconciliation()
+    stopDevtools()
+    runtime?.getDevtoolsSink()?.removeQuery(hydrationKey)
+  })
+  return {
+    resultData: Object.freeze({
+      ...result,
+      error,
+      pending,
+      status,
+    }),
+    resolvePromise:
+      lazy || !immediate || !server || hasHydratedData || error.value || status.value !== 'pending'
+        ? Promise.resolve()
+        : waitForClientTerminal(status),
+  }
+}
 
+function createServerConvexQueryState<
+  Query extends FunctionReference<'query'>,
+  Args extends ConvexQueryArgs<FunctionArgs<Query>> = FunctionArgs<Query>,
+>(
+  query: Query,
+  args: MaybeRefOrGetter<Args>,
+  options: ResolvedNuxtConvexQueryOptions,
+  convexUrl: string | undefined,
+): BuildConvexQueryResult<FunctionReturnType<Query>> {
+  type RawT = FunctionReturnType<Query>
+  const { auth, immediate, lazy, server } = options
   const authContext = createConvexQueryAuthContext()
+  const started = ref(immediate)
   const currentArgs = computed(() => normalizeConvexReactiveArgs(toValue(args)) as Args)
   const skipped = computed(() => currentArgs.value === 'skip')
   const gate = computed(() =>
-    createQueryExecutionGate({
-      authStatus: authContext.status.value,
-      authMode: auth,
-      identityKey: authContext.identityKey.value,
-      skipped: skipped.value,
-    }),
+    started.value
+      ? createQueryExecutionGate({
+          authStatus: authContext.status.value,
+          authMode: auth,
+          identityKey: authContext.identityKey.value,
+          skipped: skipped.value,
+        })
+      : ({ outcome: 'idle', cacheIdentity: 'anonymous' } as const),
   )
   const key = computed(() => {
     if (gate.value.outcome !== 'execute') {
@@ -289,7 +299,6 @@ export function createConvexQueryState<
         }
         return null
       }
-      const convexUrl = config.url
       if (!convexUrl) return null
       try {
         const token = fetchAuthToken({
@@ -318,6 +327,8 @@ export function createConvexQueryState<
     },
     {
       server,
+      immediate,
+      lazy,
       deep: false,
       default: () => null,
     },
@@ -355,7 +366,15 @@ export function createConvexQueryState<
       pending,
       status,
       isStale: computed(() => false),
+      async execute() {
+        if (!started.value) started.value = true
+        await asyncData.execute().then(
+          () => {},
+          () => {},
+        )
+      },
       async refresh() {
+        if (!started.value) started.value = true
         await asyncData.refresh().then(
           () => {},
           () => {},
@@ -363,13 +382,35 @@ export function createConvexQueryState<
       },
     }),
     resolvePromise:
-      gate.value.outcome === 'idle' || !server
+      lazy || !immediate || gate.value.outcome === 'idle' || !server
         ? Promise.resolve()
         : asyncData.then(
             () => {},
             () => {},
           ),
   }
+}
+
+export function createConvexQueryState<
+  Query extends FunctionReference<'query'>,
+  Args extends ConvexQueryArgs<FunctionArgs<Query>> = FunctionArgs<Query>,
+>(
+  query: Query,
+  args: MaybeRefOrGetter<Args>,
+  options?: UseNuxtConvexQueryOptions,
+): BuildConvexQueryResult<FunctionReturnType<Query>> {
+  const { immediate, lazy } = resolveQueryLifecycleOptions(options)
+  const resolvedOptions: ResolvedNuxtConvexQueryOptions = {
+    auth: options?.auth ?? 'optional',
+    immediate,
+    keepPreviousData: options?.keepPreviousData,
+    lazy,
+    server: options?.server ?? true,
+  }
+
+  return import.meta.client
+    ? createClientConvexQueryState(query, args, resolvedOptions)
+    : createServerConvexQueryState(query, args, resolvedOptions, getConvexRuntimeConfig().url)
 }
 
 export function useConvexQuery<Query extends FunctionReference<'query'>>(
@@ -381,5 +422,5 @@ export function useConvexQuery<Query extends FunctionReference<'query'>>(
     ConvexQueryArgs<FunctionArgs<Query>>
   >
   const result = createConvexQueryState(query, args, options)
-  return asNuxtConvexQuery(result.resultData, result.resolvePromise)
+  return createNuxtAwaitableState(result.resultData, result.resolvePromise)
 }

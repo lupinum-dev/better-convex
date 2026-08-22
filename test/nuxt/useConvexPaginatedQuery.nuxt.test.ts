@@ -292,6 +292,44 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
+  it('defers a resumed pagination subscription and resets from a new cursor', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:deferred-resume')
+    const { result, wrapper } = await captureInNuxt(
+      () =>
+        useConvexPaginatedQuery(
+          query,
+          {},
+          {
+            auth: 'none',
+            initialNumItems: 2,
+            initialCursor: 'resume-at',
+            immediate: false,
+          },
+        ),
+      { owner: makeMockOwner(primary) },
+    )
+
+    expect(result.status.value).toBe('idle')
+    expect(result.cursor.value).toBe('resume-at')
+    expect(primary.calls.onUpdate).toHaveLength(0)
+    const execution = result.execute()
+    expect(primary.calls.onUpdate).toHaveLength(1)
+    primary.emitQueryResultWhere(
+      (entry) =>
+        (entry.args as { paginationOpts: { cursor: string | null } }).paginationOpts.cursor ===
+        'resume-at',
+      page(['resumed'], false, 'next-cursor'),
+    )
+    await execution
+    expect(result.cursor.value).toBe('next-cursor')
+
+    result.reset('another-cursor')
+    expect(result.cursor.value).toBe('another-cursor')
+    expect(primary.calls.onUpdate).toHaveLength(2)
+    wrapper.unmount()
+  })
+
   it('settles when the current reactive generation becomes skipped', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:reactive-skip-settlement')

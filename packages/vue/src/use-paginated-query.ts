@@ -49,8 +49,10 @@ export type PaginatedQueryItem<Query extends PaginatedQueryReference> =
 
 export interface UseConvexPaginatedQueryOptions {
   readonly initialNumItems: number
+  readonly initialCursor?: string | null
   readonly auth?: ConvexAuthMode
   readonly keepPreviousData?: boolean
+  readonly immediate?: boolean
 }
 
 export interface UseConvexPaginatedQueryState<Item> {
@@ -58,10 +60,14 @@ export interface UseConvexPaginatedQueryState<Item> {
   readonly status: ComputedRef<'idle' | 'pending' | 'success' | 'error'>
   readonly pending: ComputedRef<boolean>
   readonly canLoadMore: ComputedRef<boolean>
+  readonly cursor: ComputedRef<string | null>
+  readonly pageStatus: ComputedRef<'SplitRecommended' | 'SplitRequired' | null>
   readonly error: ComputedRef<ConvexCallError | undefined>
   readonly isStale: ComputedRef<boolean>
+  execute(): Promise<void>
   loadMore(numItems: number): void
   refresh(): Promise<void>
+  reset(cursor?: string | null): void
 }
 
 interface NuxtPaginationBridge<Item> {
@@ -91,6 +97,13 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   if (!Number.isSafeInteger(options.initialNumItems) || options.initialNumItems < 1) {
     throw new Error('[better-convex-vue] initialNumItems must be a positive safe integer')
   }
+  if (
+    options.initialCursor !== undefined &&
+    options.initialCursor !== null &&
+    typeof options.initialCursor !== 'string'
+  ) {
+    throw new Error('[better-convex-vue] initialCursor must be a string or null')
+  }
 
   type Item = PaginatedQueryItem<Query>
   // Nuxt passes SSR state through a private fourth runtime-only slot via Reflect.apply.
@@ -98,6 +111,8 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   const runtime = useBetterConvexRuntime()
   const auth = options.auth ?? 'optional'
   const initialNumItems = options.initialNumItems
+  const initialCursor = shallowRef(options.initialCursor ?? null)
+  const started = shallowRef(options.immediate !== false)
   const identity = runtime.identity.snapshot
   const currentArgs = computed(() => normalizeConvexArgs(args))
   const argsHash = computed(() => hash(currentArgs.value))
@@ -105,13 +120,14 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   const boundaryFirstPage = shallowRef<PaginationResult<Item> | null>(bridge?.initialPage ?? null)
   const boundaryError = shallowRef<ConvexCallError | undefined>(undefined)
 
-  const gate = computed(() =>
-    decideQueryExecution({
+  const gate = computed(() => {
+    if (!started.value) return 'idle' as const
+    return decideQueryExecution({
       auth,
       skipped: isConvexArgsSkipped(currentArgs.value),
       identity: identity.value,
-    }),
-  )
+    })
+  })
   const idle = computed(() => gate.value === 'idle' || gate.value === 'error')
   const live = computed(() => gate.value === 'execute')
   const tag = computed<QueryIsolationTag>(() => ({
@@ -119,7 +135,8 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
     identityGeneration: auth === 'none' ? 0 : identity.value.identityGeneration,
   }))
   const boundaryKey = computed(
-    () => `${functionName}:${auth}:${tag.value.identityKey}:${argsHash.value}:${initialNumItems}`,
+    () =>
+      `${functionName}:${auth}:${tag.value.identityKey}:${argsHash.value}:${initialNumItems}:${initialCursor.value ?? ''}`,
   )
 
   const fetchPage = async (paginationOpts: {
@@ -137,6 +154,7 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   const controller = createPaginationController<Item>({
     query,
     initialNumItems,
+    getInitialCursor: () => initialCursor.value,
     keepPreviousData: options.keepPreviousData ?? false,
     getArgs: () =>
       isConvexArgsSkipped(currentArgs.value)
@@ -199,10 +217,32 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
       })
     }
   }
-  const stop = watch([argsHash, gate, live, () => identity.value.identityGeneration], reconcile, {
-    immediate: true,
-    flush: 'sync',
-  })
+  const stop = watch(
+    [argsHash, gate, live, initialCursor, () => identity.value.identityGeneration],
+    reconcile,
+    {
+      immediate: true,
+      flush: 'sync',
+    },
+  )
+
+  async function execute(): Promise<void> {
+    if (!started.value) started.value = true
+    await controller.firstPageSettled()
+  }
+
+  async function refresh(): Promise<void> {
+    if (!started.value) started.value = true
+    await controller.refresh()
+  }
+
+  function reset(cursor: string | null = null): void {
+    if (typeof cursor !== 'string' && cursor !== null) {
+      throw new Error('[better-convex-vue] reset cursor must be a string or null')
+    }
+    if (initialCursor.value === cursor) controller.reset()
+    else initialCursor.value = cursor
+  }
   onScopeDispose(() => {
     stop()
     controller.dispose()
@@ -214,8 +254,12 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
     pending: controller.pending,
     isStale: controller.isStale,
     canLoadMore: controller.canLoadMore,
+    cursor: controller.cursor,
+    pageStatus: controller.pageStatus,
+    execute,
     loadMore: controller.loadMore,
     error: controller.error,
-    refresh: controller.refresh,
+    refresh,
+    reset,
   })
 }

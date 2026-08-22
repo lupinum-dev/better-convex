@@ -24,6 +24,16 @@ import type { ConvexAuthMode } from '../../src/runtime/utils/auth-status'
 declare const useConvexQuery: typeof import('../../src/runtime/composables/useConvexQuery').useConvexQuery
 declare const useConvexPaginatedQuery: typeof import('../../src/runtime/composables/useConvexPaginatedQuery').useConvexPaginatedQuery
 
+function deferredOptionContracts() {
+  void useConvexQuery(requiredQuery, { id: 'note' }, { immediate: false })
+  void useConvexQuery(requiredQuery, { id: 'note' }, { lazy: true })
+  // @ts-expect-error a lazy query starts normally and cannot also be deferred
+  void useConvexQuery(requiredQuery, { id: 'note' }, { immediate: false, lazy: true })
+}
+
+declare const requiredQuery: FunctionReference<'query', 'public', { id: string }, string>
+void deferredOptionContracts
+
 type Assert<T extends true> = T
 type HasKey<T, K extends PropertyKey> = K extends keyof T ? true : false
 type IsEqual<A, B> =
@@ -43,13 +53,22 @@ type QueryData = UseConvexQueryState<string>
 type PaginatedData = UseConvexPaginatedQueryState<{ id: string }>
 
 type _VueQueryOptionBudget = Assert<
-  IsEqual<keyof UseConvexQueryOptions, 'auth' | 'keepPreviousData'>
+  IsEqual<keyof UseConvexQueryOptions, 'auth' | 'keepPreviousData' | 'immediate'>
 >
 type _NuxtQueryOptionBudget = Assert<
-  IsEqual<keyof QueryOptions, 'auth' | 'keepPreviousData' | 'server'>
+  IsEqual<keyof QueryOptions, 'auth' | 'keepPreviousData' | 'immediate' | 'lazy' | 'server'>
 >
 type _NuxtPaginationOptionBudget = Assert<
-  IsEqual<keyof PaginatedOptions, 'auth' | 'initialNumItems' | 'keepPreviousData' | 'server'>
+  IsEqual<
+    keyof PaginatedOptions,
+    | 'auth'
+    | 'initialCursor'
+    | 'initialNumItems'
+    | 'keepPreviousData'
+    | 'immediate'
+    | 'lazy'
+    | 'server'
+  >
 >
 type _NuxtPaginationDoesNotExposeAdapterInitialPage = Assert<
   IsEqual<HasKey<PaginatedOptions, 'initialPage'>, false>

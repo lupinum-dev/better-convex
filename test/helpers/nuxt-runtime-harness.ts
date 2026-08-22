@@ -24,6 +24,7 @@ let currentOwnerTarget: Record<PropertyKey, unknown> | null = null
 let currentAuthController: NuxtConvexAuthController | null = null
 let currentIdentityObserver: ClientIdentityObserver | null = null
 let currentAuthEnabled = true
+let nuxtVueRuntimeInstalled = false
 
 const convexProxy = new Proxy<Record<PropertyKey, unknown>>(
   {},
@@ -358,6 +359,10 @@ export async function captureInNuxt<T>(
         const runtimeConfig = useRuntimeConfig()
 
         nuxtAppRef = nuxtApp
+        if (!nuxtVueRuntimeInstalled) {
+          nuxtApp.vueApp.use(createBetterConvex({ attachment: attachmentProxy }))
+          nuxtVueRuntimeInstalled = true
+        }
 
         // A whole test file shares one implicit Nuxt app, so `useState` auth keys
         // leak between tests. Reset them to a clean slate before the factory runs

@@ -13,6 +13,7 @@ import {
   useConvexAction,
   useConvexMutation,
   useConvexPaginatedQuery,
+  useConvexQueries,
   useConvexQuery,
 } from '../../packages/vue/src'
 import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
@@ -74,6 +75,62 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
 }
 
 describe('better-convex-vue package runtime', () => {
+  it('keeps deferred queries idle until execute starts their live lifecycle', async () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const query = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexQuery(makeFunctionReference<'query'>('notes:deferred'), {}, { immediate: false }),
+      ),
+    )!
+
+    expect(query.status.value).toBe('idle')
+    expect(query.pending.value).toBe(false)
+    expect(host.subscriptions).toHaveLength(0)
+
+    const execution = query.execute()
+    expect(query.status.value).toBe('pending')
+    expect(host.subscriptions).toHaveLength(1)
+    host.subscriptions[0]!.emit('ready')
+    await execution
+    expect(query.data.value).toBe('ready')
+    expect(query.status.value).toBe('success')
+    scope.stop()
+  })
+
+  it('adds, removes, and replaces keyed query controllers without leaking subscriptions', () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const first = makeFunctionReference<'query'>('notes:first')
+    const replacement = makeFunctionReference<'query'>('notes:replacement')
+    const source = ref<Record<string, { query: typeof first; args?: Record<string, never> }>>({
+      alpha: { query: first },
+    })
+    const scope = effectScope()
+    const queries = app.runWithContext(() => scope.run(() => useConvexQueries(source)))!
+
+    expect(Object.keys(queries.states.value)).toEqual(['alpha'])
+    expect(host.subscriptions).toHaveLength(1)
+    source.value = { ...source.value, beta: { query: first } }
+    expect(Object.keys(queries.states.value)).toEqual(['alpha', 'beta'])
+    expect(host.subscriptions).toHaveLength(2)
+
+    const retiredAlpha = host.subscriptions[0]!
+    source.value = { alpha: { query: replacement }, beta: source.value.beta! }
+    expect(retiredAlpha.active).toBe(false)
+    expect(host.subscriptions).toHaveLength(3)
+
+    const retiredBeta = host.subscriptions[1]!
+    source.value = { alpha: source.value.alpha! }
+    expect(retiredBeta.active).toBe(false)
+    expect(Object.keys(queries.states.value)).toEqual(['alpha'])
+    scope.stop()
+    expect(host.subscriptions[2]!.active).toBe(false)
+  })
+
   it('keeps the newer result when one-shot refreshes resolve in reverse order', async () => {
     const host = attachedRuntime('alice', { queryResult: 'initial' })
     const app = createApp({})
@@ -168,6 +225,44 @@ describe('better-convex-vue package runtime', () => {
     args.value = 'skip'
     expect(query.status.value).toBe('idle')
     expect(host.subscriptions[0]!.active).toBe(false)
+    scope.stop()
+  })
+
+  it('resumes and resets deferred pagination with generation-safe cursors', async () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const query = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexPaginatedQuery(
+          makeFunctionReference<'query'>('notes:resume') as FunctionReference<
+            'query',
+            'public',
+            { paginationOpts: PaginationOptions },
+            PaginationResult<string>
+          >,
+          {},
+          { initialNumItems: 2, initialCursor: 'resume-at', immediate: false },
+        ),
+      ),
+    )!
+
+    expect(query.status.value).toBe('idle')
+    expect(query.cursor.value).toBe('resume-at')
+    expect(host.subscriptions).toHaveLength(0)
+    const execution = query.execute()
+    expect(host.subscriptions[0]?.active).toBe(true)
+    expect(host.subscriptions[0]).toBeDefined()
+    host.subscriptions[0]!.emit({ page: ['a'], continueCursor: 'after-a', isDone: false })
+    await execution
+    expect(query.cursor.value).toBe('after-a')
+
+    const retired = host.subscriptions[0]!
+    query.reset('resume-elsewhere')
+    expect(retired.active).toBe(false)
+    expect(query.cursor.value).toBe('resume-elsewhere')
+    expect(host.subscriptions).toHaveLength(2)
     scope.stop()
   })
 
@@ -607,12 +702,16 @@ describe('better-convex-vue package runtime', () => {
 
     expect(Object.keys(query).sort()).toEqual([
       'canLoadMore',
+      'cursor',
       'data',
       'error',
+      'execute',
       'isStale',
       'loadMore',
+      'pageStatus',
       'pending',
       'refresh',
+      'reset',
       'status',
     ])
     expect(Object.isFrozen(query)).toBe(true)
