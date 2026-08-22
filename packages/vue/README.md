@@ -24,7 +24,7 @@ The package requires Node.js 22.14 or newer, Vue 3.5, and Convex 1.42.2.
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-vue@0.8.0-beta.40 convex@1.42.2 vue@^3.5.0
+pnpm add @lupinum/better-convex-vue@1.0.0-beta.1 convex@1.42.2 vue@^3.5.0
 ```
 
 ## Quick start
@@ -53,7 +53,7 @@ const rename = useConvexMutation(api.notes.rename)
 
 Pass `'skip'` to pause a query. A Convex `null` result remains valid data.
 
-Advanced hosts can use the `embedded` export. MCP App UIs can use the `mcp-app` export with its exact optional peers.
+Advanced hosts can use the `embedded` export. MCP App UIs use `@lupinum/better-convex-mcp/vue`, which owns the official Apps SDK boundary.
 
 ## Documentation
 

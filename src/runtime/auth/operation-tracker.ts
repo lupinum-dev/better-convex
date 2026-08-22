@@ -2,16 +2,16 @@ import { computed, ref, type ComputedRef } from 'vue'
 
 /** Tracks actual asynchronous Better Auth work without serializing callers. */
 export interface AuthOperationTracker {
-  readonly isPending: ComputedRef<boolean>
+  readonly pending: ComputedRef<boolean>
   track<Value>(operation: Promise<Value>): Promise<Value>
 }
 
 export function createAuthOperationTracker(): AuthOperationTracker {
   const pendingCount = ref(0)
-  const isPending = computed(() => pendingCount.value > 0)
+  const pending = computed(() => pendingCount.value > 0)
 
   return {
-    isPending,
+    pending,
     track<Value>(operation: Promise<Value>): Promise<Value> {
       pendingCount.value += 1
       return operation.finally(() => {

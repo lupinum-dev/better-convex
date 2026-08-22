@@ -252,7 +252,7 @@ function runAudit(args, scope, cwd = ROOT) {
 async function fetchJson(path) {
   const headers = {
     Accept: 'application/vnd.github+json',
-    'User-Agent': 'better-convex-nuxt-auth-advisory-gate',
+    'User-Agent': 'better-convex auth schema-advisory-gate',
     'X-GitHub-Api-Version': GITHUB_API_VERSION,
   }
   if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`

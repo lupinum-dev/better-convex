@@ -14,7 +14,7 @@
   "dependencies": {
     "@lupinum/ginko-content": "0.4.0-rc.2",
     "@lupinum/ginko-docs": "0.3.0-rc.5",
-    "nuxt": "4.5.1",
+    "nuxt": "4.5.2",
     "vue-router": "5.2.0"
   },
   "devDependencies": {

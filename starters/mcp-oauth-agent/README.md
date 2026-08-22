@@ -91,10 +91,10 @@ no legacy component migration or compatibility path.
    set -a
    . ./.env.local
    set +a
-   pnpm exec better-convex-nuxt-convex env set SITE_URL "$SITE_URL"
+   pnpm exec better-convex convex env set SITE_URL "$SITE_URL"
    BETTER_AUTH_SECRETS="1:$(openssl rand -base64 32)"
-   printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex-nuxt-convex env set BETTER_AUTH_SECRETS
-   printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt-convex env set BCN_AUTH_PROXY_IP_SECRET
+   printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
+   printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
    unset BETTER_AUTH_SECRETS
    ```
 
@@ -112,7 +112,7 @@ no legacy component migration or compatibility path.
    create the fresh deployment's first signing key before allowing auth traffic:
 
    ```bash
-   pnpm exec better-convex-nuxt-convex run auth:rotateSigningKey '{}'
+   pnpm exec better-convex convex run auth:rotateSigningKey '{}'
    ```
 
    On this fresh deployment, require `previousKids` to be empty and record the
@@ -152,7 +152,7 @@ no legacy component migration or compatibility path.
    the trusted Convex CLI or dashboard operator context:
 
    ```bash
-   pnpm exec better-convex-nuxt-convex run mcpAdmin:setOAuthAdministratorByEmail \
+   pnpm exec better-convex convex run mcpAdmin:setOAuthAdministratorByEmail \
      '{"email":"admin@example.com","enabled":true}'
    ```
 
@@ -312,7 +312,7 @@ pnpm build
 ```
 
 The supported tuple is exact: Better Auth and OAuth Provider `1.7.0-rc.2`,
-Convex `1.42.2`, Better Convex Nuxt `0.8.0-beta.40`,
-`@lupinum/better-convex-mcp@0.1.0-beta.28`, and official MCP server SDK `2.0.0`.
+Convex `1.42.2`, Better Convex Nuxt `1.0.0-beta.1`,
+`@lupinum/better-convex-mcp@1.0.0-beta.1`, and official MCP server SDK `2.0.0`.
 Better Auth owns its Kysely runtime; this starter does not add a standalone
 Kysely dependency.

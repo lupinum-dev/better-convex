@@ -9,7 +9,7 @@ const { data: currentUser } = await useConvexQuery(
     server: false,
   },
 )
-const { client, isPending } = useConvexAuth()
+const { client, pending } = useConvexAuth()
 const { data: organizations, pending: organizationsPending } = await useConvexQuery(
   api.organizations.listMine,
   {},
@@ -28,8 +28,8 @@ async function handleSignOut() {
     <span>
       {{ currentUser.email || currentUser.name || 'Signed in' }}
     </span>
-    <button type="button" :disabled="isPending" @click="handleSignOut">
-      {{ isPending ? 'Signing out...' : 'Sign out' }}
+    <button type="button" :disabled="pending" @click="handleSignOut">
+      {{ pending ? 'Signing out...' : 'Sign out' }}
     </button>
   </section>
 

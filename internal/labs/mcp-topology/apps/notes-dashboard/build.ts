@@ -131,9 +131,9 @@ export function buildNotesDashboard(
         ...(options.extAppsEntry === undefined
           ? {}
           : { '@modelcontextprotocol/ext-apps': options.extAppsEntry }),
-        '@lupinum/better-convex-vue/mcp-app':
+        '@lupinum/better-convex-mcp/vue':
           options.mcpAppEntry ??
-          fileURLToPath(new URL('../../../../../packages/vue/src/mcp-app.ts', import.meta.url)),
+          fileURLToPath(new URL('../../../../../packages/mcp/src/vue.ts', import.meta.url)),
       },
       name: 'BetterConvexNotesDashboard',
       vue: true,

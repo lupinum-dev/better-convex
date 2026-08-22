@@ -304,7 +304,7 @@ function createGitHubClient({ fetch: fetchImplementation = globalThis.fetch, tok
   if (typeof fetchImplementation !== 'function') throw new Error('global fetch is unavailable')
   const headers = {
     accept: 'application/vnd.github+json',
-    'user-agent': 'better-convex-nuxt-auth-upstream-monitor',
+    'user-agent': 'better-convex auth schema-upstream-monitor',
     'x-github-api-version': '2022-11-28',
     ...(token ? { authorization: `Bearer ${token}` } : {}),
   }

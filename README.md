@@ -30,7 +30,7 @@ Do not use Better Convex as an authorization layer. Every Convex function must s
 ## Requirements
 
 - Node.js `^22.12.0 || ^24.11.0 || >=26.0.0` for the Nuxt package.
-- Nuxt `4.5.1` and Convex `1.42.2` for the current Nuxt beta.
+- Nuxt `4.5.2` and Convex `1.42.2` for the current Nuxt beta.
 - Vue `^3.5.0` and Convex `1.42.2` for the Vue package.
 
 Better Auth is optional. Auth-enabled applications must install the exact peer versions in the package manifest.
@@ -40,7 +40,7 @@ Better Auth is optional. Auth-enabled applications must install the exact peer v
 Install the Nuxt package and its exact peers:
 
 ```bash
-pnpm add @lupinum/better-convex-nuxt convex@1.42.2 nuxt@4.5.1
+pnpm add @lupinum/better-convex-nuxt convex@1.42.2 nuxt@4.5.2
 ```
 
 ```ts
@@ -56,7 +56,7 @@ NUXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
 Store this value in `.env.local`. Run the checked configuration helper if you need to create that file:
 
 ```bash
-pnpm exec better-convex-nuxt-convex configure
+pnpm exec better-convex convex configure
 ```
 
 ## Quick start

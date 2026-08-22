@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@lupinum/better-convex-mcp": "0.1.0-beta.28",
+    "@lupinum/better-convex-mcp": "1.0.0-beta.1",
     "@modelcontextprotocol/server": "2.0.0",
     "convex": "1.42.2",
     "zod": "4.4.3"

@@ -21,13 +21,13 @@ describe('package artifact coordinate CLI', () => {
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-nuxt',
-      'directory=.release-artifacts/nuxt/0.8.0-beta.40',
-      'evidence=.release-artifacts/nuxt/0.8.0-beta.40/artifact.json',
+      'directory=.release-artifacts/nuxt/1.0.0-beta.1',
+      'evidence=.release-artifacts/nuxt/1.0.0-beta.1/artifact.json',
       'package_id=nuxt',
       'package_name=@lupinum/better-convex-nuxt',
-      'tarball=.release-artifacts/nuxt/0.8.0-beta.40/lupinum-better-convex-nuxt-0.8.0-beta.40.tgz',
-      'tarball_filename=lupinum-better-convex-nuxt-0.8.0-beta.40.tgz',
-      'version=0.8.0-beta.40',
+      'tarball=.release-artifacts/nuxt/1.0.0-beta.1/lupinum-better-convex-nuxt-1.0.0-beta.1.tgz',
+      'tarball_filename=lupinum-better-convex-nuxt-1.0.0-beta.1.tgz',
+      'version=1.0.0-beta.1',
     ])
   })
 
@@ -38,13 +38,13 @@ describe('package artifact coordinate CLI', () => {
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-vue',
-      'directory=.release-artifacts/vue/0.8.0-beta.40',
-      'evidence=.release-artifacts/vue/0.8.0-beta.40/artifact.json',
+      'directory=.release-artifacts/vue/1.0.0-beta.1',
+      'evidence=.release-artifacts/vue/1.0.0-beta.1/artifact.json',
       'package_id=vue',
       'package_name=@lupinum/better-convex-vue',
-      'tarball=.release-artifacts/vue/0.8.0-beta.40/lupinum-better-convex-vue-0.8.0-beta.40.tgz',
-      'tarball_filename=lupinum-better-convex-vue-0.8.0-beta.40.tgz',
-      'version=0.8.0-beta.40',
+      'tarball=.release-artifacts/vue/1.0.0-beta.1/lupinum-better-convex-vue-1.0.0-beta.1.tgz',
+      'tarball_filename=lupinum-better-convex-vue-1.0.0-beta.1.tgz',
+      'version=1.0.0-beta.1',
     ])
   })
 
@@ -55,13 +55,13 @@ describe('package artifact coordinate CLI', () => {
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-mcp',
-      'directory=.release-artifacts/mcp/0.1.0-beta.28',
-      'evidence=.release-artifacts/mcp/0.1.0-beta.28/artifact.json',
+      'directory=.release-artifacts/mcp/1.0.0-beta.1',
+      'evidence=.release-artifacts/mcp/1.0.0-beta.1/artifact.json',
       'package_id=mcp',
       'package_name=@lupinum/better-convex-mcp',
-      'tarball=.release-artifacts/mcp/0.1.0-beta.28/lupinum-better-convex-mcp-0.1.0-beta.28.tgz',
-      'tarball_filename=lupinum-better-convex-mcp-0.1.0-beta.28.tgz',
-      'version=0.1.0-beta.28',
+      'tarball=.release-artifacts/mcp/1.0.0-beta.1/lupinum-better-convex-mcp-1.0.0-beta.1.tgz',
+      'tarball_filename=lupinum-better-convex-mcp-1.0.0-beta.1.tgz',
+      'version=1.0.0-beta.1',
     ])
   })
 

@@ -3,8 +3,8 @@
     <div class="card">
       <header class="header">
         <h1>Dashboard</h1>
-        <button class="btn-signout" :disabled="isPending" @click="handleSignOut">
-          {{ isPending ? '...' : 'Sign Out' }}
+        <button class="btn-signout" :disabled="pending" @click="handleSignOut">
+          {{ pending ? '...' : 'Sign Out' }}
         </button>
       </header>
 
@@ -63,7 +63,7 @@
             </div>
             <div class="info-item">
               <span class="label">Operation pending</span>
-              <span class="value">{{ isPending ? 'Yes' : 'No' }}</span>
+              <span class="value">{{ pending ? 'Yes' : 'No' }}</span>
             </div>
           </div>
         </section>
@@ -92,7 +92,7 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { status, isPending, error: authError, client } = useConvexAuth()
+const { status, pending, error: authError, client } = useConvexAuth()
 const isTestingConvex = ref(false)
 const convexResult = ref<string | null>(null)
 const convexError = ref(false)

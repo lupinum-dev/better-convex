@@ -173,9 +173,9 @@ export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"
   printf 'BCN_AUTH_PROXY_IP_SECRET=%s\n' "$BCN_AUTH_PROXY_IP_SECRET" >> .env.local.next
   mv .env.local.next .env.local
 )
-pnpm exec better-convex-nuxt-convex env set SITE_URL http://localhost:3000
-printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex-nuxt-convex env set BETTER_AUTH_SECRETS
-printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt-convex env set BCN_AUTH_PROXY_IP_SECRET
+pnpm exec better-convex convex env set SITE_URL http://localhost:3000
+printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
+printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
 ```
 
 In production, inject the same `BCN_AUTH_PROXY_IP_SECRET` into Nuxt with your
@@ -184,8 +184,8 @@ secret manager. Do not print or commit it.
 Email delivery with Resend:
 
 ```bash
-printf '%s' "$RESEND_API_KEY" | pnpm exec better-convex-nuxt-convex env set RESEND_API_KEY
-pnpm exec better-convex-nuxt-convex env set RESEND_FROM_EMAIL invites@example.com
+printf '%s' "$RESEND_API_KEY" | pnpm exec better-convex convex env set RESEND_API_KEY
+pnpm exec better-convex convex env set RESEND_FROM_EMAIL invites@example.com
 ```
 
 Load `RESEND_API_KEY` from your secret manager without printing it or placing it

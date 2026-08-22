@@ -112,7 +112,7 @@ export default {
       // extension appender corrupts their already-suffixed relative imports.
       await keepOnlyPublicGeneratedDeclaration(join(runtimeDir, 'convex-auth/component/_generated'))
 
-      for (const executable of ['auth-schema.js', 'convex.js']) {
+      for (const executable of ['index.js']) {
         const path = join(runtimeDir, 'cli', executable)
         if (existsSync(path)) await chmod(path, 0o755)
       }

@@ -35,7 +35,7 @@ export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthCl
         : null,
     }),
   )
-  const isPending = coordinator ? coordinator.isPending : computed(() => pending.value)
+  const resolvedPending = coordinator ? coordinator.pending : computed(() => pending.value)
   const error = computed<ConvexCallError | undefined>(() =>
     authError.value
       ? new ConvexCallError({ kind: 'authentication', message: authError.value })
@@ -44,7 +44,7 @@ export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthCl
 
   return {
     status,
-    isPending,
+    pending: resolvedPending,
     user: readonly(user),
     error,
     client: (coordinator?.client ??

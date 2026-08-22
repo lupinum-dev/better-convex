@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMcpApp } from '@lupinum/better-convex-vue/mcp-app'
+import { useMcpApp } from '@lupinum/better-convex-mcp/vue'
 import type {
   McpUiToolInputNotification,
   McpUiToolResultNotification,

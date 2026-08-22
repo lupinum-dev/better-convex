@@ -349,7 +349,7 @@ async function installFixtureAction(cwd, runId) {
     writeFile(
       path.join(cwd, 'app/pages/release-auth-lifecycle.vue'),
       `<script setup lang="ts">
-const { client, isPending, status } = useConvexAuth()
+const { client, pending, status } = useConvexAuth()
 const hydrated = ref(false)
 onMounted(() => { hydrated.value = true })
 async function reconcileSession() {
@@ -361,7 +361,7 @@ async function reconcileSession() {
 <template>
   <main>
     <p data-testid="auth-status">{{ status }}</p>
-    <p data-testid="auth-pending">{{ isPending }}</p>
+    <p data-testid="auth-pending">{{ pending }}</p>
     <p data-testid="hydrated">{{ hydrated ? 'ready' : 'server' }}</p>
     <button data-testid="refresh" type="button" @click="reconcileSession()">Refresh</button>
   </main>

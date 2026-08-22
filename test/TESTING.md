@@ -230,9 +230,9 @@ Then configure and run the suite from another terminal:
 
 ```bash
 cd playground
-pnpm exec better-convex-nuxt-convex env set SITE_URL http://localhost:3050
-printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex-nuxt-convex env set BETTER_AUTH_SECRETS
-printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt-convex env set BCN_AUTH_PROXY_IP_SECRET
+pnpm exec better-convex convex env set SITE_URL http://localhost:3050
+printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
+printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
 cd ..
 pnpm check:auth-backend
 CONVEX_E2E_AUTO_START=false pnpm test:e2e
@@ -250,7 +250,7 @@ select it once before starting the backend:
 
 ```bash
 cd playground
-pnpm exec better-convex-nuxt-convex deployment select local
+pnpm exec better-convex convex deployment select local
 CONVEX_DEPLOY_KEY= \
 CONVEX_DEPLOYMENT_TOKEN= \
 CONVEX_DEPLOYMENT= \

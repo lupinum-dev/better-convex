@@ -345,7 +345,9 @@ function verifyPackagedSchemaCli(packagedDemo, isolatedRoot) {
       'pnpm',
       [
         'exec',
-        'better-convex-nuxt-auth-schema',
+        'better-convex',
+        'auth',
+        'schema',
         '--config',
         path.join(isolatedRoot, reference, 'schemaOptions.ts'),
         '--output',

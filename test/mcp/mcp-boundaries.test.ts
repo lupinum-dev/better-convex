@@ -46,7 +46,7 @@ describe('delegated MCP static trust boundaries', () => {
 
   it('keeps OAuth cryptography in the shared package verifier', () => {
     const action = readFileSync(join(starter, 'convex/mcp.ts'), 'utf8')
-    expect(action).toContain("from '@lupinum/better-convex-nuxt/convex-auth'")
+    expect(action).toContain("from '@lupinum/better-convex-nuxt/better-auth/server'")
     expect(action).toContain('createBetterAuthMcpAccessVerifier')
     expect(action).not.toContain('@better-auth/oauth-provider/resource-client')
     expect(action).not.toMatch(/jose|subtle|createRemoteJWKSet|jwtVerify/)

@@ -13,7 +13,7 @@ const bridge = useBridge()
 const { queries, selectedQueryId, selectQuery, getSelectedQuery } = useQueries(bridge)
 const { mutations, toggleExpanded, isExpanded } = useMutations(bridge)
 const { authState, connectionState, authWaterfall } = useAuth(bridge)
-const { proxyStats, isLoading: proxyLoading, clear: clearProxyStats } = useAuthProxy()
+const { proxyStats, pending: proxyPending, clear: clearProxyStats } = useAuthProxy()
 
 // UI state
 const activeTab = ref<'queries' | 'mutations' | 'auth'>('queries')
@@ -68,14 +68,14 @@ function selectApplication(event: Event) {
           <span
             class="status-dot"
             :class="{
-              pending: authState?.isPending,
+              pending: authState?.pending,
               connected: authState?.isAuthenticated,
-              disconnected: !authState?.isPending && !authState?.isAuthenticated,
+              disconnected: !authState?.pending && !authState?.isAuthenticated,
             }"
           />
           <span>
             {{
-              authState?.isPending
+              authState?.pending
                 ? 'Loading...'
                 : authState?.isAuthenticated
                   ? authState.user?.name || 'Authenticated'
@@ -135,7 +135,7 @@ function selectApplication(event: Event) {
       <!-- Auth Tab -->
       <div v-show="activeTab === 'auth'" class="tab-content active" style="overflow-y: auto">
         <AuthPanel :auth-state="authState" :waterfall="authWaterfall" />
-        <AuthProxyPanel :stats="proxyStats" :loading="proxyLoading" @clear="clearProxyStats" />
+        <AuthProxyPanel :stats="proxyStats" :loading="proxyPending" @clear="clearProxyStats" />
       </div>
     </template>
   </div>

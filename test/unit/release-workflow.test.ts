@@ -131,6 +131,11 @@ describe('trusted prerelease workflow', () => {
   const ciWorkflow = parseWorkflow('.github/workflows/ci.yml')
   const previewWorkflow = parseWorkflow('.github/workflows/package-preview.yml')
 
+  it('certifies pull requests against every base branch for stacked delivery', () => {
+    expect(ciWorkflow.on?.push).toEqual({ branches: ['main'] })
+    expect(ciWorkflow.on?.pull_request).toBeNull()
+  })
+
   it('runs one clean-checkout family command from an empty artifact root in dependency order', () => {
     const packageJson = JSON.parse(read('package.json')) as {
       scripts?: Record<string, string>
@@ -212,8 +217,8 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       ])
       expect(commands.slice(4)).toEqual(
         expect.arrayContaining([
-          'scripts/verify-release.mjs --package vue --artifact-manifest .release-artifacts/vue/0.8.0-beta.40/artifact.json',
-          'scripts/verify-release.mjs --package nuxt --artifact-manifest .release-artifacts/nuxt/0.8.0-beta.40/artifact.json',
+          'scripts/verify-release.mjs --package vue --artifact-manifest .release-artifacts/vue/1.0.0-beta.1/artifact.json',
+          'scripts/verify-release.mjs --package nuxt --artifact-manifest .release-artifacts/nuxt/1.0.0-beta.1/artifact.json',
         ]),
       )
     } finally {

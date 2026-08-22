@@ -15,7 +15,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   const pageMeta = to.meta as { convexAuth?: ConvexAuthPageMeta }
 
-  const { status, isPending, ready } = useConvexAuth()
+  const { status, pending, ready } = useConvexAuth()
 
   const decision = resolveRouteProtectionDecision({
     meta: pageMeta.convexAuth,
@@ -28,14 +28,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!decision) return
 
   // For protected routes, wait for auth state to settle to avoid protected-content flashes.
-  if (import.meta.client && isPending.value) {
+  if (import.meta.client && pending.value) {
     const settledStatus = await ready({
       timeoutMs: PROTECTED_ROUTE_AUTH_SETTLE_TIMEOUT_MS,
     })
     if (settledStatus === 'authenticated') return
   }
 
-  if (import.meta.server && isPending.value) {
+  if (import.meta.server && pending.value) {
     // Avoid server-side waits; SSR should already have resolved auth.
     // Fall through to secure default route protection if still pending.
   }

@@ -159,7 +159,7 @@ function operationSnapshot() {
     pagination: {
       data: operations.pagination.data.value,
       status: operations.pagination.status.value,
-      loading: operations.pagination.isLoading.value,
+      loading: operations.pagination.pending.value,
       stale: operations.pagination.isStale.value,
       canLoadMore: operations.pagination.canLoadMore.value,
       error: serializeError(operations.pagination.error.value),

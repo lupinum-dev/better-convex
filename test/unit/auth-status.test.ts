@@ -149,10 +149,10 @@ describe('deriveConvexAuthStatus precedence', () => {
 
 describe('deriveConvexAuthStatus — full two-dimensional matrix ', () => {
   // `status` (5 outcomes) is a pure function of the two independent inputs
-  // `authEnabled` and the (settled, identityKey, error) triple; `isPending` is
+  // `authEnabled` and the (settled, identityKey, error) triple; `pending` is
   // NOT one of the derivation inputs — it is the orthogonal second dimension of
   // `UseConvexAuthReturn` and is deliberately absent from `ConvexAuthStatusInput`
-  // ("isPending describes auth work in flight... independent").
+  // ("pending describes auth work in flight... independent").
   const identityKeys = [null, 'anonymous', 'user:a'] as const
   const errors = [null, authErr] as const
 

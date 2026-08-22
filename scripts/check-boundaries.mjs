@@ -87,7 +87,7 @@ const ERRORS_DIR = p('packages/vue/src/errors.ts')
 const AUTH_CLIENT_DIR = p('src/runtime/auth-client')
 const CONVEX_AUTH_DIR = p('src/runtime/convex-auth')
 const CLIENT_LIFECYCLE_DIR = p('packages/vue/src')
-const MCP_APP_ENTRY = p('packages/vue/src/mcp-app.ts')
+const MCP_APP_ENTRY = p('packages/mcp/src/vue.ts')
 const MCP_PACKAGE_DIR = p('packages/mcp/src')
 const SHARED_AUTH_COOKIE_FILE = p('src/runtime/shared/auth-cookie.ts')
 const SHARED_AUTH_ORIGIN_FILE = p('src/runtime/shared/auth-origin.ts')
@@ -179,17 +179,16 @@ function isAllowedClientLifecycleBareSpecifier(specifier) {
   )
 }
 
-function isAllowedVueEntryBareSpecifier(absPath, specifier) {
-  return (
-    isAllowedClientLifecycleBareSpecifier(specifier) ||
-    (absPath === MCP_APP_ENTRY && specifier === '@modelcontextprotocol/ext-apps')
-  )
+function isAllowedVueEntryBareSpecifier(_absPath, specifier) {
+  return isAllowedClientLifecycleBareSpecifier(specifier)
 }
 
-function isAllowedMcpBareSpecifier(specifier) {
+function isAllowedMcpBareSpecifier(absPath, specifier) {
   return (
     specifier === '@modelcontextprotocol/server' ||
-    specifier.startsWith('@modelcontextprotocol/server/')
+    specifier.startsWith('@modelcontextprotocol/server/') ||
+    (absPath === MCP_APP_ENTRY &&
+      (specifier === '@modelcontextprotocol/ext-apps' || specifier === 'vue'))
   )
 }
 
@@ -221,7 +220,7 @@ const RULES = [
       'packages/mcp/src/** may import only its own package and the exact official MCP server SDK; Nuxt, Nitro, H3, Better Auth, Vue, Node built-ins, aliases, and sibling workspace packages are forbidden.',
     from: isMcpPackage,
     disallow: (edge) => {
-      if (!edge.isRelative) return !isAllowedMcpBareSpecifier(edge.specifier)
+      if (!edge.isRelative) return !isAllowedMcpBareSpecifier(edge.fromAbsPath, edge.specifier)
       if (edge.resolvedAbsPath === null) return false
       return !isMcpPackage(edge.resolvedAbsPath)
     },
@@ -230,7 +229,7 @@ const RULES = [
   {
     name: 'client-lifecycle-island-browser-only',
     description:
-      'packages/vue/src/** may import only its own package, Vue, ohash, and reviewed Convex browser/value/type entries; only the isolated mcp-app entry may import the official Apps SDK. Nuxt, Nitro, H3, Better Auth, server/MCP runtime, aliases, and Node built-ins are forbidden.',
+      'packages/vue/src/** may import only its own package, Vue, ohash, and reviewed Convex browser/value/type entries. Nuxt, Nitro, H3, Better Auth, MCP, aliases, and Node built-ins are forbidden.',
     from: isClientLifecycle,
     disallow: (edge) => {
       if (!edge.isRelative) {
@@ -292,7 +291,8 @@ const RULES = [
     from: isModuleBuild,
     disallow: (edge) =>
       (edge.isRelative && edge.resolvedAbsPath !== null && isConvexAuth(edge.resolvedAbsPath)) ||
-      (!edge.isRelative && edge.specifier.startsWith('@lupinum/better-convex-nuxt/convex-auth')),
+      (!edge.isRelative &&
+        edge.specifier.startsWith('@lupinum/better-convex-nuxt/better-auth/server')),
     typeOnlyExempt: false,
   },
   {
@@ -302,7 +302,8 @@ const RULES = [
     from: (absPath) => isBrowserRuntime(absPath) || inDir(absPath, AUTH_CLIENT_DIR),
     disallow: (edge) =>
       (edge.isRelative && edge.resolvedAbsPath !== null && isConvexAuth(edge.resolvedAbsPath)) ||
-      (!edge.isRelative && edge.specifier.startsWith('@lupinum/better-convex-nuxt/convex-auth')),
+      (!edge.isRelative &&
+        edge.specifier.startsWith('@lupinum/better-convex-nuxt/better-auth/server')),
     typeOnlyExempt: false,
   },
   {

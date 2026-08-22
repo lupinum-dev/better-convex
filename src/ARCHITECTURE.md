@@ -126,11 +126,11 @@ The supported package entry points are:
 - `@lupinum/better-convex-vue/embedded`
 
 - `@lupinum/better-convex-nuxt`
-- `@lupinum/better-convex-nuxt/auth-client`
-- `@lupinum/better-convex-nuxt/convex-auth`
-- `@lupinum/better-convex-nuxt/convex-auth/convex.config`
-- `@lupinum/better-convex-nuxt/convex-auth/_generated/component.js`
-- `@lupinum/better-convex-nuxt/convex-auth/test`
+- `@lupinum/better-convex-nuxt/better-auth/client`
+- `@lupinum/better-convex-nuxt/better-auth/server`
+- `@lupinum/better-convex-nuxt/better-auth/convex.config`
+- `@lupinum/better-convex-nuxt/better-auth/_generated/component.js`
+- `@lupinum/better-convex-nuxt/better-auth/test`
 - `@lupinum/better-convex-nuxt/errors`
 - `@lupinum/better-convex-nuxt/server`
 

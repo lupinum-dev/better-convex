@@ -2,7 +2,7 @@ import { handleMcpRequest, runMcpTool, type McpAccessContext } from '@lupinum/be
 import {
   createBetterAuthMcpAccessVerifier,
   requireAuthOrigin,
-} from '@lupinum/better-convex-nuxt/convex-auth'
+} from '@lupinum/better-convex-nuxt/better-auth/server'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { ConvexError } from 'convex/values'
 import { z } from 'zod'

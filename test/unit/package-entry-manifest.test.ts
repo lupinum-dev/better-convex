@@ -19,15 +19,15 @@ import {
 const nuxtEntrySubpaths = [
   '.',
   './errors',
-  './auth-client',
-  './convex-auth',
-  './convex-auth/convex.config',
-  './convex-auth/_generated/component.js',
-  './convex-auth/test',
+  './better-auth/client',
+  './better-auth/server',
+  './better-auth/convex.config',
+  './better-auth/_generated/component.js',
+  './better-auth/test',
   './server',
 ]
-const vueEntrySubpaths = ['.', './errors', './embedded', './mcp-app']
-const mcpEntrySubpaths = ['.']
+const vueEntrySubpaths = ['.', './errors', './embedded']
+const mcpEntrySubpaths = ['.', './vue']
 
 type PackageEntry = {
   kind: 'runtime' | 'types-only'
@@ -71,8 +71,7 @@ describe('package entry manifest', () => {
     expect(manifest.entries.map((entry: PackageEntry) => entry.subpath)).toEqual(nuxtEntrySubpaths)
     expect(manifest.entries).toHaveLength(8)
     expect(manifest.bins).toEqual({
-      'better-convex-nuxt-auth-schema': './dist/runtime/cli/auth-schema.js',
-      'better-convex-nuxt-convex': './dist/runtime/cli/convex.js',
+      'better-convex': './dist/runtime/cli/index.js',
     })
   })
 
@@ -94,7 +93,7 @@ describe('package entry manifest', () => {
   })
 
   it('keeps the MCP App subpath lifecycle contract exact', () => {
-    expect(getPackageEntry('vue', './mcp-app')).toMatchObject({
+    expect(getPackageEntry('mcp', './vue')).toMatchObject({
       kind: 'runtime',
       valueExports: ['useMcpApp'],
       typeExports: [
@@ -172,7 +171,7 @@ describe('package entry manifest', () => {
   })
 
   it('models the generated component declaration as one canonical types-only entry', () => {
-    const entry = getPackageEntry('nuxt', './convex-auth/_generated/component.js')
+    const entry = getPackageEntry('nuxt', './better-auth/_generated/component.js')
     expect(entry).toMatchObject({
       kind: 'types-only',
       distDts: 'dist/runtime/convex-auth/component/_generated/component.d.ts',
@@ -186,13 +185,13 @@ describe('package entry manifest', () => {
     expect(packageJson.exports[entry.subpath]).toEqual({
       types: `./${entry.distDts}`,
     })
-    expect(packageJson.typesVersions['*']['convex-auth/_generated/component.js']).toEqual([
+    expect(packageJson.typesVersions['*']['better-auth/_generated/component.js']).toEqual([
       `./${entry.distDts}`,
     ])
   })
 
   it('rejects JavaScript targets and value exports on a types-only entry', () => {
-    const entry = cloneEntry(getPackageEntry('nuxt', './convex-auth/_generated/component.js'))
+    const entry = cloneEntry(getPackageEntry('nuxt', './better-auth/_generated/component.js'))
 
     expect(() =>
       validatePackageEntries([
@@ -433,7 +432,7 @@ describe('package entry manifest', () => {
   it('keeps the Convex auth packed dependency surface backend-only', () => {
     const checkerEntries = getPackageCheckerEntries('nuxt')
     const entry = checkerEntries.find(
-      (candidate: CheckerEntry) => candidate.subpath === './convex-auth',
+      (candidate: CheckerEntry) => candidate.subpath === './better-auth/server',
     )
     if (!entry?.purity) throw new Error('Missing Convex auth package purity rule')
     const runtimeAllowed = new Set(entry.purity.runtimeExternalSpecifiers)

@@ -104,7 +104,7 @@ function snapshot() {
     pagination: {
       data: pagination.data.value,
       status: pagination.status.value,
-      loading: pagination.isLoading.value,
+      loading: pagination.pending.value,
       stale: pagination.isStale.value,
       canLoadMore: pagination.canLoadMore.value,
       error: serializeError(pagination.error.value),

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { user, status, isPending, error: authError, client } = useConvexAuth()
+const { user, status, pending, error: authError, client } = useConvexAuth()
 const { user: permissionUser } = await useDemoPermissions()
 const router = useRouter()
 
@@ -40,7 +40,7 @@ const items = computed(() => [
     :items="items"
     :content="{ align: 'end' }"
   >
-    <UButton color="neutral" variant="ghost" class="p-0.5" :loading="isPending">
+    <UButton color="neutral" variant="ghost" class="p-0.5" :loading="pending">
       <UAvatar :src="avatarUrl" :alt="user.name || user.email || 'User'" size="sm" />
     </UButton>
 

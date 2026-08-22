@@ -13,9 +13,6 @@ import { supportedDependencyTuple } from '../../scripts/supported-dependency-tup
 
 const NOW = Date.parse('2026-07-16T00:00:00.000Z')
 const CONVEX_VERSION = supportedDependencyTuple.convex
-const vueManifest = JSON.parse(
-  readFileSync(new URL('../../packages/vue/package.json', import.meta.url), 'utf8'),
-)
 const mcpManifest = JSON.parse(
   readFileSync(new URL('../../packages/mcp/package.json', import.meta.url), 'utf8'),
 )
@@ -54,10 +51,10 @@ describe('auth advisory gate', () => {
   it('derives exact sibling-package runtime queries from reviewed manifests', () => {
     expect(reviewedAdvisoryTuple).toMatchObject({
       '@modelcontextprotocol/ext-apps':
-        vueManifest.devDependencies['@modelcontextprotocol/ext-apps'],
+        mcpManifest.devDependencies['@modelcontextprotocol/ext-apps'],
       '@modelcontextprotocol/server': mcpManifest.dependencies['@modelcontextprotocol/server'],
       convex: supportedDependencyTuple.convex,
-      vue: vueManifest.devDependencies.vue,
+      vue: mcpManifest.devDependencies.vue,
     })
   })
 

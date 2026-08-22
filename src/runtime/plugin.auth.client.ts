@@ -195,7 +195,7 @@ export default defineNuxtPlugin({
     )
 
     const controller: NuxtConvexAuthController = {
-      isPending: computed(() => pendingState.value || operations.isPending.value),
+      pending: computed(() => pendingState.value || operations.pending.value),
       client: integratedClient,
       async ready(options) {
         const ready = runtime.attachment.identity.waitForInitialSettlement()

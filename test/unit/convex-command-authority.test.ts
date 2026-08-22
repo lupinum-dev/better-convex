@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   assertConvexAuthoritySelection,
@@ -11,6 +11,14 @@ import {
 } from '../../src/runtime/cli/convex'
 
 describe('checked Convex CLI deployment authority', () => {
+  it.each(['--help', '-h'])('prints help through the consolidated CLI: %s', async (flag) => {
+    const output = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    await expect(runConvexCommand([flag])).resolves.toBe(0)
+    expect(output).toHaveBeenCalledWith(expect.stringContaining('Usage:'))
+    output.mockRestore()
+  })
+
   it.each([
     { CONVEX_DEPLOYMENT: 'local:fixture' },
     { CONVEX_DEPLOYMENT: 'local:local-team_project-fixture' },

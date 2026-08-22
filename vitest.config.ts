@@ -49,7 +49,7 @@ export default defineConfig({
       {
         resolve: {
           alias: {
-            '@lupinum/better-convex-nuxt/convex-auth/test': fileURLToPath(
+            '@lupinum/better-convex-nuxt/better-auth/test': fileURLToPath(
               new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
             ),
           },
@@ -100,7 +100,7 @@ export default defineConfig({
       {
         resolve: {
           alias: {
-            '@lupinum/better-convex-nuxt/convex-auth': fileURLToPath(
+            '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
               new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
             ),
           },
@@ -149,10 +149,10 @@ export default defineConfig({
       {
         resolve: {
           alias: {
-            '@lupinum/better-convex-nuxt/convex-auth/test': fileURLToPath(
+            '@lupinum/better-convex-nuxt/better-auth/test': fileURLToPath(
               new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
             ),
-            '@lupinum/better-convex-nuxt/convex-auth': fileURLToPath(
+            '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
               new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
             ),
           },

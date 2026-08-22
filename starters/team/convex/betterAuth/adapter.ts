@@ -1,4 +1,4 @@
-import { defineAuthAdapterFunctions } from '@lupinum/better-convex-nuxt/convex-auth'
+import { defineAuthAdapterFunctions } from '@lupinum/better-convex-nuxt/better-auth/server'
 
 import schema from './schema'
 import schemaMetadata from './schemaMetadata'

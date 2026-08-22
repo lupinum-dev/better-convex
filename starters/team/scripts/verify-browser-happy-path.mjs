@@ -175,13 +175,13 @@ async function configureConvexAuthEnv() {
 
   await runProcess(
     'convex-env',
-    ['exec', 'better-convex-nuxt-convex', 'env', 'set', 'SITE_URL', rootUrl],
+    ['exec', 'better-convex convex', 'env', 'set', 'SITE_URL', rootUrl],
     30_000,
     options,
   )
   await runProcess(
     'convex-env',
-    ['exec', 'better-convex-nuxt-convex', 'env', 'set', 'BETTER_AUTH_SECRETS'],
+    ['exec', 'better-convex convex', 'env', 'set', 'BETTER_AUTH_SECRETS'],
     30_000,
     { ...options, input: authSecrets },
   )
@@ -771,7 +771,7 @@ async function main() {
       'convex',
       [
         'exec',
-        'better-convex-nuxt-convex',
+        'better-convex convex',
         'dev',
         '--anonymous',
         '--local-cloud-port',

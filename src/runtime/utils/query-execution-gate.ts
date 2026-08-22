@@ -6,8 +6,8 @@ import { isAuthenticatedIdentityKey, type ConvexIdentityKey } from './identity-k
  *
  * The gate is driven by the canonical auth status and the stable identity key
  * published by the frozen {@link ClientIdentityPort} adapter — never by raw engine
- * state and never by `isPending`. Background auth work must not idle an already
- * usable identity, so `isPending` is deliberately absent from the input.
+ * state and never by `pending`. Background auth work must not idle an already
+ * usable identity, so `pending` is deliberately absent from the input.
  *
  * Decision order (each step returns immediately):
  *   1. Explicit `'skip'` resolves idle.

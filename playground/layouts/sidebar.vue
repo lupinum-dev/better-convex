@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { user, status, isPending, error: authError, client } = useConvexAuth()
+const { user, status, pending, error: authError, client } = useConvexAuth()
 const route = useRoute()
 
 async function handleSignOut() {
@@ -90,8 +90,8 @@ const isActiveRoute = (to: string) => {
           </span>
           <template v-else-if="status === 'authenticated'">
             <span class="auth-user">{{ user?.name || user?.email }}</span>
-            <button class="btn btn-sm" :disabled="isPending" @click="handleSignOut">
-              {{ isPending ? 'Signing out...' : 'Sign Out' }}
+            <button class="btn btn-sm" :disabled="pending" @click="handleSignOut">
+              {{ pending ? 'Signing out...' : 'Sign Out' }}
             </button>
           </template>
           <template v-else-if="status === 'anonymous'">

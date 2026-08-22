@@ -1,6 +1,6 @@
 // Framework-free typed auth-client definition entry.
 //
-// Published as `@lupinum/better-convex-nuxt/auth-client`. This subpath contains ONLY the
+// Published as `@lupinum/better-convex-nuxt/better-auth/client`. This subpath contains ONLY the
 // definition identity function and its types. It must not import Nuxt, Vue,
 // `#imports`, browser globals, or server globals; the only imports are
 // type-only Better Auth types, which carry no runtime coupling
@@ -56,7 +56,7 @@ export function defineConvexAuthClient<const Plugins extends AuthClientPlugins =
  * whose type is `typeof` the resolved consumer definition:
  *
  * ```ts
- * declare module '@lupinum/better-convex-nuxt/auth-client' {
+ * declare module '@lupinum/better-convex-nuxt/better-auth/client' {
  *   interface ConvexAuthClientRegistry {
  *     definition: typeof definition
  *   }

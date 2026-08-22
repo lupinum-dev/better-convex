@@ -54,11 +54,11 @@ const mcpCandidate = inspectConsumerCandidate({
 })
 const officialClientVersion = repositoryManifest.devDependencies?.['@modelcontextprotocol/client']
 const officialAppsVersion =
-  vueCandidate.manifest.peerDependencies?.['@modelcontextprotocol/ext-apps']
-const officialSdkVersion = vueCandidate.manifest.peerDependencies?.['@modelcontextprotocol/sdk']
+  mcpCandidate.manifest.peerDependencies?.['@modelcontextprotocol/ext-apps']
+const officialSdkVersion = mcpCandidate.manifest.peerDependencies?.['@modelcontextprotocol/sdk']
 const officialServerVersion = mcpCandidate.manifest.dependencies?.['@modelcontextprotocol/server']
-const officialZodVersion = vueCandidate.manifest.peerDependencies?.zod
-const reviewedVueVersion = vueCandidate.manifest.devDependencies?.vue
+const officialZodVersion = repositoryManifest.devDependencies?.zod
+const reviewedVueVersion = repositoryManifest.devDependencies?.vue
 for (const [name, version] of Object.entries({
   '@modelcontextprotocol/client': officialClientVersion,
   '@modelcontextprotocol/ext-apps': officialAppsVersion,
@@ -136,7 +136,7 @@ try {
   type UseMcpAppOptions,
   type UseMcpAppReturn,
   useMcpApp,
-} from '@lupinum/better-convex-vue/mcp-app'
+} from '@lupinum/better-convex-mcp/vue'
 
 declare const options: UseMcpAppOptions
 const app: UseMcpAppReturn = useMcpApp(options)
@@ -181,14 +181,14 @@ if (error) {
   const build = await buildNotesDashboard({
     extAppsBridgeEntry: consumerRequire.resolve('@modelcontextprotocol/ext-apps/app-bridge'),
     extAppsEntry: consumerRequire.resolve('@modelcontextprotocol/ext-apps'),
-    mcpAppEntry: join(installedVue, 'dist/mcp-app.mjs'),
+    mcpAppEntry: join(installedMcp, 'dist/vue.mjs'),
   })
-  const installedMcpAppEntry = realpathSync(join(installedVue, 'dist/mcp-app.mjs'))
+  const installedMcpAppEntry = realpathSync(join(installedMcp, 'dist/vue.mjs'))
   if (!build.appModules.includes(installedMcpAppEntry)) {
-    throw new Error('Production App bundle did not consume the installed Vue candidate bytes.')
+    throw new Error('Production App bundle did not consume the installed MCP candidate bytes.')
   }
-  if (build.appModules.some((moduleId) => moduleId.includes('/packages/vue/src/'))) {
-    throw new Error('Production App bundle fell back to Vue package source.')
+  if (build.appModules.some((moduleId) => moduleId.includes('/packages/mcp/src/'))) {
+    throw new Error('Production App bundle fell back to MCP package source.')
   }
 
   const [{ handleMcpRequest }, { Client, StreamableHTTPClientTransport }, { z }] =

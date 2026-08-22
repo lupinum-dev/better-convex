@@ -94,7 +94,7 @@ function scanGeneratedPublicSurface() {
       }
     }
   }
-  const authPageMeta = join(buildDir, 'types', 'better-convex-nuxt-auth.d.ts')
+  const authPageMeta = join(buildDir, 'types', 'better-convex auth schema.d.ts')
   if (existsSync(authPageMeta)) {
     violations.push(`page meta: no-auth build generated ${authPageMeta}`)
   }

@@ -1,6 +1,6 @@
 {
   "name": "@lupinum/better-convex-vue",
-  "version": "0.8.0-beta.40",
+  "version": "1.0.0-beta.1",
   "description": "Identity-safe Convex lifecycle primitives for Vue 3 and Vite",
   "homepage": "https://better-convex.lupinum.com",
   "bugs": {
@@ -29,10 +29,6 @@
     "./embedded": {
       "types": "./dist/embedded.d.mts",
       "import": "./dist/embedded.mjs"
-    },
-    "./mcp-app": {
-      "types": "./dist/mcp-app.d.mts",
-      "import": "./dist/mcp-app.mjs"
     }
   },
   "scripts": {
@@ -44,8 +40,6 @@
     "ohash": "^2.0.11"
   },
   "devDependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.5",
-    "@modelcontextprotocol/sdk": "1.30.0",
     "convex": "1.42.2",
     "typescript": "~5.9.3",
     "unbuild": "3.6.1",
@@ -54,24 +48,10 @@
     "zod": "4.4.3"
   },
   "peerDependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.5",
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "convex": "1.42.2",
-    "vue": "^3.5.0",
-    "zod": "4.4.3"
-  },
-  "peerDependenciesMeta": {
-    "@modelcontextprotocol/ext-apps": {
-      "optional": true
-    },
-    "@modelcontextprotocol/sdk": {
-      "optional": true
-    },
-    "zod": {
-      "optional": true
-    }
+    "convex": ">=1.42.2 <2",
+    "vue": ">=3.5.0 <4"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": "^22.14.0 || ^24.0.0"
   }
 }

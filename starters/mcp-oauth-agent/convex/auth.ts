@@ -6,7 +6,7 @@ import {
   requireAuthOrigin,
   type AuthCtx,
   type AuthFunctions,
-} from '@lupinum/better-convex-nuxt/convex-auth'
+} from '@lupinum/better-convex-nuxt/better-auth/server'
 import { betterAuth } from 'better-auth'
 import { jwt } from 'better-auth/plugins'
 

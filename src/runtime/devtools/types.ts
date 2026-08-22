@@ -80,7 +80,7 @@ export interface JWTClaims {
 
 export interface AuthState {
   isAuthenticated: boolean
-  isPending: boolean
+  pending: boolean
   user: ConvexUser | null
   tokenStatus: 'valid' | 'expired' | 'none' | 'unknown'
 }

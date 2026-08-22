@@ -9,7 +9,7 @@ import {
 } from '../../scripts/release-changelog.mjs'
 
 describe('prepared release changelog', () => {
-  const tag = 'v0.8.0-beta.40'
+  const tag = 'v1.0.0-beta.1'
 
   it('returns the exact prepared release section', () => {
     expect(
@@ -20,7 +20,7 @@ describe('prepared release changelog', () => {
     ).toBe('- Ship the certified package set.')
   })
 
-  it('uses one root release tag for packages with different npm versions', () => {
+  it('uses one root release tag for the aligned beta package set', () => {
     const workspace = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
       version: string
     }
@@ -29,7 +29,7 @@ describe('prepared release changelog', () => {
     }
     const changelog = readFileSync(resolve('CHANGELOG.md'), 'utf8')
 
-    expect(mcp.version).not.toBe(workspace.version)
+    expect(mcp.version).toBe(workspace.version)
     expect(getReleaseFamilyTag(workspace.version)).toBe(tag)
     expect(requirePreparedReleaseNotes(changelog, tag)).toContain('@lupinum/better-convex-mcp')
   })

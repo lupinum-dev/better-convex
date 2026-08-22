@@ -6,7 +6,7 @@ import {
   type AuthCtx,
   type AuthFunctions,
   type BetterAuthUserProjectionSource,
-} from '@lupinum/better-convex-nuxt/convex-auth'
+} from '@lupinum/better-convex-nuxt/better-auth/server'
 import { betterAuth } from 'better-auth'
 import { jwt } from 'better-auth/plugins'
 import { ConvexError, v } from 'convex/values'

@@ -17,7 +17,7 @@ const softDeleteProject = useConvexMutation(api.projects.softDelete)
 const restoreProject = useConvexMutation(api.projects.restore)
 const {
   data: projectData,
-  isLoading: projectsLoading,
+  pending: projectsLoading,
   canLoadMore,
   loadMore,
   refresh,

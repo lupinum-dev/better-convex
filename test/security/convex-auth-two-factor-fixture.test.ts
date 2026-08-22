@@ -33,7 +33,7 @@ describe('dedicated Better Auth two-factor fixture', () => {
     const schemaInput = read(`${fixture}/betterAuth/schemaOptions.ts`)
 
     expect(adapter).toContain(
-      "import { defineAuthAdapterFunctions } from '@lupinum/better-convex-nuxt/convex-auth'",
+      "import { defineAuthAdapterFunctions } from '@lupinum/better-convex-nuxt/better-auth/server'",
     )
     expect(adapter).toContain('defineAuthAdapterFunctions({ metadata: schemaMetadata, schema })')
     expect(adapter).not.toMatch(/function\s+(?:findOne|create|incrementOne)\s*\(/)

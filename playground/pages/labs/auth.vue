@@ -3,7 +3,7 @@
     <h1>Auth Lab</h1>
     <p class="description">
       This page tests explicit rendering from <code>useConvexAuth().status</code> and keeps
-      operation progress in <code>isPending</code>.
+      operation progress in <code>pending</code>.
     </p>
 
     <div class="current-state">
@@ -24,9 +24,9 @@
           </span>
         </div>
         <div class="state-item">
-          <span class="label">isPending</span>
-          <span class="value" :class="{ active: isPending }">
-            {{ isPending }}
+          <span class="label">pending</span>
+          <span class="value" :class="{ active: pending }">
+            {{ pending }}
           </span>
         </div>
         <div class="state-item">
@@ -126,10 +126,10 @@
         <button
           v-else-if="status === 'authenticated'"
           class="btn btn-secondary"
-          :disabled="isPending"
+          :disabled="pending"
           @click="signOut"
         >
-          {{ isPending ? 'Signing out...' : 'Sign Out' }}
+          {{ pending ? 'Signing out...' : 'Sign Out' }}
         </button>
       </div>
     </div>
@@ -143,7 +143,7 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { status, isPending, user, error: authError, client } = useConvexAuth()
+const { status, pending, user, error: authError, client } = useConvexAuth()
 
 const permissionQueryArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
 const { data: permissionContext } = await useConvexQuery(

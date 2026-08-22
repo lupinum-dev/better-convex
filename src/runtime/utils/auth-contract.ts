@@ -13,7 +13,7 @@ import type { ConvexUser } from './types'
  */
 export interface UseConvexAuthReturn<Client extends object = object> {
   readonly status: ComputedRef<ConvexAuthStatus>
-  readonly isPending: ComputedRef<boolean>
+  readonly pending: ComputedRef<boolean>
   readonly user: Readonly<Ref<ConvexUser | null>>
   readonly error: Readonly<Ref<ConvexCallError | undefined>>
   /** Every PromiseLike client operation crosses canonical session reconciliation. */

@@ -33,7 +33,7 @@ describe('MCP package documentation', () => {
     )
     expect(normalizedGuide).toContain('The protocol is stable; this integration remains prerelease')
     expect(guide).toContain(
-      '@lupinum/better-convex-mcp@0.1.0-beta.28 @modelcontextprotocol/server@2.0.0 zod@4.4.3',
+      '@lupinum/better-convex-mcp@1.0.0-beta.1 @modelcontextprotocol/server@2.0.0 zod@4.4.3',
     )
   })
 
@@ -61,7 +61,7 @@ describe('MCP package documentation', () => {
     )
     expect(guide).toContain('automatic Convex-function exposure')
     expect(guide).toContain('prompts, Tasks, or a URL approval workflow')
-    expect(normalizedGuide).toContain('client entry lives in `@lupinum/better-convex-vue/mcp-app`')
+    expect(normalizedGuide).toContain('client entry lives in `@lupinum/better-convex-mcp/vue`')
     expect(normalizedGuide).toContain('adds no server capability or authority')
     expect(guide).toContain('second Nitro MCP topology')
     expect(guide).toContain('hand-written MCP parser')

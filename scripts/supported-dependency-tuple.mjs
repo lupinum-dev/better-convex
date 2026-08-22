@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs'
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
 /**
- * The published package manifest is the canonical supported dependency tuple.
- * Every other representation is derived from this value and checked in CI.
+ * Exact versions exercised by this repository. Published peer ranges are a
+ * separate contract: consumers may move within a reviewed major while CI keeps
+ * one reproducible floor/latest tuple.
  */
 export const supportedDependencyTuple = Object.freeze({
   '@better-auth/api-key': requiredDevDependency('@better-auth/api-key'),
@@ -12,8 +13,13 @@ export const supportedDependencyTuple = Object.freeze({
   '@better-auth/oauth-provider': requiredOptionalPeerDependency('@better-auth/oauth-provider'),
   '@nuxt/kit': requiredRuntimeDependency('@nuxt/kit'),
   'better-auth': requiredOptionalPeerDependency('better-auth'),
-  convex: requiredPeerDependency('convex'),
+  convex: requiredDevDependency('convex'),
   'convex-helpers': requiredRuntimeDependency('convex-helpers'),
+  nuxt: requiredDevDependency('nuxt'),
+})
+
+export const supportedPeerRanges = Object.freeze({
+  convex: requiredPeerDependency('convex'),
   nuxt: requiredPeerDependency('nuxt'),
 })
 
@@ -65,6 +71,33 @@ function assertExact(name, version) {
   }
 }
 
+function parseExactVersion(name, version) {
+  assertExact(name, version)
+  const [core] = version.split('-', 1)
+  return core.split('.').map(Number)
+}
+
+function compareVersions(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    const difference = left[index] - right[index]
+    if (difference !== 0) return difference
+  }
+  return 0
+}
+
+function assertBoundedMajorPeer(name, range, testedVersion) {
+  const match = /^>=(\d+\.\d+\.\d+) <(\d+)$/u.exec(range)
+  if (!match) {
+    throw new Error(`${name} must use a bounded >=floor <next-major peer range; received ${range}.`)
+  }
+  const floor = parseExactVersion(`${name} peer floor`, match[1])
+  const tested = parseExactVersion(`${name} tested version`, testedVersion)
+  const upperMajor = Number(match[2])
+  if (compareVersions(tested, floor) < 0 || tested[0] >= upperMajor || floor[0] >= upperMajor) {
+    throw new Error(`${name}@${testedVersion} is outside its supported peer range ${range}.`)
+  }
+}
+
 function validateTuple() {
   for (const [name, version] of Object.entries(supportedDependencyTuple)) {
     assertExact(name, version)
@@ -89,6 +122,10 @@ function validateTuple() {
     if (packageJson.dependencies?.[name] !== undefined) {
       throw new Error(`${name} must remain consumer-owned and cannot be a runtime dependency.`)
     }
+  }
+
+  for (const name of ['convex', 'nuxt']) {
+    assertBoundedMajorPeer(name, supportedPeerRanges[name], supportedDependencyTuple[name])
   }
 
   for (const name of ['better-auth', '@better-auth/oauth-provider']) {
