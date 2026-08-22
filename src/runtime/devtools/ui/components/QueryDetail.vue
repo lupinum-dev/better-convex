@@ -152,7 +152,7 @@ const options = computed<{
 
       <div class="detail-section">
         <div class="detail-title">Cache Key</div>
-        <div class="json-viewer" style="max-height: 60px">{{ query.id }}</div>
+        <div class="json-viewer" style="max-height: 60px">{{ query.logicalKey }}</div>
       </div>
 
       <div class="detail-section">

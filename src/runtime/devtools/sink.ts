@@ -10,7 +10,13 @@ type MutationSubscriber = (entries: MutationEntry[]) => void
 export interface DevtoolsSink {
   getQueries(): QueryRegistryEntry[]
   getQuery(id: string): QueryRegistryEntry | undefined
-  upsertQuery(entry: Omit<QueryRegistryEntry, 'lastUpdated'>): void
+  registerQuery(entry: Omit<QueryRegistryEntry, 'id' | 'lastUpdated'>): string
+  updateQuery(
+    id: string,
+    update: Partial<
+      Pick<QueryRegistryEntry, 'logicalKey' | 'args' | 'status' | 'data' | 'error' | 'options'>
+    >,
+  ): void
   removeQuery(id: string): void
   subscribeToQueries(callback: QuerySubscriber): () => void
   registerMutation(entry: Omit<MutationEntry, 'id'>): string
@@ -66,17 +72,40 @@ export function createDevtoolsSink(): DevtoolsSink {
       const entry = queries.get(id)
       return entry ? cloneEntry(entry) : undefined
     },
-    upsertQuery(entry) {
-      if (disposed) return
-      queries.delete(entry.id)
-      queries.set(entry.id, {
+    registerQuery(entry) {
+      if (disposed) return ''
+      const id = createId()
+      queries.set(id, {
         ...entry,
+        id,
         args: sanitizeDiagnosticValue(entry.args),
         data: sanitizeDiagnosticValue(entry.data),
         error: entry.error === undefined ? undefined : String(sanitizeDiagnosticValue(entry.error)),
         lastUpdated: Date.now(),
       })
       while (queries.size > MAX_QUERIES) queries.delete(queries.keys().next().value!)
+      notifyQueries()
+      return id
+    },
+    updateQuery(id, update) {
+      if (disposed) return
+      const existing = queries.get(id)
+      if (!existing) return
+      queries.set(id, {
+        ...existing,
+        ...update,
+        ...(Object.hasOwn(update, 'args') ? { args: sanitizeDiagnosticValue(update.args) } : {}),
+        ...(Object.hasOwn(update, 'data') ? { data: sanitizeDiagnosticValue(update.data) } : {}),
+        ...(Object.hasOwn(update, 'error')
+          ? {
+              error:
+                update.error === undefined
+                  ? undefined
+                  : String(sanitizeDiagnosticValue(update.error)),
+            }
+          : {}),
+        lastUpdated: Date.now(),
+      })
       notifyQueries()
     },
     removeQuery(id) {

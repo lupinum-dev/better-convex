@@ -9,7 +9,10 @@ export type { ConvexUser } from '../utils/types'
 export type QueryStatus = 'pending' | 'success' | 'error' | 'idle'
 
 export interface QueryRegistryEntry {
+  /** Unique controller instance. Identical subscriptions still have different IDs. */
   id: string
+  /** Stable query/cache identity shared by equivalent controller instances. */
+  logicalKey: string
   name: string
   args: unknown
   status: QueryStatus

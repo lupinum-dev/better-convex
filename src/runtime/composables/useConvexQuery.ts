@@ -204,26 +204,34 @@ function createClientConvexQueryState<
   const status = computed<ConvexCallStatus>(() =>
     error.value ? 'error' : (result.status.value as ConvexCallStatus),
   )
+  const devtoolsSink = runtime?.getDevtoolsSink()
+  const devtoolsQueryId = devtoolsSink?.registerQuery({
+    logicalKey: hydrationKey,
+    name: getFunctionName(query),
+    args: currentBoundary.value.args,
+    status: status.value,
+    data: result.data.value,
+    error: error.value?.message,
+    options: { immediate, lazy, server, subscribe: true, auth },
+  })
   const stopDevtools = watch(
-    [status, result.data, error],
-    ([currentStatus, data, currentError]) => {
-      runtime?.getDevtoolsSink()?.upsertQuery({
-        id: hydrationKey,
-        name: getFunctionName(query),
-        args: currentBoundary.value.args,
+    [currentBoundary, status, result.data, error],
+    ([boundary, currentStatus, data, currentError]) => {
+      if (!devtoolsSink || !devtoolsQueryId) return
+      devtoolsSink.updateQuery(devtoolsQueryId, {
+        logicalKey: boundary.key,
+        args: boundary.args,
         status: currentStatus,
         data,
         error: currentError?.message,
-        options: { immediate, lazy, server, subscribe: true, auth },
       })
     },
-    { immediate: true },
   )
   onScopeDispose(() => {
     stopHydrationBoundaryRetirement()
     stopHydratedErrorReconciliation()
     stopDevtools()
-    runtime?.getDevtoolsSink()?.removeQuery(hydrationKey)
+    if (devtoolsQueryId) devtoolsSink?.removeQuery(devtoolsQueryId)
   })
   return {
     resultData: Object.freeze({
