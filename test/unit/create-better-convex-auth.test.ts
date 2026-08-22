@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
+import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 
 const { betterAuth } = vi.hoisted(() => ({
   betterAuth: vi.fn((options: unknown) => ({
@@ -54,6 +55,32 @@ function component() {
   } as never
 }
 
+function oauthProfile(): PinnedOAuthProviderProfile {
+  return {
+    accessTokenExpiresIn: 600,
+    allowDynamicClientRegistration: false,
+    allowPublicClientPrelogin: true,
+    allowUnauthenticatedClientRegistration: false,
+    clientPrivileges: async () => true,
+    codeExpiresIn: 120,
+    consentPage: '/oauth/consent',
+    customAccessTokenClaims: () => ({ token_use: 'oauth-access' }),
+    dpop: { signingAlgorithms: [] },
+    enforcePerClientResources: true,
+    grantTypes: ['authorization_code'],
+    loginPage: '/login',
+    rateLimit: {
+      authorize: { max: 30, window: 60 },
+      revoke: { max: 30, window: 60 },
+      token: { max: 20, window: 60 },
+    },
+    resourcePrivileges: async () => true,
+    scopes: ['mcp:read'],
+    storeClientSecret: 'hashed',
+    storeTokens: 'hashed',
+  }
+}
+
 describe('createBetterConvexAuth', () => {
   it('owns the adapter, hardened defaults, and reviewed plugin order', async () => {
     const auth = createBetterConvexAuth(component(), {
@@ -80,7 +107,9 @@ describe('createBetterConvexAuth', () => {
     ])
     expect(options).toMatchObject({
       account: { encryptOAuthTokens: true, storeAccountCookie: false },
-      advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
+      advanced: {
+        ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] },
+      },
       rateLimit: { modelName: 'rateLimit', storage: 'database' },
       verification: { storeIdentifier: 'hashed' },
     })
@@ -89,14 +118,20 @@ describe('createBetterConvexAuth', () => {
     expect(typeof auth.triggerFunctions).toBe('function')
   })
 
-  it.each(['plugins', 'database', 'advanced', 'rateLimit', 'baseURL', 'basePath'])(
-    'rejects an unsafe override of owned option %s',
-    (key) => {
-      expect(() => createBetterConvexAuth(component(), { [key]: [] } as never)).toThrow(
-        `owns "${key}"`,
-      )
-    },
-  )
+  it.each([
+    'plugins',
+    'database',
+    'databaseHooks',
+    'user',
+    'advanced',
+    'rateLimit',
+    'baseURL',
+    'basePath',
+  ])('rejects an unsafe override of owned option %s', (key) => {
+    expect(() => createBetterConvexAuth(component(), { [key]: [] } as never)).toThrow(
+      `owns "${key}"`,
+    )
+  })
 
   it('keeps password verification and minimum policy factory-owned', async () => {
     expect(() =>
@@ -127,8 +162,134 @@ describe('createBetterConvexAuth', () => {
       } as never),
     ).toThrow('session.additionalFields')
     expect(() =>
-      createBetterConvexAuth(component(), { session: { expiresIn: 1 } } as never),
+      createBetterConvexAuth(component(), {
+        session: { expiresIn: 1 },
+      } as never),
     ).toThrow('session.expiresIn')
+  })
+
+  it('admits a narrow user identity decision without exposing Better Auth hooks', async () => {
+    const ctx = { runQuery: vi.fn() }
+    const beforeUserCreate = vi.fn(async ({ user }) => {
+      expect(Object.isFrozen(user)).toBe(true)
+      return {
+        allowed: true as const,
+        user: {
+          email: user.email.trim().toLowerCase(),
+          id: 'existing-user-id',
+        },
+      }
+    })
+    const auth = createBetterConvexAuth(component(), { beforeUserCreate })
+
+    await auth.createAuth(ctx as never)
+    const options = betterAuth.mock.calls[0]?.[0] as {
+      databaseHooks: {
+        user: {
+          create: {
+            before: (user: Record<string, unknown>) => Promise<unknown>
+          }
+        }
+      }
+    }
+    const user = {
+      createdAt: new Date(),
+      email: '  Owner@Example.test  ',
+      emailVerified: false,
+      id: 'generated-user-id',
+      image: null,
+      name: 'Owner',
+      updatedAt: new Date(),
+    }
+
+    await expect(options.databaseHooks.user.create.before(user)).resolves.toEqual({
+      data: {
+        ...user,
+        email: 'owner@example.test',
+        id: 'existing-user-id',
+      },
+    })
+    expect(beforeUserCreate).toHaveBeenCalledWith({
+      ctx,
+      user: {
+        email: user.email,
+        emailVerified: false,
+        id: 'generated-user-id',
+        image: null,
+        name: 'Owner',
+      },
+    })
+  })
+
+  it.each([
+    {
+      name: 'explicit denial',
+      callback: async () => ({ allowed: false as const }),
+    },
+    {
+      name: 'private callback failure',
+      callback: async () => Promise.reject(new Error('private')),
+    },
+    {
+      name: 'invalid identity replacement',
+      callback: async () => ({ allowed: true as const, user: { id: '  ' } }),
+    },
+  ])('fails closed with one sanitized error for $name', async ({ callback }) => {
+    const auth = createBetterConvexAuth(component(), {
+      beforeUserCreate: callback,
+    })
+    await auth.createAuth({} as never)
+    const options = betterAuth.mock.calls[0]?.[0] as {
+      databaseHooks: {
+        user: {
+          create: {
+            before: (user: Record<string, unknown>) => Promise<unknown>
+          }
+        }
+      }
+    }
+
+    await expect(
+      options.databaseHooks.user.create.before({
+        email: 'owner@example.test',
+        emailVerified: false,
+        id: 'generated-user-id',
+        image: null,
+        name: 'Owner',
+      }),
+    ).rejects.toThrow('AUTH_USER_CREATE_REJECTED')
+  })
+
+  it('builds one hardened OAuth profile from the request-scoped Convex context', async () => {
+    const ctx = { runQuery: vi.fn() }
+    const createProfile = vi.fn(() => oauthProfile())
+    const auth = createBetterConvexAuth(component(), {
+      oauthProvider: createProfile,
+    })
+
+    await auth.createAuth(ctx as never)
+
+    expect(createProfile).toHaveBeenCalledOnce()
+    expect(createProfile).toHaveBeenCalledWith(ctx)
+    const options = betterAuth.mock.calls[0]?.[0] as {
+      plugins: Array<{ id: string }>
+    }
+    expect(options.plugins.map(({ id }) => id)).toEqual([
+      'jwt',
+      '@lupinum/better-convex-nuxt',
+      'oauth-provider',
+    ])
+  })
+
+  it('sanitizes request-scoped OAuth profile failures', async () => {
+    const auth = createBetterConvexAuth(component(), {
+      oauthProvider: () => {
+        throw new Error('private policy failure')
+      },
+    })
+
+    await expect(auth.createAuth({} as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
+    await expect(auth.createAuth({} as never)).rejects.not.toThrow('private policy failure')
   })
 
   it('reports one sanitized configuration error when required secrets are absent', async () => {
