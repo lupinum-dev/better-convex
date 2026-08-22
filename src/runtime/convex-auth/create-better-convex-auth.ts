@@ -46,19 +46,21 @@ type BetterConvexPendingUser = Readonly<
   Pick<User, 'email' | 'emailVerified' | 'id' | 'image' | 'name'>
 >
 
-type ReviewedEmailAndPasswordOptions = Pick<
-  BetterAuthEmailAndPasswordOptions,
-  | 'disableSignUp'
-  | 'maxPasswordLength'
-  | 'onExistingUserSignUp'
-  | 'onPasswordReset'
-  | 'requireEmailVerification'
-  | 'resetPasswordTokenExpiresIn'
-  | 'revokeSessionsOnPasswordReset'
-  | 'sendResetPassword'
+type ReviewedEmailAndPasswordOptions = Partial<
+  Pick<
+    BetterAuthEmailAndPasswordOptions,
+    | 'disableSignUp'
+    | 'maxPasswordLength'
+    | 'onExistingUserSignUp'
+    | 'onPasswordReset'
+    | 'requireEmailVerification'
+    | 'resetPasswordTokenExpiresIn'
+    | 'revokeSessionsOnPasswordReset'
+    | 'sendResetPassword'
+  >
 >
 
-type ReviewedSessionOptions = Pick<BetterAuthSessionOptions, 'cookieCache'>
+type ReviewedSessionOptions = Partial<Pick<BetterAuthSessionOptions, 'cookieCache'>>
 
 export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataModel> {
   readonly appName?: string
