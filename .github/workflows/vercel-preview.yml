@@ -77,6 +77,21 @@ jobs:
               })
             }
 
+            const reportBestEffort = async (label, operation) => {
+              try {
+                return await operation()
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error)
+                core.warning(`${label}: ${message}`)
+                return undefined
+              }
+            }
+
+            const reportStatusComment = (label, body) =>
+              reportBestEffort(label, () => updateStatusComment(body))
+            const updateCheckBestEffort = (label, parameters) =>
+              reportBestEffort(label, () => github.rest.checks.update(parameters))
+
             const requestVercel = async (path, options = {}, { retries = 0 } = {}) => {
               const separator = path.includes('?') ? '&' : '?'
               const url = `https://api.vercel.com${path}${separator}teamId=${encodeURIComponent(vercelOrgId)}`
@@ -207,7 +222,8 @@ jobs:
               })
 
               let inspectorUrl = absoluteUrl(deployment.inspectorUrl)
-              await updateStatusComment(
+              await reportStatusComment(
+                'Could not report the building deployment',
                 [
                   '⏳ **Vercel preview is building**',
                   '',
@@ -218,16 +234,19 @@ jobs:
                 ].join('\n'),
               )
 
-              await github.rest.checks.update({
-                owner,
-                repo,
-                check_run_id: checkRunId,
-                details_url: inspectorUrl || runUrl,
-                output: {
-                  title: 'Vercel preview is building',
-                  summary: `Vercel is building pull request #${issueNumber} at ${shortSha}.`,
+              await updateCheckBestEffort(
+                'Could not update the building check',
+                {
+                  owner,
+                  repo,
+                  check_run_id: checkRunId,
+                  details_url: inspectorUrl || runUrl,
+                  output: {
+                    title: 'Vercel preview is building',
+                    summary: `Vercel is building pull request #${issueNumber} at ${shortSha}.`,
+                  },
                 },
-              })
+              )
 
               const terminalStates = new Set(['BLOCKED', 'CANCELED', 'ERROR', 'READY'])
               const deadline = jobStart + 45 * 60 * 1000
@@ -267,7 +286,8 @@ jobs:
               }
 
               if (wasIgnored && !reusedExistingPreview) {
-                await updateStatusComment(
+                await reportStatusComment(
+                  'Could not report the skipped deployment',
                   [
                     '⏭️ **Vercel preview was not needed**',
                     '',
@@ -278,19 +298,22 @@ jobs:
                   ].join('\n'),
                 )
 
-                await github.rest.checks.update({
-                  owner,
-                  repo,
-                  check_run_id: checkRunId,
-                  status: 'completed',
-                  conclusion: 'neutral',
-                  completed_at: new Date().toISOString(),
-                  details_url: inspectorUrl || runUrl,
-                  output: {
-                    title: 'Vercel preview was not needed',
-                    summary: `Commit ${shortSha} does not change the documentation site.`,
+                await updateCheckBestEffort(
+                  'Could not complete the skipped deployment check',
+                  {
+                    owner,
+                    repo,
+                    check_run_id: checkRunId,
+                    status: 'completed',
+                    conclusion: 'neutral',
+                    completed_at: new Date().toISOString(),
+                    details_url: inspectorUrl || runUrl,
+                    output: {
+                      title: 'Vercel preview was not needed',
+                      summary: `Commit ${shortSha} does not change the documentation site.`,
+                    },
                   },
-                })
+                )
                 return
               }
 
@@ -301,17 +324,26 @@ jobs:
               const previewUrl = absoluteUrl(deployment.url)
               if (!previewUrl) throw new Error('Vercel did not return a preview URL.')
 
-              const { data: currentPullRequest } = await github.rest.pulls.get({
-                owner,
-                repo,
-                pull_number: issueNumber,
-              })
-              const isOutdated = currentPullRequest.head.sha !== commitSha
+              const currentPullRequest = await reportBestEffort(
+                'Could not refresh the pull request before reporting the preview',
+                async () =>
+                  (
+                    await github.rest.pulls.get({
+                      owner,
+                      repo,
+                      pull_number: issueNumber,
+                    })
+                  ).data,
+              )
+              const isOutdated = currentPullRequest
+                ? currentPullRequest.head.sha !== commitSha
+                : false
               const outdatedMessage = isOutdated
                 ? `\n\n⚠️ The pull request is now at \`${currentPullRequest.head.sha.slice(0, 7)}\`. Run \`/vercel\` again for the latest commit.`
                 : ''
 
-              await updateStatusComment(
+              await reportStatusComment(
+                'Could not report the ready deployment',
                 [
                   '✅ **Vercel preview is ready**',
                   '',
@@ -324,21 +356,24 @@ jobs:
                 ].join('\n') + outdatedMessage,
               )
 
-              await github.rest.checks.update({
-                owner,
-                repo,
-                check_run_id: checkRunId,
-                status: 'completed',
-                conclusion: 'success',
-                completed_at: new Date().toISOString(),
-                details_url: previewUrl,
-                output: {
-                  title: isOutdated ? 'Preview ready for an older commit' : 'Vercel preview is ready',
-                  summary: isOutdated
-                    ? `Commit ${shortSha} deployed successfully, but the pull request has newer changes.`
-                    : `Pull request #${issueNumber} at ${shortSha} deployed successfully.`,
+              await updateCheckBestEffort(
+                'Could not complete the successful deployment check',
+                {
+                  owner,
+                  repo,
+                  check_run_id: checkRunId,
+                  status: 'completed',
+                  conclusion: 'success',
+                  completed_at: new Date().toISOString(),
+                  details_url: previewUrl,
+                  output: {
+                    title: isOutdated ? 'Preview ready for an older commit' : 'Vercel preview is ready',
+                    summary: isOutdated
+                      ? `Commit ${shortSha} deployed successfully, but the pull request has newer changes.`
+                      : `Pull request #${issueNumber} at ${shortSha} deployed successfully.`,
+                  },
                 },
-              })
+              )
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               const shortSha = commitSha?.slice(0, 7)
