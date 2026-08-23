@@ -177,11 +177,11 @@ function createClientConvexQueryState<
     'convex:query-errors',
     () => ({}),
   )
-  const startsAfterHydration =
-    immediate &&
-    nuxtApp.isHydrating &&
-    !hasHydratedData &&
-    hydratedErrors.value[hydrationKey] === undefined
+  // Keep the SSR payload (or SSR error) authoritative for the first client
+  // render. Starting the live controller while Vue is hydrating changes a
+  // hydrated success state back to pending and can select a different template
+  // branch than the server rendered.
+  const startsAfterHydration = immediate && nuxtApp.isHydrating
   const result = Reflect.apply(useVueConvexQuery, undefined, [
     query,
     args,

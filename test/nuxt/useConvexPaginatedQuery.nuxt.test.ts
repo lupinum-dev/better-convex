@@ -65,6 +65,51 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
+  it('keeps an SSR page authoritative until hydration settles', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:hydrated-frame')
+    const key = withAuthDimension(
+      createConvexQueryKey(
+        query,
+        { paginationOpts: { numItems: 2, cursor: null } },
+        'convex-paginated',
+      ),
+      'none',
+      'anonymous',
+    )
+    const { result, wrapper } = await captureInNuxt(
+      () => {
+        const nuxtApp = useNuxtApp()
+        nuxtApp.isHydrating = true
+        const listenersBeforeMount = ref(-1)
+        const listenersDuringMount = ref(-1)
+        const statusBeforeMount = ref('unknown')
+        const state = useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 })
+        onBeforeMount(() => {
+          listenersBeforeMount.value = primary.calls.onUpdate.length
+          statusBeforeMount.value = state.status.value
+        })
+        onMounted(() => {
+          listenersDuringMount.value = primary.calls.onUpdate.length
+          nuxtApp.isHydrating = false
+          void nuxtApp.callHook('app:suspense:resolve')
+        })
+        return { listenersBeforeMount, listenersDuringMount, statusBeforeMount, state }
+      },
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
+      },
+    )
+
+    expect(result.listenersBeforeMount.value).toBe(0)
+    expect(result.listenersDuringMount.value).toBe(0)
+    expect(result.statusBeforeMount.value).toBe('success')
+    expect(result.state.data.value).toEqual(['ssr-a', 'ssr-b'])
+    await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
+    wrapper.unmount()
+  })
+
   it('keeps an SSR error through hydration and clears it on the first live value', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:ssr-error-hydration')

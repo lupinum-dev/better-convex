@@ -150,15 +150,16 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
       ? (nuxtApp.payload.data[hydrationKey] as PaginationResult<Item> | null | undefined)
       : undefined
   const hasHydratedPage = hydrated !== null && hydrated !== undefined
+  const hydratedItems = hasHydratedPage ? hydrated.page : undefined
   const hydratedErrors = useState<Record<string, ConvexCallError | null>>(
     'convex:query-errors',
     () => ({}),
   )
-  const startsAfterHydration =
-    immediate &&
-    nuxtApp.isHydrating &&
-    !hasHydratedPage &&
-    hydratedErrors.value[hydrationKey] === undefined
+  // Keep the SSR page (or SSR error) authoritative for the first client
+  // render. Starting the live controller while Vue is hydrating changes a
+  // hydrated success state back to pending and can select a different template
+  // branch than the server rendered.
+  const startsAfterHydration = immediate && nuxtApp.isHydrating
   let firstPageSettled = Promise.resolve()
   const result = Reflect.apply(useVuePaginatedQuery, undefined, [
     query,
@@ -205,11 +206,21 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
       undefined,
   )
   const status = computed<'idle' | 'pending' | 'success' | 'error'>(() =>
-    error.value ? 'error' : result.status.value,
+    error.value
+      ? 'error'
+      : startsAfterHydration && hasHydratedPage && result.status.value === 'idle'
+        ? 'success'
+        : result.status.value,
+  )
+  const data = computed(() =>
+    hydrationBoundaryMatches.value && hydratedItems !== undefined && result.data.value === undefined
+      ? hydratedItems
+      : result.data.value,
   )
   const pending = computed(() => status.value === 'pending')
   const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
     ...result,
+    data,
     error,
     status,
     pending,
