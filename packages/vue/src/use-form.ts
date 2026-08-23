@@ -199,7 +199,7 @@ export function useConvexForm(
   let disposed = false
 
   const status = computed(() => currentStatus.value)
-  const pending = computed(() => activePromise !== undefined)
+  const pending = computed(() => currentStatus.value === 'pending')
   const issues = computed(() => error.value?.issues ?? [])
   const fieldErrors = computed(() => error.value?.fieldErrors ?? {})
   const formError = computed(() => error.value?.formError)

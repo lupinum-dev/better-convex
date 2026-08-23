@@ -127,6 +127,8 @@ describe('useConvexForm', () => {
         }),
     )
 
+    // Read before submission to prove Vue invalidates the cached computed value.
+    expect(form.pending.value).toBe(false)
     const first = form.submit({ balance: 1, note: 'first' }, { accountId: 'account-1' })
     const duplicate = form.submit({ balance: 2, note: 'second' }, { accountId: 'account-2' })
 
