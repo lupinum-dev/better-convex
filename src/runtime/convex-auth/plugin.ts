@@ -706,16 +706,21 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
                 handler: createAuthMiddleware(async (context) => {
                   if (context.path === '/admin/oauth2/create-client') {
                     assertSafePinnedClientProvisioning(
-                      context.method,
+                      context.method ?? 'POST',
                       context.body,
                       oauthOptions.scopes!,
                     )
                   } else if (context.path === '/admin/oauth2/update-client') {
                     const body = context.body as { update?: unknown }
-                    assertSafePinnedClientUpdate(context.method, body.update, oauthOptions.scopes!)
+                    assertSafePinnedClientUpdate(
+                      context.method ?? 'PATCH',
+                      body.update,
+                      oauthOptions.scopes!,
+                    )
                   } else {
                     assertSafePinnedResourceProvisioning(
-                      context.method,
+                      context.method ??
+                        (context.path === '/admin/oauth2/resources' ? 'POST' : 'PATCH'),
                       context.body,
                       oauthOptions.scopes!,
                     )

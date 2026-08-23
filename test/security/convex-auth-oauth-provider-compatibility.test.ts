@@ -100,9 +100,14 @@ describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
     expect(installed.options?.customAccessTokenClaims).toBe(safe.customAccessTokenClaims)
   })
 
-  it('routes absent mutating methods into the fail-closed provisioning guard', () => {
+  it('normalizes server-only provisioning calls to their fixed endpoint methods', async () => {
     const plugin = createConvexPlugin(profile())()
     const beforeHooks = (plugin.hooks?.before ?? []) as unknown as Array<{
+      handler: (context: {
+        body: Record<string, unknown>
+        method?: string
+        path: string
+      }) => Promise<unknown>
       matcher: (context: { method?: string; path: string }) => boolean
     }>
     const provisioningHook = beforeHooks.find((hook) =>
@@ -133,5 +138,23 @@ describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
         path: '/admin/oauth2/resources/:identifier',
       }),
     ).toBe(false)
+
+    await expect(
+      provisioningHook!.handler({
+        body: {
+          application_type: 'native',
+          dpop_bound_access_tokens: false,
+          enable_end_session: false,
+          grant_types: ['authorization_code'],
+          redirect_uris: ['http://127.0.0.1:3334/oauth/callback'],
+          require_pkce: true,
+          response_types: ['code'],
+          scope: 'mcp:read mcp:write',
+          skip_consent: false,
+          token_endpoint_auth_method: 'none',
+        },
+        path: '/admin/oauth2/create-client',
+      }),
+    ).resolves.toBeUndefined()
   })
 })
