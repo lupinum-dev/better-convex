@@ -156,6 +156,30 @@ interface JwksReadContext {
 const officialBearerBefore = bearer().hooks.before[0]!
 type BeforeHook = NonNullable<NonNullable<BetterAuthPlugin['hooks']>['before']>[number]
 
+function fixedProvisioningMethod(method: unknown, expected: 'PATCH' | 'POST'): 'PATCH' | 'POST' {
+  if (
+    method === undefined ||
+    method === expected ||
+    (Array.isArray(method) && method.length === 1 && method[0] === expected)
+  ) {
+    return expected
+  }
+  throw new OAuthSecurityError('AUTH_OAUTH_CONFIG_INVALID')
+}
+
+function matchesProvisioningWrite(
+  context: { body?: unknown; method?: unknown },
+  expected: 'PATCH' | 'POST',
+): boolean {
+  return (
+    context.method === expected ||
+    (Array.isArray(context.method) &&
+      context.method.length === 1 &&
+      context.method[0] === expected) ||
+    (context.method === undefined && context.body !== undefined)
+  )
+}
+
 const internalSessionBearerBefore: BeforeHook = {
   matcher: (context) => {
     const headers = context.request?.headers ?? context.headers
@@ -699,28 +723,30 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
                 matcher: (context: Parameters<BeforeHook['matcher']>[0]) =>
                   context.path === '/admin/oauth2/create-client' ||
                   context.path === '/admin/oauth2/update-client' ||
-                  (context.path === '/admin/oauth2/resources' && context.method !== 'GET') ||
+                  (context.path === '/admin/oauth2/resources' &&
+                    matchesProvisioningWrite(context, 'POST')) ||
                   (context.path === '/admin/oauth2/resources/:identifier' &&
-                    context.method !== 'GET' &&
-                    context.method !== 'DELETE'),
+                    matchesProvisioningWrite(context, 'PATCH')),
                 handler: createAuthMiddleware(async (context) => {
                   if (context.path === '/admin/oauth2/create-client') {
                     assertSafePinnedClientProvisioning(
-                      context.method ?? 'POST',
+                      fixedProvisioningMethod(context.method, 'POST'),
                       context.body,
                       oauthOptions.scopes!,
                     )
                   } else if (context.path === '/admin/oauth2/update-client') {
                     const body = context.body as { update?: unknown }
                     assertSafePinnedClientUpdate(
-                      context.method ?? 'PATCH',
+                      fixedProvisioningMethod(context.method, 'PATCH'),
                       body.update,
                       oauthOptions.scopes!,
                     )
                   } else {
                     assertSafePinnedResourceProvisioning(
-                      context.method ??
-                        (context.path === '/admin/oauth2/resources' ? 'POST' : 'PATCH'),
+                      fixedProvisioningMethod(
+                        context.method,
+                        context.path === '/admin/oauth2/resources' ? 'POST' : 'PATCH',
+                      ),
                       context.body,
                       oauthOptions.scopes!,
                     )
