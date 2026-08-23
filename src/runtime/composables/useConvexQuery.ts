@@ -8,6 +8,7 @@ import {
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import {
   computed,
+  onMounted,
   onScopeDispose,
   ref,
   toValue,
@@ -177,12 +178,22 @@ function createClientConvexQueryState<
     'convex:query-errors',
     () => ({}),
   )
+  const startsAfterHydration =
+    immediate &&
+    nuxtApp.isHydrating &&
+    !hasHydratedData &&
+    hydratedErrors.value[hydrationKey] === undefined
   const result = Reflect.apply(useVueConvexQuery, undefined, [
     query,
     args,
-    { auth, keepPreviousData, immediate },
+    { auth, keepPreviousData, immediate: immediate && !startsAfterHydration },
     hasHydratedData ? { value: hydratedPayload.value } : undefined,
   ]) as UseConvexQueryState<RawT>
+  if (startsAfterHydration) {
+    onMounted(() => {
+      void result.execute()
+    })
+  }
   const clearHydratedError = () => {
     if (!(hydrationKey in hydratedErrors.value)) return
     const { [hydrationKey]: _removed, ...rest } = hydratedErrors.value

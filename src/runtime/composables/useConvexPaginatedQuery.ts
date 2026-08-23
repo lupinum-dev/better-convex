@@ -7,7 +7,15 @@ import {
   type UseConvexPaginatedQueryState,
 } from '@lupinum/better-convex-vue'
 import type { PaginationResult } from 'convex/server'
-import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import {
+  computed,
+  onMounted,
+  onScopeDispose,
+  ref,
+  toValue,
+  watch,
+  type MaybeRefOrGetter,
+} from 'vue'
 
 import { useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
@@ -154,6 +162,11 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
     'convex:query-errors',
     () => ({}),
   )
+  const startsAfterHydration =
+    immediate &&
+    nuxtApp.isHydrating &&
+    !hasHydratedPage &&
+    hydratedErrors.value[hydrationKey] === undefined
   let firstPageSettled = Promise.resolve()
   const result = Reflect.apply(useVuePaginatedQuery, undefined, [
     query,
@@ -163,7 +176,7 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
       initialCursor,
       auth,
       keepPreviousData,
-      immediate,
+      immediate: immediate && !startsAfterHydration,
     },
     {
       initialPage: hasHydratedPage ? hydrated : undefined,
@@ -172,6 +185,11 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
       },
     },
   ]) as UseConvexPaginatedQueryState<Item>
+  if (startsAfterHydration) {
+    onMounted(() => {
+      void result.execute()
+    })
+  }
   const clearHydratedError = () => {
     if (!(hydrationKey in hydratedErrors.value)) return
     const { [hydrationKey]: _removed, ...rest } = hydratedErrors.value

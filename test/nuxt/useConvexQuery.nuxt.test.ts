@@ -1,9 +1,9 @@
 import type { FunctionArgs, FunctionReference } from 'convex/server'
 import { describe, expect, it } from 'vitest'
-import { reactive, ref } from 'vue'
+import { onBeforeMount, onMounted, reactive, ref } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
 
-import { useState } from '#imports'
+import { useNuxtApp, useState } from '#imports'
 
 import {
   ANONYMOUS_IDENTITY,
@@ -34,6 +34,31 @@ function useConvexQueryState<
 }
 
 describe('useConvexQuery composables (Nuxt runtime)', () => {
+  it('starts a payload-less immediate query only after hydration mounts', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:payload-less-hydration')
+    const { result } = await captureInNuxt(
+      () => {
+        const nuxtApp = useNuxtApp()
+        nuxtApp.isHydrating = true
+        const listenersBeforeMount = ref(-1)
+        const state = useConvexQuery(query, {}, { auth: 'none' })
+        onBeforeMount(() => {
+          listenersBeforeMount.value = convex.calls.onUpdate.length
+        })
+        onMounted(() => {
+          nuxtApp.isHydrating = false
+        })
+        return { listenersBeforeMount, state }
+      },
+      { convex, payloadData: {} },
+    )
+
+    expect(result.listenersBeforeMount.value).toBe(0)
+    await waitFor(() => convex.calls.onUpdate.length === 1)
+    expect(result.state.status.value).toBe('pending')
+  })
+
   it('replaces dynamic keyed controllers after in-place option and query changes', async () => {
     const convex = new MockConvexClient()
     const first = mockFnRef<'query'>('notes:multi:first')

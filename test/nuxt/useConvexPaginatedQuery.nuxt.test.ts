@@ -1,8 +1,8 @@
 import type { PaginationResult } from 'convex/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { onBeforeMount, onMounted, ref } from 'vue'
 
-import { useState } from '#imports'
+import { useNuxtApp, useState } from '#imports'
 
 import { toAuthenticatedIdentity, type AuthIdentity } from '../../src/runtime/auth/auth-identity'
 import {
@@ -28,6 +28,39 @@ function page<T>(items: T[], isDone: boolean, cursor: string | null): Pagination
 // acquisition through composable-owned listeners, and clears its pages on an
 // identity change.
 describe('useConvexPaginatedQuery controller', () => {
+  it('starts a payload-less first page only after hydration mounts', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:payload-less-hydration')
+    const { result, wrapper } = await captureInNuxt(
+      () => {
+        const nuxtApp = useNuxtApp()
+        nuxtApp.isHydrating = true
+        const listenersBeforeMount = ref(-1)
+        const state = useConvexPaginatedQuery(
+          query,
+          {},
+          {
+            auth: 'none',
+            initialNumItems: 2,
+          },
+        )
+        onBeforeMount(() => {
+          listenersBeforeMount.value = primary.calls.onUpdate.length
+        })
+        onMounted(() => {
+          nuxtApp.isHydrating = false
+        })
+        return { listenersBeforeMount, state }
+      },
+      { owner: makeMockOwner(primary), payloadData: {} },
+    )
+
+    expect(result.listenersBeforeMount.value).toBe(0)
+    await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
+    expect(result.state.status.value).toBe('pending')
+    wrapper.unmount()
+  })
+
   it('keeps an SSR error through hydration and clears it on the first live value', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:ssr-error-hydration')
