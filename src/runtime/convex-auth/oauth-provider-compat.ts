@@ -150,6 +150,14 @@ function projectPinnedClientRecord(
   allowedScopes: readonly string[],
   updating: boolean,
 ): OAuthClientRecord {
+  if (
+    'public' in input ||
+    'type' in input ||
+    'client_credentials_scopes' in input ||
+    'client_discovery_id' in input
+  ) {
+    invalidConfiguration()
+  }
   const tokenEndpointAuthMethod =
     updating && input.token_endpoint_auth_method === undefined
       ? 'client_secret_basic'
@@ -162,6 +170,7 @@ function projectPinnedClientRecord(
         ? new Date(Number(rawExpiry) * 1000)
         : rawExpiry
   return {
+    applicationType: input.application_type === undefined ? 'web' : input.application_type,
     backchannelLogoutSessionRequired: input.backchannel_logout_session_required,
     backchannelLogoutUri: input.backchannel_logout_uri,
     clientId: 'provisioning-client',
@@ -180,7 +189,6 @@ function projectPinnedClientRecord(
     jwksUri: input.jwks_uri,
     metadata: input.metadata,
     postLogoutRedirectUris: input.post_logout_redirect_uris,
-    public: updating ? false : tokenEndpointAuthMethod === 'none',
     redirectUris:
       updating && input.redirect_uris === undefined
         ? ['https://provisioning.invalid/callback']
@@ -197,7 +205,6 @@ function projectPinnedClientRecord(
     softwareStatement: input.software_statement,
     subjectType: input.subject_type,
     tokenEndpointAuthMethod,
-    type: updating && input.type === undefined ? 'web' : input.type,
   }
 }
 

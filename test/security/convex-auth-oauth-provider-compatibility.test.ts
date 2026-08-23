@@ -66,7 +66,7 @@ function createConvexPlugin(oauthProviderProfile: OAuthOptions<Scope[]>) {
 
 describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
   it('binds the differential proof to the exact supported provider bytes', () => {
-    expect(providerPackage.version).toBe('1.7.0-rc.2')
+    expect(providerPackage.version).toBe('1.7.1')
   })
 
   it.each(['clientPrivileges', 'resourcePrivileges', 'customAccessTokenClaims'] as const)(

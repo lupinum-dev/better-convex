@@ -251,8 +251,8 @@ function assertNuxtManifestShapes(manifest, profile) {
       '@better-auth/oauth-provider': { optional: true },
       'better-auth': { optional: true },
     }) ||
-    manifest.peerDependencies['@better-auth/oauth-provider'] !== '1.7.0-rc.2' ||
-    manifest.peerDependencies['better-auth'] !== '1.7.0-rc.2'
+    manifest.peerDependencies['@better-auth/oauth-provider'] !== '1.7.1' ||
+    manifest.peerDependencies['better-auth'] !== '1.7.1'
   ) {
     throw new Error('Nuxt auth packages must be exact optional peers.')
   }

@@ -36,7 +36,6 @@ const PINNED_OAUTH_PROVIDER_KEYS = [
   'allowPublicClientPrelogin',
   'allowUnauthenticatedClientRegistration',
   'advertisedMetadata',
-  'clientCredentialGrantDefaultScopes',
   'clientPrivileges',
   'clientRegistrationRequirePKCE',
   'codeExpiresIn',
@@ -132,7 +131,7 @@ interface UrlCanParseTarget {
 
 /**
  * Supply the one modern URL primitive absent from the manifest-pinned Convex
- * isolate but called by @better-auth/oauth-provider@1.7.0-rc.2 while parsing
+ * isolate but called by @better-auth/oauth-provider@1.7.1 while parsing
  * RFC 8707 resources. Delete this helper and both call sites as soon as a
  * reviewed dependency tuple supplies the primitive or removes those calls.
  */
@@ -292,7 +291,6 @@ export function validateOAuthProviderProfile(options: PinnedOAuthProviderProfile
     !emptyValue(options.customIdTokenClaims) ||
     !emptyValue(options.customUserInfoClaims) ||
     !emptyValue(options.customTokenResponseFields) ||
-    !emptyValue(options.clientCredentialGrantDefaultScopes) ||
     !emptyValue(options.pairwiseSecret) ||
     options.m2mAccessTokenExpiresIn !== undefined
   ) {
@@ -464,9 +462,14 @@ function validateScopeSubset(
 }
 
 function assertNoHiddenClientMetadata(client: OAuthClientRecord): void {
+  for (const retiredField of ['public', 'type']) {
+    if (retiredField in client) invalidConfig()
+  }
   for (const field of [
     'backchannelLogoutUri',
     'backchannelLogoutSessionRequired',
+    'clientCredentialsScopes',
+    'clientDiscoveryId',
     'jwks',
     'jwksUri',
     'metadata',
@@ -491,16 +494,14 @@ export function assertSafeStoredOAuthClient(
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) invalidConfig()
   }
   const confidentialBasic =
-    client.public === false &&
     client.tokenEndpointAuthMethod === 'client_secret_basic' &&
     typeof client.clientSecret === 'string' &&
     client.clientSecret.length > 0 &&
-    (client.type === undefined || client.type === 'web')
+    client.applicationType === 'web'
   const publicNone =
-    client.public === true &&
     client.tokenEndpointAuthMethod === 'none' &&
     (client.clientSecret === undefined || client.clientSecret === null) &&
-    (client.type === undefined || client.type === 'native' || client.type === 'user-agent-based')
+    client.applicationType === 'native'
   if (
     typeof client.clientId !== 'string' ||
     client.clientId.length === 0 ||
@@ -557,7 +558,9 @@ export function assertSafeStoredOAuthClientResource(
   resourceId: string,
 ): void {
   if (
-    link.id !== `${clientId}::${resourceId}` ||
+    typeof link.id !== 'string' ||
+    link.id.length === 0 ||
+    link.id.length > 512 ||
     link.clientId !== clientId ||
     link.resourceId !== resourceId ||
     !emptyValue(link.metadata)

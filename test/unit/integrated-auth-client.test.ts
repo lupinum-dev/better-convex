@@ -53,7 +53,7 @@ describe('integrated Better Auth client', () => {
     })
     const integrated = createIntegratedAuthClient(raw, reconciler())
 
-    // Better Auth 1.7.0-rc.2 exposes a callable root and callable namespaces.
+    // Better Auth 1.7.1 exposes a callable root and callable namespaces.
     expect(typeof raw).toBe('function')
     expect(typeof raw.lab).toBe('function')
     const session = integrated.useSession()

@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { chromium } from 'playwright'
 
 const CALLBACK = 'http://localhost:6274/oauth/callback'
+const CONFIDENTIAL_CALLBACK = 'https://client.example.test/oauth/callback'
 const MCP_REMOTE_CALLBACK = 'http://127.0.0.1:3334/oauth/callback'
 const SCOPE = 'mcp:read mcp:write'
 const REQUEST_TIMEOUT_MS = 60_000
@@ -322,7 +323,7 @@ function confidentialTokenRequest(fixture, grant, secret) {
       code: grant.code,
       code_verifier: grant.verifier,
       grant_type: 'authorization_code',
-      redirect_uri: CALLBACK,
+      redirect_uri: CONFIDENTIAL_CALLBACK,
       resource: fixture.resource,
     }).toString(),
     endpoint: `${fixture.origin}/api/auth/oauth2/token`,
@@ -384,7 +385,19 @@ async function provisionProfile(context, fixture, { confidential = false } = {})
       `${fixture.origin}/api/auth/mcp/admin/provision-confidential`,
       { ...requestOptions, data: {} },
     )
-    assert(confidentialResponse.ok(), 'OAUTH_CODE_FIXTURE_CONFIDENTIAL_PROVISION_FAILED')
+    if (!confidentialResponse.ok()) {
+      const safeCodes = [
+        ...new Set(
+          ((await confidentialResponse.text()).match(/[A-Za-z][\w-]{2,63}/gu) ?? []).filter(
+            (value) => /client|invalid|profile|redirect|uri/iu.test(value),
+          ),
+        ),
+      ]
+      console.error(
+        `[oauth-code-concurrency] confidential provisioning rejected: status=${confidentialResponse.status()} codes=${safeCodes.slice(0, 4).join(',') || 'none'}`,
+      )
+      throw new Error('OAUTH_CODE_FIXTURE_CONFIDENTIAL_PROVISION_FAILED')
+    }
     const confidentialProfile = await confidentialResponse.json()
     confidentialClient = isRecord(confidentialProfile) ? confidentialProfile.client : undefined
     if (
@@ -464,13 +477,15 @@ async function acquireAuthorizationCode(page, fixture, clientId = fixture.client
   const verifier = randomBytes(48).toString('base64url')
   const challenge = createHash('sha256').update(verifier).digest('base64url')
   const state = randomBytes(24).toString('base64url')
+  const redirectUri =
+    clientId === fixture.clients.confidential?.id ? CONFIDENTIAL_CALLBACK : CALLBACK
   const authorize = new URL(`${fixture.origin}/api/auth/oauth2/authorize`)
   authorize.search = new URLSearchParams({
     client_id: clientId,
     code_challenge: challenge,
     code_challenge_method: 'S256',
     prompt: 'consent',
-    redirect_uri: CALLBACK,
+    redirect_uri: redirectUri,
     resource: fixture.resource,
     response_type: 'code',
     scope: SCOPE,
@@ -483,7 +498,32 @@ async function acquireAuthorizationCode(page, fixture, clientId = fixture.client
   let approved = false
   while (Date.now() < deadline) {
     const current = new URL(page.url())
-    if (current.origin === new URL(CALLBACK).origin && current.pathname === '/oauth/callback') {
+    const callback = new URL(redirectUri)
+    if (current.origin === callback.origin && current.pathname === callback.pathname) {
+      if (current.searchParams.getAll('code').length !== 1) {
+        const error = current.searchParams.get('error')
+        const description = current.searchParams.get('error_description') ?? ''
+        const reason = description.includes('not linked')
+          ? 'not-linked'
+          : description.includes('not configured')
+            ? 'not-configured'
+            : description.includes('does not exist')
+              ? 'not-found'
+              : description.includes('not authorized')
+                ? 'not-authorized'
+                : description.includes('not allowed')
+                  ? 'not-allowed'
+                  : description.includes('disabled')
+                    ? 'disabled'
+                    : description.includes('absolute URI')
+                      ? 'invalid-uri'
+                      : description.includes('invalid')
+                        ? 'invalid'
+                        : 'other'
+        console.error(
+          `[oauth-code-concurrency] callback rejected: client=${clientId === fixture.clients.confidential?.id ? 'confidential' : 'public'} keys=${[...new Set(current.searchParams.keys())].sort().join(',')} error=${error && /^[a-z_]{1,64}$/u.test(error) ? error : 'none'} reason=${reason}`,
+        )
+      }
       assert(current.searchParams.getAll('code').length === 1, 'OAUTH_CODE_CALLBACK_CODE_INVALID')
       assert(current.searchParams.getAll('state').length === 1, 'OAUTH_CODE_CALLBACK_STATE_INVALID')
       assert(current.searchParams.getAll('iss').length === 1, 'OAUTH_CODE_CALLBACK_ISSUER_INVALID')
@@ -694,6 +734,18 @@ async function runLiveMatrix(startFixture) {
     const profile = await provisionProfile(context, fixtureHandle, { confidential: true })
     const fixture = { ...fixtureHandle, ...profile }
     const page = await context.newPage()
+    await page.route(`${CONFIDENTIAL_CALLBACK}*`, (route) =>
+      route.fulfill({
+        body: 'OAuth callback received.',
+        contentType: 'text/plain; charset=utf-8',
+        headers: {
+          'cache-control': 'no-store',
+          'content-security-policy': "default-src 'none'",
+          'referrer-policy': 'no-referrer',
+        },
+        status: 200,
+      }),
+    )
     const initialTokenCounts = await readPersistedTokenCounts(fixture)
     assert(
       initialTokenCounts.accessTokens === 0,
@@ -863,6 +915,13 @@ async function runLiveMatrix(startFixture) {
     console.log(
       '[oauth-code-concurrency] PASS: one winner across two child processes; replay denied; pre-provider resource/redirect rejection preserved the code; provider-forwarded wrong PKCE, valid alternate-client, confidential Basic-secret, and post-consume signing-fault paths burned their codes; key rotation restored fresh authorization.',
     )
+  } catch (error) {
+    if (typeof fixtureHandle?.readSafeServiceLogsForTest === 'function') {
+      const logs = fixtureHandle.readSafeServiceLogsForTest()
+      console.error(`[oauth-code-concurrency] Convex diagnostics:\n${logs.convex}`)
+      console.error(`[oauth-code-concurrency] Nuxt diagnostics:\n${logs.nuxt}`)
+    }
+    throw error
   } finally {
     await closeOAuthCodeResources([
       context ? () => context.close() : undefined,
