@@ -13,7 +13,6 @@ import {
   useConvexAction,
   useConvexMutation,
   useConvexPaginatedQuery,
-  useConvexQueries,
   useConvexQuery,
 } from '../../packages/vue/src'
 import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
@@ -34,7 +33,10 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
     label,
     args,
   }))
-  const action = vi.fn(async (_fn: unknown, args: unknown) => ({ label, args }))
+  const action = vi.fn(async (_fn: unknown, args: unknown) => ({
+    label,
+    args,
+  }))
   const subscriptions: Array<{ active: boolean; emit(value: unknown): void }> = []
   const client = {
     query: query as never,
@@ -98,37 +100,6 @@ describe('better-convex-vue package runtime', () => {
     expect(query.data.value).toBe('ready')
     expect(query.status.value).toBe('success')
     scope.stop()
-  })
-
-  it('adds, removes, and replaces keyed query controllers without leaking subscriptions', () => {
-    const host = attachedRuntime('alice')
-    const app = createApp({})
-    app.use(createBetterConvex({ attachment: host.attachment }))
-    const first = makeFunctionReference<'query'>('notes:first')
-    const replacement = makeFunctionReference<'query'>('notes:replacement')
-    const source = ref<Record<string, { query: typeof first; args?: Record<string, never> }>>({
-      alpha: { query: first },
-    })
-    const scope = effectScope()
-    const queries = app.runWithContext(() => scope.run(() => useConvexQueries(source)))!
-
-    expect(Object.keys(queries.states.value)).toEqual(['alpha'])
-    expect(host.subscriptions).toHaveLength(1)
-    source.value = { ...source.value, beta: { query: first } }
-    expect(Object.keys(queries.states.value)).toEqual(['alpha', 'beta'])
-    expect(host.subscriptions).toHaveLength(2)
-
-    const retiredAlpha = host.subscriptions[0]!
-    source.value = { alpha: { query: replacement }, beta: source.value.beta! }
-    expect(retiredAlpha.active).toBe(false)
-    expect(host.subscriptions).toHaveLength(3)
-
-    const retiredBeta = host.subscriptions[1]!
-    source.value = { alpha: source.value.alpha! }
-    expect(retiredBeta.active).toBe(false)
-    expect(Object.keys(queries.states.value)).toEqual(['alpha'])
-    scope.stop()
-    expect(host.subscriptions[2]!.active).toBe(false)
   })
 
   it('keeps the newer result when one-shot refreshes resolve in reverse order', async () => {
@@ -254,7 +225,11 @@ describe('better-convex-vue package runtime', () => {
     const execution = query.execute()
     expect(host.subscriptions[0]?.active).toBe(true)
     expect(host.subscriptions[0]).toBeDefined()
-    host.subscriptions[0]!.emit({ page: ['a'], continueCursor: 'after-a', isDone: false })
+    host.subscriptions[0]!.emit({
+      page: ['a'],
+      continueCursor: 'after-a',
+      isDone: false,
+    })
     await execution
     expect(query.cursor.value).toBe('after-a')
 
@@ -426,7 +401,9 @@ describe('better-convex-vue package runtime', () => {
     const scope = effectScope()
     const query = app.runWithContext(() =>
       scope.run(() =>
-        useConvexQuery(makeFunctionReference<'query'>('notes:list'), { owner: 'current' }),
+        useConvexQuery(makeFunctionReference<'query'>('notes:list'), {
+          owner: 'current',
+        }),
       ),
     )!
 
@@ -459,7 +436,9 @@ describe('better-convex-vue package runtime', () => {
     const scope = effectScope()
     const query = app.runWithContext(() =>
       scope.run(() =>
-        useConvexQuery(makeFunctionReference<'query'>('notes:list'), { owner: 'current' }),
+        useConvexQuery(makeFunctionReference<'query'>('notes:list'), {
+          owner: 'current',
+        }),
       ),
     )!
 
@@ -630,7 +609,11 @@ describe('better-convex-vue package runtime', () => {
       ),
     )!
 
-    host.subscriptions[0]!.emit({ page: [{ id: 'private' }], continueCursor: '', isDone: true })
+    host.subscriptions[0]!.emit({
+      page: [{ id: 'private' }],
+      continueCursor: '',
+      isDone: true,
+    })
     expect(query.data.value).toEqual([{ id: 'private' }])
 
     host.emit({
@@ -674,7 +657,11 @@ describe('better-convex-vue package runtime', () => {
     expect(query.status.value).toBe('pending')
     expect(query.error.value).toBeUndefined()
     expect(host.subscriptions[0]!.active).toBe(true)
-    host.subscriptions[0]!.emit({ page: [{ id: 'public' }], continueCursor: '', isDone: true })
+    host.subscriptions[0]!.emit({
+      page: [{ id: 'public' }],
+      continueCursor: '',
+      isDone: true,
+    })
     expect(query.status.value).toBe('success')
     expect(query.data.value).toEqual([{ id: 'public' }])
     scope.stop()

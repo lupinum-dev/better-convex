@@ -51,7 +51,6 @@ export type {
   ConvexClientHandle,
   OptimisticUpdate,
   UseConvexCall,
-  UseConvexQueriesState,
 } from '@lupinum/better-convex-vue'
 export type { ConvexRuntimeConfig } from './runtime/utils/runtime-config'
 export type { UseConvexAuthReturn } from './runtime/utils/auth-contract'
@@ -68,17 +67,6 @@ export type {
   UseConvexPaginatedQueryState,
 } from './runtime/composables/useConvexPaginatedQuery'
 export type { NuxtConvexQuery, UseConvexQueryState } from './runtime/composables/useConvexQuery'
-export type {
-  ConvexQueriesEntry,
-  ConvexQueriesSource,
-  ConvexQueriesStates,
-  NuxtConvexQueries,
-  UseNuxtConvexQueriesOptions,
-} from './runtime/composables/useConvexQueries'
-
-export type UseConvexQueriesOptions =
-  import('./runtime/composables/useConvexQueries').UseNuxtConvexQueriesOptions
-
 /** Per-call query options for the Nuxt composable, including its SSR policy. */
 export type UseConvexQueryOptions =
   import('./runtime/composables/useConvexQuery').UseNuxtConvexQueryOptions

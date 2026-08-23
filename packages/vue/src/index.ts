@@ -23,13 +23,6 @@ export type {
   UseConvexQueryParameters,
   UseConvexQueryState,
 } from './use-query'
-export { useConvexQueries } from './use-queries'
-export type {
-  ConvexQueriesEntry,
-  ConvexQueriesSource,
-  ConvexQueriesStates,
-  UseConvexQueriesState,
-} from './use-queries'
 export { useConvexPaginatedQuery } from './use-paginated-query'
 export type {
   PaginatedQueryArgs,
