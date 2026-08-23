@@ -9,6 +9,7 @@ const root = resolve(import.meta.dirname, '../..')
 const vuePackageManifest = JSON.parse(
   readFileSync(join(root, 'packages/vue/package.json'), 'utf8'),
 ) as {
+  dependencies: Record<string, string>
   devDependencies: Record<string, string>
 }
 const mcpPackageManifest = JSON.parse(
