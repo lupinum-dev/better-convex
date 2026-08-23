@@ -203,6 +203,28 @@ describe('useConvexForm', () => {
     scope.stop()
   })
 
+  it('does not repopulate state after disposal during submission', async () => {
+    let release!: (value: SaveResult) => void
+    const { form, mutation, scope } = setup(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    const pending = form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+    await vi.waitFor(() => expect(mutation).toHaveBeenCalledTimes(1))
+
+    scope.stop()
+    expect(form.status.value).toBe('idle')
+    release({ id: 'retired' })
+    await expect(pending).resolves.toEqual({ ok: true, data: { id: 'retired' } })
+
+    expect(form.status.value).toBe('idle')
+    expect(form.pending.value).toBe(false)
+    expect(form.data.value).toBeUndefined()
+    expect(form.error.value).toBeUndefined()
+  })
+
   it('does not commit a completion from a replaced identity', async () => {
     let release!: (value: SaveResult) => void
     const { form, mutation, scope, advanceIdentity } = setup(
@@ -251,6 +273,32 @@ describe('useConvexForm', () => {
     expect(form.fieldErrors.value.note).toEqual(['The note is not allowed'])
     expect(form.formError.value).toBeUndefined()
     expect(JSON.stringify(result.error)).not.toContain('cause')
+    scope.stop()
+  })
+
+  it('clears the previous failure and succeeds when retried', async () => {
+    let attempt = 0
+    const { form, mutation, scope } = setup(async () => {
+      attempt += 1
+      if (attempt === 1) {
+        throw new ConvexError({ code: 'BAD_NOTE' })
+      }
+      return { id: 'checkpoint-2' }
+    })
+
+    const first = await form.submit({ balance: 1, note: 'forbidden' }, { accountId: 'account-1' })
+    expect(first.ok).toBe(false)
+    expect(form.fieldErrors.value.note).toEqual(['The note is not allowed'])
+
+    const retry = form.submit({ balance: 2, note: 'allowed' }, { accountId: 'account-1' })
+    expect(form.status.value).toBe('pending')
+    expect(form.error.value).toBeUndefined()
+    await expect(retry).resolves.toEqual({ ok: true, data: { id: 'checkpoint-2' } })
+
+    expect(mutation).toHaveBeenCalledTimes(2)
+    expect(form.status.value).toBe('success')
+    expect(form.data.value).toEqual({ id: 'checkpoint-2' })
+    expect(form.fieldErrors.value).toEqual({})
     scope.stop()
   })
 })
