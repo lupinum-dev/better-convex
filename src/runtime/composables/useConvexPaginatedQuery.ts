@@ -7,17 +7,9 @@ import {
   type UseConvexPaginatedQueryState,
 } from '@lupinum/better-convex-vue'
 import type { PaginationResult } from 'convex/server'
-import {
-  computed,
-  onMounted,
-  onScopeDispose,
-  ref,
-  toValue,
-  watch,
-  type MaybeRefOrGetter,
-} from 'vue'
+import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
-import { useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
+import { onNuxtReady, useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
 import { identityToken } from '../auth/auth-identity'
 import { ConvexCallError, normalizeConvexError } from '../errors'
@@ -186,7 +178,7 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
     },
   ]) as UseConvexPaginatedQueryState<Item>
   if (startsAfterHydration) {
-    onMounted(() => {
+    onNuxtReady(() => {
       void result.execute()
     })
   }

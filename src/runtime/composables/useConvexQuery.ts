@@ -8,7 +8,6 @@ import {
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import {
   computed,
-  onMounted,
   onScopeDispose,
   ref,
   toValue,
@@ -17,7 +16,7 @@ import {
   type MaybeRefOrGetter,
 } from 'vue'
 
-import { useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
+import { onNuxtReady, useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
 import { identityToken } from '../auth/auth-identity'
 import { ConvexCallError, normalizeConvexError } from '../errors'
@@ -190,7 +189,7 @@ function createClientConvexQueryState<
     hasHydratedData ? { value: hydratedPayload.value } : undefined,
   ]) as UseConvexQueryState<RawT>
   if (startsAfterHydration) {
-    onMounted(() => {
+    onNuxtReady(() => {
       void result.execute()
     })
   }

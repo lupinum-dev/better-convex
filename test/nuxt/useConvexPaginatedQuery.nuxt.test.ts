@@ -28,7 +28,7 @@ function page<T>(items: T[], isDone: boolean, cursor: string | null): Pagination
 // acquisition through composable-owned listeners, and clears its pages on an
 // identity change.
 describe('useConvexPaginatedQuery controller', () => {
-  it('starts a payload-less first page only after hydration mounts', async () => {
+  it('starts a payload-less first page only after Nuxt hydration settles', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:payload-less-hydration')
     const { result, wrapper } = await captureInNuxt(
@@ -36,6 +36,7 @@ describe('useConvexPaginatedQuery controller', () => {
         const nuxtApp = useNuxtApp()
         nuxtApp.isHydrating = true
         const listenersBeforeMount = ref(-1)
+        const listenersDuringMount = ref(-1)
         const state = useConvexPaginatedQuery(
           query,
           {},
@@ -48,14 +49,17 @@ describe('useConvexPaginatedQuery controller', () => {
           listenersBeforeMount.value = primary.calls.onUpdate.length
         })
         onMounted(() => {
+          listenersDuringMount.value = primary.calls.onUpdate.length
           nuxtApp.isHydrating = false
+          void nuxtApp.callHook('app:suspense:resolve')
         })
-        return { listenersBeforeMount, state }
+        return { listenersBeforeMount, listenersDuringMount, state }
       },
       { owner: makeMockOwner(primary), payloadData: {} },
     )
 
     expect(result.listenersBeforeMount.value).toBe(0)
+    expect(result.listenersDuringMount.value).toBe(0)
     await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
     expect(result.state.status.value).toBe('pending')
     wrapper.unmount()

@@ -34,7 +34,7 @@ function useConvexQueryState<
 }
 
 describe('useConvexQuery composables (Nuxt runtime)', () => {
-  it('starts a payload-less immediate query only after hydration mounts', async () => {
+  it('starts a payload-less immediate query only after Nuxt hydration settles', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:payload-less-hydration')
     const { result } = await captureInNuxt(
@@ -42,19 +42,23 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
         const nuxtApp = useNuxtApp()
         nuxtApp.isHydrating = true
         const listenersBeforeMount = ref(-1)
+        const listenersDuringMount = ref(-1)
         const state = useConvexQuery(query, {}, { auth: 'none' })
         onBeforeMount(() => {
           listenersBeforeMount.value = convex.calls.onUpdate.length
         })
         onMounted(() => {
+          listenersDuringMount.value = convex.calls.onUpdate.length
           nuxtApp.isHydrating = false
+          void nuxtApp.callHook('app:suspense:resolve')
         })
-        return { listenersBeforeMount, state }
+        return { listenersBeforeMount, listenersDuringMount, state }
       },
       { convex, payloadData: {} },
     )
 
     expect(result.listenersBeforeMount.value).toBe(0)
+    expect(result.listenersDuringMount.value).toBe(0)
     await waitFor(() => convex.calls.onUpdate.length === 1)
     expect(result.state.status.value).toBe('pending')
   })
