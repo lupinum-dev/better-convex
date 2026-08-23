@@ -1,4 +1,3 @@
-import type { Auth } from 'better-auth'
 import type { GenericDataModel } from 'convex/server'
 
 import type { AuthCtx } from './context'
@@ -37,17 +36,17 @@ interface OAuthOperatorResource {
   signingAlgorithm?: unknown
 }
 
-interface OAuthOperatorApi {
-  adminCreateOAuthResource(input: { body: Record<string, unknown> }): Promise<OAuthOperatorResource>
-  adminCreateOAuthClient(input: {
-    body: Record<string, unknown>
-  }): Promise<{ client_id?: unknown } | null>
-  adminDeleteOAuthResource(input: { params: { identifier: string } }): Promise<unknown>
-  adminLinkClientResource(input: {
-    params: { client_id: string; identifier: string }
+interface OAuthOperatorAdapter {
+  create(input: { data: Record<string, unknown>; model: string }): Promise<Record<string, unknown>>
+  delete(input: { model: string; where: Array<{ field: string; value: string }> }): Promise<unknown>
+  deleteMany(input: {
+    model: string
+    where: Array<{ field: string; value: string }>
   }): Promise<unknown>
-  adminListOAuthResources(): Promise<OAuthOperatorResource[]>
-  deleteOAuthClient(input: { body: { client_id: string } }): Promise<unknown>
+  findOne(input: {
+    model: string
+    where: Array<{ field: string; value: string }>
+  }): Promise<OAuthOperatorResource | null>
 }
 
 function requireString(value: string, name: string): string {
@@ -85,38 +84,78 @@ function requireUrl(value: string, name: 'REDIRECT_URI' | 'RESOURCE'): string {
   return url.toString()
 }
 
-function requireOperatorApi(api: Auth['api']): OAuthOperatorApi {
-  const candidate = api as unknown as Partial<OAuthOperatorApi>
+function requireOperatorAdapter(context: unknown): OAuthOperatorAdapter {
+  const candidate = (context as { adapter?: Partial<OAuthOperatorAdapter> } | null)?.adapter
   if (
-    typeof candidate.adminCreateOAuthClient !== 'function' ||
-    typeof candidate.adminCreateOAuthResource !== 'function' ||
-    typeof candidate.adminDeleteOAuthResource !== 'function' ||
-    typeof candidate.adminListOAuthResources !== 'function' ||
-    typeof candidate.adminLinkClientResource !== 'function' ||
-    typeof candidate.deleteOAuthClient !== 'function'
+    typeof candidate?.create !== 'function' ||
+    typeof candidate.delete !== 'function' ||
+    typeof candidate.deleteMany !== 'function' ||
+    typeof candidate.findOne !== 'function'
   ) {
     throw new TypeError('AUTH_OAUTH_PROVIDER_REQUIRED')
   }
-  return candidate as OAuthOperatorApi
+  return candidate as OAuthOperatorAdapter
+}
+
+function generatePublicClientId(): string {
+  return crypto.randomUUID().replaceAll('-', '')
+}
+
+function assertResourceProfile(
+  resource: OAuthOperatorResource,
+  input: { identifier: string; name: string; scopes: readonly string[] },
+): void {
+  const resourceScopes = Array.isArray(resource.allowedScopes) ? resource.allowedScopes : null
+  if (
+    resource.identifier !== input.identifier ||
+    resource.name !== input.name ||
+    resource.accessTokenTtl !== 600 ||
+    resource.disabled !== false ||
+    resource.dpopBoundAccessTokensRequired !== false ||
+    resource.signingAlgorithm !== 'RS256' ||
+    resourceScopes === null ||
+    resourceScopes.length !== input.scopes.length ||
+    input.scopes.some((scope) => !resourceScopes.includes(scope))
+  ) {
+    throw new Error('AUTH_OAUTH_RESOURCE_PROFILE_INVALID')
+  }
 }
 
 async function rollbackProvisioning(
-  api: OAuthOperatorApi,
+  adapter: OAuthOperatorAdapter,
   input: { clientId?: string; resourceCreated: boolean; resourceIdentifier: string },
 ): Promise<void> {
   let clientRemoved = input.clientId === undefined
   let cleanupFailed = false
   if (input.clientId !== undefined) {
+    let linksRemoved = false
     try {
-      await api.deleteOAuthClient({ body: { client_id: input.clientId } })
-      clientRemoved = true
+      await adapter.deleteMany({
+        model: 'oauthClientResource',
+        where: [{ field: 'clientId', value: input.clientId }],
+      })
+      linksRemoved = true
     } catch {
       cleanupFailed = true
+    }
+    if (linksRemoved) {
+      try {
+        await adapter.delete({
+          model: 'oauthClient',
+          where: [{ field: 'clientId', value: input.clientId }],
+        })
+        clientRemoved = true
+      } catch {
+        cleanupFailed = true
+      }
     }
   }
   if (input.resourceCreated && clientRemoved) {
     try {
-      await api.adminDeleteOAuthResource({ params: { identifier: input.resourceIdentifier } })
+      await adapter.delete({
+        model: 'oauthResource',
+        where: [{ field: 'identifier', value: input.resourceIdentifier }],
+      })
     } catch {
       cleanupFailed = true
     }
@@ -128,7 +167,7 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
   createAuth: (
     ctx: AuthCtx<DataModel>,
     profile: PinnedOAuthProviderProfile,
-  ) => Promise<{ api: Auth['api'] }>
+  ) => Promise<{ $context: Promise<unknown> }>
   resolveProfile: (
     ctx: AuthCtx<DataModel>,
   ) => PinnedOAuthProviderProfile | Promise<PinnedOAuthProviderProfile | undefined> | undefined
@@ -161,69 +200,88 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
       if (scopes.some((scope) => !admittedScopes.has(scope))) {
         throw new Error('AUTH_OAUTH_CLIENT_SCOPE_NOT_ADMITTED')
       }
-      const api = requireOperatorApi((await input.createAuth(ctx, oauthProfile)).api)
-      const resources = await api.adminListOAuthResources()
-      let resource = resources.find((candidate) => candidate.identifier === resourceIdentifier)
+      const auth = await input.createAuth(ctx, oauthProfile)
+      const adapter = requireOperatorAdapter(await auth.$context)
+      let resource = await adapter.findOne({
+        model: 'oauthResource',
+        where: [{ field: 'identifier', value: resourceIdentifier }],
+      })
       let resourceCreated = false
       if (!resource) {
-        resource = await api.adminCreateOAuthResource({
-          body: {
-            accessTokenTtl: 600,
-            allowedScopes: scopes,
-            disabled: false,
-            dpopBoundAccessTokensRequired: false,
-            identifier: resourceIdentifier,
-            name: resourceName,
-            signingAlgorithm: 'RS256',
-          },
-        })
-        resourceCreated = true
+        try {
+          resource = await adapter.create({
+            model: 'oauthResource',
+            data: {
+              accessTokenTtl: 600,
+              allowedScopes: scopes,
+              customClaims: null,
+              disabled: false,
+              dpopBoundAccessTokensRequired: false,
+              identifier: resourceIdentifier,
+              metadata: null,
+              name: resourceName,
+              policyVersion: 1,
+              refreshTokenTtl: null,
+              signingAlgorithm: 'RS256',
+              signingKeyId: null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          })
+          resourceCreated = true
+        } catch {
+          resource = await adapter.findOne({
+            model: 'oauthResource',
+            where: [{ field: 'identifier', value: resourceIdentifier }],
+          })
+          if (!resource) throw new Error('AUTH_OAUTH_RESOURCE_CREATE_FAILED')
+        }
       }
-      const resourceScopes = Array.isArray(resource.allowedScopes) ? resource.allowedScopes : null
-      if (
-        resource.identifier !== resourceIdentifier ||
-        resource.name !== resourceName ||
-        resource.accessTokenTtl !== 600 ||
-        resource.disabled !== false ||
-        resource.dpopBoundAccessTokensRequired !== false ||
-        resource.signingAlgorithm !== 'RS256' ||
-        resourceScopes === null ||
-        resourceScopes.length !== scopes.length ||
-        scopes.some((scope) => !resourceScopes.includes(scope))
-      ) {
+      try {
+        assertResourceProfile(resource, {
+          identifier: resourceIdentifier,
+          name: resourceName,
+          scopes,
+        })
+      } catch {
         if (resourceCreated) {
-          await rollbackProvisioning(api, { resourceCreated, resourceIdentifier })
+          await rollbackProvisioning(adapter, { resourceCreated, resourceIdentifier })
         }
         throw new Error('AUTH_OAUTH_RESOURCE_PROFILE_INVALID')
       }
-      let clientId: string | undefined
+      const clientId = generatePublicClientId()
       try {
-        const client = await api.adminCreateOAuthClient({
-          body: {
-            application_type: 'native',
-            client_name: name,
-            dpop_bound_access_tokens: false,
-            enable_end_session: false,
-            grant_types: ['authorization_code'],
-            redirect_uris: redirectUris,
-            require_pkce: true,
-            response_types: ['code'],
-            scope: scopes.join(' '),
-            skip_consent: false,
-            software_id: profile,
-            subject_type: 'public',
-            token_endpoint_auth_method: 'none',
+        const now = new Date(Math.floor(Date.now() / 1_000) * 1_000)
+        await adapter.create({
+          model: 'oauthClient',
+          data: {
+            applicationType: 'native',
+            clientCredentialsScopes: [],
+            clientDiscoveryId: null,
+            clientId,
+            createdAt: now,
+            disabled: false,
+            dpopBoundAccessTokens: false,
+            enableEndSession: false,
+            grantTypes: ['authorization_code'],
+            name,
+            redirectUris,
+            requirePKCE: true,
+            responseTypes: ['code'],
+            scopes,
+            skipConsent: false,
+            softwareId: profile,
+            subjectType: 'public',
+            tokenEndpointAuthMethod: 'none',
+            updatedAt: now,
           },
         })
-        if (typeof client?.client_id !== 'string' || !client.client_id) {
-          throw new Error('AUTH_OAUTH_CLIENT_CREATE_FAILED')
-        }
-        clientId = client.client_id
-        await api.adminLinkClientResource({
-          params: { client_id: clientId, identifier: resourceIdentifier },
+        await adapter.create({
+          model: 'oauthClientResource',
+          data: { clientId, createdAt: new Date(), resourceId: resourceIdentifier },
         })
       } catch {
-        await rollbackProvisioning(api, { clientId, resourceCreated, resourceIdentifier })
+        await rollbackProvisioning(adapter, { clientId, resourceCreated, resourceIdentifier })
         throw new Error('AUTH_OAUTH_CLIENT_PROVISION_FAILED')
       }
       return { clientId }
@@ -232,8 +290,13 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
       const clientId = requireString(clientInput.clientId, 'ID')
       const oauthProfile = await input.resolveProfile(ctx)
       if (!oauthProfile) throw new TypeError('AUTH_OAUTH_PROVIDER_REQUIRED')
-      const api = requireOperatorApi((await input.createAuth(ctx, oauthProfile)).api)
-      await api.deleteOAuthClient({ body: { client_id: clientId } })
+      const auth = await input.createAuth(ctx, oauthProfile)
+      const adapter = requireOperatorAdapter(await auth.$context)
+      await rollbackProvisioning(adapter, {
+        clientId,
+        resourceCreated: false,
+        resourceIdentifier: '',
+      })
     },
   })
 }
