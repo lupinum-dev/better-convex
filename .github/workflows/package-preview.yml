@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  RELEASE_NODE_VERSION: '22.14.0'
+  RELEASE_NODE_VERSION: '22.19.0'
   RELEASE_NPM_VERSION: '11.18.0'
 
 jobs:

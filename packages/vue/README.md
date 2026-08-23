@@ -19,7 +19,7 @@ Use this package when Vue must own the Convex client lifecycle. Use `@lupinum/be
 
 ## Requirements
 
-The package requires Node.js 22.14 or newer, Vue 3.5, and Convex 1.42.2.
+The package requires Node.js 22.19+ or 24.11+, Vue 3.5, and Convex 1.42.2.
 
 ## Installation
 

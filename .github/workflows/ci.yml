@@ -68,7 +68,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
       - name: Update and enable Corepack
         run: npm install --global corepack@0.34.5 && corepack enable
       - name: Install dependencies
@@ -93,9 +93,9 @@ jobs:
       matrix:
         include:
           - profile: floor
-            node: 22.14.0
+            node: 22.19.0
           - profile: latest-compatible
-            node: 22.14.0
+            node: 22.19.0
           - profile: floor
             node: '24'
           - profile: latest-compatible
@@ -109,7 +109,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: Verify exact tarballs in fresh consumers
@@ -126,7 +126,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
@@ -148,7 +148,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
@@ -168,7 +168,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
           package-manager-cache: false
       - name: Audit docs production dependencies
         working-directory: docs
@@ -188,7 +188,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
           package-manager-cache: false
       - name: Install the release toolchain
         run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable

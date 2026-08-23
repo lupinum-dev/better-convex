@@ -21,7 +21,7 @@ The package returns a credential-free access context. Every tool and resource mu
 
 ## Requirements
 
-The package requires Node.js 22.14 or newer. OAuth mode requires the documented transport and protected-resource metadata routes. Preconfigured bearer mode exposes only the transport routes.
+The package requires Node.js 22.19+ or 24.11+. OAuth mode requires the documented transport and protected-resource metadata routes. Preconfigured bearer mode exposes only the transport routes.
 
 ## Installation
 

@@ -304,11 +304,14 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'pnpm add --workspace-root --save-dev --lockfile=false',
     )
     expect(requireJob(ciWorkflow, 'dependency-matrix').strategy?.matrix?.include).toEqual([
-      { profile: 'floor', node: '22.14.0' },
-      { profile: 'latest-compatible', node: '22.14.0' },
+      { profile: 'floor', node: '22.19.0' },
+      { profile: 'latest-compatible', node: '22.19.0' },
       { profile: 'floor', node: '24' },
       { profile: 'latest-compatible', node: '24' },
     ])
+    expect(runs(ciWorkflow, 'dependency-matrix')).toContain(
+      'npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable',
+    )
     expect(
       steps(ciWorkflow, 'release-smoke').find(
         (step) => step.name === 'Retain the Linux candidate locks for review',
