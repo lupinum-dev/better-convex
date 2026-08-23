@@ -131,6 +131,11 @@ const composableMeta = {
     purpose: 'Runs Convex mutations with status, errors, and optimistic hooks.',
     guide: '/docs/build/write-data/mutations',
   },
+  useConvexForm: {
+    kind: 'Composable',
+    purpose: 'Validates external form values and submits one typed Convex mutation.',
+    guide: '/docs/build/write-data/forms',
+  },
   useConvexPaginatedQuery: {
     kind: 'Composable',
     purpose: 'Returns one reactive, SSR-aware pagination lifecycle.',

@@ -107,7 +107,15 @@ describe('package-profile SBOM generation', () => {
         metadata: { component: { name: string } }
       }
       expect(sbom.metadata.component.name).toBe('@lupinum/better-convex-vue')
-      expect(sbom.components.map(({ name }) => name).sort()).toEqual(['convex', 'ohash', 'vue'])
+      expect(sbom.components.map(({ name }) => name).sort()).toEqual([
+        '@standard-schema/spec',
+        'convex',
+        'ohash',
+        'vue',
+      ])
+      expect(sbom.components.find(({ name }) => name === '@standard-schema/spec')?.version).toBe(
+        vuePackageManifest.dependencies['@standard-schema/spec'],
+      )
       expect(sbom.components.find(({ name }) => name === 'convex')?.version).toBe(
         vuePackageManifest.devDependencies.convex,
       )
