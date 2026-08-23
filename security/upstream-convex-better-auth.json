@@ -324,9 +324,9 @@
       "targetPath": "src/runtime/convex-auth/create-better-convex-auth.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "610a4d7edfbb0fd3ab412d61e8103b9e416edaaf8e2719189c9cff345597150d",
-      "targetSha256": "ef9dd947bb1cfdd09de9a944641ecabf79c0a756803fdcc978ed908b29143d81",
+      "targetSha256": "688e94a6bb982b7b84304559209b9bd2f3ce3f270ca7107dbe92ac1855cb6dee",
       "classification": "rewritten",
-      "modificationSummary": "Introduced one reviewed factory that owns adapter wiring, JWT and plugin ordering, route registration, signing-key operations, secret policy, and optional user-projection triggers; admits partial reviewed email/password and session policy, a fail-closed request-scoped user-creation policy, and an asynchronously resolved request-scoped OAuth profile; and rejects arbitrary Better Auth overrides.",
+      "modificationSummary": "Introduced one reviewed factory that owns adapter wiring, JWT and plugin ordering, route registration, signing-key operations, secret policy, optional user-projection triggers, and the request-scoped OAuth operator; admits partial reviewed email/password and session policy, a fail-closed request-scoped user-creation policy, and an asynchronously resolved request-scoped OAuth profile; and rejects arbitrary Better Auth overrides.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -335,9 +335,9 @@
       "targetPath": "src/runtime/convex-auth/index.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "300f9ebf00a0f236954653984709abfb70e93f1b1b9a37fabba4ee44661d2cf5",
-      "targetSha256": "438563c54a6560de84103085e94ea8a6dac3347abe036064222f6c6e7924532f",
+      "targetSha256": "018acc23f4f1871253891f930e73ab94d11302182e4902b8f313811ad1fadada",
       "classification": "rewritten",
-      "modificationSummary": "Replaced the compatibility barrel with the fixed narrow Better Convex Nuxt API, including the reviewed auth factory, maintained auth component, provider, OAuth resource verifier, and rebuildable user-projection helper.",
+      "modificationSummary": "Replaced the compatibility barrel with the fixed narrow Better Convex Nuxt API, including the reviewed auth factory, maintained auth component, provider, OAuth resource verifier and operator, and rebuildable user-projection helper.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -357,9 +357,9 @@
       "targetPath": "src/runtime/convex-auth/plugin.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
-      "targetSha256": "97d3a1bcd743eac774c510248e51963dc2370de90059bb68d360fe73bce4016f",
+      "targetSha256": "98325a8f878a006a57db10265acc291454ca126fe8af4629dc4d2c9be39ac995",
       "classification": "rewritten",
-      "modificationSummary": "Rewrote the Convex plugin as the composition, request-guard, and session-issuance owner under the scoped Lupinum package identity; exact stable OAuth Provider option/install/admin compatibility and token-method client authentication now live behind fail-closed local guards.",
+      "modificationSummary": "Rewrote the Convex plugin as the composition, request-guard, and session-issuance owner under the scoped Lupinum package identity; exact stable OAuth Provider option/install/admin compatibility, internal operator provisioning calls, and token-method client authentication now live behind fail-closed local guards.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -382,6 +382,17 @@
       "targetSha256": "507f4690084c5a0a4ce5e6449215bf50057ed1e79ff269e608db2ec5fc5faa67",
       "classification": "rewritten",
       "modificationSummary": "Replaced public lazy key creation and destructive rollover with pinned Better Auth RS256 generation, encrypted-private and public-only JWK validation, authenticated atomic winner initialization, additive rotation, and bounded grace-period retention.",
+      "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
+      "noticeRequired": false
+    },
+    {
+      "sourcePath": "src/plugins/convex/index.ts",
+      "targetPath": "src/runtime/convex-auth/oauth-operator.ts",
+      "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
+      "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
+      "targetSha256": "1cd3d867680b195a9ba56fed42d7087f62f120571778daa27f61d5abfc5529af",
+      "classification": "rewritten",
+      "modificationSummary": "Added one request-scoped operator for preregistered public OAuth clients with asynchronously resolved admitted scopes, safe redirect schemes, explicit application-owned resources, fixed provider security fields, deterministic rollback of partial writes, and no user-session dependency.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
