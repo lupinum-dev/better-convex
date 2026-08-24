@@ -7,6 +7,10 @@ export type {
   BetterConvexOrganizationAuthInstance,
   CreateBetterConvexAuthOptions,
 } from './create-better-convex-auth'
+export type {
+  BetterConvexOAuthOperator,
+  BetterConvexPublicOAuthClientInput,
+} from './oauth-operator'
 export { requireAuthOrigin } from './origin'
 export { convexAuth } from './plugin'
 export { getConvexAuthProvider } from './provider'

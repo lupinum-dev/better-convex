@@ -16,6 +16,7 @@ import type { GenericDataModel, HttpRouter } from 'convex/server'
 
 import type { AuthCtx } from './context'
 import { createAuthComponent } from './create-auth-component'
+import { createOAuthOperator, type BetterConvexOAuthOperator } from './oauth-operator'
 import type { PinnedOAuthProviderProfile } from './oauth-security'
 import { requireAuthOrigin } from './origin'
 import { convexAuth } from './plugin'
@@ -104,6 +105,7 @@ export interface BetterConvexAuth<
   readonly jwksOperatorFunctions: () => ReturnType<
     OwnedAuthComponent<DataModel, Api>['jwksOperatorFunctions']
   >
+  readonly oauthOperator: BetterConvexOAuthOperator<DataModel>
 }
 
 /** The stable Better Auth capabilities used at the Convex transport boundary. */
@@ -302,16 +304,22 @@ export function createBetterConvexAuth<
     triggers: options.triggers,
   })
 
-  const createAuth: CreateAuth<DataModel, BetterConvexAuthInstance> = async (ctx) => {
+  const resolveOAuthProfile = async (
+    ctx: AuthCtx<DataModel>,
+  ): Promise<PinnedOAuthProviderProfile | undefined> =>
+    typeof options.oauthProvider === 'function'
+      ? await options.oauthProvider(ctx)
+      : options.oauthProvider
+
+  const createAuthWithProfile = async (
+    ctx: AuthCtx<DataModel>,
+    oauthProfile: PinnedOAuthProviderProfile | undefined,
+  ): Promise<BetterConvexAuthInstance> => {
     try {
       const siteUrl = requireAuthOrigin('SITE_URL')
       const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
       assertVersionedSecrets(process.env.BETTER_AUTH_SECRETS)
       const authIssuer = `${siteUrl}/api/auth`
-      const oauthProfile =
-        typeof options.oauthProvider === 'function'
-          ? await options.oauthProvider(ctx)
-          : options.oauthProvider
       const featurePlugins = [
         options.organization === false || options.organization === undefined
           ? null
@@ -421,6 +429,21 @@ export function createBetterConvexAuth<
     }
   }
 
+  const createAuth: CreateAuth<DataModel, BetterConvexAuthInstance> = async (ctx) => {
+    let oauthProfile: PinnedOAuthProviderProfile | undefined
+    try {
+      oauthProfile = await resolveOAuthProfile(ctx)
+    } catch {
+      throw new Error('AUTH_CONFIG_INVALID')
+    }
+    return await createAuthWithProfile(ctx, oauthProfile)
+  }
+
+  const oauthOperator = createOAuthOperator<DataModel>({
+    createAuth: createAuthWithProfile,
+    resolveProfile: resolveOAuthProfile,
+  })
+
   return Object.freeze({
     authComponent,
     createAuth,
@@ -431,5 +454,6 @@ export function createBetterConvexAuth<
     jwksOperatorFunctions() {
       return authComponent.jwksOperatorFunctions(createAuth)
     },
+    oauthOperator,
   })
 }

@@ -100,24 +100,30 @@ describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
     expect(installed.options?.customAccessTokenClaims).toBe(safe.customAccessTokenClaims)
   })
 
-  it('routes absent mutating methods into the fail-closed provisioning guard', () => {
+  it('distinguishes internal resource reads from server-only provisioning writes', async () => {
     const plugin = createConvexPlugin(profile())()
     const beforeHooks = (plugin.hooks?.before ?? []) as unknown as Array<{
-      matcher: (context: { method?: string; path: string }) => boolean
+      handler: (context: {
+        body: Record<string, unknown>
+        method?: string
+        path: string
+      }) => Promise<unknown>
+      matcher: (context: { body?: unknown; method?: string; path: string }) => boolean
     }>
     const provisioningHook = beforeHooks.find((hook) =>
       hook.matcher({ path: '/admin/oauth2/create-client' }),
     )
     expect(provisioningHook).toBeDefined()
 
-    for (const path of [
-      '/admin/oauth2/create-client',
-      '/admin/oauth2/update-client',
-      '/admin/oauth2/resources',
-      '/admin/oauth2/resources/:identifier',
-    ]) {
+    for (const path of ['/admin/oauth2/create-client', '/admin/oauth2/update-client']) {
       expect(provisioningHook!.matcher({ path })).toBe(true)
     }
+    expect(provisioningHook!.matcher({ path: '/admin/oauth2/resources' })).toBe(false)
+    expect(provisioningHook!.matcher({ path: '/admin/oauth2/resources/:identifier' })).toBe(false)
+    expect(provisioningHook!.matcher({ body: {}, path: '/admin/oauth2/resources' })).toBe(true)
+    expect(
+      provisioningHook!.matcher({ body: {}, path: '/admin/oauth2/resources/:identifier' }),
+    ).toBe(true)
     expect(provisioningHook!.matcher({ method: 'GET', path: '/admin/oauth2/resources' })).toBe(
       false,
     )
@@ -133,5 +139,39 @@ describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
         path: '/admin/oauth2/resources/:identifier',
       }),
     ).toBe(false)
+
+    await expect(
+      provisioningHook!.handler({
+        body: {
+          application_type: 'native',
+          dpop_bound_access_tokens: false,
+          enable_end_session: false,
+          grant_types: ['authorization_code'],
+          redirect_uris: ['http://127.0.0.1:3334/oauth/callback'],
+          require_pkce: true,
+          response_types: ['code'],
+          scope: 'mcp:read mcp:write',
+          skip_consent: false,
+          token_endpoint_auth_method: 'none',
+        },
+        path: '/admin/oauth2/create-client',
+      }),
+    ).resolves.toBeUndefined()
+
+    await expect(
+      provisioningHook!.handler({
+        body: {
+          accessTokenTtl: 600,
+          allowedScopes: ['mcp:read', 'mcp:write'],
+          disabled: false,
+          dpopBoundAccessTokensRequired: false,
+          identifier: 'http://127.0.0.1:3211/mcp',
+          name: 'Ginko CMS MCP',
+          signingAlgorithm: 'RS256',
+        },
+        method: ['POST'] as unknown as string,
+        path: '/admin/oauth2/resources',
+      }),
+    ).resolves.toBeUndefined()
   })
 })
