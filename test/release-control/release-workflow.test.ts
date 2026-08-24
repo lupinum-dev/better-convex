@@ -124,6 +124,18 @@ describe('state-aware Better Convex release workflows', () => {
         ({ name }) => name === 'Verify the MCP unit',
       ) ?? -1,
     )
+    const mcpBrowser = requireJob(ci, 'release-candidate').steps?.find(
+      ({ name }) => name === 'Install the reviewed MCP conformance browser',
+    )
+    expect(mcpBrowser).toMatchObject({
+      if: "steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'",
+      run: 'pnpm exec playwright install --with-deps chromium',
+    })
+    expect(requireJob(ci, 'release-candidate').steps?.indexOf(mcpBrowser!)).toBeLessThan(
+      requireJob(ci, 'release-candidate').steps?.findIndex(
+        ({ name }) => name === 'Verify the MCP unit',
+      ) ?? -1,
+    )
   })
 
   it('starts from successful CI or an input-free reconciliation dispatch', () => {
