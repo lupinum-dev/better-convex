@@ -19,6 +19,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
+      artifact: ${{ steps.paths.outputs.artifact }}
       full: ${{ steps.paths.outputs.full }}
     steps:
       - name: Select required lanes
@@ -41,6 +42,10 @@ jobs:
               paths.every((path) =>
                 /^(?:docs\/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
               )
+            const releaseArtifactInputs = paths.some((path) =>
+              /^(?:demo\/pnpm-lock\.yaml|starters\/(?:agency|mcp-oauth-agent|public|team)\/pnpm-lock\.yaml|scripts\/(?:candidate-app-locks|prepare-candidate-app-locks|release-preflight-tarballs|release-smoke)\.mjs)$/u.test(path),
+            )
+            core.setOutput('artifact', String(runAll || releaseArtifactInputs))
             core.setOutput('full', String(runAll || !publicDocsOnly))
 
   secrets:
@@ -179,7 +184,7 @@ jobs:
 
   release-smoke:
     needs: classify
-    if: needs.classify.outputs.full == 'true'
+    if: needs.classify.outputs.artifact == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -231,6 +236,7 @@ jobs:
       - name: Require every independent source lane
         env:
           CLASSIFY_RESULT: ${{ needs.classify.result }}
+          ARTIFACT: ${{ needs.classify.outputs.artifact }}
           FULL: ${{ needs.classify.outputs.full }}
           AUTH_CONTRACTS: ${{ needs.auth-contracts.result }}
           AUTH_REAL_BACKEND: ${{ needs.auth-real-backend.result }}
@@ -245,8 +251,13 @@ jobs:
             true | false) ;;
             *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;;
           esac
+          case "$ARTIFACT" in
+            true | false) ;;
+            *) echo "Invalid artifact classifier output: $ARTIFACT" >&2; exit 1 ;;
+          esac
           test "$SECRETS" = success
           test "$DEPLOYABLE_APP_AUDITS" = success
-          for result in "$COMPATIBILITY" "$DEPENDENCY_MATRIX" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do
+          for result in "$COMPATIBILITY" "$DEPENDENCY_MATRIX" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND"; do
             if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi
           done
+          if [ "$ARTIFACT" = true ]; then test "$RELEASE_SMOKE" = success; else test "$RELEASE_SMOKE" = skipped; fi
