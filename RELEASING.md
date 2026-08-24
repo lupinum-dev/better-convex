@@ -5,13 +5,9 @@ Normal package versions are published only by
 workstation may run disposable checks, but it must not publish, promote, tag,
 or create authoritative release evidence.
 
-npm cannot configure trusted publishing before a package exists. The first
-version of each new package therefore has one narrow exception: after the
-protected workflow certifies and retains the exact tarball, the owning human
-may publish that file once with two-factor authentication. Do not rebuild or
-repack it. The protected workflow must then verify the registry bytes and
-create the Git tag and GitHub Release. Later versions have no workstation
-publication path.
+All three scoped packages already exist. Their historical bootstrap versions
+are immutable evidence, not a reusable exception. Every new version uses the
+protected workflow; there is no workstation publication path.
 
 ## The one release path
 
@@ -20,13 +16,19 @@ The order is fixed:
 1. Run the fast disposable lock/package smoke.
 2. Require one successful clean-Linux source certification for the exact Git
    commit.
-3. Mint the Vue, Nuxt, and MCP artifacts once.
-4. Verify only those artifact bytes and clean consumers.
-5. Publish through npm trusted publishing under the channel derived from each
-   package version (`latest` for stable, `next` for prerelease), or complete the
-   first-package bootstrap described below.
-6. Download each package from npm and compare it with the certified SRI.
-7. Create the Git tag and GitHub Release from the matching changelog entry.
+3. Derive exactly one reviewed release unit from `CHANGELOG.md`: coupled
+   Vue/Nuxt or independent MCP.
+4. Mint that unit once on the authoritative Linux CI builder and retain its
+   source-bound release record for 90 days.
+5. Let the input-free trusted workflow derive the unit, version, channel,
+   source SHA, and CI run from that retained candidate.
+6. Review its release card and approve the protected `npm` environment only
+   when the card requests approval.
+7. Publish through npm trusted publishing under the version-derived channel
+   (`latest` for stable, `next` for prerelease).
+8. Compare each npm package with the certified SRI and provenance.
+9. Create or repair the exact Git tag and GitHub Release from the same retained
+   candidate.
 
 Source certification never runs after immutable minting. Artifact verification
 never invokes the full source suite. A generic Vercel preview is a developer
@@ -68,12 +70,16 @@ Linux jobs run the core, auth, end-to-end, and secret-scanning lanes in
 parallel. `release-gate` is a small fail-closed aggregator: it succeeds only
 when every lane succeeds.
 
-The protected workflow is dispatched from `main` with `vue-nuxt` or `mcp` and
-that target's exact version. Vue and Nuxt share the root version and `v<version>`
-tag. MCP can move independently and uses `mcp-v<version>`. The workflow reads
-GitHub's check-run API and requires a successful
-`release-gate` produced by GitHub Actions for the exact dispatch commit. It does
-not rerun those source suites.
+After source certification passes on a push to `main`, CI derives the unique
+incomplete intent and retains one `release-candidate` artifact. Vue and Nuxt
+share the root version and `v<version>` tag. MCP can move independently and uses
+`mcp-v<version>`. Zero intents are a clean no-op. Multiple incomplete intents
+fail with an instruction to finish the earlier release first.
+
+The trusted workflow starts from the successful CI run. Its manual dispatch has
+no inputs and exists only for missed events or reconciliation. A first
+publication attempt requires the certified SHA to remain current `main`.
+Reruns reuse the original retained candidate even after `main` advances.
 
 The source lanes are defined by `scripts/release-source-certification.mjs`:
 
@@ -115,46 +121,23 @@ node scripts/release.mjs verify \
 ## Publication and registry equality
 
 One job receives `id-token: write`, and only through the protected `npm`
-environment. It downloads all three retained artifacts and publishes Vue, Nuxt,
-and MCP in dependency order. It uses npm provenance and disables package
-scripts. The job does not check out the repository, install dependencies, or
-run repository code.
+environment. It downloads one verified release unit. The Vue/Nuxt unit publishes
+Vue before Nuxt; MCP remains isolated. It uses npm provenance and disables
+package scripts. The job does not check out the repository, install
+dependencies, or run repository code.
 
 The job reads npm after each publish and requires the certified integrity,
 provenance mode, and version-derived channel. Clean registry-consumer tests run
 before this protected job against the exact candidate tarballs. Stable package
 versions use `latest`; prerelease package versions use `next`.
 
-## First-package bootstrap
+## Historical bootstrap publications
 
-Use this section only while an `@lupinum/better-convex-*` package does not yet
-exist and npm therefore rejects its trusted-publisher configuration.
-
-1. Dispatch the protected workflow with all missing packages listed in
-   `bootstrap_packages`.
-2. Wait for the workflow to retain and verify the selected target artifacts. Do not
-   approve the `npm` environment yet.
-3. Download the retained tarball or tarballs and their evidence from that exact
-   workflow run.
-4. Verify each tarball against its retained SHA-256 and SRI. Do not run
-   `npm pack` or rebuild any package.
-5. Confirm that the owning npm account requires two-factor authentication for
-   authorization and writes. Do not use an access token that bypasses two-factor
-   authentication.
-6. Sign in to npm with that account. Publish each exact file with `--access
-public --tag <channel> --ignore-scripts`, where `<channel>` is `latest` for
-   a stable version and `next` for a prerelease. Let npm request the one-time
-   password interactively for every publication. Do not put a one-time
-   password in a command, shell history, script, or log.
-7. Configure each package's trusted publisher for
-   `publish-prerelease.yml` and the protected `npm` environment.
-8. Approve the waiting `npm` environment.
-
-The workflow must detect the existing versions, require registry SRI equality,
-verify the version-derived channel, record each lane as `bootstrap`, and create
-the Git tag and GitHub Release from the certified source commit. The first versions do not
-have GitHub OIDC provenance. This is a recorded npm bootstrap limitation, not
-permission to publish another version from a workstation.
+The scoped packages already exist, so normal releases never need a bootstrap
+input or workstation publication. Older bootstrap versions without provenance
+are immutable historical exceptions. The workflow verifies every new version
+through trusted publishing and exact provenance. It never treats the exception
+as permission to publish another provenance-free version.
 
 ## Failure, retry, and version rules
 
@@ -178,15 +161,11 @@ After immutable minting:
 
 The publish jobs are safe to rerun after an ambiguous registry response. Before
 publication, each job reads the package identity from its retained tarball and
-checks npm. If the version exists, the job continues only when its registry SRI
-equals the retained tarball SRI. Missing provenance is accepted only when the
-version remains that package's sole published version and the dispatch names
-that package in `bootstrap_packages`. This explicit input authorizes only the
-known first-version recovery. Every other missing-provenance state stops the
-workflow. The workflow records each lane as `bootstrap` or `oidc` and names
-bootstrap packages in the GitHub Release. If the version does not exist, the
-job publishes the same retained tarball with OIDC and requires provenance.
-Never rebuild it.
+checks npm. If the version exists, the workflow continues only when its registry
+SRI, channel, Sigstore provenance, certificate identity, source SHA, and workflow
+identity match the retained candidate. Missing provenance always stops a current
+release. If the version does not exist, the protected job publishes the same
+retained tarball with OIDC and requires provenance. Never rebuild it.
 
 Never delete, replace, rebuild, repack, or publish a retired immutable
 coordinate. The internal decisions ledger and retained evidence directories
@@ -207,7 +186,7 @@ Run `pnpm changelog` to draft release notes from Conventional Commits. Review
 the generated entry before it enters the release pull request. Changelogen does
 not publish, push, tag, or own the three-package version family.
 
-For `vue-nuxt`, the dispatch version must match the coupled root version and
+For `vue-nuxt`, the reviewed version must match the coupled root version and
 `CHANGELOG.md` must contain `## v<version>`. For `mcp`, it must match the MCP
 manifest and the heading is `## mcp-v<version>`. After registry equality
 succeeds, the workflow creates the target's Git tag and GitHub Release from
@@ -221,9 +200,11 @@ launch material.
 
 ## 1.0 beta and release-candidate soak
 
-Publish `1.0.0-beta.1` only after source certification and all three packed
-artifact gates pass. Install those exact artifacts into Luis without a local
-peer-dependency patch, then run its typecheck and production build.
+Publish the coupled Vue/Nuxt `1.0.0-beta.1` unit first after its source and
+packed-artifact gates pass. Add and merge a separate `## mcp-v1.0.0-beta.1`
+intent only after that unit is complete. Install the exact beta artifacts into
+Luis without a local peer-dependency patch, then run its typecheck and
+production build.
 
 Keep the beta contract in Luis plus fresh Nuxt, Vue, and OAuth/MCP consumers for
 seven complete days. A breaking public API change restarts the seven-day clock.
