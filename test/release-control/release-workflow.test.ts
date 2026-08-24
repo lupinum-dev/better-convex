@@ -119,6 +119,11 @@ describe('state-aware Better Convex release workflows', () => {
       if: "steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'",
       run: 'pnpm check:auth-backend --install',
     })
+    expect(requireJob(ci, 'release-candidate').steps?.indexOf(mcpBackend!)).toBeLessThan(
+      requireJob(ci, 'release-candidate').steps?.findIndex(
+        ({ name }) => name === 'Verify the MCP unit',
+      ) ?? -1,
+    )
   })
 
   it('starts from successful CI or an input-free reconciliation dispatch', () => {
