@@ -318,6 +318,9 @@ jobs:
       - name: Install the reviewed MCP conformance backend
         if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'
         run: pnpm check:auth-backend --install
+      - name: Install the reviewed MCP conformance browser
+        if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'
+        run: pnpm exec playwright install --with-deps chromium
       - name: Verify the MCP unit
         if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'
         run: pnpm release:verify --package mcp --artifact-manifest "${{ steps.mcp.outputs.evidence }}"

@@ -175,6 +175,19 @@ assert(
     candidate.steps.findIndex((step) => step.name === 'Verify the MCP unit'),
   'The reviewed MCP backend must be installed before MCP verification.',
 )
+const mcpBrowser = candidate.steps.find(
+  (step) => step.name === 'Install the reviewed MCP conformance browser',
+)
+assert.equal(
+  mcpBrowser.if,
+  "steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'",
+)
+assert.equal(mcpBrowser.run, 'pnpm exec playwright install --with-deps chromium')
+assert(
+  candidate.steps.indexOf(mcpBrowser) <
+    candidate.steps.findIndex((step) => step.name === 'Verify the MCP unit'),
+  'The reviewed MCP browser must be installed before MCP verification.',
+)
 
 const publication = publish.jobs['verify-publication']
 assert.deepEqual(publication.needs, ['verify', 'publish-packages'])
