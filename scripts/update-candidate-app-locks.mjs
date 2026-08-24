@@ -215,15 +215,19 @@ try {
       profile.packageIds.includes(packageId),
     )
     const validationWorkspacePath = join(validationDir, 'pnpm-workspace.yaml')
-    if (existsSync(validationWorkspacePath)) {
-      writeFileSync(
-        validationWorkspacePath,
-        withCandidateReleaseAgeExclusions(
-          readFileSync(validationWorkspacePath, 'utf8'),
-          requiredCandidates.map(({ artifact }) => artifact),
-        ),
-      )
-    }
+    // Standalone starters inherit the repository policy in normal use but have
+    // no workspace file of their own. Give the isolated validation copy a
+    // minimal policy file so only the exact local candidates bypass quarantine.
+    const workspaceSource = existsSync(validationWorkspacePath)
+      ? readFileSync(validationWorkspacePath, 'utf8')
+      : 'packages: []\n'
+    writeFileSync(
+      validationWorkspacePath,
+      withCandidateReleaseAgeExclusions(
+        workspaceSource,
+        requiredCandidates.map(({ artifact }) => artifact),
+      ),
+    )
     if (options.check) {
       const committedLock = originalLocks.get(lockPath)
       for (const { artifact } of requiredCandidates) {
