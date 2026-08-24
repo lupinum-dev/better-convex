@@ -14,6 +14,7 @@ import {
   candidateAppLockProfiles,
   createCandidateRegistryMetadata,
   packageArtifactIdentity,
+  withCandidateReleaseAgeExclusions,
 } from '../../scripts/candidate-app-locks.mjs'
 import { getMaintainedCandidateProfile } from '../../scripts/maintained-candidate-apps.mjs'
 import { getPackageArtifactCoordinates } from '../../scripts/package-artifact-coordinates.mjs'
@@ -116,6 +117,20 @@ function writeCandidateTarball(
 }
 
 describe('candidate app lock contract', () => {
+  it('exempts only exact certified candidates in temporary workspaces', () => {
+    const artifact = packageArtifactIdentity(
+      'nuxt',
+      '1.0.0-beta.1',
+      `sha512-${Buffer.alloc(64).toString('base64')}`,
+    )
+    expect(withCandidateReleaseAgeExclusions('minimumReleaseAge: 1440\n', [artifact])).toBe(
+      "minimumReleaseAge: 1440\nminimumReleaseAgeExclude:\n  - '@lupinum/better-convex-nuxt@1.0.0-beta.1'\n",
+    )
+    expect(() =>
+      withCandidateReleaseAgeExclusions('minimumReleaseAgeExclude:\n', [artifact]),
+    ).toThrow(/already contains/u)
+  })
+
   it('derives all maintained starters and adds only the standalone demo', () => {
     const maintained = getMaintainedCandidateProfile('nuxt').profile.pnpmApps.map(
       (entry: { path: string }) => entry.path,

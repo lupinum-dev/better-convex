@@ -22,6 +22,7 @@ import {
   candidateAppLockProfiles,
   createCandidateRegistryMetadata,
   packageArtifactIdentity,
+  withCandidateReleaseAgeExclusions,
 } from './candidate-app-locks.mjs'
 import { getPackageArtifactCoordinates } from './package-artifact-coordinates.mjs'
 import { assertPackedRuntimeFingerprintBinding } from './package-runtime-fingerprint-profile.mjs'
@@ -212,6 +213,14 @@ try {
     const validationLockPath = join(validationDir, 'pnpm-lock.yaml')
     const requiredCandidates = candidates.filter(({ packageId }) =>
       profile.packageIds.includes(packageId),
+    )
+    const validationWorkspacePath = join(validationDir, 'pnpm-workspace.yaml')
+    writeFileSync(
+      validationWorkspacePath,
+      withCandidateReleaseAgeExclusions(
+        readFileSync(validationWorkspacePath, 'utf8'),
+        requiredCandidates.map(({ artifact }) => artifact),
+      ),
     )
     if (options.check) {
       const committedLock = originalLocks.get(lockPath)

@@ -50,6 +50,18 @@ export function candidateAppInstallArgs(profile, frozen) {
   return args
 }
 
+/** Exempt only locally certified candidate coordinates in a temporary workspace. */
+export function withCandidateReleaseAgeExclusions(workspaceSource, artifacts) {
+  if (/^minimumReleaseAgeExclude:/mu.test(workspaceSource)) {
+    throw new Error('Candidate workspace already contains a dependency-age exception.')
+  }
+  for (const artifact of artifacts) assertArtifactIdentity(artifact)
+  const rules = artifacts
+    .map(({ packageName, version }) => `  - '${packageName}@${version}'`)
+    .join('\n')
+  return `${workspaceSource}${workspaceSource.endsWith('\n') ? '' : '\n'}minimumReleaseAgeExclude:\n${rules}\n`
+}
+
 /** Build the npm metadata served for one local release candidate. */
 export function createCandidateRegistryMetadata({
   integrity,
