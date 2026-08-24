@@ -27,6 +27,7 @@ const releaseControlFixtureFiles = [
   'scripts/package-certification-manifest.mjs',
   'scripts/package-runtime-fingerprint-profile.mjs',
   'scripts/prepare-candidate-set.mjs',
+  'scripts/release-builder-platform.mjs',
   'scripts/release-changelog.mjs',
   'scripts/release-preflight-tarballs.mjs',
   'scripts/verify-release.mjs',
@@ -112,6 +113,10 @@ function createReleaseControlFixture() {
     mkdirSync(dirname(destination), { recursive: true })
     writeFileSync(destination, read(relativePath))
   }
+  writeFileSync(
+    join(repository, 'scripts/release-builder-platform.mjs'),
+    "export function assertReleaseBuilderPlatform() { return 'linux' }\n",
+  )
   mkdirSync(join(repository, 'scripts/package-check'), { recursive: true })
   writeFileSync(
     join(repository, 'scripts/package-check/tarball.mjs'),

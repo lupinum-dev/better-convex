@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { assertReleaseBuilderPlatform } from './release-builder-platform.mjs'
 import { withReleasePreflightTarballs } from './release-preflight-tarballs.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -54,5 +55,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (!['check', 'update'].includes(mode) || process.argv.length !== 3) {
     throw new Error('Usage: prepare-candidate-app-locks.mjs check|update')
   }
+  assertReleaseBuilderPlatform()
   prepareCandidateAppLocks(mode)
 }

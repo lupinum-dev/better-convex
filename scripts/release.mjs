@@ -38,10 +38,12 @@ import {
 } from './package-check/production-manifest-contract.mjs'
 import { buildContentManifest, packAndExtract } from './package-check/tarball.mjs'
 import { assertPackedRuntimeFingerprintBinding } from './package-runtime-fingerprint-profile.mjs'
+import { assertReleaseBuilderPlatform } from './release-builder-platform.mjs'
 import { getReleaseFamilyTag, requirePreparedReleaseNotes } from './release-changelog.mjs'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const { command, packageId: releasePackageId, verifyPath } = parseArguments(process.argv.slice(2))
+if (command !== 'verify') assertReleaseBuilderPlatform()
 const artifactCoordinates = getPackageArtifactCoordinates(releasePackageId)
 const packageJson = JSON.parse(readFileSync(artifactCoordinates.manifestPath, 'utf8'))
 const workspacePackageJson = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'))

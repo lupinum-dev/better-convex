@@ -20,6 +20,7 @@ import {
   createCandidateSetEvidence,
   getCandidateSetCoordinates,
 } from './package-candidate-set.mjs'
+import { assertReleaseBuilderPlatform } from './release-builder-platform.mjs'
 import { requirePreparedReleaseNotes } from './release-changelog.mjs'
 
 const root = resolve(import.meta.dirname, '..')
@@ -33,6 +34,7 @@ if (
     'Usage: prepare-candidate-set.mjs artifact|family|prepare | verify <artifact-set.json>',
   )
 }
+if (command !== 'verify') assertReleaseBuilderPlatform()
 
 function run(executable, args, options = {}) {
   console.log(`\n> ${[executable, ...args].join(' ')}`)
