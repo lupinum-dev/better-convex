@@ -1,9 +1,9 @@
 import type { FunctionArgs, FunctionReference } from 'convex/server'
 import { describe, expect, it } from 'vitest'
-import { reactive, ref } from 'vue'
+import { onBeforeMount, onMounted, reactive, ref } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
 
-import { useState } from '#imports'
+import { useNuxtApp, useState } from '#imports'
 
 import {
   ANONYMOUS_IDENTITY,
@@ -34,6 +34,71 @@ function useConvexQueryState<
 }
 
 describe('useConvexQuery composables (Nuxt runtime)', () => {
+  it('starts a payload-less immediate query only after Nuxt hydration settles', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:payload-less-hydration')
+    const { result } = await captureInNuxt(
+      () => {
+        const nuxtApp = useNuxtApp()
+        nuxtApp.isHydrating = true
+        const listenersBeforeMount = ref(-1)
+        const listenersDuringMount = ref(-1)
+        const state = useConvexQuery(query, {}, { auth: 'none' })
+        onBeforeMount(() => {
+          listenersBeforeMount.value = convex.calls.onUpdate.length
+        })
+        onMounted(() => {
+          listenersDuringMount.value = convex.calls.onUpdate.length
+          nuxtApp.isHydrating = false
+          void nuxtApp.callHook('app:suspense:resolve')
+        })
+        return { listenersBeforeMount, listenersDuringMount, state }
+      },
+      { convex, payloadData: {} },
+    )
+
+    expect(result.listenersBeforeMount.value).toBe(0)
+    expect(result.listenersDuringMount.value).toBe(0)
+    await waitFor(() => convex.calls.onUpdate.length === 1)
+    expect(result.state.status.value).toBe('pending')
+  })
+
+  it('keeps an SSR value authoritative until hydration settles', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:hydrated-frame')
+    const key = withAuthDimension(createConvexQueryKey(query, {}), 'none', 'anonymous')
+    const { result } = await captureInNuxt(
+      () => {
+        const nuxtApp = useNuxtApp()
+        nuxtApp.isHydrating = true
+        const listenersBeforeMount = ref(-1)
+        const listenersDuringMount = ref(-1)
+        const statusBeforeMount = ref('unknown')
+        const state = useConvexQuery(query, {}, { auth: 'none' })
+        onBeforeMount(() => {
+          listenersBeforeMount.value = convex.calls.onUpdate.length
+          statusBeforeMount.value = state.status.value
+        })
+        onMounted(() => {
+          listenersDuringMount.value = convex.calls.onUpdate.length
+          nuxtApp.isHydrating = false
+          void nuxtApp.callHook('app:suspense:resolve')
+        })
+        return { listenersBeforeMount, listenersDuringMount, statusBeforeMount, state }
+      },
+      {
+        convex,
+        payloadData: { [key]: { value: [{ _id: 'ssr-note' }] } },
+      },
+    )
+
+    expect(result.listenersBeforeMount.value).toBe(0)
+    expect(result.listenersDuringMount.value).toBe(0)
+    expect(result.statusBeforeMount.value).toBe('success')
+    expect(result.state.data.value).toEqual([{ _id: 'ssr-note' }])
+    await waitFor(() => convex.calls.onUpdate.length === 1)
+  })
+
   it('replaces dynamic keyed controllers after in-place option and query changes', async () => {
     const convex = new MockConvexClient()
     const first = mockFnRef<'query'>('notes:multi:first')

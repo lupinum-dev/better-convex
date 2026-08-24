@@ -1,5 +1,6 @@
 import { getPackageEntryManifest } from '../package-entry-manifest.mjs'
 import {
+  probeConsumerTestRuntime,
   probeAuthClientTyping,
   probeCreateUserProjectionTriggers,
   probeErrorsEntry,
@@ -47,6 +48,29 @@ const NUXT_CHECKER_ENTRY_RULES = [
       typeExternalSpecifiers: ['@lupinum/better-convex-vue/errors'],
     },
     packedProbe: probeErrorsEntry,
+  },
+  {
+    subpath: './test',
+    purity: {
+      runtimeExternalSpecifiers: [
+        '@lupinum/better-convex-vue',
+        '@lupinum/better-convex-vue/embedded',
+        '@lupinum/better-convex-vue/errors',
+        'convex/server',
+        'ohash',
+        'vue',
+      ],
+      typeExternalSpecifiers: [
+        '@lupinum/better-convex-vue',
+        '@lupinum/better-convex-vue/embedded',
+        '@lupinum/better-convex-vue/errors',
+        'convex/browser',
+        'convex/server',
+        'convex/values',
+        'vue',
+      ],
+    },
+    packedProbe: probeConsumerTestRuntime,
   },
   {
     subpath: './better-auth/client',

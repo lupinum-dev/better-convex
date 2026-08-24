@@ -95,7 +95,10 @@ try {
   const installedRoot = join(scratchRoot, 'node_modules/@lupinum/better-convex-mcp')
   candidate.assertInstalled(installedRoot)
   const imported = await import(pathToFileURL(join(installedRoot, 'dist/index.mjs')).href)
-  if (Object.keys(imported).sort().join(',') !== 'handleMcpRequest,runMcpTool') {
+  if (
+    Object.keys(imported).sort().join(',') !==
+    'McpUnsupportedCapabilityError,handleMcpRequest,runMcpTool'
+  ) {
     throw new Error('MCP runtime entry does not match the reviewed export allowlist.')
   }
   const manifest = JSON.parse(readFileSync(join(installedRoot, 'package.json'), 'utf8'))

@@ -16,7 +16,7 @@ import {
   type MaybeRefOrGetter,
 } from 'vue'
 
-import { useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
+import { onNuxtReady, useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
 import { identityToken } from '../auth/auth-identity'
 import { ConvexCallError, normalizeConvexError } from '../errors'
@@ -177,12 +177,22 @@ function createClientConvexQueryState<
     'convex:query-errors',
     () => ({}),
   )
+  // Keep the SSR payload (or SSR error) authoritative for the first client
+  // render. Starting the live controller while Vue is hydrating changes a
+  // hydrated success state back to pending and can select a different template
+  // branch than the server rendered.
+  const startsAfterHydration = immediate && nuxtApp.isHydrating
   const result = Reflect.apply(useVueConvexQuery, undefined, [
     query,
     args,
-    { auth, keepPreviousData, immediate },
+    { auth, keepPreviousData, immediate: immediate && !startsAfterHydration },
     hasHydratedData ? { value: hydratedPayload.value } : undefined,
   ]) as UseConvexQueryState<RawT>
+  if (startsAfterHydration) {
+    onNuxtReady(() => {
+      void result.execute()
+    })
+  }
   const clearHydratedError = () => {
     if (!(hydrationKey in hydratedErrors.value)) return
     const { [hydrationKey]: _removed, ...rest } = hydratedErrors.value
