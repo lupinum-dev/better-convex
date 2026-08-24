@@ -35,7 +35,7 @@ export const tables = {
   account: defineTable({
     id: v.string(),
     issuer: v.string(),
-    providerAccountId: v.string(),
+    accountId: v.string(),
     providerId: v.string(),
     userId: v.string(),
     accessToken: v.union(v.null(), v.string()),
@@ -49,7 +49,7 @@ export const tables = {
     updatedAt: v.number(),
   })
     .index('id', ['id'])
-    .index('issuer_providerAccountId', ['issuer', 'providerAccountId'])
+    .index('issuer_accountId', ['issuer', 'accountId'])
     .index('userId', ['userId'])
     .index('createdAt', ['createdAt']),
   verification: defineTable({
@@ -80,11 +80,13 @@ export const tables = {
     id: v.string(),
     clientId: v.string(),
     clientSecret: v.union(v.null(), v.string()),
+    clientDiscoveryId: v.union(v.null(), v.string()),
     disabled: v.union(v.null(), v.boolean()),
     skipConsent: v.union(v.null(), v.boolean()),
     enableEndSession: v.union(v.null(), v.boolean()),
     subjectType: v.union(v.null(), v.string()),
     scopes: v.union(v.null(), v.array(v.string())),
+    clientCredentialsScopes: v.union(v.null(), v.array(v.string())),
     userId: v.union(v.null(), v.string()),
     createdAt: v.union(v.null(), v.number()),
     updatedAt: v.union(v.null(), v.number()),
@@ -102,12 +104,11 @@ export const tables = {
     backchannelLogoutUri: v.union(v.null(), v.string()),
     backchannelLogoutSessionRequired: v.union(v.null(), v.boolean()),
     tokenEndpointAuthMethod: v.union(v.null(), v.string()),
+    applicationType: v.union(v.null(), v.string()),
     jwks: v.union(v.null(), v.string()),
     jwksUri: v.union(v.null(), v.string()),
     grantTypes: v.union(v.null(), v.array(v.string())),
     responseTypes: v.union(v.null(), v.array(v.string())),
-    public: v.union(v.null(), v.boolean()),
-    type: v.union(v.null(), v.string()),
     requirePKCE: v.union(v.null(), v.boolean()),
     dpopBoundAccessTokens: v.union(v.null(), v.boolean()),
     referenceId: v.union(v.null(), v.string()),
@@ -145,6 +146,7 @@ export const tables = {
     createdAt: v.union(v.null(), v.number()),
   })
     .index('id', ['id'])
+    .index('clientId_resourceId', ['clientId', 'resourceId'])
     .index('clientId', ['clientId'])
     .index('resourceId', ['resourceId'])
     .index('createdAt', ['createdAt']),
@@ -232,7 +234,7 @@ export const tables = {
 
 const schema = defineSchema(tables)
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:72c402323f9883a1',
+  value: 'bcn-auth-schema-v2:e33d90ec0cf73ec1',
 })
 
 export default schema

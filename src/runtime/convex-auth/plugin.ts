@@ -337,11 +337,10 @@ function assertClientAuthenticationMethod(
 ): void {
   if (
     (authentication.method === 'none' &&
-      (client.public !== true ||
-        client.tokenEndpointAuthMethod !== 'none' ||
+      (client.tokenEndpointAuthMethod !== 'none' ||
         (client.clientSecret !== undefined && client.clientSecret !== null))) ||
     (authentication.method === 'client_secret_basic' &&
-      (client.public !== false || client.tokenEndpointAuthMethod !== 'client_secret_basic'))
+      client.tokenEndpointAuthMethod !== 'client_secret_basic')
   ) {
     throw new OAuthSecurityError('AUTH_OAUTH_CLIENT_INVALID')
   }

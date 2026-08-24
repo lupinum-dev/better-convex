@@ -68,7 +68,7 @@ describe('pinned Better Auth adapter contract provenance', () => {
     const contract = adapterProvenance.adapterContractTests
 
     expect(contract.upstreamCommit).toMatch(/^[0-9a-f]{40}$/u)
-    expect(contract.upstreamTag).toBe('v1.7.0-rc.2')
+    expect(contract.upstreamTag).toBe('v1.7.1')
     expect(contract.sourceTestPaths).toEqual(
       expect.arrayContaining([
         'packages/core/src/db/adapter/factory.test.ts',
@@ -165,15 +165,15 @@ describe('greenfield Convex auth schema generation', () => {
     })
   })
 
-  it('uses the RC.2 issuer-scoped account identity without an RC.1 alias', () => {
+  it('uses the stable issuer-scoped account identity without the prerelease alias', () => {
     const account = packagedSchemaMetadata.models.account
 
     expect(account?.fields).toHaveProperty('issuer')
-    expect(account?.fields).toHaveProperty('providerAccountId')
-    expect(account?.fields).not.toHaveProperty('accountId')
+    expect(account?.fields).toHaveProperty('accountId')
+    expect(account?.fields).not.toHaveProperty('providerAccountId')
     expect(account?.indexes).toContainEqual({
-      descriptor: 'issuer_providerAccountId',
-      fields: ['issuer', 'providerAccountId'],
+      descriptor: 'issuer_accountId',
+      fields: ['issuer', 'accountId'],
       unique: true,
     })
   })
@@ -286,7 +286,7 @@ describe('greenfield Convex auth schema generation', () => {
 
     const compoundUniqueTamper = structuredClone(packagedSchemaMetadata) as AuthSchemaMetadata
     const accountCompoundIndex = compoundUniqueTamper.models.account?.indexes.find(
-      (index) => index.descriptor === 'issuer_providerAccountId',
+      (index) => index.descriptor === 'issuer_accountId',
     )
     if (!accountCompoundIndex) throw new Error('Expected generated account compound index.')
     delete (accountCompoundIndex as { unique?: true }).unique
@@ -334,7 +334,7 @@ describe('greenfield Convex auth schema generation', () => {
 
     expect(
       packagedSchemaMetadata.models.account?.indexes.find(
-        (index) => index.descriptor === 'issuer_providerAccountId',
+        (index) => index.descriptor === 'issuer_accountId',
       ),
     ).toMatchObject({ unique: true })
 

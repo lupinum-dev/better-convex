@@ -100,8 +100,11 @@ export async function validateOAuthAccess<DataModel extends GenericDataModel>(
         ctx,
         component,
         'oauthClientResource',
-        [{ field: 'id', value: `${access.clientId}::${access.resource}` }],
-        ['clientId', 'id', 'resourceId'],
+        [
+          { field: 'clientId', value: access.clientId },
+          { field: 'resourceId', value: access.resource },
+        ],
+        ['clientId', 'resourceId'],
       ),
       findOne(
         ctx,
@@ -139,7 +142,6 @@ export async function validateOAuthAccess<DataModel extends GenericDataModel>(
       resourceScopes !== undefined &&
       (resourceScopes === null || containsEvery(resourceScopes, access.scopes)) &&
       link &&
-      link.id === `${access.clientId}::${access.resource}` &&
       link.clientId === access.clientId &&
       link.resourceId === access.resource &&
       consent &&

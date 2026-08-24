@@ -61,7 +61,7 @@ const TERMINAL_CLIENTS = [
 ] as const satisfies readonly PublicClientProfile[]
 
 const CONFIDENTIAL_CLIENT = {
-  callback: CLIENTS[0].callback,
+  callback: 'https://client.example.test/oauth/callback',
   name: 'Confidential OAuth code security fixture',
   profile: 'bcn-confidential-code-fixture',
 } as const
@@ -70,6 +70,7 @@ type ProviderPlugin = ReturnType<typeof oauthProvider>
 type ProviderCall = (endpoint: unknown, input?: Record<string, unknown>) => Promise<unknown>
 
 interface OAuthClientView {
+  application_type?: unknown
   client_id?: unknown
   client_secret?: unknown
   client_name?: unknown
@@ -77,7 +78,6 @@ interface OAuthClientView {
   dpop_bound_access_tokens?: unknown
   enable_end_session?: unknown
   grant_types?: unknown
-  public?: unknown
   redirect_uris?: unknown
   require_pkce?: unknown
   response_types?: unknown
@@ -86,7 +86,6 @@ interface OAuthClientView {
   software_id?: unknown
   subject_type?: unknown
   token_endpoint_auth_method?: unknown
-  type?: unknown
 }
 
 interface OAuthResourceView {
@@ -130,9 +129,8 @@ function assertClientProfile(
     value.client_name !== expected.name ||
     value.software_id !== expected.profile ||
     value.disabled === true ||
-    value.public !== true ||
     value.token_endpoint_auth_method !== 'none' ||
-    value.type !== 'native' ||
+    value.application_type !== 'native' ||
     value.require_pkce !== true ||
     value.skip_consent !== false ||
     value.enable_end_session !== false ||
@@ -157,9 +155,8 @@ function assertConfidentialClientProfile(
     value.client_name !== CONFIDENTIAL_CLIENT.name ||
     value.software_id !== CONFIDENTIAL_CLIENT.profile ||
     value.disabled === true ||
-    value.public !== false ||
     value.token_endpoint_auth_method !== 'client_secret_basic' ||
-    value.type !== 'web' ||
+    value.application_type !== 'web' ||
     value.require_pkce !== true ||
     value.skip_consent !== false ||
     value.enable_end_session !== false ||
@@ -232,7 +229,13 @@ async function ensurePublicClient(
 ): Promise<string> {
   const matches = existingClients.filter((candidate) => candidate.software_id === expected.profile)
   if (matches.length > 1) profileDrift()
-  let client = matches[0]
+  let client: OAuthClientView | undefined = matches[0]
+  if (client && client.application_type !== 'native') {
+    await call(provider.endpoints.deleteOAuthClient, {
+      body: { client_id: client.client_id },
+    })
+    client = undefined
+  }
   if (!client) {
     client = (await call(provider.endpoints.adminCreateOAuthClient, {
       body: {
@@ -248,7 +251,7 @@ async function ensurePublicClient(
         software_id: expected.profile,
         subject_type: 'public',
         token_endpoint_auth_method: 'none',
-        type: 'native',
+        application_type: 'native',
       },
     })) as OAuthClientView
   }
@@ -270,8 +273,14 @@ async function provisionConfidentialClient(
     (candidate) => candidate.software_id === CONFIDENTIAL_CLIENT.profile,
   )
   if (matches.length > 1) profileDrift()
-  let client = matches[0]
+  let client: OAuthClientView | undefined = matches[0]
   let secretView: OAuthClientView
+  if (client && client.application_type !== 'web') {
+    await call(provider.endpoints.deleteOAuthClient, {
+      body: { client_id: client.client_id },
+    })
+    client = undefined
+  }
   if (client) {
     assertConfidentialClientProfile(client)
     secretView = (await call(provider.endpoints.rotateClientSecret, {
@@ -293,7 +302,7 @@ async function provisionConfidentialClient(
         software_id: CONFIDENTIAL_CLIENT.profile,
         subject_type: 'public',
         token_endpoint_auth_method: 'client_secret_basic',
-        type: 'web',
+        application_type: 'web',
       },
     })) as OAuthClientView
     assertConfidentialClientProfile(client)

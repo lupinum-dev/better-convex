@@ -33,8 +33,8 @@ describe('confidential OAuth code fixture contracts', () => {
   })
 
   it('pins the client to the existing callback, resource, scopes, PKCE, and Basic auth', () => {
-    expect(providerSource).toContain('callback: CLIENTS[0].callback')
-    expect(providerSource).toContain("value.type !== 'web'")
+    expect(providerSource).toContain("callback: 'https://client.example.test/oauth/callback'")
+    expect(providerSource).toContain("value.application_type !== 'web'")
     expect(providerSource).toContain("value.token_endpoint_auth_method !== 'client_secret_basic'")
     expect(providerSource).toContain('value.require_pkce !== true')
     expect(providerSource).toContain("scope: MCP_SCOPES.join(' ')")

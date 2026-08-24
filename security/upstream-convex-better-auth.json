@@ -13,8 +13,8 @@
     "npmArtifacts": [
       {
         "name": "@better-auth/core",
-        "version": "1.7.0-rc.2",
-        "integrity": "sha512-NreNGg68j4qUVVYTcC1DtvRTwSJdCavH5igrMyTO5ghZxnzL4G539uRIzOZmJ64MLzOyOwzWH+JHqpVaj0ZRxw==",
+        "version": "1.7.1",
+        "integrity": "sha512-eZ9lqcnVLMZ3QtUByRo4VZqkB1ESyRddd9NfWjBdDPgh+jcwLScoIUAqhtHLR8zaSUJZah8OLGlkzObyPdUH7A==",
         "typePaths": [
           "src/db/adapter/index.ts",
           "src/db/adapter/types.ts",
@@ -23,14 +23,14 @@
       },
       {
         "name": "better-auth",
-        "version": "1.7.0-rc.2",
-        "integrity": "sha512-5KZrqbAsoQA8q1edmufaoF/CBbMjGb/BoPqyMTzXFyDeXNhk8pXO2xJkiDDeZcSGtyhUKXiDnD7hxh4sJVgYZw==",
+        "version": "1.7.1",
+        "integrity": "sha512-g8WlTQijxXWJjPVZfFu1+EJg9cwwHrKDmIkcYMzx8CzYA+tDxl6NI7qQbKkbgw5UtHILsT5VH+RMzFzwnVJqAg==",
         "typePaths": ["dist/adapters/index.d.mts"]
       }
     ],
     "upstreamRepository": "https://github.com/better-auth/better-auth",
-    "upstreamTag": "v1.7.0-rc.2",
-    "upstreamCommit": "cc708e51bcb1d4c367d2bc6182e6fd7fd722ece8",
+    "upstreamTag": "v1.7.1",
+    "upstreamCommit": "2344536054f9164ca5d1670c270d299049ee233e",
     "sourceTestPaths": [
       "packages/core/src/db/adapter/factory.test.ts",
       "packages/core/src/db/adapter/get-id-field.test.ts",
@@ -269,9 +269,9 @@
       "targetPath": "src/runtime/convex-auth/component/schemaMetadata.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "cf79c73cfc264d11781d5474534be035c5474cef9e701dc2c9a601263ad97d6d",
-      "targetSha256": "6dbcadd5aa640cb1bcc194f7223d78cc7c2f1900a845a3e437df6508ef400dba",
+      "targetSha256": "ba3c5102d7da348e4a11e0dacb74b903b4fbc41aea2e4d1dd98fc3ed7e45c633",
       "classification": "regenerated",
-      "modificationSummary": "Generated adapter metadata with explicit indexed relationship and deletion policies for the exact maintained Better Auth, OAuth provider, JWKS, and database rate-limit schema.",
+      "modificationSummary": "Generated adapter metadata with explicit indexed relationship and deletion policies for the exact stable Better Auth 1.7.1 account identity, OAuth provider, JWKS, and database rate-limit schema.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -291,9 +291,9 @@
       "targetPath": "src/runtime/convex-auth/component/schema.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "cd186a315c6208e28d1ac0c1e231bb7d388de4cfab0720a5207236b77d24dca7",
-      "targetSha256": "cd6092db9894a7cca39c91403aec9099c88538dbb60548f7b51d01ac655c86d3",
+      "targetSha256": "92dea848abc2d8ba6c65e7f86f88fe878bb25830e65a2f6c7e20fc5e796ec7e2",
       "classification": "regenerated",
-      "modificationSummary": "Regenerated the fresh-install component schema and relationship indexes from the fixed supported Better Auth, OAuth provider, JWKS, and database rate-limit profile.",
+      "modificationSummary": "Regenerated the fresh-install component schema and relationship indexes from the fixed Better Auth 1.7.1 profile, including stable account identity and OAuth application metadata fields.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -324,9 +324,9 @@
       "targetPath": "src/runtime/convex-auth/create-better-convex-auth.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "610a4d7edfbb0fd3ab412d61e8103b9e416edaaf8e2719189c9cff345597150d",
-      "targetSha256": "e84733170493002e88f4f04e84204bf300dc291353aeaa82606627606d261f8c",
+      "targetSha256": "ef9dd947bb1cfdd09de9a944641ecabf79c0a756803fdcc978ed908b29143d81",
       "classification": "rewritten",
-      "modificationSummary": "Introduced one reviewed factory that owns adapter wiring, JWT and plugin ordering, route registration, signing-key operations, secret policy, and optional user-projection triggers while rejecting arbitrary Better Auth overrides.",
+      "modificationSummary": "Introduced one reviewed factory that owns adapter wiring, JWT and plugin ordering, route registration, signing-key operations, secret policy, and optional user-projection triggers; admits partial reviewed email/password and session policy, a fail-closed request-scoped user-creation policy, and an asynchronously resolved request-scoped OAuth profile; and rejects arbitrary Better Auth overrides.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -357,9 +357,9 @@
       "targetPath": "src/runtime/convex-auth/plugin.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
-      "targetSha256": "8feb4a96297f0ffd1b868eb038f0e822531bfd9022f247c564a2ce529b41894b",
+      "targetSha256": "97d3a1bcd743eac774c510248e51963dc2370de90059bb68d360fe73bce4016f",
       "classification": "rewritten",
-      "modificationSummary": "Rewrote the Convex plugin as the composition, request-guard, and session-issuance owner under the scoped Lupinum package identity; exact pinned OAuth Provider option/install/admin compatibility now lives in a separate fail-closed module rather than being presented as generic provider configuration.",
+      "modificationSummary": "Rewrote the Convex plugin as the composition, request-guard, and session-issuance owner under the scoped Lupinum package identity; exact stable OAuth Provider option/install/admin compatibility and token-method client authentication now live behind fail-closed local guards.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -390,9 +390,9 @@
       "targetPath": "src/runtime/convex-auth/oauth-security.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
-      "targetSha256": "219f10e3de565a043f049ae4b9bf785a5200f0a49970f1e1db212591b2625fc8",
+      "targetSha256": "1532dfb00dac0c448bf0fa7dc3165f9f847a330224e44e2ba0eef6e3cda27e02",
       "classification": "rewritten",
-      "modificationSummary": "Added provider security and token invariants behind a local structural profile that does not expose provider-private types: mandatory fail-closed privilege callbacks, bounded request parsing, canonical exact HTTPS or HTTP-loopback redirects, client/resource binding, S256 PKCE, projected metadata, access-token claim validation, and the documented time-bounded URL.canParse capability fill.",
+      "modificationSummary": "Added provider security and token invariants behind a local structural profile that does not expose provider-private types: mandatory fail-closed privilege callbacks, bounded request parsing, canonical exact HTTPS or HTTP-loopback redirects, token-method client classification, stable application-type validation, opaque join-row identity with compound client/resource binding, S256 PKCE, projected metadata, access-token claim validation, and the documented time-bounded URL.canParse capability fill.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -401,9 +401,9 @@
       "targetPath": "src/runtime/convex-auth/oauth-provider-compat.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
-      "targetSha256": "1a2656aad4509af26b71e4628926181a7e590ef5b981b348a137aed224ff0f9f",
+      "targetSha256": "e0530526fee049e06cf09bf684cfedfc8bf997f9239946716624934dc26e88a8",
       "classification": "rewritten",
-      "modificationSummary": "Isolated the exact-version Better Auth OAuth Provider compatibility firewall: scoped Lupinum plugin identity and order, installed callback identity, disabled upstream routes, fixed JWT/JWKS and storage profile, production proxy requirement, and safe administrator client/resource mutations.",
+      "modificationSummary": "Isolated the exact-version Better Auth OAuth Provider compatibility firewall: scoped Lupinum plugin identity and order, installed callback identity, disabled upstream routes, fixed JWT/JWKS and storage profile, production proxy requirement, stable application-type projection, retired-field rejection, and safe administrator client/resource mutations.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -434,9 +434,9 @@
       "targetPath": "src/runtime/convex-auth/oauth-live-access.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "48ab81541ecb0e5545bd74fb78ca426c0d695bbb156e03e6a402063255ef428a",
-      "targetSha256": "3c4c40db6f907e8d40948873b34b858e3f7b863e00fc3d712a97aec5da5f5f44",
+      "targetSha256": "7b10571671d10e08e4149ff4d486573b153418837899c8b1efb379136711595b",
       "classification": "rewritten",
-      "modificationSummary": "Separated verified-token parsing from provider-owned live authority and rechecks the current session, user, client, resource, client-resource link, consent, expiry, and scopes through the component adapter before every MCP request.",
+      "modificationSummary": "Separated verified-token parsing from provider-owned live authority and rechecks the current session, user, client, resource, compound client-resource link, consent, expiry, and scopes through the component adapter before every MCP request without assuming provider-owned row IDs.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },

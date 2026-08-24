@@ -1,6 +1,6 @@
 import { oauthProvider as createOAuthProvider } from '@better-auth/oauth-provider'
-import type { Auth, BetterAuthOptions, InferAPI } from 'better-auth'
-import { betterAuth } from 'better-auth'
+import type { Auth, BetterAuthOptions, InferAPI, User } from 'better-auth'
+import { APIError, betterAuth } from 'better-auth'
 import {
   emailOTP,
   jwt,
@@ -14,6 +14,7 @@ import {
 } from 'better-auth/plugins'
 import type { GenericDataModel, HttpRouter } from 'convex/server'
 
+import type { AuthCtx } from './context'
 import { createAuthComponent } from './create-auth-component'
 import type { PinnedOAuthProviderProfile } from './oauth-security'
 import { requireAuthOrigin } from './origin'
@@ -31,30 +32,54 @@ type EmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification
 type BetterAuthSessionOptions = NonNullable<BetterAuthOptions['session']>
 type SocialProviders = NonNullable<BetterAuthOptions['socialProviders']>
 
-type ReviewedEmailAndPasswordOptions = Pick<
-  BetterAuthEmailAndPasswordOptions,
-  | 'disableSignUp'
-  | 'maxPasswordLength'
-  | 'onExistingUserSignUp'
-  | 'onPasswordReset'
-  | 'requireEmailVerification'
-  | 'resetPasswordTokenExpiresIn'
-  | 'revokeSessionsOnPasswordReset'
-  | 'sendResetPassword'
+type BetterConvexUserCreateDecision =
+  | { readonly allowed: false }
+  | {
+      readonly allowed: true
+      readonly user?: {
+        readonly email?: string
+        readonly id?: string
+      }
+    }
+
+type BetterConvexPendingUser = Readonly<
+  Pick<User, 'email' | 'emailVerified' | 'id' | 'image' | 'name'>
 >
 
-type ReviewedSessionOptions = Pick<BetterAuthSessionOptions, 'cookieCache'>
+type ReviewedEmailAndPasswordOptions = Partial<
+  Pick<
+    BetterAuthEmailAndPasswordOptions,
+    | 'disableSignUp'
+    | 'maxPasswordLength'
+    | 'onExistingUserSignUp'
+    | 'onPasswordReset'
+    | 'requireEmailVerification'
+    | 'resetPasswordTokenExpiresIn'
+    | 'revokeSessionsOnPasswordReset'
+    | 'sendResetPassword'
+  >
+>
+
+type ReviewedSessionOptions = Partial<Pick<BetterAuthSessionOptions, 'cookieCache'>>
 
 export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataModel> {
   readonly appName?: string
   readonly authFunctions?: AuthFunctions
+  readonly beforeUserCreate?: (input: {
+    readonly ctx: AuthCtx<DataModel>
+    readonly user: BetterConvexPendingUser
+  }) => BetterConvexUserCreateDecision | Promise<BetterConvexUserCreateDecision>
   readonly triggers?: AuthComponentTriggers<DataModel>
   readonly emailAndPassword?: false | ReviewedEmailAndPasswordOptions
   readonly emailVerification?: EmailVerificationOptions
   readonly emailOTP?: false | EmailOTPOptions
   readonly organization?: false | OrganizationOptions
   readonly twoFactor?: false | TwoFactorOptions
-  readonly oauthProvider?: PinnedOAuthProviderProfile
+  readonly oauthProvider?:
+    | PinnedOAuthProviderProfile
+    | ((
+        ctx: AuthCtx<DataModel>,
+      ) => PinnedOAuthProviderProfile | Promise<PinnedOAuthProviderProfile>)
   readonly session?: ReviewedSessionOptions
   readonly socialProviders?: SocialProviders | (() => SocialProviders)
   readonly defineSessionClaims?: NonNullable<
@@ -109,7 +134,16 @@ export type BetterConvexTeamOrganizationAuthInstance =
   BetterConvexOrganizationAuthInstance<ReviewedTeamOrganizationOptions>
 
 function rejectUnsupportedOptions(options: object): void {
-  for (const key of ['plugins', 'database', 'advanced', 'rateLimit', 'baseURL', 'basePath']) {
+  for (const key of [
+    'plugins',
+    'database',
+    'databaseHooks',
+    'user',
+    'advanced',
+    'rateLimit',
+    'baseURL',
+    'basePath',
+  ]) {
     if (Object.hasOwn(options, key)) {
       throw new Error(
         `[better-convex] createBetterConvexAuth owns "${key}"; arbitrary Better Auth configuration is not supported`,
@@ -132,6 +166,60 @@ function rejectUnsupportedOptions(options: object): void {
     'emailAndPassword',
   )
   assertOnlyKeys(record.session, ['cookieCache'], 'session')
+}
+
+function rejectUserCreation(): never {
+  throw new APIError('FORBIDDEN', { message: 'AUTH_USER_CREATE_REJECTED' })
+}
+
+function requiredIdentityValue(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.trim() === value
+}
+
+function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
+  ctx: AuthCtx<DataModel>,
+  callback: NonNullable<CreateBetterConvexAuthOptions<DataModel>['beforeUserCreate']>,
+) {
+  return async (user: User & Record<string, unknown>) => {
+    let decision: BetterConvexUserCreateDecision
+    try {
+      decision = await callback({
+        ctx,
+        user: Object.freeze({
+          email: user.email,
+          emailVerified: user.emailVerified,
+          id: user.id,
+          image: user.image,
+          name: user.name,
+        }),
+      })
+    } catch {
+      rejectUserCreation()
+    }
+
+    if (!decision || typeof decision !== 'object' || decision.allowed !== true) {
+      rejectUserCreation()
+    }
+
+    const patch = decision.user
+    if (patch === undefined) return
+    if (
+      !patch ||
+      typeof patch !== 'object' ||
+      (patch.id !== undefined && !requiredIdentityValue(patch.id)) ||
+      (patch.email !== undefined && !requiredIdentityValue(patch.email))
+    ) {
+      rejectUserCreation()
+    }
+
+    return {
+      data: {
+        ...user,
+        ...(patch.id === undefined ? {} : { id: patch.id }),
+        ...(patch.email === undefined ? {} : { email: patch.email }),
+      },
+    }
+  }
 }
 
 function assertOnlyKeys(value: unknown, allowed: readonly string[], path: string): void {
@@ -220,7 +308,10 @@ export function createBetterConvexAuth<
       const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
       assertVersionedSecrets(process.env.BETTER_AUTH_SECRETS)
       const authIssuer = `${siteUrl}/api/auth`
-      const oauthProfile = options.oauthProvider
+      const oauthProfile =
+        typeof options.oauthProvider === 'function'
+          ? await options.oauthProvider(ctx)
+          : options.oauthProvider
       const featurePlugins = [
         options.organization === false || options.organization === undefined
           ? null
@@ -274,6 +365,15 @@ export function createBetterConvexAuth<
         basePath: '/api/auth',
         baseURL: siteUrl,
         database: authComponent.adapter(ctx),
+        databaseHooks: options.beforeUserCreate
+          ? {
+              user: {
+                create: {
+                  before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
+                },
+              },
+            }
+          : undefined,
         disabledPaths: [
           '/token',
           '/get-access-token',

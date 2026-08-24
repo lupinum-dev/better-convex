@@ -75,7 +75,7 @@ describe('Better Auth adapter compound uniqueness', () => {
     await createAuthRow(test, 'account', {
       id: 'account_one',
       issuer: 'https://issuer.example.test',
-      providerAccountId: 'subject_one',
+      accountId: 'subject_one',
       providerId: 'provider_one',
       userId: 'user_one',
       createdAt: now,
@@ -84,7 +84,7 @@ describe('Better Auth adapter compound uniqueness', () => {
     await createAuthRow(test, 'account', {
       id: 'account_same_provider_user',
       issuer: 'https://issuer.example.test',
-      providerAccountId: 'subject_two',
+      accountId: 'subject_two',
       providerId: 'provider_one',
       userId: 'user_one',
       createdAt: now,
@@ -94,13 +94,13 @@ describe('Better Auth adapter compound uniqueness', () => {
       createAuthRow(test, 'account', {
         id: 'account_two',
         issuer: 'https://issuer.example.test',
-        providerAccountId: 'subject_one',
+        accountId: 'subject_one',
         providerId: 'provider_one',
         userId: 'user_two',
         createdAt: now,
         updatedAt: now,
       }),
-    ).rejects.toThrow('AUTH_UNIQUE_CONFLICT:account.issuer_providerAccountId')
+    ).rejects.toThrow('AUTH_UNIQUE_CONFLICT:account.issuer_accountId')
 
     await createAuthRow(test, 'member', {
       id: 'member_one',

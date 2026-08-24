@@ -130,7 +130,7 @@ async function runWorker() {
           createdAt: 1_700_000_000_000,
           id: `${id}-${workerIndex}-${index}`,
           issuer: compoundAccountIssuer,
-          providerAccountId: key,
+          accountId: key,
           providerId: compoundAccountProvider,
           updatedAt: 1_700_000_000_000,
           userId: `${id}-user`,
@@ -403,7 +403,7 @@ async function runMain() {
     }
     const compoundAccount = {
       id: 'bcn-auth-concurrency-v1-compound-account-row',
-      providerAccountId: 'bcn-auth-concurrency-v1-compound-account',
+      accountId: 'bcn-auth-concurrency-v1-compound-account',
     }
     for (const row of Object.values(rows)) {
       await client.mutation(authConcurrencyFunctions.remove, { id: row.id })
@@ -440,7 +440,7 @@ async function runMain() {
       model: 'account',
       where: [
         { field: 'issuer', value: compoundAccountIssuer },
-        { field: 'providerAccountId', value: compoundAccount.providerAccountId },
+        { field: 'accountId', value: compoundAccount.accountId },
       ],
     })
     await client.function(authAdapterComponentFunctions.remove, authComponentPath, {
@@ -463,7 +463,7 @@ async function runMain() {
       adminKey,
       'createSameAccountIdentity',
       compoundAccount.id,
-      compoundAccount.providerAccountId,
+      compoundAccount.accountId,
       workers,
       1,
       authComponentPath,
@@ -474,7 +474,7 @@ async function runMain() {
     )
     assertOnlyFailure(
       sameAccountIdentity,
-      'AUTH_UNIQUE_CONFLICT:account.issuer_providerAccountId',
+      'AUTH_UNIQUE_CONFLICT:account.issuer_accountId',
       'AUTH_COMPOUND_UNIQUE_RACE_UNEXPECTED_FAILURE',
     )
 

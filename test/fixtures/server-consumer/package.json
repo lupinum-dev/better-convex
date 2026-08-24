@@ -10,7 +10,7 @@
   },
   "devDependencies": {
     "@lupinum/better-convex-nuxt": "file:./better-convex-nuxt.tgz",
-    "better-auth": "1.7.0-rc.2",
+    "better-auth": "1.7.1",
     "convex": "1.42.2",
     "nuxt": "4.5.2",
     "typescript": "5.9.3",

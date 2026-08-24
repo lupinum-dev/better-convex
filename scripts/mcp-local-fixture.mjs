@@ -309,6 +309,8 @@ export async function startLocalMcpOAuthFixture(options = {}) {
   const cwd = join(tempRoot, 'app')
   let convex
   let nuxt
+  let readConvexLog = () => ''
+  let readNuxtLog = () => ''
   let released = false
   const secretOverrides = options.secretOverridesForTest
   const trustedClientIpHeader = options.trustedClientIpHeaderForTest
@@ -442,6 +444,7 @@ export async function startLocalMcpOAuthFixture(options = {}) {
       },
     )
     const convexLog = capture(convex)
+    readConvexLog = convexLog
     await waitUntil(async () => {
       if (convex.exitCode !== null) {
         throw new Error(`Convex exited early: ${safeLog(convexLog(), secrets)}`)
@@ -528,6 +531,7 @@ export async function startLocalMcpOAuthFixture(options = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const nuxtLog = capture(nuxt)
+    readNuxtLog = nuxtLog
     try {
       await waitUntil(async () => {
         if (nuxt.exitCode !== null)
@@ -590,6 +594,11 @@ export async function startLocalMcpOAuthFixture(options = {}) {
       return Object.freeze({ ...counts })
     }
 
+    const readSafeServiceLogsForTest = () => ({
+      convex: safeLog(readConvexLog(), secrets),
+      nuxt: safeLog(readNuxtLog(), secrets),
+    })
+
     return Object.freeze({
       convexSiteUrl,
       convexUrl,
@@ -599,6 +608,7 @@ export async function startLocalMcpOAuthFixture(options = {}) {
       password,
       nuxtMode,
       readOAuthCredentialCountsForTest,
+      readSafeServiceLogsForTest,
       registerConfidentialClientSecretForRedaction,
       release,
       retireCurrentAuthSecretForTest,

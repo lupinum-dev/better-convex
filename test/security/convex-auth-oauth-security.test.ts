@@ -59,7 +59,6 @@ function storedClient(overrides: Record<string, unknown> = {}) {
     dpopBoundAccessTokens: false,
     enableEndSession: false,
     grantTypes: ['authorization_code'],
-    public: false,
     redirectUris: ['https://client.example.test/callback'],
     requirePKCE: true,
     responseTypes: ['code'],
@@ -67,7 +66,7 @@ function storedClient(overrides: Record<string, unknown> = {}) {
     skipConsent: false,
     subjectType: 'public',
     tokenEndpointAuthMethod: 'client_secret_basic',
-    type: 'web',
+    applicationType: 'web',
     ...overrides,
   }
 }
@@ -83,7 +82,7 @@ function provisioningClient(overrides: Record<string, unknown> = {}) {
     scope: 'mcp:read mcp:write',
     skip_consent: false,
     token_endpoint_auth_method: 'client_secret_basic',
-    type: 'web',
+    application_type: 'web',
     ...overrides,
   }
 }
@@ -92,10 +91,9 @@ function storedPublicClient(overrides: Record<string, unknown> = {}) {
   return storedClient({
     clientId: 'public-client',
     clientSecret: null,
-    public: true,
     redirectUris: ['http://127.0.0.1:3334/oauth/callback'],
     tokenEndpointAuthMethod: 'none',
-    type: 'native',
+    applicationType: 'native',
     ...overrides,
   })
 }
@@ -262,7 +260,7 @@ describe('stored OAuth beta inventory', () => {
     expect(() => assertSafeStoredOAuthResource(storedResource(), scopes)).not.toThrow()
     expect(() =>
       assertSafeStoredOAuthClientResource(
-        { id: `client-1::${resource}`, clientId: 'client-1', resourceId: resource },
+        { id: 'opaque-link-row', clientId: 'client-1', resourceId: resource },
         'client-1',
         resource,
       ),
@@ -271,12 +269,11 @@ describe('stored OAuth beta inventory', () => {
 
   it.each([
     {
-      public: true,
       clientSecret: 'hashed-secret',
       tokenEndpointAuthMethod: 'none',
-      type: 'native',
+      applicationType: 'native',
     },
-    { public: false, clientSecret: null, tokenEndpointAuthMethod: 'none', type: 'native' },
+    { clientSecret: null, tokenEndpointAuthMethod: 'none', applicationType: 'web' },
     { tokenEndpointAuthMethod: 'client_secret_post' },
     { tokenEndpointAuthMethod: 'private_key_jwt', jwks: '{}' },
     { grantTypes: ['refresh_token'] },
@@ -287,6 +284,10 @@ describe('stored OAuth beta inventory', () => {
     { dpopBoundAccessTokens: true },
     { enableEndSession: true },
     { metadata: JSON.stringify({ dpop_bound_access_tokens: true }) },
+    { clientCredentialsScopes: ['mcp:read'] },
+    { clientDiscoveryId: 'discovery-client' },
+    { public: false },
+    { type: 'web' },
     { expiresAt: new Date(0) },
   ])('rejects a malicious or drifted stored client %#', (override) => {
     expect(() => assertSafeStoredOAuthClient(storedClient(override), scopes)).toThrow(
@@ -296,9 +297,10 @@ describe('stored OAuth beta inventory', () => {
 
   it.each([
     { clientSecret: 'secret' },
-    { public: false },
     { tokenEndpointAuthMethod: 'client_secret_basic' },
-    { type: 'web' },
+    { applicationType: 'web' },
+    { public: true },
+    { type: 'native' },
   ])('rejects a public client with secret or method ambiguity %#', (override) => {
     expect(() => assertSafeStoredOAuthClient(storedPublicClient(override), scopes)).toThrow(
       'AUTH_OAUTH_CONFIG_INVALID',
@@ -400,12 +402,11 @@ describe('admin OAuth provisioning boundary', () => {
     {
       accepted: true,
       name: 'public-none native client',
-      request: { token_endpoint_auth_method: 'none', type: 'native' },
+      request: { token_endpoint_auth_method: 'none', application_type: 'native' },
       stored: {
         clientSecret: null,
-        public: true,
         tokenEndpointAuthMethod: 'none',
-        type: 'native',
+        applicationType: 'native',
       },
     },
     {
@@ -495,8 +496,8 @@ describe('admin OAuth provisioning boundary', () => {
     {
       accepted: false,
       name: 'confidential native mismatch',
-      request: { type: 'native' },
-      stored: { type: 'native' },
+      request: { application_type: 'native' },
+      stored: { applicationType: 'native' },
     },
   ])('keeps request and stored validation aligned: $name', ({ accepted, request, stored }) => {
     const requestValidation = () =>
@@ -558,8 +559,8 @@ describe('admin OAuth provisioning boundary', () => {
     {
       accepted: false,
       name: 'confidential native update',
-      request: { type: 'native' },
-      stored: { type: 'native' },
+      request: { application_type: 'native' },
+      stored: { applicationType: 'native' },
     },
     {
       accepted: false,

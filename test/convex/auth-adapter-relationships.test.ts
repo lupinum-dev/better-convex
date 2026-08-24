@@ -92,7 +92,7 @@ describe('Better Auth relationship enforcement', () => {
     await createRow(test, 'account', {
       id: 'account_one',
       issuer: 'https://issuer.example.test',
-      providerAccountId: 'subject_one',
+      accountId: 'subject_one',
       providerId: 'provider_one',
       userId: 'user_one',
       createdAt: now,
@@ -124,7 +124,7 @@ describe('Better Auth relationship enforcement', () => {
     await createRow(test, 'account', {
       id: 'account_cascade',
       issuer: 'https://issuer.example.test',
-      providerAccountId: 'subject_cascade',
+      accountId: 'subject_cascade',
       providerId: 'provider',
       userId: 'user_cascade',
       createdAt: now,

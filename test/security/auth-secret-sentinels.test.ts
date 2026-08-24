@@ -241,7 +241,7 @@ describe('Section 9.6 secret sentinel gate', () => {
         redirect_uris: ['https://client.example.test/callback'],
         response_types: ['code'],
         token_endpoint_auth_method: 'client_secret_basic',
-        type: 'web',
+        application_type: 'web',
       },
       headers: new Headers({ cookie: signUp.headers.get('set-cookie') ?? '' }),
     })
@@ -270,7 +270,7 @@ describe('Section 9.6 secret sentinel gate', () => {
       id: 'social-account-row',
       idToken: protectedIdToken.idToken,
       issuer: 'https://sentinel-provider.example.test',
-      providerAccountId: 'social-account',
+      accountId: 'social-account',
       providerId: 'sentinel-provider',
       refreshToken: encryptedRefreshToken,
       userId: database.user![0]!.id,

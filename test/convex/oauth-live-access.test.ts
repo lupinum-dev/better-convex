@@ -76,7 +76,7 @@ async function createLiveGrant(test: ReturnType<typeof initTest>): Promise<void>
   })
   await createRow(test, 'oauthClientResource', {
     clientId: access.clientId,
-    id: `${access.clientId}::${access.resource}`,
+    id: 'oauth-client-resource-row',
     resourceId: access.resource,
   })
   await createRow(test, 'oauthConsent', {
@@ -156,7 +156,7 @@ describe('provider-owned OAuth live access validation', () => {
     ['session', 'oauth-session'],
     ['user', 'oauth-user'],
     ['oauthClient', 'oauth-client-row'],
-    ['oauthClientResource', `${access.clientId}::${access.resource}`],
+    ['oauthClientResource', 'oauth-client-resource-row'],
     ['oauthConsent', 'oauth-consent-row'],
   ] as const)('rejects a deleted %s authority row', async (model, id) => {
     const test = initTest()

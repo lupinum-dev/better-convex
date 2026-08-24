@@ -8,7 +8,7 @@ The current package family consists of the `@lupinum/better-convex-nuxt@1.0.0-be
 `@lupinum/better-convex-vue@1.0.0-beta.1`, and `@lupinum/better-convex-mcp@1.0.0-beta.1`
 prerelease candidates. The Nuxt candidate uses Node
 `^22.19.0 || ^24.11.0`, Nuxt `4.5.2`, Convex `1.42.2`, Better Auth
-`1.7.0-rc.2`, `@better-auth/oauth-provider` `1.7.0-rc.2`, and Convex Helpers
+`1.7.1`, `@better-auth/oauth-provider` `1.7.1`, and Convex Helpers
 `0.1.114`.
 Each package manifest is canonical for its own dependencies and peers; each
 reviewed release descriptor binds its package manifest into that package's
@@ -20,7 +20,7 @@ auth-enabled applications. Better Auth owns its Kysely dependency; Better Convex
 does not redeclare it. An auth-enabled application resolves one physical
 instance of each stateful runtime in the tuple.
 
-This is not yet a stable authentication tuple. Stable publication is blocked until a compatible stable Better Auth 1.7 release exists and the human release gates below pass.
+This is the reviewed stable authentication tuple for the source candidate. Publication remains blocked until the human release gates below pass.
 
 ## Reporting a vulnerability
 
