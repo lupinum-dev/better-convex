@@ -162,6 +162,14 @@ const intentStep = candidate.steps.find(
   (step) => step.name === 'Derive the unique incomplete release intent',
 )
 assert.deepEqual(intentStep.env, { GH_TOKEN: '${{ github.token }}' })
+const mcpBackend = candidate.steps.find(
+  (step) => step.name === 'Install the reviewed MCP conformance backend',
+)
+assert.equal(
+  mcpBackend.if,
+  "steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'",
+)
+assert.equal(mcpBackend.run, 'pnpm check:auth-backend --install')
 
 const publication = publish.jobs['verify-publication']
 assert.deepEqual(publication.needs, ['verify', 'publish-packages'])

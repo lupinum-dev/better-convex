@@ -112,6 +112,13 @@ describe('state-aware Better Convex release workflows', () => {
       ({ name }) => name === 'Derive the unique incomplete release intent',
     )
     expect(intent?.env).toEqual({ GH_TOKEN: '${{ github.token }}' })
+    const mcpBackend = requireJob(ci, 'release-candidate').steps?.find(
+      ({ name }) => name === 'Install the reviewed MCP conformance backend',
+    )
+    expect(mcpBackend).toMatchObject({
+      if: "steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'",
+      run: 'pnpm check:auth-backend --install',
+    })
   })
 
   it('starts from successful CI or an input-free reconciliation dispatch', () => {
