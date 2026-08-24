@@ -1,5 +1,15 @@
 # Changelog
 
+## mcp-v1.0.0-beta.1
+
+- Release `@lupinum/better-convex-mcp` on its independent 1.0 beta line while
+  preserving the coupled Vue/Nuxt version and release history.
+- Consolidate MCP server operation on the `better-convex` command with
+  provider-neutral request handling, OAuth resource verification, live access
+  checks, and sanitized tool-failure hooks.
+- Provide the experimental Vue MCP App boundary from the MCP-owned `/vue`
+  entrypoint so the Vue runtime remains provider-neutral.
+
 ## v1.0.0-beta.1
 
 - Support stable `latest` releases and independent `mcp-v*` releases without
