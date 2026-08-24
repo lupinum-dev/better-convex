@@ -417,7 +417,7 @@ describe('package entry manifest', () => {
         'ohash',
         'vue',
       ],
-      typeExternalSpecifiers: ['convex/browser', 'convex/server', 'vue'],
+      typeExternalSpecifiers: ['@standard-schema/spec', 'convex/browser', 'convex/server', 'vue'],
     })
   })
 

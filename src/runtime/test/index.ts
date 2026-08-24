@@ -2,6 +2,7 @@ import {
   createBetterConvex,
   useConvexAction,
   useConvexConnectionState,
+  useConvexForm,
   useConvexMutation,
   useConvexPaginatedQuery,
   useConvexQuery,
@@ -55,6 +56,7 @@ export interface BetterConvexTestRuntime {
     useConvexAction: typeof useConvexAction
     useConvexConnectionState: typeof useConvexConnectionState
     useConvexFileUpload: BetterConvexTestFileUploadComposable
+    useConvexForm: typeof useConvexForm
     useConvexMutation: typeof useConvexMutation
     useConvexPaginatedQuery: typeof useConvexPaginatedQuery
     useConvexQuery: typeof useConvexQuery
@@ -99,6 +101,7 @@ export function setupBetterConvexTest(
       useConvexAction,
       useConvexConnectionState,
       useConvexFileUpload: uploads.useConvexFileUpload,
+      useConvexForm,
       useConvexMutation,
       useConvexPaginatedQuery,
       useConvexQuery,

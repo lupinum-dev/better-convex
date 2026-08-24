@@ -37,6 +37,7 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@standard-schema/spec": "1.1.0",
     "ohash": "^2.0.11"
   },
   "devDependencies": {

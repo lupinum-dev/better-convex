@@ -175,6 +175,7 @@ function isAllowedClientLifecycleBareSpecifier(specifier) {
     specifier === 'convex/browser' ||
     specifier === 'convex/server' ||
     specifier === 'convex/values' ||
+    specifier === '@standard-schema/spec' ||
     specifier === 'ohash'
   )
 }
@@ -229,7 +230,7 @@ const RULES = [
   {
     name: 'client-lifecycle-island-browser-only',
     description:
-      'packages/vue/src/** may import only its own package, Vue, ohash, and reviewed Convex browser/value/type entries. Nuxt, Nitro, H3, Better Auth, MCP, aliases, and Node built-ins are forbidden.',
+      'packages/vue/src/** may import only its own package, Vue, ohash, Standard Schema types, and reviewed Convex browser/value/type entries. Nuxt, Nitro, H3, Better Auth, MCP, aliases, and Node built-ins are forbidden.',
     from: isClientLifecycle,
     disallow: (edge) => {
       if (!edge.isRelative) {

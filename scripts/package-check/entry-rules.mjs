@@ -164,7 +164,7 @@ const VUE_CHECKER_ENTRY_RULES = [
         'ohash',
         'vue',
       ],
-      typeExternalSpecifiers: ['convex/browser', 'convex/server', 'vue'],
+      typeExternalSpecifiers: ['@standard-schema/spec', 'convex/browser', 'convex/server', 'vue'],
     },
   },
   {

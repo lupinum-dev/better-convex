@@ -18,6 +18,7 @@ describe('module auto-import surface', () => {
     )
 
     expect(autoImportNames).toContain('useConvexAuth')
+    expect(autoImportNames).toContain('useConvexForm')
     expect(composableAutoImports).toContainEqual({
       name: 'useConvexAttachment',
       from: './runtime/composables/useConvexAttachment',

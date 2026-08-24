@@ -49,8 +49,13 @@ export type { ConvexAuthMode, ConvexAuthStatus } from './runtime/utils/auth-stat
 export type {
   ConvexCallStatus,
   ConvexClientHandle,
+  ConvexFormErrorKind,
+  ConvexFormErrorMapping,
+  ConvexFormIssue,
+  ConvexFormSubmitResult,
   OptimisticUpdate,
   UseConvexCall,
+  UseConvexFormReturn,
 } from '@lupinum/better-convex-vue'
 export type { ConvexRuntimeConfig } from './runtime/utils/runtime-config'
 export type { UseConvexAuthReturn } from './runtime/utils/auth-contract'
