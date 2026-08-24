@@ -62,6 +62,12 @@ function uses(workflow: Workflow) {
   )
 }
 
+function checkoutRef(workflow: Workflow, jobId: string) {
+  return requireJob(workflow, jobId).steps?.find(({ uses }) =>
+    String(uses ?? '').startsWith('actions/checkout@'),
+  )?.with?.ref
+}
+
 describe('state-aware Better Convex release workflows', () => {
   const ci = parseWorkflow('.github/workflows/ci.yml')
   const publish = parseWorkflow('.github/workflows/publish-prerelease.yml')
@@ -131,6 +137,7 @@ describe('state-aware Better Convex release workflows', () => {
       actions: 'read',
       contents: 'read',
     })
+    expect(checkoutRef(publish, 'verify')).toBe('${{ github.sha }}')
   })
 
   it('uses one protected OIDC job without privileged source execution', () => {
@@ -168,6 +175,7 @@ describe('state-aware Better Convex release workflows', () => {
     expect(runs(publish, 'verify-publication').join('\n')).toContain('for delay in 0 5 10 20 40 60')
     expect(runs(publish, 'verify-publication').join('\n')).toContain("pkg.mode === 'oidc'")
     expect(JSON.stringify(publication)).toContain('publication-verified-better-convex-release')
+    expect(checkoutRef(publish, 'verify-publication')).toBe('${{ github.sha }}')
 
     expect(needs(publish, 'github-release')).toEqual(['verify', 'verify-publication'])
     const releaseJob = requireJob(publish, 'github-release')
@@ -192,6 +200,7 @@ describe('state-aware Better Convex release workflows', () => {
     expect(runs(publish, 'verify-completed-release').join('\n')).toContain(
       'test "$ACTION" = complete',
     )
+    expect(checkoutRef(publish, 'verify-completed-release')).toBe('${{ github.sha }}')
   })
 
   it('pins actions and keeps default permissions read-only', () => {

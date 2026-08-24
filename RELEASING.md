@@ -83,6 +83,11 @@ The protected job checks current `main` again immediately before that first
 publication, so an approval wait cannot make the candidate stale. Reruns reuse
 the original retained candidate even after `main` advances.
 
+Reconciliation runs the verifier from the trusted workflow commit against the
+original retained candidate and its certified source SHA. It does not execute
+an older verifier from the historical package commit, so safety fixes can
+repair existing releases without changing their bytes or provenance.
+
 After the protected job, an unprivileged verifier proves the published bytes,
 channel, Sigstore certificate identity, source SHA, and trusted workflow identity
 before GitHub history is reconciled. This verifier uses a bounded retry window

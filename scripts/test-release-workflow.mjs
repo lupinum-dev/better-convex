@@ -98,6 +98,19 @@ assert(
     verifySource.includes('registry-verification.json') === false,
   'The unprivileged verifier must derive registry evidence before approval.',
 )
+const verifierJobs = [
+  verify,
+  publish.jobs['verify-publication'],
+  publish.jobs['verify-completed-release'],
+]
+for (const job of verifierJobs) {
+  const checkout = job.steps.find((step) => String(step.uses ?? '').startsWith('actions/checkout@'))
+  assert.equal(
+    checkout?.with?.ref,
+    '${{ github.sha }}',
+    'Reconciliation must use the current trusted verifier against retained evidence.',
+  )
+}
 
 const release = publish.jobs['github-release']
 assert.equal(release.permissions.contents, 'write')
