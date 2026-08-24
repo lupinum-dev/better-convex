@@ -384,6 +384,13 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
         name: 'candidate lock update',
         event: 'pull_request',
         paths: ['starters/public/pnpm-lock.yaml'],
+        artifact: 'false',
+        full: 'true',
+      },
+      {
+        name: 'artifact verifier change',
+        event: 'pull_request',
+        paths: ['scripts/release-smoke.mjs'],
         artifact: 'true',
         full: 'true',
       },

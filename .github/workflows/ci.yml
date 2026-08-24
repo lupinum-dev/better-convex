@@ -43,7 +43,7 @@ jobs:
                 /^(?:docs\/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
               )
             const releaseArtifactInputs = paths.some((path) =>
-              /^(?:demo\/pnpm-lock\.yaml|starters\/(?:agency|mcp-oauth-agent|public|team)\/pnpm-lock\.yaml|scripts\/(?:candidate-app-locks|prepare-candidate-app-locks|release-preflight-tarballs|release-smoke)\.mjs)$/u.test(path),
+              /^scripts\/(?:candidate-app-locks|prepare-candidate-app-locks|release-preflight-tarballs|release-smoke)\.mjs$/u.test(path),
             )
             core.setOutput('artifact', String(runAll || releaseArtifactInputs))
             core.setOutput('full', String(runAll || !publicDocsOnly))
