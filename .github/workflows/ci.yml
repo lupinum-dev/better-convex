@@ -43,7 +43,7 @@ jobs:
                 /^(?:docs\/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
               )
             const releaseArtifactInputs = paths.some((path) =>
-              /^scripts\/(?:candidate-app-locks|prepare-candidate-app-locks|prepare-candidate-set|release|release-preflight-tarballs|release-smoke)\.mjs$/u.test(path),
+              /^(?:scripts\/(?:candidate-app-locks|create-release-candidate|prepare-candidate-app-locks|prepare-candidate-set|reconcile-release|release|release-intent|release-preflight-tarballs|release-smoke|test-lazy-release|test-release-workflow)\.mjs|\.github\/workflows\/(?:ci|publish-prerelease)\.yml)$/u.test(path),
             )
             core.setOutput('artifact', String(runAll || releaseArtifactInputs))
             core.setOutput('full', String(runAll || !publicDocsOnly))
@@ -217,7 +217,8 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
-  release-gate:
+  source-certification:
+    name: Source certification
     needs:
       [
         classify,
@@ -261,3 +262,89 @@ jobs:
             if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi
           done
           if [ "$ARTIFACT" = true ]; then test "$RELEASE_SMOKE" = success; else test "$RELEASE_SMOKE" = skipped; fi
+
+  release-candidate:
+    name: Release candidate
+    needs: source-certification
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.source-certification.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+          package-manager-cache: false
+      - name: Install the pinned release toolchain
+        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Derive the unique incomplete release intent
+        id: intent
+        run: node scripts/release-intent.mjs --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+      - name: Verify reviewed release ownership and identity
+        if: steps.intent.outputs.ready == 'true'
+        run: pnpm check:security-governance --release
+        env:
+          BCN_GOVERNANCE_MODE: solo-maintainer
+          RELEASE_OWNER: ${{ github.actor }}
+          RELEASE_TAG: ${{ steps.intent.outputs.tag }}
+          RELEASE_TARGET: ${{ steps.intent.outputs.unit }}
+      - name: Resolve Vue/Nuxt artifact coordinates
+        if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'vue-nuxt'
+        id: candidate_set
+        run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
+      - name: Resolve MCP artifact coordinates
+        if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'
+        id: mcp
+        run: node scripts/print-package-artifact-coordinates.mjs --package mcp >> "$GITHUB_OUTPUT"
+      - name: Build the Vue/Nuxt unit once
+        if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'vue-nuxt'
+        run: pnpm release:artifact:set
+      - name: Build the MCP unit once
+        if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'
+        run: node scripts/release.mjs artifact --package mcp && node scripts/release-target.mjs write-mcp-metadata
+      - name: Verify the Vue/Nuxt unit
+        if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'vue-nuxt'
+        run: pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Verify the MCP unit
+        if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'
+        run: pnpm release:verify --package mcp --artifact-manifest "${{ steps.mcp.outputs.evidence }}"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Create the immutable release record
+        if: steps.intent.outputs.ready == 'true'
+        run: node scripts/create-release-candidate.mjs "${{ steps.intent.outputs.unit }}"
+      - name: Retain the exact release candidate
+        if: steps.intent.outputs.ready == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate
+          path: .release-candidate/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+
+  release-gate:
+    needs: [source-certification, release-candidate]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require source certification and the main candidate decision
+        env:
+          SOURCE_CERTIFICATION: ${{ needs.source-certification.result }}
+          RELEASE_CANDIDATE: ${{ needs.release-candidate.result }}
+        run: |
+          test "$SOURCE_CERTIFICATION" = success
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            test "$RELEASE_CANDIDATE" = success
+          else
+            test "$RELEASE_CANDIDATE" = skipped
+          fi

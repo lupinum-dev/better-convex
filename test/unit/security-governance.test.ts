@@ -50,22 +50,29 @@ describe('security governance gate', () => {
     expect(validateReleaseIdentity('v1.0.0', '1.0.0', 'mcp')).not.toEqual([])
   })
 
-  it('runs only in the prerelease workflow with GitHub-owned release identity', () => {
-    const prerelease = parse(
-      readFileSync(resolve(root, '.github/workflows/publish-prerelease.yml'), 'utf8'),
-    ) as {
-      jobs?: Record<string, { steps?: Array<{ env?: Record<string, unknown>; run?: unknown }> }>
+  it('runs before candidate minting with derived GitHub-owned release identity', () => {
+    const ci = parse(readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')) as {
+      jobs?: Record<
+        string,
+        {
+          steps?: Array<{
+            env?: Record<string, unknown>
+            if?: unknown
+            run?: unknown
+          }>
+        }
+      >
     }
-    const gate = Object.values(prerelease.jobs ?? {})
-      .flatMap((job) => job.steps ?? [])
-      .find((step) => step.run === 'pnpm check:security-governance --release')
+    const gate = ci.jobs?.['release-candidate']?.steps?.find(
+      (step) => step.run === 'pnpm check:security-governance --release',
+    )
     expect(gate?.env).toEqual({
       BCN_GOVERNANCE_MODE: 'solo-maintainer',
       RELEASE_OWNER: '${{ github.actor }}',
-      RELEASE_TAG:
-        "${{ inputs.target == 'mcp' && format('mcp-v{0}', inputs.version) || format('v{0}', inputs.version) }}",
-      RELEASE_TARGET: '${{ inputs.target }}',
+      RELEASE_TAG: '${{ steps.intent.outputs.tag }}',
+      RELEASE_TARGET: '${{ steps.intent.outputs.unit }}',
     })
+    expect(gate?.if).toBe("steps.intent.outputs.ready == 'true'")
 
     const scheduled = readFileSync(resolve(root, '.github/workflows/security-extended.yml'), 'utf8')
     expect(scheduled).not.toContain('check:security-governance')

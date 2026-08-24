@@ -1,600 +1,299 @@
 name: publish-prerelease
 
 on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      version:
-        description: Exact version of the selected release target
-        required: true
-        type: string
-      target:
-        description: Coupled Vue/Nuxt set or independently versioned MCP package
-        required: true
-        default: vue-nuxt
-        type: choice
-        options:
-          - vue-nuxt
-          - mcp
-      bootstrap_packages:
-        description: Comma-separated packages explicitly authorized for first-version bootstrap recovery
-        required: false
-        default: ''
-        type: string
 
 concurrency:
   group: publish-better-convex
   cancel-in-progress: false
 
 permissions:
-  checks: read
   contents: read
 
-env:
-  RELEASE_NODE_VERSION: '22.19.0'
-  RELEASE_NPM_VERSION: '11.18.0'
-
 jobs:
-  preflight-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
-          package-manager-cache: false
-      - name: Require current main and the exact target version
-        env:
-          BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
-          RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_TARGET: ${{ inputs.target }}
-        run: |
-          test "$GITHUB_REF" = refs/heads/main
-          if [ "$RELEASE_TARGET" = vue-nuxt ]; then
-            test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
-          elif [ "$RELEASE_TARGET" = mcp ]; then
-            test "$(node -p "require('./packages/mcp/package.json').version")" = "$RELEASE_VERSION"
-          else
-            exit 1
-          fi
-          node -e "const allowed=new Set(['@lupinum/better-convex-vue','@lupinum/better-convex-nuxt','@lupinum/better-convex-mcp']); const requested=(process.env.BOOTSTRAP_PACKAGES||'').split(',').map(value=>value.trim()).filter(Boolean); if(new Set(requested).size!==requested.length||requested.some(name=>!allowed.has(name))) throw new Error('bootstrap_packages must contain unique Better Convex package names.')"
-      - name: Require an unused release tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_TARGET: ${{ inputs.target }}
-        run: |
-          if [ "$RELEASE_TARGET" = mcp ]; then TAG="mcp-v$RELEASE_VERSION"; else TAG="v$RELEASE_VERSION"; fi
-          status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
-            --header "Authorization: Bearer $GH_TOKEN" \
-            --header "Accept: application/vnd.github+json" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")
-          test "$status" = 404
-      - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
-      - run: pnpm install --frozen-lockfile
-      - name: Run the disposable lock and package smoke
-        run: pnpm release:smoke
-
-  source-certification:
-    needs: preflight-smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
-          package-manager-cache: false
-      - name: Require the exact commit's authoritative hosted certification
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/assert-hosted-source-certification.mjs
-
-  build-candidates:
-    needs: release-security
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    env:
-      BCN_RELEASE_TARGET: ${{ inputs.target }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
-          package-manager-cache: false
-
-      - name: Install pinned release tooling
-        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
-
-      - name: Verify protected release identity
-        env:
-          BCN_GOVERNANCE_MODE: solo-maintainer
-          RELEASE_OWNER: ${{ github.actor }}
-          RELEASE_TAG: ${{ inputs.target == 'mcp' && format('mcp-v{0}', inputs.version) || format('v{0}', inputs.version) }}
-          RELEASE_TARGET: ${{ inputs.target }}
-        run: pnpm check:security-governance --release
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Resolve the reviewed Vue/Nuxt candidate-set coordinates
-        if: inputs.target == 'vue-nuxt'
-        id: candidate_set
-        run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
-
-      - name: Build the immutable Vue/Nuxt candidate set once
-        if: inputs.target == 'vue-nuxt'
-        run: pnpm release:artifact:set
-
-      - name: Upload the immutable Vue/Nuxt candidate set
-        if: inputs.target == 'vue-nuxt'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.candidate_set.outputs.artifact_name }}
-          path: |
-            ${{ steps.candidate_set.outputs.vue_directory }}/
-            ${{ steps.candidate_set.outputs.nuxt_directory }}/
-            ${{ steps.candidate_set.outputs.set_directory }}/
-          if-no-files-found: error
-          include-hidden-files: true
-          retention-days: 90
-
-      - name: Resolve the reviewed MCP artifact coordinates
-        if: inputs.target == 'mcp'
-        id: mcp
-        run: node scripts/print-package-artifact-coordinates.mjs --package mcp >> "$GITHUB_OUTPUT"
-
-      - name: Build the immutable MCP candidate once
-        if: inputs.target == 'mcp'
-        run: node scripts/release.mjs artifact --package mcp
-
-      - name: Retain independently versioned MCP release notes
-        if: inputs.target == 'mcp'
-        run: node scripts/release-target.mjs write-mcp-metadata
-
-      - name: Upload the immutable MCP candidate
-        if: inputs.target == 'mcp'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.mcp.outputs.artifact_name }}
-          path: ${{ steps.mcp.outputs.directory }}/
-          if-no-files-found: error
-          include-hidden-files: true
-          retention-days: 90
-
-  release-security:
-    needs: source-certification
-    runs-on: ubuntu-latest
+  verify:
+    name: Verify retained release candidate
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
+      actions: read
       contents: read
-      security-events: write
+    outputs:
+      action: ${{ steps.state.outputs.action }}
+      channel: ${{ steps.state.outputs.channel }}
+      sha: ${{ steps.state.outputs.sha }}
+      tag: ${{ steps.state.outputs.tag }}
+      unit: ${{ steps.state.outputs.unit }}
+      version: ${{ steps.state.outputs.version }}
     steps:
+      - name: Select one unique incomplete CI candidate
+        id: ci
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const readJson = async (path, ref) => {
+              const response = await github.rest.repos.getContent({ ...context.repo, path, ref })
+              if (Array.isArray(response.data) || response.data.type !== 'file') throw new Error(`Missing ${path} at ${ref}.`)
+              return JSON.parse(Buffer.from(response.data.content, response.data.encoding).toString('utf8'))
+            }
+            const readText = async (path, ref) => {
+              const response = await github.rest.repos.getContent({ ...context.repo, path, ref })
+              if (Array.isArray(response.data) || response.data.type !== 'file') throw new Error(`Missing ${path} at ${ref}.`)
+              return Buffer.from(response.data.content, response.data.encoding).toString('utf8')
+            }
+            if (context.eventName === 'workflow_dispatch') {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                ...context.repo,
+                workflow_id: 'ci.yml',
+                status: 'success',
+                event: 'push',
+                branch: 'main',
+                per_page: 100,
+              })
+              const retained = []
+              const incomplete = []
+              for (const run of runs) {
+                const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, { ...context.repo, run_id: run.id, per_page: 100 })
+                if (!artifacts.some(artifact => artifact.name === 'release-candidate' && artifact.expired === false)) continue
+                const root = await readJson('package.json', run.head_sha)
+                const vue = await readJson('packages/vue/package.json', run.head_sha)
+                const mcp = await readJson('packages/mcp/package.json', run.head_sha)
+                if (root.version !== vue.version) throw new Error(`Vue/Nuxt coupling failed at ${run.head_sha}.`)
+                const changelog = await readText('CHANGELOG.md', run.head_sha)
+                const units = [
+                  { tag: `v${root.version}`, version: root.version, packages: ['@lupinum/better-convex-vue', '@lupinum/better-convex-nuxt'] },
+                  { tag: `mcp-v${mcp.version}`, version: mcp.version, packages: ['@lupinum/better-convex-mcp'] },
+                ].filter(unit => changelog.split('\n').some(line => line === `## ${unit.tag}` || line.startsWith(`## ${unit.tag} `)))
+                if (units.length !== 1) continue
+                const unit = units[0]
+                let releaseIncomplete = false
+                for (const name of unit.packages) {
+                  const response = await fetch(`https://registry.npmjs.org/${name.replace('/', '%2f')}/${unit.version}`)
+                  if (response.status === 404) releaseIncomplete = true
+                  else if (!response.ok) throw new Error(`npm state for ${name}@${unit.version} is unavailable: HTTP ${response.status}.`)
+                }
+                const tag = await github.rest.git.getRef({ ...context.repo, ref: `tags/${unit.tag}` }).catch(error => error.status === 404 ? null : Promise.reject(error))
+                const release = await github.rest.repos.getReleaseByTag({ ...context.repo, tag: unit.tag }).catch(error => error.status === 404 ? null : Promise.reject(error))
+                if (!tag || !release) releaseIncomplete = true
+                retained.push(run)
+                if (releaseIncomplete) incomplete.push(run)
+              }
+              if (incomplete.length > 1) throw new Error(`Multiple incomplete retained candidates exist (${incomplete.map(run => run.id).join(', ')}). Finish the earlier release first.`)
+              const selected = incomplete[0] ?? retained[0]
+              if (!selected) throw new Error('No retained release candidate is available for reconciliation.')
+              core.setOutput('active', 'true')
+              core.setOutput('run-id', String(selected.id))
+              core.setOutput('sha', selected.head_sha)
+            } else {
+              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                ...context.repo,
+                run_id: context.payload.workflow_run.id,
+                per_page: 100,
+              })
+              const candidate = artifacts.find(artifact => artifact.name === 'release-candidate' && artifact.expired === false)
+              if (!candidate) {
+                core.notice('CI produced no release candidate. The publication workflow is a clean no-op.')
+                core.setOutput('active', 'false')
+                return
+              }
+              core.setOutput('active', 'true')
+              core.setOutput('run-id', String(context.payload.workflow_run.id))
+              core.setOutput('sha', context.payload.workflow_run.head_sha)
+            }
+
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: steps.ci.outputs.active == 'true'
         with:
-          fetch-depth: 0
+          ref: ${{ steps.ci.outputs.sha }}
           persist-credentials: false
-
-      - name: Scan the release source for verified secrets
-        uses: trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55 # v3.95.9
-        with:
-          path: ./
-          base: ''
-          head: HEAD
-          version: 3.95.9
-          extra_args: --only-verified
-
-      - name: Initialize release CodeQL analysis
-        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
-        with:
-          languages: javascript-typescript
-
-      - name: Analyze the exact release source
-        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
-
-  verify-candidates:
-    needs: build-candidates
-    runs-on: ubuntu-latest
-    timeout-minutes: 150
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.ci.outputs.active == 'true'
         with:
-          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          node-version: '24.11.0'
           package-manager-cache: false
-
-      - name: Install pinned verification tooling
-        run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Install the packed-consumer browser
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install the reviewed local Convex backend
-        run: pnpm check:auth-backend --install
-
-      - name: Resolve the reviewed candidate coordinates
-        if: inputs.target == 'vue-nuxt'
-        id: candidate_set
-        run: node scripts/print-candidate-set-coordinates.mjs >> "$GITHUB_OUTPUT"
-
-      - name: Resolve the reviewed MCP coordinates
-        if: inputs.target == 'mcp'
-        id: mcp
-        run: node scripts/print-package-artifact-coordinates.mjs --package mcp >> "$GITHUB_OUTPUT"
-
-      - name: Resolve the reviewed Vue coordinates
-        if: inputs.target == 'vue-nuxt'
-        id: vue
-        run: node scripts/print-package-artifact-coordinates.mjs --package vue >> "$GITHUB_OUTPUT"
-
-      - name: Resolve the reviewed Nuxt coordinates
-        if: inputs.target == 'vue-nuxt'
-        id: nuxt
-        run: node scripts/print-package-artifact-coordinates.mjs --package nuxt >> "$GITHUB_OUTPUT"
-
-      - name: Download the exact Vue/Nuxt candidate set
-        if: inputs.target == 'vue-nuxt'
+          registry-url: https://registry.npmjs.org
+      - name: Install locked verification dependencies
+        if: steps.ci.outputs.active == 'true'
+        run: npm install --global corepack@0.34.5 && corepack enable && pnpm install --frozen-lockfile --ignore-scripts
+      - name: Download the exact retained candidate
+        if: steps.ci.outputs.active == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ${{ steps.candidate_set.outputs.artifact_name }}
-          path: ${{ steps.candidate_set.outputs.directory }}
-
-      - name: Download the exact MCP candidate
-        if: inputs.target == 'mcp'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+          github-token: ${{ github.token }}
+          name: release-candidate
+          path: .release
+          run-id: ${{ steps.ci.outputs.run-id }}
+      - name: Verify npm, provenance, GitHub history, and retained bytes
+        id: state
+        if: steps.ci.outputs.active == 'true'
+        env:
+          FIRST_ATTEMPT: ${{ github.event_name == 'workflow_run' && github.run_attempt == 1 }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/reconcile-release.mjs .release --summary "$GITHUB_STEP_SUMMARY" --github-output "$GITHUB_OUTPUT"
+      - name: Verify release artifact handoff
+        if: steps.ci.outputs.active == 'true'
+        run: echo 'release-artifact verify' && node scripts/reconcile-release.mjs .release --probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Upload the verified release plan
+        if: steps.ci.outputs.active == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.mcp.outputs.artifact_name }}
-          path: ${{ steps.mcp.outputs.directory }}
-
-      - name: Verify the exact Vue/Nuxt candidate set bytes
-        if: inputs.target == 'vue-nuxt'
-        run: pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Certify the exact Vue candidate
-        if: inputs.target == 'vue-nuxt'
-        run: >-
-          pnpm release:verify
-          --package vue
-          --artifact-manifest "${{ steps.vue.outputs.evidence }}"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Certify the exact Nuxt candidate
-        if: inputs.target == 'vue-nuxt'
-        run: >-
-          pnpm release:verify
-          --package nuxt
-          --artifact-manifest "${{ steps.nuxt.outputs.evidence }}"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Verify the exact MCP candidate bytes
-        if: inputs.target == 'mcp'
-        run: >-
-          pnpm release:verify
-          --package mcp
-          --artifact-manifest "${{ steps.mcp.outputs.evidence }}"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Record the artifact-only verification boundary
-        run: |
-          {
-            echo '## Exact artifact verification'
-            echo
-            echo 'Full source certification completed once before minting.'
-            echo 'This job verifies only immutable bytes, package identity, exports, dependency closure, and clean consumers.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          name: verified-better-convex-release
+          path: .release
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
 
   publish-packages:
-    needs: verify-candidates
-    runs-on: ubuntu-latest
+    name: Publish exact Better Convex artifacts
+    needs: verify
+    if: needs.verify.outputs.action == 'publish'
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: npm
     permissions:
       actions: read
+      contents: read
       id-token: write
-    outputs:
-      vue-mode: ${{ steps.publish.outputs.vue_mode }}
-      nuxt-mode: ${{ steps.publish.outputs.nuxt_mode }}
-      mcp-mode: ${{ steps.publish.outputs.mcp_mode }}
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.11.0'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Download the verified Vue and Nuxt artifact set
-        if: inputs.target == 'vue-nuxt'
+      - name: Download the verified release plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-candidate-vue-nuxt-set
-          path: .release-artifacts
-      - name: Download the verified MCP artifact
-        if: inputs.target == 'mcp'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: release-candidate-mcp
-          path: .release-artifacts
-      - name: Publish and verify the complete certified package set
-        id: publish
+          name: verified-better-convex-release
+          path: .release
+      - name: Publish only absent retained tarballs
         env:
-          BOOTSTRAP_PACKAGES: ${{ inputs.bootstrap_packages }}
-          RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_TARGET: ${{ inputs.target }}
+          RELEASE_CHANNEL: ${{ needs.verify.outputs.channel }}
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
         run: |
           node --input-type=module <<'NODE'
           import { spawnSync } from 'node:child_process'
           import { createHash } from 'node:crypto'
-          import { appendFileSync, readFileSync, readdirSync } from 'node:fs'
-          import { basename, dirname, join } from 'node:path'
-
+          import { readFileSync } from 'node:fs'
+          import { join } from 'node:path'
           const fail = message => { throw new Error(message) }
-          const packageOrder = [
-            ['vue', '@lupinum/better-convex-vue'],
-            ['nuxt', '@lupinum/better-convex-nuxt'],
-            ['mcp', '@lupinum/better-convex-mcp'],
-          ]
-          const expectedOrder = process.env.RELEASE_TARGET === 'mcp'
-            ? packageOrder.filter(([id]) => id === 'mcp')
-            : packageOrder.filter(([id]) => id !== 'mcp')
-          const allowed = new Set(expectedOrder.map(([, packageName]) => packageName))
-          const requested = (process.env.BOOTSTRAP_PACKAGES ?? '')
-            .split(',').map(value => value.trim()).filter(Boolean)
-          if (new Set(requested).size !== requested.length || requested.some(name => !allowed.has(name))) {
-            fail('bootstrap_packages must contain unique Better Convex package names.')
-          }
-          const authorized = new Set(requested)
-          const files = []
-          const walk = directory => {
-            for (const entry of readdirSync(directory, { withFileTypes: true })) {
-              const path = join(directory, entry.name)
-              if (entry.isDirectory()) walk(path)
-              else if (entry.isFile()) files.push(path)
-            }
-          }
-          walk('.release-artifacts')
-          const evidenceByPackage = new Map()
-          for (const path of files.filter(path => basename(path) === 'artifact.json')) {
-            const evidence = JSON.parse(readFileSync(path, 'utf8'))
-            if (!allowed.has(evidence.packageName) || evidenceByPackage.has(evidence.packageName)) {
-              fail('Artifact set contains an unknown or duplicate package.')
-            }
-            if (evidence.sourceCommit !== process.env.GITHUB_SHA) {
-              fail(`${evidence.packageName} is not bound to the release source.`)
-            }
-            if (
-              (evidence.packageName === '@lupinum/better-convex-vue' ||
-                evidence.packageName === '@lupinum/better-convex-nuxt') &&
-              evidence.version !== process.env.RELEASE_VERSION
-            ) {
-              fail(`${evidence.packageName} has the wrong release version.`)
-            }
-            const tarball = join(dirname(path), evidence.tarball?.file ?? '')
-            if (basename(tarball) !== evidence.tarball?.file || !files.includes(tarball)) {
-              fail(`${evidence.packageName} has invalid tarball evidence.`)
-            }
-            const bytes = readFileSync(tarball)
-            const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`
-            const sha256 = createHash('sha256').update(bytes).digest('hex')
-            if (integrity !== evidence.tarball.integrity || sha256 !== evidence.tarball.sha256) {
-              fail(`${evidence.packageName} tarball does not match its certified digest.`)
-            }
-            evidenceByPackage.set(evidence.packageName, {
-              id: expectedOrder.find(([, name]) => name === evidence.packageName)?.[0],
-              integrity,
-              packageName: evidence.packageName,
-              tarball,
-              version: evidence.version,
-            })
-          }
-          if (evidenceByPackage.size !== expectedOrder.length) {
-            fail('Artifact set does not contain exactly three certified packages.')
-          }
-
-          const run = (args, inherit = false) => spawnSync('npm', args, {
-            encoding: 'utf8',
-            stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe'],
-          })
+          const run = (args, inherit = false) => spawnSync('npm', args, { encoding: 'utf8', stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe'] })
           const view = (spec, field) => {
             const result = run(['view', spec, field, '--json'])
             if (result.status === 0) return JSON.parse(result.stdout.trim() || 'null')
             if (/E404|404 Not Found/u.test(result.stderr)) return null
             fail(`npm view failed for ${spec} ${field}: ${result.stderr.trim()}`)
           }
-          const hasAttestations = value => Array.isArray(value)
-            ? value.length > 0
-            : Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
-          const releaseChannel = version => version.includes('-') ? 'next' : 'latest'
-          const normalizeVersions = value => value == null ? [] : Array.isArray(value) ? value : [value]
-          const modes = new Map()
-          const pollAttempts = Number(process.env.REGISTRY_POLL_ATTEMPTS ?? 240)
-          const pollDelayMs = Number(process.env.REGISTRY_POLL_DELAY_MS ?? 5000)
-          if (!Number.isSafeInteger(pollAttempts) || pollAttempts < 1) fail('Invalid registry poll attempt count.')
-          if (!Number.isSafeInteger(pollDelayMs) || pollDelayMs < 0) fail('Invalid registry poll delay.')
-          if (pollAttempts * pollDelayMs > 20 * 60 * 1000) fail('Registry poll window exceeds 20 minutes.')
-          let remainingPollRetries = pollAttempts
-
-          for (const [id, packageName] of expectedOrder) {
-            const candidate = evidenceByPackage.get(packageName)
-            if (!candidate || candidate.id !== id) fail(`Missing certified ${id} package.`)
-            const spec = `${packageName}@${candidate.version}`
-            const channelName = releaseChannel(candidate.version)
+          const record = JSON.parse(readFileSync('.release/release-record.json', 'utf8'))
+          const verification = JSON.parse(readFileSync('.release/registry-verification.json', 'utf8'))
+          if (record.sourceSha !== process.env.SOURCE_SHA || record.version !== process.env.RELEASE_VERSION || record.channel !== process.env.RELEASE_CHANNEL) fail('Protected release coordinates differ.')
+          if (JSON.stringify(record.publishOrder) !== JSON.stringify(record.packages.map(pkg => pkg.name))) fail('Publish order differs.')
+          const verified = new Map(verification.packages.map(pkg => [pkg.name, pkg]))
+          for (const pkg of record.packages) {
+            const evidence = verified.get(pkg.name)
+            if (!evidence || evidence.version !== pkg.version || evidence.integrity !== pkg.integrity || evidence.sha256 !== pkg.sha256) fail(`${pkg.name} verification differs.`)
+            const tarball = join('.release', pkg.tarball)
+            const bytes = readFileSync(tarball)
+            if (createHash('sha256').update(bytes).digest('hex') !== pkg.sha256 || `sha512-${createHash('sha512').update(bytes).digest('base64')}` !== pkg.integrity) fail(`${pkg.name} retained bytes differ.`)
+            const spec = `${pkg.name}@${pkg.version}`
             const existing = view(spec, 'dist.integrity')
-            if (existing && existing !== candidate.integrity) fail(`${spec} exists with different bytes.`)
-            let mode
-            if (existing) {
-              const attestations = view(spec, 'dist.attestations')
-              const versions = normalizeVersions(view(packageName, 'versions'))
-              if (!hasAttestations(attestations) && (versions.length !== 1 || versions[0] !== candidate.version)) {
-                fail(`${spec} is not the first package version and has no provenance.`)
-              }
-              if (!hasAttestations(attestations) && !authorized.has(packageName)) {
-                fail(`${spec} requires explicit bootstrap authorization.`)
-              }
-              mode = hasAttestations(attestations) ? 'oidc' : 'bootstrap'
-            } else {
-              const result = run([
-                'publish', candidate.tarball, '--access', 'public',
-                '--tag', channelName,
-                '--ignore-scripts', '--provenance',
-              ], true)
+            if (evidence.mode === 'absent') {
+              if (existing !== null) fail(`${spec} changed after verification; rerun the unprivileged verifier.`)
+              const result = run(['publish', tarball, '--access', 'public', '--tag', record.channel, '--ignore-scripts', '--provenance'], true)
               if (result.status !== 0) fail(`npm publish failed for ${spec}.`)
-              mode = 'oidc'
-            }
-            while (true) {
-              const registryIntegrity = view(spec, 'dist.integrity')
-              const attestations = view(spec, 'dist.attestations')
-              const channel = view(packageName, `dist-tags.${channelName}`)
-              const versions = mode === 'bootstrap'
-                ? normalizeVersions(view(packageName, 'versions'))
-                : []
-              const remainsFirstVersion = mode !== 'bootstrap' ||
-                (versions.length === 1 && versions[0] === candidate.version)
-              if (
-                registryIntegrity === candidate.integrity &&
-                channel === candidate.version &&
-                remainsFirstVersion &&
-                (mode === 'bootstrap' || hasAttestations(attestations))
-              ) {
-                modes.set(id, mode)
-                appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${packageName}: ${mode}.\n`)
-                break
-              }
-              if (remainingPollRetries === 0) break
-              remainingPollRetries -= 1
-              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pollDelayMs)
-            }
-            if (!modes.has(id)) fail(`${spec} did not expose the required bytes, provenance mode, and ${channelName}.`)
+            } else if (existing !== pkg.integrity || view(pkg.name, `dist-tags.${record.channel}`) !== pkg.version || !view(spec, 'dist.attestations')) fail(`${spec} lost verified registry state.`)
           }
-          for (const [id] of expectedOrder) {
-            const mode = modes.get(id)
-            if (!mode) fail(`Missing ${id} publication result.`)
-            appendFileSync(process.env.GITHUB_OUTPUT, `${id}_mode=${mode}\n`)
+          for (const pkg of record.packages) {
+            const spec = `${pkg.name}@${pkg.version}`
+            if (view(spec, 'dist.integrity') !== pkg.integrity || view(pkg.name, `dist-tags.${record.channel}`) !== pkg.version || !view(spec, 'dist.attestations')) fail(`${spec} did not expose exact bytes, channel, and provenance.`)
           }
           NODE
 
-  github-prerelease:
-    needs: publish-packages
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  github-release:
+    name: Reconcile GitHub release
+    needs: [verify, publish-packages]
+    if: >-
+      always() && needs.verify.result == 'success' &&
+      (needs.verify.outputs.action == 'publish' || needs.verify.outputs.action == 'repair') &&
+      (needs.publish-packages.result == 'success' || needs.publish-packages.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       actions: read
       contents: write
     steps:
-      - name: Download the verified Vue and Nuxt artifact set
-        if: inputs.target == 'vue-nuxt'
+      - name: Download the verified release plan
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-candidate-vue-nuxt-set
-          path: .release-artifacts
-      - name: Download the verified MCP artifact
-        if: inputs.target == 'mcp'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: release-candidate-mcp
-          path: .release-artifacts
-      - name: Create or update the GitHub prerelease from the changelog
+          name: verified-better-convex-release
+          path: .release
+      - name: Create or repair the exact tag and Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VUE_MODE: ${{ needs.publish-packages.outputs.vue-mode }}
-          NUXT_MODE: ${{ needs.publish-packages.outputs.nuxt-mode }}
-          MCP_MODE: ${{ needs.publish-packages.outputs.mcp-mode }}
-          RELEASE_TARGET: ${{ inputs.target }}
-          VERSION: ${{ inputs.version }}
+          RELEASE_CHANNEL: ${{ needs.verify.outputs.channel }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          SOURCE_SHA: ${{ needs.verify.outputs.sha }}
         run: |
           set -euo pipefail
-          if [ "$RELEASE_TARGET" = mcp ]; then
-            TAG="mcp-v$VERSION"
-            release_metadata=$(find .release-artifacts -name 'mcp-release.json' -type f -print -quit)
-          else
-            TAG="v$VERSION"
-            release_metadata=$(find .release-artifacts -name 'release.json' -type f -print -quit)
-          fi
-          export TAG
-          test -n "$release_metadata"
-          RELEASE_METADATA="$release_metadata" RELEASE_NOTES="$RUNNER_TEMP/release-notes.md" node --input-type=module <<'NODE'
-          import { readFileSync, writeFileSync } from 'node:fs'
-          const metadata = JSON.parse(readFileSync(process.env.RELEASE_METADATA, 'utf8'))
-          if (
-            metadata.schemaVersion !== 1 ||
-            metadata.version !== process.env.VERSION ||
-            metadata.tag !== process.env.TAG ||
-            metadata.sourceSha !== process.env.GITHUB_SHA ||
-            typeof metadata.notes !== 'string' ||
-            !metadata.notes.trim()
-          ) throw new Error('Certified release metadata is invalid.')
-          writeFileSync(process.env.RELEASE_NOTES, `${metadata.notes.trim()}\n`)
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process'
+          import { createHash } from 'node:crypto'
+          import { readFileSync } from 'node:fs'
+          const record = JSON.parse(readFileSync('.release/release-record.json', 'utf8'))
+          const run = args => spawnSync('npm', args, { encoding: 'utf8' })
+          for (const pkg of record.packages) {
+            const result = run(['view', `${pkg.name}@${pkg.version}`, 'dist.integrity', '--json'])
+            if (result.status !== 0 || JSON.parse(result.stdout) !== pkg.integrity) throw new Error(`${pkg.name} registry bytes differ from the retained artifact.`)
+            if (`sha512-${createHash('sha512').update(readFileSync(`.release/${pkg.tarball}`)).digest('base64')}` !== pkg.integrity) throw new Error(`${pkg.name} retained bytes differ.`)
+          }
           NODE
-          test -s "$RUNNER_TEMP/release-notes.md"
-          bootstrap_packages=()
-          [ "$VUE_MODE" = bootstrap ] && bootstrap_packages+=("@lupinum/better-convex-vue")
-          [ "$NUXT_MODE" = bootstrap ] && bootstrap_packages+=("@lupinum/better-convex-nuxt")
-          [ "$MCP_MODE" = bootstrap ] && bootstrap_packages+=("@lupinum/better-convex-mcp")
-          if [ "${#bootstrap_packages[@]}" -gt 0 ]; then
-            cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTICE'
-
-          > [!NOTE]
-          > This first npm version was created from the exact CI-certified artifact before npm trusted publishing could be configured. npm does not provide GitHub OIDC provenance for this bootstrap publication. The protected workflow verified the registry bytes. Later versions use trusted publishing with provenance.
-          NOTICE
-            bootstrap_list=$(IFS=,; echo "${bootstrap_packages[*]}")
-            printf '> Bootstrap packages: %s\n' "$bootstrap_list" >> "$RUNNER_TEMP/release-notes.md"
-          fi
-          mapfile -t tarballs < <(find .release-artifacts -type f -name '*.tgz' | sort)
-          cp "$release_metadata" "$RUNNER_TEMP/release.json"
-          release_assets=("${tarballs[@]}" "$RUNNER_TEMP/release.json")
-          if [ "$RELEASE_TARGET" = mcp ]; then
-            test "${#tarballs[@]}" -eq 1
-            mcp_evidence=".release-artifacts/artifact.json"
-            test -f "$mcp_evidence"
-            cp "$mcp_evidence" "$RUNNER_TEMP/mcp-artifact.json"
-            release_assets+=("$RUNNER_TEMP/mcp-artifact.json")
-          else
-            test "${#tarballs[@]}" -eq 2
-            vue_evidence=$(find .release-artifacts -path '*/vue/*/artifact.json' -type f -print -quit)
-            nuxt_evidence=$(find .release-artifacts -path '*/nuxt/*/artifact.json' -type f -print -quit)
-            set_evidence=$(find .release-artifacts -name 'artifact-set.json' -type f -print -quit)
-            test -n "$vue_evidence"
-            test -n "$nuxt_evidence"
-            test -n "$set_evidence"
-            cp "$vue_evidence" "$RUNNER_TEMP/vue-artifact.json"
-            cp "$nuxt_evidence" "$RUNNER_TEMP/nuxt-artifact.json"
-            cp "$set_evidence" "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
-            release_assets+=(
-              "$RUNNER_TEMP/vue-artifact.json"
-              "$RUNNER_TEMP/nuxt-artifact.json"
-              "$RUNNER_TEMP/vue-nuxt-artifact-set.json"
-            )
-          fi
-          release_flags=()
-          edit_flags=(--prerelease=false)
-          case "$VERSION" in
-            *-*) release_flags+=(--prerelease); edit_flags=(--prerelease) ;;
+          release_status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" --header "Authorization: Bearer $GH_TOKEN" --header "Accept: application/vnd.github+json" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          case "$release_status" in 200) release_exists=true ;; 404) release_exists=false ;; *) echo "Could not verify GitHub Release state (HTTP $release_status)" >&2; exit 1 ;; esac
+          tag_status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" --header "Authorization: Bearer $GH_TOKEN" --header "Accept: application/vnd.github+json" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")
+          case "$tag_status" in
+            200) ;;
+            404)
+              [ "$release_exists" = false ]
+              tag_error=$(mktemp)
+              if ! gh api --silent --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$SOURCE_SHA" 2>"$tag_error"; then
+                if grep -Eq 'Resource not accessible by integration|HTTP 403' "$tag_error"; then
+                  echo "HUMAN-ONLY: GitHub could not create historical tag $RELEASE_TAG at certified commit $SOURCE_SHA." >&2
+                  echo "Run: git fetch origin && git tag $RELEASE_TAG $SOURCE_SHA && git push origin refs/tags/$RELEASE_TAG" >&2
+                  echo "Verify: test \"\$(git ls-remote origin refs/tags/$RELEASE_TAG | cut -f1)\" = \"$SOURCE_SHA\"" >&2
+                  echo "Then rerun only this failed Release job. Do not rebuild or republish." >&2
+                fi
+                cat "$tag_error" >&2
+                exit 1
+              fi ;;
+            *) echo "Could not verify tag state (HTTP $tag_status)" >&2; exit 1 ;;
           esac
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            read -r tag_type tag_sha < <(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '[.object.type, .object.sha] | @tsv')
-            while [ "$tag_type" = tag ]; do
-              read -r tag_type tag_sha < <(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '[.object.type, .object.sha] | @tsv')
-            done
-            test "$tag_type" = commit
-            test "$tag_sha" = "$GITHUB_SHA"
-            gh release edit "$TAG" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${edit_flags[@]}"
-            gh release upload "$TAG" "${release_assets[@]}" --clobber
+          tag_type=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.type)
+          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha)
+          while [ "$tag_type" = tag ]; do
+            tag_type=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq .object.type)
+            tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq .object.sha)
+          done
+          test "$tag_type" = commit
+          test "$tag_sha" = "$SOURCE_SHA"
+          prerelease=false
+          [ "$RELEASE_CHANNEL" = next ] && prerelease=true
+          if [ "$release_exists" = true ]; then
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+            gh release upload "$RELEASE_TAG" .release/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "Better Convex $RELEASE_TAG" --notes-file .release/github-release-notes.md --prerelease="$prerelease"
           else
-            gh release create "$TAG" "${release_assets[@]}" --target "$GITHUB_SHA" --title "Better Convex $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${release_flags[@]}"
+            flags=()
+            [ "$prerelease" = true ] && flags=(--prerelease)
+            gh release create "$RELEASE_TAG" .release/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "Better Convex $RELEASE_TAG" --notes-file .release/github-release-notes.md "${flags[@]}"
           fi

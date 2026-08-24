@@ -113,7 +113,10 @@ describe('public README consistency', () => {
 describe('contributor intake consistency', () => {
   it('keeps documentation reports, release notes, and risk visible', () => {
     const trackedFiles = new Set(
-      execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8' })
+      execFileSync('git', ['ls-files'], {
+        cwd: repositoryRoot,
+        encoding: 'utf8',
+      })
         .trim()
         .split('\n'),
     )
@@ -164,27 +167,11 @@ describe('contributor intake consistency', () => {
     }
 
     const releasing = readFileSync(resolve(repositoryRoot, 'RELEASING.md'), 'utf8')
-    const bootstrapHeading = '## First-package bootstrap'
-    const bootstrapStart = releasing.indexOf(bootstrapHeading)
-    const bootstrapEnd = releasing.indexOf('\n## ', bootstrapStart + bootstrapHeading.length)
-    expect(bootstrapStart).toBeGreaterThanOrEqual(0)
-    expect(bootstrapEnd).toBeGreaterThan(bootstrapStart)
-
-    const bootstrap = releasing.slice(bootstrapStart, bootstrapEnd)
-    const afterBootstrap = releasing.slice(bootstrapEnd)
-    expect(bootstrap).toContain('npm therefore rejects its trusted-publisher configuration')
-    expect(bootstrap).toMatch(/--access\s+public --tag <channel> --ignore-scripts/u)
-    expect(bootstrap).toContain('`latest` for')
-    expect(bootstrap).toContain('`next` for a prerelease')
-    expect(bootstrap).toContain('two-factor authentication for')
-    expect(bootstrap).toContain('authorization and writes')
-    expect(bootstrap).toContain('Do not use an access token that bypasses two-factor')
-    expect(bootstrap).toContain('Let npm request the one-time')
-    expect(afterBootstrap).not.toMatch(
-      /(?:workstation|owning human).{0,120}(?:publish|tag|release)/su,
-    )
-    expect(afterBootstrap).not.toMatch(/--access\s+public --tag <channel> --ignore-scripts/u)
-    expect(releasing).toMatch(/Later versions have no workstation\s+publication path\./u)
+    expect(releasing).toContain('## The one release path')
+    expect(releasing).toContain('## Historical bootstrap publications')
+    expect(releasing).toContain('protected `npm` environment')
+    expect(releasing).toContain('immutable historical exceptions')
+    expect(releasing).not.toMatch(/npm publish .*<channel>/u)
   })
 })
 

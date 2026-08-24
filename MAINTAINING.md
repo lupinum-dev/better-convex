@@ -56,6 +56,21 @@ the result and remove internal rehearsal details. `CHANGELOG.md` records only
 versions that npm contains. Do not use Changelogen to publish, push, tag, or
 change package versions.
 
+Normal maintenance has four steps:
+
+1. Merge one reviewed changelog intent (`## v<version>` for Vue/Nuxt or
+   `## mcp-v<version>` for MCP).
+2. Wait for exact-current-`main` CI to retain the candidate.
+3. Review the release card and approve the protected `npm` environment only
+   when it requests approval.
+4. Verify npm, provenance, tag, GitHub Release, and assets from the completed
+   card.
+
+Do not type a version, target, or workflow run ID. Use the input-free manual
+dispatch only when the automatic event was missed or an existing retained
+candidate needs reconciliation. If more than one intent appears incomplete,
+finish the earlier release before merging another intent.
+
 Do not publish from a workstation. Do not add an `NPM_TOKEN`. Do not create a
 tag before publication succeeds. If a publication step fails, preserve the
 evidence and follow the failure rules in `RELEASING.md`; never rebuild different
