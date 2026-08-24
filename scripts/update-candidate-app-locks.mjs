@@ -215,13 +215,15 @@ try {
       profile.packageIds.includes(packageId),
     )
     const validationWorkspacePath = join(validationDir, 'pnpm-workspace.yaml')
-    writeFileSync(
-      validationWorkspacePath,
-      withCandidateReleaseAgeExclusions(
-        readFileSync(validationWorkspacePath, 'utf8'),
-        requiredCandidates.map(({ artifact }) => artifact),
-      ),
-    )
+    if (existsSync(validationWorkspacePath)) {
+      writeFileSync(
+        validationWorkspacePath,
+        withCandidateReleaseAgeExclusions(
+          readFileSync(validationWorkspacePath, 'utf8'),
+          requiredCandidates.map(({ artifact }) => artifact),
+        ),
+      )
+    }
     if (options.check) {
       const committedLock = originalLocks.get(lockPath)
       for (const { artifact } of requiredCandidates) {
