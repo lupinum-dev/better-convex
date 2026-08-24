@@ -130,7 +130,18 @@ describe('state-aware Better Convex release workflows', () => {
     )
     expect(JSON.stringify(requireJob(publish, 'verify'))).toContain('for (const unit of units)')
     expect(JSON.stringify(requireJob(publish, 'verify'))).toContain('incompleteUnits.length > 1')
-    for (const step of requireJob(publish, 'verify').steps?.slice(1) ?? []) {
+    const verifierRefGuard = requireJob(publish, 'verify').steps?.[0]
+    expect(verifierRefGuard).toMatchObject({
+      name: 'Require the protected verifier ref',
+      env: {
+        EVENT_NAME: '${{ github.event_name }}',
+        VERIFIER_REF: '${{ github.ref }}',
+      },
+    })
+    expect(verifierRefGuard?.run).toContain('workflow_dispatch')
+    expect(verifierRefGuard?.run).toContain('refs/heads/main')
+    expect(verifierRefGuard?.run).toContain('exit 1')
+    for (const step of requireJob(publish, 'verify').steps?.slice(2) ?? []) {
       expect(step.if).toBe("steps.ci.outputs.active == 'true'")
     }
     expect(requireJob(publish, 'verify').permissions).toEqual({

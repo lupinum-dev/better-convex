@@ -36,6 +36,15 @@ jobs:
       unit: ${{ steps.state.outputs.unit }}
       version: ${{ steps.state.outputs.version }}
     steps:
+      - name: Require the protected verifier ref
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VERIFIER_REF: ${{ github.ref }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ "$VERIFIER_REF" != refs/heads/main ]; then
+            echo 'Manual reconciliation must be dispatched from the protected main branch.' >&2
+            exit 1
+          fi
       - name: Select one unique incomplete CI candidate
         id: ci
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8

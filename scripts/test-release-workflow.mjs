@@ -68,6 +68,18 @@ assert(
     String(verify.if).includes("workflow_run.event == 'push'") &&
     String(verify.if).includes("workflow_run.head_branch == 'main'"),
 )
+const verifierRefGuard = verify.steps[0]
+assert.equal(verifierRefGuard.name, 'Require the protected verifier ref')
+assert.deepEqual(verifierRefGuard.env, {
+  EVENT_NAME: '${{ github.event_name }}',
+  VERIFIER_REF: '${{ github.ref }}',
+})
+assert(
+  verifierRefGuard.run.includes('workflow_dispatch') &&
+    verifierRefGuard.run.includes('refs/heads/main') &&
+    verifierRefGuard.run.includes('exit 1'),
+  'A manual reconciliation from a non-main ref must fail before checkout.',
+)
 const verifySource = JSON.stringify(verify)
 for (const required of [
   "workflow_id: 'ci.yml'",
@@ -86,7 +98,7 @@ for (const required of [
   "core.setOutput('sha', selected.head_sha)",
 ])
   assert(verifySource.includes(required), `Candidate verification is missing ${required}.`)
-for (const step of verify.steps.slice(1)) {
+for (const step of verify.steps.slice(2)) {
   assert.equal(
     step.if,
     "steps.ci.outputs.active == 'true'",
