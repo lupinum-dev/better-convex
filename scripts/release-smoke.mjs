@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
 import { verifyCandidateAppLocks } from './prepare-candidate-app-locks.mjs'
+import { assertReleaseBuilderPlatform } from './release-builder-platform.mjs'
 import { withReleasePreflightTarballs } from './release-preflight-tarballs.mjs'
 
 const root = resolve(import.meta.dirname, '..')
@@ -21,6 +22,7 @@ function ensureClean() {
   if (status) throw new Error(`Release smoke requires a clean working tree:\n${status}`)
 }
 
+assertReleaseBuilderPlatform()
 ensureClean()
 run('node', ['scripts/check-workspace-dependency-alignment.mjs'])
 

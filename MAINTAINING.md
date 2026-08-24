@@ -44,6 +44,13 @@ Follow [RELEASING.md](./RELEASING.md). The protected workflow is the only normal
 publication path. It must publish only retained artifacts that passed source,
 consumer, security, and registry checks.
 
+The reviewed Linux workflow is the byte authority for release artifacts and
+candidate lockfiles. `npm pack` can produce the same uncompressed tar archive
+with different gzip bytes on macOS because the host zlib implementation is
+different. Do not record workstation hashes or run artifact creation, candidate
+lock generation, or `release:smoke` outside the Linux builder. Verification of
+an already retained artifact remains platform-independent.
+
 Use `pnpm changelog` to draft the public notes from Conventional Commits. Review
 the result and remove internal rehearsal details. `CHANGELOG.md` records only
 versions that npm contains. Do not use Changelogen to publish, push, tag, or
