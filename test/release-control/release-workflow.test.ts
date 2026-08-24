@@ -7,6 +7,7 @@ import { parse } from 'yaml'
 const root = resolve(import.meta.dirname, '../..')
 
 interface WorkflowStep {
+  env?: Record<string, unknown>
   if?: unknown
   name?: string
   run?: unknown
@@ -101,6 +102,10 @@ describe('state-aware Better Convex release workflows', () => {
       name: 'release-candidate',
       'retention-days': 90,
     })
+    const intent = requireJob(ci, 'release-candidate').steps?.find(
+      ({ name }) => name === 'Derive the unique incomplete release intent',
+    )
+    expect(intent?.env).toEqual({ GH_TOKEN: '${{ github.token }}' })
   })
 
   it('starts from successful CI or an input-free reconciliation dispatch', () => {
@@ -117,6 +122,8 @@ describe('state-aware Better Convex release workflows', () => {
     expect(JSON.stringify(requireJob(publish, 'verify'))).toContain(
       "core.setOutput('active', 'false')",
     )
+    expect(JSON.stringify(requireJob(publish, 'verify'))).toContain('for (const unit of units)')
+    expect(JSON.stringify(requireJob(publish, 'verify'))).toContain('incompleteUnits.length > 1')
     for (const step of requireJob(publish, 'verify').steps?.slice(1) ?? []) {
       expect(step.if).toBe("steps.ci.outputs.active == 'true'")
     }
@@ -147,20 +154,44 @@ describe('state-aware Better Convex release workflows', () => {
     expect(serializedSteps).toContain("'--provenance'")
     expect(serializedSteps).toContain('record.publishOrder')
     expect(serializedSteps).toContain("evidence.mode === 'absent'")
+    expect(serializedSteps).not.toContain('did not expose exact bytes, channel, and provenance')
+    expect(serializedSteps).toContain("needs.verify.outputs.first-attempt == 'true'")
+    expect(serializedSteps).toContain('git/ref/heads/main')
   })
 
-  it('repairs GitHub history without rebuilding or republishing', () => {
-    expect(needs(publish, 'github-release')).toEqual(['verify', 'publish-packages'])
+  it('proves publication and public history without privileged source execution', () => {
+    const publication = requireJob(publish, 'verify-publication')
+    expect(needs(publish, 'verify-publication')).toEqual(['verify', 'publish-packages'])
+    expect(publication.permissions).toEqual({ actions: 'read', contents: 'read' })
+    expect(JSON.stringify(publication)).not.toContain('id-token')
+    expect(runs(publish, 'verify-publication').join('\n')).toContain('reconcile-release.mjs')
+    expect(runs(publish, 'verify-publication').join('\n')).toContain('for delay in 0 5 10 20 40 60')
+    expect(runs(publish, 'verify-publication').join('\n')).toContain("pkg.mode === 'oidc'")
+    expect(JSON.stringify(publication)).toContain('publication-verified-better-convex-release')
+
+    expect(needs(publish, 'github-release')).toEqual(['verify', 'verify-publication'])
     const releaseJob = requireJob(publish, 'github-release')
     expect(releaseJob.permissions).toEqual({
       actions: 'read',
       contents: 'write',
     })
+    expect(JSON.stringify(releaseJob)).toContain('publication-verified-better-convex-release')
     const source = runs(publish, 'github-release').join('\n')
     expect(source).toContain('HUMAN-ONLY: GitHub could not create historical tag')
     expect(source).toContain('rerun only this failed Release job')
     expect(source).toContain('git tag $RELEASE_TAG $SOURCE_SHA')
+    expect(source).toContain('rm -f .release/registry-verification.json')
+    expect(source).toContain('gh release delete-asset')
     expect(source).not.toMatch(/npm publish|pnpm|corepack|npm install|release:artifact/u)
+
+    const completed = requireJob(publish, 'verify-completed-release')
+    expect(needs(publish, 'verify-completed-release')).toEqual(['verify', 'github-release'])
+    expect(completed.permissions).toEqual({ actions: 'read', contents: 'read' })
+    expect(JSON.stringify(completed)).not.toContain('id-token')
+    expect(runs(publish, 'verify-completed-release').join('\n')).toContain('reconcile-release.mjs')
+    expect(runs(publish, 'verify-completed-release').join('\n')).toContain(
+      'test "$ACTION" = complete',
+    )
   })
 
   it('pins actions and keeps default permissions read-only', () => {

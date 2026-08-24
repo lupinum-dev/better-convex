@@ -4,9 +4,17 @@ import {
   assertFreshFirstAttempt,
   classifyReconciliation,
   evaluateProvenanceStatement,
+  isFirstPublicationAttempt,
+  releaseAssetFiles,
   releaseMetadataState,
 } from './reconcile-release.mjs'
-import { classifyCandidateNeed, detectReleaseIntents, releaseUnits } from './release-intent.mjs'
+import {
+  classifyCandidateNeed,
+  classifyReleaseIntent,
+  detectReleaseIntents,
+  releaseUnits,
+  selectIncompleteIntent,
+} from './release-intent.mjs'
 
 const versions = {
   workspaceVersion: '1.0.0-beta.1',
@@ -36,9 +44,57 @@ assert.throws(
   () => releaseUnits({ ...versions, vueVersion: '1.0.0-beta.2' }),
   /must remain coupled/u,
 )
+assert.equal(isFirstPublicationAttempt('publish', ['absent', 'absent']), true)
+assert.equal(isFirstPublicationAttempt('publish', ['oidc', 'absent']), false)
+assert.equal(isFirstPublicationAttempt('repair', ['oidc', 'oidc']), false)
 assert.equal(classifyCandidateNeed([null, null]), 'build')
 assert.equal(classifyCandidateNeed(['sha', 'sha']), 'reuse')
 assert.equal(classifyCandidateNeed(['sha', null]), 'partial')
+assert.equal(
+  classifyReleaseIntent({ publications: [null, null], tag: 'absent', release: 'absent' }),
+  'build',
+)
+
+assert.deepEqual(
+  releaseAssetFiles({
+    assets: [{ file: 'package.tgz' }, { file: 'artifact.json' }],
+  }),
+  ['artifact.json', 'github-release-notes.md', 'package.tgz', 'release-record.json'],
+)
+assert.equal(
+  classifyReleaseIntent({ publications: ['sha', 'sha'], tag: 'absent', release: 'absent' }),
+  'repair',
+)
+assert.equal(
+  classifyReleaseIntent({ publications: ['sha', 'sha'], tag: 'present', release: 'present' }),
+  'verify',
+)
+assert.equal(
+  classifyReleaseIntent({ publications: ['sha', null], tag: 'absent', release: 'absent' }),
+  'repair',
+)
+assert.throws(
+  () => classifyReleaseIntent({ publications: [null, null], tag: 'present', release: 'absent' }),
+  /before npm publication/u,
+)
+
+const [vueNuxt, mcp] = units
+assert.equal(
+  selectIncompleteIntent([
+    { intent: vueNuxt, state: 'complete' },
+    { intent: mcp, state: 'build' },
+  ]).intent.id,
+  'mcp',
+)
+assert.equal(selectIncompleteIntent([{ intent: vueNuxt, state: 'complete' }]), undefined)
+assert.throws(
+  () =>
+    selectIncompleteIntent([
+      { intent: vueNuxt, state: 'repair' },
+      { intent: mcp, state: 'build' },
+    ]),
+  /Multiple incomplete release intents/u,
+)
 
 const complete = {
   modes: ['oidc', 'oidc'],

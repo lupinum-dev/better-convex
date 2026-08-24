@@ -79,7 +79,20 @@ fail with an instruction to finish the earlier release first.
 The trusted workflow starts from the successful CI run. Its manual dispatch has
 no inputs and exists only for missed events or reconciliation. A first
 publication attempt requires the certified SHA to remain current `main`.
-Reruns reuse the original retained candidate even after `main` advances.
+The protected job checks current `main` again immediately before that first
+publication, so an approval wait cannot make the candidate stale. Reruns reuse
+the original retained candidate even after `main` advances.
+
+After the protected job, an unprivileged verifier proves the published bytes,
+channel, Sigstore certificate identity, source SHA, and trusted workflow identity
+before GitHub history is reconciled. This verifier uses a bounded retry window
+because npm package bytes, dist-tags, and provenance can become visible at
+slightly different times after a successful publish. A final read-only verifier
+then proves the tag target, Release metadata, and every Release asset before the
+run is complete. The live `registry-verification.json` report is workflow
+evidence, not a certified build asset, so it is retained with the workflow plan
+but excluded from the public GitHub Release. This prevents pre-publication state
+from making an otherwise complete release appear to need repair forever.
 
 The source lanes are defined by `scripts/release-source-certification.mjs`:
 
