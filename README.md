@@ -29,7 +29,7 @@ Do not use Better Convex as an authorization layer. Every Convex function must s
 
 ## Requirements
 
-- Node.js `^22.14 || ^24`.
+- Node.js `^22.19 || ^24.11`.
 - Nuxt `>=4.5.2 <5`, tested at the floor and latest Nuxt 4.
 - Convex `>=1.42.2 <2`, tested at the floor and latest 1.x.
 - Vue `>=3.5 <4`.

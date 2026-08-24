@@ -304,11 +304,14 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'pnpm add --workspace-root --save-dev --lockfile=false',
     )
     expect(requireJob(ciWorkflow, 'dependency-matrix').strategy?.matrix?.include).toEqual([
-      { profile: 'floor', node: '22.14.0' },
-      { profile: 'latest-compatible', node: '22.14.0' },
+      { profile: 'floor', node: '22.19.0' },
+      { profile: 'latest-compatible', node: '22.19.0' },
       { profile: 'floor', node: '24' },
       { profile: 'latest-compatible', node: '24' },
     ])
+    expect(runs(ciWorkflow, 'dependency-matrix')).toContain(
+      'npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable',
+    )
     expect(
       steps(ciWorkflow, 'release-smoke').find(
         (step) => step.name === 'Retain the Linux candidate locks for review',
@@ -318,6 +321,9 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       uses: 'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f',
     })
     expect(requireJob(ciWorkflow, 'release-gate')['timeout-minutes']).toBe(5)
+    expect(requireJob(ciWorkflow, 'release-smoke').if).toBe(
+      "needs.classify.outputs.artifact == 'true'",
+    )
     expect(needs(ciWorkflow, 'release-gate')).toEqual([
       'classify',
       'secrets',
@@ -329,7 +335,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
       'release-smoke',
     ])
     expect(runs(ciWorkflow, 'release-gate')).toEqual([
-      'test "$CLASSIFY_RESULT" = success case "$FULL" in true | false) ;; *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;; esac test "$SECRETS" = success test "$DEPLOYABLE_APP_AUDITS" = success for result in "$COMPATIBILITY" "$DEPENDENCY_MATRIX" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi done',
+      'test "$CLASSIFY_RESULT" = success case "$FULL" in true | false) ;; *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;; esac case "$ARTIFACT" in true | false) ;; *) echo "Invalid artifact classifier output: $ARTIFACT" >&2; exit 1 ;; esac test "$SECRETS" = success test "$DEPLOYABLE_APP_AUDITS" = success for result in "$COMPATIBILITY" "$DEPENDENCY_MATRIX" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND"; do if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi done if [ "$ARTIFACT" = true ]; then test "$RELEASE_SMOKE" = success; else test "$RELEASE_SMOKE" = skipped; fi',
     ])
     const classifyScript = steps(ciWorkflow, 'classify').find(
       (step) => step.name === 'Select required lanes',
@@ -343,33 +349,66 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
         name: 'public docs',
         event: 'pull_request',
         paths: ['docs/content/1.index.md'],
+        artifact: 'false',
         full: 'false',
       },
       {
         name: 'package source',
         event: 'pull_request',
         paths: ['packages/vue/src/index.ts'],
+        artifact: 'false',
         full: 'true',
       },
       {
         name: 'empty pull request',
         event: 'pull_request',
         paths: [],
+        artifact: 'false',
         full: 'true',
       },
       {
         name: 'mixed public docs and source',
         event: 'pull_request',
         paths: ['docs/content/1.index.md', 'packages/vue/src/index.ts'],
+        artifact: 'false',
         full: 'true',
       },
       {
         name: 'workflow policy',
         event: 'pull_request',
         paths: ['.github/workflows/ci.yml'],
+        artifact: 'false',
         full: 'true',
       },
-      { name: 'main certification', event: 'push', paths: [], full: 'true' },
+      {
+        name: 'candidate lock update',
+        event: 'pull_request',
+        paths: ['starters/public/pnpm-lock.yaml'],
+        artifact: 'false',
+        full: 'true',
+      },
+      {
+        name: 'artifact verifier change',
+        event: 'pull_request',
+        paths: ['scripts/release-smoke.mjs'],
+        artifact: 'true',
+        full: 'true',
+      },
+      {
+        name: 'release entry point change',
+        event: 'pull_request',
+        paths: ['scripts/release.mjs'],
+        artifact: 'true',
+        full: 'true',
+      },
+      {
+        name: 'candidate-set builder change',
+        event: 'pull_request',
+        paths: ['scripts/prepare-candidate-set.mjs'],
+        artifact: 'true',
+        full: 'true',
+      },
+      { name: 'main certification', event: 'push', paths: [], artifact: 'true', full: 'true' },
     ]) {
       const outputs = new Map<string, string>()
       await new AsyncFunction('context', 'github', 'core', classifyScript)(
@@ -384,6 +423,7 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
         },
         { setOutput: (name: string, value: string) => outputs.set(name, value) },
       )
+      expect(outputs.get('artifact'), scenario.name).toBe(scenario.artifact)
       expect(outputs.get('full'), scenario.name).toBe(scenario.full)
     }
   })

@@ -19,6 +19,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
+      artifact: ${{ steps.paths.outputs.artifact }}
       full: ${{ steps.paths.outputs.full }}
     steps:
       - name: Select required lanes
@@ -41,6 +42,10 @@ jobs:
               paths.every((path) =>
                 /^(?:docs\/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
               )
+            const releaseArtifactInputs = paths.some((path) =>
+              /^scripts\/(?:candidate-app-locks|prepare-candidate-app-locks|prepare-candidate-set|release|release-preflight-tarballs|release-smoke)\.mjs$/u.test(path),
+            )
+            core.setOutput('artifact', String(runAll || releaseArtifactInputs))
             core.setOutput('full', String(runAll || !publicDocsOnly))
 
   secrets:
@@ -68,7 +73,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
       - name: Update and enable Corepack
         run: npm install --global corepack@0.34.5 && corepack enable
       - name: Install dependencies
@@ -93,9 +98,9 @@ jobs:
       matrix:
         include:
           - profile: floor
-            node: 22.14.0
+            node: 22.19.0
           - profile: latest-compatible
-            node: 22.14.0
+            node: 22.19.0
           - profile: floor
             node: '24'
           - profile: latest-compatible
@@ -109,7 +114,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: Verify exact tarballs in fresh consumers
@@ -126,7 +131,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
@@ -148,7 +153,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
@@ -168,7 +173,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
           package-manager-cache: false
       - name: Audit docs production dependencies
         working-directory: docs
@@ -179,7 +184,7 @@ jobs:
 
   release-smoke:
     needs: classify
-    if: needs.classify.outputs.full == 'true'
+    if: needs.classify.outputs.artifact == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -188,7 +193,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.14.0'
+          node-version: '22.19.0'
           package-manager-cache: false
       - name: Install the release toolchain
         run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
@@ -231,6 +236,7 @@ jobs:
       - name: Require every independent source lane
         env:
           CLASSIFY_RESULT: ${{ needs.classify.result }}
+          ARTIFACT: ${{ needs.classify.outputs.artifact }}
           FULL: ${{ needs.classify.outputs.full }}
           AUTH_CONTRACTS: ${{ needs.auth-contracts.result }}
           AUTH_REAL_BACKEND: ${{ needs.auth-real-backend.result }}
@@ -245,8 +251,13 @@ jobs:
             true | false) ;;
             *) echo "Invalid classifier output: $FULL" >&2; exit 1 ;;
           esac
+          case "$ARTIFACT" in
+            true | false) ;;
+            *) echo "Invalid artifact classifier output: $ARTIFACT" >&2; exit 1 ;;
+          esac
           test "$SECRETS" = success
           test "$DEPLOYABLE_APP_AUDITS" = success
-          for result in "$COMPATIBILITY" "$DEPENDENCY_MATRIX" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND" "$RELEASE_SMOKE"; do
+          for result in "$COMPATIBILITY" "$DEPENDENCY_MATRIX" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND"; do
             if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi
           done
+          if [ "$ARTIFACT" = true ]; then test "$RELEASE_SMOKE" = success; else test "$RELEASE_SMOKE" = skipped; fi
