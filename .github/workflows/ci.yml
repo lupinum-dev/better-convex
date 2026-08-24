@@ -315,6 +315,9 @@ jobs:
         run: pnpm release:verify:set "${{ steps.candidate_set.outputs.evidence }}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - name: Install the reviewed MCP conformance backend
+        if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'
+        run: pnpm check:auth-backend --install
       - name: Verify the MCP unit
         if: steps.intent.outputs.ready == 'true' && steps.intent.outputs.unit == 'mcp'
         run: pnpm release:verify --package mcp --artifact-manifest "${{ steps.mcp.outputs.evidence }}"
