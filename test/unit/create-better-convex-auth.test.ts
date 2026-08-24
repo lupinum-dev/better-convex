@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { AuthCtx } from '../../src/runtime/convex-auth/context'
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 
@@ -261,8 +262,8 @@ describe('createBetterConvexAuth', () => {
   })
 
   it('builds one hardened OAuth profile from the request-scoped Convex context', async () => {
-    const ctx = { runQuery: vi.fn() }
-    const createProfile = vi.fn(() => oauthProfile())
+    const ctx = { runQuery: vi.fn().mockResolvedValue(oauthProfile()) }
+    const createProfile = vi.fn(async (requestCtx: AuthCtx) => requestCtx.runQuery({} as never))
     const auth = createBetterConvexAuth(component(), {
       oauthProvider: createProfile,
     })
@@ -271,6 +272,7 @@ describe('createBetterConvexAuth', () => {
 
     expect(createProfile).toHaveBeenCalledOnce()
     expect(createProfile).toHaveBeenCalledWith(ctx)
+    expect(ctx.runQuery).toHaveBeenCalledOnce()
     const options = betterAuth.mock.calls[0]?.[0] as {
       plugins: Array<{ id: string }>
     }

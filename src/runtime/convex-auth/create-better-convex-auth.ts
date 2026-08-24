@@ -75,7 +75,9 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
   readonly twoFactor?: false | TwoFactorOptions
   readonly oauthProvider?:
     | PinnedOAuthProviderProfile
-    | ((ctx: AuthCtx<DataModel>) => PinnedOAuthProviderProfile)
+    | ((
+        ctx: AuthCtx<DataModel>,
+      ) => PinnedOAuthProviderProfile | Promise<PinnedOAuthProviderProfile>)
   readonly session?: ReviewedSessionOptions
   readonly socialProviders?: SocialProviders | (() => SocialProviders)
   readonly defineSessionClaims?: NonNullable<
@@ -306,7 +308,7 @@ export function createBetterConvexAuth<
       const authIssuer = `${siteUrl}/api/auth`
       const oauthProfile =
         typeof options.oauthProvider === 'function'
-          ? options.oauthProvider(ctx)
+          ? await options.oauthProvider(ctx)
           : options.oauthProvider
       const featurePlugins = [
         options.organization === false || options.organization === undefined
