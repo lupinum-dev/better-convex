@@ -22,6 +22,7 @@ import {
   candidateAppLockProfiles,
   createCandidateRegistryMetadata,
   packageArtifactIdentity,
+  withCandidateReleaseAgeExclusions,
 } from './candidate-app-locks.mjs'
 import { getPackageArtifactCoordinates } from './package-artifact-coordinates.mjs'
 import { assertPackedRuntimeFingerprintBinding } from './package-runtime-fingerprint-profile.mjs'
@@ -212,6 +213,20 @@ try {
     const validationLockPath = join(validationDir, 'pnpm-lock.yaml')
     const requiredCandidates = candidates.filter(({ packageId }) =>
       profile.packageIds.includes(packageId),
+    )
+    const validationWorkspacePath = join(validationDir, 'pnpm-workspace.yaml')
+    // Standalone starters inherit the repository policy in normal use but have
+    // no workspace file of their own. Give the isolated validation copy a
+    // minimal policy file so only the exact local candidates bypass quarantine.
+    const workspaceSource = existsSync(validationWorkspacePath)
+      ? readFileSync(validationWorkspacePath, 'utf8')
+      : 'packages: []\n'
+    writeFileSync(
+      validationWorkspacePath,
+      withCandidateReleaseAgeExclusions(
+        workspaceSource,
+        requiredCandidates.map(({ artifact }) => artifact),
+      ),
     )
     if (options.check) {
       const committedLock = originalLocks.get(lockPath)

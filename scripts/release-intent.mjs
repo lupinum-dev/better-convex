@@ -1,7 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { appendFileSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { inspect } from './reconcile-release.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 
@@ -49,12 +52,77 @@ export function classifyCandidateNeed(publications) {
   return 'partial'
 }
 
+export function classifyReleaseIntent({ publications, tag, release }) {
+  const packages = classifyCandidateNeed(publications)
+  if (![tag, release].every((state) => ['absent', 'present'].includes(state))) {
+    throw new Error('GitHub release state is unverified.')
+  }
+  if (packages !== 'reuse' && (tag === 'present' || release === 'present')) {
+    throw new Error('Public GitHub history exists before npm publication is complete.')
+  }
+  if (packages === 'reuse' && tag === 'present' && release === 'present') return 'verify'
+  return packages === 'build' ? 'build' : 'repair'
+}
+
+export function selectIncompleteIntent(states) {
+  const incomplete = states.filter(({ state }) => state !== 'complete')
+  if (incomplete.length > 1) {
+    throw new Error(
+      `Multiple incomplete release intents are active (${incomplete.map(({ intent }) => intent.tag).join(', ')}). Finish the earlier release before merging another intent.`,
+    )
+  }
+  return incomplete[0]
+}
+
 function readVersions() {
   const manifest = (path) => JSON.parse(readFileSync(resolve(root, path), 'utf8')).version
   return {
     workspaceVersion: manifest('package.json'),
     vueVersion: manifest('packages/vue/package.json'),
     mcpVersion: manifest('packages/mcp/package.json'),
+  }
+}
+
+function githubPresence(path) {
+  const repository = process.env.GITHUB_REPOSITORY
+  if (!repository) throw new Error('GitHub release inspection requires GITHUB_REPOSITORY.')
+  const result = spawnSync('gh', ['api', `repos/${repository}/${path}`], { encoding: 'utf8' })
+  if (result.status === 0) return 'present'
+  if (/HTTP 404|Not Found/u.test(result.stderr)) return 'absent'
+  throw new Error(`GitHub release state is unavailable for ${path}: ${result.stderr.trim()}`)
+}
+
+async function verifyCompletedRelease(intent) {
+  const directory = mkdtempSync(join(tmpdir(), 'better-convex-intent-'))
+  try {
+    const download = spawnSync(
+      'gh',
+      [
+        'release',
+        'download',
+        intent.tag,
+        '--repo',
+        process.env.GITHUB_REPOSITORY,
+        '--dir',
+        directory,
+      ],
+      { encoding: 'utf8' },
+    )
+    if (download.status !== 0) {
+      throw new Error(`Could not download ${intent.tag} evidence: ${download.stderr.trim()}`)
+    }
+    const record = JSON.parse(readFileSync(join(directory, 'release-record.json'), 'utf8'))
+    if (
+      record.unit !== intent.id ||
+      record.version !== intent.version ||
+      record.tag !== intent.tag ||
+      JSON.stringify(record.packages.map(({ name }) => name)) !== JSON.stringify(intent.packages)
+    ) {
+      throw new Error(`${intent.tag} Release evidence does not match its manifest-derived unit.`)
+    }
+    return (await inspect(directory, record)).action
+  } finally {
+    rmSync(directory, { force: true, recursive: true })
   }
 }
 
@@ -67,31 +135,33 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8'),
     readVersions(),
   )
-  if (intents.length > 1) {
-    throw new Error(
-      `Multiple release intents are active (${intents.map((intent) => intent.tag).join(', ')}). Finish the earlier release before merging another intent.`,
-    )
+  const states = []
+  for (const intent of intents) {
+    const publications = intent.packages.map((name) => npmIntegrity(`${name}@${intent.version}`))
+    const initialState = classifyReleaseIntent({
+      publications,
+      tag: githubPresence(`git/ref/tags/${encodeURIComponent(intent.tag)}`),
+      release: githubPresence(`releases/tags/${encodeURIComponent(intent.tag)}`),
+    })
+    states.push({
+      intent,
+      publications,
+      state: initialState === 'verify' ? await verifyCompletedRelease(intent) : initialState,
+    })
   }
-  const intent = intents[0]
-  if (!intent) {
+  const selected = selectIncompleteIntent(states)
+  if (!selected) {
     if (output) appendFileSync(output, 'ready=false\naction=no-op\n')
     if (summary)
       appendFileSync(summary, '\n## Release candidate\n\nNo incomplete release intent exists.\n')
     process.exit(0)
   }
-  const state = classifyCandidateNeed(
-    intent.packages.map((name) => npmIntegrity(`${name}@${intent.version}`)),
-  )
-  if (state === 'partial') {
-    throw new Error(
-      `${intent.tag} is partially published. Reuse its retained candidate; never build replacement bytes.`,
-    )
-  }
+  const { intent, state } = selected
   const ready = state === 'build'
   if (output) {
     for (const [name, value] of Object.entries({
       ready: String(ready),
-      action: ready ? 'build' : 'reuse',
+      action: ready ? 'build' : 'repair',
       unit: intent.id,
       version: intent.version,
       channel: intent.channel,
@@ -103,6 +173,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (summary)
     appendFileSync(
       summary,
-      `\n## Release candidate\n\n- Intent: \`${intent.tag}\`\n- Unit: \`${intent.id}\`\n- Registry state: \`${state}\`\n- Next action: ${ready ? 'Build and retain the exact candidate once.' : 'Reuse the original retained candidate for reconciliation.'}\n`,
+      `\n## Release candidate\n\n- Intent: \`${intent.tag}\`\n- Unit: \`${intent.id}\`\n- Release state: \`${state}\`\n- Next action: ${ready ? 'Build and retain the exact candidate once.' : 'Reuse the original retained candidate for reconciliation; never build replacement bytes.'}\n`,
     )
 }

@@ -286,6 +286,8 @@ jobs:
       - name: Derive the unique incomplete release intent
         id: intent
         run: node scripts/release-intent.mjs --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Verify reviewed release ownership and identity
         if: steps.intent.outputs.ready == 'true'
         run: pnpm check:security-governance --release

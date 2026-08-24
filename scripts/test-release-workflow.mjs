@@ -48,8 +48,17 @@ assert(
 )
 assert(protectedSource.includes('--provenance') && protectedSource.includes('--ignore-scripts'))
 assert(
+  !protectedSource.includes('did not expose exact bytes, channel, and provenance'),
+  'The protected job must not fail on immediate npm propagation delay.',
+)
+assert(
   protectedSource.includes('record.publishOrder'),
   'The protected job must obey the certified publish order.',
+)
+assert(
+  protectedSource.includes("needs.verify.outputs.first-attempt == 'true'") &&
+    protectedSource.includes('git/ref/heads/main'),
+  'The protected job must recheck current main immediately before a first publication.',
 )
 
 const verify = publish.jobs.verify
@@ -67,13 +76,14 @@ for (const required of [
   "branch: 'main'",
   'listWorkflowRunArtifacts',
   'artifact.expired === false',
+  'for (const unit of units)',
+  'incompleteUnits.length > 1',
   "core.setOutput('active', 'false')",
   "core.setOutput('active', 'true')",
   'incomplete.length > 1',
   'const selected = incomplete[0] ?? retained[0]',
   "core.setOutput('run-id', String(selected.id))",
   "core.setOutput('sha', selected.head_sha)",
-  'github.run_attempt == 1',
 ])
   assert(verifySource.includes(required), `Candidate verification is missing ${required}.`)
 for (const step of verify.steps.slice(1)) {
@@ -101,6 +111,8 @@ for (const required of [
   'gh release create',
   'gh release view',
   'gh release edit',
+  'rm -f .release/registry-verification.json',
+  'gh release delete-asset',
 ]) {
   assert(publishSource.includes(required), `GitHub Release repair is missing ${required}.`)
 }
@@ -121,6 +133,28 @@ assert(
   ci.jobs['release-gate'].needs.includes('release-candidate'),
   'The required release-gate must aggregate candidate success.',
 )
+const intentStep = candidate.steps.find(
+  (step) => step.name === 'Derive the unique incomplete release intent',
+)
+assert.deepEqual(intentStep.env, { GH_TOKEN: '${{ github.token }}' })
+
+const publication = publish.jobs['verify-publication']
+assert.deepEqual(publication.needs, ['verify', 'publish-packages'])
+assert.deepEqual(publication.permissions, { actions: 'read', contents: 'read' })
+assert(!JSON.stringify(publication).includes('id-token'))
+assert(JSON.stringify(publication).includes('reconcile-release.mjs'))
+assert(JSON.stringify(publication).includes('for delay in 0 5 10 20 40 60'))
+assert(JSON.stringify(publication).includes("pkg.mode === 'oidc'"))
+assert(JSON.stringify(publication).includes('publication-verified-better-convex-release'))
+assert.deepEqual(release.needs, ['verify', 'verify-publication'])
+assert(JSON.stringify(release).includes('publication-verified-better-convex-release'))
+
+const completed = publish.jobs['verify-completed-release']
+assert.deepEqual(completed.needs, ['verify', 'github-release'])
+assert.deepEqual(completed.permissions, { actions: 'read', contents: 'read' })
+assert(!JSON.stringify(completed).includes('id-token'))
+assert(JSON.stringify(completed).includes('reconcile-release.mjs'))
+assert(completed.steps.some((step) => step.run === 'test "$ACTION" = complete'))
 
 for (const [path, source] of [
   ['ci.yml', ciSource],

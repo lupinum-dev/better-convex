@@ -54,12 +54,24 @@ export function assertFreshFirstAttempt({ action, firstAttempt, mainSha, sourceS
   }
 }
 
+export function isFirstPublicationAttempt(action, modes) {
+  return action === 'publish' && modes.every((mode) => mode === 'absent')
+}
+
 export function releaseMetadataState(release, record) {
   return release.name === record.title &&
     release.body?.replace(/\r\n/gu, '\n').trimEnd() === record.notes.trimEnd() &&
     release.isPrerelease === (record.channel === 'next')
     ? 'verified'
     : 'conflict'
+}
+
+export function releaseAssetFiles(record) {
+  return [
+    'github-release-notes.md',
+    'release-record.json',
+    ...record.assets.map(({ file }) => file),
+  ].sort()
 }
 
 export function evaluateProvenanceStatement(statement, pkg, integrity, sourceSha) {
@@ -165,7 +177,12 @@ function releaseState(directory, record) {
     return { release: 'absent', assets: 'absent', metadata: 'absent' }
   assert(view.status === 0, `Could not inspect ${record.tag} Release: ${view.stderr.trim()}`)
   const release = JSON.parse(view.stdout)
-  const expectedFiles = readdirSync(directory).sort()
+  const availableFiles = readdirSync(directory)
+  const expectedFiles = releaseAssetFiles(record)
+  assert(
+    expectedFiles.every((file) => availableFiles.includes(file)),
+    'The retained candidate is missing a required GitHub Release asset.',
+  )
   const observedFiles = release.assets.map((asset) => asset.name).sort()
   const metadata = releaseMetadataState(release, record)
   if (JSON.stringify(expectedFiles) !== JSON.stringify(observedFiles))
@@ -200,7 +217,7 @@ function releaseState(directory, record) {
   }
 }
 
-async function inspect(directory, record) {
+export async function inspect(directory, record) {
   assert(
     record.schemaVersion === 1 && /^[0-9a-f]{40}$/u.test(record.sourceSha),
     'Invalid release record.',
@@ -254,17 +271,21 @@ async function inspect(directory, record) {
     tag,
     ...github,
   })
-  if (action === 'publish' && process.env.FIRST_ATTEMPT === 'true') {
+  const firstAttempt = isFirstPublicationAttempt(
+    action,
+    packages.map(({ mode }) => mode),
+  )
+  if (firstAttempt) {
     const mainSha = ghJson(['api', `repos/${process.env.GITHUB_REPOSITORY}/git/ref/heads/main`])
       .object.sha
     assertFreshFirstAttempt({
       action,
-      firstAttempt: true,
+      firstAttempt,
       mainSha,
       sourceSha: record.sourceSha,
     })
   }
-  return { action, packages, tag, ...github }
+  return { action, firstAttempt, packages, tag, ...github }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -331,6 +352,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       version: record.version,
       channel: record.channel,
       tag: record.tag,
+      'first-attempt': String(state.firstAttempt),
     }))
       appendFileSync(output, `${name}=${value}\n`)
   process.stdout.write(`Release reconciliation: ${state.action}.\n`)
