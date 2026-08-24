@@ -4,7 +4,6 @@ import {
   useConvexConnectionState,
   useConvexMutation,
   useConvexPaginatedQuery,
-  useConvexQueries,
   useConvexQuery,
   type BetterConvexPlugin,
 } from '@lupinum/better-convex-vue'
@@ -58,7 +57,6 @@ export interface BetterConvexTestRuntime {
     useConvexFileUpload: BetterConvexTestFileUploadComposable
     useConvexMutation: typeof useConvexMutation
     useConvexPaginatedQuery: typeof useConvexPaginatedQuery
-    useConvexQueries: typeof useConvexQueries
     useConvexQuery: typeof useConvexQuery
     useConvexAuth: () => BetterConvexTestAuth
   }>
@@ -103,7 +101,6 @@ export function setupBetterConvexTest(
       useConvexFileUpload: uploads.useConvexFileUpload,
       useConvexMutation,
       useConvexPaginatedQuery,
-      useConvexQueries,
       useConvexQuery,
       useConvexAuth: () => auth,
     }),

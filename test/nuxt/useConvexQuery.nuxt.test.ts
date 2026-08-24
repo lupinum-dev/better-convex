@@ -12,7 +12,6 @@ import {
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
 import { createConvexPaginatedQueryState } from '../../src/runtime/composables/useConvexPaginatedQuery'
-import { useConvexQueries } from '../../src/runtime/composables/useConvexQueries'
 import {
   createConvexQueryState,
   useConvexQuery,
@@ -30,7 +29,10 @@ function useConvexQueryState<
   Query extends FunctionReference<'query'>,
   Args extends ConvexQueryArgs<FunctionArgs<Query>> = FunctionArgs<Query>,
 >(query: Query, args: MaybeRefOrGetter<Args>, options?: UseNuxtConvexQueryOptions) {
-  return createConvexQueryState<Query, Args>(query, args, { auth: 'none', ...options }).resultData
+  return createConvexQueryState<Query, Args>(query, args, {
+    auth: 'none',
+    ...options,
+  }).resultData
 }
 
 describe('useConvexQuery composables (Nuxt runtime)', () => {
@@ -84,7 +86,12 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
           nuxtApp.isHydrating = false
           void nuxtApp.callHook('app:suspense:resolve')
         })
-        return { listenersBeforeMount, listenersDuringMount, statusBeforeMount, state }
+        return {
+          listenersBeforeMount,
+          listenersDuringMount,
+          statusBeforeMount,
+          state,
+        }
       },
       {
         convex,
@@ -97,46 +104,6 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(result.statusBeforeMount.value).toBe('success')
     expect(result.state.data.value).toEqual([{ _id: 'ssr-note' }])
     await waitFor(() => convex.calls.onUpdate.length === 1)
-  })
-
-  it('replaces dynamic keyed controllers after in-place option and query changes', async () => {
-    const convex = new MockConvexClient()
-    const first = mockFnRef<'query'>('notes:multi:first')
-    const replacement = mockFnRef<'query'>('notes:multi:replacement')
-    const { result, flush } = await captureInNuxt(
-      () => {
-        const entry = reactive<{
-          query: typeof first
-          auth: 'none' | 'optional'
-          keepPreviousData: boolean
-        }>({
-          query: first,
-          auth: 'none',
-          keepPreviousData: false,
-        })
-        return { entry, queries: useConvexQueries(reactive({ alpha: entry })) }
-      },
-      { convex, convexConfig: { auth: false } },
-    )
-
-    await waitFor(() => convex.activeListenerCount(first, {}) === 1)
-    const initialState = result.queries.states.value.alpha
-
-    result.entry.auth = 'optional'
-    await flush()
-    expect(result.queries.states.value.alpha).not.toBe(initialState)
-    expect(convex.activeListenerCount(first, {})).toBe(1)
-
-    const authState = result.queries.states.value.alpha
-    result.entry.keepPreviousData = true
-    await flush()
-    expect(result.queries.states.value.alpha).not.toBe(authState)
-    expect(convex.activeListenerCount(first, {})).toBe(1)
-
-    result.entry.query = replacement as typeof first
-    await flush()
-    expect(convex.activeListenerCount(first, {})).toBe(0)
-    expect(convex.activeListenerCount(replacement, {})).toBe(1)
   })
 
   it('does not add one identity observer listener per query composable', async () => {
@@ -356,7 +323,9 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     const { result, flush } = await captureInNuxt(
       () => {
         const owner = ref('alice')
-        const state = useConvexQuery(query, () => ({ owner: owner.value }), { auth: 'none' })
+        const state = useConvexQuery(query, () => ({ owner: owner.value }), {
+          auth: 'none',
+        })
         return { owner, state }
       },
       { convex },
