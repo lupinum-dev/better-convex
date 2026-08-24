@@ -394,6 +394,20 @@ if (args[0] === 'scripts/release.mjs' && args[1] === 'artifact') {
         artifact: 'true',
         full: 'true',
       },
+      {
+        name: 'release entry point change',
+        event: 'pull_request',
+        paths: ['scripts/release.mjs'],
+        artifact: 'true',
+        full: 'true',
+      },
+      {
+        name: 'candidate-set builder change',
+        event: 'pull_request',
+        paths: ['scripts/prepare-candidate-set.mjs'],
+        artifact: 'true',
+        full: 'true',
+      },
       { name: 'main certification', event: 'push', paths: [], artifact: 'true', full: 'true' },
     ]) {
       const outputs = new Map<string, string>()
