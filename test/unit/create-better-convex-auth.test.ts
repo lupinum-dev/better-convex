@@ -1,4 +1,3 @@
-import { httpRouter } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AuthCtx } from '../../src/runtime/convex-auth/context'
@@ -32,7 +31,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  vi.restoreAllMocks()
   for (const [name, value] of Object.entries(previousEnvironment)) {
     if (value === undefined) Reflect.deleteProperty(process.env, name)
     else process.env[name] = value
@@ -593,175 +591,19 @@ describe('createBetterConvexAuth', () => {
     expect(betterAuth).toHaveBeenCalledOnce()
   })
 
-  it.each([
-    {
-      label: 'BCN_AUTH_INIT_SITE_ORIGIN_FAILED',
-      prepare() {
-        process.env.SITE_URL = 'private-site-origin-sentinel'
-      },
-    },
-    {
-      label: 'BCN_AUTH_INIT_CONVEX_ORIGIN_FAILED',
-      prepare() {
-        process.env.CONVEX_SITE_URL = 'private-convex-origin-sentinel'
-      },
-    },
-    {
-      label: 'BCN_AUTH_INIT_SECRETS_FAILED',
-      prepare() {
-        process.env.BETTER_AUTH_SECRETS = 'private-secret-sentinel'
-      },
-    },
-  ])(
-    'reports one fixed $label line and preserves the generic failure',
-    async ({ label, prepare }) => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-      prepare()
-      const auth = createBetterConvexAuth(component())
-
-      const failure = await Promise.resolve(auth.createAuth({} as never)).catch(
-        (error: unknown) => error,
-      )
-
-      expect(failure).toEqual(new Error('AUTH_CONFIG_INVALID'))
-      expect(consoleError.mock.calls).toEqual([[`[better-convex-nuxt] ${label}`]])
-      expect(JSON.stringify(failure)).not.toContain('private-')
-    },
-  )
-
-  it('reports OAuth profile failure once without forwarding the thrown value', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const privateFailure = Object.freeze({ private: 'oauth-profile-sentinel' })
+  it('sanitizes OAuth profile failures in the client deletion operator', async () => {
+    const privateFailure = new Error('operator-profile-sentinel')
     const auth = createBetterConvexAuth(component(), {
       oauthProvider: () => Promise.reject(privateFailure),
     })
 
-    const failure = await Promise.resolve(auth.createAuth({} as never)).catch(
-      (error: unknown) => error,
-    )
+    const failure = await auth.oauthOperator
+      .deleteClient({} as never, { clientId: 'public-client' })
+      .catch((error: unknown) => error)
 
     expect(failure).toEqual(new Error('AUTH_CONFIG_INVALID'))
     expect(failure).not.toBe(privateFailure)
-    expect(consoleError.mock.calls).toEqual([
-      ['[better-convex-nuxt] BCN_AUTH_INIT_OAUTH_PROFILE_FAILED'],
-    ])
-    expect(JSON.stringify([failure, consoleError.mock.calls])).not.toContain(
-      'oauth-profile-sentinel',
-    )
-  })
-
-  it.each(['createPublicClient', 'deleteClient'] as const)(
-    'reports one shared OAuth profile failure through oauthOperator.%s',
-    async (operation) => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-      const auth = createBetterConvexAuth(component(), {
-        oauthProvider: () => {
-          throw new Error('operator-profile-sentinel')
-        },
-      })
-
-      const request =
-        operation === 'createPublicClient'
-          ? auth.oauthOperator.createPublicClient({} as never, {
-              name: 'Agent',
-              profile: 'agent',
-              redirectUris: ['https://agent.example.test/callback'],
-              resource: {
-                identifier: 'https://deployment.convex.site/mcp',
-                name: 'MCP',
-                ownership: 'application',
-              },
-              scopes: ['cms.read'],
-            })
-          : auth.oauthOperator.deleteClient({} as never, { clientId: 'public-client' })
-
-      await expect(request).rejects.toThrow('AUTH_CONFIG_INVALID')
-      expect(consoleError.mock.calls).toEqual([
-        ['[better-convex-nuxt] BCN_AUTH_INIT_OAUTH_PROFILE_FAILED'],
-      ])
-      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('operator-profile-sentinel')
-    },
-  )
-
-  it.each([
-    {
-      name: 'provider composition',
-      options: {
-        socialProviders: () => {
-          throw new Error('social-provider-sentinel')
-        },
-      },
-    },
-    {
-      name: 'Better Auth context initialization',
-      options: {},
-      prepare() {
-        betterAuth.mockImplementationOnce(() => ({
-          $context: Promise.reject(new Error('auth-context-sentinel')),
-          handler: vi.fn(),
-          options: {},
-        }))
-      },
-    },
-  ])('reports composition failure once for $name', async ({ options, prepare }) => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    prepare?.()
-    const auth = createBetterConvexAuth(component(), options)
-
-    const failure = await Promise.resolve(auth.createAuth({} as never)).catch(
-      (error: unknown) => error,
-    )
-
-    expect(failure).toEqual(new Error('AUTH_CONFIG_INVALID'))
-    expect(consoleError.mock.calls).toEqual([
-      ['[better-convex-nuxt] BCN_AUTH_INIT_COMPOSITION_FAILED'],
-    ])
-    expect(JSON.stringify([failure, consoleError.mock.calls])).not.toContain('sentinel')
-  })
-
-  it('stays silent on successful initialization', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const auth = createBetterConvexAuth(component())
-
-    await expect(auth.createAuth({} as never)).resolves.toBeDefined()
-
-    expect(consoleError).not.toHaveBeenCalled()
-  })
-
-  it('keeps the generic auth failure when console.error throws', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {
-      throw new Error('console-sentinel')
-    })
-    Reflect.deleteProperty(process.env, 'BETTER_AUTH_SECRETS')
-    const auth = createBetterConvexAuth(component())
-
-    await expect(auth.createAuth({} as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
-  })
-
-  it('keeps the real auth HTTP response generic while the operator receives one fixed label', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    process.env.BETTER_AUTH_SECRETS = 'http-private-secret-sentinel'
-    const auth = createBetterConvexAuth(component())
-    const http = httpRouter()
-    auth.registerRoutes(http)
-    const route = http.lookup('/api/auth/get-session', 'GET')
-    if (!route) throw new Error('Auth route was not registered')
-    const handler = route[0] as (typeof route)[0] & {
-      _handler: (ctx: unknown, request: Request) => Promise<Response>
-    }
-
-    const response = await handler._handler(
-      {
-        meta: {
-          getRequestMetadata: vi.fn(async () => ({ ip: '198.51.100.10' })),
-        },
-      },
-      new Request('https://deployment.convex.site/api/auth/get-session'),
-    )
-
-    expect(response.status).toBe(500)
-    expect(await response.json()).toEqual({ code: 'AUTH_CONFIG_INVALID' })
-    expect(JSON.stringify([...response.headers])).not.toContain('http-private-secret-sentinel')
-    expect(consoleError.mock.calls).toEqual([['[better-convex-nuxt] BCN_AUTH_INIT_SECRETS_FAILED']])
+    expect(String(failure)).not.toContain('operator-profile-sentinel')
+    expect(JSON.stringify(failure)).not.toContain('operator-profile-sentinel')
   })
 })

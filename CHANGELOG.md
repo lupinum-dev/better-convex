@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Add five fixed, value-free Convex operator labels for auth initialization
-  stages while preserving the existing generic public auth failure.
+- Prevent the OAuth client deletion operator from exposing a raw
+  application-owned profile resolver failure.
 
 ## mcp-v1.0.0-beta.1
 
