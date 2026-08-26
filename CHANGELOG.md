@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Recreate missing Better Auth user projections from the current update,
+  reject ambiguous duplicate rows with a fixed internal error, and leave
+  duplicate repair to application-owned migrations.
+
 ## mcp-v1.0.0-beta.1
 
 - Release `@lupinum/better-convex-mcp` on its independent 1.0 beta line while

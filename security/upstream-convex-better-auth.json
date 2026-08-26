@@ -489,9 +489,9 @@
       "targetPath": "src/runtime/convex-auth/user-projection.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "610a4d7edfbb0fd3ab412d61e8103b9e416edaaf8e2719189c9cff345597150d",
-      "targetSha256": "0d1985eb55e713ecca00bd5858f0332c21c083ef26ca73e644f2d3617af4a9d0",
+      "targetSha256": "bc3542cad74b5ffbcc3b0464d717e670d891b2c5281b96f4548e4a12fe2b8536",
       "classification": "rewritten",
-      "modificationSummary": "Extracted the optional application-user trigger path into one explicitly derived and rebuildable projection helper whose validated indexed auth key is owned by the helper and cannot be overridden by consumer callbacks.",
+      "modificationSummary": "Extracted the optional application-user trigger path into one explicitly derived and rebuildable projection helper whose validated indexed auth key is owned by the helper, cannot be overridden by consumer callbacks, uses a bounded lookup, fails closed on ambiguous survivors, and recreates a missing projection from the current canonical update snapshot.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     }
