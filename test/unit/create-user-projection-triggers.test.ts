@@ -1,8 +1,17 @@
-import { describe, expect, it, vi } from 'vitest'
+import { inspect } from 'node:util'
 
+import { httpRouter } from 'convex/server'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { createAuthComponent } from '../../src/runtime/convex-auth/create-auth-component'
 import { createUserProjectionTriggers } from '../../src/runtime/convex-auth/user-projection'
 
 describe('createUserProjectionTriggers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+  })
+
   type TestAuthUser = {
     id: string
     email?: string | null
@@ -24,7 +33,7 @@ describe('createUserProjectionTriggers', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ _id: 'user-1' }])
       .mockResolvedValueOnce([{ _id: 'user-1' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -85,7 +94,7 @@ describe('createUserProjectionTriggers', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ _id: 'user-2', authId: 'auth-2', email: 'old@example.com' }])
       .mockResolvedValueOnce([{ _id: 'user-3', authId: 'auth-3', email: 'c@example.com' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -139,7 +148,7 @@ describe('createUserProjectionTriggers', () => {
       .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1', email: 'a@example.com' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -170,20 +179,40 @@ describe('createUserProjectionTriggers', () => {
     expect(query).toHaveBeenCalledTimes(2)
   })
 
-  it('collapses duplicate projections and deletes every copy with the auth user', async () => {
+  it('rejects ambiguous projections before callbacks or writes and deletes all rows on user deletion', async () => {
     const insert = vi.fn(async () => 'new-id')
     const patch = vi.fn(async () => undefined)
     const remove = vi.fn(async () => undefined)
-    const duplicates = [
-      { _id: 'user-1', authId: 'auth-1', email: 'stale@example.com' },
-      { _id: 'user-2', authId: 'auth-1', email: 'copied@example.com' },
+    const privateSentinels = [
+      'private-auth-id-sentinel',
+      'private-first-row-sentinel',
+      'private-second-row-sentinel',
     ]
-    const collect = vi
+    const duplicates = [
+      {
+        _id: 'user-1',
+        authId: privateSentinels[0],
+        email: privateSentinels[1],
+      },
+      {
+        _id: 'user-2',
+        authId: privateSentinels[0],
+        email: privateSentinels[2],
+      },
+    ]
+    const lookup = vi
       .fn()
       .mockResolvedValueOnce(duplicates)
       .mockResolvedValueOnce(duplicates)
       .mockResolvedValueOnce(duplicates)
-    const withIndex = vi.fn(() => ({ collect }))
+      .mockResolvedValueOnce(duplicates)
+    const withIndex = vi.fn(() => ({ collect: lookup, take: lookup }))
+    const createDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({
+      authId: user.id,
+      email: user.email,
+    }))
+    const patchDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({ email: user.email }))
+    const rebuildDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({ email: user.email }))
     const ctx = {
       db: {
         insert,
@@ -196,38 +225,119 @@ describe('createUserProjectionTriggers', () => {
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
       table: 'users',
       index: 'by_auth_id',
-      createDoc: ({ user }) => ({ authId: user.id, email: user.email }),
-      patchDoc: ({ user }) => ({ email: user.email }),
-      rebuildDoc: ({ user }) => ({ email: user.email }),
+      createDoc,
+      patchDoc,
+      rebuildDoc,
     })
 
-    await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'canonical@example.com' })
-    expect(remove).toHaveBeenCalledWith('user-2')
+    const conflict = { data: { code: 'AUTH_USER_PROJECTION_CONFLICT' } }
+    const failure = await triggers.user
+      .onCreate(ctx, { id: privateSentinels[0]!, email: 'canonical@example.com' })
+      .catch((error: unknown) => error)
+    expect(failure).toMatchObject(conflict)
+    expect(Object.keys((failure as { data: object }).data)).toEqual(['code'])
+    const renderedFailure = [String(failure), inspect(failure), JSON.stringify(failure)].join('\n')
+    for (const sentinel of privateSentinels) expect(renderedFailure).not.toContain(sentinel)
+    await expect(
+      triggers.user.onUpdate(
+        ctx,
+        { id: 'auth-1', email: 'canonical@example.com' },
+        { id: 'auth-1', email: 'stale@example.com' },
+      ),
+    ).rejects.toMatchObject(conflict)
+    await expect(
+      triggers.user.rebuild(ctx, [{ id: 'auth-1', email: 'canonical@example.com' }]),
+    ).rejects.toMatchObject(conflict)
+    expect(createDoc).not.toHaveBeenCalled()
+    expect(patchDoc).not.toHaveBeenCalled()
+    expect(rebuildDoc).not.toHaveBeenCalled()
     expect(insert).not.toHaveBeenCalled()
+    expect(patch).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
 
-    remove.mockClear()
-    await triggers.user.rebuild(ctx, [{ id: 'auth-1', email: 'canonical@example.com' }])
-    expect(remove).toHaveBeenCalledWith('user-2')
-    expect(patch).toHaveBeenCalledWith('user-1', {
-      authId: 'auth-1',
-      email: 'canonical@example.com',
-    })
-
-    remove.mockClear()
     await triggers.user.onDelete(ctx, { id: 'auth-1' })
     expect(remove.mock.calls).toEqual([['user-1'], ['user-2']])
+    expect(lookup.mock.calls.slice(0, 3)).toEqual([[2], [2], [2]])
+    expect(lookup.mock.calls[3]).toEqual([])
   })
 
-  it('no-ops onUpdate arriving before onCreate for the same user', async () => {
-    // Documents the current, intentional behavior (see the onUpdate JSDoc):
-    // out-of-order delivery (onUpdate before onCreate) finds no existing
-    // projection row and silently drops the update rather than queuing or
-    // retrying it. The row is later created by onCreate, but from that
-    // event's own payload, not the dropped update's fields.
+  it('keeps projection conflicts private at the registered auth HTTP boundary', async () => {
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    const privateSentinels = [
+      'private-auth-id-sentinel',
+      'private-table-sentinel',
+      'private-index-sentinel',
+      'private-row-sentinel',
+      'private-callback-sentinel',
+    ]
+    const projectionCtx = {
+      db: {
+        insert: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            collect: vi.fn(),
+            take: vi.fn(async () => [
+              { _id: 'user-1', private: privateSentinels[3] },
+              { _id: 'user-2', private: privateSentinels[3] },
+            ]),
+          })),
+        })),
+      },
+    }
+    const createDoc = vi.fn(() => ({ private: privateSentinels[4] }))
+    const projection = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
+      table: privateSentinels[1]!,
+      index: privateSentinels[2]!,
+      createDoc,
+    })
+    const component = createAuthComponent({ adapter: {} } as never)
+    const http = httpRouter()
+    component.registerRoutes(http, async () => {
+      await projection.user.onCreate(projectionCtx, {
+        id: privateSentinels[0]!,
+        email: 'private-email-sentinel',
+      })
+      throw new Error('Projection conflict did not abort auth creation')
+    })
+    const route = http.lookup('/api/auth/get-session', 'GET')
+    if (!route) throw new Error('Auth route was not registered')
+    const handler = route[0] as (typeof route)[0] & {
+      _handler: (ctx: unknown, request: Request) => Promise<Response>
+    }
+    const logSpies = [
+      vi.spyOn(console, 'error').mockImplementation(() => undefined),
+      vi.spyOn(console, 'log').mockImplementation(() => undefined),
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined),
+    ]
+
+    const response = await handler._handler(
+      { meta: { getRequestMetadata: vi.fn(async () => ({ ip: '198.51.100.10' })) } },
+      new Request('https://deployment.convex.site/api/auth/get-session'),
+    )
+    const publicSurface = JSON.stringify({
+      body: await response.json(),
+      headers: [...response.headers],
+      logs: logSpies.flatMap((spy) => spy.mock.calls),
+    })
+
+    expect(response.status).toBe(500)
+    expect(publicSurface).toContain('AUTH_CONFIG_INVALID')
+    for (const sentinel of [...privateSentinels, 'private-email-sentinel']) {
+      expect(publicSurface).not.toContain(sentinel)
+    }
+    expect(createDoc).not.toHaveBeenCalled()
+  })
+
+  it('creates from the current update snapshot when onUpdate arrives before onCreate', async () => {
     const insert = vi.fn(async () => 'new-id')
     const patch = vi.fn(async () => undefined)
-    const collect = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([])
-    const withIndex = vi.fn(() => ({ collect }))
+    const collect = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1' }])
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -254,23 +364,20 @@ describe('createUserProjectionTriggers', () => {
       },
     })
 
-    // onUpdate arrives first — no projection row exists yet.
     await triggers.user.onUpdate(
       ctx,
       { id: 'auth-1', email: 'updated@example.com' },
       { id: 'auth-1', email: 'original@example.com' },
     )
     expect(patch).not.toHaveBeenCalled()
-    expect(insert).not.toHaveBeenCalled()
-
-    // onCreate arrives afterward, using its own (not the dropped update's) payload.
-    await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'original@example.com' })
     expect(insert).toHaveBeenCalledTimes(1)
     expect(insert).toHaveBeenCalledWith(
       'users',
-      expect.objectContaining({ authId: 'auth-1', email: 'original@example.com' }),
+      expect.objectContaining({ authId: 'auth-1', email: 'updated@example.com' }),
     )
-    // The dropped update's 'updated@example.com' never lands anywhere.
+
+    await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'original@example.com' })
+    expect(insert).toHaveBeenCalledTimes(1)
     expect(patch).not.toHaveBeenCalled()
   })
 
@@ -278,7 +385,7 @@ describe('createUserProjectionTriggers', () => {
     const insert = vi.fn(async () => 'new-id')
     const patch = vi.fn(async () => undefined)
     const collect = vi.fn().mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -316,7 +423,7 @@ describe('createUserProjectionTriggers', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ _id: 'user-1', authUserId: 'auth-1' }])
       .mockResolvedValueOnce([{ _id: 'user-1', authUserId: 'auth-1' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const ctx = {
       db: {
         insert,

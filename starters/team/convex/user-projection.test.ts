@@ -23,7 +23,7 @@ async function createAuthUser(
 }
 
 describe('team user projection', () => {
-  it('rebuilds missing and stale rows and collapses duplicates', async () => {
+  it('rebuilds missing and stale rows', async () => {
     const t = initConvexTest()
     const staleAuthUser = await createAuthUser(t, {
       name: 'Canonical Ada',
@@ -36,16 +36,14 @@ describe('team user projection', () => {
     })
 
     await t.run(async (ctx) => {
-      for (const email of ['stale@example.com', 'duplicate@example.com']) {
-        await ctx.db.insert('users', {
-          authUserId: staleAuthUser.id,
-          name: 'Stale Ada',
-          email,
-          image: 'https://example.com/stale.png',
-          createdAt: 1,
-          updatedAt: 1,
-        })
-      }
+      await ctx.db.insert('users', {
+        authUserId: staleAuthUser.id,
+        name: 'Stale Ada',
+        email: 'stale@example.com',
+        image: 'https://example.com/stale.png',
+        createdAt: 1,
+        updatedAt: 1,
+      })
     })
 
     const result = await t.mutation(internal.auth.rebuildUserProjectionBatch, { cursor: null })

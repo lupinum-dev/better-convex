@@ -4,6 +4,9 @@
 
 - Prevent the OAuth client deletion operator from exposing a raw
   application-owned profile resolver failure.
+- Recreate missing Better Auth user projections from the current update,
+  reject ambiguous duplicate rows with a fixed internal error, and leave
+  duplicate repair to application-owned migrations.
 
 ## mcp-v1.0.0-beta.1
 

@@ -1,3 +1,5 @@
+import { ConvexError } from 'convex/values'
+
 export interface BetterAuthUserProjectionSource {
   id: string
   name?: string | null
@@ -35,7 +37,7 @@ export interface CreateUserProjectionTriggersOptions<
    */
   authIdField?: string
   /**
-   * Build the document inserted into your app user table on user creation.
+   * Build the document inserted when a projection row is missing.
    */
   createDoc: (args: {
     ctx: TCtx
@@ -78,7 +80,10 @@ type ConvexQueryChain<TExistingUser> = {
   withIndex(
     indexName: string,
     cb: (q: UserProjectionIndexRangeBuilder) => unknown,
-  ): { collect: () => Promise<TExistingUser[]> }
+  ): {
+    collect: () => Promise<TExistingUser[]>
+    take: (limit: number) => Promise<TExistingUser[]>
+  }
 }
 
 type UserProjectionIndexRangeBuilder = {
@@ -96,6 +101,10 @@ interface UserProjectionLookup {
   readonly index: string
   readonly authIdField: string
 }
+
+const projectionConflictData = Object.freeze({
+  code: 'AUTH_USER_PROJECTION_CONFLICT' as const,
+})
 
 function resolveAuthIdField(field: string | undefined): string {
   const resolved = field ?? 'authId'
@@ -132,27 +141,36 @@ function withCanonicalAuthId(
   return { ...value, [authIdField]: authUserId }
 }
 
-async function findExistingByAuthId<TExistingUser extends { _id: unknown }>(
+function indexedProjectionQuery<TExistingUser extends { _id: unknown }>(
+  ctx: { db: Pick<UserProjectionDb<TExistingUser>, 'query'> },
+  lookup: UserProjectionLookup,
+  authUserId: string,
+): ReturnType<ConvexQueryChain<TExistingUser>['withIndex']> {
+  const query = ctx.db.query(lookup.table) as ConvexQueryChain<TExistingUser>
+
+  return query.withIndex(lookup.index, (q: UserProjectionIndexRangeBuilder) =>
+    q.eq(lookup.authIdField, authUserId),
+  )
+}
+
+async function findUnambiguousProjection<TExistingUser extends { _id: unknown }>(
+  ctx: { db: Pick<UserProjectionDb<TExistingUser>, 'query'> },
+  lookup: UserProjectionLookup,
+  authUserId: string,
+): Promise<TExistingUser | undefined> {
+  const existing = await indexedProjectionQuery<TExistingUser>(ctx, lookup, authUserId).take(2)
+  if (existing.length > 1) {
+    throw new ConvexError(projectionConflictData)
+  }
+  return existing[0]
+}
+
+async function findAllProjections<TExistingUser extends { _id: unknown }>(
   ctx: { db: Pick<UserProjectionDb<TExistingUser>, 'query'> },
   lookup: UserProjectionLookup,
   authUserId: string,
 ): Promise<TExistingUser[]> {
-  const query = ctx.db.query(lookup.table) as ConvexQueryChain<TExistingUser>
-
-  return await query
-    .withIndex(lookup.index, (q: UserProjectionIndexRangeBuilder) =>
-      q.eq(lookup.authIdField, authUserId),
-    )
-    .collect()
-}
-
-async function deleteDuplicateRows<TExistingUser extends { _id: unknown }>(
-  ctx: UserProjectionCtx<TExistingUser>,
-  existing: readonly TExistingUser[],
-): Promise<void> {
-  for (const duplicate of existing.slice(1)) {
-    await ctx.db.delete(duplicate._id)
-  }
+  return await indexedProjectionQuery<TExistingUser>(ctx, lookup, authUserId).collect()
 }
 
 /**
@@ -177,49 +195,40 @@ export function createUserProjectionTriggers<
     user: {
       onCreate: async (ctx: TCtx, user: TAuthUser) => {
         const now = Date.now()
-        const existing = await findExistingByAuthId<TExistingUser>(ctx, lookup, user.id)
-        if (existing.length > 0) {
-          await deleteDuplicateRows(ctx, existing)
-          return
-        }
+        const existing = await findUnambiguousProjection<TExistingUser>(ctx, lookup, user.id)
+        if (existing) return
 
         const doc = await options.createDoc({ ctx, user, now })
         await ctx.db.insert(options.table, withCanonicalAuthId(doc, lookup.authIdField, user.id))
       },
       /**
-       * Patches the projected row for a Better Auth user update.
-       *
-       * If `onUpdate` fires before the corresponding `onCreate` has run
-       * for this user (e.g. out-of-order trigger delivery, or a webhook race),
-       * `findExistingByAuthId` finds nothing and this silently no-ops — the
-       * update is dropped rather than queued or retried. The row is created
-       * later by `onCreate`, but using `createDoc`'s snapshot at that later
-       * time, not the fields this update carried. If your projection needs
-       * updates to survive arriving before creation, either make `createDoc`
-       * derive from the latest known user state (not just the `onCreate`
-       * event's payload) or run `rebuild()` periodically to reconcile drift.
+       * Patches an existing projection or creates one from the current update
+       * snapshot when trigger delivery arrives before creation.
        */
       onUpdate: async (ctx: TCtx, user: TAuthUser, previousUser: TAuthUser) => {
-        const existing = await findExistingByAuthId<TExistingUser>(ctx, lookup, user.id)
-        const [retained] = existing
-        if (!retained) return
+        const now = Date.now()
+        const existing = await findUnambiguousProjection<TExistingUser>(ctx, lookup, user.id)
+        if (!existing) {
+          const doc = await options.createDoc({ ctx, user, now })
+          await ctx.db.insert(options.table, withCanonicalAuthId(doc, lookup.authIdField, user.id))
+          return
+        }
 
-        await deleteDuplicateRows(ctx, existing)
         if (!options.patchDoc) return
 
         const patch = await options.patchDoc({
           ctx,
           user,
           previousUser,
-          existing: retained,
-          now: Date.now(),
+          existing,
+          now,
         })
         if (!patch || Object.keys(patch).length === 0) return
 
-        await ctx.db.patch(retained._id, withCanonicalAuthId(patch, lookup.authIdField, user.id))
+        await ctx.db.patch(existing._id, withCanonicalAuthId(patch, lookup.authIdField, user.id))
       },
       onDelete: async (ctx: TCtx, user: TAuthUser) => {
-        const existing = await findExistingByAuthId<TExistingUser>(ctx, lookup, user.id)
+        const existing = await findAllProjections<TExistingUser>(ctx, lookup, user.id)
         for (const row of existing) {
           await ctx.db.delete(row._id)
         }
@@ -236,10 +245,9 @@ export function createUserProjectionTriggers<
 
         for (const user of users) {
           const now = Date.now()
-          const existing = await findExistingByAuthId<TExistingUser>(ctx, lookup, user.id)
-          const [retained] = existing
+          const existing = await findUnambiguousProjection<TExistingUser>(ctx, lookup, user.id)
 
-          if (!retained) {
+          if (!existing) {
             const doc = await options.createDoc({ ctx, user, now })
             await ctx.db.insert(
               options.table,
@@ -249,8 +257,6 @@ export function createUserProjectionTriggers<
             continue
           }
 
-          await deleteDuplicateRows(ctx, existing)
-
           if (!options.rebuildDoc) {
             result.skipped += 1
             continue
@@ -259,7 +265,7 @@ export function createUserProjectionTriggers<
           const patch = await options.rebuildDoc({
             ctx,
             user,
-            existing: retained,
+            existing,
             now,
           })
           if (!patch || Object.keys(patch).length === 0) {
@@ -267,7 +273,7 @@ export function createUserProjectionTriggers<
             continue
           }
 
-          await ctx.db.patch(retained._id, withCanonicalAuthId(patch, lookup.authIdField, user.id))
+          await ctx.db.patch(existing._id, withCanonicalAuthId(patch, lookup.authIdField, user.id))
           result.patched += 1
         }
 
