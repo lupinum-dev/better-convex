@@ -219,10 +219,7 @@ export function createUserProjectionTriggers<
         const existing = await findUnambiguousProjection<TExistingUser>(ctx, lookup, user.id)
         if (!existing) {
           const doc = await options.createDoc({ ctx, user, now })
-          await ctx.db.insert(
-            options.table,
-            withCanonicalAuthId(doc, lookup.authIdField, user.id),
-          )
+          await ctx.db.insert(options.table, withCanonicalAuthId(doc, lookup.authIdField, user.id))
           return
         }
 
