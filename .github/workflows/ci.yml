@@ -43,7 +43,7 @@ jobs:
                 /^(?:docs\/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
               )
             const releaseArtifactInputs = paths.some((path) =>
-              /^(?:scripts\/(?:candidate-app-locks|create-release-candidate|prepare-candidate-app-locks|prepare-candidate-set|reconcile-release|release|release-intent|release-preflight-tarballs|release-smoke|test-lazy-release|test-release-workflow)\.mjs|\.github\/workflows\/(?:ci|publish-prerelease)\.yml)$/u.test(path),
+              /^(?:package\.json|pnpm-lock\.yaml|packages\/(?:vue|mcp)\/package\.json|(?:demo|starters\/(?:agency|mcp-oauth-agent|public|team))\/(?:package\.json|pnpm-lock\.yaml)|scripts\/(?:candidate-app-locks|create-release-candidate|prepare-candidate-app-locks|prepare-candidate-set|reconcile-release|release|release-intent|release-preflight-tarballs|release-smoke|test-lazy-release|test-release-workflow)\.mjs|\.github\/workflows\/(?:ci|publish-prerelease)\.yml)$/u.test(path),
             )
             core.setOutput('artifact', String(runAll || releaseArtifactInputs))
             core.setOutput('full', String(runAll || !publicDocsOnly))
