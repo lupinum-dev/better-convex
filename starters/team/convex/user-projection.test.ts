@@ -23,7 +23,7 @@ async function createAuthUser(
 }
 
 describe('team user projection', () => {
-  it('rebuilds missing and stale rows and collapses duplicates', async () => {
+  it('rebuilds missing and stale rows', async () => {
     const t = initConvexTest()
     const staleAuthUser = await createAuthUser(t, {
       name: 'Canonical Ada',
@@ -36,16 +36,14 @@ describe('team user projection', () => {
     })
 
     await t.run(async (ctx) => {
-      for (const email of ['stale@example.com', 'duplicate@example.com']) {
-        await ctx.db.insert('users', {
-          authUserId: staleAuthUser.id,
-          name: 'Stale Ada',
-          email,
-          image: 'https://example.com/stale.png',
-          createdAt: 1,
-          updatedAt: 1,
-        })
-      }
+      await ctx.db.insert('users', {
+        authUserId: staleAuthUser.id,
+        name: 'Stale Ada',
+        email: 'stale@example.com',
+        image: 'https://example.com/stale.png',
+        createdAt: 1,
+        updatedAt: 1,
+      })
     })
 
     const result = await t.mutation(internal.auth.rebuildUserProjectionBatch, { cursor: null })
@@ -63,6 +61,38 @@ describe('team user projection', () => {
     expect(users.filter((user) => user.authUserId === missingAuthUser.id)).toEqual([
       expect.objectContaining({ name: 'Grace', email: 'grace@example.com' }),
     ])
+  })
+
+  it('fails closed and rolls back the rebuild batch when projections conflict', async () => {
+    const t = initConvexTest()
+    const missingAuthUser = await createAuthUser(t, {
+      name: 'Grace',
+      email: 'grace@example.com',
+    })
+    const conflictingAuthUser = await createAuthUser(t, {
+      name: 'Canonical Ada',
+      email: 'ada@example.com',
+    })
+
+    await t.run(async (ctx) => {
+      for (const email of ['ada+first@example.com', 'ada+second@example.com']) {
+        await ctx.db.insert('users', {
+          authUserId: conflictingAuthUser.id,
+          name: 'Application-owned Ada',
+          email,
+          createdAt: 1,
+          updatedAt: 1,
+        })
+      }
+    })
+
+    const before = await t.run(async (ctx) => await ctx.db.query('users').collect())
+    await expect(
+      t.mutation(internal.auth.rebuildUserProjectionBatch, { cursor: null }),
+    ).rejects.toMatchObject({ data: { code: 'AUTH_USER_PROJECTION_CONFLICT' } })
+
+    expect(await t.run(async (ctx) => await ctx.db.query('users').collect())).toEqual(before)
+    expect(before.some((user) => user.authUserId === missingAuthUser.id)).toBe(false)
   })
 
   it('removes every copied PII row when the auth user is deleted', async () => {
