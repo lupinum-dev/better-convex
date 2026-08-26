@@ -24,14 +24,15 @@ describe('prepared release changelog', () => {
     const workspace = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
       version: string
     }
-    const mcp = JSON.parse(readFileSync(resolve('packages/mcp/package.json'), 'utf8')) as {
+    const vue = JSON.parse(readFileSync(resolve('packages/vue/package.json'), 'utf8')) as {
       version: string
     }
     const changelog = readFileSync(resolve('CHANGELOG.md'), 'utf8')
+    const currentTag = `v${workspace.version}`
 
-    expect(mcp.version).toBe(workspace.version)
-    expect(getReleaseFamilyTag(workspace.version)).toBe(tag)
-    expect(requirePreparedReleaseNotes(changelog, tag)).toContain('@lupinum/better-convex-mcp')
+    expect(vue.version).toBe(workspace.version)
+    expect(getReleaseFamilyTag(workspace.version)).toBe(currentTag)
+    expect(requirePreparedReleaseNotes(changelog, currentTag)).toContain('OAuth')
   })
 
   it.each([
