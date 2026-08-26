@@ -1,6 +1,6 @@
 # RFC: Prove data-model-native user projection types
 
-- Status: Draft proof; no public type change approved
+- Status: Rejected after proof; retain the current public types
 - Date: 2026-08-25
 - Target: After the projection integrity decision in PR #113
 - Scope: Public TypeScript contract of `createUserProjectionTriggers`
@@ -234,6 +234,36 @@ If the proof fails, Better Convex retains the current public types and documents
 
 The rejected proof must be deleted completely. It must leave no overload, helper type, fixture, configuration option, or compatibility path.
 
+## Proof result
+
+The experiment was implemented against Convex 1.42.2, then deleted because it
+failed admission gate 20.
+
+The candidate successfully proved the core relationships with public
+`convex/server` types:
+
+- one explicit generated `DataModel` selected the table, index, auth ID field,
+  document, mutation context, insert value, and patch value;
+- the positive and negative type matrix compiled without excessive type
+  instantiation;
+- both ordinary and `exactOptionalPropertyTypes` callback shapes compiled;
+- five warm focused server type-check runs had medians of 2.93 seconds before
+  and 3.29 seconds with the proof, a 12.3 percent regression within the
+  15 percent budget.
+
+However, the emitted `user-projection.d.ts` grew from 3.71 kB to 5.99 kB, a
+61.5 percent increase. This is more than three times the allowed 20 percent
+growth. The extra mapped and conditional types would become permanent public
+API complexity for a helper whose runtime contract is already explicit.
+
+Per the all-or-nothing admission rule, the implementation, type fixtures,
+consumer changes, configuration changes, and migration edits were removed.
+There is no overload, compatibility path, helper export, or residual type
+machinery. The current `<TAuthUser, TExistingUser, TCtx>` contract remains.
+
 ## Decision
 
-Pending proof and maintainer approval.
+Rejected. Do not adopt the data-model-native signature under the current
+declaration-size budget. Reopen only if Convex exposes a materially smaller
+public projection type primitive or a future TypeScript release emits the same
+contract within all admission gates.
