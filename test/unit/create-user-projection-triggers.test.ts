@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createUserProjectionTriggers } from '../../src/runtime/convex-auth/user-projection'
 
 describe('createUserProjectionTriggers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   type TestAuthUser = {
     id: string
     email?: string | null
@@ -24,7 +28,7 @@ describe('createUserProjectionTriggers', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ _id: 'user-1' }])
       .mockResolvedValueOnce([{ _id: 'user-1' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -85,7 +89,7 @@ describe('createUserProjectionTriggers', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ _id: 'user-2', authId: 'auth-2', email: 'old@example.com' }])
       .mockResolvedValueOnce([{ _id: 'user-3', authId: 'auth-3', email: 'c@example.com' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -139,7 +143,7 @@ describe('createUserProjectionTriggers', () => {
       .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1', email: 'a@example.com' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -170,7 +174,7 @@ describe('createUserProjectionTriggers', () => {
     expect(query).toHaveBeenCalledTimes(2)
   })
 
-  it('collapses duplicate projections and deletes every copy with the auth user', async () => {
+  it('rejects ambiguous projections before callbacks or writes and deletes all rows on user deletion', async () => {
     const insert = vi.fn(async () => 'new-id')
     const patch = vi.fn(async () => undefined)
     const remove = vi.fn(async () => undefined)
@@ -178,12 +182,19 @@ describe('createUserProjectionTriggers', () => {
       { _id: 'user-1', authId: 'auth-1', email: 'stale@example.com' },
       { _id: 'user-2', authId: 'auth-1', email: 'copied@example.com' },
     ]
-    const collect = vi
+    const lookup = vi
       .fn()
       .mockResolvedValueOnce(duplicates)
       .mockResolvedValueOnce(duplicates)
       .mockResolvedValueOnce(duplicates)
-    const withIndex = vi.fn(() => ({ collect }))
+      .mockResolvedValueOnce(duplicates)
+    const withIndex = vi.fn(() => ({ collect: lookup, take: lookup }))
+    const createDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({
+      authId: user.id,
+      email: user.email,
+    }))
+    const patchDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({ email: user.email }))
+    const rebuildDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({ email: user.email }))
     const ctx = {
       db: {
         insert,
@@ -196,38 +207,46 @@ describe('createUserProjectionTriggers', () => {
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
       table: 'users',
       index: 'by_auth_id',
-      createDoc: ({ user }) => ({ authId: user.id, email: user.email }),
-      patchDoc: ({ user }) => ({ email: user.email }),
-      rebuildDoc: ({ user }) => ({ email: user.email }),
+      createDoc,
+      patchDoc,
+      rebuildDoc,
     })
 
-    await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'canonical@example.com' })
-    expect(remove).toHaveBeenCalledWith('user-2')
+    const conflict = { data: { code: 'AUTH_USER_PROJECTION_CONFLICT' } }
+    await expect(
+      triggers.user.onCreate(ctx, { id: 'auth-1', email: 'canonical@example.com' }),
+    ).rejects.toMatchObject(conflict)
+    await expect(
+      triggers.user.onUpdate(
+        ctx,
+        { id: 'auth-1', email: 'canonical@example.com' },
+        { id: 'auth-1', email: 'stale@example.com' },
+      ),
+    ).rejects.toMatchObject(conflict)
+    await expect(
+      triggers.user.rebuild(ctx, [{ id: 'auth-1', email: 'canonical@example.com' }]),
+    ).rejects.toMatchObject(conflict)
+    expect(createDoc).not.toHaveBeenCalled()
+    expect(patchDoc).not.toHaveBeenCalled()
+    expect(rebuildDoc).not.toHaveBeenCalled()
     expect(insert).not.toHaveBeenCalled()
+    expect(patch).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
 
-    remove.mockClear()
-    await triggers.user.rebuild(ctx, [{ id: 'auth-1', email: 'canonical@example.com' }])
-    expect(remove).toHaveBeenCalledWith('user-2')
-    expect(patch).toHaveBeenCalledWith('user-1', {
-      authId: 'auth-1',
-      email: 'canonical@example.com',
-    })
-
-    remove.mockClear()
     await triggers.user.onDelete(ctx, { id: 'auth-1' })
     expect(remove.mock.calls).toEqual([['user-1'], ['user-2']])
+    expect(lookup.mock.calls.slice(0, 3)).toEqual([[2], [2], [2]])
+    expect(lookup.mock.calls[3]).toEqual([])
   })
 
-  it('no-ops onUpdate arriving before onCreate for the same user', async () => {
-    // Documents the current, intentional behavior (see the onUpdate JSDoc):
-    // out-of-order delivery (onUpdate before onCreate) finds no existing
-    // projection row and silently drops the update rather than queuing or
-    // retrying it. The row is later created by onCreate, but from that
-    // event's own payload, not the dropped update's fields.
+  it('creates from the current update snapshot when onUpdate arrives before onCreate', async () => {
     const insert = vi.fn(async () => 'new-id')
     const patch = vi.fn(async () => undefined)
-    const collect = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([])
-    const withIndex = vi.fn(() => ({ collect }))
+    const collect = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1' }])
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -254,31 +273,68 @@ describe('createUserProjectionTriggers', () => {
       },
     })
 
-    // onUpdate arrives first — no projection row exists yet.
     await triggers.user.onUpdate(
       ctx,
       { id: 'auth-1', email: 'updated@example.com' },
       { id: 'auth-1', email: 'original@example.com' },
     )
     expect(patch).not.toHaveBeenCalled()
-    expect(insert).not.toHaveBeenCalled()
-
-    // onCreate arrives afterward, using its own (not the dropped update's) payload.
-    await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'original@example.com' })
     expect(insert).toHaveBeenCalledTimes(1)
     expect(insert).toHaveBeenCalledWith(
       'users',
-      expect.objectContaining({ authId: 'auth-1', email: 'original@example.com' }),
+      expect.objectContaining({ authId: 'auth-1', email: 'updated@example.com' }),
     )
-    // The dropped update's 'updated@example.com' never lands anywhere.
+
+    await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'original@example.com' })
+    expect(insert).toHaveBeenCalledTimes(1)
     expect(patch).not.toHaveBeenCalled()
+  })
+
+  it('does not insert when createDoc fails and captures now once at handler invocation', async () => {
+    const insert = vi.fn(async () => 'new-id')
+    const take = vi.fn(async () => [])
+    const callbackFailure = new Error('projection callback failed')
+    const createDoc = vi.fn(() => {
+      throw callbackFailure
+    })
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValueOnce(123).mockReturnValueOnce(456)
+    const ctx = {
+      db: {
+        insert,
+        patch: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ collect: vi.fn(), take })),
+        })),
+      },
+    }
+    const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
+      table: 'users',
+      index: 'by_auth_id',
+      createDoc,
+    })
+
+    await expect(
+      triggers.user.onUpdate(
+        ctx,
+        { id: 'auth-1', email: 'updated@example.com' },
+        { id: 'auth-1', email: 'original@example.com' },
+      ),
+    ).rejects.toBe(callbackFailure)
+    expect(createDoc).toHaveBeenCalledWith({
+      ctx,
+      user: { id: 'auth-1', email: 'updated@example.com' },
+      now: 123,
+    })
+    expect(dateNow).toHaveBeenCalledTimes(1)
+    expect(insert).not.toHaveBeenCalled()
   })
 
   it('does not overwrite existing projection rows during rebuild without an explicit rebuild patch', async () => {
     const insert = vi.fn(async () => 'new-id')
     const patch = vi.fn(async () => undefined)
     const collect = vi.fn().mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const query = vi.fn(() => ({ withIndex }))
 
     const ctx = {
@@ -316,7 +372,7 @@ describe('createUserProjectionTriggers', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ _id: 'user-1', authUserId: 'auth-1' }])
       .mockResolvedValueOnce([{ _id: 'user-1', authUserId: 'auth-1' }])
-    const withIndex = vi.fn(() => ({ collect }))
+    const withIndex = vi.fn(() => ({ collect, take: collect }))
     const ctx = {
       db: {
         insert,

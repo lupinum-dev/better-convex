@@ -64,6 +64,14 @@ const db = {
             }
             return matches
           },
+          async take(limit: number) {
+            const matches: AppUser[] = []
+            for (const row of rows.values()) {
+              if ((row as Record<string, unknown>)[matchField] === matchValue) matches.push(row)
+              if (matches.length === limit) break
+            }
+            return matches
+          },
         }
       },
     }
