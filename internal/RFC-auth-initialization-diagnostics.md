@@ -110,7 +110,7 @@ The following behavior must remain unchanged:
 
 - public status codes;
 - the `{ code: 'AUTH_CONFIG_INVALID' }` response;
-- thrown error messages received by current factory and operator callers;
+- thrown error messages received by current factory and operator callers, except that `oauthOperator.deleteClient` now converts a profile callback failure from its raw value to `AUTH_CONFIG_INVALID` as described in the proof result;
 - auth proxy error shapes;
 - `ConvexCallError`;
 - SSR payloads and DevTools events;
