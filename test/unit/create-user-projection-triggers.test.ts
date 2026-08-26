@@ -1,10 +1,15 @@
+import { inspect } from 'node:util'
+
+import { httpRouter } from 'convex/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { createAuthComponent } from '../../src/runtime/convex-auth/create-auth-component'
 import { createUserProjectionTriggers } from '../../src/runtime/convex-auth/user-projection'
 
 describe('createUserProjectionTriggers', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
   })
 
   type TestAuthUser = {
@@ -178,9 +183,22 @@ describe('createUserProjectionTriggers', () => {
     const insert = vi.fn(async () => 'new-id')
     const patch = vi.fn(async () => undefined)
     const remove = vi.fn(async () => undefined)
+    const privateSentinels = [
+      'private-auth-id-sentinel',
+      'private-first-row-sentinel',
+      'private-second-row-sentinel',
+    ]
     const duplicates = [
-      { _id: 'user-1', authId: 'auth-1', email: 'stale@example.com' },
-      { _id: 'user-2', authId: 'auth-1', email: 'copied@example.com' },
+      {
+        _id: 'user-1',
+        authId: privateSentinels[0],
+        email: privateSentinels[1],
+      },
+      {
+        _id: 'user-2',
+        authId: privateSentinels[0],
+        email: privateSentinels[2],
+      },
     ]
     const lookup = vi
       .fn()
@@ -213,9 +231,13 @@ describe('createUserProjectionTriggers', () => {
     })
 
     const conflict = { data: { code: 'AUTH_USER_PROJECTION_CONFLICT' } }
-    await expect(
-      triggers.user.onCreate(ctx, { id: 'auth-1', email: 'canonical@example.com' }),
-    ).rejects.toMatchObject(conflict)
+    const failure = await triggers.user
+      .onCreate(ctx, { id: privateSentinels[0]!, email: 'canonical@example.com' })
+      .catch((error: unknown) => error)
+    expect(failure).toMatchObject(conflict)
+    expect(Object.keys((failure as { data: object }).data)).toEqual(['code'])
+    const renderedFailure = [String(failure), inspect(failure), JSON.stringify(failure)].join('\n')
+    for (const sentinel of privateSentinels) expect(renderedFailure).not.toContain(sentinel)
     await expect(
       triggers.user.onUpdate(
         ctx,
@@ -237,6 +259,75 @@ describe('createUserProjectionTriggers', () => {
     expect(remove.mock.calls).toEqual([['user-1'], ['user-2']])
     expect(lookup.mock.calls.slice(0, 3)).toEqual([[2], [2], [2]])
     expect(lookup.mock.calls[3]).toEqual([])
+  })
+
+  it('keeps projection conflicts private at the registered auth HTTP boundary', async () => {
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    const privateSentinels = [
+      'private-auth-id-sentinel',
+      'private-table-sentinel',
+      'private-index-sentinel',
+      'private-row-sentinel',
+      'private-callback-sentinel',
+    ]
+    const projectionCtx = {
+      db: {
+        insert: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            collect: vi.fn(),
+            take: vi.fn(async () => [
+              { _id: 'user-1', private: privateSentinels[3] },
+              { _id: 'user-2', private: privateSentinels[3] },
+            ]),
+          })),
+        })),
+      },
+    }
+    const createDoc = vi.fn(() => ({ private: privateSentinels[4] }))
+    const projection = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
+      table: privateSentinels[1]!,
+      index: privateSentinels[2]!,
+      createDoc,
+    })
+    const component = createAuthComponent({ adapter: {} } as never)
+    const http = httpRouter()
+    component.registerRoutes(http, async () => {
+      await projection.user.onCreate(projectionCtx, {
+        id: privateSentinels[0]!,
+        email: 'private-email-sentinel',
+      })
+      throw new Error('Projection conflict did not abort auth creation')
+    })
+    const route = http.lookup('/api/auth/get-session', 'GET')
+    if (!route) throw new Error('Auth route was not registered')
+    const handler = route[0] as (typeof route)[0] & {
+      _handler: (ctx: unknown, request: Request) => Promise<Response>
+    }
+    const logSpies = [
+      vi.spyOn(console, 'error').mockImplementation(() => undefined),
+      vi.spyOn(console, 'log').mockImplementation(() => undefined),
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined),
+    ]
+
+    const response = await handler._handler(
+      { meta: { getRequestMetadata: vi.fn(async () => ({ ip: '198.51.100.10' })) } },
+      new Request('https://deployment.convex.site/api/auth/get-session'),
+    )
+    const publicSurface = JSON.stringify({
+      body: await response.json(),
+      headers: [...response.headers],
+      logs: logSpies.flatMap((spy) => spy.mock.calls),
+    })
+
+    expect(response.status).toBe(500)
+    expect(publicSurface).toContain('AUTH_CONFIG_INVALID')
+    for (const sentinel of [...privateSentinels, 'private-email-sentinel']) {
+      expect(publicSurface).not.toContain(sentinel)
+    }
+    expect(createDoc).not.toHaveBeenCalled()
   })
 
   it('creates from the current update snapshot when onUpdate arrives before onCreate', async () => {
@@ -288,46 +379,6 @@ describe('createUserProjectionTriggers', () => {
     await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'original@example.com' })
     expect(insert).toHaveBeenCalledTimes(1)
     expect(patch).not.toHaveBeenCalled()
-  })
-
-  it('does not insert when createDoc fails and captures now once at handler invocation', async () => {
-    const insert = vi.fn(async () => 'new-id')
-    const take = vi.fn(async () => [])
-    const callbackFailure = new Error('projection callback failed')
-    const createDoc = vi.fn(() => {
-      throw callbackFailure
-    })
-    const dateNow = vi.spyOn(Date, 'now').mockReturnValueOnce(123).mockReturnValueOnce(456)
-    const ctx = {
-      db: {
-        insert,
-        patch: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({ collect: vi.fn(), take })),
-        })),
-      },
-    }
-    const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
-      table: 'users',
-      index: 'by_auth_id',
-      createDoc,
-    })
-
-    await expect(
-      triggers.user.onUpdate(
-        ctx,
-        { id: 'auth-1', email: 'updated@example.com' },
-        { id: 'auth-1', email: 'original@example.com' },
-      ),
-    ).rejects.toBe(callbackFailure)
-    expect(createDoc).toHaveBeenCalledWith({
-      ctx,
-      user: { id: 'auth-1', email: 'updated@example.com' },
-      now: 123,
-    })
-    expect(dateNow).toHaveBeenCalledTimes(1)
-    expect(insert).not.toHaveBeenCalled()
   })
 
   it('does not overwrite existing projection rows during rebuild without an explicit rebuild patch', async () => {

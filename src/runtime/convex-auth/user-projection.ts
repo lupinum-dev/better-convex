@@ -37,7 +37,7 @@ export interface CreateUserProjectionTriggersOptions<
    */
   authIdField?: string
   /**
-   * Build the document inserted into your app user table on user creation.
+   * Build the document inserted when a projection row is missing.
    */
   createDoc: (args: {
     ctx: TCtx
@@ -173,15 +173,6 @@ async function findAllProjections<TExistingUser extends { _id: unknown }>(
   return await indexedProjectionQuery<TExistingUser>(ctx, lookup, authUserId).collect()
 }
 
-async function deleteAllProjections<TExistingUser extends { _id: unknown }>(
-  ctx: UserProjectionCtx<TExistingUser>,
-  existing: readonly TExistingUser[],
-): Promise<void> {
-  for (const row of existing) {
-    await ctx.db.delete(row._id)
-  }
-}
-
 /**
  * Creates Better Auth trigger handlers that project auth users into a Convex app table.
  *
@@ -238,7 +229,9 @@ export function createUserProjectionTriggers<
       },
       onDelete: async (ctx: TCtx, user: TAuthUser) => {
         const existing = await findAllProjections<TExistingUser>(ctx, lookup, user.id)
-        await deleteAllProjections(ctx, existing)
+        for (const row of existing) {
+          await ctx.db.delete(row._id)
+        }
       },
       rebuild: async (
         ctx: TCtx,

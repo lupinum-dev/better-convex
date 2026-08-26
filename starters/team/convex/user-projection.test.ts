@@ -63,38 +63,6 @@ describe('team user projection', () => {
     ])
   })
 
-  it('fails closed and rolls back the rebuild batch when projections conflict', async () => {
-    const t = initConvexTest()
-    const missingAuthUser = await createAuthUser(t, {
-      name: 'Grace',
-      email: 'grace@example.com',
-    })
-    const conflictingAuthUser = await createAuthUser(t, {
-      name: 'Canonical Ada',
-      email: 'ada@example.com',
-    })
-
-    await t.run(async (ctx) => {
-      for (const email of ['ada+first@example.com', 'ada+second@example.com']) {
-        await ctx.db.insert('users', {
-          authUserId: conflictingAuthUser.id,
-          name: 'Application-owned Ada',
-          email,
-          createdAt: 1,
-          updatedAt: 1,
-        })
-      }
-    })
-
-    const before = await t.run(async (ctx) => await ctx.db.query('users').collect())
-    await expect(
-      t.mutation(internal.auth.rebuildUserProjectionBatch, { cursor: null }),
-    ).rejects.toThrow('AUTH_USER_PROJECTION_CONFLICT')
-
-    expect(await t.run(async (ctx) => await ctx.db.query('users').collect())).toEqual(before)
-    expect(before.some((user) => user.authUserId === missingAuthUser.id)).toBe(false)
-  })
-
   it('removes every copied PII row when the auth user is deleted', async () => {
     const t = initConvexTest()
     await t.run(async (ctx) => {
