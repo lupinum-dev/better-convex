@@ -306,10 +306,15 @@ export function createBetterConvexAuth<
 
   const resolveOAuthProfile = async (
     ctx: AuthCtx<DataModel>,
-  ): Promise<PinnedOAuthProviderProfile | undefined> =>
-    typeof options.oauthProvider === 'function'
-      ? await options.oauthProvider(ctx)
-      : options.oauthProvider
+  ): Promise<PinnedOAuthProviderProfile | undefined> => {
+    try {
+      return typeof options.oauthProvider === 'function'
+        ? await options.oauthProvider(ctx)
+        : options.oauthProvider
+    } catch {
+      throw new Error('AUTH_CONFIG_INVALID')
+    }
+  }
 
   const createAuthWithProfile = async (
     ctx: AuthCtx<DataModel>,
@@ -429,15 +434,8 @@ export function createBetterConvexAuth<
     }
   }
 
-  const createAuth: CreateAuth<DataModel, BetterConvexAuthInstance> = async (ctx) => {
-    let oauthProfile: PinnedOAuthProviderProfile | undefined
-    try {
-      oauthProfile = await resolveOAuthProfile(ctx)
-    } catch {
-      throw new Error('AUTH_CONFIG_INVALID')
-    }
-    return await createAuthWithProfile(ctx, oauthProfile)
-  }
+  const createAuth: CreateAuth<DataModel, BetterConvexAuthInstance> = async (ctx) =>
+    await createAuthWithProfile(ctx, await resolveOAuthProfile(ctx))
 
   const oauthOperator = createOAuthOperator<DataModel>({
     createAuth: createAuthWithProfile,

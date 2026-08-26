@@ -590,4 +590,20 @@ describe('createBetterConvexAuth', () => {
     await expect(auth.createAuth({} as never)).resolves.toBeDefined()
     expect(betterAuth).toHaveBeenCalledOnce()
   })
+
+  it('sanitizes OAuth profile failures in the client deletion operator', async () => {
+    const privateFailure = new Error('operator-profile-sentinel')
+    const auth = createBetterConvexAuth(component(), {
+      oauthProvider: () => Promise.reject(privateFailure),
+    })
+
+    const failure = await auth.oauthOperator
+      .deleteClient({} as never, { clientId: 'public-client' })
+      .catch((error: unknown) => error)
+
+    expect(failure).toEqual(new Error('AUTH_CONFIG_INVALID'))
+    expect(failure).not.toBe(privateFailure)
+    expect(String(failure)).not.toContain('operator-profile-sentinel')
+    expect(JSON.stringify(failure)).not.toContain('operator-profile-sentinel')
+  })
 })
