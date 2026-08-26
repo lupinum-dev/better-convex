@@ -89,7 +89,7 @@ describe('team user projection', () => {
     const before = await t.run(async (ctx) => await ctx.db.query('users').collect())
     await expect(
       t.mutation(internal.auth.rebuildUserProjectionBatch, { cursor: null }),
-    ).rejects.toMatchObject({ data: { code: 'AUTH_USER_PROJECTION_CONFLICT' } })
+    ).rejects.toThrow('AUTH_USER_PROJECTION_CONFLICT')
 
     expect(await t.run(async (ctx) => await ctx.db.query('users').collect())).toEqual(before)
     expect(before.some((user) => user.authUserId === missingAuthUser.id)).toBe(false)
