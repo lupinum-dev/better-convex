@@ -1,6 +1,6 @@
 # RFC: Value-free auth initialization diagnostics
 
-- Status: Draft proof; no runtime change approved
+- Status: Accepted with one operator-boundary correction
 - Date: 2026-08-25
 - Target: Post-1.0 supportability improvement; not a release prerequisite
 - Scope: Convex operator diagnostics for `createBetterConvexAuth`
@@ -212,6 +212,36 @@ Reject the RFC when:
 
 If the composition label is not actionable, omit that label rather than subdividing upstream internals.
 
+## Proof result
+
+The proof passed with one security-relevant correction to the stated baseline.
+
+The implementation uses one private reporter in
+`create-better-convex-auth.ts`. It accepts only the five closed labels, writes
+one constant string argument to `console.error`, receives no caught value or
+context, and ignores a throwing console. Stage selection follows five explicit
+control-flow boundaries. Successful initialization is silent.
+
+The shared OAuth resolver exposed an inconsistency during the proof. Normal
+auth creation and `oauthOperator.createPublicClient` already converted a thrown
+profile callback to `AUTH_CONFIG_INVALID`, but `oauthOperator.deleteClient`
+could forward the raw callback error. Preserving that message would require the
+new shared reporter to retain and rethrow the caught value, which this RFC
+explicitly forbids. The accepted contract therefore closes that operator-only
+leak: every shared OAuth profile failure now emits the fixed profile label and
+throws `AUTH_CONFIG_INVALID`.
+
+This correction changes only the unsafe `deleteClient` failure detail. HTTP
+status, body, headers, auth proxy errors, normal factory failures, and all other
+operator errors remain unchanged. There is no compatibility alias for a raw
+error message that applications must not branch on.
+
+The proof covers every stage, successful silence, throwing `console.error`,
+non-Error and private sentinels, Better Auth context rejection, and both OAuth
+operator entry points. Source-boundary checks confirm that no option, export,
+route, table, environment variable, dependency, `nostics` import, callback, or
+second reporting channel was added.
+
 ## Alternatives considered
 
 ### Keep only `AUTH_CONFIG_INVALID`
@@ -240,4 +270,6 @@ Rejected. Message matching is unstable and requires reading the exact raw value 
 
 ## Decision
 
-Pending proof and maintainer approval.
+Accepted. Ship the five private stage labels and the consistent generic OAuth
+profile failure. Keep the labels local to the Convex auth factory and do not
+grow this mechanism into a runtime diagnostic framework.

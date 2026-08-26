@@ -33,6 +33,34 @@ type EmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification
 type BetterAuthSessionOptions = NonNullable<BetterAuthOptions['session']>
 type SocialProviders = NonNullable<BetterAuthOptions['socialProviders']>
 
+type AuthInitializationFailureLabel =
+  | 'BCN_AUTH_INIT_SITE_ORIGIN_FAILED'
+  | 'BCN_AUTH_INIT_CONVEX_ORIGIN_FAILED'
+  | 'BCN_AUTH_INIT_SECRETS_FAILED'
+  | 'BCN_AUTH_INIT_OAUTH_PROFILE_FAILED'
+  | 'BCN_AUTH_INIT_COMPOSITION_FAILED'
+
+const authInitializationFailureLines = Object.freeze({
+  BCN_AUTH_INIT_SITE_ORIGIN_FAILED: '[better-convex-nuxt] BCN_AUTH_INIT_SITE_ORIGIN_FAILED',
+  BCN_AUTH_INIT_CONVEX_ORIGIN_FAILED: '[better-convex-nuxt] BCN_AUTH_INIT_CONVEX_ORIGIN_FAILED',
+  BCN_AUTH_INIT_SECRETS_FAILED: '[better-convex-nuxt] BCN_AUTH_INIT_SECRETS_FAILED',
+  BCN_AUTH_INIT_OAUTH_PROFILE_FAILED: '[better-convex-nuxt] BCN_AUTH_INIT_OAUTH_PROFILE_FAILED',
+  BCN_AUTH_INIT_COMPOSITION_FAILED: '[better-convex-nuxt] BCN_AUTH_INIT_COMPOSITION_FAILED',
+} satisfies Record<AuthInitializationFailureLabel, string>)
+
+function reportAuthInitializationFailure(label: AuthInitializationFailureLabel): void {
+  try {
+    console.error(authInitializationFailureLines[label])
+  } catch {
+    // Operator logging must never replace the stable auth failure.
+  }
+}
+
+function failAuthInitialization(label: AuthInitializationFailureLabel): never {
+  reportAuthInitializationFailure(label)
+  throw new Error('AUTH_CONFIG_INVALID')
+}
+
 type BetterConvexUserCreateDecision =
   | { readonly allowed: false }
   | {
@@ -306,19 +334,41 @@ export function createBetterConvexAuth<
 
   const resolveOAuthProfile = async (
     ctx: AuthCtx<DataModel>,
-  ): Promise<PinnedOAuthProviderProfile | undefined> =>
-    typeof options.oauthProvider === 'function'
-      ? await options.oauthProvider(ctx)
-      : options.oauthProvider
+  ): Promise<PinnedOAuthProviderProfile | undefined> => {
+    try {
+      return typeof options.oauthProvider === 'function'
+        ? await options.oauthProvider(ctx)
+        : options.oauthProvider
+    } catch {
+      failAuthInitialization('BCN_AUTH_INIT_OAUTH_PROFILE_FAILED')
+    }
+  }
 
   const createAuthWithProfile = async (
     ctx: AuthCtx<DataModel>,
     oauthProfile: PinnedOAuthProviderProfile | undefined,
   ): Promise<BetterConvexAuthInstance> => {
+    let siteUrl: string
     try {
-      const siteUrl = requireAuthOrigin('SITE_URL')
-      const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
+      siteUrl = requireAuthOrigin('SITE_URL')
+    } catch {
+      failAuthInitialization('BCN_AUTH_INIT_SITE_ORIGIN_FAILED')
+    }
+
+    let convexSiteUrl: string
+    try {
+      convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
+    } catch {
+      failAuthInitialization('BCN_AUTH_INIT_CONVEX_ORIGIN_FAILED')
+    }
+
+    try {
       assertVersionedSecrets(process.env.BETTER_AUTH_SECRETS)
+    } catch {
+      failAuthInitialization('BCN_AUTH_INIT_SECRETS_FAILED')
+    }
+
+    try {
       const authIssuer = `${siteUrl}/api/auth`
       const featurePlugins = [
         options.organization === false || options.organization === undefined
@@ -425,7 +475,7 @@ export function createBetterConvexAuth<
       await auth.$context
       return auth
     } catch {
-      throw new Error('AUTH_CONFIG_INVALID')
+      failAuthInitialization('BCN_AUTH_INIT_COMPOSITION_FAILED')
     }
   }
 

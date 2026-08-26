@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add five fixed, value-free Convex operator labels for auth initialization
+  stages while preserving the existing generic public auth failure.
+
 ## mcp-v1.0.0-beta.1
 
 - Release `@lupinum/better-convex-mcp` on its independent 1.0 beta line while
