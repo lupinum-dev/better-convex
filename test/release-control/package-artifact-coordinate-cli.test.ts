@@ -1,10 +1,15 @@
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '../..')
 const script = 'scripts/print-package-artifact-coordinates.mjs'
+
+function packageVersion(path: string) {
+  return (JSON.parse(readFileSync(resolve(root, path), 'utf8')) as { version: string }).version
+}
 
 function run(args: string[]) {
   return spawnSync(process.execPath, [script, ...args], {
@@ -16,52 +21,55 @@ function run(args: string[]) {
 describe('package artifact coordinate CLI', () => {
   it('prints only descriptor-derived GitHub output values', () => {
     const result = run(['--package', 'nuxt'])
+    const version = packageVersion('package.json')
 
     expect(result.status).toBe(0)
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-nuxt',
-      'directory=.release-artifacts/nuxt/1.0.0-beta.1',
-      'evidence=.release-artifacts/nuxt/1.0.0-beta.1/artifact.json',
+      `directory=.release-artifacts/nuxt/${version}`,
+      `evidence=.release-artifacts/nuxt/${version}/artifact.json`,
       'package_id=nuxt',
       'package_name=@lupinum/better-convex-nuxt',
-      'tarball=.release-artifacts/nuxt/1.0.0-beta.1/lupinum-better-convex-nuxt-1.0.0-beta.1.tgz',
-      'tarball_filename=lupinum-better-convex-nuxt-1.0.0-beta.1.tgz',
-      'version=1.0.0-beta.1',
+      `tarball=.release-artifacts/nuxt/${version}/lupinum-better-convex-nuxt-${version}.tgz`,
+      `tarball_filename=lupinum-better-convex-nuxt-${version}.tgz`,
+      `version=${version}`,
     ])
   })
 
   it('prints Vue artifact coordinates from the reviewed nested package', () => {
     const result = run(['--package', 'vue'])
+    const version = packageVersion('packages/vue/package.json')
 
     expect(result.status).toBe(0)
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-vue',
-      'directory=.release-artifacts/vue/1.0.0-beta.1',
-      'evidence=.release-artifacts/vue/1.0.0-beta.1/artifact.json',
+      `directory=.release-artifacts/vue/${version}`,
+      `evidence=.release-artifacts/vue/${version}/artifact.json`,
       'package_id=vue',
       'package_name=@lupinum/better-convex-vue',
-      'tarball=.release-artifacts/vue/1.0.0-beta.1/lupinum-better-convex-vue-1.0.0-beta.1.tgz',
-      'tarball_filename=lupinum-better-convex-vue-1.0.0-beta.1.tgz',
-      'version=1.0.0-beta.1',
+      `tarball=.release-artifacts/vue/${version}/lupinum-better-convex-vue-${version}.tgz`,
+      `tarball_filename=lupinum-better-convex-vue-${version}.tgz`,
+      `version=${version}`,
     ])
   })
 
   it('prints MCP artifact coordinates from the reviewed nested package', () => {
     const result = run(['--package', 'mcp'])
+    const version = packageVersion('packages/mcp/package.json')
 
     expect(result.status).toBe(0)
     expect(result.stderr).toBe('')
     expect(result.stdout.trim().split('\n')).toEqual([
       'artifact_name=release-candidate-mcp',
-      'directory=.release-artifacts/mcp/1.0.0-beta.1',
-      'evidence=.release-artifacts/mcp/1.0.0-beta.1/artifact.json',
+      `directory=.release-artifacts/mcp/${version}`,
+      `evidence=.release-artifacts/mcp/${version}/artifact.json`,
       'package_id=mcp',
       'package_name=@lupinum/better-convex-mcp',
-      'tarball=.release-artifacts/mcp/1.0.0-beta.1/lupinum-better-convex-mcp-1.0.0-beta.1.tgz',
-      'tarball_filename=lupinum-better-convex-mcp-1.0.0-beta.1.tgz',
-      'version=1.0.0-beta.1',
+      `tarball=.release-artifacts/mcp/${version}/lupinum-better-convex-mcp-${version}.tgz`,
+      `tarball_filename=lupinum-better-convex-mcp-${version}.tgz`,
+      `version=${version}`,
     ])
   })
 

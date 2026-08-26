@@ -72,6 +72,18 @@ describe('state-aware Better Convex release workflows', () => {
   const ci = parseWorkflow('.github/workflows/ci.yml')
   const publish = parseWorkflow('.github/workflows/publish-prerelease.yml')
 
+  it('runs the Linux release smoke when release package or candidate lock inputs change', () => {
+    const classifier = requireJob(ci, 'classify').steps?.find(
+      ({ name }) => name === 'Select required lanes',
+    )?.with?.script
+
+    expect(classifier).toEqual(expect.any(String))
+    expect(classifier).toContain('package\\.json')
+    expect(classifier).toContain('pnpm-lock\\.yaml')
+    expect(classifier).toContain('packages\\/(?:vue|mcp)')
+    expect(classifier).toContain('mcp-oauth-agent')
+  })
+
   it('keeps release-gate as the final CI aggregator', () => {
     expect(needs(ci, 'release-gate')).toEqual(['source-certification', 'release-candidate'])
     expect(requireJob(ci, 'release-gate').if).toBe('always()')

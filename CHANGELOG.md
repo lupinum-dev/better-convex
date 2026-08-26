@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.0-beta.2
 
 - Prevent the OAuth client deletion operator from exposing a raw
   application-owned profile resolver failure.
