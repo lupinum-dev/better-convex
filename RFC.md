@@ -123,6 +123,8 @@ The update event already contains the current Better Auth trigger snapshot. Call
 
 This removes event-order dependence without a queue, retry store, or second state machine.
 
+The `now` argument remains the helper invocation time. The first create or update event that inserts the row owns insert-time metadata built from `now`; the RFC does not promise identical timestamps across different event orders. An application that needs canonical Better Auth creation time must derive it from a validated field in the current Better Auth trigger snapshot instead of treating `now` as event time.
+
 ### Why create, update, and rebuild fail closed
 
 These paths require one survivor. Better Convex cannot infer which duplicate contains the correct application-owned fields. It must not select, merge, patch, or delete a candidate.
@@ -139,11 +141,15 @@ The deletion cascade is atomic only within Convex transaction read and write lim
 
 ## Conflict failure
 
-Create, update, and rebuild must throw one fixed error code:
+Create, update, and rebuild must throw a `ConvexError` whose data is exactly:
 
-```text
-AUTH_USER_PROJECTION_CONFLICT
+```ts
+{
+  code: 'AUTH_USER_PROJECTION_CONFLICT'
+}
 ```
+
+Direct helper callers inspect `error.data.code`. The error has no additional data and no attached cause. Its message, Convex serialization, and Node inspection may contain the fixed code and a library-owned stack, but no runtime input or upstream error value.
 
 The library-generated failure must not include:
 
@@ -154,7 +160,7 @@ The library-generated failure must not include:
 - a raw cause, message, or stack from another error;
 - credentials, tokens, cookies, secrets, or URLs.
 
-The fixed code identifies the violated invariant. It does not diagnose which row should survive.
+The fixed code identifies the violated invariant. It does not diagnose which row should survive. When this error crosses the Better Auth adapter, the existing public auth boundary must replace it with the existing generic auth failure. The projection code and structured error data must not enter the HTTP response, response headers, or captured public logs.
 
 ## Repair ownership
 
@@ -207,7 +213,8 @@ The bounded lookup, update upsert, fixed conflict, runtime tests, migration guid
 | Create with two distinct rows                      | Throws the fixed conflict before callbacks or writes                                                                                  |
 | Update with zero rows                              | Calls `createDoc` with the current user and inserts once                                                                              |
 | Missing-row `createDoc` throws                     | Calls it once and inserts nothing                                                                                                     |
-| Update followed by delayed create                  | Leaves one row; delayed create is a no-op                                                                                             |
+| Update followed by delayed create                  | Leaves one row; delayed create is a no-op; insert metadata uses the update invocation's `now`                                         |
+| Create followed by update                          | Leaves one row; insert metadata uses the create invocation's `now`                                                                    |
 | Update with one row and `patchDoc`                 | Patches the one row                                                                                                                   |
 | Update with two distinct rows                      | Throws the fixed conflict before callbacks or writes                                                                                  |
 | Rebuild with zero rows                             | Inserts one row                                                                                                                       |
@@ -219,7 +226,7 @@ The bounded lookup, update upsert, fixed conflict, runtime tests, migration guid
 | Delete beyond Convex transaction limits            | Fails atomically and creates no library repair state                                                                                  |
 | Callback returns another auth ID                   | Runtime canonical auth ID wins                                                                                                        |
 | Conflict rows contain unique app fields            | No create, update, or rebuild conflict path mutates either row                                                                        |
-| Private values at direct helper boundary           | Error text, inspection, and serialization expose only the fixed code                                                                  |
+| Private values at direct helper boundary           | `ConvexError.data` is exactly the fixed code object; text, inspection, and serialization expose no runtime input                      |
 | Conflict through the real auth HTTP boundary       | Canonical write rolls back; response and captured logs expose no conflict row, auth ID, table, index, callback sentinel, or raw cause |
 | Packed application consumer                        | Compiles and proves the published behavior                                                                                            |
 
