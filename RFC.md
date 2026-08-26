@@ -1,6 +1,6 @@
 # RFC: Make user projections converge without silent data loss
 
-- Status: Proposed
+- Status: Accepted and implemented
 - Date: 2026-08-25
 - Target: `@lupinum/better-convex-nuxt` before stable 1.0
 - Scope: `createUserProjectionTriggers`
@@ -302,4 +302,4 @@ Rejected because the old behavior is unsafe and the package is prerelease. Two b
 
 ## Decision
 
-Pending maintainer approval.
+Accepted and implemented as a prerelease hard cut. The implementation uses a two-row bounded lookup, fails before projection callbacks or writes on ambiguity, upserts a missing projection from the current update snapshot, retains the intentional all-match deletion cascade, and adds unit, real Convex rollback, packed-consumer, security, migration, and release evidence. It adds no compatibility mode or repair subsystem.
