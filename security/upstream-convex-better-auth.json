@@ -324,9 +324,9 @@
       "targetPath": "src/runtime/convex-auth/create-better-convex-auth.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "610a4d7edfbb0fd3ab412d61e8103b9e416edaaf8e2719189c9cff345597150d",
-      "targetSha256": "688e94a6bb982b7b84304559209b9bd2f3ce3f270ca7107dbe92ac1855cb6dee",
+      "targetSha256": "a59fe6f3d86c8a3f4b8354a6f0385a5ff6e63ee0abf55d6652db32bdba9a3f72",
       "classification": "rewritten",
-      "modificationSummary": "Introduced one reviewed factory that owns adapter wiring, JWT and plugin ordering, route registration, signing-key operations, secret policy, optional user-projection triggers, and the request-scoped OAuth operator; admits partial reviewed email/password and session policy, a fail-closed request-scoped user-creation policy, and an asynchronously resolved request-scoped OAuth profile; and rejects arbitrary Better Auth overrides.",
+      "modificationSummary": "Introduced one reviewed factory that owns adapter wiring, JWT and plugin ordering, route registration, signing-key operations, secret policy, optional user-projection triggers, and the request-scoped OAuth operator; admits partial reviewed email/password and session policy, a fail-closed request-scoped user-creation policy, and an asynchronously resolved request-scoped OAuth profile; emits only fixed value-free operator labels for five initialization stages while preserving the generic public failure; and rejects arbitrary Better Auth overrides.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
