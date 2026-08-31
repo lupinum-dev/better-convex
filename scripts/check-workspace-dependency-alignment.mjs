@@ -78,6 +78,10 @@ if (renovate.minimumReleaseAge !== '1 day') {
   failures.push('Renovate must match the 24-hour pnpm quarantine')
 }
 
+const temporaryReleaseAgeExceptions = new Map([
+  ['docs/pnpm-workspace.yaml', '@lupinum/ginko-docs@0.4.0-rc.4'],
+])
+
 for (const workspacePath of [
   'pnpm-workspace.yaml',
   'docs/pnpm-workspace.yaml',
@@ -93,8 +97,11 @@ for (const workspacePath of [
   if (!/^minimumReleaseAgeIgnoreMissingTime:\s*false\s*$/mu.test(workspace)) {
     failures.push(`${workspacePath} must fail when registry publication time is missing`)
   }
-  if (/^minimumReleaseAgeExclude:/mu.test(workspace)) {
-    failures.push(`${workspacePath} must not contain a committed dependency-age exception`)
+  const releaseAgeException = workspace.match(/^minimumReleaseAgeExclude:\s*\n\s+-\s+['"]?([^'"\s]+)['"]?\s*$/mu)?.[1]
+  const allowedException = temporaryReleaseAgeExceptions.get(workspacePath)
+  const hasReleaseAgeException = /^minimumReleaseAgeExclude:/mu.test(workspace)
+  if (hasReleaseAgeException && releaseAgeException !== allowedException) {
+    failures.push(`${workspacePath} contains an unapproved dependency-age exception`)
   }
 }
 
