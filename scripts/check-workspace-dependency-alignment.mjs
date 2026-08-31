@@ -88,21 +88,24 @@ for (const workspacePath of [
   'demo/pnpm-workspace.yaml',
 ]) {
   const workspace = readFileSync(resolve(rootDir, workspacePath), 'utf8')
-  if (!/^minimumReleaseAge:\s*1440\s*$/mu.test(workspace)) {
+  const workspaceConfig = parse(workspace)
+  if (workspaceConfig.minimumReleaseAge !== 1440) {
     failures.push(`${workspacePath} must quarantine fresh dependencies for 24 hours`)
   }
-  if (!/^minimumReleaseAgeStrict:\s*true\s*$/mu.test(workspace)) {
+  if (workspaceConfig.minimumReleaseAgeStrict !== true) {
     failures.push(`${workspacePath} must apply the quarantine to transitive dependencies`)
   }
-  if (!/^minimumReleaseAgeIgnoreMissingTime:\s*false\s*$/mu.test(workspace)) {
+  if (workspaceConfig.minimumReleaseAgeIgnoreMissingTime !== false) {
     failures.push(`${workspacePath} must fail when registry publication time is missing`)
   }
-  const releaseAgeException = workspace.match(
-    /^minimumReleaseAgeExclude:\s*\n\s+-\s+['"]?([^'"\s]+)['"]?\s*$/mu,
-  )?.[1]
+  const releaseAgeExceptions = workspaceConfig.minimumReleaseAgeExclude ?? []
   const allowedException = temporaryReleaseAgeExceptions.get(workspacePath)
-  const hasReleaseAgeException = /^minimumReleaseAgeExclude:/mu.test(workspace)
-  if (hasReleaseAgeException && releaseAgeException !== allowedException) {
+  const approvedExceptions = allowedException ? [allowedException] : []
+  if (
+    !Array.isArray(releaseAgeExceptions) ||
+    releaseAgeExceptions.length !== approvedExceptions.length ||
+    releaseAgeExceptions.some((exception, index) => exception !== approvedExceptions[index])
+  ) {
     failures.push(`${workspacePath} contains an unapproved dependency-age exception`)
   }
 }
