@@ -38,6 +38,7 @@ dist
 
 # Testing
 reports
+.ginko
 coverage
 .vitest-attachments
 *.lcov
