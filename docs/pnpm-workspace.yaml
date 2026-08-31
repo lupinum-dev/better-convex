@@ -5,6 +5,11 @@ minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 
+# Exact first-party prerelease certified in lupinum-dev/ginko-docs Actions run
+# 33392984677. Remove after 2026-09-01 15:00 Europe/Vienna.
+minimumReleaseAgeExclude:
+  - '@lupinum/ginko-docs@0.4.0-rc.4'
+
 allowBuilds:
   '@parcel/watcher': true
   better-sqlite3: true

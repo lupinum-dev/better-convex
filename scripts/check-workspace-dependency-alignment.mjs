@@ -78,23 +78,35 @@ if (renovate.minimumReleaseAge !== '1 day') {
   failures.push('Renovate must match the 24-hour pnpm quarantine')
 }
 
+const temporaryReleaseAgeExceptions = new Map([
+  ['docs/pnpm-workspace.yaml', '@lupinum/ginko-docs@0.4.0-rc.4'],
+])
+
 for (const workspacePath of [
   'pnpm-workspace.yaml',
   'docs/pnpm-workspace.yaml',
   'demo/pnpm-workspace.yaml',
 ]) {
   const workspace = readFileSync(resolve(rootDir, workspacePath), 'utf8')
-  if (!/^minimumReleaseAge:\s*1440\s*$/mu.test(workspace)) {
+  const workspaceConfig = parse(workspace)
+  if (workspaceConfig.minimumReleaseAge !== 1440) {
     failures.push(`${workspacePath} must quarantine fresh dependencies for 24 hours`)
   }
-  if (!/^minimumReleaseAgeStrict:\s*true\s*$/mu.test(workspace)) {
+  if (workspaceConfig.minimumReleaseAgeStrict !== true) {
     failures.push(`${workspacePath} must apply the quarantine to transitive dependencies`)
   }
-  if (!/^minimumReleaseAgeIgnoreMissingTime:\s*false\s*$/mu.test(workspace)) {
+  if (workspaceConfig.minimumReleaseAgeIgnoreMissingTime !== false) {
     failures.push(`${workspacePath} must fail when registry publication time is missing`)
   }
-  if (/^minimumReleaseAgeExclude:/mu.test(workspace)) {
-    failures.push(`${workspacePath} must not contain a committed dependency-age exception`)
+  const releaseAgeExceptions = workspaceConfig.minimumReleaseAgeExclude ?? []
+  const allowedException = temporaryReleaseAgeExceptions.get(workspacePath)
+  const approvedExceptions = allowedException ? [allowedException] : []
+  if (
+    !Array.isArray(releaseAgeExceptions) ||
+    releaseAgeExceptions.length !== approvedExceptions.length ||
+    releaseAgeExceptions.some((exception, index) => exception !== approvedExceptions[index])
+  ) {
+    failures.push(`${workspacePath} contains an unapproved dependency-age exception`)
   }
 }
 
