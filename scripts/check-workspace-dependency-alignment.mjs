@@ -97,7 +97,9 @@ for (const workspacePath of [
   if (!/^minimumReleaseAgeIgnoreMissingTime:\s*false\s*$/mu.test(workspace)) {
     failures.push(`${workspacePath} must fail when registry publication time is missing`)
   }
-  const releaseAgeException = workspace.match(/^minimumReleaseAgeExclude:\s*\n\s+-\s+['"]?([^'"\s]+)['"]?\s*$/mu)?.[1]
+  const releaseAgeException = workspace.match(
+    /^minimumReleaseAgeExclude:\s*\n\s+-\s+['"]?([^'"\s]+)['"]?\s*$/mu,
+  )?.[1]
   const allowedException = temporaryReleaseAgeExceptions.get(workspacePath)
   const hasReleaseAgeException = /^minimumReleaseAgeExclude:/mu.test(workspace)
   if (hasReleaseAgeException && releaseAgeException !== allowedException) {
