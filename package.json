@@ -1,6 +1,6 @@
 {
   "name": "@lupinum/better-convex-nuxt",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "description": "Full-featured Convex integration for Nuxt with SSR, real-time subscriptions, and authentication",
   "keywords": [
     "authentication",
@@ -195,7 +195,7 @@
   },
   "dependencies": {
     "@better-auth/utils": "0.4.2",
-    "@lupinum/better-convex-vue": "1.0.0-beta.2",
+    "@lupinum/better-convex-vue": "1.0.0-beta.3",
     "@nuxt/kit": "4.5.2",
     "convex-helpers": "0.1.114",
     "defu": "^6.1.5",

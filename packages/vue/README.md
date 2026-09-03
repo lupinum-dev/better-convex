@@ -24,7 +24,7 @@ The package requires Node.js `^22.19.0 || ^24.11.0`, Vue 3.5, and Convex 1.42.2.
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-vue@1.0.0-beta.2 convex@1.42.2 vue@^3.5.0
+pnpm add @lupinum/better-convex-vue@1.0.0-beta.3 convex@1.42.2 vue@^3.5.0
 ```
 
 ## Quick start
