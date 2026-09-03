@@ -12,11 +12,11 @@
     "verify": "pnpm convex:codegen && pnpm typecheck && pnpm build"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "1.7.1",
+    "@better-auth/oauth-provider": "1.7.2",
     "@lupinum/better-convex-mcp": "1.0.0-beta.1",
     "@lupinum/better-convex-nuxt": "1.0.0-beta.2",
     "@modelcontextprotocol/server": "2.0.0",
-    "better-auth": "1.7.1",
+    "better-auth": "1.7.2",
     "convex": "1.42.2",
     "nuxt": "4.5.2",
     "vue": "3.5.40",

@@ -318,7 +318,7 @@ pnpm typecheck
 pnpm build
 ```
 
-The supported tuple is exact: Better Auth and OAuth Provider `1.7.1`,
+The supported tuple is exact: Better Auth and OAuth Provider `1.7.2`,
 Convex `1.42.2`, Better Convex Nuxt `1.0.0-beta.1`,
 `@lupinum/better-convex-mcp@1.0.0-beta.1`, and official MCP server SDK `2.0.0`.
 Better Auth owns its Kysely runtime; this starter does not add a standalone

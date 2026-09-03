@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- generated auth models are selected at runtime */
 import type { SchemaDefinition } from 'convex/server'
 
+import { advanceWorkforceGeneration } from '../workforce/credential-generation'
+import { assertGenericVerificationDelete } from '../workforce/replay'
 import type { AuthFieldMetadata, AuthSchemaMetadata } from './metadata'
 import { getAuthModelMetadata } from './metadata'
 import { collectAuthRows, findAuthRows, toBetterAuthDocument } from './query'
@@ -38,8 +40,9 @@ export function createAuthRelationshipEngine(input: {
   schema: SchemaDefinition<any, any>
   metadata: AuthSchemaMetadata
   runTrigger: TriggerRunner
+  workforce: boolean
 }) {
-  const { schema, metadata, runTrigger } = input
+  const { schema, metadata, runTrigger, workforce } = input
   const inboundByModel = new Map<string, Array<{ model: string; field: AuthFieldMetadata }>>()
   for (const model of Object.values(metadata.models)) {
     for (const field of Object.values(model.fields)) {
@@ -123,6 +126,8 @@ export function createAuthRelationshipEngine(input: {
 
     const collectCascade = async (candidate: PlannedAuthRow): Promise<void> => {
       if (visited.has(candidate.key)) return
+      if (workforce && candidate.model === 'verification')
+        assertGenericVerificationDelete(candidate.row)
       if (visited.size === AUTH_BULK_OPERATION_LIMIT) rejectOversizedOperation()
       visited.add(candidate.key)
       for (const inbound of inboundByModel.get(candidate.model) ?? []) {
@@ -167,6 +172,33 @@ export function createAuthRelationshipEngine(input: {
           existing.patch[inbound.field.physicalName] = null
           setNullPatches.set(planned.key, existing)
         }
+      }
+    }
+
+    if (workforce) {
+      const deletedUsers = new Set(
+        deletionOrder
+          .filter((candidate) => candidate.model === 'user')
+          .map((candidate) => candidate.row.id),
+      )
+      const affectedUsers = new Set(
+        deletionOrder
+          .filter(
+            (candidate) =>
+              candidate.model === 'account' && candidate.row.providerId === 'credential',
+          )
+          .map((candidate) => candidate.row.userId),
+      )
+      if (
+        deletionOrder.some(
+          (candidate) => candidate.model === 'twoFactor' && !deletedUsers.has(candidate.row.userId),
+        )
+      ) {
+        throw new Error('AUTH_WORKFORCE_FACTOR_DELETE_FORBIDDEN')
+      }
+      for (const userId of affectedUsers) {
+        // A deleted user has no surviving session authority to invalidate.
+        if (!deletedUsers.has(userId)) await advanceWorkforceGeneration(ctx, userId)
       }
     }
 

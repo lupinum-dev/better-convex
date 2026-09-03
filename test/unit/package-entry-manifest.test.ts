@@ -459,6 +459,18 @@ describe('package entry manifest', () => {
     expect(runtimeAllowed.has('convex/server')).toBe(true)
     expect(typeAllowed.has('convex/server')).toBe(true)
     expect(runtimeAllowed.has('better-auth/db')).toBe(false)
+    expect(runtimeAllowed.has('@better-auth/core/context')).toBe(true)
+    expect(runtimeAllowed.has('better-auth/cookies')).toBe(true)
+    expect(runtimeAllowed.has('convex-helpers/validators')).toBe(true)
     expect(typeAllowed.has('better-auth/db')).toBe(false)
+  })
+
+  it('keeps the workforce request context out of non-auth package entries', () => {
+    for (const entry of getPackageCheckerEntries('nuxt')) {
+      if (entry.subpath === './better-auth/server') continue
+      expect(entry.purity.runtimeExternalSpecifiers).not.toContain('better-auth/cookies')
+      expect(entry.purity.runtimeExternalSpecifiers).not.toContain('@better-auth/core/context')
+      expect(entry.purity.typeExternalSpecifiers).not.toContain('@better-auth/core/context')
+    }
   })
 })

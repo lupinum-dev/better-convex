@@ -14,6 +14,7 @@
     "test/fixtures/auth-disabled",
     "test/fixtures/better-auth-local-component",
     "test/fixtures/better-auth-two-factor",
+    "test/fixtures/workforce-http",
     "test/fixtures/ssr-errors-consumer",
     "test/fixtures/errors-consumer",
     "test/fixtures/server-consumer",

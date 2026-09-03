@@ -194,6 +194,7 @@
     "test:types": "pnpm run typecheck:module"
   },
   "dependencies": {
+    "@better-auth/utils": "0.4.2",
     "@lupinum/better-convex-vue": "1.0.0-beta.2",
     "@nuxt/kit": "4.5.2",
     "convex-helpers": "0.1.114",
@@ -203,8 +204,8 @@
     "ohash": "^2.0.11"
   },
   "devDependencies": {
-    "@better-auth/core": "1.7.1",
-    "@better-auth/oauth-provider": "1.7.1",
+    "@better-auth/core": "1.7.2",
+    "@better-auth/oauth-provider": "1.7.2",
     "@edge-runtime/vm": "^5.0.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/conformance": "0.1.16",
@@ -219,7 +220,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "@vitest/browser-playwright": "^4.1.8",
     "arktype": "2.2.3",
-    "better-auth": "1.7.1",
+    "better-auth": "1.7.2",
     "changelogen": "0.6.2",
     "convex": "1.42.2",
     "convex-test": "^0.0.54",
@@ -242,12 +243,16 @@
     "zod": "4.4.3"
   },
   "peerDependencies": {
-    "@better-auth/oauth-provider": "1.7.1",
-    "better-auth": "1.7.1",
+    "@better-auth/core": "1.7.2",
+    "@better-auth/oauth-provider": "1.7.2",
+    "better-auth": "1.7.2",
     "convex": ">=1.42.2 <2",
     "nuxt": ">=4.5.2 <5"
   },
   "peerDependenciesMeta": {
+    "@better-auth/core": {
+      "optional": true
+    },
     "@better-auth/oauth-provider": {
       "optional": true
     },

@@ -9,9 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@better-auth/oauth-provider": "1.7.1",
+    "@better-auth/oauth-provider": "1.7.2",
     "@lupinum/better-convex-nuxt": "file:./better-convex-nuxt.tgz",
-    "better-auth": "1.7.1",
+    "better-auth": "1.7.2",
     "convex": "1.42.2",
     "nuxt": "4.5.2",
     "typescript": "5.9.3"

@@ -24,6 +24,13 @@ import type { FunctionReference } from "convex/server";
 export type ComponentApi<Name extends string | undefined = string | undefined> =
   {
     adapter: {
+      assertProfile: FunctionReference<
+        "query",
+        "internal",
+        { workforce: boolean },
+        null,
+        Name
+      >;
       consumeOne: FunctionReference<
         "mutation",
         "internal",
@@ -53,7 +60,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
         },
-        any,
+        Record<
+          string,
+          string | number | boolean | Array<string> | Array<number> | null
+        > | null,
         Name
       >;
       count: FunctionReference<
@@ -81,14 +91,70 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
         },
-        any,
+        number,
         Name
       >;
       create: FunctionReference<
         "mutation",
         "internal",
-        { data: any; model: string; onCreateHandle?: string },
-        any,
+        {
+          data: any;
+          model: string;
+          onCreateHandle?: string;
+          workforce?:
+            | {
+                expectedGeneration: number;
+                operation:
+                  | "begin-enrollment"
+                  | "confirm-enrollment"
+                  | "regenerate-backup-codes"
+                  | "change-password";
+                replay?: {
+                  digest: string;
+                  factorFingerprint: string;
+                  factorId: string;
+                  matchingCounters: Array<number>;
+                  userId: string;
+                };
+                sessionId: string;
+                userId: string;
+              }
+            | {
+                expectedGeneration: number;
+                operation: "password-sign-in";
+                userId: string;
+              }
+            | {
+                challengeId: string;
+                expectedGeneration: number;
+                operation: "password-challenge";
+                userId: string;
+              }
+            | {
+                challengeId: string;
+                expectedGeneration: number;
+                operation: "totp-sign-in" | "recovery-sign-in";
+                replay?: {
+                  digest: string;
+                  factorFingerprint: string;
+                  factorId: string;
+                  matchingCounters: Array<number>;
+                  userId: string;
+                };
+                userId: string;
+              };
+          workforceConsumedChallenge?: {
+            challengeId: string;
+            expectedGeneration: number;
+            expiresAt: number;
+            operation: "totp-sign-in" | "recovery-sign-in";
+            userId: string;
+          };
+        },
+        Record<
+          string,
+          string | number | boolean | Array<string> | Array<number> | null
+        >,
         Name
       >;
       deleteMany: FunctionReference<
@@ -120,7 +186,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
         },
-        any,
+        number,
         Name
       >;
       deleteOne: FunctionReference<
@@ -152,7 +218,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
         },
-        any,
+        Record<
+          string,
+          string | number | boolean | Array<string> | Array<number> | null
+        > | null,
         Name
       >;
       findMany: FunctionReference<
@@ -193,7 +262,18 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
         },
-        any,
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<
+            Record<
+              string,
+              string | number | boolean | Array<string> | Array<number> | null
+            >
+          >;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        },
         Name
       >;
       findOne: FunctionReference<
@@ -224,8 +304,53 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             value:
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
+          workforce?:
+            | {
+                expectedGeneration: number;
+                operation:
+                  | "begin-enrollment"
+                  | "confirm-enrollment"
+                  | "regenerate-backup-codes"
+                  | "change-password";
+                replay?: {
+                  digest: string;
+                  factorFingerprint: string;
+                  factorId: string;
+                  matchingCounters: Array<number>;
+                  userId: string;
+                };
+                sessionId: string;
+                userId: string;
+              }
+            | {
+                expectedGeneration: number;
+                operation: "password-sign-in";
+                userId: string;
+              }
+            | {
+                challengeId: string;
+                expectedGeneration: number;
+                operation: "password-challenge";
+                userId: string;
+              }
+            | {
+                challengeId: string;
+                expectedGeneration: number;
+                operation: "totp-sign-in" | "recovery-sign-in";
+                replay?: {
+                  digest: string;
+                  factorFingerprint: string;
+                  factorId: string;
+                  matchingCounters: Array<number>;
+                  userId: string;
+                };
+                userId: string;
+              };
         },
-        any,
+        Record<
+          string,
+          string | number | boolean | Array<string> | Array<number> | null
+        > | null,
         Name
       >;
       incrementOne: FunctionReference<
@@ -255,8 +380,92 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             value:
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
+          workforce?:
+            | {
+                expectedGeneration: number;
+                operation:
+                  | "begin-enrollment"
+                  | "confirm-enrollment"
+                  | "regenerate-backup-codes"
+                  | "change-password";
+                replay?: {
+                  digest: string;
+                  factorFingerprint: string;
+                  factorId: string;
+                  matchingCounters: Array<number>;
+                  userId: string;
+                };
+                sessionId: string;
+                userId: string;
+              }
+            | {
+                expectedGeneration: number;
+                operation: "password-sign-in";
+                userId: string;
+              }
+            | {
+                challengeId: string;
+                expectedGeneration: number;
+                operation: "password-challenge";
+                userId: string;
+              }
+            | {
+                challengeId: string;
+                expectedGeneration: number;
+                operation: "totp-sign-in" | "recovery-sign-in";
+                replay?: {
+                  digest: string;
+                  factorFingerprint: string;
+                  factorId: string;
+                  matchingCounters: Array<number>;
+                  userId: string;
+                };
+                userId: string;
+              };
         },
-        any,
+        Record<
+          string,
+          string | number | boolean | Array<string> | Array<number> | null
+        > | null,
+        Name
+      >;
+      listWorkforceSessions: FunctionReference<
+        "query",
+        "internal",
+        {
+          actor: { sessionId: string; userId: string };
+          paginationOpts: { cursor: string | null; numItems: number };
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            authenticatedAt: number;
+            expiresAt: number;
+            isCurrent: boolean;
+            method:
+              | "password-only"
+              | "totp-enrollment"
+              | "password-totp"
+              | "password-recovery";
+            sessionId: string;
+            sessionStartedAt: number;
+          }>;
+        },
+        Name
+      >;
+      revokeAllWorkforceSessions: FunctionReference<
+        "mutation",
+        "internal",
+        { actor: { sessionId: string; userId: string } },
+        null,
+        Name
+      >;
+      revokeWorkforceSession: FunctionReference<
+        "mutation",
+        "internal",
+        { actor: { sessionId: string; userId: string }; sessionId: string },
+        null,
         Name
       >;
       rotateSigningKey: FunctionReference<
@@ -272,7 +481,37 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           };
           onlyIfEmpty?: boolean;
         },
-        any,
+        {
+          created?: boolean;
+          createdAt: number;
+          newKid: string;
+          previousKids: Array<string>;
+          previousVerifyUntil: number;
+          rotatedAt: number;
+        },
+        Name
+      >;
+      sessionAdmission: FunctionReference<
+        "query",
+        "internal",
+        { sessionId: string; userId?: string },
+        {
+          session: Record<
+            string,
+            string | number | boolean | Array<string> | Array<number> | null
+          >;
+          user: Record<
+            string,
+            string | number | boolean | Array<string> | Array<number> | null
+          >;
+        } | null,
+        Name
+      >;
+      touchWorkforceSession: FunctionReference<
+        "mutation",
+        "internal",
+        { actor: { sessionId: string; userId: string } },
+        { expiresAt: number },
         Name
       >;
       updateMany: FunctionReference<
@@ -302,7 +541,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
         },
-        any,
+        number,
         Name
       >;
       updateOne: FunctionReference<
@@ -331,8 +570,53 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             value:
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
+          workforce?:
+            | {
+                expectedGeneration: number;
+                operation:
+                  | "begin-enrollment"
+                  | "confirm-enrollment"
+                  | "regenerate-backup-codes"
+                  | "change-password";
+                replay?: {
+                  digest: string;
+                  factorFingerprint: string;
+                  factorId: string;
+                  matchingCounters: Array<number>;
+                  userId: string;
+                };
+                sessionId: string;
+                userId: string;
+              }
+            | {
+                expectedGeneration: number;
+                operation: "password-sign-in";
+                userId: string;
+              }
+            | {
+                challengeId: string;
+                expectedGeneration: number;
+                operation: "password-challenge";
+                userId: string;
+              }
+            | {
+                challengeId: string;
+                expectedGeneration: number;
+                operation: "totp-sign-in" | "recovery-sign-in";
+                replay?: {
+                  digest: string;
+                  factorFingerprint: string;
+                  factorId: string;
+                  matchingCounters: Array<number>;
+                  userId: string;
+                };
+                userId: string;
+              };
         },
-        any,
+        Record<
+          string,
+          string | number | boolean | Array<string> | Array<number> | null
+        > | null,
         Name
       >;
     };

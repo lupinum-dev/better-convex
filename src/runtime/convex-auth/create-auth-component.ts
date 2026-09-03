@@ -93,7 +93,7 @@ export function createAuthComponent<
   DataModel extends GenericDataModel,
   Api extends AuthAdapterComponentApi = AuthAdapterComponentApi,
 >(component: Api, options: CreateAuthComponentOptions<DataModel> = {}) {
-  const safeGetAuthSession = async (ctx: AuthCtx<DataModel>) => {
+  const sessionIdentity = async (ctx: AuthCtx<DataModel>) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) return null
     const claims = identity as unknown as Record<string, unknown>
@@ -101,24 +101,26 @@ export function createAuthComponent<
     const sessionId = identityClaim(claims, 'sid')
     if (!sessionId) return null
 
-    const session = (await ctx.runQuery(component.adapter.findOne, {
-      model: 'session',
-      where: [
-        { field: 'id', value: sessionId },
-        { field: 'userId', value: identity.subject },
-        { field: 'expiresAt', operator: 'gt', value: Date.now() },
-      ],
-    })) as Record<string, unknown> | null
-    return session ? { identity, session } : null
+    return {
+      sessionId,
+      userId: identity.subject,
+    }
+  }
+
+  const requireSessionIdentity = async (ctx: AuthCtx<DataModel>) => {
+    const actor = await sessionIdentity(ctx)
+    if (!actor) throw new ConvexError('Unauthenticated')
+    return actor
+  }
+
+  const safeGetAuthSession = async (ctx: AuthCtx<DataModel>) => {
+    const actor = await sessionIdentity(ctx)
+    return actor ? ctx.runQuery(component.adapter.sessionAdmission, actor) : null
   }
 
   const safeGetAuthUser = async (ctx: AuthCtx<DataModel>) => {
     const authenticated = await safeGetAuthSession(ctx)
-    if (!authenticated) return null
-    return (await ctx.runQuery(component.adapter.findOne, {
-      model: 'user',
-      where: [{ field: 'id', value: authenticated.identity.subject }],
-    })) as Record<string, unknown> | null
+    return authenticated?.user ?? null
   }
 
   return {
@@ -129,6 +131,32 @@ export function createAuthComponent<
       }),
 
     safeGetAuthUser,
+
+    // Actor comes only from the verified Convex identity. Each component call
+    // re-reads full live authority in its own canonical query or mutation.
+    workforceSessions: {
+      touch: async (ctx: WritableAuthCtx<DataModel>) =>
+        ctx.runMutation(component.adapter.touchWorkforceSession, {
+          actor: await requireSessionIdentity(ctx),
+        }),
+      list: async (
+        ctx: AuthCtx<DataModel>,
+        paginationOpts: { cursor: string | null; numItems: number },
+      ) =>
+        ctx.runQuery(component.adapter.listWorkforceSessions, {
+          actor: await requireSessionIdentity(ctx),
+          paginationOpts,
+        }),
+      revoke: async (ctx: WritableAuthCtx<DataModel>, sessionId: string) =>
+        ctx.runMutation(component.adapter.revokeWorkforceSession, {
+          actor: await requireSessionIdentity(ctx),
+          sessionId,
+        }),
+      revokeAll: async (ctx: WritableAuthCtx<DataModel>) =>
+        ctx.runMutation(component.adapter.revokeAllWorkforceSessions, {
+          actor: await requireSessionIdentity(ctx),
+        }),
+    },
 
     getAuthUser: async (ctx: AuthCtx<DataModel>) => {
       const user = await safeGetAuthUser(ctx)

@@ -13,8 +13,8 @@
     "npmArtifacts": [
       {
         "name": "@better-auth/core",
-        "version": "1.7.1",
-        "integrity": "sha512-eZ9lqcnVLMZ3QtUByRo4VZqkB1ESyRddd9NfWjBdDPgh+jcwLScoIUAqhtHLR8zaSUJZah8OLGlkzObyPdUH7A==",
+        "version": "1.7.2",
+        "integrity": "sha512-j0nM4ygsWbF/fcYRoKtDn8gn8uLXkmC+075HqSqsJEAV828cJR9bvYBCUQ1zmxNyRBk6Iz/qXsA0Zm2oksiOTg==",
         "typePaths": [
           "src/db/adapter/index.ts",
           "src/db/adapter/types.ts",
@@ -23,14 +23,14 @@
       },
       {
         "name": "better-auth",
-        "version": "1.7.1",
-        "integrity": "sha512-g8WlTQijxXWJjPVZfFu1+EJg9cwwHrKDmIkcYMzx8CzYA+tDxl6NI7qQbKkbgw5UtHILsT5VH+RMzFzwnVJqAg==",
+        "version": "1.7.2",
+        "integrity": "sha512-gKapKBEvYIGcMxi74RjQ7EbFLiqyQt58vdoJmL1qAlWSkY1Bc2Vqshl524/3u1NxauiOU03M/Ebh762Brmac9A==",
         "typePaths": ["dist/adapters/index.d.mts"]
       }
     ],
     "upstreamRepository": "https://github.com/better-auth/better-auth",
-    "upstreamTag": "v1.7.1",
-    "upstreamCommit": "2344536054f9164ca5d1670c270d299049ee233e",
+    "upstreamTag": "v1.7.2",
+    "upstreamCommit": "ba12fcdfa774ca27d417079dbac0b1b5894ccaf2",
     "sourceTestPaths": [
       "packages/core/src/db/adapter/factory.test.ts",
       "packages/core/src/db/adapter/get-id-field.test.ts",

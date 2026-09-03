@@ -1,13 +1,32 @@
 import { mergedStream, stream } from 'convex-helpers/server/stream'
+import { validate } from 'convex-helpers/validators'
 /*
  * Adapted from get-convex/better-auth at
  * c628916b451a6b4cff0f5464f134475464b1a6da (Apache-2.0).
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- runtime model and index names come from generated metadata */
-import type { GenericQueryCtx, PaginationOptions, SchemaDefinition } from 'convex/server'
+import type {
+  GenericQueryCtx,
+  PaginationOptions,
+  PaginationResult,
+  SchemaDefinition,
+} from 'convex/server'
+import { v, type Infer } from 'convex/values'
 
 import type { AuthIndexMetadata, AuthModelMetadata, AuthSchemaMetadata } from './metadata'
 import { getAuthFieldMetadata, getAuthModelMetadata } from './metadata'
+
+// Dates and JSON use the adapter's existing number and serialized-string wire forms.
+export const authValueValidator = v.union(
+  v.string(),
+  v.number(),
+  v.boolean(),
+  v.array(v.string()),
+  v.array(v.number()),
+  v.null(),
+)
+export const authDocumentValidator = v.record(v.string(), authValueValidator)
+export type AuthDocument = Infer<typeof authDocumentValidator>
 
 export type AuthWhereOperator =
   | 'lt'
@@ -351,17 +370,31 @@ function createAuthQuery(
 }
 
 export function toBetterAuthDocument(
+  doc: Record<string, unknown>,
+  select?: readonly string[],
+): AuthDocument
+export function toBetterAuthDocument(
   doc: Record<string, unknown> | null,
   select?: readonly string[],
-): Record<string, unknown> | null {
+): AuthDocument | null
+export function toBetterAuthDocument(
+  doc: Record<string, unknown> | null,
+  select?: readonly string[],
+): AuthDocument | null {
   if (!doc) return null
-  const clean = Object.fromEntries(
+  const clean: Record<string, unknown> = Object.fromEntries(
     Object.entries(doc).filter(([field]) => field !== '_id' && field !== '_creationTime'),
   )
+  if (Object.values(clean).includes(undefined) || !validate(authDocumentValidator, clean)) {
+    throw new Error('AUTH_DOCUMENT_INVALID')
+  }
   if (!select?.length) return clean
-  return Object.fromEntries(
-    select.filter((field) => field in clean).map((field) => [field, clean[field]]),
-  )
+  const selected: AuthDocument = {}
+  for (const field of select) {
+    const value = clean[field]
+    if (value !== undefined) selected[field] = value
+  }
+  return selected
 }
 
 export async function paginateAuthRows(
@@ -370,7 +403,7 @@ export async function paginateAuthRows(
   metadata: AuthSchemaMetadata,
   args: AuthReadArgs,
   paginationOpts: PaginationOptions,
-) {
+): Promise<PaginationResult<AuthDocument>> {
   const result = await createAuthQuery(ctx, schema, metadata, args).paginate({
     ...paginationOpts,
     maximumRowsRead: Math.max((paginationOpts.numItems ?? 0) + 1, 200),

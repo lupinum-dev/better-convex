@@ -1,9 +1,9 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import { assertCurrentBackendBinary } from '../../scripts/check-auth-backend.mjs'
 
@@ -55,7 +55,6 @@ export interface LocalAuthPreflightOptions {
 let activeHandle: LocalConvexHandle | null = null
 let retainers = 0
 const startupFailures = new Map<string, Error>()
-const convexCli = fileURLToPath(new URL('../../node_modules/convex/bin/main.js', import.meta.url))
 const localAuthSecret = '1:better-convex-nuxt-e2e-only-secret-32-bytes-minimum'
 const localProxyIpSecret = 'better-convex-nuxt-e2e-proxy-ip-secret-32-bytes'
 const localConvexReadyMessage = 'Convex functions ready!'
@@ -77,6 +76,8 @@ const inheritedConvexRuntimeEnvBlocklist = new Set([
   'CONVEX_URL',
   'NUXT_PUBLIC_CONVEX_SITE_URL',
   'NUXT_PUBLIC_CONVEX_URL',
+  'VITE_CONVEX_URL',
+  'VITE_CONVEX_SITE_URL',
 ])
 const maxLocalDeploymentEnvEntries = 16
 const maxLocalDeploymentEnvValueBytes = 4096
@@ -88,6 +89,8 @@ const reservedLocalDeploymentEnvNames = new Set([
   'CONVEX_URL',
   'NUXT_PUBLIC_CONVEX_SITE_URL',
   'NUXT_PUBLIC_CONVEX_URL',
+  'VITE_CONVEX_URL',
+  'VITE_CONVEX_SITE_URL',
   'SITE_URL',
 ])
 const allowedLocalConvexFileNames = new Set(['CONVEX_DEPLOYMENT', 'CONVEX_SITE_URL', 'CONVEX_URL'])
@@ -224,12 +227,20 @@ function signalChildProcessTree(child: ChildProcessWithoutNullStreams, signal: N
   }
 }
 
+export function resolveLocalConvexCli(cwd: string): string {
+  // Exercise the consumer's installed CLI, including packed-app candidates.
+  // Fixtures within this repository naturally resolve its own pinned dependency.
+  const consumerRequire = createRequire(path.join(cwd, 'package.json'))
+  return path.join(path.dirname(consumerRequire.resolve('convex/package.json')), 'bin/main.js')
+}
+
 function spawnConvex(
   cwd: string,
   args: string[],
   overrides: Readonly<Record<string, string>> = {},
   localDeployment?: string,
 ): ChildProcessWithoutNullStreams {
+  const convexCli = resolveLocalConvexCli(cwd)
   const env = Object.fromEntries(
     Object.entries({ ...process.env, ...overrides }).filter(
       ([name]) =>
@@ -338,47 +349,59 @@ async function configureLocalDeploymentEnvironment(
   }
 }
 
-async function readLocalConvexEnv(cwd: string): Promise<LocalConvexEnv> {
+export async function readLocalConvexEnv(cwd: string): Promise<LocalConvexEnv> {
+  let content: string
   try {
     const envPath = path.join(cwd, '.env.local')
-    const content = await readFile(envPath, 'utf-8')
-    const lines = content.split('\n')
-
-    const values: Record<string, string> = {}
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('#')) continue
-
-      // Match dotenv's supported assignment prefixes. Convex uses dotenv for
-      // --env-file, so both `export NAME=value` and `NAME: value` must reach
-      // the same cloud-credential guard as ordinary `NAME=value` lines.
-      const assignment = trimmed.match(/^(?:export\s+)?([\w.-]+)(?:\s*=\s*|:\s+)/u)
-      const key = assignment?.[1]
-      if (!key) continue
-
-      const rawValue = trimmed.slice(assignment[0].length).trim()
-      const value = rawValue.split('#')[0]?.trim()
-      if (!value) continue
-
-      values[key] = value
-    }
-
-    const forbiddenCredentialNames = Object.keys(values)
-      .filter((name) => {
-        const normalized = name.toUpperCase()
-        return normalized.startsWith('CONVEX_') && !allowedLocalConvexFileNames.has(normalized)
-      })
-      .map((name) => name.toUpperCase())
-      .sort()
-
-    return {
-      deployment: values.CONVEX_DEPLOYMENT,
-      forbiddenCredentialNames,
-      url: values.CONVEX_URL,
-      siteUrl: values.CONVEX_SITE_URL,
-    }
+    content = await readFile(envPath, 'utf-8')
   } catch {
     return {}
+  }
+  const lines = content.split('\n')
+
+  const values: Record<string, string> = {}
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+
+    // Match dotenv's supported assignment prefixes. Convex uses dotenv for
+    // --env-file, so both `export NAME=value` and `NAME: value` must reach
+    // the same cloud-credential guard as ordinary `NAME=value` lines.
+    const assignment = trimmed.match(/^(?:export\s+)?([\w.-]+)(?:\s*=\s*|:\s+)/u)
+    const key = assignment?.[1]
+    if (!key) continue
+
+    const rawValue = trimmed.slice(assignment[0].length).trim()
+    const value = rawValue.split('#')[0]?.trim()
+    if (!value) continue
+
+    values[key] = value
+  }
+
+  const forbiddenCredentialNames = Object.keys(values)
+    .filter((name) => {
+      const normalized = name.toUpperCase()
+      return normalized.startsWith('CONVEX_') && !allowedLocalConvexFileNames.has(normalized)
+    })
+    .map((name) => name.toUpperCase())
+    .sort()
+
+  for (const name of ['CONVEX_URL', 'CONVEX_SITE_URL'] as const) {
+    const alias = `VITE_${name}`
+    if (
+      values[name] !== undefined &&
+      values[alias] !== undefined &&
+      values[name] !== values[alias]
+    ) {
+      throw new Error(`Conflicting local Convex URL aliases: ${name} and ${alias}.`)
+    }
+  }
+
+  return {
+    deployment: values.CONVEX_DEPLOYMENT,
+    forbiddenCredentialNames,
+    url: values.CONVEX_URL ?? values.VITE_CONVEX_URL,
+    siteUrl: values.CONVEX_SITE_URL ?? values.VITE_CONVEX_SITE_URL,
   }
 }
 
@@ -414,8 +437,18 @@ function localPortFromUrl(urlString: string): number | null {
 
 function isLoopbackUrl(urlString: string): boolean {
   try {
-    const { hostname } = new URL(urlString)
-    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]'
+    const url = new URL(urlString)
+    return (
+      !/\s/u.test(urlString) &&
+      url.protocol === 'http:' &&
+      Boolean(url.port) &&
+      !url.username &&
+      !url.password &&
+      url.pathname === '/' &&
+      !url.search &&
+      !url.hash &&
+      (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]')
+    )
   } catch {
     return false
   }

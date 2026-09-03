@@ -1,3 +1,4 @@
+import { getCurrentAuthContext } from '@better-auth/core/context'
 import { oauthAuthorizationServerMetadata } from '@better-auth/oauth-provider'
 import type { BetterAuthPlugin, Session, User } from 'better-auth'
 import {
@@ -43,6 +44,8 @@ import {
   type OAuthResourceRecord,
 } from './oauth-security'
 import { normalizeAuthOrigin } from './origin'
+import { workforceSchemaPlugin } from './workforce/schema'
+import { isFullWorkforceSession } from './workforce/session-assurance'
 
 type SessionJwtOptions = Pick<
   NonNullable<JwtOptions['jwt']>,
@@ -185,7 +188,28 @@ const internalSessionBearerBefore: BeforeHook = {
     const headers = context.request?.headers ?? context.headers
     return headers?.get(INTERNAL_SESSION_HEADER) === '1' && officialBearerBefore.matcher(context)
   },
-  handler: officialBearerBefore.handler,
+  handler: createAuthMiddleware(async (context) => {
+    const result = await officialBearerBefore.handler({
+      ...context,
+      asResponse: false,
+      returnHeaders: false,
+    })
+    const sharedHeaders = context.headers
+    if (result?.context.headers instanceof Headers) {
+      // Pinned dispatch merges returned context only after all before hooks.
+      // Keep its shared request headers in sync so later owned policy hooks
+      // parse the official converted cookie, without another bearer parser.
+      if (sharedHeaders instanceof Headers) {
+        result.context.headers.forEach((value, name) => sharedHeaders.set(name, value))
+      } else {
+        // Typed auth.api calls may supply Request without a separate headers
+        // property. Publish the official result to that same endpoint owner.
+        const endpoint = await getCurrentAuthContext()
+        endpoint.headers = result.context.headers
+      }
+    }
+    return result
+  }),
 }
 
 const INVALID_SESSION_MESSAGE = 'AUTH_SESSION_INVALID'
@@ -810,6 +834,19 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
             where: [{ field: 'id', value: persistedSession.userId }],
           })
           if (!persistedUser || persistedUser.id !== authenticated.user.id) unauthorized()
+          if (
+            ctx.context.getPlugin(workforceSchemaPlugin.id) &&
+            !isFullWorkforceSession({
+              user: persistedUser,
+              session: {
+                ...persistedSession,
+                // Better Auth materializes dates; the component stores epoch ms.
+                expiresAt: persistedSession.expiresAt.getTime(),
+              },
+              now: Date.now(),
+            })
+          )
+            unauthorized()
 
           const customClaims =
             (await options.sessionJwt.definePayload?.({

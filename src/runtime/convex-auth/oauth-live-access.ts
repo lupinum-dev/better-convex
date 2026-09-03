@@ -73,15 +73,11 @@ export async function validateOAuthAccess<DataModel extends GenericDataModel>(
   if (!validAccess(access)) return false
 
   try {
-    const [session, user, client, resource, link, consent] = await Promise.all([
-      findOne(
-        ctx,
-        component,
-        'session',
-        [{ field: 'id', value: access.sessionId }],
-        ['expiresAt', 'id', 'userId'],
-      ),
-      findOne(ctx, component, 'user', [{ field: 'id', value: access.subject }], ['id']),
+    const [admission, client, resource, link, consent] = await Promise.all([
+      ctx.runQuery(component.adapter.sessionAdmission, {
+        sessionId: access.sessionId,
+        userId: access.subject,
+      }),
       findOne(
         ctx,
         component,
@@ -125,13 +121,7 @@ export async function validateOAuthAccess<DataModel extends GenericDataModel>(
     const consentScopes = stringArray(consent?.scopes)
 
     return Boolean(
-      session &&
-      session.id === access.sessionId &&
-      session.userId === access.subject &&
-      typeof session.expiresAt === 'number' &&
-      Number.isFinite(session.expiresAt) &&
-      session.expiresAt > Date.now() &&
-      user?.id === access.subject &&
+      admission &&
       client &&
       client.clientId === access.clientId &&
       client.disabled !== true &&

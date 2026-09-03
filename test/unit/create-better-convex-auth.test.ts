@@ -1,6 +1,8 @@
+import type { BetterAuthOptions } from 'better-auth'
+import { makeFunctionReference } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AuthCtx } from '../../src/runtime/convex-auth/context'
+import { requireWritableAuthCtx, type AuthCtx } from '../../src/runtime/convex-auth/context'
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 
@@ -37,10 +39,19 @@ afterEach(() => {
   }
 })
 
+const assertProfile = makeFunctionReference<'query', { workforce: boolean }, null>(
+  'adapter:assertProfile',
+)
+
+function profileContext() {
+  return { runQuery: vi.fn().mockResolvedValue(null) }
+}
+
 function component() {
   const reference = {} as never
   return {
     adapter: {
+      assertProfile,
       consumeOne: reference,
       count: reference,
       create: reference,
@@ -132,7 +143,7 @@ describe('createBetterConvexAuth', () => {
       twoFactor: { issuer: 'Example' },
     })
 
-    await auth.createAuth({} as never)
+    await auth.createAuth(profileContext() as never)
     const options = betterAuth.mock.calls[0]?.[0] as {
       account: { encryptOAuthTokens: boolean; storeAccountCookie: boolean }
       advanced: { ipAddress: { ipAddressHeaders: string[] } }
@@ -188,7 +199,7 @@ describe('createBetterConvexAuth', () => {
       emailAndPassword: { requireEmailVerification: true },
     })
 
-    await auth.createAuth({} as never)
+    await auth.createAuth(profileContext() as never)
     expect(betterAuth.mock.calls[0]?.[0]).toMatchObject({
       emailAndPassword: {
         autoSignIn: false,
@@ -212,8 +223,176 @@ describe('createBetterConvexAuth', () => {
     ).toThrow('session.expiresIn')
   })
 
+  it('binds email callbacks to separate concurrent invocations without changing their inputs', async () => {
+    const submitMail = makeFunctionReference<'mutation', { email: string; url: string }, null>(
+      'authMail:submit',
+    )
+    const first = { ...profileContext(), runMutation: vi.fn().mockResolvedValue('first-queued') }
+    const second = { ...profileContext(), runMutation: vi.fn().mockResolvedValue('second-queued') }
+    const onPasswordReset = vi.fn()
+    const auth = createBetterConvexAuth(component(), {
+      emailAndPassword: async (ctx) => ({
+        revokeSessionsOnPasswordReset: true,
+        onPasswordReset,
+        async sendResetPassword(data) {
+          requireWritableAuthCtx(ctx)
+          await ctx.runMutation(submitMail, { email: data.user.email, url: data.url })
+        },
+      }),
+      emailVerification: (ctx) => ({
+        expiresIn: 300,
+        async sendVerificationEmail(data) {
+          requireWritableAuthCtx(ctx)
+          await ctx.runMutation(submitMail, { email: data.user.email, url: data.url })
+        },
+      }),
+    })
+    await Promise.all([auth.createAuth(first as never), auth.createAuth(second as never)])
+    expect(first.runQuery).toHaveBeenCalledExactlyOnceWith(assertProfile, { workforce: false })
+    expect(second.runQuery).toHaveBeenCalledExactlyOnceWith(assertProfile, { workforce: false })
+    const firstOptions = betterAuth.mock.calls[0]![0] as BetterAuthOptions
+    const secondOptions = betterAuth.mock.calls[1]![0] as BetterAuthOptions
+    const data = {
+      user: {
+        id: 'user',
+        email: 'person@example.test',
+        emailVerified: false,
+        name: 'Person',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      },
+      token: 'synthetic-token',
+      url: 'https://app.example.test/recover?token=synthetic-token',
+    }
+    await firstOptions.emailAndPassword!.sendResetPassword!(data)
+    await secondOptions.emailVerification!.sendVerificationEmail!(data)
+    expect(first.runMutation).toHaveBeenCalledExactlyOnceWith(submitMail, {
+      email: data.user.email,
+      url: data.url,
+    })
+    expect(second.runMutation).toHaveBeenCalledExactlyOnceWith(submitMail, {
+      email: data.user.email,
+      url: data.url,
+    })
+    expect(firstOptions.emailAndPassword).toMatchObject({
+      enabled: true,
+      autoSignIn: false,
+      minPasswordLength: 15,
+      revokeSessionsOnPasswordReset: true,
+      onPasswordReset,
+    })
+    expect(secondOptions.emailVerification?.expiresIn).toBe(300)
+  })
+
+  it('constructs query auth without requiring write access until a sending callback runs', async () => {
+    const query = profileContext()
+    const auth = createBetterConvexAuth(component(), {
+      emailAndPassword: (ctx) => ({
+        async sendResetPassword() {
+          requireWritableAuthCtx(ctx)
+          await ctx.runMutation({} as never, {})
+        },
+      }),
+    })
+    await expect(auth.createAuth(query as never)).resolves.toBeDefined()
+    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
+    await expect(options.emailAndPassword!.sendResetPassword!({} as never)).rejects.toThrow(
+      'AUTH_WRITE_REQUIRES_MUTATION_OR_ACTION',
+    )
+    expect(query.runQuery).toHaveBeenCalledExactlyOnceWith(assertProfile, { workforce: false })
+  })
+
+  it('retains the callback promise and rejection so submission cannot be fire-and-forget', async () => {
+    const submission = Promise.withResolvers<null>()
+    const ctx = { ...profileContext(), runMutation: vi.fn(() => submission.promise) }
+    const auth = createBetterConvexAuth(component(), {
+      emailVerification: (requestCtx) => ({
+        async sendVerificationEmail() {
+          requireWritableAuthCtx(requestCtx)
+          await requestCtx.runMutation({} as never, {})
+        },
+      }),
+    })
+    await auth.createAuth(ctx as never)
+    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
+    let settled = false
+    const sending = options.emailVerification!.sendVerificationEmail!({} as never)
+    const observed = Promise.resolve(sending).finally(() => {
+      settled = true
+    })
+    const rejected = expect(observed).rejects.toThrow('submission failed')
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    submission.reject(new Error('submission failed'))
+    await rejected
+    expect(settled).toBe(true)
+  })
+
+  it('resolves email OTP per invocation and retains its upstream plugin', async () => {
+    const query = profileContext()
+    const emailOTP = vi.fn((_ctx: AuthCtx) => ({
+      expiresIn: 300,
+      async sendVerificationOTP() {},
+    }))
+    const auth = createBetterConvexAuth(component(), { emailOTP })
+    await auth.createAuth(query as never)
+    expect(emailOTP).toHaveBeenCalledExactlyOnceWith(query)
+    expect(query.runQuery).toHaveBeenCalledExactlyOnceWith(assertProfile, { workforce: false })
+    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
+    expect(options.plugins?.map(({ id }) => id)).toContain('email-otp')
+  })
+
+  it('allows explicit password and OTP disablement from a factory', async () => {
+    const auth = createBetterConvexAuth(component(), {
+      emailAndPassword: () => false,
+      emailOTP: async () => false as const,
+    })
+    await auth.createAuth(profileContext() as never)
+    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
+    expect(options.emailAndPassword).toEqual({ enabled: false })
+    expect(options.plugins?.map(({ id }) => id)).not.toContain('email-otp')
+  })
+
+  it.each(['emailAndPassword', 'emailVerification', 'emailOTP'] as const)(
+    'sanitizes %s factory failures',
+    async (key) => {
+      const auth = createBetterConvexAuth(component(), {
+        [key]: async () => {
+          throw new Error('private configuration detail')
+        },
+      })
+      await expect(auth.createAuth(profileContext() as never)).rejects.toThrow(
+        /^AUTH_CONFIG_INVALID$/,
+      )
+      expect(betterAuth).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([undefined, null, [], 'invalid', 1])(
+    'rejects malformed factory output %s',
+    async (value) => {
+      for (const key of ['emailAndPassword', 'emailVerification', 'emailOTP']) {
+        const auth = createBetterConvexAuth(component(), { [key]: () => value } as never)
+        await expect(auth.createAuth(profileContext() as never)).rejects.toThrow(
+          /^AUTH_CONFIG_INVALID$/,
+        )
+      }
+      expect(betterAuth).not.toHaveBeenCalled()
+    },
+  )
+
+  it('applies password option admission after resolving a factory', async () => {
+    const auth = createBetterConvexAuth(component(), {
+      emailAndPassword: () => ({ password: { verify: async () => true } }),
+    } as never)
+    await expect(auth.createAuth(profileContext() as never)).rejects.toThrow(
+      /^AUTH_CONFIG_INVALID$/,
+    )
+    expect(betterAuth).not.toHaveBeenCalled()
+  })
+
   it('admits a narrow user identity decision without exposing Better Auth hooks', async () => {
-    const ctx = { runQuery: vi.fn() }
+    const ctx = profileContext()
     const beforeUserCreate = vi.fn(async ({ user }) => {
       expect(Object.isFrozen(user)).toBe(true)
       return {
@@ -282,7 +461,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), {
       beforeUserCreate: callback,
     })
-    await auth.createAuth({} as never)
+    await auth.createAuth(profileContext() as never)
     const options = betterAuth.mock.calls[0]?.[0] as {
       databaseHooks: {
         user: {
@@ -305,8 +484,11 @@ describe('createBetterConvexAuth', () => {
   })
 
   it('builds one hardened OAuth profile from the request-scoped Convex context', async () => {
-    const ctx = { runQuery: vi.fn().mockResolvedValue(oauthProfile()) }
-    const createProfile = vi.fn(async (requestCtx: AuthCtx) => requestCtx.runQuery({} as never))
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValueOnce(oauthProfile()).mockResolvedValue(null),
+    }
+    const profileQuery = makeFunctionReference<'query'>('authPolicy:oauthProfile')
+    const createProfile = vi.fn(async (requestCtx: AuthCtx) => requestCtx.runQuery(profileQuery))
     const auth = createBetterConvexAuth(component(), {
       oauthProvider: createProfile,
     })
@@ -315,7 +497,9 @@ describe('createBetterConvexAuth', () => {
 
     expect(createProfile).toHaveBeenCalledOnce()
     expect(createProfile).toHaveBeenCalledWith(ctx)
-    expect(ctx.runQuery).toHaveBeenCalledOnce()
+    expect(ctx.runQuery).toHaveBeenCalledTimes(2)
+    expect(ctx.runQuery).toHaveBeenNthCalledWith(1, profileQuery)
+    expect(ctx.runQuery).toHaveBeenNthCalledWith(2, assertProfile, { workforce: false })
     const options = betterAuth.mock.calls[0]?.[0] as {
       plugins: Array<{ id: string }>
     }
@@ -331,7 +515,7 @@ describe('createBetterConvexAuth', () => {
     const authInstance = authWithAdapter(adapter)
     betterAuth.mockImplementationOnce(authInstance).mockImplementationOnce(authInstance)
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-    const ctx = {} as never
+    const ctx = profileContext() as never
 
     await expect(
       auth.oauthOperator.createPublicClient(ctx, {
@@ -390,7 +574,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient({} as never, {
+      auth.oauthOperator.createPublicClient(profileContext() as never, {
         name: 'Proof',
         profile: 'proof',
         redirectUris: ['not-a-url'],
@@ -414,7 +598,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient({} as never, {
+      auth.oauthOperator.createPublicClient(profileContext() as never, {
         name: 'Proof',
         profile: 'proof',
         redirectUris: [redirectUri],
@@ -439,7 +623,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient({} as never, {
+      auth.oauthOperator.createPublicClient(profileContext() as never, {
         name: 'Proof',
         profile: 'proof',
         redirectUris: ['https://agent.example.test/callback'],
@@ -458,7 +642,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient({} as never, {
+      auth.oauthOperator.createPublicClient(profileContext() as never, {
         name: 'Proof',
         profile: 'proof',
         redirectUris: ['https://agent.example.test/callback'],
@@ -477,7 +661,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient({} as never, {
+      auth.oauthOperator.createPublicClient(profileContext() as never, {
         name: 'Proof',
         profile: 'proof',
         redirectUris: ['https://agent.example.test/callback'],
@@ -503,7 +687,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient({} as never, {
+      auth.oauthOperator.createPublicClient(profileContext() as never, {
         name: 'Proof',
         profile: 'proof',
         redirectUris: ['https://agent.example.test/callback'],
@@ -536,7 +720,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient({} as never, {
+      auth.oauthOperator.createPublicClient(profileContext() as never, {
         name: 'Proof',
         profile: 'proof',
         redirectUris: ['https://agent.example.test/callback'],
@@ -560,14 +744,16 @@ describe('createBetterConvexAuth', () => {
       },
     })
 
-    await expect(auth.createAuth({} as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
-    await expect(auth.createAuth({} as never)).rejects.not.toThrow('private policy failure')
+    await expect(auth.createAuth(profileContext() as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
+    await expect(auth.createAuth(profileContext() as never)).rejects.not.toThrow(
+      'private policy failure',
+    )
   })
 
   it('reports one sanitized configuration error when required secrets are absent', async () => {
     Reflect.deleteProperty(process.env, 'BETTER_AUTH_SECRETS')
     const auth = createBetterConvexAuth(component())
-    await expect(auth.createAuth({} as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
+    await expect(auth.createAuth(profileContext() as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
   })
 
   it.each([
@@ -579,7 +765,7 @@ describe('createBetterConvexAuth', () => {
     process.env.BETTER_AUTH_SECRETS = secrets
     const auth = createBetterConvexAuth(component())
 
-    await expect(auth.createAuth({} as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
+    await expect(auth.createAuth(profileContext() as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
     expect(betterAuth).not.toHaveBeenCalled()
   })
 
@@ -587,7 +773,7 @@ describe('createBetterConvexAuth', () => {
     process.env.BETTER_AUTH_SECRETS = `2:${'a'.repeat(32)},1:${'b'.repeat(32)}`
     const auth = createBetterConvexAuth(component())
 
-    await expect(auth.createAuth({} as never)).resolves.toBeDefined()
+    await expect(auth.createAuth(profileContext() as never)).resolves.toBeDefined()
     expect(betterAuth).toHaveBeenCalledOnce()
   })
 
@@ -598,7 +784,7 @@ describe('createBetterConvexAuth', () => {
     })
 
     const failure = await auth.oauthOperator
-      .deleteClient({} as never, { clientId: 'public-client' })
+      .deleteClient(profileContext() as never, { clientId: 'public-client' })
       .catch((error: unknown) => error)
 
     expect(failure).toEqual(new Error('AUTH_CONFIG_INVALID'))

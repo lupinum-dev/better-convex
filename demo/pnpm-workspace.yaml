@@ -6,5 +6,7 @@ minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 
 overrides:
+  # Remove when Nuxt UI resolves the patched Tiptap core without this audit pin.
+  '@tiptap/core@3.30.3': 3.30.4
   # Remove when fontless requires esbuild 0.28.1 or newer.
   'fontless>esbuild': 0.28.2

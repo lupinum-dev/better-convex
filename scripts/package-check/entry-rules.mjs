@@ -89,15 +89,19 @@ const NUXT_CHECKER_ENTRY_RULES = [
     subpath: './better-auth/server',
     purity: {
       runtimeExternalSpecifiers: [
+        '@better-auth/core/context',
+        '@better-auth/utils/otp',
         '@better-auth/oauth-provider',
         '@better-auth/oauth-provider/resource-client',
         'better-auth',
         'better-auth/adapters',
         'better-auth/api',
+        'better-auth/cookies',
         'better-auth/crypto',
         'better-auth/oauth2',
         'better-auth/plugins',
         'convex-helpers/server/stream',
+        'convex-helpers/validators',
         'convex/server',
         'convex/values',
       ],
@@ -133,6 +137,7 @@ const NUXT_CHECKER_ENTRY_RULES = [
       runtimeExternalSpecifiers: [
         'better-auth/plugins',
         'convex-helpers/server/stream',
+        'convex-helpers/validators',
         'convex/server',
         'convex/values',
       ],

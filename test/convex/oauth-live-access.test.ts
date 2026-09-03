@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import authSchema from '../../src/runtime/convex-auth/component/schema'
-import type { OAuthLiveAccess } from '../../src/runtime/convex-auth/oauth-live-access'
+import {
+  validateOAuthAccess as checkOAuthAccess,
+  type OAuthLiveAccess,
+} from '../../src/runtime/convex-auth/oauth-live-access'
 import rootSchema from '../fixtures/auth-relationships-root/convex/schema'
 
 const rootModules = import.meta.glob('../fixtures/auth-relationships-root/convex/**/*.ts')
@@ -170,5 +173,27 @@ describe('provider-owned OAuth live access validation', () => {
     await createLiveGrant(test)
     await updateRow(test, 'oauthResource', 'oauth-resource-row', { allowedScopes: null })
     await expect(validate(test)).resolves.toBe(true)
+  })
+
+  it('delegates session authority to component admission with exact subject binding', async () => {
+    const test = initTest()
+    await createLiveGrant(test)
+    await test.query(async (ctx) => {
+      const query = vi.spyOn(ctx, 'runQuery')
+      expect(await checkOAuthAccess(ctx, components.relationshipAuth, access)).toBe(true)
+      expect(query.mock.calls.map((call) => call[1])).toContainEqual({
+        sessionId: access.sessionId,
+        userId: access.subject,
+      })
+      expect(query.mock.calls.map((call) => call[1])).not.toContainEqual(
+        expect.objectContaining({ model: 'session' }),
+      )
+      expect(query.mock.calls.map((call) => call[1])).not.toContainEqual(
+        expect.objectContaining({ model: 'user' }),
+      )
+    })
+    await expect(
+      test.query(validateOAuthAccess, { access: { ...access, subject: 'other' } }),
+    ).resolves.toBe(false)
   })
 })

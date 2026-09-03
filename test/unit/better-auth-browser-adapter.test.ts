@@ -40,6 +40,88 @@ function source(
 }
 
 describe('Better Auth browser adapter', () => {
+  it('keeps a restricted provider cookie but retires Convex authority across same-session observations', async () => {
+    const data = { session: { token: 'setup-session' }, user: { id: 'alice' } }
+    const fixture = source({ isPending: false, data, error: null }, [
+      { error: { status: 403, code: 'AUTH_WORKFORCE_FULL_AUTH_REQUIRED' } },
+      { data: { token: jwt('alice') } },
+    ])
+    const callbacks = { authenticated: vi.fn(), anonymous: vi.fn(), sessionChanged: vi.fn() }
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, callbacks)
+    const listener = vi.fn()
+    adapter.subscribe(listener)
+    await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBeNull()
+    expect(adapter.snapshot()).toMatchObject({
+      status: 'anonymous',
+      identityKey: null,
+      error: null,
+    })
+    expect(adapter.isRestrictedSession()).toBe(true)
+    expect(callbacks.authenticated).not.toHaveBeenCalled()
+    expect(callbacks.anonymous).toHaveBeenLastCalledWith(null)
+    expect(callbacks.sessionChanged).toHaveBeenLastCalledWith('setup-session', null, 1)
+    expect(listener).toHaveBeenCalledOnce()
+    fixture.session.value = { isPending: false, data: { ...data }, error: null }
+    expect(adapter.snapshot().status).toBe('anonymous')
+    await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBeNull()
+    expect(fixture.token).toHaveBeenCalledOnce()
+    fixture.session.value = {
+      isPending: false,
+      data: { session: { token: 'full-session' }, user: { id: 'alice' } },
+      error: null,
+    }
+    expect(adapter.isRestrictedSession()).toBe(false)
+    await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBeTypeOf('string')
+    expect(callbacks.authenticated).toHaveBeenCalledOnce()
+    adapter.dispose()
+    expect(adapter.isRestrictedSession()).toBe(false)
+  })
+
+  it.each(['full', 'restricted'] as const)(
+    'ignores a late %s result after same-user cookie rotation',
+    async (result) => {
+      const fixture = source(
+        {
+          isPending: false,
+          data: { session: { token: 'old' }, user: { id: 'alice' } },
+          error: null,
+        },
+        [],
+      )
+      let resolve!: (value: {
+        data?: { token: string }
+        error?: { status: number; code: string }
+      }) => void
+      fixture.token.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done
+          }),
+      )
+      const callbacks = { authenticated: vi.fn(), anonymous: vi.fn() }
+      const adapter = createBetterAuthBrowserAdapter(fixture.client, callbacks)
+      const fetch = adapter.fetchToken({ forceRefreshToken: false })
+      fixture.session.value = {
+        isPending: false,
+        data: { session: { token: 'new' }, user: { id: 'alice' } },
+        error: null,
+      }
+      resolve(
+        result === 'full'
+          ? { data: { token: jwt('alice') } }
+          : {
+              error: { status: 403, code: 'AUTH_WORKFORCE_FULL_AUTH_REQUIRED' },
+            },
+      )
+      await expect(fetch).resolves.toBeNull()
+      expect(adapter.snapshot()).toMatchObject({ status: 'authenticated', sessionGeneration: 2 })
+      expect(adapter.isRestrictedSession()).toBe(false)
+      expect(callbacks.authenticated).not.toHaveBeenCalled()
+      expect(callbacks.anonymous).not.toHaveBeenCalled()
+      adapter.dispose()
+    },
+  )
+
   it('keeps matching SSR identity provenance through initial provider settlement', () => {
     const fixture = source({ isPending: true, data: null, error: null }, [])
     const adapter = createBetterAuthBrowserAdapter(fixture.client, undefined, {

@@ -73,10 +73,11 @@ describe('package-profile SBOM generation', () => {
           }),
         )
       }
-      for (const peer of ['@better-auth/oauth-provider', 'better-auth']) {
+      for (const peer of ['@better-auth/core', '@better-auth/oauth-provider', 'better-auth']) {
         expect(sbom.components).toContainEqual(
           expect.objectContaining({
             name: peer,
+            version: '1.7.2',
             properties: [
               {
                 name: '@lupinum/better-convex-nuxt:dependency-kind',

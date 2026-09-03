@@ -5,6 +5,11 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
+import { workforceSessionPolicy } from '../../src/runtime/convex-auth/workforce/operations'
+import {
+  workforceSchemaOptions,
+  workforceSchemaPlugin,
+} from '../../src/runtime/convex-auth/workforce/schema'
 
 const origin = 'https://app.example.test'
 const convexSiteUrl = 'https://deployment.convex.site'
@@ -41,14 +46,19 @@ function database(): MemoryDB {
   }
 }
 
-function createAuth(memoryDatabase = database()) {
+function createAuth(memoryDatabase = database(), workforce = false) {
   const issuer = `${origin}/api/auth`
   return betterAuth({
+    ...(workforce ? workforceSchemaOptions : {}),
+    ...(workforce
+      ? { session: { ...workforceSchemaOptions.session, disableSessionRefresh: true } }
+      : {}),
     advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
     basePath: '/api/auth',
     baseURL: origin,
     database: memoryAdapter(memoryDatabase),
     plugins: [
+      ...(workforce ? [workforceSchemaPlugin] : []),
       jwt({
         disableSettingJwtHeader: true,
         jwks: {
@@ -92,6 +102,42 @@ function request(marker: boolean, path = '/get-session'): Request {
 }
 
 describe('internal Better Auth session bridge', () => {
+  it.each([
+    { label: 'full', method: 'password-totp', allowed: true },
+    { label: 'password', method: 'password-only', allowed: false },
+    { label: 'enrollment', method: 'totp-enrollment', allowed: false },
+    { label: 'recovery', method: 'password-recovery', allowed: false },
+    { label: 'absent proof', method: 'none', allowed: false },
+    { label: 'stale generation', method: 'password-totp', generation: 4, allowed: false },
+    { label: 'unverified email', method: 'password-totp', verified: false, allowed: false },
+    { label: 'absolute deadline', method: 'password-totp', absoluteExpired: true, allowed: false },
+  ])('gates workforce token mint for $label sessions', async (scenario) => {
+    const now = Date.now()
+    const memory = database()
+    Object.assign(memory.user![0]!, {
+      bcnSecurityGeneration: 5,
+      emailVerified: scenario.verified ?? true,
+    })
+    Object.assign(memory.session![0]!, {
+      bcnAssuranceGeneration: scenario.generation ?? 5,
+      bcnAssuranceMethod: scenario.method,
+      bcnAuthenticatedAt: now - 1000,
+      bcnSessionStartedAt: scenario.absoluteExpired
+        ? now - workforceSessionPolicy.absoluteLifetimeMs
+        : now - 1000,
+    })
+    const auth = createAuth(memory, true)
+    const context = await auth.$context
+    const signer = context.getPlugin('jwt')
+    if (!signer) throw new Error('Expected the JWT plugin')
+    // This proves the real HTTP gate precedes signing, not JWT cryptography.
+    const sign = vi.spyOn(signer.endpoints, 'signJWT').mockResolvedValue({ token: 'synthetic-jwt' })
+    const response = await auth.handler(request(true, '/convex/token'))
+    expect(response.status).toBe(scenario.allowed ? 200 : 401)
+    expect(sign).toHaveBeenCalledTimes(scenario.allowed ? 1 : 0)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+  })
+
   it('gives the authenticated token exchange a bounded route-specific allowance', () => {
     const plugin = convexAuth({
       authConfig: {

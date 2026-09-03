@@ -73,6 +73,43 @@ describe('production manifest certification profiles', () => {
     })
   })
 
+  it('requires the exact optional auth peer tuple in the reviewed Nuxt contract', () => {
+    const contract = selectProductionManifestContract(packageId, manifest)
+    expect(contract.manifest).toHaveProperty(
+      'peerDependencies',
+      expect.objectContaining({
+        '@better-auth/core': '1.7.2',
+        '@better-auth/oauth-provider': '1.7.2',
+        'better-auth': '1.7.2',
+      }),
+    )
+    expect(contract.manifest).toHaveProperty('peerDependenciesMeta', {
+      '@better-auth/core': { optional: true },
+      '@better-auth/oauth-provider': { optional: true },
+      'better-auth': { optional: true },
+    })
+  })
+
+  it.each([
+    ['missing peer', undefined, { optional: true }],
+    ['version range', '^1.7.2', { optional: true }],
+    ['different exact version', '1.7.1', { optional: true }],
+    ['required peer', '1.7.2', { optional: false }],
+    ['missing optional metadata', '1.7.2', undefined],
+  ])('rejects core with %s even when source and candidate match', (_label, version, metadata) => {
+    const unreviewed = candidate((value) => {
+      const peers = value.peerDependencies as Record<string, unknown>
+      const peerMetadata = value.peerDependenciesMeta as Record<string, unknown>
+      if (version === undefined) Reflect.deleteProperty(peers, '@better-auth/core')
+      else peers['@better-auth/core'] = version
+      if (metadata === undefined) Reflect.deleteProperty(peerMetadata, '@better-auth/core')
+      else peerMetadata['@better-auth/core'] = metadata
+    })
+    expect(() => assertProductionManifestContract(packageId, unreviewed, unreviewed)).toThrow(
+      'Nuxt auth packages must be exact optional peers.',
+    )
+  })
+
   it('selects the minimal MCP contract with one exact official SDK dependency', () => {
     const contract = selectProductionManifestContract('mcp', mcpManifest)
     expect(contract).toMatchObject({

@@ -156,6 +156,36 @@ describe('client Convex token exchange deadline', () => {
 })
 
 describe('client Convex token exchange outcomes', () => {
+  it('recognizes only the live workforce continuation refusal', async () => {
+    const source = {
+      convex: {
+        token: vi.fn(async () => ({
+          data: null,
+          error: { status: 403, code: 'AUTH_WORKFORCE_FULL_AUTH_REQUIRED' },
+        })),
+      },
+    } satisfies ConvexTokenSource
+    await expect(fetchConvexToken(source)).resolves.toEqual({
+      identity: null,
+      authError: null,
+      definitive: true,
+      restricted: true,
+    })
+    expect(source.convex.token).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    { status: 401, code: 'AUTH_WORKFORCE_FULL_AUTH_REQUIRED' },
+    { status: 403, code: 'AUTH_WORKFORCE_SESSION_INVALID' },
+    { status: 403, code: 'AUTH_WORKFORCE_SESSION_REQUIRED' },
+    { status: 503, code: 'AUTH_WORKFORCE_FULL_AUTH_REQUIRED' },
+  ])('does not treat other refusals as continuation: $status $code', async (error) => {
+    const outcome = await fetchConvexToken({ convex: { token: async () => ({ error }) } })
+    expect(outcome.restricted).toBeUndefined()
+    expect(outcome.authError).not.toBeNull()
+    expect(outcome.identity).toBeNull()
+  })
+
   it('settles a nullable successful response as clean anonymous state', async () => {
     const source = {
       convex: { token: async () => ({ data: { token: null }, error: null }) },
