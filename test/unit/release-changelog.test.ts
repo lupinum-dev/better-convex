@@ -32,7 +32,7 @@ describe('prepared release changelog', () => {
 
     expect(vue.version).toBe(workspace.version)
     expect(getReleaseFamilyTag(workspace.version)).toBe(currentTag)
-    expect(requirePreparedReleaseNotes(changelog, currentTag)).toContain('OAuth')
+    expect(requirePreparedReleaseNotes(changelog, currentTag)).toContain('workforce assurance')
   })
 
   it.each([
