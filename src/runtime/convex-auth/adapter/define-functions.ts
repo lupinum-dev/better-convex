@@ -21,15 +21,12 @@ import {
   normalizeSigningKeyCandidate,
   signingKeyCandidateValidator,
 } from '../jwks-rotation'
+import { createWorkforceAdapterPolicy } from '../workforce/adapter-policy'
 import { readAuthSessionAdmission } from '../workforce/admission'
-import { invalidateWorkforcePasswordChange } from '../workforce/credential-generation'
-import { prepareWorkforceFactorWrite } from '../workforce/factor-transitions'
 import {
   workforceConsumedChallengeValidator,
   workforceOperationValidator,
 } from '../workforce/operations'
-import { readWorkforcePendingFactor } from '../workforce/pending-factor-view'
-import { collectExpiredWorkforceVerificationRows } from '../workforce/replay'
 import { hasWorkforceSchema } from '../workforce/schema'
 import {
   expireWorkforceSession,
@@ -41,11 +38,6 @@ import {
   workforceSessionPageOptionsValidator,
   workforceSessionPageValidator,
 } from '../workforce/session-management'
-import {
-  prepareWorkforceProofUpdate,
-  prepareWorkforceSessionCreate,
-  prepareWorkforceVerificationCreate,
-} from '../workforce/session-transitions'
 import type { AuthFieldMetadata, AuthSchemaMetadata } from './metadata'
 import {
   assertAuthSchemaMatchesMetadata,
@@ -296,7 +288,13 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
 }: DefineAuthAdapterFunctionsOptions<Schema>) {
   assertAuthSchemaMatchesMetadata(schema, metadata)
   const workforce = hasWorkforceSchema(metadata)
-  const relationships = createAuthRelationshipEngine({ schema, metadata, runTrigger, workforce })
+  const workforcePolicy = createWorkforceAdapterPolicy(workforce)
+  const relationships = createAuthRelationshipEngine({
+    schema,
+    metadata,
+    runTrigger,
+    workforcePolicy,
+  })
   function requireWorkforce(): void {
     if (!workforce) throw new Error('AUTH_WORKFORCE_SCHEMA_REQUIRED')
   }
@@ -387,24 +385,13 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         let row = normalizeCreate(metadata, args.model, args.data)
         await relationships.assertTargets(ctx, args.model, row)
         await assertUniqueConstraints(ctx, schema, metadata, args.model, row)
-        if (workforce)
-          await invalidateWorkforcePasswordChange(ctx, args.model, null, row, args.workforce)
-        if (workforce) {
-          if (args.workforceConsumedChallenge && args.model !== 'session')
-            throw new Error('AUTH_WORKFORCE_UNEXPECTED_CHALLENGE_RECEIPT')
-          if (args.model === 'user') row = { ...row, bcnSecurityGeneration: 0 }
-          row = await prepareWorkforceFactorWrite(ctx, args.model, null, row, args.workforce)
-          if (args.model === 'session')
-            row = await prepareWorkforceSessionCreate(
-              ctx,
-              row,
-              args.workforce,
-              args.workforceConsumedChallenge,
-            )
-          if (args.model === 'verification')
-            row = await prepareWorkforceVerificationCreate(ctx, row, args.workforce)
-        } else if (args.workforce || args.workforceConsumedChallenge)
-          throw new Error('AUTH_WORKFORCE_SCHEMA_REQUIRED')
+        row = await workforcePolicy.prepareCreate(
+          ctx,
+          args.model,
+          row,
+          args.workforce,
+          args.workforceConsumedChallenge,
+        )
         const storageId = await ctx.db.insert(args.model as never, row as never)
         const created = await ctx.db.get(args.model as never, storageId as never)
         if (!created) throw new Error('AUTH_CREATE_READBACK_FAILED')
@@ -414,14 +401,11 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         })
         const finalRow = await ctx.db.get(args.model as never, storageId as never)
         if (!finalRow) throw new Error('AUTH_CREATE_TRIGGER_DELETED_ROW')
-        if (workforce && args.model === 'session') {
+        await workforcePolicy.scheduleCreatedSession(args.model, finalRow, async (expiresAt) => {
           const sessionId = ctx.db.normalizeId('session', storageId)
-          if (!sessionId || typeof finalRow.expiresAt !== 'number')
-            throw new Error('AUTH_WORKFORCE_SESSION_INVALID')
-          await ctx.scheduler.runAt(finalRow.expiresAt, expireSessionReference, {
-            storageId: sessionId,
-          })
-        }
+          if (!sessionId) throw new Error('AUTH_WORKFORCE_SESSION_INVALID')
+          await ctx.scheduler.runAt(expiresAt, expireSessionReference, { storageId: sessionId })
+        })
         return toBetterAuthDocument(finalRow as never)
       },
     }),
@@ -434,13 +418,9 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         workforce: v.optional(workforceOperationValidator),
       },
       handler: async (ctx, args) => {
-        if (!workforce && args.workforce) throw new Error('AUTH_WORKFORCE_SCHEMA_REQUIRED')
         const rows = await findAuthRows(ctx, schema, metadata, readShape(args), 2)
         const row = oneOrNull(rows, 'AUTH_FIND_ONE')
-        const view =
-          workforce && args.model === 'twoFactor'
-            ? await readWorkforcePendingFactor(ctx, row, args.workforce)
-            : row
+        const view = await workforcePolicy.projectFind(ctx, args.model, row, args.workforce)
         return toBetterAuthDocument(view, args.select)
       },
     }),
@@ -492,7 +472,6 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           'AUTH_UPDATE_ONE',
         )
         if (!current) return null
-        if (workforce) patch = prepareWorkforceProofUpdate(args.model, current, patch)
         await relationships.assertTargets(
           ctx,
           args.model,
@@ -500,16 +479,14 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           new Set(Object.keys(patch)),
         )
         await assertUniqueConstraints(ctx, schema, metadata, args.model, patch, current)
-        if (workforce) {
-          await invalidateWorkforcePasswordChange(
-            ctx,
-            args.model,
-            current,
-            { ...current, ...patch },
-            args.workforce,
-          )
-          patch = await prepareWorkforceFactorWrite(ctx, args.model, current, patch, args.workforce)
-        } else if (args.workforce) throw new Error('AUTH_WORKFORCE_SCHEMA_REQUIRED')
+        patch = await workforcePolicy.prepareUpdate(
+          ctx,
+          args.model,
+          current,
+          patch,
+          args.workforce,
+          undefined,
+        )
         await ctx.db.patch(args.model as never, current._id as never, patch as never)
         const updated = await ctx.db.get(args.model as never, current._id as never)
         if (!updated) throw new Error('AUTH_UPDATE_READBACK_FAILED')
@@ -548,21 +525,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           await assertUniqueConstraints(ctx, schema, metadata, args.model, patch, current)
         }
         for (const current of rows) {
-          if (workforce) {
-            await invalidateWorkforcePasswordChange(ctx, args.model, current, {
-              ...current,
-              ...patch,
-            })
-          }
-          const rowPatch = workforce
-            ? await prepareWorkforceFactorWrite(
-                ctx,
-                args.model,
-                current,
-                prepareWorkforceProofUpdate(args.model, current, patch),
-                undefined,
-              )
-            : patch
+          const rowPatch = await workforcePolicy.prepareBulkUpdate(ctx, args.model, current, patch)
           await ctx.db.patch(args.model as never, current._id as never, rowPatch as never)
           if (!args.onUpdateHandle) continue
           const updated = await ctx.db.get(args.model as never, current._id as never)
@@ -609,19 +572,9 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         onUpdateModels: v.optional(v.array(v.string())),
       },
       handler: async (ctx, args) => {
-        const cutoff = args.where[0]
-        const boundedExpiryCleanup =
-          workforce &&
-          args.model === 'verification' &&
-          args.where.length === 1 &&
-          cutoff?.field === 'expiresAt' &&
-          cutoff.operator === 'lt' &&
-          typeof cutoff.value === 'number' &&
-          cutoff.connector !== 'OR' &&
-          cutoff.mode !== 'insensitive'
-        const rows = boundedExpiryCleanup
-          ? await collectExpiredWorkforceVerificationRows(ctx, cutoff.value as number)
-          : await relationships.collectOperationRows(ctx, readShape(args))
+        const rows =
+          (await workforcePolicy.expiredVerificationRows(ctx, args.model, args.where)) ??
+          (await relationships.collectOperationRows(ctx, readShape(args)))
         await relationships.applyDeletion(ctx, rows, args.model, args)
         return rows.length
       },
@@ -702,26 +655,14 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           { ...current, ...patch },
           new Set(Object.keys(patch)),
         )
-        if (workforce) {
-          await invalidateWorkforcePasswordChange(
-            ctx,
-            args.model,
-            current,
-            { ...current, ...patch },
-            args.workforce,
-          )
-        }
-        const rowPatch = workforce
-          ? await prepareWorkforceFactorWrite(
-              ctx,
-              args.model,
-              current,
-              prepareWorkforceProofUpdate(args.model, current, patch),
-              args.workforce,
-              { where: args.where, increment: args.increment },
-            )
-          : patch
-        if (!workforce && args.workforce) throw new Error('AUTH_WORKFORCE_SCHEMA_REQUIRED')
+        const rowPatch = await workforcePolicy.prepareUpdate(
+          ctx,
+          args.model,
+          current,
+          patch,
+          args.workforce,
+          { where: args.where, increment: args.increment },
+        )
         await ctx.db.patch(args.model as never, current._id as never, rowPatch as never)
         const updated = await ctx.db.get(args.model as never, current._id as never)
         if (!updated) throw new Error('AUTH_INCREMENT_READBACK_FAILED')

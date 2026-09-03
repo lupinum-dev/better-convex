@@ -5,7 +5,7 @@ import {
   isComponentAdmissionDenied,
   isInconclusiveComponentSocketClose,
   isRootAdmissionMissing,
-} from '../../scripts/run-auth-concurrency.mjs'
+} from '../../scripts/auth-session-admission.mjs'
 
 describe('session admission runtime boundary failure classification', () => {
   const completeEvidence = {

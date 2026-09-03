@@ -153,11 +153,11 @@ export function createWorkforceProviderHooks() {
   const before = createAuthMiddleware(async (ctx) => {
     const path = ctx.path
     const body = bodyRecord(ctx.body) ? ctx.body : {}
+    if (path && publicPaths.has(path)) return
     if (path === '/sign-in/email') {
       const trustCookie = ctx.context.createAuthCookie('trust_device')
       if (ctx.getCookie(trustCookie.name) !== null) {
         expireCookie(ctx, trustCookie)
-        // A thrown before-hook error must explicitly carry its response headers.
         deny('AUTH_WORKFORCE_TRUST_DEVICE_FORBIDDEN', ctx.responseHeaders)
       }
       if (typeof body.email !== 'string') return
@@ -176,52 +176,58 @@ export function createWorkforceProviderHooks() {
       })
       return
     }
-    if (path && publicPaths.has(path)) return
     if (path === '/get-session') {
-      // An absent cookie remains an anonymous session. A stale live cookie does
-      // not restore revoked authority; restricted onboarding sessions stay usable.
       await liveSession(ctx)
       return
     }
-    const verifyTotp = path === '/two-factor/verify-totp'
-    const verifyRecovery = path === '/two-factor/verify-backup-code'
-    const enable = path === '/two-factor/enable'
-    const regenerate = path === '/two-factor/generate-backup-codes'
-    const token = path === '/convex/token'
-    const changePassword = path === '/change-password'
-    if (!verifyTotp && !verifyRecovery && !enable && !regenerate && !token && !changePassword)
-      deny()
-    if ((verifyTotp || verifyRecovery) && (body.trustDevice || body.disableSession)) deny()
-    if (enable && body.method !== undefined && body.method !== 'totp') deny()
-    if (changePassword && body.revokeOtherSessions) deny()
-    const live = await liveSession(ctx)
-    if ((verifyTotp || verifyRecovery) && !live) {
-      await bindChallenge(ctx, verifyRecovery)
-      return
-    }
-    if (!live) deny('AUTH_WORKFORCE_SESSION_REQUIRED')
-    if (verifyRecovery) deny()
-    if (verifyTotp && live.session.bcnAssuranceMethod !== 'totp-enrollment') deny()
-    if (enable || verifyTotp) {
+    if (path === '/two-factor/verify-totp' || path === '/two-factor/verify-backup-code') {
+      if (body.trustDevice || body.disableSession) deny()
+      const live = await liveSession(ctx)
+      if (!live) {
+        await bindChallenge(ctx, path === '/two-factor/verify-backup-code')
+        return
+      }
+      if (
+        path === '/two-factor/verify-backup-code' ||
+        live.session.bcnAssuranceMethod !== 'totp-enrollment'
+      )
+        deny()
       await setWorkforceOperation({
-        operation: enable ? 'begin-enrollment' : 'confirm-enrollment',
+        operation: 'confirm-enrollment',
         userId: live.userId,
         sessionId: live.sessionId,
         expectedGeneration: live.generation,
-        ...(verifyTotp
-          ? {
-              replay: await bindWorkforceTotpReplay(ctx, {
-                userId: live.userId,
-                expectedGeneration: live.generation,
-                sessionId: live.sessionId,
-              }),
-            }
-          : {}),
+        replay: await bindWorkforceTotpReplay(ctx, {
+          userId: live.userId,
+          expectedGeneration: live.generation,
+          sessionId: live.sessionId,
+        }),
       })
       return
     }
+    if (path === '/two-factor/enable') {
+      if (body.method !== undefined && body.method !== 'totp') deny()
+      const live = await liveSession(ctx)
+      if (!live) deny('AUTH_WORKFORCE_SESSION_REQUIRED')
+      await setWorkforceOperation({
+        operation: 'begin-enrollment',
+        userId: live.userId,
+        sessionId: live.sessionId,
+        expectedGeneration: live.generation,
+      })
+      return
+    }
+    if (
+      path !== '/convex/token' &&
+      path !== '/two-factor/generate-backup-codes' &&
+      path !== '/change-password'
+    )
+      deny()
+    if (path === '/change-password' && body.revokeOtherSessions) deny()
+    const live = await liveSession(ctx)
+    if (!live) deny('AUTH_WORKFORCE_SESSION_REQUIRED')
     if (!isFullWorkforceSession(live)) deny('AUTH_WORKFORCE_FULL_AUTH_REQUIRED')
-    if (token) return
+    if (path === '/convex/token') return
     if (
       getWorkforceSessionAssurance({
         ...live,
@@ -230,13 +236,12 @@ export function createWorkforceProviderHooks() {
       })?.method !== 'password-totp'
     )
       deny('AUTH_WORKFORCE_FRESH_AUTH_REQUIRED')
-    if (regenerate || changePassword)
-      await setWorkforceOperation({
-        operation: regenerate ? 'regenerate-backup-codes' : 'change-password',
-        userId: live.userId,
-        sessionId: live.sessionId,
-        expectedGeneration: live.generation,
-      })
+    await setWorkforceOperation({
+      operation: path === '/change-password' ? 'change-password' : 'regenerate-backup-codes',
+      userId: live.userId,
+      sessionId: live.sessionId,
+      expectedGeneration: live.generation,
+    })
   })
   const sessionCreateAfter: SessionCreateAfter = async (session) => {
     if ((await getWorkforceOperation())?.operation === 'confirm-enrollment')

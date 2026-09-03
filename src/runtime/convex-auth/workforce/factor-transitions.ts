@@ -101,7 +101,7 @@ export function assertPending(factor: Row | null, session: Row, operation: Sessi
     throw new Error('AUTH_WORKFORCE_PENDING_FACTOR_INVALID')
 }
 
-interface RecoveryConsumption {
+export interface RecoveryConsumption {
   where: readonly AuthWhere[]
   increment: Row
 }
@@ -158,6 +158,140 @@ async function assertRecoveryConsumption(
   // Advancing the generation here would invalidate that same successful attempt.
 }
 
+async function deferFactorFlag(
+  ctx: Ctx,
+  previous: Row,
+  patch: Row,
+  operation: WorkforceOperation | undefined,
+): Promise<Row> {
+  if (patch.twoFactorEnabled !== true || operation?.operation !== 'confirm-enrollment') {
+    throw new Error('AUTH_WORKFORCE_FACTOR_FLAG_FORBIDDEN')
+  }
+  const live = await liveContinuation(ctx, operation)
+  if (previous.id !== operation.userId) throw new Error('AUTH_WORKFORCE_CONTINUATION_INVALID')
+  assertPending(await factorForUser(ctx, operation.userId), live.session, live.operation)
+  const { twoFactorEnabled: _deferred, ...other } = patch
+  return other
+}
+
+async function prepareCredentialWrite(
+  ctx: Ctx,
+  previous: Row | null,
+  patch: Row,
+  operation: WorkforceOperation | undefined,
+  consumption?: RecoveryConsumption,
+): Promise<Row> {
+  if (previous && operation?.operation === 'recovery-sign-in' && consumption) {
+    await assertRecoveryConsumption(ctx, previous, patch, operation, consumption)
+    return patch
+  }
+  if (previous && operation?.operation === 'regenerate-backup-codes' && !consumption) {
+    const live = await liveContinuation(ctx, operation)
+    if (
+      previous.userId !== operation.userId ||
+      previous.verified !== true ||
+      live.user.twoFactorEnabled !== true ||
+      live.session.bcnAssuranceMethod !== 'password-totp' ||
+      live.now - Number(live.session.bcnAuthenticatedAt) >=
+        workforceSessionPolicy.freshAuthenticationMs
+    )
+      throw new Error('AUTH_WORKFORCE_FRESH_AUTH_REQUIRED')
+    if (
+      Object.keys(patch).length !== 1 ||
+      typeof patch.backupCodes !== 'string' ||
+      !patch.backupCodes
+    ) {
+      throw new Error('AUTH_WORKFORCE_BACKUP_REGENERATION_INVALID')
+    }
+    await advanceWorkforceGeneration(ctx, operation.userId)
+    return { ...patch, ...emptyPending }
+  }
+  if (operation?.operation !== 'begin-enrollment')
+    throw new Error('AUTH_WORKFORCE_OPERATION_REQUIRED')
+  const live = await liveContinuation(ctx, operation)
+  const current = await factorForUser(ctx, operation.userId)
+  if ((previous && previous.id !== current?.id) || (!previous && current)) {
+    throw new Error('AUTH_WORKFORCE_FACTOR_CONFLICT')
+  }
+  if ((previous?.userId ?? patch.userId) !== operation.userId) {
+    throw new Error('AUTH_WORKFORCE_CONTINUATION_INVALID')
+  }
+  const method = live.session.bcnAssuranceMethod
+  if (method === 'totp-enrollment') {
+    assertPending(current, live.session, live.operation)
+  } else {
+    const fresh =
+      live.now - Number(live.session.bcnAuthenticatedAt) <
+      workforceSessionPolicy.freshAuthenticationMs
+    const initial =
+      method === 'password-only' &&
+      live.user.twoFactorEnabled !== true &&
+      current?.verified !== true
+    const approved = method === 'password-totp' || method === 'password-recovery'
+    if (!fresh || (!initial && !approved)) throw new Error('AUTH_WORKFORCE_FRESH_AUTH_REQUIRED')
+  }
+  if (
+    typeof patch.secret !== 'string' ||
+    !patch.secret ||
+    typeof patch.backupCodes !== 'string' ||
+    !patch.backupCodes
+  ) {
+    throw new Error('AUTH_WORKFORCE_PENDING_FACTOR_INVALID')
+  }
+  const generation = await advanceWorkforceGeneration(ctx, operation.userId)
+  await ctx.db.patch('session', storageId(ctx, 'session', live.session), {
+    bcnAssuranceGeneration: generation,
+    bcnAssuranceMethod: 'totp-enrollment',
+  })
+  return {
+    ...patch,
+    secret: previous?.secret ?? '',
+    backupCodes: previous?.backupCodes ?? '',
+    verified: previous?.verified ?? false,
+    bcnPendingSecret: patch.secret,
+    bcnPendingBackupCodes: patch.backupCodes,
+    bcnPendingSessionId: operation.sessionId,
+    bcnPendingGeneration: generation,
+  }
+}
+
+async function confirmFactor(
+  ctx: Ctx,
+  previous: Row | null,
+  patch: Row,
+  operation: WorkforceOperation | undefined,
+): Promise<Row> {
+  if (patch.verified !== true || operation?.operation !== 'confirm-enrollment') {
+    throw new Error('AUTH_WORKFORCE_FACTOR_CONFIRMATION_REQUIRED')
+  }
+  const live = await liveContinuation(ctx, operation)
+  assertPending(previous, live.session, live.operation)
+  if (
+    !operation.replay ||
+    typeof previous?.id !== 'string' ||
+    typeof previous.bcnPendingSecret !== 'string'
+  ) {
+    throw new Error('AUTH_WORKFORCE_REPLAY_PROOF_REQUIRED')
+  }
+  await consumeWorkforceTotpReplay(ctx, operation.replay, {
+    userId: operation.userId,
+    factorId: previous.id,
+    factorSecret: previous.bcnPendingSecret,
+  })
+  const generation = await advanceWorkforceGeneration(ctx, operation.userId)
+  await ctx.db.patch('user', storageId(ctx, 'user', live.user), { twoFactorEnabled: true })
+  await ctx.db.patch('session', storageId(ctx, 'session', live.session), {
+    bcnAssuranceGeneration: generation,
+    bcnAssuranceMethod: 'none',
+  })
+  return {
+    ...patch,
+    ...emptyPending,
+    secret: previous.bcnPendingSecret,
+    backupCodes: previous.bcnPendingBackupCodes,
+  }
+}
+
 /** Runs inside the existing component write, before the normalized patch is applied. */
 export async function prepareWorkforceFactorWrite(
   ctx: Ctx,
@@ -173,16 +307,7 @@ export async function prepareWorkforceFactorWrite(
     'twoFactorEnabled' in patch &&
     patch.twoFactorEnabled !== previous.twoFactorEnabled
   ) {
-    if (patch.twoFactorEnabled !== true || operation?.operation !== 'confirm-enrollment') {
-      throw new Error('AUTH_WORKFORCE_FACTOR_FLAG_FORBIDDEN')
-    }
-    const live = await liveContinuation(ctx, operation)
-    if (previous?.id !== operation.userId) throw new Error('AUTH_WORKFORCE_CONTINUATION_INVALID')
-    assertPending(await factorForUser(ctx, operation.userId), live.session, live.operation)
-    // Better Auth writes this flag before its final factor confirmation. Keep
-    // the actual row unchanged until both are committed by the promotion below.
-    const { twoFactorEnabled: _deferred, ...other } = patch
-    return other
+    return deferFactorFlag(ctx, previous, patch, operation)
   }
   if (model !== 'twoFactor') return patch
   if (
@@ -193,115 +318,10 @@ export async function prepareWorkforceFactorWrite(
   if (previous && 'userId' in patch && patch.userId !== previous.userId) {
     throw new Error('AUTH_WORKFORCE_FACTOR_OWNER_IMMUTABLE')
   }
-  const credentialWrite = !previous || ['secret', 'backupCodes'].some((field) => field in patch)
-  if (credentialWrite) {
-    if (previous && operation?.operation === 'recovery-sign-in' && consumption) {
-      await assertRecoveryConsumption(ctx, previous, patch, operation, consumption)
-      return patch
-    }
-    if (previous && operation?.operation === 'regenerate-backup-codes' && !consumption) {
-      const live = await liveContinuation(ctx, operation)
-      if (
-        previous.userId !== operation.userId ||
-        previous.verified !== true ||
-        live.user.twoFactorEnabled !== true ||
-        live.session.bcnAssuranceMethod !== 'password-totp' ||
-        live.now - Number(live.session.bcnAuthenticatedAt) >=
-          workforceSessionPolicy.freshAuthenticationMs
-      )
-        throw new Error('AUTH_WORKFORCE_FRESH_AUTH_REQUIRED')
-      if (
-        Object.keys(patch).length !== 1 ||
-        typeof patch.backupCodes !== 'string' ||
-        !patch.backupCodes
-      ) {
-        throw new Error('AUTH_WORKFORCE_BACKUP_REGENERATION_INVALID')
-      }
-      await advanceWorkforceGeneration(ctx, operation.userId)
-      return { ...patch, ...emptyPending }
-    }
-    if (operation?.operation !== 'begin-enrollment')
-      throw new Error('AUTH_WORKFORCE_OPERATION_REQUIRED')
-    const live = await liveContinuation(ctx, operation)
-    const current = await factorForUser(ctx, operation.userId)
-    if ((previous && previous.id !== current?.id) || (!previous && current)) {
-      throw new Error('AUTH_WORKFORCE_FACTOR_CONFLICT')
-    }
-    if ((previous?.userId ?? patch.userId) !== operation.userId) {
-      throw new Error('AUTH_WORKFORCE_CONTINUATION_INVALID')
-    }
-    const method = live.session.bcnAssuranceMethod
-    if (method === 'totp-enrollment') {
-      assertPending(current, live.session, live.operation)
-    } else {
-      const fresh =
-        live.now - Number(live.session.bcnAuthenticatedAt) <
-        workforceSessionPolicy.freshAuthenticationMs
-      const initial =
-        method === 'password-only' &&
-        live.user.twoFactorEnabled !== true &&
-        current?.verified !== true
-      const approved = method === 'password-totp' || method === 'password-recovery'
-      if (!fresh || (!initial && !approved)) throw new Error('AUTH_WORKFORCE_FRESH_AUTH_REQUIRED')
-    }
-    if (
-      typeof patch.secret !== 'string' ||
-      !patch.secret ||
-      typeof patch.backupCodes !== 'string' ||
-      !patch.backupCodes
-    ) {
-      throw new Error('AUTH_WORKFORCE_PENDING_FACTOR_INVALID')
-    }
-    const generation = await advanceWorkforceGeneration(ctx, operation.userId)
-    await ctx.db.patch('session', storageId(ctx, 'session', live.session), {
-      bcnAssuranceGeneration: generation,
-      bcnAssuranceMethod: 'totp-enrollment',
-    })
-    // The active secret/codes stay usable if the setup response or cookie is lost.
-    return {
-      ...patch,
-      secret: previous?.secret ?? '',
-      backupCodes: previous?.backupCodes ?? '',
-      verified: previous?.verified ?? false,
-      bcnPendingSecret: patch.secret,
-      bcnPendingBackupCodes: patch.backupCodes,
-      bcnPendingSessionId: operation.sessionId,
-      bcnPendingGeneration: generation,
-    }
+  if (!previous || ['secret', 'backupCodes'].some((field) => field in patch)) {
+    return prepareCredentialWrite(ctx, previous, patch, operation, consumption)
   }
-  if ('verified' in patch) {
-    if (patch.verified !== true || operation?.operation !== 'confirm-enrollment') {
-      throw new Error('AUTH_WORKFORCE_FACTOR_CONFIRMATION_REQUIRED')
-    }
-    const live = await liveContinuation(ctx, operation)
-    assertPending(previous, live.session, live.operation)
-    if (
-      !operation.replay ||
-      typeof previous?.id !== 'string' ||
-      typeof previous.bcnPendingSecret !== 'string'
-    )
-      throw new Error('AUTH_WORKFORCE_REPLAY_PROOF_REQUIRED')
-    await consumeWorkforceTotpReplay(ctx, operation.replay, {
-      userId: operation.userId,
-      factorId: previous.id,
-      factorSecret: previous.bcnPendingSecret,
-    })
-    const generation = await advanceWorkforceGeneration(ctx, operation.userId)
-    await ctx.db.patch('user', storageId(ctx, 'user', live.user), {
-      twoFactorEnabled: true,
-    })
-    await ctx.db.patch('session', storageId(ctx, 'session', live.session), {
-      bcnAssuranceGeneration: generation,
-      bcnAssuranceMethod: 'none',
-    })
-    return {
-      ...patch,
-      ...emptyPending,
-      secret: previous!.bcnPendingSecret,
-      backupCodes: previous!.bcnPendingBackupCodes,
-    }
-  }
-  return patch
+  return 'verified' in patch ? confirmFactor(ctx, previous, patch, operation) : patch
 }
 
 /** Preserve the setup lifetime and move its binding during provider session rotation. */

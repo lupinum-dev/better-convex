@@ -18,13 +18,7 @@ import { ConvexError } from 'convex/values'
 
 import { isWritableAuthCtx, requireWritableAuthCtx, type AuthCtx } from '../context'
 import type { AuthAdapterComponentApi, AuthComponentTriggers, AuthFunctions } from '../types'
-import type { WorkforceConsumedChallenge } from '../workforce/operations'
-import {
-  armWorkforceConsumedChallenge,
-  getWorkforceOperation,
-  reserveWorkforcePasswordChallenge,
-  takeWorkforceConsumedChallenge,
-} from '../workforce/request-context'
+import { createWorkforceAdapterTransport } from '../workforce/adapter-transport'
 import { hasWorkforceSchema, workforceSchemaPlugin } from '../workforce/schema'
 import { createAuthSchema, generateAuthSchemaArtifacts } from './generate-schema'
 
@@ -266,6 +260,7 @@ export function createConvexAuthAdapter<
       if (workforce && !hasWorkforceSchema(generateAuthSchemaArtifacts(schema).metadata)) {
         throw new Error('AUTH_WORKFORCE_SCHEMA_MISMATCH')
       }
+      const workforceTransport = createWorkforceAdapterTransport(workforce)
       const idTokens = createAccountIdTokenProtector(options)
       const triggerModels = {
         onCreate: configuredTriggerModels(adapterOptions.triggers, 'onCreate').map(getModelName),
@@ -317,20 +312,7 @@ export function createConvexAuthAdapter<
           model: string
         }): Promise<T> => {
           requireWritableAuthCtx(ctx)
-          const operation = workforce
-            ? model === 'verification'
-              ? await reserveWorkforcePasswordChallenge(data)
-              : await getWorkforceOperation()
-            : null
-          let consumedChallenge: Readonly<WorkforceConsumedChallenge> | null = null
-          if (
-            model === 'session' &&
-            (operation?.operation === 'totp-sign-in' || operation?.operation === 'recovery-sign-in')
-          ) {
-            if (typeof data.userId !== 'string')
-              throw new Error('AUTH_WORKFORCE_SESSION_OWNER_REQUIRED')
-            consumedChallenge = await takeWorkforceConsumedChallenge(data.userId)
-          }
+          const { operation, consumedChallenge } = await workforceTransport.create(model, data)
           const created = await ctx
             .runMutation(component.adapter.create, {
               model,
@@ -352,8 +334,7 @@ export function createConvexAuthAdapter<
           select?: string[]
           where: CleanedWhere[]
         }): Promise<T | null> => {
-          const operation =
-            workforce && model === 'twoFactor' ? await getWorkforceOperation() : null
+          const operation = await workforceTransport.operation(model)
           const found = await ctx.runQuery(component.adapter.findOne, {
             model,
             where: toComponentWhere(where),
@@ -407,7 +388,7 @@ export function createConvexAuthAdapter<
         }): Promise<T | null> => {
           requireWritableAuthCtx(ctx)
           if (where.length === 0) return null
-          const operation = workforce ? await getWorkforceOperation() : null
+          const operation = await workforceTransport.operation()
           const updated = await ctx
             .runMutation(component.adapter.updateOne, {
               model,
@@ -466,7 +447,7 @@ export function createConvexAuthAdapter<
             onUpdateHandle: await relationshipTriggerHandle('onUpdate'),
             onUpdateModels: triggerModels.onUpdate,
           })
-          if (workforce && model === 'verification') await armWorkforceConsumedChallenge(consumed)
+          await workforceTransport.consumed(model, consumed)
           return idTokens.reveal(model, consumed as T | null)
         },
         incrementOne: async <T>({
@@ -481,7 +462,7 @@ export function createConvexAuthAdapter<
           where: CleanedWhere[]
         }): Promise<T | null> => {
           requireWritableAuthCtx(ctx)
-          const operation = workforce ? await getWorkforceOperation() : null
+          const operation = await workforceTransport.operation()
           const incremented = await ctx.runMutation(component.adapter.incrementOne, {
             model,
             where: toComponentWhere(where)!,
