@@ -12,7 +12,7 @@ function sri(path: string) {
 }
 
 describe('canonical release tarball packing', () => {
-  it('cleans stale dist, restores the placeholder, and reproduces exact bytes', () => {
+  it('cleans generated state, restores the placeholder, and reproduces exact bytes', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'bcn-release-pack-'))
     const repository = join(fixture, 'repository')
     const fakeBin = join(fixture, 'bin')
@@ -29,6 +29,8 @@ describe('canonical release tarball packing', () => {
     )
     mkdirSync(join(repository, 'dist'))
     writeFileSync(join(repository, 'dist/stale.js'), 'stale\n')
+    mkdirSync(join(repository, '.nuxt'))
+    writeFileSync(join(repository, '.nuxt/stale.ts'), 'stale\n')
 
     const fakePnpm = join(fakeBin, 'pnpm')
     writeFileSync(
@@ -36,7 +38,13 @@ describe('canonical release tarball packing', () => {
       `#!${process.execPath}
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-appendFileSync(process.env.BCN_PACK_BUILD_LOG, String(existsSync(join(process.cwd(), 'dist/stale.js'))) + '\\n')
+appendFileSync(
+  process.env.BCN_PACK_BUILD_LOG,
+  [
+    existsSync(join(process.cwd(), 'dist/stale.js')),
+    existsSync(join(process.cwd(), '.nuxt/stale.ts')),
+  ].join(',') + '\\n',
+)
 mkdirSync(join(process.cwd(), 'dist/runtime/shared'), { recursive: true })
 writeFileSync(join(process.cwd(), 'dist/module.mjs'), "import { getPackedRuntimeFingerprint } from '../dist/runtime/shared/release-fingerprint.js'\\n")
 writeFileSync(join(process.cwd(), 'dist/runtime/shared/release-fingerprint.js'), "const value = '__BCN_RELEASE_RUNTIME_FINGERPRINT__'\\n")
@@ -95,7 +103,7 @@ process.stdout.write(JSON.stringify([{ filename, integrity: 'sha512-' + createHa
         repositoryRoot: repository,
       })
 
-      expect(readFileSync(buildLog, 'utf8')).toBe('false\nfalse\n')
+      expect(readFileSync(buildLog, 'utf8')).toBe('false,false\nfalse,false\n')
       expect(second.runtimeFingerprint).toBe(first.runtimeFingerprint)
       expect(sri(second.tarballPath)).toBe(sri(first.tarballPath))
       expect(readFileSync(second.tarballPath)).toEqual(readFileSync(first.tarballPath))
