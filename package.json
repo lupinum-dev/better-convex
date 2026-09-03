@@ -107,7 +107,7 @@
   "scripts": {
     "build:devtools": "nuxi build src/runtime/devtools/ui --preset static && node scripts/normalize-devtools-build.mjs",
     "changelog": "changelogen --output CHANGELOG.md --hideAuthorEmail",
-    "build:package": "pnpm --dir packages/vue build && nuxt-module-build prepare && pnpm run build:devtools && nuxt-module-build build",
+    "build:package": "pnpm --dir packages/vue build && nuxt-module-build prepare && pnpm run build:devtools && nuxt-module-build build && node scripts/normalize-generated-declarations.mjs",
     "prepack": "pnpm exec unbuild packages/mcp && pnpm run build:package && pnpm run check:package-exports:dist --dist-only && pnpm run check:single-runtime-owners:dist",
     "dev": "pnpm run dev:prepare && nuxi dev --cwd playground --dotenv .env.local --port 4578",
     "dev:build": "nuxi build --cwd playground --dotenv .env.local",
