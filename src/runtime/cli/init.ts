@@ -4,11 +4,12 @@ import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
 import { runAuthSchemaCommand } from './auth-schema'
-import { runConvexCommand } from './convex'
+import { inspectConvexAuthority, runConvexCommand } from './convex'
 
 export interface InitDependencies {
   confirm(message: string): Promise<boolean>
   prompt(message: string, defaultValue: string): Promise<string>
+  readDevelopmentAuthorityLabel(): Promise<string>
   runConvex(args: readonly string[], input?: string): Promise<number>
   readEnvironmentNames(): Promise<ReadonlySet<string>>
   generateSchema(args: readonly string[]): Promise<number>
@@ -109,7 +110,29 @@ async function readOptional(path: string): Promise<string | undefined> {
   }
 }
 
-function defaultDependencies(): InitDependencies {
+function defaultDependencies(root: string): InitDependencies {
+  let authorityPromise: ReturnType<typeof inspectConvexAuthority> | undefined
+  const developmentAuthority = async () => {
+    authorityPromise ??= inspectConvexAuthority(root)
+    const authority = await authorityPromise
+    if (!authority.development) {
+      throw new Error('better-convex init refuses production or unclassified authority')
+    }
+    return authority
+  }
+  const runDevelopmentConvex = async (
+    args: readonly string[],
+    options: { input?: string; onStdout?: (output: string) => void } = {},
+  ) => {
+    const authority = await developmentAuthority()
+    return await runConvexCommand(args, {
+      ...options,
+      cwd: root,
+      developmentOnly: true,
+      expectedAuthorityDigest: authority.digest,
+      quiet: true,
+    })
+  }
   async function question(message: string): Promise<string> {
     const terminal = createInterface({ input: process.stdin, output: process.stdout })
     try {
@@ -127,11 +150,13 @@ function defaultDependencies(): InitDependencies {
       const answer = (await question(`${message} [${defaultValue}] `)).trim()
       return answer || defaultValue
     },
-    runConvex: async (args, input) => await runConvexCommand(args, { input, quiet: true }),
+    async readDevelopmentAuthorityLabel() {
+      return (await developmentAuthority()).label
+    },
+    runConvex: async (args, input) => await runDevelopmentConvex(args, { input }),
     async readEnvironmentNames() {
       let output = ''
-      const status = await runConvexCommand(['env', 'list', '--names-only'], {
-        quiet: true,
+      const status = await runDevelopmentConvex(['env', 'list', '--names-only'], {
         onStdout: (value) => {
           output += value
         },
@@ -253,9 +278,9 @@ export async function runInitCommand(
     console.log('Usage: better-convex init [--typed-client]')
     return 0
   }
-  const defaults = defaultDependencies()
-  const dependencies: InitDependencies = { ...defaults, ...overrides }
   const root = process.cwd()
+  const defaults = defaultDependencies(root)
+  const dependencies: InitDependencies = { ...defaults, ...overrides }
   const schemaPath = join(root, 'convex/betterAuth/schema.ts')
   const metadataPath = join(root, 'convex/betterAuth/schemaMetadata.ts')
   const [schema, metadata] = await Promise.all([
@@ -291,7 +316,12 @@ export async function runInitCommand(
       'Generated auth schema conflicts with the reviewed plugin profile. Run better-convex auth schema and review the diff manually.',
     )
   }
-  if (!(await dependencies.confirm('Provision development secrets and the first signing key?'))) {
+  const authorityLabel = await dependencies.readDevelopmentAuthorityLabel()
+  if (
+    !(await dependencies.confirm(
+      `Provision development secrets and the first signing key in ${authorityLabel}?`,
+    ))
+  ) {
     return 0
   }
   await provisionDevelopment(dependencies)

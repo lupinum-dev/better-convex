@@ -28,6 +28,9 @@ function createHarness(confirmations: boolean[] = [true, true, true]): Harness {
     async prompt() {
       return 'http://localhost:4173'
     },
+    async readDevelopmentAuthorityLabel() {
+      return 'dev:fixture'
+    },
     async runConvex(args, input) {
       convexCalls.push({ args, input })
       if (args[0] === 'env' && args[1] === 'set') {
@@ -93,6 +96,7 @@ describe.sequential('better-convex init', () => {
     expect(JSON.stringify(harness.convexCalls.map(({ args }) => args))).not.toContain(
       'SENTINEL_SECRET_DO_NOT_LOG',
     )
+    expect(harness.confirmations.at(-1)).toContain('dev:fixture')
   })
 
   it('writes nothing when the file plan is cancelled', async () => {
@@ -204,5 +208,31 @@ describe.sequential('better-convex init', () => {
     await expect(runInitCommand(['--prod'], createHarness().dependencies)).rejects.toThrow(
       'refuses production',
     )
+  })
+
+  it('refuses production authority before starting a provisioning command', async () => {
+    await mkdir(join(root, 'node_modules/convex/bin'), { recursive: true })
+    await writeFile(
+      join(root, '.env.local'),
+      'CONVEX_DEPLOY_KEY=prod:fixture-production|not-a-real-credential\n',
+      { mode: 0o600 },
+    )
+    await writeFile(
+      join(root, 'node_modules/convex/bin/main.js'),
+      "require('node:fs').writeFileSync('production-command-started', 'unsafe')\n",
+    )
+
+    await expect(
+      runInitCommand([], {
+        confirm: async () => true,
+        generateSchema: async () => 0,
+        log: () => undefined,
+        prompt: async (_message, defaultValue) => defaultValue,
+        randomSecret: () => 'fixture-generated-secret-never-real',
+      }),
+    ).rejects.toThrow('refuses production or unclassified authority')
+    await expect(readFile(join(root, 'production-command-started'), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
   })
 })

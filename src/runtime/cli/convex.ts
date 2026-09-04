@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { stat, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -71,6 +72,12 @@ const DEPLOYMENT_KEY = /^(?:dev|prod):[^:|\s]+\|\S+$/u
 const DEPLOYMENT_NAME = /^(?:custom|dev|local|preview|prod):[a-z0-9_-]+$/u
 
 type ConvexAuthorityKind = 'deployment-key' | 'deployment-name' | 'self-hosted'
+
+export interface ConvexAuthoritySnapshot {
+  digest: string
+  development: boolean
+  label: string
+}
 
 function hasValue(environment: Readonly<Record<string, string>>, name: string): boolean {
   return typeof environment[name] === 'string' && environment[name]!.length > 0
@@ -221,6 +228,34 @@ async function readAuthorityFile(cwd: string): Promise<Record<string, string>> {
   }
 }
 
+function snapshotAuthority(environment: Readonly<Record<string, string>>): ConvexAuthoritySnapshot {
+  const kind = assertConvexAuthoritySelection(environment)
+  const selector =
+    TOKEN_SELECTORS.map((name) => environment[name]).find(Boolean) ??
+    environment.CONVEX_DEPLOYMENT ??
+    'self-hosted'
+  const publicSelector = selector.includes('|')
+    ? selector.slice(0, selector.indexOf('|'))
+    : selector
+  const development =
+    (kind === 'deployment-key' && publicSelector.startsWith('dev:')) ||
+    (kind === 'deployment-name' && /^(?:anonymous:anonymous-|dev:|local:)/u.test(publicSelector))
+  const canonicalAuthority = Object.entries(environment)
+    .filter(([name]) => ALLOWED_CONVEX_FILE_NAMES.has(name))
+    .sort(([left], [right]) => left.localeCompare(right))
+  return {
+    digest: createHash('sha256').update(JSON.stringify(canonicalAuthority)).digest('hex'),
+    development,
+    label: kind === 'self-hosted' ? 'self-hosted deployment' : publicSelector,
+  }
+}
+
+export async function inspectConvexAuthority(
+  cwd: string = process.cwd(),
+): Promise<ConvexAuthoritySnapshot> {
+  return snapshotAuthority(await readAuthorityFile(resolve(cwd)))
+}
+
 function usage(): string {
   return [
     'Run the pinned Convex CLI with one explicit deployment authority.',
@@ -240,6 +275,8 @@ export async function runConvexCommand(
   arguments_: readonly string[],
   options: {
     cwd?: string
+    developmentOnly?: boolean
+    expectedAuthorityDigest?: string
     inheritedEnvironment?: NodeJS.ProcessEnv
     input?: string
     onStdout?: (output: string) => void
@@ -284,6 +321,16 @@ export async function runConvexCommand(
     assertFileBoundArguments(commandArguments)
     const authorityFile = await readAuthorityFile(cwd)
     const authorityKind = assertConvexAuthoritySelection(authorityFile)
+    const authority = snapshotAuthority(authorityFile)
+    if (options.developmentOnly && !authority.development) {
+      throw new Error('This command requires development, local, or anonymous authority.')
+    }
+    if (
+      options.expectedAuthorityDigest !== undefined &&
+      authority.digest !== options.expectedAuthorityDigest
+    ) {
+      throw new Error('The Convex authority file changed after the operation was confirmed.')
+    }
     const deploymentKey = TOKEN_SELECTORS.map((name) => authorityFile[name]).find(Boolean)
     if (command === 'deploy' && authorityKind === 'deployment-name') {
       throw new Error('Deploy requires a deployment-scoped key or self-hosted authority.')
