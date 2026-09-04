@@ -12,6 +12,7 @@
     "test/fixtures/auth-client-typing",
     "test/fixtures/missing-convex-api",
     "test/fixtures/auth-disabled",
+    "test/fixtures/auth-security-plugins",
     "test/fixtures/better-auth-local-component",
     "test/fixtures/better-auth-two-factor",
     "test/fixtures/workforce-http",
