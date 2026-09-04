@@ -1,5 +1,5 @@
 import { oauthProvider as createOAuthProvider } from '@better-auth/oauth-provider'
-import type { Auth, BetterAuthOptions, InferAPI, User } from 'better-auth'
+import type { Auth, BetterAuthOptions, BetterAuthPlugin, InferAPI, User } from 'better-auth'
 import { APIError, betterAuth } from 'better-auth'
 import {
   emailOTP,
@@ -305,6 +305,21 @@ export function createBetterConvexAuth<
   component: Api,
   options: CreateBetterConvexAuthOptions<DataModel> = {},
 ): BetterConvexAuth<DataModel, Api> {
+  return createBetterConvexAuthOwned(component, options)
+}
+
+/**
+ * Test-only package entry support.
+ * @internal
+ */
+export function createBetterConvexAuthOwned<
+  DataModel extends GenericDataModel,
+  Api extends AuthAdapterComponentApi = AuthAdapterComponentApi,
+>(
+  component: Api,
+  options: CreateBetterConvexAuthOptions<DataModel> = {},
+  extraPlugins: readonly BetterAuthPlugin[] = [],
+): BetterConvexAuth<DataModel, Api> {
   rejectUnsupportedOptions(options)
   const workforce = options.workforce === true
   if (options.workforce !== undefined && !workforce) throw new Error('AUTH_CONFIG_INVALID')
@@ -407,6 +422,7 @@ export function createBetterConvexAuth<
       })
       const plugins = [
         ...featurePlugins,
+        ...extraPlugins,
         jwtPlugin,
         convexPlugin,
         ...(workforceHooks

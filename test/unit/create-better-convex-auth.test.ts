@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { requireWritableAuthCtx, type AuthCtx } from '../../src/runtime/convex-auth/context'
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
+import { createBetterConvexTestAuth } from '../../src/runtime/convex-auth/test'
 
 const { betterAuth } = vi.hoisted(() => ({
   betterAuth: vi.fn((options: unknown) => ({
@@ -791,5 +792,37 @@ describe('createBetterConvexAuth', () => {
     expect(failure).not.toBe(privateFailure)
     expect(String(failure)).not.toContain('operator-profile-sentinel')
     expect(JSON.stringify(failure)).not.toContain('operator-profile-sentinel')
+  })
+})
+
+describe('createBetterConvexTestAuth', () => {
+  it('adds only the fixed test-utils plugin on exact loopback origins', async () => {
+    process.env.SITE_URL = 'http://localhost:3000'
+    process.env.CONVEX_SITE_URL = 'http://127.0.0.1:3211'
+    const auth = createBetterConvexTestAuth(component(), {})
+
+    await auth.createAuth(profileContext() as never)
+    const options = betterAuth.mock.calls[0]?.[0] as BetterAuthOptions
+
+    expect(options.plugins?.map(({ id }) => id)).toEqual([
+      'test-utils',
+      'jwt',
+      '@lupinum/better-convex-nuxt',
+    ])
+  })
+
+  it.each([
+    ['SITE_URL', 'https://localhost'],
+    ['SITE_URL', 'http://example.test'],
+    ['SITE_URL', 'http://localhost/path'],
+    ['CONVEX_SITE_URL', 'https://127.0.0.1'],
+    ['CONVEX_SITE_URL', 'http://user@localhost'],
+  ] as const)('rejects non-loopback %s value %s', (name, value) => {
+    process.env.SITE_URL = 'http://localhost:3000'
+    process.env.CONVEX_SITE_URL = 'http://127.0.0.1:3211'
+    process.env[name] = value
+
+    expect(() => createBetterConvexTestAuth(component(), {})).toThrow('AUTH_TEST_LOOPBACK_REQUIRED')
+    expect(betterAuth).not.toHaveBeenCalled()
   })
 })
