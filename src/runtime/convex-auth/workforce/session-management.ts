@@ -193,9 +193,13 @@ export async function expireWorkforceSession(
   if (!session) return null
   const expiresAt = session.expiresAt
   const startedAt = session.bcnSessionStartedAt
-  const deadline =
-    positive(expiresAt) && positive(startedAt)
+  const workforceSession = 'bcnSessionStartedAt' in session
+  const deadline = workforceSession
+    ? positive(expiresAt) && positive(startedAt)
       ? Math.min(expiresAt, startedAt + workforceSessionPolicy.absoluteLifetimeMs)
+      : null
+    : positive(expiresAt)
+      ? expiresAt
       : null
   if (deadline !== null && deadline > Date.now()) return deadline
   await ctx.db.delete('session', storageId)

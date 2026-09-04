@@ -257,7 +257,7 @@ describe('workforce credential invalidation in the canonical component mutation'
       update: { password: 'hash-reset' },
     })
     expect(await proof()).toBeNull()
-    expect(await find(test, 'session', 'approved-session')).toEqual(session)
+    expect(await find(test, 'session', 'approved-session')).toBeNull()
   })
 
   it('serializes simultaneous password writes without losing an invalidation', async () => {

@@ -159,8 +159,12 @@ describe('canonical session admission', () => {
   it('preserves ordinary admission without accepting its missing fields as workforce proof', async () => {
     const test = convexTest(ordinarySchema, ordinaryModules)
     const ids = await test.run(async (ctx) => ({
-      user: await ctx.db.insert('user', { ...user, emailVerified: false }),
-      session: await ctx.db.insert('session', session),
+      user: await ctx.db.insert('user', {
+        ...user,
+        emailVerified: false,
+        bcnSecurityGeneration: 0,
+      }),
+      session: await ctx.db.insert('session', { ...session, bcnAssuranceGeneration: 0 }),
     }))
     const binding = { sessionId: session.id, userId: user.id }
     expect(await test.run((ctx) => readAuthSessionAdmission(ctx, binding, false))).toMatchObject({

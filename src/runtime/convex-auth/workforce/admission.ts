@@ -1,5 +1,6 @@
 import type { GenericDataModel, GenericQueryCtx } from 'convex/server'
 
+import { sessionGenerationMatches } from '../session-generation'
 import { isFullWorkforceSession } from './session-assurance'
 
 /**
@@ -34,7 +35,7 @@ export async function readAuthSessionAdmission(
     .query('user')
     .withIndex('id', (query) => query.eq('id', sessionUserId))
     .unique()
-  if (!user) return null
+  if (!user || !sessionGenerationMatches(user, session)) return null
   if (workforce && !isFullWorkforceSession({ user, session, now })) {
     return null
   }

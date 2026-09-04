@@ -178,4 +178,71 @@ describe('backend helpers use canonical component admission', () => {
       ),
     ).toBe(`Bearer ${session.token}`)
   })
+
+  it('revokes more than the bulk-delete limit atomically after a password reset', async () => {
+    const test = convexTest(rootSchema, rootModules)
+    test.registerComponent('ordinaryAuth', ordinarySchema, ordinaryModules)
+    await test.mutation(components.ordinaryAuth.adapter.create, {
+      model: 'user',
+      data: { ...user, emailVerified: false },
+    })
+    for (let index = 0; index < 129; index += 1) {
+      await test.mutation(components.ordinaryAuth.adapter.create, {
+        model: 'session',
+        data: {
+          ...session,
+          id: `session-${index}`,
+          token: `token-${index}`,
+        },
+      })
+    }
+
+    const staleIdentity = { ...identity, sid: 'session-128' }
+    const staleClient = test.withIdentity(staleIdentity)
+    const helper = createAuthComponent(components.ordinaryAuth)
+    expect(await staleClient.query((ctx) => helper.safeGetAuthUser(ctx))).toMatchObject({
+      ...user,
+      emailVerified: false,
+    })
+
+    await expect(
+      test.mutation(components.ordinaryAuth.adapter.deleteMany, {
+        model: 'session',
+        where: [{ field: 'userId', value: user.id }],
+      }),
+    ).resolves.toBe(0)
+
+    await expect(
+      test.query(components.ordinaryAuth.adapter.findOne, {
+        model: 'session',
+        select: ['id'],
+        where: [{ field: 'id', value: 'session-128' }],
+      }),
+    ).resolves.toBeNull()
+    await expect(
+      test.query(components.ordinaryAuth.adapter.findMany, {
+        model: 'session',
+        paginationOpts: { cursor: null, numItems: 200 },
+        where: [{ field: 'userId', value: user.id }],
+      }),
+    ).resolves.toMatchObject({ page: [] })
+    await expect(staleClient.query((ctx) => helper.safeGetAuthUser(ctx))).resolves.toBeNull()
+
+    await test.mutation(components.ordinaryAuth.adapter.create, {
+      model: 'session',
+      data: { ...session, id: 'session-current', token: 'token-current' },
+    })
+    await expect(
+      test.query(components.ordinaryAuth.adapter.findOne, {
+        model: 'session',
+        select: ['id'],
+        where: [{ field: 'id', value: 'session-current' }],
+      }),
+    ).resolves.toEqual({ id: 'session-current' })
+    const currentClient = test.withIdentity({ ...identity, sid: 'session-current' })
+    await expect(currentClient.query((ctx) => helper.safeGetAuthUser(ctx))).resolves.toMatchObject({
+      ...user,
+      emailVerified: false,
+    })
+  })
 })

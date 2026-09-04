@@ -27,6 +27,52 @@ interface AuthIndexDeclaration {
   unique?: true
 }
 
+const sessionGenerationFields = {
+  session: {
+    bcnAssuranceGeneration: {
+      type: 'number',
+      required: true,
+      defaultValue: 0,
+      input: false,
+      returned: false,
+    },
+  },
+  user: {
+    bcnSecurityGeneration: {
+      type: 'number',
+      required: true,
+      defaultValue: 0,
+      input: false,
+      returned: false,
+    },
+  },
+} as const satisfies Record<'session' | 'user', Record<string, DBFieldAttribute>>
+
+function withSessionGenerationFields(tables: BetterAuthDBSchema): BetterAuthDBSchema {
+  return Object.fromEntries(
+    Object.entries(tables).map(([name, table]) => {
+      if (name !== 'user' && name !== 'session') return [name, table]
+      for (const [fieldName, expected] of Object.entries(sessionGenerationFields[name])) {
+        const configured = table.fields[fieldName]
+        if (
+          configured &&
+          (configured.type !== expected.type ||
+            configured.required !== expected.required ||
+            configured.defaultValue !== expected.defaultValue ||
+            configured.input !== expected.input ||
+            configured.returned !== expected.returned ||
+            configured.fieldName !== undefined ||
+            configured.references !== undefined ||
+            configured.unique === true)
+        ) {
+          throw new Error(`AUTH_SCHEMA_SESSION_GENERATION_FIELD_RESERVED:${name}.${fieldName}`)
+        }
+      }
+      return [name, { ...table, fields: { ...table.fields, ...sessionGenerationFields[name] } }]
+    }),
+  )
+}
+
 const explicitIndexes: Readonly<Record<string, readonly AuthIndexDeclaration[]>> = {
   invitation: [
     { fields: ['email', 'organizationId', 'status'] },
@@ -383,7 +429,7 @@ function renderSchema(metadata: AuthSchemaMetadata): string {
 export function generateAuthSchemaArtifacts(
   tables: BetterAuthDBSchema,
 ): GeneratedAuthSchemaArtifacts {
-  const metadata = buildMetadata(tables)
+  const metadata = buildMetadata(withSessionGenerationFields(tables))
   return {
     metadata,
     metadataCode: renderMetadata(metadata),
