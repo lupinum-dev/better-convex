@@ -319,6 +319,7 @@ export function createBetterConvexAuthOwned<
   component: Api,
   options: CreateBetterConvexAuthOptions<DataModel> = {},
   extraPlugins: readonly BetterAuthPlugin[] = [],
+  assertExtraPluginsAllowed: () => void = () => {},
 ): BetterConvexAuth<DataModel, Api> {
   rejectUnsupportedOptions(options)
   const workforce = options.workforce === true
@@ -359,6 +360,7 @@ export function createBetterConvexAuthOwned<
     oauthProfile: PinnedOAuthProviderProfile | undefined,
   ): Promise<BetterConvexAuthInstance> => {
     try {
+      assertExtraPluginsAllowed()
       const siteUrl = requireAuthOrigin('SITE_URL')
       const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
       assertVersionedSecrets(process.env.BETTER_AUTH_SECRETS)

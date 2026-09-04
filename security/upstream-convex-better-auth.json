@@ -324,9 +324,9 @@
       "targetPath": "src/runtime/convex-auth/create-better-convex-auth.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "610a4d7edfbb0fd3ab412d61e8103b9e416edaaf8e2719189c9cff345597150d",
-      "targetSha256": "05bf350f00f6ff9c32b39713ab11ca0eea2901e9594c3cd9b32ceb4572a4cb19",
+      "targetSha256": "0ecea97ae78a7dc70136f8973c57895bf6099e3781ee1802a0d0dfb2a5cf7e34",
       "classification": "rewritten",
-      "modificationSummary": "Introduced one reviewed factory that owns adapter wiring, JWT and plugin ordering, route registration, keys, secrets, projections, and OAuth operations; admits fail-closed request-scoped email and user-creation policy, supports one fixed workforce password-and-TOTP profile, and keeps arbitrary plugins limited to the internal loopback-only test constructor.",
+      "modificationSummary": "Introduced one reviewed factory that owns adapter wiring, JWT and plugin ordering, route registration, keys, secrets, projections, and OAuth operations; admits fail-closed request-scoped email and user-creation policy, supports one fixed workforce password-and-TOTP profile, keeps arbitrary plugins limited to the internal loopback-only test constructor, and lets that constructor revalidate its boundary for every auth instance.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
@@ -467,9 +467,9 @@
       "targetPath": "src/runtime/convex-auth/test.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "239c30774d3fa877fea3e4aa56fa85d0ec4bd56758157bf33178966c12d1e942",
-      "targetSha256": "f4ab20bd24a82b77032010e48b8b681acfe81fd98ac5132c4bad0b1be1d07976",
+      "targetSha256": "6ff38a822ddc960139b4e0ffa9d0bbf1629ba63ddb96070621ba9ae972281317",
       "classification": "adapted",
-      "modificationSummary": "Compiled the component test registration helper against the exact packaged schema and modules, and added a test-only auth constructor that admits Better Auth test utilities only for validated loopback origins.",
+      "modificationSummary": "Compiled the component test registration helper against the exact packaged schema and modules, and added a test-only auth constructor that admits Better Auth test utilities only while both configured origins remain validated loopback URLs.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": true
     },

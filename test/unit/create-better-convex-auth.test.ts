@@ -825,4 +825,14 @@ describe('createBetterConvexTestAuth', () => {
     expect(() => createBetterConvexTestAuth(component(), {})).toThrow('AUTH_TEST_LOOPBACK_REQUIRED')
     expect(betterAuth).not.toHaveBeenCalled()
   })
+
+  it('revalidates loopback origins for every auth construction', async () => {
+    process.env.SITE_URL = 'http://localhost:3000'
+    process.env.CONVEX_SITE_URL = 'http://127.0.0.1:3211'
+    const auth = createBetterConvexTestAuth(component(), {})
+    process.env.SITE_URL = 'https://app.example.test'
+
+    await expect(auth.createAuth(profileContext() as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
+    expect(betterAuth).not.toHaveBeenCalled()
+  })
 })

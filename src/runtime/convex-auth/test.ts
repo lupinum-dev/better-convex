@@ -55,6 +55,11 @@ function requireLoopbackOrigin(name: 'CONVEX_SITE_URL' | 'SITE_URL'): void {
   }
 }
 
+function requireLoopbackOrigins(): void {
+  requireLoopbackOrigin('SITE_URL')
+  requireLoopbackOrigin('CONVEX_SITE_URL')
+}
+
 /**
  * Create the normal Better Convex auth unit with Better Auth's test helpers.
  * This entry refuses non-loopback runtimes and offers no arbitrary plugin seam.
@@ -66,11 +71,13 @@ export function createBetterConvexTestAuth<
   component: Api,
   options: CreateBetterConvexAuthOptions<DataModel>,
 ): BetterConvexAuth<DataModel, Api, BetterConvexTestAuthInstance> {
-  requireLoopbackOrigin('SITE_URL')
-  requireLoopbackOrigin('CONVEX_SITE_URL')
-  return createBetterConvexAuthOwned<DataModel, Api>(component, options, [
-    testUtils(),
-  ]) as BetterConvexAuth<DataModel, Api, BetterConvexTestAuthInstance>
+  requireLoopbackOrigins()
+  return createBetterConvexAuthOwned<DataModel, Api>(
+    component,
+    options,
+    [testUtils()],
+    requireLoopbackOrigins,
+  ) as BetterConvexAuth<DataModel, Api, BetterConvexTestAuthInstance>
 }
 
 // Keep this map static so the compiled npm entry works in plain Node as well
