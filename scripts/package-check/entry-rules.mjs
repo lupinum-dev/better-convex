@@ -141,7 +141,7 @@ const NUXT_CHECKER_ENTRY_RULES = [
         'convex/server',
         'convex/values',
       ],
-      typeExternalSpecifiers: ['convex/server', 'convex/values'],
+      typeExternalSpecifiers: ['convex/server'],
     },
   },
   {

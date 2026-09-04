@@ -30,6 +30,9 @@ import { basename, join } from 'node:path'
  *   `src/runtime/server/tsconfig.json`, which `extends` a repo-relative
  *   `../../../.nuxt/tsconfig.server.json` that does not exist for a
  *   published consumer.
+ * - the inferred declaration for the internal component schema. Supported
+ *   package entries do not import it, and component source keeps the exact
+ *   schema type used by its generated data model.
  * - `dist/runtime/devtools/.output/`, nitro's raw static-build output
  *   directory (created by the `build:devtools` script at
  *   `src/runtime/devtools/.output`, sibling to `ui/`, not inside it) — a
@@ -111,6 +114,14 @@ export default {
       // generated declarations are unreachable build debris, and mkdist's
       // extension appender corrupts their already-suffixed relative imports.
       await keepOnlyPublicGeneratedDeclaration(join(runtimeDir, 'convex-auth/component/_generated'))
+
+      // The component schema is an internal runtime module. Its exact inferred
+      // type remains available to the component source and generated data model,
+      // but no supported package entry imports its declaration.
+      const internalSchemaDeclaration = join(runtimeDir, 'convex-auth/component/schema.d.ts')
+      if (existsSync(internalSchemaDeclaration)) {
+        await rm(internalSchemaDeclaration, { force: true })
+      }
 
       for (const executable of ['index.js']) {
         const path = join(runtimeDir, 'cli', executable)

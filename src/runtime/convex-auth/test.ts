@@ -16,6 +16,12 @@ interface ComponentRegistrar {
   ): void
 }
 
+interface BetterAuthTestHelper {
+  modules: ComponentModules
+  register: typeof register
+  schema: SchemaDefinition<GenericSchema, boolean>
+}
+
 // Keep this map static so the compiled npm entry works in plain Node as well
 // as under Vite. The generated key establishes convex-test's component root;
 // adapter is the only component function module.
@@ -28,4 +34,6 @@ export function register(test: ComponentRegistrar, name = 'betterAuth'): void {
   test.registerComponent(name, schema, modules)
 }
 
-export default { modules, register, schema }
+const testHelper: BetterAuthTestHelper = { modules, register, schema }
+
+export default testHelper
