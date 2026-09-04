@@ -1,4 +1,4 @@
-import { getCurrentAuthContext, runWithEndpointContext } from '@better-auth/core/context'
+import { getCurrentAuthEndpointContext, runWithEndpointContext } from '@better-auth/core/context'
 import { betterAuth } from 'better-auth'
 import { memoryAdapter } from 'better-auth/adapters/memory'
 import { createAuthEndpoint, createAuthMiddleware } from 'better-auth/api'
@@ -123,7 +123,7 @@ describe('workforce operation request context', () => {
     const auth = fixture({
       before: async () => {
         await setWorkforceOperation(first)
-        const original = await getCurrentAuthContext()
+        const original = getCurrentAuthEndpointContext()
         await runWithEndpointContext(
           { ...original, context: { ...original.context } },
           async () => {
@@ -136,6 +136,21 @@ describe('workforce operation request context', () => {
       },
     })
     expect(await auth.api.first()).toEqual(first)
+  })
+
+  it('does not add workforce state to Better Auth context objects', async () => {
+    let keysBefore: readonly PropertyKey[] = []
+    let keysAfter: readonly PropertyKey[] = []
+    const auth = fixture({
+      before: async () => {
+        const context = getCurrentAuthEndpointContext().context
+        keysBefore = Reflect.ownKeys(context)
+        await setWorkforceOperation(first)
+        keysAfter = Reflect.ownKeys(context)
+      },
+    })
+    expect(await auth.api.first()).toEqual(first)
+    expect(keysAfter).toEqual(keysBefore)
   })
 
   it('copies and freezes the operation and rejects rebinding in the same endpoint', async () => {
