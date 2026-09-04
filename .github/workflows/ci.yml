@@ -165,8 +165,22 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
   dependency-advisories:
+    name: Dependency advisories (${{ matrix.scope }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: package
+            directory: .
+            command: pnpm check:auth-advisories
+          - scope: documentation
+            directory: docs
+            command: pnpm audit
+          - scope: demo
+            directory: demo
+            command: pnpm audit
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -176,16 +190,11 @@ jobs:
           node-version: '22.19.0'
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
-      - name: Audit package and imported authentication advisories
-        run: pnpm check:auth-advisories
+      - name: Audit ${{ matrix.scope }} dependencies
+        working-directory: ${{ matrix.directory }}
+        run: ${{ matrix.command }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - name: Audit documentation dependencies
-        working-directory: docs
-        run: pnpm audit
-      - name: Audit demo dependencies
-        working-directory: demo
-        run: pnpm audit
 
   release-smoke:
     needs: classify

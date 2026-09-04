@@ -21,6 +21,7 @@ interface WorkflowJob {
   needs?: string | string[]
   permissions?: Record<string, unknown>
   steps?: WorkflowStep[]
+  strategy?: unknown
 }
 
 interface Workflow {
@@ -151,9 +152,17 @@ describe('state-aware Better Convex release workflows', () => {
   })
 
   it('runs network advisory checks once in an independently rerunnable lane', () => {
-    const advisoryRuns = runs(ci, 'dependency-advisories').join('\n')
-    expect(advisoryRuns).toContain('pnpm check:auth-advisories')
-    expect(advisoryRuns.match(/pnpm audit/gu)).toHaveLength(2)
+    expect(requireJob(ci, 'dependency-advisories').strategy).toEqual({
+      'fail-fast': false,
+      matrix: {
+        include: [
+          { scope: 'package', directory: '.', command: 'pnpm check:auth-advisories' },
+          { scope: 'documentation', directory: 'docs', command: 'pnpm audit' },
+          { scope: 'demo', directory: 'demo', command: 'pnpm audit' },
+        ],
+      },
+    })
+    expect(runs(ci, 'dependency-advisories')).toContain('${{ matrix.command }}')
     expect(runs(ci, 'compatibility').join('\n')).not.toContain('pnpm audit')
     expect(runs(ci, 'auth-real-backend').join('\n')).not.toContain('check:auth-advisories')
 
