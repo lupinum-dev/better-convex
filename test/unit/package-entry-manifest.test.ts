@@ -467,7 +467,9 @@ describe('package entry manifest', () => {
 
   it('keeps the workforce request context out of non-auth package entries', () => {
     for (const entry of getPackageCheckerEntries('nuxt')) {
-      if (entry.subpath === './better-auth/server') continue
+      if (entry.subpath === './better-auth/server' || entry.subpath === './better-auth/test') {
+        continue
+      }
       expect(entry.purity.runtimeExternalSpecifiers).not.toContain('better-auth/cookies')
       expect(entry.purity.runtimeExternalSpecifiers).not.toContain('@better-auth/core/context')
       expect(entry.purity.typeExternalSpecifiers).not.toContain('@better-auth/core/context')
