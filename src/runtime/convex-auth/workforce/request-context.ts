@@ -93,6 +93,7 @@ export async function relayWorkforceSession(session: {
   const binding = await bindingFor(context)
   const operation = binding?.operation
   if (
+    !binding ||
     operation?.operation !== 'confirm-enrollment' ||
     operation.userId !== session.userId ||
     session.id.trim().length === 0
