@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { generateAuthSchemaArtifacts } from '../../src/runtime/convex-auth/adapter/generate-schema'
 import schemaOptions from '../fixtures/better-auth-two-factor/convex/betterAuth/schemaOptions'
+import workforceSchemaOptions from '../fixtures/workforce-component/convex/betterAuth/schemaOptions'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const jiti = fileURLToPath(new URL('../../node_modules/jiti/lib/jiti-cli.mjs', import.meta.url))
@@ -86,7 +87,27 @@ describe('auth schema CLI authority', () => {
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
   })
 
-  it('rejects schema-changing plugins outside the reviewed 1.0 profile', () => {
+  it('accepts the owned workforce schema plugin and checks its canonical paired output', () => {
+    const directory = 'test/fixtures/workforce-component/convex/betterAuth'
+    const artifacts = generateAuthSchemaArtifacts(getAuthTables(workforceSchemaOptions))
+    expect(artifacts.schemaCode).toBe(readFileSync(`${root}/${directory}/schema.ts`, 'utf8'))
+    expect(artifacts.metadataCode).toBe(
+      readFileSync(`${root}/${directory}/schemaMetadata.ts`, 'utf8'),
+    )
+    const result = runCli(`${directory}/schemaOptions.ts`, directory)
+    expect(result.error).toBeUndefined()
+    expect(result.signal).toBeNull()
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
+  })
+
+  it.each([
+    { reason: 'unsupported', plugins: [{ id: 'admin' }], rejectedIndex: 0 },
+    {
+      reason: 'duplicate workforce',
+      plugins: [{ id: 'bcn-workforce-schema' }, { id: 'bcn-workforce-schema' }],
+      rejectedIndex: 1,
+    },
+  ])('rejects $reason schema plugins', ({ plugins, rejectedIndex }) => {
     const directory = mkdtempSync(join(tmpdir(), 'bcn-auth-schema-unsupported-'))
     const config = join(directory, 'schemaOptions.ts')
     writeFileSync(
@@ -94,14 +115,16 @@ describe('auth schema CLI authority', () => {
       `export default {
   baseURL: 'https://schema.invalid',
   secret: 'schema-generation-only-value-never-used-at-runtime',
-  plugins: [{ id: 'admin' }],
+  plugins: ${JSON.stringify(plugins)},
 }\n`,
     )
 
     try {
       const result = runCli(config, directory)
       expect(result.status).toBe(1)
-      expect(result.stderr).toContain('Schema config plugin at index 0 is unsupported')
+      expect(result.stderr).toContain(
+        `Schema config plugin at index ${rejectedIndex} is unsupported`,
+      )
     } finally {
       rmSync(directory, { force: true, recursive: true })
     }

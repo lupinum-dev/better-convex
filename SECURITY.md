@@ -8,14 +8,14 @@ The current package family consists of the `@lupinum/better-convex-nuxt@1.0.0-be
 `@lupinum/better-convex-vue@1.0.0-beta.1`, and `@lupinum/better-convex-mcp@1.0.0-beta.1`
 prerelease candidates. The Nuxt candidate uses Node
 `^22.19.0 || ^24.11.0`, Nuxt `4.5.2`, Convex `1.42.2`, Better Auth
-`1.7.1`, `@better-auth/oauth-provider` `1.7.1`, and Convex Helpers
+`1.7.2`, `@better-auth/oauth-provider` `1.7.2`, and Convex Helpers
 `0.1.114`.
 Each package manifest is canonical for its own dependencies and peers; each
 reviewed release descriptor binds its package manifest into that package's
 artifact proof. The hosted `release-gate` certifies source once before the
 protected workflow mints the three package candidates. Post-mint verification
 is artifact-only. Convex and Nuxt are exact required peers of the Nuxt package.
-Better Auth and the OAuth Provider are exact optional peers installed only by
+Better Auth, Better Auth Core, and the OAuth Provider are exact optional peers installed only by
 auth-enabled applications. Better Auth owns its Kysely dependency; Better Convex
 does not redeclare it. An auth-enabled application resolves one physical
 instance of each stateful runtime in the tuple.
@@ -123,6 +123,45 @@ The operational contract is documented in the [delegated OAuth and MCP guide](./
 The packaged schema contains the maintained core/JWT/OAuth profile. Plugins that add tables or fields—such as organizations, admin, API keys, or two-factor authentication—use one fresh application-owned local component. The checked-in schema and metadata are generated together from the same build-only options with `better-convex auth schema`.
 
 Do not copy the adapter, mount both packaged and local components, or enable a runtime plugin absent from the generated schema. Two-factor must be ordered before `convexAuth()` and must prove that a first-factor-only session cannot obtain a Convex token.
+
+The adapter's `sessionAdmission` query is part of the isolated auth component.
+Convex exposes it to the parent backend as an internal reference. It reads the
+canonical session and user together. Never re-export this query from a public
+application function: its return value contains session material. The existing
+user helpers and OAuth live checks call it internally. A local component must
+export it from its component adapter and regenerate Convex bindings when adopting
+this candidate; there is no fallback to weaker admission for older adapters.
+
+Workforce-schema admission requires a verified mailbox and current full TOTP
+proof. Recovery and enrollment sessions cannot enter ordinary business functions.
+The shared predicate enforces the absolute lifetime and credential generation;
+application functions must still check live membership, suspension, and resource
+permissions. The fixed `workforce: true` factory uses the package-owned
+`createWorkforceAuthSchemaOptions()` contract. Its component-only `assertProfile`
+startup check rejects an ordinary/workforce mismatch in either direction. This
+check does not select or modify the component's admission policy.
+
+The candidate enforces a 60-minute idle deadline through explicit foreground
+touch and a 12-hour absolute limit. Its component-owned expiry chain removes
+expired rows so subscriptions can invalidate; scheduler latency still applies.
+Session-list and revoke helpers derive the actor from verified Convex identity
+and recheck live full authority in the canonical operation. Raw provider session
+management remains blocked.
+
+TOTP replay markers are consumed atomically with full session insertion or
+pending-factor promotion. Metadata carries only a factor fingerprint, a keyed
+digest, and matching counters. The final canonical counter gate bounds delayed
+proofs without assuming action/database clock synchronization. Marker cleanup
+uses canonical time in bounded batches. No plaintext OTP or factor seed belongs
+in metadata, logs, or returned session summaries.
+
+Local HTTP and uninterrupted WebSocket tests cover replay and scheduled session
+expiry, including a surviving-session control. Invitation recovery, complete
+reference-application verification, and hosted verification remain release gates,
+not a released security
+guarantee. Public signup needs an explicit application
+admission callback; an email allowlist alone does not prevent account
+pre-creation or establish invitation possession.
 
 ## Secrets, credentials, and logs
 

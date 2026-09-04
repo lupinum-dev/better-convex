@@ -68,7 +68,7 @@ describe('pinned Better Auth adapter contract provenance', () => {
     const contract = adapterProvenance.adapterContractTests
 
     expect(contract.upstreamCommit).toMatch(/^[0-9a-f]{40}$/u)
-    expect(contract.upstreamTag).toBe('v1.7.1')
+    expect(contract.upstreamTag).toBe('v1.7.2')
     expect(contract.sourceTestPaths).toEqual(
       expect.arrayContaining([
         'packages/core/src/db/adapter/factory.test.ts',
@@ -369,6 +369,39 @@ describe('greenfield Convex auth query invariants', () => {
       email: 'ada@example.com',
     })
     expect(toBetterAuthDocument(stored, ['id'])).toEqual({ id: 'logical-id' })
+  })
+
+  it('preserves the supported auth wire values, nullable rows, and partial selection', () => {
+    const document = {
+      id: 'logical-id',
+      createdAt: 123,
+      enabled: true,
+      scopes: ['read'],
+      attempts: [1, 2],
+      metadata: '{"enabled":true}',
+      image: null,
+    }
+    expect(toBetterAuthDocument(document)).toEqual(document)
+    expect(toBetterAuthDocument(null)).toBeNull()
+    expect(toBetterAuthDocument(document, ['missing'])).toEqual({})
+    expect(toBetterAuthDocument(document, ['scopes', 'image'])).toEqual({
+      scopes: ['read'],
+      image: null,
+    })
+  })
+
+  it.each([
+    undefined,
+    { secret: 'private-document-sentinel' },
+    ['read', 1],
+    [true],
+    [['nested']],
+    1n,
+    new Date(0),
+  ])('rejects unsupported document values without exposing their contents: %#', (value) => {
+    expect(() => toBetterAuthDocument({ id: 'logical-id', value })).toThrow(
+      new Error('AUTH_DOCUMENT_INVALID'),
+    )
   })
 
   it('evaluates mixed AND/OR connectors in order and supports canonical null filters', () => {

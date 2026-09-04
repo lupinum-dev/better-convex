@@ -21,8 +21,8 @@ describe('dedicated Better Auth two-factor fixture', () => {
       read('test/fixtures/better-auth-two-factor/package.json'),
     ) as Record<string, unknown>
     expect(manifest.peerDependencies).toEqual({
-      '@better-auth/oauth-provider': '1.7.1',
-      'better-auth': '1.7.1',
+      '@better-auth/oauth-provider': '1.7.2',
+      'better-auth': '1.7.2',
       convex: '1.42.2',
     })
   })

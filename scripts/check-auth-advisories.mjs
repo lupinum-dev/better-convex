@@ -323,11 +323,7 @@ async function main() {
     return
   }
 
-  const findings = [
-    ...runAudit(['--prod'], 'production'),
-    ...runAudit([], 'complete'),
-    ...(await collectGitHubFindings(importedCommit)),
-  ]
+  const findings = [...runAudit([], 'complete'), ...(await collectGitHubFindings(importedCommit))]
   const result = evaluateFindings(
     findings,
     exceptions.filter((exception) => exception.auditScope === 'repository'),
@@ -347,7 +343,7 @@ async function main() {
     fail(`Unresolved applicable advisories:\n- ${summary}`)
   }
   console.log(
-    `[auth-advisories] PASS: npm production/full audits, ${Object.keys(reviewedAdvisoryTuple).length} exact GitHub package queries, and imported upstream advisories are clear (${result.excepted.length} active exceptions).`,
+    `[auth-advisories] PASS: npm full audit, ${Object.keys(reviewedAdvisoryTuple).length} exact GitHub package queries, and imported upstream advisories are clear (${result.excepted.length} active exceptions).`,
   )
 }
 

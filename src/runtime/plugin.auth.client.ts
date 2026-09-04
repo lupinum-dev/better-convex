@@ -23,7 +23,7 @@ import {
 } from './auth/session-synchronization'
 import { validateConvexAuthClientDefinition } from './auth/validate-auth-client-definition'
 import { setupNuxtDevtoolsClient } from './devtools/setup-client'
-import type { ConvexCallError } from './errors'
+import { ConvexCallError } from './errors'
 import { createConvexRuntimeContext, type NuxtConvexAuthController } from './runtime-context'
 import { useConvexIdentityState } from './utils/auth-identity-state'
 import { useConvexAuthPendingState } from './utils/auth-pending-state'
@@ -177,8 +177,27 @@ export default defineNuxtPlugin({
     }
     synchronization = createSessionSynchronization({
       timeoutMs: SESSION_RECONCILIATION_TIMEOUT_MS,
-      refetchCanonicalSession: () =>
-        Reflect.apply(refreshConvexAuthentication, vuePlugin, []) as Promise<void>,
+      async refetchCanonicalSession() {
+        try {
+          await (Reflect.apply(refreshConvexAuthentication, vuePlugin, []) as Promise<void>)
+        } catch (error) {
+          const snapshot = runtime.attachment.identity.snapshot()
+          // An expected workforce restriction retires the in-flight Convex
+          // confirmation. Only its settled anonymous generation may continue
+          // the provider ceremony; every other refresh failure stays closed.
+          if (
+            !(error instanceof ConvexCallError) ||
+            error.code !== 'IDENTITY_CHANGED' ||
+            !adapter.isRestrictedSession() ||
+            !snapshot.settled ||
+            snapshot.identityKey !== 'anonymous' ||
+            snapshot.error ||
+            latestProviderSession?.revision !== adapter.snapshot().sessionGeneration
+          ) {
+            throw error
+          }
+        }
+      },
       failClosed(failure) {
         adapter.failClosed(failure.message)
       },

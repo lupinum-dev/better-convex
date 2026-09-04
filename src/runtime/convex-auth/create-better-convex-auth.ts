@@ -1,9 +1,8 @@
 import { oauthProvider as createOAuthProvider } from '@better-auth/oauth-provider'
-import type { Auth, BetterAuthOptions, InferAPI, User } from 'better-auth'
+import type { Auth, BetterAuthOptions, BetterAuthPlugin, InferAPI, User } from 'better-auth'
 import { APIError, betterAuth } from 'better-auth'
 import {
   emailOTP,
-  jwt,
   organization,
   twoFactor,
   type EmailOTPOptions,
@@ -14,6 +13,7 @@ import {
 } from 'better-auth/plugins'
 import type { GenericDataModel, HttpRouter } from 'convex/server'
 
+import { createAuthJwtPlugin } from './auth-jwt'
 import type { AuthCtx } from './context'
 import { createAuthComponent } from './create-auth-component'
 import { createOAuthOperator, type BetterConvexOAuthOperator } from './oauth-operator'
@@ -27,6 +27,10 @@ import type {
   AuthFunctions,
   CreateAuth,
 } from './types'
+import { workforceSessionPolicy } from './workforce/operations'
+import { createWorkforceSchemaPlugins } from './workforce/profile'
+import { createWorkforceProviderHooks } from './workforce/provider-hooks'
+import { workforceSchemaOptions } from './workforce/schema'
 
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>
 type EmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>
@@ -48,22 +52,29 @@ type BetterConvexPendingUser = Readonly<
 >
 
 type ReviewedEmailAndPasswordOptions = Partial<
-  Pick<
-    BetterAuthEmailAndPasswordOptions,
-    | 'disableSignUp'
-    | 'maxPasswordLength'
-    | 'onExistingUserSignUp'
-    | 'onPasswordReset'
-    | 'requireEmailVerification'
-    | 'resetPasswordTokenExpiresIn'
-    | 'revokeSessionsOnPasswordReset'
-    | 'sendResetPassword'
-  >
+  Pick<BetterAuthEmailAndPasswordOptions, (typeof reviewedPasswordOptionKeys)[number]>
 >
 
 type ReviewedSessionOptions = Partial<Pick<BetterAuthSessionOptions, 'cookieCache'>>
 
+type RequestAuthOptions<DataModel extends GenericDataModel, Options> =
+  | Options
+  | ((ctx: AuthCtx<DataModel>) => Options | Promise<Options>)
+
+const reviewedPasswordOptionKeys = [
+  'disableSignUp',
+  'maxPasswordLength',
+  'onExistingUserSignUp',
+  'onPasswordReset',
+  'requireEmailVerification',
+  'resetPasswordTokenExpiresIn',
+  'revokeSessionsOnPasswordReset',
+  'sendResetPassword',
+] as const
+
 export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataModel> {
+  /** Fixed password + TOTP profile; requires the generated workforce component schema. */
+  readonly workforce?: true
   readonly appName?: string
   readonly authFunctions?: AuthFunctions
   readonly beforeUserCreate?: (input: {
@@ -71,9 +82,9 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
     readonly user: BetterConvexPendingUser
   }) => BetterConvexUserCreateDecision | Promise<BetterConvexUserCreateDecision>
   readonly triggers?: AuthComponentTriggers<DataModel>
-  readonly emailAndPassword?: false | ReviewedEmailAndPasswordOptions
-  readonly emailVerification?: EmailVerificationOptions
-  readonly emailOTP?: false | EmailOTPOptions
+  readonly emailAndPassword?: RequestAuthOptions<DataModel, false | ReviewedEmailAndPasswordOptions>
+  readonly emailVerification?: RequestAuthOptions<DataModel, EmailVerificationOptions>
+  readonly emailOTP?: RequestAuthOptions<DataModel, false | EmailOTPOptions>
   readonly organization?: false | OrganizationOptions
   readonly twoFactor?: false | TwoFactorOptions
   readonly oauthProvider?:
@@ -153,20 +164,9 @@ function rejectUnsupportedOptions(options: object): void {
     }
   }
   const record = options as Record<string, unknown>
-  assertOnlyKeys(
-    record.emailAndPassword,
-    [
-      'disableSignUp',
-      'maxPasswordLength',
-      'onExistingUserSignUp',
-      'onPasswordReset',
-      'requireEmailVerification',
-      'resetPasswordTokenExpiresIn',
-      'revokeSessionsOnPasswordReset',
-      'sendResetPassword',
-    ],
-    'emailAndPassword',
-  )
+  if (typeof record.emailAndPassword !== 'function') {
+    assertOnlyKeys(record.emailAndPassword, reviewedPasswordOptionKeys, 'emailAndPassword')
+  }
   assertOnlyKeys(record.session, ['cookieCache'], 'session')
 }
 
@@ -237,6 +237,13 @@ function assertOnlyKeys(value: unknown, allowed: readonly string[], path: string
   }
 }
 
+function assertFactoryResult(value: unknown, allowDisabled: boolean): void {
+  if (value === false && allowDisabled) return
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('AUTH_CONFIG_INVALID')
+  }
+}
+
 function assertVersionedSecrets(raw: string | undefined): void {
   if (!raw) throw new Error('BETTER_AUTH_SECRETS is required')
   const versions = new Set<number>()
@@ -298,7 +305,39 @@ export function createBetterConvexAuth<
   component: Api,
   options: CreateBetterConvexAuthOptions<DataModel> = {},
 ): BetterConvexAuth<DataModel, Api> {
+  return createBetterConvexAuthOwned(component, options)
+}
+
+/**
+ * Test-only package entry support.
+ * @internal
+ */
+export function createBetterConvexAuthOwned<
+  DataModel extends GenericDataModel,
+  Api extends AuthAdapterComponentApi = AuthAdapterComponentApi,
+>(
+  component: Api,
+  options: CreateBetterConvexAuthOptions<DataModel> = {},
+  extraPlugins: readonly BetterAuthPlugin[] = [],
+  assertExtraPluginsAllowed: () => void = () => {},
+): BetterConvexAuth<DataModel, Api> {
   rejectUnsupportedOptions(options)
+  const workforce = options.workforce === true
+  if (options.workforce !== undefined && !workforce) throw new Error('AUTH_CONFIG_INVALID')
+  if (workforce) {
+    for (const key of [
+      'twoFactor',
+      'emailOTP',
+      'organization',
+      'oauthProvider',
+      'socialProviders',
+    ] as const) {
+      if (options[key] !== undefined && options[key] !== false)
+        throw new Error(`AUTH_WORKFORCE_UNSUPPORTED_OPTION:${key}`)
+    }
+    if (options.session?.cookieCache?.enabled)
+      throw new Error('AUTH_WORKFORCE_COOKIE_CACHE_FORBIDDEN')
+  }
   const authComponent = createAuthComponent<DataModel, Api>(component, {
     authFunctions: options.authFunctions,
     triggers: options.triggers,
@@ -321,30 +360,58 @@ export function createBetterConvexAuth<
     oauthProfile: PinnedOAuthProviderProfile | undefined,
   ): Promise<BetterConvexAuthInstance> => {
     try {
+      assertExtraPluginsAllowed()
       const siteUrl = requireAuthOrigin('SITE_URL')
       const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
       assertVersionedSecrets(process.env.BETTER_AUTH_SECRETS)
       const authIssuer = `${siteUrl}/api/auth`
+      const emailAndPassword =
+        typeof options.emailAndPassword === 'function'
+          ? await options.emailAndPassword(ctx)
+          : options.emailAndPassword
+      const emailVerification =
+        typeof options.emailVerification === 'function'
+          ? await options.emailVerification(ctx)
+          : options.emailVerification
+      const emailOtpOptions =
+        typeof options.emailOTP === 'function' ? await options.emailOTP(ctx) : options.emailOTP
+      if (typeof options.emailAndPassword === 'function') {
+        assertFactoryResult(emailAndPassword, true)
+      }
+      if (typeof options.emailVerification === 'function') {
+        assertFactoryResult(emailVerification, false)
+      }
+      if (typeof options.emailOTP === 'function') {
+        assertFactoryResult(emailOtpOptions, true)
+      }
+      assertOnlyKeys(emailAndPassword, reviewedPasswordOptionKeys, 'emailAndPassword')
+      if (workforce) {
+        if (
+          emailAndPassword === false ||
+          emailAndPassword?.requireEmailVerification === false ||
+          emailAndPassword?.revokeSessionsOnPasswordReset === false ||
+          emailVerification?.autoSignInAfterVerification === true ||
+          (!emailAndPassword?.disableSignUp && !options.beforeUserCreate)
+        )
+          throw new Error('AUTH_WORKFORCE_PASSWORD_POLICY_INVALID')
+      }
+      // Component-only assertion. The component derives its profile from its
+      // canonical schema; a runtime option cannot select weaker admission.
+      await ctx.runQuery(component.adapter.assertProfile, { workforce })
+      const workforceHooks = workforce ? createWorkforceProviderHooks() : undefined
       const featurePlugins = [
+        ...(workforce ? createWorkforceSchemaPlugins() : []),
         options.organization === false || options.organization === undefined
           ? null
           : organization(options.organization),
         options.twoFactor === false || options.twoFactor === undefined
           ? null
           : twoFactor(options.twoFactor),
-        options.emailOTP === false || options.emailOTP === undefined
+        emailOtpOptions === false || emailOtpOptions === undefined
           ? null
-          : emailOTP(options.emailOTP),
+          : emailOTP(emailOtpOptions),
       ].filter((plugin) => plugin !== null)
-      const jwtPlugin = jwt({
-        disableSettingJwtHeader: true,
-        jwks: {
-          disablePrivateKeyEncryption: false,
-          gracePeriod: 21 * 60,
-          keyPairConfig: { alg: 'RS256' },
-        },
-        jwt: { audience: authIssuer, expirationTime: '10m', issuer: authIssuer },
-      })
+      const jwtPlugin = createAuthJwtPlugin(authIssuer)
       const convexPlugin = convexAuth({
         authConfig: { providers: [getConvexAuthProvider()] },
         oauthProvider: oauthProfile,
@@ -357,8 +424,17 @@ export function createBetterConvexAuth<
       })
       const plugins = [
         ...featurePlugins,
+        ...extraPlugins,
         jwtPlugin,
         convexPlugin,
+        ...(workforceHooks
+          ? [
+              {
+                id: 'bcn-workforce-policy',
+                hooks: { before: [{ matcher: () => true, handler: workforceHooks.before }] },
+              },
+            ]
+          : []),
         ...(oauthProfile ? [createOAuthProvider(oauthProfile)] : []),
       ]
 
@@ -378,15 +454,23 @@ export function createBetterConvexAuth<
         basePath: '/api/auth',
         baseURL: siteUrl,
         database: authComponent.adapter(ctx),
-        databaseHooks: options.beforeUserCreate
-          ? {
-              user: {
-                create: {
-                  before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
-                },
-              },
-            }
-          : undefined,
+        databaseHooks:
+          options.beforeUserCreate || workforceHooks
+            ? {
+                ...(options.beforeUserCreate
+                  ? {
+                      user: {
+                        create: {
+                          before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
+                        },
+                      },
+                    }
+                  : {}),
+                ...(workforceHooks
+                  ? { session: { create: { after: workforceHooks.sessionCreateAfter } } }
+                  : {}),
+              }
+            : undefined,
         disabledPaths: [
           '/token',
           '/get-access-token',
@@ -404,28 +488,46 @@ export function createBetterConvexAuth<
           '/oauth2/delete-client',
         ],
         emailAndPassword:
-          options.emailAndPassword === false
+          emailAndPassword === false
             ? { enabled: false }
             : {
-                ...options.emailAndPassword,
+                ...emailAndPassword,
+                ...(workforce
+                  ? { requireEmailVerification: true, revokeSessionsOnPasswordReset: true }
+                  : {}),
                 autoSignIn: false,
                 enabled: true,
                 minPasswordLength: 15,
               },
-        emailVerification: options.emailVerification,
+        emailVerification: workforce
+          ? { ...emailVerification, autoSignInAfterVerification: false }
+          : emailVerification,
         plugins,
         rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
         session: {
           expiresIn: 7 * 24 * 60 * 60,
           updateAge: 24 * 60 * 60,
           ...options.session,
+          ...(workforce
+            ? {
+                ...workforceSchemaOptions.session,
+                cookieCache: { enabled: false },
+                expiresIn: workforceSessionPolicy.absoluteLifetimeMs / 1000,
+                freshAge: workforceSessionPolicy.freshAuthenticationMs / 1000,
+                disableSessionRefresh: true,
+              }
+            : {}),
         },
+        ...(workforce ? { user: workforceSchemaOptions.user } : {}),
         socialProviders:
           typeof options.socialProviders === 'function'
             ? options.socialProviders()
             : options.socialProviders,
         trustedOrigins: [siteUrl],
-        verification: { storeIdentifier: 'hashed' },
+        verification: {
+          ...(workforce ? workforceSchemaOptions.verification : {}),
+          storeIdentifier: 'hashed',
+        },
       })
       await auth.$context
       return auth

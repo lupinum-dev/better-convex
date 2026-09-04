@@ -1,6 +1,14 @@
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
@@ -10,6 +18,11 @@ import { isMainThread, parentPort, Worker, workerData } from 'node:worker_thread
 import { ConvexHttpClient } from 'convex/browser'
 import { makeFunctionReference } from 'convex/server'
 import { createJiti } from 'jiti'
+
+import {
+  hasCompleteSessionAdmissionBoundaryEvidence,
+  verifySessionAdmissionBoundary,
+} from './auth-session-admission.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const sourcePlayground = join(root, 'playground')
@@ -30,6 +43,7 @@ export const authConcurrencyFunctions = {
   jwksState: makeFunctionReference('authConcurrency:readJwksRaceState'),
   read: makeFunctionReference('authConcurrency:readRaceRow'),
   runtimeCapabilities: makeFunctionReference('authConcurrency:readRuntimeCapabilities'),
+  requestContext: makeFunctionReference('authRequestContext:prove'),
   remove: makeFunctionReference('authConcurrency:deleteRaceRow'),
   rotate: makeFunctionReference('authConcurrency:rotateSigningKeyRace'),
   updateManyWithFailingTrigger: makeFunctionReference(
@@ -42,6 +56,7 @@ export const authAdapterComponentFunctions = {
   findOne: makeFunctionReference('adapter:findOne'),
   increment: makeFunctionReference('adapter:incrementOne'),
   remove: makeFunctionReference('adapter:deleteMany'),
+  sessionAdmission: makeFunctionReference('adapter:sessionAdmission'),
 }
 
 export const authOperatorFunctions = {
@@ -189,9 +204,30 @@ function copyIsolatedPlayground() {
   mkdirSync(nodeModules)
   mkdirSync(join(nodeModules, '@lupinum'))
   symlinkSync(join(root, 'src'), join(parent, 'src'), 'dir')
+  symlinkSync(join(root, 'node_modules'), join(parent, 'node_modules'), 'dir')
   symlinkSync(join(root, 'node_modules', 'better-auth'), join(nodeModules, 'better-auth'), 'dir')
   symlinkSync(root, join(nodeModules, '@lupinum/better-convex-nuxt'), 'dir')
   symlinkSync(join(root, 'node_modules', 'convex'), join(nodeModules, 'convex'), 'dir')
+  const fixturePath = 'test/fixtures/auth-request-context/convex/contextProof.ts'
+  mkdirSync(join(parent, 'test/fixtures/auth-request-context/convex'), { recursive: true })
+  cpSync(join(root, fixturePath), join(parent, fixturePath))
+  writeFileSync(
+    join(cwd, 'convex/authRequestContext.ts'),
+    `import { v } from 'convex/values'
+import { internalAction } from './_generated/server'
+import { proveWorkforceRequestContext } from '../../test/fixtures/auth-request-context/convex/contextProof'
+
+export const prove = internalAction({
+  args: {},
+  returns: v.object({
+    before: v.number(), adapter: v.number(), sessionAfter: v.number(),
+    endpointAfter: v.number(), blank: v.number(),
+    outsideWriteRejected: v.boolean(), outsideBinding: v.boolean(), blankBinding: v.boolean(),
+  }),
+  handler: async () => proveWorkforceRequestContext(),
+})
+`,
+  )
   return { cwd, parent }
 }
 
@@ -344,6 +380,12 @@ function readLocalAdminKey(cwd) {
 }
 
 async function runMain() {
+  const args = process.argv.slice(2)
+  assert(
+    args.length === 0 || (args.length === 1 && args[0] === '--request-context-only'),
+    'AUTH_CONCURRENCY_ARGUMENT_INVALID',
+  )
+  const requestContextOnly = args[0] === '--request-context-only'
   process.env.CONVEX_E2E_AUTO_START = 'true'
   process.env.BCN_E2E_REQUIRE_LOCAL = 'true'
   execFileSync('pnpm', ['exec', 'nuxt-module-build', 'prepare'], {
@@ -367,6 +409,35 @@ async function runMain() {
     const adminKey = readLocalAdminKey(isolated.cwd)
     const client = new ConvexHttpClient(url)
     client.setAdminAuth(adminKey)
+    const boundaryEvidence = await verifySessionAdmissionBoundary({
+      url,
+      adminClient: client,
+      adminKey,
+      root,
+      componentFunctions: authAdapterComponentFunctions,
+      componentPath: authComponentPath,
+    })
+    const contextProof = await client.action(authConcurrencyFunctions.requestContext, {})
+    assert(
+      contextProof.before === 2 &&
+        contextProof.adapter === 2 &&
+        contextProof.sessionAfter === 2 &&
+        contextProof.endpointAfter === 2 &&
+        contextProof.blank === 2 &&
+        contextProof.outsideWriteRejected === true &&
+        contextProof.outsideBinding === false &&
+        contextProof.blankBinding === false,
+      'AUTH_REQUEST_CONTEXT_RUNTIME_PROOF_FAILED',
+    )
+    console.log(
+      'Convex V8 workforce context: HTTP hooks, memory adapter, relay and isolation passed.',
+    )
+    console.log(JSON.stringify({ contextPassed: true, ...boundaryEvidence }))
+    if (requestContextOnly) return
+    assert(
+      hasCompleteSessionAdmissionBoundaryEvidence(boundaryEvidence),
+      'AUTH_ADMISSION_BOUNDARY_EVIDENCE_INCOMPLETE',
+    )
     const runtimeCapabilities = await client.query(authConcurrencyFunctions.runtimeCapabilities, {})
     assert(
       runtimeCapabilities?.urlCanParse === 'undefined',

@@ -62,7 +62,9 @@ export function decodeFetchedIdentity(token: string): FetchedIdentity | null {
  * The outcome of one total token fetch. `identity: null` with `authError: null`
  * is a clean anonymous result when the exchange succeeds with no token. A
  * definitive 401/403 means presented credentials were rejected and is reported
- * as an authentication error. `authError` is also set when a token decodes
+ * as an authentication error, except the exact live workforce continuation
+ * refusal. That result is restricted and grants no Convex identity.
+ * `authError` is also set when a token decodes
  * without a stable user id, or a transient transport failure exhausts the retry
  * loop. `definitive`
  * distinguishes such a transient (non-definitive) failure — over which a usable
@@ -72,6 +74,8 @@ export interface FetchOutcome {
   identity: FetchedIdentity | null
   authError: string | null
   definitive: boolean
+  /** A live workforce cookie may continue setup, but cannot authenticate Convex. */
+  restricted?: true
 }
 
 /**
@@ -144,6 +148,15 @@ export async function fetchConvexToken(
           break
         }
         if (response.error) {
+          if (
+            typeof response.error === 'object' &&
+            'status' in response.error &&
+            response.error.status === 403 &&
+            'code' in response.error &&
+            response.error.code === 'AUTH_WORKFORCE_FULL_AUTH_REQUIRED'
+          ) {
+            return { identity: null, authError: null, definitive: true, restricted: true }
+          }
           if (isDefinitiveAuthStatus(response.error)) {
             return {
               identity: null,

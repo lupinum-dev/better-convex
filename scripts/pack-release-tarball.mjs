@@ -16,6 +16,7 @@ export function buildReleasePackage(packageId, { repositoryRoot, environment = p
     ...(repositoryRoot ? { repositoryRoot } : {}),
   })
   rmSync(join(coordinates.sourceDirectory, 'dist'), { force: true, recursive: true })
+  rmSync(join(coordinates.sourceDirectory, '.nuxt'), { force: true, recursive: true })
   console.log(`\n> pnpm run prepack (${coordinates.packageDirectory})`)
   execFileSync('pnpm', ['run', 'prepack'], {
     cwd: coordinates.sourceDirectory,

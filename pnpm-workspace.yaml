@@ -10,6 +10,12 @@ linkWorkspacePackages: true
 shamefullyHoist: true
 strictPeerDependencies: true
 
+overrides:
+  # Express 4 and body-parser 1 constrain qs below the patched minor.
+  # Remove when both owners accept qs >=6.16.0 and the audit stays clean.
+  'express@4>qs': 6.16.0
+  'body-parser@1>qs': 6.16.0
+
 allowBuilds:
   '@parcel/watcher': true
   esbuild: true

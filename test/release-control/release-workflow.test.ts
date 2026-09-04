@@ -21,6 +21,7 @@ interface WorkflowJob {
   needs?: string | string[]
   permissions?: Record<string, unknown>
   steps?: WorkflowStep[]
+  strategy?: unknown
 }
 
 interface Workflow {
@@ -100,7 +101,7 @@ describe('state-aware Better Convex release workflows', () => {
       'dependency-matrix',
       'auth-contracts',
       'auth-real-backend',
-      'deployable-app-audits',
+      'dependency-advisories',
       'release-smoke',
     ])
     expect(requireJob(ci, 'release-candidate').if).toContain("github.ref == 'refs/heads/main'")
@@ -148,6 +149,31 @@ describe('state-aware Better Convex release workflows', () => {
         ({ name }) => name === 'Verify the MCP unit',
       ) ?? -1,
     )
+  })
+
+  it('runs network advisory checks once in an independently rerunnable lane', () => {
+    expect(requireJob(ci, 'dependency-advisories').strategy).toEqual({
+      'fail-fast': false,
+      matrix: {
+        include: [
+          { scope: 'package', directory: '.', command: 'pnpm check:auth-advisories' },
+          { scope: 'documentation', directory: 'docs', command: 'pnpm audit' },
+          { scope: 'demo', directory: 'demo', command: 'pnpm audit' },
+        ],
+      },
+    })
+    expect(runs(ci, 'dependency-advisories')).toContain('${{ matrix.command }}')
+    expect(runs(ci, 'compatibility').join('\n')).not.toContain('pnpm audit')
+    expect(runs(ci, 'auth-real-backend').join('\n')).not.toContain('check:auth-advisories')
+
+    const gate = runs(ci, 'source-certification').join('\n')
+    expect(gate).toContain('$DEPENDENCY_ADVISORIES')
+
+    const sourceCertification = read('scripts/release-source-certification.mjs')
+    expect(sourceCertification).toContain("Object.freeze(['run', 'verify:code'])")
+    expect(sourceCertification).toContain("Object.freeze(['run', 'docs:build'])")
+    expect(sourceCertification).not.toContain("Object.freeze(['run', 'verify'])")
+    expect(sourceCertification).not.toContain("Object.freeze(['run', 'check:auth-advisories'])")
   })
 
   it('starts from successful CI or an input-free reconciliation dispatch', () => {

@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -11,15 +12,17 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import * as tar from 'tar'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
+import { getMaintainedCandidateProfile } from '../../scripts/maintained-candidate-apps.mjs'
 import {
   canonicalNpmTarballFilename,
   getPackageArtifactCoordinates,
 } from '../../scripts/package-artifact-coordinates.mjs'
+import { packageCertificationDescriptors } from '../../scripts/package-certification-manifest.mjs'
 import {
   buildContentManifest,
   inspectTarballArchive,
@@ -29,6 +32,71 @@ import { derivePackageRuntimeFingerprint } from '../../scripts/package-runtime-f
 const root = resolve(import.meta.dirname, '../..')
 const temporaryDirectories: string[] = []
 let productionSbom: string | undefined
+let sourceFixture: ReturnType<typeof createSourceFixture>
+
+function createSourceFixture() {
+  const directory = mkdtempSync(join(tmpdir(), 'bcn-release-source-'))
+  const environment = { ...process.env }
+  for (const name of Object.keys(environment)) {
+    if (name.startsWith('GIT_')) Reflect.deleteProperty(environment, name)
+  }
+  Object.assign(environment, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' })
+  const git = (args: string[]) =>
+    execFileSync('git', args, { cwd: directory, encoding: 'utf8', env: environment }).trim()
+  try {
+    const { profile } = getMaintainedCandidateProfile('nuxt')
+    const files = new Set([
+      'package.json',
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
+      'playground/package.json',
+      ...packageCertificationDescriptors.map(({ packageDirectory }: { packageDirectory: string }) =>
+        join(packageDirectory, 'package.json'),
+      ),
+      join(profile.npmConsumer.path, 'package.json'),
+      ...profile.pnpmApps.flatMap(({ path }: { path: string }) => [
+        join(path, 'package.json'),
+        join(path, 'pnpm-lock.yaml'),
+      ]),
+    ])
+    for (const file of files) {
+      const destination = join(directory, file)
+      mkdirSync(dirname(destination), { recursive: true })
+      cpSync(join(root, file), destination)
+    }
+    // Copy the actual verifier: its source root is bound to import.meta.url.
+    // Only these test inputs form the synthetic commit, never the real worktree.
+    cpSync(join(root, 'scripts'), join(directory, 'scripts'), { recursive: true })
+    writeFileSync(join(directory, '.gitignore'), '/node_modules\n')
+    symlinkSync(join(root, 'node_modules'), join(directory, 'node_modules'), 'dir')
+    git(['-c', 'init.defaultBranch=fixture', 'init', '--template='])
+    git(['add', '--', ...files, 'scripts', '.gitignore'])
+    git([
+      '-c',
+      'user.name=BCN release test',
+      '-c',
+      'user.email=release-test@example.invalid',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-m',
+      'test: snapshot release verifier inputs',
+    ])
+    if (git(['status', '--porcelain'])) throw new Error('Release source fixture must start clean')
+    return { directory, environment, sourceCommit: git(['rev-parse', 'HEAD']) }
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true })
+    throw error
+  }
+}
+
+beforeAll(() => {
+  sourceFixture = createSourceFixture()
+})
+
+afterAll(() => {
+  if (sourceFixture) rmSync(sourceFixture.directory, { recursive: true, force: true })
+})
 
 function writeFixtureTarball(file: string, packedRoot: string) {
   const files: string[] = []
@@ -93,7 +161,8 @@ function canonicalProductionSbom() {
       process.execPath,
       ['scripts/generate-sbom.mjs', '--package', 'nuxt', '--output', path],
       {
-        cwd: root,
+        cwd: sourceFixture.directory,
+        env: sourceFixture.environment,
         stdio: 'ignore',
       },
     )
@@ -107,12 +176,13 @@ function canonicalProductionSbom() {
 function createArtifactFixture() {
   const directory = mkdtempSync(join(tmpdir(), 'bcn-release-evidence-'))
   temporaryDirectories.push(directory)
-  const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-  const coordinates = getPackageArtifactCoordinates('nuxt', { repositoryRoot: root })
-  const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
-    cwd: root,
-    encoding: 'utf8',
-  }).trim()
+  const packageJson = JSON.parse(
+    readFileSync(join(sourceFixture.directory, 'package.json'), 'utf8'),
+  )
+  const coordinates = getPackageArtifactCoordinates('nuxt', {
+    repositoryRoot: sourceFixture.directory,
+  })
+  const sourceCommit = sourceFixture.sourceCommit
   const npm = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim()
   const pnpm = execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim()
   const tarballName = canonicalNpmTarballFilename(packageJson.name, packageJson.version)
@@ -232,7 +302,8 @@ function productionContractDigest(sbom: Record<string, unknown>) {
 
 function verify(path: string) {
   return spawnSync('node', ['scripts/release.mjs', 'verify', path], {
-    cwd: root,
+    cwd: sourceFixture.directory,
+    env: sourceFixture.environment,
     encoding: 'utf8',
   })
 }
@@ -277,6 +348,24 @@ describe('immutable release artifact evidence', () => {
       readFileSync(join(fixture.directory, fixture.evidence.sbom.file), 'utf8'),
     ) as Record<string, unknown>
     expect(productionContractDigest(sbom)).toMatch(/^[0-9a-f]{64}$/u)
+  }, 120_000)
+
+  it('rejects source manifest bytes changed after the synthetic commit', () => {
+    const fixture = createArtifactFixture()
+    const manifestPath = join(sourceFixture.directory, 'package.json')
+    const original = readFileSync(manifestPath)
+    try {
+      writeFileSync(manifestPath, Buffer.concat([original, Buffer.from('\n')]))
+      const result = verify(fixture.evidencePath)
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(
+        'Reviewed package manifest bytes do not match the source commit.',
+      )
+    } finally {
+      writeFileSync(manifestPath, original)
+    }
+    const restored = verify(fixture.evidencePath)
+    expect(restored.status, restored.stderr).toBe(0)
   }, 120_000)
 
   it.each([
@@ -483,7 +572,7 @@ describe('immutable release artifact evidence', () => {
         '--output',
         outputPath,
       ],
-      { cwd: root, stdio: 'ignore' },
+      { cwd: sourceFixture.directory, env: sourceFixture.environment, stdio: 'ignore' },
     )
     const candidate = JSON.parse(readFileSync(outputPath, 'utf8')) as Record<string, unknown>
     expect(productionContractDigest(candidate)).toMatch(/^[0-9a-f]{64}$/u)

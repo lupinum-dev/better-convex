@@ -8,7 +8,7 @@ const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.me
  * one reproducible floor/latest tuple.
  */
 export const supportedDependencyTuple = Object.freeze({
-  '@better-auth/core': requiredDevDependency('@better-auth/core'),
+  '@better-auth/core': requiredOptionalPeerDependency('@better-auth/core'),
   '@better-auth/oauth-provider': requiredOptionalPeerDependency('@better-auth/oauth-provider'),
   '@nuxt/kit': requiredRuntimeDependency('@nuxt/kit'),
   'better-auth': requiredOptionalPeerDependency('better-auth'),
@@ -127,7 +127,7 @@ function validateTuple() {
     assertBoundedMajorPeer(name, supportedPeerRanges[name], supportedDependencyTuple[name])
   }
 
-  for (const name of ['better-auth', '@better-auth/oauth-provider']) {
+  for (const name of ['better-auth', '@better-auth/core', '@better-auth/oauth-provider']) {
     if (packageJson.peerDependenciesMeta?.[name]?.optional !== true) {
       throw new Error(`${name} must remain optional for Convex-only consumers.`)
     }
@@ -139,13 +139,14 @@ function validateTuple() {
     )
   }
 
-  const provider = '@better-auth/oauth-provider'
-  if (
-    packageJson.devDependencies?.[provider] !== supportedDependencyTuple[provider] ||
-    packageJson.peerDependencies?.[provider] !== supportedDependencyTuple[provider] ||
-    packageJson.dependencies?.[provider] !== undefined
-  ) {
-    throw new Error(`${provider} must be an exact optional peer exercised in development.`)
+  for (const name of ['@better-auth/core', '@better-auth/oauth-provider']) {
+    if (
+      packageJson.devDependencies?.[name] !== supportedDependencyTuple[name] ||
+      packageJson.peerDependencies?.[name] !== supportedDependencyTuple[name] ||
+      packageJson.dependencies?.[name] !== undefined
+    ) {
+      throw new Error(`${name} must be an exact optional peer exercised in development.`)
+    }
   }
 
   if (

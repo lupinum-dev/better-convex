@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.0.0-beta.3
+
+- Add an opt-in workforce assurance baseline for business applications with
+  verified email, bounded sessions, TOTP, recovery codes, enrollment and
+  revocation controls, and replay-safe security operations.
+- Add typed Better Auth email hooks for verification, password reset, and
+  invitations while keeping delivery in application-owned Convex actions.
+- Preserve request-bound authentication continuity across browser, Nuxt, and
+  Convex boundaries without exposing credentials to client state or logs.
+- Centralize workforce adapter policy so transport handlers remain thin and
+  security rules have one source of truth.
+
 ## v1.0.0-beta.2
 
 - Prevent the OAuth client deletion operator from exposing a raw

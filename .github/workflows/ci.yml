@@ -164,9 +164,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-  deployable-app-audits:
+  dependency-advisories:
+    name: Dependency advisories (${{ matrix.scope }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: package
+            directory: .
+            command: pnpm check:auth-advisories
+          - scope: documentation
+            directory: docs
+            command: pnpm audit
+          - scope: demo
+            directory: demo
+            command: pnpm audit
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -175,12 +189,12 @@ jobs:
         with:
           node-version: '22.19.0'
           package-manager-cache: false
-      - name: Audit docs production dependencies
-        working-directory: docs
-        run: corepack pnpm audit --prod
-      - name: Audit demo production dependencies
-        working-directory: demo
-        run: corepack pnpm audit --prod
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - name: Audit ${{ matrix.scope }} dependencies
+        working-directory: ${{ matrix.directory }}
+        run: ${{ matrix.command }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
   release-smoke:
     needs: classify
@@ -227,7 +241,7 @@ jobs:
         dependency-matrix,
         auth-contracts,
         auth-real-backend,
-        deployable-app-audits,
+        dependency-advisories,
         release-smoke,
       ]
     if: always()
@@ -243,7 +257,7 @@ jobs:
           AUTH_REAL_BACKEND: ${{ needs.auth-real-backend.result }}
           COMPATIBILITY: ${{ needs.compatibility.result }}
           DEPENDENCY_MATRIX: ${{ needs.dependency-matrix.result }}
-          DEPLOYABLE_APP_AUDITS: ${{ needs.deployable-app-audits.result }}
+          DEPENDENCY_ADVISORIES: ${{ needs.dependency-advisories.result }}
           RELEASE_SMOKE: ${{ needs.release-smoke.result }}
           SECRETS: ${{ needs.secrets.result }}
         run: |
@@ -257,7 +271,7 @@ jobs:
             *) echo "Invalid artifact classifier output: $ARTIFACT" >&2; exit 1 ;;
           esac
           test "$SECRETS" = success
-          test "$DEPLOYABLE_APP_AUDITS" = success
+          test "$DEPENDENCY_ADVISORIES" = success
           for result in "$COMPATIBILITY" "$DEPENDENCY_MATRIX" "$AUTH_CONTRACTS" "$AUTH_REAL_BACKEND"; do
             if [ "$FULL" = true ]; then test "$result" = success; else test "$result" = skipped; fi
           done

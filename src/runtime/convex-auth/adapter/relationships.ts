@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- generated auth models are selected at runtime */
 import type { SchemaDefinition } from 'convex/server'
 
+import type { createWorkforceAdapterPolicy } from '../workforce/adapter-policy'
 import type { AuthFieldMetadata, AuthSchemaMetadata } from './metadata'
 import { getAuthModelMetadata } from './metadata'
 import { collectAuthRows, findAuthRows, toBetterAuthDocument } from './query'
@@ -38,8 +39,9 @@ export function createAuthRelationshipEngine(input: {
   schema: SchemaDefinition<any, any>
   metadata: AuthSchemaMetadata
   runTrigger: TriggerRunner
+  workforcePolicy: ReturnType<typeof createWorkforceAdapterPolicy>
 }) {
-  const { schema, metadata, runTrigger } = input
+  const { schema, metadata, runTrigger, workforcePolicy } = input
   const inboundByModel = new Map<string, Array<{ model: string; field: AuthFieldMetadata }>>()
   for (const model of Object.values(metadata.models)) {
     for (const field of Object.values(model.fields)) {
@@ -123,6 +125,7 @@ export function createAuthRelationshipEngine(input: {
 
     const collectCascade = async (candidate: PlannedAuthRow): Promise<void> => {
       if (visited.has(candidate.key)) return
+      workforcePolicy.assertDeleteCandidate(candidate)
       if (visited.size === AUTH_BULK_OPERATION_LIMIT) rejectOversizedOperation()
       visited.add(candidate.key)
       for (const inbound of inboundByModel.get(candidate.model) ?? []) {
@@ -169,6 +172,8 @@ export function createAuthRelationshipEngine(input: {
         }
       }
     }
+
+    await workforcePolicy.beforeDeletion(ctx, deletionOrder)
 
     for (const { planned, patch } of setNullPatches.values()) {
       await ctx.db.patch(planned.model as never, planned.row._id as never, patch as never)

@@ -12,7 +12,7 @@ export interface CanonicalSessionReconciler {
    * without changing its synchronous contract.
    */
   cancel(checkpoint: SessionCheckpoint): void
-  /** Re-read the canonical provider session, then await its Convex acceptance. */
+  /** Re-read the provider session, then await matching Convex settlement (possibly anonymous). */
   reconcile(checkpoint: SessionCheckpoint): Promise<void>
 }
 

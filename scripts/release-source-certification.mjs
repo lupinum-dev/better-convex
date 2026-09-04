@@ -10,7 +10,10 @@ export const sourceCertificationLanes = Object.freeze({
   auth: Object.freeze([
     Object.freeze({ command: 'pnpm', args: Object.freeze(['run', 'verify:auth']) }),
   ]),
-  core: Object.freeze([Object.freeze({ command: 'pnpm', args: Object.freeze(['run', 'verify']) })]),
+  core: Object.freeze([
+    Object.freeze({ command: 'pnpm', args: Object.freeze(['run', 'verify:code']) }),
+    Object.freeze({ command: 'pnpm', args: Object.freeze(['run', 'docs:build']) }),
+  ]),
   e2e: Object.freeze([
     Object.freeze({
       command: 'pnpm',
@@ -18,7 +21,6 @@ export const sourceCertificationLanes = Object.freeze({
       environment: Object.freeze({ CONVEX_E2E_AUTO_START: 'true', BCN_E2E_REQUIRE_LOCAL: 'true' }),
     }),
     Object.freeze({ command: 'pnpm', args: Object.freeze(['run', 'test:dast:proxy']) }),
-    Object.freeze({ command: 'pnpm', args: Object.freeze(['run', 'check:auth-advisories']) }),
   ]),
 })
 
