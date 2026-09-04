@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   assertConvexAuthoritySelection,
   buildConvexCommandEnvironment,
+  inspectConvexAuthority,
   runConvexCommand,
 } from '../../src/runtime/cli/convex'
 
@@ -245,6 +246,50 @@ describe('checked Convex CLI deployment authority', () => {
       rmSync(keyDirectory, { force: true, recursive: true })
       rmSync(prodDirectory, { force: true, recursive: true })
       rmSync(prodKeyDirectory, { force: true, recursive: true })
+    }
+  })
+
+  it('pins development-only commands to one confirmed authority snapshot', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'bcn-convex-development-authority-'))
+    const cliDirectory = join(cwd, 'node_modules/convex/bin')
+    mkdirSync(cliDirectory, { recursive: true })
+    writeFileSync(join(cwd, '.env.local'), 'CONVEX_DEPLOYMENT=dev:confirmed\n', { mode: 0o600 })
+    writeFileSync(join(cliDirectory, 'main.js'), 'process.exitCode = 0\n')
+
+    try {
+      const authority = await inspectConvexAuthority(cwd)
+      expect(authority).toMatchObject({ development: true, label: 'dev:confirmed' })
+      await expect(
+        runConvexCommand(['env', 'list', '--names-only'], {
+          cwd,
+          developmentOnly: true,
+          expectedAuthorityDigest: authority.digest,
+          quiet: true,
+        }),
+      ).resolves.toBe(0)
+
+      writeFileSync(join(cwd, '.env.local'), 'CONVEX_DEPLOYMENT=dev:changed\n', { mode: 0o600 })
+      await expect(
+        runConvexCommand(['env', 'list', '--names-only'], {
+          cwd,
+          developmentOnly: true,
+          expectedAuthorityDigest: authority.digest,
+          quiet: true,
+        }),
+      ).rejects.toThrow('authority file changed')
+
+      writeFileSync(join(cwd, '.env.local'), 'CONVEX_DEPLOY_KEY=prod:production|secret\n', {
+        mode: 0o600,
+      })
+      await expect(
+        runConvexCommand(['run', 'auth:ensureSigningKey', '{}'], {
+          cwd,
+          developmentOnly: true,
+          quiet: true,
+        }),
+      ).rejects.toThrow('requires development, local, or anonymous authority')
+    } finally {
+      rmSync(cwd, { force: true, recursive: true })
     }
   })
 
