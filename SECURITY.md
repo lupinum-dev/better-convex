@@ -4,21 +4,23 @@
 
 Security fixes are provided for the latest published minor release. Older minors are unsupported after a newer minor is published.
 
-The current package family consists of the `@lupinum/better-convex-nuxt@1.0.0-beta.1`,
-`@lupinum/better-convex-vue@1.0.0-beta.1`, and `@lupinum/better-convex-mcp@1.0.0-beta.1`
-prerelease candidates. The Nuxt candidate uses Node
-`^22.19.0 || ^24.11.0`, Nuxt `4.5.2`, Convex `1.42.2`, Better Auth
-`1.7.2`, `@better-auth/oauth-provider` `1.7.2`, and Convex Helpers
-`0.1.114`.
+At this source revision, the package family consists of the
+`@lupinum/better-convex-nuxt@1.0.0-beta.3`,
+`@lupinum/better-convex-vue@1.0.0-beta.3`, and
+`@lupinum/better-convex-mcp@1.0.0-beta.1` prerelease candidates.
+The tested Nuxt source tuple uses Node `^22.19.0 || ^24.11.0`, Nuxt `4.5.2`,
+Convex `1.42.2`, Better Auth `1.7.2`, `@better-auth/oauth-provider` `1.7.2`,
+and Convex Helpers `0.1.114`.
 Each package manifest is canonical for its own dependencies and peers; each
 reviewed release descriptor binds its package manifest into that package's
 artifact proof. The hosted `release-gate` certifies source once before the
 protected workflow mints the three package candidates. Post-mint verification
-is artifact-only. Convex and Nuxt are exact required peers of the Nuxt package.
-Better Auth, Better Auth Core, and the OAuth Provider are exact optional peers installed only by
-auth-enabled applications. Better Auth owns its Kysely dependency; Better Convex
-does not redeclare it. An auth-enabled application resolves one physical
-instance of each stateful runtime in the tuple.
+is artifact-only. Convex and Nuxt are required peers within the compatible
+ranges declared by the Nuxt package. Better Auth, Better Auth Core, and the
+OAuth Provider are exact optional peers installed only by auth-enabled
+applications. Better Auth owns its Kysely dependency; Better Convex does not
+redeclare it. An auth-enabled application resolves one physical instance of
+each stateful runtime in the tuple.
 
 This is the reviewed stable authentication tuple for the source candidate. Publication remains blocked until the human release gates below pass.
 
@@ -74,6 +76,7 @@ shared MCP secret.
 - `BETTER_AUTH_SECRETS` is mandatory and versioned with the newest key first. Better Auth owns the envelope and rotation format. Social-provider access and refresh tokens are encrypted by Better Auth; Better Convex Nuxt encrypts provider ID tokens at the same adapter boundary because the pinned RC misses those writes. Verification identifiers are stored hashed.
 - A Convex session JWT is minted only by `/api/auth/convex/token`, after session middleware and a fresh component read confirm a current persisted session and matching user. The generic JWT `/token` route, automatic JWT response header, JWT cookie, and sign-in/callback mint hooks are disabled.
 - A Convex session JWT is RS256, has `token_use = "convex-session"`, exact issuer `CONVEX_SITE_URL`, audience `convex`, a maximum 15-minute lifetime, and an allowlisted payload. Convex functions that use the component helpers recheck the persisted session.
+- Every session is bound to its user's component-owned security generation. Password reset advances that generation atomically, so all earlier sessions fail provider reads and component admission without an unbounded delete. Stale rows remain inaccessible and are removed by their scheduled expiry; only sessions created after invalidation bind to the new generation.
 - Public JWKS output contains public key material only. Private JWK members and stored rows must never appear in an operator response, error, trace, source map, or artifact.
 - The initial signing key is provisioned through the internal `rotateSigningKey` operator action before public auth traffic. Later rotations are additive and retain earlier verification keys through the complete token, cache, and skew grace period.
 - Convex session JWTs and delegated OAuth access tokens are different token classes and are rejected at the wrong boundary.

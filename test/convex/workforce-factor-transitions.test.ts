@@ -335,10 +335,7 @@ describe('canonical recovery code writes', () => {
     expect(await read(test, 'user', 'user')).toMatchObject({
       bcnSecurityGeneration: 3,
     })
-    expect(await read(test, 'session', 'approved')).toMatchObject({
-      bcnAssuranceGeneration: 2,
-      bcnAuthenticatedAt: now,
-    })
+    expect(await read(test, 'session', 'approved')).toBeNull()
     await expect(regenerate(test)).rejects.toThrow('AUTH_WORKFORCE_CONTINUATION_INVALID')
   })
 

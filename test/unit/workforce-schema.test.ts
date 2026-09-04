@@ -87,7 +87,7 @@ describe('workforce schema ownership', () => {
     },
   )
 
-  it.each(Object.keys(workforceSchemaOptions))('rejects the missing %s proof model', (name) => {
+  it.each(['session', 'verification'] as const)('rejects the missing %s proof model', (name) => {
     const options = { ...workforceSchemaOptions }
     Reflect.deleteProperty(options, name)
     expect(() => hasWorkforceSchema(metadata(options))).toThrow('AUTH_WORKFORCE_SCHEMA_MISMATCH')
@@ -143,7 +143,7 @@ describe('workforce schema ownership', () => {
           },
         }),
       ),
-    ).toThrow('AUTH_WORKFORCE_SCHEMA_MISMATCH')
+    ).toThrow('AUTH_SCHEMA_SESSION_GENERATION_FIELD_RESERVED')
     expect(() =>
       hasWorkforceSchema(
         metadata({
@@ -170,7 +170,7 @@ describe('workforce schema ownership', () => {
             },
           }),
         ),
-      ).toThrow('AUTH_WORKFORCE_SCHEMA_MISMATCH')
+      ).toThrow('AUTH_SCHEMA_SESSION_GENERATION_FIELD_RESERVED')
     }
   })
 })

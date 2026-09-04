@@ -20,7 +20,7 @@ export const workforceSchemaOptions = {
       bcnAssuranceGeneration: {
         type: 'number',
         required: true,
-        defaultValue: -1,
+        defaultValue: 0,
         input: false,
         returned: false,
       },
@@ -81,17 +81,28 @@ const workforceFields = {
   twoFactor: workforceSchemaPlugin.schema.twoFactor.fields,
 }
 
-/** Reject partial or remapped proof contracts; ordinary auth schemas are unchanged. */
+const workforceExclusiveNames = new Set([
+  'bcnAssuranceMethod',
+  'bcnAuthenticatedAt',
+  'bcnSessionStartedAt',
+  'bcnPendingSecret',
+  'bcnPendingBackupCodes',
+  'bcnPendingSessionId',
+  'bcnPendingGeneration',
+])
+
+/** Reject partial or remapped workforce proof contracts. */
 export function hasWorkforceSchema(metadata: AuthSchemaMetadata): boolean {
-  const reservedNames = new Set(Object.values(workforceFields).flatMap(Object.keys))
   const present = Object.values(metadata.models).some((model) =>
     Object.values(model.fields).some(
-      (field) => reservedNames.has(field.logicalName) || reservedNames.has(field.physicalName),
+      (field) =>
+        workforceExclusiveNames.has(field.logicalName) ||
+        workforceExclusiveNames.has(field.physicalName),
     ),
   )
   if (!present) return false
 
-  for (const name of ['user', 'session', 'verification', 'account', 'twoFactor']) {
+  for (const name of ['session', 'verification', 'account', 'twoFactor']) {
     const model = metadata.models[name]
     if (
       !model ||

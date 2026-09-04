@@ -1,5 +1,13 @@
 import type { GenericDataModel, GenericMutationCtx, GenericQueryCtx } from 'convex/server'
 
+import type { AuthSchemaMetadata } from '../adapter/metadata'
+import {
+  assertSessionGenerationUpdate,
+  currentSessionOrNull,
+  invalidateSessionCollection,
+  prepareSessionGenerationCreate,
+  sessionGenerationAuthority,
+} from '../session-generation'
 import {
   advanceWorkforceGeneration,
   invalidateWorkforcePasswordChange,
@@ -19,7 +27,8 @@ type QueryCtx = GenericQueryCtx<GenericDataModel>
 type Row = Record<string, unknown>
 
 /** The only component-side integration point for workforce persistence policy. */
-export function createWorkforceAdapterPolicy(enabled: boolean) {
+export function createWorkforceAdapterPolicy(enabled: boolean, metadata: AuthSchemaMetadata) {
+  const generationAuthority = sessionGenerationAuthority(metadata)
   function assertEvidence(
     operation?: WorkforceOperation,
     consumedChallenge?: WorkforceConsumedChallenge,
@@ -37,8 +46,8 @@ export function createWorkforceAdapterPolicy(enabled: boolean) {
       row: Row,
       schedule: (expiresAt: number) => Promise<void>,
     ) {
-      if (!enabled || model !== 'session') return
-      if (typeof row.expiresAt !== 'number') throw new Error('AUTH_WORKFORCE_SESSION_INVALID')
+      if (!generationAuthority || model !== generationAuthority.sessionModel) return
+      if (typeof row.expiresAt !== 'number') throw new Error('AUTH_SESSION_INVALID')
       await schedule(row.expiresAt)
     },
 
@@ -88,7 +97,7 @@ export function createWorkforceAdapterPolicy(enabled: boolean) {
         throw new Error('AUTH_WORKFORCE_UNEXPECTED_CHALLENGE_RECEIPT')
       }
       await invalidateWorkforcePasswordChange(ctx, model, null, row, operation)
-      let prepared = model === 'user' ? { ...row, bcnSecurityGeneration: 0 } : row
+      let prepared = row
       prepared = await prepareWorkforceFactorWrite(ctx, model, null, prepared, operation)
       if (model === 'session') {
         return prepareWorkforceSessionCreate(ctx, prepared, operation, consumedChallenge)
@@ -106,9 +115,43 @@ export function createWorkforceAdapterPolicy(enabled: boolean) {
       operation?: WorkforceOperation,
     ) {
       assertEvidence(operation)
+      if (generationAuthority && model === generationAuthority.sessionModel) {
+        return currentSessionOrNull(ctx, row, generationAuthority)
+      }
       return enabled && model === 'twoFactor'
         ? readWorkforcePendingFactor(ctx, row, operation)
         : row
+    },
+
+    prepareCreateInput(ctx: QueryCtx, model: string, data: unknown) {
+      if (!generationAuthority) return data
+      return prepareSessionGenerationCreate(ctx, model, data, generationAuthority)
+    },
+
+    prepareReadSelect(model: string, select: readonly string[] | undefined) {
+      if (
+        !generationAuthority ||
+        model !== generationAuthority.sessionModel ||
+        select === undefined
+      ) {
+        return select
+      }
+      return [
+        ...new Set([
+          ...select,
+          generationAuthority.userIdField,
+          generationAuthority.assuranceGenerationField,
+        ]),
+      ]
+    },
+
+    invalidateSessionCollection(
+      ctx: MutationCtx,
+      model: string,
+      where: RecoveryConsumption['where'],
+    ) {
+      if (!generationAuthority) return null
+      return invalidateSessionCollection(ctx, model, where, generationAuthority)
     },
 
     async prepareUpdate(
@@ -120,7 +163,10 @@ export function createWorkforceAdapterPolicy(enabled: boolean) {
       consumption?: RecoveryConsumption,
     ) {
       assertEvidence(operation)
-      if (!enabled) return patch
+      if (!enabled) {
+        if (generationAuthority) assertSessionGenerationUpdate(model, patch, generationAuthority)
+        return patch
+      }
       const guarded = prepareWorkforceProofUpdate(model, current, patch)
       await invalidateWorkforcePasswordChange(
         ctx,
@@ -133,7 +179,10 @@ export function createWorkforceAdapterPolicy(enabled: boolean) {
     },
 
     async prepareBulkUpdate(ctx: MutationCtx, model: string, current: Row, patch: Row) {
-      if (!enabled) return patch
+      if (!enabled) {
+        if (generationAuthority) assertSessionGenerationUpdate(model, patch, generationAuthority)
+        return patch
+      }
       const guarded = prepareWorkforceProofUpdate(model, current, patch)
       await invalidateWorkforcePasswordChange(ctx, model, current, { ...current, ...guarded })
       return prepareWorkforceFactorWrite(ctx, model, current, guarded, undefined)

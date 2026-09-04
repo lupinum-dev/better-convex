@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Revoke every earlier session after password reset with atomic generation
+  invalidation, including accounts with more than the bounded bulk-delete limit.
+- Require a current persisted session before approving destructive MCP starter
+  operations, instead of trusting a still-valid session JWT alone.
+- Bind development initialization to one inspected Convex authority and reject
+  production or changed deployment credentials before provisioning.
+
 ## v1.0.0-beta.3
 
 - Add an opt-in workforce assurance baseline for business applications with

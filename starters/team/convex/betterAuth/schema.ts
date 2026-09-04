@@ -11,6 +11,7 @@ export const tables = {
     image: v.union(v.null(), v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    bcnSecurityGeneration: v.number(),
   })
     .index('id', ['id'])
     .index('name', ['name'])
@@ -27,6 +28,7 @@ export const tables = {
     userId: v.string(),
     activeOrganizationId: v.union(v.null(), v.string()),
     activeTeamId: v.union(v.null(), v.string()),
+    bcnAssuranceGeneration: v.number(),
   })
     .index('id', ['id'])
     .index('expiresAt', ['expiresAt'])
@@ -160,7 +162,7 @@ export const tables = {
 
 const schema = defineSchema(tables)
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:656f3c21525d0042',
+  value: 'bcn-auth-schema-v2:f0d7a81d318f4e73',
 })
 
 export default schema

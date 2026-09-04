@@ -52,6 +52,7 @@ import {
   findAuthRows,
   paginateAuthRows,
   toBetterAuthDocument,
+  type AuthDocument,
   type AuthReadArgs,
   type AuthWhere,
 } from './query'
@@ -288,7 +289,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
 }: DefineAuthAdapterFunctionsOptions<Schema>) {
   assertAuthSchemaMatchesMetadata(schema, metadata)
   const workforce = hasWorkforceSchema(metadata)
-  const workforcePolicy = createWorkforceAdapterPolicy(workforce)
+  const workforcePolicy = createWorkforceAdapterPolicy(workforce, metadata)
   const relationships = createAuthRelationshipEngine({
     schema,
     metadata,
@@ -338,7 +339,6 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
       args: { storageId: v.id('session') },
       returns: v.null(),
       handler: async (ctx, args) => {
-        requireWorkforce()
         const next = await expireWorkforceSession(ctx, args.storageId)
         if (next !== null) await ctx.scheduler.runAt(next, expireSessionReference, args)
         return null
@@ -382,7 +382,11 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         workforceConsumedChallenge: v.optional(workforceConsumedChallengeValidator),
       },
       handler: async (ctx, args) => {
-        let row = normalizeCreate(metadata, args.model, args.data)
+        let row = normalizeCreate(
+          metadata,
+          args.model,
+          await workforcePolicy.prepareCreateInput(ctx, args.model, args.data),
+        )
         await relationships.assertTargets(ctx, args.model, row)
         await assertUniqueConstraints(ctx, schema, metadata, args.model, row)
         row = await workforcePolicy.prepareCreate(
@@ -403,7 +407,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (!finalRow) throw new Error('AUTH_CREATE_TRIGGER_DELETED_ROW')
         await workforcePolicy.scheduleCreatedSession(args.model, finalRow, async (expiresAt) => {
           const sessionId = ctx.db.normalizeId('session', storageId)
-          if (!sessionId) throw new Error('AUTH_WORKFORCE_SESSION_INVALID')
+          if (!sessionId) throw new Error('AUTH_SESSION_INVALID')
           await ctx.scheduler.runAt(expiresAt, expireSessionReference, { storageId: sessionId })
         })
         return toBetterAuthDocument(finalRow as never)
@@ -418,10 +422,20 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         workforce: v.optional(workforceOperationValidator),
       },
       handler: async (ctx, args) => {
-        const rows = await findAuthRows(ctx, schema, metadata, readShape(args), 2)
+        const requested = readShape(args)
+        const rows = await findAuthRows(
+          ctx,
+          schema,
+          metadata,
+          {
+            ...requested,
+            select: workforcePolicy.prepareReadSelect(args.model, requested.select),
+          },
+          2,
+        )
         const row = oneOrNull(rows, 'AUTH_FIND_ONE')
         const view = await workforcePolicy.projectFind(ctx, args.model, row, args.workforce)
-        return toBetterAuthDocument(view, args.select)
+        return toBetterAuthDocument(view, requested.select)
       },
     }),
 
@@ -434,16 +448,25 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         paginationOpts: paginationOptsValidator,
       },
       handler: async (ctx, args) => {
+        const requested = readShape(args)
         const result = await paginateAuthRows(
           ctx,
           schema,
           metadata,
-          readShape(args),
+          {
+            ...requested,
+            select: workforcePolicy.prepareReadSelect(args.model, requested.select),
+          },
           args.paginationOpts,
         )
-        return args.limit === undefined
-          ? result
-          : { ...result, page: result.page.slice(0, args.limit) }
+        const page = (
+          await Promise.all(
+            result.page.map((row) => workforcePolicy.projectFind(ctx, args.model, row)),
+          )
+        )
+          .filter((row): row is AuthDocument => row !== null)
+          .map((row) => toBetterAuthDocument(row, requested.select)!)
+        return { ...result, page: args.limit === undefined ? page : page.slice(0, args.limit) }
       },
     }),
 
@@ -572,6 +595,12 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         onUpdateModels: v.optional(v.array(v.string())),
       },
       handler: async (ctx, args) => {
+        const invalidated = await workforcePolicy.invalidateSessionCollection(
+          ctx,
+          args.model,
+          args.where,
+        )
+        if (invalidated !== null) return invalidated
         const rows =
           (await workforcePolicy.expiredVerificationRows(ctx, args.model, args.where)) ??
           (await relationships.collectOperationRows(ctx, readShape(args)))
