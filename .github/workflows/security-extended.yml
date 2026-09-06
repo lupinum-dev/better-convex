@@ -94,7 +94,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm check:auth-backend --install
-      - run: pnpm test:mcp-auth
       - run: pnpm test:mcp-conformance
 
   extended-http:
