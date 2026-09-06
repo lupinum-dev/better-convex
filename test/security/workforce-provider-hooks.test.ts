@@ -597,10 +597,17 @@ describe('owned workforce provider hooks', () => {
     const h = await fixture()
     const user = await h.enabled()
     await h.proof(user.sessionId, 'password-totp')
-    expect((await h.post('/two-factor/verify-totp', { code: '000000' }, user.jar)).status).toBe(403)
-    expect(
-      (await h.post('/two-factor/verify-backup-code', { code: 'synthetic' }, user.jar)).status,
-    ).toBe(403)
+    for (const [path, body] of [
+      ['/two-factor/verify-totp', { code: '000000' }],
+      ['/two-factor/verify-backup-code', { code: 'synthetic' }],
+    ] as const) {
+      const result = await h.post(path, body, user.jar).then(
+        (response) => ({ response }),
+        (error: unknown) => ({ error }),
+      )
+      if ('response' in result) expect(result.response.status).toBe(403)
+      else expect(result.error).toMatchObject({ status: 'FORBIDDEN' })
+    }
     expect(h.relayed).toHaveLength(0)
   })
 
