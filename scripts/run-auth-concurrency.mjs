@@ -159,13 +159,25 @@ async function runWorker() {
     return client.mutation(authConcurrencyFunctions[functionName], args)
   }
   const invoke = async (index) => {
+    const started = performance.now()
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return { ok: true, value: await invokeOnce(index) }
+        const value = await invokeOnce(index)
+        return {
+          ok: true,
+          value,
+          attempts: attempt + 1,
+          elapsedMs: Math.round(performance.now() - started),
+        }
       } catch (error) {
         const failure = safeAuthConcurrencyFailure(error)
         if (!shouldRetryAuthContention(operation, failure, attempt)) {
-          return { ok: false, error: failure }
+          return {
+            ok: false,
+            error: failure,
+            attempts: attempt + 1,
+            elapsedMs: Math.round(performance.now() - started),
+          }
         }
         // A final Convex OCC contention error means the mutation did not commit.
         // Never retry ambiguous transport/action failures: an increment must
@@ -300,16 +312,25 @@ function assertPristineRaceRow(row, expected, message) {
   )
 }
 
-function failureSummary(results) {
+export function failureSummary(results) {
   const counts = new Map()
+  const attempts = new Map()
+  let maxElapsedMs = 0
   for (const result of results) {
+    attempts.set(result.attempts, (attempts.get(result.attempts) ?? 0) + 1)
+    maxElapsedMs = Math.max(maxElapsedMs, result.elapsedMs)
     if (result.ok) continue
     counts.set(result.error, (counts.get(result.error) ?? 0) + 1)
   }
-  return [...counts.entries()]
+  const failures = [...counts.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, count]) => `${name}=${count}`)
     .join(', ')
+  const histogram = [...attempts.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([attempt, count]) => `${attempt}:${count}`)
+    .join(',')
+  return `${failures}; requestAttempts={${histogram}}; maxElapsedMs=${maxElapsedMs}`
 }
 
 function signClientIp(clientIp) {

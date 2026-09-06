@@ -7,6 +7,7 @@ import { parse } from 'yaml'
 import {
   AUTH_CONTENTION_MAX_RETRIES,
   authContentionRetryDelayMs,
+  failureSummary,
   safeAuthConcurrencyFailure,
   shouldRetryAuthContention,
 } from '../../scripts/run-auth-concurrency.mjs'
@@ -221,6 +222,22 @@ describe('real OAuth transport quota evidence', () => {
     expect(() => authContentionRetryDelayMs(-1, 0, 0)).toThrow(
       'AUTH_CONTENTION_RETRY_INPUT_INVALID',
     )
+  })
+
+  it('reports bounded retry effort without successful values or raw errors', () => {
+    const summary = failureSummary([
+      { ok: true, value: { token: 'private-sentinel' }, attempts: 1, elapsedMs: 10 },
+      { ok: true, value: 2, attempts: 2, elapsedMs: 40 },
+      {
+        ok: false,
+        error: safeAuthConcurrencyFailure(new Error('OCC error private-error-sentinel')),
+        attempts: 6,
+        elapsedMs: 1200,
+      },
+      { ok: false, error: 'CONVEX_CONTENTION', attempts: 6, elapsedMs: 1100 },
+    ])
+    expect(summary).toBe('CONVEX_CONTENTION=2; requestAttempts={1:1,2:1,6:2}; maxElapsedMs=1200')
+    expect(summary).not.toContain('sentinel')
   })
 
   it('preserves exact safe uniqueness evidence from the real-backend races', () => {
