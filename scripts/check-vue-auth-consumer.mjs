@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path'
 
 import { chromium } from 'playwright'
 
+import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 import { prepareVueCandidate } from './vue-candidate-consumer.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -90,9 +91,10 @@ try {
     recursive: true,
   })
   cpSync(candidate.tarballPath, join(consumerRoot, 'better-convex-vue.tgz'))
+  prepareConsumerDependencyPolicy(consumerRoot)
   run(
     'pnpm',
-    ['install', '--frozen-lockfile=false', '--ignore-scripts', '--strict-peer-dependencies'],
+    ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
     consumerRoot,
   )
   symlinkSync(join(consumerRoot, 'node_modules'), join(scratchRoot, 'node_modules'), 'dir')

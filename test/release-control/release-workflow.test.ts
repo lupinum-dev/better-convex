@@ -86,7 +86,11 @@ describe('state-aware Better Convex release workflows', () => {
   })
 
   it('keeps release-gate as the final CI aggregator', () => {
-    expect(needs(ci, 'release-gate')).toEqual(['source-certification', 'release-candidate'])
+    expect(needs(ci, 'release-gate')).toEqual([
+      'dependency-policy',
+      'source-certification',
+      'release-candidate',
+    ])
     expect(requireJob(ci, 'release-gate').if).toBe('always()')
     const gate = runs(ci, 'release-gate').join('\n')
     expect(gate).toContain('test "$SOURCE_CERTIFICATION" = success')

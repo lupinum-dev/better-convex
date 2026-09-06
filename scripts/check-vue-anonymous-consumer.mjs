@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 import { prepareVueCandidate } from './vue-candidate-consumer.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -83,9 +84,10 @@ try {
 
   cpSync(fixtureRoot, consumerRoot, { recursive: true })
   cpSync(packedTarball, join(consumerRoot, tarballName))
+  prepareConsumerDependencyPolicy(consumerRoot)
   run(
     'pnpm',
-    ['install', '--frozen-lockfile=false', '--ignore-scripts', '--strict-peer-dependencies'],
+    ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
     consumerRoot,
   )
 

@@ -17,6 +17,7 @@ import { join, resolve } from 'node:path'
 import { chromium } from 'playwright'
 
 import { applyCompatibilityProfile } from './compatibility-profile.mjs'
+import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 import { inspectConsumerCandidate } from './package-consumer-candidate.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -167,11 +168,13 @@ try {
   })
   cpSync(options.nuxtTarball, join(consumerRoot, 'better-convex-nuxt.tgz'))
   cpSync(options.vueTarball, join(consumerRoot, 'better-convex-vue.tgz'))
+  prepareConsumerDependencyPolicy(consumerRoot)
   run(
     'pnpm',
     ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
     consumerRoot,
   )
+  prepareConsumerDependencyPolicy(consumerRoot)
   run(
     'pnpm',
     ['install', '--frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],

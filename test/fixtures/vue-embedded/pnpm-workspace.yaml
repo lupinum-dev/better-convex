@@ -1,3 +1,7 @@
 packages: []
 
 linkWorkspacePackages: false
+
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false

@@ -38,6 +38,19 @@ schemas, consumer fixtures, and exact package boundaries before merge.
 Use `security/upstream-convex-better-auth.json` as the only upstream auth review
 ledger. Do not add another handwritten advisory list.
 
+Run `pnpm check:dependency-policy` to validate maintained install configuration
+and expiry failures. The same gate runs on every pull request and the existing
+nightly schedule. `scripts/check-dependency-policy.mjs` is the repository-owned
+copy of the Lupinum OSS checker; update it from the canonical shared file.
+
+Generated consumers call `prepareConsumerDependencyPolicy` before every install.
+It copies the maintained quarantine fields and inline exception metadata, then
+checks the actual generated file. Consumer companion overrides remain explicit;
+root workspace overrides and package extensions are omitted so the probe tests
+the published dependency graph and selected framework version. npm receives the
+same age cutoff. Local file tarballs need no registry-age exclusion; the isolated
+candidate registry supplies controlled publication metadata instead.
+
 ## Releases
 
 Follow [RELEASING.md](./RELEASING.md). The protected workflow is the only normal

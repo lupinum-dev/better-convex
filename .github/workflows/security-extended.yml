@@ -17,6 +17,21 @@ env:
   RELEASE_NODE_VERSION: '22.19.0'
 
 jobs:
+  dependency-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm check:dependency-policy
+
   static-and-negative:
     runs-on: ubuntu-latest
     timeout-minutes: 30

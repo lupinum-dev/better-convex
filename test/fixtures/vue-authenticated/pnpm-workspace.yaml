@@ -1,1 +1,5 @@
 # Keep the packed consumer outside the repository workspace graph.
+
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
