@@ -51,14 +51,14 @@ jobs:
                   pull_number: context.issue.number,
                   per_page: 100,
                 })
-            const paths = files.map((file) => file.filename)
+            const paths = files.flatMap((file) => [file.filename, file.previous_filename].filter(Boolean))
             const publicDocsOnly =
               paths.length > 0 &&
               paths.every((path) =>
-                /^(?:docs\/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
+                /^(?:docs\/content\/.*\.md$|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
               )
             const releaseArtifactInputs = paths.some((path) =>
-              /^(?:package\.json|pnpm-lock\.yaml|packages\/(?:vue|mcp)\/package\.json|(?:demo|starters\/(?:agency|mcp-oauth-agent|public|team))\/(?:package\.json|pnpm-lock\.yaml)|scripts\/(?:candidate-app-locks|create-release-candidate|prepare-candidate-app-locks|prepare-candidate-set|reconcile-release|release|release-intent|release-preflight-tarballs|release-smoke|test-lazy-release|test-release-workflow)\.mjs|\.github\/workflows\/(?:ci|publish-prerelease)\.yml)$/u.test(path),
+              /^(?:package\.json|pnpm-(?:lock|workspace)\.yaml|packages\/(?:vue|mcp)\/package\.json|(?:demo|starters\/(?:agency|mcp-oauth-agent|public|team))\/(?:package\.json|pnpm-lock\.yaml)|(?:test\/fixtures\/.*\/pnpm-workspace\.yaml|scripts\/package-check\/probes\.mjs)|scripts\/(?:consumer-dependency-policy|check-dependency-policy|check-candidate-apps|update-candidate-app-locks|check-(?:nuxt-lifecycle|vue-[a-z-]+|mcp-package)-consumer|candidate-app-locks|create-release-candidate|prepare-candidate-app-locks|prepare-candidate-set|reconcile-release|release|release-intent|release-preflight-tarballs|release-smoke|test-lazy-release|test-release-workflow)\.mjs|\.github\/workflows\/(?:ci|publish-prerelease)\.yml)$/u.test(path),
             )
             core.setOutput('artifact', String(runAll || releaseArtifactInputs))
             core.setOutput('full', String(runAll || !publicDocsOnly))

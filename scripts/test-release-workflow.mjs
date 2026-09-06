@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { runInNewContext } from 'node:vm'
 
 import { parse } from 'yaml'
 
@@ -218,3 +219,45 @@ for (const [path, source] of [
 }
 
 process.stdout.write('Lazy release workflow policy passed.\n')
+
+// Execute the committed classifier against additions and both sides of renames.
+const classifier = ci.jobs.classify.steps.find((step) => step.id === 'paths').with.script
+for (const [files, expected] of [
+  [[{ filename: 'docs/content/docs/guide.md' }], { full: 'false', artifact: 'false' }],
+  [[{ filename: 'docs/nuxt.config.ts' }], { full: 'true', artifact: 'false' }],
+  [[{ filename: 'docs/package.json' }], { full: 'true', artifact: 'false' }],
+  [[{ filename: 'docs/vercel.json' }], { full: 'true', artifact: 'false' }],
+  [[{ filename: 'docs/content/example.vue' }], { full: 'true', artifact: 'false' }],
+  [
+    [{ filename: 'README.md', previous_filename: 'src/module.ts' }],
+    { full: 'true', artifact: 'false' },
+  ],
+  [
+    [{ filename: 'README.md', previous_filename: 'pnpm-workspace.yaml' }],
+    { full: 'true', artifact: 'true' },
+  ],
+  [[{ filename: 'scripts/consumer-dependency-policy.mjs' }], { full: 'true', artifact: 'true' }],
+  [[{ filename: 'scripts/package-check/probes.mjs' }], { full: 'true', artifact: 'true' }],
+  [
+    [{ filename: 'test/fixtures/nuxt-lifecycle/pnpm-workspace.yaml' }],
+    { full: 'true', artifact: 'true' },
+  ],
+  [[], { full: 'true', artifact: 'false' }],
+]) {
+  const output = {}
+  await runInNewContext(`(async () => {${classifier}})()`, {
+    context: {
+      eventName: 'pull_request',
+      repo: { owner: 'fixture', repo: 'fixture' },
+      issue: { number: 1 },
+    },
+    github: { paginate: async () => files, rest: { pulls: { listFiles() {} } } },
+    core: {
+      setOutput: (key, value) => {
+        output[key] = value
+      },
+    },
+  })
+  assert.deepEqual(output, expected, JSON.stringify(files))
+}
+console.log('CI classifier addition and rename fixtures passed.')
