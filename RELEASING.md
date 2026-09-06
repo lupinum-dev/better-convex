@@ -34,10 +34,11 @@ Source certification never runs after immutable minting. Artifact verification
 never invokes the full source suite. A generic Vercel preview is a developer
 convenience and is not release authority.
 
-## Fast local smoke
+## Linux release smoke
 
 The release workflow uses npm `11.18.0` to create the package archives. Use the
-same packer when candidate application locks need an update:
+same packer in the reviewed Linux builder when candidate application locks need
+an update. These commands are not workstation instructions:
 
 ```bash
 pnpm install --frozen-lockfile

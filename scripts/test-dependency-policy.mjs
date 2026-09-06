@@ -108,7 +108,7 @@ test('normal and scheduled workflows enforce policy without building packages', 
     assert.equal(job['continue-on-error'], undefined)
     const commands = job.steps.flatMap((step) => step.run ?? [])
     assert.ok(commands.includes('pnpm install --frozen-lockfile --ignore-scripts'))
-    assert.ok(commands.includes('pnpm check:dependency-policy'))
+    assert.ok(commands.includes('pnpm check:dependencies'))
     assert.ok(commands.every((command) => !/pnpm (?:build|release:|test:e2e)/.test(command)))
   }
   const gate = ci.jobs['release-gate']
