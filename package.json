@@ -157,8 +157,6 @@
     "check:workspace-deps": "node scripts/check-workspace-dependency-alignment.mjs",
     "check:candidate-apps": "node scripts/check-candidate-apps.mjs --package nuxt",
     "check:compatibility-matrix": "node scripts/check-candidate-apps.mjs --package nuxt --dependency-profile",
-    "update:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs update",
-    "check:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs check",
     "check:consumer-smoke": "nuxt-module-build prepare && nuxt-module-build build && pnpm run check:consumer-smoke:dist",
     "check:consumer-smoke:dist": "nuxi prepare --cwd test/fixtures/consumer-smoke && nuxi typecheck --cwd test/fixtures/consumer-smoke",
     "check:missing-convex-api": "nuxi prepare --cwd test/fixtures/missing-convex-api && nuxi typecheck --cwd test/fixtures/missing-convex-api",

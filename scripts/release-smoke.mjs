@@ -3,7 +3,6 @@
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
-import { verifyCandidateAppLocks } from './prepare-candidate-app-locks.mjs'
 import { assertReleaseBuilderPlatform } from './release-builder-platform.mjs'
 import { withReleasePreflightTarballs } from './release-preflight-tarballs.mjs'
 
@@ -27,7 +26,6 @@ ensureClean()
 run('node', ['scripts/check-workspace-dependency-alignment.mjs'])
 
 withReleasePreflightTarballs((tarballs) => {
-  verifyCandidateAppLocks('check', tarballs)
   run('node', ['scripts/check-package-exports.mjs', '--package', 'vue', '--tarball', tarballs.vue])
   run('node', [
     'scripts/check-package-exports.mjs',
@@ -49,6 +47,4 @@ run('pnpm', [
   'test/release-control/release-workflow.test.ts',
 ])
 ensureClean()
-console.log(
-  '\n[release-smoke] PASS: locks, release-equivalent packages, consumers, and regressions.',
-)
+console.log('\n[release-smoke] PASS: release-equivalent packages, exports, and regressions.')

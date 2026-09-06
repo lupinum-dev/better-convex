@@ -15,7 +15,7 @@ describe('release builder platform', () => {
     'rejects non-authoritative %s package bytes',
     (platform) => {
       expect(() => assertReleaseBuilderPlatform(platform)).toThrow(
-        'Release artifacts, candidate locks, and release smoke must be created on the reviewed Linux builder.',
+        'Release artifacts and release smoke must be created on the reviewed Linux builder.',
       )
     },
   )
