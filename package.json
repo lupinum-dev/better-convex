@@ -165,7 +165,7 @@
     "check:better-auth-two-factor": "tsc --noEmit -p test/fixtures/better-auth-two-factor/tsconfig.json",
     "check:auth-security-plugins": "tsc --noEmit -p test/fixtures/auth-security-plugins/tsconfig.json",
     "check:boundaries": "node scripts/check-boundaries.mjs",
-    "check": "pnpm check:dependencies && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run check:boundaries && pnpm run test && pnpm run release:policy",
+    "check": "pnpm check:dependencies && pnpm test:dependency-policy && pnpm check:workspace-deps && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run check:boundaries && pnpm run test && pnpm run release:policy",
     "typecheck:module": "nuxt-module-build prepare && vue-tsc --noEmit",
     "typecheck:server": "nuxt-module-build prepare && tsc --noEmit -p src/runtime/server/tsconfig.json",
     "typecheck:mcp-tests": "tsc -p test/mcp/tsconfig.json",
@@ -190,7 +190,8 @@
     "test:nuxt": "nuxt-module-build prepare && vitest run --project=nuxt",
     "test:watch": "nuxt-module-build prepare && vitest watch --project=unit --project=nuxt",
     "test:types": "pnpm run typecheck:module",
-    "check:dependencies": "pnpm check:workspace-deps && node --test scripts/test-dependency-policy.mjs"
+    "check:dependencies": "node scripts/check-dependency-policy.mjs",
+    "test:dependency-policy": "node --test scripts/test-dependency-policy.mjs"
   },
   "dependencies": {
     "@better-auth/utils": "0.4.2",
