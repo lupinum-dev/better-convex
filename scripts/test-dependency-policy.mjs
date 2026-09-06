@@ -10,7 +10,9 @@ import { parse } from 'yaml'
 import { checkDependencyPolicy } from './check-dependency-policy.mjs'
 import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 
-const now = Date.parse('2026-09-06T12:00:00Z')
+// Keep maintained-root validation current when a real reviewed exception is active.
+const now = Math.floor(Date.now() / 1000) * 1000
+const timestamp = (offset) => new Date(now + offset).toISOString().replace('.000Z', 'Z')
 const policy =
   'minimumReleaseAge: 1440\nminimumReleaseAgeStrict: true\nminimumReleaseAgeIgnoreMissingTime: false\n'
 const exception = (expires, name = 'example@1.2.3') =>
@@ -26,14 +28,14 @@ function temporary(run) {
 }
 
 test('exact reviewed exceptions expire at their boundary and cannot exceed one day', () => {
-  assert.deepEqual(checkDependencyPolicy(exception('2026-09-06T12:00:01Z'), now), [])
-  assert.match(checkDependencyPolicy(exception('2026-09-06T12:00:00Z'), now).join(), /expired/)
+  assert.deepEqual(checkDependencyPolicy(exception(timestamp(1000)), now), [])
+  assert.match(checkDependencyPolicy(exception(timestamp(0)), now).join(), /expired/)
   assert.match(
-    checkDependencyPolicy(exception('2026-09-07T12:00:01Z'), now).join(),
+    checkDependencyPolicy(exception(timestamp(86_401_000)), now).join(),
     /within 24 hours/,
   )
   assert.match(
-    checkDependencyPolicy(exception('2026-09-06T13:00:00Z', 'example@*'), now).join(),
+    checkDependencyPolicy(exception(timestamp(3_600_000), 'example@*'), now).join(),
     /exact/,
   )
   assert.match(
@@ -59,13 +61,13 @@ test('generated consumers inherit maintained age settings without workspace reso
     )
     assert.equal(actual.overrides, undefined)
     assert.equal(actual.packageExtensions, undefined)
-    assert.equal(cutoff, '--before=2026-09-05T12:00:00.000Z')
+    assert.equal(cutoff, `--before=${new Date(now - 86_400_000).toISOString()}`)
   }))
 
 test('companion overrides and valid inline metadata survive generated-policy preparation', () =>
   temporary((directory) => {
     const path = join(directory, 'pnpm-workspace.yaml')
-    const source = `${exception('2026-09-06T13:00:00Z')}overrides:\n  companion: file:./companion.tgz\n`
+    const source = `${exception(timestamp(3_600_000))}overrides:\n  companion: file:./companion.tgz\n`
     writeFileSync(path, source)
     prepareConsumerDependencyPolicy(directory, now)
     assert.equal(readFileSync(path, 'utf8'), source)
