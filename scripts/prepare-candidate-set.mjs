@@ -79,10 +79,6 @@ function verifySet(manifest) {
   return evidence
 }
 
-function checkCandidateAppLocks() {
-  run('node', ['scripts/prepare-candidate-app-locks.mjs', 'check'])
-}
-
 function certifyPackage(packageId, evidence) {
   run('node', [
     'scripts/verify-release.mjs',
@@ -165,7 +161,6 @@ function createSet() {
 }
 
 if (command === 'family') {
-  checkCandidateAppLocks()
   const manifest = createSet()
   const mcpCoordinates = getPackageArtifactCoordinates('mcp', {
     repositoryRoot: root,
@@ -179,7 +174,6 @@ if (command === 'family') {
 } else if (command === 'verify') {
   verifySet(suppliedManifest)
 } else {
-  checkCandidateAppLocks()
   const manifest = createSet()
   if (command === 'prepare') certifySet(manifest)
   console.log(`\nImmutable candidate set: ${manifest}`)

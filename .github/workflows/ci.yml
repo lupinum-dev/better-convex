@@ -25,7 +25,7 @@ jobs:
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm check:dependency-policy
+      - run: pnpm check:dependencies
 
   classify:
     name: Classify changes
@@ -51,14 +51,14 @@ jobs:
                   pull_number: context.issue.number,
                   per_page: 100,
                 })
-            const paths = files.map((file) => file.filename)
+            const paths = files.flatMap((file) => [file.filename, file.previous_filename].filter(Boolean))
             const publicDocsOnly =
               paths.length > 0 &&
               paths.every((path) =>
-                /^(?:docs\/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
+                /^(?:docs\/content\/.*\.md$|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|MAINTAINING\.md$|AGENTS\.md$|CLAUDE\.md$|LICENSE$)/u.test(path),
               )
             const releaseArtifactInputs = paths.some((path) =>
-              /^(?:package\.json|pnpm-lock\.yaml|packages\/(?:vue|mcp)\/package\.json|(?:demo|starters\/(?:agency|mcp-oauth-agent|public|team))\/(?:package\.json|pnpm-lock\.yaml)|scripts\/(?:candidate-app-locks|create-release-candidate|prepare-candidate-app-locks|prepare-candidate-set|reconcile-release|release|release-intent|release-preflight-tarballs|release-smoke|test-lazy-release|test-release-workflow)\.mjs|\.github\/workflows\/(?:ci|publish-prerelease)\.yml)$/u.test(path),
+              /^(?:package\.json|pnpm-(?:lock|workspace)\.yaml|packages\/(?:vue|mcp)\/package\.json|(?:demo|starters\/(?:agency|mcp-oauth-agent|public|team))\/(?:package\.json|pnpm-lock\.yaml)|(?:test\/fixtures\/.*\/pnpm-workspace\.yaml|scripts\/package-check\/probes\.mjs)|scripts\/(?:consumer-dependency-policy|check-dependency-policy|check-candidate-apps|check-(?:nuxt-lifecycle|vue-[a-z-]+|mcp-package)-consumer|create-release-candidate|prepare-candidate-set|reconcile-release|release|release-intent|release-preflight-tarballs|release-smoke|test-lazy-release|test-release-workflow)\.mjs|\.github\/workflows\/(?:ci|publish-prerelease)\.yml)$/u.test(path),
             )
             core.setOutput('artifact', String(runAll || releaseArtifactInputs))
             core.setOutput('full', String(runAll || !publicDocsOnly))
@@ -227,24 +227,8 @@ jobs:
       - name: Install the release toolchain
         run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
-      - name: Verify release-equivalent packages and candidate locks
+      - name: Verify release-equivalent packages
         run: pnpm release:smoke
-      - name: Prepare Linux candidate locks after a mismatch
-        if: failure()
-        run: pnpm update:candidate-app-locks
-      - name: Retain the Linux candidate locks for review
-        if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: candidate-locks-${{ github.sha }}
-          path: |
-            demo/pnpm-lock.yaml
-            starters/agency/pnpm-lock.yaml
-            starters/mcp-oauth-agent/pnpm-lock.yaml
-            starters/public/pnpm-lock.yaml
-            starters/team/pnpm-lock.yaml
-          if-no-files-found: error
-          retention-days: 2
 
   source-certification:
     name: Source certification

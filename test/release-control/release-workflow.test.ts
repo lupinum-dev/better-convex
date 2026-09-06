@@ -73,7 +73,7 @@ describe('state-aware Better Convex release workflows', () => {
   const ci = parseWorkflow('.github/workflows/ci.yml')
   const publish = parseWorkflow('.github/workflows/publish-prerelease.yml')
 
-  it('runs the Linux release smoke when release package or candidate lock inputs change', () => {
+  it('runs the Linux release smoke when release package inputs change', () => {
     const classifier = requireJob(ci, 'classify').steps?.find(
       ({ name }) => name === 'Select required lanes',
     )?.with?.script

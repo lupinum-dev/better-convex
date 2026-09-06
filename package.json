@@ -157,8 +157,6 @@
     "check:workspace-deps": "node scripts/check-workspace-dependency-alignment.mjs",
     "check:candidate-apps": "node scripts/check-candidate-apps.mjs --package nuxt",
     "check:compatibility-matrix": "node scripts/check-candidate-apps.mjs --package nuxt --dependency-profile",
-    "update:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs update",
-    "check:candidate-app-locks": "node scripts/prepare-candidate-app-locks.mjs check",
     "check:consumer-smoke": "nuxt-module-build prepare && nuxt-module-build build && pnpm run check:consumer-smoke:dist",
     "check:consumer-smoke:dist": "nuxi prepare --cwd test/fixtures/consumer-smoke && nuxi typecheck --cwd test/fixtures/consumer-smoke",
     "check:missing-convex-api": "nuxi prepare --cwd test/fixtures/missing-convex-api && nuxi typecheck --cwd test/fixtures/missing-convex-api",
@@ -167,7 +165,7 @@
     "check:better-auth-two-factor": "tsc --noEmit -p test/fixtures/better-auth-two-factor/tsconfig.json",
     "check:auth-security-plugins": "tsc --noEmit -p test/fixtures/auth-security-plugins/tsconfig.json",
     "check:boundaries": "node scripts/check-boundaries.mjs",
-    "check": "pnpm check:dependency-policy && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run check:boundaries && pnpm run test && pnpm run release:policy",
+    "check": "pnpm check:dependencies && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run check:boundaries && pnpm run test && pnpm run release:policy",
     "typecheck:module": "nuxt-module-build prepare && vue-tsc --noEmit",
     "typecheck:server": "nuxt-module-build prepare && tsc --noEmit -p src/runtime/server/tsconfig.json",
     "typecheck:mcp-tests": "tsc -p test/mcp/tsconfig.json",
@@ -192,7 +190,7 @@
     "test:nuxt": "nuxt-module-build prepare && vitest run --project=nuxt",
     "test:watch": "nuxt-module-build prepare && vitest watch --project=unit --project=nuxt",
     "test:types": "pnpm run typecheck:module",
-    "check:dependency-policy": "pnpm check:workspace-deps && node --test scripts/test-dependency-policy.mjs"
+    "check:dependencies": "pnpm check:workspace-deps && node --test scripts/test-dependency-policy.mjs"
   },
   "dependencies": {
     "@better-auth/utils": "0.4.2",

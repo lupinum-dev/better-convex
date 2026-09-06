@@ -18,6 +18,64 @@ pnpm verify
 Use `pnpm docs:build` for documentation changes. Use `pnpm audit:all` after a
 dependency update. Use `pnpm release:verify` only for an exact release candidate.
 
+## Local development
+
+Use a fresh isolated worktree for this disposable auth playground. Install with
+`pnpm install --frozen-lockfile`, then run `pnpm check:auth-backend --install`.
+Prepare package entries with `pnpm --dir packages/vue build && pnpm dev:prepare`
+before starting the backend, which imports those entries. The first prepare can
+warn that the backend URL is missing; the helper below supplies it.
+Do not copy `.env.local`, `.convex`, or production credentials into that worktree.
+The existing local helper selects an anonymous loopback backend, checks its
+reviewed binary, configures synthetic auth secrets, and rejects cloud selection.
+
+From the repository root on macOS or Linux, start the existing helper and dev
+command together:
+
+```bash
+CONVEX_E2E_AUTO_START=true BCN_E2E_REQUIRE_LOCAL=true node --input-type=module <<'NODE'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { createJiti } from 'jiti'
+const { ensureLocalConvex } = await createJiti(import.meta.url).import('./test/helpers/local-convex.ts')
+const local = await ensureLocalConvex({ authOrigin: 'http://localhost:4578' })
+try {
+  const app = spawn('pnpm', ['dev'], {
+    detached: true,
+    stdio: 'inherit',
+    env: { ...process.env, ...local.env, SITE_URL: 'http://localhost:4578' },
+  })
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, () => process.kill(-app.pid, 'SIGTERM'))
+  }
+  const [code] = await once(app, 'exit')
+  process.exitCode = code ?? 1
+} finally {
+  await local.release()
+}
+NODE
+```
+
+Wait for Nuxt readiness at `http://localhost:4578`. Create a synthetic account
+through `/auth/signup`, then sign in normally. This local flow needs no cloud
+account or real email delivery. Keep the same session while editing. Test a
+failure and recovery, then reload to check session continuity. `Ctrl-C` stops
+the owned dev process and releases the backend. Remove the disposable worktree's
+`playground/.convex` and `playground/.env.local` after shutdown. Preserve those
+paths in an existing developer checkout; use the isolated worktree instead.
+
+`pnpm test:e2e` separately runs built-source journeys and restores playground
+state. It does not replace the dev-server check. A local pass does not certify
+Linux candidate bytes or hosted provider behavior.
+
+The 6 September 2026 maintenance trial passed on macOS with Node 24 and pinned
+pnpm 11.21.0: ordinary local signup/sign-in, rejected password and recovery,
+authenticated query, task persistence, keyboard interaction, HMR/reload session
+continuity, sign-out, and the explicit route guard. Owned browser/backend/dev
+processes and synthetic state were removed. `pnpm verify` passed, including
+2,753 tests, packed export probes, and docs build. Linux candidate, compatibility
+matrix, and nightly auth-load certification remain required separately.
+
 ## Quick fixes
 
 Keep one cause and one verification path in the pull request. Add a regression
@@ -38,7 +96,7 @@ schemas, consumer fixtures, and exact package boundaries before merge.
 Use `security/upstream-convex-better-auth.json` as the only upstream auth review
 ledger. Do not add another handwritten advisory list.
 
-Run `pnpm check:dependency-policy` to validate maintained install configuration
+Run `pnpm check:dependencies` to validate maintained install configuration
 and expiry failures. The same gate runs on every pull request and the existing
 nightly schedule. `scripts/check-dependency-policy.mjs` is the repository-owned
 copy of the Lupinum OSS checker; update it from the canonical shared file.
@@ -57,11 +115,11 @@ Follow [RELEASING.md](./RELEASING.md). The protected workflow is the only normal
 publication path. It must publish only retained artifacts that passed source,
 consumer, security, and registry checks.
 
-The reviewed Linux workflow is the byte authority for release artifacts and
-candidate lockfiles. `npm pack` can produce the same uncompressed tar archive
+The reviewed Linux workflow is the byte authority for release artifacts.
+`npm pack` can produce the same uncompressed tar archive
 with different gzip bytes on macOS because the host zlib implementation is
-different. Do not record workstation hashes or run artifact creation, candidate
-lock generation, or `release:smoke` outside the Linux builder. Verification of
+different. Do not record workstation hashes or run artifact creation or
+`release:smoke` outside the Linux builder. Verification of
 an already retained artifact remains platform-independent.
 
 Use `pnpm changelog` to draft the public notes from Conventional Commits. Review
@@ -142,7 +200,10 @@ credentials outside repository workflows and avoids executing dependencies with
 a production-capable key.
 
 Vercel must deploy the `docs/` app from `main` to
-`better-convex.lupinum.com` and create pull-request previews. Set the Vercel
+`better-convex.lupinum.com`. Keep automatic library branch previews disabled;
+request previews on demand. Use Basic build machines unless measured total cost
+per successful build and failure evidence justify another choice. Keep on-demand
+concurrency off and builds queued. Set the Vercel
 Root Directory to `docs`. Do not set an Output Directory override; Nuxt emits
 the Vercel Build Output API files. The docs app owns its lockfile and does not
 need source files outside the Root Directory. Do not set an Install Command

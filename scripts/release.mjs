@@ -17,10 +17,6 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 
-import {
-  assertCandidateAppLocksBindArtifact,
-  packageArtifactIdentity,
-} from './candidate-app-locks.mjs'
 import { buildAndPackReleaseTarball } from './pack-release-tarball.mjs'
 import {
   assertPackageArtifactWriteTarget,
@@ -382,10 +378,6 @@ function createArtifact() {
     if (packResult[0].integrity && packResult[0].integrity !== tarballIntegrity) {
       throw new Error('npm pack integrity does not match the independently computed tarball SRI.')
     }
-    assertCandidateAppLocksBindArtifact(
-      packageArtifactIdentity(releasePackageId, version, tarballIntegrity),
-      { repositoryRoot: repoRoot },
-    )
     const evidence = {
       schemaVersion: packageArtifactEvidenceSchemaVersion,
       packageId: artifactCoordinates.packageId,

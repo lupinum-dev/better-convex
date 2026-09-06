@@ -30,7 +30,7 @@ jobs:
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm check:dependency-policy
+      - run: pnpm check:dependencies
 
   static-and-negative:
     runs-on: ubuntu-latest
