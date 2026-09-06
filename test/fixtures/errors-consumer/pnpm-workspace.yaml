@@ -1,3 +1,7 @@
 # Isolated single-package pnpm workspace root for this packed-probe consumer
 # so the repo-root workspace does not leak in and the fixture installs deterministically
 # from the packed tarball copied in as ./better-convex-nuxt.tgz.
+
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false

@@ -2,3 +2,7 @@ overrides:
   '@lupinum/better-convex-vue': file:./better-convex-vue.tgz
 
 onlyBuiltDependencies: []
+
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false

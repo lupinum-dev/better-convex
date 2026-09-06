@@ -2,3 +2,7 @@
 # (same pattern as test/fixtures/errors-consumer): the repo-root workspace
 # overrides do not leak in, and the fixture installs deterministically from the
 # packed tarball copied in as ./better-convex-nuxt.tgz.
+
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false

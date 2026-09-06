@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 import { inspectConsumerCandidate } from './package-consumer-candidate.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -83,12 +84,8 @@ try {
     join(scratchRoot, 'runtime-proof.mjs'),
   )
 
-  run('pnpm', [
-    'install',
-    '--frozen-lockfile=false',
-    '--ignore-scripts',
-    '--strict-peer-dependencies',
-  ])
+  prepareConsumerDependencyPolicy(scratchRoot)
+  run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'])
   run('pnpm', ['exec', 'tsc', '--noEmit'])
   run('node', ['runtime-proof.mjs'])
 

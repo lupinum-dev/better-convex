@@ -24,6 +24,7 @@ import { makeFunctionReference } from 'convex/server'
 import { createJiti } from 'jiti'
 
 import { assertCurrentBackendBinary } from './check-auth-backend.mjs'
+import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const jiti = createJiti(import.meta.url, { interopDefault: false })
@@ -315,6 +316,7 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
       '',
     ].join('\n'),
   )
+  prepareConsumerDependencyPolicy(packaged)
   run(
     'pnpm',
     [
@@ -326,6 +328,7 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
     ],
     packaged,
   )
+  prepareConsumerDependencyPolicy(packaged)
   run(
     'pnpm',
     ['install', '--frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],

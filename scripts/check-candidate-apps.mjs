@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import { applyCompatibilityProfile } from './compatibility-profile.mjs'
+import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 import { getMaintainedCandidateProfile } from './maintained-candidate-apps.mjs'
 import { canonicalNpmTarballFilename } from './package-artifact-coordinates.mjs'
 import { getPackageCertificationDescriptor } from './package-certification-manifest.mjs'
@@ -338,25 +339,11 @@ function addCompanionCandidates(appDir, manifest, companions, label) {
   }
 }
 
-function addPnpmCandidatePolicy(appDir, candidateManifest, companions) {
+function addPnpmCompanionOverrides(appDir, companions) {
+  if (companions.length === 0) return
   const workspacePath = join(appDir, 'pnpm-workspace.yaml')
   const current = existsSync(workspacePath) ? readFileSync(workspacePath, 'utf8') : ''
-  const candidates = [
-    { descriptor: certificationContext.descriptor, manifest: candidateManifest },
-    ...companions,
-  ]
-  const releaseAgeRules = candidates
-    .map(({ descriptor, manifest }) => `  - '${descriptor.packageName}@${manifest.version}'`)
-    .join('\n')
-  const releaseAgeHeader = /^minimumReleaseAgeExclude:\s*$/mu
-  let next = releaseAgeHeader.test(current)
-    ? current.replace(releaseAgeHeader, (header) => `${header}\n${releaseAgeRules}`)
-    : `${current}${current.endsWith('\n') || current.length === 0 ? '' : '\n'}minimumReleaseAgeExclude:\n${releaseAgeRules}\n`
-
-  if (companions.length === 0) {
-    writeFileSync(workspacePath, next)
-    return
-  }
+  let next = current
   for (const companion of companions) {
     if (current.includes(`${companion.descriptor.packageName}:`)) {
       throw new Error(
@@ -487,9 +474,19 @@ function verifyNpmConsumer(
   console.log(
     `\n=== ${fixture.path} with npm against ${candidateManifest.name}@${candidateManifest.version} ===`,
   )
-  run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], {
-    cwd: appDir,
-  })
+  run(
+    'npm',
+    [
+      'install',
+      prepareConsumerDependencyPolicy(appDir),
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+    ],
+    {
+      cwd: appDir,
+    },
+  )
 
   const lock = readFileSync(join(appDir, 'package-lock.json'), 'utf8')
   if (!lock.includes(certificationContext.profile.tarballFilename)) {
@@ -751,10 +748,9 @@ try {
       const appCompanions = [...companionCandidates, ...fixtureCompanions]
       addCompanionCandidates(appDir, manifest, appCompanions, app.path)
       writeJson(manifestPath, manifest)
-      // These exact local tarballs are the subject of this test. They can be
-      // unpublished, so registry release-age checks cannot classify them. All
-      // other lockfile entries remain subject to the application's policy.
-      addPnpmCandidatePolicy(appDir, candidateManifest, appCompanions)
+      // Local file tarballs do not require registry age exemptions.
+      addPnpmCompanionOverrides(appDir, appCompanions)
+      prepareConsumerDependencyPolicy(appDir)
 
       console.log(
         `\n=== ${app.path} against ${candidateManifest.name}@${candidateManifest.version} ===`,
@@ -775,6 +771,7 @@ try {
           cwd: appDir,
         },
       )
+      prepareConsumerDependencyPolicy(appDir)
       run(
         'pnpm',
         ['install', '--frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],

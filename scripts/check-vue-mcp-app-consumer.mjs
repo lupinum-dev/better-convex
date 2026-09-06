@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url'
 
 import { proveNotesDashboardBrowserBoundary } from '../internal/labs/mcp-topology/apps/notes-dashboard/browser-proof.ts'
 import { buildNotesDashboard } from '../internal/labs/mcp-topology/apps/notes-dashboard/build.ts'
+import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 import { inspectConsumerCandidate } from './package-consumer-candidate.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -95,19 +96,9 @@ try {
       2,
     )}\n`,
   )
-  writeFileSync(
-    join(scratchRoot, 'pnpm-workspace.yaml'),
-    `minimumReleaseAgeExclude:
-  - '${mcpCandidate.manifest.name}@${mcpCandidate.manifest.version}'
-  - '${vueCandidate.manifest.name}@${vueCandidate.manifest.version}'
-`,
-  )
-  run('pnpm', [
-    'install',
-    '--frozen-lockfile=false',
-    '--ignore-scripts',
-    '--strict-peer-dependencies',
-  ])
+  prepareConsumerDependencyPolicy(scratchRoot)
+  run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'])
+  prepareConsumerDependencyPolicy(scratchRoot)
   run('pnpm', [
     'install',
     '--frozen-lockfile',

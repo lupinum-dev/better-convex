@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
+import { prepareConsumerDependencyPolicy } from '../consumer-dependency-policy.mjs'
 import {
   requiredPhysicalRuntimeNames,
   requiredStatefulPeerNames,
@@ -20,6 +21,7 @@ function run(command, args, options = {}) {
 }
 
 function installStrict(cwd, { production = false } = {}) {
+  prepareConsumerDependencyPolicy(cwd)
   run(
     'pnpm',
     [

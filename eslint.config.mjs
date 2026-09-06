@@ -19,6 +19,7 @@ export default createConfigForNuxt({
     // part of the repo eslint project service.
     {
       ignores: [
+        'scripts/check-dependency-policy.mjs',
         'demo/**',
         'docs/**',
         '**/convex/**/_generated/**',

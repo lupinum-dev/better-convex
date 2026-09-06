@@ -16,6 +16,7 @@
     "node_modules",
     "coverage",
     "*.min.js",
-    "pnpm-lock.yaml"
+    "pnpm-lock.yaml",
+    "scripts/check-dependency-policy.mjs"
   ]
 }

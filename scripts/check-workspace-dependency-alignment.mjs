@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 
 import { parse } from 'yaml'
 
+import { checkDependencyPolicy } from './check-dependency-policy.mjs'
 import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
 
 const rootDir = process.cwd()
@@ -78,36 +79,18 @@ if (renovate.minimumReleaseAge !== '1 day') {
   failures.push('Renovate must match the 24-hour pnpm quarantine')
 }
 
-const temporaryReleaseAgeExceptions = new Map([
-  ['docs/pnpm-workspace.yaml', '@lupinum/ginko-docs@0.4.0-rc.4'],
-])
-
 for (const workspacePath of [
   'pnpm-workspace.yaml',
   'docs/pnpm-workspace.yaml',
   'demo/pnpm-workspace.yaml',
+  ...packageManifestsIn('test/fixtures')
+    .map((path) => path.replace(/package\.json$/u, 'pnpm-workspace.yaml'))
+    .filter((path) => existsSync(resolve(rootDir, path))),
 ]) {
   const workspace = readFileSync(resolve(rootDir, workspacePath), 'utf8')
-  const workspaceConfig = parse(workspace)
-  if (workspaceConfig.minimumReleaseAge !== 1440) {
-    failures.push(`${workspacePath} must quarantine fresh dependencies for 24 hours`)
-  }
-  if (workspaceConfig.minimumReleaseAgeStrict !== true) {
-    failures.push(`${workspacePath} must apply the quarantine to transitive dependencies`)
-  }
-  if (workspaceConfig.minimumReleaseAgeIgnoreMissingTime !== false) {
-    failures.push(`${workspacePath} must fail when registry publication time is missing`)
-  }
-  const releaseAgeExceptions = workspaceConfig.minimumReleaseAgeExclude ?? []
-  const allowedException = temporaryReleaseAgeExceptions.get(workspacePath)
-  const approvedExceptions = allowedException ? [allowedException] : []
-  if (
-    !Array.isArray(releaseAgeExceptions) ||
-    releaseAgeExceptions.length !== approvedExceptions.length ||
-    releaseAgeExceptions.some((exception, index) => exception !== approvedExceptions[index])
-  ) {
-    failures.push(`${workspacePath} contains an unapproved dependency-age exception`)
-  }
+  failures.push(
+    ...checkDependencyPolicy(workspace).map((failure) => `${workspacePath}: ${failure}`),
+  )
 }
 
 if (existsSync(resolve(rootDir, 'packages/mcp/pnpm-workspace.yaml'))) {
