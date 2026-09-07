@@ -127,11 +127,10 @@ for (const manifestPath of manifestPaths) {
 for (const manifestPath of distributedAppManifests) {
   const appDir = manifestPath.slice(0, -'/package.json'.length)
   const packageJson = readPackage(manifestPath)
-  const expected = rootSpecifiers.get('@lupinum/better-convex-nuxt') ?? rootPackage.version
   const actual = dependencySpecifier(packageJson, '@lupinum/better-convex-nuxt')
-  if (actual !== expected) {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(actual ?? '')) {
     failures.push(
-      `${manifestPath} declares @lupinum/better-convex-nuxt@${actual}; expected ${expected}`,
+      `${manifestPath} must pin one exact published @lupinum/better-convex-nuxt version; received ${actual ?? '<missing>'}`,
     )
   }
 
