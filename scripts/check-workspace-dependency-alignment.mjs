@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { parse } from 'yaml'
 
 import { checkDependencyPolicy } from './check-dependency-policy.mjs'
+import { validatePackageArtifactVersion } from './package-artifact-coordinates.mjs'
 import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
 
 const rootDir = process.cwd()
@@ -128,7 +129,9 @@ for (const manifestPath of distributedAppManifests) {
   const appDir = manifestPath.slice(0, -'/package.json'.length)
   const packageJson = readPackage(manifestPath)
   const actual = dependencySpecifier(packageJson, '@lupinum/better-convex-nuxt')
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(actual ?? '')) {
+  try {
+    validatePackageArtifactVersion(actual)
+  } catch {
     failures.push(
       `${manifestPath} must pin one exact published @lupinum/better-convex-nuxt version; received ${actual ?? '<missing>'}`,
     )
