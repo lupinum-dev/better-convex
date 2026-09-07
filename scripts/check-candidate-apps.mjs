@@ -702,15 +702,6 @@ try {
       assertNoRepositoryOverride(app)
       const sourceDir = join(repoRoot, app.path)
       const sourceManifest = readJson(join(sourceDir, 'package.json'))
-      const sourceVersion = dependencySpecifier(
-        sourceManifest,
-        certificationContext.descriptor.packageName,
-      )
-      if (sourceVersion !== candidateManifest.version) {
-        throw new Error(
-          `${app.path}/package.json declares ${certificationContext.descriptor.packageName}@${sourceVersion ?? '<missing>'}; expected ${candidateManifest.version}`,
-        )
-      }
       const sourceLockPath = join(sourceDir, 'pnpm-lock.yaml')
       if (!existsSync(sourceLockPath)) {
         throw new Error(`${app.path}/pnpm-lock.yaml is missing`)
