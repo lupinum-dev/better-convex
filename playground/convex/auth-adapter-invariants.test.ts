@@ -626,9 +626,22 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
       }),
     ).toBeNull()
 
-    await expect(
-      t.mutation(auth.consumeRateLimit, { key: 'tenant:invalid', ...rule, max: 0 }),
-    ).rejects.toThrow('AUTH_RATE_LIMIT_RULE_INVALID')
+    for (const invalidRule of [
+      { key: '', ...rule },
+      { key: 'tenant:invalid-max', ...rule, max: 0 },
+      { key: 'tenant:invalid-window', ...rule, window: 0 },
+      { key: 'tenant:invalid-retention', ...rule, retentionWindow: 9 },
+      {
+        key: 'tenant:overflow',
+        ...rule,
+        retentionWindow: Number.MAX_VALUE,
+        window: Number.MAX_VALUE,
+      },
+    ]) {
+      await expect(t.mutation(auth.consumeRateLimit, invalidRule)).rejects.toThrow(
+        'AUTH_RATE_LIMIT_RULE_INVALID',
+      )
+    }
   })
 
   it('supports decrement and set return semantics while rejecting overlap and overflow', async () => {

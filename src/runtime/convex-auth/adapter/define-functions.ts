@@ -652,6 +652,8 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         retryAfter: v.union(v.number(), v.null()),
       }),
       handler: async (ctx, args) => {
+        const windowInMs = args.window * 1_000
+        const retentionWindowInMs = args.retentionWindow * 1_000
         if (
           args.key.length === 0 ||
           !Number.isSafeInteger(args.max) ||
@@ -659,12 +661,13 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           !Number.isFinite(args.window) ||
           args.window <= 0 ||
           !Number.isFinite(args.retentionWindow) ||
-          args.retentionWindow < args.window
+          args.retentionWindow < args.window ||
+          !Number.isFinite(windowInMs) ||
+          !Number.isFinite(retentionWindowInMs)
         ) {
           throw new Error('AUTH_RATE_LIMIT_RULE_INVALID')
         }
         const now = Date.now()
-        const windowInMs = args.window * 1_000
         const current = oneOrNull(
           await findAuthRows(
             ctx,
@@ -699,7 +702,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
               {
                 field: 'lastRequest',
                 operator: 'lt',
-                value: now - args.retentionWindow * 1_000,
+                value: now - retentionWindowInMs,
               },
             ],
           })
