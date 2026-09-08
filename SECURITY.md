@@ -5,8 +5,8 @@
 Security fixes are provided for the latest published minor release. Older minors are unsupported after a newer minor is published.
 
 At this source revision, the package family consists of the
-`@lupinum/better-convex-nuxt@1.0.0-beta.3`,
-`@lupinum/better-convex-vue@1.0.0-beta.3`, and
+`@lupinum/better-convex-nuxt@1.0.0-beta.5`,
+`@lupinum/better-convex-vue@1.0.0-beta.5`, and
 `@lupinum/better-convex-mcp@1.0.0-beta.1` prerelease candidates.
 The tested Nuxt source tuple uses Node `^22.19.0 || ^24.11.0`, Nuxt `4.5.2`,
 Convex `1.42.2`, Better Auth `1.7.2`, `@better-auth/oauth-provider` `1.7.2`,
@@ -67,7 +67,14 @@ shared MCP secret.
 - The public origins are configured statically. `convex.auth.origin`/`SITE_URL` and `CONVEX_SITE_URL` are validated as bare origins. Incoming `Host`, `Forwarded`, `X-Forwarded-*`, and request URLs never select an issuer, callback, JWKS URL, redirect target, or trusted origin.
 - Browser auth uses the fixed same-origin `/api/auth` base path. The proxy accepts only GET and POST, bounds request and response bodies, filters cookies to Better Auth's namespace, strips hop-by-hop and forwarding controls, and does not follow upstream redirects with credentials.
 - When a deployment configures an ingress-owned client-IP header, Nuxt strips caller copies, canonicalizes one address, and signs it with `BCN_AUTH_PROXY_IP_SECRET`. Convex accepts only that signature or its own direct request metadata. Callers cannot select a Better Auth rate-limit bucket.
-- Better Auth rate limiting is enabled with database storage. The adapter implements the counter update atomically; there is no process-local security counter. Any process-local defense in depth is non-authoritative; deployments still own a trusted-ingress per-account and per-IP limiter for distributed abuse.
+- Better Auth rate limiting uses a package-owned custom storage boundary. One
+  component mutation atomically creates, resets, or increments each database
+  counter. It retries only final uncommitted Convex contention failures with a
+  fixed bound. The storage owns Better Auth's built-in retention floor. A direct
+  composition must also supply the longest custom plugin window. There is no
+  process-local security counter.
+- Any process-local defense in depth is non-authoritative. Deployments still own
+  a trusted-ingress per-account and per-IP limiter for distributed abuse.
 - Every auth row has a required immutable Better Auth logical `id`. Convex `_id` and `_creationTime` remain internal storage details and are never protocol identity.
 - Nullable auth fields have one stored empty representation: explicit `null`. Omitted update fields remain unchanged; explicit `null` clears them.
 - Logical-ID and unique-field checks execute in the same Convex mutation as the write. `consumeOne` and `incrementOne` are single mutations. Bulk updates cannot change `id` or generated unique fields.

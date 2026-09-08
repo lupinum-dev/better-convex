@@ -54,6 +54,7 @@ function component() {
     adapter: {
       assertProfile,
       consumeOne: reference,
+      consumeRateLimit: reference,
       count: reference,
       create: reference,
       deleteMany: reference,
@@ -149,7 +150,7 @@ describe('createBetterConvexAuth', () => {
       account: { encryptOAuthTokens: boolean; storeAccountCookie: boolean }
       advanced: { ipAddress: { ipAddressHeaders: string[] } }
       plugins: Array<{ id: string }>
-      rateLimit: { modelName: string; storage: string }
+      rateLimit: { customStorage: { consume: unknown }; modelName: string; storage: string }
       verification: { storeIdentifier: string }
     }
 
@@ -172,6 +173,83 @@ describe('createBetterConvexAuth', () => {
     expect(typeof auth.jwksOperatorFunctions).toBe('function')
     expect(typeof auth.oauthOperator.createPublicClient).toBe('function')
     expect(typeof auth.triggerFunctions).toBe('function')
+    expect(options.rateLimit.customStorage.consume).toBeTypeOf('function')
+  })
+
+  it('retries only confirmed uncommitted rate-limit contention with a fixed bound', async () => {
+    const consumeRateLimit = { operation: 'consumeRateLimit' }
+    const systemConflict = new Error(
+      'Documents read from or written to the table "rateLimit" changed while this mutation was being run and on every subsequent retry.',
+    )
+    const ctx = {
+      ...profileContext(),
+      runMutation: vi
+        .fn()
+        .mockRejectedValueOnce(systemConflict)
+        .mockRejectedValueOnce(systemConflict)
+        .mockResolvedValueOnce({ allowed: true, retryAfter: null }),
+    }
+    const componentWithRateLimit = component() as unknown as {
+      adapter: Record<string, unknown>
+    }
+    componentWithRateLimit.adapter.consumeRateLimit = consumeRateLimit
+    const auth = createBetterConvexAuth(componentWithRateLimit as never)
+
+    await auth.createAuth(ctx as never)
+    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
+    await expect(
+      options.rateLimit!.customStorage!.consume('client|/get-session', {
+        max: 100,
+        window: 10,
+      }),
+    ).resolves.toEqual({ allowed: true, retryAfter: null })
+    expect(ctx.runMutation).toHaveBeenCalledTimes(3)
+    expect(ctx.runMutation).toHaveBeenLastCalledWith(consumeRateLimit, {
+      key: 'client|/get-session',
+      max: 100,
+      retentionWindow: 60,
+      window: 10,
+    })
+
+    ctx.runMutation.mockClear()
+    ctx.runMutation.mockRejectedValueOnce(new Error('AUTH_RATE_LIMIT_ROW_INVALID'))
+    await expect(
+      options.rateLimit!.customStorage!.consume('client|/get-session', {
+        max: 100,
+        window: 10,
+      }),
+    ).rejects.toThrow('AUTH_RATE_LIMIT_ROW_INVALID')
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+
+    ctx.runMutation.mockClear()
+    ctx.runMutation.mockRejectedValueOnce(new Error('optimistic concurrency control failure'))
+    await expect(
+      options.rateLimit!.customStorage!.consume('client|/get-session', {
+        max: 100,
+        window: 10,
+      }),
+    ).rejects.toThrow('optimistic concurrency control failure')
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+
+    ctx.runMutation.mockClear()
+    ctx.runMutation.mockRejectedValue(systemConflict)
+    await expect(
+      options.rateLimit!.customStorage!.consume('client|/get-session', {
+        max: 100,
+        window: 10,
+      }),
+    ).rejects.toThrow(systemConflict.message)
+    expect(ctx.runMutation).toHaveBeenCalledTimes(6)
+
+    ctx.runMutation.mockClear()
+    Object.assign(ctx, { db: {} })
+    await expect(
+      options.rateLimit!.customStorage!.consume('client|/get-session', {
+        max: 100,
+        window: 10,
+      }),
+    ).rejects.toThrow(systemConflict.message)
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
   })
 
   it.each([

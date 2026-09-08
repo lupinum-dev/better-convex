@@ -52,6 +52,7 @@ export const authConcurrencyFunctions = {
 }
 
 export const authAdapterComponentFunctions = {
+  count: makeFunctionReference('adapter:count'),
   create: makeFunctionReference('adapter:create'),
   findOne: makeFunctionReference('adapter:findOne'),
   increment: makeFunctionReference('adapter:incrementOne'),
@@ -364,6 +365,16 @@ async function directSignIn(siteUrl) {
       email: 'rate-limit-missing@example.test',
       password: 'not-a-real-password',
     }),
+  })
+}
+
+async function getSession(siteUrl, clientIp) {
+  return fetch(`${siteUrl}/api/auth/get-session`, {
+    headers: {
+      origin: 'http://localhost:3050',
+      'x-bcn-client-ip': clientIp,
+      'x-bcn-client-ip-signature': signClientIp(clientIp),
+    },
   })
 }
 
@@ -685,6 +696,66 @@ async function runMain() {
       'AUTH_TRIGGER_FAULT_DID_NOT_ROLL_BACK',
     )
 
+    const coldSessions = await Promise.all(
+      Array.from({ length: 40 }, () => getSession(siteUrl, '192.0.2.20')),
+    )
+    assert(
+      coldSessions.every((response) => response.status === 200),
+      `AUTH_RATE_LIMIT_COLD_START_FAILURE:${coldSessions.map(({ status }) => status).join(',')}`,
+    )
+    const sessionRateLimitKey = '192.0.2.20|/get-session'
+    const sessionRateLimitWhere = [{ field: 'key', value: sessionRateLimitKey }]
+    assert(
+      (await client.function(authAdapterComponentFunctions.count, authComponentPath, {
+        model: 'rateLimit',
+        where: sessionRateLimitWhere,
+      })) === 1,
+      'AUTH_RATE_LIMIT_COLD_START_DUPLICATE_ROWS',
+    )
+    assert(
+      (
+        await client.function(authAdapterComponentFunctions.findOne, authComponentPath, {
+          model: 'rateLimit',
+          where: sessionRateLimitWhere,
+        })
+      )?.count === 40,
+      'AUTH_RATE_LIMIT_COLD_START_COUNT',
+    )
+    const warmSessions = await Promise.all(
+      Array.from({ length: 40 }, () => getSession(siteUrl, '192.0.2.20')),
+    )
+    assert(
+      warmSessions.every((response) => response.status === 200),
+      `AUTH_RATE_LIMIT_WARM_FAILURE:${warmSessions.map(({ status }) => status).join(',')}`,
+    )
+    const limitSessions = await Promise.all(
+      Array.from({ length: 21 }, () => getSession(siteUrl, '192.0.2.20')),
+    )
+    assert(
+      limitSessions.filter((response) => response.status === 200).length === 20 &&
+        limitSessions.filter((response) => response.status === 429).length === 1,
+      `AUTH_RATE_LIMIT_EXACT_LIMIT_FAILURE:${limitSessions.map(({ status }) => status).join(',')}`,
+    )
+    const limitedSession = limitSessions.find((response) => response.status === 429)
+    const retryAfter = Number(limitedSession?.headers.get('x-retry-after'))
+    assert(
+      Number.isSafeInteger(retryAfter) && retryAfter > 0 && retryAfter <= 10,
+      'AUTH_RATE_LIMIT_RETRY_AFTER_INVALID',
+    )
+    assert(
+      (
+        await client.function(authAdapterComponentFunctions.findOne, authComponentPath, {
+          model: 'rateLimit',
+          where: sessionRateLimitWhere,
+        })
+      )?.count === 100,
+      'AUTH_RATE_LIMIT_EXACT_FINAL_COUNT',
+    )
+    assert(
+      (await getSession(siteUrl, '192.0.2.21')).status === 200,
+      'AUTH_RATE_LIMIT_INDEPENDENT_KEY_FAILURE',
+    )
+
     const signedA = await Promise.all(
       Array.from({ length: 4 }, () => limitedSignIn(siteUrl, '192.0.2.10')),
     )
@@ -753,7 +824,7 @@ async function runMain() {
     }
 
     console.log(
-      `[auth-concurrency] PASS: pinned real backend lacks URL.canParse as expected; logical-id 1/${sameId.length}, scalar unique-field 1/${sameKey.length}, compound account identity 1/${sameAccountIdentity.length}, consume 1/${consumed.length} across ${workers} worker isolates; increment ${finalRow.count}/${totalRequests} across ${incrementWorkers} sustained worker isolates; create/consume/increment/updateMany trigger rollback, signed-IP quotas/reset, forged-pair rejection, direct-IP fallback, and 8-way official JWKS rotation verified.`,
+      `[auth-concurrency] PASS: pinned real backend lacks URL.canParse as expected; logical-id 1/${sameId.length}, scalar unique-field 1/${sameKey.length}, compound account identity 1/${sameAccountIdentity.length}, consume 1/${consumed.length} across ${workers} worker isolates; increment ${finalRow.count}/${totalRequests} across ${incrementWorkers} sustained worker isolates; cold/warm/exact-limit rate-limit accounting, independent keys, create/consume/increment/updateMany trigger rollback, signed-IP quotas/reset, forged-pair rejection, direct-IP fallback, and 8-way official JWKS rotation verified.`,
     )
   } finally {
     await local?.release()

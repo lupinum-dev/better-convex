@@ -11,6 +11,7 @@ import {
   type SigningKeyCandidate,
 } from '../../src/runtime/convex-auth/jwks-rotation'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
+import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
 
 const origin = 'https://app.example.test'
 const issuer = `${origin}/api/auth`
@@ -71,7 +72,12 @@ function createAuth(
     plugins: [jwtPlugin, createConvexPlugin()],
     rateLimit:
       runtimeOverrides.rateLimit ??
-      ({ enabled: true, modelName: 'rateLimit', storage: 'database' } as const),
+      ({
+        customStorage: createMemoryRateLimitStorage(database),
+        enabled: true,
+        modelName: 'rateLimit',
+        storage: 'database',
+      } as const),
     secrets,
   })
   return { auth }
@@ -491,7 +497,12 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
       database: memoryAdapter({}),
       logger: { disabled: true },
       plugins: [createConvexPlugin(), createJwtPlugin()],
-      rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
+      rateLimit: {
+        customStorage: createMemoryRateLimitStorage({}),
+        enabled: true,
+        modelName: 'rateLimit',
+        storage: 'database',
+      },
       secrets: [{ value: currentSecret, version: 1 }],
     })
     await expect(value.$context).rejects.toThrow('AUTH_JWKS_CONFIG_INVALID')

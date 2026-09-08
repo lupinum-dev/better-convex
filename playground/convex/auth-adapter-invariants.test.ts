@@ -4,7 +4,7 @@ import type { ComponentApi } from '@lupinum/better-convex-nuxt/better-auth/_gene
 import authTest from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
 import { componentsGeneric, makeFunctionReference } from 'convex/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import schema from './schema'
 
@@ -59,6 +59,8 @@ function initFaultTest() {
   authTest.register(t)
   return t
 }
+
+afterEach(() => vi.useRealTimers())
 
 async function createUser(
   t: ReturnType<typeof initAuthTest>,
@@ -549,6 +551,84 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
       where: [{ field: 'id', value: 'rate_limit_counter' }],
     })
     expect(row).toMatchObject({ id: 'rate_limit_counter', count: 12 })
+  })
+
+  it('atomically consumes rate limits across create, active, denied, reset, and independent keys', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_700_000_000_000)
+    const t = initAuthTest()
+    const rule = { max: 2, retentionWindow: 60, window: 10 }
+
+    await expect(
+      t.mutation(auth.consumeRateLimit, { key: 'tenant:one', ...rule }),
+    ).resolves.toEqual({ allowed: true, retryAfter: null })
+    await expect(
+      t.mutation(auth.consumeRateLimit, { key: 'tenant:one', ...rule }),
+    ).resolves.toEqual({ allowed: true, retryAfter: null })
+    const denied = await t.mutation(auth.consumeRateLimit, { key: 'tenant:one', ...rule })
+    expect(denied.allowed).toBe(false)
+    expect(denied.retryAfter).toBeGreaterThan(0)
+    expect(denied.retryAfter).toBeLessThanOrEqual(rule.window)
+    await expect(
+      t.mutation(auth.consumeRateLimit, { key: 'tenant:two', ...rule }),
+    ).resolves.toEqual({ allowed: true, retryAfter: null })
+
+    expect(
+      await t.query(auth.findOne, {
+        model: 'rateLimit',
+        where: [{ field: 'key', value: 'tenant:one' }],
+      }),
+    ).toMatchObject({ count: 2 })
+    expect(
+      await t.query(auth.findOne, {
+        model: 'rateLimit',
+        where: [{ field: 'key', value: 'tenant:two' }],
+      }),
+    ).toMatchObject({ count: 1 })
+
+    await t.mutation(auth.create, {
+      model: 'rateLimit',
+      data: { id: 'expired', key: 'tenant:expired', count: 99, lastRequest: 1 },
+    })
+    await t.mutation(auth.create, {
+      model: 'rateLimit',
+      data: { id: 'stale', key: 'tenant:stale', count: 1, lastRequest: 1 },
+    })
+    await expect(
+      t.mutation(auth.consumeRateLimit, { key: 'tenant:expired', ...rule }),
+    ).resolves.toEqual({ allowed: true, retryAfter: null })
+    await t.mutation(auth.create, {
+      model: 'rateLimit',
+      data: {
+        id: 'long-window',
+        key: 'tenant:long-window',
+        count: 4,
+        lastRequest: Date.now() - 30_000,
+      },
+    })
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    expect(
+      await t.query(auth.findOne, {
+        model: 'rateLimit',
+        where: [{ field: 'key', value: 'tenant:expired' }],
+      }),
+    ).toMatchObject({ count: 1 })
+    expect(
+      await t.query(auth.findOne, {
+        model: 'rateLimit',
+        where: [{ field: 'key', value: 'tenant:long-window' }],
+      }),
+    ).toMatchObject({ count: 4 })
+    expect(
+      await t.query(auth.findOne, {
+        model: 'rateLimit',
+        where: [{ field: 'key', value: 'tenant:stale' }],
+      }),
+    ).toBeNull()
+
+    await expect(
+      t.mutation(auth.consumeRateLimit, { key: 'tenant:invalid', ...rule, max: 0 }),
+    ).rejects.toThrow('AUTH_RATE_LIMIT_RULE_INVALID')
   })
 
   it('supports decrement and set return semantics while rejecting overlap and overflow', async () => {

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.0-beta.5
+
+- Make Better Auth rate-limit consumption one atomic Convex mutation so
+  simultaneous first requests share one counter instead of failing during
+  cold-start contention.
+- Retry only final uncommitted Convex contention failures with a fixed bound,
+  while preserving exact quotas, retry metadata, and independent client keys.
+
 ## v1.0.0-beta.4
 
 - Revoke every earlier session after password reset with atomic generation

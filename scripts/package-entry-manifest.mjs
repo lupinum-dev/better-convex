@@ -125,6 +125,7 @@ const nuxtPackageEntries = [
       'createBetterAuthMcpAccessVerifier',
       'createAuthComponent',
       'createBetterConvexAuth',
+      'createConvexAuthRateLimitStorage',
       'createWorkforceAuthSchemaOptions',
       'createUserProjectionTriggers',
       'defineAuthAdapterFunctions',

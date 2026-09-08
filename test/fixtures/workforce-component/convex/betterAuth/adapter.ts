@@ -5,6 +5,7 @@ import metadata from './schemaMetadata'
 export const {
   assertProfile,
   consumeOne,
+  consumeRateLimit,
   count,
   create,
   deleteMany,

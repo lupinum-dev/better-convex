@@ -21,6 +21,7 @@ import type { PinnedOAuthProviderProfile } from './oauth-security'
 import { requireAuthOrigin } from './origin'
 import { convexAuth } from './plugin'
 import { getConvexAuthProvider } from './provider'
+import { createConvexAuthRateLimitStorage } from './rate-limit-storage'
 import type {
   AuthAdapterComponentApi,
   AuthComponentTriggers,
@@ -422,7 +423,7 @@ export function createBetterConvexAuthOwned<
           definePayload: options.defineSessionClaims,
         },
       })
-      const plugins = [
+      const plugins: BetterAuthPlugin[] = [
         ...featurePlugins,
         ...extraPlugins,
         jwtPlugin,
@@ -437,6 +438,15 @@ export function createBetterConvexAuthOwned<
           : []),
         ...(oauthProfile ? [createOAuthProvider(oauthProfile)] : []),
       ]
+      const maximumConfiguredPluginRateLimitWindow = Math.max(
+        0,
+        ...plugins.flatMap((plugin) => plugin.rateLimit?.map((rule) => rule.window) ?? []),
+      )
+      const rateLimitStorage = createConvexAuthRateLimitStorage(
+        ctx,
+        component,
+        maximumConfiguredPluginRateLimitWindow,
+      )
 
       const auth = betterAuth({
         appName: options.appName,
@@ -503,7 +513,12 @@ export function createBetterConvexAuthOwned<
           ? { ...emailVerification, autoSignInAfterVerification: false }
           : emailVerification,
         plugins,
-        rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
+        rateLimit: {
+          customStorage: rateLimitStorage,
+          enabled: true,
+          modelName: 'rateLimit',
+          storage: 'database',
+        },
         session: {
           expiresIn: 7 * 24 * 60 * 60,
           updateAge: 24 * 60 * 60,
