@@ -10,6 +10,7 @@ import {
   workforceSchemaOptions,
   workforceSchemaPlugin,
 } from '../../src/runtime/convex-auth/workforce/schema'
+import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
 
 const origin = 'https://app.example.test'
 const convexSiteUrl = 'https://deployment.convex.site'
@@ -87,7 +88,12 @@ function createAuth(memoryDatabase = database(), workforce = false) {
         },
       }),
     ],
-    rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
+    rateLimit: {
+      customStorage: createMemoryRateLimitStorage(memoryDatabase),
+      enabled: true,
+      modelName: 'rateLimit',
+      storage: 'database',
+    },
     secret,
   })
 }

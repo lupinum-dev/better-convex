@@ -16,6 +16,7 @@ export { requireAuthOrigin } from './origin'
 export { requireWritableAuthCtx } from './context'
 export { convexAuth } from './plugin'
 export { getConvexAuthProvider } from './provider'
+export { createConvexAuthRateLimitStorage } from './rate-limit-storage'
 export { createBetterAuthMcpAccessVerifier, verifyOAuthBearerToken } from './oauth-resource'
 export { createUserProjectionTriggers } from './user-projection'
 

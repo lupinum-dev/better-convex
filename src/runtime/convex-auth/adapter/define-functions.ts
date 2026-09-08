@@ -100,6 +100,15 @@ const expireSessionReference = makeFunctionReference<
   null
 >('adapter:expireWorkforceSession')
 
+const pruneRateLimitsReference = makeFunctionReference<
+  'mutation',
+  {
+    model: string
+    where: Array<{ field: string; operator: 'lt'; value: number }>
+  },
+  number
+>('adapter:deleteMany')
+
 export interface DefineAuthAdapterFunctionsOptions<Schema extends SchemaDefinition<any, any>> {
   schema: Schema
   metadata: AuthSchemaMetadata
@@ -628,6 +637,91 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (!current) return null
         await relationships.applyDeletion(ctx, [current], args.model, args)
         return toBetterAuthDocument(current)
+      },
+    }),
+
+    consumeRateLimit: mutationGeneric({
+      args: {
+        key: v.string(),
+        max: v.number(),
+        retentionWindow: v.number(),
+        window: v.number(),
+      },
+      returns: v.object({
+        allowed: v.boolean(),
+        retryAfter: v.union(v.number(), v.null()),
+      }),
+      handler: async (ctx, args) => {
+        const windowInMs = args.window * 1_000
+        const retentionWindowInMs = args.retentionWindow * 1_000
+        if (
+          args.key.length === 0 ||
+          !Number.isSafeInteger(args.max) ||
+          args.max <= 0 ||
+          !Number.isFinite(args.window) ||
+          args.window <= 0 ||
+          !Number.isFinite(args.retentionWindow) ||
+          args.retentionWindow < args.window ||
+          !Number.isFinite(windowInMs) ||
+          !Number.isFinite(retentionWindowInMs)
+        ) {
+          throw new Error('AUTH_RATE_LIMIT_RULE_INVALID')
+        }
+        const now = Date.now()
+        const current = oneOrNull(
+          await findAuthRows(
+            ctx,
+            schema,
+            metadata,
+            { model: 'rateLimit', where: [{ field: 'key', value: args.key }] },
+            2,
+          ),
+          'AUTH_RATE_LIMIT',
+        )
+        if (!current) {
+          await ctx.db.insert(
+            'rateLimit' as never,
+            { id: args.key, key: args.key, count: 1, lastRequest: now } as never,
+          )
+          return { allowed: true, retryAfter: null }
+        }
+        if (
+          typeof current.count !== 'number' ||
+          !Number.isSafeInteger(current.count) ||
+          current.count < 0 ||
+          typeof current.lastRequest !== 'number' ||
+          !Number.isFinite(current.lastRequest)
+        ) {
+          throw new Error('AUTH_RATE_LIMIT_ROW_INVALID')
+        }
+        if (now - current.lastRequest >= windowInMs) {
+          await ctx.db.patch(current._id as never, { count: 1, lastRequest: now } as never)
+          await ctx.scheduler.runAfter(0, pruneRateLimitsReference, {
+            model: 'rateLimit',
+            where: [
+              {
+                field: 'lastRequest',
+                operator: 'lt',
+                value: now - retentionWindowInMs,
+              },
+            ],
+          })
+          return { allowed: true, retryAfter: null }
+        }
+        if (current.count >= args.max) {
+          return {
+            allowed: false,
+            retryAfter: Math.max(1, Math.ceil((current.lastRequest + windowInMs - now) / 1_000)),
+          }
+        }
+        await ctx.db.patch(
+          current._id as never,
+          {
+            count: current.count + 1,
+            lastRequest: now,
+          } as never,
+        )
+        return { allowed: true, retryAfter: null }
       },
     }),
 

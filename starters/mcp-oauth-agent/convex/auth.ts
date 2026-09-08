@@ -2,6 +2,7 @@ import { oauthProvider, type OAuthOptions, type Scope } from '@better-auth/oauth
 import {
   convexAuth,
   createAuthComponent,
+  createConvexAuthRateLimitStorage,
   getConvexAuthProvider,
   requireAuthOrigin,
   type AuthCtx,
@@ -195,7 +196,12 @@ export async function createAuth(ctx: AuthCtx<DataModel>) {
       provider,
       mcpOAuthAdminPlugin(ctx, provider, convexSiteUrl),
     ],
-    rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
+    rateLimit: {
+      customStorage: createConvexAuthRateLimitStorage(ctx, components.betterAuth, 60),
+      enabled: true,
+      modelName: 'rateLimit',
+      storage: 'database',
+    },
     trustedOrigins: [siteUrl],
     verification: { storeIdentifier: 'hashed' },
   })

@@ -5,6 +5,7 @@ import { jwt } from 'better-auth/plugins'
 import { describe, expect, it } from 'vitest'
 
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
+import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
 
 const origin = 'https://app.example.test'
 const issuer = `${origin}/api/auth`
@@ -174,7 +175,12 @@ function createAuth(
       }),
       oauthProvider(options),
     ],
-    rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
+    rateLimit: {
+      customStorage: createMemoryRateLimitStorage(db),
+      enabled: true,
+      modelName: 'rateLimit',
+      storage: 'database',
+    },
     secret,
     trustedOrigins: [origin],
     verification: { storeIdentifier: 'hashed' },

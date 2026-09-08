@@ -66,6 +66,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         > | null,
         Name
       >;
+      consumeRateLimit: FunctionReference<
+        "mutation",
+        "internal",
+        { key: string; max: number; retentionWindow: number; window: number },
+        { allowed: boolean; retryAfter: number | null },
+        Name
+      >;
       count: FunctionReference<
         "query",
         "internal",

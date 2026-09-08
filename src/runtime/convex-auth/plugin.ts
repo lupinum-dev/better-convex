@@ -44,6 +44,7 @@ import {
   type OAuthResourceRecord,
 } from './oauth-security'
 import { normalizeAuthOrigin } from './origin'
+import { isConvexAuthRateLimitStorage } from './rate-limit-storage'
 import { workforceSchemaPlugin } from './workforce/schema'
 import { isFullWorkforceSession } from './workforce/session-assurance'
 
@@ -575,7 +576,7 @@ function hasSafeGlobalAuthRuntime(
     context.options.rateLimit?.enabled === true &&
     context.options.rateLimit.storage === 'database' &&
     context.options.rateLimit.modelName === 'rateLimit' &&
-    context.options.rateLimit.customStorage === undefined &&
+    isConvexAuthRateLimitStorage(context.options.rateLimit.customStorage) &&
     context.options.rateLimit.customRules === undefined &&
     Array.isArray(ipHeaders) &&
     ipHeaders.length === 1 &&

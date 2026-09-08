@@ -15,6 +15,7 @@ import {
   workforceSchemaOptions,
   workforceSchemaPlugin,
 } from '../../src/runtime/convex-auth/workforce/schema'
+import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
 
 // Real pinned dispatch/cookies/password/TOTP. Direct fixture patches stand in for
 // separately tested component transitions; these tests do not certify those transactions.
@@ -245,7 +246,12 @@ describe('owned workforce provider hooks', () => {
       secret: 'synthetic-provider-hooks-proof-secret-longer-than-32-characters',
       logger: { disabled: true },
       advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
-      rateLimit: { enabled: true, storage: 'database', modelName: 'rateLimit' },
+      rateLimit: {
+        customStorage: createMemoryRateLimitStorage(h.db),
+        enabled: true,
+        storage: 'database',
+        modelName: 'rateLimit',
+      },
       database: memoryAdapter(h.db),
       ...workforceSchemaOptions,
       session: {
