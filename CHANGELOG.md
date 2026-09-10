@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.0-beta.6
+
+- Preserve populated beta.3 Better Auth users, accounts, sessions, session
+  tokens, and application identity references during the session-generation
+  schema cutover.
+- Provide a bounded internal migration operator with closed-ingress preflight,
+  forward, strict-schema, and restart-safe rollback procedures.
+
 ## v1.0.0-beta.5
 
 - Make Better Auth rate-limit consumption one atomic Convex mutation so
