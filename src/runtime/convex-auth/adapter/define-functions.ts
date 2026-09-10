@@ -21,7 +21,7 @@ import {
   normalizeSigningKeyCandidate,
   signingKeyCandidateValidator,
 } from '../jwks-rotation'
-import { migrateSessionGenerationPage, sessionGenerationAuthority } from '../session-generation'
+import { migrateBeta3UserGeneration, sessionGenerationAuthority } from '../session-generation'
 import { createWorkforceAdapterPolicy } from '../workforce/adapter-policy'
 import { readAuthSessionAdmission } from '../workforce/admission'
 import {
@@ -311,28 +311,17 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     if (!workforce) throw new Error('AUTH_WORKFORCE_SCHEMA_REQUIRED')
   }
   return {
-    migrateBeta3SessionGeneration: internalMutationGeneric({
+    migrateBeta3UserGeneration: internalMutationGeneric({
       args: {
-        after: v.union(v.null(), v.string()),
-        mode: v.union(v.literal('preflight'), v.literal('forward'), v.literal('rollback')),
-        model: v.union(v.literal('user'), v.literal('session')),
+        mode: v.union(v.literal('forward'), v.literal('rollback')),
       },
       returns: v.object({
-        done: v.boolean(),
-        nextAfter: v.union(v.null(), v.string()),
-        pending: v.number(),
         patched: v.number(),
         scanned: v.number(),
       }),
       handler: (ctx, args) => {
         if (!generationAuthority) throw new Error('AUTH_SESSION_GENERATION_SCHEMA_INVALID')
-        return migrateSessionGenerationPage(
-          ctx,
-          args.model,
-          args.mode,
-          args.after,
-          generationAuthority,
-        )
+        return migrateBeta3UserGeneration(ctx, args.mode, generationAuthority)
       },
     }),
     touchWorkforceSession: mutationGeneric({

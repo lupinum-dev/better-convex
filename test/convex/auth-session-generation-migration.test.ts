@@ -1,24 +1,17 @@
 import { convexTest } from 'convex-test'
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { tables } from '../../src/runtime/convex-auth/component/schema'
-import {
-  migrateSessionGenerationPage,
-  sessionGenerationMatches,
-} from '../../src/runtime/convex-auth/session-generation'
-import { readAuthSessionAdmission } from '../../src/runtime/convex-auth/workforce/admission'
+import { migrateBeta3UserGeneration } from '../../src/runtime/convex-auth/session-generation'
 
 const modules = import.meta.glob('../fixtures/workforce-root/convex/**/*.ts')
-
 const schema = defineSchema(
   {
     ...tables,
-    workspaceMember: defineTable({ authUserId: v.string(), role: v.string() }).index(
-      'by_auth_user_id',
-      ['authUserId'],
-    ),
+    accountLink: defineTable({ authUserId: v.string(), passwordHash: v.string() }),
+    workspaceMember: defineTable({ authUserId: v.string(), role: v.string() }),
   },
   { schemaValidation: false },
 )
@@ -44,274 +37,136 @@ const legacySession = {
   userId: legacyUser.id,
 }
 
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(now)
-})
-afterEach(() => vi.useRealTimers())
+describe('beta.3 user-generation cutover', () => {
+  it('requires legacy sessions to be deleted before changing users', async () => {
+    const test = convexTest(schema, modules)
+    const userId = await test.run(async (ctx) => {
+      const id = await ctx.db.insert('user', legacyUser as never)
+      await ctx.db.insert('session', legacySession as never)
+      return id
+    })
 
-describe('beta.3 session-generation migration', () => {
-  it('backfills and rolls back without changing identities, sessions, or app references', async () => {
+    await expect(test.run((ctx) => migrateBeta3UserGeneration(ctx, 'forward'))).rejects.toThrow(
+      'AUTH_BETA3_CUTOVER_SESSIONS_REMAIN',
+    )
+    await expect(test.run((ctx) => ctx.db.get(userId))).resolves.not.toHaveProperty(
+      'bcnSecurityGeneration',
+    )
+  })
+
+  it('preserves user identity, account links, and application references', async () => {
     const test = convexTest(schema, modules)
     const ids = await test.run(async (ctx) => ({
+      account: await ctx.db.insert('accountLink', {
+        authUserId: legacyUser.id,
+        passwordHash: 'unchanged',
+      }),
       member: await ctx.db.insert('workspaceMember', {
         authUserId: legacyUser.id,
         role: 'owner',
       }),
-      session: await ctx.db.insert('session', legacySession as never),
       user: await ctx.db.insert('user', legacyUser as never),
     }))
 
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'preflight', null)),
-    ).resolves.toEqual({ done: true, nextAfter: null, pending: 1, patched: 0, scanned: 1 })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'preflight', null)),
-    ).resolves.toEqual({ done: true, nextAfter: null, pending: 1, patched: 0, scanned: 1 })
+    await expect(test.run((ctx) => migrateBeta3UserGeneration(ctx, 'forward'))).resolves.toEqual({
+      patched: 1,
+      scanned: 1,
+    })
+    await expect(test.run((ctx) => migrateBeta3UserGeneration(ctx, 'forward'))).resolves.toEqual({
+      patched: 0,
+      scanned: 1,
+    })
 
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'forward', null)),
-    ).rejects.toThrow('AUTH_SESSION_GENERATION_MIGRATION_USER_NOT_READY')
-
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'forward', null)),
-    ).resolves.toEqual({ done: true, nextAfter: null, pending: 0, patched: 1, scanned: 1 })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'preflight', null)),
-    ).resolves.toEqual({ done: true, nextAfter: null, pending: 1, patched: 0, scanned: 1 })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'forward', null)),
-    ).resolves.toEqual({ done: true, nextAfter: null, pending: 0, patched: 1, scanned: 1 })
-
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'preflight', null)),
-    ).resolves.toMatchObject({ pending: 0, patched: 0 })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'preflight', null)),
-    ).resolves.toMatchObject({ pending: 0, patched: 0 })
-
-    const migrated = await test.run(async (ctx) => ({
+    const state = await test.run(async (ctx) => ({
+      account: await ctx.db.get(ids.account),
       member: await ctx.db.get(ids.member),
-      session: await ctx.db.get(ids.session),
       user: await ctx.db.get(ids.user),
     }))
-    expect(migrated.user).toMatchObject({
+    expect(state.user).toMatchObject({
       _id: ids.user,
       id: legacyUser.id,
       bcnSecurityGeneration: 0,
     })
-    expect(migrated.session).toMatchObject({
-      _id: ids.session,
-      id: legacySession.id,
-      token: legacySession.token,
-      userId: legacyUser.id,
-      bcnAssuranceGeneration: 0,
+    expect(state.account).toMatchObject({
+      _id: ids.account,
+      authUserId: legacyUser.id,
+      passwordHash: 'unchanged',
     })
-    expect(migrated.member).toEqual({
-      _creationTime: expect.any(Number),
+    expect(state.member).toMatchObject({
       _id: ids.member,
       authUserId: legacyUser.id,
       role: 'owner',
     })
-    expect(sessionGenerationMatches(migrated.user!, migrated.session!)).toBe(true)
-    await expect(
-      test.run((ctx) =>
-        readAuthSessionAdmission(
-          ctx,
-          { sessionId: legacySession.id, userId: legacyUser.id },
-          false,
-        ),
-      ),
-    ).resolves.toMatchObject({
-      session: { _id: ids.session, id: legacySession.id, token: legacySession.token },
-      user: { _id: ids.user, id: legacyUser.id },
-    })
-
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'rollback', null)),
-    ).rejects.toThrow('AUTH_SESSION_GENERATION_MIGRATION_ROLLBACK_ORDER')
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'rollback', null)),
-    ).resolves.toMatchObject({ patched: 1 })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'rollback', null)),
-    ).resolves.toMatchObject({ patched: 1 })
-
-    const rolledBack = await test.run(async (ctx) => ({
-      member: await ctx.db.get(ids.member),
-      session: await ctx.db.get(ids.session),
-      user: await ctx.db.get(ids.user),
-    }))
-    expect(rolledBack.user).toEqual({
-      _creationTime: expect.any(Number),
-      _id: ids.user,
-      ...legacyUser,
-    })
-    expect(rolledBack.session).toEqual({
-      _creationTime: expect.any(Number),
-      _id: ids.session,
-      ...legacySession,
-    })
-    expect(rolledBack.member).toEqual(migrated.member)
   })
 
-  it('refuses rollback after either generation advances', async () => {
+  it('rolls back only generation zero while sessions remain absent', async () => {
     const test = convexTest(schema, modules)
-    await test.run(async (ctx) => {
-      await ctx.db.insert('user', { ...legacyUser, bcnSecurityGeneration: 1 } as never)
-      await ctx.db.insert('session', { ...legacySession, bcnAssuranceGeneration: 1 } as never)
-    })
-
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'rollback', null)),
-    ).rejects.toThrow('AUTH_SESSION_GENERATION_MIGRATION_ROLLBACK_UNSAFE')
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'rollback', null)),
-    ).rejects.toThrow('AUTH_SESSION_GENERATION_MIGRATION_ROLLBACK_UNSAFE')
-  })
-
-  it('refuses a user rollback that cannot prove all sessions were rolled back', async () => {
-    const test = convexTest(schema, modules)
-    await test.run(async (ctx) => {
-      await ctx.db.insert('user', { ...legacyUser, bcnSecurityGeneration: 0 } as never)
-      for (let index = 0; index < 129; index += 1) {
-        await ctx.db.insert('session', {
-          ...legacySession,
-          bcnAssuranceGeneration: undefined,
-          id: `session-${String(index).padStart(3, '0')}`,
-        } as never)
-      }
-    })
-
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'rollback', null)),
-    ).rejects.toThrow('AUTH_SESSION_GENERATION_MIGRATION_ROLLBACK_ORDER')
-  })
-
-  it('resumes mixed rollback pages and tolerates a lost page response', async () => {
-    const test = convexTest(schema, modules)
-    await test.run(async (ctx) => {
-      for (let index = 0; index < 17; index += 1) {
-        await ctx.db.insert('user', {
-          ...legacyUser,
-          bcnSecurityGeneration: index % 2 === 0 ? 0 : undefined,
-          email: `existing-${index}@example.test`,
-          id: `user-${String(index).padStart(3, '0')}`,
-        } as never)
-      }
-    })
-
-    const first = await test.run((ctx) =>
-      migrateSessionGenerationPage(ctx, 'user', 'rollback', null),
+    const userId = await test.run((ctx) =>
+      ctx.db.insert('user', { ...legacyUser, bcnSecurityGeneration: 0 } as never),
     )
-    expect(first).toEqual({
-      done: false,
-      nextAfter: 'user-015',
-      pending: 0,
-      patched: 8,
-      scanned: 16,
-    })
 
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'rollback', null)),
-    ).resolves.toEqual({
-      done: false,
-      nextAfter: 'user-015',
-      pending: 0,
-      patched: 0,
-      scanned: 16,
+    await expect(test.run((ctx) => migrateBeta3UserGeneration(ctx, 'rollback'))).resolves.toEqual({
+      patched: 1,
+      scanned: 1,
     })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'rollback', first.nextAfter)),
-    ).resolves.toEqual({ done: true, nextAfter: null, pending: 0, patched: 1, scanned: 1 })
+    await expect(test.run((ctx) => migrateBeta3UserGeneration(ctx, 'rollback'))).resolves.toEqual({
+      patched: 0,
+      scanned: 1,
+    })
+    await expect(test.run((ctx) => ctx.db.get(userId))).resolves.not.toHaveProperty(
+      'bcnSecurityGeneration',
+    )
   })
 
-  it('retries mixed session rollback pages from the beginning', async () => {
+  it('fails closed after a generation advance without partial writes', async () => {
     const test = convexTest(schema, modules)
-    await test.run(async (ctx) => {
-      await ctx.db.insert('user', { ...legacyUser, bcnSecurityGeneration: 0 } as never)
-      await ctx.db.insert('user', {
+    const ids = await test.run(async (ctx) => ({
+      advanced: await ctx.db.insert('user', {
         ...legacyUser,
-        bcnSecurityGeneration: 0,
+        bcnSecurityGeneration: 1,
+      } as never),
+      legacy: await ctx.db.insert('user', {
+        ...legacyUser,
         email: 'second@example.test',
         id: 'second-user-id',
-      } as never)
-      for (let index = 0; index < 129; index += 1) {
-        await ctx.db.insert('session', {
-          ...legacySession,
-          bcnAssuranceGeneration: index % 2 === 0 ? 0 : undefined,
-          id: `session-${String(index).padStart(3, '0')}`,
-          token: `token-${index}`,
-          userId: index < 65 ? legacyUser.id : 'second-user-id',
-        } as never)
-      }
-    })
+      } as never),
+    }))
 
-    const first = await test.run((ctx) =>
-      migrateSessionGenerationPage(ctx, 'session', 'rollback', null),
+    await expect(test.run((ctx) => migrateBeta3UserGeneration(ctx, 'forward'))).rejects.toThrow(
+      'AUTH_BETA3_CUTOVER_GENERATION_INVALID',
     )
-    expect(first).toMatchObject({ done: false, patched: 64, scanned: 128 })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'rollback', null)),
-    ).resolves.toMatchObject({ done: false, patched: 0, scanned: 128 })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'rollback', first.nextAfter)),
-    ).resolves.toMatchObject({ done: true, patched: 1, scanned: 1 })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'rollback', null)),
-    ).resolves.toMatchObject({ done: true, patched: 2 })
+    await expect(test.run((ctx) => ctx.db.get(ids.legacy))).resolves.not.toHaveProperty(
+      'bcnSecurityGeneration',
+    )
+    await expect(test.run((ctx) => ctx.db.get(ids.advanced))).resolves.toHaveProperty(
+      'bcnSecurityGeneration',
+      1,
+    )
   })
 
-  it('fails closed for orphaned sessions, duplicate logical IDs, and mismatched generations', async () => {
-    const orphaned = convexTest(schema, modules)
-    await orphaned.run((ctx) => ctx.db.insert('session', legacySession as never))
-    await expect(
-      orphaned.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'preflight', null)),
-    ).rejects.toThrow('AUTH_SESSION_GENERATION_MIGRATION_USER_INVALID')
-
-    const duplicated = convexTest(schema, modules)
-    await duplicated.run(async (ctx) => {
-      await ctx.db.insert('user', legacyUser as never)
-      await ctx.db.insert('user', legacyUser as never)
-    })
-    await expect(
-      duplicated.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'preflight', null)),
-    ).rejects.toThrow('AUTH_SESSION_GENERATION_MIGRATION_LOGICAL_ID_INVALID')
-
-    const mismatched = convexTest(schema, modules)
-    await mismatched.run(async (ctx) => {
-      await ctx.db.insert('user', { ...legacyUser, bcnSecurityGeneration: 0 } as never)
-      await ctx.db.insert('session', { ...legacySession, bcnAssuranceGeneration: 1 } as never)
-    })
-    await expect(
-      mismatched.run((ctx) => migrateSessionGenerationPage(ctx, 'session', 'preflight', null)),
-    ).rejects.toThrow('AUTH_SESSION_GENERATION_MIGRATION_GENERATION_INVALID')
-  })
-
-  it('uses bounded, resumable pages without returning row contents', async () => {
+  it('rejects more than 128 users without changing any row', async () => {
     const test = convexTest(schema, modules)
-    await test.run(async (ctx) => {
-      for (let index = 0; index < 129; index += 1) {
+    const first = await test.run(async (ctx) => {
+      const firstId = await ctx.db.insert('user', {
+        ...legacyUser,
+        email: 'existing-0@example.test',
+        id: 'user-000',
+      } as never)
+      for (let index = 1; index < 129; index += 1) {
         await ctx.db.insert('user', {
           ...legacyUser,
           email: `existing-${index}@example.test`,
           id: `user-${String(index).padStart(3, '0')}`,
         } as never)
       }
+      return firstId
     })
 
-    const first = await test.run((ctx) =>
-      migrateSessionGenerationPage(ctx, 'user', 'forward', null),
+    await expect(test.run((ctx) => migrateBeta3UserGeneration(ctx, 'forward'))).rejects.toThrow(
+      'AUTH_BETA3_CUTOVER_USER_LIMIT',
     )
-    expect(first).toEqual({
-      done: false,
-      nextAfter: 'user-127',
-      pending: 0,
-      patched: 128,
-      scanned: 128,
-    })
-    await expect(
-      test.run((ctx) => migrateSessionGenerationPage(ctx, 'user', 'forward', first.nextAfter)),
-    ).resolves.toEqual({ done: true, nextAfter: null, pending: 0, patched: 1, scanned: 1 })
+    await expect(test.run((ctx) => ctx.db.get(first))).resolves.not.toHaveProperty(
+      'bcnSecurityGeneration',
+    )
   })
 })

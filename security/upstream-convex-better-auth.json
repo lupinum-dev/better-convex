@@ -148,9 +148,9 @@
       "targetPath": "src/runtime/convex-auth/adapter/define-functions.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "7f537e1081bc22ee50d15df7b24e73e8869aa78a17af4aca18a5b0d261b186e3",
-      "targetSha256": "4e25fbffdcb5c610a0a94b67f3eb87bd41ced13016f7d299e27e1ae02a7d14ae",
+      "targetSha256": "cfabe28cf39cfe31075eddd06c7690728419f2e2a497fd58cd8e830ba603168b",
       "classification": "adapted",
-      "modificationSummary": "Rebuilt component functions with strict validation, indexed relationships, failure-atomic writes and triggers, single-snapshot counts, one atomic rate-limit consume operation, guarded consumption and increments, authenticated signing-key rotation, component-owned session-generation invalidation, a temporary internal beta.3 generation migration operator, and workforce profile, admission, expiry, management, credential, factor, and replay operations.",
+      "modificationSummary": "Rebuilt component functions with strict validation, indexed relationships, failure-atomic writes and triggers, single-snapshot counts, one atomic rate-limit consume operation, guarded consumption and increments, authenticated signing-key rotation, component-owned session-generation invalidation, a temporary internal beta.3 user-generation cutover operator, and workforce profile, admission, expiry, management, credential, factor, and replay operations.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": true
     },
@@ -203,9 +203,9 @@
       "targetPath": "src/runtime/convex-auth/session-generation.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "70daca2ff67e790be91a69c92e35b9c9c373ff5b23402d796a3a50429cc002bc",
-      "targetSha256": "eb46f94f9fda0f75ba641793a4d2abb918037e23637b62f43b5e3d7a0c4aab6a",
+      "targetSha256": "e7f27dcd27e5a47a095647b9b54cac1a8c66b233ccc0e92049fda197dd5b168e",
       "classification": "rewritten",
-      "modificationSummary": "Added component-owned user and session generations so the provider's canonical delete-all selector atomically invalidates every earlier session without an unbounded collection scan; stale sessions fail adapter reads and backend admission until scheduled physical expiry. Added a bounded, identity-preserving beta.3 generation backfill and rollback helper for closed-ingress operator use.",
+      "modificationSummary": "Added component-owned user and session generations so the provider's canonical delete-all selector atomically invalidates every earlier session without an unbounded collection scan; stale sessions fail adapter reads and backend admission until scheduled physical expiry. Added a bounded beta.3 user-generation cutover helper that requires legacy sessions to be deleted while preserving user IDs, accounts, passwords, and application references.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },

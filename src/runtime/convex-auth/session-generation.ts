@@ -7,13 +7,9 @@ type ReadCtx = GenericQueryCtx<GenericDataModel>
 type WriteCtx = GenericMutationCtx<GenericDataModel>
 type Row = Record<string, unknown>
 
-export type SessionGenerationMigrationModel = 'session' | 'user'
-export type SessionGenerationMigrationMode = 'forward' | 'preflight' | 'rollback'
+export type Beta3UserGenerationMigrationMode = 'forward' | 'rollback'
 
-export interface SessionGenerationMigrationPage {
-  done: boolean
-  nextAfter: string | null
-  pending: number
+export interface Beta3UserGenerationMigrationResult {
   patched: number
   scanned: number
 }
@@ -73,34 +69,6 @@ function generation(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
-function migrationStorageId(row: Row): string {
-  if (typeof row._id !== 'string' || !row._id) {
-    throw new Error('AUTH_SESSION_GENERATION_MIGRATION_ROW_INVALID')
-  }
-  return row._id
-}
-
-function migrationLogicalId(row: Row): string {
-  if (typeof row.id !== 'string' || !row.id) {
-    throw new Error('AUTH_SESSION_GENERATION_MIGRATION_ROW_INVALID')
-  }
-  return row.id
-}
-
-async function assertUniqueMigrationLogicalId(
-  ctx: ReadCtx,
-  table: string,
-  logicalId: string,
-): Promise<void> {
-  const matches = await ctx.db
-    .query(table as never)
-    .withIndex('id', (query) => query.eq('id', logicalId))
-    .take(2)
-  if (matches.length !== 1) {
-    throw new Error('AUTH_SESSION_GENERATION_MIGRATION_LOGICAL_ID_INVALID')
-  }
-}
-
 async function readUser(
   ctx: ReadCtx,
   userId: string,
@@ -112,98 +80,45 @@ async function readUser(
     .unique()
 }
 
-/** Temporary beta.3-to-beta.5 operator migration. Remove after the hard cut is complete. */
-export async function migrateSessionGenerationPage(
+/**
+ * Temporary beta.3 cutover for small, pre-customer deployments.
+ * Legacy sessions must be deleted before this operator runs.
+ */
+export async function migrateBeta3UserGeneration(
   ctx: WriteCtx,
-  model: SessionGenerationMigrationModel,
-  mode: SessionGenerationMigrationMode,
-  after: string | null,
+  mode: Beta3UserGenerationMigrationMode,
   authority = canonicalSessionGenerationAuthority,
-): Promise<SessionGenerationMigrationPage> {
-  const table = model === 'user' ? authority.userModel : authority.sessionModel
-  const generationField =
-    model === 'user' ? authority.securityGenerationField : authority.assuranceGenerationField
-  // User rollback also checks up to 129 sessions per user. Its smaller page
-  // keeps the complete mutation comfortably below Convex read limits.
-  const pageSize = mode === 'rollback' && model === 'user' ? 16 : 128
-  const rows = await ctx.db
-    .query(table as never)
-    .withIndex('id', (query) => (after === null ? query : query.gt('id', after)))
-    .take(pageSize + 1)
-  const page = rows.slice(0, pageSize) as Row[]
-  let pending = 0
+): Promise<Beta3UserGenerationMigrationResult> {
+  const sessions = await ctx.db.query(authority.sessionModel as never).take(1)
+  if (sessions.length !== 0) throw new Error('AUTH_BETA3_CUTOVER_SESSIONS_REMAIN')
+
+  const users = (await ctx.db.query(authority.userModel as never).take(129)) as Row[]
+  if (users.length > 128) throw new Error('AUTH_BETA3_CUTOVER_USER_LIMIT')
+
   let patched = 0
 
-  for (const row of page) {
-    const logicalId = migrationLogicalId(row)
-    await assertUniqueMigrationLogicalId(ctx, table, logicalId)
-    const storageId = migrationStorageId(row)
-    const current = row[generationField]
-    let expected = 0
-
-    if (model === 'session') {
-      const userId = row[authority.userIdField]
-      if (typeof userId !== 'string' || !userId) {
-        throw new Error('AUTH_SESSION_GENERATION_MIGRATION_SESSION_INVALID')
-      }
-      const user = await readUser(ctx, userId, authority)
-      const userGeneration = user?.[authority.securityGenerationField]
-      if (!user || (userGeneration !== undefined && !generation(userGeneration))) {
-        throw new Error('AUTH_SESSION_GENERATION_MIGRATION_USER_INVALID')
-      }
-      if (mode === 'forward' && userGeneration === undefined) {
-        throw new Error('AUTH_SESSION_GENERATION_MIGRATION_USER_NOT_READY')
-      }
-      expected = userGeneration ?? 0
+  for (const user of users) {
+    if (typeof user._id !== 'string' || !user._id || typeof user.id !== 'string' || !user.id) {
+      throw new Error('AUTH_BETA3_CUTOVER_USER_INVALID')
     }
-
-    if (mode === 'rollback') {
-      if ((current !== undefined && current !== 0) || expected !== 0) {
-        throw new Error('AUTH_SESSION_GENERATION_MIGRATION_ROLLBACK_UNSAFE')
-      }
-      if (model === 'user') {
-        const sessions = await ctx.db
-          .query(authority.sessionModel as never)
-          .withIndex('userId', (query) => query.eq(authority.userIdField, logicalId))
-          .take(129)
-        if (
-          sessions.length > 128 ||
-          sessions.some((session) => session[authority.assuranceGenerationField] !== undefined)
-        ) {
-          throw new Error('AUTH_SESSION_GENERATION_MIGRATION_ROLLBACK_ORDER')
-        }
-      }
-      if (current === undefined) continue
-      await ctx.db.patch(table as never, storageId as never, { [generationField]: undefined })
+    const current = user[authority.securityGenerationField]
+    if (current !== undefined && (!generation(current) || current !== 0)) {
+      throw new Error('AUTH_BETA3_CUTOVER_GENERATION_INVALID')
+    }
+    if (mode === 'forward' && current === undefined) {
+      await ctx.db.patch(authority.userModel as never, user._id as never, {
+        [authority.securityGenerationField]: 0,
+      })
       patched += 1
-      continue
+    } else if (mode === 'rollback' && current === 0) {
+      await ctx.db.patch(authority.userModel as never, user._id as never, {
+        [authority.securityGenerationField]: undefined,
+      })
+      patched += 1
     }
-
-    if (current === undefined) {
-      pending += 1
-      if (mode === 'forward') {
-        await ctx.db.patch(table as never, storageId as never, { [generationField]: expected })
-        patched += 1
-      }
-      continue
-    }
-
-    if (!generation(current) || current !== expected) {
-      throw new Error('AUTH_SESSION_GENERATION_MIGRATION_GENERATION_INVALID')
-    }
-
-    // Reading the logical ID before every decision proves that pagination cannot
-    // silently advance across a malformed row.
-    void logicalId
   }
 
-  return {
-    done: rows.length <= pageSize,
-    nextAfter: rows.length <= pageSize ? null : migrationLogicalId(page.at(-1)!),
-    pending: mode === 'preflight' ? pending : 0,
-    patched,
-    scanned: page.length,
-  }
+  return { patched, scanned: users.length }
 }
 
 /** Add component-owned generation fields before strict generated-schema normalization. */

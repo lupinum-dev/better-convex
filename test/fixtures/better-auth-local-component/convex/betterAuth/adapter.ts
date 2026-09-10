@@ -18,7 +18,7 @@ export const {
   sessionAdmission,
   expireWorkforceSession,
   listWorkforceSessions,
-  migrateBeta3SessionGeneration,
+  migrateBeta3UserGeneration,
   revokeAllWorkforceSessions,
   revokeWorkforceSession,
   touchWorkforceSession,
