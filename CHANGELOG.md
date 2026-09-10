@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.0-beta.6
+
+- Preserve populated beta.3 Better Auth user IDs, accounts, passwords, and
+  application identity references during the session-generation schema cutover.
+- Provide a bounded user-only migration operator that requires legacy sessions
+  to be invalidated and each operator to sign in again.
+
 ## v1.0.0-beta.5
 
 - Make Better Auth rate-limit consumption one atomic Convex mutation so

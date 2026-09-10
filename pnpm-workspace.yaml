@@ -15,6 +15,11 @@ overrides:
   # Remove when both owners accept qs >=6.16.0 and the audit stays clean.
   'express@4>qs': 6.16.0
   'body-parser@1>qs': 6.16.0
+  # Transitive build and HTTP owners permit these patched releases, but can
+  # retain vulnerable lockfile selections. Remove when a clean resolution
+  # selects svgo >=4.1.0 and hono >=4.13.5 without overrides.
+  svgo: 4.1.0
+  hono: 4.13.7
 
 allowBuilds:
   '@parcel/watcher': true

@@ -21,6 +21,7 @@ import {
   normalizeSigningKeyCandidate,
   signingKeyCandidateValidator,
 } from '../jwks-rotation'
+import { migrateBeta3UserGeneration, sessionGenerationAuthority } from '../session-generation'
 import { createWorkforceAdapterPolicy } from '../workforce/adapter-policy'
 import { readAuthSessionAdmission } from '../workforce/admission'
 import {
@@ -298,6 +299,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
 }: DefineAuthAdapterFunctionsOptions<Schema>) {
   assertAuthSchemaMatchesMetadata(schema, metadata)
   const workforce = hasWorkforceSchema(metadata)
+  const generationAuthority = sessionGenerationAuthority(metadata)
   const workforcePolicy = createWorkforceAdapterPolicy(workforce, metadata)
   const relationships = createAuthRelationshipEngine({
     schema,
@@ -309,6 +311,19 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     if (!workforce) throw new Error('AUTH_WORKFORCE_SCHEMA_REQUIRED')
   }
   return {
+    migrateBeta3UserGeneration: internalMutationGeneric({
+      args: {
+        mode: v.union(v.literal('forward'), v.literal('rollback')),
+      },
+      returns: v.object({
+        patched: v.number(),
+        scanned: v.number(),
+      }),
+      handler: (ctx, args) => {
+        if (!generationAuthority) throw new Error('AUTH_SESSION_GENERATION_SCHEMA_INVALID')
+        return migrateBeta3UserGeneration(ctx, args.mode, generationAuthority)
+      },
+    }),
     touchWorkforceSession: mutationGeneric({
       args: { actor: workforceSessionActorValidator },
       returns: v.object({ expiresAt: v.number() }),

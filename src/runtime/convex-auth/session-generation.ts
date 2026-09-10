@@ -7,6 +7,13 @@ type ReadCtx = GenericQueryCtx<GenericDataModel>
 type WriteCtx = GenericMutationCtx<GenericDataModel>
 type Row = Record<string, unknown>
 
+export type Beta3UserGenerationMigrationMode = 'forward' | 'rollback'
+
+export interface Beta3UserGenerationMigrationResult {
+  patched: number
+  scanned: number
+}
+
 export interface SessionGenerationAuthority {
   assuranceGenerationField: string
   securityGenerationField: string
@@ -71,6 +78,47 @@ async function readUser(
     .query(authority.userModel as never)
     .withIndex('id', (query) => query.eq('id', userId))
     .unique()
+}
+
+/**
+ * Temporary beta.3 cutover for small, pre-customer deployments.
+ * Legacy sessions must be deleted before this operator runs.
+ */
+export async function migrateBeta3UserGeneration(
+  ctx: WriteCtx,
+  mode: Beta3UserGenerationMigrationMode,
+  authority = canonicalSessionGenerationAuthority,
+): Promise<Beta3UserGenerationMigrationResult> {
+  const sessions = await ctx.db.query(authority.sessionModel as never).take(1)
+  if (sessions.length !== 0) throw new Error('AUTH_BETA3_CUTOVER_SESSIONS_REMAIN')
+
+  const users = (await ctx.db.query(authority.userModel as never).take(129)) as Row[]
+  if (users.length > 128) throw new Error('AUTH_BETA3_CUTOVER_USER_LIMIT')
+
+  let patched = 0
+
+  for (const user of users) {
+    if (typeof user._id !== 'string' || !user._id || typeof user.id !== 'string' || !user.id) {
+      throw new Error('AUTH_BETA3_CUTOVER_USER_INVALID')
+    }
+    const current = user[authority.securityGenerationField]
+    if (current !== undefined && (!generation(current) || current !== 0)) {
+      throw new Error('AUTH_BETA3_CUTOVER_GENERATION_INVALID')
+    }
+    if (mode === 'forward' && current === undefined) {
+      await ctx.db.patch(authority.userModel as never, user._id as never, {
+        [authority.securityGenerationField]: 0,
+      })
+      patched += 1
+    } else if (mode === 'rollback' && current === 0) {
+      await ctx.db.patch(authority.userModel as never, user._id as never, {
+        [authority.securityGenerationField]: undefined,
+      })
+      patched += 1
+    }
+  }
+
+  return { patched, scanned: users.length }
 }
 
 /** Add component-owned generation fields before strict generated-schema normalization. */
