@@ -15,6 +15,28 @@ const schema = defineSchema(
   },
   { schemaValidation: false },
 )
+const beta3Schema = defineSchema({
+  ...tables,
+  user: defineTable({
+    id: v.string(),
+    name: v.string(),
+    email: v.string(),
+    emailVerified: v.boolean(),
+    image: v.union(v.null(), v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }),
+  session: defineTable({
+    id: v.string(),
+    expiresAt: v.number(),
+    token: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    ipAddress: v.union(v.null(), v.string()),
+    userAgent: v.union(v.null(), v.string()),
+    userId: v.string(),
+  }),
+})
 
 const now = 1_700_000_000_000
 const legacyUser = {
@@ -115,6 +137,26 @@ describe('beta.3 user-generation cutover', () => {
     })
     await expect(test.run((ctx) => ctx.db.get(userId))).resolves.not.toHaveProperty(
       'bcnSecurityGeneration',
+    )
+  })
+
+  it('moves between strict beta.3 and target user schemas', async () => {
+    const target = convexTest(defineSchema(tables), modules)
+    await expect(target.run((ctx) => ctx.db.insert('user', legacyUser as never))).rejects.toThrow()
+    await expect(
+      target.run((ctx) =>
+        ctx.db.insert('user', { ...legacyUser, bcnSecurityGeneration: 0 } as never),
+      ),
+    ).resolves.toEqual(expect.any(String))
+
+    const beta3 = convexTest(beta3Schema, modules)
+    await expect(
+      beta3.run((ctx) =>
+        ctx.db.insert('user', { ...legacyUser, bcnSecurityGeneration: 0 } as never),
+      ),
+    ).rejects.toThrow()
+    await expect(beta3.run((ctx) => ctx.db.insert('user', legacyUser))).resolves.toEqual(
+      expect.any(String),
     )
   })
 
