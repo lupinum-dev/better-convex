@@ -193,6 +193,7 @@ export async function verifyPackageAgentDocs(packageRoot, { sourceRoot } = {}) {
   }
   const expected = new Set(['AGENTS.md'])
   const routes = new Set()
+  const urls = new Set()
   for (const page of manifest.pages) {
     if (
       typeof page.file !== 'string' ||
@@ -209,13 +210,17 @@ export async function verifyPackageAgentDocs(packageRoot, { sourceRoot } = {}) {
       metadata.route !== page.route ||
       metadata.url !== page.url ||
       metadata.title !== page.title ||
-      routes.has(page.route)
+      routes.has(page.route) ||
+      urls.has(page.url)
     ) {
       throw new Error(`Documentation page differs from its inventory: ${page.file}`)
     }
     expected.add(page.file)
     routes.add(page.route)
+    urls.add(page.url)
   }
+  if (new Set(manifest.startRoutes).size !== manifest.startRoutes.length)
+    throw new Error('Documentation starting routes must be unique.')
   if (manifest.startRoutes.some((route) => !routes.has(route)))
     throw new Error('Documentation starting route is missing.')
   const actual = (await markdownFiles(root)).map((file) =>
