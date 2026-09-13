@@ -30,7 +30,7 @@
   },
   "scripts": {
     "build": "unbuild",
-    "prepack": "pnpm --dir ../.. docs:package && unbuild",
+    "prepack": "pnpm --dir ../.. docs:package && unbuild && pnpm --dir ../.. docs:package",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
