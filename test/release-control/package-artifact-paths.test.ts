@@ -334,17 +334,23 @@ describe('packed artifact path classes', () => {
     expect(validate(path)).not.toEqual([])
   })
 
-  it('requires the built DevTools entry asset', () => {
+  it('requires the installed docs and built DevTools entry asset', () => {
     const failures: string[] = []
     checkRequiredPackedFiles('nuxt', { files: [] }, failures)
     expect(failures).toEqual([
+      'packed tarball is missing required file: dist/agent/AGENTS.md',
       'packed tarball is missing required file: dist/runtime/devtools/ui/dist/index.html',
     ])
 
     failures.length = 0
     checkRequiredPackedFiles(
       'nuxt',
-      { files: [{ path: 'dist/runtime/devtools/ui/dist/index.html' }] },
+      {
+        files: [
+          { path: 'dist/agent/AGENTS.md' },
+          { path: 'dist/runtime/devtools/ui/dist/index.html' },
+        ],
+      },
       failures,
     )
     expect(failures).toEqual([])

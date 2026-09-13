@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process'
+
 import { defineBuildConfig } from 'unbuild'
 
 export default defineBuildConfig({
@@ -8,4 +10,12 @@ export default defineBuildConfig({
     emitCJS: false,
   },
   externals: ['@modelcontextprotocol/ext-apps', '@modelcontextprotocol/server', 'vue'],
+  hooks: {
+    'rollup:done'() {
+      execFileSync('node', ['scripts/build-agent-docs.mjs'], {
+        cwd: new URL('../..', import.meta.url),
+        stdio: 'inherit',
+      })
+    },
+  },
 })

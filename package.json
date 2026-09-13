@@ -102,18 +102,21 @@
     "./server": {
       "types": "./dist/runtime/server/index.d.ts",
       "import": "./dist/runtime/server/index.js"
-    }
+    },
+    "./agent-docs": "./dist/agent/AGENTS.md"
   },
   "scripts": {
     "build:devtools": "nuxi build src/runtime/devtools/ui --preset static && node scripts/normalize-devtools-build.mjs",
     "changelog": "changelogen --output CHANGELOG.md --hideAuthorEmail",
     "build:package": "pnpm --dir packages/vue build && nuxt-module-build prepare && pnpm run build:devtools && nuxt-module-build build",
-    "prepack": "pnpm exec unbuild packages/mcp && pnpm run build:package && pnpm run check:package-exports:dist --dist-only && pnpm run check:single-runtime-owners:dist",
+    "prepack": "pnpm docs:build && pnpm exec unbuild packages/mcp && pnpm run build:package && pnpm run check:package-exports:dist --dist-only && pnpm run check:single-runtime-owners:dist",
     "dev": "pnpm run dev:prepare && nuxi dev --cwd playground --dotenv .env.local --port 4578",
     "dev:build": "nuxi build --cwd playground --dotenv .env.local",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare --cwd playground --dotenv .env.local",
     "audit:all": "pnpm audit && pnpm --dir docs audit && pnpm --dir demo audit",
     "docs:build": "pnpm --dir docs build",
+    "docs:package": "node scripts/build-agent-docs.mjs",
+    "docs:onboarding": "node scripts/sync-consumer-onboarding.mjs --write",
     "docs:api-surface": "node scripts/generate-api-surface.mjs",
     "docs:asvs": "node scripts/generate-asvs-evidence.mjs",
     "release:artifact": "node scripts/release.mjs artifact",
@@ -122,7 +125,7 @@
     "release:smoke": "node scripts/release-smoke.mjs",
     "release:certify:source": "node scripts/release-source-certification.mjs",
     "release:verify:set": "node scripts/prepare-candidate-set.mjs verify",
-    "verify": "pnpm audit:all && pnpm verify:code && pnpm docs:build",
+    "verify": "pnpm audit:all && pnpm docs:build && pnpm docs:package && pnpm verify:code",
     "verify:code": "pnpm check:vercel && pnpm check && pnpm check:asvs && pnpm check:sbom && pnpm check:contracts",
     "verify:auth": "pnpm check:auth-backend && pnpm check:no-old-auth-runtime && pnpm check:auth-logical-ids && pnpm check:auth-provenance --source-only && pnpm check:auth-upstream && pnpm check:auth-schema && pnpm test:auth-adapter && pnpm test:oauth && pnpm test:auth-fuzz && pnpm test:auth-sentinels && pnpm test:auth-concurrency && pnpm test:auth-export-sentinels && pnpm test:auth-mfa && pnpm test:mcp-conformance",
     "release:verify": "node scripts/verify-release.mjs",

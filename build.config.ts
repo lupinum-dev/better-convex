@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { chmod, lstat, readdir, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -86,6 +87,12 @@ async function keepOnlyPublicGeneratedDeclaration(dir: string): Promise<void> {
 
 export default {
   hooks: {
+    'rollup:done'() {
+      execFileSync('node', ['scripts/build-agent-docs.mjs'], {
+        cwd: import.meta.dirname,
+        stdio: 'inherit',
+      })
+    },
     async 'build:done'(ctx: MinimalBuildDoneContext) {
       const outDir = ctx.options.outDir
       if (basename(outDir) !== 'dist') {

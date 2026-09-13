@@ -41,6 +41,7 @@ import { builtinModules } from 'node:module'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { verifyPackageAgentDocs } from './package-agent-docs.mjs'
 import { canonicalNpmTarballFilename } from './package-artifact-coordinates.mjs'
 import { getPackageCertificationDescriptor } from './package-certification-manifest.mjs'
 import { checkEntryExportShapes } from './package-check/declarations.mjs'
@@ -372,7 +373,7 @@ function runSourceScan() {
 // Main
 // ---------------------------------------------------------------------------
 
-function main() {
+async function main() {
   const failures = []
 
   const sourceScan = runSourceScan()
@@ -418,6 +419,11 @@ function main() {
         failures.push(error instanceof Error ? error.message : String(error))
       }
       scanExtractedTarball(packageId, packageDir, failures, manifest)
+      try {
+        await verifyPackageAgentDocs(packageDir)
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+      }
       failures.push(
         ...checkPackageJsonManifestConsistency({
           manifest: packedPackageJson,
@@ -474,7 +480,7 @@ function main() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    main()
+    await main()
   } finally {
     for (const scratchDir of temporaryCompanionScratchDirs) {
       rmSync(scratchDir, { recursive: true, force: true })

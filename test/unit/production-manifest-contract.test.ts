@@ -69,7 +69,7 @@ describe('production manifest certification profiles', () => {
     expect(contract.manifest).toMatchObject({
       files: ['dist'],
       sideEffects: false,
-      scripts: { prepack: 'pnpm run build' },
+      scripts: { prepack: 'pnpm --dir ../.. docs:build && pnpm run build' },
     })
   })
 
@@ -135,7 +135,7 @@ describe('production manifest certification profiles', () => {
       dependencies: mcpManifest.dependencies,
       files: ['dist'],
       sideEffects: false,
-      scripts: { prepack: 'unbuild' },
+      scripts: { prepack: 'pnpm --dir ../.. docs:build && unbuild' },
     })
   })
 

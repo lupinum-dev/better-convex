@@ -258,6 +258,20 @@ describe('package manifest consistency', () => {
     expect(check(missing)).toContain('package.json exports is missing manifest entry "./errors"')
   })
 
+  it('requires the versioned package documentation export', () => {
+    const missing = cloneNuxtManifest()
+    delete missing.exports['./agent-docs']
+    expect(check(missing)).toContain(
+      'package.json exports["./agent-docs"] must be "./dist/agent/AGENTS.md"',
+    )
+
+    const moved = cloneNuxtManifest()
+    moved.exports['./agent-docs'] = './README.md'
+    expect(check(moved)).toContain(
+      'package.json exports["./agent-docs"] must be "./dist/agent/AGENTS.md"',
+    )
+  })
+
   it('rejects JavaScript and declaration target drift', () => {
     const wrongJavaScript = cloneNuxtManifest()
     wrongJavaScript.exports['./server'].import = './dist/runtime/server/renamed.js'

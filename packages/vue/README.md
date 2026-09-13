@@ -55,6 +55,35 @@ Pass `'skip'` to pause a query. A Convex `null` result remains valid data.
 
 Advanced hosts can use the `embedded` export. MCP App UIs use `@lupinum/better-convex-mcp/vue`, which owns the official Apps SDK boundary.
 
+<!-- BEGIN:consumer-onboarding -->
+
+## Use a coding agent
+
+A coding agent is a development tool that can inspect and change your project.
+After installation, copy this prompt into your coding agent:
+
+```text
+Add Better Convex to this application using the smallest suitable Nuxt, Vue,
+or MCP package. Read the project's existing instructions first. Resolve the
+installed @lupinum/better-convex-*/agent-docs export from this application's
+directory and read its starting pages. Use the installed version's examples
+and public types. Preserve existing authorization, routes, conventions, and
+AGENTS.md instructions. Convex functions remain the source of truth for
+authorization; do not move that rule into client state, Nuxt middleware, or MCP
+transport. Add or update one short Better Convex pointer in AGENTS.md if the
+project allows it; do not duplicate the documentation. If the file is absent,
+create only that pointer. Report missing guidance. Verify the affected type,
+build, runtime, authentication, and disposal boundaries.
+```
+
+If the installed package has no `agent-docs` export, read its packaged README
+and types. Use documentation from the matching source tag when more detail is
+needed. Installing or updating the package does not edit project instructions.
+The pointer resolves the installed package, so upgrades and rollbacks select
+the matching documentation without copying it into your application.
+
+<!-- END:consumer-onboarding -->
+
 ## Documentation
 
 Read the [Vue documentation](https://better-convex.lupinum.com/docs/get-started/choose-your-path).
