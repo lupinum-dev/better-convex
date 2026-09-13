@@ -53,6 +53,10 @@ jobs:
       - name: Install package dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Install candidate browser
         run: pnpm exec playwright install --with-deps chromium
 

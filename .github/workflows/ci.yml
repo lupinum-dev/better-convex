@@ -153,6 +153,9 @@ jobs:
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm check:auth-backend --install
       - name: Certify auth source lane
@@ -175,6 +178,9 @@ jobs:
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm check:auth-backend --install
       - name: Certify end-to-end source lane
