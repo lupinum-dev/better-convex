@@ -93,7 +93,10 @@ const packedArtifactProfiles = Object.freeze({
       'package.json',
       'security/upstream-convex-better-auth.json',
     ]),
-    requiredPackedFiles: Object.freeze(['dist/runtime/devtools/ui/dist/index.html']),
+    requiredPackedFiles: Object.freeze([
+      'dist/agent/AGENTS.md',
+      'dist/runtime/devtools/ui/dist/index.html',
+    ]),
     requiredBuildFiles: Object.freeze([
       'dist/module.mjs',
       'dist/types.d.mts',
@@ -112,6 +115,7 @@ const packedArtifactProfiles = Object.freeze({
     allowedPackageRootFiles: Object.freeze(['LICENSE', 'README.md', 'package.json']),
     requiredPackedFiles: Object.freeze([
       'README.md',
+      'dist/agent/AGENTS.md',
       'dist/index.mjs',
       'dist/index.d.mts',
       'dist/errors.mjs',
@@ -138,7 +142,12 @@ const packedArtifactProfiles = Object.freeze({
   }),
   'mcp-runtime-artifact': Object.freeze({
     allowedPackageRootFiles: Object.freeze(['LICENSE', 'README.md', 'package.json']),
-    requiredPackedFiles: Object.freeze(['README.md', 'dist/index.mjs', 'dist/index.d.mts']),
+    requiredPackedFiles: Object.freeze([
+      'README.md',
+      'dist/agent/AGENTS.md',
+      'dist/index.mjs',
+      'dist/index.d.mts',
+    ]),
     requiredBuildFiles: Object.freeze(['dist/index.mjs', 'dist/index.d.mts']),
     allowedHostPackages: Object.freeze([]),
     allowedVirtualSpecifiers: Object.freeze([]),

@@ -29,11 +29,12 @@
     "./embedded": {
       "types": "./dist/embedded.d.mts",
       "import": "./dist/embedded.mjs"
-    }
+    },
+    "./agent-docs": "./dist/agent/AGENTS.md"
   },
   "scripts": {
     "build": "unbuild",
-    "prepack": "pnpm run build",
+    "prepack": "pnpm --dir ../.. docs:package && pnpm run build && pnpm --dir ../.. docs:package",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

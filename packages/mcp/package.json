@@ -25,11 +25,12 @@
     "./vue": {
       "types": "./dist/vue.d.mts",
       "import": "./dist/vue.mjs"
-    }
+    },
+    "./agent-docs": "./dist/agent/AGENTS.md"
   },
   "scripts": {
     "build": "unbuild",
-    "prepack": "unbuild",
+    "prepack": "pnpm --dir ../.. docs:package && unbuild && pnpm --dir ../.. docs:package",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

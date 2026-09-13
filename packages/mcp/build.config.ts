@@ -1,7 +1,15 @@
 import { defineBuildConfig } from 'unbuild'
 
 export default defineBuildConfig({
-  entries: ['src/index', 'src/vue'],
+  entries: [
+    'src/index',
+    'src/vue',
+    {
+      builder: 'copy',
+      input: 'agent-docs',
+      outDir: 'dist/agent',
+    },
+  ],
   declaration: true,
   clean: true,
   rollup: {

@@ -46,7 +46,7 @@
     ]
   },
   "monitoring": {
-    "reviewedAt": "2026-08-12",
+    "reviewedAt": "2026-09-13",
     "reviewExpiresAfterDays": 31,
     "apiRepository": "get-convex/better-auth",
     "defaultBranch": {

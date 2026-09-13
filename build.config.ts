@@ -85,6 +85,13 @@ async function keepOnlyPublicGeneratedDeclaration(dir: string): Promise<void> {
 }
 
 export default {
+  entries: [
+    {
+      builder: 'copy',
+      input: 'agent-docs',
+      outDir: 'dist/agent',
+    },
+  ],
   hooks: {
     async 'build:done'(ctx: MinimalBuildDoneContext) {
       const outDir = ctx.options.outDir

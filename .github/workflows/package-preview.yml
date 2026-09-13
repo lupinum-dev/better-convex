@@ -45,6 +45,10 @@ jobs:
       - name: Install dependencies from the frozen lockfile
         run: pnpm install --frozen-lockfile
 
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Build the disposable Vue, Nuxt, and MCP preview set
         id: artifact
         run: node scripts/build-package-preview.mjs

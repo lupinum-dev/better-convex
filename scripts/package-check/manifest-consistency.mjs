@@ -64,7 +64,10 @@ export function checkPackageJsonManifestConsistency({
     failures.push(`package.json main must be "./${rootEntry.distJs}" (manifest source of truth)`)
   }
 
-  const contractSubpaths = new Set(entries.map((entry) => entry.subpath))
+  const contractSubpaths = new Set([...entries.map((entry) => entry.subpath), './agent-docs'])
+  if (exportsMap['./agent-docs'] !== './dist/agent/AGENTS.md') {
+    failures.push('package.json exports["./agent-docs"] must be "./dist/agent/AGENTS.md"')
+  }
   for (const entry of entries) {
     const packageEntry = exportsMap[entry.subpath]
     if (!packageEntry || typeof packageEntry !== 'object' || Array.isArray(packageEntry)) {
