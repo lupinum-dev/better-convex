@@ -67,15 +67,16 @@ export function findNuxtClientEngineViolations(root, options = {}) {
       continue
     }
     for (const file of textFiles(scanRoot.path)) {
+      if (isInside(repositoryPath(root, file), 'dist/agent')) continue
       let contents
       try {
         contents = readFileSync(file, 'utf8')
       } catch {
         continue
       }
-      const repositoryPath = relative(root, file).split(sep).join('/')
+      const relativePath = repositoryPath(root, file)
       for (const marker of forbiddenNuxtMarkers) {
-        if (contents.includes(marker)) violations.push(`${repositoryPath}: forbidden ${marker}`)
+        if (contents.includes(marker)) violations.push(`${relativePath}: forbidden ${marker}`)
       }
     }
   }
@@ -198,6 +199,7 @@ function findBuiltOwnerViolations(root) {
     )
   }
   for (const path of textFiles(resolve(root, 'dist'))) {
+    if (isInside(repositoryPath(root, path), 'dist/agent')) continue
     let source
     try {
       source = readFileSync(path, 'utf8')

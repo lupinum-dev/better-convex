@@ -162,6 +162,11 @@ describe('single runtime-owner gate', () => {
       "import { McpServer } from '@modelcontextprotocol/server'\nnew McpServer({ name: 'fixture', version: '1' })\n",
     )
     write(root, 'packages/vue/dist/index.mjs', 'export const vueRuntime = true\n')
+    write(
+      root,
+      'dist/agent/pages/mcp.md',
+      'Use `@modelcontextprotocol/server` and `new McpServer(` in the dedicated MCP package.\n',
+    )
 
     expect(findSingleRuntimeOwnerViolations(root, { dist: true })).toEqual([])
 
