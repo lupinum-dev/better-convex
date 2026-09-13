@@ -131,6 +131,9 @@ jobs:
           package-manager-cache: false
       - run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm exec playwright install --with-deps chromium
       - name: Verify exact tarballs in fresh consumers
         run: pnpm run check:compatibility-matrix "${{ matrix.profile }}"
@@ -227,6 +230,9 @@ jobs:
       - name: Install the release toolchain
         run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify release-equivalent packages
         run: pnpm release:smoke
 
@@ -296,6 +302,9 @@ jobs:
       - name: Install the pinned release toolchain
         run: npm install --global npm@"$RELEASE_NPM_VERSION" corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Derive the unique incomplete release intent
         id: intent
         run: node scripts/release-intent.mjs --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
