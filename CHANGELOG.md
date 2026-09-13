@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.0-beta.7
+
+- Ship version-matched `agent-docs` exports with each Vue and Nuxt package so
+  coding agents can follow the installed contract instead of stale web docs.
+- Add concise package-owned onboarding guidance without changing application
+  authorization, runtime ownership, or installation behavior.
+
 ## v1.0.0-beta.6
 
 - Preserve populated beta.3 Better Auth user IDs, accounts, passwords, and
