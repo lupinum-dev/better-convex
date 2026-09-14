@@ -47,6 +47,7 @@ import {
   isSupportedProxyResponseContentEncoding,
   shouldSkipProxyResponseHeader,
 } from './headers'
+import { authProxyFetchMode } from './response-mode'
 import {
   OAUTH_TOKEN_CORS_MAX_BODY_BYTES,
   hasPublicAuthCorsCredentials,
@@ -462,7 +463,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         // overwrites the forwarded browser header. Better Auth uses that header
         // to distinguish fetch calls (JSON redirects) from navigations (HTTP
         // redirects), so preserve the only classification it consumes.
-        mode: event.headers.get('sec-fetch-mode') === 'cors' ? 'cors' : 'same-origin',
+        mode: authProxyFetchMode(event.method, normalizedPath, event.headers),
         headers: forwardHeaders,
         body: body
           ? (body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer)
