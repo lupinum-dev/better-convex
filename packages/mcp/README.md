@@ -26,14 +26,21 @@ The package requires Node.js `^22.19.0 || ^24.11.0`. OAuth mode requires the doc
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-mcp@1.0.0-beta.1 @modelcontextprotocol/server@2.0.0 zod@4.4.3
+pnpm add @lupinum/better-convex-mcp@1.0.0-beta.2 @modelcontextprotocol/server@2.0.0 zod@4.4.3
 ```
 
 ## Quick start
 
+First implement the application-owned `applicationTokenVerifier` using the
+[provider-neutral verifier contract](https://better-convex.lupinum.com/docs/build/agents/mcp#implement-a-provider-neutral-verifier).
+It must validate the token and its issuer, resource, identity, granted scopes, and
+actual expiry in Unix seconds. Never substitute a fixed identity or invented expiry.
+The example below requires that implementation in `convex/mcp/verify.ts`.
+
 ```ts
 import { handleMcpRequest } from '@lupinum/better-convex-mcp'
 import { httpAction } from './_generated/server'
+import { applicationTokenVerifier } from './mcp/verify'
 
 export const handleMcp = httpAction(async (_ctx, request) =>
   handleMcpRequest(request, {
@@ -42,20 +49,7 @@ export const handleMcp = httpAction(async (_ctx, request) =>
     authorization: {
       mode: 'preconfigured-bearer',
       issuer: 'https://example.convex.site/managed-credentials',
-      verifier: {
-        async verifyAccessToken(token, expected) {
-          // Validate the token, issuer, resource, subject, expiry, and scopes.
-          return {
-            access: {
-              issuer: expected.issuer,
-              subject: 'managed-agent',
-              clientId: 'managed-agent',
-              resource: expected.resource.href,
-              scopes: ['notes:read'],
-            },
-          }
-        },
-      },
+      verifier: applicationTokenVerifier,
     },
     configureServer(_access, server) {
       // Register the application's bounded tools and resources here.

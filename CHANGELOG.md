@@ -1,5 +1,12 @@
 # Changelog
 
+## mcp-v1.0.0-beta.2
+
+- Ship version-matched `agent-docs` guidance with the MCP package so coding
+  agents can follow the installed contract instead of stale web documentation.
+- Add package-owned onboarding and a complete exact MCP Apps install command
+  without changing transport, authorization, or runtime behavior.
+
 ## v1.0.0-beta.7
 
 - Ship version-matched `agent-docs` exports with each Vue and Nuxt package so

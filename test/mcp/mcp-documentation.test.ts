@@ -1,9 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+import { runMcpTool, type McpAccessContext } from '../../packages/mcp/src/index'
 
 const root = process.cwd()
+const packageReadme = readFileSync(join(root, 'packages/mcp/README.md'), 'utf8')
 const guide = readFileSync(join(root, 'docs/content/docs/4.build/7.agents/1.mcp.md'), 'utf8')
 const delegatedGuide = readFileSync(
   join(root, 'docs/content/docs/4.build/3.authentication/10.delegated-oauth-and-mcp.md'),
@@ -33,7 +37,7 @@ describe('MCP package documentation', () => {
     )
     expect(normalizedGuide).toContain('The protocol is stable; this integration remains prerelease')
     expect(guide).toContain(
-      '@lupinum/better-convex-mcp@1.0.0-beta.1 @modelcontextprotocol/server@2.0.0 zod@4.4.3',
+      `@lupinum/better-convex-mcp@${mcpManifest.version} @modelcontextprotocol/server@2.0.0 zod@4.4.3`,
     )
   })
 
@@ -76,4 +80,51 @@ describe('MCP package documentation', () => {
     expect(starterReadme).toContain('direct S256 PKCE')
     expect(starterReadme).not.toContain('harness drives the pinned MCP Inspector')
   })
+})
+
+describe('documented MCP authorization examples', () => {
+  it('requires an application verifier instead of inventing token identity', () => {
+    expect(packageReadme).toContain("import { applicationTokenVerifier } from './mcp/verify'")
+    expect(packageReadme).toContain('verifier: applicationTokenVerifier')
+    expect(packageReadme).toContain('actual expiry in Unix seconds')
+    expect(packageReadme).not.toContain('async verifyAccessToken(')
+  })
+
+  it.each([
+    { scopes: ['mcp:read'], allowed: false },
+    { scopes: ['mcp:read', 'mcp:write'], allowed: true },
+  ])(
+    'enforces the write scope before the documented mutation: $allowed',
+    async ({ scopes, allowed }) => {
+      const access: McpAccessContext = {
+        clientId: 'client-1',
+        issuer: 'https://accounts.example.com',
+        resource: 'https://deployment.convex.site/mcp',
+        scopes,
+        subject: 'user-1',
+      }
+      const runMutation = vi.fn().mockResolvedValue({ title: 'Updated' })
+      // Execute the actual Markdown callback, so changes to the example affect this test.
+      const callback = guide.match(/(async \(args\) =>[\s\S]*?),\n {8}\)/u)?.[1]
+      expect(callback).toBeDefined()
+      const rename = runInNewContext(`(${callback})`, {
+        access,
+        ctx: { runMutation },
+        internal: { notes: { renameFromMcp: 'notes.renameFromMcp' } },
+        runMcpTool,
+      }) as (args: { noteId: string; title: string }) => Promise<{ isError?: boolean }>
+      const args = { noteId: 'note-1', title: 'Updated' }
+      const result = await rename(args)
+      if (allowed) {
+        expect(result.isError).not.toBe(true)
+        expect(runMutation).toHaveBeenCalledExactlyOnceWith('notes.renameFromMcp', {
+          ...args,
+          access,
+        })
+      } else {
+        expect(result.isError).toBe(true)
+        expect(runMutation).not.toHaveBeenCalled()
+      }
+    },
+  )
 })

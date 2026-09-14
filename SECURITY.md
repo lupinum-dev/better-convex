@@ -5,9 +5,9 @@
 Security fixes are provided for the latest published minor release. Older minors are unsupported after a newer minor is published.
 
 At this source revision, the package family consists of the
-`@lupinum/better-convex-nuxt@1.0.0-beta.6`,
-`@lupinum/better-convex-vue@1.0.0-beta.6`, and
-`@lupinum/better-convex-mcp@1.0.0-beta.1` prerelease candidates.
+`@lupinum/better-convex-nuxt@1.0.0-beta.7`,
+`@lupinum/better-convex-vue@1.0.0-beta.7`, and
+`@lupinum/better-convex-mcp@1.0.0-beta.2` prerelease candidates.
 The tested Nuxt source tuple uses Node `^22.19.0 || ^24.11.0`, Nuxt `4.5.2`,
 Convex `1.42.2`, Better Auth `1.7.2`, `@better-auth/oauth-provider` `1.7.2`,
 and Convex Helpers `0.1.114`.
