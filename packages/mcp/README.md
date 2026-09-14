@@ -26,7 +26,7 @@ The package requires Node.js `^22.19.0 || ^24.11.0`. OAuth mode requires the doc
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-mcp@1.0.0-beta.1 @modelcontextprotocol/server@2.0.0 zod@4.4.3
+pnpm add @lupinum/better-convex-mcp@1.0.0-beta.2 @modelcontextprotocol/server@2.0.0 zod@4.4.3
 ```
 
 ## Quick start
