@@ -257,13 +257,13 @@ exact environment block above but replace its final command with:
 pnpm test:mcp-conformance
 ```
 
-That command runs the complete OAuth/MCP evidence and the selected protocol
-scenarios in one fixture lifecycle, using the freshly issued least-scope bearer
-internally. Do not run `test:mcp-auth` first and do not run both commands against
-one deployment; either run consumes it. This validates the stable-SDK request
-envelope with the official server package and retains the older official
-conformance package only for its published `2025-11-25` scenarios. It is not
-OAuth certification or OAuth conformance.
+That command runs the complete OAuth/MCP evidence and stable-SDK stateless
+contract checks in one fixture lifecycle, using the freshly issued least-scope
+bearer internally. Do not run `test:mcp-auth` first and do not run both commands
+against one deployment; either run consumes it. Stable official conformance
+`0.1.16` has no `2026-07-28` scenarios. The separate topology probe runs
+applicable alpha `0.2.0-alpha.10` scenarios; no legacy relay is used. These checks
+are not matching stable MCP certification or OAuth certification.
 
 ## Login and consent boundary
 
@@ -301,7 +301,7 @@ introspection, UserInfo, or OIDC scopes. Do not enable one merely to satisfy an
 unsupported client.
 
 OAuth access tokens are self-contained JWTs with a maximum ten-minute lifetime.
-Deleting a session or consent, disabling a client/resource, unlinking the
+Deleting a session or consent, disabling a client, deleting a resource, unlinking the
 resource, or changing membership/delegation is checked live and blocks the next
 tool call. Revoking only one already-issued JWT has a residual window until its
 `exp`; the starter does not claim immediate individual-token revocation.

@@ -46,6 +46,15 @@ export function createAuthRelationshipEngine(input: {
   for (const model of Object.values(metadata.models)) {
     for (const field of Object.values(model.fields)) {
       if (!field.reference) continue
+      // Refresh history must not make logout or parent revocation depend on its
+      // size. Admission checks these live parents; deleting one makes every
+      // retained row inert, as session expiry already does. Creation and
+      // reference-changing updates still require valid targets below.
+      if (
+        model.logicalName === 'oauthRefreshToken' &&
+        ['session', 'user', 'oauthClient'].includes(field.reference.model)
+      )
+        continue
       const inbound = inboundByModel.get(field.reference.model) ?? []
       inbound.push({ model: model.physicalName, field })
       inboundByModel.set(field.reference.model, inbound)

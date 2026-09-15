@@ -106,6 +106,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "internal",
         {
           data: any;
+          oauthRefreshParentId?: string;
           model: string;
           onCreateHandle?: string;
           workforce?:
@@ -169,6 +170,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "internal",
         {
           model: string;
+          oauthRefreshGrantId?: string;
           onDeleteHandle?: string;
           onDeleteModels?: Array<string>;
           onUpdateHandle?: string;

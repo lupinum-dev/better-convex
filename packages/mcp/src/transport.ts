@@ -40,6 +40,37 @@ export async function prepareBoundedMcpRequest(
   })
 }
 
+/** SDK 2.0.0 accepts body-only versions; the 2026-07-28 HTTP binding requires this header. */
+export async function missingMcpProtocolHeaderResponse(
+  boundedRequest: Request,
+): Promise<Response | undefined> {
+  if (boundedRequest.headers.get('mcp-protocol-version')) return undefined
+  // Read only the already bounded body, and only to correlate this rejection.
+  // The official SDK still owns version support, envelope validation and dispatch.
+  let id: string | number | null = null
+  try {
+    const body: unknown = await boundedRequest.json()
+    if (body && typeof body === 'object' && !Array.isArray(body) && 'id' in body) {
+      if (
+        typeof body.id === 'string' ||
+        (typeof body.id === 'number' && Number.isFinite(body.id))
+      ) {
+        id = body.id
+      }
+    }
+  } catch {
+    // An unparseable request has no safe correlation ID.
+  }
+  return Response.json(
+    {
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32020, message: 'Required MCP-Protocol-Version header is missing' },
+    },
+    { headers: { 'cache-control': 'no-store' }, status: 400 },
+  )
+}
+
 export async function boundMcpResponse(
   response: Response,
   signal?: AbortSignal,

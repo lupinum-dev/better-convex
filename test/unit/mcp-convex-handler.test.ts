@@ -897,12 +897,12 @@ describe('Convex-native official MCP handler composition', () => {
     [
       'subscriptions/listen',
       { notifications: { resourceSubscriptions: ['note://one'] } },
-      200,
-      -32603,
-      'Subscription limit reached',
+      404,
+      -32601,
+      'Method not found',
     ],
   ])(
-    'returns the official SDK rejection for %s',
+    'returns the finite-profile rejection for %s',
     async (method, methodParams, status, code, message) => {
       let factoryCalls = 0
       const requestOptions = {

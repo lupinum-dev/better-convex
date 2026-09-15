@@ -30,3 +30,5 @@ export type {
   BetterAuthUserProjectionSource,
   CreateUserProjectionTriggersOptions,
 } from './user-projection'
+
+export type { OAuthLiveAccess } from './oauth-live-access'

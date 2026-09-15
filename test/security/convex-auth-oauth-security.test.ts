@@ -837,3 +837,28 @@ describe('exact OAuth access-token class and bindings', () => {
     )
   })
 })
+
+describe('explicit renewable OAuth profile', () => {
+  const renewable = () =>
+    oauthOptions({
+      grantTypes: ['authorization_code', 'refresh_token'],
+      scopes: ['mcp:read', 'offline_access'],
+      refreshTokenExpiresIn: 604800,
+      refreshTokenReuseInterval: 10,
+    })
+  it('accepts only the bounded opt-in, while the original profile remains valid', () => {
+    expect(() => validateOAuthProviderProfile(renewable())).not.toThrow()
+    expect(() => validateOAuthProviderProfile(oauthOptions())).not.toThrow()
+  })
+  it.each([
+    { accessTokenExpiresIn: 601 },
+    { refreshTokenExpiresIn: 604801 },
+    { refreshTokenReuseInterval: 60 },
+    { scopes: ['mcp:read'] },
+    { grantTypes: ['authorization_code'] },
+  ])('rejects renewal lifetime or consent drift %#', (patch) => {
+    expect(() => validateOAuthProviderProfile({ ...renewable(), ...patch })).toThrow(
+      'AUTH_OAUTH_CONFIG_INVALID',
+    )
+  })
+})
