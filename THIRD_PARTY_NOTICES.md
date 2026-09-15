@@ -36,3 +36,12 @@ public API, logical Better Auth IDs, atomic Convex storage operations, explicit
 origin and token-class validation, additive signing-key rotation, and one shared
 packaged/local adapter implementation. Adapted files carry a prominent
 modification notice when required by the provenance ledger.
+
+The OAuth renewal helpers `oauth-refresh.ts` and `oauth-refresh-transport.ts`
+under `src/runtime/convex-auth/` are original Better Convex extensions. Their
+`rewritten` ledger records identify the existing component API and provider
+integration seams; they do not claim that these helpers were copied from the
+upstream baseline. The extensions bind renewal to live sessions and immutable
+consent, constrain rotation, and pass request-local evidence to Convex-owned
+writes. The upstream source hashes and Apache notices for incorporated portions
+remain unchanged.

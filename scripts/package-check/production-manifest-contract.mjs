@@ -325,7 +325,7 @@ function assertMcpManifestShapes(manifest, profile) {
       '@modelcontextprotocol/sdk': { optional: true },
       vue: { optional: true },
     }) ||
-    manifest.peerDependencies['@modelcontextprotocol/ext-apps'] !== '1.7.5' ||
+    manifest.peerDependencies['@modelcontextprotocol/ext-apps'] !== '1.7.5 || 2.0.0' ||
     manifest.peerDependencies['@modelcontextprotocol/sdk'] !== '1.30.0' ||
     manifest.peerDependencies.vue !== '>=3.5.0 <4'
   ) {

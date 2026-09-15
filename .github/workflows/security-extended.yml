@@ -45,6 +45,13 @@ jobs:
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+      # Package docs before sentinel injection so prerequisite failures remain visible
+      # without printing captured output that may contain synthetic credentials.
+      - name: Build package documentation
+        run: pnpm docs:build
       - run: pnpm check:no-old-auth-runtime
       - run: pnpm check:auth-logical-ids
       - run: pnpm check:auth-provenance --source-only
@@ -128,4 +135,9 @@ jobs:
           package-manager-cache: false
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+      - name: Build package documentation
+        run: pnpm docs:build
       - run: pnpm check:candidate-apps

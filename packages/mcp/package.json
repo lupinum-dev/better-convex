@@ -44,7 +44,7 @@
     "vue": "3.5.40"
   },
   "peerDependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/ext-apps": "1.7.5 || 2.0.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "vue": ">=3.5.0 <4"
   },

@@ -179,6 +179,7 @@ export function createBetterAuthMcpAccessVerifier(options: BetterAuthMcpAccessVe
       try {
         live = await validateLiveAccess(
           Object.freeze({
+            ...(principal.grantId ? { grantId: principal.grantId } : {}),
             clientId: principal.clientId,
             issuer: expected.issuer,
             resource,

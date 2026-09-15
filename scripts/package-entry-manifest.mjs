@@ -148,6 +148,7 @@ const nuxtPackageEntries = [
       'CreateAuth',
       'CreateBetterConvexAuthOptions',
       'CreateUserProjectionTriggersOptions',
+      'OAuthLiveAccess',
       'VerifyOAuthBearerTokenOptions',
       'WritableAuthCtx',
     ],

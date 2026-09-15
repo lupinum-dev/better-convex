@@ -51,6 +51,19 @@ const sessionGenerationFields = {
 function withSessionGenerationFields(tables: BetterAuthDBSchema): BetterAuthDBSchema {
   return Object.fromEntries(
     Object.entries(tables).map(([name, table]) => {
+      if (name === 'oauthRefreshToken') {
+        if (table.fields.bcnConsentId) throw new Error('AUTH_SCHEMA_OAUTH_CONSENT_FIELD_RESERVED')
+        return [
+          name,
+          {
+            ...table,
+            fields: {
+              ...table.fields,
+              bcnConsentId: { type: 'string', required: false, input: false, returned: false },
+            },
+          },
+        ]
+      }
       if (name !== 'user' && name !== 'session') return [name, table]
       for (const [fieldName, expected] of Object.entries(sessionGenerationFields[name])) {
         const configured = table.fields[fieldName]
@@ -270,7 +283,9 @@ function buildMetadata(tables: BetterAuthDBSchema): AuthSchemaMetadata {
         selectable: true,
         sortable: field.sortable === true,
         unique: field.unique === true,
-        updatable: true,
+        updatable: !(
+          logicalModelName === 'oauthRefreshToken' && logicalFieldName === 'bcnConsentId'
+        ),
         ...(reference ? { reference } : {}),
       }
     }

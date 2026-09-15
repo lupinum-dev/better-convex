@@ -17,7 +17,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { ConvexHttpClient } from 'convex/browser'
 import { makeFunctionReference } from 'convex/server'
@@ -33,6 +33,7 @@ const codegenPaths = [
   'test/fixtures/better-auth-local-component/convex/betterAuth/_generated',
 ]
 const excludedDirectoryNames = new Set([
+  '.cache',
   '.convex',
   '.git',
   '.nuxt',
@@ -258,7 +259,7 @@ function resolveSchemaVueTarball(isolatedRoot, parent) {
   }
 
   const packageRoot = path.join(isolatedRoot, 'packages/vue')
-  run('pnpm', ['run', 'build'], packageRoot)
+  run(process.execPath, [path.join(isolatedRoot, 'node_modules/unbuild/dist/cli.mjs')], packageRoot)
   const artifacts = path.join(parent, 'artifacts', 'vue')
   mkdirSync(artifacts, { recursive: true })
   const packed = JSON.parse(
@@ -374,6 +375,16 @@ function verifyPackagedSchemaCli(packagedDemo, isolatedRoot) {
   }
 }
 
+// This snapshot shares the reviewed installation; it is not a pnpm-owned install.
+// Execute the pinned runtimes directly so pnpm does not try to repair that symlink.
+export function checkSourceSchemas(isolatedRoot) {
+  run(
+    process.execPath,
+    [path.join(isolatedRoot, 'scripts/generate-auth-schema.mjs'), '--check'],
+    isolatedRoot,
+  )
+}
+
 async function main() {
   const unknown = process.argv.slice(2)
   if (unknown.length > 0) fail(`unknown argument ${JSON.stringify(unknown[0])}`)
@@ -391,10 +402,11 @@ async function main() {
       symlinkSync(isolatedRoot, path.join(packageScope, 'better-convex-nuxt'), 'dir')
     }
 
-    run('pnpm', ['exec', 'jiti', 'scripts/generate-auth-schema.mjs', '--check'], isolatedRoot)
+    checkSourceSchemas(isolatedRoot)
 
-    run('pnpm', ['exec', 'nuxt-module-build', 'prepare'], isolatedRoot)
-    run('pnpm', ['exec', 'nuxt-module-build', 'build'], isolatedRoot)
+    const moduleBuilder = path.join(isolatedRoot, 'node_modules/@nuxt/module-builder/dist/cli.mjs')
+    run(process.execPath, [moduleBuilder, 'prepare'], isolatedRoot)
+    run(process.execPath, [moduleBuilder, 'build'], isolatedRoot)
     const tarball = resolveSchemaTarball(isolatedRoot, parent)
     const vueTarball = resolveSchemaVueTarball(isolatedRoot, parent)
     const packagedDemo = preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball)
@@ -428,7 +440,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exitCode = 1
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  })
+}

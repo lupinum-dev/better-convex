@@ -114,7 +114,6 @@ function assertResourceProfile(
     resource.dpopBoundAccessTokensRequired !== false ||
     resource.signingAlgorithm !== 'RS256' ||
     resourceScopes === null ||
-    resourceScopes.length !== input.scopes.length ||
     input.scopes.some((scope) => !resourceScopes.includes(scope))
   ) {
     throw new Error('AUTH_OAUTH_RESOURCE_PROFILE_INVALID')
@@ -123,7 +122,11 @@ function assertResourceProfile(
 
 async function rollbackProvisioning(
   adapter: OAuthOperatorAdapter,
-  input: { clientId?: string; resourceCreated: boolean; resourceIdentifier: string },
+  input: {
+    clientId?: string
+    resourceCreated: boolean
+    resourceIdentifier: string
+  },
 ): Promise<void> {
   let clientRemoved = input.clientId === undefined
   let cleanupFailed = false
@@ -213,7 +216,7 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
             model: 'oauthResource',
             data: {
               accessTokenTtl: 600,
-              allowedScopes: scopes,
+              allowedScopes: [...oauthProfile.scopes!],
               customClaims: null,
               disabled: false,
               dpopBoundAccessTokensRequired: false,
@@ -245,7 +248,10 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
         })
       } catch {
         if (resourceCreated) {
-          await rollbackProvisioning(adapter, { resourceCreated, resourceIdentifier })
+          await rollbackProvisioning(adapter, {
+            resourceCreated,
+            resourceIdentifier,
+          })
         }
         throw new Error('AUTH_OAUTH_RESOURCE_PROFILE_INVALID')
       }
@@ -263,7 +269,9 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
             disabled: false,
             dpopBoundAccessTokens: false,
             enableEndSession: false,
-            grantTypes: ['authorization_code'],
+            grantTypes: scopes.includes('offline_access')
+              ? ['authorization_code', 'refresh_token']
+              : ['authorization_code'],
             name,
             redirectUris,
             requirePKCE: true,
@@ -278,10 +286,18 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
         })
         await adapter.create({
           model: 'oauthClientResource',
-          data: { clientId, createdAt: new Date(), resourceId: resourceIdentifier },
+          data: {
+            clientId,
+            createdAt: new Date(),
+            resourceId: resourceIdentifier,
+          },
         })
       } catch {
-        await rollbackProvisioning(adapter, { clientId, resourceCreated, resourceIdentifier })
+        await rollbackProvisioning(adapter, {
+          clientId,
+          resourceCreated,
+          resourceIdentifier,
+        })
         throw new Error('AUTH_OAUTH_CLIENT_PROVISION_FAILED')
       }
       return { clientId }

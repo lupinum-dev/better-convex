@@ -17,6 +17,14 @@ import { createFunctionHandle, type FunctionArgs, type GenericDataModel } from '
 import { ConvexError } from 'convex/values'
 
 import { isWritableAuthCtx, requireWritableAuthCtx, type AuthCtx } from '../context'
+import {
+  assertOAuthRefreshReady,
+  matchesOAuthRefreshClient,
+  oauthRefreshBusy,
+  presentedOAuthRefreshGrant,
+  rememberOAuthRefreshRotation,
+  takeOAuthRefreshParent,
+} from '../oauth-refresh-transport'
 import type { AuthAdapterComponentApi, AuthComponentTriggers, AuthFunctions } from '../types'
 import { createWorkforceAdapterTransport } from '../workforce/adapter-transport'
 import { hasWorkforceSchema, workforceSchemaPlugin } from '../workforce/schema'
@@ -151,10 +159,16 @@ export function createAccountIdTokenProtector(options: IdTokenProtectionOptions)
           await symmetricDecrypt({ data: value, key: secretConfig })
           transformed = value
         } else {
-          transformed = await symmetricEncrypt({ data: value, key: secretConfig })
+          transformed = await symmetricEncrypt({
+            data: value,
+            key: secretConfig,
+          })
         }
       } else {
-        transformed = await symmetricDecrypt({ data: value, key: secretConfig })
+        transformed = await symmetricDecrypt({
+          data: value,
+          key: secretConfig,
+        })
       }
     } catch {
       // The caught crypto error may contain credential/configuration detail;
@@ -165,7 +179,10 @@ export function createAccountIdTokenProtector(options: IdTokenProtectionOptions)
           : 'AUTH_ID_TOKEN_DECRYPTION_FAILED',
       )
     }
-    return { ...(data as Record<string, unknown>), [idTokenField]: transformed } as T
+    return {
+      ...(data as Record<string, unknown>),
+      [idTokenField]: transformed,
+    } as T
   }
 
   return {
@@ -317,6 +334,9 @@ export function createConvexAuthAdapter<
             .runMutation(component.adapter.create, {
               model,
               data: await idTokens.protect(model, data),
+              ...(model === 'oauthRefreshToken'
+                ? { oauthRefreshParentId: await takeOAuthRefreshParent() }
+                : {}),
               onCreateHandle: await triggerHandle(model, 'onCreate'),
               ...(operation ? { workforce: operation } : {}),
               ...(consumedChallenge ? { workforceConsumedChallenge: consumedChallenge } : {}),
@@ -341,6 +361,10 @@ export function createConvexAuthAdapter<
             select: mapSelect(model, select),
             ...(operation?.operation === 'confirm-enrollment' ? { workforce: operation } : {}),
           })
+          if (model === 'oauthRefreshToken') {
+            if (!(await matchesOAuthRefreshClient(found))) return null
+            await assertOAuthRefreshReady(found)
+          }
           return idTokens.reveal(model, found as T | null)
         },
         findMany: async <T>({
@@ -376,7 +400,10 @@ export function createConvexAuthAdapter<
           return Promise.all(rows.map((row) => idTokens.reveal(model, row) as Promise<T>))
         },
         count: ({ model, where }) =>
-          ctx.runQuery(component.adapter.count, { model, where: toComponentWhere(where) }),
+          ctx.runQuery(component.adapter.count, {
+            model,
+            where: toComponentWhere(where),
+          }),
         update: async <T>({
           model,
           where,
@@ -424,6 +451,9 @@ export function createConvexAuthAdapter<
           requireWritableAuthCtx(ctx)
           return ctx.runMutation(component.adapter.deleteMany, {
             model,
+            ...(model === 'oauthRefreshToken'
+              ? { oauthRefreshGrantId: await presentedOAuthRefreshGrant() }
+              : {}),
             where: toComponentWhere(where)!,
             onDeleteHandle: await relationshipTriggerHandle('onDelete'),
             onDeleteModels: triggerModels.onDelete,
@@ -471,6 +501,10 @@ export function createConvexAuthAdapter<
             onUpdateHandle: await triggerHandle(model, 'onUpdate'),
             ...(operation ? { workforce: operation } : {}),
           })
+          if (model === 'oauthRefreshToken' && set?.rotatedAt != null) {
+            if (!incremented) oauthRefreshBusy()
+            await rememberOAuthRefreshRotation(incremented)
+          }
           return idTokens.reveal(model, incremented as T | null)
         },
       }
