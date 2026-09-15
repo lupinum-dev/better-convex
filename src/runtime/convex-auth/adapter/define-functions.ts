@@ -21,6 +21,11 @@ import {
   normalizeSigningKeyCandidate,
   signingKeyCandidateValidator,
 } from '../jwks-rotation'
+import {
+  admitOAuthRefresh,
+  prepareOAuthRefreshCreate,
+  revokeOAuthRefreshConsent,
+} from '../oauth-refresh'
 import { migrateBeta3UserGeneration, sessionGenerationAuthority } from '../session-generation'
 import { createWorkforceAdapterPolicy } from '../workforce/adapter-policy'
 import { readAuthSessionAdmission } from '../workforce/admission'
@@ -340,7 +345,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
       returns: workforceSessionPageValidator,
       handler: (ctx, args) => {
         requireWorkforce()
-        return listWorkforceSessions(ctx, args.actor, args.paginationOpts, { schema, metadata })
+        return listWorkforceSessions(ctx, args.actor, args.paginationOpts, {
+          schema,
+          metadata,
+        })
       },
     }),
     revokeWorkforceSession: mutationGeneric({
@@ -383,7 +391,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     sessionAdmission: queryGeneric({
       args: { sessionId: v.string(), userId: v.optional(v.string()) },
       returns: v.union(
-        v.object({ user: authDocumentValidator, session: authDocumentValidator }),
+        v.object({
+          user: authDocumentValidator,
+          session: authDocumentValidator,
+        }),
         v.null(),
       ),
       handler: async (ctx, args) => {
@@ -401,6 +412,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
       args: {
         model: v.string(),
         data: v.any(),
+        oauthRefreshParentId: v.optional(v.string()),
         onCreateHandle: v.optional(v.string()),
         workforce: v.optional(workforceOperationValidator),
         workforceConsumedChallenge: v.optional(workforceConsumedChallengeValidator),
@@ -411,6 +423,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           args.model,
           await workforcePolicy.prepareCreateInput(ctx, args.model, args.data),
         )
+        if (args.model === 'oauthRefreshToken') {
+          row = await prepareOAuthRefreshCreate(ctx, row, args.oauthRefreshParentId, workforce)
+        } else if (args.oauthRefreshParentId !== undefined)
+          throw new Error('AUTH_OAUTH_REFRESH_INVALID')
         await relationships.assertTargets(ctx, args.model, row)
         await assertUniqueConstraints(ctx, schema, metadata, args.model, row)
         row = await workforcePolicy.prepareCreate(
@@ -432,7 +448,9 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         await workforcePolicy.scheduleCreatedSession(args.model, finalRow, async (expiresAt) => {
           const sessionId = ctx.db.normalizeId('session', storageId)
           if (!sessionId) throw new Error('AUTH_SESSION_INVALID')
-          await ctx.scheduler.runAt(expiresAt, expireSessionReference, { storageId: sessionId })
+          await ctx.scheduler.runAt(expiresAt, expireSessionReference, {
+            storageId: sessionId,
+          })
         })
         return toBetterAuthDocument(finalRow as never)
       },
@@ -453,11 +471,20 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           metadata,
           {
             ...requested,
-            select: workforcePolicy.prepareReadSelect(args.model, requested.select),
+            select:
+              args.model === 'oauthRefreshToken'
+                ? undefined
+                : workforcePolicy.prepareReadSelect(args.model, requested.select),
           },
           2,
         )
         const row = oneOrNull(rows, 'AUTH_FIND_ONE')
+        if (
+          args.model === 'oauthRefreshToken' &&
+          row &&
+          !(await admitOAuthRefresh(ctx, row, workforce))
+        )
+          return null
         const view = await workforcePolicy.projectFind(ctx, args.model, row, args.workforce)
         return toBetterAuthDocument(view, requested.select)
       },
@@ -490,7 +517,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         )
           .filter((row): row is AuthDocument => row !== null)
           .map((row) => toBetterAuthDocument(row, requested.select)!)
-        return { ...result, page: args.limit === undefined ? page : page.slice(0, args.limit) }
+        return {
+          ...result,
+          page: args.limit === undefined ? page : page.slice(0, args.limit),
+        }
       },
     }),
 
@@ -612,6 +642,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
       returns: v.number(),
       args: {
         model: v.string(),
+        oauthRefreshGrantId: v.optional(v.string()),
         where: v.array(whereValidator),
         onDeleteHandle: v.optional(v.string()),
         onDeleteModels: v.optional(v.array(v.string())),
@@ -619,6 +650,54 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         onUpdateModels: v.optional(v.array(v.string())),
       },
       handler: async (ctx, args) => {
+        // Provider family invalidation must not fail once a long-lived grant has more
+        // rows than the ordinary bulk limit. Consent deletion revokes every bound JWT
+        // and refresh row atomically; only a bounded batch of inert hashes is removed.
+        if (
+          args.model === 'oauthRefreshToken' &&
+          args.where.length === 2 &&
+          args.where.every(
+            (clause) =>
+              (clause.operator === undefined || clause.operator === 'eq') &&
+              (clause.connector === undefined || clause.connector === 'AND') &&
+              typeof clause.value === 'string',
+          )
+        ) {
+          const clientId = args.where.find((clause) => clause.field === 'clientId')?.value
+          const userId = args.where.find((clause) => clause.field === 'userId')?.value
+          if (typeof clientId === 'string' && typeof userId === 'string') {
+            const grantId = args.oauthRefreshGrantId
+            const rows = await ctx.db
+              .query('oauthRefreshToken')
+              .withIndex('clientId', (query) => query.eq('clientId', clientId))
+              .filter((query) =>
+                query.and(
+                  query.eq(query.field('userId'), userId),
+                  grantId === undefined ? true : query.eq(query.field('bcnConsentId'), grantId),
+                ),
+              )
+              .take(128)
+            await revokeOAuthRefreshConsent(ctx, rows)
+            await relationships.applyDeletion(ctx, rows, args.model, args)
+            return rows.length
+          }
+        }
+        const codeFamily = args.where.length === 1 ? args.where[0] : undefined
+        if (
+          args.model === 'oauthRefreshToken' &&
+          codeFamily?.field === 'authorizationCodeId' &&
+          (codeFamily.operator === undefined || codeFamily.operator === 'eq') &&
+          typeof codeFamily.value === 'string'
+        ) {
+          const codeId = codeFamily.value
+          const rows = await ctx.db
+            .query('oauthRefreshToken')
+            .withIndex('authorizationCodeId', (query) => query.eq('authorizationCodeId', codeId))
+            .take(128)
+          await revokeOAuthRefreshConsent(ctx, rows)
+          await relationships.applyDeletion(ctx, rows, args.model, args)
+          return rows.length
+        }
         const invalidated = await workforcePolicy.invalidateSessionCollection(
           ctx,
           args.model,
@@ -628,6 +707,14 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         const rows =
           (await workforcePolicy.expiredVerificationRows(ctx, args.model, args.where)) ??
           (await relationships.collectOperationRows(ctx, readShape(args)))
+        if (
+          args.model === 'oauthRefreshToken' &&
+          (args.where.some((clause) => clause.field === 'authorizationCodeId') ||
+            (args.where.some((clause) => clause.field === 'clientId') &&
+              args.where.some((clause) => clause.field === 'userId')))
+        ) {
+          await revokeOAuthRefreshConsent(ctx, rows)
+        }
         await relationships.applyDeletion(ctx, rows, args.model, args)
         return rows.length
       },
@@ -696,7 +783,12 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (!current) {
           await ctx.db.insert(
             'rateLimit' as never,
-            { id: args.key, key: args.key, count: 1, lastRequest: now } as never,
+            {
+              id: args.key,
+              key: args.key,
+              count: 1,
+              lastRequest: now,
+            } as never,
           )
           return { allowed: true, retryAfter: null }
         }
@@ -776,6 +868,11 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           'AUTH_INCREMENT_ONE',
         )
         if (!current) return null
+        if (args.model === 'oauthRefreshToken') {
+          if (!(await admitOAuthRefresh(ctx, current, workforce))) return null
+          if (set.revoked != null && set.rotatedAt == null)
+            await revokeOAuthRefreshConsent(ctx, [current])
+        }
         const patch: Record<string, unknown> = { ...set }
         for (const [fieldName, delta] of incrementEntries) {
           const value = current[fieldName]
@@ -822,7 +919,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         previousVerifyUntil: v.number(),
         rotatedAt: v.number(),
       }),
-      args: { next: signingKeyCandidateValidator, onlyIfEmpty: v.optional(v.boolean()) },
+      args: {
+        next: signingKeyCandidateValidator,
+        onlyIfEmpty: v.optional(v.boolean()),
+      },
       handler: async (ctx, args) => {
         const next = normalizeSigningKeyCandidate(args.next)
         const rotationNow = Date.now()

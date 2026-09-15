@@ -5,6 +5,8 @@ import type { AuthAdapterComponentApi } from './types'
 
 /** Provider-owned authority needed to revalidate a verified OAuth access token. */
 export interface OAuthLiveAccess {
+  /** Required for renewable tokens; immutable provider consent identity. */
+  readonly grantId?: string
   readonly clientId: string
   readonly issuer: string
   readonly resource: string
@@ -70,7 +72,11 @@ export async function validateOAuthAccess<DataModel extends GenericDataModel>(
   component: AuthAdapterComponentApi,
   access: OAuthLiveAccess,
 ): Promise<boolean> {
-  if (!validAccess(access)) return false
+  if (
+    !validAccess(access) ||
+    (access.scopes.includes('offline_access') && !nonEmptyString(access.grantId))
+  )
+    return false
 
   try {
     const [admission, client, resource, link, consent] = await Promise.all([
@@ -110,7 +116,7 @@ export async function validateOAuthAccess<DataModel extends GenericDataModel>(
           { field: 'clientId', value: access.clientId },
           { field: 'userId', value: access.subject },
         ],
-        ['clientId', 'resources', 'scopes', 'userId'],
+        ['id', 'clientId', 'resources', 'scopes', 'userId'],
       ),
     ])
 
@@ -135,6 +141,7 @@ export async function validateOAuthAccess<DataModel extends GenericDataModel>(
       link.clientId === access.clientId &&
       link.resourceId === access.resource &&
       consent &&
+      (access.grantId === undefined || consent.id === access.grantId) &&
       consent.clientId === access.clientId &&
       consent.userId === access.subject &&
       consentResources?.includes(access.resource) &&

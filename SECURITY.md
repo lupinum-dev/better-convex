@@ -85,15 +85,15 @@ shared MCP secret.
 - A Convex session JWT is RS256, has `token_use = "convex-session"`, exact issuer `CONVEX_SITE_URL`, audience `convex`, a maximum 15-minute lifetime, and an allowlisted payload. Convex functions that use the component helpers recheck the persisted session.
 - Every session is bound to its user's component-owned security generation. Password reset advances that generation atomically, so all earlier sessions fail provider reads and component admission without an unbounded delete. Stale rows remain inaccessible and are removed by their scheduled expiry; only sessions created after invalidation bind to the new generation.
 - Public JWKS output contains public key material only. Private JWK members and stored rows must never appear in an operator response, error, trace, source map, or artifact.
-- The initial signing key is provisioned through the internal `rotateSigningKey` operator action before public auth traffic. Later rotations are additive and retain earlier verification keys through the complete token, cache, and skew grace period.
+- The initial signing key is provisioned through the internal `ensureSigningKey` operator action before public auth traffic. Later rotations are additive and retain earlier verification keys through the complete token, cache, and skew grace period.
 - Convex session JWTs and delegated OAuth access tokens are different token classes and are rejected at the wrong boundary.
 
 ## Delegated OAuth beta profile
 
-OAuth protocol behavior comes from the exact official Better Auth OAuth Provider peer. Better Convex Nuxt constrains it to one reviewed profile:
+OAuth protocol behavior comes from the exact official Better Auth OAuth Provider peer. Better Convex Nuxt constrains it to the following profile, with explicit session-bound renewal opt-in:
 
 - confidential web clients and public agent clients provisioned by an authorized operator;
-- authorization code only;
+- authorization code; an explicit renewable profile also permits refresh-token exchanges;
 - `client_secret_basic` for confidential clients and `none` for public clients;
 - exact pre-registered HTTPS redirects, or canonical HTTP loopback redirects whose
   IP-literal runtime port alone may vary under RFC 8252;
@@ -103,9 +103,41 @@ OAuth protocol behavior comes from the exact official Better Auth OAuth Provider
 - allowlisted scopes;
 - RS256 `at+jwt` access tokens with `token_use = "oauth-access"` and a maximum 10-minute lifetime;
 - database-backed rate limiting;
-- no refresh tokens or `offline_access`.
+- no refresh tokens or `offline_access` by default. Renewal requires both grant types, explicit `offline_access` consent, `refreshTokenExpiresIn: 604800`, and `refreshTokenReuseInterval: 10`.
 
-Dynamic client registration, client credentials, implicit flow, password grant, refresh tokens, DPoP, pushed authorization requests, client ID metadata documents, multi-resource tokens, introspection, UserInfo, end-session, and outbound OIDC identity-provider behavior are disabled for the first beta. Public clients must be preregistered with exact HTTPS redirects or canonical HTTP loopback shapes, use `token_endpoint_auth_method = none`, and complete S256 PKCE; only an IP-literal loopback runtime port may vary, and public clients never receive or share a client secret.
+Dynamic client registration, client credentials, implicit flow, password grant, DPoP, pushed authorization requests, client ID metadata documents, multi-resource tokens, introspection, UserInfo, end-session, and outbound OIDC identity-provider behavior are disabled for the first beta. Public clients must be preregistered with exact HTTPS redirects or canonical HTTP loopback shapes, use `token_endpoint_auth_method = none`, and complete S256 PKCE; only an IP-literal loopback runtime port may vary, and public clients never receive or share a client secret.
+
+The renewable profile requires the canonical Convex adapter. The provider owns
+hashing, issuance, guarded rotation, and its encrypted 10-second retry receipt.
+The component rechecks the original session, user, client, resource link and
+consent, then binds every refresh row to the immutable consent ID. Rotation
+carries its parent ID privately to the successor mutation, which rejects a
+removed parent or replaced consent. The family cannot outlive its original
+refresh deadline or session. A refresh scope reduction must retain
+`offline_access`; other reductions are permitted within the original grant.
+
+Concurrent exchanges have one successor. An unfinished rotation returns
+`temporarily_unavailable` with `Retry-After: 1`; an identical completed retry
+within the 10-second grace returns the same encrypted receipt. Reuse outside
+that grace revokes the client/user consent. Every newly issued token under the
+renewable profile, including read-only tokens without `offline_access`, carries
+`bcn_grant_id`. Live validation checks that consent ID, so reconsent cannot
+revive those revoked tokens. Legacy unbound tokens retain their original
+maximum 10-minute lifetime; see `internals/migrations.md`.
+
+Family invalidation revokes authority independently of family size. It deletes
+at most 128 refresh rows synchronously. Additional hashed rows retain their old
+consent binding and cannot become valid after reconsent; deployments still own
+physical retention/cleanup of expired credential records. No secret or cached
+rotation response belongs in logs.
+
+Removing a session, user, or OAuth client denies its refresh tokens through
+live parent admission without traversing renewal history. Hashed refresh rows
+and encrypted retry receipts can retain stale parent references; deployments
+own their physical retention and cleanup. Explicit refresh-family deletion
+still removes at most 128 rows and revokes bound consent. Creating a refresh
+row or changing its parent references still requires valid targets. Other
+relationship limits and deletion hooks are unchanged.
 
 The authorization-server and protected-resource metadata documents are public
 and return `Access-Control-Allow-Origin: *` without credentialed CORS. The only
@@ -344,7 +376,7 @@ loss can let an attacker choose signed client-IP buckets.
 
 1. For one user/client grant, delete the consent with the provider-owned consent
    API and revoke the app-owned delegation. For a client-wide event, disable the
-   client; for a resource-wide event, disable or unlink the resource and close
+   client; for a resource-wide event, delete or unlink the resource and close
    `/mcp` if needed.
 2. The beta issues self-contained JWT access tokens. The revocation endpoint
    cannot individually revoke that token class, and no second denylist exists.

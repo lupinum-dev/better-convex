@@ -5,6 +5,7 @@ import {
   OAuthSecurityError,
   assertSafeStoredOAuthClient,
   assertSafeStoredOAuthResource,
+  hasOAuthRenewal,
   type hardenOAuthProviderCallbacks,
   type OAuthClientRecord,
   type PinnedOAuthProviderProfile,
@@ -40,6 +41,8 @@ export function validatePinnedOAuthProviderRuntime(
   options: PinnedOAuthProviderProfile,
   hardened: ReturnType<typeof hardenOAuthProviderCallbacks>,
 ): InstalledOAuthProviderPlugin['options'] {
+  if (hasOAuthRenewal(options) && context.adapter.id !== '@lupinum/better-convex-nuxt')
+    invalidConfiguration()
   const configuredPlugins = context.options.plugins ?? []
   const jwtIndexes = configuredPlugins
     .map((plugin, index) => (plugin.id === 'jwt' ? index : -1))
@@ -116,8 +119,10 @@ export function validatePinnedOAuthProviderRuntime(
     providerOptions.accessTokenExpiresIn !== options.accessTokenExpiresIn ||
     providerOptions.codeExpiresIn !== options.codeExpiresIn ||
     !Array.isArray(providerOptions.grantTypes) ||
-    providerOptions.grantTypes.length !== 1 ||
-    providerOptions.grantTypes[0] !== 'authorization_code'
+    providerOptions.grantTypes.length !== options.grantTypes?.length ||
+    providerOptions.grantTypes.some((grant, index) => grant !== options.grantTypes?.[index]) ||
+    providerOptions.refreshTokenExpiresIn !== (options.refreshTokenExpiresIn ?? 2592000) ||
+    providerOptions.refreshTokenReuseInterval !== (options.refreshTokenReuseInterval ?? 0)
   ) {
     invalidConfiguration()
   }
