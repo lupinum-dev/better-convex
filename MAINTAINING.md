@@ -175,7 +175,8 @@ workflow change.
 GitHub must have:
 
 - a protected `main` branch with pull requests, linear history, resolved review
-  threads, and the repository's required CI, CodeQL, starter, and preview checks;
+  threads, and required `release-gate` and CodeQL `analyze` checks; starter CI
+  remains a review check and on-demand previews remain optional;
 - squash merge as the only merge method, auto-merge enabled, and merged branches
   deleted automatically;
 - GitHub Actions restricted to full commit-SHA references, with default

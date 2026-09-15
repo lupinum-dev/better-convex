@@ -13,6 +13,7 @@ interface WorkflowStep {
   run?: unknown
   uses?: unknown
   with?: Record<string, unknown>
+  'working-directory'?: string
 }
 
 interface WorkflowJob {
@@ -72,6 +73,27 @@ function checkoutRef(workflow: Workflow, jobId: string) {
 describe('state-aware Better Convex release workflows', () => {
   const ci = parseWorkflow('.github/workflows/ci.yml')
   const publish = parseWorkflow('.github/workflows/publish-prerelease.yml')
+
+  it.each([
+    ['static-and-negative', 'pnpm test:auth-sentinels'],
+    ['monthly-clean-consumers', 'pnpm check:candidate-apps'],
+  ])('prepares package documentation before %s packs a clean checkout', (jobId, command) => {
+    const workflow = parseWorkflow('.github/workflows/security-extended.yml')
+    const steps = requireJob(workflow, jobId).steps ?? []
+    const install = steps.findIndex(
+      (step) =>
+        step['working-directory'] === 'docs' && step.run === 'pnpm install --frozen-lockfile',
+    )
+    const build = steps.findIndex((step) => step.run === 'pnpm docs:build')
+    const pack = steps.findIndex((step) => step.run === command)
+
+    expect(install).toBeGreaterThan(-1)
+    expect(build).toBeGreaterThan(install)
+    expect(pack).toBeGreaterThan(build)
+    for (const index of [install, build, pack]) {
+      expect(steps[index]?.if).toBeUndefined()
+    }
+  })
 
   it('runs the Linux release smoke when release package inputs change', () => {
     const classifier = requireJob(ci, 'classify').steps?.find(
