@@ -13,7 +13,7 @@
   subscriptions that itself returns HTTP 404 and `-32601`. Verify unchanged
   header, version, correlation and closed-capability regressions; remove the
   response correction and this entry together.
-- **Tracking issue:** Tracked in the release-completion review.
+- **Tracking issue:** [Release-completion review #143](https://github.com/lupinum-dev/better-convex/pull/143).
 
 ## MCP SDK missing protocol-version header rejection
 
@@ -34,7 +34,7 @@
   suite in `test/unit/mcp-header-contract.test.ts`, then remove
   `missingMcpProtocolHeaderResponse`, its handler call, and this entry together.
   Keep the protocol regression tests after removing the guard.
-- **Tracking issue:** No public issue filed; tracked in the MCP audit follow-up.
+- **Tracking issue:** [Release-completion review #143](https://github.com/lupinum-dev/better-convex/pull/143).
 
 ## Beta.3 user-generation backfill
 
@@ -81,4 +81,4 @@
   nullable stored refresh binding until no experimental legacy rows remain.
   Remove this entry together with the retired compatibility path; keep the
   revocation/reconsent regression tests.
-- **Tracking issue:** No public issue filed; tracked in the MCP audit follow-up.
+- **Tracking issue:** [Release-completion review #143](https://github.com/lupinum-dev/better-convex/pull/143).
