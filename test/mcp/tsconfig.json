@@ -14,6 +14,7 @@
     "baseUrl": "../..",
     "paths": {
       "@lupinum/better-convex-mcp": ["packages/mcp/src/index.ts"],
+      "@lupinum/better-convex-mcp/test": ["packages/mcp/src/test.ts"],
       "@lupinum/better-convex-nuxt/better-auth/server": ["src/runtime/convex-auth/index.ts"]
     }
   },

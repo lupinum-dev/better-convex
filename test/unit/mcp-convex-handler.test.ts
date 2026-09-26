@@ -59,7 +59,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       authorization: oauthAuthorization(),
-      configureServer(_access, server) {
+      configureServer({ server }) {
         server.registerTool(
           'commit_once',
           { inputSchema: z.object({}) },
@@ -133,7 +133,7 @@ describe('Convex-native official MCP handler composition', () => {
         resourceName: 'Neutral notes',
         scopesSupported: ['notes:read', 'notes:write'],
       },
-      configureServer(access, server) {
+      configureServer({ access, server }) {
         observedAccess.push(access)
         server.registerTool(
           'search_notes',
@@ -296,7 +296,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       authorization: oauthAuthorization(),
-      configureServer(_access, server) {
+      configureServer({ server }) {
         factoryCalls += 1
         void server
       },
@@ -327,7 +327,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       authorization: oauthAuthorization(),
-      configureServer(_access, server) {
+      configureServer({ server }) {
         server.registerTool('owned-server', { inputSchema: z.object({}) }, () => ({
           content: [{ type: 'text', text: 'owned' }],
         }))
@@ -397,7 +397,7 @@ describe('Convex-native official MCP handler composition', () => {
           },
         },
       },
-      configureServer(access, server) {
+      configureServer({ access, server }) {
         server.registerTool('whoami', { inputSchema: z.object({}) }, () => ({
           content: [{ type: 'text', text: 'Credential is active.' }],
           structuredContent: { subject: access.subject },
@@ -455,7 +455,7 @@ describe('Convex-native official MCP handler composition', () => {
           issuer: 'http://notes.example.test/credentials/',
           verifier: accessVerifier(),
         },
-        configureServer(_access, server) {
+        configureServer({ server }) {
           void server
         },
       }),
@@ -517,7 +517,7 @@ describe('Convex-native official MCP handler composition', () => {
           })
         },
       }),
-      configureServer(_access, server) {
+      configureServer({ server }) {
         factoryCalls += 1
         void server
       },
@@ -541,7 +541,7 @@ describe('Convex-native official MCP handler composition', () => {
         resourceName: 'Neutral notes',
         scopesSupported: ['notes:read', 'notes:write'],
       },
-      configureServer(_access, server) {
+      configureServer({ server }) {
         void server
       },
     } satisfies HandleMcpRequestOptions
@@ -618,7 +618,7 @@ describe('Convex-native official MCP handler composition', () => {
           issuer: 'http://issuer.example.test/',
           verifier: accessVerifier(),
         },
-        configureServer(_access, server) {
+        configureServer({ server }) {
           void server
         },
       }),
@@ -668,7 +668,7 @@ describe('Convex-native official MCP handler composition', () => {
               },
             },
           },
-          configureServer(_access, server) {
+          configureServer({ server }) {
             factoryCalls += 1
             void server
           },
@@ -692,7 +692,7 @@ describe('Convex-native official MCP handler composition', () => {
             serverInfo,
             resource,
             authorization,
-            configureServer(_access, server) {
+            configureServer({ server }) {
               void server
             },
           }),
@@ -721,7 +721,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       authorization: oauthAuthorization(foreignIssuerVerifier),
-      configureServer(_access, server) {
+      configureServer({ server }) {
         factoryCalls += 1
         void server
       },
@@ -743,7 +743,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       authorization: oauthAuthorization(),
-      configureServer(_access, server) {
+      configureServer({ server }) {
         factoryCalls += 1
         void server
       },
@@ -779,7 +779,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       authorization: oauthAuthorization(),
-      configureServer(_access, server) {
+      configureServer({ server }) {
         factoryCalls += 1
         void server
       },
@@ -807,7 +807,7 @@ describe('Convex-native official MCP handler composition', () => {
       serverInfo,
       resource,
       authorization: oauthAuthorization(),
-      configureServer(_access, server) {
+      configureServer({ server }) {
         server.registerPrompt('unsupported', {}, () => ({
           messages: [],
         }))
@@ -853,7 +853,7 @@ describe('Convex-native official MCP handler composition', () => {
         serverInfo,
         resource,
         authorization: oauthAuthorization(),
-        async configureServer(_access, server) {
+        async configureServer({ server }) {
           factoryCalls += 1
           void server
           return await new Promise<void>(() => {})
@@ -918,7 +918,7 @@ describe('Convex-native official MCP handler composition', () => {
         serverInfo,
         resource,
         authorization: oauthAuthorization(),
-        configureServer(_access, server) {
+        configureServer({ server }) {
           factoryCalls += 1
           void server
         },
@@ -1005,7 +1005,7 @@ describe('Convex-native official MCP handler composition', () => {
             serverInfo,
             resource,
             authorization: oauthAuthorization(verifier),
-            configureServer(access, server) {
+            configureServer({ access, server }) {
               for (const registeredTool of ['search_notes', 'rename_note'] as const) {
                 server.registerTool(registeredTool, { inputSchema: z.object({}) }, () => {
                   const key = [

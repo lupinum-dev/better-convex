@@ -1,241 +1,109 @@
-import { handleMcpRequest, runMcpTool, type McpAccessContext } from '@lupinum/better-convex-mcp'
 import {
-  createBetterAuthMcpAccessVerifier,
-  requireAuthOrigin,
-} from '@lupinum/better-convex-nuxt/better-auth/server'
-import type { McpServer } from '@modelcontextprotocol/server'
-import { ConvexError } from 'convex/values'
+  handleMcpRequest,
+  registerMcpTool,
+  type McpConfigureServerContext,
+} from '@lupinum/better-convex-mcp'
+import type { BetterConvexMcpPrincipal } from '@lupinum/better-convex-nuxt/better-auth/server'
 import { z } from 'zod'
 
 import { internal } from './_generated/api'
 import { httpAction, type ActionCtx } from './_generated/server'
 import { auth } from './auth'
-import { serializePrincipal, type SerializableOAuthPrincipal } from './mcp/policy'
-import { MCP_SCOPES, isMcpScope, type McpScope } from './mcp/scopes'
+import { PROJECT_ERROR_CODES } from './projects'
 
-const SAFE_APPLICATION_CODES = new Set([
-  'MCP_ACCESS_REVOKED',
-  'MCP_APPROVAL_REQUIRED',
-  'MCP_INPUT_INVALID',
-  'MCP_RATE_LIMITED',
-  'MCP_RESOURCE_NOT_FOUND',
-  'MCP_SCOPE_REQUIRED',
-])
-const idSchema = z.string().min(1).max(128)
+const id = z.string().min(1).max(128)
+const inOrganization = z.object({ organizationId: id }).strict()
+const onProject = z.object({ organizationId: id, projectId: id }).strict()
+const projectSummary = z.object({ id: z.string(), name: z.string() })
 
-function applicationFailure(error: unknown) {
-  const code =
-    error instanceof ConvexError &&
-    typeof error.data === 'string' &&
-    SAFE_APPLICATION_CODES.has(error.data)
-      ? error.data
-      : undefined
-  if (!code) throw error
-  return {
-    content: [{ text: JSON.stringify({ code }), type: 'text' as const }],
-    isError: true,
-  }
-}
-
-async function invokeTool(operation: () => Promise<unknown>) {
-  return await runMcpTool(async () => {
-    try {
-      const value = await operation()
-      return {
-        content: [{ text: JSON.stringify(value), type: 'text' as const }],
-        structuredContent: value as Record<string, unknown>,
-      }
-    } catch (error) {
-      return applicationFailure(error)
-    }
-  })
-}
-
-function requireScope(access: McpAccessContext, scope: McpScope) {
-  if (access.scopes.includes(scope)) return undefined
-  return {
-    content: [
-      {
-        text: JSON.stringify({ code: 'MCP_SCOPE_REQUIRED' }),
-        type: 'text' as const,
-      },
-    ],
-    isError: true,
-  }
-}
-
-export function createDelegatedMcpServer(
-  ctx: ActionCtx,
-  access: McpAccessContext,
-  principal: SerializableOAuthPrincipal,
-  server: McpServer,
+/**
+ * Registers the project tools for one request. Each tool passes the verified
+ * principal to one internal mutation, which re-checks it before any effect.
+ */
+export function registerProjectTools(
+  ctx: Pick<ActionCtx, 'runMutation'>,
+  { principal, server, tools }: McpConfigureServerContext<BetterConvexMcpPrincipal>,
 ) {
-  server.registerTool(
-    'projects.list',
-    {
-      description: 'List up to 100 active projects in an organization.',
-      inputSchema: z.object({ organizationId: idSchema }).strict(),
-    },
-    async ({ organizationId }) => {
-      const denied = requireScope(access, 'mcp:read')
-      if (denied) return denied
-      return await invokeTool(() =>
-        ctx.runMutation(internal.mcpTools.listProjects, {
-          organizationId,
-          principal,
-        }),
-      )
-    },
-  )
-
-  server.registerTool(
-    'projects.create',
-    {
-      description: 'Create one project after live member authorization.',
-      inputSchema: z
-        .object({
-          name: z.string().trim().min(1).max(100),
-          organizationId: idSchema,
-        })
-        .strict(),
-    },
-    async ({ name, organizationId }) => {
-      const denied = requireScope(access, 'mcp:write')
-      if (denied) return denied
-      return await invokeTool(() =>
-        ctx.runMutation(internal.mcpTools.createProject, {
-          name,
-          organizationId,
-          principal,
-        }),
-      )
-    },
-  )
-
-  const projectInput = z.object({ organizationId: idSchema, projectId: idSchema }).strict()
-  server.registerTool(
-    'projects.delete.preview',
-    {
-      description: 'Preview a reversible project deletion without changing state.',
-      inputSchema: projectInput,
-    },
-    async ({ organizationId, projectId }) => {
-      const denied = requireScope(access, 'mcp:write')
-      if (denied) return denied
-      return await invokeTool(() =>
-        ctx.runMutation(internal.mcpTools.previewProjectDelete, {
-          organizationId,
-          principal,
-          projectId,
-        }),
-      )
-    },
-  )
-
-  server.registerTool(
-    'projects.delete.requestApproval',
-    {
-      description: 'Request a short-lived human approval for one project deletion.',
-      inputSchema: projectInput,
-    },
-    async ({ organizationId, projectId }) => {
-      const denied = requireScope(access, 'mcp:write')
-      if (denied) return denied
-      return await invokeTool(() =>
-        ctx.runMutation(internal.mcpTools.requestProjectDeleteApproval, {
-          organizationId,
-          principal,
-          projectId,
-        }),
-      )
-    },
-  )
-
-  server.registerTool(
-    'projects.delete.execute',
-    {
-      description: 'Soft-delete one project using its bound, approved request.',
-      inputSchema: z
-        .object({
-          approvalId: idSchema,
-          organizationId: idSchema,
-          projectId: idSchema,
-        })
-        .strict(),
-    },
-    async ({ approvalId, organizationId, projectId }) => {
-      const denied = requireScope(access, 'mcp:write')
-      if (denied) return denied
-      return await invokeTool(() =>
-        ctx.runMutation(internal.mcpTools.executeProjectDelete, {
-          approvalId,
-          organizationId,
-          principal,
-          projectId,
-        }),
-      )
-    },
-  )
+  registerMcpTool(server, tools, {
+    name: 'list_organizations',
+    description: 'List your organizations and your role in each. Use an ID with the project tools.',
+    risk: 'read',
+    scopes: ['mcp:read'],
+    inputSchema: z.object({}).strict(),
+    outputSchema: z.object({
+      organizations: z.array(z.object({ id: z.string(), name: z.string(), role: z.string() })),
+    }),
+    handler: async () => ({
+      structuredContent: await ctx.runMutation(internal.projects.listOrganizations, { principal }),
+    }),
+  })
+  registerMcpTool(server, tools, {
+    name: 'list_projects',
+    description: 'List up to 100 active projects in an organization.',
+    risk: 'read',
+    scopes: ['mcp:read'],
+    inputSchema: inOrganization,
+    outputSchema: z.object({ projects: z.array(projectSummary) }),
+    handler: async (input) => ({
+      structuredContent: await ctx.runMutation(internal.projects.list, { ...input, principal }),
+    }),
+  })
+  registerMcpTool(server, tools, {
+    name: 'create_project',
+    description: 'Create one project in an organization.',
+    risk: 'write',
+    scopes: ['mcp:write'],
+    inputSchema: z.object({ organizationId: id, name: z.string().trim().min(1).max(100) }).strict(),
+    outputSchema: projectSummary,
+    handler: async (input) => ({
+      structuredContent: await ctx.runMutation(internal.projects.create, { ...input, principal }),
+    }),
+  })
+  registerMcpTool(server, tools, {
+    name: 'request_project_deletion',
+    description:
+      'Ask a person to approve deleting a project. Returns the project and an approval ID for delete_project.',
+    risk: 'write',
+    scopes: ['mcp:write'],
+    inputSchema: onProject,
+    outputSchema: z.object({
+      approvalId: z.string(),
+      project: projectSummary,
+      status: z.literal('waiting_for_approval'),
+    }),
+    handler: async (input) => ({
+      structuredContent: await ctx.runMutation(internal.projects.requestDelete, {
+        ...input,
+        principal,
+      }),
+    }),
+  })
+  registerMcpTool(server, tools, {
+    name: 'delete_project',
+    description: 'Delete a project after a person approved the request. The app can restore it.',
+    risk: 'destructive',
+    scopes: ['mcp:write'],
+    inputSchema: onProject.extend({ approvalId: id }).strict(),
+    outputSchema: z.object({ projectId: z.string(), status: z.literal('deleted') }),
+    handler: async (input) => ({
+      structuredContent: await ctx.runMutation(internal.projects.remove, { ...input, principal }),
+    }),
+  })
 }
 
-export const handleMcp = httpAction(async (ctx, request) => {
-  const issuer = `${requireAuthOrigin('SITE_URL')}/api/auth`
-  const resource = new URL('/mcp', requireAuthOrigin('CONVEX_SITE_URL'))
-  type ProviderAccess = Parameters<
-    Parameters<typeof createBetterAuthMcpAccessVerifier>[0]['validateLiveAccess']
-  >[0]
-  let verifiedPrincipal: ProviderAccess | undefined
-  const verifier = createBetterAuthMcpAccessVerifier({
-    allowedScopes: MCP_SCOPES,
-    jwksUrl: `${issuer}/jwks`,
-    maxLifetimeSeconds: 600,
-    validateLiveAccess: async (access) => {
-      if (!(await auth.validateOAuthAccess(ctx, access))) return false
-      verifiedPrincipal = access
-      return true
-    },
-  })
-  return await handleMcpRequest(request, {
-    serverInfo: {
-      name: 'better-convex-nuxt-mcp-oauth-agent',
-      version: '0.1.0',
-    },
-    resource,
+export const handleMcp = httpAction((ctx, request) =>
+  handleMcpRequest(request, {
+    serverInfo: { name: 'better-convex-mcp-oauth-agent', version: '0.2.0' },
+    resource: auth.mcp.resource(),
     authorization: {
-      issuer,
       mode: 'oauth',
-      resourceName: 'Better Convex Nuxt MCP',
-      scopesSupported: MCP_SCOPES,
-      verifier,
+      issuer: auth.mcp.issuer(),
+      verifier: auth.createMcpAccessVerifier(ctx),
+      resourceName: 'Better Convex MCP starter',
+      // Hosts that read this list request `offline_access` and receive renewal.
+      scopesSupported: auth.mcp.scopesSupported(),
     },
-    configureServer(access, server) {
-      const principal = verifiedPrincipal
-      const delegatedScopes = principal?.scopes.filter(isMcpScope) ?? []
-      if (
-        !principal ||
-        principal.clientId !== access.clientId ||
-        principal.issuer !== access.issuer ||
-        principal.resource !== access.resource ||
-        principal.subject !== access.subject ||
-        delegatedScopes.length !== principal.scopes.length ||
-        principal.scopes.length !== access.scopes.length ||
-        access.scopes.some((scope) => !principal.scopes.includes(scope))
-      ) {
-        throw new Error('MCP_ACCESS_CONTEXT_INVALID')
-      }
-      createDelegatedMcpServer(
-        ctx,
-        access,
-        serializePrincipal({
-          clientId: principal.clientId,
-          issuer: principal.issuer,
-          resource: principal.resource,
-          scopes: new Set(delegatedScopes),
-          sessionId: principal.sessionId,
-          subject: principal.subject,
-        }),
-        server,
-      )
-    },
-  })
-})
+    exposeErrorCodes: PROJECT_ERROR_CODES,
+    configureServer: (context) => registerProjectTools(ctx, context),
+  }),
+)

@@ -38,7 +38,7 @@ describe('MCP request routing', () => {
       }),
       {
         authorization: { issuer, mode: 'oauth', verifier },
-        configureServer(_access, server) {
+        configureServer({ server }) {
           void server
         },
         resource,

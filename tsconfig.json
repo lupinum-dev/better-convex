@@ -7,6 +7,7 @@
     "docs",
     "demo",
     "starters",
+    "scripts/fixtures/mcp-oauth-agent-evidence.ts",
     "test/mcp",
     "test/fixtures/consumer-smoke",
     "test/fixtures/auth-client-typing",

@@ -1,21 +1,14 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
-const role = v.union(
-  v.literal('owner'),
-  v.literal('admin'),
-  v.literal('member'),
-  v.literal('viewer'),
-)
-
 export default defineSchema({
   // Rebuildable projection. Better Auth remains the canonical user store.
   users: defineTable({
     authId: v.string(),
     email: v.string(),
     name: v.string(),
+    // App-owned suspension. A suspended user keeps their login but loses MCP access.
     active: v.boolean(),
-    oauthAdmin: v.boolean(),
   })
     .index('by_auth_id', ['authId'])
     .index('by_email', ['email']),
@@ -25,21 +18,11 @@ export default defineSchema({
   memberships: defineTable({
     organizationId: v.id('organizations'),
     userId: v.id('users'),
-    role,
+    role: v.union(v.literal('owner'), v.literal('admin'), v.literal('member'), v.literal('viewer')),
     status: v.union(v.literal('active'), v.literal('removed')),
-  }).index('by_org_user', ['organizationId', 'userId']),
-
-  // App-owned grant: OAuth consent alone never grants organization access.
-  delegations: defineTable({
-    organizationId: v.id('organizations'),
-    userId: v.id('users'),
-    clientId: v.string(),
-    scopes: v.array(v.string()),
-    status: v.union(v.literal('active'), v.literal('revoked')),
-    expiresAt: v.number(),
   })
-    .index('by_org_user_client', ['organizationId', 'userId', 'clientId'])
-    .index('by_user_client', ['userId', 'clientId']),
+    .index('by_org_user', ['organizationId', 'userId'])
+    .index('by_user', ['userId', 'status']),
 
   projects: defineTable({
     organizationId: v.id('organizations'),
@@ -49,6 +32,7 @@ export default defineSchema({
     deletedAt: v.optional(v.number()),
   }).index('by_org_status', ['organizationId', 'status']),
 
+  // A person approves a deletion the agent requested. Bound to user, client, and project.
   approvals: defineTable({
     operation: v.literal('projects.delete'),
     projectId: v.id('projects'),

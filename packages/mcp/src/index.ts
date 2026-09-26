@@ -13,15 +13,20 @@ export interface McpAccessContext {
 }
 
 /**
- * Safe result returned by a provider-neutral access-token verifier.
+ * Result returned by an access-token verifier.
  *
- * Implementations return exactly these fields. Provider-private references stay in the verifier's
- * request-local closure and must not be attached to this value.
+ * `access` is the normalized, credential-free identity provenance. `principal` is the verifier's
+ * typed application principal for this token, for example the live grant a Convex verifier just
+ * resolved. The package hands it unchanged to `requestState` and `configureServer`, so the
+ * application never captures verifier state in a closure. It must never contain the raw token or
+ * other provider secrets.
  */
-export interface VerifiedMcpAccess {
+export type VerifiedMcpAccess<Principal = undefined> = {
   readonly access: McpAccessContext
   readonly expiresAt: number
-}
+} & (undefined extends Principal
+  ? { readonly principal?: Principal }
+  : { readonly principal: Principal })
 
 /** Captured verification target with a frozen outer record and a request-local resource clone. */
 export interface McpVerificationExpectation {
@@ -34,13 +39,35 @@ export interface McpVerificationExpectation {
  *
  * Implementations validate signature or introspection, token class, issuer, client, subject,
  * expiration, scopes, and the exact expected resource. Provider-private references remain inside
- * the adapter and never become part of {@link McpAccessContext}.
+ * the adapter and never become part of {@link McpAccessContext}; the typed principal is the one
+ * application-facing value a verifier adds.
  */
-export interface McpAccessVerifier {
-  verifyAccessToken(token: string, expected: McpVerificationExpectation): Promise<VerifiedMcpAccess>
+export interface McpAccessVerifier<Principal = undefined> {
+  verifyAccessToken(
+    token: string,
+    expected: McpVerificationExpectation,
+  ): Promise<VerifiedMcpAccess<Principal>>
 }
 
 export { handleMcpRequest, McpUnsupportedCapabilityError } from './handler.js'
-export type { HandleMcpRequestOptions, McpRequestTools } from './handler.js'
-export { runMcpTool } from './tools.js'
-export type { McpToolErrorMetadata, RunMcpToolOptions } from './tools.js'
+export type {
+  HandleMcpRequestOptions,
+  McpConfigureServerContext,
+  McpRequestStateContext,
+  McpRequestTools,
+} from './handler.js'
+export { projectMcpToolError, runMcpTool } from './tools.js'
+export type {
+  McpToolErrorMetadata,
+  McpToolResult,
+  ProjectMcpToolErrorOptions,
+  RunMcpToolOptions,
+} from './tools.js'
+export { defineMcpTool, registerMcpTool } from './define.js'
+export type {
+  DefinedMcpTool,
+  McpToolConfig,
+  McpToolDefinition,
+  McpToolHandlerResult,
+  McpToolRisk,
+} from './define.js'

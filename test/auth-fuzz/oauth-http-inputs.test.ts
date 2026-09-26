@@ -1,5 +1,7 @@
+import { componentsGeneric } from 'convex/server'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import { verifyOAuthBearerToken } from '../../src/runtime/convex-auth/oauth-resource'
 import {
   assertOAuthAccessTokenClaims,
@@ -132,17 +134,21 @@ describe('seeded OAuth HTTP input corpus', () => {
     })
   })
 
-  it('rejects malformed bearer syntax before any JWKS transport is possible', async () => {
+  it('rejects malformed bearer syntax before any key lookup is possible', async () => {
+    const component = (componentsGeneric() as unknown as { betterAuth: ComponentApi<'betterAuth'> })
+      .betterAuth
+    const runQuery = vi.fn(async () => {
+      throw new Error('key lookup must not run for malformed bearer input')
+    })
+    const ctx = { runQuery } as unknown as Parameters<typeof verifyOAuthBearerToken>[0]
     const verifyOptions = {
       allowedScopes: ['mcp:read'],
       audience: RESOURCE,
       issuer: ISSUER,
-      jwksUrl: `${ISSUER}/jwks`,
     }
+    const verify = (token: string) => verifyOAuthBearerToken(ctx, component, token, verifyOptions)
     for (const token of MALFORMED_BEARER_TOKENS) {
-      await expect(verifyOAuthBearerToken(token, verifyOptions), token).rejects.toThrow(
-        'AUTH_OAUTH_TOKEN_INVALID',
-      )
+      await expect(verify(token), token).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
     }
 
     await runSeededAuthCorpus('oauth-malformed-bearer', 48, async (random) => {
@@ -151,10 +157,9 @@ describe('seeded OAuth HTTP input corpus', () => {
         .replaceAll('/', '_')
         .replace(/=+$/u, '')
       const token = `header.${payload}.signature`
-      await expect(verifyOAuthBearerToken(token, verifyOptions)).rejects.toThrow(
-        'AUTH_OAUTH_TOKEN_INVALID',
-      )
+      await expect(verify(token)).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
     })
+    expect(runQuery).not.toHaveBeenCalled()
   })
 
   it('rejects generated token-class and exact-binding claim drift', async () => {

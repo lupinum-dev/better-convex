@@ -70,6 +70,7 @@ function validAccessToken(accessToken, expected) {
       JSON.stringify([
         'aud',
         'azp',
+        'bcn_grant_id',
         'client_id',
         'exp',
         'iat',
@@ -84,6 +85,8 @@ function validAccessToken(accessToken, expected) {
     claims.aud === expected.resource &&
     claims.client_id === expected.clientId &&
     claims.azp === expected.clientId &&
+    typeof claims.bcn_grant_id === 'string' &&
+    claims.bcn_grant_id.length > 0 &&
     claims.scope === SCOPE &&
     claims.token_use === 'oauth-access' &&
     typeof claims.sub === 'string' &&
@@ -351,19 +354,18 @@ async function startCallbackServer() {
     new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
 }
 
-async function provisionProfile(context, fixture, { confidential = false } = {}) {
-  const requestOptions = { headers: { origin: fixture.origin } }
+async function signInFixture(context, fixture) {
   const signIn = await context.request.post(`${fixture.origin}/api/auth/sign-in/email`, {
-    ...requestOptions,
+    headers: { origin: fixture.origin },
     data: { email: fixture.email, password: fixture.password },
   })
   assert(signIn.ok(), 'OAUTH_CODE_FIXTURE_SIGN_IN_FAILED')
-  const response = await context.request.post(`${fixture.origin}/api/auth/mcp/admin/provision`, {
-    ...requestOptions,
-    data: {},
-  })
-  assert(response.ok(), 'OAUTH_CODE_FIXTURE_PROVISION_FAILED')
-  const profile = await response.json()
+}
+
+/** Clients come from the deployment operator (`convex run`), never from an HTTP route. */
+async function provisionProfile(context, fixture) {
+  await signInFixture(context, fixture)
+  const profile = await fixture.runConvex('evidence:provision', { email: fixture.email })
   assert(
     isRecord(profile) &&
       isRecord(profile.clients) &&
@@ -375,65 +377,42 @@ async function provisionProfile(context, fixture, { confidential = false } = {})
       profile.resource === `${fixture.convexSiteUrl}/mcp`,
     'OAUTH_CODE_FIXTURE_PROFILE_INVALID',
   )
-  let confidentialClient
-  if (confidential) {
-    assert(
-      typeof fixture.registerConfidentialClientSecretForRedaction === 'function',
-      'OAUTH_CODE_FIXTURE_SECRET_REDACTION_MISSING',
-    )
-    const confidentialResponse = await context.request.post(
-      `${fixture.origin}/api/auth/mcp/admin/provision-confidential`,
-      { ...requestOptions, data: {} },
-    )
-    if (!confidentialResponse.ok()) {
-      const safeCodes = [
-        ...new Set(
-          ((await confidentialResponse.text()).match(/[A-Za-z][\w-]{2,63}/gu) ?? []).filter(
-            (value) => /client|invalid|profile|redirect|uri/iu.test(value),
-          ),
-        ),
-      ]
-      console.error(
-        `[oauth-code-concurrency] confidential provisioning rejected: status=${confidentialResponse.status()} codes=${safeCodes.slice(0, 4).join(',') || 'none'}`,
-      )
-      throw new Error('OAUTH_CODE_FIXTURE_CONFIDENTIAL_PROVISION_FAILED')
-    }
-    const confidentialProfile = await confidentialResponse.json()
-    confidentialClient = isRecord(confidentialProfile) ? confidentialProfile.client : undefined
-    if (
-      isRecord(confidentialClient) &&
-      typeof confidentialClient.secret === 'string' &&
-      confidentialClient.secret.length >= 16 &&
-      confidentialClient.secret.length <= 1_024
-    ) {
-      fixture.registerConfidentialClientSecretForRedaction(confidentialClient.secret)
-    }
-    assert(isRecord(confidentialClient), 'OAUTH_CODE_FIXTURE_CONFIDENTIAL_PROFILE_MISSING')
-    assert(
-      typeof confidentialClient.id === 'string' && confidentialClient.id.length > 0,
-      'OAUTH_CODE_FIXTURE_CONFIDENTIAL_ID_INVALID',
-    )
-    assert(
-      confidentialClient.id !== profile.clients.inspector &&
-        confidentialClient.id !== profile.clients.mcpRemote,
-      'OAUTH_CODE_FIXTURE_CONFIDENTIAL_ID_COLLISION',
-    )
-    assert(
-      typeof confidentialClient.secret === 'string' &&
-        confidentialClient.secret.length >= 16 &&
-        confidentialClient.secret.length <= 1_024,
-      'OAUTH_CODE_FIXTURE_CONFIDENTIAL_SECRET_INVALID',
-    )
-    assert(
-      isRecord(confidentialProfile) && confidentialProfile.resource === profile.resource,
-      'OAUTH_CODE_FIXTURE_CONFIDENTIAL_RESOURCE_INVALID',
-    )
+  assert(
+    typeof fixture.registerConfidentialClientSecretForRedaction === 'function',
+    'OAUTH_CODE_FIXTURE_SECRET_REDACTION_MISSING',
+  )
+  const confidentialProfile = await fixture.runConvex('evidence:provisionConfidential')
+  const confidentialClient = isRecord(confidentialProfile) ? confidentialProfile.client : undefined
+  if (
+    isRecord(confidentialClient) &&
+    typeof confidentialClient.secret === 'string' &&
+    confidentialClient.secret.length >= 16 &&
+    confidentialClient.secret.length <= 1_024
+  ) {
+    fixture.registerConfidentialClientSecretForRedaction(confidentialClient.secret)
   }
+  assert(isRecord(confidentialClient), 'OAUTH_CODE_FIXTURE_CONFIDENTIAL_PROFILE_MISSING')
+  assert(
+    typeof confidentialClient.id === 'string' && confidentialClient.id.length > 0,
+    'OAUTH_CODE_FIXTURE_CONFIDENTIAL_ID_INVALID',
+  )
+  assert(
+    confidentialClient.id !== profile.clients.inspector &&
+      confidentialClient.id !== profile.clients.mcpRemote,
+    'OAUTH_CODE_FIXTURE_CONFIDENTIAL_ID_COLLISION',
+  )
+  assert(
+    typeof confidentialClient.secret === 'string' &&
+      confidentialClient.secret.length >= 16 &&
+      confidentialClient.secret.length <= 1_024,
+    'OAUTH_CODE_FIXTURE_CONFIDENTIAL_SECRET_INVALID',
+  )
+  assert(
+    isRecord(confidentialProfile) && confidentialProfile.resource === profile.resource,
+    'OAUTH_CODE_FIXTURE_CONFIDENTIAL_RESOURCE_INVALID',
+  )
   return {
-    clients: {
-      ...profile.clients,
-      ...(confidentialClient ? { confidential: confidentialClient } : {}),
-    },
+    clients: { ...profile.clients, confidential: confidentialClient },
     resource: profile.resource,
   }
 }
@@ -658,12 +637,29 @@ function normalizeExternalFixture(input) {
     typeof input.ingressLease === 'string' && /^[\w-]{43,128}$/u.test(input.ingressLease),
     'OAUTH_CODE_EXTERNAL_INGRESS_LEASE_INVALID',
   )
+  // Provision with `connections:createInspectorClient` before the run; there is no HTTP route.
+  assert(
+    typeof input.clientId === 'string' && /^[\w-]{1,256}$/u.test(input.clientId),
+    'OAUTH_CODE_EXTERNAL_CLIENT_ID_INVALID',
+  )
+  let resource
+  try {
+    resource = new URL(input.resource)
+  } catch {
+    throw new Error('OAUTH_CODE_EXTERNAL_RESOURCE_INVALID')
+  }
+  assert(
+    resource.protocol === 'https:' && resource.href === input.resource && !resource.search,
+    'OAUTH_CODE_EXTERNAL_RESOURCE_INVALID',
+  )
   return Object.freeze({
+    clients: Object.freeze({ inspector: input.clientId }),
     email: input.email,
     ingressCookie: `__Host-bcn-staging-lease=${input.ingressLease}`,
     ingressLease: input.ingressLease,
     origin: url.origin,
     password: input.password,
+    resource: resource.href,
   })
 }
 
@@ -705,10 +701,9 @@ export async function runExternalAuthorizationCodeRace(input) {
         value: external.ingressLease,
       },
     ])
-    const profile = await provisionProfile(context, external)
-    const fixture = { ...external, ...profile }
+    await signInFixture(context, external)
     const page = await context.newPage()
-    const summary = await runAuthorizationCodeRace(page, fixture)
+    const summary = await runAuthorizationCodeRace(page, external)
     await page.close()
     return summary
   } finally {
@@ -731,7 +726,7 @@ async function runLiveMatrix(startFixture) {
     browser = await chromium.launch({ headless: true })
     context = await browser.newContext({ viewport: { height: 900, width: 1440 } })
 
-    const profile = await provisionProfile(context, fixtureHandle, { confidential: true })
+    const profile = await provisionProfile(context, fixtureHandle)
     const fixture = { ...fixtureHandle, ...profile }
     const page = await context.newPage()
     await page.route(`${CONFIDENTIAL_CALLBACK}*`, (route) =>

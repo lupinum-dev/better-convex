@@ -82,7 +82,7 @@ describe('request-scoped MCP lifecycle', () => {
   it('constructs a fresh configured server for every request and closes each exactly once', async () => {
     const servers = new Set<object>()
     const closeCounts: number[] = []
-    const requestOptions = options((_access, server) => {
+    const requestOptions = options(({ server }) => {
       servers.add(server)
       const index = closeCounts.push(0) - 1
       const onclose = server.server.onclose
@@ -110,7 +110,7 @@ describe('request-scoped MCP lifecycle', () => {
     let closeCount = 0
     const response = await handleMcpRequest(
       toolsListRequest('configuration-failure'),
-      options((_access, server) => {
+      options(({ server }) => {
         const close = server.close.bind(server)
         server.close = async () => {
           closeCount += 1
@@ -131,7 +131,7 @@ describe('request-scoped MCP lifecycle', () => {
     let toolsA: McpRequestTools | undefined
     let toolsB: McpRequestTools | undefined
     const optionsA = {
-      ...options((_access, _server, tools) => {
+      ...options(({ tools }) => {
         toolsA = tools
       }),
       onToolError(metadata: unknown) {
@@ -139,7 +139,7 @@ describe('request-scoped MCP lifecycle', () => {
       },
     } satisfies HandleMcpRequestOptions
     const optionsB = {
-      ...options((_access, _server, tools) => {
+      ...options(({ tools }) => {
         toolsB = tools
       }),
       onToolError(metadata: unknown) {

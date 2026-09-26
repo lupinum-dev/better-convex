@@ -27,25 +27,23 @@ function harness(
   const readResource = vi.fn((uri: URL) => ({
     contents: [{ uri: uri.href, text: 'private note' }],
   }))
-  const configureServer = vi.fn<HandleMcpRequestOptions['configureServer']>(
-    (_access, server, tools) => {
-      server.registerTool('read_note', { inputSchema: z.object({}) }, operation)
-      server.registerTool(
-        'write_note',
-        {
-          inputSchema: z.object({}),
-          ...(writeChallenge === null ? {} : { scopeChallenge: writeChallenge(tools) }),
-        },
-        operation,
-      )
-      server.registerResource(
-        'private_note',
-        noteUri,
-        { scopeChallenge: tools.requireScopes('notes:issue') },
-        readResource,
-      )
-    },
-  )
+  const configureServer = vi.fn<HandleMcpRequestOptions['configureServer']>(({ server, tools }) => {
+    server.registerTool('read_note', { inputSchema: z.object({}) }, operation)
+    server.registerTool(
+      'write_note',
+      {
+        inputSchema: z.object({}),
+        ...(writeChallenge === null ? {} : { scopeChallenge: writeChallenge(tools) }),
+      },
+      operation,
+    )
+    server.registerResource(
+      'private_note',
+      noteUri,
+      { scopeChallenge: tools.requireScopes('notes:issue') },
+      readResource,
+    )
+  })
   const options: HandleMcpRequestOptions = {
     resource,
     serverInfo: { name: 'tool-scopes', version: '1.0.0' },

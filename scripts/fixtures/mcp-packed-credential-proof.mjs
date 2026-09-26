@@ -35,7 +35,7 @@ const options = {
     },
   },
   serverInfo: { name: 'packed-proof', version: '0.0.0' },
-  configureServer(_access, server) {
+  configureServer({ server }) {
     server.registerTool('inspect_headers', { inputSchema: z.object({}) }, (_input, extra) => {
       callbackHeaders = Object.fromEntries(extra.http?.req?.headers ?? [])
       return {

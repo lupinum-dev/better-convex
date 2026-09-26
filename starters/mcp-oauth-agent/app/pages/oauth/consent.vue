@@ -1,5 +1,12 @@
 <script setup lang="ts">
+import { MCP_SCOPES } from '../../../convex/scopes'
+
 defineOptions({ name: 'McpConsentPage' })
+
+function describeScope(scope: string): string {
+  if (scope === 'offline_access') return 'Stay connected while your session in this app lasts.'
+  return MCP_SCOPES[scope as keyof typeof MCP_SCOPES]
+}
 
 const pending = ref(false)
 const consentError = ref('')
@@ -43,9 +50,15 @@ async function decide(accept: boolean) {
       </p>
       <p>Scopes:</p>
       <ul>
-        <li v-for="scope in transaction.scopes" :key="scope">{{ scope }}</li>
+        <li v-for="scope in transaction.scopes" :key="scope">
+          <code>{{ scope }}</code
+          >: {{ describeScope(scope) }}
+        </li>
       </ul>
-      <p>Organization membership and delegation are checked again for every tool call.</p>
+      <p>
+        This applies to every organization you belong to, up to your role in each. Your membership
+        and role are checked again for every tool call.
+      </p>
     </section>
     <p v-else role="alert">{{ errorMessage }}</p>
     <p v-if="consentError" role="alert">{{ consentError }}</p>

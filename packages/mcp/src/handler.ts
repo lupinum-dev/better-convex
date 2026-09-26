@@ -26,7 +26,7 @@ import {
   verifyAndNormalizeMcpAccess,
 } from './access.js'
 import type { McpAccessContext, McpAccessVerifier, VerifiedMcpAccess } from './index.js'
-import { runMcpTool, type McpToolErrorMetadata } from './tools.js'
+import { exposedMcpErrorCodes, runMcpTool, type McpToolErrorMetadata } from './tools.js'
 import {
   boundMcpResponse,
   maximumMcpRequestBytes,
@@ -37,6 +37,8 @@ import {
 } from './transport.js'
 
 export interface McpRequestTools {
+  /** Runs a tool operation with this request's error projection (`exposeErrorCodes`) and
+   * `onToolError` diagnostics. */
   runTool(name: string, operation: Parameters<typeof runMcpTool>[0]): ReturnType<typeof runMcpTool>
   /** Official SDK `scopeChallenge` for a tool or resource that needs these scopes. The challenge
    * also names `authorization.requiredScopes`. Throws a `TypeError` for a scope that
@@ -44,7 +46,21 @@ export interface McpRequestTools {
   requireScopes(...scopes: readonly [string, ...string[]]): ScopeChallengeHandler
 }
 
-export interface HandleMcpRequestOptions {
+/** The freshly verified access and the verifier's typed principal for one MCP request. */
+export interface McpRequestStateContext<Principal = undefined> {
+  readonly access: McpAccessContext
+  readonly principal: Principal
+}
+
+/** Everything `configureServer` needs to register this request's tools and resources. */
+export interface McpConfigureServerContext<
+  Principal = undefined,
+> extends McpRequestStateContext<Principal> {
+  readonly server: McpServer
+  readonly tools: McpRequestTools
+}
+
+export interface HandleMcpRequestOptions<Principal = undefined> {
   readonly serverInfo: {
     readonly name: string
     readonly version: string
@@ -53,13 +69,13 @@ export interface HandleMcpRequestOptions {
   /** Build the official SDK's request-state verifier for this freshly authenticated principal.
    * The SDK verifies echoed state before dispatch and supplies its decoded value to the handler. */
   readonly requestState?: (
-    access: McpAccessContext,
+    context: McpRequestStateContext<Principal>,
   ) => Required<Pick<NonNullable<ServerOptions['requestState']>, 'verify'>>
   readonly authorization:
     | {
         readonly mode: 'oauth'
         readonly issuer: string
-        readonly verifier: McpAccessVerifier
+        readonly verifier: McpAccessVerifier<Principal>
         readonly resourceName?: string
         readonly requiredScopes?: readonly string[]
         readonly scopesSupported?: readonly string[]
@@ -71,23 +87,27 @@ export interface HandleMcpRequestOptions {
          */
         readonly mode: 'preconfigured-bearer'
         readonly issuer: string
-        readonly verifier: McpAccessVerifier
+        readonly verifier: McpAccessVerifier<Principal>
         readonly requiredScopes?: readonly string[]
       }
-  readonly configureServer: (
-    access: McpAccessContext,
-    server: McpServer,
-    tools: McpRequestTools,
-  ) => void | Promise<void>
+  /** Register this request's tools and resources. `principal` is the value the verifier resolved
+   * for this token; pass it to Convex functions instead of re-deriving it. */
+  readonly configureServer: (context: McpConfigureServerContext<Principal>) => void | Promise<void>
+  /** `ConvexError` `data.code` values that `tools.runTool` projects to the client with their
+   * message. `UNAUTHENTICATED`, `MCP_ACCESS_DENIED` and `MCP_INSUFFICIENT_SCOPE` always are. */
+  readonly exposeErrorCodes?: readonly string[]
   readonly onToolError?: (metadata: McpToolErrorMetadata) => void | Promise<void>
 }
 
-export async function handleMcpRequest(
+export async function handleMcpRequest<Principal = undefined>(
   request: Request,
-  options: HandleMcpRequestOptions,
+  options: HandleMcpRequestOptions<Principal>,
 ): Promise<Response> {
   const expectedResource = new URL(canonicalMcpResource(options.resource))
-  const authorization = normalizeAuthorization(options.authorization, expectedResource)
+  const authorization = normalizeAuthorization<Principal>(options.authorization, expectedResource)
+  const exposeErrorCodes =
+    options.exposeErrorCodes === undefined ? undefined : [...options.exposeErrorCodes]
+  exposedMcpErrorCodes(exposeErrorCodes) // Reject an invalid allowlist before any request work.
   const requiredScopes =
     authorization.requiredScopes === undefined ? undefined : [...authorization.requiredScopes]
 
@@ -117,18 +137,21 @@ export async function handleMcpRequest(
       }
 
       const boundedRequest = await prepareBoundedMcpRequest(request, signal)
+      const { access } = authenticated
+      const principal = authenticated.principal as Principal
       const handler = createMcpHandler(
         async () => {
           const server = new McpServer(options.serverInfo, {
             ...(options.requestState === undefined
               ? {}
-              : { requestState: options.requestState(authenticated.access) }),
+              : { requestState: options.requestState(Object.freeze({ access, principal })) }),
           })
           try {
             const tools: McpRequestTools = Object.freeze({
               runTool: (name: string, operation: Parameters<typeof runMcpTool>[0]) =>
                 runMcpTool(operation, {
                   name,
+                  ...(exposeErrorCodes === undefined ? {} : { expose: exposeErrorCodes }),
                   ...(options.onToolError === undefined
                     ? {}
                     : { onToolError: options.onToolError }),
@@ -136,7 +159,7 @@ export async function handleMcpRequest(
               requireScopes: (...scopes: readonly [string, ...string[]]) =>
                 requireEndpointScopes(authorization, scopes),
             })
-            await options.configureServer(authenticated.access, server, tools)
+            await options.configureServer(Object.freeze({ access, principal, server, tools }))
             return hardenUnaryServer(server)
           } catch (error) {
             await server.close().catch(() => {})
@@ -216,7 +239,7 @@ async function rejectUnavailableSubscription(
  * scopes, so a client that authorizes again for the challenge keeps the access it already has.
  * Discovery must advertise every scope that a challenge can ask for, checked at registration. */
 function requireEndpointScopes(
-  authorization: NormalizedAuthorization,
+  authorization: Pick<NormalizedAuthorization, 'requiredScopes' | 'scopesSupported'>,
   scopes: readonly [string, ...string[]],
 ): ScopeChallengeHandler {
   const { requiredScopes = [], scopesSupported } = authorization
@@ -230,7 +253,7 @@ function requireEndpointScopes(
  * receive this value as `ctx.http.authInfo`, so the raw bearer never leaves authentication.
  * Omitting `resource` keeps preconfigured-bearer challenges free of discovery metadata. */
 function scopeChallengeAuthInfo(
-  verified: VerifiedMcpAccess,
+  verified: VerifiedMcpAccess<unknown>,
   resourceMetadataUrl: string | undefined,
 ): AuthInfo {
   return {
@@ -242,11 +265,11 @@ function scopeChallengeAuthInfo(
   }
 }
 
-type NormalizedAuthorization =
+type NormalizedAuthorization<Principal = unknown> =
   | {
       readonly mode: 'oauth'
       readonly issuer: string
-      readonly verifier: McpAccessVerifier
+      readonly verifier: McpAccessVerifier<Principal>
       readonly metadataOptions: AuthMetadataOptions
       readonly resourceMetadataUrl: string
       readonly requiredScopes?: readonly string[]
@@ -255,16 +278,16 @@ type NormalizedAuthorization =
   | {
       readonly mode: 'preconfigured-bearer'
       readonly issuer: string
-      readonly verifier: McpAccessVerifier
+      readonly verifier: McpAccessVerifier<Principal>
       readonly resourceMetadataUrl: undefined
       readonly requiredScopes?: readonly string[]
       readonly scopesSupported?: undefined
     }
 
-function normalizeAuthorization(
-  authorization: HandleMcpRequestOptions['authorization'],
+function normalizeAuthorization<Principal>(
+  authorization: HandleMcpRequestOptions<Principal>['authorization'],
   expectedResource: URL,
-): NormalizedAuthorization {
+): NormalizedAuthorization<Principal> {
   if (authorization.mode === 'preconfigured-bearer') {
     const issuer = canonicalMcpIssuer(authorization.issuer)
     const requiredScopes = normalizeConfiguredScopes(authorization.requiredScopes)
@@ -368,15 +391,15 @@ function emptyFailure(status: number): Response {
   })
 }
 
-async function authenticateRequest(
+async function authenticateRequest<Principal>(
   authorizationHeader: string | null,
-  verifier: McpAccessVerifier,
+  verifier: McpAccessVerifier<Principal>,
   expectedIssuer: string,
   expectedResource: URL,
   resourceMetadataUrl: string | undefined,
   requiredScopes: string[] | undefined,
-): Promise<VerifiedMcpAccess | Response> {
-  let verified: VerifiedMcpAccess | undefined
+): Promise<VerifiedMcpAccess<Principal> | Response> {
+  let verified: VerifiedMcpAccess<Principal> | undefined
   const officialVerifier: OAuthTokenVerifier = {
     async verifyAccessToken(token): Promise<AuthInfo> {
       try {

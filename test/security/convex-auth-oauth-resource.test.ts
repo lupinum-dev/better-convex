@@ -1,33 +1,68 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { componentsGeneric, getFunctionAddress } from 'convex/server'
+import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import {
+  clearVerificationKeyCache,
   createBetterAuthMcpAccessVerifier,
   verifyOAuthBearerToken,
 } from '../../src/runtime/convex-auth/oauth-resource'
 
-const { verifyBearerToken } = vi.hoisted(() => ({ verifyBearerToken: vi.fn() }))
+const siteUrl = 'https://app.example.test'
+const issuer = `${siteUrl}/api/auth`
+const audience = 'https://deployment.example.test/mcp'
+const component = (componentsGeneric() as unknown as { betterAuth: ComponentApi<'betterAuth'> })
+  .betterAuth
 
-vi.mock('@better-auth/oauth-provider/resource-client', () => ({
-  oauthProviderResourceClient: () => ({
-    getActions: () => ({ verifyBearerToken }),
-  }),
-}))
+const address = (reference: unknown) =>
+  JSON.stringify(getFunctionAddress(reference as typeof component.adapter.findMany))
 
-const issuer = 'https://app.example.test/api/auth'
-const audience = 'https://app.example.test/mcp'
+let signingKey: CryptoKey
+let jwksRow: Record<string, unknown>
 
-function expectation(resource = audience) {
-  return Object.freeze({ issuer, resource: new URL(resource) })
+beforeAll(async () => {
+  const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true })
+  const { e, kty, n } = await exportJWK(publicKey)
+  signingKey = privateKey
+  jwksRow = {
+    alg: 'RS256',
+    crv: null,
+    expiresAt: null,
+    id: 'kid-1',
+    publicKey: JSON.stringify({ kty, n, e }),
+  }
+})
+
+interface FakeState {
+  live: Record<string, unknown> | null | Error
+  keys: Record<string, unknown>[]
 }
 
-function compactToken(overrides: Record<string, unknown> = {}): string {
-  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
-  return `${encode({ alg: 'RS256', typ: 'at+jwt' })}.${encode({
+function fakeCtx(state: FakeState) {
+  const runQuery = vi.fn(async (reference: unknown, args: Record<string, unknown>) => {
+    if (address(reference) === address(component.adapter.findMany)) {
+      expect(args).toMatchObject({ model: 'jwks' })
+      expect(args.select).not.toContain('privateKey')
+      return { continueCursor: '', isDone: true, page: state.keys }
+    }
+    if (address(reference) === address(component.adapter.oauthLiveAccess)) {
+      if (state.live instanceof Error) throw state.live
+      return state.live
+    }
+    throw new Error(`unexpected query ${address(reference)}`)
+  })
+  return { ctx: { runQuery } as never, runQuery }
+}
+
+async function token(overrides: Record<string, unknown> = {}) {
+  const now = Math.floor(Date.now() / 1_000)
+  const claims: Record<string, unknown> = {
     aud: audience,
     azp: 'client-1',
     client_id: 'client-1',
-    exp: 1600,
-    iat: 1000,
+    exp: now + 300,
+    iat: now - 10,
     iss: issuer,
     jti: 'token-1',
     scope: 'mcp:read',
@@ -35,404 +70,195 @@ function compactToken(overrides: Record<string, unknown> = {}): string {
     sub: 'user-1',
     token_use: 'oauth-access',
     ...overrides,
-  })}.signature`
+  }
+  return await new SignJWT(claims)
+    .setProtectedHeader({ alg: 'RS256', kid: 'kid-1', typ: 'at+jwt' })
+    .sign(signingKey)
 }
 
-describe('official OAuth resource-client integration', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(1_200 * 1_000))
-    verifyBearerToken.mockReset()
-    verifyBearerToken.mockResolvedValue({
-      aud: audience,
-      azp: 'client-1',
-      client_id: 'client-1',
-      exp: 1600,
-      iat: 1000,
-      iss: issuer,
-      jti: 'token-1',
-      scope: 'mcp:read',
-      sid: 'session-1',
-      sub: 'user-1',
-      token_use: 'oauth-access',
+function expectation(resource = audience) {
+  return Object.freeze({ issuer, resource: new URL(resource) })
+}
+
+beforeEach(() => {
+  vi.stubEnv('SITE_URL', siteUrl)
+  clearVerificationKeyCache()
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
+describe('Better Auth MCP resource verification without an HTTP JWKS loop', () => {
+  it('verifies against component keys and never fetches over HTTP', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch')
+    const { ctx, runQuery } = fakeCtx({ keys: [jwksRow], live: { grantId: 'consent-1', user: {} } })
+    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+      allowedScopes: ['mcp:read'],
     })
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('delegates JOSE/JWKS verification with exact RS256, at+jwt, issuer and audience', async () => {
-    await expect(
-      verifyOAuthBearerToken(compactToken(), {
-        allowedScopes: ['mcp:read', 'mcp:write'],
-        audience,
-        clientId: 'client-1',
-        issuer,
-        jwksUrl: `${issuer}/jwks`,
-        requiredScopes: ['mcp:read'],
-        subject: 'user-1',
-      }),
-    ).resolves.toEqual({
+    await expect(verifier.verifyAccessToken(await token(), expectation())).resolves.toMatchObject({
+      access: { clientId: 'client-1', issuer, resource: audience, scopes: ['mcp:read'] },
+      principal: { grantId: 'consent-1', kind: 'oauth', sessionId: 'session-1', userId: 'user-1' },
+    })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(runQuery.mock.calls.at(-1)?.[1]).toEqual({
       clientId: 'client-1',
-      expiresAt: 1600,
-      scopes: ['mcp:read'],
-      sessionId: 'session-1',
-      subject: 'user-1',
-    })
-
-    expect(verifyBearerToken).toHaveBeenCalledWith(compactToken(), {
-      jwksUrl: `${issuer}/jwks`,
-      verifyOptions: {
-        algorithms: ['RS256'],
-        audience,
-        clockTolerance: 0,
-        currentDate: new Date(1200 * 1000),
-        issuer,
-        maxTokenAge: '600s',
-        typ: 'at+jwt',
-      },
-    })
-  })
-
-  it('accepts an exact origin-form issuer without adding a trailing slash', async () => {
-    const originIssuer = 'https://accounts.example.test'
-    const token = compactToken({ iss: originIssuer })
-
-    await expect(
-      verifyOAuthBearerToken(token, {
-        allowedScopes: ['mcp:read'],
-        audience,
-        issuer: originIssuer,
-        jwksUrl: `${originIssuer}/jwks`,
-      }),
-    ).resolves.toMatchObject({ subject: 'user-1' })
-    expect(verifyBearerToken).toHaveBeenLastCalledWith(
-      token,
-      expect.objectContaining({
-        verifyOptions: expect.objectContaining({ issuer: originIssuer }),
-      }),
-    )
-  })
-
-  it('cannot accept a wall-clock-expired token through a caller-supplied clock', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2_000 * 1_000))
-    try {
-      await expect(
-        verifyOAuthBearerToken(compactToken(), {
-          allowedScopes: ['mcp:read'],
-          audience,
-          issuer,
-          jwksUrl: `${issuer}/jwks`,
-          nowSeconds: 1_200,
-        } as Parameters<typeof verifyOAuthBearerToken>[1] & { nowSeconds: number }),
-      ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('adapts the strict verifier to a resource-bound MCP identity without provider-private state', async () => {
-    const now = Math.floor(Date.now() / 1000)
-    const allowedScopes = ['mcp:read']
-    const requiredScopes = ['mcp:read']
-    const validateLiveAccess = vi.fn(async (_access: unknown) => true)
-    const verifier = createBetterAuthMcpAccessVerifier({
-      allowedScopes,
-      jwksUrl: `${issuer}/jwks`,
-      requiredScopes,
-      validateLiveAccess,
-    })
-    allowedScopes.push('attacker:scope')
-    requiredScopes[0] = 'attacker:scope'
-
-    const token = compactToken({ exp: now + 300, iat: now - 10 })
-    await expect(verifier.verifyAccessToken(token, expectation())).resolves.toEqual({
-      access: {
-        clientId: 'client-1',
-        issuer,
-        resource: audience,
-        scopes: ['mcp:read'],
-        subject: 'user-1',
-      },
-      expiresAt: now + 300,
-    })
-
-    const result = await verifier.verifyAccessToken(token, expectation())
-    expect(result).not.toHaveProperty('sessionId')
-    expect(result.access).not.toHaveProperty('sessionId')
-    expect(result).not.toHaveProperty('token')
-    expect(Object.isFrozen(result)).toBe(true)
-    expect(Object.isFrozen(result.access)).toBe(true)
-    expect(Object.isFrozen(result.access.scopes)).toBe(true)
-    expect(validateLiveAccess).toHaveBeenLastCalledWith({
-      clientId: 'client-1',
-      issuer,
       resource: audience,
       scopes: ['mcp:read'],
       sessionId: 'session-1',
-      subject: 'user-1',
+      userId: 'user-1',
     })
-    const liveAccess = validateLiveAccess.mock.calls.at(-1)?.[0] as
-      | { scopes: readonly string[] }
-      | undefined
-    expect(Object.isFrozen(liveAccess)).toBe(true)
-    expect(Object.isFrozen(liveAccess?.scopes)).toBe(true)
-    expect(verifyBearerToken).toHaveBeenLastCalledWith(token, {
-      jwksUrl: `${issuer}/jwks`,
-      verifyOptions: {
-        algorithms: ['RS256'],
-        audience,
-        clockTolerance: 0,
-        currentDate: new Date(1_200 * 1_000),
-        issuer,
-        maxTokenAge: '600s',
-        typ: 'at+jwt',
-      },
-    })
+    fetch.mockRestore()
   })
 
-  it('preserves loopback HTTP for the local Convex MCP authority chain', async () => {
-    const loopbackIssuer = 'http://127.0.0.1:3210/api/auth'
-    const loopbackAudience = 'http://127.0.0.1:3220/mcp'
-    const now = Math.floor(Date.now() / 1000)
-    const validateLiveAccess = vi.fn(async () => true)
-    const verifier = createBetterAuthMcpAccessVerifier({
-      allowedScopes: ['mcp:read'],
-      jwksUrl: `${loopbackIssuer}/jwks`,
-      validateLiveAccess,
-    })
-    const token = compactToken({
-      aud: loopbackAudience,
-      exp: now + 300,
-      iat: now - 10,
-      iss: loopbackIssuer,
-    })
-
+  it('copies its options so a later caller mutation cannot widen the scope allowlist', async () => {
+    const allowedScopes = ['mcp:read']
+    const { ctx } = fakeCtx({ keys: [jwksRow], live: { grantId: 'consent-1', user: {} } })
+    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, { allowedScopes })
+    allowedScopes.push('admin')
     await expect(
-      verifier.verifyAccessToken(
-        token,
-        Object.freeze({ issuer: loopbackIssuer, resource: new URL(loopbackAudience) }),
-      ),
-    ).resolves.toMatchObject({
-      access: { issuer: loopbackIssuer, resource: loopbackAudience },
-    })
-    expect(verifyBearerToken).toHaveBeenLastCalledWith(
-      token,
-      expect.objectContaining({
-        jwksUrl: `${loopbackIssuer}/jwks`,
-        verifyOptions: expect.objectContaining({
-          audience: loopbackAudience,
-          issuer: loopbackIssuer,
-        }),
-      }),
-    )
-    expect(validateLiveAccess).toHaveBeenCalledOnce()
-  })
-
-  it('fails construction when request-local Better Auth validation is absent', () => {
-    expect(() =>
-      createBetterAuthMcpAccessVerifier({
-        allowedScopes: ['mcp:read'],
-        jwksUrl: `${issuer}/jwks`,
-      } as never),
-    ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+      verifier.verifyAccessToken(await token({ scope: 'mcp:read admin' }), expectation()),
+    ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
   })
 
   it.each([
-    ['denied', async () => false],
-    [
-      'failed',
-      async () => {
-        throw new Error('private-live-check-sentinel')
-      },
-    ],
-  ])('rejects a cryptographically valid token when live authority is %s', async (_label, check) => {
-    const now = Math.floor(Date.now() / 1000)
-    const verifier = createBetterAuthMcpAccessVerifier({
+    ['denied', null],
+    ['failed', new Error('private-live-check-sentinel')],
+  ])('rejects a cryptographically valid token when live authority is %s', async (_label, live) => {
+    const { ctx } = fakeCtx({ keys: [jwksRow], live })
+    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
       allowedScopes: ['mcp:read'],
-      jwksUrl: `${issuer}/jwks`,
-      validateLiveAccess: check,
     })
-
-    await expect(
-      verifier.verifyAccessToken(compactToken({ exp: now + 300, iat: now - 10 }), expectation()),
-    ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
-  })
-
-  it('rechecks current Better Auth authority on every use of the same signed token', async () => {
-    const now = Math.floor(Date.now() / 1000)
-    const authority = {
-      client: true,
-      consent: true,
-      resource: true,
-      session: true,
-      user: true,
-    }
-    const validateLiveAccess = vi.fn(
-      async (access: { clientId: string; resource: string; sessionId: string; subject: string }) =>
-        authority.session &&
-        authority.user &&
-        authority.client &&
-        authority.consent &&
-        authority.resource &&
-        access.sessionId === 'session-1' &&
-        access.subject === 'user-1' &&
-        access.clientId === 'client-1' &&
-        access.resource === audience,
-    )
-    const verifier = createBetterAuthMcpAccessVerifier({
-      allowedScopes: ['mcp:read'],
-      jwksUrl: `${issuer}/jwks`,
-      validateLiveAccess,
-    })
-    const token = compactToken({ exp: now + 300, iat: now - 10 })
-
-    await expect(verifier.verifyAccessToken(token, expectation())).resolves.toMatchObject({
-      access: { subject: 'user-1' },
-    })
-    for (const key of ['session', 'user', 'client', 'consent', 'resource'] as const) {
-      authority[key] = false
-      await expect(verifier.verifyAccessToken(token, expectation())).rejects.toThrow(
-        'AUTH_OAUTH_TOKEN_INVALID',
-      )
-      authority[key] = true
-    }
-    expect(validateLiveAccess).toHaveBeenCalledTimes(6)
-  })
-
-  it.each([
-    ['Convex session token class', { token_use: 'convex-session' }],
-    ['missing token class', { token_use: undefined }],
-    ['foreign issuer', { iss: 'https://foreign.example.test/api/auth' }],
-    ['foreign resource', { aud: 'https://other.example.test/mcp' }],
-    ['array audience', { aud: [audience] }],
-    ['conflicting client identity', { client_id: 'attacker-client' }],
-  ])('rejects %s through the Better Auth MCP adapter', async (_label, overrides) => {
-    const now = Math.floor(Date.now() / 1000)
-    const verifier = createBetterAuthMcpAccessVerifier({
-      allowedScopes: ['mcp:read'],
-      jwksUrl: `${issuer}/jwks`,
-      validateLiveAccess: async () => true,
-    })
-
-    await expect(
-      verifier.verifyAccessToken(
-        compactToken({ exp: now + 300, iat: now - 10, ...overrides }),
-        expectation(),
-      ),
-    ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
-  })
-
-  it('rejects expired and malformed tokens through the Better Auth MCP adapter', async () => {
-    const now = Math.floor(Date.now() / 1000)
-    const verifier = createBetterAuthMcpAccessVerifier({
-      allowedScopes: ['mcp:read'],
-      jwksUrl: `${issuer}/jwks`,
-      validateLiveAccess: async () => true,
-    })
-
-    await expect(
-      verifier.verifyAccessToken(compactToken({ exp: now - 1, iat: now - 100 }), expectation()),
-    ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
-    await expect(verifier.verifyAccessToken('not-a-jwt', expectation())).rejects.toThrow(
+    await expect(verifier.verifyAccessToken(await token(), expectation())).rejects.toThrow(
       'AUTH_OAUTH_TOKEN_INVALID',
     )
   })
 
-  it.each([
-    'http://app.example.test/mcp',
-    'https://user@app.example.test/mcp',
-    'https://app.example.test/mcp?tenant=one',
-    'https://app.example.test/mcp#fragment',
-  ])('rejects an unsafe expected MCP resource before token verification: %s', async (resource) => {
-    const verifier = createBetterAuthMcpAccessVerifier({
+  it('rechecks live authority on every use of the same signed token', async () => {
+    const state: FakeState = { keys: [jwksRow], live: { grantId: 'consent-1', user: {} } }
+    const { ctx, runQuery } = fakeCtx(state)
+    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
       allowedScopes: ['mcp:read'],
-      jwksUrl: `${issuer}/jwks`,
-      validateLiveAccess: async () => true,
     })
-
-    await expect(verifier.verifyAccessToken(compactToken(), expectation(resource))).rejects.toThrow(
+    const signed = await token()
+    await verifier.verifyAccessToken(signed, expectation())
+    state.live = null
+    await expect(verifier.verifyAccessToken(signed, expectation())).rejects.toThrow(
       'AUTH_OAUTH_TOKEN_INVALID',
     )
-    expect(verifyBearerToken).not.toHaveBeenCalled()
+    const liveCalls = runQuery.mock.calls.filter(
+      ([reference]) => address(reference) === address(component.adapter.oauthLiveAccess),
+    )
+    expect(liveCalls).toHaveLength(2)
   })
 
-  it('installs URL.canParse at the isolated resource-verification boundary', async () => {
-    const original = URL.canParse
-    try {
-      Object.defineProperty(URL, 'canParse', {
-        configurable: true,
-        value: undefined,
-        writable: true,
-      })
-      await verifyOAuthBearerToken(compactToken(), {
-        allowedScopes: ['mcp:read'],
-        audience,
-        issuer,
-        jwksUrl: `${issuer}/jwks`,
-      })
-      expect(URL.canParse).toBeTypeOf('function')
-    } finally {
-      Object.defineProperty(URL, 'canParse', {
-        configurable: true,
-        value: original,
-        writable: true,
-      })
-    }
-  })
-
-  it('rejects a signed raw client_id conflict hidden by the pinned verifier normalization', async () => {
-    verifyBearerToken.mockResolvedValue({
-      aud: audience,
-      azp: 'client-1',
-      client_id: 'client-1',
-      exp: 1600,
-      iat: 1000,
-      iss: issuer,
-      jti: 'token-1',
-      scope: 'mcp:read',
-      sid: 'session-1',
-      sub: 'user-1',
-      token_use: 'oauth-access',
+  it('rejects a caller-selected issuer before any key lookup', async () => {
+    const { ctx, runQuery } = fakeCtx({ keys: [jwksRow], live: { grantId: 'c', user: {} } })
+    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+      allowedScopes: ['mcp:read'],
     })
-
     await expect(
-      verifyOAuthBearerToken(compactToken({ client_id: 'attacker-client' }), {
-        allowedScopes: ['mcp:read'],
-        audience,
-        clientId: 'client-1',
-        issuer,
-        jwksUrl: `${issuer}/jwks`,
+      verifier.verifyAccessToken(await token({ iss: 'https://evil.example.test/api/auth' }), {
+        issuer: 'https://evil.example.test/api/auth',
+        resource: new URL(audience),
       }),
     ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
+    expect(runQuery).not.toHaveBeenCalled()
   })
 
-  it('rejects malformed compact input before any JWKS work', async () => {
-    await expect(
-      verifyOAuthBearerToken('not-a-jwt', {
-        allowedScopes: ['mcp:read'],
-        audience,
-        issuer,
-        jwksUrl: `${issuer}/jwks`,
-      }),
-    ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
-    expect(verifyBearerToken).not.toHaveBeenCalled()
+  it.each([
+    'http://deployment.example.test/mcp',
+    'https://user@deployment.example.test/mcp',
+    'https://deployment.example.test/mcp?tenant=one',
+    'https://deployment.example.test/mcp#fragment',
+  ])('rejects an unsafe expected MCP resource before any query: %s', async (resource) => {
+    const { ctx, runQuery } = fakeCtx({ keys: [jwksRow], live: { grantId: 'c', user: {} } })
+    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+      allowedScopes: ['mcp:read'],
+    })
+    await expect(verifier.verifyAccessToken(await token(), expectation(resource))).rejects.toThrow(
+      'AUTH_OAUTH_TOKEN_INVALID',
+    )
+    expect(runQuery).not.toHaveBeenCalled()
   })
 
-  it.each(['https://evil.example/jwks', `${issuer}/other-jwks`, `${issuer}/jwks#fragment`])(
-    'rejects a noncanonical JWKS location before crypto processing: %s',
-    async (jwksUrl) => {
+  it('rejects malformed compact input and foreign headers before any key lookup', async () => {
+    const { ctx, runQuery } = fakeCtx({ keys: [jwksRow], live: null })
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+    for (const value of [
+      'not-a-jwt',
+      `${'a'.repeat(9000)}.b.c`,
+      `${encode({ alg: 'none', kid: 'kid-1', typ: 'at+jwt' })}.${encode({})}.`,
+      `${encode({ alg: 'RS256', typ: 'at+jwt' })}.${encode({})}.sig`,
+      `${encode({ alg: 'RS256', kid: 'kid-1', typ: 'JWT' })}.${encode({})}.sig`,
+      `${encode({ alg: 'RS256', jku: 'https://evil.example/jwks', kid: 'kid-1', typ: 'at+jwt' })}.${encode({})}.sig`,
+    ]) {
       await expect(
-        verifyOAuthBearerToken('access-token', {
+        verifyOAuthBearerToken(ctx, component, value, {
           allowedScopes: ['mcp:read'],
           audience,
           issuer,
-          jwksUrl,
         }),
       ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
-      expect(verifyBearerToken).not.toHaveBeenCalled()
-    },
-  )
+    }
+    expect(runQuery).not.toHaveBeenCalled()
+  })
+
+  it('never publishes a malformed or private key row for verification', async () => {
+    const privateRow = {
+      ...jwksRow,
+      publicKey: JSON.stringify({ ...JSON.parse(jwksRow.publicKey as string), d: 'secret' }),
+    }
+    for (const row of [
+      privateRow,
+      { ...jwksRow, alg: 'HS256' },
+      { ...jwksRow, crv: 'P-256' },
+      { ...jwksRow, expiresAt: 'soon' },
+    ]) {
+      clearVerificationKeyCache()
+      const { ctx } = fakeCtx({ keys: [row], live: { grantId: 'c', user: {} } })
+      await expect(
+        verifyOAuthBearerToken(ctx, component, await token(), {
+          allowedScopes: ['mcp:read'],
+          audience,
+          issuer,
+        }),
+      ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
+    }
+  })
+
+  it('fails construction without a query context, component, or scopes', () => {
+    const { ctx } = fakeCtx({ keys: [], live: null })
+    expect(() =>
+      createBetterAuthMcpAccessVerifier({} as never, component, { allowedScopes: ['mcp:read'] }),
+    ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    expect(() =>
+      createBetterAuthMcpAccessVerifier(ctx, undefined as never, { allowedScopes: ['mcp:read'] }),
+    ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    expect(() => createBetterAuthMcpAccessVerifier(ctx, component, { allowedScopes: [] })).toThrow(
+      'AUTH_OAUTH_CONFIG_INVALID',
+    )
+    expect(() =>
+      createBetterAuthMcpAccessVerifier(ctx, component, {
+        allowedScopes: ['mcp:read'],
+        resource: 'https://deployment.example.test/mcp?x=1',
+      }),
+    ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+  })
+
+  it('preserves loopback HTTP for the local Convex MCP authority chain', async () => {
+    vi.stubEnv('SITE_URL', 'http://127.0.0.1:3210')
+    const loopbackIssuer = 'http://127.0.0.1:3210/api/auth'
+    const loopbackAudience = 'http://127.0.0.1:3211/mcp'
+    const { ctx } = fakeCtx({ keys: [jwksRow], live: { grantId: 'c', user: {} } })
+    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+      allowedScopes: ['mcp:read'],
+    })
+    await expect(
+      verifier.verifyAccessToken(await token({ aud: loopbackAudience, iss: loopbackIssuer }), {
+        issuer: loopbackIssuer,
+        resource: new URL(loopbackAudience),
+      }),
+    ).resolves.toMatchObject({ access: { issuer: loopbackIssuer, resource: loopbackAudience } })
+  })
 })

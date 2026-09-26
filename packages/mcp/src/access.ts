@@ -11,16 +11,16 @@ export class McpAccessVerificationFailure extends Error {
   }
 }
 
-export async function verifyAndNormalizeMcpAccess(options: {
-  verifier: McpAccessVerifier
+export async function verifyAndNormalizeMcpAccess<Principal = undefined>(options: {
+  verifier: McpAccessVerifier<Principal>
   token: string
   expectedIssuer: string
   expectedResource: URL
   now?: () => number
-}): Promise<VerifiedMcpAccess> {
+}): Promise<VerifiedMcpAccess<Principal>> {
   const issuer = canonicalMcpIssuer(options.expectedIssuer)
   const resource = canonicalMcpResource(options.expectedResource)
-  let verified: VerifiedMcpAccess
+  let verified: VerifiedMcpAccess<Principal>
 
   try {
     verified = await options.verifier.verifyAccessToken(
@@ -43,13 +43,18 @@ export async function verifyAndNormalizeMcpAccess(options: {
   }
 }
 
-function normalizeVerifiedAccess(
-  verified: VerifiedMcpAccess,
+function normalizeVerifiedAccess<Principal>(
+  verified: VerifiedMcpAccess<Principal>,
   expectedIssuer: string,
   expectedResource: string,
   nowSeconds: number,
-): VerifiedMcpAccess {
-  assertExactObject(verified, ['access', 'expiresAt'])
+): VerifiedMcpAccess<Principal> {
+  assertExactObject(
+    verified,
+    Object.hasOwn(verified, 'principal')
+      ? ['access', 'expiresAt', 'principal']
+      : ['access', 'expiresAt'],
+  )
   assertExactObject(verified.access, ['issuer', 'subject', 'clientId', 'resource', 'scopes'])
 
   if (
@@ -75,7 +80,12 @@ function normalizeVerifiedAccess(
     scopes,
   })
 
-  return Object.freeze({ access, expiresAt: verified.expiresAt })
+  // The principal is application-owned and passed through unchanged; the verifier owns its checks.
+  return Object.freeze({
+    access,
+    expiresAt: verified.expiresAt,
+    principal: verified.principal,
+  }) as VerifiedMcpAccess<Principal>
 }
 
 export function canonicalMcpIssuer(value: string): string {

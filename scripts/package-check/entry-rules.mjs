@@ -89,7 +89,6 @@ const NUXT_CHECKER_ENTRY_RULES = [
       runtimeExternalSpecifiers: [
         '@better-auth/core/context',
         '@better-auth/oauth-provider',
-        '@better-auth/oauth-provider/resource-client',
         'better-auth',
         'better-auth/adapters',
         'better-auth/api',
@@ -234,6 +233,13 @@ const VUE_CHECKER_ENTRY_RULES = [
 const MCP_CHECKER_ENTRY_RULES = [
   {
     subpath: '.',
+    purity: {
+      runtimeExternalSpecifiers: ['@modelcontextprotocol/server'],
+      typeExternalSpecifiers: ['@modelcontextprotocol/server'],
+    },
+  },
+  {
+    subpath: './test',
     purity: {
       runtimeExternalSpecifiers: ['@modelcontextprotocol/server'],
       typeExternalSpecifiers: ['@modelcontextprotocol/server'],

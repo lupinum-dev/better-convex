@@ -10,12 +10,17 @@ type RegisteredHttpAction = {
   _handler: (ctx: unknown, request: Request) => Promise<Response>
 }
 
+// Every case below must finish before a signing-key or grant lookup.
+const runQuery = vi.fn(async () => {
+  throw new Error('The route graph must not reach Convex data')
+})
+
 async function dispatch(path: string, method: RouteMethod, init: RequestInit = {}) {
   const route = http.lookup(path, method)
   if (!route) throw new Error(`Missing ${method} ${path} route`)
   const handler = route[0] as unknown as RegisteredHttpAction
   return await handler._handler(
-    {},
+    { runQuery },
     new Request(`${deploymentOrigin}${path}`, {
       ...init,
       method,
@@ -24,6 +29,7 @@ async function dispatch(path: string, method: RouteMethod, init: RequestInit = {
 }
 
 afterEach(() => {
+  expect(runQuery).not.toHaveBeenCalled()
   vi.unstubAllEnvs()
 })
 
@@ -53,7 +59,7 @@ describe('delegated OAuth starter HTTP route graph', () => {
     await expect(get.json()).resolves.toMatchObject({
       authorization_servers: [`${applicationOrigin}/api/auth`],
       resource: `${deploymentOrigin}/mcp`,
-      scopes_supported: ['mcp:read', 'mcp:write'],
+      scopes_supported: ['mcp:read', 'mcp:write', 'offline_access'],
     })
 
     const head = await dispatch(metadataUrl.pathname, 'HEAD')

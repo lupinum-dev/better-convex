@@ -1,6 +1,11 @@
-import { isMcpScope } from '../../convex/mcp/scopes'
+import { MCP_SCOPES } from '../../convex/scopes'
 
 const MAX_SIGNED_QUERY_LENGTH = 16 * 1024
+
+/** An MCP scope, or `offline_access` when the host asks for renewal. */
+function isConsentScope(value: string): boolean {
+  return Object.hasOwn(MCP_SCOPES, value) || value === 'offline_access'
+}
 
 interface PublicOAuthClient {
   client_id?: unknown
@@ -44,7 +49,7 @@ export function useVerifiedOAuthTransaction() {
         resource !== `${runtimeConfig.public.convex.siteUrl}/mcp` ||
         scopes.length === 0 ||
         new Set(scopes).size !== scopes.length ||
-        scopes.some((entry) => !entry || !isMcpScope(entry))
+        scopes.some((entry) => !entry || !isConsentScope(entry))
       ) {
         throw new Error('OAUTH_TRANSACTION_INVALID')
       }

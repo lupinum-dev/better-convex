@@ -51,16 +51,31 @@ resource:
 OAuth/MCP client
   -> configured Convex site origin /mcp
   -> application HTTP action using better-convex-mcp
-  -> application-supplied exact access-token verifier
-  -> explicit official-SDK tool registration
-  -> named internal Convex function
+  -> exact access-token verifier (auth.createMcpAccessVerifier or application-supplied)
+  -> explicit official-SDK tool registration with the verified principal
+  -> named internal Convex function that calls auth.requireMcpPrincipal
 ```
 
-`starters/mcp-oauth-agent/convex/http.ts` and `convex/mcp.ts` are the maintained
-production trace for that composition. Better Convex Nuxt owns no `/mcp` route
+`starters/mcp-oauth-agent/convex/http.ts`, `convex/mcp.ts`, and
+`convex/projects.ts` are the maintained production trace for that composition. Better Convex Nuxt owns no `/mcp` route
 or bearer-token proxy. There is no generic function bridge, caller-selected
-upstream, caller-supplied principal, raw-token function argument, or extra
-shared MCP secret.
+upstream, raw-token function argument, or extra shared MCP secret.
+
+The only principal that crosses a function boundary is the verifier-produced
+`BetterConvexMcpPrincipal`. It holds identifiers (user, client, session, grant,
+issuer, resource, scopes, expiry), not a secret, so it is not proof of access.
+The application passes it only to internal functions, validated with
+`mcpPrincipalValidator`, and every such function calls
+`auth.requireMcpPrincipal` before any read or effect. That call re-checks the
+shape, expiry, and issuer (and the resource when the caller pins it), then in
+one transaction the live session admission and generation, the client, the
+resource, the client-resource link, and the consent named by the grant ID. Every
+principal scope must still be allowed by the client, the resource, and the
+consent, and the operation scope must be one of them. A forged or stale
+principal therefore never exceeds the live consent, client, and resource scopes
+of that user. `mcpPrincipalValidator` must never be used on a public query,
+mutation, or action: a public function would let any caller name another
+user's identifiers.
 
 ## Enforced invariants
 

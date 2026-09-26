@@ -61,14 +61,12 @@ async function setup({ sessionExpiresAt }: { sessionExpiresAt?: number } = {}) {
       email: authUser.email,
       name: authUser.name,
       active: true,
-      oauthAdmin: false,
     })
     const requesterId = await ctx.db.insert('users', {
       authId: 'requester-auth-id',
       email: 'requester@example.test',
       name: 'Requester',
       active: true,
-      oauthAdmin: false,
     })
     const organizationId = await ctx.db.insert('organizations', {
       name: 'Test',

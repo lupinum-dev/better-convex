@@ -239,8 +239,8 @@
       "asvs": ["v5.0.0-8.3.1", "v5.0.0-10.3.2"],
       "commands": ["pnpm test:oauth", "pnpm test:mcp-auth"],
       "evidence": [
-        "test/mcp/mcp-live-authorization.test.ts",
-        "starters/mcp-oauth-agent/convex/mcpTools.ts"
+        "test/mcp/mcp-starter-authorization.test.ts",
+        "starters/mcp-oauth-agent/convex/projects.ts"
       ]
     },
     {
@@ -330,7 +330,7 @@
       "asvs": ["v5.0.0-7.4.1", "v5.0.0-8.3.1", "v5.0.0-9.2.1"],
       "commands": ["pnpm test:oauth", "pnpm test:mcp-auth"],
       "evidence": [
-        "test/mcp/mcp-live-authorization.test.ts",
+        "test/mcp/mcp-starter-authorization.test.ts",
         "src/runtime/convex-auth/oauth-resource.ts",
         "test/security/convex-auth-oauth-provider-integration.test.ts"
       ]

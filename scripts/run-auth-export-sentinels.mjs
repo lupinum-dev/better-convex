@@ -532,12 +532,7 @@ async function provisionOAuthProfile(context, fixture) {
     'AUTH_EXPORT_CONVEX_TOKEN_INVALID',
   )
 
-  const publicResponse = await context.request.post(
-    `${fixture.origin}/api/auth/mcp/admin/provision`,
-    { data: {}, headers },
-  )
-  assert(publicResponse.ok(), 'AUTH_EXPORT_OAUTH_PROFILE_FAILED')
-  const profile = await publicResponse.json()
+  const profile = await fixture.runConvex('evidence:provision', { email: fixture.email })
   assert(
     isRecord(profile) &&
       isRecord(profile.clients) &&
@@ -547,12 +542,7 @@ async function provisionOAuthProfile(context, fixture) {
     'AUTH_EXPORT_OAUTH_PROFILE_INVALID',
   )
 
-  const confidentialResponse = await context.request.post(
-    `${fixture.origin}/api/auth/mcp/admin/provision-confidential`,
-    { data: {}, headers },
-  )
-  assert(confidentialResponse.ok(), 'AUTH_EXPORT_CONFIDENTIAL_PROFILE_FAILED')
-  const confidential = await confidentialResponse.json()
+  const confidential = await fixture.runConvex('evidence:provisionConfidential')
   assert(
     isRecord(confidential) &&
       isRecord(confidential.client) &&

@@ -3,11 +3,11 @@ import { resolve } from 'node:path'
 export const MCP_FIXTURE_SCOPE = 'mcp:read mcp:write'
 export const MCP_REMOTE_CALLBACK = 'http://127.0.0.1:3334/oauth/callback'
 export const MCP_TOOL_NAMES = [
-  'projects.list',
-  'projects.create',
-  'projects.delete.preview',
-  'projects.delete.requestApproval',
-  'projects.delete.execute',
+  'list_organizations',
+  'list_projects',
+  'create_project',
+  'request_project_deletion',
+  'delete_project',
 ]
 
 export function normalizeEvidenceOrigin(value) {
