@@ -12,6 +12,18 @@ describe('server entrypoint exports', () => {
   })
 
   it('exports exactly the supported runtime surface', () => {
-    expect(Object.keys(serverApi).sort()).toEqual(['serverConvex'])
+    expect(Object.keys(serverApi).sort()).toEqual([
+      'ServerConvexValidationError',
+      'getConvexUser',
+      'requireConvexUser',
+      'serverConvex',
+      'toConvexH3Error',
+    ])
+  })
+
+  it('exports the validation error class callers can match with instanceof', () => {
+    expect(() => serverApi.serverConvex({} as never, { auth: 'always' as never })).toThrow(
+      serverApi.ServerConvexValidationError,
+    )
   })
 })

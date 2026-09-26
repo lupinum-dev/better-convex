@@ -1,6 +1,6 @@
 // Typed-client contract checked by `nuxi typecheck` against the packed
 // `@lupinum/better-convex-nuxt/better-auth/client` entry with the MODULE-GENERATED registry
-// (`.nuxt/types/better-convex auth schema-client.d.ts`, produced by `nuxi prepare`
+// (`.nuxt/types/better-convex-auth-client.d.ts`, produced by `nuxi prepare`
 // from this app's `convex-auth.ts`) active.
 import type {
   BaseAuthClient,
@@ -17,20 +17,19 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 
 // The current implementation shape, proved end-to-end through the LIVE composable (not a bare
-// `declare const`): `useConvexAuth().client` is narrowed to
-// the integrated form of `InferRegisteredConvexAuthClient | null` by the
-// module-generated registry.
+// `declare const`): `useConvexAuth().client` is narrowed to the integrated form
+// of `InferRegisteredConvexAuthClient` by the module-generated registry. It is
+// never `null`; before the browser runtime exists its members throw
+// `CLIENT_UNAVAILABLE` when called.
 const { client } = useConvexAuth()
 type _clientIsRegisteredType = Expect<
-  Equal<typeof client, IntegratedAuthClient<InferRegisteredConvexAuthClient> | null>
+  Equal<typeof client, IntegratedAuthClient<InferRegisteredConvexAuthClient>>
 >
 
 // -----------------------------------------------------------------------------
 // (a) The registered organization definition exposes typed plugin methods.
 // -----------------------------------------------------------------------------
 export function assertPluginClient() {
-  if (!client) return
-
   type ListFn = typeof client.organization.list
   type _listNotAny = Expect<Equal<IsAny<ListFn>, false>>
   void client.organization.list()

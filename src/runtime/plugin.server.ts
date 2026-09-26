@@ -5,14 +5,17 @@
  * 2. Exchange the session cookie for a JWT token via Better Auth API
  * 3. Store the token and user data in useState for client hydration
  *
- * This ensures authenticated state is available on first render with zero flash.
+ * The exchange is the request's shared auth snapshot, so a Nitro handler or
+ * middleware that already called `getConvexUser(event)` does not trigger a
+ * second exchange. This ensures authenticated state is available on first
+ * render with zero flash.
  */
 
 import { defineNuxtPlugin, useState, useRuntimeConfig, useRequestEvent } from '#app'
 
 import { ANONYMOUS_IDENTITY, toAuthenticatedIdentity } from './auth/auth-identity'
 import type { AuthWaterfall } from './devtools/types'
-import { resolveServerAuthSnapshot } from './server/utils/auth-snapshot'
+import { resolveRequestAuthSnapshot } from './server/utils/request-auth'
 import { applyConvexAuthSsrHeaders } from './server/utils/ssr-auth-headers'
 import { buildMissingSiteUrlMessage } from './utils/auth-errors'
 import { useConvexIdentityState } from './utils/auth-identity-state'
@@ -91,8 +94,7 @@ export default defineNuxtPlugin(async () => {
   const convexAuthWaterfall = useState<AuthWaterfall | null>('convex:authWaterfall', () => null)
 
   const snapshotStartedAt = Date.now()
-  const snapshot = await resolveServerAuthSnapshot({
-    event,
+  const snapshot = await resolveRequestAuthSnapshot(event, {
     siteUrl,
     cookieHeader,
     requestId,

@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 const ARGUMENT_SENTINEL = 'PACKED_SERVER_ARGUMENT_SENTINEL_63dff0c4'
 const UPSTREAM_SENTINEL = 'PACKED_SERVER_UPSTREAM_SENTINEL_a72bb891'
 const CREDENTIAL_SENTINEL = 'PACKED_SERVER_CREDENTIAL_SENTINEL_177e5ec0'
+const APPLICATION_MESSAGE = 'The packed server probe rejected this call'
 const operations = ['query', 'mutation', 'action']
 const scenarios = ['success', 'structured', 'plain', 'transport', 'required-auth']
 const requests = []
@@ -69,6 +70,7 @@ function startConvexProtocolServer() {
           errorMessage: `Structured packed server failure ${UPSTREAM_SENTINEL}\n    at handler (../convex/private.ts:1:1)`,
           errorData: {
             code: 'PACKED_SERVER_STRUCTURED',
+            message: APPLICATION_MESSAGE,
             operation,
           },
         })
@@ -142,15 +144,20 @@ async function stopChild(child) {
 function expectedError(scenario) {
   switch (scenario) {
     case 'structured':
-      return { kind: 'server', message: 'Convex application error' }
+      return { kind: 'server', message: APPLICATION_MESSAGE, code: 'PACKED_SERVER_STRUCTURED' }
     case 'plain':
       return { kind: 'unknown', message: 'Unknown Convex error' }
     case 'transport':
-      return { kind: 'transport', message: 'Convex HTTP request could not complete' }
+      return {
+        kind: 'transport',
+        message: 'Convex HTTP request could not complete',
+        code: 'NETWORK_ERROR',
+      }
     case 'required-auth':
       return {
         kind: 'authentication',
         message: 'Convex authentication is required for this server call',
+        code: 'UNAUTHENTICATED',
         status: 401,
       }
     default:
@@ -250,11 +257,12 @@ try {
           `${operation}/${scenario} had wrong status`,
         )
       }
+      invariant(result.error?.code === expected.code, `${operation}/${scenario} had wrong code`)
+      invariant(
+        result.error?.functionName === `serverProbe:${operation}-${scenario}`,
+        `${operation}/${scenario} did not name the failing function`,
+      )
       if (scenario === 'structured') {
-        invariant(
-          result.error?.code === 'PACKED_SERVER_STRUCTURED',
-          `${operation}/structured lost its code`,
-        )
         invariant(
           result.error?.data?.operation === operation,
           `${operation}/structured lost its data`,

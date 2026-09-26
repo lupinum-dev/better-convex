@@ -167,9 +167,8 @@ export default defineNuxtConfig({
 import { api } from '#convex/api'
 import type { Id } from '~/convex/_generated/dataModel'
 
-// Mutations using the new composable
-const addNoteMutation = useConvexMutation(api.notes.add)
-const deleteNoteMutation = useConvexMutation(api.notes.remove)
+const { mutate: addNoteMutation } = useConvexMutation(api.notes.add)
+const { mutate: deleteNoteMutation } = useConvexMutation(api.notes.remove)
 
 // Track if we got SSR data (use useState to persist across hydration)
 const wasSSR = useState('playground-was-ssr', () => import.meta.server)

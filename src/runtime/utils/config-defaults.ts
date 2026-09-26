@@ -14,6 +14,8 @@ import type { LogLevel } from './logger'
 // --- Named literals (each config default appears exactly once) ---------------
 
 const DEFAULT_AUTH_PROXY_BODY_LIMIT_BYTES = 1_048_576
+const DEFAULT_SERVER_MAX_RESPONSE_BYTES = 1_048_576
+const DEFAULT_SERVER_QUERY_TIMEOUT_MS = 8_000
 
 // --- Frozen defaults object --------------------------------------------------
 
@@ -22,5 +24,10 @@ export const CONVEX_MODULE_DEFAULTS = Object.freeze({
   authProxy: Object.freeze({
     maxRequestBodyBytes: DEFAULT_AUTH_PROXY_BODY_LIMIT_BYTES,
     maxResponseBodyBytes: DEFAULT_AUTH_PROXY_BODY_LIMIT_BYTES,
+  }),
+  /** Bounds for Convex HTTP calls made during SSR and by `serverConvex`. */
+  server: Object.freeze({
+    maxResponseBytes: DEFAULT_SERVER_MAX_RESPONSE_BYTES,
+    queryTimeoutMs: DEFAULT_SERVER_QUERY_TIMEOUT_MS,
   }),
 })

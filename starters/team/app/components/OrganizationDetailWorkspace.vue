@@ -29,15 +29,15 @@ function errorMessage(error: unknown, fallback: string) {
 
 const organizationId = computed(() => props.organization.id)
 const selectedTeamId = ref<string | null>(null)
-const createTeamMutation = useConvexMutation(api.organizations.createTeam)
-const renameOrganizationMutation = useConvexMutation(api.organizations.rename)
-const renameTeamMutation = useConvexMutation(api.teams.rename)
-const inviteMemberMutation = useConvexMutation(api.organizations.inviteMember)
-const cancelInvitationMutation = useConvexMutation(api.organizations.cancelInvitation)
-const changeRoleMutation = useConvexMutation(api.organizations.changeMemberRole)
-const removeMemberMutation = useConvexMutation(api.organizations.removeMember)
-const addTeamMemberMutation = useConvexMutation(api.teams.addMember)
-const removeTeamMemberMutation = useConvexMutation(api.teams.removeMember)
+const { mutate: createTeamMutation } = useConvexMutation(api.organizations.createTeam)
+const { mutate: renameOrganizationMutation } = useConvexMutation(api.organizations.rename)
+const { mutate: renameTeamMutation } = useConvexMutation(api.teams.rename)
+const { mutate: inviteMemberMutation } = useConvexMutation(api.organizations.inviteMember)
+const { mutate: cancelInvitationMutation } = useConvexMutation(api.organizations.cancelInvitation)
+const { mutate: changeRoleMutation } = useConvexMutation(api.organizations.changeMemberRole)
+const { mutate: removeMemberMutation } = useConvexMutation(api.organizations.removeMember)
+const { mutate: addTeamMemberMutation } = useConvexMutation(api.teams.addMember)
+const { mutate: removeTeamMemberMutation } = useConvexMutation(api.teams.removeMember)
 
 const { data: orgCapabilities } = await useConvexQuery(api.organizations.getCapabilities, () => ({
   organizationId: organizationId.value,

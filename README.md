@@ -84,12 +84,14 @@ Queries use SSR and realtime updates by default. Queries with empty validators m
 
 ## Server calls and mutations
 
-Create a mutation composable inside component setup:
+Create a mutation composable inside component setup and destructure its function and state:
 
 ```ts
-const createTask = useConvexMutation(api.tasks.create)
+const { mutate: createTask, pending, error } = useConvexMutation(api.tasks.create)
 await createTask({ text: 'Review the release' })
 ```
+
+`mutate` rejects with a `ConvexCallError`. For an error that your Convex function throws with `ConvexError`, `message` is the text you wrote. `code` and `functionName` identify the failure.
 
 Create a server caller inside each Nitro request:
 
@@ -98,12 +100,12 @@ import { api } from '#convex/api'
 import { serverConvex } from '#convex/server'
 
 export default defineEventHandler(async (event) => {
-  const convex = await serverConvex(event)
-  return convex.query(api.tasks.list)
+  const convex = serverConvex(event)
+  return await convex.query(api.tasks.list)
 })
 ```
 
-Do not share an authenticated server caller across requests.
+Do not share an authenticated server caller across requests. Use `requireConvexUser(event)` to read the signed-in user in a handler, and `toConvexH3Error(error)` to return a failure with a matching HTTP status.
 
 ## Authentication
 

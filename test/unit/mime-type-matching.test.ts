@@ -7,7 +7,10 @@
 
 import { describe, it, expect } from 'vitest'
 
-import { matchesMimeType, isFileTypeAllowed } from '../../src/runtime/utils/mime-type'
+import {
+  isFileTypeAllowed,
+  matchesMimeType,
+} from '../../packages/vue/src/internal/upload-validation'
 
 // ============================================================================
 // matchesMimeType Tests

@@ -98,7 +98,8 @@ const composableMeta = {
   },
   useConvexAction: {
     kind: 'Composable',
-    purpose: 'Runs Convex actions with reactive status and error handling.',
+    purpose:
+      'Returns `run` plus reactive action state: `data`, `status`, `pending`, `error`, `reset`.',
     guide: '/docs/build/write-data/actions',
   },
   useConvexAttachment: {
@@ -123,12 +124,14 @@ const composableMeta = {
   },
   useConvexFileUpload: {
     kind: 'Composable',
-    purpose: 'Uploads files to Convex storage with progress tracking.',
+    purpose:
+      'Uploads one file at a time to Convex storage with progress, `cancel()`, and `reset()`.',
     guide: '/docs/build/files/upload-files',
   },
   useConvexMutation: {
     kind: 'Composable',
-    purpose: 'Runs Convex mutations with status, errors, and optimistic hooks.',
+    purpose:
+      'Returns `mutate` plus reactive mutation state: `data`, `status`, `pending`, `error`, `reset`.',
     guide: '/docs/build/write-data/mutations',
   },
   useConvexForm: {
@@ -149,6 +152,22 @@ const composableMeta = {
 }
 
 const serverMeta = {
+  getConvexUser: {
+    kind: 'Server helper',
+    purpose: 'Reads the signed-in user for the request, or `null` when it is anonymous.',
+    guide: '/docs/build/server/server-convex',
+  },
+  requireConvexUser: {
+    kind: 'Server helper',
+    purpose: 'Reads the signed-in user for the request, or throws an H3 401 error.',
+    guide: '/docs/build/server/server-convex',
+  },
+  toConvexH3Error: {
+    kind: 'Server helper',
+    purpose:
+      'Maps any thrown value to an H3 error whose `data` is the serialized `ConvexCallError`.',
+    guide: '/docs/build/server/server-convex',
+  },
   serverConvex: {
     kind: 'Server helper',
     purpose:
@@ -226,7 +245,7 @@ ${toPackageEntryRows(packageContract)}
 Use \`#convex/server\` when an explicit server import is clearer than relying on Nuxt auto-imports, or for exports that are intentionally not auto-imported:
 
 \`\`\`ts
-import { serverConvex } from '#convex/server'
+import { requireConvexUser, serverConvex } from '#convex/server'
 \`\`\`
 
 \`createUserProjectionTriggers\` runs inside your \`convex/\` functions. Import it from the Better Auth integration subpath:
@@ -243,9 +262,11 @@ These composables are available in every build. Omitting \`convex.auth\` keeps B
 | ---- | ---- | ------- | ---------- |
 ${toRows(composableImports, composableMeta)}
 
-\`useConvexQuery\` accepts \`auth\`, \`keepPreviousData\`, and Nuxt's \`server\` option. Its state is \`data\`, \`status\`, \`pending\`, \`error\`, \`isStale\`, and \`refresh()\`. These option and state lists are exhaustive.
+\`useConvexQuery\` accepts \`auth\`, \`keepPreviousData\`, \`immediate\`, and Nuxt's \`server\` and \`lazy\` options. Its state is \`data\`, \`status\`, \`pending\`, \`error\`, \`isStale\`, \`blockedBy\`, \`execute()\`, and \`refresh()\`. These option and state lists are exhaustive.
 
-\`useConvexPaginatedQuery\` requires a positive \`initialNumItems\`. Its state is \`data\`, \`status\`, \`pending\`, \`pageStatus\`, \`canLoadMore\`, \`cursor\`, \`error\`, \`isStale\`, \`execute()\`, \`loadMore()\`, \`refresh()\`, and \`reset()\`.
+\`useConvexPaginatedQuery\` requires a positive \`initialNumItems\`. Its state is \`data\`, \`status\`, \`pending\`, \`error\`, \`isStale\`, \`blockedBy\`, \`canLoadMore\`, \`isLoadingMore\`, \`isExhausted\`, \`execute()\`, \`loadMore()\`, \`refresh()\`, and \`reset()\`. \`status\` and \`pending\` describe the first page; \`loadMore()\` returns a Promise that never rejects.
+
+\`useConvexMutation\` and \`useConvexAction\` return an object, so destructure the verb: \`const { mutate, pending, error } = useConvexMutation(api.notes.create)\`.
 
 ## Auth-enabled auto-imports
 

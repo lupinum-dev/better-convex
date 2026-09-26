@@ -1,9 +1,19 @@
 import type { FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+import type { ComputedRef } from 'vue'
 
-import type { UseConvexCall } from '../../packages/vue/src'
-import { normalizeConvexError } from '../../src/runtime/errors'
+import type {
+  ConvexCallStatus,
+  UseConvexActionReturn,
+  UseConvexMutationReturn,
+} from '../../packages/vue/src'
+import {
+  isConvexCallError,
+  normalizeConvexError,
+  type ConvexCallError,
+  type ConvexCallErrorCode,
+} from '../../src/runtime/errors'
 
 type IsEqual<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
@@ -25,30 +35,72 @@ type ActionRef<Args extends ConvexArgs, Result> = FunctionReference<
 >
 type Argless = Record<string, never>
 
-type MutationReturn = UseConvexCall<MutationRef<{ id: string }, { id: string }>>
-type ActionReturn = UseConvexCall<ActionRef<{ id: string }, { id: string }>>
+type MutationReturn = UseConvexMutationReturn<MutationRef<{ id: string }, { id: string }>>
+type ActionReturn = UseConvexActionReturn<ActionRef<{ id: string }, { id: string }>>
 
-type _MutationCallable = Assert<IsEqual<Awaited<ReturnType<MutationReturn>>, { id: string }>>
-type _MutationCallableArgs = Assert<IsEqual<Parameters<MutationReturn>, [args: { id: string }]>>
-type _ArglessMutationCallableArgs = Assert<
-  IsEqual<Parameters<UseConvexCall<MutationRef<Argless, string>>>, [args?: Argless]>
+type _MutationKeys = Assert<
+  IsEqual<keyof MutationReturn, 'mutate' | 'data' | 'status' | 'pending' | 'error' | 'reset'>
 >
-type _MutationHasNoExecute = Assert<IsEqual<HasKey<MutationReturn, 'execute'>, false>>
+type _MutationResult = Assert<
+  IsEqual<Awaited<ReturnType<MutationReturn['mutate']>>, { id: string }>
+>
+type _MutationArgs = Assert<IsEqual<Parameters<MutationReturn['mutate']>, [args: { id: string }]>>
+type _ArglessMutationArgs = Assert<
+  IsEqual<
+    Parameters<UseConvexMutationReturn<MutationRef<Argless, string>>['mutate']>,
+    [args?: Argless]
+  >
+>
+type _MutationIsNotCallable = Assert<
+  IsEqual<MutationReturn extends (...args: never[]) => unknown ? true : false, false>
+>
+type _MutationHasNoRun = Assert<IsEqual<HasKey<MutationReturn, 'run'>, false>>
 type _MutationHasNoSafe = Assert<IsEqual<HasKey<MutationReturn, 'safe'>, false>>
-type _MutationHasNoReset = Assert<IsEqual<HasKey<MutationReturn, 'reset'>, false>>
+type _MutationReset = Assert<IsEqual<MutationReturn['reset'], () => void>>
 
-type _ActionCallable = Assert<IsEqual<Awaited<ReturnType<ActionReturn>>, { id: string }>>
-type _ActionCallableArgs = Assert<IsEqual<Parameters<ActionReturn>, [args: { id: string }]>>
-type _ArglessActionCallableArgs = Assert<
-  IsEqual<Parameters<UseConvexCall<ActionRef<Argless, string>>>, [args?: Argless]>
+type _ActionKeys = Assert<
+  IsEqual<keyof ActionReturn, 'run' | 'data' | 'status' | 'pending' | 'error' | 'reset'>
 >
-type _ActionHasNoExecute = Assert<IsEqual<HasKey<ActionReturn, 'execute'>, false>>
+type _ActionResult = Assert<IsEqual<Awaited<ReturnType<ActionReturn['run']>>, { id: string }>>
+type _ActionArgs = Assert<IsEqual<Parameters<ActionReturn['run']>, [args: { id: string }]>>
+type _ArglessActionArgs = Assert<
+  IsEqual<Parameters<UseConvexActionReturn<ActionRef<Argless, string>>['run']>, [args?: Argless]>
+>
+type _ActionHasNoMutate = Assert<IsEqual<HasKey<ActionReturn, 'mutate'>, false>>
 type _ActionHasNoSafe = Assert<IsEqual<HasKey<ActionReturn, 'safe'>, false>>
-type _ActionHasNoReset = Assert<IsEqual<HasKey<ActionReturn, 'reset'>, false>>
+
+function stateContract(mutation: MutationReturn, action: ActionReturn) {
+  const { data, error, status, pending } = mutation
+  expectTypeOf(data).toEqualTypeOf<ComputedRef<{ id: string } | undefined>>()
+  expectTypeOf(error).toEqualTypeOf<ComputedRef<ConvexCallError | undefined>>()
+  expectTypeOf(status).toEqualTypeOf<ComputedRef<ConvexCallStatus>>()
+  expectTypeOf(pending).toEqualTypeOf<ComputedRef<boolean>>()
+  expectTypeOf(action.data).toEqualTypeOf<ComputedRef<{ id: string } | undefined>>()
+  // @ts-expect-error callable state is readonly
+  data.value = { id: 'written' }
+  // @ts-expect-error callable state is readonly
+  action.error.value = undefined
+}
+
+function errorContract(error: unknown) {
+  if (isConvexCallError(error, 'IDENTITY_CHANGED')) {
+    expectTypeOf(error).toEqualTypeOf<ConvexCallError>()
+  }
+  // Application codes stay plain strings.
+  void isConvexCallError(error, 'NOTE_EXISTS')
+  expectTypeOf<'CANCELLED'>().toExtend<ConvexCallErrorCode>()
+  // @ts-expect-error application codes are not library codes
+  const applicationCode: ConvexCallErrorCode = 'NOTE_EXISTS'
+  void applicationCode
+  expectTypeOf(normalizeConvexError)
+    .parameter(1)
+    .toEqualTypeOf<{ readonly functionName?: string } | undefined>()
+}
 
 describe('callable and error type contracts', () => {
-  it('keeps one named direct-call contract without alternate execution paths', () => {
-    expect(true).toBe(true)
+  it('keeps one destructurable object contract per callable kind', () => {
+    expect(stateContract).toBeTypeOf('function')
+    expect(errorContract).toBeTypeOf('function')
   })
 
   it('does not special-case a LIMIT_* message prefix into a code', () => {
@@ -61,11 +113,11 @@ describe('callable and error type contracts', () => {
     expect(normalized.code).toBeUndefined()
   })
 
-  it('derives code from a Convex application error, preserving its data verbatim', () => {
-    // Structured extraction requires the pinned ConvexError contract :
-    // a plain Error carrying a `.data` bag is NOT treated as a Convex application
-    // error and stays `unknown`. A real ConvexError becomes `server` with its
-    // `data.code` surfaced and its data preserved.
+  it('derives code and message from a Convex application error, preserving its data', () => {
+    // Structured extraction requires the pinned ConvexError contract: a plain
+    // Error carrying a `.data` bag is NOT a Convex application error and stays
+    // `unknown`. A real ConvexError becomes `server` with its `data.code` and
+    // developer-authored `data.message` surfaced and its data preserved.
     const plain = new Error('fallback message') as Error & {
       data?: { message: string; code: string }
     }
@@ -79,7 +131,7 @@ describe('callable and error type contracts', () => {
       new ConvexError({ message: 'Limit reached', code: 'LIMIT_ITEMS' }),
     )
     expect(structured.kind).toBe('server')
-    expect(structured.message).toBe('Convex application error')
+    expect(structured.message).toBe('Limit reached')
     expect(structured.code).toBe('LIMIT_ITEMS')
     expect(structured.data).toEqual({ message: 'Limit reached', code: 'LIMIT_ITEMS' })
   })

@@ -11,7 +11,8 @@ import { ConvexCallError } from '../../../../src/runtime/errors'
 //
 // The mock always answers with a structured 560 application failure whose wire
 // message carries a sentinel and UDF frame. Central normalization replaces that
-// message while preserving application-owned data/code/status. The composable
+// message with the application-authored `data.message` while preserving
+// application-owned data/code/status and the failing function name. The composable
 // stores that instance in its own identity-partitioned payload state (never
 // `asyncData.error`), so it survives SSR -> payload -> hydration as a real
 // `ConvexCallError` instance while the sentinel never reaches a public field.
@@ -39,6 +40,7 @@ onMounted(() => {
     message: (e as { message?: string } | null)?.message ?? null,
     code: (e as { code?: string } | null)?.code ?? null,
     status: (e as { status?: number } | null)?.status ?? null,
+    functionName: (e as { functionName?: string } | null)?.functionName ?? null,
     data: (e as { data?: unknown } | null)?.data ?? null,
     // Raw causes are never retained and cannot appear after payload revival.
     causeIsUndefined: e ? (e as unknown as { cause?: unknown }).cause === undefined : null,

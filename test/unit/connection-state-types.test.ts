@@ -1,6 +1,10 @@
+import { DISCONNECTED_CONNECTION_STATE } from '@lupinum/better-convex-vue/internal'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
-import type { useConvexConnectionState as useVueConvexConnectionState } from '../../packages/vue/src/use-connection-state'
+import type {
+  UseConvexConnectionStateReturn,
+  useConvexConnectionState as useVueConvexConnectionState,
+} from '../../packages/vue/src/use-connection-state'
 import { useConvexConnectionState as useNuxtConvexConnectionState } from '../../src/runtime/composables/useConvexConnectionState'
 
 type TransportStateKeys =
@@ -11,6 +15,15 @@ type TransportStateKeys =
   | 'pendingActions'
 
 describe('connection-state public contract', () => {
+  it('names one return type shared by Vue and Nuxt', () => {
+    expectTypeOf<
+      ReturnType<typeof useVueConvexConnectionState>
+    >().toEqualTypeOf<UseConvexConnectionStateReturn>()
+    expectTypeOf<
+      ReturnType<typeof useNuxtConvexConnectionState>
+    >().toEqualTypeOf<UseConvexConnectionStateReturn>()
+  })
+
   it('contains only transport facts in Vue and Nuxt', () => {
     expectTypeOf<
       keyof ReturnType<typeof useVueConvexConnectionState>
@@ -36,6 +49,7 @@ describe('connection-state public contract', () => {
       'pendingMutations',
       'state',
     ])
+    expect(result.state.value).toBe(DISCONNECTED_CONNECTION_STATE)
     expect(result.isConnected.value).toBe(false)
     expect(result.isReconnecting.value).toBe(false)
     expect(result.pendingMutations.value).toBe(0)

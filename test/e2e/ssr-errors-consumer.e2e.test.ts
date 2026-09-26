@@ -16,13 +16,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
  * The Convex backend is a deterministic local HTTP mock (no live
  * credentials): it always answers `POST /api/query` with a structured 560
  * application error whose wire message carries a sentinel and UDF frame. The
- * public error must preserve only the application-owned structured fields.
+ * public error must preserve only the application-owned structured fields: its
+ * message is the application-authored `data.message`, never the wire message.
  */
 
 const MOCK_PORT = 4988
 const NUXT_PORT = 4611
 const SENTINEL_SECRET = 'ssr-errors-consumer-sentinel-8f21c6ad'
-const PUBLIC_APPLICATION_MESSAGE = 'Convex application error'
+const PUBLIC_APPLICATION_MESSAGE = 'Archived projects cannot be edited'
 
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0
@@ -67,7 +68,7 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
             errorData: convexToJson({
               code: 'PROJECT_ARCHIVED',
               status: 409,
-              detail: 'Archived projects cannot be edited',
+              message: PUBLIC_APPLICATION_MESSAGE,
             }),
           }),
         )
@@ -155,10 +156,11 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
     expect(revived.message).toBe(PUBLIC_APPLICATION_MESSAGE)
     expect(revived.status).toBe(409)
     expect(revived.code).toBe('PROJECT_ARCHIVED')
+    expect(revived.functionName).toBe('fixture:query')
     expect(revived.data).toEqual({
       code: 'PROJECT_ARCHIVED',
       status: 409,
-      detail: 'Archived projects cannot be edited',
+      message: PUBLIC_APPLICATION_MESSAGE,
     })
     // cause never survives the payload round-trip
     expect(revived.causeIsUndefined).toBe(true)

@@ -104,19 +104,12 @@ const { data: user, pending: isLoadingUser } = await useConvexQuery(
   userArgs,
 )
 
-// useConvex() is client-only; the handle is used exclusively from browser
-// event handlers, so capture it during client setup and guard SSR.
-const convexHandle = import.meta.client ? useConvex() : null
-function getConvexClient() {
-  if (!convexHandle) {
-    throw new Error('Convex client unavailable')
-  }
-  return convexHandle
-}
+// The handle is safe to create during SSR; its calls run only from browser
+// event handlers.
+const convex = useConvex()
 
 async function handleSignOut() {
   try {
-    if (!client) throw new Error('Authentication client unavailable')
     await client.signOut()
     window.location.href = '/'
   } catch (error) {
@@ -129,7 +122,6 @@ async function testConvexQuery() {
   convexError.value = false
 
   try {
-    const convex = getConvexClient()
     const result = await convex.query(api.users.getCurrentUser, {})
     convexResult.value = JSON.stringify(result, null, 2)
   } catch (e) {

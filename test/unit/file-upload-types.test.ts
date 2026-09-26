@@ -7,6 +7,7 @@ import type { UploadProgressInfo } from '../../src/runtime/composables/useConvex
 import type { ConvexCallError } from '../../src/runtime/errors'
 
 declare const useConvexFileUpload: (typeof import('../../src/runtime/composables/useConvexFileUpload'))['useConvexFileUpload']
+declare const useVueConvexFileUpload: (typeof import('../../packages/vue/src'))['useConvexFileUpload']
 
 type NoArgs = Record<string, never>
 
@@ -32,6 +33,10 @@ function uploadTypeContracts(file: File) {
   expectTypeOf(noArgs.data).toEqualTypeOf<ComputedRef<GenericId<'_storage'> | undefined>>()
   expectTypeOf(noArgs.error).toEqualTypeOf<ComputedRef<ConvexCallError | undefined>>()
   expectTypeOf(noArgs.progress).toEqualTypeOf<ComputedRef<UploadProgressInfo>>()
+  expectTypeOf(noArgs.cancel).toEqualTypeOf<() => void>()
+  expectTypeOf(noArgs.reset).toEqualTypeOf<() => void>()
+  // The Nuxt facade returns exactly the Vue lifecycle's state.
+  expectTypeOf(noArgs).toEqualTypeOf(useVueConvexFileUpload(noArgsUploadUrl))
   void noArgs.upload(file, {})
 
   const requiredArgs = useConvexFileUpload(requiredArgsUploadUrl)

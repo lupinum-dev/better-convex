@@ -39,6 +39,8 @@ createBetterConvex({ runtime: attachment })
 createBetterConvex({ attachment, convexUrl: 'https://duplicate-owner.invalid' })
 // @ts-expect-error an attached child cannot install an authentication authority
 createBetterConvex({ attachment, auth: {} })
+// @ts-expect-error an attached child cannot configure the host-owned client
+createBetterConvex({ attachment, clientOptions: { verbose: true } })
 // @ts-expect-error the attachment cannot dispose its host
 attachment.dispose()
 // @ts-expect-error the attachment cannot close its host client

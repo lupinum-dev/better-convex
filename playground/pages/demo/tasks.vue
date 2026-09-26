@@ -85,15 +85,9 @@ const { data: tasks, pending, error } = await useConvexQuery(api.tasks.list, que
 const newTaskTitle = ref('')
 const isAdding = ref(false)
 
-// useConvex() is client-only; the handle is used exclusively from browser
-// event handlers, so capture it during client setup and guard SSR.
-const convexHandle = import.meta.client ? useConvex() : null
-function getConvexClient() {
-  if (!convexHandle) {
-    throw new Error('Convex client unavailable')
-  }
-  return convexHandle
-}
+// The handle is safe to create during SSR; its calls run only from browser
+// event handlers.
+const convex = useConvex()
 
 // Add a new task
 async function addTask() {
@@ -101,8 +95,7 @@ async function addTask() {
 
   isAdding.value = true
   try {
-    const client = getConvexClient()
-    await client.mutation(api.tasks.add, { title: newTaskTitle.value.trim() })
+    await convex.mutation(api.tasks.add, { title: newTaskTitle.value.trim() })
     newTaskTitle.value = ''
     // Real-time subscription updates automatically!
   } catch (e) {
@@ -115,8 +108,7 @@ async function addTask() {
 // Toggle task completion
 async function toggleTask(id: Id<'tasks'>) {
   try {
-    const client = getConvexClient()
-    await client.mutation(api.tasks.toggle, { id })
+    await convex.mutation(api.tasks.toggle, { id })
     // Real-time subscription updates automatically!
   } catch (e) {
     console.error('Failed to toggle task:', e)
@@ -126,8 +118,7 @@ async function toggleTask(id: Id<'tasks'>) {
 // Delete a task
 async function deleteTask(id: Id<'tasks'>) {
   try {
-    const client = getConvexClient()
-    await client.mutation(api.tasks.remove, { id })
+    await convex.mutation(api.tasks.remove, { id })
     // Real-time subscription updates automatically!
   } catch (e) {
     console.error('Failed to delete task:', e)

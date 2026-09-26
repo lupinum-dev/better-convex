@@ -1,11 +1,17 @@
 import { ConvexHttpClient } from 'convex/browser'
-import type { FunctionReference, FunctionReturnType, OptionalRestArgs } from 'convex/server'
+import {
+  getFunctionName,
+  type FunctionReference,
+  type FunctionReturnType,
+  type OptionalRestArgs,
+} from 'convex/server'
 import type { H3Event } from 'h3'
 
 import { ConvexCallError, normalizeConvexError } from '../../errors'
 import { createBoundedConvexFetch } from '../../utils/bounded-convex-fetch'
-import { normalizeConvexRuntimeConfig } from '../../utils/runtime-config-normalize'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
+import { readEventConvexConfig, readEventCookieHeader } from './event-context'
+import { resolveRequestAuthSnapshot } from './request-auth'
 import {
   validateServerConvexOptions,
   type NormalizedServerConvexOptions,
@@ -40,44 +46,15 @@ export interface ServerConvexCaller {
   ): Promise<FunctionReturnType<Action>>
 }
 
-// ---------------------------------------------------------------------------
-// Private per-caller configuration and cookie access.
-// ---------------------------------------------------------------------------
-
-function readCallerConfig(event: H3Event) {
-  const context = event.context as {
-    nitro?: { runtimeConfig?: { public?: { convex?: unknown } } }
-  }
-  const runtimeConfig = context.nitro?.runtimeConfig
-  return normalizeConvexRuntimeConfig(runtimeConfig?.public?.convex)
-}
-
-function readRequiredConvexUrl(event: H3Event): string {
-  const url = readCallerConfig(event).url
+function readRequiredConvexUrl(url: string | undefined): string {
   if (!url) {
     throw new ConvexCallError({
       kind: 'unknown',
+      code: 'CONVEX_URL_MISSING',
       message: 'Convex URL is not configured for serverConvex',
     })
   }
   return url
-}
-
-function readCookieHeader(event: H3Event): string | null {
-  const directHeader = (event as { headers?: { get?: (name: string) => string | null } }).headers
-  if (directHeader?.get) {
-    return directHeader.get('cookie')
-  }
-  const nodeHeaders = (
-    event as {
-      node?: {
-        req?: { headers?: Record<string, string | string[] | undefined> }
-      }
-    }
-  ).node?.req?.headers
-  const raw = nodeHeaders?.cookie
-  if (Array.isArray(raw)) return raw.join('; ')
-  return typeof raw === 'string' ? raw : null
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +64,7 @@ function readCookieHeader(event: H3Event): string | null {
 function authenticationRequiredError(status = 401): ConvexCallError {
   return new ConvexCallError({
     kind: 'authentication',
+    code: 'UNAUTHENTICATED',
     message: 'Convex authentication is required for this server call',
     status,
   })
@@ -98,6 +76,7 @@ function throwExchangeFailure(result: ConvexTokenExchangeResult): never {
     result.error ??
     new ConvexCallError({
       kind: 'transport',
+      code: 'NETWORK_ERROR',
       message: 'Convex token exchange could not complete',
     })
   )
@@ -112,7 +91,7 @@ async function resolveServerToken(
     return normalized.authToken
   }
 
-  const config = readCallerConfig(event)
+  const config = readEventConvexConfig(event)
   const required = normalized.auth === 'required'
 
   if (config.auth === false) {
@@ -137,7 +116,7 @@ async function resolveServerToken(
   // Cookie-based event resolution.
   if (normalized.auth === 'none') return null
 
-  const cookieHeader = readCookieHeader(event)
+  const cookieHeader = readEventCookieHeader(event)
   const sessionToken = getBetterAuthSessionToken(cookieHeader)
   const authCookieHeader = filterBetterAuthCookies(cookieHeader)
 
@@ -151,23 +130,29 @@ async function resolveServerToken(
     return null
   }
 
-  const result = await exchangeConvexToken({
-    event,
+  // The request's shared snapshot: one exchange per request, and the identity
+  // Convex authorizes is the one getConvexUser/requireConvexUser display.
+  const snapshot = await resolveRequestAuthSnapshot(event, {
     siteUrl: config.siteUrl,
-    credential: { type: 'cookie', value: authCookieHeader },
     trustedClientIpHeader: config.auth.trustedClientIpHeader,
+    cookieHeader,
   })
 
-  if (result.token) return result.token
+  if (snapshot.token) return snapshot.token
 
-  // No token. 401/403 -> anonymous for optional, authentication for required.
-  // Every other failure (transport, 5xx, oversized, malformed) throws transport
-  // in both modes.
-  if (result.status === 401 || result.status === 403) {
-    if (required) throw authenticationRequiredError(result.status)
+  // No token and no failure is a definitive miss (no usable session, or an
+  // exchange 401/403): anonymous for optional, authentication for required.
+  // Every other failure (transport, 5xx, oversized, malformed, unusable token)
+  // throws transport in both modes.
+  if (snapshot.authError === null) {
+    if (required) throw authenticationRequiredError(snapshot.exchangeStatus === 403 ? 403 : 401)
     return null
   }
-  throwExchangeFailure(result)
+  throw new ConvexCallError({
+    kind: 'transport',
+    code: 'AUTH_UNAVAILABLE',
+    message: 'Convex authentication is temporarily unavailable',
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -180,19 +165,20 @@ async function resolveServerToken(
  * The caller lazily resolves one authentication token and one
  * `ConvexHttpClient` (built with `logger: false` so arbitrary Convex function
  * log lines are not re-emitted, and the shared bounded fetch so abort, deadline,
- * response-size, and transport classification remain request-scoped). A
+ * response-size, and transport classification remain request-scoped). The
+ * response cap and query deadline come from the `server` module options. A
  * rejected token or client promise stays rejected for this caller; retrying
  * requires a new caller. Neither promise is stored on the event nor keyed by
- * option hash.
+ * option hash. The request-cookie path reads the request's shared auth
+ * snapshot, so it reuses the exchange of SSR hydration and
+ * `getConvexUser`/`requireConvexUser` and authorizes the same identity they
+ * display. Failures are `ConvexCallError`s that carry the function name.
  */
 export function serverConvex(
   event: H3Event,
   options: ServerConvexOptions = {},
 ): ServerConvexCaller {
   const normalized = validateServerConvexOptions(options)
-  const boundedFetch = createBoundedConvexFetch({
-    signal: event.web?.request?.signal,
-  })
   let tokenPromise: Promise<string | null> | null = null
   let clientPromise: Promise<ConvexHttpClient> | null = null
 
@@ -203,8 +189,13 @@ export function serverConvex(
 
   const getClient = (): Promise<ConvexHttpClient> => {
     clientPromise ??= (async () => {
-      const client = new ConvexHttpClient(readRequiredConvexUrl(event), {
-        fetch: boundedFetch,
+      const config = readEventConvexConfig(event)
+      const client = new ConvexHttpClient(readRequiredConvexUrl(config.url), {
+        fetch: createBoundedConvexFetch({
+          signal: event.web?.request?.signal,
+          maxResponseBytes: config.server.maxResponseBytes,
+          queryTimeoutMs: config.server.queryTimeoutMs,
+        }),
         logger: false,
       })
       const token = await getToken()
@@ -222,31 +213,56 @@ export function serverConvex(
     return getClient()
   }
 
+  const call = async <Result>(
+    reference: FunctionReference<'query' | 'mutation' | 'action'>,
+    invoke: (client: ConvexHttpClient) => Promise<Result>,
+  ): Promise<Result> => {
+    const functionName = readFunctionName(reference)
+    let client: ConvexHttpClient
+    try {
+      client = await prepareClient()
+    } catch (error) {
+      // Option and credential contract violations stay ServerConvexValidationError.
+      throw error instanceof ConvexCallError ? normalizeConvexError(error, { functionName }) : error
+    }
+    try {
+      return await invoke(client)
+    } catch (error) {
+      throw normalizeConvexError(error, { functionName })
+    }
+  }
+
   return {
     getToken,
-    async query(query, ...args) {
-      const client = await prepareClient()
-      try {
-        return (await client.query(query, ...args)) as FunctionReturnType<typeof query>
-      } catch (error) {
-        throw normalizeConvexError(error)
-      }
+    query(query, ...args) {
+      return call(
+        query,
+        async (client) => (await client.query(query, ...args)) as FunctionReturnType<typeof query>,
+      )
     },
-    async mutation(mutation, ...args) {
-      const client = await prepareClient()
-      try {
-        return (await client.mutation(mutation, ...args)) as FunctionReturnType<typeof mutation>
-      } catch (error) {
-        throw normalizeConvexError(error)
-      }
+    mutation(mutation, ...args) {
+      return call(
+        mutation,
+        async (client) =>
+          (await client.mutation(mutation, ...args)) as FunctionReturnType<typeof mutation>,
+      )
     },
-    async action(action, ...args) {
-      const client = await prepareClient()
-      try {
-        return (await client.action(action, ...args)) as FunctionReturnType<typeof action>
-      } catch (error) {
-        throw normalizeConvexError(error)
-      }
+    action(action, ...args) {
+      return call(
+        action,
+        async (client) =>
+          (await client.action(action, ...args)) as FunctionReturnType<typeof action>,
+      )
     },
+  }
+}
+
+function readFunctionName(
+  reference: FunctionReference<'query' | 'mutation' | 'action'>,
+): string | undefined {
+  try {
+    return getFunctionName(reference)
+  } catch {
+    return undefined
   }
 }

@@ -52,7 +52,6 @@ async function submitAuth() {
   info.value = null
 
   try {
-    if (!client) throw new Error('Authentication client unavailable')
     if (mode.value === 'signUp') {
       const parsed = signUpInputSchema.safeParse({
         name: name.value,

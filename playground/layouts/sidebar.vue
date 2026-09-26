@@ -4,7 +4,6 @@ const route = useRoute()
 
 async function handleSignOut() {
   try {
-    if (!client) throw new Error('Authentication client unavailable')
     await client.signOut()
     window.location.href = '/'
   } catch (error) {

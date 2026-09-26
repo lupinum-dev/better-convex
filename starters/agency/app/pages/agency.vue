@@ -28,7 +28,6 @@ async function submitAuth() {
   operationError.value = null
   authNotice.value = null
   try {
-    if (!authClient) throw new Error('Authentication client unavailable')
     const signingUp = authMode.value === 'signUp'
     const result = signingUp
       ? await authClient.signUp.email({
@@ -55,7 +54,6 @@ async function submitAuth() {
 }
 
 async function handleSignOut() {
-  if (!authClient) throw new Error('Authentication client unavailable')
   await authClient.signOut()
   agencyOrganizationId.value = '' as Id<'organizations'>
 }

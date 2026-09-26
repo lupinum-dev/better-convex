@@ -1,7 +1,7 @@
 import type { FunctionReference, PaginationResult } from 'convex/server'
 import type { ComputedRef, Ref } from 'vue'
 
-import { ConvexCallError } from '../errors'
+import { ConvexCallError, type ConvexCallErrorCode } from '../errors'
 import {
   createPendingPaginationPage,
   needsPaginationSplit,
@@ -56,7 +56,11 @@ function visiblePage<Item>(result: PaginationResult<Item>) {
 }
 
 function splitRequiredError(message: string): ConvexCallError {
-  return new ConvexCallError({ kind: 'unknown', code: 'PAGINATION_SPLIT_REQUIRED', message })
+  return new ConvexCallError({
+    kind: 'unknown',
+    code: 'PAGINATION_SPLIT_REQUIRED' satisfies ConvexCallErrorCode,
+    message,
+  })
 }
 
 export function createPaginationSplitController<Item>(

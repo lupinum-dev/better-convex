@@ -225,15 +225,9 @@ function canDelete(post: { ownerId: string }) {
   return user.value.authId === post.ownerId
 }
 
-// useConvex() is client-only; the handle is used exclusively from browser
-// event handlers, so capture it during client setup and guard SSR.
-const convexHandle = import.meta.client ? useConvex() : null
-function getConvexClient() {
-  if (!convexHandle) {
-    throw new Error('Convex client unavailable')
-  }
-  return convexHandle
-}
+// The handle is safe to create during SSR; its calls run only from browser
+// event handlers.
+const convex = useConvex()
 
 // Create post
 async function createPost() {
@@ -241,8 +235,7 @@ async function createPost() {
 
   isCreating.value = true
   try {
-    const client = getConvexClient()
-    await client.mutation(api.posts.create, {
+    await convex.mutation(api.posts.create, {
       title: newPost.value.title.trim(),
       content: newPost.value.content.trim(),
     })
@@ -276,8 +269,7 @@ async function saveEdit(postId: Id<'posts'>) {
 
   isSaving.value = true
   try {
-    const client = getConvexClient()
-    await client.mutation(api.posts.update, {
+    await convex.mutation(api.posts.update, {
       id: postId,
       title: editingPost.value.title.trim(),
       content: editingPost.value.content.trim(),
@@ -295,8 +287,7 @@ async function saveEdit(postId: Id<'posts'>) {
 async function publishPost(postId: Id<'posts'>) {
   publishingPostId.value = postId
   try {
-    const client = getConvexClient()
-    await client.mutation(api.posts.publish, { id: postId })
+    await convex.mutation(api.posts.publish, { id: postId })
   } catch (e) {
     console.error('Failed to publish post:', e)
     alert(`Failed to publish post: ${e instanceof Error ? e.message : 'Unknown error'}`)
@@ -311,8 +302,7 @@ async function deletePost(postId: Id<'posts'>) {
 
   deletingPostId.value = postId
   try {
-    const client = getConvexClient()
-    await client.mutation(api.posts.remove, { id: postId })
+    await convex.mutation(api.posts.remove, { id: postId })
   } catch (e) {
     console.error('Failed to delete post:', e)
     alert(`Failed to delete post: ${e instanceof Error ? e.message : 'Unknown error'}`)

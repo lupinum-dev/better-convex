@@ -1,6 +1,7 @@
 import { type } from 'arktype'
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import type { ComputedRef } from 'vue'
 import { z } from 'zod'
 
 import { useConvexForm } from '../../packages/vue/src'
@@ -37,6 +38,14 @@ function formTypeContract() {
       | { readonly ok: false; readonly error: import('../../packages/vue/src').ConvexFormError }
     >
   >()
+
+  // Destructuring keeps the verb and state typed; `submit` and `reset` are
+  // function properties, not unbound methods.
+  const { submit, pending, reset, data } = direct
+  expectTypeOf(submit).returns.toEqualTypeOf<typeof directResult>()
+  expectTypeOf(pending).toEqualTypeOf<ComputedRef<boolean>>()
+  expectTypeOf(reset).toEqualTypeOf<() => void>()
+  expectTypeOf(data).toEqualTypeOf<ComputedRef<{ memberId: string } | undefined>>()
 
   const mapped = useConvexForm(mutation, {
     schema: z.object({

@@ -1,18 +1,28 @@
-import { useConvexConnectionState as useVueConvexConnectionState } from '@lupinum/better-convex-vue'
+import {
+  useConvexConnectionState as useVueConvexConnectionState,
+  type UseConvexConnectionStateReturn,
+} from '@lupinum/better-convex-vue'
 import {
   DISCONNECTED_CONNECTION_STATE,
   projectConvexConnectionState,
 } from '@lupinum/better-convex-vue/internal'
 import { computed } from 'vue'
 
-export type { ConnectionState } from 'convex/browser'
+import { useNuxtApp } from '#app'
 
-/** Deterministic SSR projection around the shared Vue connection store. */
-export function useConvexConnectionState() {
-  // The Better Convex Vue plugin is intentionally client-only in Nuxt. SSR
-  // therefore renders the same disconnected state that the shared runtime
-  // reports before its first browser connection, without relaxing plain Vue's
-  // fail-fast "plugin required" contract.
-  if (import.meta.client) return useVueConvexConnectionState()
+import { readConvexRuntimeContext } from '../runtime-context'
+
+export type { ConnectionState } from 'convex/browser'
+export type { UseConvexConnectionStateReturn } from '@lupinum/better-convex-vue'
+
+/**
+ * Observe the browser Convex connection. Server rendering, and a build without
+ * a Convex URL, report the same disconnected state the browser runtime starts
+ * from, so the first client render hydrates without a mismatch.
+ */
+export function useConvexConnectionState(): UseConvexConnectionStateReturn {
+  if (import.meta.client && readConvexRuntimeContext(useNuxtApp())) {
+    return useVueConvexConnectionState()
+  }
   return projectConvexConnectionState(computed(() => DISCONNECTED_CONNECTION_STATE))
 }

@@ -5,8 +5,7 @@ import { api } from '#convex/api'
 
 const name = ref('')
 const error = ref<string | null>(null)
-const pending = ref(false)
-const createOrganization = useConvexMutation(api.organizations.create)
+const { mutate: createOrganization, pending } = useConvexMutation(api.organizations.create)
 
 async function submit() {
   const parsed = createOrganizationInputSchema.safeParse({
@@ -17,15 +16,12 @@ async function submit() {
     return
   }
 
-  pending.value = true
   error.value = null
   try {
     await createOrganization(parsed.data)
     name.value = ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Organization was not created'
-  } finally {
-    pending.value = false
   }
 }
 </script>

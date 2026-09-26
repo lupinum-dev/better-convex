@@ -3,8 +3,21 @@ import { computed, getCurrentScope, onScopeDispose, type ComputedRef } from 'vue
 
 import { useBetterConvexRuntime } from './runtime-context'
 
+/** Transport facts about the app's current Convex WebSocket connection. */
+export interface UseConvexConnectionStateReturn {
+  /** The raw Convex connection state. */
+  readonly state: ComputedRef<ConnectionState>
+  readonly isConnected: ComputedRef<boolean>
+  /** True after a first connection was lost and has not come back yet. */
+  readonly isReconnecting: ComputedRef<boolean>
+  readonly pendingMutations: ComputedRef<number>
+  readonly pendingActions: ComputedRef<number>
+}
+
 /** Project one connection-state source onto the returned transport facts. */
-export function projectConvexConnectionState(state: ComputedRef<ConnectionState>) {
+export function projectConvexConnectionState(
+  state: ComputedRef<ConnectionState>,
+): UseConvexConnectionStateReturn {
   return Object.freeze({
     state,
     isConnected: computed(() => state.value.isWebSocketConnected),
@@ -16,7 +29,7 @@ export function projectConvexConnectionState(state: ComputedRef<ConnectionState>
   })
 }
 
-export function useConvexConnectionState() {
+export function useConvexConnectionState(): UseConvexConnectionStateReturn {
   if (!getCurrentScope()) {
     throw new Error(
       '[better-convex-vue] useConvexConnectionState must run inside a Vue effect scope',

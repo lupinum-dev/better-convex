@@ -1,5 +1,10 @@
 import { ConvexCallError } from '@lupinum/better-convex-nuxt/errors'
-import { serverConvex } from '@lupinum/better-convex-nuxt/server'
+import {
+  getConvexUser,
+  requireConvexUser,
+  serverConvex,
+  toConvexH3Error,
+} from '@lupinum/better-convex-nuxt/server'
 import { makeFunctionReference } from 'convex/server'
 
 type ProbeOperation = 'query' | 'mutation' | 'action'
@@ -44,6 +49,16 @@ async function _packedServerTypeContracts(event: Parameters<typeof serverConvex>
     // @ts-expect-error token and credential are mutually exclusive
     credential: { type: 'cookie', value: 'better-auth.session_token=k' },
   })
+
+  const maybeUser = await getConvexUser(event)
+  // @ts-expect-error anonymous requests resolve null
+  void maybeUser.id
+  const optionalId: string | undefined = maybeUser?.id
+  const requiredId: string = (await requireConvexUser(event)).id
+  const mapped = toConvexH3Error(new ConvexCallError({ kind: 'transport', message: 'down' }))
+  const statusCode: number = mapped.statusCode
+  const functionName: string | undefined = mapped.data?.functionName
+  void [optionalId, requiredId, statusCode, functionName]
 }
 
 function readProbeValue<T extends string>(value: unknown, allowed: Set<T>, label: string): T {

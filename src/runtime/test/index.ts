@@ -82,7 +82,7 @@ export function setupBetterConvexTest(
 ): BetterConvexTestRuntime {
   const client = new BetterConvexTestClient()
   const { auth, observer } = createBetterConvexTestAuth(options.auth ?? 'authenticated')
-  const uploads = createBetterConvexTestUploads()
+  const uploads = createBetterConvexTestUploads(observer)
   const attachment = createBetterConvexAttachment({
     client: client.handle,
     anonymousClient: client.handle,

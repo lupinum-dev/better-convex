@@ -42,51 +42,55 @@ watch(
 )
 
 // Mutation WITH optimistic update
-const addNoteOptimistic = useConvexMutation(api.notes.add, {
-  optimisticUpdate: (localStore, args) => {
-    console.log('[Optimistic] Applying optimistic update for add')
-    const current = localStore.getQuery(api.notes.list, {})
-    const now = Date.now()
-    const optimisticNote = {
-      _id: `optimistic-${now}` as Id<'notes'>,
-      _creationTime: now,
-      createdAt: now,
-      title: args.title,
-      content: args.content,
-    }
-    console.log('[Optimistic] Created optimistic note:', optimisticNote.title)
-    localStore.setQuery(
-      api.notes.list,
-      {},
-      current ? [optimisticNote, ...current] : [optimisticNote],
-    )
-  },
-})
-const { pending: addPendingOptimistic } = addNoteOptimistic
-
-// Mutation WITHOUT optimistic update (for comparison)
-const addNoteNormal = useConvexMutation(api.notes.add)
-const { pending: addPendingNormal } = addNoteNormal
-
-// Delete mutation WITH optimistic update
-const removeNoteOptimistic = useConvexMutation(api.notes.remove, {
-  optimisticUpdate: (localStore, args) => {
-    console.log('[Optimistic] Applying optimistic update for remove')
-    const current = localStore.getQuery(api.notes.list, {})
-    if (current) {
+const { mutate: addNoteOptimistic, pending: addPendingOptimistic } = useConvexMutation(
+  api.notes.add,
+  {
+    optimisticUpdate: (localStore, args) => {
+      console.log('[Optimistic] Applying optimistic update for add')
+      const current = localStore.getQuery(api.notes.list, {})
+      const now = Date.now()
+      const optimisticNote = {
+        _id: `optimistic-${now}` as Id<'notes'>,
+        _creationTime: now,
+        createdAt: now,
+        title: args.title,
+        content: args.content,
+      }
+      console.log('[Optimistic] Created optimistic note:', optimisticNote.title)
       localStore.setQuery(
         api.notes.list,
         {},
-        current.filter((note) => note._id !== args.id),
+        current ? [optimisticNote, ...current] : [optimisticNote],
       )
-    }
+    },
   },
-})
-const { pending: removePendingOptimistic } = removeNoteOptimistic
+)
+
+// Mutation WITHOUT optimistic update (for comparison)
+const { mutate: addNoteNormal, pending: addPendingNormal } = useConvexMutation(api.notes.add)
+
+// Delete mutation WITH optimistic update
+const { mutate: removeNoteOptimistic, pending: removePendingOptimistic } = useConvexMutation(
+  api.notes.remove,
+  {
+    optimisticUpdate: (localStore, args) => {
+      console.log('[Optimistic] Applying optimistic update for remove')
+      const current = localStore.getQuery(api.notes.list, {})
+      if (current) {
+        localStore.setQuery(
+          api.notes.list,
+          {},
+          current.filter((note) => note._id !== args.id),
+        )
+      }
+    },
+  },
+)
 
 // Delete mutation WITHOUT optimistic update (for comparison)
-const removeNoteNormal = useConvexMutation(api.notes.remove)
-const { pending: removePendingNormal } = removeNoteNormal
+const { mutate: removeNoteNormal, pending: removePendingNormal } = useConvexMutation(
+  api.notes.remove,
+)
 
 async function handleAddOptimistic() {
   const timestamp = Date.now()

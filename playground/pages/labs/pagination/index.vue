@@ -15,17 +15,12 @@ definePageMeta({
  * - Basic paginated query test (from /test-paginated-query)
  */
 
-const { data, status, pending, canLoadMore, loadMore, error } = await useConvexPaginatedQuery(
-  api.notes.listPaginated,
-  {},
-  { initialNumItems: 3, auth: 'none' },
-)
+const { data, status, pending, canLoadMore, isLoadingMore, isExhausted, loadMore, error } =
+  await useConvexPaginatedQuery(api.notes.listPaginated, {}, { initialNumItems: 3, auth: 'none' })
 const notes = computed(() => data.value ?? [])
 
-const addNote = useConvexMutation(api.notes.add)
-const removeNote = useConvexMutation(api.notes.remove)
-const { pending: addPending } = addNote
-const { pending: removePending } = removeNote
+const { mutate: addNote, pending: addPending } = useConvexMutation(api.notes.add)
+const { mutate: removeNote, pending: removePending } = useConvexMutation(api.notes.remove)
 
 // Track add/remove counts for verification
 const addCount = ref(0)
@@ -47,7 +42,7 @@ async function handleRemove(id: Id<'notes'>) {
 }
 
 function handleLoadMore() {
-  loadMore(3)
+  void loadMore(3)
   loadMoreCount.value++
 }
 </script>
@@ -99,7 +94,7 @@ function handleLoadMore() {
         :disabled="!canLoadMore"
         @click="handleLoadMore"
       >
-        {{ pending ? 'Loading...' : 'Load More' }}
+        {{ isLoadingMore ? 'Loading...' : 'Load More' }}
       </button>
     </section>
 
@@ -113,6 +108,14 @@ function handleLoadMore() {
         <div class="state-item">
           <span class="label">pending:</span>
           <span data-testid="is-loading" class="value">{{ pending }}</span>
+        </div>
+        <div class="state-item">
+          <span class="label">isLoadingMore:</span>
+          <span data-testid="is-loading-more" class="value">{{ isLoadingMore }}</span>
+        </div>
+        <div class="state-item">
+          <span class="label">isExhausted:</span>
+          <span data-testid="is-exhausted" class="value">{{ isExhausted }}</span>
         </div>
         <div class="state-item">
           <span class="label">result count:</span>
@@ -174,15 +177,11 @@ function handleLoadMore() {
         </li>
       </ul>
 
-      <div v-if="pending && notes.length > 0" class="loading-more" data-testid="loading-more">
+      <div v-if="isLoadingMore" class="loading-more" data-testid="loading-more">
         Loading more...
       </div>
 
-      <div
-        v-if="status === 'success' && !canLoadMore && notes.length > 0"
-        class="exhausted"
-        data-testid="exhausted"
-      >
+      <div v-if="isExhausted && notes.length > 0" class="exhausted" data-testid="exhausted">
         All notes loaded.
       </div>
     </section>

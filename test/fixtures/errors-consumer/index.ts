@@ -13,10 +13,12 @@
  */
 import {
   ConvexCallError,
+  isConvexCallError,
   isSerializedConvexCallError,
   normalizeConvexError,
 } from '@lupinum/better-convex-nuxt/errors'
-import type { ConvexCallErrorKind } from '@lupinum/better-convex-nuxt/errors'
+import type { ConvexCallErrorCode, ConvexCallErrorKind } from '@lupinum/better-convex-nuxt/errors'
+import { ConvexError } from 'convex/values'
 
 const typedKind: ConvexCallErrorKind = 'server'
 void typedKind
@@ -58,6 +60,62 @@ if (isSerializedConvexCallError({ name: 'ConvexCallError' })) {
   fail(
     'isSerializedConvexCallError accepted a bare { name } object (must do strict structural validation)',
   )
+}
+
+// The call context names the failing function without replacing a known one.
+const named = normalizeConvexError(original, { functionName: 'notes:create' })
+if (named === original || named.kind !== 'transport' || named.functionName !== 'notes:create') {
+  fail('normalizeConvexError did not attach the context function name to a copy')
+}
+if (normalizeConvexError(named, { functionName: 'notes:other' }).functionName !== 'notes:create') {
+  fail('normalizeConvexError replaced an existing function name')
+}
+
+// Application errors keep developer-authored text; Convex's wire message never leaks.
+const stringData = normalizeConvexError(new ConvexError('Title is required'), {
+  functionName: 'notes:create',
+})
+if (
+  stringData.kind !== 'server' ||
+  stringData.message !== 'Title is required' ||
+  stringData.functionName !== 'notes:create'
+) {
+  fail('a string ConvexError payload did not become the public message')
+}
+const structured = normalizeConvexError(
+  new ConvexError({ code: 'NOTE_EXISTS', message: 'A note with this title exists' }),
+)
+if (structured.code !== 'NOTE_EXISTS' || structured.message !== 'A note with this title exists') {
+  fail('a structured ConvexError payload did not keep its code and message')
+}
+if (
+  normalizeConvexError(new ConvexError({ code: 'NOTE_EXISTS' })).message !==
+  'Convex application error'
+) {
+  fail('a ConvexError payload without text did not use the generic message')
+}
+
+// Library failures carry stable codes and survive the serialized round trip.
+const cancelledCode: ConvexCallErrorCode = 'CANCELLED'
+const cancelled = new ConvexCallError({
+  kind: 'unknown',
+  code: cancelledCode,
+  message: 'Upload cancelled',
+  functionName: 'files:generateUploadUrl',
+})
+if (!isConvexCallError(cancelled, 'CANCELLED') || !isConvexCallError(cancelled)) {
+  fail('isConvexCallError rejected a matching ConvexCallError')
+}
+if (isConvexCallError(cancelled, 'IDENTITY_CHANGED') || isConvexCallError({ code: 'CANCELLED' })) {
+  fail('isConvexCallError accepted a different code or a plain object')
+}
+const revived = normalizeConvexError(JSON.parse(JSON.stringify(cancelled)))
+if (
+  !(revived instanceof ConvexCallError) ||
+  revived.code !== 'CANCELLED' ||
+  revived.functionName !== 'files:generateUploadUrl'
+) {
+  fail('a serialized ConvexCallError did not revive with its code and function name')
 }
 
 console.log('errors-consumer OK')

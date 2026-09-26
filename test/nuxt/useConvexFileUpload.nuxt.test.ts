@@ -72,6 +72,9 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+// The lifecycle itself is covered framework-free in test/unit/vue-file-upload.test.ts.
+// These cases prove the Nuxt facade drives it through the Nuxt runtime's client
+// and identity.
 describe('useConvexFileUpload (Nuxt runtime)', () => {
   it('can be created without a live transport and safely normalizes execution failure', async () => {
     const mutation = mockFnRef<'mutation'>('files:ssr-safe-upload-url')
@@ -183,7 +186,10 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     )
 
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' })
-    await expect(result.upload(file)).rejects.toThrow('not allowed')
+    await expect(result.upload(file)).rejects.toMatchObject({
+      code: 'FILE_TYPE_NOT_ALLOWED',
+      functionName: 'files:generateUploadUrl',
+    })
     expect(result.status.value).toBe('error')
     expect(result.error.value?.message).toContain('not allowed')
     expect(convex.calls.mutation).toHaveLength(0)
@@ -199,13 +205,13 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
 
     await expect(
       result.upload(new File(['hello'], 'hello.txt', { type: 'text/plain' })),
-    ).rejects.toThrow('exceeds maximum')
+    ).rejects.toMatchObject({ code: 'FILE_TOO_LARGE' })
     expect(result.status.value).toBe('error')
     expect(convex.calls.mutation).toHaveLength(0)
   })
 
   it('cancel() aborts in-flight upload and resets state', async () => {
-    FakeXhr.delayMs = 50
+    FakeXhr.delayMs = 200
 
     const convex = new MockConvexClient()
     const mutation = mockFnRef<'mutation'>('files:generateUploadUrl')
@@ -218,7 +224,7 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     await waitFor(() => result.progress.value.percent > 0, { timeoutMs: 1000 })
     result.cancel()
 
-    await expect(uploadPromise).rejects.toThrow()
+    await expect(uploadPromise).rejects.toMatchObject({ code: 'CANCELLED' })
     expect(result.status.value).toBe('idle')
     expect(result.progress.value).toEqual({ loaded: 0, total: 0, percent: 0 })
     expect(result.data.value).toBeUndefined()
@@ -245,7 +251,7 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     const firstPromise = result.upload(fileA)
     expect(result.status.value).toBe('pending')
 
-    await expect(result.upload(fileB)).rejects.toThrow('Upload already in progress')
+    await expect(result.upload(fileB)).rejects.toMatchObject({ code: 'UPLOAD_IN_PROGRESS' })
     // The rejected concurrent call must not have clobbered the in-flight upload.
     expect(result.status.value).toBe('pending')
 
@@ -279,7 +285,7 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     // Now let the mutation resolve; the upload must not proceed to the XHR.
     urlRequest.resolve('http://upload.local')
 
-    await expect(uploadPromise).rejects.toThrow()
+    await expect(uploadPromise).rejects.toMatchObject({ code: 'CANCELLED' })
     expect(sendSpy).not.toHaveBeenCalled()
     expect(result.status.value).toBe('idle')
     expect(result.progress.value).toEqual({ loaded: 0, total: 0, percent: 0 })
@@ -490,7 +496,7 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
   })
 
   it('retires an active upload on identity change and permits fresh work', async () => {
-    FakeXhr.delayMs = 50
+    FakeXhr.delayMs = 200
 
     const convex = new MockConvexClient()
     const mutation = mockFnRef<'mutation'>('files:generateUploadUrl:identity-change')
@@ -527,7 +533,7 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     expect(result.data.value).toBe('storage_1')
 
     // The old fake XHR still attempts its delayed load. It must not overwrite B.
-    await new Promise((resolve) => setTimeout(resolve, 60))
+    await new Promise((resolve) => setTimeout(resolve, 210))
     expect(result.status.value).toBe('success')
     expect(result.data.value).toBe('storage_1')
 

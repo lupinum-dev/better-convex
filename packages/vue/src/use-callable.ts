@@ -5,9 +5,10 @@ import type {
   FunctionReturnType,
   OptionalRestArgs,
 } from 'convex/server'
-import { getCurrentScope, onScopeDispose, shallowReadonly, type ComputedRef, type Ref } from 'vue'
+import { getFunctionName } from 'convex/server'
+import { computed, getCurrentScope, onScopeDispose, type ComputedRef } from 'vue'
 
-import { ConvexCallError } from './errors'
+import { ConvexCallError, type ConvexCallErrorCode } from './errors'
 import type { ClientCallStatus } from './internal/call-state'
 import {
   createCallableController,
@@ -29,12 +30,56 @@ export interface ConvexCallableInternalOptions<Args, Result> {
   readonly observer?: CallableControllerObserver<Args, Result>
 }
 
-export interface UseConvexCall<Reference extends FunctionReference<'mutation' | 'action'>> {
-  (...args: OptionalRestArgs<Reference>): Promise<FunctionReturnType<Reference>>
-  readonly data: Readonly<Ref<FunctionReturnType<Reference> | undefined>>
+/**
+ * The frozen state and verb returned by {@link useConvexMutation}.
+ *
+ * `data` and `error` hold the exact values of the latest call, not reactive
+ * proxies. Only the newest call owns state; `reset()` and identity changes
+ * retire older calls.
+ */
+export interface UseConvexMutationReturn<Mutation extends FunctionReference<'mutation'>> {
+  /**
+   * Runs the mutation. Resolves with its result and rejects with a
+   * {@link ConvexCallError} that carries the function name.
+   */
+  readonly mutate: (...args: OptionalRestArgs<Mutation>) => Promise<FunctionReturnType<Mutation>>
+  /** The latest successful result, or `undefined`. */
+  readonly data: ComputedRef<FunctionReturnType<Mutation> | undefined>
   readonly status: ComputedRef<ConvexCallStatus>
   readonly pending: ComputedRef<boolean>
-  readonly error: Readonly<Ref<ConvexCallError | undefined>>
+  /** The latest failure, or `undefined`. */
+  readonly error: ComputedRef<ConvexCallError | undefined>
+  /**
+   * Returns to `idle` and clears `data` and `error`. An in-flight call still
+   * settles its own promise but no longer updates this state.
+   */
+  readonly reset: () => void
+}
+
+/**
+ * The frozen state and verb returned by {@link useConvexAction}.
+ *
+ * `data` and `error` hold the exact values of the latest call, not reactive
+ * proxies. Only the newest call owns state; `reset()` and identity changes
+ * retire older calls.
+ */
+export interface UseConvexActionReturn<Action extends FunctionReference<'action'>> {
+  /**
+   * Runs the action. Resolves with its result and rejects with a
+   * {@link ConvexCallError} that carries the function name.
+   */
+  readonly run: (...args: OptionalRestArgs<Action>) => Promise<FunctionReturnType<Action>>
+  /** The latest successful result, or `undefined`. */
+  readonly data: ComputedRef<FunctionReturnType<Action> | undefined>
+  readonly status: ComputedRef<ConvexCallStatus>
+  readonly pending: ComputedRef<boolean>
+  /** The latest failure, or `undefined`. */
+  readonly error: ComputedRef<ConvexCallError | undefined>
+  /**
+   * Returns to `idle` and clears `data` and `error`. An in-flight call still
+   * settles its own promise but no longer updates this state.
+   */
+  readonly reset: () => void
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -64,17 +109,18 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
   operation: 'mutation' | 'action',
   reference: Reference,
   options?: ConvexCallableInternalOptions<FunctionArgs<Reference>, FunctionReturnType<Reference>>,
-): UseConvexCall<Reference> {
+) {
+  const composable = operation === 'mutation' ? 'useConvexMutation' : 'useConvexAction'
   if (!getCurrentScope()) {
-    throw new Error(
-      `[better-convex-vue] useConvex${operation === 'mutation' ? 'Mutation' : 'Action'} must run inside a Vue effect scope`,
-    )
+    throw new Error(`[better-convex-vue] ${composable} must run inside a Vue effect scope`)
   }
   type Args = FunctionArgs<Reference>
   type Result = FunctionReturnType<Reference>
+  const functionName = getFunctionName(reference)
   const runtime = useOptionalBetterConvexRuntime()
   const lifecycle = createCallableController<Args, Result>({
     operation,
+    functionName,
     getIdentityGeneration: () => runtime?.identity.snapshot.value.identityGeneration ?? 0,
     subscribeIdentityChange: runtime
       ? (listener) => runtime.browser.identity.subscribe(listener)
@@ -86,7 +132,9 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
         if (!runtime) {
           throw new ConvexCallError({
             kind: 'unknown',
-            message: `[better-convex-vue] useConvex${operation === 'mutation' ? 'Mutation' : 'Action'} cannot execute without an installed browser runtime`,
+            code: 'CLIENT_UNAVAILABLE' satisfies ConvexCallErrorCode,
+            message: `[better-convex-vue] ${composable} cannot execute without an installed browser runtime`,
+            functionName,
           })
         }
         if (operation === 'mutation') {
@@ -99,38 +147,59 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
     },
   })
   onScopeDispose(lifecycle.dispose)
-  const execute = (...args: OptionalRestArgs<Reference>) => lifecycle.run((args[0] ?? {}) as Args)
-  // Shallow: `readonly()` would hand out deep proxies instead of the exact
-  // result and error the call settled with.
-  return Object.freeze(
-    Object.assign(execute, {
-      data: shallowReadonly(lifecycle.data),
-      status: lifecycle.status,
-      pending: lifecycle.pending,
-      error: shallowReadonly(lifecycle.error),
-    }),
-  ) as UseConvexCall<Reference>
+  // Computed, like every composable's state: read-only, and the exact result
+  // and error the call settled with rather than deep `readonly()` proxies.
+  return {
+    call: (...args: OptionalRestArgs<Reference>): Promise<Result> =>
+      lifecycle.run((args[0] ?? {}) as Args),
+    data: computed(() => lifecycle.data.value),
+    status: lifecycle.status,
+    pending: lifecycle.pending,
+    error: computed(() => lifecycle.error.value),
+    reset: lifecycle.reset,
+  }
 }
 
+/**
+ * Binds a Convex mutation to reactive call state.
+ *
+ * ```ts
+ * const { mutate, pending, error } = useConvexMutation(api.notes.create)
+ * await mutate({ title: 'Hello' })
+ * ```
+ *
+ * Must run inside a Vue effect scope. `optimisticUpdate` must be synchronous.
+ */
 export function useConvexMutation<Mutation extends FunctionReference<'mutation'>>(
   mutation: Mutation,
   options?: UseConvexMutationOptions<FunctionArgs<Mutation>>,
-): UseConvexCall<Mutation> {
-  return createCallable('mutation', mutation, { optimisticUpdate: options?.optimisticUpdate })
+): UseConvexMutationReturn<Mutation> {
+  return useConvexMutationInternal(mutation, { optimisticUpdate: options?.optimisticUpdate })
 }
 
+/**
+ * Binds a Convex action to reactive call state.
+ *
+ * ```ts
+ * const { run, pending, error } = useConvexAction(api.reports.generate)
+ * await run({ month: '2026-09' })
+ * ```
+ *
+ * Must run inside a Vue effect scope.
+ */
 export function useConvexAction<Action extends FunctionReference<'action'>>(
   action: Action,
-): UseConvexCall<Action> {
-  return createCallable('action', action)
+): UseConvexActionReturn<Action> {
+  return useConvexActionInternal(action)
 }
 
 /** Adapter entry for {@link useConvexMutation}; the same lifecycle plus an observer. */
 export function useConvexMutationInternal<Mutation extends FunctionReference<'mutation'>>(
   mutation: Mutation,
   options?: ConvexCallableInternalOptions<FunctionArgs<Mutation>, FunctionReturnType<Mutation>>,
-): UseConvexCall<Mutation> {
-  return createCallable('mutation', mutation, options)
+): UseConvexMutationReturn<Mutation> {
+  const { call, ...state } = createCallable('mutation', mutation, options)
+  return Object.freeze({ mutate: call, ...state })
 }
 
 /** Adapter entry for {@link useConvexAction}; the same lifecycle plus an observer. */
@@ -140,6 +209,7 @@ export function useConvexActionInternal<Action extends FunctionReference<'action
     ConvexCallableInternalOptions<FunctionArgs<Action>, FunctionReturnType<Action>>,
     'observer'
   >,
-): UseConvexCall<Action> {
-  return createCallable('action', action, options)
+): UseConvexActionReturn<Action> {
+  const { call, ...state } = createCallable('action', action, options)
+  return Object.freeze({ run: call, ...state })
 }

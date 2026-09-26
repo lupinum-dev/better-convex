@@ -21,7 +21,10 @@ export default defineNuxtPlugin({
     const logger = createLogger(getLogLevel(publicConvex))
     if (readConvexRuntimeContext(nuxtApp) || !convexConfig.url) return
 
-    const plugin = createBetterConvex({ convexUrl: convexConfig.url })
+    const plugin = createBetterConvex({
+      convexUrl: convexConfig.url,
+      clientOptions: convexConfig.client,
+    })
     nuxtApp.vueApp.use(plugin)
     const runtime = createConvexRuntimeContext(plugin.attachment(), logger)
     nuxtApp.provide('convexRuntime', runtime)

@@ -18,7 +18,6 @@ const { data: organizations, pending: organizationsPending } = await useConvexQu
 const hasUserProjection = computed(() => currentUser.value != null)
 
 async function handleSignOut() {
-  if (!client) throw new Error('Authentication client unavailable')
   await client.signOut()
 }
 </script>

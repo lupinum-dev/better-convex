@@ -77,12 +77,14 @@ describe('useConvexQuery auth execution gate', () => {
     // Loading: no network request.
     await flush()
     expect(primary.calls.onUpdate.length).toBe(0)
+    expect(result.q.blockedBy.value).toBe('auth')
 
     // Settles authenticated: executes with identity.
     result.identity.value = toAuthenticatedIdentity('jwt-u1', { id: 'u1' })
     result.pending.value = false
     await flush()
     expect(primary.activeListenerCount(query, {})).toBe(1)
+    expect(result.q.blockedBy.value).toBeNull()
   })
 
   it('required stays idle when auth settles anonymous', async () => {
@@ -108,6 +110,7 @@ describe('useConvexQuery auth execution gate', () => {
 
     expect(primary.calls.onUpdate.length).toBe(0)
     expect(result.q.status.value).toBe('idle')
+    expect(result.q.blockedBy.value).toBe('auth')
   })
 
   it('optional executes anonymously when auth settles anonymous', async () => {

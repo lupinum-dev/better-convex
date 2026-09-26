@@ -14,9 +14,18 @@ import type { ConvexUser } from './types'
 export interface UseConvexAuthReturn<Client extends object = object> {
   readonly status: ComputedRef<ConvexAuthStatus>
   readonly pending: ComputedRef<boolean>
+  /** The signed-in user. Server rendering hydrates it, so read identity here. */
   readonly user: Readonly<Ref<ConvexUser | null>>
-  readonly error: Readonly<Ref<ConvexCallError | undefined>>
-  /** Every PromiseLike client operation crosses canonical session reconciliation. */
-  readonly client: IntegratedAuthClient<Client> | null
+  readonly error: ComputedRef<ConvexCallError | undefined>
+  /**
+   * The Better Auth client. Every PromiseLike operation settles only after
+   * Convex accepts the resulting session.
+   *
+   * It is always present, so destructuring and property reads are safe during
+   * server rendering and setup. The real client exists only in the browser
+   * after the Convex runtime starts; before that (and on the server) calling
+   * any member throws a `ConvexCallError` with code `CLIENT_UNAVAILABLE`.
+   */
+  readonly client: IntegratedAuthClient<Client>
   ready(options?: { timeoutMs?: number }): Promise<ConvexAuthStatus>
 }

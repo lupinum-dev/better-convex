@@ -162,6 +162,8 @@ function operationSnapshot() {
       loading: operations.pagination.pending.value,
       stale: operations.pagination.isStale.value,
       canLoadMore: operations.pagination.canLoadMore.value,
+      loadingMore: operations.pagination.isLoadingMore.value,
+      exhausted: operations.pagination.isExhausted.value,
       error: serializeError(operations.pagination.error.value),
     },
     mutation: {
@@ -239,7 +241,7 @@ Object.assign(window, {
     },
     loadMore(count = 1) {
       if (!operations) throw new Error('Operation composables are not mounted')
-      operations.pagination.loadMore(count)
+      void operations.pagination.loadMore(count)
       return operationSnapshot()
     },
     async setOwner(owner: string) {
@@ -253,24 +255,24 @@ Object.assign(window, {
     },
     async runMutation(value: string) {
       if (!operations) throw new Error('Operation composables are not mounted')
-      return await operations.mutation({ value })
+      return await operations.mutation.mutate({ value })
     },
     async runAction(value: string) {
       if (!operations) throw new Error('Operation composables are not mounted')
-      return await operations.action({ value })
+      return await operations.action.run({ value })
     },
     async safeMutation(kind: 'plain' | 'application', message: string) {
       if (!operations) throw new Error('Operation composables are not mounted')
       failNextCall('mutation', kind, message)
       try {
-        return { ok: true, data: await operations.mutation({ value: 'denied' }) }
+        return { ok: true, data: await operations.mutation.mutate({ value: 'denied' }) }
       } catch (error) {
         return { ok: false, error: serializeError(error) }
       }
     },
     startDeferredMutation() {
       if (!operations) throw new Error('Operation composables are not mounted')
-      deferredMutation = operations.mutation({ value: 'late', defer: true })
+      deferredMutation = operations.mutation.mutate({ value: 'late', defer: true })
       return operationSnapshot()
     },
     async finishDeferredMutation(value: string) {

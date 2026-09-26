@@ -1,9 +1,32 @@
+import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { describe, expect, it } from 'vitest'
+import { defineComponent, h } from 'vue'
 
 import { useConvexAttachment } from '../../src/runtime/composables/useConvexAttachment'
+import { ConvexCallError } from '../../src/runtime/errors'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
 
 describe('useConvexAttachment Nuxt host boundary', () => {
+  // Runs before the harness installs a runtime into this file's Nuxt app.
+  it('throws CLIENT_UNAVAILABLE when no browser runtime exists', async () => {
+    let thrown: unknown
+    await mountSuspended(
+      defineComponent({
+        setup() {
+          try {
+            useConvexAttachment()
+          } catch (error) {
+            thrown = error
+          }
+          return () => h('div')
+        },
+      }),
+    )
+
+    expect(thrown).toBeInstanceOf(ConvexCallError)
+    expect(thrown).toMatchObject({ code: 'CLIENT_UNAVAILABLE' })
+  })
+
   it('returns only the existing token-free Vue attachment, not the Nuxt runtime context', async () => {
     const { result, nuxtApp } = await captureInNuxt(() => useConvexAttachment(), {
       convex: {

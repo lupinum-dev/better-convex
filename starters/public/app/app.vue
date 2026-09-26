@@ -3,10 +3,9 @@ import { api } from '#convex/api'
 
 const newText = ref('')
 const { data: todos, status } = await useConvexQuery(api.todos.list)
-const createTodo = useConvexMutation(api.todos.create)
-const toggleTodo = useConvexMutation(api.todos.toggle)
-const removeTodo = useConvexMutation(api.todos.remove)
-const isCreating = createTodo.pending
+const { mutate: createTodo, pending: isCreating } = useConvexMutation(api.todos.create)
+const { mutate: toggleTodo } = useConvexMutation(api.todos.toggle)
+const { mutate: removeTodo } = useConvexMutation(api.todos.remove)
 const todoList = computed(() => todos.value ?? [])
 
 async function addTodo() {

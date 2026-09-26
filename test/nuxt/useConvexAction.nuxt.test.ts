@@ -1,9 +1,10 @@
+import { ConvexError } from 'convex/values'
 import { describe, expect, it, vi } from 'vitest'
 import { isProxy } from 'vue'
 
 import { useConvexAction } from '../../src/runtime/composables/useConvexAction'
 import type { DevtoolsSink } from '../../src/runtime/devtools/sink'
-import { ConvexCallError } from '../../src/runtime/errors'
+import { ConvexCallError, isConvexCallError } from '../../src/runtime/errors'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt, installIdentityPortHarness } from '../helpers/nuxt-runtime-harness'
 
@@ -17,8 +18,9 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     wrapper.unmount()
     result.identity.advance()
-    await expect(result.action({} as never)).rejects.toMatchObject({
-      code: 'CALL_DISPOSED',
+    await expect(result.action.run({} as never)).rejects.toMatchObject({
+      code: 'CANCELLED',
+      functionName: 'testing:disposed-action',
     })
   })
 
@@ -29,7 +31,9 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     const { result } = await captureInNuxt(() => useConvexAction(action), { convex })
 
-    const pending = result({ message: 'hello' } as never)
+    expect(Object.isFrozen(result)).toBe(true)
+    expect(Object.keys(result)).toEqual(['run', 'data', 'status', 'pending', 'error', 'reset'])
+    const pending = result.run({ message: 'hello' } as never)
     expect(result.pending.value).toBe(true)
 
     await expect(pending).resolves.toEqual({ ok: true, args: { message: 'hello' } })
@@ -40,7 +44,29 @@ describe('useConvexAction (Nuxt runtime)', () => {
     expect(result.error.value).toBeUndefined()
     expect(result.data.value).toEqual({ ok: true, args: { message: 'hello' } })
     expect('safe' in result).toBe(false)
-    expect('reset' in result).toBe(false)
+
+    result.reset()
+    expect(result.status.value).toBe('idle')
+    expect(result.data.value).toBeUndefined()
+  })
+
+  it('names normalized failures and keeps developer-authored application text', async () => {
+    const convex = new MockConvexClient()
+    const action = mockFnRef<'action'>('testing:failing-action')
+    convex.setActionHandler('testing:failing-action', async () => {
+      throw new ConvexError({ code: 'QUOTA', message: 'Monthly quota reached' })
+    })
+
+    const { result } = await captureInNuxt(() => useConvexAction(action), { convex })
+
+    const rejection: unknown = await result.run({} as never).catch((error: unknown) => error)
+    expect(isConvexCallError(rejection, 'QUOTA')).toBe(true)
+    expect(rejection).toMatchObject({
+      kind: 'server',
+      message: 'Monthly quota reached',
+      functionName: 'testing:failing-action',
+    })
+    expect(result.error.value).toBe(rejection)
   })
 
   it('exposes the exact settled result and error rather than proxies', async () => {
@@ -55,12 +81,12 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     const { result } = await captureInNuxt(() => useConvexAction(action), { convex })
 
-    await expect(result({} as never)).resolves.toBe(settled)
+    await expect(result.run({} as never)).resolves.toBe(settled)
     expect(result.data.value).toBe(settled)
     expect(isProxy(result.data.value)).toBe(false)
 
     fail = true
-    const rejection: unknown = await result({} as never).catch((error: unknown) => error)
+    const rejection: unknown = await result.run({} as never).catch((error: unknown) => error)
     expect(rejection).toBeInstanceOf(ConvexCallError)
     expect(result.error.value).toBe(rejection)
     expect(isProxy(result.error.value)).toBe(false)
@@ -73,7 +99,7 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     const { result } = await captureInNuxt(() => useConvexAction(action), { convex })
 
-    await expect(result()).resolves.toEqual({})
+    await expect(result.run()).resolves.toEqual({})
     expect(convex.calls.action.at(-1)?.args).toEqual({})
   })
 
@@ -91,7 +117,7 @@ describe('useConvexAction (Nuxt runtime)', () => {
     ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = () => sink
 
     try {
-      await expect(result({} as never)).resolves.toBe('committed')
+      await expect(result.run({} as never)).resolves.toBe('committed')
       expect(convex.calls.action).toHaveLength(1)
       expect(registerMutation).toHaveBeenCalledTimes(1)
     } finally {
@@ -120,8 +146,12 @@ describe('useConvexAction (Nuxt runtime)', () => {
     ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = () => sink
 
     try {
-      await expect(result({} as never)).resolves.toBe('committed')
-      await expect(result({ fail: true } as never)).rejects.toBe(remoteFailure)
+      await expect(result.run({} as never)).resolves.toBe('committed')
+      // The call path adds its function name to a boundary error it did not name.
+      await expect(result.run({ fail: true } as never)).rejects.toMatchObject({
+        ...remoteFailure.toJSON(),
+        functionName: 'testing:diagnostics-update',
+      })
       expect(updateMutation).toHaveBeenCalledTimes(2)
     } finally {
       ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = previous

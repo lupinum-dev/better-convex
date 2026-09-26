@@ -164,6 +164,8 @@ try {
       loading: true,
       stale: false,
       canLoadMore: false,
+      loadingMore: false,
+      exhausted: false,
       error: null,
     },
     'Initial pagination state',
@@ -180,7 +182,10 @@ try {
   })
   assertDeepEqual(operations.pagination.data, [{ id: 'page-a' }], 'First page')
   assertDeepEqual(operations.pagination.canLoadMore, true, 'First page continuation')
-  await invoke('loadMore', 1)
+  operations = await invoke('loadMore', 1)
+  assertDeepEqual(operations.pagination.loadingMore, true, 'Later page loading state')
+  assertDeepEqual(operations.pagination.status, 'success', 'First page status while loading more')
+  assertDeepEqual(operations.pagination.canLoadMore, false, 'Continuation while loading more')
   operations = await invoke('emitPage', 'cursor-empty', {
     page: [],
     continueCursor: 'cursor-tail',
@@ -201,6 +206,8 @@ try {
   )
   assertDeepEqual(operations.pagination.status, 'success', 'Pagination exhaustion')
   assertDeepEqual(operations.pagination.canLoadMore, false, 'Exhausted continuation state')
+  assertDeepEqual(operations.pagination.exhausted, true, 'Exhausted list state')
+  assertDeepEqual(operations.pagination.loadingMore, false, 'Exhausted loading state')
 
   const subscriptionsBeforeArgsChange = await invoke('subscriptions')
   operations = await invoke('setOwner', 'bob')

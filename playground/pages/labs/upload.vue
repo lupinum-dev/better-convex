@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isConvexCallError } from '@lupinum/better-convex-nuxt/errors'
+
 import { api } from '#convex/api'
 import type { Id } from '~/convex/_generated/dataModel'
 
@@ -15,7 +17,8 @@ definePageMeta({
  * - success: upload completed successfully
  * - error: upload failed
  *
- * Also tests cancel() function and progress tracking
+ * Also tests cancel(), reset() and progress tracking. Library failures carry a
+ * stable `error.code` (FILE_TOO_LARGE, FILE_TYPE_NOT_ALLOWED, CANCELLED, ...).
  */
 
 const {
@@ -26,12 +29,13 @@ const {
   error: uploadError,
   data: storageId,
   cancel,
+  reset,
 } = useConvexFileUpload(api.files.generateUploadUrl, {
   maxSize: 5 * 1024 * 1024,
   allowedTypes: ['image/gif', 'image/jpeg', 'image/png'],
 })
 
-const saveFile = useConvexMutation(api.files.saveFile)
+const { mutate: saveFile } = useConvexMutation(api.files.saveFile)
 const registeredStorageId = ref<Id<'_storage'> | null>(null)
 
 // Resolve a URL only after the backend has accepted and registered the blob.
@@ -65,8 +69,7 @@ async function handleFileChange(event: Event) {
     registeredStorageId.value = id
     successCount.value++
   } catch (e) {
-    // Check if it was a cancel
-    if (e instanceof DOMException && e.name === 'AbortError') {
+    if (isConvexCallError(e, 'CANCELLED')) {
       cancelCount.value++
     } else {
       registrationError.value = e instanceof Error ? e.message : 'Upload failed'
@@ -78,6 +81,12 @@ async function handleFileChange(event: Event) {
 
 function handleCancel() {
   cancel()
+}
+
+function handleReset() {
+  reset()
+  registrationError.value = null
+  registeredStorageId.value = null
 }
 </script>
 
@@ -108,6 +117,8 @@ function handleCancel() {
       >
         Cancel Upload
       </button>
+
+      <button data-testid="reset-btn" class="btn reset-btn" @click="handleReset">Reset</button>
     </section>
 
     <section class="state-section">
@@ -123,13 +134,17 @@ function handleCancel() {
         </div>
         <div class="state-item">
           <span class="label">progress:</span>
-          <span data-testid="progress" class="value">{{ progress }}</span>
+          <span data-testid="progress" class="value">{{ progress.percent }}%</span>
         </div>
         <div class="state-item">
           <span class="label">error:</span>
           <span data-testid="error" class="value">
             {{ registrationError ?? uploadError?.message ?? 'null' }}
           </span>
+        </div>
+        <div class="state-item">
+          <span class="label">error code:</span>
+          <span data-testid="error-code" class="value">{{ uploadError?.code ?? 'null' }}</span>
         </div>
         <div class="state-item">
           <span class="label">storageId:</span>
@@ -163,7 +178,7 @@ function handleCancel() {
 
     <!-- Progress bar for visual feedback during tests -->
     <div v-if="pending" data-testid="progress-bar" class="progress-bar">
-      <div class="progress-fill" :style="{ width: `${progress}%` }" />
+      <div class="progress-fill" :style="{ width: `${progress.percent}%` }" />
     </div>
   </div>
 </template>

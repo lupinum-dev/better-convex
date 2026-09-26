@@ -1,4 +1,4 @@
-import type { FunctionReference } from 'convex/server'
+import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import type { H3Event } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -91,6 +91,14 @@ function createEvent(
 
 const AUTH_COOKIE = 'better-auth.session_token=session123'
 
+function makeJwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${encode({ alg: 'RS256' })}.${encode(payload)}.signature`
+}
+
+/** A display-decodable, unexpired Convex token, as the shared snapshot requires. */
+const USER_JWT = makeJwt({ sub: 'user-1', exp: Math.floor(Date.now() / 1000) + 3600 })
+
 beforeEach(() => {
   mocks.ctorCalls.length = 0
   mocks.setAuthCalls.length = 0
@@ -142,7 +150,7 @@ const serverOperations = [
 describe('serverConvex caller-scoped invariants', () => {
   it('creates one token promise, one ConvexHttpClient, and calls setAuth at most once across calls', async () => {
     mocks.exchangeMock.mockResolvedValue({
-      token: 'jwt-token',
+      token: USER_JWT,
       status: 200,
       error: null,
     })
@@ -158,12 +166,12 @@ describe('serverConvex caller-scoped invariants', () => {
     expect(mocks.ctorCalls).toHaveLength(1)
     expect(mocks.ctorCalls[0]?.address).toBe(CONVEX_URL)
     expect(mocks.ctorCalls[0]?.options).toMatchObject({ logger: false })
-    expect(mocks.setAuthCalls).toEqual(['jwt-token'])
+    expect(mocks.setAuthCalls).toEqual([USER_JWT])
   })
 
   it('constructs ConvexHttpClient with logger:false and a fetch function', async () => {
     mocks.exchangeMock.mockResolvedValue({
-      token: 'jwt-token',
+      token: USER_JWT,
       status: 200,
       error: null,
     })
@@ -209,6 +217,7 @@ describe('serverConvex caller-scoped invariants', () => {
     request.abort()
     await expect(body).rejects.toMatchObject({
       kind: 'transport',
+      code: 'CANCELLED',
       message: 'Convex HTTP request was aborted',
     })
   })
@@ -219,7 +228,7 @@ describe('serverConvex caller-scoped invariants', () => {
       siteUrl: SITE_URL,
       auth: { ...AUTH_CONFIG, trustedClientIpHeader: 'CF-Connecting-IP' },
     })
-    mocks.exchangeMock.mockResolvedValue({ token: 'jwt-token', status: 200, error: null })
+    mocks.exchangeMock.mockResolvedValue({ token: USER_JWT, status: 200, error: null })
 
     const event = createEvent(AUTH_COOKIE, { 'cf-connecting-ip': '198.51.100.10' })
     await serverConvex(event).getToken()
@@ -229,6 +238,7 @@ describe('serverConvex caller-scoped invariants', () => {
       siteUrl: SITE_URL,
       credential: { type: 'cookie', value: AUTH_COOKIE },
       trustedClientIpHeader: 'cf-connecting-ip',
+      timeoutMs: 5_000,
     })
   })
 
@@ -589,5 +599,101 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
       Vary: 'Cookie',
       'Cache-Control': 'private, no-store',
     })
+  })
+})
+
+describe('serverConvex configured bounds and error context', () => {
+  it('applies the configured response cap and query deadline to its Convex fetch', async () => {
+    setConfig({
+      url: CONVEX_URL,
+      auth: false,
+      server: { maxResponseBytes: 16, queryTimeoutMs: 20 },
+    })
+    let respond: (init?: RequestInit) => Promise<Response> = async () => new Response('')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => respond(init)),
+    )
+    mocks.queryMock.mockResolvedValue(null)
+    await serverConvex(createEvent(), { auth: 'none' }).query(queryRef, {})
+    const boundedFetch = (mocks.ctorCalls[0]?.options as { fetch: typeof fetch }).fetch
+
+    respond = async () => new Response('x'.repeat(32), { headers: { 'content-length': '32' } })
+    await expect(boundedFetch(`${CONVEX_URL}/api/query`)).rejects.toMatchObject({
+      kind: 'transport',
+      code: 'RESPONSE_TOO_LARGE',
+      message: 'Convex HTTP response exceeded the size limit',
+    })
+
+    respond = (init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+      })
+    await expect(boundedFetch(`${CONVEX_URL}/api/query`)).rejects.toMatchObject({
+      kind: 'transport',
+      code: 'TIMEOUT',
+      message: 'Convex HTTP request timed out',
+    })
+  })
+
+  it('names the failing function and codes a missing identity', async () => {
+    const notesList = makeFunctionReference<'query', Record<string, never>, unknown>('notes:list')
+    mocks.queryMock.mockRejectedValue(new Error('upstream'))
+
+    await expect(
+      serverConvex(createEvent(), { auth: 'none' }).query(notesList),
+    ).rejects.toMatchObject({ kind: 'unknown', functionName: 'notes:list' })
+    await expect(
+      serverConvex(createEvent(), { auth: 'required' }).query(notesList),
+    ).rejects.toMatchObject({
+      kind: 'authentication',
+      code: 'UNAUTHENTICATED',
+      status: 401,
+      functionName: 'notes:list',
+    })
+  })
+
+  it('codes library-raised write failures', async () => {
+    setConfig({ auth: false })
+    await expect(
+      serverConvex(createEvent(), { auth: 'none' }).mutation(mutationRef, {}),
+    ).rejects.toMatchObject({ kind: 'unknown', code: 'CONVEX_URL_MISSING' })
+
+    setConfig({ url: CONVEX_URL, auth: false })
+    let respond: () => Promise<Response> = async () => new Response('', { status: 502 })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => respond()),
+    )
+    mocks.mutationMock.mockResolvedValue(null)
+    await serverConvex(createEvent(), { auth: 'none' }).mutation(mutationRef, {})
+    const boundedFetch = (mocks.ctorCalls.at(-1)?.options as { fetch: typeof fetch }).fetch
+
+    await expect(boundedFetch(`${CONVEX_URL}/api/mutation`)).rejects.toMatchObject({
+      kind: 'transport',
+      code: 'UPSTREAM_ERROR',
+      status: 502,
+    })
+    respond = async () => {
+      throw new TypeError('fetch failed')
+    }
+    await expect(boundedFetch(`${CONVEX_URL}/api/mutation`)).rejects.toMatchObject({
+      kind: 'transport',
+      code: 'NETWORK_ERROR',
+    })
+  })
+
+  it('keeps credential contract violations as ServerConvexValidationError', async () => {
+    const violation = new ServerConvexValidationError(
+      'credential must contain a non-empty supported Better Auth session cookie',
+    )
+    mocks.exchangeMock.mockImplementation(() => {
+      throw violation
+    })
+    const caller = serverConvex(createEvent(), {
+      credential: { type: 'cookie', value: 'unrelated_cookie=value' },
+    })
+
+    await expect(caller.query(queryRef, {})).rejects.toBe(violation)
   })
 })

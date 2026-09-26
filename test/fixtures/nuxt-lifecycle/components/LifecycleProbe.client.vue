@@ -71,6 +71,8 @@ const pagination = await useConvexPaginatedQuery(pagesQuery, () => ({ owner: own
 })
 const mutation = useConvexMutation(writeNote)
 const action = useConvexAction(generateNote)
+const { mutate: writeNoteNow } = mutation
+const { run: generateNoteNow } = action
 
 function serializeError(error: unknown) {
   if (!error || typeof error !== 'object') return null
@@ -107,6 +109,8 @@ function snapshot() {
       loading: pagination.pending.value,
       stale: pagination.isStale.value,
       canLoadMore: pagination.canLoadMore.value,
+      loadingMore: pagination.isLoadingMore.value,
+      exhausted: pagination.isExhausted.value,
       error: serializeError(pagination.error.value),
     },
     mutation: {
@@ -149,7 +153,7 @@ onMounted(() => {
       return snapshot()
     },
     loadMore(count = 1) {
-      pagination.loadMore(count)
+      void pagination.loadMore(count)
       return snapshot()
     },
     async setOwner(value: string) {
@@ -162,15 +166,15 @@ onMounted(() => {
       return snapshot()
     },
     async runMutation(value: string) {
-      return await mutation({ value })
+      return await writeNoteNow({ value })
     },
     async runAction(value: string) {
-      return await action({ value })
+      return await generateNoteNow({ value })
     },
     async safeMutation(kind: 'plain' | 'application', message: string) {
       failNextCall('mutation', kind, message)
       try {
-        return { ok: true, data: await mutation({ value: 'denied' }) }
+        return { ok: true, data: await writeNoteNow({ value: 'denied' }) }
       } catch (error) {
         return { ok: false, error: serializeError(error) }
       }

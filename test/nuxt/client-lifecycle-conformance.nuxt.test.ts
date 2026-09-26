@@ -64,7 +64,7 @@ describe('Nuxt shared client lifecycle conformance', () => {
           null,
       page(['page-a'], 'cursor-1'),
     )
-    result.pagination.loadMore(1)
+    void result.pagination.loadMore(1)
     await waitFor(() => client.activeListenerCountWhere((entry) => entry.query === paginated) === 2)
     client.emitQueryResultWhere(
       (entry) =>
@@ -78,8 +78,8 @@ describe('Nuxt shared client lifecycle conformance', () => {
     const beforeIdentityChange = {
       query: result.query.data.value ?? [],
       pagination: result.pagination.data.value ?? [],
-      mutation: await result.mutation({ value: 'write' } as never),
-      action: await result.action({ value: 'work' } as never),
+      mutation: await result.mutation.mutate({ value: 'write' } as never),
+      action: await result.action.run({ value: 'work' } as never),
     }
 
     const retiredQuery = client.queuedQueryResultByPath('conformance:query', ['late'])

@@ -1,7 +1,4 @@
-import type {
-  UseConvexCall,
-  UseConvexMutationOptions as VueMutationOptions,
-} from '@lupinum/better-convex-vue'
+import type { UseConvexMutationOptions, UseConvexMutationReturn } from '@lupinum/better-convex-vue'
 import { useConvexMutationInternal } from '@lupinum/better-convex-vue/internal'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
@@ -11,9 +8,6 @@ import { useNuxtApp } from '#imports'
 
 import { readConvexRuntimeContext } from '../runtime-context'
 import { createCallableDevtoolsEvents } from '../utils/callable-devtools'
-
-export type UseConvexMutationOptions<Args extends Record<string, unknown>> =
-  VueMutationOptions<Args>
 
 type OptimisticUpdateCandidate<Args> = (store: OptimisticLocalStore, args: Args) => unknown
 type ReturnHasThen<Result> = Result extends unknown
@@ -26,22 +20,33 @@ type SynchronousOptimisticUpdate<Update extends (...args: never[]) => unknown> =
     ? 'Optimistic update handlers must be synchronous'
     : unknown
 
-/** Nuxt auto-import facade over the one shared Vue callable lifecycle. */
+/**
+ * Binds a Convex mutation to reactive call state. Nuxt auto-import facade over
+ * the shared Vue callable lifecycle; it adds only DevTools observation.
+ *
+ * ```ts
+ * const { mutate, pending, error } = useConvexMutation(api.notes.create)
+ * await mutate({ title: 'Hello' })
+ * ```
+ *
+ * `optimisticUpdate` must be synchronous; a Promise-returning updater is a type error.
+ */
 export function useConvexMutation<Mutation extends FunctionReference<'mutation'>>(
   mutation: Mutation,
   options?: UseConvexMutationOptions<FunctionArgs<Mutation>>,
-): UseConvexCall<Mutation>
+): UseConvexMutationReturn<Mutation>
+/** Binds a Convex mutation with a synchronous `optimisticUpdate` to reactive call state. */
 export function useConvexMutation<
   Mutation extends FunctionReference<'mutation'>,
   Update extends OptimisticUpdateCandidate<FunctionArgs<Mutation>>,
 >(
   mutation: Mutation,
   options: Readonly<{ optimisticUpdate: Update }> & SynchronousOptimisticUpdate<Update>,
-): UseConvexCall<Mutation>
+): UseConvexMutationReturn<Mutation>
 export function useConvexMutation<Mutation extends FunctionReference<'mutation'>>(
   mutation: Mutation,
   options?: Readonly<{ optimisticUpdate?: OptimisticUpdateCandidate<FunctionArgs<Mutation>> }>,
-): UseConvexCall<Mutation> {
+): UseConvexMutationReturn<Mutation> {
   const runtime = readConvexRuntimeContext(useNuxtApp())
   const observer = createCallableDevtoolsEvents<
     FunctionArgs<Mutation>,

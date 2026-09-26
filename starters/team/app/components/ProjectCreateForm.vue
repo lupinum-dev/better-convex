@@ -16,8 +16,7 @@ const {
   message: rateLimitMessage,
   refresh: refreshCreateRateLimit,
 } = await useProjectCreateRateLimit(() => props.teamId)
-const createProject = useConvexMutation(api.projects.create)
-const pending = createProject.pending
+const { mutate: createProject, pending } = useConvexMutation(api.projects.create)
 
 async function submit() {
   if (!canCreateProjectNow.value) {

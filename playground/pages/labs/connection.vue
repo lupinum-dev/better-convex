@@ -123,8 +123,7 @@ const statusLabel = computed(() => {
 })
 
 // Test mutation to see inflight state
-const addNote = useConvexMutation(api.notes.add)
-const { pending: addingNote } = addNote
+const { mutate: addNote, pending: addingNote } = useConvexMutation(api.notes.add)
 const lastNoteId = ref<string | null>(null)
 
 async function triggerMutation() {

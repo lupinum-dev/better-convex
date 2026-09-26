@@ -2,6 +2,12 @@ import { normalizeConvexAuthConfig, type NormalizedConvexAuthConfig } from './au
 import { resolveConvexSiteUrl } from './convex-config'
 import type { LogLevel } from './logger'
 import { normalizeConvexDeploymentUrl, normalizeConvexSiteUrl } from './site-url'
+import {
+  normalizeConvexClientConfig,
+  normalizeConvexServerConfig,
+  type ConvexClientConfig,
+  type ConvexServerConfig,
+} from './transport-config'
 
 /**
  * The internal, fully materialized per-app runtime config. `auth` is false for
@@ -12,6 +18,10 @@ export interface NormalizedConvexRuntimeConfig {
   siteUrl?: string
   auth: NormalizedConvexAuthConfig
   logging: LogLevel | false
+  /** Options for the browser `ConvexClient`. */
+  client: ConvexClientConfig
+  /** Bounds for Convex HTTP calls made during SSR and by `serverConvex`. */
+  server: ConvexServerConfig
 }
 
 /**
@@ -52,6 +62,8 @@ export function normalizeConvexRuntimeConfig(input: unknown): NormalizedConvexRu
       raw?.logging === false || typeof raw?.logging === 'string'
         ? (raw.logging as LogLevel | false)
         : false,
+    client: normalizeConvexClientConfig(raw?.client),
+    server: normalizeConvexServerConfig(raw?.server),
   }
 }
 
