@@ -80,9 +80,9 @@ describe('production manifest certification profiles', () => {
     expect(contract.manifest).toHaveProperty(
       'peerDependencies',
       expect.objectContaining({
-        '@better-auth/core': '1.7.2',
-        '@better-auth/oauth-provider': '1.7.2',
-        'better-auth': '1.7.2',
+        '@better-auth/core': '1.7.6',
+        '@better-auth/oauth-provider': '1.7.6',
+        'better-auth': '1.7.6',
       }),
     )
     expect(contract.manifest).toHaveProperty('peerDependenciesMeta', {
@@ -94,10 +94,10 @@ describe('production manifest certification profiles', () => {
 
   it.each([
     ['missing peer', undefined, { optional: true }],
-    ['version range', '^1.7.2', { optional: true }],
+    ['version range', '^1.7.6', { optional: true }],
     ['different exact version', '1.7.1', { optional: true }],
-    ['required peer', '1.7.2', { optional: false }],
-    ['missing optional metadata', '1.7.2', undefined],
+    ['required peer', '1.7.6', { optional: false }],
+    ['missing optional metadata', '1.7.6', undefined],
   ])('rejects core with %s even when source and candidate match', (_label, version, metadata) => {
     const unreviewed = candidate((value) => {
       const peers = value.peerDependencies as Record<string, unknown>

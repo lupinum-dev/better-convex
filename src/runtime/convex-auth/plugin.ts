@@ -34,6 +34,7 @@ import {
   hardenOAuthProviderCallbacks,
   hasOAuthRenewal,
   installUrlCanParseCompatibility,
+  isLoopbackRedirectHost,
   parseBoundedFormBody,
   parseBoundedFormRequest,
   projectOAuthAuthorizationServerMetadata,
@@ -406,24 +407,28 @@ function canonicalRedirectUrl(value: string): URL | null {
   return url
 }
 
+function loopbackRedirectWithoutPort(url: URL): string | null {
+  if (url.protocol !== 'http:' || !isLoopbackRedirectHost(url.hostname)) return null
+  return `${url.protocol}//${url.hostname}${url.pathname}${url.search}`
+}
+
+/**
+ * Mirrors the pinned provider's redirect matching so BCN never trusts a
+ * callback the provider rejects, or rejects one it accepts: an exact
+ * registered URI, or an HTTP loopback callback (IP literal or `localhost`)
+ * that differs only in its port (RFC 8252 section 7.3).
+ */
 function matchesProviderRedirectUri(client: OAuthClientRecord, requested: string): boolean {
   if (!Array.isArray(client.redirectUris)) return false
   const requestedUrl = canonicalRedirectUrl(requested)
   if (!requestedUrl) return false
   if (client.redirectUris.includes(requested)) return true
+  const requestedWithoutPort = loopbackRedirectWithoutPort(requestedUrl)
+  if (!requestedWithoutPort) return false
 
   return client.redirectUris.some((registered) => {
     const registeredUrl = canonicalRedirectUrl(registered)
-    if (!registeredUrl) return false
-    const registeredLoopbackIp =
-      registeredUrl.hostname === '127.0.0.1' || registeredUrl.hostname === '[::1]'
-    return (
-      registeredLoopbackIp &&
-      registeredUrl.protocol === requestedUrl.protocol &&
-      registeredUrl.hostname === requestedUrl.hostname &&
-      registeredUrl.pathname === requestedUrl.pathname &&
-      registeredUrl.search === requestedUrl.search
-    )
+    return !!registeredUrl && loopbackRedirectWithoutPort(registeredUrl) === requestedWithoutPort
   })
 }
 

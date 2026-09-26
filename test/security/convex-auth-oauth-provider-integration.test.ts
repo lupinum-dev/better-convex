@@ -681,6 +681,70 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     })
   })
 
+  it('matches the provider on localhost ephemeral ports at authorization and token exchange', async () => {
+    const db = database()
+    db.oauthClient![1]!.redirectUris = ['http://localhost:3334/oauth/callback']
+    const auth = createAuth(db)
+    const ephemeralRedirect = 'http://localhost:49152/oauth/callback'
+
+    const authorize = await auth.handler(
+      new Request(
+        authorizeUrl({
+          client_id: [publicClientId],
+          redirect_uri: [ephemeralRedirect],
+        }),
+      ),
+    )
+    expect(authorize.status).toBe(302)
+    expect(authorize.headers.get('location')).toMatch(/^\/login\?/u)
+
+    const missingResource = authorizationError(
+      await auth.handler(
+        new Request(
+          authorizeUrl({
+            client_id: [publicClientId],
+            redirect_uri: [ephemeralRedirect],
+            resource: [],
+          }),
+        ),
+      ),
+    )
+    expect(`${missingResource.origin}${missingResource.pathname}`).toBe(ephemeralRedirect)
+    expect(missingResource.searchParams.get('error')).toBe('invalid_target')
+
+    const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~'
+    await seedPublicAuthorizationCode(db, 'localhost-code', verifier, ephemeralRedirect)
+    for (const redirectUri of [
+      'http://localhost:49152/other',
+      'http://127.0.0.1:49152/oauth/callback',
+    ]) {
+      const rejected = await auth.handler(
+        tokenRequest(
+          authorizationCodeBody({
+            client_id: publicClientId,
+            code: 'localhost-code',
+            code_verifier: verifier,
+            redirect_uri: redirectUri,
+          }),
+        ),
+      )
+      expect(rejected.status).toBe(400)
+      await expect(rejected.json()).resolves.toEqual({ error: 'invalid_request' })
+      expect(db.verification).toHaveLength(1)
+    }
+
+    const token = await auth.handler(
+      tokenRequest(
+        authorizationCodeBody({
+          client_id: publicClientId,
+          redirect_uri: ephemeralRedirect,
+        }),
+      ),
+    )
+    expect(token.status).toBe(400)
+    await expect(token.json()).resolves.toMatchObject({ error: 'invalid_grant' })
+  })
+
   it('lets the provider consume a code when the request uses another registered callback', async () => {
     const db = database()
     const alternateRedirect = 'http://127.0.0.1:3334/other-registered'

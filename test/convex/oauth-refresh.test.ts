@@ -140,9 +140,72 @@ async function invalidate(test: ReturnType<typeof initTest>) {
   })
 }
 
+/** Give other users live renewable grants for the same client. */
+async function createOtherClientUsers(
+  test: ReturnType<typeof initTest>,
+  count: number,
+): Promise<void> {
+  for (let index = 0; index < count; index++) {
+    const userId = `other-user-${index}`
+    const sessionId = `other-session-${index}`
+    await createRow(test, 'user', {
+      createdAt: now,
+      email: `${userId}@example.test`,
+      emailVerified: true,
+      id: userId,
+      name: userId,
+      updatedAt: now,
+    })
+    await createRow(test, 'session', {
+      createdAt: now,
+      expiresAt: now + 60_000,
+      id: sessionId,
+      token: `${sessionId}-token`,
+      updatedAt: now,
+      userId,
+    })
+    await createRow(test, 'oauthConsent', {
+      clientId: access.clientId,
+      id: `other-consent-${index}`,
+      resources: [access.resource],
+      scopes: [...access.scopes],
+      userId,
+    })
+    await createRow(test, 'oauthRefreshToken', {
+      ...refresh(`other-refresh-${index}`),
+      sessionId,
+      userId,
+    })
+  }
+}
+
 describe('canonical OAuth refresh protection', () => {
   beforeEach(() => vi.spyOn(Date, 'now').mockReturnValue(now))
   afterEach(() => vi.restoreAllMocks())
+
+  it('admits and revokes only the subject grant when other users share the client', async () => {
+    const test = initTest()
+    await createLiveGrant(test)
+    await createRow(test, 'oauthRefreshToken', refresh())
+    await createOtherClientUsers(test, 3)
+    expect(
+      await test.query(auth.findOne, {
+        model: 'oauthRefreshToken',
+        where: [{ field: 'id', value: 'refresh-1' }],
+      }),
+    ).toMatchObject({ bcnConsentId: 'oauth-consent-row', userId: access.subject })
+    expect(await invalidate(test)).toBe(1)
+    expect(await validate(test)).toBe(false)
+    expect(await test.query(auth.count, { model: 'oauthConsent' })).toBe(3)
+    for (let index = 0; index < 3; index++) {
+      expect(
+        await test.query(auth.findOne, {
+          model: 'oauthRefreshToken',
+          where: [{ field: 'id', value: `other-refresh-${index}` }],
+        }),
+      ).toMatchObject({ bcnConsentId: `other-consent-${index}` })
+    }
+  })
 
   it('caps refresh lifetime to the original session without extending it', async () => {
     const test = initTest()

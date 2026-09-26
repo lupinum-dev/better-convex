@@ -426,7 +426,7 @@ export function validateResourceIdentifier(identifier: string): void {
   }
 }
 
-function isLoopbackRedirectHost(hostname: string): boolean {
+export function isLoopbackRedirectHost(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
 }
 

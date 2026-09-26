@@ -8,7 +8,7 @@ import {
   type ProviderSessionRevision,
 } from '../../src/runtime/auth/session-synchronization'
 
-describe('integrated client against pinned Better Auth 1.7.2', () => {
+describe('integrated client against pinned Better Auth 1.7.6', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })

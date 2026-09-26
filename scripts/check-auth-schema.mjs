@@ -24,6 +24,7 @@ import { makeFunctionReference } from 'convex/server'
 import { createJiti } from 'jiti'
 
 import { assertCurrentBackendBinary } from './check-auth-backend.mjs'
+import { adoptCandidateTuple } from './compatibility-profile.mjs'
 import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -304,6 +305,9 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
       manifest.dependencies[name],
     ]),
   )
+  adoptCandidateTuple(manifest, [
+    JSON.parse(output('tar', ['-xOzf', localTarball, 'package/package.json'], packaged)),
+  ])
   manifest.dependencies['@lupinum/better-convex-nuxt'] = 'file:./better-convex-nuxt.tgz'
   delete manifest.devDependencies
   delete manifest.scripts

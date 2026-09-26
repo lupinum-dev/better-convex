@@ -305,7 +305,6 @@ export const seedEncryptedCredentials = action({
       model: 'account',
       data: {
         id: crypto.randomUUID(),
-        issuer: 'https://auth-export-sentinel.example.test',
         accountId: 'auth-export-sentinel-provider-account',
         providerId: 'auth-export-sentinel-provider',
         userId,

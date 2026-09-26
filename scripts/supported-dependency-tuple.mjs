@@ -22,6 +22,14 @@ export const supportedPeerRanges = Object.freeze({
   nuxt: requiredPeerDependency('nuxt'),
 })
 
+/**
+ * Runtime dependencies whose instances cross a published package boundary. An application
+ * that installs the package declares the same exact version so that it resolves one copy.
+ */
+export const sharedPackageRuntimes = Object.freeze({
+  '@lupinum/better-convex-mcp': Object.freeze(['@modelcontextprotocol/server']),
+})
+
 export const requiredStatefulPeerNames = Object.freeze(['better-auth', 'convex'])
 export const requiredPhysicalRuntimeNames = Object.freeze([
   'better-auth',

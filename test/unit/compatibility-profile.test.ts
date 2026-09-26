@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  adoptCandidateTuple,
   applyCompatibilityProfile,
   compatibilityProfiles,
   compatibilityProfileNames,
@@ -56,5 +57,46 @@ describe('packed compatibility profiles', () => {
   it('rejects unknown profiles', () => {
     expect(compatibilityProfileNames).toEqual(['floor', 'latest-compatible'])
     expect(() => applyCompatibilityProfile({}, 'future')).toThrow('Unknown compatibility profile')
+  })
+
+  it('moves a published app copy to the exact candidate tuple', () => {
+    const manifest = {
+      dependencies: {
+        '@better-auth/oauth-provider': '1.7.2',
+        '@lupinum/better-convex-mcp': 'file:./better-convex-mcp.tgz',
+        '@modelcontextprotocol/server': '2.0.0',
+        'better-auth': '1.7.2',
+        convex: '1.42.2',
+        zod: '4.4.3',
+      },
+    }
+
+    adoptCandidateTuple(manifest, [
+      {
+        name: '@lupinum/better-convex-nuxt',
+        peerDependencies: {
+          '@better-auth/core': '1.7.6',
+          '@better-auth/oauth-provider': '1.7.6',
+          'better-auth': '1.7.6',
+          convex: '>=1.42.2 <2',
+        },
+      },
+      {
+        name: '@lupinum/better-convex-mcp',
+        dependencies: { '@modelcontextprotocol/server': '2.1.0' },
+      },
+    ])
+
+    expect(manifest.dependencies).toEqual({
+      '@better-auth/oauth-provider': '1.7.6',
+      '@lupinum/better-convex-mcp': 'file:./better-convex-mcp.tgz',
+      '@modelcontextprotocol/server': '2.1.0',
+      'better-auth': '1.7.6',
+      convex: '1.42.2',
+      zod: '4.4.3',
+    })
+    expect(() =>
+      adoptCandidateTuple(manifest, [{ name: '@lupinum/better-convex-mcp', dependencies: {} }]),
+    ).toThrow('must declare one exact shared @modelcontextprotocol/server runtime')
   })
 })

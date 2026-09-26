@@ -74,7 +74,6 @@ describe('Better Auth adapter compound uniqueness', () => {
 
     await createAuthRow(test, 'account', {
       id: 'account_one',
-      issuer: 'https://issuer.example.test',
       accountId: 'subject_one',
       providerId: 'provider_one',
       userId: 'user_one',
@@ -83,24 +82,37 @@ describe('Better Auth adapter compound uniqueness', () => {
     })
     await createAuthRow(test, 'account', {
       id: 'account_same_provider_user',
-      issuer: 'https://issuer.example.test',
       accountId: 'subject_two',
       providerId: 'provider_one',
       userId: 'user_one',
       createdAt: now,
       updatedAt: now,
     })
+    await createAuthRow(test, 'account', {
+      id: 'account_same_subject_other_provider',
+      accountId: 'subject_one',
+      providerId: 'provider_two',
+      userId: 'user_two',
+      createdAt: now,
+      updatedAt: now,
+    })
     await expect(
       createAuthRow(test, 'account', {
         id: 'account_two',
-        issuer: 'https://issuer.example.test',
         accountId: 'subject_one',
         providerId: 'provider_one',
         userId: 'user_two',
         createdAt: now,
         updatedAt: now,
       }),
-    ).rejects.toThrow('AUTH_UNIQUE_CONFLICT:account.issuer_accountId')
+    ).rejects.toThrow('AUTH_UNIQUE_CONFLICT:account.providerId_accountId')
+    await expect(
+      test.mutation(auth.updateOne, {
+        model: 'account',
+        where: [{ field: 'id', value: 'account_same_subject_other_provider' }],
+        update: { providerId: 'provider_one' },
+      }),
+    ).rejects.toThrow('AUTH_UNIQUE_CONFLICT:account.providerId_accountId')
 
     await createAuthRow(test, 'member', {
       id: 'member_one',

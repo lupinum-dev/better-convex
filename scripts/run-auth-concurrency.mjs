@@ -58,7 +58,6 @@ export const authOperatorFunctions = {
 const proxyIpSecret = 'better-convex-nuxt-e2e-proxy-ip-secret-32-bytes'
 const authComponentPath = 'betterAuth'
 const compoundAccountProvider = 'bcn-compound-race'
-const compoundAccountIssuer = 'https://bcn-compound-race.example.test'
 export const AUTH_CONTENTION_MAX_RETRIES = 5
 
 export function safeAuthConcurrencyFailure(error) {
@@ -136,7 +135,6 @@ async function runWorker() {
         data: {
           createdAt: 1_700_000_000_000,
           id: `${id}-${workerIndex}-${index}`,
-          issuer: compoundAccountIssuer,
           accountId: key,
           providerId: compoundAccountProvider,
           updatedAt: 1_700_000_000_000,
@@ -492,7 +490,7 @@ async function runMain() {
     await client.function(authAdapterComponentFunctions.remove, authComponentPath, {
       model: 'account',
       where: [
-        { field: 'issuer', value: compoundAccountIssuer },
+        { field: 'providerId', value: compoundAccountProvider },
         { field: 'accountId', value: compoundAccount.accountId },
       ],
     })
@@ -527,7 +525,7 @@ async function runMain() {
     )
     assertOnlyFailure(
       sameAccountIdentity,
-      'AUTH_UNIQUE_CONFLICT:account.issuer_accountId',
+      'AUTH_UNIQUE_CONFLICT:account.providerId_accountId',
       'AUTH_COMPOUND_UNIQUE_RACE_UNEXPECTED_FAILURE',
     )
 

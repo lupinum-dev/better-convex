@@ -252,9 +252,9 @@ function assertNuxtManifestShapes(manifest, profile) {
       '@better-auth/oauth-provider': { optional: true },
       'better-auth': { optional: true },
     }) ||
-    manifest.peerDependencies['@better-auth/core'] !== '1.7.2' ||
-    manifest.peerDependencies['@better-auth/oauth-provider'] !== '1.7.2' ||
-    manifest.peerDependencies['better-auth'] !== '1.7.2'
+    manifest.peerDependencies['@better-auth/core'] !== '1.7.6' ||
+    manifest.peerDependencies['@better-auth/oauth-provider'] !== '1.7.6' ||
+    manifest.peerDependencies['better-auth'] !== '1.7.6'
   ) {
     throw new Error('Nuxt auth packages must be exact optional peers.')
   }

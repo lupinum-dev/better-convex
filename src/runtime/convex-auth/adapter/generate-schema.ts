@@ -87,12 +87,17 @@ function withSessionGenerationFields(tables: BetterAuthDBSchema): BetterAuthDBSc
 }
 
 const explicitIndexes: Readonly<Record<string, readonly AuthIndexDeclaration[]>> = {
+  // Better Auth identifies an account by (providerId, accountId) and rejects
+  // duplicates on read; the component enforces that identity on every write.
+  account: [{ fields: ['providerId', 'accountId'], unique: true }],
   invitation: [
     { fields: ['email', 'organizationId', 'status'] },
     { fields: ['organizationId', 'status', 'createdAt'] },
   ],
   member: [{ fields: ['organizationId', 'userId'], unique: true }],
   oauthConsent: [{ fields: ['clientId', 'userId'] }],
+  // Refresh-family invalidation selects one (client, user) pair.
+  oauthRefreshToken: [{ fields: ['clientId', 'userId'] }],
   rateLimit: [{ fields: ['key'] }],
   session: [{ fields: ['expiresAt'] }, { fields: ['userId', 'expiresAt'] }],
   teamMember: [{ fields: ['teamId', 'userId'], unique: true }],

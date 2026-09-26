@@ -1,4 +1,9 @@
 /// <reference types="vite/client" />
+import {
+  diffSchema,
+  getExpectedSchema,
+  type IntrospectedTable,
+} from '@better-auth/core/db/internal'
 import { oauthProvider } from '@better-auth/oauth-provider'
 import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { hashPassword } from 'better-auth/crypto'
@@ -14,8 +19,10 @@ import { decodeJwt } from 'jose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createConvexAuthAdapter } from '../../src/runtime/convex-auth/adapter/create-adapter'
+import type { AuthSchemaMetadata } from '../../src/runtime/convex-auth/adapter/metadata'
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import authSchema from '../../src/runtime/convex-auth/component/schema'
+import authSchemaMetadata from '../../src/runtime/convex-auth/component/schemaMetadata'
 import { rotateSigningKeyWithOfficialJwt } from '../../src/runtime/convex-auth/jwks-rotation'
 import { validateOAuthAccess } from '../../src/runtime/convex-auth/oauth-live-access'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
@@ -50,6 +57,23 @@ const disabledPaths = [
   '/oauth2/delete-client',
 ]
 const originalToken = 'SyntheticOnlyRefreshTokenForProviderTest'
+
+/** The component, not Better Auth, writes the session-generation authority fields. */
+const componentOwnedFields = new Set([
+  'user.bcnSecurityGeneration',
+  'session.bcnAssuranceGeneration',
+])
+
+function introspectComponent(metadata: AuthSchemaMetadata): IntrospectedTable[] {
+  return Object.values(metadata.models).map((model) => ({
+    name: model.physicalName,
+    columns: Object.values(model.fields).map((field) => ({
+      name: field.physicalName,
+      nullable: field.nullable,
+      hasDefault: componentOwnedFields.has(`${model.logicalName}.${field.logicalName}`),
+    })),
+  }))
+}
 
 function createAuth(ctx: GenericActionCtx<GenericDataModel>) {
   const options = {
@@ -152,7 +176,6 @@ async function init() {
   await create('account', {
     id: 'credential-account',
     accountId: 'user',
-    issuer: 'local:credential',
     providerId: 'credential',
     userId: 'user',
     password: await hashPassword('Synthetic password for tests 2026'),
@@ -283,6 +306,42 @@ beforeEach(() => {
   vi.setSystemTime(now)
 })
 afterEach(() => vi.useRealTimers())
+
+describe('Better Auth runtime contract of the canonical Convex adapter', () => {
+  it('holds every table and column the runtime configuration writes', async () => {
+    const { test } = await init()
+    const result = await test.action(async (ctx) => {
+      const context = await createAuth(ctx).auth.$context
+      return {
+        // The Convex adapter registers no request-time schema probe; the
+        // generated component is checked here with Better Auth's own rules.
+        runtimeCheck: context.checkSchema !== undefined,
+        findings: diffSchema(
+          getExpectedSchema(context.options),
+          introspectComponent(authSchemaMetadata),
+        ),
+      }
+    })
+    expect(result).toEqual({ runtimeCheck: false, findings: [] })
+  })
+
+  it('rejects an overlong password before credential lookup for known and unknown users', async () => {
+    const { send } = await init()
+    const signIn = (email: string) =>
+      send(
+        new Request(`${issuer}/sign-in/email`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin },
+          body: JSON.stringify({ email, password: 'x'.repeat(129) }),
+        }),
+      )
+    const known = await signIn('user@example.test')
+    const unknown = await signIn('nobody@example.test')
+    expect(known.status).toBe(400)
+    expect(JSON.parse(known.text)).toMatchObject({ code: 'PASSWORD_TOO_LONG' })
+    expect([unknown.status, unknown.text]).toEqual([known.status, known.text])
+  })
+})
 
 describe('official provider renewal through the canonical Convex adapter', () => {
   it('rotates, replays a lost response briefly, and renews after access expiry', async () => {
