@@ -1,3 +1,5 @@
+import { hash } from 'ohash'
+
 import type { ConvexAuthMode } from './auth-status'
 import type { ConvexIdentityKey } from './identity-key'
 import { getBetterAuthSessionToken } from './shared-helpers'
@@ -19,13 +21,39 @@ import { getBetterAuthSessionToken } from './shared-helpers'
 // Grammar:
 //   required/optional: convex:<fn>:<argsHash>:auth:<mode>:<identityKey>
 //   none:              convex:<fn>:<argsHash>:auth:none
-//   same shapes under the `convex-paginated:` namespace.
+//   same shapes under the `convex-paginated:` namespace, where the hash segment
+//   also covers the first-page window.
+// The hash segment never contains `:`, so a function in a module named `auth`
+// (`auth:me`) cannot be mistaken for the auth dimension.
 
 const AUTH_SEGMENT = ':auth:'
+const AUTH_DIMENSION = /:auth:(?:(none)|(required|optional):(?:anonymous|user:.*))$/
+
+export type ConvexPayloadNamespace = 'convex' | 'convex-paginated'
+
+/** The identity-partitioned payload key for one query execution. */
+export function createConvexPayloadKey(
+  namespace: ConvexPayloadNamespace,
+  functionName: string,
+  argsHash: string,
+  authMode: ConvexAuthMode,
+  identityKey: ConvexIdentityKey,
+): string {
+  return withAuthDimension(`${namespace}:${functionName}:${argsHash}`, authMode, identityKey)
+}
+
+/** Hash segment of a paginated payload key: the arguments plus the first-page window. */
+export function paginatedPayloadHash(
+  argsHash: string,
+  numItems: number,
+  cursor: string | null,
+): string {
+  return hash([argsHash, numItems, cursor])
+}
 
 /**
- * Append the auth/identity dimension to an identity-blind base key produced by
- * `createConvexQueryKey`. `none` is a static, identity-independent suffix so a
+ * Append the auth/identity dimension to an identity-blind base key
+ * (`<namespace>:<fn>:<hash>`). `none` is a static, identity-independent suffix so a
  * public query is shared across sign-in/out; every other mode is partitioned by
  * the concrete `ConvexIdentityKey`.
  */
@@ -69,12 +97,9 @@ function isConvexPayloadKey(key: string): boolean {
  * not a mode-tagged Convex payload key (e.g. an `idle` key or a non-Convex key).
  */
 export function readAuthMode(key: string): ConvexAuthMode | null {
-  const idx = key.indexOf(AUTH_SEGMENT)
-  if (idx < 0) return null
-  const rest = key.slice(idx + AUTH_SEGMENT.length)
-  const mode = rest.split(':', 1)[0]
-  if (mode === 'required' || mode === 'optional' || mode === 'none') return mode
-  return null
+  const match = AUTH_DIMENSION.exec(key)
+  if (!match) return null
+  return (match[1] ?? match[2]) as ConvexAuthMode
 }
 
 /**
@@ -108,17 +133,6 @@ export function purgeConvexIdentityPayloadKeys(nuxtApp: {
   scan(nuxtApp.payload?.data)
   scan(nuxtApp.payload?.state)
   return purged
-}
-
-/**
- * Remove identity-bound query errors while retaining anonymous-query errors.
- * Error state is stored under one Nuxt useState key rather than as individual
- * payload keys, so it needs the same auth-mode filtering explicitly.
- */
-export function retainAnonymousConvexQueryErrors<T>(
-  errors: Readonly<Record<string, T>>,
-): Record<string, T> {
-  return Object.fromEntries(Object.entries(errors).filter(([key]) => readAuthMode(key) === 'none'))
 }
 
 // ============================================================================

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { isProxy } from 'vue'
 
 import { ConvexCallError } from '../../packages/vue/src/errors'
 import { createClientCallState } from '../../packages/vue/src/internal/call-state'
@@ -6,6 +7,19 @@ import { createClientCallState } from '../../packages/vue/src/internal/call-stat
 const callError = (message: string) => new ConvexCallError({ kind: 'unknown', message })
 
 describe('createClientCallState', () => {
+  it('exposes the exact result and error objects rather than reactive proxies', () => {
+    const state = createClientCallState<{ nested: { id: string } }>()
+    const result = { nested: { id: 'a' } }
+    expect(state.commitSuccess(state.start(), result)).toBe(true)
+    expect(state.data.value).toBe(result)
+    expect(isProxy(state.data.value)).toBe(false)
+
+    const error = callError('boom')
+    expect(state.commitError(state.start(), error)).toBe(true)
+    expect(state.error.value).toBe(error)
+    expect(isProxy(state.error.value)).toBe(false)
+  })
+
   it('tracks pending, success, error, and reset state', () => {
     const state = createClientCallState<string>()
 

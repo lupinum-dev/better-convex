@@ -59,11 +59,11 @@ export interface PaginationPageOptions {
   endCursor?: string | null
 }
 
+/** A page is loading while it has neither a result nor an error. */
 export interface PaginationPageState<T> {
   paginationOpts: PaginationPageOptions
   result: PaginationResult<T> | undefined
   error: ConvexCallError | undefined
-  pending: boolean
   unsubscribe: (() => void) | null
 }
 
@@ -74,7 +74,6 @@ export function createPendingPaginationPage<T>(
     paginationOpts,
     result: undefined,
     error: undefined,
-    pending: true,
     unsubscribe: null,
   }
 }
@@ -92,7 +91,6 @@ export function commitPaginationPageResult<T>(
     ...page,
     result,
     error: undefined,
-    pending: false,
   }
   return nextPages
 }
@@ -109,19 +107,103 @@ export function commitPaginationPageError<T>(
   nextPages[pageIndex] = {
     ...page,
     error: normalizeConvexError(error),
-    pending: false,
   }
   return nextPages
 }
 
-export function getLastLoadedPaginationResult<T>(
-  firstPage: PaginationResult<T> | null | undefined,
-  additionalPages: PaginationPageState<T>[],
-): PaginationResult<T> | undefined {
-  const lastPage = additionalPages[additionalPages.length - 1]
-  if (!lastPage) return firstPage ?? undefined
-  if (lastPage.pending) return undefined
-  return lastPage.result
+export function assertLoadMoreNumItems(numItems: number): void {
+  if (!Number.isSafeInteger(numItems) || numItems < 1) {
+    throw new Error('[better-convex-vue] loadMore numItems must be a positive safe integer')
+  }
+}
+
+/** Hides a page's items until bounded replacement pages settle (`SplitRequired`). */
+export function withholdPaginationPage<T>(
+  pages: PaginationPageState<T>[],
+  pageIndex: number,
+): PaginationPageState<T>[] {
+  const page = pages[pageIndex]
+  if (!page) return pages
+
+  const nextPages = [...pages]
+  nextPages[pageIndex] = { ...page, result: undefined, error: undefined }
+  return nextPages
+}
+
+export interface PaginationPagesView<T> {
+  /** Items up to the first page without a result; `undefined` until the first page is visible. */
+  items: T[] | undefined
+  /** The last result included in `items`. */
+  last: PaginationResult<T> | undefined
+  /** Every page contributed a result, so `last` is the end of the loaded list. */
+  complete: boolean
+  /** Concatenation stopped at a later page that is still loading or withheld. */
+  loadingMore: boolean
+  /** The first failure among the later pages that were reached; earlier items stay visible. */
+  error: ConvexCallError | undefined
+}
+
+/**
+ * Mirrors Convex `usePaginatedQuery`: concatenation stops at the first page
+ * without a result, so a withheld middle page never leaves a hole in the list.
+ * A failed page keeps its last result visible and reports the error separately.
+ */
+export function viewPaginationPages<T>(
+  firstPage: PaginationResult<T> | null,
+  pages: readonly PaginationPageState<T>[],
+): PaginationPagesView<T> {
+  if (!firstPage) {
+    return {
+      items: undefined,
+      last: undefined,
+      complete: false,
+      loadingMore: false,
+      error: undefined,
+    }
+  }
+  const items = [...firstPage.page]
+  let last = firstPage
+  let error: ConvexCallError | undefined
+  for (const page of pages) {
+    error ??= page.error
+    if (!page.result) {
+      return { items, last, complete: false, loadingMore: page.error === undefined, error }
+    }
+    items.push(...page.result.page)
+    last = page.result
+  }
+  return { items, last, complete: true, loadingMore: false, error }
+}
+
+/** Convex's split rule, including its client-side cap of twice the initial page size. */
+export function needsPaginationSplit<T>(
+  result: PaginationResult<T>,
+  initialNumItems: number,
+): result is PaginationResult<T> & { splitCursor: string } {
+  return (
+    typeof result.splitCursor === 'string' &&
+    result.splitCursor !== '' &&
+    (result.pageStatus === 'SplitRecommended' ||
+      result.pageStatus === 'SplitRequired' ||
+      result.page.length > initialNumItems * 2)
+  )
+}
+
+/**
+ * Recognizes the cursor failures Convex `usePaginatedQuery` answers by
+ * resetting pagination. This only steers control flow; the public error is
+ * still classified by `normalizeConvexError`.
+ */
+export function isInvalidCursorError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  if (error.message.includes('InvalidCursor')) return true
+  const data: unknown = (error as { data?: unknown }).data
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as Record<string, unknown>).isConvexSystemError === true &&
+    (data as Record<string, unknown>).paginationError === 'InvalidCursor'
+  )
 }
 
 export type PaginationStatus = 'idle' | 'pending' | 'success' | 'error'

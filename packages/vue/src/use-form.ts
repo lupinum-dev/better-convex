@@ -4,8 +4,8 @@ import {
   computed,
   getCurrentScope,
   onScopeDispose,
-  readonly,
-  ref,
+  shallowReadonly,
+  shallowRef,
   type ComputedRef,
   type Ref,
 } from 'vue'
@@ -18,10 +18,9 @@ import {
   type ConvexFormErrorMapping,
   type ConvexFormIssue,
 } from './form-errors'
+import type { CallableControllerObserver } from './internal/callable-controller'
 import type { ConvexCallStatus } from './use-callable'
-import { useConvexMutation } from './use-callable'
-
-const CALLABLE_OBSERVER_KEY = Symbol.for('better-convex.callable-observer')
+import { useConvexMutationInternal } from './use-callable'
 
 type FormRecord = Record<string, unknown>
 type RequiredKeys<Value> = {
@@ -66,16 +65,6 @@ export interface UseConvexFormReturn<
   reset(): void
 }
 
-interface FormObserver<Args, Result> {
-  startEvent(args: Args, startedAt: number): unknown
-  finishEvent(event: unknown, result: Result, startedAt: number): void
-  failEvent(event: unknown, error: ConvexCallError, startedAt: number): void
-}
-
-interface InternalFormOptions<Args, Result> {
-  [CALLABLE_OBSERVER_KEY]?: FormObserver<Args, Result>
-}
-
 interface FormOptionsBase<Schema extends StandardSchemaV1, Input extends FormRecord> {
   readonly schema: Schema
   readonly mapError?: (error: ConvexCallError) => ConvexFormErrorMapping<Input> | undefined
@@ -86,9 +75,7 @@ type DirectFormOptions<
   Input extends FormRecord,
   Output extends FormRecord,
   Args extends FormRecord,
-  Result,
 > = FormOptionsBase<Schema, Input> &
-  InternalFormOptions<Args, Result> &
   CompatibleProduced<Output, Args> & {
     readonly toArgs?: never
   }
@@ -99,18 +86,14 @@ type MappedFormOptions<
   Output,
   Produced extends FormRecord,
   Args extends FormRecord,
-  Result,
-> = FormOptionsBase<Schema, Input> &
-  InternalFormOptions<Args, Result> & {
-    readonly toArgs: (
-      values: Output,
-    ) => Produced & Record<Exclude<keyof Produced, keyof Args>, never>
-  }
+> = FormOptionsBase<Schema, Input> & {
+  readonly toArgs: (values: Output) => Produced & Record<Exclude<keyof Produced, keyof Args>, never>
+}
 
-type AnyFormOptions = FormOptionsBase<StandardSchemaV1, FormRecord> &
-  InternalFormOptions<FormRecord, unknown> & {
-    readonly toArgs?: (values: unknown) => FormRecord
-  }
+/** Options accepted by the untyped adapter entry {@link useConvexFormInternal}. */
+export type ConvexFormInternalOptions = FormOptionsBase<StandardSchemaV1, FormRecord> & {
+  readonly toArgs?: (values: unknown) => FormRecord
+}
 
 function cloneSnapshot<Value>(value: Value): Value {
   const seen = new WeakMap<object, unknown>()
@@ -147,8 +130,7 @@ export function useConvexForm<
     Schema,
     StandardSchemaV1.InferInput<Schema>,
     StandardSchemaV1.InferOutput<Schema>,
-    FunctionArgs<Mutation>,
-    FunctionReturnType<Mutation>
+    FunctionArgs<Mutation>
   >,
 ): UseConvexFormReturn<
   StandardSchemaV1.InferInput<Schema>,
@@ -166,8 +148,7 @@ export function useConvexForm<
     StandardSchemaV1.InferInput<Schema>,
     StandardSchemaV1.InferOutput<Schema>,
     Produced,
-    FunctionArgs<Mutation>,
-    FunctionReturnType<Mutation>
+    FunctionArgs<Mutation>
   >,
 ): UseConvexFormReturn<
   StandardSchemaV1.InferInput<Schema>,
@@ -176,24 +157,29 @@ export function useConvexForm<
 >
 export function useConvexForm(
   mutation: FunctionReference<'mutation'>,
-  options: AnyFormOptions,
+  options: ConvexFormInternalOptions,
+): UseConvexFormReturn<FormRecord, FormRecord, unknown> {
+  return useConvexFormInternal(mutation, options)
+}
+
+/** Adapter entry for {@link useConvexForm}; the same lifecycle plus a mutation observer. */
+export function useConvexFormInternal(
+  mutation: FunctionReference<'mutation'>,
+  options: ConvexFormInternalOptions,
+  observer?: CallableControllerObserver<FormRecord, unknown>,
 ): UseConvexFormReturn<FormRecord, FormRecord, unknown> {
   if (!getCurrentScope()) {
     throw new Error('[better-convex-vue] useConvexForm must run inside a Vue effect scope')
   }
-  const internalMutationOptions = options[CALLABLE_OBSERVER_KEY]
-    ? { [CALLABLE_OBSERVER_KEY]: options[CALLABLE_OBSERVER_KEY] }
-    : undefined
-  const mutate = (
-    useConvexMutation as unknown as (
-      reference: FunctionReference<'mutation'>,
-      internalOptions?: Record<PropertyKey, unknown>,
-    ) => (args: FormRecord) => Promise<unknown>
-  )(mutation, internalMutationOptions)
+  const mutate = useConvexMutationInternal(
+    mutation as FunctionReference<'mutation', 'public', FormRecord, unknown>,
+    { observer },
+  )
 
-  const data = ref<unknown>()
-  const currentStatus = ref<ConvexCallStatus>('idle')
-  const error = ref<ConvexFormError>()
+  // Shallow refs keep the exact mutation result and the returned form error.
+  const data = shallowRef<unknown>()
+  const currentStatus = shallowRef<ConvexCallStatus>('idle')
+  const error = shallowRef<ConvexFormError>()
   let activePromise: Promise<ConvexFormSubmitResult<unknown>> | undefined
   let revision = 0
   let disposed = false
@@ -282,10 +268,10 @@ export function useConvexForm(
 
   return Object.freeze({
     submit,
-    data: readonly(data),
+    data: shallowReadonly(data),
     status,
     pending,
-    error: readonly(error),
+    error: shallowReadonly(error),
     issues,
     fieldErrors,
     formError,

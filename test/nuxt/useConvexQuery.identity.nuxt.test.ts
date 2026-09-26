@@ -1,15 +1,34 @@
+import { getFunctionName, type FunctionReference } from 'convex/server'
+import { hash } from 'ohash'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { onMounted } from 'vue'
 
-import { useState } from '#imports'
+import { useNuxtApp, useState } from '#imports'
 
 import { toAuthenticatedIdentity, type AuthIdentity } from '../../src/runtime/auth/auth-identity'
 import { createConvexQueryState } from '../../src/runtime/composables/useConvexQuery'
 import { ConvexCallError } from '../../src/runtime/errors'
-import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
-import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
+import { createConvexPayloadKey } from '../../src/runtime/utils/convex-cache'
 import { makeMockOwner } from '../helpers/mock-client-owner'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt, createIdentityObserverHarness } from '../helpers/nuxt-runtime-harness'
+import { waitFor } from '../helpers/wait-for'
+
+function userAKey(query: FunctionReference<'query'>, auth: 'optional' | 'required') {
+  return createConvexPayloadKey('convex', getFunctionName(query), hash({}), auth, 'user:A')
+}
+
+/** Run a factory as a hydrating Nuxt app would, then settle hydration after mount. */
+function hydrating<T>(factory: () => T): T {
+  const nuxtApp = useNuxtApp()
+  nuxtApp.isHydrating = true
+  const result = factory()
+  onMounted(() => {
+    nuxtApp.isHydrating = false
+    void nuxtApp.callHook('app:suspense:resolve')
+  })
+  return result
+}
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -24,7 +43,7 @@ describe('useConvexQuery identity isolation', () => {
     async (auth) => {
       const primary = new MockConvexClient()
       const query = mockFnRef<'query'>(`notes:hydrated-${auth}`)
-      const key = withAuthDimension(createConvexQueryKey(query, {}), auth, 'user:A')
+      const key = userAKey(query, auth)
       const identityPort = createIdentityObserverHarness({
         authEnabled: true,
         settled: false,
@@ -33,14 +52,15 @@ describe('useConvexQuery identity isolation', () => {
         error: null,
       })
 
-      const { result, flush, wrapper } = await captureInNuxt(
-        () => {
-          const pending = useState<boolean>('convex:pending', () => false)
-          const identity = useState<AuthIdentity>('convex:identity')
-          pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-          return createConvexQueryState(query, {}, { auth }).resultData
-        },
+      const { result, wrapper } = await captureInNuxt(
+        () =>
+          hydrating(() => {
+            const pending = useState<boolean>('convex:pending', () => false)
+            const identity = useState<AuthIdentity>('convex:identity')
+            pending.value = false
+            identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+            return createConvexQueryState(query, {}, { auth }).resultData
+          }),
         {
           owner: makeMockOwner(primary),
           identityObserver: identityPort.observer,
@@ -58,7 +78,7 @@ describe('useConvexQuery identity isolation', () => {
         identityGeneration: 0,
         error: null,
       })
-      await flush()
+      await waitFor(() => primary.calls.onUpdate.length === 1)
 
       expect(result.data.value).toEqual({ owner: 'A', source: 'ssr' })
       expect(primary.calls.onUpdate).toHaveLength(1)
@@ -69,7 +89,7 @@ describe('useConvexQuery identity isolation', () => {
   it('retires a hydrated SSR error when the browser identity changes', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:hydrated-error-identity-boundary')
-    const key = withAuthDimension(createConvexQueryKey(query, {}), 'optional', 'user:A')
+    const key = userAKey(query, 'optional')
     const ssrError = new ConvexCallError({
       kind: 'transport',
       message: 'Sanitized SSR transport failure',
@@ -84,26 +104,26 @@ describe('useConvexQuery identity isolation', () => {
     })
 
     const { result, flush, wrapper } = await captureInNuxt(
-      () => {
-        const identity = useState<AuthIdentity>('convex:identity')
-        const errors = useState<Record<string, ConvexCallError | undefined>>('convex:query-errors')
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        errors.value = { [key]: ssrError }
-        return {
-          identity,
-          errors,
-          query: createConvexQueryState(query, {}, { auth: 'optional' }).resultData,
-        }
-      },
+      () =>
+        hydrating(() => {
+          const identity = useState<AuthIdentity>('convex:identity')
+          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          return {
+            identity,
+            query: createConvexQueryState(query, {}, { auth: 'optional' }).resultData,
+          }
+        }),
       {
         owner: makeMockOwner(primary),
         identityObserver: identityPort.observer,
-        payloadData: { [key]: null },
+        payloadData: { [key]: { error: ssrError } },
       },
     )
 
     expect(result.query.error.value).toBe(ssrError)
     expect(result.query.status.value).toBe('error')
+    await waitFor(() => primary.calls.onUpdate.length === 1)
+    expect(result.query.error.value).toBe(ssrError)
 
     result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
     identityPort.set({
@@ -118,10 +138,47 @@ describe('useConvexQuery identity isolation', () => {
     expect(result.query.error.value).toBeUndefined()
     expect(result.query.status.value).toBe('pending')
     expect(result.query.data.value).toBeUndefined()
-    // Identity-change payload purging owns the shared error bag. This composable
-    // retires its local view without deleting state another same-key consumer
-    // could still be reconciling.
-    expect(key in result.errors.value).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('retires hydrated protected data when the browser identity changes', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:hydrated-data-identity-boundary')
+    const key = userAKey(query, 'optional')
+    const identityPort = createIdentityObserverHarness({
+      authEnabled: true,
+      settled: true,
+      identityKey: 'user:A',
+      identityGeneration: 0,
+      error: null,
+    })
+
+    const { result, wrapper } = await captureInNuxt(
+      () =>
+        hydrating(() => {
+          const pending = useState<boolean>('convex:pending', () => false)
+          const identity = useState<AuthIdentity>('convex:identity')
+          pending.value = false
+          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
+        }),
+      {
+        owner: makeMockOwner(primary),
+        identityObserver: identityPort.observer,
+        payloadData: { [key]: { value: { owner: 'A' } } },
+      },
+    )
+
+    expect(result.data.value).toEqual({ owner: 'A' })
+    identityPort.set({
+      authEnabled: true,
+      settled: true,
+      identityKey: 'user:B',
+      identityGeneration: 1,
+      error: null,
+    })
+    expect(result.data.value).toBeUndefined()
+    expect(result.status.value).not.toBe('success')
     wrapper.unmount()
   })
 
@@ -149,17 +206,18 @@ describe('useConvexQuery identity isolation', () => {
   ])('rejects user A SSR data for $label before use', async ({ snapshot }) => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:mismatched-hydration')
-    const key = withAuthDimension(createConvexQueryKey(query, {}), 'optional', 'user:A')
+    const key = userAKey(query, 'optional')
     const identityPort = createIdentityObserverHarness(snapshot)
 
     const { result, wrapper } = await captureInNuxt(
-      () => {
-        const pending = useState<boolean>('convex:pending', () => false)
-        const identity = useState<AuthIdentity>('convex:identity')
-        pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
-      },
+      () =>
+        hydrating(() => {
+          const pending = useState<boolean>('convex:pending', () => false)
+          const identity = useState<AuthIdentity>('convex:identity')
+          pending.value = false
+          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
+        }),
       {
         owner: makeMockOwner(primary),
         identityObserver: identityPort.observer,
@@ -174,7 +232,7 @@ describe('useConvexQuery identity isolation', () => {
   it('clears hydrated data on later generations even when the identity key returns to A', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:hydrated-generation-fence')
-    const key = withAuthDimension(createConvexQueryKey(query, {}), 'optional', 'user:A')
+    const key = userAKey(query, 'optional')
     const identityPort = createIdentityObserverHarness({
       authEnabled: true,
       settled: true,
@@ -184,13 +242,14 @@ describe('useConvexQuery identity isolation', () => {
     })
 
     const { result, wrapper } = await captureInNuxt(
-      () => {
-        const pending = useState<boolean>('convex:pending', () => false)
-        const identity = useState<AuthIdentity>('convex:identity')
-        pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
-      },
+      () =>
+        hydrating(() => {
+          const pending = useState<boolean>('convex:pending', () => false)
+          const identity = useState<AuthIdentity>('convex:identity')
+          pending.value = false
+          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
+        }),
       {
         owner: makeMockOwner(primary),
         identityObserver: identityPort.observer,

@@ -5,7 +5,6 @@ import {
   computePaginationStatus,
   type PaginationStatusState,
 } from '../../packages/vue/src/internal/pagination-state'
-import { computeConvexQueryPending } from '../../src/runtime/utils/query-state'
 
 const readyPaginatedState: PaginationStatusState = {
   disabled: false,
@@ -16,57 +15,6 @@ const readyPaginatedState: PaginationStatusState = {
 }
 
 describe('query state helpers', () => {
-  describe('computeConvexQueryPending', () => {
-    it('is never pending when skipped', () => {
-      expect(
-        computeConvexQueryPending({
-          isSkipped: true,
-          server: false,
-          asyncDataPending: true,
-          isAuthPending: true,
-        }),
-      ).toBe(false)
-    })
-
-    it('stays pending while auth settles', () => {
-      expect(
-        computeConvexQueryPending({
-          isSkipped: false,
-          server: true,
-          asyncDataPending: false,
-          isAuthPending: true,
-        }),
-      ).toBe(true)
-    })
-
-    it('stays pending on the server when server fetching is disabled', () => {
-      expect(
-        computeConvexQueryPending({
-          isSkipped: false,
-          server: false,
-          asyncDataPending: false,
-        }),
-      ).toBe(true)
-    })
-
-    it('follows Nuxt async data pending when server fetching is enabled', () => {
-      expect(
-        computeConvexQueryPending({
-          isSkipped: false,
-          server: true,
-          asyncDataPending: false,
-        }),
-      ).toBe(false)
-      expect(
-        computeConvexQueryPending({
-          isSkipped: false,
-          server: true,
-          asyncDataPending: true,
-        }),
-      ).toBe(true)
-    })
-  })
-
   describe('computePaginationStatus', () => {
     it('returns idle when skipped', () => {
       expect(computePaginationStatus({ ...readyPaginatedState, disabled: true })).toBe('idle')

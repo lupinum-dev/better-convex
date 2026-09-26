@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { isProxy } from 'vue'
 
 import { useConvexAction } from '../../src/runtime/composables/useConvexAction'
 import type { DevtoolsSink } from '../../src/runtime/devtools/sink'
@@ -40,6 +41,29 @@ describe('useConvexAction (Nuxt runtime)', () => {
     expect(result.data.value).toEqual({ ok: true, args: { message: 'hello' } })
     expect('safe' in result).toBe(false)
     expect('reset' in result).toBe(false)
+  })
+
+  it('exposes the exact settled result and error rather than proxies', async () => {
+    const convex = new MockConvexClient()
+    const action = mockFnRef<'action'>('testing:exact-action')
+    const settled = { nested: { id: 'n1' } }
+    let fail = false
+    convex.setActionHandler('testing:exact-action', async () => {
+      if (fail) throw new Error('action failed')
+      return settled
+    })
+
+    const { result } = await captureInNuxt(() => useConvexAction(action), { convex })
+
+    await expect(result({} as never)).resolves.toBe(settled)
+    expect(result.data.value).toBe(settled)
+    expect(isProxy(result.data.value)).toBe(false)
+
+    fail = true
+    const rejection: unknown = await result({} as never).catch((error: unknown) => error)
+    expect(rejection).toBeInstanceOf(ConvexCallError)
+    expect(result.error.value).toBe(rejection)
+    expect(isProxy(result.error.value)).toBe(false)
   })
 
   it('dispatches an empty object for an argless action', async () => {

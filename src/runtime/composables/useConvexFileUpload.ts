@@ -4,7 +4,12 @@
  * Inspired by nuxt-convex by @onmax (https://github.com/onmax/nuxt-convex)
  */
 
+import {
+  createIdentityChangedError,
+  isIdentityChangedError,
+} from '@lupinum/better-convex-vue/internal'
 import type { FunctionArgs, FunctionReference, OptionalRestArgs } from 'convex/server'
+import { getFunctionName } from 'convex/server'
 import type { GenericId } from 'convex/values'
 import { computed, getCurrentScope, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
 
@@ -13,8 +18,6 @@ import { useNuxtApp } from '#imports'
 import { ConvexCallError, normalizeConvexError } from '../errors'
 import { readConvexRuntimeContext } from '../runtime-context'
 import { assertConvexComposableScope } from '../utils/composable-scope'
-import { getFunctionName } from '../utils/convex-shared'
-import { createIdentityChangedError, isIdentityChangedError } from '../utils/identity-changed-error'
 import { createLogger } from '../utils/logger'
 import { isFileTypeAllowed } from '../utils/mime-type'
 import { getConvexRuntimeConfig } from '../utils/runtime-config'

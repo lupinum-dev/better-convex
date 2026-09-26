@@ -5,7 +5,7 @@ import type {
   FunctionReturnType,
   OptionalRestArgs,
 } from 'convex/server'
-import { getCurrentScope, onScopeDispose, readonly, type ComputedRef, type Ref } from 'vue'
+import { getCurrentScope, onScopeDispose, shallowReadonly, type ComputedRef, type Ref } from 'vue'
 
 import { ConvexCallError } from './errors'
 import type { ClientCallStatus } from './internal/call-state'
@@ -15,8 +15,6 @@ import {
 } from './internal/callable-controller'
 import { useOptionalBetterConvexRuntime } from './runtime-context'
 
-const CALLABLE_OBSERVER_KEY = Symbol.for('better-convex.callable-observer')
-
 export type ConvexCallStatus = ClientCallStatus
 
 export type OptimisticUpdate<Args> = (store: OptimisticLocalStore, args: Args) => undefined
@@ -25,8 +23,10 @@ type OptimisticUpdateCandidate<Args> = (store: OptimisticLocalStore, args: Args)
 
 export type UseConvexMutationOptions<Args> = Readonly<{ optimisticUpdate?: OptimisticUpdate<Args> }>
 
-interface InternalCallableOptions<Args, Result> {
-  [CALLABLE_OBSERVER_KEY]?: CallableControllerObserver<Args, Result>
+/** Adapter options for the one callable lifecycle; `observer` feeds Nuxt DevTools. */
+export interface ConvexCallableInternalOptions<Args, Result> {
+  readonly optimisticUpdate?: OptimisticUpdateCandidate<Args>
+  readonly observer?: CallableControllerObserver<Args, Result>
 }
 
 export interface UseConvexCall<Reference extends FunctionReference<'mutation' | 'action'>> {
@@ -63,9 +63,7 @@ function wrapOptimisticUpdate<Args>(
 function createCallable<Reference extends FunctionReference<'mutation' | 'action'>>(
   operation: 'mutation' | 'action',
   reference: Reference,
-  options?: {
-    optimisticUpdate?: OptimisticUpdateCandidate<FunctionArgs<Reference>>
-  } & InternalCallableOptions<FunctionArgs<Reference>, FunctionReturnType<Reference>>,
+  options?: ConvexCallableInternalOptions<FunctionArgs<Reference>, FunctionReturnType<Reference>>,
 ): UseConvexCall<Reference> {
   if (!getCurrentScope()) {
     throw new Error(
@@ -81,7 +79,7 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
     subscribeIdentityChange: runtime
       ? (listener) => runtime.browser.identity.subscribe(listener)
       : undefined,
-    observer: options?.[CALLABLE_OBSERVER_KEY],
+    observer: options?.observer,
     handlers: {
       settle: () => runtime?.browser.ready() ?? Promise.resolve(),
       invoke: async (args) => {
@@ -102,12 +100,14 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
   })
   onScopeDispose(lifecycle.dispose)
   const execute = (...args: OptionalRestArgs<Reference>) => lifecycle.run((args[0] ?? {}) as Args)
+  // Shallow: `readonly()` would hand out deep proxies instead of the exact
+  // result and error the call settled with.
   return Object.freeze(
     Object.assign(execute, {
-      data: readonly(lifecycle.data),
+      data: shallowReadonly(lifecycle.data),
       status: lifecycle.status,
       pending: lifecycle.pending,
-      error: readonly(lifecycle.error),
+      error: shallowReadonly(lifecycle.error),
     }),
   ) as UseConvexCall<Reference>
 }
@@ -115,22 +115,31 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
 export function useConvexMutation<Mutation extends FunctionReference<'mutation'>>(
   mutation: Mutation,
   options?: UseConvexMutationOptions<FunctionArgs<Mutation>>,
-): UseConvexCall<Mutation>
-export function useConvexMutation<Mutation extends FunctionReference<'mutation'>>(
-  mutation: Mutation,
-  options?: {
-    optimisticUpdate?: OptimisticUpdateCandidate<FunctionArgs<Mutation>>
-  } & InternalCallableOptions<FunctionArgs<Mutation>, FunctionReturnType<Mutation>>,
 ): UseConvexCall<Mutation> {
-  return createCallable('mutation', mutation, options)
+  return createCallable('mutation', mutation, { optimisticUpdate: options?.optimisticUpdate })
 }
 
 export function useConvexAction<Action extends FunctionReference<'action'>>(
   action: Action,
-): UseConvexCall<Action>
-export function useConvexAction<Action extends FunctionReference<'action'>>(
+): UseConvexCall<Action> {
+  return createCallable('action', action)
+}
+
+/** Adapter entry for {@link useConvexMutation}; the same lifecycle plus an observer. */
+export function useConvexMutationInternal<Mutation extends FunctionReference<'mutation'>>(
+  mutation: Mutation,
+  options?: ConvexCallableInternalOptions<FunctionArgs<Mutation>, FunctionReturnType<Mutation>>,
+): UseConvexCall<Mutation> {
+  return createCallable('mutation', mutation, options)
+}
+
+/** Adapter entry for {@link useConvexAction}; the same lifecycle plus an observer. */
+export function useConvexActionInternal<Action extends FunctionReference<'action'>>(
   action: Action,
-  options?: InternalCallableOptions<FunctionArgs<Action>, FunctionReturnType<Action>>,
+  options?: Pick<
+    ConvexCallableInternalOptions<FunctionArgs<Action>, FunctionReturnType<Action>>,
+    'observer'
+  >,
 ): UseConvexCall<Action> {
   return createCallable('action', action, options)
 }

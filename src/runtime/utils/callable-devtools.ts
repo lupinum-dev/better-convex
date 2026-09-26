@@ -1,5 +1,6 @@
+import type { CallableControllerObserver } from '@lupinum/better-convex-vue/internal'
+
 import type { DevtoolsSink } from '../devtools/sink'
-import type { ConvexCallError } from '../errors'
 
 interface CallableDevtoolsEvent {
   sink: DevtoolsSink
@@ -11,11 +12,7 @@ export function createCallableDevtoolsEvents<Args, Result>(input: {
   fnName: string
   hasOptimisticUpdate: boolean
   getSink: () => DevtoolsSink | null
-}): {
-  startEvent(args: Args, startedAt: number): CallableDevtoolsEvent | undefined
-  finishEvent(event: unknown, result: Result, startedAt: number): void
-  failEvent(event: unknown, error: ConvexCallError, startedAt: number): void
-} {
+}): CallableControllerObserver<Args, Result> {
   return {
     startEvent(args, startedAt): CallableDevtoolsEvent | undefined {
       try {

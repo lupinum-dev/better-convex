@@ -1,16 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
-import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
 import {
-  getConvexIdentityKey,
   isAuthenticatedIdentityKey,
-  type ConvexIdentityKey,
-} from '../../src/runtime/utils/identity-key'
+  type ConvexIdentityKey as VueConvexIdentityKey,
+} from '../../packages/vue/src/internal/identity-key'
+import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
+import { getConvexIdentityKey, type ConvexIdentityKey } from '../../src/runtime/utils/identity-key'
 import type { ConvexUser } from '../../src/runtime/utils/types'
 
 function user(id: string): ConvexUser {
   return { id } as ConvexUser
 }
+
+describe('ConvexIdentityKey', () => {
+  it('is exactly the Vue runtime identity partition', () => {
+    expectTypeOf<ConvexIdentityKey>().toEqualTypeOf<VueConvexIdentityKey>()
+  })
+})
 
 describe('getConvexIdentityKey (single stable extraction function)', () => {
   it('returns "anonymous" for null', () => {

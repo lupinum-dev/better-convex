@@ -199,6 +199,19 @@ const VUE_CHECKER_ENTRY_RULES = [
       typeExternalSpecifiers: ['convex/browser'],
     },
   },
+  {
+    subpath: './internal',
+    purity: {
+      runtimeExternalSpecifiers: [
+        'convex/browser',
+        'convex/server',
+        'convex/values',
+        'ohash',
+        'vue',
+      ],
+      typeExternalSpecifiers: ['@standard-schema/spec', 'convex/browser', 'convex/server', 'vue'],
+    },
+  },
 ]
 
 const MCP_CHECKER_ENTRY_RULES = [

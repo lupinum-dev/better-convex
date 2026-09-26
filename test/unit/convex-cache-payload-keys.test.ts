@@ -1,36 +1,72 @@
+import { hash } from 'ohash'
 import { describe, expect, it } from 'vitest'
 
 import {
+  createConvexPayloadKey,
+  paginatedPayloadHash,
   purgeConvexIdentityPayloadKeys,
   readAuthMode,
-  retainAnonymousConvexQueryErrors,
   withAuthDimension,
 } from '../../src/runtime/utils/convex-cache'
-import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 
 // Library-owned key state consists of the identity-partitioned payload-key
 // grammar and the namespace-scan sign-out purge.
 
-const noArgs = {} as never
+const argsHash = hash({})
 
 describe('identity-partitioned payload-key grammar', () => {
   it('appends a static none suffix for none mode (identity-independent)', () => {
-    const base = createConvexQueryKey({ _path: 'notes.list' } as never, noArgs)
-    expect(withAuthDimension(base, 'none', 'anonymous')).toBe(`${base}:auth:none`)
+    const base = `convex:notes:list:${argsHash}`
+    expect(createConvexPayloadKey('convex', 'notes:list', argsHash, 'none', 'anonymous')).toBe(
+      `${base}:auth:none`,
+    )
     // none is identity-blind: a signed-in identity does not change the key.
     expect(withAuthDimension(base, 'none', 'user:u1')).toBe(`${base}:auth:none`)
   })
 
   it('partitions required/optional keys by identity', () => {
-    const base = createConvexQueryKey({ _path: 'notes.list' } as never, noArgs)
-    expect(withAuthDimension(base, 'required', 'user:u1')).toBe(`${base}:auth:required:user:u1`)
-    expect(withAuthDimension(base, 'optional', 'user:u2')).toBe(`${base}:auth:optional:user:u2`)
-    expect(withAuthDimension(base, 'optional', 'anonymous')).toBe(`${base}:auth:optional:anonymous`)
+    const key = (auth: 'required' | 'optional', identity: 'anonymous' | `user:${string}`) =>
+      createConvexPayloadKey('convex', 'notes:list', argsHash, auth, identity)
+    const base = `convex:notes:list:${argsHash}`
+    expect(key('required', 'user:u1')).toBe(`${base}:auth:required:user:u1`)
+    expect(key('optional', 'user:u2')).toBe(`${base}:auth:optional:user:u2`)
+    expect(key('optional', 'anonymous')).toBe(`${base}:auth:optional:anonymous`)
   })
 
-  it('uses the convex-paginated namespace for paginated base keys', () => {
-    const base = createConvexQueryKey({ _path: 'notes.list' } as never, noArgs, 'convex-paginated')
-    expect(base.startsWith('convex-paginated:')).toBe(true)
+  it('uses the convex-paginated namespace and one colon-free hash for the first-page window', () => {
+    const pageHash = paginatedPayloadHash(argsHash, 10, null)
+    expect(pageHash).not.toContain(':')
+    expect(pageHash).not.toBe(paginatedPayloadHash(argsHash, 10, 'cursor'))
+    expect(pageHash).not.toBe(paginatedPayloadHash(argsHash, 20, null))
+    const key = createConvexPayloadKey(
+      'convex-paginated',
+      'notes:list',
+      pageHash,
+      'none',
+      'anonymous',
+    )
+    expect(key).toBe(`convex-paginated:notes:list:${pageHash}:auth:none`)
+  })
+
+  it('reads the auth dimension of a function in a module named auth', () => {
+    const key = createConvexPayloadKey(
+      'convex',
+      'auth:currentUser',
+      argsHash,
+      'required',
+      'user:u1',
+    )
+    expect(readAuthMode(key)).toBe('required')
+    expect(
+      readAuthMode(
+        createConvexPayloadKey('convex', 'auth:none', argsHash, 'optional', 'anonymous'),
+      ),
+    ).toBe('optional')
+    expect(
+      readAuthMode(
+        createConvexPayloadKey('convex', 'auth:required', argsHash, 'none', 'anonymous'),
+      ),
+    ).toBe('none')
   })
 
   it('reads the auth mode segment back out', () => {
@@ -75,18 +111,20 @@ describe('sign-out identity purge (namespace scan, no registry)', () => {
     )
   })
 
-  it('retains only anonymous errors on every credential-generation change', () => {
-    const retained = retainAnonymousConvexQueryErrors({
-      'convex:notes:list:h:auth:required:user:alice': 'alice error',
-      'convex:notes:list:h:auth:optional:user:alice': 'optional error',
-      'convex:notes:public:h:auth:none': 'public error',
-      'convex-paginated:feed:h:auth:none': 'public page error',
-      unrelated: 'foreign error',
-    })
+  it('purges protected keys of a function in a module named auth', () => {
+    const protectedKey = createConvexPayloadKey(
+      'convex',
+      'auth:currentUser',
+      argsHash,
+      'required',
+      'user:u1',
+    )
+    const publicKey = createConvexPayloadKey('convex', 'auth:status', argsHash, 'none', 'anonymous')
+    const nuxtApp = {
+      payload: { data: { [protectedKey]: { value: 'alice' }, [publicKey]: { value: 'up' } } },
+    }
 
-    expect(retained).toEqual({
-      'convex:notes:public:h:auth:none': 'public error',
-      'convex-paginated:feed:h:auth:none': 'public page error',
-    })
+    expect(purgeConvexIdentityPayloadKeys(nuxtApp)).toEqual([protectedKey])
+    expect(Object.keys(nuxtApp.payload.data)).toEqual([publicKey])
   })
 })

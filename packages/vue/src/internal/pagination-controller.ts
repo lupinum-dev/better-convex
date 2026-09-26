@@ -2,8 +2,12 @@ import type { FunctionReference, PaginationResult } from 'convex/server'
 import { computed, shallowRef, watch, type ComputedRef, type Ref } from 'vue'
 
 import { normalizeConvexError, type ConvexCallError } from '../errors'
-import { createPaginationSplitController } from './pagination-split-controller'
 import {
+  createPaginationSplitController,
+  type PaginationSplitTarget,
+} from './pagination-split-controller'
+import {
+  assertLoadMoreNumItems,
   commitPaginationPageError,
   commitPaginationPageResult,
   computePaginationStale,
@@ -11,9 +15,10 @@ import {
   createPaginationGeneration,
   createPaginationOperationFence,
   createPendingPaginationPage,
-  getLastLoadedPaginationResult,
+  isInvalidCursorError,
+  viewPaginationPages,
+  withholdPaginationPage,
   type PaginationFirstPageState,
-  type PaginationNextPageState,
   type PaginationOperationContext,
   type PaginationPageOptions,
   type PaginationPageState,
@@ -40,24 +45,18 @@ export interface PaginationControllerInput<Item> {
 }
 
 export interface PaginationController<Item> {
-  generation: Readonly<Ref<number>>
-  initialOptions: ComputedRef<PaginationPageOptions>
   pages: Readonly<Ref<PaginationPageState<Item>[]>>
   data: ComputedRef<readonly Item[] | undefined>
+  /** Whole-list status: any failed or loading page makes the list error or pending. */
   status: ComputedRef<PaginationStatus>
   pending: ComputedRef<boolean>
   isStale: ComputedRef<boolean>
   canLoadMore: ComputedRef<boolean>
   cursor: ComputedRef<string | null>
   pageStatus: ComputedRef<'SplitRecommended' | 'SplitRequired' | null>
+  /** The boundary error, else the first failed later page; loaded items stay in `data`. */
   error: ComputedRef<ConvexCallError | undefined>
   start(): void
-  captureOperation(): PaginationOperationContext
-  isOperationCurrent(operation: PaginationOperationContext): boolean
-  fetchForOperation(
-    options: PaginationPageOptions,
-    operation: PaginationOperationContext,
-  ): Promise<PaginationResult<Item> | null>
   firstPageSettled(): Promise<void>
   loadMore(numItems: number): void
   refresh(): Promise<void>
@@ -124,6 +123,7 @@ export function createPaginationController<Item>(
 
   const splitController = createPaginationSplitController({
     query: input.query,
+    initialNumItems: input.initialNumItems,
     pages,
     firstPageRealtime,
     firstPageOptions,
@@ -133,7 +133,6 @@ export function createPaginationController<Item>(
     isLive: input.isLive,
     getClient: input.getClient,
     getArgs: input.getArgs,
-    getBoundaryKey: input.getBoundaryKey,
     setBoundaryError: input.setBoundaryError,
     captureOperation: fence.capture,
     isOperationCurrent: fence.isCurrent,
@@ -144,6 +143,7 @@ export function createPaginationController<Item>(
     },
     acceptFirstPageResult,
     acceptPageResult,
+    rejectPage,
   })
 
   const visiblePage = (result: PaginationResult<Item> | null | undefined) =>
@@ -153,6 +153,9 @@ export function createPaginationController<Item>(
     firstPageWithheld.value
       ? null
       : (visiblePage(firstPageRealtime.value) ?? visiblePage(input.getBoundaryFirstPage()))
+
+  const findPageIndex = (options: PaginationPageOptions) =>
+    pages.value.findIndex((candidate) => candidate.paginationOpts === options)
 
   function settleFirstPageIfTerminal(): void {
     if (
@@ -197,6 +200,8 @@ export function createPaginationController<Item>(
     operation: PaginationOperationContext,
   ): void {
     if (result.pageStatus === 'SplitRequired') {
+      firstPageWithheld.value = true
+      firstPageRealtime.value = null
       splitController.begin('first', result)
       return
     }
@@ -206,7 +211,7 @@ export function createPaginationController<Item>(
     firstPageWithheld.value = false
     firstPageRealtime.value = result
     input.setBoundaryError(undefined, operation.boundaryKey)
-    if (result.pageStatus === 'SplitRecommended') splitController.begin('first', result)
+    splitController.begin('first', result)
     settleFirstPageIfTerminal()
   }
 
@@ -214,9 +219,10 @@ export function createPaginationController<Item>(
     pageOptions: PaginationPageOptions,
     result: PaginationResult<Item>,
   ): void {
-    const index = pages.value.findIndex((candidate) => candidate.paginationOpts === pageOptions)
+    const index = findPageIndex(pageOptions)
     if (index < 0) return
     if (result.pageStatus === 'SplitRequired') {
+      pages.value = withholdPaginationPage(pages.value, index)
       splitController.begin(pageOptions, result)
       return
     }
@@ -232,8 +238,29 @@ export function createPaginationController<Item>(
     } else {
       pages.value = nextPages
     }
-    input.setBoundaryError(undefined, input.getBoundaryKey())
-    if (result.pageStatus === 'SplitRecommended') splitController.begin(pageOptions, result)
+    splitController.begin(pageOptions, result)
+  }
+
+  // Replaying the caller's own initial cursor would fail the same way forever.
+  const isUnboundedInitialPage = (options: PaginationPageOptions) =>
+    options.endCursor == null && options.cursor === initialOptions.value.cursor
+
+  function rejectPage(
+    target: PaginationSplitTarget,
+    error: unknown,
+    source?: PaginationPageOptions,
+  ): void {
+    if (target !== 'first' && findPageIndex(target) < 0) return
+    if (source && !isUnboundedInitialPage(source) && isInvalidCursorError(error)) {
+      restartAfterInvalidCursor()
+      return
+    }
+    if (target === 'first') {
+      input.setBoundaryError(normalizeConvexError(error), input.getBoundaryKey())
+      settleFirstPageIfTerminal()
+      return
+    }
+    pages.value = commitPaginationPageError(pages.value, findPageIndex(target), error)
   }
 
   function subscribeFirstPage(options = initialOptions.value): void {
@@ -243,17 +270,15 @@ export function createPaginationController<Item>(
     if (!client || args === 'skip') return
     const operation = fence.capture()
     firstPageOptions.value = options
+    const isCurrent = () => fence.isCurrent(operation) && firstPageOptions.value === options
     firstPageUnsubscribe = client.onUpdate(
       input.query,
       { ...args, paginationOpts: options },
       (raw) => {
-        if (!fence.isCurrent(operation)) return
-        acceptFirstPageResult(raw as PaginationResult<Item>, operation)
+        if (isCurrent()) acceptFirstPageResult(raw as PaginationResult<Item>, operation)
       },
       (error) => {
-        if (!fence.isCurrent(operation)) return
-        input.setBoundaryError(normalizeConvexError(error), operation.boundaryKey)
-        settleFirstPageIfTerminal()
+        if (isCurrent()) rejectPage('first', error, options)
       },
     )
   }
@@ -267,21 +292,16 @@ export function createPaginationController<Item>(
     const operation = fence.capture()
     const pageOptions = page.paginationOpts
     page.unsubscribe?.()
-    const unsubscribe = client.onUpdate(
+    page.unsubscribe = client.onUpdate(
       input.query,
-      { ...args, paginationOpts: page.paginationOpts },
+      { ...args, paginationOpts: pageOptions },
       (raw) => {
-        if (!fence.isCurrent(operation)) return
-        acceptPageResult(pageOptions, raw as PaginationResult<Item>)
+        if (fence.isCurrent(operation)) acceptPageResult(pageOptions, raw as PaginationResult<Item>)
       },
       (error) => {
-        if (!fence.isCurrent(operation)) return
-        const index = pages.value.findIndex((candidate) => candidate.paginationOpts === pageOptions)
-        if (index < 0) return
-        pages.value = commitPaginationPageError(pages.value, index, error)
+        if (fence.isCurrent(operation)) rejectPage(pageOptions, error, pageOptions)
       },
     )
-    page.unsubscribe = unsubscribe
   }
 
   function teardownSubscriptions(): void {
@@ -295,37 +315,30 @@ export function createPaginationController<Item>(
     }
   }
 
+  const view = computed(() => viewPaginationPages(firstPage(), pages.value))
+
   const status = computed<PaginationStatus>(() => {
     const currentFirstPage = firstPage()
-    const lastPage = pages.value.at(-1)
+    const { complete, last, loadingMore, error: pageError } = view.value
     const firstPageState: PaginationFirstPageState = currentFirstPage
       ? { state: 'ready', isDone: currentFirstPage.isDone }
       : { state: 'loading' }
-    const nextPageState: PaginationNextPageState = lastPage?.pending
-      ? { state: 'loading' }
-      : lastPage?.result?.isDone
-        ? { state: 'exhausted' }
-        : { state: 'idle' }
     return computePaginationStatus({
       disabled: input.isIdle(),
       refresh: manualRefreshPending.value ? 'pending' : 'idle',
-      hasError:
-        input.getBoundaryError() !== undefined ||
-        pages.value.some((page) => page.error !== undefined),
+      hasError: input.getBoundaryError() !== undefined || pageError !== undefined,
       firstPage: firstPageState,
-      nextPage: nextPageState,
+      nextPage: loadingMore
+        ? { state: 'loading' }
+        : complete && last?.isDone
+          ? { state: 'exhausted' }
+          : { state: 'idle' },
     })
   })
 
-  const currentData = computed<readonly Item[] | undefined>(() => {
-    if (input.isIdle()) return undefined
-    const items: Item[] = []
-    const currentFirstPage = firstPage()
-    if (currentFirstPage) items.push(...currentFirstPage.page)
-    for (const page of pages.value) if (page.result) items.push(...page.result.page)
-    if (currentFirstPage || pages.value.some((page) => page.result !== undefined)) return items
-    return undefined
-  })
+  const currentData = computed<readonly Item[] | undefined>(() =>
+    input.isIdle() ? undefined : view.value.items,
+  )
 
   const isStale = computed(() =>
     computePaginationStale({
@@ -339,20 +352,16 @@ export function createPaginationController<Item>(
     isStale.value ? lastSettledResults.value : currentData.value,
   )
   const pending = computed(() => status.value === 'pending')
-  const canLoadMore = computed(() => {
-    if (status.value !== 'success') return false
-    return getLastLoadedPaginationResult(firstPage(), pages.value)?.isDone === false
-  })
-  const lastLoadedResult = computed(() => getLastLoadedPaginationResult(firstPage(), pages.value))
-  const cursor = computed(
-    () => lastLoadedResult.value?.continueCursor ?? initialOptions.value.cursor,
+  // A settled list may load more while its auth gate still waits: the page is
+  // held and subscribed with the rest of the list once it goes live.
+  const canLoadMore = computed(
+    () => status.value === 'success' && view.value.last?.isDone === false,
   )
-  const pageStatus = computed(() => lastLoadedResult.value?.pageStatus ?? null)
-  const error = computed<ConvexCallError | undefined>(() => {
-    const boundaryError = input.getBoundaryError()
-    if (boundaryError) return boundaryError
-    return pages.value.find((page) => page.error)?.error
-  })
+  const cursor = computed(() => view.value.last?.continueCursor ?? initialOptions.value.cursor)
+  const pageStatus = computed(() => view.value.last?.pageStatus ?? null)
+  const error = computed<ConvexCallError | undefined>(
+    () => input.getBoundaryError() ?? view.value.error,
+  )
 
   function start(): void {
     if (disposed || stopSettledWatch) return
@@ -367,15 +376,17 @@ export function createPaginationController<Item>(
     if (input.isLive()) subscribeFirstPage()
   }
 
+  /** Bounds the last loaded page; a list that is not live yet subscribes it when it goes live. */
   function boundLastLoadedPage(endCursor: string | null): void {
-    if (!input.isLive()) return
     const lastIndex = pages.value.length - 1
     if (lastIndex < 0) {
       const options = firstPageOptions.value ?? initialOptions.value
       if (options.endCursor === endCursor) return
       firstPageUnsubscribe?.()
       firstPageUnsubscribe = null
-      subscribeFirstPage({ ...options, endCursor })
+      const bounded = { ...options, endCursor }
+      if (input.isLive()) subscribeFirstPage(bounded)
+      else firstPageOptions.value = bounded
       return
     }
 
@@ -392,44 +403,17 @@ export function createPaginationController<Item>(
   }
 
   function loadMore(numItems: number): void {
-    if (!Number.isSafeInteger(numItems) || numItems < 1) {
-      throw new Error('[better-convex-vue] loadMore numItems must be a positive safe integer')
-    }
-    if (disposed || input.isIdle() || manualRefreshPending.value) return
-    if (pages.value.at(-1)?.pending) return
-    const lastResult = getLastLoadedPaginationResult(firstPage(), pages.value)
-    if (!lastResult || lastResult.isDone) return
-    boundLastLoadedPage(lastResult.continueCursor)
-    const page = createPendingPaginationPage<Item>({
-      numItems,
-      cursor: lastResult.continueCursor,
-      id: generation.value,
-    })
-    pages.value = [...pages.value, page]
-    const index = pages.value.length - 1
-    const operation = fence.capture()
-    if (input.isLive() && input.getClient()) {
-      subscribePage(index)
-      return
-    }
-    void fetchForOperation(page.paginationOpts, operation)
-      .then((result) => {
-        if (!result || !fence.isCurrent(operation) || pages.value[index] !== page) return
-        if (result.pageStatus === 'SplitRequired') {
-          pages.value = [
-            ...pages.value.slice(0, index),
-            { ...page, result: undefined, error: undefined, pending: false },
-            ...pages.value.slice(index + 1),
-          ]
-          splitController.begin(page.paginationOpts, result)
-          return
-        }
-        pages.value = commitPaginationPageResult(pages.value, index, result)
-      })
-      .catch((cause) => {
-        if (!fence.isCurrent(operation) || pages.value[index] !== page) return
-        pages.value = commitPaginationPageError(pages.value, index, cause)
-      })
+    assertLoadMoreNumItems(numItems)
+    // Only subscriptions load later pages. Before the list is live the page
+    // stays pending; `resubscribeLoadedPages` subscribes it with the others.
+    if (disposed || !canLoadMore.value || input.getArgs() === 'skip') return
+    const continueCursor = view.value.last!.continueCursor
+    boundLastLoadedPage(continueCursor)
+    pages.value = [
+      ...pages.value,
+      createPendingPaginationPage<Item>({ numItems, cursor: continueCursor, id: generation.value }),
+    ]
+    subscribePage(pages.value.length - 1)
   }
 
   async function refresh(): Promise<void> {
@@ -438,47 +422,33 @@ export function createPaginationController<Item>(
     input.setBoundaryError(undefined, input.getBoundaryKey())
     const loadedPages = [...pages.value]
     const operation = fence.capture()
+    // A failed later page keeps the loaded list and reports on that page only.
+    let failedTarget: PaginationSplitTarget = 'first'
+    let failedSource = firstPageOptions.value ?? initialOptions.value
     try {
-      const firstResult = await fetchForOperation(
-        firstPageOptions.value ?? initialOptions.value,
-        operation,
-      )
+      const firstResult = await fetchForOperation(failedSource, operation)
       if (!firstResult) return
       const refreshed: PaginationPageState<Item>[] = []
-      const splitResults: Array<{
-        options: PaginationPageOptions
-        result: PaginationResult<Item>
-      }> = []
+      const results: PaginationResult<Item>[] = []
       let previous = firstResult
-      for (let index = 0; index < loadedPages.length; index += 1) {
+      for (const page of loadedPages) {
         if (previous.isDone || previous.pageStatus === 'SplitRequired') break
-        const page = loadedPages[index]
-        if (!page) continue
-        const result = await fetchForOperation(
-          {
-            ...page.paginationOpts,
-            cursor: previous.continueCursor,
-          },
-          operation,
-        )
-        if (!result) return
         const cursor = previous.continueCursor
+        const paginationOpts =
+          cursor === page.paginationOpts.cursor
+            ? page.paginationOpts
+            : { ...page.paginationOpts, cursor }
+        failedTarget = page.paginationOpts
+        failedSource = paginationOpts
+        const result = await fetchForOperation(paginationOpts, operation)
+        if (!result) return
         refreshed.push({
           ...page,
-          paginationOpts:
-            cursor === page.paginationOpts.cursor
-              ? page.paginationOpts
-              : { ...page.paginationOpts, cursor },
+          paginationOpts,
           result: visiblePage(result) ?? undefined,
           error: undefined,
-          pending: result.pageStatus === 'SplitRequired',
         })
-        if (result.pageStatus === 'SplitRecommended' || result.pageStatus === 'SplitRequired') {
-          splitResults.push({
-            options: refreshed.at(-1)!.paginationOpts,
-            result,
-          })
-        }
+        results.push(result)
         previous = result
       }
       if (!fence.isCurrent(operation) || pages.value.length !== loadedPages.length) return
@@ -488,24 +458,18 @@ export function createPaginationController<Item>(
       pages.value = refreshed
       if (input.isLive()) {
         for (let index = 0; index < refreshed.length; index += 1) {
-          if (
-            loadedPages[index]?.paginationOpts.cursor !== refreshed[index]?.paginationOpts.cursor
-          ) {
+          if (loadedPages[index]?.paginationOpts !== refreshed[index]?.paginationOpts) {
             subscribePage(index)
           }
         }
       }
       input.setBoundaryError(undefined, operation.boundaryKey)
-      if (
-        firstResult.pageStatus === 'SplitRecommended' ||
-        firstResult.pageStatus === 'SplitRequired'
+      splitController.begin('first', firstResult)
+      refreshed.forEach((page, index) =>
+        splitController.begin(page.paginationOpts, results[index]!),
       )
-        splitController.begin('first', firstResult)
-      for (const split of splitResults) splitController.begin(split.options, split.result)
     } catch (cause) {
-      if (fence.isCurrent(operation)) {
-        input.setBoundaryError(normalizeConvexError(cause), operation.boundaryKey)
-      }
+      if (fence.isCurrent(operation)) rejectPage(failedTarget, cause, failedSource)
     } finally {
       if (fence.isCurrent(operation)) manualRefreshPending.value = false
     }
@@ -528,6 +492,26 @@ export function createPaginationController<Item>(
     input.setBoundaryError(undefined, options.errorKey)
     if (options.subscribe) subscribeFirstPage()
     else settleFirstPageIfTerminal()
+  }
+
+  /** Convex resets pagination on an invalid cursor; settled data stays available as stale. */
+  function restartAfterInvalidCursor(): void {
+    restartBoundary({
+      clearSettledData: false,
+      errorKey: input.getBoundaryKey(),
+      renewGeneration: true,
+      subscribe: input.isLive(),
+    })
+  }
+
+  /** Every retained page must be live again, not only the first one. */
+  function resubscribeLoadedPages(): void {
+    const options = firstPageOptions.value ?? initialOptions.value
+    fence.invalidate()
+    teardownSubscriptions()
+    manualRefreshPending.value = false
+    subscribeFirstPage(options)
+    for (let index = 0; index < pages.value.length; index += 1) subscribePage(index)
   }
 
   function reset(): void {
@@ -570,9 +554,7 @@ export function createPaginationController<Item>(
       boundary.nextLive &&
       !boundary.previousLive
     ) {
-      fence.invalidate()
-      manualRefreshPending.value = false
-      subscribeFirstPage()
+      resubscribeLoadedPages()
       return
     }
     const idle = input.isIdle()
@@ -598,8 +580,6 @@ export function createPaginationController<Item>(
   }
 
   return {
-    generation,
-    initialOptions,
     pages,
     data,
     status,
@@ -610,9 +590,6 @@ export function createPaginationController<Item>(
     pageStatus,
     error,
     start,
-    captureOperation: fence.capture,
-    isOperationCurrent: fence.isCurrent,
-    fetchForOperation,
     firstPageSettled,
     loadMore,
     refresh,

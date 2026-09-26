@@ -1,5 +1,7 @@
+import { isAuthenticatedIdentityKey } from '@lupinum/better-convex-vue/internal'
+
 import type { ConvexCallError } from '../errors'
-import { isAuthenticatedIdentityKey, type ConvexIdentityKey } from './identity-key'
+import type { ConvexIdentityKey } from './identity-key'
 
 /**
  * Per-query authentication mode.
@@ -22,16 +24,12 @@ export type ConvexAuthMode = 'required' | 'optional' | 'none'
  */
 export type ConvexAuthStatus = 'loading' | 'anonymous' | 'authenticated' | 'error'
 
-/** Internal query gate state for a build that intentionally has no auth graph. */
-export type ConvexQueryAuthStatus = ConvexAuthStatus | 'disabled'
-
 /**
  * The two-dimensional inputs to status derivation. `settled` is the initial
  * auth-settlement signal; `error` is non-null only when initial resolution
  * failed without a usable identity.
  */
 export interface ConvexAuthStatusInput {
-  authEnabled: boolean
   settled: boolean
   identityKey: ConvexIdentityKey | null
   error: ConvexCallError | null
@@ -39,19 +37,15 @@ export interface ConvexAuthStatusInput {
 
 /**
  * Derive the canonical status in this fixed precedence:
- * `disabled` → `loading` → `authenticated` → `error` → `anonymous`.
+ * `loading` → `authenticated` → `error` → `anonymous`.
  *
  * `authenticated` outranks `error` so a failed background refresh over a still
  * usable identity keeps `authenticated`. `error` outranks `anonymous` so a
  * failed initial resolution surfaces the error instead of silently downgrading
- * to anonymous execution.
+ * to anonymous execution. Nuxt's query identity projection reads the same
+ * precedence from here.
  */
-export function deriveConvexAuthStatus(
-  input: ConvexAuthStatusInput & { authEnabled: true },
-): ConvexAuthStatus
-export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexQueryAuthStatus
-export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexQueryAuthStatus {
-  if (!input.authEnabled) return 'disabled'
+export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexAuthStatus {
   if (!input.settled) return 'loading'
   if (isAuthenticatedIdentityKey(input.identityKey)) return 'authenticated'
   if (input.error) return 'error'
