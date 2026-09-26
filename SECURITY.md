@@ -70,9 +70,10 @@ shared MCP secret.
 - Better Auth rate limiting uses a package-owned custom storage boundary. One
   component mutation atomically creates, resets, or increments each database
   counter. It retries only final uncommitted Convex contention failures with a
-  fixed bound. The storage owns Better Auth's built-in retention floor. A direct
-  composition must also supply the longest custom plugin window. There is no
-  process-local security counter.
+  fixed bound. The storage owns Better Auth's built-in retention floor and the
+  longest configured plugin window. `createBetterConvexAuth` is the only
+  composition path; the plugin, adapter, and rate-limit storage are not public
+  exports. There is no process-local security counter.
 - Any process-local defense in depth is non-authoritative. Deployments still own
   a trusted-ingress per-account and per-IP limiter for distributed abuse.
 - Every auth row has a required immutable Better Auth logical `id`. Convex `_id` and `_creationTime` remain internal storage details and are never protocol identity.
@@ -163,7 +164,7 @@ The operational contract is documented in the [delegated OAuth and MCP guide](./
 
 The packaged schema contains the maintained core/JWT/OAuth profile. Plugins that add tables or fields—such as organizations, admin, API keys, or two-factor authentication—use one fresh application-owned local component. The checked-in schema and metadata are generated together from the same build-only options with `better-convex auth schema`.
 
-Do not copy the adapter, mount both packaged and local components, or enable a runtime plugin absent from the generated schema. Two-factor must be ordered before `convexAuth()` and must prove that a first-factor-only session cannot obtain a Convex token.
+Do not copy the adapter, mount both packaged and local components, or enable a runtime plugin absent from the generated schema. The factory orders two-factor before the Convex plugin, and a first-factor-only session must not obtain a Convex token.
 
 The adapter's `sessionAdmission` query is part of the isolated auth component.
 Convex exposes it to the parent backend as an internal reference. It reads the
@@ -367,7 +368,9 @@ loss can let an attacker choose signed client-IP buckets.
    token-consuming route. Record only the compromised `kid` and time window.
 2. **Convex operator action:** run the internal `auth:rotateSigningKey` action,
    verify its `newKid` in public JWKS, and verify newly issued session and OAuth
-   tokens use it. Never expose key rows or delete all JWKS state.
+   tokens use it. Never expose key rows or delete all JWKS state. The internal
+   `auth:pruneSigningKeys` mutation deletes only retired keys past the 21-minute
+   grace and never the current key.
 3. Ordinary rotation deliberately retains prior verification keys for the
    token/cache/skew grace period, so it is not immediate containment of a stolen
    private key. Keep consumers closed through `previousVerifyUntil`, or deploy a

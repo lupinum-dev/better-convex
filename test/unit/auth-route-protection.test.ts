@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveRouteProtectionDecision } from '../../src/runtime/utils/auth-route-protection'
+import {
+  normalizeLocalRedirectPath,
+  resolveGuestRedirect,
+  resolveRoutePolicy,
+  resolveRouteProtectionDecision,
+} from '../../src/runtime/utils/auth-route-protection'
+
+const OPEN_REDIRECT_VECTORS = [
+  '//evil.example/steal',
+  '/\\evil.example/steal',
+  '/%5Cevil.example/steal',
+  '/%5cevil.example/steal',
+  '/%2F%2Fevil.example/steal',
+  '/%2f%2fevil.example',
+  '%2F%2Fevil.example',
+  '/\t/evil.example',
+  '/%09/evil.example',
+  '///evil.example',
+  '/.//evil.example',
+  '/..//evil.example',
+  'https://evil.example/steal',
+  'HTTPS://evil.example',
+  'javascript:alert(1)',
+  'evil.example/steal',
+  ' /dashboard',
+  '/safe\nforged',
+  '/safe%0d%0aforged',
+  '/broken%zz',
+  '',
+] as const
 
 describe('route protection decision', () => {
   it('does nothing when page is not protected', () => {
@@ -56,24 +85,18 @@ describe('route protection decision', () => {
     ).toEqual({ redirectTo: routeTarget })
   })
 
-  it.each([
-    '//evil.example/steal',
-    '/\\evil.example/steal',
-    '/%5Cevil.example/steal',
-    '/%2F%2Fevil.example/steal',
-    'https://evil.example/steal',
-    '/safe\nforged',
-    '/safe%0d%0aforged',
-    '/broken%zz',
-  ])('rejects unsafe string redirect targets: %s', (redirectTo) => {
-    expect(
-      resolveRouteProtectionDecision({
-        meta: { redirectTo },
-        defaultRedirectTo: '/auth/signin',
-        currentPath: '/dashboard',
-      }),
-    ).toBeNull()
-  })
+  it.each(OPEN_REDIRECT_VECTORS)(
+    'falls back to the default sign-in route for an unsafe per-page target: %s',
+    (redirectTo) => {
+      expect(
+        resolveRouteProtectionDecision({
+          meta: { redirectTo },
+          defaultRedirectTo: '/auth/signin',
+          currentPath: '/dashboard',
+        }),
+      ).toEqual({ redirectTo: '/auth/signin?redirect=%2Fdashboard' })
+    },
+  )
 
   it('never reflects an unsafe return target into the sign-in redirect', () => {
     expect(
@@ -107,7 +130,95 @@ describe('route protection decision', () => {
         defaultRedirectTo: '/auth/signin',
         currentPath: '/dashboard',
       }),
-    ).toBeNull()
+    ).toEqual({ redirectTo: '/auth/signin?redirect=%2Fdashboard' })
     expect(routeTarget.path).toBe('//evil.example/steal')
+  })
+
+  it('protects pages without meta when routes default to protected', () => {
+    const input = {
+      routes: 'protected' as const,
+      defaultRedirectTo: '/auth/signin',
+      currentPath: '/dashboard',
+    }
+    expect(resolveRouteProtectionDecision({ ...input, meta: undefined })).toEqual({
+      redirectTo: '/auth/signin?redirect=%2Fdashboard',
+    })
+    // `convexAuth: false` opts a page out, and the sign-in page never loops.
+    expect(resolveRouteProtectionDecision({ ...input, meta: false })).toBeNull()
+    expect(
+      resolveRouteProtectionDecision({ ...input, meta: undefined, currentPath: '/auth/signin' }),
+    ).toBeNull()
+    expect(resolveRouteProtectionDecision({ ...input, meta: 'guest' })).toBeNull()
+  })
+
+  it('resolves the effective page policy', () => {
+    expect(resolveRoutePolicy(undefined)).toBe('public')
+    expect(resolveRoutePolicy(undefined, 'protected')).toBe('protected')
+    expect(resolveRoutePolicy(false, 'protected')).toBe('public')
+    expect(resolveRoutePolicy(true)).toBe('protected')
+    expect(resolveRoutePolicy({})).toBe('protected')
+    expect(resolveRoutePolicy('guest', 'protected')).toBe('guest')
+  })
+})
+
+describe('normalizeLocalRedirectPath', () => {
+  it('keeps safe local paths and normalizes dot segments', () => {
+    expect(normalizeLocalRedirectPath('/dashboard')).toBe('/dashboard')
+    expect(normalizeLocalRedirectPath('/team/../dashboard?tab=a#b')).toBe('/dashboard?tab=a#b')
+    expect(normalizeLocalRedirectPath('/%252F%252Fdouble')).toBe('/%252F%252Fdouble')
+  })
+
+  it.each(OPEN_REDIRECT_VECTORS)('rejects %j', (value) => {
+    expect(normalizeLocalRedirectPath(value)).toBeNull()
+  })
+
+  it.each([undefined, null, 42, ['/a', '/b'], { path: '/a' }])(
+    'rejects non-strings: %j',
+    (value) => {
+      expect(normalizeLocalRedirectPath(value)).toBeNull()
+    },
+  )
+})
+
+describe('guest-only route redirect', () => {
+  it('sends a signed-in visitor to the validated return path', () => {
+    expect(
+      resolveGuestRedirect({
+        returnTo: '/dashboard?tab=team',
+        guestRedirectTo: '/',
+        currentPath: '/auth/signin',
+      }),
+    ).toBe('/dashboard?tab=team')
+  })
+
+  it('falls back to guestRedirectTo without a return path', () => {
+    expect(
+      resolveGuestRedirect({ returnTo: undefined, guestRedirectTo: '/app', currentPath: '/login' }),
+    ).toBe('/app')
+  })
+
+  it.each(OPEN_REDIRECT_VECTORS)('never follows an unsafe return path: %j', (returnTo) => {
+    expect(resolveGuestRedirect({ returnTo, guestRedirectTo: '/app', currentPath: '/login' })).toBe(
+      '/app',
+    )
+  })
+
+  it('rejects a repeated redirect parameter as ambiguous', () => {
+    expect(
+      resolveGuestRedirect({
+        returnTo: ['/a', '//evil.example'],
+        guestRedirectTo: '/app',
+        currentPath: '/login',
+      }),
+    ).toBe('/app')
+  })
+
+  it('never redirects a guest page to itself', () => {
+    expect(
+      resolveGuestRedirect({ returnTo: '/login?x=1', guestRedirectTo: '/', currentPath: '/login' }),
+    ).toBe('/')
+    expect(
+      resolveGuestRedirect({ returnTo: undefined, guestRedirectTo: '/', currentPath: '/' }),
+    ).toBeNull()
   })
 })

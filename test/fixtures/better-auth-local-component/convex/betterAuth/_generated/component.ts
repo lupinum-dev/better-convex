@@ -298,6 +298,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         > | null,
         Name
       >;
+      pruneSigningKeys: FunctionReference<
+        "mutation",
+        "internal",
+        { batchSize?: number },
+        { deleted: number; deletedKids: Array<string>; hasMore: boolean },
+        Name
+      >;
       rotateSigningKey: FunctionReference<
         "mutation",
         "internal",

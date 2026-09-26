@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
+import { auth } from './auth'
 
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png'])
@@ -15,10 +16,7 @@ const IMAGE_POLICY_MESSAGE = 'File must be a GIF, JPEG, or PNG no larger than 5 
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error('Not authenticated')
-    }
+    await auth.requireUser(ctx)
 
     return await ctx.storage.generateUploadUrl()
   },
@@ -32,10 +30,7 @@ export const generateUploadUrl = mutation({
 export const saveFile = mutation({
   args: { storageId: v.id('_storage') },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error('Not authenticated')
-    }
+    const user = await auth.requireUser(ctx)
 
     // First registration wins: without this, a second insert for the same
     // storageId would let another caller contest ownership and would make the
@@ -77,7 +72,7 @@ export const saveFile = mutation({
 
     const fileId = await ctx.db.insert('files', {
       storageId: args.storageId,
-      ownerId: identity.subject,
+      ownerId: user.id,
       createdAt: Date.now(),
     })
 
@@ -89,8 +84,8 @@ export const saveFile = mutation({
 export const getUrl = query({
   args: { storageId: v.id('_storage') },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
+    const user = await auth.getUser(ctx)
+    if (!user) {
       return null
     }
 
@@ -99,7 +94,7 @@ export const getUrl = query({
       .withIndex('by_storage', (q) => q.eq('storageId', args.storageId))
       .unique()
 
-    if (!file || file.ownerId !== identity.subject) {
+    if (!file || file.ownerId !== user.id) {
       return null
     }
 
@@ -115,17 +110,14 @@ export const getUrl = query({
 export const deleteFile = mutation({
   args: { storageId: v.id('_storage') },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error('Not authenticated')
-    }
+    const user = await auth.requireUser(ctx)
 
     const file = await ctx.db
       .query('files')
       .withIndex('by_storage', (q) => q.eq('storageId', args.storageId))
       .unique()
 
-    if (!file || file.ownerId !== identity.subject) {
+    if (!file || file.ownerId !== user.id) {
       throw new Error('Not authorized')
     }
 

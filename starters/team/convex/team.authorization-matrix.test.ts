@@ -50,75 +50,79 @@ describe('team public authorization matrix', () => {
     // it exposes no organization rows without a live Better Auth session.
     await expect(t.query(api.organizations.listMine, {})).resolves.toEqual([])
     await expect(t.query(api.organizations.getCapabilities, { organizationId })).rejects.toThrow(
-      'Unauthenticated',
+      'Authentication required',
     )
     await expect(
       t.mutation(api.organizations.create, { name: 'Anonymous Organization' }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.mutation(api.organizations.createTeam, { organizationId, name: 'Anonymous Team' }),
-    ).rejects.toThrow('Unauthenticated')
-    await expect(t.query(api.teams.getCapabilities, { teamId })).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
+    await expect(t.query(api.teams.getCapabilities, { teamId })).rejects.toThrow(
+      'Authentication required',
+    )
     await expect(
       t.mutation(api.teams.rename, { teamId, name: 'Anonymous Team Rename' }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.query(api.audit.listForTeam, {
         teamId,
         paginationOpts: { cursor: null, numItems: 10 },
       }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.mutation(api.organizations.rename, { organizationId, name: 'Anonymous Rename' }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.query(api.organizations.listMembers, {
         organizationId,
         paginationOpts: { cursor: null, numItems: 10 },
       }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.query(api.organizations.listInvitations, {
         organizationId,
         paginationOpts: { cursor: null, numItems: 10 },
       }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.mutation(api.organizations.inviteMember, {
         organizationId,
         email: 'anonymous@example.com',
         role: 'member',
       }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.mutation(api.organizations.changeMemberRole, {
         organizationId,
         memberId: 'member-id',
         role: 'viewer',
       }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.mutation(api.organizations.removeMember, {
         organizationId,
         memberId: 'member-id',
       }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.mutation(api.teams.removeMember, { teamId, userId: 'member-id' }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(t.query(api.projects.getCreateRateLimit, { teamId })).rejects.toThrow(
-      'Unauthenticated',
+      'Authentication required',
     )
-    await expect(t.mutation(api.projects.restore, { projectId })).rejects.toThrow('Unauthenticated')
+    await expect(t.mutation(api.projects.restore, { projectId })).rejects.toThrow(
+      'Authentication required',
+    )
     await expect(t.query(api.invitations.get, { invitationId: 'invitation-id' })).rejects.toThrow(
-      'Unauthenticated',
+      'Authentication required',
     )
     await expect(
       t.mutation(api.invitations.accept, { invitationId: 'invitation-id' }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.mutation(api.invitations.reject, { invitationId: 'invitation-id' }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(t.query(api.users.getCurrent, {})).resolves.toBeNull()
 
     const expiredSeed = await signUpBetterAuthUser(t, { label: 'expired_matrix_user' })
@@ -137,7 +141,7 @@ describe('team public authorization matrix', () => {
     await expect(expired.query(api.users.getCurrent, {})).resolves.toBeNull()
     await expect(
       expired.mutation(api.organizations.create, { name: 'Expired Organization' }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
   })
 
   it('rechecks tenant membership, team membership, and role on capability and audit reads', async () => {

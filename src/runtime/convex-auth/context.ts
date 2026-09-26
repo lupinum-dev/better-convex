@@ -20,6 +20,7 @@ export function isWritableAuthCtx<DataModel extends GenericDataModel>(
   return 'runMutation' in ctx && typeof ctx.runMutation === 'function'
 }
 
+/** Internal guard for library-owned writes; applications get writable contexts from the factory. */
 export function requireWritableAuthCtx<DataModel extends GenericDataModel>(
   ctx: AuthCtx<DataModel>,
 ): asserts ctx is WritableAuthCtx<DataModel> {

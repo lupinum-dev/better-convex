@@ -6,7 +6,7 @@ export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.bet
   organization: {},
 })
 
-export const { authComponent, createAuth } = betterConvexAuth
+export const { createAuth } = betterConvexAuth
 
 // Pre-traffic operator ceremony: provision/rotate the one official JWT key graph.
 export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()

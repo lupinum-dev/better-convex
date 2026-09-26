@@ -1,6 +1,7 @@
 import type { GenericDataModel } from 'convex/server'
 
 import type { AuthCtx } from './context'
+import { authConfigFailure } from './diagnostics'
 import { validateOAuthProviderProfile, type PinnedOAuthProviderProfile } from './oauth-security'
 
 export interface BetterConvexPublicOAuthClientInput {
@@ -195,8 +196,8 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
       try {
         oauthProfile = await input.resolveProfile(ctx)
         if (oauthProfile) validateOAuthProviderProfile(oauthProfile)
-      } catch {
-        throw new Error('AUTH_CONFIG_INVALID')
+      } catch (error) {
+        throw authConfigFailure('AUTH_CONFIG_OAUTH_PROFILE_FAILED', error)
       }
       if (!oauthProfile) throw new TypeError('AUTH_OAUTH_PROVIDER_REQUIRED')
       const admittedScopes = new Set(oauthProfile.scopes)

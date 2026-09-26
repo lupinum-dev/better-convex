@@ -1,12 +1,11 @@
-import { convexTest } from 'convex-test'
+import { signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { describe, expect, it } from 'vitest'
 
 import { api, components, internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
-import schema from './schema'
-import { initConvexTest, modules } from './test.setup'
+import { initConvexTest } from './test.setup'
 
-async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
+async function seedUser(t: ReturnType<typeof initConvexTest>, subject: string) {
   return await t.run(async (ctx) => {
     return await ctx.db.insert('users', {
       subject,
@@ -19,7 +18,7 @@ async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
 }
 
 async function seedOrganization(
-  t: ReturnType<typeof convexTest>,
+  t: ReturnType<typeof initConvexTest>,
   userId: Id<'users'>,
   kind: 'agency' | 'client',
   name: string,
@@ -44,7 +43,7 @@ async function seedOrganization(
 }
 
 async function linkClient(
-  t: ReturnType<typeof convexTest>,
+  t: ReturnType<typeof initConvexTest>,
   agencyOrganizationId: Id<'organizations'>,
   clientOrganizationId: Id<'organizations'>,
 ) {
@@ -327,7 +326,7 @@ describe('agency starter invariants', () => {
   })
 
   it('agency member can list linked client workspaces only', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const agencyUserId = await seedUser(t, 'agency')
     const clientUserId = await seedUser(t, 'client')
     const agencyOrganizationId = await seedOrganization(t, agencyUserId, 'agency', 'Agency')
@@ -335,24 +334,24 @@ describe('agency starter invariants', () => {
     await seedOrganization(t, clientUserId, 'client', 'Unlinked')
     await linkClient(t, agencyOrganizationId, linkedClientId)
 
-    const clients = await t
-      .withIdentity({ subject: 'agency' })
-      .query(api.organizationLinks.listClients, {
-        agencyOrganizationId,
-      })
+    const clients = await (
+      await signInAs(t, 'agency')
+    ).query(api.organizationLinks.listClients, {
+      agencyOrganizationId,
+    })
 
     expect(clients.map((client: { name: string }) => client.name)).toEqual(['Linked'])
   })
 
   it('agency member cannot access unlinked clients', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const agencyUserId = await seedUser(t, 'agency')
     const clientUserId = await seedUser(t, 'client')
     const agencyOrganizationId = await seedOrganization(t, agencyUserId, 'agency', 'Agency')
     const clientOrganizationId = await seedOrganization(t, clientUserId, 'client', 'Client')
 
     await expect(
-      t.withIdentity({ subject: 'agency' }).mutation(api.clientProjects.createForClient, {
+      (await signInAs(t, 'agency')).mutation(api.clientProjects.createForClient, {
         agencyOrganizationId,
         clientOrganizationId,
         name: 'Blocked',
@@ -361,7 +360,7 @@ describe('agency starter invariants', () => {
   })
 
   it('client member cannot access sibling clients', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const clientUserId = await seedUser(t, 'client')
     await seedOrganization(t, clientUserId, 'client', 'Own')
     const siblingClientId = await t.run(async (ctx) => {
@@ -379,14 +378,14 @@ describe('agency starter invariants', () => {
     })
 
     await expect(
-      t.withIdentity({ subject: 'client' }).query(api.clientProjects.listForClient, {
+      (await signInAs(t, 'client')).query(api.clientProjects.listForClient, {
         clientOrganizationId: siblingClientId,
       }),
     ).rejects.toThrow('Organization access denied')
   })
 
   it('revoked link removes delegated access', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const agencyUserId = await seedUser(t, 'agency')
     const clientUserId = await seedUser(t, 'client')
     const agencyOrganizationId = await seedOrganization(t, agencyUserId, 'agency', 'Agency')
@@ -406,7 +405,7 @@ describe('agency starter invariants', () => {
     })
 
     await expect(
-      t.withIdentity({ subject: 'agency' }).mutation(api.clientProjects.createForClient, {
+      (await signInAs(t, 'agency')).mutation(api.clientProjects.createForClient, {
         agencyOrganizationId,
         clientOrganizationId,
         name: 'Blocked',
@@ -415,20 +414,22 @@ describe('agency starter invariants', () => {
   })
 
   it('allows an administrator on the client side to revoke delegated access', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const agencyUserId = await seedUser(t, 'agency')
     const clientUserId = await seedUser(t, 'client')
     const agencyOrganizationId = await seedOrganization(t, agencyUserId, 'agency', 'Agency')
     const clientOrganizationId = await seedOrganization(t, clientUserId, 'client', 'Client')
     await linkClient(t, agencyOrganizationId, clientOrganizationId)
 
-    await t.withIdentity({ subject: 'client' }).mutation(api.organizationLinks.revoke, {
+    await (
+      await signInAs(t, 'client')
+    ).mutation(api.organizationLinks.revoke, {
       agencyOrganizationId,
       clientOrganizationId,
     })
 
     await expect(
-      t.withIdentity({ subject: 'agency' }).query(api.organizationLinks.assertClientAccess, {
+      (await signInAs(t, 'agency')).query(api.organizationLinks.assertClientAccess, {
         agencyOrganizationId,
         clientOrganizationId,
       }),
@@ -447,14 +448,14 @@ describe('agency starter invariants', () => {
   })
 
   it('rejects delegated links whose organization kinds are reversed', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const userId = await seedUser(t, 'agency')
     const wrongAgencyId = await seedOrganization(t, userId, 'client', 'Not an agency')
     const wrongClientId = await seedOrganization(t, userId, 'agency', 'Not a client')
     await linkClient(t, wrongAgencyId, wrongClientId)
 
     await expect(
-      t.withIdentity({ subject: 'agency' }).query(api.organizationLinks.assertClientAccess, {
+      (await signInAs(t, 'agency')).query(api.organizationLinks.assertClientAccess, {
         agencyOrganizationId: wrongAgencyId,
         clientOrganizationId: wrongClientId,
       }),
@@ -462,14 +463,16 @@ describe('agency starter invariants', () => {
   })
 
   it('audit records delegated access path', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const agencyUserId = await seedUser(t, 'agency')
     const clientUserId = await seedUser(t, 'client')
     const agencyOrganizationId = await seedOrganization(t, agencyUserId, 'agency', 'Agency')
     const clientOrganizationId = await seedOrganization(t, clientUserId, 'client', 'Client')
     await linkClient(t, agencyOrganizationId, clientOrganizationId)
 
-    await t.withIdentity({ subject: 'agency' }).mutation(api.clientProjects.createForClient, {
+    await (
+      await signInAs(t, 'agency')
+    ).mutation(api.clientProjects.createForClient, {
       agencyOrganizationId,
       clientOrganizationId,
       name: 'Audit me',

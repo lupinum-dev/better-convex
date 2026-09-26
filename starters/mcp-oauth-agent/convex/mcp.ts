@@ -9,7 +9,7 @@ import { z } from 'zod'
 
 import { internal } from './_generated/api'
 import { httpAction, type ActionCtx } from './_generated/server'
-import { authComponent } from './auth'
+import { auth } from './auth'
 import { serializePrincipal, type SerializableOAuthPrincipal } from './mcp/policy'
 import { MCP_SCOPES, isMcpScope, type McpScope } from './mcp/scopes'
 
@@ -190,7 +190,7 @@ export const handleMcp = httpAction(async (ctx, request) => {
     jwksUrl: `${issuer}/jwks`,
     maxLifetimeSeconds: 600,
     validateLiveAccess: async (access) => {
-      if (!(await authComponent.validateOAuthAccess(ctx, access))) return false
+      if (!(await auth.validateOAuthAccess(ctx, access))) return false
       verifiedPrincipal = access
       return true
     },

@@ -34,6 +34,7 @@ export type ConvexCallStatus = ClientCallStatus
 export type { ConvexQueryBlockedBy }
 
 export interface UseConvexQueryOptions {
+  /** Defaults to the plugin's `defaultQueryAuth` (`'optional'` unless configured). */
   readonly auth?: ConvexAuthMode
   readonly keepPreviousData?: boolean
   readonly immediate?: boolean
@@ -112,7 +113,7 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
   type Raw = FunctionReturnType<Query>
   const { query, args, options, hydrationSeed } = input
   const runtime = useBetterConvexRuntime()
-  const auth = options?.auth ?? 'optional'
+  const auth = options?.auth ?? runtime.defaultQueryAuth
   const noQueryValue = Symbol('no-query-value')
   const raw = shallowRef<Raw | typeof noQueryValue>(
     hydrationSeed === undefined ? noQueryValue : hydrationSeed.value,

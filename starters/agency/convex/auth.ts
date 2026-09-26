@@ -79,7 +79,7 @@ async function syncAgencyUserActor(
   return 'patched'
 }
 
-export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.betterAuth, {
+export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
   organization: false,
   triggers: {
@@ -99,9 +99,9 @@ export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.bet
   },
 })
 
-export const { authComponent, createAuth } = betterConvexAuth
+export const { createAuth } = auth
 
-export const { onCreate, onUpdate, onDelete } = betterConvexAuth.triggerFunctions()
+export const { onCreate, onUpdate, onDelete } = auth.triggerFunctions()
 
 /** Rebuild one bounded page of the app user projection from Better Auth user truth. */
 export const rebuildUserProjectionBatch = internalMutation({
@@ -126,4 +126,5 @@ export const rebuildUserProjectionBatch = internalMutation({
 })
 
 // Pre-traffic operator ceremony: provision/rotate the one official JWT key graph.
-export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()
+// Schedule pruneSigningKeys to delete retired keys after the verification grace.
+export const { ensureSigningKey, pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()

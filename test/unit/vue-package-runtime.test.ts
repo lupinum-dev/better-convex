@@ -1027,4 +1027,46 @@ describe('better-convex-vue package runtime', () => {
     ])
     scope.stop()
   })
+
+  it('applies the plugin defaultQueryAuth to queries that omit auth', () => {
+    const host = attachedRuntime('anon')
+    host.emit({
+      authEnabled: true,
+      settled: true,
+      identityKey: 'anonymous',
+      identityGeneration: 2,
+      error: null,
+    })
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment, defaultQueryAuth: 'required' }))
+    const scope = effectScope()
+    const queries = app.runWithContext(() =>
+      scope.run(() => ({
+        defaulted: useConvexQuery(makeFunctionReference<'query'>('notes:defaulted'), {}),
+        explicit: useConvexQuery(
+          makeFunctionReference<'query'>('notes:explicit'),
+          {},
+          { auth: 'optional' },
+        ),
+        paginated: useConvexPaginatedQuery(
+          makeFunctionReference<'query'>('notes:paginated') as never,
+          {},
+          { initialNumItems: 1 },
+        ),
+      })),
+    )!
+
+    expect(queries.defaulted.blockedBy.value).toBe('auth')
+    expect(queries.paginated.blockedBy.value).toBe('auth')
+    expect(queries.explicit.blockedBy.value).toBeNull()
+    expect(host.subscriptions).toHaveLength(1)
+    scope.stop()
+  })
+
+  it.each(['auto', 'OPTIONAL', null, 1])('rejects an invalid defaultQueryAuth: %j', (value) => {
+    const host = attachedRuntime('invalid')
+    expect(() =>
+      createBetterConvex({ attachment: host.attachment, defaultQueryAuth: value as never }),
+    ).toThrow(TypeError)
+  })
 })

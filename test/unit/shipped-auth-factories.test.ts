@@ -286,7 +286,7 @@ describe('shipped Better Auth factory invariants', () => {
   it.each(authApps)('%s registers only the lazy Better Auth HTTP ceremony', (app) => {
     const http = read(`${app}/convex/http.ts`)
 
-    expect(http).toContain('betterConvexAuth.registerRoutes(http)')
+    expect(http).toMatch(/\b(?:auth|betterConvexAuth)\.registerRoutes\(http\)/)
     expect(http).not.toContain('registerRoutesLazy')
   })
 
@@ -304,7 +304,7 @@ describe('shipped Better Auth factory invariants', () => {
     expect(source).toContain('value.length < 32')
     expect(source).toContain('trustedOrigins: [siteUrl]')
     expect(source).toContain("ipAddressHeaders: ['x-bcn-verified-client-ip']")
-    expect(source).toContain("throw new Error('AUTH_CONFIG_INVALID')")
+    expect(source).toContain('throw authConfigFailure(stage, error)')
     expect(source).not.toContain('estimatedEntropy')
     expect(source).toContain('unique versioned secrets of 32 characters')
   })
@@ -394,7 +394,8 @@ describe('shipped Better Auth factory invariants', () => {
     expect(auth).toContain("throw new Error('GITHUB_CLIENT_SECRET is required')")
     expect(factory).toContain('encryptOAuthTokens: true')
     expect(factory).toContain('disableImplicitLinking: true')
-    expect(factory).toContain('trustedProviders: []')
+    expect(factory).toContain('trustedProviders,')
+    expect(factory).toContain('admits only configured social providers')
     expect(factory).toContain('allowDifferentEmails: false')
     expect(factory).toContain('allowUnlinkingAll: false')
   })

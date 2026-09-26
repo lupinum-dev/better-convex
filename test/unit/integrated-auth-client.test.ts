@@ -12,8 +12,9 @@ function reconciler(
   overrides: Partial<CanonicalSessionReconciler> = {},
 ): CanonicalSessionReconciler {
   return {
-    checkpoint: vi.fn(() => ({ revision: 0 })),
+    checkpoint: vi.fn(() => ({ revision: 0, sessionSignals: 0, sessionRequests: 0 })),
     cancel: vi.fn(),
+    settle: vi.fn(async () => {}),
     reconcile: vi.fn(async () => {}),
     ...overrides,
   }
@@ -87,9 +88,9 @@ describe('integrated Better Auth client', () => {
     expect(() => Object.preventExtensions(integrated)).toThrow(TypeError)
   })
 
-  it('reconciles fulfilled, rejected, and result-error Promise operations', async () => {
+  it('settles fulfilled, rejected, and result-error Promise operations', async () => {
     const originalFailure = new Error('operation failed after rotating its cookie')
-    const reconcile = vi.fn(async () => {})
+    const settle = vi.fn(async () => {})
     const integrated = createIntegratedAuthClient(
       {
         success: () => Promise.resolve({ data: { ok: true }, error: null }),
@@ -97,7 +98,7 @@ describe('integrated Better Auth client', () => {
         reject: () => Promise.reject(originalFailure),
         thenable: () => ({ then: (resolve: (value: string) => void) => resolve('thenable') }),
       },
-      reconciler({ reconcile }),
+      reconciler({ settle }),
     )
 
     await expect(integrated.success()).resolves.toEqual({ data: { ok: true }, error: null })
@@ -107,17 +108,17 @@ describe('integrated Better Auth client', () => {
     })
     await expect(integrated.reject()).rejects.toBe(originalFailure)
     await expect(integrated.thenable()).resolves.toBe('thenable')
-    expect(reconcile).toHaveBeenCalledTimes(4)
+    expect(settle).toHaveBeenCalledTimes(4)
   })
 
-  it('does not expose a Promise outcome until reconciliation settles', async () => {
+  it('does not expose a Promise outcome until session settlement finishes', async () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
     const integrated = createIntegratedAuthClient(
       { signOut: async () => ({ data: { success: true }, error: null }) },
-      reconciler({ reconcile: vi.fn(() => gate) }),
+      reconciler({ settle: vi.fn(() => gate) }),
     )
     let settled = false
     const operation = integrated.signOut().then(() => {
@@ -134,7 +135,7 @@ describe('integrated Better Auth client', () => {
 
   it('keeps native bound actions inside the reconciliation boundary', async () => {
     const originalFailure = new Error('bound action failed')
-    const reconcile = vi.fn(async () => {})
+    const settle = vi.fn(async () => {})
     const integrated = createIntegratedAuthClient(
       {
         success: async () => 'bound success',
@@ -145,7 +146,7 @@ describe('integrated Better Auth client', () => {
           return value
         },
       },
-      reconciler({ reconcile }),
+      reconciler({ settle }),
     )
 
     const boundSuccess = integrated.success.bind(null)
@@ -156,7 +157,7 @@ describe('integrated Better Auth client', () => {
     await expect(boundSuccess()).resolves.toBe('bound success')
     await expect(boundReject()).rejects.toBe(originalFailure)
     await expect(echoedSuccess()).resolves.toBe('bound success')
-    expect(reconcile).toHaveBeenCalledTimes(3)
+    expect(settle).toHaveBeenCalledTimes(3)
   })
 
   it('returns synchronous results unchanged and surfaces sync reconciliation failure', () => {

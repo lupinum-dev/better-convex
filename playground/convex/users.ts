@@ -1,16 +1,17 @@
 import { query } from './_generated/server'
+import { auth } from './auth'
 
 // Get the currently authenticated user from the custom users table
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
+    const authUser = await auth.getUser(ctx)
+    if (!authUser) {
       return null
     }
 
-    // The subject is the Better Auth user ID (matches authId in users table)
-    const authId = identity.subject
+    // The Better Auth user ID matches authId in the users table.
+    const authId = authUser.id
 
     // Query the custom users table using by_auth_id index
     const user = await ctx.db

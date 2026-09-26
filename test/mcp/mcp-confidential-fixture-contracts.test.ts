@@ -20,13 +20,13 @@ const evidenceSource = readFileSync(
 
 describe('confidential OAuth code fixture contracts', () => {
   it('keeps confidential provisioning on one dedicated admin-only no-store endpoint', () => {
-    expect(providerSource).toContain("'/mcp/admin/provision-confidential'")
-    expect(providerSource).toMatch(
-      /provisionMcpConfidentialFixture:[\s\S]+metadata: \{ noStore: true \}[\s\S]+use: \[sessionMiddleware\]/u,
-    )
+    expect(providerSource).toContain("'provision-confidential': async ({ call, resource }) => {")
+    expect(providerSource).toContain('path: `/api/auth/mcp/admin/${name}`')
+    expect(providerSource).toContain("'cache-control': 'no-store'")
+    expect(providerSource).toContain('return auth.sessionHttpAction(async (ctx, session) => {')
     expect(providerSource).not.toContain('x-bcn-confidential-fixture')
     expect(providerSource).toContain('const client = await provisionConfidentialClient(')
-    expect(providerSource).toContain('return ctx.json({ client, resource })')
+    expect(providerSource).toContain('return { client, resource }')
     expect(providerSource).toContain(
       'clients: { inspector: clientIds[0], mcpRemote: clientIds[1] },',
     )
@@ -38,8 +38,8 @@ describe('confidential OAuth code fixture contracts', () => {
     expect(providerSource).toContain("value.token_endpoint_auth_method !== 'client_secret_basic'")
     expect(providerSource).toContain('value.require_pkce !== true')
     expect(providerSource).toContain("scope: MCP_SCOPES.join(' ')")
-    expect(providerSource).toContain('provider.endpoints.adminLinkClientResource')
-    expect(providerSource).toContain('provider.endpoints.rotateClientSecret')
+    expect(providerSource).toContain("call('adminLinkClientResource'")
+    expect(providerSource).toContain("call('rotateClientSecret'")
     expect(providerSource).not.toMatch(/console\.(?:debug|error|info|log|warn)/u)
   })
 

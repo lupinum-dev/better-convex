@@ -6,15 +6,14 @@
  * getUser()/authorize().
  */
 
-import { convexTest } from 'convex-test'
+import { signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { describe, expect, it } from 'vitest'
 
 import { api } from './_generated/api'
 import { checkPermission } from './permissions.config'
-import schema from './schema'
-import { modules } from './test.setup'
+import { initConvexTest } from './test.setup'
 
-type ConvexTest = ReturnType<typeof convexTest>
+type ConvexTest = ReturnType<typeof initConvexTest>
 
 async function seedUser(t: ConvexTest, authId: string) {
   return await t.run(async (ctx) => {
@@ -62,7 +61,7 @@ async function expectConvexErrorCode(promise: Promise<unknown>, code: string) {
 
 describe('posts unauthenticated access', () => {
   it('returns empty list results for signed-out callers', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await seedPost(t, 'user_owner')
 
     const posts = await t.query(api.posts.list, {})
@@ -71,7 +70,7 @@ describe('posts unauthenticated access', () => {
   })
 
   it('returns an empty paginated result for signed-out callers', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await seedPost(t, 'user_owner')
 
     const page = await t.query(api.posts.listPaginated, {
@@ -82,7 +81,7 @@ describe('posts unauthenticated access', () => {
   })
 
   it('returns null from get for signed-out callers', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const postId = await seedPost(t, 'user_owner')
 
     const post = await t.query(api.posts.get, { id: postId })
@@ -91,7 +90,7 @@ describe('posts unauthenticated access', () => {
   })
 
   it('throws structured UNAUTHENTICATED errors for protected mutations', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const postId = await seedPost(t, 'user_owner')
 
     await expectConvexErrorCode(
@@ -107,11 +106,11 @@ describe('posts unauthenticated access', () => {
   })
 
   it('treats an identity without a synced user projection as unauthenticated', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
 
     await expectConvexErrorCode(
-      t
-        .withIdentity({ subject: 'missing_projection' })
+      (await signInAs(t, 'missing_projection'))
+
         .mutation(api.posts.create, { title: 'Draft', content: 'Body' }),
       'UNAUTHENTICATED',
     )
@@ -120,11 +119,13 @@ describe('posts unauthenticated access', () => {
 
 describe('posts ownership authorization', () => {
   it('creates posts owned by the signed-in user', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await seedUser(t, 'user_owner')
 
-    const postId = await t
-      .withIdentity({ subject: 'user_owner' })
+    const postId = await (
+      await signInAs(t, 'user_owner')
+    )
+
       .mutation(api.posts.create, { title: 'Draft', content: 'Body' })
 
     const post = await t.run(async (ctx) => await ctx.db.get(postId))
@@ -137,14 +138,14 @@ describe('posts ownership authorization', () => {
   })
 
   it('lists and gets only posts owned by the caller', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await seedUser(t, 'user_owner')
     await seedUser(t, 'user_other')
     const ownerPostId = await seedPost(t, 'user_owner')
     await seedPost(t, 'user_other')
 
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
-    const asOther = t.withIdentity({ subject: 'user_other' })
+    const asOwner = await signInAs(t, 'user_owner')
+    const asOther = await signInAs(t, 'user_other')
 
     const ownerList = await asOwner.query(api.posts.list, {})
     expect(ownerList.map((post) => post.ownerId)).toEqual(['user_owner'])
@@ -153,14 +154,16 @@ describe('posts ownership authorization', () => {
   })
 
   it('paginates only posts owned by the caller', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await seedUser(t, 'user_owner')
     await seedUser(t, 'user_other')
     await seedPost(t, 'user_owner')
     await seedPost(t, 'user_owner')
     await seedPost(t, 'user_other')
 
-    const page = await t.withIdentity({ subject: 'user_owner' }).query(api.posts.listPaginated, {
+    const page = await (
+      await signInAs(t, 'user_owner')
+    ).query(api.posts.listPaginated, {
       paginationOpts: { numItems: 10, cursor: null },
     })
 
@@ -169,9 +172,9 @@ describe('posts ownership authorization', () => {
   })
 
   it('allows the owner to update, publish, and remove a post', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await seedUser(t, 'user_owner')
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
+    const asOwner = await signInAs(t, 'user_owner')
     const postId = await asOwner.mutation(api.posts.create, { title: 'Draft', content: 'Body' })
 
     await asOwner.mutation(api.posts.update, { id: postId, title: 'Updated' })
@@ -185,11 +188,11 @@ describe('posts ownership authorization', () => {
   })
 
   it('rejects non-owner update, publish, and remove without changing the post', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await seedUser(t, 'user_owner')
     await seedUser(t, 'user_other')
     const postId = await seedPost(t, 'user_owner')
-    const asOther = t.withIdentity({ subject: 'user_other' })
+    const asOther = await signInAs(t, 'user_other')
 
     await expectConvexErrorCode(
       asOther.mutation(api.posts.update, { id: postId, title: 'Stolen' }),
@@ -203,13 +206,13 @@ describe('posts ownership authorization', () => {
   })
 
   it('throws NOT_FOUND before ownership checks for missing posts', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await seedUser(t, 'user_owner')
     const missingId = await seedPost(t, 'user_owner')
     await t.run(async (ctx) => {
       await ctx.db.delete(missingId)
     })
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
+    const asOwner = await signInAs(t, 'user_owner')
 
     await expectConvexErrorCode(
       asOwner.mutation(api.posts.update, { id: missingId, title: 'Missing' }),

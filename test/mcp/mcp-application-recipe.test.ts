@@ -89,7 +89,7 @@ describe('ordinary application MCP recipe', () => {
         },
       })),
     }
-    const authComponent = {
+    const auth = {
       validateOAuthAccess: async (_ctx: unknown, value: OAuthLiveAccess) => {
         checked.push(value)
         return live
@@ -103,7 +103,7 @@ describe('ordinary application MCP recipe', () => {
     }>('convex/mcpTools.ts', {
       ConvexError,
       v,
-      authComponent,
+      auth,
       mcpAddresses: () => addresses,
       internalQuery: (definition: unknown) => definition,
     })
@@ -114,7 +114,7 @@ describe('ordinary application MCP recipe', () => {
     }>('convex/mcp.ts', {
       ConvexError,
       z,
-      authComponent,
+      auth,
       handleMcpRequest,
       console: { error: diagnostics },
       MCP_SCOPES: ['mcp:read'],

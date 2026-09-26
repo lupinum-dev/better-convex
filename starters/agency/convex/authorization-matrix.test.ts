@@ -1,3 +1,4 @@
+import { signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { describe, expect, it } from 'vitest'
 
 import { api } from './_generated/api'
@@ -12,10 +13,10 @@ describe('agency public authorization matrix', () => {
         name: 'Anonymous Agency',
         kind: 'agency',
       }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
 
     await expect(
-      t.withIdentity({ subject: 'missing-projection' }).mutation(api.organizations.create, {
+      (await signInAs(t, 'missing-projection')).mutation(api.organizations.create, {
         name: 'Missing Projection Agency',
         kind: 'agency',
       }),
@@ -31,12 +32,12 @@ describe('agency public authorization matrix', () => {
       })
     })
 
-    const organizationId = await t
-      .withIdentity({ subject: 'owner' })
-      .mutation(api.organizations.create, {
-        name: '  Defensible Agency  ',
-        kind: 'agency',
-      })
+    const organizationId = await (
+      await signInAs(t, 'owner')
+    ).mutation(api.organizations.create, {
+      name: '  Defensible Agency  ',
+      kind: 'agency',
+    })
 
     const rows = await t.run(async (ctx) => ({
       organization: await ctx.db.get(organizationId),
@@ -108,13 +109,13 @@ describe('agency public authorization matrix', () => {
 
     await expect(
       t.query(api.organizationLinks.listClients, { agencyOrganizationId }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
     await expect(
       t.mutation(api.organizationLinks.revoke, {
         agencyOrganizationId,
         clientOrganizationId,
       }),
-    ).rejects.toThrow('Unauthenticated')
+    ).rejects.toThrow('Authentication required')
 
     const link = await t.run(async (ctx) => {
       return await ctx.db

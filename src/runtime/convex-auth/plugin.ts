@@ -18,7 +18,8 @@ import {
   assertSupportedJwksOptions,
   createPublicJwksResponse,
   rejectImplicitSigningKeyCreation,
-  sanitizeStoredJwk,
+  reportJwksFailure,
+  selectUsableStoredJwks,
 } from './jwks-rotation'
 import {
   assertSafePinnedClientProvisioning,
@@ -66,7 +67,19 @@ export interface ConvexAuthOptions {
   sessionJwt: SessionJwtOptions
 }
 
-const forbiddenCustomClaims = new Set(['aud', 'exp', 'iat', 'iss', 'jti', 'nbf', 'sub'])
+// Registered JWT claims plus the claims that bind a token to its session and
+// token class. Custom (and default) session claims can never set these.
+const forbiddenCustomClaims = new Set([
+  'aud',
+  'exp',
+  'iat',
+  'iss',
+  'jti',
+  'nbf',
+  'sid',
+  'sub',
+  'token_use',
+])
 const TOKEN_FIELDS = [
   'client_assertion',
   'client_assertion_type',
@@ -107,7 +120,7 @@ const sharedJwksReader: NonNullable<NonNullable<JwtOptions['adapter']>['getJwks'
   const rows = (await endpointContext.context.adapter.findMany({
     model: 'jwks',
   })) as Jwk[]
-  return rows.map((row) => sanitizeStoredJwk(row))
+  return selectUsableStoredJwks(rows, { requireEncryptedCurrentKey: true })
 }
 
 function configureSharedJwks(
@@ -685,12 +698,19 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
             model: 'jwks',
           })
           return { response: createPublicJwksResponse(rows, request.method) }
-        } catch {
+        } catch (error) {
+          reportJwksFailure(error)
           return {
-            response: new Response(null, {
-              headers: { 'Cache-Control': 'private, no-store' },
-              status: 500,
-            }),
+            response: new Response(
+              request.method === 'HEAD' ? null : JSON.stringify({ code: 'AUTH_JWKS_UNAVAILABLE' }),
+              {
+                headers: {
+                  'Cache-Control': 'private, no-store',
+                  'Content-Type': 'application/json',
+                },
+                status: 500,
+              },
+            ),
           }
         }
       }
@@ -888,6 +908,9 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
               session: persistedSession,
               user: persistedUser,
             })) ?? {}
+          if (typeof customClaims !== 'object' || Array.isArray(customClaims)) {
+            throw new TypeError('AUTH_SESSION_JWT_CLAIMS_INVALID')
+          }
           for (const claim of Object.keys(customClaims)) {
             if (forbiddenCustomClaims.has(claim)) {
               throw new Error(`AUTH_SESSION_JWT_RESERVED_CLAIM:${claim}`)

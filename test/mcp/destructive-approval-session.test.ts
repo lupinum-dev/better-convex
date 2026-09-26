@@ -121,7 +121,9 @@ describe('destructive project approval', () => {
 
     await expect(
       test.withIdentity(identity).mutation(approveProjectDelete, { approvalId }),
-    ).rejects.toMatchObject({ data: 'Unauthenticated' })
+    ).rejects.toMatchObject({
+      data: { code: 'UNAUTHENTICATED', message: 'Authentication required' },
+    })
     await expect(test.run((ctx) => ctx.db.get(approvalId))).resolves.toMatchObject({
       status: 'pending',
     })
@@ -134,7 +136,9 @@ describe('destructive project approval', () => {
 
     await expect(
       test.withIdentity(identity).mutation(approveProjectDelete, { approvalId }),
-    ).rejects.toMatchObject({ data: 'Unauthenticated' })
+    ).rejects.toMatchObject({
+      data: { code: 'UNAUTHENTICATED', message: 'Authentication required' },
+    })
     await expect(test.run((ctx) => ctx.db.get(approvalId))).resolves.toMatchObject({
       status: 'pending',
     })

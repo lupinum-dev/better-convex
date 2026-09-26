@@ -19,6 +19,7 @@ import { useNuxtApp } from '#imports'
 
 import type { ConvexCallError } from '../errors'
 import { readConvexRuntimeContext } from '../runtime-context'
+import { resolveDefaultQueryAuth } from '../utils/default-query-auth'
 import { executeQueryHttp } from '../utils/query-execution'
 import {
   useConvexQueryHydration,
@@ -218,7 +219,7 @@ export function createConvexQueryState<
 ): BuildConvexQueryResult<FunctionReturnType<Query>> {
   const { immediate, lazy } = resolveQueryLifecycleOptions(options)
   const resolvedOptions: ResolvedNuxtConvexQueryOptions = {
-    auth: options?.auth ?? 'optional',
+    auth: options?.auth ?? resolveDefaultQueryAuth(),
     immediate,
     keepPreviousData: options?.keepPreviousData,
     lazy,

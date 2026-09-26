@@ -12,8 +12,9 @@ import type { ConvexIdentityKey } from './identity-key'
  * | `optional` | Wait                 | Execute with identity | Execute anonymously |
  * | `none`     | Do not wait          | Execute anonymously   | Execute anonymously |
  *
- * The fixed default is `optional`. There is no `auto` mode and no per-build
- * default override; auth policy must not change invisibly between applications.
+ * A query without `auth` uses the build's explicit `convex.auth.defaultQueryAuth`
+ * (`optional` unless configured). SSR and the browser read the same value, and
+ * there is no `auto` mode.
  */
 export type ConvexAuthMode = 'required' | 'optional' | 'none'
 

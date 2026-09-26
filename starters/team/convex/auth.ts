@@ -4,6 +4,7 @@ import {
   requireAuthOrigin,
   type AuthFunctions,
   type BetterAuthUserProjectionSource,
+  type BetterConvexAuthEmail,
 } from '@lupinum/better-convex-nuxt/better-auth/server'
 import { v } from 'convex/values'
 
@@ -15,27 +16,6 @@ import { escapeEmailHtml, sendStarterEmail } from './lib/authEmail'
 
 const authFunctions: AuthFunctions = internal.auth
 
-type InvitationEmailData = {
-  id: string
-  email: string
-  organization: {
-    name: string
-  }
-  inviter: {
-    user: {
-      name?: string | null
-      email: string
-    }
-  }
-}
-
-type VerificationEmailData = {
-  url: string
-  user: {
-    email: string
-  }
-}
-
 type BetterAuthUserPage = {
   page: BetterAuthUserProjectionSource[]
   continueCursor: string
@@ -46,21 +26,24 @@ function invitationLink(siteUrl: string, invitationId: string) {
   return `${siteUrl.replace(/\/+$/, '')}/invitations/${encodeURIComponent(invitationId)}`
 }
 
-async function sendInvitationEmail(siteUrl: string, data: InvitationEmailData) {
-  const link = invitationLink(siteUrl, data.id)
-  const inviterName = data.inviter.user.name?.trim() || data.inviter.user.email
+async function deliverInvitationEmail(
+  siteUrl: string,
+  message: Extract<BetterConvexAuthEmail, { type: 'organization-invitation' }>,
+) {
+  const link = invitationLink(siteUrl, message.invitationId)
+  const inviterName = message.inviter.name.trim() || message.inviter.email
   const escapedInviterName = escapeEmailHtml(inviterName)
-  const escapedOrganizationName = escapeEmailHtml(data.organization.name)
+  const escapedOrganizationName = escapeEmailHtml(message.organization.name)
   const escapedLink = escapeEmailHtml(link)
   await sendStarterEmail({
-    recipient: data.email,
+    recipient: message.to,
     siteUrl,
     fallbackLabel: 'Invitation link',
     fallbackUrl: link,
     content: {
-      subject: `${inviterName} invited you to join ${data.organization.name}`,
+      subject: `${inviterName} invited you to join ${message.organization.name}`,
       text: [
-        `${inviterName} invited you to join ${data.organization.name}.`,
+        `${inviterName} invited you to join ${message.organization.name}.`,
         '',
         `Accept the invitation: ${link}`,
       ].join('\n'),
@@ -69,16 +52,19 @@ async function sendInvitationEmail(siteUrl: string, data: InvitationEmailData) {
   })
 }
 
-async function sendVerificationEmail(siteUrl: string, data: VerificationEmailData) {
-  const escapedUrl = escapeEmailHtml(data.url)
+async function deliverVerificationEmail(
+  siteUrl: string,
+  message: Extract<BetterConvexAuthEmail, { type: 'verify-email' }>,
+) {
+  const escapedUrl = escapeEmailHtml(message.url)
   await sendStarterEmail({
-    recipient: data.user.email,
+    recipient: message.to,
     siteUrl,
     fallbackLabel: 'Verification link',
-    fallbackUrl: data.url,
+    fallbackUrl: message.url,
     content: {
       subject: 'Verify your email address',
-      text: `Click the link to verify your email: ${data.url}`,
+      text: `Click the link to verify your email: ${message.url}`,
       html: `<p><a href="${escapedUrl}">Verify your email address</a></p>`,
     },
   })
@@ -123,7 +109,7 @@ const userProjection = createUserProjectionTriggers<BetterAuthUserProjectionSour
   rebuildDoc: ({ user, existing, now }) => userProjectionPatch(user, existing, now),
 })
 
-export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.betterAuth, {
+export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
   triggers: {
     user: {
@@ -139,36 +125,38 @@ export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.bet
         userProjection.user.onDelete(ctx, user as BetterAuthUserProjectionSource),
     },
   },
-  defineSessionClaims: ({ user }) => ({
-    email: user.email,
-    emailVerified: user.emailVerified,
-    image: user.image ?? undefined,
-    name: user.name,
-  }),
+  email: async (_ctx, message) => {
+    const siteUrl = requireAuthOrigin('SITE_URL')
+    switch (message.type) {
+      case 'verify-email':
+        return await deliverVerificationEmail(siteUrl, message)
+      case 'organization-invitation':
+        return await deliverInvitationEmail(siteUrl, message)
+      default:
+        // Password reset and one-time codes are not enabled, so no other type
+        // is emitted. Better Auth only logs a rejected send; it never fails
+        // the request, so an unexpected type must not be relied on to block it.
+        throw new Error(`The team starter does not send ${message.type} email`)
+    }
+  },
   emailAndPassword: { requireEmailVerification: true },
   emailVerification: {
     autoSignInAfterVerification: true,
     sendOnSignIn: true,
     sendOnSignUp: true,
-    async sendVerificationEmail(data) {
-      await sendVerificationEmail(requireAuthOrigin('SITE_URL'), data as VerificationEmailData)
-    },
   },
-  organization: createTeamOrganizationOptions({
-    async sendInvitationEmail(data) {
-      await sendInvitationEmail(requireAuthOrigin('SITE_URL'), data as InvitationEmailData)
-    },
-  }),
+  organization: createTeamOrganizationOptions(),
 })
 
-export const { authComponent, createAuth } = betterConvexAuth
+export const { createAuth } = auth
 
 // Pre-traffic operator ceremony: provision/rotate the one official JWT key graph.
-export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()
+// Schedule pruneSigningKeys to delete retired keys after the verification grace.
+export const { ensureSigningKey, pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()
 
 export type AppAuth = Awaited<ReturnType<typeof createAuth>>
 
-export const { onCreate, onUpdate, onDelete } = betterConvexAuth.triggerFunctions()
+export const { onCreate, onUpdate, onDelete } = auth.triggerFunctions()
 
 /** Reconcile one bounded page of the display-only user projection. */
 export const rebuildUserProjectionBatch = internalMutation({

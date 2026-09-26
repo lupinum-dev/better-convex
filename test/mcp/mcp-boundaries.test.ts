@@ -18,7 +18,7 @@ describe('delegated MCP static trust boundaries', () => {
     const action = readFileSync(join(starter, 'convex/mcp.ts'), 'utf8')
     const tools = readFileSync(join(starter, 'convex/mcpTools.ts'), 'utf8')
     expect(action.match(/createBetterAuthMcpAccessVerifier\(/g)).toHaveLength(1)
-    expect(action).toContain('authComponent.validateOAuthAccess(ctx, access)')
+    expect(action).toContain('auth.validateOAuthAccess(ctx, access)')
     expect(action).toContain("from '@lupinum/better-convex-mcp'")
     expect(action).toContain("from '@modelcontextprotocol/server'")
     expect(action.match(/server\.registerTool\(/g)).toHaveLength(5)
@@ -67,19 +67,31 @@ describe('delegated MCP static trust boundaries', () => {
 
   it('provisions only through provider-owned admin endpoints behind live app authorization', () => {
     const auth = readFileSync(join(starter, 'convex/auth.ts'), 'utf8')
+    const http = readFileSync(join(starter, 'convex/http.ts'), 'utf8')
     const admin = readFileSync(join(starter, 'convex/mcpAdmin.ts'), 'utf8')
     const providerAdmin = readFileSync(join(starter, 'convex/mcpOAuthAdmin.ts'), 'utf8')
 
+    expect(auth).toContain('createBetterConvexAuth<DataModel>(components.betterAuth')
+    expect(auth).toContain('oauthProvider: (ctx) => oauthOptions(ctx)')
+    expect(auth).not.toMatch(/\b(?:betterAuth|convexAuth|oauthProvider)\(/)
     expect(auth).toContain('clientPrivileges: (identity) => hasOAuthAdminPrivilege')
     expect(auth).toContain('resourcePrivileges: (identity) => hasOAuthAdminPrivilege')
     expect(auth).toContain('allowPublicClientPrelogin: true')
     expect(auth).not.toMatch(/(?:clientPrivileges|resourcePrivileges):\s*\(.*\)\s*=>\s*false/)
+    expect(http).toContain('auth.registerRoutes(http)')
+    expect(http).toContain('registerMcpOAuthFixtureRoutes(http)')
     expect(admin).not.toContain('components.betterAuth.adapter')
     expect(admin).not.toMatch(/oauth(?:Client(?:Resource)?|Resource)/)
-    expect(providerAdmin).toContain('dispatchAuthEndpoint')
-    expect(providerAdmin).toContain('provider.endpoints.adminCreateOAuthClient')
-    expect(providerAdmin).toContain('provider.endpoints.adminCreateOAuthResource')
-    expect(providerAdmin).toContain('provider.endpoints.adminLinkClientResource')
+    // Fixture routes take the library's hardened session path (signed client IP,
+    // rate limit, same-origin, admission) and never resolve a session or read
+    // proxy headers themselves; the provider's own admin APIs then re-check the
+    // live OAuth administrator privilege.
+    expect(providerAdmin).toContain('auth.sessionHttpAction(')
+    expect(providerAdmin).not.toMatch(/\bhttpAction\(|api\.getSession|x-bcn-|headers\.get\(/)
+    expect(providerAdmin).toContain('headers: session.headers')
+    expect(providerAdmin).toContain("call('adminCreateOAuthClient'")
+    expect(providerAdmin).toContain("call('adminCreateOAuthResource'")
+    expect(providerAdmin).toContain("call('adminLinkClientResource'")
     expect(providerAdmin).not.toContain('components.betterAuth.adapter')
   })
 
@@ -103,13 +115,12 @@ describe('delegated MCP static trust boundaries', () => {
     expect(nuxtConfig.match(/frame-ancestors 'none'/g)).toHaveLength(2)
   })
 
-  it('reads display identity from the live projection instead of adding PII to session JWTs', () => {
-    const auth = readFileSync(join(starter, 'convex/auth.ts'), 'utf8')
+  it('reads display identity from the live projection', () => {
     const users = readFileSync(join(starter, 'convex/users.ts'), 'utf8')
     const index = readFileSync(join(starter, 'app/pages/index.vue'), 'utf8')
 
-    expect(auth).not.toContain('definePayload')
-    expect(users).toContain('ctx.auth.getUserIdentity()')
+    expect(users).toContain('await auth.getUser(ctx)')
+    expect(users).not.toContain('getUserIdentity')
     expect(users).toContain(".withIndex('by_auth_id'")
     expect(users).toContain('if (!user?.active) return null')
     expect(users).toContain('return { email: user.email, name: user.name }')

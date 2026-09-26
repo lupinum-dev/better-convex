@@ -5,16 +5,15 @@
  * generateUploadUrl/getUrl/deleteFile enforce authentication + ownership.
  */
 
-import { convexTest } from 'convex-test'
+import { signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { describe, it, expect } from 'vitest'
 
 import { api } from './_generated/api'
 import type { Id } from './_generated/dataModel'
-import schema from './schema'
-import { modules } from './test.setup'
+import { initConvexTest } from './test.setup'
 
 async function storeFile(
-  t: ReturnType<typeof convexTest>,
+  t: ReturnType<typeof initConvexTest>,
   options: { contentType?: string; size?: number } = {},
 ) {
   const { contentType = 'image/png', size } = options
@@ -32,14 +31,16 @@ async function storeFile(
 
 describe('files.generateUploadUrl', () => {
   it('throws for unauthenticated callers', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
 
-    await expect(t.mutation(api.files.generateUploadUrl, {})).rejects.toThrow('Not authenticated')
+    await expect(t.mutation(api.files.generateUploadUrl, {})).rejects.toThrow(
+      'Authentication required',
+    )
   })
 
   it('returns an upload URL for authenticated callers', async () => {
-    const t = convexTest(schema, modules)
-    const asUser = t.withIdentity({ subject: 'user_1' })
+    const t = initConvexTest()
+    const asUser = await signInAs(t, 'user_1')
 
     const url = await asUser.mutation(api.files.generateUploadUrl, {})
     expect(typeof url).toBe('string')
@@ -48,16 +49,18 @@ describe('files.generateUploadUrl', () => {
 
 describe('files.saveFile', () => {
   it('throws for unauthenticated callers', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
 
     const storageId = await storeFile(t)
 
-    await expect(t.mutation(api.files.saveFile, { storageId })).rejects.toThrow('Not authenticated')
+    await expect(t.mutation(api.files.saveFile, { storageId })).rejects.toThrow(
+      'Authentication required',
+    )
   })
 
   it('records the caller as owner', async () => {
-    const t = convexTest(schema, modules)
-    const asUser = t.withIdentity({ subject: 'user_1' })
+    const t = initConvexTest()
+    const asUser = await signInAs(t, 'user_1')
 
     const storageId = await storeFile(t)
     const result = await asUser.mutation(api.files.saveFile, { storageId })
@@ -73,8 +76,8 @@ describe('files.saveFile', () => {
   })
 
   it('deletes a blob with a disallowed canonical MIME type and commits the rejection', async () => {
-    const t = convexTest(schema, modules)
-    const asUser = t.withIdentity({ subject: 'user_1' })
+    const t = initConvexTest()
+    const asUser = await signInAs(t, 'user_1')
     const storageId = await storeFile(t, { contentType: 'text/html' })
 
     const result = await asUser.mutation(api.files.saveFile, { storageId })
@@ -96,8 +99,8 @@ describe('files.saveFile', () => {
   })
 
   it('deletes an oversized blob and commits the rejection', async () => {
-    const t = convexTest(schema, modules)
-    const asUser = t.withIdentity({ subject: 'user_1' })
+    const t = initConvexTest()
+    const asUser = await signInAs(t, 'user_1')
     const storageId = await storeFile(t, { size: 5 * 1024 * 1024 + 1 })
 
     const result = await asUser.mutation(api.files.saveFile, { storageId })
@@ -107,8 +110,8 @@ describe('files.saveFile', () => {
   })
 
   it('returns a not-found rejection without creating ownership', async () => {
-    const t = convexTest(schema, modules)
-    const asUser = t.withIdentity({ subject: 'user_1' })
+    const t = initConvexTest()
+    const asUser = await signInAs(t, 'user_1')
     const storageId = await storeFile(t)
     await t.run(async (ctx) => await ctx.storage.delete(storageId))
 
@@ -130,9 +133,9 @@ describe('files.saveFile', () => {
   })
 
   it('rejects a second registration of the same storageId (claim-race guard)', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
-    const asOther = t.withIdentity({ subject: 'user_other' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
+    const asOther = await signInAs(t, 'user_other')
 
     const storageId = await storeFile(t)
     await asOwner.mutation(api.files.saveFile, { storageId })
@@ -152,8 +155,8 @@ describe('files.saveFile', () => {
 
 describe('files.getUrl', () => {
   it('returns null for unauthenticated callers', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
 
     const storageId = await storeFile(t)
     await asOwner.mutation(api.files.saveFile, { storageId })
@@ -163,9 +166,9 @@ describe('files.getUrl', () => {
   })
 
   it('returns null for a caller who does not own the file', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
-    const asOther = t.withIdentity({ subject: 'user_other' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
+    const asOther = await signInAs(t, 'user_other')
 
     const storageId = await storeFile(t)
     await asOwner.mutation(api.files.saveFile, { storageId })
@@ -175,8 +178,8 @@ describe('files.getUrl', () => {
   })
 
   it('returns null when no ownership record exists yet', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
 
     const storageId = await storeFile(t)
     // saveFile was never called - no owner recorded.
@@ -186,8 +189,8 @@ describe('files.getUrl', () => {
   })
 
   it('returns the URL for the owning caller', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
 
     const storageId = await storeFile(t)
     await asOwner.mutation(api.files.saveFile, { storageId })
@@ -199,21 +202,21 @@ describe('files.getUrl', () => {
 
 describe('files.deleteFile', () => {
   it('throws for unauthenticated callers', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
 
     const storageId = await storeFile(t)
     await asOwner.mutation(api.files.saveFile, { storageId })
 
     await expect(t.mutation(api.files.deleteFile, { storageId })).rejects.toThrow(
-      'Not authenticated',
+      'Authentication required',
     )
   })
 
   it('throws for a caller who does not own the file (IDOR guard)', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
-    const asOther = t.withIdentity({ subject: 'user_other' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
+    const asOther = await signInAs(t, 'user_other')
 
     const storageId = await storeFile(t)
     await asOwner.mutation(api.files.saveFile, { storageId })
@@ -228,8 +231,8 @@ describe('files.deleteFile', () => {
   })
 
   it('allows the owner to delete their file', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
 
     const storageId = await storeFile(t)
     await asOwner.mutation(api.files.saveFile, { storageId })

@@ -1,11 +1,13 @@
 import { httpRouter } from 'convex/server'
 
-import { authComponent, createAuth } from './auth'
+import { auth } from './auth'
 import { handleMcp } from './mcp'
+import { registerMcpOAuthFixtureRoutes } from './mcpOAuthAdmin'
 
 const http = httpRouter()
 
-authComponent.registerRoutes(http, createAuth)
+auth.registerRoutes(http)
+registerMcpOAuthFixtureRoutes(http)
 http.route({ handler: handleMcp, method: 'POST', path: '/mcp' })
 http.route({ handler: handleMcp, method: 'GET', path: '/mcp' })
 http.route({ handler: handleMcp, method: 'DELETE', path: '/mcp' })

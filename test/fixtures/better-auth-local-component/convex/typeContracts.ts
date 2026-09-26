@@ -5,7 +5,7 @@ import type {
 } from 'convex/server'
 
 import type { DataModel } from './_generated/dataModel'
-import { authComponent, createAuth } from './auth'
+import { betterConvexAuth } from './auth'
 import type schema from './betterAuth/schema'
 
 type Assert<T extends true> = T
@@ -23,18 +23,18 @@ type _HasJwksTable = Assert<HasTable<BetterAuthDataModel, 'jwks'>>
 type _HasRateLimitTable = Assert<HasTable<BetterAuthDataModel, 'rateLimit'>>
 
 export async function assertLocalComponentHelpersCompile(ctx: GenericMutationCtx<DataModel>) {
-  const { auth, headers } = await authComponent.getAuth(createAuth, ctx)
-  const user = await authComponent.safeGetAuthUser(ctx)
+  const { auth, headers } = await betterConvexAuth.getAuth(ctx)
+  const user = await betterConvexAuth.getUser(ctx)
 
   return { auth, headers, user }
 }
 
 export function assertQueryContextUsesReadPath(ctx: GenericQueryCtx<DataModel>) {
-  const user = authComponent.safeGetAuthUser(ctx)
+  const user = betterConvexAuth.getUser(ctx)
 
   // A query may authenticate through component reads, but it must never create
   // a Better Auth instance whose adapter could write.
   // @ts-expect-error getAuth intentionally requires a mutation or action context.
-  const auth = authComponent.getAuth(createAuth, ctx)
+  const auth = betterConvexAuth.getAuth(ctx)
   return { auth, user }
 }

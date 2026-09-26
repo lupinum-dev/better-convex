@@ -18,6 +18,14 @@ describe('module auto-import surface', () => {
     )
 
     expect(autoImportNames).toContain('useConvexAuth')
+    expect(authAutoImports).toContainEqual({
+      name: 'useConvexAuthReturnTo',
+      from: './runtime/composables/useConvexAuthReturnTo',
+    })
+    expect(authAutoImports).toContainEqual({
+      name: 'normalizeLocalRedirectPath',
+      from: './runtime/utils/auth-route-protection',
+    })
     expect(autoImportNames).toContain('useConvexForm')
     expect(composableAutoImports).toContainEqual({
       name: 'useConvexAttachment',

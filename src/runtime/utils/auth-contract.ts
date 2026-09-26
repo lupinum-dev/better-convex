@@ -18,8 +18,10 @@ export interface UseConvexAuthReturn<Client extends object = object> {
   readonly user: Readonly<Ref<ConvexUser | null>>
   readonly error: ComputedRef<ConvexCallError | undefined>
   /**
-   * The Better Auth client. Every PromiseLike operation settles only after
-   * Convex accepts the resulting session.
+   * The Better Auth client. A PromiseLike operation that changes the session
+   * (Better Auth's session signal or a new provider session revision) settles
+   * only after Convex accepts the resulting session; read-only operations
+   * settle without touching it.
    *
    * It is always present, so destructuring and property reads are safe during
    * server rendering and setup. The real client exists only in the browser

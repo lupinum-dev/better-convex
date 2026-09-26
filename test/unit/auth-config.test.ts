@@ -24,6 +24,9 @@ describe('auth config normalization', () => {
       origin: 'https://app.example.test',
       trustedClientIpHeader: 'cf-connecting-ip',
       redirectTo: '/auth/signin',
+      guestRedirectTo: '/',
+      defaultQueryAuth: 'optional',
+      routes: 'public',
     })
     expect(isConvexAuthEnabled(auth)).toBe(true)
   })
@@ -50,6 +53,40 @@ describe('auth config normalization', () => {
       ).toThrow('safe local application path')
     },
   )
+
+  it('normalizes the global auth defaults', () => {
+    const auth = normalizeConvexAuthConfig({
+      origin: 'http://localhost:3000',
+      guestRedirectTo: '/app/../dashboard',
+      defaultQueryAuth: 'required',
+      routes: 'protected',
+    })
+    if (auth === false) throw new Error('expected auth enabled')
+    expect(auth).toMatchObject({
+      guestRedirectTo: '/dashboard',
+      defaultQueryAuth: 'required',
+      routes: 'protected',
+    })
+    // Runtime re-normalization of the materialized config is idempotent.
+    expect(normalizeConvexAuthConfig(auth)).toEqual(auth)
+  })
+
+  it.each([
+    [{ defaultQueryAuth: 'auto' }, 'auth.defaultQueryAuth'],
+    [{ defaultQueryAuth: 'OPTIONAL' }, 'auth.defaultQueryAuth'],
+    [{ defaultQueryAuth: null }, 'auth.defaultQueryAuth'],
+    [{ routes: 'private' }, 'auth.routes'],
+    [{ routes: true }, 'auth.routes'],
+    [{ guestRedirectTo: '//evil.example' }, 'auth.guestRedirectTo'],
+    [{ guestRedirectTo: 'https://evil.example' }, 'auth.guestRedirectTo'],
+    [{ guestRedirectTo: '/%2F%2Fevil.example' }, 'auth.guestRedirectTo'],
+    [{ guestRedirectTo: 42 }, 'auth.guestRedirectTo'],
+    [{ redirectTo: 42 }, 'auth.redirectTo'],
+  ])('rejects an invalid default %j', (options, message) => {
+    expect(() =>
+      normalizeConvexAuthConfig({ origin: 'http://localhost:3000', ...options }),
+    ).toThrow(message)
+  })
 
   it('rejects malformed or reserved trusted ingress header names', () => {
     expect(() =>
@@ -93,6 +130,24 @@ function _moduleOptionsTypeContracts() {
       client: './convex-auth.ts',
       trustedClientIpHeader: 'cf-connecting-ip',
       redirectTo: '/login',
+      guestRedirectTo: '/app',
+      defaultQueryAuth: 'required',
+      routes: 'protected',
+    },
+  })
+
+  assertModuleOptions({
+    auth: {
+      origin: 'https://app.example.test',
+      // @ts-expect-error defaultQueryAuth is one of the three query auth modes
+      defaultQueryAuth: 'auto',
+    },
+  })
+  assertModuleOptions({
+    auth: {
+      origin: 'https://app.example.test',
+      // @ts-expect-error routes is 'public' or 'protected'
+      routes: true,
     },
   })
 

@@ -33,6 +33,8 @@ export const composableAutoImports = [
 
 export const authAutoImports = [
   { name: 'useConvexAuth', from: './runtime/composables/useConvexAuth' },
+  { name: 'useConvexAuthReturnTo', from: './runtime/composables/useConvexAuthReturnTo' },
+  { name: 'normalizeLocalRedirectPath', from: './runtime/utils/auth-route-protection' },
 ] as const satisfies readonly ModuleImportRegistration[]
 
 export const serverAutoImports = [

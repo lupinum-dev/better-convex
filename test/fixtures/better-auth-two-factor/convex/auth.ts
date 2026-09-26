@@ -11,5 +11,5 @@ export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.bet
   twoFactor: createTwoFactorOptions(),
 })
 
-export const { authComponent, createAuth } = betterConvexAuth
+export const { createAuth } = betterConvexAuth
 export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()

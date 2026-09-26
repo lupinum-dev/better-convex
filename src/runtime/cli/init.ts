@@ -36,7 +36,7 @@ import type { DataModel } from './_generated/dataModel'
 
 export const auth = createBetterConvexAuth<DataModel>(components.betterAuth)
 export const createAuth = auth.createAuth
-export const { ensureSigningKey, rotateSigningKey } = auth.jwksOperatorFunctions()
+export const { ensureSigningKey, pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()
 export const { onCreate, onUpdate, onDelete } = auth.triggerFunctions()
 `,
   'convex/http.ts': `import { httpRouter } from 'convex/server'
@@ -61,7 +61,7 @@ import schema from './schema'
 import schemaMetadata from './schemaMetadata'
 
 // This module is inside the isolated betterAuth component, not the public app API.
-export const { consumeOne, consumeRateLimit, count, create, deleteMany, deleteOne, expireSession, findMany, findOne, incrementOne, rotateSigningKey, sessionAdmission, updateMany, updateOne } = defineAuthAdapterFunctions({ metadata: schemaMetadata, schema })
+export const { consumeOne, consumeRateLimit, count, create, deleteMany, deleteOne, expireSession, findMany, findOne, incrementOne, pruneSigningKeys, rotateSigningKey, sessionAdmission, updateMany, updateOne } = defineAuthAdapterFunctions({ metadata: schemaMetadata, schema })
 `,
   'convex/betterAuth/convex.config.ts': `import { defineComponent } from 'convex/server'
 

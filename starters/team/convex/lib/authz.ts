@@ -1,9 +1,10 @@
+import type { BetterConvexAuthUser } from '@lupinum/better-convex-nuxt/better-auth/server'
 import { ConvexError } from 'convex/values'
 
 import { canAccessAllTeams, canViewOrganizationActivity } from '../../shared/organizationRoles'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
-import { authComponent, createAuth, type AppAuth } from '../auth'
+import { auth, type AppAuth } from '../auth'
 import { roleAllowsOrganizationPermissions } from '../betterAuth/schemaPlugins'
 import { getBetterAuthMember, getBetterAuthTeam, getBetterAuthTeamMember } from './betterAuthRows'
 
@@ -27,17 +28,16 @@ export type ProjectAccess = TeamAccess & {
 }
 
 export async function getAppAuth(ctx: MutationCtx) {
-  return await authComponent.getAuth(createAuth, ctx)
+  return await auth.getAuth(ctx)
+}
+
+function actorFor(user: BetterConvexAuthUser): AccessActor {
+  return { kind: 'user', authUserId: user.id }
 }
 
 export async function getAuthenticatedUserOrNull(ctx: Ctx) {
-  const user = await authComponent.safeGetAuthUser(ctx)
-  if (!user || typeof user.id !== 'string') return null
-  const actor = {
-    kind: 'user' as const,
-    authUserId: user.id,
-  }
-  return { actor, user: user as { id: string } & Record<string, unknown> }
+  const user = await auth.getUser(ctx)
+  return user ? { actor: actorFor(user), user } : null
 }
 
 export async function getAuthenticatedSessionOrNull(ctx: Ctx) {
@@ -46,23 +46,20 @@ export async function getAuthenticatedSessionOrNull(ctx: Ctx) {
 }
 
 export async function requireAuthenticatedSession(ctx: MutationCtx) {
-  const authenticated = await getAuthenticatedUserOrNull(ctx)
-  if (!authenticated) throw new ConvexError('Unauthenticated')
-  const { auth, headers } = await getAppAuth(ctx)
+  const user = await auth.requireUser(ctx)
+  const appAuth = await getAppAuth(ctx)
 
   return {
-    ...authenticated,
-    auth,
-    headers,
-    session: { user: authenticated.user },
+    actor: actorFor(user),
+    user,
+    auth: appAuth.auth,
+    headers: appAuth.headers,
+    session: { user },
   }
 }
 
 export async function requireAuthenticatedUser(ctx: Ctx): Promise<AccessActor> {
-  const authenticated = await getAuthenticatedUserOrNull(ctx)
-  if (!authenticated) throw new ConvexError('Unauthenticated')
-  const { actor } = authenticated
-  return actor
+  return actorFor(await auth.requireUser(ctx))
 }
 
 export async function hasOrganizationPermissions(

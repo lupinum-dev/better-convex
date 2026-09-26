@@ -1,13 +1,12 @@
-import { convexTest } from 'convex-test'
+import { signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { describe, expect, it } from 'vitest'
 
 import { api } from './_generated/api'
-import schema from './schema'
-import { modules } from './test.setup'
+import { initConvexTest } from './test.setup'
 
 describe('playground public-operation authorization matrix', () => {
   it('models signed-out and platform-rejected expired tokens as a missing identity', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const taskId = await t.run(async (ctx) => {
       return await ctx.db.insert('tasks', {
         userId: 'user_owner',
@@ -23,14 +22,37 @@ describe('playground public-operation authorization matrix', () => {
     expect(await t.query(api.users.getCurrentUser, {})).toBeNull()
     expect(await t.query(api.tasks.list, {})).toEqual([])
     await expect(t.mutation(api.tasks.add, { title: 'anonymous' })).rejects.toThrow(
-      'Not authenticated',
+      'Authentication required',
     )
-    await expect(t.mutation(api.tasks.toggle, { id: taskId })).rejects.toThrow('Not authenticated')
-    await expect(t.mutation(api.tasks.remove, { id: taskId })).rejects.toThrow('Not authenticated')
+    await expect(t.mutation(api.tasks.toggle, { id: taskId })).rejects.toThrow(
+      'Authentication required',
+    )
+    await expect(t.mutation(api.tasks.remove, { id: taskId })).rejects.toThrow(
+      'Authentication required',
+    )
+  })
+
+  it('denies a token whose Better Auth session is not live', async () => {
+    const t = initConvexTest()
+    await signInAs(t, 'user_owner')
+
+    for (const identity of [
+      { subject: 'user_owner' },
+      { subject: 'user_owner', sid: 'user_owner-session' },
+      { subject: 'user_owner', sid: 'user_owner-session', token_use: 'oauth-access' },
+      { subject: 'user_owner', sid: 'revoked-session', token_use: 'convex-session' },
+    ]) {
+      const caller = t.withIdentity(identity)
+      expect(await caller.query(api.auth.getPermissionContext, {})).toBeNull()
+      expect(await caller.query(api.tasks.list, {})).toEqual([])
+      await expect(caller.mutation(api.tasks.add, { title: 'stale' })).rejects.toThrow(
+        'Authentication required',
+      )
+    }
   })
 
   it('returns the caller identity and projection without leaking another user', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await t.run(async (ctx) => {
       const now = Date.now()
       await ctx.db.insert('users', {
@@ -49,7 +71,7 @@ describe('playground public-operation authorization matrix', () => {
       })
     })
 
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
+    const asOwner = await signInAs(t, 'user_owner')
     expect(await asOwner.query(api.auth.getPermissionContext, {})).toEqual({
       role: 'member',
       userId: 'user_owner',
@@ -59,14 +81,14 @@ describe('playground public-operation authorization matrix', () => {
       displayName: 'Owner',
     })
     expect(
-      await t.withIdentity({ subject: 'missing_projection' }).query(api.users.getCurrentUser, {}),
+      await (await signInAs(t, 'missing_projection')).query(api.users.getCurrentUser, {}),
     ).toBeNull()
   })
 
   it('isolates task reads and rejects cross-user object mutation', async () => {
-    const t = convexTest(schema, modules)
-    const asOwner = t.withIdentity({ subject: 'user_owner' })
-    const asOther = t.withIdentity({ subject: 'user_other' })
+    const t = initConvexTest()
+    const asOwner = await signInAs(t, 'user_owner')
+    const asOther = await signInAs(t, 'user_other')
     const ownerTaskId = await asOwner.mutation(api.tasks.add, { title: 'owner task' })
     await asOther.mutation(api.tasks.add, { title: 'other task' })
 
@@ -89,7 +111,7 @@ describe('playground public-operation authorization matrix', () => {
   })
 
   it('keeps notes intentionally anonymous while bounding public pagination and payloads', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
 
     // Notes deliberately have no owner field in this public playground, so
     // cross-user authorization is N/A. Anonymous behavior is the contract.
@@ -118,7 +140,7 @@ describe('playground public-operation authorization matrix', () => {
   })
 
   it('keeps test probes intentionally anonymous and bounds echoed action input', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
 
     // These probes intentionally exercise anonymous query/mutation/action
     // transport behavior; no user-owned object exists for cross-user denial.

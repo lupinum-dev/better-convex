@@ -1,24 +1,72 @@
-import { oauthProvider, type OAuthOptions, type Scope } from '@better-auth/oauth-provider'
+import type { OAuthOptions, Scope } from '@better-auth/oauth-provider'
 import {
-  convexAuth,
-  createAuthComponent,
-  createConvexAuthRateLimitStorage,
-  getConvexAuthProvider,
-  requireAuthOrigin,
+  createBetterConvexAuth,
   type AuthCtx,
   type AuthFunctions,
 } from '@lupinum/better-convex-nuxt/better-auth/server'
-import { betterAuth } from 'better-auth'
-import { jwt } from 'better-auth/plugins'
 
 import { components, internal } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
 import { MCP_SCOPES } from './mcp/scopes'
-import { mcpOAuthAdminPlugin } from './mcpOAuthAdmin'
+
 const authFunctions: AuthFunctions = internal.auth
 
-export const authComponent = createAuthComponent<DataModel>(components.betterAuth, {
+async function hasOAuthAdminPrivilege(
+  ctx: AuthCtx<DataModel>,
+  {
+    session,
+    user,
+  }: {
+    session?: { userId?: string }
+    user?: { id?: string }
+  },
+): Promise<boolean> {
+  if (!user?.id || session?.userId !== user.id) return false
+  const userId = user.id
+  if ('db' in ctx) {
+    const projected = await ctx.db
+      .query('users')
+      .withIndex('by_auth_id', (q) => q.eq('authId', userId))
+      .unique()
+    return projected?.active === true && projected.oauthAdmin === true
+  }
+  if ('runQuery' in ctx && typeof ctx.runQuery === 'function') {
+    return await ctx.runQuery(internal.mcpAdmin.hasOAuthAdminPrivilege, {
+      authUserId: userId,
+    })
+  }
+  return false
+}
+
+function oauthOptions(ctx: AuthCtx<DataModel>): OAuthOptions<Scope[]> {
+  return {
+    accessTokenExpiresIn: 600,
+    allowDynamicClientRegistration: false,
+    allowPublicClientPrelogin: true,
+    allowUnauthenticatedClientRegistration: false,
+    clientPrivileges: (identity) => hasOAuthAdminPrivilege(ctx, identity),
+    codeExpiresIn: 120,
+    consentPage: '/oauth/consent',
+    customAccessTokenClaims: () => ({ token_use: 'oauth-access' }),
+    dpop: { signingAlgorithms: [] },
+    enforcePerClientResources: true,
+    grantTypes: ['authorization_code'],
+    loginPage: '/login',
+    rateLimit: {
+      authorize: { max: 30, window: 60 },
+      revoke: { max: 30, window: 60 },
+      token: { max: 20, window: 60 },
+    },
+    resourcePrivileges: (identity) => hasOAuthAdminPrivilege(ctx, identity),
+    scopes: [...MCP_SCOPES],
+    storeClientSecret: 'hashed',
+    storeTokens: 'hashed',
+  }
+}
+
+export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
+  oauthProvider: (ctx) => oauthOptions(ctx),
   triggers: {
     user: {
       onCreate: async (ctx, input) => {
@@ -79,132 +127,6 @@ export const authComponent = createAuthComponent<DataModel>(components.betterAut
   },
 })
 
-export const { onCreate, onDelete, onUpdate } = authComponent.triggerFunctions()
-export const { rotateSigningKey } = authComponent.jwksOperatorFunctions(createAuth)
-
-async function hasOAuthAdminPrivilege(
-  ctx: AuthCtx<DataModel>,
-  {
-    session,
-    user,
-  }: {
-    session?: { userId?: string }
-    user?: { id?: string }
-  },
-): Promise<boolean> {
-  if (!user?.id || session?.userId !== user.id) return false
-  const userId = user.id
-  if ('db' in ctx) {
-    const projected = await ctx.db
-      .query('users')
-      .withIndex('by_auth_id', (q) => q.eq('authId', userId))
-      .unique()
-    return projected?.active === true && projected.oauthAdmin === true
-  }
-  if ('runQuery' in ctx && typeof ctx.runQuery === 'function') {
-    return await ctx.runQuery(internal.mcpAdmin.hasOAuthAdminPrivilege, {
-      authUserId: userId,
-    })
-  }
-  return false
-}
-
-function oauthOptions(ctx: AuthCtx<DataModel>): OAuthOptions<Scope[]> {
-  return {
-    accessTokenExpiresIn: 600,
-    allowDynamicClientRegistration: false,
-    allowPublicClientPrelogin: true,
-    allowUnauthenticatedClientRegistration: false,
-    clientPrivileges: (identity) => hasOAuthAdminPrivilege(ctx, identity),
-    codeExpiresIn: 120,
-    consentPage: '/oauth/consent',
-    customAccessTokenClaims: () => ({ token_use: 'oauth-access' }),
-    dpop: { signingAlgorithms: [] },
-    enforcePerClientResources: true,
-    grantTypes: ['authorization_code'],
-    loginPage: '/login',
-    rateLimit: {
-      authorize: { max: 30, window: 60 },
-      revoke: { max: 30, window: 60 },
-      token: { max: 20, window: 60 },
-    },
-    resourcePrivileges: (identity) => hasOAuthAdminPrivilege(ctx, identity),
-    scopes: [...MCP_SCOPES],
-    storeClientSecret: 'hashed',
-    storeTokens: 'hashed',
-  }
-}
-
-export async function createAuth(ctx: AuthCtx<DataModel>) {
-  const siteUrl = requireAuthOrigin('SITE_URL')
-  const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
-  if (!process.env.BETTER_AUTH_SECRETS) throw new Error('AUTH_CONFIG_INVALID')
-  const issuer = `${siteUrl}/api/auth`
-  const oauth = oauthOptions(ctx)
-  const authConfig = { providers: [getConvexAuthProvider()] }
-  // convexAuth hardens the privilege/claim callbacks in-place. Construct it
-  // before the official provider snapshots those options, while keeping the
-  // runtime plugin order jwt -> convexAuth -> oauthProvider.
-  const convexPlugin = convexAuth({
-    authConfig,
-    oauthProvider: oauth,
-    sessionJwt: {
-      audience: 'convex',
-      expirationTime: '15m',
-      issuer: convexSiteUrl,
-    },
-  })
-  const provider = oauthProvider(oauth)
-  const auth = betterAuth({
-    account: { encryptOAuthTokens: true, storeAccountCookie: false },
-    advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
-    basePath: '/api/auth',
-    baseURL: siteUrl,
-    database: authComponent.adapter(ctx),
-    disabledPaths: [
-      '/token',
-      '/get-access-token',
-      '/refresh-token',
-      '/.well-known/openid-configuration',
-      '/oauth2/register',
-      '/oauth2/introspect',
-      '/oauth2/userinfo',
-      '/oauth2/end-session',
-      '/oauth2/create-client',
-      '/oauth2/get-client',
-      '/oauth2/get-clients',
-      '/oauth2/update-client',
-      '/oauth2/client/rotate-secret',
-      '/oauth2/delete-client',
-    ],
-    emailAndPassword: {
-      autoSignIn: false,
-      enabled: true,
-      minPasswordLength: 15,
-    },
-    plugins: [
-      jwt({
-        disableSettingJwtHeader: true,
-        jwks: {
-          disablePrivateKeyEncryption: false,
-          gracePeriod: 21 * 60,
-          keyPairConfig: { alg: 'RS256' },
-        },
-        jwt: { audience: issuer, expirationTime: '10m', issuer },
-      }),
-      convexPlugin,
-      provider,
-      mcpOAuthAdminPlugin(ctx, provider, convexSiteUrl),
-    ],
-    rateLimit: {
-      customStorage: createConvexAuthRateLimitStorage(ctx, components.betterAuth, 60),
-      enabled: true,
-      modelName: 'rateLimit',
-      storage: 'database',
-    },
-    trustedOrigins: [siteUrl],
-    verification: { storeIdentifier: 'hashed' },
-  })
-  await auth.$context
-  return auth
-}
+export const { createAuth } = auth
+export const { onCreate, onDelete, onUpdate } = auth.triggerFunctions()
+export const { ensureSigningKey, pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()

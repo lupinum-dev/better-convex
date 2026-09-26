@@ -44,7 +44,7 @@ function isBetterAuthAdapterCall(node, sourceFile) {
 function isAuthUserCall(node, sourceFile) {
   return (
     ts.isCallExpression(node) &&
-    /\bauthComponent\.(?:getAuthUser|safeGetAuthUser)\b/.test(node.expression.getText(sourceFile))
+    /\.(?:getUser|requireUser)$/.test(node.expression.getText(sourceFile))
   )
 }
 
@@ -134,10 +134,12 @@ function queryHandlerViolations(sourceFile, report) {
               ts.isCallExpression(child) &&
               ts.isPropertyAccessExpression(child.expression) &&
               ts.isIdentifier(child.expression.expression) &&
-              child.expression.expression.text === 'authComponent' &&
               forbiddenQueryMethods.has(child.expression.name.text)
             ) {
-              report(child, `query handler calls authComponent.${child.expression.name.text}()`)
+              report(
+                child,
+                `query handler calls ${child.expression.expression.text}.${child.expression.name.text}()`,
+              )
             }
             ts.forEachChild(child, inspectHandler)
           }

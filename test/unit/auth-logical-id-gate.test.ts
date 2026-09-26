@@ -59,10 +59,25 @@ describe('auth logical-ID AST gate', () => {
     expect(
       messages(`
         export const current = query({
-          handler: async (ctx) => authComponent.getAuth(createAuth, ctx),
+          handler: async (ctx) => betterConvexAuth.getAuth(ctx),
         })
       `),
-    ).toEqual(['query handler calls authComponent.getAuth()'])
+    ).toEqual(['query handler calls betterConvexAuth.getAuth()'])
+  })
+
+  it('tracks library user helpers as auth rows', () => {
+    expect(
+      messages(`
+        const user = await auth.requireUser(ctx)
+        const maybe = await auth.getUser(ctx)
+        console.log(user._id, maybe?._id)
+      `),
+    ).toEqual(
+      expect.arrayContaining([
+        'Better Auth row user uses Convex _id',
+        'Better Auth row maybe uses Convex _id',
+      ]),
+    )
   })
 
   it('allows application document IDs and logical Better Auth IDs', () => {

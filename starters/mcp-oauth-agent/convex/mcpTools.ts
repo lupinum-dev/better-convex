@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values'
 
 import type { DataModel, Doc, Id } from './_generated/dataModel'
 import { internalMutation, type MutationCtx } from './_generated/server'
-import { authComponent } from './auth'
+import { auth } from './auth'
 import {
   McpAuthorizationError,
   assertLiveMcpAuthorization,
@@ -119,7 +119,7 @@ async function requireLiveAuthorization(
     projectId?: Id<'projects'>
   },
 ) {
-  if (!(await authComponent.validateOAuthAccess(ctx, principal))) {
+  if (!(await auth.validateOAuthAccess(ctx, principal))) {
     throw new ConvexError('MCP_ACCESS_REVOKED')
   }
   const state = await loadLiveState(

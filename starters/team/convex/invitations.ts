@@ -1,7 +1,8 @@
 import { ConvexError, v } from 'convex/values'
 
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
-import { getAuthenticatedUserOrNull, requireAuthenticatedSession } from './lib/authz'
+import { auth } from './auth'
+import { requireAuthenticatedSession } from './lib/authz'
 import {
   getBetterAuthInvitation,
   getBetterAuthOrganization,
@@ -13,13 +14,12 @@ function normalizeEmail(email: string | null | undefined) {
 }
 
 async function loadInvitationForUser(ctx: QueryCtx | MutationCtx, invitationId: string) {
-  const authenticated = await getAuthenticatedUserOrNull(ctx)
-  if (!authenticated) throw new ConvexError('Unauthenticated')
-  const sessionEmail = normalizeEmail(authenticated.user.email as string | undefined)
+  const user = await auth.requireUser(ctx)
+  const sessionEmail = normalizeEmail(user.email)
   if (!sessionEmail) {
     throw new ConvexError('Authenticated session is missing an email address')
   }
-  if (authenticated.user.emailVerified !== true) {
+  if (user.emailVerified !== true) {
     throw new ConvexError('Verify your email before using invitation links')
   }
 
@@ -28,10 +28,7 @@ async function loadInvitationForUser(ctx: QueryCtx | MutationCtx, invitationId: 
     throw new ConvexError('Invitation is unavailable')
   }
 
-  return {
-    ...authenticated,
-    invitation,
-  }
+  return { user, invitation }
 }
 
 export const get = query({
