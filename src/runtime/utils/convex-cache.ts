@@ -3,21 +3,20 @@ import type { ConvexIdentityKey } from './identity-key'
 import { getBetterAuthSessionToken } from './shared-helpers'
 
 // ============================================================================
-// Identity-partitioned payload-key grammar (decision 7 / architecture invariant)
+// Identity-partitioned payload-key grammar
 // ============================================================================
 //
 // Convex's `ConvexClient` owns wire deduplication and its per-transport local
-// cache, so this module no longer keeps a subscription registry, payload-key
-// registry, reference counts, or query bridges. The only library-owned key
-// machinery that remains is the payload-key grammar below, which:
+// cache. The only library-owned key machinery is the payload-key grammar
+// below, which:
 //   - partitions Nuxt async-data / payload keys per identity so A's payload can
 //     never be read under B (structural cross-user isolation, no token-derived
-//     keys, architecture invariant);
+//     keys);
 //   - lets sign-out/identity purge scan the two namespaces and drop only the
 //     `required`/`optional` keys while retaining `none` keys — no registry and
 //     no count is consulted.
 //
-// Grammar (decision 7):
+// Grammar:
 //   required/optional: convex:<fn>:<argsHash>:auth:<mode>:<identityKey>
 //   none:              convex:<fn>:<argsHash>:auth:none
 //   same shapes under the `convex-paginated:` namespace.
@@ -79,9 +78,9 @@ export function readAuthMode(key: string): ConvexAuthMode | null {
 }
 
 /**
- * Sign-out / identity-change purge (architecture invariant). Scans only the two Convex
- * payload namespaces on the Nuxt payload/state and removes keys whose `:auth:`
- * mode segment is `required` or `optional`; `none` keys are retained and keys
+ * Sign-out / identity-change purge. Scans only the two Convex payload
+ * namespaces on the Nuxt payload/state and removes keys whose `:auth:` mode
+ * segment is `required` or `optional`; `none` keys are retained and keys
  * outside these namespaces are never touched. No registry or count is consulted.
  *
  * This is the app-global hygiene complement to each composable clearing its own

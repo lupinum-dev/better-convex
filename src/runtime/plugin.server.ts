@@ -3,7 +3,6 @@
  * when auth is enabled. It runs during SSR to:
  * 1. Read the session cookie from the request
  * 2. Exchange the session cookie for a JWT token via Better Auth API
- *    (with optional caching to reduce TTFB)
  * 3. Store the token and user data in useState for client hydration
  *
  * This ensures authenticated state is available on first render with zero flash.
@@ -17,7 +16,7 @@ import { resolveServerAuthSnapshot } from './server/utils/auth-snapshot'
 import { applyConvexAuthSsrHeaders } from './server/utils/ssr-auth-headers'
 import { buildMissingSiteUrlMessage } from './utils/auth-errors'
 import { useConvexIdentityState } from './utils/auth-identity-state'
-import { createLogger, getLogLevel } from './utils/logger'
+import { createLogger, getLogLevel, type AuthEvent } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
 import { filterBetterAuthCookies } from './utils/shared-helpers'
 
@@ -71,7 +70,7 @@ export default defineNuxtPlugin(async () => {
 
   const logAuth = (
     phase: string,
-    outcome: 'success' | 'error' | 'skip' | 'miss',
+    outcome: AuthEvent['outcome'],
     details?: Record<string, unknown>,
   ) => {
     logger.auth({

@@ -27,7 +27,6 @@ const SUPPORTED_SCHEMA_PLUGIN_IDS = new Set([
   'email-otp',
   'jwt',
   'oauth-provider',
-  'bcn-workforce-schema',
 ])
 
 interface CliOptions {
@@ -106,7 +105,7 @@ function requireSchemaOptions(value: unknown): BetterAuthOptions {
       const id = isRecord(plugin) && typeof plugin.id === 'string' ? plugin.id : undefined
       if (!id || !SUPPORTED_SCHEMA_PLUGIN_IDS.has(id) || seen.has(id)) {
         throw new Error(
-          `Schema config plugin at index ${index} is unsupported; the 1.0 profile admits organization, two-factor, email-otp, jwt, oauth-provider, and bcn-workforce-schema once each.`,
+          `Schema config plugin at index ${index} is unsupported; the 1.0 profile admits organization, two-factor, email-otp, jwt, and oauth-provider once each.`,
         )
       }
       seen.add(id)

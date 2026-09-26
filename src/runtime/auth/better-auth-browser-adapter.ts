@@ -47,7 +47,6 @@ export function createBetterAuthBrowserAdapter(
   } = { authenticated: () => {}, anonymous: () => {} },
   options: { initialIdentityKey?: string } = {},
 ): BetterConvexAuthAdapter & {
-  isRestrictedSession(): boolean
   failClosed(message: string): void
   dispose(): void
 } {
@@ -59,7 +58,6 @@ export function createBetterAuthBrowserAdapter(
   let observedSessionToken: string | null | undefined
   let observedIdentityKey: string | null | undefined = options.initialIdentityKey
   let cachedToken: string | null = null
-  let restrictedGeneration: number | undefined
   let snapshot: BrowserAuthSnapshot = options.initialIdentityKey
     ? {
         status: 'authenticated',
@@ -122,7 +120,6 @@ export function createBetterAuthBrowserAdapter(
     if (retainsEstablishedSession) return
 
     if (value.error || malformed) {
-      restrictedGeneration = undefined
       cachedToken = null
       sessionGeneration += 1
       // The published failed state is the null provider identity. Reset the
@@ -152,12 +149,11 @@ export function createBetterAuthBrowserAdapter(
     if (changed) {
       sessionGeneration += 1
       cachedToken = null
-      restrictedGeneration = undefined
     }
     observedSessionToken = sessionToken
     observedIdentityKey = key
     snapshot =
-      sessionToken && key && restrictedGeneration !== sessionGeneration
+      sessionToken && key
         ? {
             status: 'authenticated',
             identityKey: key,
@@ -228,8 +224,6 @@ export function createBetterAuthBrowserAdapter(
 
   return Object.freeze({
     snapshot: () => snapshot,
-    isRestrictedSession: () =>
-      !disposed && restrictedGeneration === sessionGeneration && snapshot.status === 'anonymous',
     subscribe(listener: () => void) {
       if (disposed) return () => {}
       listeners.add(listener)
@@ -246,16 +240,6 @@ export function createBetterAuthBrowserAdapter(
         snapshot.identityKey !== expectedKey ||
         sessionGeneration !== expectedGeneration
       ) {
-        return null
-      }
-      if (outcome.restricted) {
-        cachedToken = null
-        restrictedGeneration = expectedGeneration
-        snapshot = { status: 'anonymous', identityKey: null, sessionGeneration, error: null }
-        callbacks.anonymous(null)
-        // Retire any old authenticated client before returning no token. The
-        // provider cookie stays available only to the guarded auth endpoints.
-        notify()
         return null
       }
       if (outcome.identity) {
@@ -287,7 +271,6 @@ export function createBetterAuthBrowserAdapter(
     },
     failClosed(message: string) {
       if (disposed) return
-      restrictedGeneration = undefined
       cachedToken = null
       sessionGeneration += 1
       snapshot = {
@@ -305,7 +288,6 @@ export function createBetterAuthBrowserAdapter(
     dispose() {
       if (disposed) return
       disposed = true
-      restrictedGeneration = undefined
       stop()
       for (const cancel of [...cancelSessionSettlement]) cancel()
       cancelSessionSettlement.clear()

@@ -23,7 +23,7 @@ import {
   buildMissingPublicOriginMessage,
   buildMissingSiteUrlMessage,
 } from '../../../utils/auth-errors'
-import { createLogger } from '../../../utils/logger'
+import { createLogger, type AuthEvent } from '../../../utils/logger'
 import { getConvexRuntimeConfig } from '../../../utils/runtime-config'
 import {
   deduplicateSetCookies,
@@ -268,7 +268,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
     const logger = createLogger(traceEnabled ? 'debug' : false)
     const trace = (
       phase: string,
-      outcome: 'success' | 'error' | 'skip' | 'miss',
+      outcome: AuthEvent['outcome'],
       details: Record<string, boolean | number | string> = {},
     ) => {
       if (!traceEnabled) return

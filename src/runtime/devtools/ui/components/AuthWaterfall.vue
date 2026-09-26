@@ -9,35 +9,28 @@ const props = defineProps<{
 
 // Color mapping for phase results (fallback for unknown phases)
 const resultColors: Record<AuthWaterfallPhase['result'], string> = {
-  hit: 'var(--success)',
   miss: 'var(--warning)',
   success: 'var(--accent)',
   error: 'var(--error)',
-  skipped: 'var(--text-secondary)',
 }
 
 // Distinct colors for each phase (waterfall style)
 const phaseColors: Record<string, string> = {
   'session-check': '#3b82f6', // Blue
-  'cache-lookup': '#06b6d4', // Cyan
   'token-exchange': '#f59e0b', // Amber
   'jwt-decode': '#10b981', // Emerald
-  'cache-store': '#ec4899', // Pink
 }
 
 // Phase display names
 const phaseNames: Record<string, string> = {
   'session-check': 'Session',
-  'cache-lookup': 'Cache',
   'token-exchange': 'Token Exchange',
   'jwt-decode': 'JWT Decode',
-  'cache-store': 'Cache Store',
 }
 
 // Get color for a phase (use phase-specific color, or fall back to result-based)
 const getPhaseColor = (phase: AuthWaterfallPhase): string => {
-  // Skipped and error always use result colors
-  if (phase.result === 'skipped') return resultColors.skipped
+  // Errors always use the result color
   if (phase.result === 'error') return resultColors.error
   // Otherwise use phase-specific color
   return phaseColors[phase.name] || resultColors[phase.result]
@@ -98,15 +91,6 @@ const formatTime = (ms: number) => {
         <div class="summary-item">
           <span class="summary-label">Total</span>
           <span class="summary-value">{{ formatTime(waterfall.totalDuration) }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Cache</span>
-          <span
-            class="summary-value"
-            :style="{ color: waterfall.cacheHit ? 'var(--success)' : 'var(--warning)' }"
-          >
-            {{ waterfall.cacheHit ? 'HIT' : 'MISS' }}
-          </span>
         </div>
         <div class="summary-item">
           <span class="summary-label">Result</span>

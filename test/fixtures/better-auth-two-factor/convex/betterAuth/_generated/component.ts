@@ -24,13 +24,6 @@ import type { FunctionReference } from "convex/server";
 export type ComponentApi<Name extends string | undefined = string | undefined> =
   {
     adapter: {
-      assertProfile: FunctionReference<
-        "query",
-        "internal",
-        { workforce: boolean },
-        null,
-        Name
-      >;
       consumeOne: FunctionReference<
         "mutation",
         "internal",
@@ -107,56 +100,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {
           data: any;
           model: string;
+          oauthRefreshParentId?: string;
           onCreateHandle?: string;
-          workforce?:
-            | {
-                expectedGeneration: number;
-                operation:
-                  | "begin-enrollment"
-                  | "confirm-enrollment"
-                  | "regenerate-backup-codes"
-                  | "change-password";
-                replay?: {
-                  digest: string;
-                  factorFingerprint: string;
-                  factorId: string;
-                  matchingCounters: Array<number>;
-                  userId: string;
-                };
-                sessionId: string;
-                userId: string;
-              }
-            | {
-                expectedGeneration: number;
-                operation: "password-sign-in";
-                userId: string;
-              }
-            | {
-                challengeId: string;
-                expectedGeneration: number;
-                operation: "password-challenge";
-                userId: string;
-              }
-            | {
-                challengeId: string;
-                expectedGeneration: number;
-                operation: "totp-sign-in" | "recovery-sign-in";
-                replay?: {
-                  digest: string;
-                  factorFingerprint: string;
-                  factorId: string;
-                  matchingCounters: Array<number>;
-                  userId: string;
-                };
-                userId: string;
-              };
-          workforceConsumedChallenge?: {
-            challengeId: string;
-            expectedGeneration: number;
-            expiresAt: number;
-            operation: "totp-sign-in" | "recovery-sign-in";
-            userId: string;
-          };
         },
         Record<
           string,
@@ -169,6 +114,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "internal",
         {
           model: string;
+          oauthRefreshGrantId?: string;
           onDeleteHandle?: string;
           onDeleteModels?: Array<string>;
           onUpdateHandle?: string;
@@ -311,48 +257,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             value:
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
-          workforce?:
-            | {
-                expectedGeneration: number;
-                operation:
-                  | "begin-enrollment"
-                  | "confirm-enrollment"
-                  | "regenerate-backup-codes"
-                  | "change-password";
-                replay?: {
-                  digest: string;
-                  factorFingerprint: string;
-                  factorId: string;
-                  matchingCounters: Array<number>;
-                  userId: string;
-                };
-                sessionId: string;
-                userId: string;
-              }
-            | {
-                expectedGeneration: number;
-                operation: "password-sign-in";
-                userId: string;
-              }
-            | {
-                challengeId: string;
-                expectedGeneration: number;
-                operation: "password-challenge";
-                userId: string;
-              }
-            | {
-                challengeId: string;
-                expectedGeneration: number;
-                operation: "totp-sign-in" | "recovery-sign-in";
-                replay?: {
-                  digest: string;
-                  factorFingerprint: string;
-                  factorId: string;
-                  matchingCounters: Array<number>;
-                  userId: string;
-                };
-                userId: string;
-              };
         },
         Record<
           string,
@@ -387,92 +291,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             value:
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
-          workforce?:
-            | {
-                expectedGeneration: number;
-                operation:
-                  | "begin-enrollment"
-                  | "confirm-enrollment"
-                  | "regenerate-backup-codes"
-                  | "change-password";
-                replay?: {
-                  digest: string;
-                  factorFingerprint: string;
-                  factorId: string;
-                  matchingCounters: Array<number>;
-                  userId: string;
-                };
-                sessionId: string;
-                userId: string;
-              }
-            | {
-                expectedGeneration: number;
-                operation: "password-sign-in";
-                userId: string;
-              }
-            | {
-                challengeId: string;
-                expectedGeneration: number;
-                operation: "password-challenge";
-                userId: string;
-              }
-            | {
-                challengeId: string;
-                expectedGeneration: number;
-                operation: "totp-sign-in" | "recovery-sign-in";
-                replay?: {
-                  digest: string;
-                  factorFingerprint: string;
-                  factorId: string;
-                  matchingCounters: Array<number>;
-                  userId: string;
-                };
-                userId: string;
-              };
         },
         Record<
           string,
           string | number | boolean | Array<string> | Array<number> | null
         > | null,
-        Name
-      >;
-      listWorkforceSessions: FunctionReference<
-        "query",
-        "internal",
-        {
-          actor: { sessionId: string; userId: string };
-          paginationOpts: { cursor: string | null; numItems: number };
-        },
-        {
-          continueCursor: string;
-          isDone: boolean;
-          page: Array<{
-            authenticatedAt: number;
-            expiresAt: number;
-            isCurrent: boolean;
-            method:
-              | "password-only"
-              | "totp-enrollment"
-              | "password-totp"
-              | "password-recovery";
-            sessionId: string;
-            sessionStartedAt: number;
-          }>;
-        },
-        Name
-      >;
-      revokeAllWorkforceSessions: FunctionReference<
-        "mutation",
-        "internal",
-        { actor: { sessionId: string; userId: string } },
-        null,
-        Name
-      >;
-      revokeWorkforceSession: FunctionReference<
-        "mutation",
-        "internal",
-        { actor: { sessionId: string; userId: string }; sessionId: string },
-        null,
         Name
       >;
       rotateSigningKey: FunctionReference<
@@ -512,13 +335,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             string | number | boolean | Array<string> | Array<number> | null
           >;
         } | null,
-        Name
-      >;
-      touchWorkforceSession: FunctionReference<
-        "mutation",
-        "internal",
-        { actor: { sessionId: string; userId: string } },
-        { expiresAt: number },
         Name
       >;
       updateMany: FunctionReference<
@@ -577,48 +393,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             value:
               string | number | boolean | Array<string> | Array<number> | null;
           }>;
-          workforce?:
-            | {
-                expectedGeneration: number;
-                operation:
-                  | "begin-enrollment"
-                  | "confirm-enrollment"
-                  | "regenerate-backup-codes"
-                  | "change-password";
-                replay?: {
-                  digest: string;
-                  factorFingerprint: string;
-                  factorId: string;
-                  matchingCounters: Array<number>;
-                  userId: string;
-                };
-                sessionId: string;
-                userId: string;
-              }
-            | {
-                expectedGeneration: number;
-                operation: "password-sign-in";
-                userId: string;
-              }
-            | {
-                challengeId: string;
-                expectedGeneration: number;
-                operation: "password-challenge";
-                userId: string;
-              }
-            | {
-                challengeId: string;
-                expectedGeneration: number;
-                operation: "totp-sign-in" | "recovery-sign-in";
-                replay?: {
-                  digest: string;
-                  factorFingerprint: string;
-                  factorId: string;
-                  matchingCounters: Array<number>;
-                  userId: string;
-                };
-                userId: string;
-              };
         },
         Record<
           string,

@@ -120,8 +120,6 @@ const contractProfiles = Object.freeze({
       'sideEffects',
       'exports',
       'dependencies',
-      'peerDependencies',
-      'peerDependenciesMeta',
       'engines',
     ]),
     forbiddenPackageFields: Object.freeze([
@@ -137,6 +135,8 @@ const contractProfiles = Object.freeze({
       'man',
       'directories',
       'gypfile',
+      'peerDependencies',
+      'peerDependenciesMeta',
       'optionalDependencies',
       'bundleDependencies',
       'bundledDependencies',
@@ -308,28 +308,15 @@ function assertMcpManifestShapes(manifest, profile) {
     throw new Error('MCP package files must contain only dist.')
   }
   assertPlainRecord(manifest.exports, 'exports')
-  for (const field of ['dependencies', 'peerDependencies', 'engines']) {
+  for (const field of ['dependencies', 'engines']) {
     assertStringMap(manifest[field], field)
   }
-  assertPlainRecord(manifest.peerDependenciesMeta, 'peerDependenciesMeta')
   assertReleaseManifestPolicy(manifest, profile)
   if (
     Object.keys(manifest.dependencies).length !== 1 ||
     !Object.hasOwn(manifest.dependencies, '@modelcontextprotocol/server')
   ) {
     throw new Error('MCP package must pin exactly one official server SDK dependency.')
-  }
-  if (
-    !isDeepStrictEqual(manifest.peerDependenciesMeta, {
-      '@modelcontextprotocol/ext-apps': { optional: true },
-      '@modelcontextprotocol/sdk': { optional: true },
-      vue: { optional: true },
-    }) ||
-    manifest.peerDependencies['@modelcontextprotocol/ext-apps'] !== '1.7.5 || 2.0.0' ||
-    manifest.peerDependencies['@modelcontextprotocol/sdk'] !== '1.30.0' ||
-    manifest.peerDependencies.vue !== '>=3.5.0 <4'
-  ) {
-    throw new Error('MCP Vue App integrations must use the reviewed optional peer set.')
   }
 }
 

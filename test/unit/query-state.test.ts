@@ -21,60 +21,49 @@ describe('query state helpers', () => {
       expect(
         computeConvexQueryPending({
           isSkipped: true,
-          hasData: false,
-          hasSettled: false,
           server: false,
-          resolveImmediately: true,
-          isServer: true,
-          isClient: false,
           asyncDataPending: true,
+          isAuthPending: true,
         }),
       ).toBe(false)
+    })
+
+    it('stays pending while auth settles', () => {
+      expect(
+        computeConvexQueryPending({
+          isSkipped: false,
+          server: true,
+          asyncDataPending: false,
+          isAuthPending: true,
+        }),
+      ).toBe(true)
     })
 
     it('stays pending on the server when server fetching is disabled', () => {
       expect(
         computeConvexQueryPending({
           isSkipped: false,
-          hasData: false,
-          hasSettled: false,
           server: false,
-          resolveImmediately: false,
-          isServer: true,
-          isClient: false,
           asyncDataPending: false,
         }),
       ).toBe(true)
     })
 
-    it('stays pending for immediate client consumers until data settles', () => {
+    it('follows Nuxt async data pending when server fetching is enabled', () => {
       expect(
         computeConvexQueryPending({
           isSkipped: false,
-          hasData: false,
-          hasSettled: false,
           server: true,
-          resolveImmediately: true,
-          isServer: false,
-          isClient: true,
-          asyncDataPending: false,
-        }),
-      ).toBe(true)
-    })
-
-    it('falls back to Nuxt async data pending after data exists', () => {
-      expect(
-        computeConvexQueryPending({
-          isSkipped: false,
-          hasData: true,
-          hasSettled: true,
-          server: true,
-          resolveImmediately: true,
-          isServer: false,
-          isClient: true,
           asyncDataPending: false,
         }),
       ).toBe(false)
+      expect(
+        computeConvexQueryPending({
+          isSkipped: false,
+          server: true,
+          asyncDataPending: true,
+        }),
+      ).toBe(true)
     })
   })
 

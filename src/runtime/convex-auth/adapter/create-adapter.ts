@@ -11,10 +11,8 @@ import {
   type DBAdapterDebugLogOption,
   type JoinConfig,
 } from 'better-auth/adapters'
-import { APIError } from 'better-auth/api'
 import { symmetricDecrypt, symmetricEncrypt, type SecretConfig } from 'better-auth/crypto'
 import { createFunctionHandle, type FunctionArgs, type GenericDataModel } from 'convex/server'
-import { ConvexError } from 'convex/values'
 
 import { isWritableAuthCtx, requireWritableAuthCtx, type AuthCtx } from '../context'
 import {
@@ -26,9 +24,7 @@ import {
   takeOAuthRefreshParent,
 } from '../oauth-refresh-transport'
 import type { AuthAdapterComponentApi, AuthComponentTriggers, AuthFunctions } from '../types'
-import { createWorkforceAdapterTransport } from '../workforce/adapter-transport'
-import { hasWorkforceSchema, workforceSchemaPlugin } from '../workforce/schema'
-import { createAuthSchema, generateAuthSchemaArtifacts } from './generate-schema'
+import { createAuthSchema } from './generate-schema'
 
 interface AdapterOptions<DataModel extends GenericDataModel> {
   authFunctions?: AuthFunctions
@@ -46,16 +42,6 @@ type ComponentWhere = NonNullable<
   FunctionArgs<AuthAdapterComponentApi['adapter']['findOne']>['where']
 >
 type ComponentUpdate = FunctionArgs<AuthAdapterComponentApi['adapter']['updateOne']>['update']
-
-function rejectReplay(error: unknown): never {
-  if (error instanceof ConvexError && error.data === 'AUTH_WORKFORCE_TOTP_REPLAYED') {
-    throw new APIError('FORBIDDEN', {
-      code: 'INVALID_TWO_FACTOR_CODE',
-      message: 'This code cannot be used. Wait for a new code and try again.',
-    })
-  }
-  throw error
-}
 
 function toComponentWhere(where: CleanedWhere[] | undefined): ComponentWhere | undefined {
   return where?.map((condition) => ({
@@ -267,17 +253,9 @@ export function createConvexAuthAdapter<
       customTransformOutput: ({ data, fieldAttributes }) =>
         fieldAttributes.type === 'date' ? toDate(data) : data,
     },
-    adapter: ({ getFieldName, getModelName, options, schema }) => {
+    adapter: ({ getFieldName, getModelName, options }) => {
       options.telemetry = { enabled: false }
       if (options.advanced?.database?.joins) throw new Error('AUTH_JOINS_UNSUPPORTED')
-      // The owned factory installs this plugin; the component independently
-      // validates its schema. Ordinary auth does not generate workforce metadata.
-      const workforce =
-        options.plugins?.some((plugin) => plugin.id === workforceSchemaPlugin.id) === true
-      if (workforce && !hasWorkforceSchema(generateAuthSchemaArtifacts(schema).metadata)) {
-        throw new Error('AUTH_WORKFORCE_SCHEMA_MISMATCH')
-      }
-      const workforceTransport = createWorkforceAdapterTransport(workforce)
       const idTokens = createAccountIdTokenProtector(options)
       const triggerModels = {
         onCreate: configuredTriggerModels(adapterOptions.triggers, 'onCreate').map(getModelName),
@@ -329,19 +307,14 @@ export function createConvexAuthAdapter<
           model: string
         }): Promise<T> => {
           requireWritableAuthCtx(ctx)
-          const { operation, consumedChallenge } = await workforceTransport.create(model, data)
-          const created = await ctx
-            .runMutation(component.adapter.create, {
-              model,
-              data: await idTokens.protect(model, data),
-              ...(model === 'oauthRefreshToken'
-                ? { oauthRefreshParentId: await takeOAuthRefreshParent() }
-                : {}),
-              onCreateHandle: await triggerHandle(model, 'onCreate'),
-              ...(operation ? { workforce: operation } : {}),
-              ...(consumedChallenge ? { workforceConsumedChallenge: consumedChallenge } : {}),
-            })
-            .catch(rejectReplay)
+          const created = await ctx.runMutation(component.adapter.create, {
+            model,
+            data: await idTokens.protect(model, data),
+            ...(model === 'oauthRefreshToken'
+              ? { oauthRefreshParentId: await takeOAuthRefreshParent() }
+              : {}),
+            onCreateHandle: await triggerHandle(model, 'onCreate'),
+          })
           return idTokens.reveal(model, created as T)
         },
         findOne: async <T>({
@@ -354,12 +327,10 @@ export function createConvexAuthAdapter<
           select?: string[]
           where: CleanedWhere[]
         }): Promise<T | null> => {
-          const operation = await workforceTransport.operation(model)
           const found = await ctx.runQuery(component.adapter.findOne, {
             model,
             where: toComponentWhere(where),
             select: mapSelect(model, select),
-            ...(operation?.operation === 'confirm-enrollment' ? { workforce: operation } : {}),
           })
           if (model === 'oauthRefreshToken') {
             if (!(await matchesOAuthRefreshClient(found))) return null
@@ -415,16 +386,12 @@ export function createConvexAuthAdapter<
         }): Promise<T | null> => {
           requireWritableAuthCtx(ctx)
           if (where.length === 0) return null
-          const operation = await workforceTransport.operation()
-          const updated = await ctx
-            .runMutation(component.adapter.updateOne, {
-              model,
-              where: toComponentWhere(where)!,
-              update: (await idTokens.protect(model, update)) as ComponentUpdate,
-              onUpdateHandle: await triggerHandle(model, 'onUpdate'),
-              ...(operation ? { workforce: operation } : {}),
-            })
-            .catch(rejectReplay)
+          const updated = await ctx.runMutation(component.adapter.updateOne, {
+            model,
+            where: toComponentWhere(where)!,
+            update: (await idTokens.protect(model, update)) as ComponentUpdate,
+            onUpdateHandle: await triggerHandle(model, 'onUpdate'),
+          })
           return idTokens.reveal(model, updated as T | null)
         },
         updateMany: async ({ model, where, update }) => {
@@ -477,7 +444,6 @@ export function createConvexAuthAdapter<
             onUpdateHandle: await relationshipTriggerHandle('onUpdate'),
             onUpdateModels: triggerModels.onUpdate,
           })
-          await workforceTransport.consumed(model, consumed)
           return idTokens.reveal(model, consumed as T | null)
         },
         incrementOne: async <T>({
@@ -492,14 +458,12 @@ export function createConvexAuthAdapter<
           where: CleanedWhere[]
         }): Promise<T | null> => {
           requireWritableAuthCtx(ctx)
-          const operation = await workforceTransport.operation()
           const incremented = await ctx.runMutation(component.adapter.incrementOne, {
             model,
             where: toComponentWhere(where)!,
             increment,
             set: await idTokens.protect(model, set),
             onUpdateHandle: await triggerHandle(model, 'onUpdate'),
-            ...(operation ? { workforce: operation } : {}),
           })
           if (model === 'oauthRefreshToken' && set?.rotatedAt != null) {
             if (!incremented) oauthRefreshBusy()

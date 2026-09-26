@@ -28,10 +28,6 @@ import type {
   AuthFunctions,
   CreateAuth,
 } from './types'
-import { workforceSessionPolicy } from './workforce/operations'
-import { createWorkforceSchemaPlugins } from './workforce/profile'
-import { createWorkforceProviderHooks } from './workforce/provider-hooks'
-import { workforceSchemaOptions } from './workforce/schema'
 
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>
 type EmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>
@@ -74,8 +70,6 @@ const reviewedPasswordOptionKeys = [
 ] as const
 
 export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataModel> {
-  /** Fixed password + TOTP profile; requires the generated workforce component schema. */
-  readonly workforce?: true
   readonly appName?: string
   readonly authFunctions?: AuthFunctions
   readonly beforeUserCreate?: (input: {
@@ -323,22 +317,6 @@ export function createBetterConvexAuthOwned<
   assertExtraPluginsAllowed: () => void = () => {},
 ): BetterConvexAuth<DataModel, Api> {
   rejectUnsupportedOptions(options)
-  const workforce = options.workforce === true
-  if (options.workforce !== undefined && !workforce) throw new Error('AUTH_CONFIG_INVALID')
-  if (workforce) {
-    for (const key of [
-      'twoFactor',
-      'emailOTP',
-      'organization',
-      'oauthProvider',
-      'socialProviders',
-    ] as const) {
-      if (options[key] !== undefined && options[key] !== false)
-        throw new Error(`AUTH_WORKFORCE_UNSUPPORTED_OPTION:${key}`)
-    }
-    if (options.session?.cookieCache?.enabled)
-      throw new Error('AUTH_WORKFORCE_COOKIE_CACHE_FORBIDDEN')
-  }
   const authComponent = createAuthComponent<DataModel, Api>(component, {
     authFunctions: options.authFunctions,
     triggers: options.triggers,
@@ -386,22 +364,7 @@ export function createBetterConvexAuthOwned<
         assertFactoryResult(emailOtpOptions, true)
       }
       assertOnlyKeys(emailAndPassword, reviewedPasswordOptionKeys, 'emailAndPassword')
-      if (workforce) {
-        if (
-          emailAndPassword === false ||
-          emailAndPassword?.requireEmailVerification === false ||
-          emailAndPassword?.revokeSessionsOnPasswordReset === false ||
-          emailVerification?.autoSignInAfterVerification === true ||
-          (!emailAndPassword?.disableSignUp && !options.beforeUserCreate)
-        )
-          throw new Error('AUTH_WORKFORCE_PASSWORD_POLICY_INVALID')
-      }
-      // Component-only assertion. The component derives its profile from its
-      // canonical schema; a runtime option cannot select weaker admission.
-      await ctx.runQuery(component.adapter.assertProfile, { workforce })
-      const workforceHooks = workforce ? createWorkforceProviderHooks() : undefined
       const featurePlugins = [
-        ...(workforce ? createWorkforceSchemaPlugins() : []),
         options.organization === false || options.organization === undefined
           ? null
           : organization(options.organization),
@@ -428,14 +391,6 @@ export function createBetterConvexAuthOwned<
         ...extraPlugins,
         jwtPlugin,
         convexPlugin,
-        ...(workforceHooks
-          ? [
-              {
-                id: 'bcn-workforce-policy',
-                hooks: { before: [{ matcher: () => true, handler: workforceHooks.before }] },
-              },
-            ]
-          : []),
         ...(oauthProfile ? [createOAuthProvider(oauthProfile)] : []),
       ]
       const maximumConfiguredPluginRateLimitWindow = Math.max(
@@ -464,23 +419,15 @@ export function createBetterConvexAuthOwned<
         basePath: '/api/auth',
         baseURL: siteUrl,
         database: authComponent.adapter(ctx),
-        databaseHooks:
-          options.beforeUserCreate || workforceHooks
-            ? {
-                ...(options.beforeUserCreate
-                  ? {
-                      user: {
-                        create: {
-                          before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
-                        },
-                      },
-                    }
-                  : {}),
-                ...(workforceHooks
-                  ? { session: { create: { after: workforceHooks.sessionCreateAfter } } }
-                  : {}),
-              }
-            : undefined,
+        databaseHooks: options.beforeUserCreate
+          ? {
+              user: {
+                create: {
+                  before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
+                },
+              },
+            }
+          : undefined,
         disabledPaths: [
           '/token',
           '/get-access-token',
@@ -502,16 +449,11 @@ export function createBetterConvexAuthOwned<
             ? { enabled: false }
             : {
                 ...emailAndPassword,
-                ...(workforce
-                  ? { requireEmailVerification: true, revokeSessionsOnPasswordReset: true }
-                  : {}),
                 autoSignIn: false,
                 enabled: true,
                 minPasswordLength: 15,
               },
-        emailVerification: workforce
-          ? { ...emailVerification, autoSignInAfterVerification: false }
-          : emailVerification,
+        emailVerification,
         plugins,
         rateLimit: {
           customStorage: rateLimitStorage,
@@ -523,26 +465,13 @@ export function createBetterConvexAuthOwned<
           expiresIn: 7 * 24 * 60 * 60,
           updateAge: 24 * 60 * 60,
           ...options.session,
-          ...(workforce
-            ? {
-                ...workforceSchemaOptions.session,
-                cookieCache: { enabled: false },
-                expiresIn: workforceSessionPolicy.absoluteLifetimeMs / 1000,
-                freshAge: workforceSessionPolicy.freshAuthenticationMs / 1000,
-                disableSessionRefresh: true,
-              }
-            : {}),
         },
-        ...(workforce ? { user: workforceSchemaOptions.user } : {}),
         socialProviders:
           typeof options.socialProviders === 'function'
             ? options.socialProviders()
             : options.socialProviders,
         trustedOrigins: [siteUrl],
-        verification: {
-          ...(workforce ? workforceSchemaOptions.verification : {}),
-          storeIdentifier: 'hashed',
-        },
+        verification: { storeIdentifier: 'hashed' },
       })
       await auth.$context
       return auth

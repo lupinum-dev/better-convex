@@ -116,8 +116,8 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
         createConvexQueryState(query, 'skip')
         createConvexQueryState(query, 'skip')
         createConvexQueryState(query, 'skip')
-        createConvexPaginatedQueryState(paginated as never, 'skip', { initialNumItems: 10 }, true)
-        createConvexPaginatedQueryState(paginated as never, 'skip', { initialNumItems: 10 }, true)
+        createConvexPaginatedQueryState(paginated as never, 'skip', { initialNumItems: 10 })
+        createConvexPaginatedQueryState(paginated as never, 'skip', { initialNumItems: 10 })
         return { before, after: identityProxyListenerCount() }
       },
       { convex: new MockConvexClient() },

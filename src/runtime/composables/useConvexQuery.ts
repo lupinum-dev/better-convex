@@ -355,12 +355,7 @@ function createServerConvexQueryState<
   const pending = computed(() =>
     computeConvexQueryPending({
       isSkipped: gate.value.outcome === 'idle',
-      hasData: asyncData.data.value !== null,
-      hasSettled: asyncData.status.value === 'success' || asyncData.status.value === 'error',
       server,
-      resolveImmediately: false,
-      isServer: true,
-      isClient: false,
       asyncDataPending: asyncData.pending.value,
       isAuthPending: gate.value.outcome === 'wait',
     }),

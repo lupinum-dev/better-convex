@@ -188,7 +188,7 @@ export async function handleMcpRequest(
 
 /** SDK 2.0.0 intercepts subscriptions before dispatch, even with no advertised capability.
  * Correct only its exact zero-capacity response after the SDK's request validation.
- * Remove with the SDK disable-subscriptions fix; tracked in internals/migrations.md. */
+ * Remove with the SDK disable-subscriptions fix. */
 async function rejectUnavailableSubscription(
   request: Request,
   response: Response,

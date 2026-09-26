@@ -9,7 +9,6 @@ type MutationSubscriber = (entries: MutationEntry[]) => void
 
 export interface DevtoolsSink {
   getQueries(): QueryRegistryEntry[]
-  getQuery(id: string): QueryRegistryEntry | undefined
   registerQuery(entry: Omit<QueryRegistryEntry, 'id' | 'lastUpdated'>): string
   updateQuery(
     id: string,
@@ -68,10 +67,6 @@ export function createDevtoolsSink(): DevtoolsSink {
 
   return {
     getQueries,
-    getQuery: (id) => {
-      const entry = queries.get(id)
-      return entry ? cloneEntry(entry) : undefined
-    },
     registerQuery(entry) {
       if (disposed) return ''
       const id = createId()

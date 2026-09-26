@@ -182,14 +182,12 @@ async function _requiredArgsContracts() {
   void useConvexQuery(api.files.getUrl)
   // @ts-expect-error wrong arg shape must not compile
   void useConvexQuery(api.files.getUrl, { wrong: 1 })
-  // @ts-expect-error no-arg functions must reject arbitrary properties (R2-3.3b)
+  // @ts-expect-error no-arg functions must reject arbitrary properties
   void useConvexQuery(api.tasks.list, { initialNumItems: 5 })
   // @ts-expect-error options can never occupy the args slot
   void useConvexQuery(api.tasks.list, { server: false })
 
-  // --- useConvexQuery: all-optional args still require the explicit slot
-  // (decision 9 — this differs from earlier behavior, where all-optional
-  // args could omit the slot entirely) ---
+  // --- useConvexQuery: all-optional args still require the explicit slot ---
   // Positive: all-optional args accept a populated object.
   void useConvexQuery(api.tasks.search, { limit: 5 })
   // Positive: all-optional args accept a partial object.
@@ -198,12 +196,12 @@ async function _requiredArgsContracts() {
   void useConvexQuery(api.tasks.search, {})
   // Positive: all-optional args accept the skip sentinel.
   void useConvexQuery(api.tasks.search, 'skip')
-  // @ts-expect-error all-optional args no longer omit the args slot (decision 9)
+  // @ts-expect-error all-optional args still require the args slot
   void useConvexQuery(api.tasks.search)
-  // @ts-expect-error all-optional args still reject unknown properties (R2-3.3b)
+  // @ts-expect-error all-optional args still reject unknown properties
   void useConvexQuery(api.tasks.search, { limit: 5, wrong: 1 })
 
-  // --- useConvexQuery: union all-optional args stay callable (R2-3.3c) ---
+  // --- useConvexQuery: union all-optional args stay callable ---
   // Top-level v.union(...) validators produce union args; each member must be
   // judged by its own keys, not the union's key intersection.
   void useConvexQuery(api.tasks.filter, { term: 'x' })
@@ -211,7 +209,7 @@ async function _requiredArgsContracts() {
   void useConvexQuery(api.tasks.filter, 'skip')
   // @ts-expect-error union all-optional args no longer omit the args slot
   void useConvexQuery(api.tasks.filter)
-  // @ts-expect-error union all-optional args still reject unknown properties (R2-3.3c)
+  // @ts-expect-error union all-optional args still reject unknown properties
   void useConvexQuery(api.tasks.filter, { wrong: 1 })
 
   // --- useConvexPaginatedQuery ---

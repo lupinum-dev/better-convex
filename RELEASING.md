@@ -182,9 +182,8 @@ release. If the version does not exist, the protected job publishes the same
 retained tarball with OIDC and requires provenance. Never rebuild it.
 
 Never delete, replace, rebuild, repack, or publish a retired immutable
-coordinate. The internal decisions ledger and retained evidence directories
-record private rehearsal failures. `CHANGELOG.md` contains only versions that
-were actually published to npm.
+coordinate. `CHANGELOG.md` contains only versions that were actually published
+to npm.
 
 ## Package previews
 

@@ -1,15 +1,10 @@
-import { betterAuth } from 'better-auth'
+import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { memoryAdapter, type MemoryDB } from 'better-auth/adapters/memory'
 import { jwt } from 'better-auth/plugins'
 import { describe, expect, it, vi } from 'vitest'
 
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
-import { workforceSessionPolicy } from '../../src/runtime/convex-auth/workforce/operations'
-import {
-  workforceSchemaOptions,
-  workforceSchemaPlugin,
-} from '../../src/runtime/convex-auth/workforce/schema'
 import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
 
 const origin = 'https://app.example.test'
@@ -17,14 +12,17 @@ const convexSiteUrl = 'https://deployment.convex.site'
 const secret = 'internal-session-test-secret-with-at-least-32-randomish-characters'
 const sessionToken = 'persisted-session-token'
 
-function database(): MemoryDB {
+// Outside Better Auth's update window, so a token exchange reads the session instead of renewing it.
+const sessionLifetimeMs = 7 * 24 * 60 * 60 * 1_000
+
+function database(expiresInMs = 60_000): MemoryDB {
   const now = Date.now()
   return {
     rateLimit: [],
     session: [
       {
         createdAt: new Date(now - 1_000),
-        expiresAt: new Date(now + 60_000),
+        expiresAt: new Date(now + expiresInMs),
         id: 'session-1',
         ipAddress: null,
         token: sessionToken,
@@ -47,19 +45,15 @@ function database(): MemoryDB {
   }
 }
 
-function createAuth(memoryDatabase = database(), workforce = false) {
+function createAuth(memoryDatabase = database(), session?: BetterAuthOptions['session']) {
   const issuer = `${origin}/api/auth`
   return betterAuth({
-    ...(workforce ? workforceSchemaOptions : {}),
-    ...(workforce
-      ? { session: { ...workforceSchemaOptions.session, disableSessionRefresh: true } }
-      : {}),
     advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
     basePath: '/api/auth',
     baseURL: origin,
     database: memoryAdapter(memoryDatabase),
+    ...(session ? { session } : {}),
     plugins: [
-      ...(workforce ? [workforceSchemaPlugin] : []),
       jwt({
         disableSettingJwtHeader: true,
         jwks: {
@@ -98,51 +92,95 @@ function createAuth(memoryDatabase = database(), workforce = false) {
   })
 }
 
-function request(marker: boolean, path = '/get-session'): Request {
+function request(marker: boolean, path = '/get-session', cookie?: string): Request {
   return new Request(`${origin}/api/auth${path}`, {
     headers: {
       authorization: `Bearer ${sessionToken}`,
       ...(marker ? { [INTERNAL_SESSION_HEADER]: '1' } : {}),
+      ...(cookie ? { cookie } : {}),
     },
   })
 }
 
+// Mint tests prove the checks that precede signing; key provisioning is covered elsewhere.
+async function spyOnSigner(auth: ReturnType<typeof createAuth>) {
+  const signer = (await auth.$context).getPlugin('jwt')
+  if (!signer) throw new Error('Expected the JWT plugin')
+  return vi.spyOn(signer.endpoints, 'signJWT').mockResolvedValue({ token: 'signed-convex-jwt' })
+}
+
 describe('internal Better Auth session bridge', () => {
-  it.each([
-    { label: 'full', method: 'password-totp', allowed: true },
-    { label: 'password', method: 'password-only', allowed: false },
-    { label: 'enrollment', method: 'totp-enrollment', allowed: false },
-    { label: 'recovery', method: 'password-recovery', allowed: false },
-    { label: 'absent proof', method: 'none', allowed: false },
-    { label: 'stale generation', method: 'password-totp', generation: 4, allowed: false },
-    { label: 'unverified email', method: 'password-totp', verified: false, allowed: false },
-    { label: 'absolute deadline', method: 'password-totp', absoluteExpired: true, allowed: false },
-  ])('gates workforce token mint for $label sessions', async (scenario) => {
-    const now = Date.now()
-    const memory = database()
-    Object.assign(memory.user![0]!, {
-      bcnSecurityGeneration: 5,
-      emailVerified: scenario.verified ?? true,
-    })
-    Object.assign(memory.session![0]!, {
-      bcnAssuranceGeneration: scenario.generation ?? 5,
-      bcnAssuranceMethod: scenario.method,
-      bcnAuthenticatedAt: now - 1000,
-      bcnSessionStartedAt: scenario.absoluteExpired
-        ? now - workforceSessionPolicy.absoluteLifetimeMs
-        : now - 1000,
-    })
-    const auth = createAuth(memory, true)
-    const context = await auth.$context
-    const signer = context.getPlugin('jwt')
-    if (!signer) throw new Error('Expected the JWT plugin')
-    // This proves the real HTTP gate precedes signing, not JWT cryptography.
-    const sign = vi.spyOn(signer.endpoints, 'signJWT').mockResolvedValue({ token: 'synthetic-jwt' })
+  it('signs one Convex session token bound to the stored session and user rows', async () => {
+    const auth = createAuth(database(sessionLifetimeMs))
+    const sign = await spyOnSigner(auth)
+
     const response = await auth.handler(request(true, '/convex/token'))
-    expect(response.status).toBe(scenario.allowed ? 200 : 401)
-    expect(sign).toHaveBeenCalledTimes(scenario.allowed ? 1 : 0)
+
+    expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('private, no-store')
+    await expect(response.json()).resolves.toEqual({ token: 'signed-convex-jwt' })
+    expect(sign).toHaveBeenCalledTimes(1)
+    expect(sign.mock.calls[0]?.[0]?.body).toMatchObject({
+      overrideOptions: {
+        jwt: { audience: 'convex', expirationTime: '15m', issuer: convexSiteUrl },
+      },
+      payload: { sid: 'session-1', sub: 'user-1', token_use: 'convex-session' },
+    })
   })
+
+  it.each<{ label: string; mutate: (memory: MemoryDB) => void; allowed: boolean }>([
+    { label: 'intact rows', mutate: () => {}, allowed: true },
+    {
+      label: 'a deleted session row',
+      mutate: (memory) => void memory.session!.splice(0),
+      allowed: false,
+    },
+    {
+      label: 'a rotated session token',
+      mutate: (memory) => void (memory.session![0]!.token = 'rotated-session-token'),
+      allowed: false,
+    },
+    {
+      label: 'an expired session row',
+      mutate: (memory) => void (memory.session![0]!.expiresAt = new Date(Date.now() - 1_000)),
+      allowed: false,
+    },
+    {
+      label: 'a deleted user row',
+      mutate: (memory) => void memory.user!.splice(0),
+      allowed: false,
+    },
+  ])(
+    'rechecks stored rows before signing a cookie-cached session with $label',
+    async ({ mutate, allowed }) => {
+      const memory = database(sessionLifetimeMs)
+      const auth = createAuth(memory, { cookieCache: { enabled: true, maxAge: 300 } })
+      const cacheName = (await auth.$context).authCookies.sessionData.name
+      const sign = await spyOnSigner(auth)
+
+      const primed = await auth.handler(request(true))
+      expect(primed.status).toBe(200)
+      const cacheCookie = primed.headers
+        .getSetCookie()
+        .map((cookie) => cookie.split(';', 1)[0]!)
+        .find((cookie) => cookie.startsWith(`${cacheName}=`))
+      if (!cacheCookie) throw new Error('Expected a session cookie cache')
+
+      mutate(memory)
+      // The cache still authenticates the request; only the stored-row re-read can refuse it.
+      const cached = await auth.handler(request(true, '/get-session', cacheCookie))
+      await expect(cached.json()).resolves.toMatchObject({
+        session: { id: 'session-1', token: sessionToken },
+        user: { id: 'user-1' },
+      })
+
+      const response = await auth.handler(request(true, '/convex/token', cacheCookie))
+
+      expect(response.status).toBe(allowed ? 200 : 401)
+      expect(response.headers.get('cache-control')).toBe('private, no-store')
+      expect(sign).toHaveBeenCalledTimes(allowed ? 1 : 0)
+    },
+  )
 
   it('gives the authenticated token exchange a bounded route-specific allowance', () => {
     const plugin = convexAuth({

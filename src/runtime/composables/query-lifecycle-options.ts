@@ -8,7 +8,7 @@ export interface ResolvedQueryLifecycleOptions {
   readonly lazy: boolean
 }
 
-/** Resolve the lifecycle pair shared by query, multi-query, and pagination. */
+/** Resolve the lifecycle pair shared by query and pagination. */
 export function resolveQueryLifecycleOptions(
   options: QueryLifecycleOptions | undefined,
 ): ResolvedQueryLifecycleOptions {

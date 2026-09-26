@@ -30,40 +30,40 @@ Source: https://github.com/OWASP/ASVS/releases/tag/v5.0.0_release
 
 ## Library-owned verified controls
 
-| ASVS control  | Evidence                                                        |
-| ------------- | --------------------------------------------------------------- |
-| v5.0.0-1.2.2  | `test/security/proxy-property-regressions.test.ts`              |
-| v5.0.0-1.3.6  | `src/runtime/utils/site-url.ts`                                 |
-| v5.0.0-3.4.2  | `src/runtime/server/api/auth/security.ts`                       |
-| v5.0.0-3.5.1  | `test/security/proxy-regressions.test.ts`                       |
-| v5.0.0-3.5.2  | `test/security/proxy-regressions.test.ts`                       |
-| v5.0.0-4.1.3  | `src/runtime/server/api/auth/headers.ts`                        |
-| v5.0.0-4.2.1  | `src/runtime/server/api/auth/headers.ts`                        |
-| v5.0.0-10.1.1 | `src/runtime/server/api/auth/headers.ts`                        |
-| v5.0.0-12.2.1 | `src/runtime/utils/site-url.ts`                                 |
-| v5.0.0-12.3.1 | `src/runtime/utils/site-url.ts`                                 |
-| v5.0.0-13.1.1 | `src/ARCHITECTURE.md`                                           |
-| v5.0.0-13.2.4 | `src/runtime/utils/site-url.ts`                                 |
-| v5.0.0-13.2.5 | `src/runtime/utils/site-url.ts`                                 |
-| v5.0.0-13.4.2 | `test/security/proxy-regressions.test.ts`                       |
-| v5.0.0-13.4.4 | `src/runtime/server/api/auth/[...].ts`                          |
-| v5.0.0-14.2.2 | `src/runtime/server/api/auth/[...].ts`                          |
-| v5.0.0-14.3.1 | `internal/evidence/asvs-client-lifecycle-cutover-2026-07-22.md` |
-| v5.0.0-14.3.2 | `test/security/proxy-regressions.test.ts`                       |
-| v5.0.0-15.1.1 | `SECURITY.md`                                                   |
-| v5.0.0-15.1.2 | `scripts/generate-sbom.mjs`                                     |
-| v5.0.0-15.1.3 | `src/ARCHITECTURE.md`                                           |
-| v5.0.0-15.2.1 | `.github/workflows/ci.yml`                                      |
-| v5.0.0-15.2.2 | `src/runtime/server/api/auth/body-size.ts`                      |
-| v5.0.0-15.2.3 | `scripts/check-package-exports.mjs`                             |
-| v5.0.0-15.3.2 | `test/security/proxy-regressions.test.ts`                       |
-| v5.0.0-15.3.4 | `test/unit/auth-proxy-headers.test.ts`                          |
-| v5.0.0-15.3.5 | `tsconfig.json`                                                 |
-| v5.0.0-16.2.5 | `src/runtime/utils/sanitize-diagnostic.ts`                      |
-| v5.0.0-16.4.1 | `src/runtime/utils/sanitize-diagnostic.ts`                      |
-| v5.0.0-16.5.1 | `test/security/proxy-regressions.test.ts`                       |
-| v5.0.0-16.5.2 | `internal/evidence/asvs-client-lifecycle-cutover-2026-07-22.md` |
-| v5.0.0-16.5.3 | `internal/evidence/asvs-client-lifecycle-cutover-2026-07-22.md` |
+| ASVS control  | Evidence                                           |
+| ------------- | -------------------------------------------------- |
+| v5.0.0-1.2.2  | `test/security/proxy-property-regressions.test.ts` |
+| v5.0.0-1.3.6  | `src/runtime/utils/site-url.ts`                    |
+| v5.0.0-3.4.2  | `src/runtime/server/api/auth/security.ts`          |
+| v5.0.0-3.5.1  | `test/security/proxy-regressions.test.ts`          |
+| v5.0.0-3.5.2  | `test/security/proxy-regressions.test.ts`          |
+| v5.0.0-4.1.3  | `src/runtime/server/api/auth/headers.ts`           |
+| v5.0.0-4.2.1  | `src/runtime/server/api/auth/headers.ts`           |
+| v5.0.0-10.1.1 | `src/runtime/server/api/auth/headers.ts`           |
+| v5.0.0-12.2.1 | `src/runtime/utils/site-url.ts`                    |
+| v5.0.0-12.3.1 | `src/runtime/utils/site-url.ts`                    |
+| v5.0.0-13.1.1 | `src/ARCHITECTURE.md`                              |
+| v5.0.0-13.2.4 | `src/runtime/utils/site-url.ts`                    |
+| v5.0.0-13.2.5 | `src/runtime/utils/site-url.ts`                    |
+| v5.0.0-13.4.2 | `test/security/proxy-regressions.test.ts`          |
+| v5.0.0-13.4.4 | `src/runtime/server/api/auth/[...].ts`             |
+| v5.0.0-14.2.2 | `src/runtime/server/api/auth/[...].ts`             |
+| v5.0.0-14.3.1 | `test/unit/query-controller.test.ts`               |
+| v5.0.0-14.3.2 | `test/security/proxy-regressions.test.ts`          |
+| v5.0.0-15.1.1 | `SECURITY.md`                                      |
+| v5.0.0-15.1.2 | `scripts/generate-sbom.mjs`                        |
+| v5.0.0-15.1.3 | `src/ARCHITECTURE.md`                              |
+| v5.0.0-15.2.1 | `.github/workflows/ci.yml`                         |
+| v5.0.0-15.2.2 | `src/runtime/server/api/auth/body-size.ts`         |
+| v5.0.0-15.2.3 | `scripts/check-package-exports.mjs`                |
+| v5.0.0-15.3.2 | `test/security/proxy-regressions.test.ts`          |
+| v5.0.0-15.3.4 | `test/unit/auth-proxy-headers.test.ts`             |
+| v5.0.0-15.3.5 | `tsconfig.json`                                    |
+| v5.0.0-16.2.5 | `src/runtime/utils/sanitize-diagnostic.ts`         |
+| v5.0.0-16.4.1 | `src/runtime/utils/sanitize-diagnostic.ts`         |
+| v5.0.0-16.5.1 | `test/security/proxy-regressions.test.ts`          |
+| v5.0.0-16.5.2 | `test/unit/auth-adapter-port.test.ts`              |
+| v5.0.0-16.5.3 | `test/unit/callable-lifecycle.test.ts`             |
 
 ## Authentication invariant map
 

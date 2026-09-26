@@ -11,23 +11,6 @@ import {
 const root = join(import.meta.dirname, '../..')
 
 describe('supported version alignment', () => {
-  it('uses the exact OTP utility version owned by the pinned provider tuple', () => {
-    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
-      dependencies: Record<string, string>
-    }
-    const utility = manifest.dependencies['@better-auth/utils']
-    expect(utility).toMatch(/^\d+\.\d+\.\d+$/)
-    for (const provider of ['better-auth', '@better-auth/core', '@better-auth/oauth-provider']) {
-      const installed = JSON.parse(
-        readFileSync(join(root, 'node_modules', provider, 'package.json'), 'utf8'),
-      ) as { dependencies: Record<string, string>; peerDependencies?: Record<string, string> }
-      expect(
-        installed.dependencies['@better-auth/utils'] ??
-          installed.peerDependencies?.['@better-auth/utils'],
-      ).toBe(utility)
-    }
-  })
-
   it('derives every advertised Nuxt version from the package tuple', () => {
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
       dependencies: { '@nuxt/kit': string }

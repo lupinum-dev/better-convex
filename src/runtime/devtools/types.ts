@@ -94,10 +94,10 @@ export interface ConnectionState {
 // Auth Waterfall Types (SSR Performance Debugging)
 // ============================================================================
 
-export type WaterfallPhaseResult = 'hit' | 'miss' | 'success' | 'error' | 'skipped'
+export type WaterfallPhaseResult = 'miss' | 'success' | 'error'
 
 export interface AuthWaterfallPhase {
-  /** Phase name (e.g., "session-check", "cache-lookup", "token-exchange") */
+  /** Phase name (e.g., "session-check", "token-exchange", "jwt-decode") */
   name: string
   /** Start time relative to waterfall start (ms) */
   start: number
@@ -107,7 +107,7 @@ export interface AuthWaterfallPhase {
   duration: number
   /** Result of this phase */
   result: WaterfallPhaseResult
-  /** Optional details (e.g., cache key, status code) */
+  /** Optional details (e.g., status code) */
   details?: string
 }
 
@@ -122,8 +122,6 @@ export interface AuthWaterfall {
   totalDuration: number
   /** Final outcome of the auth check */
   outcome: 'authenticated' | 'unauthenticated' | 'error'
-  /** Whether the auth token was served from cache */
-  cacheHit: boolean
   /** Error message if outcome is 'error' */
   error?: string
 }
@@ -166,29 +164,16 @@ export interface AuthProxyStats {
 // DevTools Bridge Interface
 // ============================================================================
 
+/** Methods the DevTools UI can call on the app through the bridge transport. */
 export interface ConvexDevToolsBridge {
   /** Get all active queries */
   getQueries: () => QueryRegistryEntry[]
-  /** Get a specific query by ID for detail view */
-  getQueryDetail: (id: string) => QueryRegistryEntry | undefined
-  /** Subscribe to query updates */
-  subscribeToQueries: (callback: (queries: QueryRegistryEntry[]) => void) => () => void
   /** Get all mutation entries */
   getMutations: () => MutationEntry[]
-  /** Subscribe to mutation updates */
-  subscribeToMutations: (callback: (mutations: MutationEntry[]) => void) => () => void
-  /** Get auth state */
-  getAuthState: () => AuthState
   /** Get auth state with bounded token timing */
   getEnhancedAuthState: () => EnhancedAuthState
   /** Get connection state */
   getConnectionState: () => ConnectionState
   /** Get the most recent auth waterfall (SSR timing data) */
   getAuthWaterfall: () => AuthWaterfall | null
-  /** Get auth proxy stats (dev mode only) */
-  getAuthProxyStats: () => Promise<AuthProxyStats | null>
-  /** Version of the bridge API */
-  version: string
 }
-
-export {}

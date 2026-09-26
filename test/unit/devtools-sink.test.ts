@@ -110,12 +110,13 @@ describe('createDevtoolsSink', () => {
       entry.logicalKey,
     ])
 
+    const byId = (id: string) => sink.getQueries().find((query) => query.id === id)
     sink.updateQuery(firstId, { status: 'success', data: ['first'] })
-    expect(sink.getQuery(firstId)).toMatchObject({ status: 'success', data: ['first'] })
-    expect(sink.getQuery(secondId)).toMatchObject({ status: 'pending' })
+    expect(byId(firstId)).toMatchObject({ status: 'success', data: ['first'] })
+    expect(byId(secondId)).toMatchObject({ status: 'pending' })
 
     sink.removeQuery(firstId)
     expect(sink.getQueries()).toHaveLength(1)
-    expect(sink.getQuery(secondId)).toBeDefined()
+    expect(byId(secondId)).toBeDefined()
   })
 })

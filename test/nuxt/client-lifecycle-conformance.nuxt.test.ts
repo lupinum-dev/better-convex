@@ -44,7 +44,7 @@ describe('Nuxt shared client lifecycle conformance', () => {
           identity,
           identityHarness,
           query: createConvexQueryState(query, {}).resultData,
-          pagination: createConvexPaginatedQueryState(paginated, {}, { initialNumItems: 1 }, true)
+          pagination: createConvexPaginatedQueryState(paginated, {}, { initialNumItems: 1 })
             .resultData,
           mutation: useConvexMutation(mutationRef),
           action: useConvexAction(actionRef),

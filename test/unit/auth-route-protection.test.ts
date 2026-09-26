@@ -8,7 +8,6 @@ describe('route protection decision', () => {
       resolveRouteProtectionDecision({
         meta: undefined,
         defaultRedirectTo: '/auth/signin',
-        preserveReturnTo: true,
         currentPath: '/dashboard',
       }),
     ).toBeNull()
@@ -18,7 +17,6 @@ describe('route protection decision', () => {
     const decision = resolveRouteProtectionDecision({
       meta: true,
       defaultRedirectTo: '/auth/signin',
-      preserveReturnTo: true,
       currentPath: '/dashboard',
       currentFullPath: '/dashboard?tab=team',
     })
@@ -32,16 +30,14 @@ describe('route protection decision', () => {
       resolveRouteProtectionDecision({
         meta: { redirectTo: '/login' },
         defaultRedirectTo: '/auth/signin',
-        preserveReturnTo: false,
         currentPath: '/dashboard',
       }),
-    ).toEqual({ redirectTo: '/login' })
+    ).toEqual({ redirectTo: '/login?redirect=%2Fdashboard' })
 
     expect(
       resolveRouteProtectionDecision({
         meta: { redirectTo: '/login' },
         defaultRedirectTo: '/auth/signin',
-        preserveReturnTo: true,
         currentPath: '/login',
       }),
     ).toBeNull()
@@ -54,7 +50,6 @@ describe('route protection decision', () => {
       resolveRouteProtectionDecision({
         meta: { redirectTo: routeTarget },
         defaultRedirectTo: '/auth/signin',
-        preserveReturnTo: true,
         currentPath: '/dashboard',
         currentFullPath: '/dashboard?tab=team',
       }),
@@ -75,7 +70,6 @@ describe('route protection decision', () => {
       resolveRouteProtectionDecision({
         meta: { redirectTo },
         defaultRedirectTo: '/auth/signin',
-        preserveReturnTo: true,
         currentPath: '/dashboard',
       }),
     ).toBeNull()
@@ -86,7 +80,6 @@ describe('route protection decision', () => {
       resolveRouteProtectionDecision({
         meta: true,
         defaultRedirectTo: '/auth/signin',
-        preserveReturnTo: true,
         currentPath: '//evil.example/steal',
         currentFullPath: '//evil.example/steal?token=private',
       }),
@@ -98,7 +91,6 @@ describe('route protection decision', () => {
       resolveRouteProtectionDecision({
         meta: true,
         defaultRedirectTo: '/auth/../signin#form',
-        preserveReturnTo: true,
         currentPath: '/dashboard',
         currentFullPath: '/account/../dashboard?tab=team#members',
       }),
@@ -113,7 +105,6 @@ describe('route protection decision', () => {
       resolveRouteProtectionDecision({
         meta: { redirectTo: routeTarget },
         defaultRedirectTo: '/auth/signin',
-        preserveReturnTo: true,
         currentPath: '/dashboard',
       }),
     ).toBeNull()

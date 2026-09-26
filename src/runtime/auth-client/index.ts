@@ -51,7 +51,7 @@ export function defineConvexAuthClient<const Plugins extends AuthClientPlugins =
 }
 
 /**
- * Augmentable registry . The module-generated type template (produced
+ * Augmentable registry. The module-generated type template (produced
  * by `src/module.ts` via Nuxt Kit `addTypeTemplate`) adds a `definition` member
  * whose type is `typeof` the resolved consumer definition:
  *

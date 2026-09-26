@@ -5,7 +5,6 @@ export type ConvexAuthPageMeta = boolean | { redirectTo?: RouteLocationRaw }
 export interface RouteProtectionDecisionInput {
   meta: ConvexAuthPageMeta | undefined
   defaultRedirectTo: string
-  preserveReturnTo: boolean
   currentPath: string
   currentFullPath?: string
 }
@@ -50,7 +49,7 @@ export function normalizeLocalRedirectPath(value: string): string | null {
 export function resolveRouteProtectionDecision(
   input: RouteProtectionDecisionInput,
 ): RouteProtectionDecision | null {
-  const { meta, defaultRedirectTo, preserveReturnTo, currentPath } = input
+  const { meta, defaultRedirectTo, currentPath } = input
   const currentFullPath = input.currentFullPath ?? currentPath
 
   if (meta === undefined || meta === false) return null
@@ -73,10 +72,6 @@ export function resolveRouteProtectionDecision(
   if (!redirectPath) return null
   const redirectPathOnly = redirectPath.split(/[?#]/)[0] || redirectPath
   if (currentPath === redirectPathOnly) return null
-
-  if (!preserveReturnTo) {
-    return { redirectTo: redirectPath }
-  }
 
   const returnTo =
     normalizeLocalRedirectPath(currentFullPath) ?? normalizeLocalRedirectPath(currentPath) ?? '/'

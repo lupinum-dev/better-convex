@@ -2085,7 +2085,7 @@
       "chapter": "Data Protection",
       "responsibility": "library",
       "status": "verified",
-      "evidence": "internal/evidence/asvs-client-lifecycle-cutover-2026-07-22.md"
+      "evidence": "test/unit/query-controller.test.ts"
     },
     {
       "id": "v5.0.0-14.3.2",
@@ -2325,7 +2325,7 @@
       "chapter": "Security Logging and Error Handling",
       "responsibility": "library",
       "status": "verified",
-      "evidence": "internal/evidence/asvs-client-lifecycle-cutover-2026-07-22.md"
+      "evidence": "test/unit/auth-adapter-port.test.ts"
     },
     {
       "id": "v5.0.0-16.5.3",
@@ -2333,7 +2333,7 @@
       "chapter": "Security Logging and Error Handling",
       "responsibility": "library",
       "status": "verified",
-      "evidence": "internal/evidence/asvs-client-lifecycle-cutover-2026-07-22.md"
+      "evidence": "test/unit/callable-lifecycle.test.ts"
     },
     {
       "id": "v5.0.0-17.1.1",

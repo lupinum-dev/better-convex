@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 import { createUiDevtoolsTransport, type DevtoolsTransport } from '../../transport'
 import type { ConvexDevToolsBridge } from '../../types'
 
-type BridgeMethod = keyof Omit<ConvexDevToolsBridge, 'version'>
+type BridgeMethod = keyof ConvexDevToolsBridge
 
 interface PendingRequest {
   reject: (error: Error) => void

@@ -53,7 +53,7 @@ const rename = useConvexMutation(api.notes.rename)
 
 Pass `'skip'` to pause a query. A Convex `null` result remains valid data.
 
-Advanced hosts can use the `embedded` export. MCP App UIs use `@lupinum/better-convex-mcp/vue`, which owns the official Apps SDK boundary.
+Advanced hosts can use the `embedded` export.
 
 <!-- BEGIN:consumer-onboarding -->
 

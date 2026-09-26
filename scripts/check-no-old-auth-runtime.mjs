@@ -24,7 +24,7 @@ const historicalInputs = new Set([
   'security/upstream-convex-better-auth.json',
   'test/unit/supported-version-alignment.test.ts',
 ])
-const historicalPrefixes = ['docs/research/', 'LICENSES/']
+const historicalPrefixes = ['LICENSES/']
 const violations = []
 
 function isHistoricalInput(path) {

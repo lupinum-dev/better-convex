@@ -1,13 +1,11 @@
 import type { LogLevel } from './logger'
 
 /**
- * Single source of truth for every better-convex-nuxt config default literal and
- * the shared config normalizers.
+ * Single source of truth for better-convex-nuxt config default literals.
  *
  * `module.ts` (build-time `defaults:` block + the defu merge into runtimeConfig)
- * and `runtime-config.ts` (runtime normalization) both consume these. No default
- * literal for a config value may appear anywhere else in `src/` — grep the file
- * name if you need to change a default.
+ * and the auth proxy body limits consume these. Grep the file name if you need
+ * to change a default.
  *
  * Internal only: not part of the public auto-import surface, not exported from
  * the module entrypoint.

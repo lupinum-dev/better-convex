@@ -261,8 +261,7 @@ That command runs the complete OAuth/MCP evidence and stable-SDK stateless
 contract checks in one fixture lifecycle, using the freshly issued least-scope
 bearer internally. Do not run `test:mcp-auth` first and do not run both commands
 against one deployment; either run consumes it. Stable official conformance
-`0.1.16` has no `2026-07-28` scenarios. The separate topology probe runs
-applicable alpha `0.2.0-alpha.10` scenarios; no legacy relay is used. These checks
+`0.1.16` has no `2026-07-28` scenarios, and no legacy relay is used. These checks
 are not matching stable MCP certification or OAuth certification.
 
 ## Login and consent boundary

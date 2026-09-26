@@ -108,7 +108,7 @@ export function createQueryExecutionGate(input: QueryExecutionGateInput): QueryE
   // 7. Authenticated: both modes require a concrete matching `user:<id>` key.
   //    A settled 'authenticated' status always carries such a key; guard the
   //    inconsistent case (no usable id) by waiting rather than manufacturing a
-  //    `user:undefined` identity .
+  //    `user:undefined` identity.
   if (!isAuthenticatedIdentityKey(identityKey)) {
     return {
       outcome: 'wait',

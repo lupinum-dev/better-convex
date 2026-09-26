@@ -2,7 +2,7 @@ import type { ConvexCallError } from '../errors'
 import { isAuthenticatedIdentityKey, type ConvexIdentityKey } from './identity-key'
 
 /**
- * Per-query authentication mode .
+ * Per-query authentication mode.
  *
  * | Mode       | Initial auth loading | Settled authenticated | Settled anonymous   |
  * | ---------- | -------------------- | --------------------- | ------------------- |
@@ -16,9 +16,9 @@ import { isAuthenticatedIdentityKey, type ConvexIdentityKey } from './identity-k
 export type ConvexAuthMode = 'required' | 'optional' | 'none'
 
 /**
- * Current usable identity . Orthogonal to `pending`, which tracks
- * auth work in flight. A background refresh keeps `status === 'authenticated'`
- * while `pending === true`.
+ * Current usable identity. Orthogonal to `pending`, which tracks auth work in
+ * flight. A background refresh keeps `status === 'authenticated'` while
+ * `pending === true`.
  */
 export type ConvexAuthStatus = 'loading' | 'anonymous' | 'authenticated' | 'error'
 
@@ -28,7 +28,7 @@ export type ConvexQueryAuthStatus = ConvexAuthStatus | 'disabled'
 /**
  * The two-dimensional inputs to status derivation. `settled` is the initial
  * auth-settlement signal; `error` is non-null only when initial resolution
- * failed without a usable identity (see {@link ConvexCallError} placeholder).
+ * failed without a usable identity.
  */
 export interface ConvexAuthStatusInput {
   authEnabled: boolean
@@ -38,8 +38,8 @@ export interface ConvexAuthStatusInput {
 }
 
 /**
- * Derive the canonical status in the exact precedence locked by public and
- * architecture invariant: `disabled` → `loading` → `authenticated` → `error` → `anonymous`.
+ * Derive the canonical status in this fixed precedence:
+ * `disabled` → `loading` → `authenticated` → `error` → `anonymous`.
  *
  * `authenticated` outranks `error` so a failed background refresh over a still
  * usable identity keeps `authenticated`. `error` outranks `anonymous` so a
