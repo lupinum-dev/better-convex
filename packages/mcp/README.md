@@ -31,7 +31,7 @@ The package does not export your Convex functions automatically. You register ea
 - A Convex deployment with HTTP actions
 - An OAuth token verifier. With Better Convex authentication, use `auth.createMcpAccessVerifier(ctx)` from `@lupinum/better-convex-nuxt/better-auth/server`.
 
-The package depends on `@modelcontextprotocol/server` `2.1.0`. Install the same version in your application when your code imports from it.
+`@modelcontextprotocol/server` `2.1.0` is an exact peer dependency. `McpServer` crosses this package's API, so your application installs the SDK and both share one copy.
 
 ## Installation
 
