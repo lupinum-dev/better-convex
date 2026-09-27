@@ -3,9 +3,9 @@ import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
+import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import {
   clearVerificationKeyCache,
-  createBetterAuthMcpAccessVerifier,
   verifyOAuthBearerToken,
 } from '../../src/runtime/convex-auth/oauth-resource'
 
@@ -15,6 +15,13 @@ const audience = 'https://deployment.example.test/mcp'
 const component = (componentsGeneric() as unknown as { betterAuth: ComponentApi<'betterAuth'> })
   .betterAuth
 
+// The only public verifier path: auth.createMcpAccessVerifier(ctx, options).
+const auth = createBetterConvexAuth(component)
+const createVerifier = (
+  ctx: Parameters<typeof auth.createMcpAccessVerifier>[0],
+  options: Parameters<typeof auth.createMcpAccessVerifier>[1],
+) => auth.createMcpAccessVerifier(ctx, options)
+
 const address = (reference: unknown) =>
   JSON.stringify(getFunctionAddress(reference as typeof component.adapter.findMany))
 
@@ -22,7 +29,9 @@ let signingKey: CryptoKey
 let jwksRow: Record<string, unknown>
 
 beforeAll(async () => {
-  const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true })
+  const { privateKey, publicKey } = await generateKeyPair('RS256', {
+    extractable: true,
+  })
   const { e, kty, n } = await exportJWK(publicKey)
   signingKey = privateKey
   jwksRow = {
@@ -60,6 +69,7 @@ async function token(overrides: Record<string, unknown> = {}) {
   const claims: Record<string, unknown> = {
     aud: audience,
     azp: 'client-1',
+    bcn_grant_id: 'consent-1',
     client_id: 'client-1',
     exp: now + 300,
     iat: now - 10,
@@ -71,7 +81,10 @@ async function token(overrides: Record<string, unknown> = {}) {
     token_use: 'oauth-access',
     ...overrides,
   }
-  return await new SignJWT(claims)
+  const present = Object.fromEntries(
+    Object.entries(claims).filter(([, value]) => value !== undefined),
+  )
+  return await new SignJWT(present)
     .setProtectedHeader({ alg: 'RS256', kid: 'kid-1', typ: 'at+jwt' })
     .sign(signingKey)
 }
@@ -92,17 +105,31 @@ afterEach(() => {
 describe('Better Auth MCP resource verification without an HTTP JWKS loop', () => {
   it('verifies against component keys and never fetches over HTTP', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch')
-    const { ctx, runQuery } = fakeCtx({ keys: [jwksRow], live: { grantId: 'consent-1', user: {} } })
-    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+    const { ctx, runQuery } = fakeCtx({
+      keys: [jwksRow],
+      live: { grantId: 'consent-1', user: {} },
+    })
+    const verifier = createVerifier(ctx, {
       allowedScopes: ['mcp:read'],
     })
     await expect(verifier.verifyAccessToken(await token(), expectation())).resolves.toMatchObject({
-      access: { clientId: 'client-1', issuer, resource: audience, scopes: ['mcp:read'] },
-      principal: { grantId: 'consent-1', kind: 'oauth', sessionId: 'session-1', userId: 'user-1' },
+      access: {
+        clientId: 'client-1',
+        issuer,
+        resource: audience,
+        scopes: ['mcp:read'],
+      },
+      principal: {
+        grantId: 'consent-1',
+        kind: 'oauth',
+        sessionId: 'session-1',
+        userId: 'user-1',
+      },
     })
     expect(fetch).not.toHaveBeenCalled()
     expect(runQuery.mock.calls.at(-1)?.[1]).toEqual({
       clientId: 'client-1',
+      grantId: 'consent-1',
       resource: audience,
       scopes: ['mcp:read'],
       sessionId: 'session-1',
@@ -113,8 +140,11 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
 
   it('copies its options so a later caller mutation cannot widen the scope allowlist', async () => {
     const allowedScopes = ['mcp:read']
-    const { ctx } = fakeCtx({ keys: [jwksRow], live: { grantId: 'consent-1', user: {} } })
-    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, { allowedScopes })
+    const { ctx } = fakeCtx({
+      keys: [jwksRow],
+      live: { grantId: 'consent-1', user: {} },
+    })
+    const verifier = createVerifier(ctx, { allowedScopes })
     allowedScopes.push('admin')
     await expect(
       verifier.verifyAccessToken(await token({ scope: 'mcp:read admin' }), expectation()),
@@ -126,7 +156,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
     ['failed', new Error('private-live-check-sentinel')],
   ])('rejects a cryptographically valid token when live authority is %s', async (_label, live) => {
     const { ctx } = fakeCtx({ keys: [jwksRow], live })
-    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+    const verifier = createVerifier(ctx, {
       allowedScopes: ['mcp:read'],
     })
     await expect(verifier.verifyAccessToken(await token(), expectation())).rejects.toThrow(
@@ -134,10 +164,35 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
     )
   })
 
+  it.each([
+    ['missing', { bcn_grant_id: undefined }],
+    ['empty', { bcn_grant_id: '' }],
+  ])(
+    'rejects a non-renewable token whose consent id is %s before the live query',
+    async (_label, overrides) => {
+      const { ctx, runQuery } = fakeCtx({
+        keys: [jwksRow],
+        live: { grantId: 'consent-1', user: {} },
+      })
+      const verifier = createVerifier(ctx, { allowedScopes: ['mcp:read'] })
+      await expect(
+        verifier.verifyAccessToken(await token(overrides), expectation()),
+      ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
+      expect(
+        runQuery.mock.calls.some(
+          ([reference]) => address(reference) === address(component.adapter.oauthLiveAccess),
+        ),
+      ).toBe(false)
+    },
+  )
+
   it('rechecks live authority on every use of the same signed token', async () => {
-    const state: FakeState = { keys: [jwksRow], live: { grantId: 'consent-1', user: {} } }
+    const state: FakeState = {
+      keys: [jwksRow],
+      live: { grantId: 'consent-1', user: {} },
+    }
     const { ctx, runQuery } = fakeCtx(state)
-    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+    const verifier = createVerifier(ctx, {
       allowedScopes: ['mcp:read'],
     })
     const signed = await token()
@@ -153,8 +208,11 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
   })
 
   it('rejects a caller-selected issuer before any key lookup', async () => {
-    const { ctx, runQuery } = fakeCtx({ keys: [jwksRow], live: { grantId: 'c', user: {} } })
-    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+    const { ctx, runQuery } = fakeCtx({
+      keys: [jwksRow],
+      live: { grantId: 'consent-1', user: {} },
+    })
+    const verifier = createVerifier(ctx, {
       allowedScopes: ['mcp:read'],
     })
     await expect(
@@ -172,8 +230,11 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
     'https://deployment.example.test/mcp?tenant=one',
     'https://deployment.example.test/mcp#fragment',
   ])('rejects an unsafe expected MCP resource before any query: %s', async (resource) => {
-    const { ctx, runQuery } = fakeCtx({ keys: [jwksRow], live: { grantId: 'c', user: {} } })
-    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+    const { ctx, runQuery } = fakeCtx({
+      keys: [jwksRow],
+      live: { grantId: 'consent-1', user: {} },
+    })
+    const verifier = createVerifier(ctx, {
       allowedScopes: ['mcp:read'],
     })
     await expect(verifier.verifyAccessToken(await token(), expectation(resource))).rejects.toThrow(
@@ -207,7 +268,10 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
   it('never publishes a malformed or private key row for verification', async () => {
     const privateRow = {
       ...jwksRow,
-      publicKey: JSON.stringify({ ...JSON.parse(jwksRow.publicKey as string), d: 'secret' }),
+      publicKey: JSON.stringify({
+        ...JSON.parse(jwksRow.publicKey as string),
+        d: 'secret',
+      }),
     }
     for (const row of [
       privateRow,
@@ -216,7 +280,10 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
       { ...jwksRow, expiresAt: 'soon' },
     ]) {
       clearVerificationKeyCache()
-      const { ctx } = fakeCtx({ keys: [row], live: { grantId: 'c', user: {} } })
+      const { ctx } = fakeCtx({
+        keys: [row],
+        live: { grantId: 'consent-1', user: {} },
+      })
       await expect(
         verifyOAuthBearerToken(ctx, component, await token(), {
           allowedScopes: ['mcp:read'],
@@ -229,17 +296,18 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
 
   it('fails construction without a query context, component, or scopes', () => {
     const { ctx } = fakeCtx({ keys: [], live: null })
-    expect(() =>
-      createBetterAuthMcpAccessVerifier({} as never, component, { allowedScopes: ['mcp:read'] }),
-    ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
-    expect(() =>
-      createBetterAuthMcpAccessVerifier(ctx, undefined as never, { allowedScopes: ['mcp:read'] }),
-    ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
-    expect(() => createBetterAuthMcpAccessVerifier(ctx, component, { allowedScopes: [] })).toThrow(
+    expect(() => createVerifier({} as never, { allowedScopes: ['mcp:read'] })).toThrow(
       'AUTH_OAUTH_CONFIG_INVALID',
     )
     expect(() =>
-      createBetterAuthMcpAccessVerifier(ctx, component, {
+      createBetterConvexAuth(undefined as never).createMcpAccessVerifier(ctx, {
+        allowedScopes: ['mcp:read'],
+      }),
+    ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    expect(() => createVerifier(ctx, {})).toThrow('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
+    expect(() => createVerifier(ctx, { allowedScopes: [] })).toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    expect(() =>
+      createVerifier(ctx, {
         allowedScopes: ['mcp:read'],
         resource: 'https://deployment.example.test/mcp?x=1',
       }),
@@ -250,8 +318,11 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
     vi.stubEnv('SITE_URL', 'http://127.0.0.1:3210')
     const loopbackIssuer = 'http://127.0.0.1:3210/api/auth'
     const loopbackAudience = 'http://127.0.0.1:3211/mcp'
-    const { ctx } = fakeCtx({ keys: [jwksRow], live: { grantId: 'c', user: {} } })
-    const verifier = createBetterAuthMcpAccessVerifier(ctx, component, {
+    const { ctx } = fakeCtx({
+      keys: [jwksRow],
+      live: { grantId: 'consent-1', user: {} },
+    })
+    const verifier = createVerifier(ctx, {
       allowedScopes: ['mcp:read'],
     })
     await expect(
@@ -259,6 +330,8 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
         issuer: loopbackIssuer,
         resource: new URL(loopbackAudience),
       }),
-    ).resolves.toMatchObject({ access: { issuer: loopbackIssuer, resource: loopbackAudience } })
+    ).resolves.toMatchObject({
+      access: { issuer: loopbackIssuer, resource: loopbackAudience },
+    })
   })
 })

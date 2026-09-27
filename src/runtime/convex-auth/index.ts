@@ -24,7 +24,6 @@ export type { BetterConvexMcpPrincipal, McpAccessErrorCode } from './mcp-princip
 export type { BetterConvexMcpHost, BetterConvexMcpOptions } from './mcp-profile'
 export { getConvexAuthProvider } from './provider'
 export { requireAuthOrigin } from './origin'
-export { createBetterAuthMcpAccessVerifier } from './oauth-resource'
 export { createUserProjectionTriggers } from './user-projection'
 
 export type { AuthCtx, WritableAuthCtx } from './context'
@@ -47,5 +46,3 @@ export type {
   BetterAuthUserProjectionSource,
   CreateUserProjectionTriggersOptions,
 } from './user-projection'
-
-export type { OAuthLiveAccess } from './oauth-live-access'

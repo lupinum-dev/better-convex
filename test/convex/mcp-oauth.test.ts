@@ -1,26 +1,20 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from 'convex-test'
-import { componentsGeneric, getFunctionAddress } from 'convex/server'
+import { componentsGeneric, getFunctionAddress, type GenericDataModel } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import authSchema from '../../src/runtime/convex-auth/component/schema'
+import type { AuthCtx } from '../../src/runtime/convex-auth/context'
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import { JWKS_GRACE_PERIOD_SECONDS } from '../../src/runtime/convex-auth/jwks-rotation'
-import {
-  requireMcpPrincipal,
-  type BetterConvexMcpPrincipal,
-} from '../../src/runtime/convex-auth/mcp-principal'
+import type { BetterConvexMcpPrincipal } from '../../src/runtime/convex-auth/mcp-principal'
 import { createOAuthConnections } from '../../src/runtime/convex-auth/oauth-connections'
-import { validateOAuthAccess } from '../../src/runtime/convex-auth/oauth-live-access'
 import { createOAuthOperator } from '../../src/runtime/convex-auth/oauth-operator'
-import {
-  clearVerificationKeyCache,
-  createBetterAuthMcpAccessVerifier,
-} from '../../src/runtime/convex-auth/oauth-resource'
+import { clearVerificationKeyCache } from '../../src/runtime/convex-auth/oauth-resource'
 import rootSchema from '../fixtures/auth-relationships-root/convex/schema'
 
 const rootModules = import.meta.glob('../fixtures/auth-relationships-root/convex/**/*.ts')
@@ -217,15 +211,19 @@ const address = (reference: unknown) =>
 const expected = () => Object.freeze({ issuer, resource: new URL(resource) })
 
 // convex-test contexts carry the fixture's root data model; the helpers under test are generic.
-type Ctx = Parameters<typeof createBetterAuthMcpAccessVerifier>[0]
+type Ctx = AuthCtx<GenericDataModel>
 const asCtx = (ctx: unknown) => ctx as Ctx
 
+// The public path: auth.createMcpAccessVerifier(ctx) + auth.requireMcpPrincipal(ctx, principal).
+const auth = createBetterConvexAuth(component, {
+  appName: 'Example',
+  oauth: {
+    mcp: { scopes: { 'mcp:read': 'Read projects', 'mcp:write': 'Change projects' } },
+  },
+})
+
 function verifier(ctx: unknown) {
-  return createBetterAuthMcpAccessVerifier(asCtx(ctx), component, {
-    allowedScopes: scopes,
-    requiredScopes: ['mcp:read'],
-    resource,
-  })
+  return auth.createMcpAccessVerifier(asCtx(ctx), { requiredScopes: ['mcp:read'] })
 }
 
 beforeEach(() => {
@@ -295,7 +293,10 @@ describe('Better Auth MCP access verifier', () => {
     ['unknown scope', { scope: 'mcp:read admin' }],
     ['missing required scope', { scope: 'mcp:write' }],
     ['renewable token without grant', { bcn_grant_id: undefined }],
+    ['non-renewable token without grant', { bcn_grant_id: undefined, scope: 'mcp:read' }],
+    ['empty grant', { bcn_grant_id: '' }],
     ['foreign grant', { bcn_grant_id: 'other-consent' }],
+    ['non-renewable foreign grant', { bcn_grant_id: 'other-consent', scope: 'mcp:read' }],
   ])('rejects a %s', async (_label, overrides) => {
     const { test, key } = await initGrant()
     const token = await signAccessToken(key, overrides)
@@ -402,6 +403,38 @@ describe('Better Auth MCP access verifier', () => {
   })
 })
 
+describe('disabled OAuth resource', () => {
+  it('denies already-issued access tokens while disabled (owner decision for 1.0)', async () => {
+    const { test, key } = await initGrant()
+    const token = await signAccessToken(key)
+    const verified = await test.query(async (ctx) =>
+      verifier(ctx).verifyAccessToken(token, expected()),
+    )
+    const setDisabled = (disabled: boolean) =>
+      test.mutation(adapter.updateOne, {
+        model: 'oauthResource',
+        update: { disabled },
+        where: [{ field: 'id', value: 'oauth-resource-row' }],
+      })
+    await setDisabled(true)
+    await test.query(async (ctx) => {
+      await expect(verifier(ctx).verifyAccessToken(token, expected())).rejects.toThrow(
+        'AUTH_OAUTH_TOKEN_INVALID',
+      )
+      await expect(
+        denial(auth.requireMcpPrincipal(asCtx(ctx), verified.principal)),
+      ).resolves.toEqual({ code: 'MCP_ACCESS_DENIED', message: 'MCP access denied' })
+    })
+    await setDisabled(false)
+    await test.query(async (ctx) => {
+      await expect(verifier(ctx).verifyAccessToken(token, expected())).resolves.toBeTruthy()
+      await expect(
+        auth.requireMcpPrincipal(asCtx(ctx), verified.principal, { scope: 'mcp:read' }),
+      ).resolves.toBeTruthy()
+    })
+  })
+})
+
 function principal(overrides: Partial<BetterConvexMcpPrincipal> = {}): BetterConvexMcpPrincipal {
   return {
     clientId: 'oauth-client',
@@ -432,7 +465,7 @@ describe('requireMcpPrincipal', () => {
     const { test } = await initGrant()
     await test.query(async (ctx) => {
       const runQuery = vi.spyOn(ctx, 'runQuery')
-      const result = await requireMcpPrincipal(asCtx(ctx), component, principal(), {
+      const result = await auth.requireMcpPrincipal(asCtx(ctx), principal(), {
         scope: 'mcp:read',
       })
       expect(runQuery).toHaveBeenCalledTimes(1)
@@ -446,7 +479,7 @@ describe('requireMcpPrincipal', () => {
     const { test } = await initGrant()
     await test.query(async (ctx) => {
       await expect(
-        denial(requireMcpPrincipal(asCtx(ctx), component, principal(), { scope: 'mcp:write' })),
+        denial(auth.requireMcpPrincipal(asCtx(ctx), principal(), { scope: 'mcp:write' })),
       ).resolves.toEqual({
         code: 'MCP_INSUFFICIENT_SCOPE',
         message: 'MCP scope "mcp:write" is required',
@@ -459,6 +492,7 @@ describe('requireMcpPrincipal', () => {
     ['foreign issuer', { issuer: 'https://evil.example.test/api/auth' }],
     ['foreign resource', { resource: 'https://deployment.example.test/other' }],
     ['foreign grant', { grantId: 'other-consent' }],
+    ['missing grant', { grantId: undefined as never }],
     ['foreign session', { sessionId: 'bob-session' }],
     ['other user', { userId: 'bob' }],
     ['ungranted scope', { scopes: ['mcp:read', 'admin'] }],
@@ -466,11 +500,7 @@ describe('requireMcpPrincipal', () => {
     const { test } = await initGrant()
     await test.query(async (ctx) => {
       await expect(
-        denial(
-          requireMcpPrincipal(asCtx(ctx), component, principal(overrides), {
-            resource: () => new URL(resource),
-          }),
-        ),
+        denial(auth.requireMcpPrincipal(asCtx(ctx), principal(overrides))),
       ).resolves.toEqual({ code: 'MCP_ACCESS_DENIED', message: 'MCP access denied' })
     })
   })
@@ -488,9 +518,7 @@ describe('requireMcpPrincipal', () => {
       await operator.setClientDisabled(ctx, { clientId: 'oauth-client', disabled: true })
     })
     await test.query(async (ctx) => {
-      await expect(
-        denial(requireMcpPrincipal(asCtx(ctx), component, principal())),
-      ).resolves.toEqual({
+      await expect(denial(auth.requireMcpPrincipal(asCtx(ctx), principal()))).resolves.toEqual({
         code: 'MCP_ACCESS_DENIED',
         message: 'MCP access denied',
       })
@@ -499,7 +527,7 @@ describe('requireMcpPrincipal', () => {
       await operator.setClientDisabled(ctx, { clientId: 'oauth-client', disabled: false })
     })
     await test.query(async (ctx) => {
-      await expect(requireMcpPrincipal(asCtx(ctx), component, principal())).resolves.toBeTruthy()
+      await expect(auth.requireMcpPrincipal(asCtx(ctx), principal())).resolves.toBeTruthy()
     })
     await test.mutation(async (ctx) => {
       await expect(
@@ -511,9 +539,7 @@ describe('requireMcpPrincipal', () => {
       })
     })
     await test.query(async (ctx) => {
-      await expect(
-        denial(requireMcpPrincipal(asCtx(ctx), component, principal())),
-      ).resolves.toEqual({
+      await expect(denial(auth.requireMcpPrincipal(asCtx(ctx), principal()))).resolves.toEqual({
         code: 'MCP_ACCESS_DENIED',
         message: 'MCP access denied',
       })
@@ -580,15 +606,19 @@ describe('OAuth connections', () => {
     expect((await rows('oauthRefreshToken')).map((row) => row.id)).toEqual(['bob-refresh'])
     await test.query(async (ctx) => {
       const live = (user: string) =>
-        validateOAuthAccess(asCtx(ctx), component, {
-          clientId: 'oauth-client',
-          grantId: `${user}-oauth-client-consent`,
-          issuer,
-          resource,
-          scopes,
-          sessionId: `${user}-session`,
-          subject: user,
-        })
+        auth
+          .requireMcpPrincipal(
+            asCtx(ctx),
+            principal({
+              grantId: `${user}-oauth-client-consent`,
+              sessionId: `${user}-session`,
+              userId: user,
+            }),
+          )
+          .then(
+            () => true,
+            () => false,
+          )
       await expect(live('alice')).resolves.toBe(false)
       await expect(live('bob')).resolves.toBe(true)
     })
@@ -598,15 +628,6 @@ describe('OAuth connections', () => {
 describe('factory MCP wiring', () => {
   it('binds the profile scopes and resource to the verifier and principal checks', async () => {
     const { test, key } = await initGrant()
-    const auth = createBetterConvexAuth(component, {
-      appName: 'Example',
-      oauth: {
-        mcp: {
-          scopes: { 'mcp:read': 'Read projects', 'mcp:write': 'Change projects' },
-          hosts: ['claude'],
-        },
-      },
-    })
     expect(auth.mcp.issuer()).toBe(issuer)
     expect(auth.mcp.resource().href).toBe(resource)
     expect(auth.mcp.scopes()).toEqual({
