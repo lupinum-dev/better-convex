@@ -52,7 +52,13 @@ const releaseRuntimeFingerprint = getPackedRuntimeFingerprint()
 // are re-exported from it unchanged, and Nuxt-only shapes carry a Nuxt name.
 export type { ConvexAuthOptions } from './runtime/utils/auth-config'
 export type { ConvexAuthMode, ConvexAuthStatus } from './runtime/utils/auth-status'
-export type { ConvexCallError, ConvexCallErrorCode, ConvexFormError } from './runtime/errors'
+export type {
+  ConvexCallError,
+  ConvexCallErrorCode,
+  ConvexCallOutcome,
+  ConvexFormError,
+  ConvexUploadPhase,
+} from './runtime/errors'
 export type { ConvexUser } from './runtime/utils/types'
 export type {
   ConvexCallStatus,
@@ -78,11 +84,20 @@ export type {
 export type { ConvexRuntimeConfig } from './runtime/utils/runtime-config'
 export type { UseConvexAuthReturn } from './runtime/utils/auth-contract'
 export type {
+  ConvexFileUploadResult,
+  UploadComplete,
+  UploadCompleteContext,
   UploadProgressInfo,
   UploadUrlMutation,
   UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from './runtime/composables/useConvexFileUpload'
+export type {
+  ConvexOperation,
+  ConvexOperationUploadOptions,
+  ConvexOperationWork,
+  UseConvexOperationReturn,
+} from './runtime/composables/useConvexOperation'
 // The Nuxt query options extend the Vue ones with the SSR policy (`server`,
 // `lazy`), so they are exported under their own `UseNuxt*` names.
 export type {

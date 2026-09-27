@@ -15,6 +15,10 @@ export const composableAutoImports = [
     from: './runtime/composables/useConvexMutation',
   },
   { name: 'useConvexForm', from: './runtime/composables/useConvexForm' },
+  {
+    name: 'useConvexOperation',
+    from: './runtime/composables/useConvexOperation',
+  },
   { name: 'useConvexAction', from: './runtime/composables/useConvexAction' },
   { name: 'useConvexQuery', from: './runtime/composables/useConvexQuery' },
   {

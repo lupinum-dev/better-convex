@@ -140,9 +140,15 @@ describe('useConvexFileUpload (Vue)', () => {
     expect(upload.status.value).toBe('pending')
     expect(upload.pending.value).toBe(true)
 
-    await expect(pending).resolves.toBe('storage_1')
+    const result = await pending
+    expect(result).toEqual({
+      storageId: 'storage_1',
+      prepared: 'https://upload.test/url?token=secret-token',
+      completed: undefined,
+    })
+    expect(Object.isFrozen(result)).toBe(true)
     expect(upload.status.value).toBe('success')
-    expect(upload.data.value).toBe('storage_1')
+    expect(upload.data.value).toBe(result)
     expect(upload.error.value).toBeUndefined()
     expect(upload.progress.value).toEqual({ loaded: 5, total: 10, percent: 50 })
     expect(progress).toContain(50)
@@ -198,7 +204,7 @@ describe('useConvexFileUpload (Vue)', () => {
     expect(upload.status.value).toBe('pending')
     expect(upload.error.value).toBeUndefined()
 
-    await expect(first).resolves.toBe('storage_1')
+    await expect(first).resolves.toMatchObject({ storageId: 'storage_1' })
     expect(upload.status.value).toBe('success')
     host.stop()
   })
@@ -244,7 +250,7 @@ describe('useConvexFileUpload (Vue)', () => {
     await upload.upload(textFile())
     upload.cancel()
     expect(upload.status.value).toBe('success')
-    expect(upload.data.value).toBe('storage_1')
+    expect(upload.data.value?.storageId).toBe('storage_1')
 
     upload.reset()
     expect(upload.status.value).toBe('idle')
@@ -297,7 +303,7 @@ describe('useConvexFileUpload (Vue)', () => {
     })
 
     FakeXhr.delayMs = 0
-    await expect(upload.upload(textFile())).resolves.toBe('storage_1')
+    await expect(upload.upload(textFile())).resolves.toMatchObject({ storageId: 'storage_1' })
     expect(upload.status.value).toBe('success')
 
     host.advanceIdentity()
@@ -476,7 +482,7 @@ describe('useConvexFileUpload (Vue)', () => {
       throw new Error('diagnostics failed')
     })
     FakeXhr.delayMs = 0
-    await expect(upload.upload(textFile())).resolves.toBe('storage_1')
+    await expect(upload.upload(textFile())).resolves.toMatchObject({ storageId: 'storage_1' })
     host.stop()
   })
 })

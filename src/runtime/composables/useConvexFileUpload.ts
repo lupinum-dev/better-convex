@@ -9,7 +9,11 @@ import type {
   UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from '@lupinum/better-convex-vue'
-import { useConvexFileUploadInternal } from '@lupinum/better-convex-vue/internal'
+import {
+  useConvexFileUploadInternal,
+  type ConvexFileUploadInternalOptions,
+} from '@lupinum/better-convex-vue/internal'
+import type { FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'
 
 import { useNuxtApp } from '#imports'
@@ -19,37 +23,51 @@ import { createLogger } from '../utils/logger'
 import { getConvexRuntimeConfig } from '../utils/runtime-config'
 
 export type {
+  ConvexFileUploadResult,
+  UploadComplete,
+  UploadCompleteContext,
   UploadProgressInfo,
   UploadUrlMutation,
   UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from '@lupinum/better-convex-vue'
 
+type UploadOptionsParameter<Prepared, Completed> = [Prepared] extends [string]
+  ? [options?: UseConvexFileUploadOptions<Prepared, Completed>]
+  : [options: UseConvexFileUploadOptions<Prepared, Completed>]
+
 /**
- * Upload files to Convex storage with byte progress.
+ * Upload files to Convex storage with byte progress, as one identity-bound
+ * workflow: prepare (the upload-URL mutation), upload (the storage POST), and
+ * an optional `complete` step. `upload()` resolves with
+ * `{ storageId, prepared, completed }`.
  *
- * The composable calls the upload-URL mutation, POSTs the file to that URL,
- * and returns the storage ID. Uploads run in the browser only: during SSR,
- * `upload()` rejects with `CLIENT_UNAVAILABLE`. Library failures reject with a
- * `ConvexCallError` code (`FILE_TOO_LARGE`, `FILE_TYPE_NOT_ALLOWED`,
- * `UPLOAD_IN_PROGRESS`, `CANCELLED`, `IDENTITY_CHANGED`, `CLIENT_UNAVAILABLE`).
+ * Uploads run in the browser only: during SSR, `upload()` rejects with
+ * `CLIENT_UNAVAILABLE`. Failures reject with a `ConvexCallError` whose `phase`
+ * names the phase that failed and whose `outcome` tells whether its request
+ * was sent. Library codes: `FILE_TOO_LARGE`, `FILE_TYPE_NOT_ALLOWED`,
+ * `UPLOAD_IN_PROGRESS`, `CANCELLED`, `IDENTITY_CHANGED`, `CLIENT_UNAVAILABLE`,
+ * `INVALID_UPLOAD_URL`.
  *
  * @example
  * ```vue
  * <script setup lang="ts">
  * import { api } from '#convex/api'
  *
+ * const props = defineProps<{ documentId: Id<'documents'> }>()
  * const { upload, pending, progress, error, cancel } = useConvexFileUpload(
  *   api.files.generateUploadUrl,
- *   { maxSize: 5 * 1024 * 1024, allowedTypes: ['image/*'] },
+ *   {
+ *     maxSize: 5 * 1024 * 1024,
+ *     allowedTypes: ['image/*'],
+ *     complete: (op, { storageId }) =>
+ *       op.mutation(api.documents.attachFile, { documentId: props.documentId, storageId }),
+ *   },
  * )
- * const { mutate: createDocument } = useConvexMutation(api.documents.create)
  *
  * async function onChange(event: Event) {
  *   const file = (event.target as HTMLInputElement).files?.[0]
- *   if (!file) return
- *   const storageId = await upload(file).catch(() => undefined)
- *   if (storageId) await createDocument({ fileId: storageId })
+ *   if (file) await upload(file).catch(() => undefined)
  * }
  * </script>
  *
@@ -60,16 +78,19 @@ export type {
  * </template>
  * ```
  */
-export function useConvexFileUpload<Mutation extends UploadUrlMutation>(
+export function useConvexFileUpload<Mutation extends UploadUrlMutation, Completed = undefined>(
   mutation: Mutation,
-  options?: UseConvexFileUploadOptions,
-): UseConvexFileUploadReturn<Mutation> {
+  ...options: UploadOptionsParameter<FunctionReturnType<Mutation>, Completed>
+): UseConvexFileUploadReturn<Mutation, Completed> {
+  const input = options[0] as ConvexFileUploadInternalOptions | undefined
   const logger =
     readConvexRuntimeContext(useNuxtApp())?.logger ?? createLogger(getConvexRuntimeConfig().logging)
   const name = getFunctionName(mutation)
   return useConvexFileUploadInternal(mutation, {
-    maxSize: options?.maxSize,
-    allowedTypes: options?.allowedTypes,
+    maxSize: input?.maxSize,
+    allowedTypes: input?.allowedTypes,
+    url: input?.url,
+    complete: input?.complete,
     observer: {
       succeeded: ({ file, durationMs }) =>
         logger.upload({
@@ -89,5 +110,5 @@ export function useConvexFileUpload<Mutation extends UploadUrlMutation>(
           error,
         }),
     },
-  })
+  }) as unknown as UseConvexFileUploadReturn<Mutation, Completed>
 }

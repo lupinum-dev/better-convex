@@ -2,15 +2,10 @@ import type { ComputedRef, Ref } from 'vue'
 
 import { ConvexCallError, normalizeConvexError, type ConvexCallErrorCode } from '../errors'
 import { createClientCallState, type ClientCallStatus } from './call-state'
-import { createIdentityChangedError, isIdentityChangedError } from './identity-changed-error'
+import { isIdentityChangedError } from './identity-changed-error'
+import type { InternalOperation, OperationController } from './operation-controller'
 
-export type CallableOperation = 'mutation' | 'action'
-
-export interface CallableControllerHandlers<Args, Result> {
-  /** Settle authentication before the operation is bound and dispatched. */
-  settle?: () => Promise<void>
-  invoke: (args: Args) => Promise<Result>
-}
+export type CallableOperation = 'mutation' | 'action' | 'operation'
 
 /** Package-private observation seam used by Nuxt DevTools. */
 export interface CallableControllerObserver<Args, Result> {
@@ -23,9 +18,10 @@ export interface CallableControllerInput<Args, Result> {
   operation: CallableOperation
   /** The Convex function path, attached to every rejection this controller produces. */
   functionName?: string
-  getIdentityGeneration: () => number
-  subscribeIdentityChange?: (listener: () => void) => () => void
-  handlers: CallableControllerHandlers<Args, Result>
+  /** The identity fence; the callable disposes it with itself. */
+  operations: OperationController
+  /** Send one call as a step of `operation`. */
+  invoke: (operation: InternalOperation, args: Args) => Promise<Result>
   observer?: CallableControllerObserver<Args, Result>
 }
 
@@ -40,25 +36,23 @@ export interface CallableController<Args, Result> {
 }
 
 /**
- * Framework-neutral mutation/action lifecycle.
+ * Mutation, action, and operation call state over the shared operation fence.
  *
- * A call is bound to the identity generation visible at invocation entry.
- * Authentication settlement may delay dispatch, but it can never rebind an
- * already-started call to a later identity. A settlement-time transition masks
- * provisional state and the call fails before `invoke`. `reset()` and newer
- * attempts are final: a retired attempt still settles its own promise but
- * never commits state.
+ * Each call is one operation, bound to the identity visible at invocation
+ * entry; the fence rejects it with `IDENTITY_CHANGED` when that identity
+ * changes before or while it runs. `reset()` and newer calls are final for
+ * state: a retired call still settles its own promise but never commits state.
+ * `reset()` also cancels every unsettled call, so a step not yet sent is never
+ * sent; a step already sent settles with its real result.
  */
 export function createCallableController<Args, Result>(
   input: CallableControllerInput<Args, Result>,
 ): CallableController<Args, Result> {
-  const { operation, functionName, getIdentityGeneration, handlers } = input
+  const { operation, functionName, operations } = input
   const errorContext = { functionName }
   const callState = createClientCallState<Result>()
-  let lastSeenGeneration = getIdentityGeneration()
-  let attemptRevision = 0
+  const active = new Set<InternalOperation>()
   let disposed = false
-  let stopIdentity: (() => void) | null = null
 
   const observe = (callback: () => void) => {
     try {
@@ -76,6 +70,7 @@ export function createCallableController<Args, Result>(
         code: 'CANCELLED' satisfies ConvexCallErrorCode,
         message: `Convex ${operation} cancelled: its owning scope was disposed.`,
         functionName,
+        outcome: 'not-sent',
       })
     }
     const startedAt = Date.now()
@@ -85,77 +80,47 @@ export function createCallableController<Args, Result>(
         event = input.observer!.startEvent(args, startedAt)
       })
     }
-    const generation = getIdentityGeneration()
-    const attempt = ++attemptRevision
-    let requestId = callState.start()
+    const call = operations.begin()
+    active.add(call)
+    const requestId = callState.start()
 
     try {
-      if (handlers.settle) await handlers.settle()
-
-      if (getIdentityGeneration() !== generation) {
-        throw createIdentityChangedError(operation, errorContext)
-      }
-
-      // Settlement may mask provisional state without changing identity. Only
-      // the latest live attempt may restore it. A reset/newer call increments
-      // attemptRevision.
-      if (attempt === attemptRevision && !callState.isCurrent(requestId)) {
-        requestId = callState.start()
-      }
-      const result = await handlers.invoke(args)
-
-      if (getIdentityGeneration() !== generation) {
-        throw createIdentityChangedError(operation, errorContext)
-      }
-
+      const result = await input.invoke(call, args)
       callState.commitSuccess(requestId, result)
       if (input.observer) {
         observe(() => input.observer!.finishEvent(event, result, startedAt))
       }
       return result
     } catch (rawError) {
-      const normalized = normalizeConvexError(rawError, errorContext)
-      const stale = isIdentityChangedError(normalized) || getIdentityGeneration() !== generation
-
-      if (stale) {
+      const error = normalizeConvexError(rawError, errorContext)
+      // Identity-owned state never shows a retired identity's outcome.
+      if (isIdentityChangedError(error)) {
         if (callState.isCurrent(requestId)) callState.mask()
-        const identityError = isIdentityChangedError(normalized)
-          ? normalized
-          : createIdentityChangedError(operation, errorContext)
-        if (input.observer) {
-          observe(() => input.observer!.failEvent(event, identityError, startedAt))
-        }
-        throw identityError
+      } else {
+        callState.commitError(requestId, error)
       }
-
-      callState.commitError(requestId, normalized)
       if (input.observer) {
-        observe(() => input.observer!.failEvent(event, normalized, startedAt))
+        observe(() => input.observer!.failEvent(event, error, startedAt))
       }
-      throw normalized
+      throw error
+    } finally {
+      active.delete(call)
+      call.finish()
     }
   }
 
-  const onIdentityMaybeChanged = () => {
-    const generation = getIdentityGeneration()
-    if (generation === lastSeenGeneration) return
-    lastSeenGeneration = generation
-    callState.mask()
-  }
-
-  stopIdentity = input.subscribeIdentityChange?.(onIdentityMaybeChanged) ?? null
-
   const reset = () => {
-    attemptRevision += 1
     callState.reset()
+    for (const call of [...active]) call.cancel()
   }
+
+  const stopIdentity = operations.onIdentityChange(() => callState.mask())
 
   const dispose = () => {
     if (disposed) return
     disposed = true
-    attemptRevision += 1
-    stopIdentity?.()
-    stopIdentity = null
+    stopIdentity()
+    operations.dispose()
     callState.mask()
   }
 

@@ -4,21 +4,55 @@ import { describe, expect, it, vi } from 'vitest'
 import { ConvexCallError } from '../../packages/vue/src/errors'
 import {
   createCallableController,
-  type CallableControllerHandlers,
+  type CallableControllerObserver,
 } from '../../packages/vue/src/internal/callable-controller'
 import {
   createIdentityChangedError,
   isIdentityChangedError,
 } from '../../packages/vue/src/internal/identity-changed-error'
+import { createOperationController } from '../../packages/vue/src/internal/operation-controller'
+
+interface CallableHandlers<Args, Result> {
+  settle?: () => Promise<void>
+  invoke: (args: Args) => Promise<Result>
+}
+
+/** The callable over the shared operation fence, with a stubbed transport. */
+function createCallable<Args, Result>(input: {
+  operation: 'mutation' | 'action'
+  functionName?: string
+  getIdentityGeneration: () => number
+  subscribeIdentityChange?: (listener: () => void) => () => void
+  handlers: CallableHandlers<Args, Result>
+  observer?: CallableControllerObserver<Args, Result>
+}) {
+  return createCallableController<Args, Result>({
+    operation: input.operation,
+    functionName: input.functionName,
+    observer: input.observer,
+    operations: createOperationController({
+      getIdentityGeneration: input.getIdentityGeneration,
+      subscribeIdentityChange: input.subscribeIdentityChange,
+      settle: input.handlers.settle,
+      client: null,
+    }),
+    invoke: (call, args) =>
+      call.step({
+        kind: input.operation,
+        functionName: input.functionName,
+        dispatch: () => input.handlers.invoke(args),
+      }),
+  })
+}
 
 function makeLifecycle<Result = string>(
-  handlers: CallableControllerHandlers<Record<string, unknown>, Result>,
+  handlers: CallableHandlers<Record<string, unknown>, Result>,
   getIdentityGeneration: () => number = () => 0,
   subscribeIdentityChange?: (listener: () => void) => () => void,
   operation: 'mutation' | 'action' = 'mutation',
   functionName?: string,
 ) {
-  return createCallableController<Record<string, unknown>, Result>({
+  return createCallable<Record<string, unknown>, Result>({
     operation,
     functionName,
     getIdentityGeneration,
@@ -86,7 +120,7 @@ describe('callable lifecycle: one throwing error protocol', () => {
     const failEvent = vi.fn(() => {
       throw new Error('diagnostics unavailable')
     })
-    const lifecycle = createCallableController<Record<string, unknown>, string>({
+    const lifecycle = createCallable<Record<string, unknown>, string>({
       operation: 'mutation',
       getIdentityGeneration: () => 0,
       handlers: {
@@ -156,13 +190,16 @@ describe('callable lifecycle: newest invocation and identity retirement', () => 
     )
 
     const pending = lifecycle.run({})
+    await vi.waitFor(() => expect(releaseInvoke).toBeTypeOf('function'))
     generation = 1
     notifyIdentityChange()
     releaseInvoke('wire-ok')
 
+    // Sent before the identity changed: it may have committed.
     await expect(pending).rejects.toMatchObject({
       code: 'IDENTITY_CHANGED',
       kind: 'authentication',
+      outcome: 'unknown',
     })
     expect(lifecycle.status.value).toBe('idle')
     expect(lifecycle.error.value).toBeUndefined()
@@ -182,8 +219,43 @@ describe('callable lifecycle: newest invocation and identity retirement', () => 
     }
 
     expect(isIdentityChangedError(rejection)).toBe(true)
+    // The transport recorded no outcome, so the sent call stays open.
+    expect(rejection).toMatchObject({ outcome: 'unknown' })
     expect(lifecycle.status.value).toBe('idle')
     expect(lifecycle.error.value).toBeUndefined()
+  })
+
+  it("keeps the transport's own not-sent identity rejection", async () => {
+    const lifecycle = makeLifecycle({
+      invoke: () => Promise.reject(createIdentityChangedError('mutation', { outcome: 'not-sent' })),
+    })
+
+    await expect(lifecycle.run({})).rejects.toMatchObject({
+      code: 'IDENTITY_CHANGED',
+      outcome: 'not-sent',
+    })
+  })
+
+  it('rejects promptly on an identity change even when the transport never settles', async () => {
+    let generation = 0
+    let notifyIdentityChange!: () => void
+    const invoke = vi.fn(() => new Promise<string>(() => {}))
+    const lifecycle = makeLifecycle(
+      { invoke },
+      () => generation,
+      (listener) => {
+        notifyIdentityChange = listener
+        return () => {}
+      },
+    )
+
+    const pending = lifecycle.run({})
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1))
+    generation = 1
+    notifyIdentityChange()
+
+    await expect(pending).rejects.toMatchObject({ code: 'IDENTITY_CHANGED', outcome: 'unknown' })
+    expect(lifecycle.status.value).toBe('idle')
   })
 
   it('does not let an older identity rejection mask a newer in-flight call', async () => {
@@ -259,29 +331,50 @@ describe('callable lifecycle: settlement and disposal', () => {
       notifyIdentityChange()
       releaseSettlement()
 
-      await expect(pending).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
+      await expect(pending).rejects.toMatchObject({
+        code: 'IDENTITY_CHANGED',
+        outcome: 'not-sent',
+      })
       expect(invoke).not.toHaveBeenCalled()
       expect(lifecycle.status.value).toBe('idle')
     },
   )
 
-  it('keeps an internal retirement reset final while settlement is pending', async () => {
+  it('never sends a call that reset() retired while settlement was pending', async () => {
     let releaseSettlement!: () => void
-    const lifecycle = makeLifecycle({
-      settle: () =>
-        new Promise<void>((resolve) => {
-          releaseSettlement = resolve
-        }),
-      invoke: async () => 'wire-result',
-    })
+    const invoke = vi.fn(async () => 'wire-result')
+    const lifecycle = makeLifecycle(
+      {
+        settle: () =>
+          new Promise<void>((resolve) => {
+            releaseSettlement = resolve
+          }),
+        invoke,
+      },
+      undefined,
+      undefined,
+      'mutation',
+      'notes:create',
+    )
 
     const pending = lifecycle.run({})
     lifecycle.reset()
     releaseSettlement()
 
-    await expect(pending).resolves.toBe('wire-result')
+    await expect(pending).rejects.toMatchObject({
+      code: 'CANCELLED',
+      outcome: 'not-sent',
+      functionName: 'notes:create',
+    })
+    expect(invoke).not.toHaveBeenCalled()
     expect(lifecycle.status.value).toBe('idle')
-    expect(lifecycle.data.value).toBeUndefined()
+    expect(lifecycle.error.value).toBeUndefined()
+
+    // The next call belongs to a fresh operation and is sent.
+    const next = lifecycle.run({})
+    releaseSettlement()
+    await expect(next).resolves.toBe('wire-result')
+    expect(lifecycle.status.value).toBe('success')
   })
 
   it('normalizes a settlement failure without dispatching', async () => {
@@ -296,7 +389,10 @@ describe('callable lifecycle: settlement and disposal', () => {
       invoke,
     })
 
-    await expect(lifecycle.run({})).rejects.toMatchObject({ kind: 'authentication' })
+    await expect(lifecycle.run({})).rejects.toMatchObject({
+      kind: 'authentication',
+      outcome: 'not-sent',
+    })
     expect(invoke).not.toHaveBeenCalled()
     expect(lifecycle.status.value).toBe('error')
   })
@@ -306,7 +402,7 @@ describe('callable lifecycle: settlement and disposal', () => {
     let notifyIdentityChange: (() => void) | undefined
     let releaseInvoke!: (value: string) => void
     const stopIdentity = vi.fn()
-    const lifecycle = createCallableController<Record<string, unknown>, string>({
+    const lifecycle = createCallable<Record<string, unknown>, string>({
       operation: 'mutation',
       getIdentityGeneration: () => generation,
       subscribeIdentityChange(listener) {
@@ -333,7 +429,11 @@ describe('callable lifecycle: settlement and disposal', () => {
 
     generation = 2
     notifyIdentityChange?.()
-    await expect(lifecycle.run({})).rejects.toMatchObject({ kind: 'unknown', code: 'CANCELLED' })
+    await expect(lifecycle.run({})).rejects.toMatchObject({
+      kind: 'unknown',
+      code: 'CANCELLED',
+      outcome: 'not-sent',
+    })
     expect(lifecycle.status.value).toBe('idle')
   })
 })
@@ -406,6 +506,8 @@ describe('callable lifecycle: function names and library codes', () => {
       functionName: 'notes:create',
     })
     expect(lifecycle.error.value?.functionName).toBe('notes:create')
+    // A confirmed server rejection records no dispatch outcome.
+    expect(lifecycle.error.value?.outcome).toBeUndefined()
   })
 
   it('names identity retirements from the controller and from the owner', async () => {

@@ -12,8 +12,11 @@
   `verifyOAuthBearerToken`, and `createWorkforceAuthSchemaOptions`.
 - Require Better Auth, `@better-auth/core`, and `@better-auth/oauth-provider`
   `1.7.6` for every application with auth. The auth component `account` table
-  drops `issuer` and is keyed by `(providerId, accountId)`; existing beta account
-  rows need a new, empty auth component.
+  is keyed by `(providerId, accountId)`. Existing beta account rows are
+  preserved: the retired `issuer` stays as an optional column that the adapter
+  never reads or writes, and `findAccountKeyCollisions` reports rows that share
+  a `(providerId, accountId)` key. Beta OAuth refresh tokens must be cleared
+  before the deploy.
 - `useConvexMutation` returns `{ mutate, data, status, pending, error, reset }`
   and `useConvexAction` returns `{ run, ... }`. `useConvexForm` rejects a
   concurrent submit with `SUBMIT_IN_PROGRESS`, and never sends a submission
@@ -26,8 +29,23 @@
   every restart, so an invalid cursor or `reset()` never shows it again.
 - `ConvexCallError` keeps the message written by your Convex function, carries
   `functionName` and a stable library `code`, and `isConvexCallError(error, code?)`
-  checks it. File upload moves into the Vue package with `CANCELLED`,
-  `FILE_TOO_LARGE`, `FILE_TYPE_NOT_ALLOWED`, and `UPLOAD_IN_PROGRESS` codes.
+  checks it. Browser errors record `outcome` (`not-sent` or `unknown`) from the
+  real request lifecycle. File upload moves into the Vue package with
+  `CANCELLED`, `FILE_TOO_LARGE`, `FILE_TYPE_NOT_ALLOWED`, and
+  `UPLOAD_IN_PROGRESS` codes, and runs prepare, upload, and an optional
+  `complete` step as one workflow for the signed-in user: `url` selects the URL
+  from an object prepare result, `upload()` resolves with
+  `{ storageId, prepared, completed }`, and errors carry `phase`.
+- Add `useConvexOperation(work)`: several queries, mutations, actions, and
+  uploads that run for the user who started them, with `run`, `data`, `status`,
+  `pending`, `error`, and `reset` like `useConvexAction`. A step is checked
+  immediately before it is sent, every later step stops after an identity
+  change, and the state returns to `idle`. Callables, `useConvexForm`, and
+  uploads use the same check; `reset()` on a callable stops a call that was not
+  sent yet.
+- The component-test runtime runs the real composables against an in-memory
+  Convex connection, from `@lupinum/better-convex-nuxt/test` and the new
+  `@lupinum/better-convex-vue/test`. The Nuxt `composables` map is removed.
   `ConvexFormError` is exported from `@lupinum/better-convex-nuxt/errors` and
   `@lupinum/better-convex-vue/errors`.
 - `useConvexAuth().client` is never `null`; queries with `server: false` render

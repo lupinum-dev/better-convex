@@ -218,9 +218,13 @@ describe('createConvexClientOwner', () => {
       a.setMutationHandler('m', () => a.hangingMutation())
 
       const inflight = o.handle.mutation(mockFnRef<'mutation'>('m'), {})
+      // Sent to the wire client, then retired: it may have committed.
       const assertion = expect(inflight).rejects.toMatchObject({
         code: IDENTITY_CHANGED,
+        outcome: 'unknown',
       })
+      await Promise.resolve()
+      expect(a.calls.mutation).toHaveLength(1)
 
       await o.replacePrimary({
         identityGeneration: 1,
@@ -451,8 +455,10 @@ describe('createConvexClientOwner', () => {
         const path = `${rawCall.method}:crossing`
 
         const pending = rawCall.invoke(o, path)
+        // Refused before any wire client saw it.
         const rejection = expect(pending).rejects.toMatchObject({
           code: IDENTITY_CHANGED,
+          outcome: 'not-sent',
         })
         expect(rawCall.calls(a)).toHaveLength(0)
 
@@ -637,6 +643,7 @@ describe('createConvexClientOwner', () => {
       const inflight = o.handle.mutation(mockFnRef<'mutation'>('m'), {})
       const assertion = expect(inflight).rejects.toMatchObject({
         code: IDENTITY_CHANGED,
+        outcome: 'unknown',
       })
       // Let dispatch resolve its primary and register the pending call before we
       // tear the owner down.

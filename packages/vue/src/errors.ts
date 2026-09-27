@@ -30,9 +30,11 @@ export type ConvexCallErrorKind = 'authentication' | 'transport' | 'server' | 'u
  * Stable codes for failures that Better Convex raises itself. Application codes
  * (from `ConvexError` `data.code`) stay plain strings in {@link ConvexCallError.code}.
  *
- * - `IDENTITY_CHANGED`: the auth identity changed while the call was in flight.
- *   It is not safe-retry evidence: the write may have committed.
- * - `CANCELLED`: the work was cancelled or its owning scope was disposed.
+ * - `IDENTITY_CHANGED`: the auth identity changed before the call was sent or
+ *   while it was in flight. Its `outcome` tells which: `not-sent`, or `unknown`
+ *   (the write may have committed).
+ * - `CANCELLED`: the work was cancelled or its owning scope was disposed. Its
+ *   `outcome` tells whether the request was sent.
  * - `FILE_TOO_LARGE`, `FILE_TYPE_NOT_ALLOWED`: client-side upload validation.
  * - `UPLOAD_IN_PROGRESS`, `SUBMIT_IN_PROGRESS`: a second upload or form submission
  *   started while the first one is still pending.
@@ -44,7 +46,8 @@ export type ConvexCallErrorKind = 'authentication' | 'transport' | 'server' | 'u
  * - `UPSTREAM_ERROR`: the upload endpoint, the Convex HTTP API, or the token
  *   exchange answered with a failure status.
  * - `INVALID_RESPONSE`: an upstream response had an unusable body.
- * - `INVALID_UPLOAD_URL`: the upload URL mutation did not return a string.
+ * - `INVALID_UPLOAD_URL`: the upload-URL mutation did not yield a usable URL:
+ *   it returned no string and no `url` option selected one.
  * - `CONVEX_URL_MISSING`, `SITE_URL_MISSING`: the Convex URL or site URL is
  *   not configured.
  * - `AUTH_UNAVAILABLE`: the request identity could not be resolved because
@@ -73,6 +76,38 @@ export type ConvexCallErrorCode =
   | 'AUTH_CONFIRMATION_TIMEOUT'
   | 'PAGINATION_SPLIT_REQUIRED'
 
+/**
+ * What the failing request did before it failed, recorded from the real
+ * dispatch lifecycle and never inferred from `code`.
+ *
+ * - `not-sent`: the request was never handed to the network. Nothing it would
+ *   have written exists.
+ * - `unknown`: the request was sent but no result was confirmed (an identity
+ *   change, a cancellation, or a lost connection crossed it). It may have
+ *   committed.
+ *
+ * `undefined` means the failure is not tied to a dispatch outcome, for example
+ * a confirmed server rejection.
+ *
+ * Neither value makes a retry safe by itself: a write sent twice commits twice
+ * unless the application makes it idempotent (for example a client-generated
+ * request ID the server deduplicates).
+ */
+export type ConvexCallOutcome = 'not-sent' | 'unknown'
+
+/**
+ * The `useConvexFileUpload` phase that failed: `prepare` (the upload-URL
+ * mutation), `upload` (the storage POST), or `complete` (the `complete`
+ * option). Every phase before it succeeded.
+ *
+ * With a phase, `outcome` describes the whole phase: `not-sent` means that
+ * the phase sent no request. A `complete` phase that sent one call and then
+ * failed before sending the next records `unknown`.
+ */
+export type ConvexUploadPhase = 'prepare' | 'upload' | 'complete'
+
+const CONVEX_CALL_OUTCOMES: readonly ConvexCallOutcome[] = ['not-sent', 'unknown']
+const CONVEX_UPLOAD_PHASES: readonly ConvexUploadPhase[] = ['prepare', 'upload', 'complete']
 const CONVEX_CALL_ERROR_KINDS: readonly ConvexCallErrorKind[] = [
   'authentication',
   'transport',
@@ -87,6 +122,8 @@ const SERIALIZED_KEYS: ReadonlySet<string> = new Set([
   'status',
   'data',
   'functionName',
+  'outcome',
+  'phase',
 ])
 const CONVEX_APPLICATION_ERROR_MESSAGE = 'Convex application error'
 const UNKNOWN_CONVEX_ERROR_MESSAGE = 'Unknown Convex error'
@@ -99,6 +136,10 @@ export interface ConvexCallErrorInput {
   data?: unknown
   /** The Convex function path, for example `notes:create`. */
   functionName?: string
+  /** Set only by the code that dispatched the request. See {@link ConvexCallOutcome}. */
+  outcome?: ConvexCallOutcome
+  /** Set only by `useConvexFileUpload`. See {@link ConvexUploadPhase}. */
+  phase?: ConvexUploadPhase
 }
 
 /**
@@ -116,6 +157,14 @@ export class ConvexCallError extends Error {
   readonly data?: unknown
   /** The Convex function path when the failing call path knows it. */
   readonly functionName?: string
+  /**
+   * Whether the failing request was sent: `not-sent` or `unknown` (it may have
+   * committed). Recorded by the dispatching code, never derived from `code`.
+   * Retrying is only safe when the application makes the write idempotent.
+   */
+  readonly outcome?: ConvexCallOutcome
+  /** The `useConvexFileUpload` phase that failed. */
+  readonly phase?: ConvexUploadPhase
 
   constructor(input: ConvexCallErrorInput) {
     super(input.message)
@@ -125,6 +174,8 @@ export class ConvexCallError extends Error {
     this.status = input.status
     this.data = input.data
     this.functionName = input.functionName
+    this.outcome = input.outcome
+    this.phase = input.phase
   }
 
   /** The public serialized shape. There is no `cause` to serialize. */
@@ -137,6 +188,8 @@ export class ConvexCallError extends Error {
       status: this.status,
       data: this.data,
       functionName: this.functionName,
+      outcome: this.outcome,
+      phase: this.phase,
     }
   }
 }
@@ -223,6 +276,8 @@ export interface SerializedConvexCallError {
   status?: number
   data?: unknown
   functionName?: string
+  outcome?: ConvexCallOutcome
+  phase?: ConvexUploadPhase
 }
 
 function isRecordLike(value: unknown): value is Record<string, unknown> {
@@ -270,6 +325,8 @@ function readSerialized(value: unknown): SerializedConvexCallError | undefined {
       status: value.status,
       data: value.data,
       functionName: value.functionName,
+      outcome: value.outcome,
+      phase: value.phase,
     }
     if (snapshot.name !== 'ConvexCallError') return undefined
     if (!isConvexCallErrorKind(snapshot.kind)) return undefined
@@ -283,6 +340,18 @@ function readSerialized(value: unknown): SerializedConvexCallError | undefined {
     if (
       snapshot.functionName !== undefined &&
       asNonEmptyString(snapshot.functionName) === undefined
+    ) {
+      return undefined
+    }
+    if (
+      snapshot.outcome !== undefined &&
+      !CONVEX_CALL_OUTCOMES.includes(snapshot.outcome as ConvexCallOutcome)
+    ) {
+      return undefined
+    }
+    if (
+      snapshot.phase !== undefined &&
+      !CONVEX_UPLOAD_PHASES.includes(snapshot.phase as ConvexUploadPhase)
     ) {
       return undefined
     }
@@ -336,14 +405,21 @@ function withFunctionName(
   functionName: string | undefined,
 ): ConvexCallError {
   if (!functionName || error.functionName !== undefined) return error
-  return new ConvexCallError({
+  return new ConvexCallError({ ...fieldsOf(error), functionName })
+}
+
+/** The public fields of an error, for building a copy that changes one of them. */
+function fieldsOf(error: ConvexCallError): ConvexCallErrorInput {
+  return {
     kind: error.kind,
     message: error.message,
     code: error.code,
     status: error.status,
     data: error.data,
-    functionName,
-  })
+    functionName: error.functionName,
+    outcome: error.outcome,
+    phase: error.phase,
+  }
 }
 
 function revive(serialized: SerializedConvexCallError, functionName: string | undefined) {
@@ -354,6 +430,8 @@ function revive(serialized: SerializedConvexCallError, functionName: string | un
     status: serialized.status,
     data: serialized.data,
     functionName: serialized.functionName ?? functionName,
+    outcome: serialized.outcome,
+    phase: serialized.phase,
   })
 }
 
@@ -409,8 +487,8 @@ export function normalizeConvexError(
  * Strict validation of the serialized public shape. It gates every revival:
  * the value must be a plain object with only the public keys, a known `kind`,
  * a string `message`, and, when present, a non-empty string `code` and
- * `functionName` and a finite `status`. A `name: 'ConvexCallError'` alone is
- * never enough.
+ * `functionName`, a finite `status`, a known `outcome`, and a known `phase`.
+ * A `name: 'ConvexCallError'` alone is never enough.
  */
 export function isSerializedConvexCallError(value: unknown): value is SerializedConvexCallError {
   return readSerialized(value) !== undefined

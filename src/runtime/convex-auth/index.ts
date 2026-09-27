@@ -25,6 +25,12 @@ export type { BetterConvexMcpHost, BetterConvexMcpOptions } from './mcp-profile'
 export { getConvexAuthProvider } from './provider'
 export { requireAuthOrigin } from './origin'
 export { createUserProjectionTriggers } from './user-projection'
+export { findAccountKeyCollisions } from './adapter/account-key-collisions'
+export type {
+  AccountKeyCollision,
+  AccountKeyCollisionReport,
+  FindAccountKeyCollisionsOptions,
+} from './adapter/account-key-collisions'
 
 export type { AuthCtx, WritableAuthCtx } from './context'
 export type {

@@ -34,17 +34,21 @@ describe('unavailable useConvex() handle', () => {
       kind: 'unknown',
       code: 'CLIENT_UNAVAILABLE',
       functionName: 'notes:list',
+      outcome: 'not-sent',
     })
     await expect(handle.mutation(createNote, {})).rejects.toMatchObject({
       code: 'CLIENT_UNAVAILABLE',
       functionName: 'notes:create',
+      outcome: 'not-sent',
     })
     await expect(handle.action(sendEmail, {})).rejects.toMatchObject({
       code: 'CLIENT_UNAVAILABLE',
       functionName: 'emails:send',
+      outcome: 'not-sent',
     })
     const error = thrownBy(() => handle.onUpdate(listNotes, {}, () => {}))
     expect(error.code).toBe('CLIENT_UNAVAILABLE')
+    expect(error.outcome).toBe('not-sent')
     expect(error.functionName).toBe('notes:list')
     expect(error.message).toContain('useConvex().onUpdate()')
   })

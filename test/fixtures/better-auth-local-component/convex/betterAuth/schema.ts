@@ -49,6 +49,8 @@ export const tables = {
     password: v.union(v.null(), v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    // Retired column: optional so earlier rows validate; never read or written.
+    issuer: v.optional(v.string()),
   })
     .index('id', ['id'])
     .index('providerId_accountId', ['providerId', 'accountId'])
@@ -134,7 +136,7 @@ export const tables = {
 
 const schema = defineSchema(tables)
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:bcc255c5b8220378',
+  value: 'bcn-auth-schema-v2:be5f17d7bf75ddba',
 })
 
 export default schema

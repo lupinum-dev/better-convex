@@ -1,4 +1,10 @@
-import type { ConvexCallErrorCode } from '@lupinum/better-convex-nuxt'
+import type {
+  ConvexCallErrorCode,
+  ConvexCallOutcome,
+  ConvexFileUploadResult,
+  ConvexOperation,
+  ConvexUploadPhase,
+} from '@lupinum/better-convex-nuxt'
 import { defineConvexAuthClient } from '@lupinum/better-convex-nuxt/better-auth/client'
 import type { ConvexAuthClientDefinition } from '@lupinum/better-convex-nuxt/better-auth/client'
 import { isConvexCallError, type ConvexCallError } from '@lupinum/better-convex-nuxt/errors'
@@ -118,8 +124,8 @@ export async function usePublicApiSurfaceContracts(file: File) {
   void sendEmail.safe({ to: 'team@example.com', subject: 'Removed' })
 
   const upload = useConvexFileUpload(api.files.generateUploadUrl)
-  assertType<GenericId<'_storage'>>(await upload.upload(file))
-  assertType<ComputedRef<GenericId<'_storage'> | undefined>>(upload.data)
+  assertType<GenericId<'_storage'>>((await upload.upload(file)).storageId)
+  assertType<ComputedRef<ConvexFileUploadResult<string, undefined> | undefined>>(upload.data)
   assertType<number>(upload.progress.value.percent)
   assertType<() => void>(upload.cancel)
   assertType<() => void>(upload.reset)
@@ -127,10 +133,37 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<string | undefined>(upload.error.value?.functionName)
   const uploadedUrl = useConvexQuery(
     api.files.getUrl,
-    () => (upload.data.value ? { storageId: upload.data.value } : 'skip'),
+    () => (upload.data.value ? { storageId: upload.data.value.storageId } : 'skip'),
     { auth: 'required' },
   )
   assertType<ComputedRef<string | null | undefined>>(uploadedUrl.data)
+
+  // One identity-bound workflow: an object prepare result, its URL, and a completion.
+  const attached = useConvexFileUpload(api.files.createUploadSession, {
+    url: (session) => session.uploadUrl,
+    complete: (op, { storageId }) => op.mutation(api.files.attach, { storageId }),
+  })
+  const attachedResult = await attached.upload(file)
+  assertType<string>(attachedResult.completed)
+  assertType<string>(attachedResult.prepared.sessionId)
+  assertType<ConvexUploadPhase | undefined>(attached.error.value?.phase)
+  assertType<ConvexCallOutcome | undefined>(attached.error.value?.outcome)
+
+  const bound = useConvexOperation(async (operation: ConvexOperation, text: string) => {
+    assertType<AbortSignal>(operation.signal)
+    assertType<boolean>(operation.retired)
+    assertType<GenericId<'_storage'>>(await operation.upload('https://upload.test', file))
+    // @ts-expect-error operation steps take validator-derived args
+    void operation.mutation(api.tasks.create, {})
+    return operation.mutation(api.tasks.create, { text })
+  })
+  assertType<string>(await bound.run('bound'))
+  assertType<string | undefined>(bound.data.value)
+  assertType<boolean>(bound.pending.value)
+  assertType<ConvexCallError | undefined>(bound.error.value)
+  bound.reset()
+  // @ts-expect-error run() takes the work's arguments
+  void bound.run(1)
 
   // The framework-free typed client definition comes from the auth-client entry. The
   // plugin-typed narrowing of `useConvexAuth().client` is proven end-to-end in
@@ -192,7 +225,7 @@ function _uploadContracts(file: File) {
   // @ts-expect-error generated validator-derived args reject the wrong shape
   void requiredArgs.upload(file, {})
 
-  // @ts-expect-error generateUploadUrl must return string
+  // @ts-expect-error a non-string upload-URL result requires `url`
   useConvexFileUpload(api.files.invalidUploadUrl)
   // @ts-expect-error completion is observed through await/catch, not callbacks
   useConvexFileUpload(api.files.generateUploadUrl, { onSuccess: () => {} })

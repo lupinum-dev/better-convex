@@ -51,20 +51,14 @@ const NUXT_CHECKER_ENTRY_RULES = [
     subpath: './test',
     purity: {
       runtimeExternalSpecifiers: [
-        '@lupinum/better-convex-vue',
-        '@lupinum/better-convex-vue/embedded',
         '@lupinum/better-convex-vue/errors',
-        'convex/server',
-        'ohash',
+        '@lupinum/better-convex-vue/test',
         'vue',
       ],
       typeExternalSpecifiers: [
         '@lupinum/better-convex-vue',
-        '@lupinum/better-convex-vue/embedded',
         '@lupinum/better-convex-vue/errors',
-        'convex/browser',
-        'convex/server',
-        'convex/values',
+        '@lupinum/better-convex-vue/test',
         'vue',
       ],
     },
@@ -207,6 +201,25 @@ const VUE_CHECKER_ENTRY_RULES = [
     purity: {
       runtimeExternalSpecifiers: ['convex/values', 'vue'],
       typeExternalSpecifiers: ['convex/browser'],
+    },
+  },
+  {
+    subpath: './test',
+    purity: {
+      runtimeExternalSpecifiers: [
+        'convex/browser',
+        'convex/server',
+        'convex/values',
+        'ohash',
+        'vue',
+      ],
+      typeExternalSpecifiers: [
+        '@standard-schema/spec',
+        'convex/browser',
+        'convex/server',
+        'convex/values',
+        'vue',
+      ],
     },
   },
   {

@@ -5,12 +5,17 @@ import { ConvexCallError } from '../errors'
 
 const CLIENT_UNAVAILABLE = 'CLIENT_UNAVAILABLE'
 
-function clientUnavailableError(message: string, functionName?: string): ConvexCallError {
+function clientUnavailableError(
+  message: string,
+  functionName?: string,
+  outcome?: 'not-sent',
+): ConvexCallError {
   return new ConvexCallError({
     kind: 'unknown',
     code: CLIENT_UNAVAILABLE,
     message: `[better-convex-nuxt] ${message}`,
     functionName,
+    outcome,
   })
 }
 
@@ -28,6 +33,8 @@ function unavailableCall(method: 'query' | 'mutation' | 'action') {
       clientUnavailableError(
         `useConvex().${method}() needs the browser Convex client, which does not exist during server rendering or without a configured Convex URL. Use useConvexQuery for server-rendered data and serverConvex(event) in Nitro handlers.`,
         readFunctionName(reference),
+        // No Convex client exists, so nothing was sent.
+        'not-sent',
       ),
     )
 }
@@ -45,6 +52,7 @@ export const UNAVAILABLE_CONVEX_HANDLE: ConvexClientHandle = Object.freeze({
     throw clientUnavailableError(
       'useConvex().onUpdate() needs the browser Convex client, which does not exist during server rendering or without a configured Convex URL. Subscribe from onMounted() or use useConvexQuery.',
       readFunctionName(reference),
+      'not-sent',
     )
   }) as ConvexClientHandle['onUpdate'],
 })

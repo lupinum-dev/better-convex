@@ -1,12 +1,16 @@
-import { ConvexCallError, isConvexCallError, type ConvexCallErrorCode } from '../errors'
+import {
+  ConvexCallError,
+  isConvexCallError,
+  type ConvexCallErrorCode,
+  type ConvexCallOutcome,
+} from '../errors'
 
 /**
  * Stable `code` for the identity-boundary rejection.
  *
- * A handle invocation that crosses an identity generation, and every A-owned
- * consumer-held call retired during A→B replacement, rejects with this code. It
- * is deliberately NOT safe-retry evidence: a stale mutation/action may already
- * have committed under the original identity.
+ * A call that crosses an identity generation rejects with this code. Its
+ * `outcome` records whether the request was sent: `not-sent`, or `unknown`
+ * when a write may already have committed under the original identity.
  */
 export const IDENTITY_CHANGED = 'IDENTITY_CHANGED' satisfies ConvexCallErrorCode
 
@@ -18,7 +22,7 @@ export const IDENTITY_CHANGED = 'IDENTITY_CHANGED' satisfies ConvexCallErrorCode
  */
 export function createIdentityChangedError(
   operation?: string,
-  context?: { readonly functionName?: string },
+  context?: { readonly functionName?: string; readonly outcome?: ConvexCallOutcome },
 ): ConvexCallError {
   const message = operation
     ? `Convex ${operation} rejected: the auth identity changed before it settled (${IDENTITY_CHANGED}).`
@@ -28,6 +32,7 @@ export function createIdentityChangedError(
     code: IDENTITY_CHANGED,
     message,
     functionName: context?.functionName,
+    outcome: context?.outcome,
   })
 }
 

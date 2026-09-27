@@ -97,12 +97,16 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     const { result } = await captureInNuxt(() => useConvexFileUpload(mutation), { convex })
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' })
 
-    const storageId = await result.upload(file)
+    const uploaded = await result.upload(file)
 
-    expect(storageId).toBe('storage_1')
+    expect(uploaded).toEqual({
+      storageId: 'storage_1',
+      prepared: 'http://upload.local',
+      completed: undefined,
+    })
     expect(result.progress.value).toEqual({ loaded: 5, total: 10, percent: 50 })
     expect(result.status.value).toBe('success')
-    expect(result.data.value).toBe('storage_1')
+    expect(result.data.value).toBe(uploaded)
     expect(result.error.value).toBeUndefined()
   })
 
@@ -255,8 +259,8 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     // The rejected concurrent call must not have clobbered the in-flight upload.
     expect(result.status.value).toBe('pending')
 
-    const storageId = await firstPromise
-    expect(storageId).toBe('storage_1')
+    const uploaded = await firstPromise
+    expect(uploaded.storageId).toBe('storage_1')
     expect(result.status.value).toBe('success')
     expect(result.error.value).toBeUndefined()
   })
@@ -383,12 +387,13 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     {
       boundary: 'success',
       response: { status: 200, responseText: JSON.stringify({ storageId: 'storage_1' }) },
-      assertOriginal: (promise: Promise<string>) => expect(promise).resolves.toBe('storage_1'),
+      assertOriginal: (promise: Promise<unknown>) =>
+        expect(promise).resolves.toMatchObject({ storageId: 'storage_1' }),
     },
     {
       boundary: 'error',
       response: { status: 500, responseText: 'failed' },
-      assertOriginal: (promise: Promise<string>) =>
+      assertOriginal: (promise: Promise<unknown>) =>
         expect(promise).rejects.toThrow('Upload failed'),
     },
   ])(
@@ -399,7 +404,7 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
       const mutationName = `files:generateUploadUrl:same-identity-${boundary}`
       const mutation = mockFnRef<'mutation'>(mutationName)
       convex.setMutationHandler(mutationName, async () => 'http://upload.local')
-      let freshUpload: Promise<string> | null = null
+      let freshUpload: Promise<unknown> | null = null
 
       const { result } = await captureInNuxt(
         () => {
@@ -526,16 +531,16 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
       code: 'IDENTITY_CHANGED',
     })
     FakeXhr.delayMs = 0
-    await expect(result.upload(new File(['b'], 'b.txt', { type: 'text/plain' }))).resolves.toBe(
-      'storage_1',
-    )
+    await expect(
+      result.upload(new File(['b'], 'b.txt', { type: 'text/plain' })),
+    ).resolves.toMatchObject({ storageId: 'storage_1' })
     expect(result.status.value).toBe('success')
-    expect(result.data.value).toBe('storage_1')
+    expect(result.data.value?.storageId).toBe('storage_1')
 
     // The old fake XHR still attempts its delayed load. It must not overwrite B.
     await new Promise((resolve) => setTimeout(resolve, 210))
     expect(result.status.value).toBe('success')
-    expect(result.data.value).toBe('storage_1')
+    expect(result.data.value?.storageId).toBe('storage_1')
 
     // Finished state is identity-owned too; a later transition masks B's result.
     identity.advance()
@@ -555,7 +560,7 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     )
     let identity!: ReturnType<typeof installIdentityPortHarness>
     let launchFresh = false
-    let freshUpload: Promise<string> | null = null
+    let freshUpload: Promise<unknown> | null = null
 
     const { result } = await captureInNuxt(
       () => {

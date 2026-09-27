@@ -38,6 +38,12 @@ export interface AuthModelMetadata {
   physicalName: string
   fields: Readonly<Record<string, AuthFieldMetadata>>
   indexes: readonly AuthIndexMetadata[]
+  /**
+   * Columns an earlier release stored that Better Auth no longer defines, by
+   * physical name. They are optional in the Convex schema so existing rows
+   * still validate; the adapter never writes, reads, filters or indexes them.
+   */
+  legacyFields?: Readonly<Record<string, AuthFieldKind>>
 }
 
 export interface AuthSchemaMetadata {
@@ -164,8 +170,20 @@ export function assertAuthSchemaMatchesMetadata(
       }
 
       const fields = Object.values(model.fields)
+      const legacyFields = Object.entries(model.legacyFields ?? {})
       const exportedFields = table.documentType.value
-      if (fields.length !== Object.keys(exportedFields).length) mismatch()
+      if (fields.length + legacyFields.length !== Object.keys(exportedFields).length) mismatch()
+      for (const [name, kind] of legacyFields) {
+        const exportedField = exportedFields[name]
+        if (
+          Object.hasOwn(model.fields, name) ||
+          !exportedField ||
+          exportedField.optional !== true ||
+          JSON.stringify(exportedField.fieldType) !== JSON.stringify(expectedBaseValidator(kind))
+        ) {
+          mismatch()
+        }
+      }
       for (const field of fields) {
         if (model.fields[field.physicalName] !== field) mismatch()
         const exportedField = exportedFields[field.physicalName]

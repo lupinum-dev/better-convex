@@ -76,11 +76,12 @@ The list updates when the data changes in Convex. A query without arguments may 
 
 ## Exports
 
-| Import                                | Exports                                                                                                                                                                                                                          |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@lupinum/better-convex-vue`          | `createBetterConvex`, `useConvexQuery`, `useConvexPaginatedQuery`, `useConvexMutation`, `useConvexAction`, `useConvexForm`, `useConvexFileUpload`, `useConvexConnectionState`, `useConvex`, `ConvexCallError`, `ConvexFormError` |
-| `@lupinum/better-convex-vue/errors`   | `ConvexCallError`, `ConvexFormError`, `isConvexCallError`, `normalizeConvexError`, `isSerializedConvexCallError`                                                                                                                 |
-| `@lupinum/better-convex-vue/embedded` | `createBetterConvexAttachment`, for a Vue application that runs inside another application and shares its Convex connection                                                                                                      |
+| Import                                | Exports                                                                                                                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@lupinum/better-convex-vue`          | `createBetterConvex`, `useConvexQuery`, `useConvexPaginatedQuery`, `useConvexMutation`, `useConvexAction`, `useConvexForm`, `useConvexOperation`, `useConvexFileUpload`, `useConvexConnectionState`, `useConvex`, `ConvexCallError`, `ConvexFormError` |
+| `@lupinum/better-convex-vue/errors`   | `ConvexCallError`, `ConvexFormError`, `isConvexCallError`, `normalizeConvexError`, `isSerializedConvexCallError`                                                                                                                                       |
+| `@lupinum/better-convex-vue/embedded` | `createBetterConvexAttachment`, for a Vue application that runs inside another application and shares its Convex connection                                                                                                                            |
+| `@lupinum/better-convex-vue/test`     | `setupBetterConvexTest` and `invalidCursorError`, a component-test runtime that runs the real composables against an in-memory Convex connection                                                                                                       |
 
 `createBetterConvex` accepts `convexUrl`, an optional `auth` adapter, optional `clientOptions` for the Convex client, and `defaultQueryAuth`. The [plain Vue guide](https://better-convex.lupinum.com/docs/get-started/plain-vue) shows each option.
 
