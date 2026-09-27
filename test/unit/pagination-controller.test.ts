@@ -99,6 +99,9 @@ function makeHarness(options?: { live?: boolean; initialCursor?: string | null }
     isIdle: () => idle.value,
     isLive: () => live.value,
     getBoundaryFirstPage: () => boundaryFirstPage.value,
+    retireBoundaryFirstPage: () => {
+      boundaryFirstPage.value = null
+    },
     getBoundaryError: () => boundaryError.value,
     setBoundaryError: (error) => {
       boundaryError.value = error
@@ -120,6 +123,9 @@ function makeHarness(options?: { live?: boolean; initialCursor?: string | null }
       fetchQueue,
       get boundaryError() {
         return boundaryError.value
+      },
+      get boundaryFirstPage() {
+        return boundaryFirstPage.value
       },
       setBoundaryFirstPage(value: PaginationResult<Row> | null) {
         boundaryFirstPage.value = value
@@ -746,6 +752,38 @@ describe('pagination controller', () => {
     state.subscriptions[3]?.value(page(['a2'], 'cursor-1'))
     expect(controller.data.value?.map((row) => row.id)).toEqual(['a2'])
     expect(controller.status.value).toBe('success')
+  })
+
+  it('never revives the hydrated first page after an invalid-cursor restart', () => {
+    const { controller, state } = makeHarness()
+    state.setBoundaryFirstPage(page(['ssr'], 'ssr-cursor'))
+    // Hydration parity: the first render uses the server page.
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['ssr'])
+    expect(controller.status.value).toBe('success')
+
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    expect(state.boundaryFirstPage).toBeNull()
+    void controller.loadMore(2)
+    state.subscriptions[2]?.value(page(['b'], 'cursor-2'))
+    state.subscriptions[2]?.error(new Error('InvalidCursor: stale'))
+
+    expect(controller.status.value).toBe('pending')
+    expect(controller.isStale.value).toBe(true)
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b'])
+    expect(controller.canLoadMore.value).toBe(false)
+    const subscriptionCount = state.subscriptions.length
+    void controller.loadMore(2)
+    expect(state.subscriptions).toHaveLength(subscriptionCount)
+  })
+
+  it('retires the hydrated first page on reset even before live data arrives', () => {
+    const { controller, state } = makeHarness()
+    state.setBoundaryFirstPage(page(['ssr'], 'ssr-cursor'))
+    controller.reset()
+
+    expect(state.boundaryFirstPage).toBeNull()
+    expect(controller.status.value).toBe('pending')
+    expect(controller.data.value).toBeUndefined()
   })
 
   it('surfaces an invalid initial cursor instead of resetting into a loop', () => {

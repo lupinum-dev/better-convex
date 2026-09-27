@@ -22,7 +22,11 @@ afterEach(() => {
 })
 
 function page<T>(items: T[], isDone: boolean, cursor: string | null): PaginationResult<T> {
-  return { page: items, isDone, continueCursor: cursor ?? '' } as PaginationResult<T>
+  return {
+    page: items,
+    isDone,
+    continueCursor: cursor ?? '',
+  } as PaginationResult<T>
 }
 
 function pageKey(
@@ -114,11 +118,18 @@ describe('useConvexPaginatedQuery controller', () => {
           nuxtApp.isHydrating = false
           void nuxtApp.callHook('app:suspense:resolve')
         })
-        return { listenersBeforeMount, listenersDuringMount, statusBeforeMount, state }
+        return {
+          listenersBeforeMount,
+          listenersDuringMount,
+          statusBeforeMount,
+          state,
+        }
       },
       {
         owner: makeMockOwner(primary),
-        payloadData: { [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') } },
+        payloadData: {
+          [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
+        },
       },
     )
 
@@ -334,8 +345,18 @@ describe('useConvexPaginatedQuery controller', () => {
   })
 
   it.each([
-    { name: 'skip', args: 'skip' as const, server: true, status: 'idle' as const },
-    { name: 'server false', args: {}, server: false, status: 'pending' as const },
+    {
+      name: 'skip',
+      args: 'skip' as const,
+      server: true,
+      status: 'idle' as const,
+    },
+    {
+      name: 'server false',
+      args: {},
+      server: false,
+      status: 'pending' as const,
+    },
   ])('settles $name immediately', async ({ args, server, status }) => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:immediate-settlement')
@@ -402,7 +423,11 @@ describe('useConvexPaginatedQuery controller', () => {
     const query = mockFnRef<'query'>('feed:reactive-skip-settlement')
     const args = ref<Record<string, never> | 'skip'>({})
     const { result, flush, wrapper } = await captureInNuxt(
-      () => useConvexPaginatedQuery(query, args, { auth: 'none', initialNumItems: 2 }),
+      () =>
+        useConvexPaginatedQuery(query, args, {
+          auth: 'none',
+          initialNumItems: 2,
+        }),
       { owner: makeMockOwner(primary) },
     )
     let settled = false
@@ -535,7 +560,9 @@ describe('useConvexPaginatedQuery controller', () => {
       {
         owner: makeMockOwner(primary),
         identityObserver: identityPort.observer,
-        payloadData: { [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') } },
+        payloadData: {
+          [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
+        },
       },
     )
 
@@ -587,24 +614,35 @@ describe('useConvexPaginatedQuery controller', () => {
             {},
             { auth: 'optional', initialNumItems: 2 },
           ).resultData
-          const hydrated = { status: state.status.value, canLoadMore: state.canLoadMore.value }
+          const hydrated = {
+            status: state.status.value,
+            canLoadMore: state.canLoadMore.value,
+          }
           // Registered after the composable's own handoff, so it observes the live state.
           const ready = ref<{ status: string; canLoadMore: boolean } | null>(null)
           onNuxtReady(() => {
-            ready.value = { status: state.status.value, canLoadMore: state.canLoadMore.value }
+            ready.value = {
+              status: state.status.value,
+              canLoadMore: state.canLoadMore.value,
+            }
           })
           return { state, hydrated, ready }
         }),
       {
         owner: makeMockOwner(primary),
         identityObserver: identityPort.observer,
-        payloadData: { [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') } },
+        payloadData: {
+          [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
+        },
       },
     )
 
     expect(result.hydrated).toEqual({ status: 'success', canLoadMore: true })
     await vi.waitFor(() => expect(result.ready.value).not.toBeNull())
-    expect(result.ready.value).toEqual({ status: 'success', canLoadMore: true })
+    expect(result.ready.value).toEqual({
+      status: 'success',
+      canLoadMore: true,
+    })
     expect(result.state.data.value).toEqual(['ssr-a', 'ssr-b'])
 
     // Convex has not confirmed the token yet: the page waits with the list.
@@ -661,7 +699,9 @@ describe('useConvexPaginatedQuery controller', () => {
         }),
       {
         owner: makeMockOwner(primary),
-        payloadData: { [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') } },
+        payloadData: {
+          [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
+        },
       },
     )
 
@@ -677,6 +717,77 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.state.status.value).toBe('success')
     expect(result.state.isLoadingMore.value).toBe(true)
     expect(result.state.data.value).toEqual(['ssr-a', 'ssr-b'])
+    expect(primary.calls.query).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it.each([
+    { label: 'reset()', cursor: null },
+    { label: 'reset(cursor)', cursor: 'jump-to' },
+  ])('stops showing the SSR page on $label before onNuxtReady', async ({ cursor }) => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>(`feed:hydrating-reset-${cursor ?? 'start'}`)
+    const key = pageKey(query, {})
+
+    const { result, wrapper } = await captureInNuxt(
+      () =>
+        hydrating(() => {
+          const state = useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 })
+          const beforeReset = {
+            data: state.data.value,
+            canLoadMore: state.canLoadMore.value,
+          }
+          state.reset(cursor)
+          const afterReset = {
+            data: state.data.value,
+            status: state.status.value,
+            canLoadMore: state.canLoadMore.value,
+            isExhausted: state.isExhausted.value,
+          }
+          return {
+            state,
+            beforeReset,
+            afterReset,
+            onUpdatesAfterReset: primary.calls.onUpdate.length,
+          }
+        }),
+      {
+        owner: makeMockOwner(primary),
+        payloadData: {
+          [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
+        },
+      },
+    )
+
+    expect(result.beforeReset).toEqual({
+      data: ['ssr-a', 'ssr-b'],
+      canLoadMore: true,
+    })
+    // reset() drops the server page at once: no stale `success` page offering
+    // a loadMore that would silently do nothing.
+    expect(result.afterReset.data).toBeUndefined()
+    expect(result.afterReset.status).not.toBe('success')
+    expect(result.afterReset.canLoadMore).toBe(false)
+    expect(result.afterReset.isExhausted).toBe(false)
+    expect(result.onUpdatesAfterReset).toBe(0)
+
+    // The list goes live from the reset cursor, not from the SSR page.
+    await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
+    expect(primary.calls.onUpdate[0]?.args).toMatchObject({
+      paginationOpts: { cursor, numItems: 2 },
+    })
+    expect(primary.calls.onUpdate[0]?.args).not.toMatchObject({
+      paginationOpts: { endCursor: 'ssr-cursor' },
+    })
+    expect(result.state.data.value).toBeUndefined()
+    primary.emitQueryResultWhere(
+      (entry) =>
+        (entry.args as { paginationOpts: { cursor: string | null } }).paginationOpts.cursor ===
+        cursor,
+      page(['live-a'], true, 'live-end'),
+    )
+    await vi.waitFor(() => expect(result.state.data.value).toEqual(['live-a']))
+    expect(result.state.status.value).toBe('success')
     expect(primary.calls.query).toHaveLength(0)
     wrapper.unmount()
   })
@@ -846,7 +957,9 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.status.value).toBe('success')
     expect(result.pending.value).toBe(false)
     expect(result.isLoadingMore.value).toBe(false)
-    expect(result.error.value).toMatchObject({ functionName: 'feed:failing-tail' })
+    expect(result.error.value).toMatchObject({
+      functionName: 'feed:failing-tail',
+    })
     expect(result.canLoadMore.value).toBe(true)
     wrapper.unmount()
   })
@@ -925,7 +1038,9 @@ describe('useConvexPaginatedQuery controller', () => {
         ),
       {
         owner: makeMockOwner(primary),
-        payloadData: { [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') } },
+        payloadData: {
+          [key]: { value: page(['ssr-a', 'ssr-b'], false, 'ssr-cursor') },
+        },
       },
     )
 
@@ -981,7 +1096,9 @@ describe('useConvexPaginatedQuery controller', () => {
       () => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 }),
       {
         owner: makeMockOwner(primary),
-        payloadData: { [key]: { value: page(['old-ssr'], false, 'old-cursor') } },
+        payloadData: {
+          [key]: { value: page(['old-ssr'], false, 'old-cursor') },
+        },
       },
     )
 

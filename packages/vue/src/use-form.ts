@@ -15,7 +15,10 @@ import {
   type ConvexFormErrorMapping,
 } from './form-errors'
 import type { CallableControllerObserver } from './internal/callable-controller'
-import { isIdentityChangedError } from './internal/identity-changed-error'
+import {
+  createIdentityChangedError,
+  isIdentityChangedError,
+} from './internal/identity-changed-error'
 import { useOptionalBetterConvexRuntime } from './runtime-context'
 import type { ConvexCallStatus } from './use-callable'
 import { useConvexMutationInternal } from './use-callable'
@@ -206,6 +209,9 @@ export function useConvexFormInternal(
     { observer },
   )
 
+  const runtime = useOptionalBetterConvexRuntime()
+  const readGeneration = () => runtime?.identity.snapshot.value.identityGeneration ?? 0
+
   // Shallow refs keep the exact mutation result and the returned form error.
   const data = shallowRef<unknown>()
   const currentStatus = shallowRef<ConvexCallStatus>('idle')
@@ -238,6 +244,7 @@ export function useConvexFormInternal(
     const extra = cloneSnapshot(extraArgs[0] ?? {})
     const knownFields = new Set(Object.keys(snapshot))
     const attempt = ++revision
+    const generation = readGeneration()
     currentStatus.value = 'pending'
     data.value = undefined
     error.value = undefined
@@ -258,6 +265,16 @@ export function useConvexFormInternal(
         : (validation.value as FormRecord)
       if (hasOverlappingKeys(produced, extra)) {
         throw new TypeError('[better-convex-vue] form and contextual mutation arguments overlap')
+      }
+
+      // Validation is async: values captured under one identity, or by a
+      // retired attempt, must never be dispatched afterwards.
+      const retirement = retiredBeforeDispatch(attempt, generation)
+      if (retirement) {
+        return Object.freeze({
+          ok: false,
+          error: createSubmissionFormError(retirement, knownFields, options.mapError),
+        })
       }
 
       try {
@@ -290,6 +307,24 @@ export function useConvexFormInternal(
     return promise
   }
 
+  const retiredBeforeDispatch = (
+    attempt: number,
+    generation: number,
+  ): ConvexCallError | undefined => {
+    if (readGeneration() !== generation) {
+      return createIdentityChangedError('mutation', { functionName })
+    }
+    if (disposed || revision !== attempt) {
+      return new ConvexCallError({
+        kind: 'unknown',
+        code: 'CANCELLED' satisfies ConvexCallErrorCode,
+        message: 'Convex mutation cancelled: the form submission was reset before it was sent.',
+        functionName,
+      })
+    }
+    return undefined
+  }
+
   const reset = () => {
     revision += 1
     activePromise = undefined
@@ -300,8 +335,6 @@ export function useConvexFormInternal(
 
   // A settled result or mapped error belongs to the identity that produced it;
   // a new identity starts from a clean form, like the other callables.
-  const runtime = useOptionalBetterConvexRuntime()
-  const readGeneration = () => runtime?.identity.snapshot.value.identityGeneration ?? 0
   let lastSeenGeneration = readGeneration()
   const stopIdentity =
     runtime?.browser.identity.subscribe(() => {

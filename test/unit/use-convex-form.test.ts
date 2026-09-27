@@ -290,6 +290,78 @@ describe('useConvexForm', () => {
     scope.stop()
   })
 
+  it('never dispatches values validated under a replaced identity', async () => {
+    let releaseValidation!: () => void
+    const asyncSchema: StandardSchemaV1<FormValues, FormValues> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: async (value) => {
+          await new Promise<void>((resolve) => {
+            releaseValidation = resolve
+          })
+          return { value: value as FormValues }
+        },
+      },
+    }
+    const { form, mutation, scope, advanceIdentity } = setup(
+      async () => ({ id: 'bob-write' }),
+      asyncSchema,
+    )
+
+    // Alice submits; validation is still pending when Bob signs in.
+    const pending = form.submit({ balance: 1, note: 'alice' }, { accountId: 'alice-account' })
+    await vi.waitFor(() => expect(releaseValidation).toBeTypeOf('function'))
+    advanceIdentity()
+    releaseValidation()
+    const result = await pending
+
+    expect(mutation.mock.calls).toEqual([])
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        callError: {
+          kind: 'authentication',
+          code: 'IDENTITY_CHANGED',
+          functionName: 'accounts:save',
+        },
+      },
+    })
+    expect(form.status.value).toBe('idle')
+    expect(form.data.value).toBeUndefined()
+    expect(form.error.value).toBeUndefined()
+    scope.stop()
+  })
+
+  it('never dispatches a submission reset during async validation', async () => {
+    let releaseValidation!: () => void
+    const asyncSchema: StandardSchemaV1<FormValues, FormValues> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: async (value) => {
+          await new Promise<void>((resolve) => {
+            releaseValidation = resolve
+          })
+          return { value: value as FormValues }
+        },
+      },
+    }
+    const { form, mutation, scope } = setup(async () => ({ id: 'unused' }), asyncSchema)
+
+    const pending = form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+    await vi.waitFor(() => expect(releaseValidation).toBeTypeOf('function'))
+    form.reset()
+    releaseValidation()
+    const result = await pending
+
+    expect(mutation.mock.calls).toEqual([])
+    expect(result).toMatchObject({ ok: false, error: { callError: { code: 'CANCELLED' } } })
+    expect(form.status.value).toBe('idle')
+    expect(form.error.value).toBeUndefined()
+    scope.stop()
+  })
+
   it('clears settled success and failure state when the identity changes', async () => {
     let outcome: 'ok' | 'fail' = 'ok'
     const { form, scope, advanceIdentity } = setup(async () => {

@@ -48,7 +48,10 @@ export function useConvexQueryIdentity(): ComputedRef<ClientIdentitySnapshot> {
       pending: pending.value,
       identityKey: identityKeyOf(identity.value),
       error: authError.value
-        ? new ConvexCallError({ kind: 'authentication', message: authError.value })
+        ? new ConvexCallError({
+            kind: 'authentication',
+            message: authError.value,
+          })
         : null,
     }),
   )
@@ -125,7 +128,11 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
           value: await input.fetch(convexUrl, token, event?.web?.request?.signal, bounds),
         }
       } catch (error) {
-        return { error: normalizeConvexError(error, { functionName: input.functionName }) }
+        return {
+          error: normalizeConvexError(error, {
+            functionName: input.functionName,
+          }),
+        }
       }
     },
     { server, immediate, lazy, deep: false, default: () => null },
@@ -178,6 +185,8 @@ export interface ConvexQueryHydration<T> {
   readonly error: ComputedRef<ConvexCallError | undefined>
   /** Start a deferred live lifecycle once Nuxt hydration settles. */
   startLive(live: ConvexLiveQuery): void
+  /** Stop showing the server-rendered view, for example after a caller reset. */
+  retire(): void
 }
 
 /**
@@ -197,6 +206,7 @@ export function useConvexQueryHydration<T>(
       view: computed(() => undefined),
       error: computed(() => undefined),
       startLive: ignore,
+      retire: ignore,
     }
   }
 
@@ -298,5 +308,6 @@ export function useConvexQueryHydration<T>(
         )
       })
     },
+    retire,
   }
 }

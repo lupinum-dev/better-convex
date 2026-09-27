@@ -218,6 +218,9 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
     isIdle: () => idle.value,
     isLive: () => live.value,
     getBoundaryFirstPage: () => boundaryFirstPage.value,
+    retireBoundaryFirstPage: () => {
+      boundaryFirstPage.value = null
+    },
     getBoundaryError: () =>
       auth === 'none' ? boundaryError.value : (gateError.value ?? boundaryError.value),
     setBoundaryError: (error) => {

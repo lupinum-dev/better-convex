@@ -137,6 +137,11 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
       ssr.value ? ssr.value.canLoadMore && !result.isLoadingMore.value : result.canLoadMore.value,
     ),
     isExhausted: computed(() => (ssr.value ? ssr.value.isExhausted : result.isExhausted.value)),
+    // A reset drops the server-rendered page along with the live pages.
+    reset(cursor?: string | null) {
+      result.reset(cursor)
+      hydration.retire()
+    },
   })
   return {
     resultData,
@@ -164,7 +169,10 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
         boundary.functionName,
         {
           ...(args.args.value as PaginatedQueryArgs<Query>),
-          paginationOpts: { numItems: options.initialNumItems, cursor: startCursor.value },
+          paginationOpts: {
+            numItems: options.initialNumItems,
+            cursor: startCursor.value,
+          },
         },
         token,
         signal,
