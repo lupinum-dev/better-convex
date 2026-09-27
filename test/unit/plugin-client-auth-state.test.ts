@@ -19,7 +19,7 @@ const {
   failClosedMock,
   identityState,
   pendingState,
-  queryErrorsState,
+  refreshBetterConvexAuthMock,
   refreshSessionMock,
   runtime,
   snapshot,
@@ -67,9 +67,7 @@ const {
       value: { status: 'anonymous' } as AuthIdentity,
     },
     pendingState: { value: false },
-    queryErrorsState: {
-      value: {} as Record<string, unknown>,
-    },
+    refreshBetterConvexAuthMock: vi.fn(),
     refreshSessionMock: vi.fn(async () => {}),
     runtime,
     snapshot,
@@ -83,7 +81,6 @@ vi.mock('#app', () => ({
   useRuntimeConfig: vi.fn(() => ({ public: { convex: {} } })),
   useState: vi.fn((key: string, init?: () => unknown) => {
     if (key === 'convex:authError') return authErrorState
-    if (key === 'convex:query-errors') return queryErrorsState
     return { value: init?.() ?? null }
   }),
 }))
@@ -96,6 +93,10 @@ vi.mock('better-auth/vue', () => ({
 
 vi.mock('@lupinum/better-convex-vue', () => ({
   createBetterConvex: createBetterConvexMock,
+}))
+
+vi.mock('@lupinum/better-convex-vue/internal', () => ({
+  refreshBetterConvexAuth: refreshBetterConvexAuthMock,
 }))
 
 vi.mock('../../src/runtime/auth/better-auth-browser-adapter', () => ({
@@ -166,7 +167,6 @@ describe('auth client app-facing state projection', () => {
     authErrorState.value = null
     emitInitialProviderSession.value = true
     pendingState.value = false
-    queryErrorsState.value = {}
     snapshot.settled = true
     snapshot.identityKey = 'user:alice'
     snapshot.identityGeneration = 1
@@ -190,9 +190,12 @@ describe('auth client app-facing state projection', () => {
       hydrateSession: vi.fn(),
       convex: { token: vi.fn() },
     })
-    createBetterConvexMock.mockReturnValue({
-      attachment: vi.fn(() => runtime.attachment),
-      [Symbol.for('better-convex-vue:internal-refresh-auth')]: authRefreshMock,
+    const vuePlugin = { attachment: vi.fn(() => runtime.attachment) }
+    createBetterConvexMock.mockReturnValue(vuePlugin)
+    // The typed seam refreshes only the plugin this Nuxt app created.
+    refreshBetterConvexAuthMock.mockImplementation(async (plugin: unknown) => {
+      if (plugin !== vuePlugin) throw new Error('refreshed a foreign plugin')
+      await authRefreshMock()
     })
   })
 
@@ -292,10 +295,6 @@ describe('auth client app-facing state projection', () => {
     snapshot.settled = false
     snapshot.identityKey = 'user:bob'
     snapshot.identityGeneration = 0
-    queryErrorsState.value = {
-      'convex:notes:list:auth:optional:user:alice': { private: 'alice-error' },
-      'convex:status:list:auth:none': { public: true },
-    }
     const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
       setup(nuxtApp: {
         payload: {
@@ -309,13 +308,17 @@ describe('auth client app-facing state projection', () => {
         }
       }): void
     }
+    // SSR values and SSR errors share their identity-partitioned payload keys.
+    const payload = {
+      data: {
+        'convex:notes:list:auth:optional:user:alice': { value: 'alice' },
+        'convex:notes:mine:auth:required:user:alice': { error: { message: 'alice-error' } },
+        'convex:status:list:auth:none': { error: { message: 'public' } },
+      } as Record<string, unknown>,
+      state: {},
+    }
     plugin.setup({
-      payload: {
-        data: {
-          'convex:notes:list:auth:optional:user:alice': { private: 'alice' },
-        },
-        state: {},
-      },
+      payload,
       provide: vi.fn(),
       vueApp: {
         onUnmount: vi.fn(),
@@ -324,23 +327,16 @@ describe('auth client app-facing state projection', () => {
     })
 
     expect(clearNuxtDataMock).toHaveBeenCalledTimes(1)
-    expect(queryErrorsState.value).toEqual({
-      'convex:status:list:auth:none': { public: true },
-    })
+    expect(Object.keys(payload.data)).toEqual(['convex:status:list:auth:none'])
     snapshot.settled = true
     for (const subscriber of subscribers) subscriber()
     expect(clearNuxtDataMock).toHaveBeenCalledTimes(1)
 
-    queryErrorsState.value = {
-      ...queryErrorsState.value,
-      'convex:notes:list:auth:required:user:bob': { private: 'bob-error' },
-    }
+    payload.data['convex:notes:list:auth:required:user:bob'] = { error: { message: 'bob-error' } }
     snapshot.identityGeneration = 1
     for (const subscriber of subscribers) subscriber()
     expect(clearNuxtDataMock).toHaveBeenCalledTimes(2)
-    expect(queryErrorsState.value).toEqual({
-      'convex:status:list:auth:none': { public: true },
-    })
+    expect(Object.keys(payload.data)).toEqual(['convex:status:list:auth:none'])
   })
 
   it('settles integrated sign-in only after Convex confirms the new identity', async () => {

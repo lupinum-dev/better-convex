@@ -44,20 +44,36 @@ describe('Nuxt client-engine absence gate', () => {
     expect(findNuxtClientEngineViolations(root, { dist: true })).toEqual([])
   })
 
-  it('rejects removed source paths, private imports, controller ownership, and bundled engines', () => {
+  it('accepts the typed private Vue integration seam', () => {
+    const root = createRoot()
+    write(
+      root,
+      'src/runtime/composables/useConvexQuery.ts',
+      "import { useConvexQueryInternal } from '@lupinum/better-convex-vue/internal'\n",
+    )
+    write(
+      root,
+      'dist/runtime/composables/useConvexQuery.js',
+      "import { useConvexQueryInternal } from '@lupinum/better-convex-vue/internal'\n",
+    )
+
+    expect(findNuxtClientEngineViolations(root, { dist: true })).toEqual([])
+  })
+
+  it('rejects removed source paths, source imports, controller ownership, and bundled engines', () => {
     const root = createRoot()
     write(root, 'src/runtime/client-core/query-controller.ts', 'export const old = true\n')
     write(
       root,
       'src/runtime/private.ts',
-      "import '@lupinum/better-convex-vue/internal'\ncreateClientOwner()\n",
+      "import '../../packages/vue/src/internal/client-owner'\ncreateClientOwner()\n",
     )
     write(root, 'dist/runtime/plugin.js', 'createCallableController()\n')
 
     expect(findNuxtClientEngineViolations(root, { dist: true })).toEqual(
       expect.arrayContaining([
         'removed path exists: src/runtime/client-core',
-        'src/runtime/private.ts: forbidden @lupinum/better-convex-vue/internal',
+        'src/runtime/private.ts: forbidden packages/vue/src/',
         'src/runtime/private.ts: forbidden createClientOwner',
         'dist/runtime/plugin.js: forbidden createCallableController',
       ]),

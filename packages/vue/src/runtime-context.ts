@@ -1,5 +1,5 @@
 import { ConvexClient } from 'convex/browser'
-import type { App, InjectionKey, ObjectPlugin } from 'vue'
+import type { App, InjectionKey, ObjectPlugin, Ref } from 'vue'
 import { inject, readonly, shallowRef } from 'vue'
 
 import {
@@ -12,6 +12,8 @@ import {
   createBetterConvexBrowserRuntime,
   type BetterConvexBrowserRuntime,
 } from './internal/browser-runtime'
+import { DISCONNECTED_CONNECTION_STATE } from './internal/connection-state'
+import type { ClientIdentitySnapshot } from './internal/identity-port'
 
 export interface BetterConvexVueRuntime {
   readonly browser: BetterConvexBrowserRuntime
@@ -19,10 +21,10 @@ export interface BetterConvexVueRuntime {
 }
 
 const BETTER_CONVEX_KEY: InjectionKey<BetterConvexVueRuntime> = Symbol('@lupinum/better-convex-vue')
-// Private cross-package seam used by the Nuxt owner to reconcile one provider
-// operation with the already-installed Convex runtime. It is intentionally not
-// part of BetterConvexPlugin or any package export.
-const INTERNAL_REFRESH_AUTH = Symbol.for('better-convex-vue:internal-refresh-auth')
+// Owner-only auth refresh, reachable through `refreshBetterConvexAuth` in the
+// private `/internal` entry. Keeping it off the plugin object means an attached
+// (embedded) child can never gain provider control.
+const ownerAuthRefresh = new WeakMap<BetterConvexPlugin, () => Promise<void>>()
 
 export type BetterConvexAuthAdapter = BrowserAuthAdapter
 
@@ -49,7 +51,7 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
   let installedAttachment: BetterConvexAttachment | null = null
   let ownedBrowser: BetterConvexBrowserRuntime | null = null
 
-  return Object.freeze({
+  const plugin: BetterConvexPlugin = Object.freeze({
     install(app: App) {
       if (installed) throw new Error('[better-convex-vue] plugin is already installed')
       installed = true
@@ -84,19 +86,34 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
       }
       return installedAttachment
     },
-    async [INTERNAL_REFRESH_AUTH]() {
-      if (!ownedBrowser) {
-        throw new Error('[better-convex-vue] only the owning plugin can refresh authentication')
-      }
-      await ownedBrowser.refreshAuth()
-    },
   })
+  ownerAuthRefresh.set(plugin, async () => {
+    if (!ownedBrowser) {
+      throw new Error('[better-convex-vue] only the owning plugin can refresh authentication')
+    }
+    await ownedBrowser.refreshAuth()
+  })
+  return plugin
+}
+
+/**
+ * Re-read the provider session through the auth adapter of a plugin created
+ * with `convexUrl` and `auth`. Rejects for an attached plugin.
+ */
+export async function refreshBetterConvexAuth(plugin: BetterConvexPlugin): Promise<void> {
+  const refresh = ownerAuthRefresh.get(plugin)
+  if (!refresh) {
+    throw new Error('[better-convex-vue] refreshBetterConvexAuth requires a Better Convex plugin')
+  }
+  await refresh()
 }
 
 function createAttachedBrowserFacade(
   attachment: BetterConvexAttachment,
 ): BetterConvexBrowserRuntime {
-  const state = shallowRef(attachment.connection?.snapshot() ?? disconnectedState())
+  const state = shallowRef(
+    attachment.connection?.snapshot() ?? { ...DISCONNECTED_CONNECTION_STATE },
+  )
   let consumers = 0
   let stop: (() => void) | null = null
   const addConsumer = () => {
@@ -133,23 +150,15 @@ function createAttachedBrowserFacade(
   }
 }
 
-function disconnectedState() {
-  return {
-    hasInflightRequests: false,
-    isWebSocketConnected: false,
-    timeOfOldestInflightRequest: null,
-    hasEverConnected: false,
-    connectionCount: 0,
-    connectionRetries: 0,
-    inflightMutations: 0,
-    inflightActions: 0,
-  }
-}
-
 export function useBetterConvexRuntime(): BetterConvexVueRuntime {
   const runtime = useOptionalBetterConvexRuntime()
   if (!runtime) throw new Error('[better-convex-vue] plugin is not installed in this Vue app')
   return runtime
+}
+
+/** The app's one reactive identity snapshot; composables share it instead of subscribing. */
+export function useBetterConvexIdentity(): Readonly<Ref<ClientIdentitySnapshot>> {
+  return useBetterConvexRuntime().identity.snapshot
 }
 
 /** Internal SSR seam: callable composables may be created during render but cannot execute there. */

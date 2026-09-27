@@ -1,4 +1,5 @@
-import { toValue, type MaybeRefOrGetter } from 'vue'
+import { hash } from 'ohash'
+import { computed, toValue, type ComputedRef, type MaybeRefOrGetter } from 'vue'
 
 import { deepUnref } from './deep-unref'
 
@@ -21,4 +22,17 @@ export function normalizeConvexArgs<Args>(
 
 export function isConvexArgsSkipped(args: unknown): boolean {
   return args === 'skip'
+}
+
+/** Normalized reactive arguments and their stable hash, computed once per change. */
+export interface ConvexArgsState<Args> {
+  readonly args: ComputedRef<ConvexArgs<Args>>
+  readonly hash: ComputedRef<string>
+}
+
+export function createConvexArgsState<Args>(
+  source: MaybeRefOrGetter<ConvexArgs<Args>>,
+): ConvexArgsState<Args> {
+  const args = computed(() => normalizeConvexArgs(source))
+  return { args, hash: computed(() => hash(args.value)) }
 }

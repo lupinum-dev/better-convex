@@ -1,6 +1,7 @@
 import type { ConnectionState, ConvexClient } from 'convex/browser'
 import { shallowRef, readonly, type Ref } from 'vue'
 
+import { DISCONNECTED_CONNECTION_STATE } from './connection-state'
 import { createIdentityChangedError } from './identity-changed-error'
 import type { ClientIdentityPort } from './identity-port'
 
@@ -120,17 +121,6 @@ export interface CreateConvexClientOwnerInput {
   anonymousFactory?: () => OwnedConvexClient
 }
 
-const DEFAULT_CONNECTION_STATE: ConnectionState = {
-  hasInflightRequests: false,
-  isWebSocketConnected: false,
-  timeOfOldestInflightRequest: null,
-  hasEverConnected: false,
-  connectionCount: 0,
-  connectionRetries: 0,
-  inflightMutations: 0,
-  inflightActions: 0,
-}
-
 type OwnedUnsubscribe = ReturnType<ConvexClient['onUpdate']> & {
   /** Present at runtime in Convex 1.40 but stripped from its public declarations. */
   getQueryLogs(): string[] | undefined
@@ -189,9 +179,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
   }
 
   // ---- connection-state store (owned here; single ownership) ----------
-  const connectionState = shallowRef<ConnectionState>({
-    ...DEFAULT_CONNECTION_STATE,
-  })
+  const connectionState = shallowRef<ConnectionState>({ ...DISCONNECTED_CONNECTION_STATE })
   let connectionUnsubscribe: (() => void) | null = null
   let connectionConsumers = 0
 
@@ -211,7 +199,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
   // to the replacement only when it has consumers (architecture invariant).
   function resetConnectionForReplacement() {
     unsubscribeConnection()
-    connectionState.value = { ...DEFAULT_CONNECTION_STATE }
+    connectionState.value = { ...DISCONNECTED_CONNECTION_STATE }
     if (connectionConsumers > 0) subscribeConnection()
   }
 

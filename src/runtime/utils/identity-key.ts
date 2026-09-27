@@ -1,10 +1,10 @@
 import type { ConvexUser } from './types'
 
+/**
+ * The Vue runtime's identity partition, restated so public Nuxt declarations
+ * never reference the private Vue entry. A type test pins the two as equal.
+ */
 export type ConvexIdentityKey = 'anonymous' | `user:${string}`
-
-export function isAuthenticatedIdentityKey(key: ConvexIdentityKey | null): key is `user:${string}` {
-  return typeof key === 'string' && key.startsWith('user:')
-}
 
 /**
  * The single stable-user-ID extraction function.

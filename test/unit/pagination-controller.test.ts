@@ -1,7 +1,9 @@
 import type { FunctionReference, PaginationResult } from 'convex/server'
+import { ConvexError } from 'convex/values'
 import { describe, expect, it } from 'vitest'
+import { shallowRef } from 'vue'
 
-import type { ConvexCallError } from '../../packages/vue/src/errors'
+import { ConvexCallError } from '../../packages/vue/src/errors'
 import { createPaginationController } from '../../packages/vue/src/internal/pagination-controller'
 import type { PaginationPageOptions } from '../../packages/vue/src/internal/pagination-state'
 import type { QueryIsolationTag } from '../../packages/vue/src/internal/query-controller'
@@ -17,21 +19,22 @@ function page(
   isDone = false,
   split?: {
     cursor: string
-    status: 'SplitRecommended' | 'SplitRequired'
+    status?: 'SplitRecommended' | 'SplitRequired'
   },
 ): PaginationResult<Row> {
   return {
     page: ids.map((id) => ({ id })),
     continueCursor,
     isDone,
-    ...(split
-      ? {
-          splitCursor: split.cursor,
-          pageStatus: split.status,
-        }
-      : {}),
+    ...(split ? { splitCursor: split.cursor } : {}),
+    ...(split?.status ? { pageStatus: split.status } : {}),
   }
 }
+
+const aliceBoundary = {
+  nextBoundaryKey: 'notes:list:alice',
+  previousBoundaryKey: 'notes:list:alice',
+} as const
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -41,7 +44,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-function makeHarness(options?: { live?: boolean }) {
+function makeHarness(options?: { live?: boolean; initialCursor?: string | null }) {
   const query = mockFnRef<'query'>('notes:list')
   let args: Record<string, unknown> | 'skip' = { owner: 'alice' }
   let argsHash = 'alice'
@@ -50,10 +53,11 @@ function makeHarness(options?: { live?: boolean }) {
     identityKey: 'user:alice',
     identityGeneration: 1,
   }
-  let live = options?.live ?? true
-  let idle = false
-  let boundaryFirstPage: PaginationResult<Row> | null = null
-  let boundaryError: ConvexCallError | undefined
+  // Reactive like the real entry, so computed state observes gate changes.
+  const live = shallowRef(options?.live ?? true)
+  const idle = shallowRef(false)
+  const boundaryFirstPage = shallowRef<PaginationResult<Row> | null>(null)
+  const boundaryError = shallowRef<ConvexCallError | undefined>(undefined)
   const fetches: PaginationPageOptions[] = []
   const fetchQueue: Array<Promise<PaginationResult<Row> | null>> = []
   const subscriptions: Array<{
@@ -86,19 +90,20 @@ function makeHarness(options?: { live?: boolean }) {
   const controller = createPaginationController<Row>({
     query,
     initialNumItems: 2,
+    getInitialCursor: () => options?.initialCursor ?? null,
     keepPreviousData: true,
     getArgs: () => args,
     getArgsHash: () => argsHash,
     getBoundaryKey: () => boundaryKey,
     getIsolationTag: () => tag,
-    isIdle: () => idle,
-    isLive: () => live,
-    getBoundaryFirstPage: () => boundaryFirstPage,
-    getBoundaryError: () => boundaryError,
+    isIdle: () => idle.value,
+    isLive: () => live.value,
+    getBoundaryFirstPage: () => boundaryFirstPage.value,
+    getBoundaryError: () => boundaryError.value,
     setBoundaryError: (error) => {
-      boundaryError = error
+      boundaryError.value = error
     },
-    getClient: () => (live ? client : null),
+    getClient: () => (live.value ? client : null),
     fetchPage: async (paginationOptions) => {
       fetches.push(paginationOptions)
       return (await fetchQueue.shift()) ?? null
@@ -114,16 +119,16 @@ function makeHarness(options?: { live?: boolean }) {
       fetches,
       fetchQueue,
       get boundaryError() {
-        return boundaryError
+        return boundaryError.value
       },
       setBoundaryFirstPage(value: PaginationResult<Row> | null) {
-        boundaryFirstPage = value
+        boundaryFirstPage.value = value
       },
       setLive(value: boolean) {
-        live = value
+        live.value = value
       },
       setIdle(value: boolean) {
-        idle = value
+        idle.value = value
       },
       setArgs(nextArgs: Record<string, unknown> | 'skip', hash: string, key: string) {
         args = nextArgs
@@ -542,6 +547,289 @@ describe('pagination controller', () => {
     pending.resolve(page(['stale-alice'], '', true))
     await refresh
     expect(controller.data.value).toBeUndefined()
+  })
+
+  it('holds a page requested before the list is live and subscribes it with the list', async () => {
+    const { controller, state } = makeHarness({ live: false })
+    state.setBoundaryFirstPage(page(['a'], 'cursor-1'))
+
+    expect(controller.status.value).toBe('success')
+    expect(controller.canLoadMore.value).toBe(true)
+    controller.loadMore(2)
+    expect(state.fetches).toEqual([])
+    expect(state.subscriptions).toHaveLength(0)
+    expect(controller.pages.value).toHaveLength(1)
+    expect(controller.status.value).toBe('pending')
+    expect(controller.canLoadMore.value).toBe(false)
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a'])
+    controller.loadMore(2)
+    expect(controller.pages.value).toHaveLength(1)
+
+    state.setLive(true)
+    await controller.handleExecutionBoundary({
+      ...aliceBoundary,
+      nextLive: true,
+      previousLive: false,
+    })
+    expect(
+      state.subscriptions.map((subscription) => subscription.args.paginationOpts),
+    ).toMatchObject([{ cursor: null, endCursor: 'cursor-1' }, { cursor: 'cursor-1' }])
+
+    state.subscriptions[1]?.value(page(['b'], '', true))
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b'])
+    expect(controller.status.value).toBe('success')
+    expect(controller.canLoadMore.value).toBe(false)
+  })
+
+  it('resubscribes every existing page when the same boundary becomes live', async () => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(2)
+    state.subscriptions[2]?.value(page(['b'], 'cursor-2'))
+    controller.loadMore(2)
+
+    await controller.handleExecutionBoundary({
+      ...aliceBoundary,
+      nextLive: true,
+      previousLive: false,
+    })
+
+    expect(state.subscriptions.slice(0, 5).every((subscription) => !subscription.active)).toBe(true)
+    expect(
+      state.subscriptions.slice(5).map((subscription) => subscription.args.paginationOpts),
+    ).toMatchObject([
+      { cursor: null, endCursor: 'cursor-1' },
+      { cursor: 'cursor-1', endCursor: 'cursor-2' },
+      { cursor: 'cursor-2' },
+    ])
+    state.subscriptions[4]?.value(page(['retired'], '', true))
+    expect(controller.status.value).toBe('pending')
+
+    state.subscriptions[7]?.value(page(['c'], '', true))
+    state.subscriptions[6]?.value(page(['b2'], 'cursor-2'))
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b2', 'c'])
+    expect(controller.status.value).toBe('success')
+  })
+
+  it('stops at a withheld middle page instead of concatenating around the hole', () => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(2)
+    state.subscriptions[2]?.value(page(['b'], 'cursor-2'))
+    controller.loadMore(2)
+    state.subscriptions[4]?.value(page(['c'], '', true))
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b', 'c'])
+
+    state.subscriptions[3]?.value(
+      page(['unsafe'], 'cursor-2', false, { cursor: 'cursor-1.5', status: 'SplitRequired' }),
+    )
+
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a'])
+    expect(controller.status.value).toBe('pending')
+    expect(controller.canLoadMore.value).toBe(false)
+
+    state.subscriptions[5]?.value(page(['b1'], 'cursor-1.5'))
+    state.subscriptions[6]?.value(page(['b2'], 'cursor-2'))
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b1', 'b2', 'c'])
+    expect(controller.status.value).toBe('success')
+    expect(controller.canLoadMore.value).toBe(false)
+  })
+
+  it('stops at every pending page, not only the last one', () => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(2)
+    state.subscriptions[2]?.value(page(['b'], 'cursor-2'))
+    controller.loadMore(2)
+    state.subscriptions[4]?.value(page(['c'], 'cursor-3'))
+
+    state.subscriptions[1]?.value(
+      page(['unsafe'], 'cursor-1', false, { cursor: 'cursor-0.5', status: 'SplitRequired' }),
+    )
+
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b', 'c'])
+    expect(controller.isStale.value).toBe(true)
+    expect(controller.status.value).toBe('pending')
+    expect(controller.canLoadMore.value).toBe(false)
+  })
+
+  it('keeps loaded items and reports a failed later page separately', () => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(2)
+    state.subscriptions[2]?.value(page(['b'], 'cursor-2'))
+    controller.loadMore(2)
+    state.subscriptions[4]?.error(new Error('tail failed'))
+
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b'])
+    expect(controller.status.value).toBe('error')
+    expect(controller.error.value).toBeInstanceOf(ConvexCallError)
+    expect(controller.error.value).toBe(controller.pages.value[1]?.error)
+    expect(state.boundaryError).toBeUndefined()
+    expect(controller.canLoadMore.value).toBe(false)
+
+    state.subscriptions[3]?.error(new Error('middle failed'))
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b'])
+    expect(state.boundaryError).toBeUndefined()
+
+    state.subscriptions[3]?.value(page(['b2'], 'cursor-2'))
+    state.subscriptions[4]?.value(page(['c'], '', true))
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b2', 'c'])
+    expect(controller.error.value).toBeUndefined()
+    expect(controller.status.value).toBe('success')
+  })
+
+  it('fails a later-page split on that page without failing the first page', () => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(2)
+    state.subscriptions[2]?.value(
+      page(['unsafe'], 'cursor-2', false, { cursor: 'cursor-1.5', status: 'SplitRequired' }),
+    )
+    state.subscriptions[3]?.error(new Error('split failed'))
+
+    expect(state.boundaryError).toBeUndefined()
+    expect(controller.error.value).toBeInstanceOf(ConvexCallError)
+    expect(controller.pages.value[0]?.error).toBe(controller.error.value)
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a'])
+    expect(state.subscriptions[4]?.active).toBe(false)
+  })
+
+  it.each([
+    ['message', new Error('Uncaught Error: InvalidCursor: cursor is from a different query')],
+    [
+      'system data',
+      new ConvexError({ isConvexSystemError: true, paginationError: 'InvalidCursor' }),
+    ],
+  ])('resets pagination when a later page reports an invalid cursor (%s)', (_label, cause) => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(2)
+    state.subscriptions[2]?.value(page(['b'], 'cursor-2'))
+    const firstId = (state.subscriptions[1]?.args.paginationOpts as PaginationPageOptions).id
+
+    state.subscriptions[2]?.error(cause)
+
+    expect(state.subscriptions.slice(0, 3).every((subscription) => !subscription.active)).toBe(true)
+    expect(state.subscriptions).toHaveLength(4)
+    const restarted = state.subscriptions[3]?.args.paginationOpts as PaginationPageOptions
+    expect(restarted).toMatchObject({ cursor: null, numItems: 2 })
+    expect(restarted.endCursor).toBeUndefined()
+    expect(restarted.id).not.toBe(firstId)
+    expect(controller.pages.value).toEqual([])
+    expect(controller.error.value).toBeUndefined()
+    expect(controller.status.value).toBe('pending')
+    expect(controller.isStale.value).toBe(true)
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b'])
+
+    state.subscriptions[3]?.value(page(['a2'], 'cursor-1'))
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a2'])
+    expect(controller.status.value).toBe('success')
+  })
+
+  it('surfaces an invalid initial cursor instead of resetting into a loop', () => {
+    const { controller, state } = makeHarness({ initialCursor: 'stale-cursor' })
+    expect(state.subscriptions[0]?.args.paginationOpts).toMatchObject({ cursor: 'stale-cursor' })
+
+    state.subscriptions[0]?.error(new Error('InvalidCursor: stale cursor'))
+
+    expect(state.subscriptions).toHaveLength(1)
+    expect(controller.status.value).toBe('error')
+    expect(controller.error.value).toBeInstanceOf(ConvexCallError)
+  })
+
+  it('resets when refresh meets an invalid cursor', async () => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(2)
+    state.subscriptions[2]?.value(page(['b'], '', true))
+
+    state.fetchQueue.push(Promise.reject(new Error('InvalidCursor: stale')))
+    await controller.refresh()
+
+    expect(state.subscriptions.slice(0, 3).every((subscription) => !subscription.active)).toBe(true)
+    expect(state.subscriptions[3]?.args.paginationOpts).toMatchObject({ cursor: null })
+    expect(controller.pages.value).toEqual([])
+    expect(controller.error.value).toBeUndefined()
+    expect(controller.status.value).toBe('pending')
+  })
+
+  it('keeps the loaded list when refresh fails on a later page', async () => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(2)
+    state.subscriptions[2]?.value(page(['b'], 'cursor-2'))
+    controller.loadMore(2)
+    state.subscriptions[4]?.value(page(['c'], '', true))
+
+    state.fetchQueue.push(
+      Promise.resolve(page(['a2'], 'cursor-1')),
+      Promise.reject(new Error('page two failed')),
+    )
+    await controller.refresh()
+
+    expect(state.fetches.map((options) => options.cursor)).toEqual([null, 'cursor-1'])
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b', 'c'])
+    expect(state.boundaryError).toBeUndefined()
+    expect(controller.error.value).toBeInstanceOf(ConvexCallError)
+    expect(controller.pages.value[0]?.error).toBe(controller.error.value)
+    expect(controller.status.value).toBe('error')
+    expect([1, 3, 4].every((index) => state.subscriptions[index]?.active)).toBe(true)
+
+    state.subscriptions[3]?.value(page(['b2'], 'cursor-2'))
+    expect(controller.error.value).toBeUndefined()
+    expect(controller.status.value).toBe('success')
+  })
+
+  it('splits a live page that grows beyond twice the initial page size', () => {
+    const { controller, state } = makeHarness()
+
+    state.subscriptions[0]?.value(page(['a', 'b', 'c', 'd'], 'page-end', false, { cursor: 'mid' }))
+    expect(state.subscriptions).toHaveLength(1)
+    state.subscriptions[0]?.value(page(['a', 'b', 'c', 'd', 'e'], 'page-end'))
+    expect(state.subscriptions).toHaveLength(1)
+
+    state.subscriptions[0]?.value(
+      page(['a', 'b', 'c', 'd', 'e'], 'page-end', false, { cursor: 'mid' }),
+    )
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(controller.status.value).toBe('success')
+    expect(state.subscriptions).toHaveLength(3)
+    expect(state.subscriptions[1]?.args.paginationOpts).toMatchObject({
+      cursor: null,
+      endCursor: 'mid',
+    })
+    expect(state.subscriptions[2]?.args.paginationOpts).toMatchObject({
+      cursor: 'mid',
+      endCursor: 'page-end',
+    })
+
+    state.subscriptions[1]?.value(page(['a', 'b'], 'mid'))
+    state.subscriptions[2]?.value(page(['c', 'd', 'e'], 'page-end'))
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(controller.pages.value).toHaveLength(1)
+    expect(state.subscriptions[0]?.active).toBe(false)
+    expect(state.subscriptions).toHaveLength(3)
+  })
+
+  it('splits an oversized later page and keeps its items visible meanwhile', () => {
+    const { controller, state } = makeHarness()
+    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
+    controller.loadMore(8)
+    state.subscriptions[2]?.value(
+      page(['b', 'c', 'd', 'e', 'f'], 'cursor-2', false, { cursor: 'cursor-1.5' }),
+    )
+
+    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b', 'c', 'd', 'e', 'f'])
+    expect(state.subscriptions).toHaveLength(5)
+    expect(state.subscriptions[3]?.args.paginationOpts).toMatchObject({
+      cursor: 'cursor-1',
+      endCursor: 'cursor-1.5',
+    })
+    expect(state.subscriptions[4]?.args.paginationOpts).toMatchObject({
+      cursor: 'cursor-1.5',
+      endCursor: 'cursor-2',
+    })
   })
 
   it('disposes exactly once and rejects callbacks from retired subscriptions', () => {

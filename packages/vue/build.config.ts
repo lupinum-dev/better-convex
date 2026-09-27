@@ -5,6 +5,8 @@ export default defineBuildConfig({
     'src/index',
     'src/errors',
     'src/embedded',
+    // Private Nuxt integration seam; see src/internal.ts. Not public API.
+    'src/internal',
     {
       builder: 'copy',
       input: 'agent-docs',

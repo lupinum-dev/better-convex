@@ -1,8 +1,8 @@
-import {
-  useConvexMutation as useVueConvexMutation,
-  type UseConvexCall,
-  type UseConvexMutationOptions as VueMutationOptions,
+import type {
+  UseConvexCall,
+  UseConvexMutationOptions as VueMutationOptions,
 } from '@lupinum/better-convex-vue'
+import { useConvexMutationInternal } from '@lupinum/better-convex-vue/internal'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'
@@ -11,7 +11,6 @@ import { useNuxtApp } from '#imports'
 
 import { readConvexRuntimeContext } from '../runtime-context'
 import { createCallableDevtoolsEvents } from '../utils/callable-devtools'
-import { CALLABLE_OBSERVER_KEY } from '../utils/callable-observer'
 
 export type UseConvexMutationOptions<Args extends Record<string, unknown>> =
   VueMutationOptions<Args>
@@ -44,22 +43,17 @@ export function useConvexMutation<Mutation extends FunctionReference<'mutation'>
   options?: Readonly<{ optimisticUpdate?: OptimisticUpdateCandidate<FunctionArgs<Mutation>> }>,
 ): UseConvexCall<Mutation> {
   const runtime = readConvexRuntimeContext(useNuxtApp())
-  const events = createCallableDevtoolsEvents<FunctionArgs<Mutation>, FunctionReturnType<Mutation>>(
-    {
-      operation: 'mutation',
-      fnName: getFunctionName(mutation),
-      hasOptimisticUpdate: Boolean(options?.optimisticUpdate),
-      getSink: () => runtime?.getDevtoolsSink() ?? null,
-    },
-  )
-  const internalOptions = {
-    ...options,
-    [CALLABLE_OBSERVER_KEY]: events,
-  }
-  return (
-    useVueConvexMutation as unknown as (
-      reference: Mutation,
-      internalOptions: Record<PropertyKey, unknown>,
-    ) => UseConvexCall<Mutation>
-  )(mutation, internalOptions)
+  const observer = createCallableDevtoolsEvents<
+    FunctionArgs<Mutation>,
+    FunctionReturnType<Mutation>
+  >({
+    operation: 'mutation',
+    fnName: getFunctionName(mutation),
+    hasOptimisticUpdate: Boolean(options?.optimisticUpdate),
+    getSink: () => runtime?.getDevtoolsSink() ?? null,
+  })
+  return useConvexMutationInternal(mutation, {
+    optimisticUpdate: options?.optimisticUpdate,
+    observer,
+  })
 }

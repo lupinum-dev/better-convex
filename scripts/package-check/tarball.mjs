@@ -122,6 +122,8 @@ const packedArtifactProfiles = Object.freeze({
       'dist/errors.d.mts',
       'dist/embedded.mjs',
       'dist/embedded.d.mts',
+      'dist/internal.mjs',
+      'dist/internal.d.mts',
     ]),
     requiredBuildFiles: Object.freeze([
       'dist/index.mjs',
@@ -130,6 +132,8 @@ const packedArtifactProfiles = Object.freeze({
       'dist/errors.d.mts',
       'dist/embedded.mjs',
       'dist/embedded.d.mts',
+      'dist/internal.mjs',
+      'dist/internal.d.mts',
     ]),
     allowedHostPackages: Object.freeze([]),
     allowedVirtualSpecifiers: Object.freeze([]),

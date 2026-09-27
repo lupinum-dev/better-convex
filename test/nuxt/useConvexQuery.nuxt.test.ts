@@ -1,4 +1,5 @@
-import type { FunctionArgs, FunctionReference } from 'convex/server'
+import { getFunctionName, type FunctionArgs, type FunctionReference } from 'convex/server'
+import { hash } from 'ohash'
 import { describe, expect, it } from 'vitest'
 import { onBeforeMount, onMounted, reactive, ref } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
@@ -19,11 +20,33 @@ import {
   type UseNuxtConvexQueryOptions,
 } from '../../src/runtime/composables/useConvexQuery'
 import { ConvexCallError } from '../../src/runtime/errors'
-import { withAuthDimension } from '../../src/runtime/utils/convex-cache'
-import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
+import type { ConvexAuthMode } from '../../src/runtime/utils/auth-status'
+import { createConvexPayloadKey } from '../../src/runtime/utils/convex-cache'
+import type { ConvexIdentityKey } from '../../src/runtime/utils/identity-key'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt, identityProxyListenerCount } from '../helpers/nuxt-runtime-harness'
 import { waitFor } from '../helpers/wait-for'
+
+function payloadKey(
+  query: FunctionReference<'query'>,
+  args: Record<string, unknown>,
+  auth: ConvexAuthMode,
+  identity: ConvexIdentityKey = 'anonymous',
+) {
+  return createConvexPayloadKey('convex', getFunctionName(query), hash(args), auth, identity)
+}
+
+/** Run a factory as a hydrating Nuxt app would, then settle hydration after mount. */
+function hydrating<T>(factory: () => T): T {
+  const nuxtApp = useNuxtApp()
+  nuxtApp.isHydrating = true
+  const result = factory()
+  onMounted(() => {
+    nuxtApp.isHydrating = false
+    void nuxtApp.callHook('app:suspense:resolve')
+  })
+  return result
+}
 
 function useConvexQueryState<
   Query extends FunctionReference<'query'>,
@@ -68,7 +91,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
   it('keeps an SSR value authoritative until hydration settles', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:hydrated-frame')
-    const key = withAuthDimension(createConvexQueryKey(query, {}), 'none', 'anonymous')
+    const key = payloadKey(query, {}, 'none')
     const { result } = await captureInNuxt(
       () => {
         const nuxtApp = useNuxtApp()
@@ -129,20 +152,19 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
   it('mounts immediately from an SSR error and keeps it until client reconciliation settles', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:ssr-error-hydration')
-    const key = withAuthDimension(createConvexQueryKey(query, {}), 'optional', 'anonymous')
+    const key = payloadKey(query, {}, 'optional')
     const ssrError = new ConvexCallError({
       kind: 'transport',
       message: 'Sanitized SSR transport failure',
       status: 500,
     })
     const { result, flush } = await captureInNuxt(
-      () => {
-        useState<Record<string, ConvexCallError | undefined>>('convex:query-errors').value = {
-          [key]: ssrError,
-        }
-        return useConvexQuery(query, {})
+      () => hydrating(() => useConvexQuery(query, {})),
+      {
+        convex,
+        convexConfig: { auth: false },
+        payloadData: { [key]: { error: ssrError } },
       },
-      { convex, convexConfig: { auth: false }, payloadData: { [key]: null } },
     )
 
     const hydrated = await result
@@ -150,6 +172,9 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(hydrated.pending.value).toBe(false)
     expect(hydrated.status.value).toBe('error')
 
+    await waitFor(() => convex.calls.onUpdate.length === 1)
+    // The live lifecycle is loading: the SSR error bridges it.
+    expect(hydrated.status.value).toBe('error')
     convex.emitQueryResult(query, {}, { ok: true })
     await flush()
     await waitFor(() => hydrated.status.value === 'success')
@@ -162,29 +187,28 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     const query = mockFnRef<'query'>('notes:list:ssr-error-argument-boundary')
     const initialArgs = { category: 'alpha' }
     const replacementArgs = { category: 'beta' }
-    const key = withAuthDimension(createConvexQueryKey(query, initialArgs), 'none', 'anonymous')
+    const key = payloadKey(query, initialArgs, 'none')
     const ssrError = new ConvexCallError({
       kind: 'transport',
       message: 'Sanitized SSR transport failure',
       status: 500,
     })
     const { result, flush } = await captureInNuxt(
-      () => {
-        const args = ref(initialArgs)
-        const errors = useState<Record<string, ConvexCallError | undefined>>('convex:query-errors')
-        errors.value = { [key]: ssrError }
-        return {
-          args,
-          errors,
-          query: useConvexQuery(query, args, { auth: 'none' }),
-          stableQuery: useConvexQuery(query, initialArgs, { auth: 'none' }),
-        }
-      },
-      { convex, payloadData: { [key]: null } },
+      () =>
+        hydrating(() => {
+          const args = ref(initialArgs)
+          return {
+            args,
+            query: useConvexQuery(query, args, { auth: 'none' }),
+            stableQuery: useConvexQuery(query, initialArgs, { auth: 'none' }),
+          }
+        }),
+      { convex, payloadData: { [key]: { error: ssrError } } },
     )
 
     expect(result.query.error.value).toBe(ssrError)
     expect(result.query.status.value).toBe('error')
+    await waitFor(() => convex.calls.onUpdate.length === 2)
 
     result.args.value = replacementArgs
     await flush()
@@ -193,7 +217,13 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(result.query.status.value).toBe('pending')
     expect(result.query.data.value).toBeUndefined()
     expect(result.stableQuery.error.value).toBe(ssrError)
-    expect(key in result.errors.value).toBe(true)
+
+    // Returning to the hydrated arguments does not resurrect the retired error.
+    result.args.value = initialArgs
+    await flush()
+    expect(result.query.error.value).toBeUndefined()
+    result.args.value = replacementArgs
+    await flush()
 
     convex.emitQueryResult(query, replacementArgs, { category: 'beta' })
     await waitFor(() => result.query.status.value === 'success')
@@ -202,7 +232,113 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     convex.emitQueryResult(query, initialArgs, { category: 'alpha' })
     await waitFor(() => result.stableQuery.status.value === 'success')
     expect(result.stableQuery.data.value).toEqual({ category: 'alpha' })
-    expect(key in result.errors.value).toBe(false)
+    expect(result.stableQuery.error.value).toBeUndefined()
+  })
+
+  it('ignores an SSR payload once hydration has finished', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:stale-payload-navigation')
+    const key = payloadKey(query, {}, 'none')
+
+    // Client navigation after hydration: the payload describes an earlier page.
+    const { result } = await captureInNuxt(() => useConvexQueryState(query, {}, { auth: 'none' }), {
+      convex,
+      payloadData: { [key]: { value: [{ _id: 'old-ssr-note' }] } },
+    })
+
+    expect(result.status.value).toBe('pending')
+    expect(result.data.value).toBeUndefined()
+    await waitFor(() => convex.calls.onUpdate.length === 1)
+    convex.emitQueryResult(query, {}, [{ _id: 'live-note' }])
+    await waitFor(() => result.status.value === 'success')
+    expect(result.data.value).toEqual([{ _id: 'live-note' }])
+  })
+
+  it('renders server:false as idle while hydrating, as the server did', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:server-false-hydration')
+    const { result } = await captureInNuxt(
+      () =>
+        hydrating(() => {
+          const statusBeforeMount = ref('unknown')
+          const pendingBeforeMount = ref<boolean | undefined>(undefined)
+          const state = useConvexQueryState(query, {}, { server: false })
+          onBeforeMount(() => {
+            statusBeforeMount.value = state.status.value
+            pendingBeforeMount.value = state.pending.value
+          })
+          return { state, statusBeforeMount, pendingBeforeMount }
+        }),
+      { convex, payloadData: {} },
+    )
+
+    expect(result.statusBeforeMount.value).toBe('idle')
+    expect(result.pendingBeforeMount.value).toBe(false)
+    await waitFor(() => convex.calls.onUpdate.length === 1)
+    expect(result.state.status.value).toBe('pending')
+    convex.emitQueryResult(query, {}, [{ _id: 'browser-only' }])
+    await waitFor(() => result.state.status.value === 'success')
+  })
+
+  it('renders the SSR auth-error gate while hydrating, as the server did', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:ssr-auth-error-gate')
+    const { result } = await captureInNuxt(
+      () =>
+        hydrating(() => {
+          useState<string | null>('convex:authError').value = 'Session exchange failed'
+          useState<boolean>('convex:pending').value = false
+          const state = useConvexQueryState(query, {}, { auth: 'optional' })
+          const rendered = ref<{ status: string; pending: boolean; message?: string }>()
+          const listenersBeforeMount = ref(-1)
+          onBeforeMount(() => {
+            rendered.value = {
+              status: state.status.value,
+              pending: state.pending.value,
+              message: state.error.value?.message,
+            }
+            listenersBeforeMount.value = convex.calls.onUpdate.length
+          })
+          return { state, rendered, listenersBeforeMount }
+        }),
+      { convex },
+    )
+
+    expect(result.rendered.value).toEqual({
+      status: 'error',
+      pending: false,
+      message: 'Session exchange failed',
+    })
+    expect(result.state.error.value).toBeInstanceOf(ConvexCallError)
+    expect(result.listenersBeforeMount.value).toBe(0)
+  })
+
+  it('renders an authenticated SSR query fetched without a token as idle, as the server did', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:mine:ssr-without-token')
+    const key = payloadKey(query, {}, 'required', 'user:A')
+    const { result } = await captureInNuxt(
+      () =>
+        hydrating(() => {
+          useState<boolean>('convex:pending').value = false
+          useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity('jwt-A', {
+            id: 'A',
+          })
+          const state = useConvexQueryState(query, {}, { auth: 'required' })
+          const rendered = ref<{ status: string; pending: boolean; data: unknown }>()
+          onBeforeMount(() => {
+            rendered.value = {
+              status: state.status.value,
+              pending: state.pending.value,
+              data: state.data.value,
+            }
+          })
+          return { state, rendered }
+        }),
+      { convex, payloadData: { [key]: null } },
+    )
+
+    expect(result.rendered.value).toEqual({ status: 'idle', pending: false, data: undefined })
   })
 
   it('surfaces a live query failure as a ConvexCallError through composable-owned error state', async () => {
@@ -667,16 +803,12 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     const query = mockFnRef<'query'>('files:hydrated-by-digest')
     const digest = new Uint8Array([1, 2, 3]).buffer
     const otherDigest = new Uint8Array([1, 2, 4]).buffer
-    const key = withAuthDimension(createConvexQueryKey(query, { digest }), 'none', 'anonymous')
-    const otherKey = withAuthDimension(
-      createConvexQueryKey(query, { digest: otherDigest }),
-      'none',
-      'anonymous',
-    )
+    const key = payloadKey(query, { digest }, 'none')
+    const otherKey = payloadKey(query, { digest: otherDigest }, 'none')
 
     expect(otherKey).not.toBe(key)
     const { result, wrapper } = await captureInNuxt(
-      () => useConvexQueryState(query, { digest }, { auth: 'none' }),
+      () => hydrating(() => useConvexQueryState(query, { digest }, { auth: 'none' })),
       {
         convex,
         payloadData: {
@@ -801,26 +933,28 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
   it('hydrates the shared Vue controller from the identity-partitioned Nuxt payload', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:hydrated')
-    const key = withAuthDimension(createConvexQueryKey(query, {}), 'none', 'anonymous')
+    const key = payloadKey(query, {}, 'none')
 
-    const { result } = await captureInNuxt(() => useConvexQueryState(query, {}, { auth: 'none' }), {
-      convex,
-      payloadData: { [key]: { value: [{ _id: 'ssr-note' }] } },
-    })
+    const { result } = await captureInNuxt(
+      () => hydrating(() => useConvexQueryState(query, {}, { auth: 'none' })),
+      { convex, payloadData: { [key]: { value: [{ _id: 'ssr-note' }] } } },
+    )
 
     expect(result.data.value).toEqual([{ _id: 'ssr-note' }])
-    expect(convex.calls.onUpdate).toHaveLength(1)
+    await waitFor(() => convex.calls.onUpdate.length === 1)
+    expect(result.status.value).toBe('success')
+    expect(result.data.value).toEqual([{ _id: 'ssr-note' }])
   })
 
   it('hydrates a valid Convex null result as settled data', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:nullable:hydrated')
-    const key = withAuthDimension(createConvexQueryKey(query, {}), 'none', 'anonymous')
+    const key = payloadKey(query, {}, 'none')
 
-    const { result } = await captureInNuxt(() => useConvexQueryState(query, {}, { auth: 'none' }), {
-      convex,
-      payloadData: { [key]: { value: null } },
-    })
+    const { result } = await captureInNuxt(
+      () => hydrating(() => useConvexQueryState(query, {}, { auth: 'none' })),
+      { convex, payloadData: { [key]: { value: null } } },
+    )
 
     expect(result.data.value).toBeNull()
     expect(result.pending.value).toBe(false)

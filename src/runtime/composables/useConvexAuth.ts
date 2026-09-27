@@ -28,7 +28,6 @@ export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthCl
 
   const status = computed<ConvexAuthStatus>(() =>
     deriveConvexAuthStatus({
-      authEnabled: true,
       settled: !pending.value,
       identityKey: identityKeyOf(identity.value),
       error: authError.value

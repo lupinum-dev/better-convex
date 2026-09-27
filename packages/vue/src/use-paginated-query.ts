@@ -6,7 +6,6 @@ import type {
   PaginationResult,
 } from 'convex/server'
 import { getFunctionName } from 'convex/server'
-import { hash } from 'ohash'
 import {
   computed,
   getCurrentScope,
@@ -19,9 +18,13 @@ import {
 
 import type { ConvexCallError } from './errors'
 import { createPaginationController } from './internal/pagination-controller'
-import { normalizeConvexArgs, isConvexArgsSkipped } from './internal/query-args'
-import type { QueryIsolationTag } from './internal/query-controller'
-import { decideQueryExecution } from './internal/query-execution'
+import { assertLoadMoreNumItems } from './internal/pagination-state'
+import {
+  createConvexArgsState,
+  isConvexArgsSkipped,
+  type ConvexArgsState,
+} from './internal/query-args'
+import { decideQueryExecution, queryIsolationTag } from './internal/query-execution'
 import { useBetterConvexRuntime } from './runtime-context'
 import type { ConvexAuthMode } from './use-query'
 
@@ -70,25 +73,27 @@ export interface UseConvexPaginatedQueryState<Item> {
   reset(cursor?: string | null): void
 }
 
-interface NuxtPaginationBridge<Item> {
-  initialPage?: PaginationResult<Item>
-  onFirstPageSettled(promise: Promise<void>): void
+/** Adapter-owned SSR state for the browser pagination lifecycle. */
+export interface ConvexPaginationBridge<Item> {
+  /** A server-rendered first page the browser lifecycle starts from. */
+  readonly initialPage?: PaginationResult<Item>
 }
 
-export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
-  query: Query,
-  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
-  options: UseConvexPaginatedQueryOptions,
-): UseConvexPaginatedQueryState<PaginatedQueryItem<Query>>
-export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
-  query: Query,
-  ...parameters: [
-    args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
-    options: UseConvexPaginatedQueryOptions,
-    bridge?: NuxtPaginationBridge<PaginatedQueryItem<Query>>,
-  ]
-): UseConvexPaginatedQueryState<PaginatedQueryItem<Query>> {
-  const [args, options, bridge] = parameters
+export interface UseConvexPaginatedQueryInternalInput<Query extends PaginatedQueryReference> {
+  readonly query: Query
+  /** Normalized arguments and hash, shared with the adapter's payload key. */
+  readonly args: ConvexArgsState<PaginatedQueryArgs<Query>>
+  readonly options: UseConvexPaginatedQueryOptions
+  readonly bridge?: ConvexPaginationBridge<PaginatedQueryItem<Query>>
+}
+
+export interface ConvexPaginatedQueryInternal<Item> {
+  readonly state: UseConvexPaginatedQueryState<Item>
+  /** Settles once the current first page is terminal, without starting a deferred query. */
+  firstPageSettled(): Promise<void>
+}
+
+function assertPaginatedQueryInput(options: UseConvexPaginatedQueryOptions): void {
   if (!getCurrentScope()) {
     throw new Error(
       '[better-convex-vue] useConvexPaginatedQuery must run inside a Vue effect scope',
@@ -104,18 +109,36 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   ) {
     throw new Error('[better-convex-vue] initialCursor must be a string or null')
   }
+}
+
+export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
+  query: Query,
+  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  options: UseConvexPaginatedQueryOptions,
+): UseConvexPaginatedQueryState<PaginatedQueryItem<Query>> {
+  return useConvexPaginatedQueryInternal({ query, args: createConvexArgsState(args), options })
+    .state
+}
+
+/**
+ * The one browser pagination lifecycle. The public composable and the Nuxt
+ * adapter both enter here; only the adapter supplies an SSR bridge.
+ */
+export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryReference>(
+  input: UseConvexPaginatedQueryInternalInput<Query>,
+): ConvexPaginatedQueryInternal<PaginatedQueryItem<Query>> {
+  const { query, args, options, bridge } = input
+  assertPaginatedQueryInput(options)
 
   type Item = PaginatedQueryItem<Query>
-  // Nuxt passes SSR state through a private fourth runtime-only slot via Reflect.apply.
-  // The public overload above intentionally omits it from generated declarations.
   const runtime = useBetterConvexRuntime()
   const auth = options.auth ?? 'optional'
   const initialNumItems = options.initialNumItems
   const initialCursor = shallowRef(options.initialCursor ?? null)
   const started = shallowRef(options.immediate !== false)
   const identity = runtime.identity.snapshot
-  const currentArgs = computed(() => normalizeConvexArgs(args))
-  const argsHash = computed(() => hash(currentArgs.value))
+  const currentArgs = args.args
+  const argsHash = args.hash
   const functionName = getFunctionName(query)
   const boundaryFirstPage = shallowRef<PaginationResult<Item> | null>(bridge?.initialPage ?? null)
   const boundaryError = shallowRef<ConvexCallError | undefined>(undefined)
@@ -130,10 +153,7 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   })
   const idle = computed(() => gate.value === 'idle' || gate.value === 'error')
   const live = computed(() => gate.value === 'execute')
-  const tag = computed<QueryIsolationTag>(() => ({
-    identityKey: auth === 'none' ? 'anonymous' : (identity.value.identityKey ?? 'anonymous'),
-    identityGeneration: auth === 'none' ? 0 : identity.value.identityGeneration,
-  }))
+  const tag = computed(() => queryIsolationTag(auth, identity.value))
   const boundaryKey = computed(
     () =>
       `${functionName}:${auth}:${tag.value.identityKey}:${argsHash.value}:${initialNumItems}:${initialCursor.value ?? ''}`,
@@ -175,7 +195,6 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
     fetchPage,
   })
   controller.start()
-  bridge?.onFirstPageSettled(controller.firstPageSettled())
 
   let previousTag = tag.value
   let previousBoundaryKey = boundaryKey.value
@@ -217,22 +236,44 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
       })
     }
   }
+  // Getter sources only: a shallow ref source would force-trigger reconcile on
+  // every identity notification, and an unchanged idle (deferred) reconcile
+  // drops the hydrated first page.
   const stop = watch(
-    [argsHash, gate, live, initialCursor, () => identity.value.identityGeneration],
+    [argsHash, gate, live, () => initialCursor.value, () => identity.value.identityGeneration],
     reconcile,
-    {
-      immediate: true,
-      flush: 'sync',
-    },
+    { immediate: true, flush: 'sync' },
   )
 
+  // A deferred lifecycle can already show a server-rendered first page that
+  // offers more items. Hold one loadMore until starting makes it runnable.
+  let deferredLoadMore: number | undefined
+
+  function start(): void {
+    if (started.value) return
+    started.value = true
+    const numItems = deferredLoadMore
+    deferredLoadMore = undefined
+    if (numItems !== undefined) controller.loadMore(numItems)
+  }
+
+  function loadMore(numItems: number): void {
+    const seed = boundaryFirstPage.value
+    if (started.value || !seed || seed.isDone) {
+      controller.loadMore(numItems)
+      return
+    }
+    assertLoadMoreNumItems(numItems)
+    deferredLoadMore ??= numItems
+  }
+
   async function execute(): Promise<void> {
-    if (!started.value) started.value = true
+    start()
     await controller.firstPageSettled()
   }
 
   async function refresh(): Promise<void> {
-    if (!started.value) started.value = true
+    start()
     await controller.refresh()
   }
 
@@ -240,6 +281,7 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
     if (typeof cursor !== 'string' && cursor !== null) {
       throw new Error('[better-convex-vue] reset cursor must be a string or null')
     }
+    deferredLoadMore = undefined
     if (initialCursor.value === cursor) controller.reset()
     else initialCursor.value = cursor
   }
@@ -248,18 +290,21 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
     controller.dispose()
   })
 
-  return Object.freeze({
-    data: controller.data,
-    status: controller.status,
-    pending: controller.pending,
-    isStale: controller.isStale,
-    canLoadMore: controller.canLoadMore,
-    cursor: controller.cursor,
-    pageStatus: controller.pageStatus,
-    execute,
-    loadMore: controller.loadMore,
-    error: controller.error,
-    refresh,
-    reset,
-  })
+  return {
+    state: Object.freeze({
+      data: controller.data,
+      status: controller.status,
+      pending: controller.pending,
+      isStale: controller.isStale,
+      canLoadMore: controller.canLoadMore,
+      cursor: controller.cursor,
+      pageStatus: controller.pageStatus,
+      execute,
+      loadMore,
+      error: controller.error,
+      refresh,
+      reset,
+    }),
+    firstPageSettled: controller.firstPageSettled,
+  }
 }

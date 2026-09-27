@@ -5,7 +5,7 @@ import {
   type PaginationResult,
 } from 'convex/server'
 import { describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope, ref } from 'vue'
+import { createApp, effectScope, isProxy, isReadonly, ref } from 'vue'
 
 import {
   createBetterConvex,
@@ -16,7 +16,13 @@ import {
   useConvexQuery,
 } from '../../packages/vue/src'
 import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
-import { normalizeConvexError } from '../../packages/vue/src/errors'
+import { ConvexCallError, normalizeConvexError } from '../../packages/vue/src/errors'
+import {
+  createConvexArgsState,
+  refreshBetterConvexAuth,
+  useConvexPaginatedQueryInternal,
+  useConvexQueryInternal,
+} from '../../packages/vue/src/internal'
 import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
 
 function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
@@ -37,13 +43,13 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
     label,
     args,
   }))
-  const subscriptions: Array<{ active: boolean; emit(value: unknown): void }> = []
+  const subscriptions: Array<{ active: boolean; args: unknown; emit(value: unknown): void }> = []
   const client = {
     query: query as never,
     mutation: mutation as never,
     action: action as never,
-    onUpdate: vi.fn((_fn, _args, onValue) => {
-      const subscription = { active: true, emit: onValue }
+    onUpdate: vi.fn((_fn, args, onValue) => {
+      const subscription = { active: true, args, emit: onValue }
       subscriptions.push(subscription)
       return () => {
         subscription.active = false
@@ -360,6 +366,54 @@ describe('better-convex-vue package runtime', () => {
 
     scope.stop()
     expect(host.listeners.size).toBe(1) // plugin identity projection remains; callable listener is gone
+  })
+
+  it('exposes the exact settled result and error through readonly callable refs', async () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    type Result = { label: string; args: unknown; nested: { id: string } }
+    const operation = app.runWithContext(() =>
+      scope.run(() => ({
+        mutation: useConvexMutation(
+          makeFunctionReference<'mutation'>('notes:exact') as FunctionReference<
+            'mutation',
+            'public',
+            { value: string },
+            Result
+          >,
+        ),
+        action: useConvexAction(
+          makeFunctionReference<'action'>('notes:exactWork') as FunctionReference<
+            'action',
+            'public',
+            { value: string },
+            Result
+          >,
+        ),
+      })),
+    )!
+
+    for (const [callable, invoke] of [
+      [operation.mutation, host.mutation],
+      [operation.action, host.action],
+    ] as const) {
+      const result: Result = { label: 'alice', args: {}, nested: { id: 'n1' } }
+      invoke.mockResolvedValueOnce(result)
+      await expect(callable({ value: 'exact' })).resolves.toBe(result)
+      expect(callable.data.value).toBe(result)
+      expect(isProxy(callable.data.value)).toBe(false)
+      expect(isReadonly(callable.data)).toBe(true)
+
+      invoke.mockRejectedValueOnce(new Error('boom'))
+      const rejection: unknown = await callable({ value: 'fails' }).catch((error: unknown) => error)
+      expect(rejection).toBeInstanceOf(ConvexCallError)
+      expect(callable.error.value).toBe(rejection)
+      expect(isProxy(callable.error.value)).toBe(false)
+      expect(isReadonly(callable.error)).toBe(true)
+    }
+    scope.stop()
   })
 
   it('diagnoses a casted Promise-like optimistic updater without throwing after registration', async () => {
@@ -747,6 +801,209 @@ describe('better-convex-vue package runtime', () => {
     expect(query.data.value).toEqual([{ id: 'bob' }])
     expect(query.isStale.value).toBe(false)
     expect(query.status.value).toBe('success')
+    scope.stop()
+  })
+
+  it('resolves execute only after pending auth settles and the first value arrives', async () => {
+    const host = attachedRuntime('alice')
+    host.emit({ ...host.attachment.identity.snapshot(), settled: false })
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const query = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexQuery(
+          makeFunctionReference<'query'>('notes:after-auth'),
+          {},
+          { immediate: false },
+        ),
+      ),
+    )!
+
+    let resolved = false
+    const execution = query.execute().then(() => {
+      resolved = true
+    })
+    await Promise.resolve()
+    expect(query.status.value).toBe('pending')
+    expect(host.subscriptions).toHaveLength(0)
+    expect(resolved).toBe(false)
+
+    host.emit({ ...host.attachment.identity.snapshot(), settled: true })
+    expect(host.subscriptions).toHaveLength(1)
+    await Promise.resolve()
+    expect(resolved).toBe(false)
+
+    host.subscriptions[0]!.emit('after-auth')
+    await execution
+    expect(query.data.value).toBe('after-auth')
+    scope.stop()
+  })
+
+  it('settles a waiting execute when its scope is disposed', async () => {
+    const host = attachedRuntime('alice')
+    host.emit({ ...host.attachment.identity.snapshot(), settled: false })
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const query = app.runWithContext(() =>
+      scope.run(() => useConvexQuery(makeFunctionReference<'query'>('notes:disposed-wait'), {})),
+    )!
+
+    const execution = query.execute()
+    scope.stop()
+    await execution
+    host.emit({ ...host.attachment.identity.snapshot(), settled: true })
+    expect(host.subscriptions).toHaveLength(0)
+  })
+
+  it('accepts a hydration seed only through the typed internal entry', () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const reference = makeFunctionReference<'query'>('notes:seeded')
+    const state = app.runWithContext(() =>
+      scope.run(() => ({
+        seeded: useConvexQueryInternal({
+          query: reference,
+          args: createConvexArgsState({}),
+          hydrationSeed: { value: 'ssr' },
+        }),
+        // A hidden fourth positional slot no longer exists on the public entry.
+        public: Reflect.apply(useConvexQuery, undefined, [
+          reference,
+          {},
+          {},
+          { value: 'forged' },
+        ]) as ReturnType<typeof useConvexQuery>,
+      })),
+    )!
+
+    expect(state.seeded.status.value).toBe('success')
+    expect(state.seeded.data.value).toBe('ssr')
+    expect(state.public.status.value).toBe('pending')
+    expect(state.public.data.value).toBeUndefined()
+    scope.stop()
+  })
+
+  it('refreshes authentication only through the plugin that owns the browser runtime', async () => {
+    const host = attachedRuntime('alice')
+    const attached = createBetterConvex({ attachment: host.attachment })
+    createApp({}).use(attached)
+
+    await expect(refreshBetterConvexAuth(attached)).rejects.toThrow(
+      'only the owning plugin can refresh authentication',
+    )
+    await expect(
+      refreshBetterConvexAuth({ install() {}, attachment: () => host.attachment }),
+    ).rejects.toThrow('requires a Better Convex plugin')
+  })
+
+  it('keeps a hydrated first page while a deferred query observes auth settlement', async () => {
+    const host = attachedRuntime('alice')
+    host.emit({ ...host.attachment.identity.snapshot(), settled: false })
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const pagination = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexPaginatedQueryInternal({
+          query: makeFunctionReference<'query'>('notes:hydratedPages') as FunctionReference<
+            'query',
+            'public',
+            { paginationOpts: PaginationOptions },
+            PaginationResult<string>
+          >,
+          args: createConvexArgsState({}),
+          options: { initialNumItems: 1, immediate: false },
+          bridge: { initialPage: { page: ['ssr'], isDone: false, continueCursor: 'next' } },
+        }),
+      ),
+    )!
+
+    host.emit({ ...host.attachment.identity.snapshot(), settled: true })
+    void pagination.state.execute()
+
+    expect(pagination.state.status.value).toBe('success')
+    expect(pagination.state.data.value).toEqual(['ssr'])
+    expect(host.subscriptions).toHaveLength(1)
+    scope.stop()
+  })
+
+  it('holds one loadMore offered by a hydrated first page until the list goes live', () => {
+    const host = attachedRuntime('alice')
+    host.emit({ ...host.attachment.identity.snapshot(), settled: false })
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const pagination = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexPaginatedQueryInternal({
+          query: makeFunctionReference<'query'>('notes:heldPages') as FunctionReference<
+            'query',
+            'public',
+            { paginationOpts: PaginationOptions },
+            PaginationResult<string>
+          >,
+          args: createConvexArgsState({}),
+          options: { initialNumItems: 1, immediate: false },
+          bridge: { initialPage: { page: ['ssr'], isDone: false, continueCursor: 'next' } },
+        }),
+      ),
+    )!
+
+    expect(() => pagination.state.loadMore(0)).toThrow('positive safe integer')
+    pagination.state.loadMore(2)
+    pagination.state.loadMore(5)
+    expect(host.subscriptions).toHaveLength(0)
+
+    // Started while auth still settles: the held page waits with the list.
+    void pagination.state.execute()
+    expect(host.subscriptions).toHaveLength(0)
+    expect(pagination.state.status.value).toBe('pending')
+    expect(pagination.state.data.value).toEqual(['ssr'])
+
+    host.emit({ ...host.attachment.identity.snapshot(), settled: true })
+    expect(host.subscriptions.map((subscription) => subscription.args)).toMatchObject([
+      { paginationOpts: { numItems: 1, cursor: null, endCursor: 'next' } },
+      { paginationOpts: { numItems: 2, cursor: 'next' } },
+    ])
+    host.subscriptions[1]!.emit({ page: ['live'], isDone: true, continueCursor: 'end' })
+    expect(pagination.state.data.value).toEqual(['ssr', 'live'])
+    expect(pagination.state.status.value).toBe('success')
+    expect(pagination.state.canLoadMore.value).toBe(false)
+    scope.stop()
+  })
+
+  it('drops a held loadMore when the deferred list is reset before it starts', () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const pagination = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexPaginatedQueryInternal({
+          query: makeFunctionReference<'query'>('notes:resetHeldPages') as FunctionReference<
+            'query',
+            'public',
+            { paginationOpts: PaginationOptions },
+            PaginationResult<string>
+          >,
+          args: createConvexArgsState({}),
+          options: { initialNumItems: 1, immediate: false },
+          bridge: { initialPage: { page: ['ssr'], isDone: false, continueCursor: 'next' } },
+        }),
+      ),
+    )!
+
+    pagination.state.loadMore(2)
+    pagination.state.reset()
+    void pagination.state.execute()
+
+    expect(host.subscriptions.map((subscription) => subscription.args)).toMatchObject([
+      { paginationOpts: { numItems: 1, cursor: null } },
+    ])
     scope.stop()
   })
 })

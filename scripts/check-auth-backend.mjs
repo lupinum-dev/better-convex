@@ -161,7 +161,7 @@ async function downloadArchiveOnce(url, filename, fetchImplementation) {
   const timer = setTimeout(() => controller.abort(), downloadTimeoutMs)
   try {
     const response = await fetchImplementation(url, {
-      headers: { 'user-agent': 'better-convex auth schema-backend-verifier' },
+      headers: { 'user-agent': 'better-convex-auth-backend-verifier' },
       redirect: 'follow',
       signal: controller.signal,
     })

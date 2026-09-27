@@ -55,6 +55,9 @@ Pass `'skip'` to pause a query. A Convex `null` result remains valid data.
 
 Advanced hosts can use the `embedded` export.
 
+`@lupinum/better-convex-vue/internal` is the private integration seam for
+`@lupinum/better-convex-nuxt`. It is not public API and does not follow semver.
+
 <!-- BEGIN:consumer-onboarding -->
 
 ## Use a coding agent

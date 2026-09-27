@@ -2,7 +2,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope } from 'vue'
+import { createApp, effectScope, isProxy, isReadonly } from 'vue'
 import { z } from 'zod'
 
 import { createBetterConvex, useConvexForm } from '../../packages/vue/src'
@@ -102,6 +102,24 @@ describe('useConvexForm', () => {
     )
     expect(form.status.value).toBe('success')
     expect(form.data.value).toEqual({ id: 'checkpoint-1' })
+    scope.stop()
+  })
+
+  it('exposes the exact mutation result and returned form error, not proxies', async () => {
+    const saved: SaveResult = { id: 'checkpoint-exact' }
+    const { form, scope } = setup(async () => saved)
+
+    const success = await form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+    expect(success).toEqual({ ok: true, data: saved })
+    expect(form.data.value).toBe(saved)
+    expect(isProxy(form.data.value)).toBe(false)
+    expect(isReadonly(form.data)).toBe(true)
+
+    const failure = await form.submit({ balance: -1, note: '' }, { accountId: 'account-1' })
+    expect(failure.ok).toBe(false)
+    expect(form.error.value).toBe(failure.ok ? undefined : failure.error)
+    expect(isProxy(form.error.value)).toBe(false)
+    expect(isReadonly(form.error)).toBe(true)
     scope.stop()
   })
 

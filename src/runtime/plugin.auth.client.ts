@@ -1,4 +1,5 @@
 import { createBetterConvex } from '@lupinum/better-convex-vue'
+import { refreshBetterConvexAuth } from '@lupinum/better-convex-vue/internal'
 import { createAuthClient } from 'better-auth/vue'
 import { computed } from 'vue'
 
@@ -23,22 +24,14 @@ import {
 } from './auth/session-synchronization'
 import { validateConvexAuthClientDefinition } from './auth/validate-auth-client-definition'
 import { setupNuxtDevtoolsClient } from './devtools/setup-client'
-import type { ConvexCallError } from './errors'
 import { createConvexRuntimeContext, type NuxtConvexAuthController } from './runtime-context'
 import { useConvexIdentityState } from './utils/auth-identity-state'
 import { useConvexAuthPendingState } from './utils/auth-pending-state'
-import {
-  purgeConvexIdentityPayloadKeys,
-  readAuthMode,
-  retainAnonymousConvexQueryErrors,
-} from './utils/convex-cache'
+import { purgeConvexIdentityPayloadKeys, readAuthMode } from './utils/convex-cache'
 import { createLogger, getLogLevel } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
 
 const SESSION_RECONCILIATION_TIMEOUT_MS = 5_000
-// Matches the Vue package's private, non-exported owner seam. Keeping this off
-// the public plugin type prevents embedded children from gaining auth control.
-const INTERNAL_REFRESH_AUTH = Symbol.for('better-convex-vue:internal-refresh-auth')
 
 /** Auth-enabled entry: Better Auth is an adapter around the one Vue-owned runtime. */
 export default defineNuxtPlugin({
@@ -112,18 +105,14 @@ export default defineNuxtPlugin({
     nuxtApp.vueApp.use(vuePlugin)
     const runtime = createConvexRuntimeContext(vuePlugin.attachment(), logger)
     nuxtApp.provide('convexRuntime', runtime)
-    const queryErrors = useState<Record<string, ConvexCallError | null>>(
-      'convex:query-errors',
-      () => ({}),
-    )
     const ssrIdentityKey = identityKeyOf(identity.value)
     const initialSnapshot = runtime.attachment.identity.snapshot()
     let observedIdentityGeneration = initialSnapshot.identityGeneration
     let runtimeProviderRevision = adapter.snapshot().sessionGeneration
     let initialHydrationReconciled = false
+    // Query values and SSR errors share their identity-partitioned payload keys.
     const purgeProtectedPayload = () => {
       purgeConvexIdentityPayloadKeys(nuxtApp)
-      queryErrors.value = retainAnonymousConvexQueryErrors(queryErrors.value)
       clearNuxtData((key) => {
         const mode = readAuthMode(key)
         return mode === 'required' || mode === 'optional'
@@ -171,15 +160,9 @@ export default defineNuxtPlugin({
 
     let disposed = false
     const operations = createAuthOperationTracker()
-    const refreshConvexAuthentication = Reflect.get(vuePlugin, INTERNAL_REFRESH_AUTH)
-    if (typeof refreshConvexAuthentication !== 'function') {
-      throw new TypeError('[better-convex-nuxt] Vue auth refresh seam is unavailable')
-    }
     synchronization = createSessionSynchronization({
       timeoutMs: SESSION_RECONCILIATION_TIMEOUT_MS,
-      async refetchCanonicalSession() {
-        await (Reflect.apply(refreshConvexAuthentication, vuePlugin, []) as Promise<void>)
-      },
+      refetchCanonicalSession: () => refreshBetterConvexAuth(vuePlugin),
       failClosed(failure) {
         adapter.failClosed(failure.message)
       },

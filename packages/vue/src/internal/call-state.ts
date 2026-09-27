@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, shallowRef, type ComputedRef, type Ref } from 'vue'
 
 import type { ConvexCallError } from '../errors'
 
@@ -20,9 +20,10 @@ export interface ClientCallState<Result> {
 
 export function createClientCallState<Result>(): ClientCallState<Result> {
   let activeRequestId = 0
-  const currentStatus = ref<ClientCallStatus>('idle')
-  const error = ref<ConvexCallError | undefined>(undefined) as Ref<ConvexCallError | undefined>
-  const data = ref<Result | undefined>(undefined) as Ref<Result | undefined>
+  const currentStatus = shallowRef<ClientCallStatus>('idle')
+  // Results stay the exact values Convex returned; a deep ref would hand out proxies.
+  const error = shallowRef<ConvexCallError | undefined>(undefined)
+  const data = shallowRef<Result | undefined>(undefined)
 
   const status = computed(() => currentStatus.value)
   const pending = computed(() => currentStatus.value === 'pending')
