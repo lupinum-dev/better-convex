@@ -23,10 +23,12 @@ are gone, and TypeScript reports most places that you must change.
       `findAccountKeyCollisions` from an internal action. A reported group
       (possible only when a provider's issuer changed during the beta) cannot
       sign in until you merge or delete its extra rows.
-- [ ] With MCP or the OAuth provider, clear the auth component's
-      `oauthRefreshToken` table right before you deploy. Beta refresh tokens
-      have no consent binding, so 1.0 rejects them and the schema push fails
-      while they exist; MCP hosts sign in again.
+- [ ] Deploy normally: the auth component schema accepts every beta row, so
+      you do not export, import, or clear any table.
+- [ ] With MCP or the OAuth provider, expect beta refresh tokens to stop
+      working. They have no consent binding, so 1.0 answers them with
+      `invalid_grant`; MCP hosts and other OAuth clients sign in again. The
+      old rows can stay.
 - [ ] Regenerate a local auth component schema with
       `better-convex auth schema`.
 
@@ -98,7 +100,9 @@ are gone, and TypeScript reports most places that you must change.
       `@lupinum/better-convex-nuxt/errors` instead of reading `data`.
 - [ ] `upload()` resolves with `{ storageId, prepared, completed }`, not the
       storage ID, and `data` holds the same object. Move a follow-up save
-      mutation into the `complete` option. A prepare mutation that returns an
+      mutation into the `complete` option. Pass the record to attach to as
+      `upload(file, args, { context })` and read it from `ctx.context` in
+      `complete`, not from component state. A prepare mutation that returns an
       object needs the `url` option.
 - [ ] `upload()` failures have codes, `phase`, and `outcome`, and `cancel()`
       makes the pending upload reject with `CANCELLED`.

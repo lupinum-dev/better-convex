@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest'
 
 import {
+  checkUploadFile,
   isFileTypeAllowed,
   matchesMimeType,
 } from '../../packages/vue/src/internal/upload-validation'
@@ -197,6 +198,35 @@ describe('isFileTypeAllowed', () => {
       expect(isFileTypeAllowed('audio/mpeg', allowedTypes)).toBe(true)
       expect(isFileTypeAllowed('application/pdf', allowedTypes)).toBe(true)
       expect(isFileTypeAllowed('text/plain', allowedTypes)).toBe(true)
+    })
+  })
+})
+
+describe('checkUploadFile', () => {
+  const png = new Blob(['four'], { type: 'image/png' })
+
+  it('passes a file within its limits', () => {
+    expect(checkUploadFile(png, {})).toBeUndefined()
+    expect(checkUploadFile(png, { maxSize: 4, allowedTypes: ['image/*'] })).toBeUndefined()
+  })
+
+  it('rejects an oversized file as not sent, before its type', () => {
+    expect(
+      checkUploadFile(png, { maxSize: 3, allowedTypes: ['text/plain'] }, 'files:generate'),
+    ).toMatchObject({
+      code: 'FILE_TOO_LARGE',
+      outcome: 'not-sent',
+      functionName: 'files:generate',
+      message: 'File size 4 bytes exceeds maximum 3 bytes',
+    })
+  })
+
+  it('rejects a disallowed type as not sent', () => {
+    expect(checkUploadFile(png, { allowedTypes: ['application/pdf'] })).toMatchObject({
+      code: 'FILE_TYPE_NOT_ALLOWED',
+      outcome: 'not-sent',
+      functionName: undefined,
+      message: 'File type "image/png" not allowed. Allowed: application/pdf',
     })
   })
 })

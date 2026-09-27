@@ -1,9 +1,13 @@
 import { getFunctionName, makeFunctionReference, type FunctionReference } from 'convex/server'
 import { ConvexError, type GenericId } from 'convex/values'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope } from 'vue'
+import { createApp, effectScope, reactive } from 'vue'
 
-import { createBetterConvex, useConvexFileUpload } from '../../packages/vue/src'
+import {
+  createBetterConvex,
+  useConvexFileUpload,
+  type UploadCompleteContext,
+} from '../../packages/vue/src'
 import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
 import type { ConvexCallError } from '../../packages/vue/src/errors'
 import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
@@ -677,6 +681,73 @@ describe('useConvexFileUpload workflows', () => {
       host.stop()
     },
   )
+
+  it('completes against the per-call context captured when upload() was called', async () => {
+    const host = workflowHost({
+      'files:createSession': () => SESSION,
+      'files:claim': () => ({ fileId: 'file_1' }),
+    })
+    type Target = { sessionId: string; token: string; tags: string[] }
+    // Component state the application selects the completion target from.
+    const selection = reactive<Target>({ sessionId: 'selected_a', token: 'token_a', tags: ['a'] })
+    const seen: { url?: Target; complete?: Target } = {}
+    const upload = host.run(() =>
+      useConvexFileUpload(createSession, {
+        url: (session, { context }: { file: File; context: Target }) => {
+          seen.url = context
+          return session.uploadUrl
+        },
+        complete: (op, { storageId, context }: UploadCompleteContext<Session, Target>) => {
+          seen.complete = context
+          return op.mutation(claimUpload, {
+            sessionId: context.sessionId,
+            token: context.token,
+            storageId,
+          })
+        },
+      }),
+    )
+
+    const pending = upload.upload(textFile(), { folder: 'x' }, { context: selection })
+    // The selection changes while the upload-URL mutation and the POST run.
+    selection.sessionId = 'selected_b'
+    selection.token = 'token_b'
+    selection.tags.push('b')
+    ;(await nextXhr()).respond('storage_5')
+
+    await expect(pending).resolves.toMatchObject({ completed: { fileId: 'file_1' } })
+    expect(host.calls('files:claim')[0]?.[1]).toEqual({
+      sessionId: 'selected_a',
+      token: 'token_a',
+      storageId: 'storage_5',
+    })
+    const captured = { sessionId: 'selected_a', token: 'token_a', tags: ['a'] }
+    expect(seen.url).toEqual(captured)
+    expect(seen.complete).toEqual(captured)
+    host.stop()
+  })
+
+  it('hands each upload its own context', async () => {
+    const host = workflowHost({
+      'files:generateUploadUrl': () => 'https://upload.test/plain',
+      'evidence:attach': (args) => (args as { originalName: string }).originalName,
+    })
+    const upload = host.run(() =>
+      useConvexFileUpload(uploadUrl, {
+        complete: (op, { storageId, context }: UploadCompleteContext<string, string>) =>
+          op.action(attachEvidence, { storageId, originalName: context }),
+      }),
+    )
+
+    const first = upload.upload(textFile(), {}, { context: 'first' })
+    ;(await nextXhr()).respond('storage_1')
+    await expect(first).resolves.toMatchObject({ completed: 'first' })
+    FakeXhr.sent = []
+    const second = upload.upload(textFile(), undefined, { context: 'second' })
+    ;(await nextXhr()).respond('storage_2')
+    await expect(second).resolves.toMatchObject({ completed: 'second' })
+    host.stop()
+  })
 
   it('records preflight rejections as not sent', async () => {
     const host = workflowHost({ 'files:createSession': () => SESSION })

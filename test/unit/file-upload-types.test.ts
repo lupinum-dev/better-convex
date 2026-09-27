@@ -5,6 +5,7 @@ import type { ComputedRef } from 'vue'
 
 import type {
   ConvexFileUploadResult,
+  UploadCompleteContext,
   UploadProgressInfo,
 } from '../../src/runtime/composables/useConvexFileUpload'
 import type { ConvexOperation } from '../../src/runtime/composables/useConvexOperation'
@@ -43,6 +44,13 @@ declare const claimMutation: FunctionReference<
 >
 declare const attachAction: FunctionReference<'action', 'public', { storageId: string }, number>
 declare const internalClaim: FunctionReference<'mutation', 'internal', { storageId: string }, null>
+type AssetId = GenericId<'assets'>
+declare const attachToAsset: FunctionReference<
+  'mutation',
+  'public',
+  { assetId: AssetId; storageId: string },
+  null
+>
 
 function uploadTypeContracts(file: File) {
   const noArgs = useConvexFileUpload(noArgsUploadUrl)
@@ -141,8 +149,70 @@ function uploadTypeContracts(file: File) {
   })
 }
 
+function uploadContextTypeContracts(file: File, assetId: AssetId, operation: ConvexOperation) {
+  // The completion declares its per-call context; upload() infers and requires it.
+  const toAsset = useConvexFileUpload(noArgsUploadUrl, {
+    complete: (op, { storageId, context }: UploadCompleteContext<string, AssetId>) =>
+      op.mutation(attachToAsset, { assetId: context, storageId }),
+  })
+  void toAsset.upload(file, {}, { context: assetId })
+  void toAsset.upload(file, undefined, { context: assetId })
+  // @ts-expect-error a declared context is required, so the target is never implicit
+  void toAsset.upload(file)
+  // @ts-expect-error a declared context is required, so the target is never implicit
+  void toAsset.upload(file, {})
+  // @ts-expect-error the context type is inferred from the completion
+  void toAsset.upload(file, {}, { context: 'asset_1' })
+  expectTypeOf(toAsset).toEqualTypeOf(
+    useVueConvexFileUpload(noArgsUploadUrl, {
+      complete: (op, { storageId, context }: UploadCompleteContext<string, AssetId>) =>
+        op.mutation(attachToAsset, { assetId: context, storageId }),
+    }),
+  )
+
+  // The URL selector receives the same context; required upload-URL args come first.
+  const scoped = useConvexFileUpload(requiredArgsUploadUrl, {
+    url: (prepared, { context, file: selected }: { file: File; context: { folder: string } }) => {
+      expectTypeOf(selected).toEqualTypeOf<File>()
+      return `${prepared}?folder=${context.folder}`
+    },
+  })
+  void scoped.upload(file, { workspaceId: 'workspace_1' }, { context: { folder: 'a' } })
+  // @ts-expect-error upload-URL args keep their position before the call options
+  void scoped.upload(file, { context: { folder: 'a' } })
+
+  // A context that admits `undefined` stays optional.
+  const optionalContext = useConvexFileUpload(noArgsUploadUrl, {
+    complete: async (_op, { context }: UploadCompleteContext<string, AssetId | undefined>) =>
+      context,
+  })
+  void optionalContext.upload(file)
+  void optionalContext.upload(file, {}, { context: assetId })
+
+  // Without a declared context, `ctx.context` is `undefined` and none may be passed.
+  const plain = useConvexFileUpload(noArgsUploadUrl, {
+    complete: async (_op, { context }) => {
+      expectTypeOf(context).toEqualTypeOf<undefined>()
+      return 1
+    },
+  })
+  void plain.upload(file)
+  // @ts-expect-error no context was declared
+  void plain.upload(file, {}, { context: assetId })
+
+  // op.upload() accepts the same client-side limits as the composable.
+  void operation.upload('https://upload.test', file, {
+    maxSize: 1024,
+    allowedTypes: ['image/*'],
+    onProgress: () => {},
+  })
+  // @ts-expect-error maxSize is a byte count
+  void operation.upload('https://upload.test', file, { maxSize: '1mb' })
+}
+
 describe('single-file upload type contract', () => {
   it('keeps its compile-time contract executable by TypeScript', () => {
     expectTypeOf(uploadTypeContracts).toBeFunction()
+    expectTypeOf(uploadContextTypeContracts).toBeFunction()
   })
 })

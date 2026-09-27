@@ -32,9 +32,9 @@ export type {
   UseConvexFileUploadReturn,
 } from '@lupinum/better-convex-vue'
 
-type UploadOptionsParameter<Prepared, Completed> = [Prepared] extends [string]
-  ? [options?: UseConvexFileUploadOptions<Prepared, Completed>]
-  : [options: UseConvexFileUploadOptions<Prepared, Completed>]
+type UploadOptionsParameter<Prepared, Completed, Context> = [Prepared] extends [string]
+  ? [options?: UseConvexFileUploadOptions<Prepared, Completed, Context>]
+  : [options: UseConvexFileUploadOptions<Prepared, Completed, Context>]
 
 /**
  * Upload files to Convex storage with byte progress, as one identity-bound
@@ -49,6 +49,11 @@ type UploadOptionsParameter<Prepared, Completed> = [Prepared] extends [string]
  * `UPLOAD_IN_PROGRESS`, `CANCELLED`, `IDENTITY_CHANGED`, `CLIENT_UNAVAILABLE`,
  * `INVALID_UPLOAD_URL`.
  *
+ * Pass the record the upload belongs to as per-call context:
+ * `upload(file, args, { context })` captures it when called and hands it to
+ * `url` and `complete` as `ctx.context`, so a selection that changes while the
+ * file uploads does not change the target.
+ *
  * @example
  * ```vue
  * <script setup lang="ts">
@@ -60,14 +65,16 @@ type UploadOptionsParameter<Prepared, Completed> = [Prepared] extends [string]
  *   {
  *     maxSize: 5 * 1024 * 1024,
  *     allowedTypes: ['image/*'],
- *     complete: (op, { storageId }) =>
- *       op.mutation(api.documents.attachFile, { documentId: props.documentId, storageId }),
+ *     complete: (
+ *       op,
+ *       { storageId, context: documentId }: UploadCompleteContext<string, Id<'documents'>>,
+ *     ) => op.mutation(api.documents.attachFile, { documentId, storageId }),
  *   },
  * )
  *
  * async function onChange(event: Event) {
  *   const file = (event.target as HTMLInputElement).files?.[0]
- *   if (file) await upload(file).catch(() => undefined)
+ *   if (file) await upload(file, {}, { context: props.documentId }).catch(() => undefined)
  * }
  * </script>
  *
@@ -78,10 +85,14 @@ type UploadOptionsParameter<Prepared, Completed> = [Prepared] extends [string]
  * </template>
  * ```
  */
-export function useConvexFileUpload<Mutation extends UploadUrlMutation, Completed = undefined>(
+export function useConvexFileUpload<
+  Mutation extends UploadUrlMutation,
+  Completed = undefined,
+  Context = undefined,
+>(
   mutation: Mutation,
-  ...options: UploadOptionsParameter<FunctionReturnType<Mutation>, Completed>
-): UseConvexFileUploadReturn<Mutation, Completed> {
+  ...options: UploadOptionsParameter<FunctionReturnType<Mutation>, Completed, Context>
+): UseConvexFileUploadReturn<Mutation, Completed, Context> {
   const input = options[0] as ConvexFileUploadInternalOptions | undefined
   const logger =
     readConvexRuntimeContext(useNuxtApp())?.logger ?? createLogger(getConvexRuntimeConfig().logging)
@@ -110,5 +121,5 @@ export function useConvexFileUpload<Mutation extends UploadUrlMutation, Complete
           error,
         }),
     },
-  }) as unknown as UseConvexFileUploadReturn<Mutation, Completed>
+  }) as unknown as UseConvexFileUploadReturn<Mutation, Completed, Context>
 }

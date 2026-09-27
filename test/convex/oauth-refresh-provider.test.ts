@@ -8,13 +8,18 @@ import { oauthProvider } from '@better-auth/oauth-provider'
 import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { hashPassword } from 'better-auth/crypto'
 import { jwt } from 'better-auth/plugins'
+import { validate } from 'convex-helpers/validators'
 import { convexTest } from 'convex-test'
 import {
   componentsGeneric,
   defineSchema,
+  mutationGeneric,
+  queryGeneric,
+  type FunctionReference,
   type GenericActionCtx,
   type GenericDataModel,
 } from 'convex/server'
+import { v } from 'convex/values'
 import { decodeJwt } from 'jose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -27,12 +32,42 @@ import { rotateSigningKeyWithOfficialJwt } from '../../src/runtime/convex-auth/j
 import { queryOAuthLiveGrant } from '../../src/runtime/convex-auth/oauth-live-access'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
 import { createConvexAuthRateLimitStorage } from '../../src/runtime/convex-auth/rate-limit-storage'
+import { tables as beta7Tables } from '../fixtures/auth-upgrade/beta7/schema'
 
 const rootModules = import.meta.glob('../fixtures/jwks-rotation/convex/**/*.ts')
 const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
+const componentRoot = Object.keys(authModules)
+  .find((path) => path.includes('/_generated/'))!
+  .split('_generated')[0]!
+
+// Raw storage access, standing in for rows a 1.0.0-beta deployment already holds.
+const betaStorage = {
+  insert: mutationGeneric({
+    args: { table: v.string(), row: v.any() },
+    returns: v.null(),
+    handler: async (ctx, args) => {
+      await ctx.db.insert(args.table as never, args.row as never)
+      return null
+    },
+  }),
+  rows: queryGeneric({
+    args: { table: v.string() },
+    returns: v.any(),
+    handler: async (ctx, args) =>
+      (await ctx.db.query(args.table as never).collect()).map(
+        ({ _creationTime, ...row }: Record<string, unknown>) => row,
+      ),
+  }),
+}
+
 const component = (
   componentsGeneric() as unknown as {
-    authRotation: ComponentApi<'authRotation'>
+    authRotation: ComponentApi<'authRotation'> & {
+      betaStorage: {
+        insert: FunctionReference<'mutation', 'internal', { table: string; row: unknown }, null>
+        rows: FunctionReference<'query', 'internal', { table: string }, Record<string, unknown>[]>
+      }
+    }
   }
 ).authRotation
 const now = 1_700_000_000_000
@@ -57,6 +92,15 @@ const disabledPaths = [
   '/oauth2/delete-client',
 ]
 const originalToken = 'SyntheticOnlyRefreshTokenForProviderTest'
+
+/** The provider stores refresh tokens as unpadded base64url SHA-256 digests. */
+async function hashRefreshToken(token: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
+  return btoa(String.fromCharCode(...new Uint8Array(hash)))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '')
+}
 
 /** The component, not Better Auth, writes the session-generation authority fields. */
 const componentOwnedFields = new Set([
@@ -162,7 +206,10 @@ function createAuth(ctx: GenericActionCtx<GenericDataModel>) {
 
 async function init() {
   const test = convexTest(defineSchema({}), rootModules)
-  test.registerComponent('authRotation', authSchema, authModules)
+  test.registerComponent('authRotation', authSchema, {
+    ...authModules,
+    [`${componentRoot}betaStorage.ts`]: async () => betaStorage,
+  })
   const create = (model: string, data: Record<string, unknown>) =>
     test.mutation(component.adapter.create, { model, data })
   await create('user', {
@@ -228,14 +275,9 @@ async function init() {
     resources: [resource],
     scopes,
   })
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(originalToken))
-  const token = btoa(String.fromCharCode(...new Uint8Array(hash)))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replaceAll('=', '')
   await create('oauthRefreshToken', {
     id: 'refresh',
-    token,
+    token: await hashRefreshToken(originalToken),
     clientId: 'client',
     userId: 'user',
     sessionId: 'session',
@@ -608,5 +650,99 @@ describe('official provider renewal through the canonical Convex adapter', () =>
       sub: 'user',
       scope: scopes.join(' '),
     })
+  })
+})
+
+describe('beta refresh tokens after the 1.0 upgrade', () => {
+  const betaToken = 'SyntheticOnlyBetaRefreshTokenWithoutConsentBinding'
+
+  // A refresh token exactly as 1.0.0-beta.7 stored it: no `bcnConsentId`.
+  async function betaRefreshRow() {
+    return {
+      id: 'beta-refresh',
+      token: await hashRefreshToken(betaToken),
+      clientId: 'client',
+      sessionId: 'session',
+      userId: 'user',
+      referenceId: null,
+      authorizationCodeId: null,
+      resources: [resource],
+      requestedUserInfoClaims: null,
+      expiresAt: now + 3600000,
+      createdAt: now,
+      revoked: null,
+      rotatedAt: null,
+      rotationReplayResponse: null,
+      rotationReplayExpiresAt: null,
+      authTime: null,
+      confirmation: null,
+      scopes,
+    }
+  }
+
+  it('keeps the beta row valid but denies it every read, rotation and rebinding', async () => {
+    const { test } = await init()
+    const row = await betaRefreshRow()
+    expect(validate(beta7Tables.oauthRefreshToken.validator, row)).toBe(true)
+    // The deploy accepts the beta row: the column is optional.
+    await test.mutation(component.betaStorage.insert, { table: 'oauthRefreshToken', row })
+
+    for (const where of [
+      [{ field: 'id', value: 'beta-refresh' }],
+      [{ field: 'token', value: row.token }],
+    ]) {
+      expect(
+        await test.query(component.adapter.findOne, { model: 'oauthRefreshToken', where }),
+      ).toBeNull()
+    }
+    expect(
+      await test.mutation(component.adapter.incrementOne, {
+        model: 'oauthRefreshToken',
+        where: [
+          { field: 'id', value: 'beta-refresh' },
+          { field: 'revoked', value: null },
+        ],
+        increment: {},
+        set: { revoked: now, rotatedAt: now, rotationReplayExpiresAt: now + 10000 },
+      }),
+    ).toBeNull()
+    await expect(
+      test.mutation(component.adapter.create, {
+        model: 'oauthRefreshToken',
+        data: { ...row, id: 'beta-refresh-child', token: 'synthetic-beta-child-hash' },
+        oauthRefreshParentId: 'beta-refresh',
+      }),
+    ).rejects.toThrow('AUTH_OAUTH_REFRESH_INVALID')
+    await expect(
+      test.mutation(component.adapter.updateOne, {
+        model: 'oauthRefreshToken',
+        where: [{ field: 'id', value: 'beta-refresh' }],
+        update: { bcnConsentId: 'consent' },
+      }),
+    ).rejects.toThrow('AUTH_FIELD_IMMUTABLE:oauthRefreshToken.bcnConsentId')
+  })
+
+  it('answers invalid_grant to a beta refresh token and mints nothing', async () => {
+    const { test, request } = await init()
+    await test.mutation(component.betaStorage.insert, {
+      table: 'oauthRefreshToken',
+      row: await betaRefreshRow(),
+    })
+    const before = await test.query(component.betaStorage.rows, { table: 'oauthRefreshToken' })
+
+    const denied = await request(betaToken)
+    expect(denied.status).toBe(400)
+    expect(denied.body.error).toBe('invalid_grant')
+    expect(denied.body).not.toHaveProperty('access_token')
+    expect(denied.body).not.toHaveProperty('refresh_token')
+    expect(await test.query(component.betaStorage.rows, { table: 'oauthRefreshToken' })).toEqual(
+      before,
+    )
+    expect(await test.query(component.adapter.count, { model: 'oauthConsent' })).toBe(1)
+
+    // The same client, user, session and consent still renew with a 1.0 token.
+    const renewed = await request()
+    expect(renewed.status, JSON.stringify(renewed.body)).toBe(200)
+    expect(decodeJwt(renewed.body.access_token)).toMatchObject({ bcn_grant_id: 'consent' })
   })
 })

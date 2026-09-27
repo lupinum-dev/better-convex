@@ -223,6 +223,30 @@ describe('posts ownership authorization', () => {
   })
 })
 
+describe('post controls on the posts page', () => {
+  // The page shows edit, publish and delete through usePermissions(): the same
+  // checkPermission() rule, applied to the context from auth.getPermissionContext.
+  it('grants the owner controls to exactly the user who created the post', async () => {
+    const t = initConvexTest()
+    await seedUser(t, 'user_owner')
+    await seedUser(t, 'user_other')
+    const asOwner = await signInAs(t, 'user_owner')
+    const asOther = await signInAs(t, 'user_other')
+    const postId = await asOwner.mutation(api.posts.create, { title: 'Draft', content: 'Body' })
+    const [post] = await asOwner.query(api.posts.list, {})
+    expect(post?._id).toBe(postId)
+
+    const ownerContext = await asOwner.query(api.auth.getPermissionContext, {})
+    const otherContext = await asOther.query(api.auth.getPermissionContext, {})
+    for (const permission of ['post.update', 'post.publish', 'post.delete'] as const) {
+      expect(checkPermission(ownerContext, permission, post), permission).toBe(true)
+      expect(checkPermission(otherContext, permission, post), permission).toBe(false)
+      expect(checkPermission(null, permission, post), permission).toBe(false)
+    }
+    expect(checkPermission(otherContext, 'post.create')).toBe(true)
+  })
+})
+
 describe('checkPermission', () => {
   it('denies every permission without signed-in context', () => {
     expect(checkPermission(null, 'post.create')).toBe(false)

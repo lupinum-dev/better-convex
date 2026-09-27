@@ -357,6 +357,48 @@ describe('useConvexOperation', () => {
     host.stop()
   })
 
+  it.each([
+    [
+      'FILE_TOO_LARGE',
+      { maxSize: 3 },
+      new Blob(['four'], { type: 'image/png' }),
+      'exceeds maximum 3 bytes',
+    ],
+    [
+      'FILE_TYPE_NOT_ALLOWED',
+      { allowedTypes: ['image/*'] },
+      new Blob(['x'], { type: 'application/pdf' }),
+      'not allowed',
+    ],
+  ] as const)(
+    'rejects an upload that fails its %s preflight before any request',
+    async (code, limits, blob, message) => {
+      const host = operationHost()
+      const run = host.state.run((op) => op.upload('https://upload.test', blob, limits))
+
+      const error = await run.catch((cause: unknown) => cause)
+      expect(isConvexCallError(error, code)).toBe(true)
+      expect(error).toMatchObject({ code, outcome: 'not-sent' })
+      expect((error as Error).message).toContain(message)
+      expect(FakeXhr.sent).toHaveLength(0)
+      expect(host.state.error.value).toBe(error)
+      host.stop()
+    },
+  )
+
+  it('uploads a file that meets its maxSize and allowedTypes', async () => {
+    const host = operationHost()
+    const op = host.begin()
+
+    const upload = op.upload('https://upload.test', new Blob(['four'], { type: 'image/png' }), {
+      maxSize: 4,
+      allowedTypes: ['image/*'],
+    })
+    FakeXhr.sent[0]!.respond('storage_1')
+    await expect(upload).resolves.toBe('storage_1')
+    host.stop()
+  })
+
   it('rejects every step without a browser runtime as not sent', async () => {
     const scope = effectScope()
     const state = scope.run(() =>

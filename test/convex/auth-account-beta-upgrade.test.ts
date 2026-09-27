@@ -6,19 +6,26 @@ import { convexTest } from 'convex-test'
 import {
   componentsGeneric,
   defineSchema,
+  defineTable,
   mutationGeneric,
   queryGeneric,
   type FunctionReference,
   type GenericActionCtx,
   type GenericDataModel,
 } from 'convex/server'
-import { v } from 'convex/values'
+import { v, type PropertyValidators } from 'convex/values'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { findAccountKeyCollisions } from '../../src/runtime/convex-auth/adapter/account-key-collisions'
 import { createConvexAuthAdapter } from '../../src/runtime/convex-auth/adapter/create-adapter'
+import {
+  assertAuthSchemaMatchesMetadata,
+  fingerprintAuthSchemaModels,
+} from '../../src/runtime/convex-auth/adapter/metadata'
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
-import authSchema from '../../src/runtime/convex-auth/component/schema'
+import authSchema, { tables } from '../../src/runtime/convex-auth/component/schema'
+import authSchemaMetadata from '../../src/runtime/convex-auth/component/schemaMetadata'
+import beta7Schema from '../fixtures/auth-upgrade/beta7/schema'
 
 /*
  * Better Convex 1.0.0-beta.1 through beta.7 ran Better Auth 1.7.1/1.7.2 and
@@ -506,6 +513,79 @@ describe('findAccountKeyCollisions', () => {
       await expect(
         test.action((ctx) => findAccountKeyCollisions(ctx, component, { pageSize })),
       ).rejects.toThrow('AUTH_ACCOUNT_SCAN_PAGE_SIZE_INVALID')
+    }
+  })
+})
+
+describe('every 1.0.0-beta.7 auth document under the 1.0 schema', () => {
+  type ExportedFields = Record<string, { fieldType: unknown; optional: boolean }>
+  const documentFields = (schema: unknown) =>
+    new Map(
+      (
+        JSON.parse((schema as { export(): string }).export()) as {
+          tables: Array<{ tableName: string; documentType: { value: ExportedFields } }>
+        }
+      ).tables.map((table) => [table.tableName, table.documentType.value]),
+    )
+
+  it('accepts every beta field with its beta type and requires no new field', () => {
+    // A schema push validates every stored document. This holds for each
+    // table exactly when the push needs no export, import or manual clearing.
+    const beta = documentFields(beta7Schema)
+    const current = documentFields(authSchema)
+    for (const [table, betaFields] of beta) {
+      const fields = current.get(table)
+      expect(fields, table).toBeDefined()
+      for (const [name, field] of Object.entries(betaFields)) {
+        expect(fields![name]?.fieldType, `${table}.${name}`).toEqual(field.fieldType)
+      }
+      for (const [name, field] of Object.entries(fields!)) {
+        if (!field.optional) expect(betaFields[name], `${table}.${name}`).toBeDefined()
+      }
+    }
+    expect(current.get('oauthRefreshToken')?.bcnConsentId).toEqual({
+      fieldType: { type: 'union', value: [{ type: 'null' }, { type: 'string' }] },
+      optional: true,
+    })
+  })
+
+  it('keeps the optional consent binding immutable and pinned to the adapter metadata', () => {
+    expect(authSchemaMetadata.models.oauthRefreshToken.fields.bcnConsentId).toMatchObject({
+      nullable: true,
+      optional: true,
+      updatable: false,
+    })
+    const { bcnConsentId: _bcnConsentId, ...fields } = tables.oauthRefreshToken.validator.fields
+    const withRefreshFields = (refreshFields: PropertyValidators) => {
+      let table = defineTable(refreshFields) as unknown as {
+        index(name: string, fields: string[]): typeof table
+      }
+      for (const index of authSchemaMetadata.models.oauthRefreshToken.indexes) {
+        table = table.index(index.descriptor, [...index.fields])
+      }
+      const schema = defineSchema({
+        ...tables,
+        oauthRefreshToken: table as unknown as typeof tables.oauthRefreshToken,
+      })
+      Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
+        value: fingerprintAuthSchemaModels(authSchemaMetadata.models),
+      })
+      return schema
+    }
+    expect(() =>
+      assertAuthSchemaMatchesMetadata(
+        withRefreshFields({ ...fields, bcnConsentId: v.optional(v.union(v.null(), v.string())) }),
+        authSchemaMetadata,
+      ),
+    ).not.toThrow()
+    for (const variant of [
+      { ...fields, bcnConsentId: v.union(v.null(), v.string()) },
+      { ...fields, bcnConsentId: v.optional(v.string()) },
+      fields,
+    ]) {
+      expect(() =>
+        assertAuthSchemaMatchesMetadata(withRefreshFields(variant), authSchemaMetadata),
+      ).toThrow('AUTH_SCHEMA_METADATA_MISMATCH')
     }
   })
 })

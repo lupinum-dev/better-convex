@@ -24,6 +24,13 @@ export interface AuthFieldMetadata {
   sortable: boolean
   unique: boolean
   updatable: boolean
+  /**
+   * The Convex column may be absent, so rows written by a release that did not
+   * have this field still validate on schema push. The adapter writes it on
+   * every new row, so an absent value only ever means an earlier release wrote
+   * the row; code that depends on the field must deny such rows.
+   */
+  optional?: true
   reference?: AuthReferenceMetadata
 }
 
@@ -189,7 +196,7 @@ export function assertAuthSchemaMatchesMetadata(
         const exportedField = exportedFields[field.physicalName]
         if (
           !exportedField ||
-          exportedField.optional !== false ||
+          exportedField.optional !== (field.optional === true) ||
           !validatorMatches(field, exportedField.fieldType)
         ) {
           mismatch()

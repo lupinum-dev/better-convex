@@ -128,6 +128,47 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     expect(convex.calls.mutation[0]?.args).toEqual({ workspaceId: 'workspace_1' })
   })
 
+  it('hands the per-call context to url and complete through the Nuxt facade', async () => {
+    const convex = new MockConvexClient()
+    const mutation = mockFnRef<'mutation'>('files:generateUploadUrl:context')
+    const attach = mockFnRef<'mutation'>('assets:attach') as FunctionReference<
+      'mutation',
+      'public',
+      { assetId: string; storageId: string },
+      null
+    >
+    convex.setMutationHandler('files:generateUploadUrl:context', async () => 'http://upload.local')
+    convex.setMutationHandler('assets:attach', async () => null)
+    const urlContexts: unknown[] = []
+
+    const { result } = await captureInNuxt(
+      () =>
+        useConvexFileUpload(mutation, {
+          url: (prepared: string, { context }: { file: File; context: { assetId: string } }) => {
+            urlContexts.push(context)
+            return prepared
+          },
+          complete: (op, { storageId, context }) =>
+            op.mutation(attach, { assetId: context.assetId, storageId }),
+        }),
+      { convex },
+    )
+    const selected = { assetId: 'asset_a' }
+    const uploading = result.upload(
+      new File(['hello'], 'hello.txt', { type: 'text/plain' }),
+      {},
+      { context: selected },
+    )
+    selected.assetId = 'asset_b'
+    await uploading
+
+    expect(urlContexts).toEqual([{ assetId: 'asset_a' }])
+    expect(convex.calls.mutation.at(-1)?.args).toEqual({
+      assetId: 'asset_a',
+      storageId: 'storage_1',
+    })
+  })
+
   it('rejects an invalid upload URL mutation result before starting XHR', async () => {
     const sendSpy = vi.spyOn(FakeXhr.prototype, 'send')
     const convex = new MockConvexClient()

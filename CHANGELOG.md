@@ -15,8 +15,11 @@
   is keyed by `(providerId, accountId)`. Existing beta account rows are
   preserved: the retired `issuer` stays as an optional column that the adapter
   never reads or writes, and `findAccountKeyCollisions` reports rows that share
-  a `(providerId, accountId)` key. Beta OAuth refresh tokens must be cleared
-  before the deploy.
+  a `(providerId, accountId)` key. The schema push accepts every beta row
+  without export, import, or manual clearing. Beta OAuth refresh tokens have no
+  consent binding: they stay stored but are answered with `invalid_grant`, so
+  MCP hosts and other OAuth clients sign in again. `pnpm test:auth-upgrade`
+  proves the 1.0.0-beta.7 upgrade on the pinned local Convex backend.
 - `useConvexMutation` returns `{ mutate, data, status, pending, error, reset }`
   and `useConvexAction` returns `{ run, ... }`. `useConvexForm` rejects a
   concurrent submit with `SUBMIT_IN_PROGRESS`, and never sends a submission
@@ -36,13 +39,18 @@
   `complete` step as one workflow for the signed-in user: `url` selects the URL
   from an object prepare result, `upload()` resolves with
   `{ storageId, prepared, completed }`, and errors carry `phase`.
+  `upload(file, args, { context })` passes a per-call context, captured when
+  `upload()` is called, to `url` and `complete` as `ctx.context`; its type is
+  inferred from the `complete`/`url` annotation and then required.
 - Add `useConvexOperation(work)`: several queries, mutations, actions, and
   uploads that run for the user who started them, with `run`, `data`, `status`,
   `pending`, `error`, and `reset` like `useConvexAction`. A step is checked
   immediately before it is sent, every later step stops after an identity
   change, and the state returns to `idle`. Callables, `useConvexForm`, and
   uploads use the same check; `reset()` on a callable stops a call that was not
-  sent yet.
+  sent yet. `op.upload()` accepts `maxSize` and `allowedTypes` and rejects
+  with `FILE_TOO_LARGE` / `FILE_TYPE_NOT_ALLOWED` (`outcome: 'not-sent'`)
+  before any request.
 - The component-test runtime runs the real composables against an in-memory
   Convex connection, from `@lupinum/better-convex-nuxt/test` and the new
   `@lupinum/better-convex-vue/test`. The Nuxt `composables` map is removed.

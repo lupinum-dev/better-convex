@@ -85,6 +85,7 @@ jobs:
           BCN_AUTH_CONCURRENCY_LOAD: nightly
       - run: pnpm test:auth-export-sentinels
       - run: pnpm test:auth-mfa
+      - run: pnpm test:auth-upgrade
 
   oauth-mcp-interop:
     runs-on: ubuntu-latest

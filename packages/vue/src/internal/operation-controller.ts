@@ -11,12 +11,24 @@ import {
 import type { ConvexClientHandle } from './client-owner'
 import { createIdentityChangedError, isIdentityChangedError } from './identity-changed-error'
 import { canPostFiles, postFileToConvexStorage, type UploadProgressInfo } from './upload-transport'
+import { checkUploadFile } from './upload-validation'
 
 export type OperationStepKind = 'query' | 'mutation' | 'action' | 'upload'
 
 export interface ConvexOperationUploadOptions {
   /** Byte progress of the storage POST. */
   readonly onProgress?: (progress: UploadProgressInfo) => void
+  /**
+   * Maximum file size in bytes. A larger file rejects with `FILE_TOO_LARGE`
+   * and `outcome: 'not-sent'`; no request is made.
+   */
+  readonly maxSize?: number
+  /**
+   * Allowed MIME types: exact types and top-level wildcards such as
+   * `image/*`. Another type rejects with `FILE_TYPE_NOT_ALLOWED` and
+   * `outcome: 'not-sent'`; no request is made.
+   */
+  readonly allowedTypes?: readonly string[]
 }
 
 /**
@@ -60,7 +72,11 @@ export interface ConvexOperation {
     query: Query,
     ...args: OptionalRestArgs<Query>
   ): Promise<FunctionReturnType<Query>>
-  /** POST `file` to a Convex storage upload URL and resolve with its storage ID. */
+  /**
+   * POST `file` to a Convex storage upload URL and resolve with its storage
+   * ID. `maxSize` and `allowedTypes` are checked first, like
+   * `useConvexFileUpload`'s options.
+   */
   upload(
     url: string,
     file: Blob,
@@ -361,8 +377,11 @@ export function createOperationController(input: OperationControllerInput): Oper
       mutation: (reference, ...args) => convexStep('mutation', reference, args),
       action: (reference, ...args) => convexStep('action', reference, args),
       query: (reference, ...args) => convexStep('query', reference, args),
-      upload: (url, file, options) =>
-        runStep(state, {
+      upload: (url, file, options) => {
+        // The same client-side preflight as useConvexFileUpload: nothing is sent.
+        const rejected = options && checkUploadFile(file, options)
+        if (rejected) return Promise.reject(rejected)
+        return runStep(state, {
           kind: 'upload',
           dispatch: (signal) => {
             if (!canPostFiles()) {
@@ -375,7 +394,8 @@ export function createOperationController(input: OperationControllerInput): Oper
             }
             return postFileToConvexStorage(url, file, { signal, onProgress: options?.onProgress })
           },
-        }),
+        })
+      },
       step: (step) => runStep(state, step),
     }
     return operation

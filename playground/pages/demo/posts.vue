@@ -171,12 +171,13 @@
 <script setup lang="ts">
 import { api } from '#convex/api'
 import type { Id } from '~/convex/_generated/dataModel'
+import type { Resource } from '~/convex/permissions.config'
 
 definePageMeta({
   layout: 'sidebar',
 })
 
-const { status, user, error: authError } = useConvexAuth()
+const { status, error: authError } = useConvexAuth()
 // Query posts with real-time updates
 const queryArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
 
@@ -201,28 +202,22 @@ const isSaving = ref(false)
 const publishingPostId = ref<Id<'posts'> | null>(null)
 const deletingPostId = ref<Id<'posts'> | null>(null)
 
-// Permission checks (simplified - actual checks happen server-side)
-const canCreate = computed(() => {
-  // In a real app, you'd check permissions client-side too
-  // For now, we'll let the server handle it
-  return status.value === 'authenticated' && user.value
-})
+// The buttons use the same rules as the mutations (convex/permissions.config.ts):
+// any signed-in user may create, and only the owner may edit, publish or delete.
+// The server still checks every mutation.
+const { can } = await usePermissions()
+const canCreate = computed(() => can('post.create'))
 
-// Ownership model: only the owner may edit/publish/delete their own posts.
-// (The playground has no org plugin, so there are no admin/owner roles.)
-function canEdit(post: { ownerId: string; status: string }) {
-  if (!user.value) return false
-  return user.value.authId === post.ownerId
+function canEdit(post: Resource) {
+  return can('post.update', post)
 }
 
-function canPublish(post: { ownerId: string; status: string }) {
-  if (!user.value) return false
-  return user.value.authId === post.ownerId && post.status === 'draft'
+function canPublish(post: Resource & { status: string }) {
+  return can('post.publish', post) && post.status === 'draft'
 }
 
-function canDelete(post: { ownerId: string }) {
-  if (!user.value) return false
-  return user.value.authId === post.ownerId
+function canDelete(post: Resource) {
+  return can('post.delete', post)
 }
 
 // The handle is safe to create during SSR; its calls run only from browser

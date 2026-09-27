@@ -11,8 +11,9 @@ import {
 import type { ClientCallStatus } from './call-state'
 import { createIdentityChangedError, isIdentityChangedError } from './identity-changed-error'
 import type { InternalOperation, OperationController } from './operation-controller'
+import { snapshotUploadContext } from './upload-context'
 import { canPostFiles, type UploadProgressInfo } from './upload-transport'
-import { isFileTypeAllowed } from './upload-validation'
+import { checkUploadFile } from './upload-validation'
 
 /** What one finished upload produced. */
 export interface ConvexFileUploadResult<Prepared = string, Completed = undefined> {
@@ -24,10 +25,17 @@ export interface ConvexFileUploadResult<Prepared = string, Completed = undefined
   readonly completed: Completed
 }
 
-export interface UploadCompleteContext<Prepared = unknown> {
+/** What the `complete` step receives about the stored file. */
+export interface UploadCompleteContext<Prepared = unknown, Context = undefined> {
+  /** The upload-URL mutation's result. */
   readonly prepared: Prepared
   readonly storageId: GenericId<'_storage'>
   readonly file: File
+  /**
+   * The `context` passed to this `upload()` call, captured when it was called:
+   * `upload(file, args, { context })`. `undefined` when none was passed.
+   */
+  readonly context: Context
 }
 
 export interface FileUploadViewState {
@@ -66,18 +74,26 @@ export interface FileUploadControllerInput {
   /** Run the upload-URL mutation as a step of `operation`. */
   prepare(operation: InternalOperation, args: unknown): Promise<unknown>
   /** Select the upload URL from the prepared result. */
-  readonly url?: (prepared: unknown) => string
+  readonly url?: (
+    prepared: unknown,
+    ctx: { readonly file: File; readonly context: unknown },
+  ) => string
   /** Run the completion; its Convex calls are steps of `operation`. */
   readonly complete?: (
     operation: InternalOperation,
-    context: UploadCompleteContext,
+    ctx: UploadCompleteContext<unknown, unknown>,
   ) => Promise<unknown>
   readonly observer?: ConvexFileUploadObserver
 }
 
 export interface FileUploadController {
   readonly state: Readonly<ShallowRef<FileUploadViewState>>
-  upload(file: File, args: unknown): Promise<ConvexFileUploadResult<unknown, unknown>>
+  /** `context` is captured now and handed to `url` and `complete`. */
+  upload(
+    file: File,
+    args: unknown,
+    context?: unknown,
+  ): Promise<ConvexFileUploadResult<unknown, unknown>>
   cancel(): void
   reset(): void
   dispose(): void
@@ -141,11 +157,11 @@ export function createFileUploadController(input: FileUploadControllerInput): Fi
 
   const stopIdentity = operations.onIdentityChange(retire)
 
-  const selectUrl = (prepared: unknown): string => {
+  const selectUrl = (prepared: unknown, file: File, context: unknown): string => {
     let url: unknown = prepared
     if (input.url) {
       try {
-        url = input.url(prepared)
+        url = input.url(prepared, { file, context })
       } catch {
         throw libraryError('INVALID_UPLOAD_URL', 'The url option threw while selecting the URL', {
           outcome: 'not-sent',
@@ -168,8 +184,12 @@ export function createFileUploadController(input: FileUploadControllerInput): Fi
   const upload = async (
     file: File,
     args: unknown,
+    callContext?: unknown,
   ): Promise<ConvexFileUploadResult<unknown, unknown>> => {
     const startedAt = Date.now()
+    // The completion target is fixed here, before anything awaits: later
+    // changes to component state cannot redirect this upload.
+    const context = snapshotUploadContext(callContext)
     if (disposed) {
       throw libraryError('CANCELLED', 'Convex upload cancelled: its owner was disposed.', {
         outcome: 'not-sent',
@@ -237,24 +257,8 @@ export function createFileUploadController(input: FileUploadControllerInput): Fi
     }
 
     // Client-side preflight never reaches the network.
-    if (input.maxSize !== undefined && file.size > input.maxSize) {
-      throw publishFailure(
-        libraryError(
-          'FILE_TOO_LARGE',
-          `File size ${file.size} bytes exceeds maximum ${input.maxSize} bytes`,
-          { outcome: 'not-sent' },
-        ),
-      )
-    }
-    if (input.allowedTypes && !isFileTypeAllowed(file.type, input.allowedTypes)) {
-      throw publishFailure(
-        libraryError(
-          'FILE_TYPE_NOT_ALLOWED',
-          `File type "${file.type}" not allowed. Allowed: ${input.allowedTypes.join(', ')}`,
-          { outcome: 'not-sent' },
-        ),
-      )
-    }
+    const rejected = checkUploadFile(file, input, functionName)
+    if (rejected) throw publishFailure(rejected)
     // The storage POST needs XHR for byte progress; a server has neither it
     // nor a browser Convex client, so no upload URL may be minted there.
     if (!input.available || !canPostFiles()) {
@@ -283,7 +287,7 @@ export function createFileUploadController(input: FileUploadControllerInput): Fi
       const prepared = await input.prepare(operation, args)
 
       enterPhase('upload')
-      const url = selectUrl(prepared)
+      const url = selectUrl(prepared, file, context)
       const storageId = await operation.upload(url, file, {
         onProgress: (progress) => {
           if (isCurrent()) state.value = { ...state.value, progress }
@@ -293,7 +297,7 @@ export function createFileUploadController(input: FileUploadControllerInput): Fi
       let completed: unknown
       if (input.complete) {
         enterPhase('complete')
-        completed = await input.complete(operation, { prepared, storageId, file })
+        completed = await input.complete(operation, { prepared, storageId, file, context })
       }
 
       const result: ConvexFileUploadResult<unknown, unknown> = Object.freeze({

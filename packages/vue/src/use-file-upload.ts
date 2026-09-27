@@ -32,31 +32,51 @@ export type UploadUrlMutation = FunctionReference<
  * The completion step. It runs as part of the upload's operation once the
  * file is stored: send its Convex calls through `operation` so that they
  * belong to the same signed-in identity, for example
- * `(op, { storageId }) => op.mutation(api.notes.attachImage, { noteId, storageId })`.
+ * `(op, { storageId, context }) => op.mutation(api.notes.attachImage, { noteId: context, storageId })`.
  * It may send several steps; its result becomes `data.completed`.
  */
-export type UploadComplete<Prepared = unknown, Completed = unknown> = (
+export type UploadComplete<Prepared = unknown, Completed = unknown, Context = undefined> = (
   operation: ConvexOperation,
-  context: UploadCompleteContext<Prepared>,
+  ctx: UploadCompleteContext<Prepared, Context>,
 ) => Promise<Completed>
 
-type UploadUrlOption<Prepared> = [Prepared] extends [string]
+/** Select the upload URL; `ctx.context` is the `upload()` call's context. */
+type UploadUrlSelector<Prepared, Context> = (
+  prepared: Prepared,
+  ctx: { readonly file: File; readonly context: Context },
+) => string
+
+type UploadUrlOption<Prepared, Context> = [Prepared] extends [string]
   ? {
       /** Select the upload URL from the upload-URL mutation's result. */
-      readonly url?: (prepared: Prepared) => string
+      readonly url?: UploadUrlSelector<Prepared, Context>
     }
   : {
       /**
        * Select the upload URL from the upload-URL mutation's result. Required
        * when that result is not a string.
        */
-      readonly url: (prepared: Prepared) => string
+      readonly url: UploadUrlSelector<Prepared, Context>
     }
+
+/**
+ * The arguments of `upload()` after the file: the upload-URL mutation's
+ * arguments, then `{ context }`, the per-call value `url` and `complete`
+ * receive as `ctx.context`. `{ context }` is required once `complete` or
+ * `url` declares a context type that does not include `undefined`.
+ */
+type UploadCallArgs<
+  Mutation extends UploadUrlMutation,
+  Context = undefined,
+> = undefined extends Context
+  ? [...args: OptionalRestArgs<Mutation>, options?: { readonly context?: Context }]
+  : [args: OptionalRestArgs<Mutation>[0], options: { readonly context: Context }]
 
 export type UseConvexFileUploadOptions<
   Prepared = string,
   Completed = undefined,
-> = UploadUrlOption<Prepared> & {
+  Context = undefined,
+> = UploadUrlOption<Prepared, Context> & {
   /**
    * Maximum file size in bytes. A larger file fails with `FILE_TOO_LARGE`
    * before any request is made.
@@ -76,6 +96,13 @@ export type UseConvexFileUploadOptions<
    * receives. `pending` stays `true` until it finishes and `data.completed`
    * holds its result.
    *
+   * Take the record to attach to from `ctx.context`, the value passed as
+   * `upload(file, args, { context })`, rather than from component state: the
+   * context is captured when `upload()` is called, so a selection that
+   * changes while the file uploads does not change the target. Declare its
+   * type on the parameter, for example
+   * `(op, { storageId, context }: UploadCompleteContext<string, Id<'assets'>>) => ...`.
+   *
    * A `complete` failure's `outcome` covers every completion call, not only
    * the one that failed. `outcome: 'not-sent'` means that no completion call
    * was sent: when the identity changes after the file was stored but before
@@ -85,16 +112,17 @@ export type UseConvexFileUploadOptions<
    * earlier call may have referenced the file. Clean up unreferenced files on
    * the server.
    */
-  readonly complete?: UploadComplete<Prepared, Completed>
+  readonly complete?: UploadComplete<Prepared, Completed, Context>
 }
 
-type UploadOptionsParameter<Prepared, Completed> = [Prepared] extends [string]
-  ? [options?: UseConvexFileUploadOptions<Prepared, Completed>]
-  : [options: UseConvexFileUploadOptions<Prepared, Completed>]
+type UploadOptionsParameter<Prepared, Completed, Context> = [Prepared] extends [string]
+  ? [options?: UseConvexFileUploadOptions<Prepared, Completed, Context>]
+  : [options: UseConvexFileUploadOptions<Prepared, Completed, Context>]
 
 export interface UseConvexFileUploadReturn<
   Mutation extends UploadUrlMutation,
   Completed = undefined,
+  Context = undefined,
 > {
   /**
    * Prepare, upload, and complete one file. Resolves with
@@ -113,11 +141,15 @@ export interface UseConvexFileUploadReturn<
    * `error`.
    *
    * @param file The file to upload.
-   * @param args Validator-derived arguments for the upload-URL mutation.
+   * @param args Validator-derived arguments for the upload-URL mutation,
+   * then `{ context }`: a per-call value handed to `url` and `complete` as
+   * `ctx.context`, like Convex's `mutation(ref, args, options)`. Plain
+   * objects and arrays are copied when `upload()` is called, so pass values
+   * (IDs), not refs.
    */
   readonly upload: (
     file: File,
-    ...args: OptionalRestArgs<Mutation>
+    ...args: UploadCallArgs<Mutation, Context>
   ) => Promise<ConvexFileUploadResult<FunctionReturnType<Mutation>, Completed>>
   /** The result of the last successful upload. */
   readonly data: ComputedRef<
@@ -148,8 +180,8 @@ export interface UseConvexFileUploadReturn<
 export type ConvexFileUploadInternalOptions = {
   readonly maxSize?: number
   readonly allowedTypes?: readonly string[]
-  readonly url?: (prepared: never) => string
-  readonly complete?: UploadComplete<never, unknown>
+  readonly url?: UploadUrlSelector<never, never>
+  readonly complete?: UploadComplete<never, unknown, never>
   readonly observer?: ConvexFileUploadObserver
 }
 
@@ -162,6 +194,11 @@ export type ConvexFileUploadInternalOptions = {
  * current when `upload()` started: after an identity change no later phase is
  * sent. The composable uploads one file at a time.
  *
+ * Pass the record the upload belongs to as per-call context, not through
+ * component state that may change while the file uploads:
+ * `upload(file, args, { context })` hands it to `url` and `complete` as
+ * `ctx.context`.
+ *
  * @example
  * ```vue
  * <script setup lang="ts">
@@ -171,14 +208,14 @@ export type ConvexFileUploadInternalOptions = {
  *   {
  *     maxSize: 5 * 1024 * 1024,
  *     allowedTypes: ['image/*'],
- *     complete: (op, { storageId }) =>
- *       op.mutation(api.notes.attachImage, { noteId: props.noteId, storageId }),
+ *     complete: (op, { storageId, context: noteId }: UploadCompleteContext<string, Id<'notes'>>) =>
+ *       op.mutation(api.notes.attachImage, { noteId, storageId }),
  *   },
  * )
  *
  * async function onChange(event: Event) {
  *   const file = (event.target as HTMLInputElement).files?.[0]
- *   if (file) await upload(file).catch(() => undefined)
+ *   if (file) await upload(file, {}, { context: props.noteId }).catch(() => undefined)
  * }
  * </script>
  *
@@ -192,27 +229,31 @@ export type ConvexFileUploadInternalOptions = {
  * When the upload-URL mutation returns an object, `url` selects the URL:
  * `useConvexFileUpload(api.files.createUploadSession, { url: (session) => session.uploadUrl })`.
  */
-export function useConvexFileUpload<Mutation extends UploadUrlMutation, Completed = undefined>(
+export function useConvexFileUpload<
+  Mutation extends UploadUrlMutation,
+  Completed = undefined,
+  Context = undefined,
+>(
   mutation: Mutation,
-  ...options: UploadOptionsParameter<FunctionReturnType<Mutation>, Completed>
-): UseConvexFileUploadReturn<Mutation, Completed> {
-  const input = options[0] as UseConvexFileUploadOptions<unknown, unknown> | undefined
+  ...options: UploadOptionsParameter<FunctionReturnType<Mutation>, Completed, Context>
+): UseConvexFileUploadReturn<Mutation, Completed, Context> {
+  const input = options[0] as UseConvexFileUploadOptions<unknown, unknown, unknown> | undefined
   return useConvexFileUploadInternal(mutation, {
     maxSize: input?.maxSize,
     allowedTypes: input?.allowedTypes,
     url: input?.url as ConvexFileUploadInternalOptions['url'],
     complete: input?.complete as ConvexFileUploadInternalOptions['complete'],
-  }) as unknown as UseConvexFileUploadReturn<Mutation, Completed>
+  }) as unknown as UseConvexFileUploadReturn<Mutation, Completed, Context>
 }
 
 /** Adapter entry for {@link useConvexFileUpload}; the same lifecycle plus an observer. */
 export function useConvexFileUploadInternal<Mutation extends UploadUrlMutation>(
   mutation: Mutation,
   options?: ConvexFileUploadInternalOptions,
-): UseConvexFileUploadReturn<Mutation, unknown> {
+): UseConvexFileUploadReturn<Mutation, unknown, unknown> {
   const operations = useOperationController('useConvexFileUpload')
   const runtime = useOptionalBetterConvexRuntime()
-  const completion = options?.complete as UploadComplete | undefined
+  const completion = options?.complete as UploadComplete<unknown, unknown, unknown> | undefined
   const controller = createFileUploadController({
     functionName: getFunctionName(mutation),
     maxSize: options?.maxSize,
@@ -220,7 +261,7 @@ export function useConvexFileUploadInternal<Mutation extends UploadUrlMutation>(
     available: runtime !== null,
     operations,
     prepare: (operation, args) => operation.mutation(mutation, args as never),
-    url: options?.url as ((prepared: unknown) => string) | undefined,
+    url: options?.url as UploadUrlSelector<unknown, unknown> | undefined,
     complete: completion
       ? (operation, context) => completion(toPublicOperation(operation), context)
       : undefined,
@@ -230,8 +271,8 @@ export function useConvexFileUploadInternal<Mutation extends UploadUrlMutation>(
 
   const state = controller.state
   return Object.freeze({
-    upload: (file: File, ...args: [Record<string, unknown>?]) =>
-      controller.upload(file, args[0] ?? {}),
+    upload: (file: File, args?: Record<string, unknown>, call?: { context?: unknown }) =>
+      controller.upload(file, args ?? {}, call?.context),
     data: computed(() => state.value.data),
     status: computed(() => state.value.status),
     pending: computed(() => state.value.status === 'pending'),
@@ -239,5 +280,5 @@ export function useConvexFileUploadInternal<Mutation extends UploadUrlMutation>(
     progress: computed(() => state.value.progress),
     cancel: controller.cancel,
     reset: controller.reset,
-  }) as unknown as UseConvexFileUploadReturn<Mutation, unknown>
+  }) as unknown as UseConvexFileUploadReturn<Mutation, unknown, unknown>
 }

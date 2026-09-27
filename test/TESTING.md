@@ -75,6 +75,7 @@ pnpm check:auth-schema
 pnpm test:auth-concurrency
 pnpm test:auth-export-sentinels
 pnpm test:auth-mfa
+pnpm test:auth-upgrade
 
 # Real OAuth/MCP clients and advertised-surface protocol scenarios
 pnpm test:mcp-auth
@@ -114,6 +115,23 @@ scans bounded extracted bytes for every raw canary, and deletes the entire
 fixture and export directory in `finally`. The same gate statically pins the
 live OAuth runner's local/session/cookie scans and its fail-closed empty Cache
 Storage and IndexedDB assertions.
+
+`test:auth-upgrade` proves the 1.0.0-beta.7 to 1.0 auth upgrade through normal
+`convex dev --once` pushes on the pinned backend, in a temporary copy of
+`test/fixtures/auth-upgrade`. It deploys the verbatim beta.7 component schema
+(`beta7/schema.ts`) and seeds beta-shaped users, credential and social accounts
+with `issuer`, sessions, an OAuth client, resource, consent, access token, and
+a refresh token without `bcnConsentId`. A control push of the 1.0 schema with a
+required `bcnConsentId` must fail schema validation. Then it pushes the 1.0
+schema, metadata, and adapter from `src/runtime/convex-auth/component` and runs
+`upgrade:verifyUpgrade`, which checks unchanged rows and document IDs,
+credential sign-in, account lookups, `invalid_grant` for the beta refresh
+token, renewal with a bound token, and `findAccountKeyCollisions` before and
+after removing a planted collision. Every push names the reviewed backend
+version and fixed ports, and the run fails if the stored local deployment config
+then names any other version: a Convex CLI backend upgrade would move the data
+through export and import, the path this proof rules out. Set
+`BCN_AUTH_UPGRADE_KEEP=1` to keep the temporary directory.
 
 `test:mcp-auth` is self-contained by default: it creates and owns a temporary
 starter, local Convex backend, Nuxt process, administrator, and secrets, then

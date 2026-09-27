@@ -123,6 +123,17 @@ const legacyFields: Readonly<Record<string, Readonly<Record<string, AuthFieldKin
   account: { issuer: 'string' },
 }
 
+/**
+ * Component-owned fields added after the 1.0.0 betas, by logical model. Beta
+ * rows lack them, so each is an optional Convex column: the schema push accepts
+ * those rows, and the adapter writes the field on every new row. Code that
+ * reads the field must deny a row without it.
+ */
+const postBetaFields: Readonly<Record<string, readonly string[]>> = {
+  // Beta refresh tokens have no consent binding; refresh admission denies them.
+  oauthRefreshToken: ['bcnConsentId'],
+}
+
 function physicalFieldName(logicalName: string, field: DBFieldAttribute): string {
   return field.fieldName ?? logicalName
 }
@@ -307,6 +318,9 @@ function buildMetadata(tables: BetterAuthDBSchema): AuthSchemaMetadata {
         updatable: !(
           logicalModelName === 'oauthRefreshToken' && logicalFieldName === 'bcnConsentId'
         ),
+        ...(postBetaFields[logicalModelName]?.includes(logicalFieldName)
+          ? { optional: true as const }
+          : {}),
         ...(reference ? { reference } : {}),
       }
     }
@@ -436,8 +450,11 @@ function renderSchema(metadata: AuthSchemaMetadata): string {
   const renderedModels = models.map((model) => {
     const fields = Object.values(model.fields)
       .map((field) => {
-        const validator = validatorForKind(field.kind)
-        return `    ${renderPropertyName(field.physicalName)}: ${field.nullable ? `v.union(v.null(), ${validator})` : validator},`
+        const base = validatorForKind(field.kind)
+        const validator = field.nullable ? `v.union(v.null(), ${base})` : base
+        return field.optional
+          ? `    // Added after the 1.0 betas: optional so beta rows validate; always written.\n    ${renderPropertyName(field.physicalName)}: v.optional(${validator}),`
+          : `    ${renderPropertyName(field.physicalName)}: ${validator},`
       })
       .join('\n')
     const legacy = Object.entries(model.legacyFields ?? {})
