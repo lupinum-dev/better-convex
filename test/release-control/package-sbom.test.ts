@@ -15,7 +15,7 @@ const vuePackageManifest = JSON.parse(
 const mcpPackageManifest = JSON.parse(
   readFileSync(join(root, 'packages/mcp/package.json'), 'utf8'),
 ) as {
-  dependencies: Record<string, string>
+  peerDependencies: Record<string, string>
 }
 
 function run(args: string[]) {
@@ -142,7 +142,7 @@ describe('package-profile SBOM generation', () => {
     }
   }, 120_000)
 
-  it('roots the MCP SBOM in the official server SDK', () => {
+  it('records the official server SDK as the MCP package required peer', () => {
     const directory = mkdtempSync(join(tmpdir(), 'bcm-sbom-output-'))
     try {
       const output = join(directory, 'sbom.cdx.json')
@@ -158,17 +158,17 @@ describe('package-profile SBOM generation', () => {
         metadata: { component: { name: string } }
       }
       expect(sbom.metadata.component.name).toBe('@lupinum/better-convex-mcp')
-      expect(sbom.components.map(({ name }) => name).sort()).toEqual([
-        '@modelcontextprotocol/core',
-        '@modelcontextprotocol/server',
-        'zod',
-      ])
-      expect(sbom.components).toContainEqual(
+      // The SDK is an exact peer: the application installs it, so its transitive closure
+      // belongs to the application's SBOM, not to this package's.
+      expect(sbom.components).toEqual([
         expect.objectContaining({
           name: '@modelcontextprotocol/server',
-          version: mcpPackageManifest.dependencies['@modelcontextprotocol/server'],
+          version: mcpPackageManifest.peerDependencies['@modelcontextprotocol/server'],
+          properties: [
+            { name: '@lupinum/better-convex-mcp:dependency-kind', value: 'required-peer' },
+          ],
         }),
-      )
+      ])
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

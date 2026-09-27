@@ -119,7 +119,7 @@ const contractProfiles = Object.freeze({
       'type',
       'sideEffects',
       'exports',
-      'dependencies',
+      'peerDependencies',
       'engines',
     ]),
     forbiddenPackageFields: Object.freeze([
@@ -135,7 +135,7 @@ const contractProfiles = Object.freeze({
       'man',
       'directories',
       'gypfile',
-      'peerDependencies',
+      'dependencies',
       'peerDependenciesMeta',
       'optionalDependencies',
       'bundleDependencies',
@@ -308,15 +308,15 @@ function assertMcpManifestShapes(manifest, profile) {
     throw new Error('MCP package files must contain only dist.')
   }
   assertPlainRecord(manifest.exports, 'exports')
-  for (const field of ['dependencies', 'engines']) {
+  for (const field of ['peerDependencies', 'engines']) {
     assertStringMap(manifest[field], field)
   }
   assertReleaseManifestPolicy(manifest, profile)
   if (
-    Object.keys(manifest.dependencies).length !== 1 ||
-    !Object.hasOwn(manifest.dependencies, '@modelcontextprotocol/server')
+    Object.keys(manifest.peerDependencies).length !== 1 ||
+    !/^\d+\.\d+\.\d+$/u.test(manifest.peerDependencies['@modelcontextprotocol/server'] ?? '')
   ) {
-    throw new Error('MCP package must pin exactly one official server SDK dependency.')
+    throw new Error('MCP package must declare exactly one exact official server SDK peer.')
   }
 }
 

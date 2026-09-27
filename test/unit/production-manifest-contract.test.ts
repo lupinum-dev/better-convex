@@ -112,7 +112,7 @@ describe('production manifest certification profiles', () => {
     )
   })
 
-  it('selects the minimal MCP contract with one exact official SDK dependency', () => {
+  it('selects the minimal MCP contract with one exact official SDK peer', () => {
     const contract = selectProductionManifestContract('mcp', mcpManifest)
     expect(contract).toMatchObject({
       schemaVersion: 1,
@@ -127,12 +127,14 @@ describe('production manifest certification profiles', () => {
       'type',
       'sideEffects',
       'exports',
-      'dependencies',
+      'peerDependencies',
       'engines',
       'scripts',
     ])
+    // McpServer crosses the package's public API, so the app owns the one SDK instance.
+    expect(mcpManifest.dependencies).toBeUndefined()
     expect(contract.manifest).toMatchObject({
-      dependencies: mcpManifest.dependencies,
+      peerDependencies: { '@modelcontextprotocol/server': '2.1.0' },
       files: ['dist'],
       sideEffects: false,
       scripts: {
@@ -142,8 +144,11 @@ describe('production manifest certification profiles', () => {
   })
 
   it.each([
-    ['peerDependencies', { peerDependencies: { vue: '>=3.5.0 <4' } }],
-    ['peerDependenciesMeta', { peerDependenciesMeta: { vue: { optional: true } } }],
+    ['dependencies', { dependencies: { '@modelcontextprotocol/server': '2.1.0' } }],
+    [
+      'peerDependenciesMeta',
+      { peerDependenciesMeta: { '@modelcontextprotocol/server': { optional: true } } },
+    ],
   ] as const)(
     'rejects MCP manifest field %s even when source and candidate match',
     (field, addition) => {

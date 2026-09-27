@@ -53,7 +53,7 @@ function syntheticFinding() {
 describe('auth advisory gate', () => {
   it('derives exact sibling-package runtime queries from reviewed manifests', () => {
     expect(reviewedAdvisoryTuple).toMatchObject({
-      '@modelcontextprotocol/server': mcpManifest.dependencies['@modelcontextprotocol/server'],
+      '@modelcontextprotocol/server': mcpManifest.peerDependencies['@modelcontextprotocol/server'],
       convex: supportedDependencyTuple.convex,
       vue: vueManifest.devDependencies.vue,
     })

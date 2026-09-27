@@ -33,12 +33,13 @@
     "prepack": "unbuild && pnpm --dir ../.. docs:package",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "dependencies": {
-    "@modelcontextprotocol/server": "2.1.0"
-  },
   "devDependencies": {
+    "@modelcontextprotocol/server": "2.1.0",
     "typescript": "~5.9.3",
     "unbuild": "3.6.1"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/server": "2.1.0"
   },
   "engines": {
     "node": "^22.19.0 || ^24.11.0"
