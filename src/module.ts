@@ -52,7 +52,7 @@ const releaseRuntimeFingerprint = getPackedRuntimeFingerprint()
 // are re-exported from it unchanged, and Nuxt-only shapes carry a Nuxt name.
 export type { ConvexAuthOptions } from './runtime/utils/auth-config'
 export type { ConvexAuthMode, ConvexAuthStatus } from './runtime/utils/auth-status'
-export type { ConvexCallError, ConvexCallErrorCode } from './runtime/errors'
+export type { ConvexCallError, ConvexCallErrorCode, ConvexFormError } from './runtime/errors'
 export type { ConvexUser } from './runtime/utils/types'
 export type {
   ConvexCallStatus,

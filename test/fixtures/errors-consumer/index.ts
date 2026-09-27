@@ -13,11 +13,16 @@
  */
 import {
   ConvexCallError,
+  ConvexFormError,
   isConvexCallError,
   isSerializedConvexCallError,
   normalizeConvexError,
 } from '@lupinum/better-convex-nuxt/errors'
-import type { ConvexCallErrorCode, ConvexCallErrorKind } from '@lupinum/better-convex-nuxt/errors'
+import type {
+  ConvexCallErrorCode,
+  ConvexCallErrorKind,
+  ConvexFormErrorKind,
+} from '@lupinum/better-convex-nuxt/errors'
 import { ConvexError } from 'convex/values'
 
 const typedKind: ConvexCallErrorKind = 'server'
@@ -116,6 +121,22 @@ if (
   revived.functionName !== 'files:generateUploadUrl'
 ) {
   fail('a serialized ConvexCallError did not revive with its code and function name')
+}
+
+// `useConvexForm` failures are reachable from the same entry, without a direct Vue dependency.
+const formKind: ConvexFormErrorKind = 'submission'
+const formError = new ConvexFormError({
+  kind: formKind,
+  message: 'Could not save',
+  callError: cancelled,
+})
+if (
+  !(formError instanceof Error) ||
+  formError.name !== 'ConvexFormError' ||
+  formError.callError !== cancelled ||
+  formError.toJSON().callError?.code !== 'CANCELLED'
+) {
+  fail('ConvexFormError from /errors did not keep its kind and call error')
 }
 
 console.log('errors-consumer OK')

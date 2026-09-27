@@ -36,7 +36,7 @@ The package depends on `@modelcontextprotocol/server` `2.1.0`. Install the same 
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-mcp@1.0.0-beta.3 @modelcontextprotocol/server@2.1.0 zod@4.6.5
+pnpm add @lupinum/better-convex-mcp@1.0.0-rc.0 @modelcontextprotocol/server@2.1.0 zod@4.6.5
 ```
 
 ## Quick start

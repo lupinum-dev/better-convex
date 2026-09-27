@@ -156,6 +156,64 @@ Object.defineProperty(ConvexCallError.prototype, NODE_INSPECT_CUSTOM, {
   configurable: true,
 })
 
+export interface ConvexFormIssue {
+  readonly message: string
+  readonly path: readonly PropertyKey[]
+  readonly field?: string
+}
+
+export type ConvexFormErrorKind = 'validation' | 'submission'
+
+type ConvexFormErrorInput = Readonly<{
+  kind: ConvexFormErrorKind
+  message: string
+  issues?: readonly ConvexFormIssue[]
+  fieldErrors?: Readonly<Record<string, readonly string[]>>
+  formError?: string
+  callError?: ConvexCallError
+}>
+
+/**
+ * A safe form-facing failure from `useConvexForm`. Raw validator and mapper
+ * causes are never retained; a `submission` failure keeps the mutation's
+ * {@link ConvexCallError} as `callError`.
+ */
+export class ConvexFormError extends Error {
+  readonly kind: ConvexFormErrorKind
+  readonly issues: readonly ConvexFormIssue[]
+  readonly fieldErrors: Readonly<Record<string, readonly string[]>>
+  readonly formError?: string
+  readonly callError?: ConvexCallError
+
+  constructor(input: ConvexFormErrorInput) {
+    super(input.message)
+    this.name = 'ConvexFormError'
+    this.kind = input.kind
+    this.issues = Object.freeze([...(input.issues ?? [])])
+    this.fieldErrors = Object.freeze({ ...(input.fieldErrors ?? {}) })
+    this.formError = input.formError
+    this.callError = input.callError
+  }
+
+  toJSON() {
+    return {
+      name: this.name,
+      kind: this.kind,
+      message: this.message,
+      issues: this.issues.map((issue) => ({
+        message: issue.message,
+        path: issue.path.map((segment) =>
+          typeof segment === 'symbol' ? (segment.description ?? 'symbol') : segment,
+        ),
+        field: issue.field,
+      })),
+      fieldErrors: this.fieldErrors,
+      formError: this.formError,
+      callError: this.callError?.toJSON(),
+    }
+  }
+}
+
 /** The exact object shape produced by {@link ConvexCallError.toJSON}. */
 export interface SerializedConvexCallError {
   name: 'ConvexCallError'

@@ -11,6 +11,7 @@ export type {
   BetterConvexMcp,
   BetterConvexOrganizationAuthInstance,
   BetterConvexSessionPolicy,
+  BetterConvexTeamOrganizationAuthInstance,
   CreateBetterConvexAuthOptions,
 } from './create-better-convex-auth'
 export type {

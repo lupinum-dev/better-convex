@@ -28,10 +28,10 @@ Use [`@lupinum/better-convex-nuxt`](https://www.npmjs.com/package/@lupinum/bette
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-vue@next convex@^1.42.2 vue@^3.5.0
+pnpm add @lupinum/better-convex-vue@1.0.0-rc.0 convex@^1.42.2 vue@^3.5.0
 ```
 
-The `next` tag installs the newest 1.0 prerelease.
+This installs the exact `1.0.0-rc.0` release candidate.
 
 ## Quick start
 
@@ -79,7 +79,7 @@ The list updates when the data changes in Convex. A query without arguments may 
 | Import                                | Exports                                                                                                                                                                                                                          |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@lupinum/better-convex-vue`          | `createBetterConvex`, `useConvexQuery`, `useConvexPaginatedQuery`, `useConvexMutation`, `useConvexAction`, `useConvexForm`, `useConvexFileUpload`, `useConvexConnectionState`, `useConvex`, `ConvexCallError`, `ConvexFormError` |
-| `@lupinum/better-convex-vue/errors`   | `ConvexCallError`, `isConvexCallError`, `normalizeConvexError`, `isSerializedConvexCallError`                                                                                                                                    |
+| `@lupinum/better-convex-vue/errors`   | `ConvexCallError`, `ConvexFormError`, `isConvexCallError`, `normalizeConvexError`, `isSerializedConvexCallError`                                                                                                                 |
 | `@lupinum/better-convex-vue/embedded` | `createBetterConvexAttachment`, for a Vue application that runs inside another application and shares its Convex connection                                                                                                      |
 
 `createBetterConvex` accepts `convexUrl`, an optional `auth` adapter, optional `clientOptions` for the Convex client, and `defaultQueryAuth`. The [plain Vue guide](https://better-convex.lupinum.com/docs/get-started/plain-vue) shows each option.

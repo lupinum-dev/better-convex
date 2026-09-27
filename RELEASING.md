@@ -211,17 +211,46 @@ is green. Public launch notes name only the final published coordinates.
 Unpublished rehearsal numbers remain private release evidence, not changelog or
 launch material.
 
-## 1.0 beta and release-candidate soak
+## 1.0 release-candidate steps
 
-Publish the coupled Vue/Nuxt `1.0.0-beta.1` unit first after its source and
-packed-artifact gates pass. Add and merge a separate `## mcp-v1.0.0-beta.1`
-intent only after that unit is complete. Install the exact beta artifacts into
-Luis without a local peer-dependency patch, then run its typecheck and
-production build.
+All three manifests carry `1.0.0-rc.0`. `CHANGELOG.md` carries only the
+`## v1.0.0-rc.0` intent, because two incomplete intents stop the candidate job.
 
-Keep the beta contract in Luis plus fresh Nuxt, Vue, and OAuth/MCP consumers for
-seven complete days. A breaking public API change restarts the seven-day clock.
-A compatible fix requires a fresh 48-hour soak. Promote the same public contract
-to `1.0.0-rc.1` only when no release-blocking defect, local package override, or
-undocumented consumer patch remains. Record the artifact hashes, consumer commit
-SHAs, start time, and end time in the release pull request.
+1. Merge the release pull request and let the protected workflow publish the
+   coupled Vue/Nuxt `1.0.0-rc.0` unit.
+2. After that unit is complete (npm, tag, and GitHub Release verified), open a
+   pull request that adds `## mcp-v1.0.0-rc.0` with the MCP notes to
+   `CHANGELOG.md`. The MCP manifest already has the version; change nothing
+   else. Let the workflow publish that unit.
+3. After both units are on npm, bump the maintained starters and the demo in
+   one pull request. They must pin published versions with registry lock entries, so
+   this cannot happen before step 2:
+   - every starter: `@lupinum/better-convex-nuxt` `1.0.0-rc.0`;
+   - `agency`, `team`, `mcp-oauth-agent`: `better-auth` and
+     `@better-auth/oauth-provider` `1.7.6`;
+   - `mcp-oauth-agent`: `@lupinum/better-convex-mcp` `1.0.0-rc.0` and
+     `@modelcontextprotocol/server` `2.1.0`, plus the supported tuple at the
+     end of its `README.md`;
+   - remove the "1.0.0-rc.0 note" from the `public`, `agency`, and `team`
+     READMEs and the pending-bump sentences from the `mcp-oauth-agent`
+     README;
+   - `demo/`: migrate `demo/app` to the object-returning callables
+     (`const { mutate } = useConvexMutation(...)`,
+     `const { run } = useConvexAction(...)`) in `pages/demo/feed.vue`,
+     `pagination.vue`, `personal.vue`, `optimistic.vue`, and `storage.vue`,
+     and pin the same `1.0.0-rc.0` / Better Auth `1.7.6` tuple. Its code
+     matches its published `1.0.0-beta.3` pin until then, so it moves in the
+     same pull request, never before;
+   - regenerate each `pnpm-lock.yaml` with `pnpm install` in the starter and
+     demo directories, then run `pnpm check:workspace-deps`,
+     `pnpm check:candidate-apps`, and `pnpm --dir demo typecheck`.
+4. Install the exact artifacts into Luis without a local peer-dependency
+   patch, then run its typecheck and production build.
+
+Keep the release-candidate contract in Luis plus fresh Nuxt, Vue, and
+OAuth/MCP consumers for seven complete days. A breaking public API change
+restarts the seven-day clock. A compatible fix requires a fresh 48-hour soak.
+Promote the same public contract to `1.0.0` only when no release-blocking
+defect, local package override, or undocumented consumer patch remains. Record
+the artifact hashes, consumer commit SHAs, start time, and end time in the
+release pull request.

@@ -1,5 +1,9 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import type { McpServer } from '@modelcontextprotocol/server'
+import {
+  RESOURCE_MIME_TYPE,
+  registerAppResource,
+  registerAppTool,
+} from '@modelcontextprotocol/ext-apps/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
@@ -27,26 +31,6 @@ const access = (scopes: readonly string[]): McpAccessContext => ({
 })
 
 const noteOutput = z.object({ id: z.string(), title: z.string() })
-
-/** The exact runtime behaviour of `registerAppTool` from `@modelcontextprotocol/ext-apps` 2.0. */
-function registerAppToolLike(
-  server: Pick<McpServer, 'registerTool'>,
-  name: string,
-  config: { _meta: Record<string, unknown> },
-  handler: unknown,
-) {
-  const meta = config._meta
-  const ui = meta.ui as { resourceUri?: string } | undefined
-  const legacy = meta['ui/resourceUri']
-  let normalized = meta
-  if (ui?.resourceUri && !legacy) normalized = { ...meta, 'ui/resourceUri': ui.resourceUri }
-  else if (legacy && !ui?.resourceUri) normalized = { ...meta, ui: { ...ui, resourceUri: legacy } }
-  return (server.registerTool as (...args: unknown[]) => unknown)(
-    name,
-    { ...config, _meta: normalized },
-    handler,
-  )
-}
 
 const effects = { writes: 0 }
 
@@ -93,7 +77,19 @@ const configureServer: HandleMcpRequestOptions<Principal>['configureServer'] = (
     inputSchema: z.object({}),
     handler: () => ({ content: [{ type: 'text', text: 'shown' }] }),
   })
-  registerAppToolLike(server, show.name, show.config, show.handler)
+  // The official ext-apps 2.x helpers accept the request's McpServer and the defined tool as is.
+  registerAppResource(
+    server,
+    'Note card',
+    'ui://notes/card.html',
+    { _meta: { ui: { prefersBorder: true } } },
+    async () => ({
+      contents: [
+        { uri: 'ui://notes/card.html', mimeType: RESOURCE_MIME_TYPE, text: '<p>Note</p>' },
+      ],
+    }),
+  )
+  registerAppTool(server, show.name, show.config, show.handler)
 }
 
 function connect(scopes: readonly string[], onToolError = vi.fn()) {
@@ -144,7 +140,9 @@ describe('defineMcpTool', () => {
       principal: { userId: 'user-1' },
       serverInfo: { name: 'define-tool', version: '1.0.0' },
     })
-    expect(catalog.resources).toEqual([])
+    expect(catalog.resources).toEqual([
+      expect.objectContaining({ uri: 'ui://notes/card.html', mimeType: RESOURCE_MIME_TYPE }),
+    ])
     expect(catalog.tools.map((tool) => tool.name)).toEqual(['get_note', 'rename_note', 'show_note'])
     const [read, write, destructive] = catalog.tools
     expect(read).toMatchObject({

@@ -357,9 +357,9 @@
       "targetPath": "src/runtime/convex-auth/index.ts",
       "sourceCommit": "c628916b451a6b4cff0f5464f134475464b1a6da",
       "sourceSha256": "300f9ebf00a0f236954653984709abfb70e93f1b1b9a37fabba4ee44661d2cf5",
-      "targetSha256": "935fc075b6f279fedc5d8a1dc92c2925ca1f678dff7f52cca18e907e084d9ef6",
+      "targetSha256": "d74d14f201c3b27410bc5d82d07f87b9d5ded3ca14535a676eb8c2c8dace1448",
       "classification": "rewritten",
-      "modificationSummary": "Replaced the compatibility barrel with the fixed narrow Better Convex Nuxt API, including the reviewed auth factory, maintained component, atomic rate-limit storage constructor, provider, Better Auth MCP access verifier and OAuth operator, and rebuildable user projection. The 2026-09-15 public type surface also exports OAuthLiveAccess for the application live-authority callback. The 2026-09-26 pass removes the manual composition exports (convexAuth, createAuthComponent, rate-limit storage, writable-context guard) so the factory is the only composition path, and exports the typed email, session-policy, session HTTP action, account, and user types. The 2026-09-26 MCP pass exports the MCP principal validator and the MCP profile, principal, verifier, and connection types.",
+      "modificationSummary": "Replaced the compatibility barrel with the fixed narrow Better Convex Nuxt API, including the reviewed auth factory, maintained component, atomic rate-limit storage constructor, provider, Better Auth MCP access verifier and OAuth operator, and rebuildable user projection. The 2026-09-15 public type surface also exports OAuthLiveAccess for the application live-authority callback. The 2026-09-26 pass removes the manual composition exports (convexAuth, createAuthComponent, rate-limit storage, writable-context guard) so the factory is the only composition path, and exports the typed email, session-policy, session HTTP action, account, and user types. The 2026-09-26 MCP pass exports the MCP principal validator and the MCP profile, principal, verifier, and connection types. The 2026-09-27 release-candidate pass exports the team-organization auth instance type named by the public factory overload.",
       "latestReviewedUpstreamPatch": "https://github.com/get-convex/better-auth/commit/c628916b451a6b4cff0f5464f134475464b1a6da",
       "noticeRequired": false
     },
