@@ -11,7 +11,15 @@ import { useNuxtApp } from '#imports'
 import { readConvexRuntimeContext } from '../runtime-context'
 import { createCallableDevtoolsEvents } from '../utils/callable-devtools'
 
-/** Nuxt auto-import facade over the shared Vue form and mutation lifecycles. */
+/**
+ * Validates form values with a Standard Schema and submits one Convex mutation.
+ * Nuxt auto-import facade over the shared Vue form lifecycle; it adds only
+ * DevTools observation. The Vue overloads carry the typed signature.
+ *
+ * ```ts
+ * const { submit, pending, fieldErrors, formError } = useConvexForm(api.notes.create, { schema })
+ * ```
+ */
 export const useConvexForm = ((
   mutation: FunctionReference<'mutation'>,
   options: ConvexFormInternalOptions,

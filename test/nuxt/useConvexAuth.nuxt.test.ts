@@ -10,7 +10,9 @@ import {
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
 import { useConvexAuth } from '../../src/runtime/composables/useConvexAuth'
+import { ConvexCallError } from '../../src/runtime/errors'
 import type { NuxtConvexAuthController } from '../../src/runtime/runtime-context'
+import { UNAVAILABLE_AUTH_CLIENT } from '../../src/runtime/utils/client-unavailable'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
 
 function controller(overrides: Partial<NuxtConvexAuthController> = {}): NuxtConvexAuthController {
@@ -110,5 +112,34 @@ describe('useConvexAuth Nuxt facade', () => {
     expect(await secondResult.result.ready()).toBe('anonymous')
     expect(first.ready).toHaveBeenCalledOnce()
     expect(second.ready).toHaveBeenCalledOnce()
+  })
+
+  it('returns a non-null inert client before the browser auth runtime exists', async () => {
+    const { result } = await captureInNuxt(
+      () => {
+        // Destructuring during setup must never throw.
+        const { client, status, user } = useConvexAuth()
+        const { signIn, useSession } = client as unknown as {
+          signIn: { email: (input: unknown) => unknown }
+          useSession: () => unknown
+        }
+        return { client, status, user, signIn, useSession }
+      },
+      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
+    )
+
+    expect(result.client).toBe(UNAVAILABLE_AUTH_CLIENT)
+    expect(result.status.value).toBe('anonymous')
+    expect(result.user.value).toBeNull()
+    let thrown: unknown
+    try {
+      result.signIn.email({ email: 'ada@example.test', password: 'secret' })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(ConvexCallError)
+    expect(thrown).toMatchObject({ kind: 'unknown', code: 'CLIENT_UNAVAILABLE' })
+    expect((thrown as Error).message).toContain('useConvexAuth().client.signIn.email()')
+    expect(() => result.useSession()).toThrow(ConvexCallError)
   })
 })

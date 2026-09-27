@@ -1,7 +1,8 @@
+import type { BetterConvexAttachment } from '@lupinum/better-convex-vue/embedded'
 import type { FunctionArgs, FunctionReference, OptionalRestArgs } from 'convex/server'
 import { getFunctionName } from 'convex/server'
 import type { GenericId } from 'convex/values'
-import { computed, shallowRef } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, shallowRef } from 'vue'
 
 import type {
   UploadProgressInfo,
@@ -9,7 +10,8 @@ import type {
   UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from '../composables/useConvexFileUpload'
-import { ConvexCallError } from '../errors'
+import { ConvexCallError, normalizeConvexError, type ConvexCallErrorCode } from '../errors'
+import type { ConvexCallStatus } from '../utils/types'
 
 export interface BetterConvexTestUploadCall<Mutation extends UploadUrlMutation> {
   readonly file: File
@@ -21,6 +23,7 @@ export interface BetterConvexTestUploadController<Mutation extends UploadUrlMuta
   resolve(storageId: GenericId<'_storage'>): void
   reject(error: unknown): void
   progress(progress: UploadProgressInfo): void
+  /** Forget the configured outcome and cancel pending uploads with `CANCELLED`. */
   reset(): void
 }
 
@@ -40,6 +43,8 @@ interface UploadAttempt {
   readonly resolve: (storageId: GenericId<'_storage'>) => void
   readonly reject: (error: unknown) => void
   readonly publishProgress: (progress: UploadProgressInfo) => void
+  /** Retire the attempt as `upload.cancel()` would. */
+  readonly cancel: () => void
 }
 
 interface UploadRecord {
@@ -48,7 +53,15 @@ interface UploadRecord {
   behavior?: UploadBehavior
 }
 
+interface UploadViewState {
+  readonly status: ConvexCallStatus
+  readonly data?: GenericId<'_storage'>
+  readonly error?: ConvexCallError
+  readonly progress: UploadProgressInfo
+}
+
 const EMPTY_PROGRESS: UploadProgressInfo = Object.freeze({ loaded: 0, total: 0, percent: 0 })
+const IDLE_STATE: UploadViewState = Object.freeze({ status: 'idle', progress: EMPTY_PROGRESS })
 
 function progressSnapshot(progress: UploadProgressInfo): UploadProgressInfo {
   return Object.freeze({
@@ -58,21 +71,37 @@ function progressSnapshot(progress: UploadProgressInfo): UploadProgressInfo {
   })
 }
 
-function normalizedError(error: unknown): ConvexCallError {
-  if (error instanceof ConvexCallError) return error
-  return new ConvexCallError({
-    kind: 'unknown',
-    message: error instanceof Error ? error.message : String(error),
-  })
-}
-
 function typeAllowed(type: string, allowed: readonly string[]): boolean {
   return allowed.some((candidate) =>
     candidate.endsWith('/*') ? type.startsWith(candidate.slice(0, -1)) : candidate === type,
   )
 }
 
-export function createBetterConvexTestUploads() {
+function libraryError(code: ConvexCallErrorCode, message: string, functionName: string) {
+  return new ConvexCallError({ kind: 'unknown', code, message, functionName })
+}
+
+function cancelledError(functionName: string): ConvexCallError {
+  return libraryError('CANCELLED', 'Convex upload cancelled before it settled.', functionName)
+}
+
+function identityChangedError(functionName: string): ConvexCallError {
+  return new ConvexCallError({
+    kind: 'authentication',
+    code: 'IDENTITY_CHANGED',
+    message:
+      'Convex upload rejected: the auth identity changed before it settled (IDENTITY_CHANGED).',
+    functionName,
+  })
+}
+
+/**
+ * The test double for `useConvexFileUpload`. It keeps the public contract of
+ * the real composable (error codes, `cancel()`/`reset()` returning to `idle`,
+ * identity fencing, scope disposal) while tests settle each upload through
+ * the controller returned by `upload(mutation)`.
+ */
+export function createBetterConvexTestUploads(identity?: BetterConvexAttachment['identity']) {
   const records = new Map<string, UploadRecord>()
 
   const recordFor = (mutation: FunctionReference<'mutation'>): UploadRecord => {
@@ -87,7 +116,7 @@ export function createBetterConvexTestUploads() {
 
   const settle = (record: UploadRecord, behavior: UploadBehavior) => {
     record.behavior = behavior
-    for (const attempt of record.pending) {
+    for (const attempt of [...record.pending]) {
       if (behavior.state === 'resolved') {
         attempt.resolve(behavior.value as GenericId<'_storage'>)
       } else {
@@ -113,9 +142,7 @@ export function createBetterConvexTestUploads() {
       },
       reset: () => {
         record.behavior = undefined
-        for (const attempt of record.pending) {
-          attempt.reject(new Error('Better Convex test upload reset'))
-        }
+        for (const attempt of [...record.pending]) attempt.cancel()
         record.pending.clear()
       },
     }
@@ -127,37 +154,76 @@ export function createBetterConvexTestUploads() {
     mutation: Mutation,
     options: UseConvexFileUploadOptions = {},
   ): UseConvexFileUploadReturn<Mutation> => {
+    if (!getCurrentScope()) {
+      throw new Error('[better-convex-test] useConvexFileUpload must run inside a Vue effect scope')
+    }
+    const functionName = getFunctionName(mutation)
     const record = recordFor(mutation)
-    const state = shallowRef<{
-      status: 'idle' | 'pending' | 'success' | 'error'
-      data?: GenericId<'_storage'>
-      error?: ConvexCallError
-      progress: UploadProgressInfo
-    }>({ status: 'idle', progress: EMPTY_PROGRESS })
+    const state = shallowRef<UploadViewState>(IDLE_STATE)
     let active: UploadAttempt | null = null
+    const retiredReasons = new WeakMap<UploadAttempt, ConvexCallError>()
+    let disposed = false
+    let generation = identity?.snapshot().identityGeneration ?? 0
+
+    const retire = (reason: ConvexCallError) => {
+      const attempt = active
+      active = null
+      state.value = IDLE_STATE
+      if (attempt) {
+        retiredReasons.set(attempt, reason)
+        record.pending.delete(attempt)
+        attempt.reject(reason)
+      }
+    }
+
+    const stopIdentity = identity?.subscribe(() => {
+      const next = identity.snapshot().identityGeneration
+      if (next === generation) return
+      generation = next
+      retire(identityChangedError(functionName))
+    })
+    onScopeDispose(() => {
+      disposed = true
+      stopIdentity?.()
+      retire(cancelledError(functionName))
+    })
 
     const run = async (
       file: File,
       ...args: OptionalRestArgs<Mutation>
     ): Promise<GenericId<'_storage'>> => {
+      if (disposed) throw cancelledError(functionName)
       if (state.value.status === 'pending') {
-        throw normalizedError(new Error('Upload already in progress for this composable instance'))
+        throw libraryError(
+          'UPLOAD_IN_PROGRESS',
+          'An upload is already in progress for this composable.',
+          functionName,
+        )
       }
       if (options.maxSize !== undefined && file.size > options.maxSize) {
-        const error = normalizedError(
-          new Error(`File size exceeds maximum of ${options.maxSize} bytes`),
+        const error = libraryError(
+          'FILE_TOO_LARGE',
+          `File size ${file.size} bytes exceeds maximum ${options.maxSize} bytes`,
+          functionName,
         )
         state.value = { status: 'error', error, progress: EMPTY_PROGRESS }
         throw error
       }
       if (options.allowedTypes && !typeAllowed(file.type, options.allowedTypes)) {
-        const error = normalizedError(new Error(`File type "${file.type}" is not allowed`))
+        const error = libraryError(
+          'FILE_TYPE_NOT_ALLOWED',
+          `File type "${file.type}" not allowed. Allowed: ${options.allowedTypes.join(', ')}`,
+          functionName,
+        )
         state.value = { status: 'error', error, progress: EMPTY_PROGRESS }
         throw error
       }
 
       record.calls.push({ file, args: (args[0] ?? {}) as FunctionArgs<Mutation> })
-      state.value = { status: 'pending', progress: EMPTY_PROGRESS }
+      state.value = {
+        status: 'pending',
+        progress: progressSnapshot({ loaded: 0, total: file.size, percent: 0 }),
+      }
       let attempt!: UploadAttempt
       try {
         const storageId = await new Promise<GenericId<'_storage'>>((resolve, reject) => {
@@ -167,6 +233,10 @@ export function createBetterConvexTestUploads() {
             publishProgress(progress) {
               if (active === attempt) state.value = { ...state.value, progress }
             },
+            cancel() {
+              if (active === attempt) retire(cancelledError(functionName))
+              else reject(cancelledError(functionName))
+            },
           }
           active = attempt
           if (record.behavior?.state === 'resolved')
@@ -174,29 +244,19 @@ export function createBetterConvexTestUploads() {
           else if (record.behavior?.state === 'rejected') reject(record.behavior.value)
           else record.pending.add(attempt)
         })
+        // A cancelled or retired attempt cannot overwrite newer state.
+        if (active !== attempt) throw retiredReasons.get(attempt) ?? cancelledError(functionName)
         state.value = { status: 'success', data: storageId, progress: state.value.progress }
         return storageId
       } catch (error) {
-        // A cancelled attempt, or an older attempt replaced after cancellation,
-        // must not overwrite the current composable state.
-        if (active !== attempt) throw error
-        const normalized = normalizedError(error)
+        if (active !== attempt) throw retiredReasons.get(attempt) ?? cancelledError(functionName)
+        const normalized = normalizeConvexError(error, { functionName })
         state.value = { status: 'error', error: normalized, progress: state.value.progress }
         throw normalized
       } finally {
         record.pending.delete(attempt)
         if (active === attempt) active = null
       }
-    }
-
-    const cancel = () => {
-      const attempt = active
-      active = null
-      if (attempt) {
-        record.pending.delete(attempt)
-        attempt.reject(new DOMException('Upload cancelled', 'AbortError'))
-      }
-      state.value = { status: 'idle', progress: EMPTY_PROGRESS }
     }
 
     return Object.freeze({
@@ -206,7 +266,10 @@ export function createBetterConvexTestUploads() {
       pending: computed(() => state.value.status === 'pending'),
       progress: computed(() => state.value.progress),
       error: computed(() => state.value.error),
-      cancel,
+      cancel: () => {
+        if (active) retire(cancelledError(functionName))
+      },
+      reset: () => retire(cancelledError(functionName)),
     })
   }
 

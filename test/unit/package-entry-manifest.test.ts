@@ -401,7 +401,14 @@ describe('package entry manifest', () => {
         'ohash',
         'vue',
       ],
-      typeExternalSpecifiers: ['@standard-schema/spec', 'convex/browser', 'convex/server', 'vue'],
+      // `convex/values` carries the storage `GenericId` in the upload types.
+      typeExternalSpecifiers: [
+        '@standard-schema/spec',
+        'convex/browser',
+        'convex/server',
+        'convex/values',
+        'vue',
+      ],
     })
   })
 

@@ -9,11 +9,6 @@
       <div class="row">
         <span>pending</span><strong>{{ pending }}</strong>
       </div>
-      <ClientOnly>
-        <div class="row">
-          <span>hasClient</span><strong>{{ client ? 'yes' : 'no' }}</strong>
-        </div>
-      </ClientOnly>
       <div class="row">
         <span>signIn.email type</span><strong>{{ signInEmailType }}</strong>
       </div>
@@ -54,7 +49,9 @@ definePageMeta({
 })
 
 const { status, pending, user, client } = useConvexAuth()
-const publicSession = client?.useSession()
+// The integrated client exists only in the browser; calling it during SSR throws
+// CLIENT_UNAVAILABLE, so the reactive session store is created client-side.
+const publicSession = import.meta.client ? client.useSession() : undefined
 const publicSessionUserId = computed(() => publicSession?.value.data?.user.id ?? null)
 const permissionArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
 const { data: permissionContext } = await useConvexQuery(
@@ -63,16 +60,11 @@ const { data: permissionContext } = await useConvexQuery(
 )
 const resultText = ref('(idle)')
 
-const signInEmailType = computed(() => typeof client?.signIn.email)
-const signUpEmailType = computed(() => typeof client?.signUp.email)
-
-function requireAuthClient() {
-  if (!client) throw new Error('Authentication client unavailable')
-  return client
-}
+const signInEmailType = computed(() => typeof client.signIn.email)
+const signUpEmailType = computed(() => typeof client.signUp.email)
 
 async function callSignIn() {
-  const result = await requireAuthClient().signIn.email({
+  const result = await client.signIn.email({
     email: 'stub@example.com',
     password: 'Password123456!',
   })
@@ -80,7 +72,7 @@ async function callSignIn() {
 }
 
 async function callSignUp() {
-  const result = await requireAuthClient().signUp.email({
+  const result = await client.signUp.email({
     name: 'Stub User',
     email: 'stub@example.com',
     password: 'Password123456!',
@@ -89,7 +81,7 @@ async function callSignUp() {
 }
 
 async function callSignOut() {
-  resultText.value = JSON.stringify(await requireAuthClient().signOut(), null, 2)
+  resultText.value = JSON.stringify(await client.signOut(), null, 2)
 }
 </script>
 

@@ -1,6 +1,6 @@
 import type { AuthTokenFetcher, ConvexClient } from 'convex/browser'
 
-import { ConvexCallError } from '../errors'
+import { ConvexCallError, type ConvexCallErrorCode } from '../errors'
 import { createIdentityChangedError } from './identity-changed-error'
 import type { ClientIdentityPort, ClientIdentitySnapshot } from './identity-port'
 
@@ -225,7 +225,7 @@ export function createAuthAdapterIdentityPort(
     timer = setTimeout(() => {
       const timeout = new ConvexCallError({
         kind: 'authentication',
-        code: 'AUTH_CONFIRMATION_TIMEOUT',
+        code: 'AUTH_CONFIRMATION_TIMEOUT' satisfies ConvexCallErrorCode,
         message: 'Convex authentication confirmation timed out',
       })
       failClosed(expectedGeneration, timeout)

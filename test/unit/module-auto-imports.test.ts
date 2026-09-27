@@ -31,12 +31,15 @@ describe('module auto-import surface', () => {
     expect(autoImportNames.size).toBe(composableAutoImports.length + authAutoImports.length)
   })
 
-  it('exposes only the request-bound server caller as a Nitro auto-import', () => {
+  it('exposes the request-bound server caller and user helpers as Nitro auto-imports', () => {
     expect(serverAutoImports).toEqual([
       {
         name: 'serverConvex',
         from: './runtime/server/utils/server-convex-caller',
       },
+      { name: 'getConvexUser', from: './runtime/server/utils/convex-user' },
+      { name: 'requireConvexUser', from: './runtime/server/utils/convex-user' },
+      { name: 'toConvexH3Error', from: './runtime/server/utils/h3-error' },
     ])
   })
 
@@ -50,7 +53,6 @@ describe('module auto-import surface', () => {
     const nuxt = {
       options: {
         alias: {},
-        buildDir: '/app/.nuxt',
       },
       hook: (name: 'prepare:types', callback: NonNullable<typeof prepareTypes>) => {
         expect(name).toBe('prepare:types')
@@ -79,8 +81,10 @@ describe('module auto-import surface', () => {
       '#convex/api': '/app/convex/_generated/api',
       '#convex/server': './runtime/server/index',
     })
+    // Aliases add no type reference: every generated declaration is registered
+    // (and referenced) by `addTypeTemplate` in the module setup.
     expect(tsConfigOptions).toEqual({
-      references: [{ path: '/app/.nuxt/types/better-convex-nuxt.d.ts' }],
+      references: [],
       tsConfig: {
         compilerOptions: {
           paths: {

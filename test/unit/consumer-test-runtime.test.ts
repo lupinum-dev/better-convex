@@ -84,7 +84,7 @@ describe('setupBetterConvexTest', () => {
       mutation = runtime.composables.useConvexMutation(createNote)
     })
 
-    const result = mutation({ title: 'Proof' })
+    const result = mutation.mutate({ title: 'Proof' })
     expect(mutation.pending.value).toBe(true)
     await Promise.resolve()
     expect(create.calls).toEqual([{ args: { title: 'Proof' } }])
@@ -105,13 +105,16 @@ describe('setupBetterConvexTest', () => {
       mutation = runtime.composables.useConvexMutation(createNote)
     })
 
-    await expect(mutation({ title: 'Duplicate' })).rejects.toMatchObject({
+    await expect(mutation.mutate({ title: 'Duplicate' })).rejects.toMatchObject({
+      kind: 'server',
+      code: 'NOTE_EXISTS',
       data: { code: 'NOTE_EXISTS' },
+      functionName: 'notes:create',
     })
     expect(mutation.status.value).toBe('error')
 
     create.resolve('note-new')
-    await expect(mutation({ title: 'New' })).resolves.toBe('note-new')
+    await expect(mutation.mutate({ title: 'New' })).resolves.toBe('note-new')
     expect(mutation.status.value).toBe('success')
     expect(create.calls).toEqual([{ args: { title: 'Duplicate' } }, { args: { title: 'New' } }])
     app.unmount()
@@ -199,13 +202,87 @@ describe('setupBetterConvexTest', () => {
     const first = upload.upload(new File(['first'], 'first.txt', { type: 'text/plain' }))
 
     upload.cancel()
+    expect(upload.status.value).toBe('idle')
     const second = upload.upload(new File(['second'], 'second.txt', { type: 'text/plain' }))
-    await expect(first).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(first).rejects.toMatchObject({
+      name: 'ConvexCallError',
+      code: 'CANCELLED',
+      functionName: 'files:generateUploadUrl',
+    })
     expect(upload.status.value).toBe('pending')
 
     uploadControl.resolve('storage-second' as GenericId<'_storage'>)
     await expect(second).resolves.toBe('storage-second')
     expect(upload.status.value).toBe('success')
+
+    // cancel() only aborts in-flight work; reset() clears the finished result.
+    upload.cancel()
+    expect(upload.data.value).toBe('storage-second')
+    upload.reset()
+    expect(upload.status.value).toBe('idle')
+    expect(upload.data.value).toBeUndefined()
     app.unmount()
+  })
+
+  it('rejects library upload failures with stable codes before recording a call', async () => {
+    const runtime = setupBetterConvexTest()
+    const uploadControl = runtime.upload(generateUploadUrl)
+    let upload!: ReturnType<
+      typeof runtime.composables.useConvexFileUpload<typeof generateUploadUrl>
+    >
+    const app = mountRuntime(runtime, () => {
+      upload = runtime.composables.useConvexFileUpload(generateUploadUrl, {
+        maxSize: 4,
+        allowedTypes: ['image/*'],
+      })
+    })
+
+    await expect(
+      upload.upload(new File(['too large'], 'large.png', { type: 'image/png' })),
+    ).rejects.toMatchObject({ code: 'FILE_TOO_LARGE', functionName: 'files:generateUploadUrl' })
+    expect(upload.error.value?.code).toBe('FILE_TOO_LARGE')
+    await expect(
+      upload.upload(new File(['txt'], 'note.txt', { type: 'text/plain' })),
+    ).rejects.toMatchObject({ code: 'FILE_TYPE_NOT_ALLOWED' })
+    expect(uploadControl.calls).toEqual([])
+
+    const first = upload.upload(new File(['png'], 'a.png', { type: 'image/png' }))
+    await expect(
+      upload.upload(new File(['png'], 'b.png', { type: 'image/png' })),
+    ).rejects.toMatchObject({ code: 'UPLOAD_IN_PROGRESS' })
+    expect(upload.status.value).toBe('pending')
+
+    uploadControl.reset()
+    await expect(first).rejects.toMatchObject({ code: 'CANCELLED' })
+    expect(upload.status.value).toBe('idle')
+    expect(upload.error.value).toBeUndefined()
+    app.unmount()
+  })
+
+  it('retires an in-flight upload when the identity changes or the scope is disposed', async () => {
+    const runtime = setupBetterConvexTest()
+    runtime.upload(generateUploadUrl)
+    let upload!: ReturnType<
+      typeof runtime.composables.useConvexFileUpload<typeof generateUploadUrl>
+    >
+    const app = mountRuntime(runtime, () => {
+      upload = runtime.composables.useConvexFileUpload(generateUploadUrl)
+    })
+
+    const beforeSignOut = upload.upload(new File(['a'], 'a.txt', { type: 'text/plain' }))
+    runtime.auth.signOut()
+    await expect(beforeSignOut).rejects.toMatchObject({
+      kind: 'authentication',
+      code: 'IDENTITY_CHANGED',
+      functionName: 'files:generateUploadUrl',
+    })
+    expect(upload.status.value).toBe('idle')
+
+    const beforeUnmount = upload.upload(new File(['b'], 'b.txt', { type: 'text/plain' }))
+    app.unmount()
+    await expect(beforeUnmount).rejects.toMatchObject({ code: 'CANCELLED' })
+    await expect(
+      upload.upload(new File(['c'], 'c.txt', { type: 'text/plain' })),
+    ).rejects.toMatchObject({ code: 'CANCELLED' })
   })
 })

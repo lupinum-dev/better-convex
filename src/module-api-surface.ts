@@ -37,4 +37,7 @@ export const authAutoImports = [
 
 export const serverAutoImports = [
   { name: 'serverConvex', from: './runtime/server/utils/server-convex-caller' },
+  { name: 'getConvexUser', from: './runtime/server/utils/convex-user' },
+  { name: 'requireConvexUser', from: './runtime/server/utils/convex-user' },
+  { name: 'toConvexH3Error', from: './runtime/server/utils/h3-error' },
 ] as const satisfies readonly ModuleImportRegistration[]

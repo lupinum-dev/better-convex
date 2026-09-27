@@ -12,9 +12,9 @@ const props = defineProps<{
 }>()
 
 const statusFilter = ref<'active' | 'deleted'>('active')
-const renameProject = useConvexMutation(api.projects.rename)
-const softDeleteProject = useConvexMutation(api.projects.softDelete)
-const restoreProject = useConvexMutation(api.projects.restore)
+const { mutate: renameProject } = useConvexMutation(api.projects.rename)
+const { mutate: softDeleteProject } = useConvexMutation(api.projects.softDelete)
+const { mutate: restoreProject } = useConvexMutation(api.projects.restore)
 const {
   data: projectData,
   pending: projectsLoading,
@@ -32,7 +32,7 @@ const {
 const projects = computed(() => projectData.value ?? [])
 
 function loadMoreProjects() {
-  loadMore(20)
+  void loadMore(20)
 }
 
 async function renameSelectedProject(projectId: Id<'projects'>, name: string) {

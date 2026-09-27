@@ -29,6 +29,8 @@ export interface ServerAuthSnapshot {
   token: string | null
   user: ConvexUser | null
   authError: string | null
+  /** The exchange's HTTP status, when an exchange ran and answered. */
+  exchangeStatus: number | undefined
   waterfall: AuthWaterfall | null
   logEvents: ServerAuthLogEvent[]
 }
@@ -97,6 +99,7 @@ export async function resolveServerAuthSnapshot(
       token: null,
       user: null,
       authError: null,
+      exchangeStatus: undefined,
       waterfall: buildWaterfall('unauthenticated'),
       logEvents,
     }
@@ -155,6 +158,7 @@ export async function resolveServerAuthSnapshot(
         token,
         user,
         authError: null,
+        exchangeStatus: tokenExchangeStatus,
         waterfall: buildWaterfall('authenticated'),
         logEvents,
       }
@@ -196,6 +200,7 @@ export async function resolveServerAuthSnapshot(
       token: null,
       user: null,
       authError,
+      exchangeStatus: tokenExchangeStatus,
       waterfall: buildWaterfall(
         isExchangeFailure ? 'error' : 'unauthenticated',
         isExchangeFailure ? AUTH_TOKEN_EXCHANGE_FAILED : undefined,
@@ -213,6 +218,7 @@ export async function resolveServerAuthSnapshot(
       token: null,
       user: null,
       authError: GENERIC_AUTH_ERROR_MESSAGE,
+      exchangeStatus: undefined,
       waterfall: buildWaterfall('error', AUTH_TOKEN_EXCHANGE_FAILED),
       logEvents,
     }

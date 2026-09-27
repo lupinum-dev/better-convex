@@ -94,9 +94,27 @@ function scanGeneratedPublicSurface() {
       }
     }
   }
-  const authPageMeta = join(buildDir, 'types', 'better-convex auth schema.d.ts')
-  if (existsSync(authPageMeta)) {
-    violations.push(`page meta: no-auth build generated ${authPageMeta}`)
+  // Auth-only type templates (see AUTH_CLIENT_TYPES_FILENAME and
+  // PAGE_META_TYPES_FILENAME in src/module.ts) must be neither generated nor
+  // referenced from the app type entry.
+  const authOnlyTypeTemplates = [
+    'types/better-convex-auth-client.d.ts',
+    'types/better-convex-page-meta.d.ts',
+  ]
+  for (const template of authOnlyTypeTemplates) {
+    const generated = join(buildDir, template)
+    if (existsSync(generated)) {
+      violations.push(`types: no-auth build generated ${generated}`)
+    }
+  }
+  const nuxtTypeEntry = join(buildDir, 'nuxt.d.ts')
+  if (existsSync(nuxtTypeEntry)) {
+    const references = readFileSync(nuxtTypeEntry, 'utf8')
+    for (const template of authOnlyTypeTemplates) {
+      if (references.includes(template)) {
+        violations.push(`types: no-auth build references ${template} from ${nuxtTypeEntry}`)
+      }
+    }
   }
   const generatedTsConfig = join(buildDir, 'tsconfig.json')
   if (

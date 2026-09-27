@@ -14,10 +14,8 @@ import type { Id } from '~/convex/_generated/dataModel'
 
 const { data, pending, status, error } = await useConvexQuery(api.notes.list, {})
 
-const addNote = useConvexMutation(api.notes.add)
-const removeNote = useConvexMutation(api.notes.remove)
-const { pending: addPending } = addNote
-const { pending: removePending } = removeNote
+const { mutate: addNote, pending: addPending } = useConvexMutation(api.notes.add)
+const { mutate: removeNote, pending: removePending } = useConvexMutation(api.notes.remove)
 
 // Track add/remove counts for verification
 const addCount = ref(0)

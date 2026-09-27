@@ -1,9 +1,10 @@
-import { ConvexCallError } from '../errors'
+import { ConvexCallError, type ConvexCallErrorCode } from '../errors'
+import { CONVEX_MODULE_DEFAULTS } from './config-defaults'
 
-export const CONVEX_HTTP_QUERY_TIMEOUT_MS = 8_000
+export const CONVEX_HTTP_QUERY_TIMEOUT_MS = CONVEX_MODULE_DEFAULTS.server.queryTimeoutMs
 export const CONVEX_HTTP_MUTATION_TIMEOUT_MS = 15_000
 export const CONVEX_HTTP_ACTION_TIMEOUT_MS = 60_000
-export const CONVEX_HTTP_MAX_RESPONSE_BYTES = 1024 * 1024
+export const CONVEX_HTTP_MAX_RESPONSE_BYTES = CONVEX_MODULE_DEFAULTS.server.maxResponseBytes
 
 const CONVEX_UDF_FAILED_STATUS = 560
 const CONVEX_HTTP_UPSTREAM_FAILURE_MESSAGE =
@@ -12,25 +13,31 @@ const CONVEX_HTTP_UPSTREAM_FAILURE_MESSAGE =
 interface BoundedConvexFetchOptions {
   fetchImpl?: typeof fetch
   maxResponseBytes?: number
+  /** Deadline for query requests (the configured `server.queryTimeoutMs`). */
+  queryTimeoutMs?: number
   signal?: AbortSignal
   /** Test-only fixed deadline override; production derives it from the endpoint. */
   timeoutMs?: number
 }
 
-function operationTimeoutMs(input: RequestInfo | URL): number {
+function operationTimeoutMs(input: RequestInfo | URL, queryTimeoutMs: number): number {
   let pathname: string
   try {
     pathname = new URL(input instanceof Request ? input.url : String(input)).pathname
   } catch {
-    return CONVEX_HTTP_QUERY_TIMEOUT_MS
+    return queryTimeoutMs
   }
   if (pathname.endsWith('/api/action')) return CONVEX_HTTP_ACTION_TIMEOUT_MS
   if (pathname.endsWith('/api/mutation')) return CONVEX_HTTP_MUTATION_TIMEOUT_MS
-  return CONVEX_HTTP_QUERY_TIMEOUT_MS
+  return queryTimeoutMs
 }
 
-function transportError(message: string, status?: number): ConvexCallError {
-  return new ConvexCallError({ kind: 'transport', message, status })
+function transportError(
+  code: ConvexCallErrorCode,
+  message: string,
+  status?: number,
+): ConvexCallError {
+  return new ConvexCallError({ kind: 'transport', code, message, status })
 }
 
 function boundedResponse(
@@ -45,7 +52,11 @@ function boundedResponse(
     if (!Number.isSafeInteger(length) || length < 0 || length > maximum) {
       cleanup()
       void response.body?.cancel().catch(() => {})
-      throw transportError('Convex HTTP response exceeded the size limit', response.status)
+      throw transportError(
+        'RESPONSE_TOO_LARGE',
+        'Convex HTTP response exceeded the size limit',
+        response.status,
+      )
     }
   }
   if (!response.body) {
@@ -62,7 +73,7 @@ function boundedResponse(
     const reason =
       signal.reason instanceof ConvexCallError
         ? signal.reason
-        : transportError('Convex HTTP request was aborted')
+        : transportError('CANCELLED', 'Convex HTTP request was aborted')
     void reader.cancel(reason).catch(() => {})
     finish()
     bodyController?.error(reason)
@@ -91,6 +102,7 @@ function boundedResponse(
         total += next.value.byteLength
         if (total > maximum) {
           const error = transportError(
+            'RESPONSE_TOO_LARGE',
             'Convex HTTP response exceeded the size limit',
             response.status,
           )
@@ -129,24 +141,28 @@ export function createBoundedConvexFetch(options: BoundedConvexFetchOptions = {}
   const {
     fetchImpl = fetch,
     maxResponseBytes = CONVEX_HTTP_MAX_RESPONSE_BYTES,
+    queryTimeoutMs = CONVEX_HTTP_QUERY_TIMEOUT_MS,
     signal: parentSignal,
     timeoutMs: fixedTimeoutMs,
   } = options
   if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) {
     throw new TypeError('CONVEX_HTTP_RESPONSE_LIMIT_INVALID')
   }
+  if (!Number.isFinite(queryTimeoutMs) || queryTimeoutMs <= 0) {
+    throw new TypeError('CONVEX_HTTP_TIMEOUT_INVALID')
+  }
   if (fixedTimeoutMs !== undefined && (!Number.isFinite(fixedTimeoutMs) || fixedTimeoutMs <= 0)) {
     throw new TypeError('CONVEX_HTTP_TIMEOUT_INVALID')
   }
 
   return async (input, init) => {
-    const timeoutMs = fixedTimeoutMs ?? operationTimeoutMs(input)
+    const timeoutMs = fixedTimeoutMs ?? operationTimeoutMs(input, queryTimeoutMs)
     const controller = new AbortController()
     const abortFromParent = () => controller.abort(parentSignal?.reason)
     if (parentSignal?.aborted) abortFromParent()
     else parentSignal?.addEventListener('abort', abortFromParent, { once: true })
     const timeout = setTimeout(
-      () => controller.abort(transportError('Convex HTTP request timed out')),
+      () => controller.abort(transportError('TIMEOUT', 'Convex HTTP request timed out')),
       timeoutMs,
     )
     const cleanup = () => {
@@ -163,20 +179,22 @@ export function createBoundedConvexFetch(options: BoundedConvexFetchOptions = {}
       if (!response.ok && response.status !== CONVEX_UDF_FAILED_STATUS) {
         cleanup()
         void response.body?.cancel().catch(() => {})
-        throw transportError(CONVEX_HTTP_UPSTREAM_FAILURE_MESSAGE, response.status)
+        throw transportError(
+          'UPSTREAM_ERROR',
+          CONVEX_HTTP_UPSTREAM_FAILURE_MESSAGE,
+          response.status,
+        )
       }
       return boundedResponse(response, maxResponseBytes, controller.signal, cleanup)
     } catch (error) {
       cleanup()
       if (error instanceof ConvexCallError) throw error
       if (controller.signal.aborted) {
-        throw transportError(
-          parentSignal?.aborted
-            ? 'Convex HTTP request was aborted'
-            : 'Convex HTTP request timed out',
-        )
+        throw parentSignal?.aborted
+          ? transportError('CANCELLED', 'Convex HTTP request was aborted')
+          : transportError('TIMEOUT', 'Convex HTTP request timed out')
       }
-      throw transportError('Convex HTTP request could not complete')
+      throw transportError('NETWORK_ERROR', 'Convex HTTP request could not complete')
     }
   }
 }

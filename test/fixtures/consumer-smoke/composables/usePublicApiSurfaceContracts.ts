@@ -1,5 +1,7 @@
+import type { ConvexCallErrorCode } from '@lupinum/better-convex-nuxt'
 import { defineConvexAuthClient } from '@lupinum/better-convex-nuxt/better-auth/client'
 import type { ConvexAuthClientDefinition } from '@lupinum/better-convex-nuxt/better-auth/client'
+import { isConvexCallError, type ConvexCallError } from '@lupinum/better-convex-nuxt/errors'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { GenericId } from 'convex/values'
 import type { ComputedRef, Ref } from 'vue'
@@ -50,6 +52,7 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<ComputedRef<string[] | undefined>>(liveList.data)
   const list = await liveList
   assertType<ComputedRef<boolean>>(list.isStale)
+  assertType<'skip' | 'auth' | 'manual' | null>(list.blockedBy.value)
   assertType<string[]>(list.data.value ?? [])
 
   const skipped = await useConvexQuery(api.tasks.list, 'skip')
@@ -63,8 +66,15 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<boolean>(paginated.canLoadMore.value)
   assertType<Error | undefined>(paginated.error.value)
   assertType<boolean>(paginated.isStale.value)
-  paginated.loadMore(5)
+  assertType<boolean>(paginated.isLoadingMore.value)
+  assertType<boolean>(paginated.isExhausted.value)
+  assertType<'skip' | 'auth' | 'manual' | null>(paginated.blockedBy.value)
+  assertType<Promise<void>>(paginated.loadMore(5))
   assertType<Promise<void>>(paginated.refresh())
+  // @ts-expect-error the transport cursor is not public pagination state
+  void paginated.cursor
+  // @ts-expect-error the transport page status is not public pagination state
+  void paginated.pageStatus
   const settledPagination = await paginated
   assertType<readonly string[]>(settledPagination.data.value ?? [])
   // @ts-expect-error legacy tuple vocabulary was removed
@@ -80,15 +90,25 @@ export async function usePublicApiSurfaceContracts(file: File) {
       store.setQuery(api.tasks.list, {}, current ? [...current, args.text] : current)
     },
   })
-  assertType<string>(await createTask({ text: 'callable' }))
+  assertType<string>(await createTask.mutate({ text: 'callable' }))
   assertType<boolean>(createTask.pending.value)
+  const { mutate: createTaskNow, reset: resetCreateTask } = createTask
+  assertType<Promise<string>>(createTaskNow({ text: 'destructured' }))
+  assertType<() => void>(resetCreateTask)
+  // @ts-expect-error a mutation returns state and a verb, not a callable
+  void createTask({ text: 'removed' })
   // @ts-expect-error callable lifecycle state is readonly
   createTask.data.value = 'mutated'
   // @ts-expect-error one rejected-Promise protocol; `.safe` was removed
   void createTask.safe({ text: 'removed' })
 
   const sendEmail = useConvexAction(api.emails.send)
-  assertType<{ ok: boolean }>(await sendEmail({ to: 'team@example.com', subject: 'Smoke' }))
+  assertType<{ ok: boolean }>(await sendEmail.run({ to: 'team@example.com', subject: 'Smoke' }))
+  const { run: sendEmailNow, reset: resetSendEmail } = sendEmail
+  assertType<Promise<{ ok: boolean }>>(sendEmailNow({ to: 'team@example.com', subject: 'Smoke' }))
+  assertType<() => void>(resetSendEmail)
+  // @ts-expect-error an action returns state and a verb, not a callable
+  void sendEmail({ to: 'team@example.com', subject: 'Removed' })
   // @ts-expect-error actions have no callback options or alternate execution protocol
   void sendEmail.safe({ to: 'team@example.com', subject: 'Removed' })
 
@@ -96,6 +116,10 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<GenericId<'_storage'>>(await upload.upload(file))
   assertType<ComputedRef<GenericId<'_storage'> | undefined>>(upload.data)
   assertType<number>(upload.progress.value.percent)
+  assertType<() => void>(upload.cancel)
+  assertType<() => void>(upload.reset)
+  assertType<ConvexCallError | undefined>(upload.error.value)
+  assertType<string | undefined>(upload.error.value?.functionName)
   const uploadedUrl = useConvexQuery(
     api.files.getUrl,
     () => (upload.data.value ? { storageId: upload.data.value } : 'skip'),
@@ -131,6 +155,25 @@ function _callableContracts() {
   useConvexAction(api.emails.send, { onError() {} })
 }
 void _callableContracts
+
+function _errorContracts(error: unknown) {
+  const code: ConvexCallErrorCode = 'CANCELLED'
+  if (isConvexCallError(error, code)) {
+    assertType<ConvexCallError>(error)
+    assertType<string | undefined>(error.functionName)
+  }
+  if (isConvexCallError(error)) {
+    assertType<'authentication' | 'transport' | 'server' | 'unknown'>(error.kind)
+    // Application codes from `ConvexError` data stay plain strings.
+    assertType<string | undefined>(error.code)
+  }
+  // Application-defined codes are accepted alongside the library codes.
+  void isConvexCallError(error, 'NOTE_EXISTS')
+  // @ts-expect-error library codes are a closed union
+  const unknownCode: ConvexCallErrorCode = 'NOT_A_LIBRARY_CODE'
+  void unknownCode
+}
+void _errorContracts
 
 function _uploadContracts(file: File) {
   const noArgs = useConvexFileUpload(api.files.generateUploadUrl)

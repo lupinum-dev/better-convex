@@ -110,6 +110,7 @@ function tokenExchangeTransportFailure(): ConvexTokenExchangeResult {
     status: undefined,
     error: new ConvexCallError({
       kind: 'transport',
+      code: 'NETWORK_ERROR',
       message: 'Convex token exchange could not complete',
     }),
   }
@@ -131,11 +132,13 @@ async function runTokenExchange(
     )
     if (!response.ok) {
       await response.body?.cancel().catch(() => {})
+      const rejected = response.status === 401 || response.status === 403
       return {
         token: null,
         status: response.status,
         error: new ConvexCallError({
-          kind: response.status === 401 || response.status === 403 ? 'authentication' : 'transport',
+          kind: rejected ? 'authentication' : 'transport',
+          code: rejected ? 'UNAUTHENTICATED' : 'UPSTREAM_ERROR',
           message: `Convex token exchange failed with HTTP ${response.status}`,
           status: response.status,
         }),
@@ -150,6 +153,7 @@ async function runTokenExchange(
         status: response.status,
         error: new ConvexCallError({
           kind: 'transport',
+          code: 'INVALID_RESPONSE',
           message: 'Convex token exchange response did not include a token',
           status: response.status,
         }),

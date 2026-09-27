@@ -16,12 +16,21 @@ definePageMeta({
  */
 
 // Successful mutation
-const addNote = useConvexMutation(api.notes.add)
-const { pending: addPending, status: addStatus, error: addError, data: addData } = addNote
+const {
+  mutate: addNote,
+  pending: addPending,
+  status: addStatus,
+  error: addError,
+  data: addData,
+} = useConvexMutation(api.notes.add)
 
 // Error mutation
-const failMutation = useConvexMutation(api.testing.alwaysFailsMutation)
-const { pending: failPending, status: failStatus, error: failError } = failMutation
+const {
+  mutate: failMutation,
+  pending: failPending,
+  status: failStatus,
+  error: failError,
+} = useConvexMutation(api.testing.alwaysFailsMutation)
 
 // Track mutation counts
 const successCount = ref(0)

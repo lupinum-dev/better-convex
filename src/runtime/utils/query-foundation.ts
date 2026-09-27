@@ -29,6 +29,7 @@ import {
   type ConvexSsrQueryView,
 } from './query-ssr'
 import { getConvexRuntimeConfig } from './runtime-config'
+import type { ConvexServerConfig } from './transport-config'
 
 /**
  * Nuxt's SSR-seeded auth state (`convex:pending` / `convex:identity` /
@@ -67,7 +68,13 @@ export interface ConvexQueryBoundaryInput {
 
 export interface ConvexSsrQueryInput<T> extends ConvexQueryBoundaryInput {
   readonly lazy: boolean
-  fetch(convexUrl: string, token: string | undefined, signal: AbortSignal | undefined): Promise<T>
+  /** `bounds` are the configured `convex.server` limits for this request. */
+  fetch(
+    convexUrl: string,
+    token: string | undefined,
+    signal: AbortSignal | undefined,
+    bounds: ConvexServerConfig,
+  ): Promise<T>
 }
 
 export interface ConvexSsrQuery<T> {
@@ -101,7 +108,7 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
   const event = useRequestEvent()
   const identityState = useConvexIdentityState()
   const cachedToken = computed(() => identityToken(identityState.value))
-  const convexUrl = getConvexRuntimeConfig().url
+  const { url: convexUrl, server: bounds } = getConvexRuntimeConfig()
   const asyncData = useAsyncData<ConvexQueryPayload<T> | null>(
     key,
     async () => {
@@ -114,17 +121,20 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
           cachedToken,
         })
         if (auth !== 'none' && decision.identity !== 'anonymous' && !token) return null
-        return { value: await input.fetch(convexUrl, token, event?.web?.request?.signal) }
+        return {
+          value: await input.fetch(convexUrl, token, event?.web?.request?.signal, bounds),
+        }
       } catch (error) {
-        return { error: normalizeConvexError(error) }
+        return { error: normalizeConvexError(error, { functionName: input.functionName }) }
       }
     },
     { server, immediate, lazy, deep: false, default: () => null },
   )
   const view = computed(() =>
     projectConvexSsrQuery({
-      gate: gate.value.outcome,
+      gate: gate.value,
       server,
+      functionName: input.functionName,
       authError: identity.value.error,
       entry: asyncData.data.value,
       fetching: asyncData.status.value === 'pending',
@@ -227,8 +237,9 @@ export function useConvexQueryHydration<T>(
         )
       : undefined
   const ssrView = projectConvexSsrQuery({
-    gate: gate.outcome,
+    gate,
     server,
+    functionName: input.functionName,
     authError: identity.value.error,
     entry,
     fetching: false,

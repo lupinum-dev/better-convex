@@ -6,8 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ConvexCallError,
+  isConvexCallError,
   isSerializedConvexCallError,
   normalizeConvexError,
+  type ConvexCallErrorCode,
   type ConvexCallErrorInput,
 } from '../../src/runtime/errors'
 import {
@@ -34,13 +36,7 @@ const SECRET = 'super-secret-token-do-not-leak'
 function payloadRoundTrip(error: ConvexCallError): unknown {
   const reduced = JSON.parse(JSON.stringify(error.toJSON())) as unknown
   if (!isSerializedConvexCallError(reduced)) return undefined
-  return new ConvexCallError({
-    kind: reduced.kind,
-    message: reduced.message,
-    code: reduced.code,
-    status: reduced.status,
-    data: reduced.data,
-  })
+  return normalizeConvexError(reduced)
 }
 
 describe('ConvexCallError golden fixtures ', () => {
@@ -54,13 +50,14 @@ describe('ConvexCallError golden fixtures ', () => {
     expect(authError.kind).toBe('authentication')
     // Re-normalizing a boundary-classified instance never downgrades it.
     expect(normalizeConvexError(authError)).toBe(authError)
-    expect(authError.toJSON()).toEqual({
+    expect(authError.toJSON()).toStrictEqual({
       name: 'ConvexCallError',
       kind: 'authentication',
       message: 'Required identity missing',
       code: 'UNAUTHENTICATED',
       status: undefined,
       data: undefined,
+      functionName: undefined,
     })
   })
 
@@ -150,6 +147,46 @@ describe('ConvexCallError golden fixtures ', () => {
     expect(normalized.data).toEqual({ code: 'DUPLICATE_COPY' })
   })
 
+  it('6d. a string ConvexError payload becomes the message', () => {
+    const appError = new ConvexError('Title is already taken')
+    Object.defineProperty(appError, 'message', {
+      value: `Uncaught ConvexError: ${SECRET}\n    at handler (../convex/private.ts:1:1)`,
+    })
+    const normalized = normalizeConvexError(appError, { functionName: 'notes:create' })
+
+    expect(normalized.kind).toBe('server')
+    expect(normalized.message).toBe('Title is already taken')
+    expect(normalized.data).toBe('Title is already taken')
+    expect(normalized.code).toBeUndefined()
+    expect(normalized.functionName).toBe('notes:create')
+    expect(JSON.stringify(normalized)).not.toContain(SECRET)
+  })
+
+  it('6e. a structured payload message becomes the message, never the wire message', () => {
+    const appError = new ConvexError({ code: 'TITLE_TAKEN', message: 'Title is already taken' })
+    Object.defineProperty(appError, 'message', {
+      value: `Uncaught ConvexError: ${SECRET}\n    at handler (../convex/private.ts:1:1)`,
+    })
+    const normalized = normalizeConvexError(appError)
+
+    expect(normalized.message).toBe('Title is already taken')
+    expect(normalized.code).toBe('TITLE_TAKEN')
+    expect(normalized.functionName).toBeUndefined()
+    expect(inspect(normalized)).not.toContain(SECRET)
+  })
+
+  it.each([
+    ['an empty string payload', ''],
+    ['an empty data.message', { message: '' }],
+    ['a non-string data.message', { message: 42 }],
+    ['a numeric payload', 7],
+    ['a null payload', null],
+  ])('6f. %s falls back to the generic application message', (_name, data) => {
+    const normalized = normalizeConvexError(new ConvexError(data as never))
+    expect(normalized.kind).toBe('server')
+    expect(normalized.message).toBe('Convex application error')
+  })
+
   it('6c. mere `data` property presence without the marker stays unknown', () => {
     const notAnApplicationError = {
       message: 'looks structured',
@@ -186,6 +223,225 @@ describe('ConvexCallError golden fixtures ', () => {
       message: 'already normalized',
     })
     expect(normalizeConvexError(existing)).toBe(existing)
+    expect(normalizeConvexError(existing, {})).toBe(existing)
+  })
+
+  it('10. context fills a missing function name without changing the classification', () => {
+    const boundary = new ConvexCallError({
+      kind: 'transport',
+      code: 'ABORTED',
+      status: 504,
+      message: 'The request timed out.',
+      data: { retryable: true },
+    })
+    const named = normalizeConvexError(boundary, { functionName: 'notes:create' })
+
+    expect(named).not.toBe(boundary)
+    expect(named).toBeInstanceOf(ConvexCallError)
+    expect(named.toJSON()).toStrictEqual({ ...boundary.toJSON(), functionName: 'notes:create' })
+    expect('cause' in named).toBe(false)
+
+    // A known name is never replaced, and an empty context name is ignored.
+    expect(normalizeConvexError(named, { functionName: 'other:fn' })).toBe(named)
+    expect(normalizeConvexError(boundary, { functionName: '' })).toBe(boundary)
+  })
+
+  it('11. context names unknown and application failures', () => {
+    expect(normalizeConvexError(new Error('boom'), { functionName: 'notes:list' })).toMatchObject({
+      kind: 'unknown',
+      message: 'Unknown Convex error',
+      functionName: 'notes:list',
+    })
+    expect(
+      normalizeConvexError(new ConvexError({ code: 'X' }), { functionName: 'notes:save' }),
+    ).toMatchObject({ kind: 'server', code: 'X', functionName: 'notes:save' })
+  })
+})
+
+describe('isConvexCallError', () => {
+  it('narrows instances and optionally matches a code', () => {
+    const cancelled = new ConvexCallError({
+      kind: 'unknown',
+      code: 'CANCELLED',
+      message: 'cancelled',
+    })
+    const application = normalizeConvexError(new ConvexError({ code: 'NOTE_EXISTS' }))
+
+    expect(isConvexCallError(cancelled)).toBe(true)
+    expect(isConvexCallError(cancelled, 'CANCELLED')).toBe(true)
+    expect(isConvexCallError(cancelled, 'IDENTITY_CHANGED')).toBe(false)
+    expect(isConvexCallError(application, 'NOTE_EXISTS')).toBe(true)
+    expect(isConvexCallError(application, 'CANCELLED')).toBe(false)
+  })
+
+  it('rejects shapes that were not normalized first', () => {
+    const serialized = new ConvexCallError({
+      kind: 'unknown',
+      code: 'CANCELLED',
+      message: 'cancelled',
+    }).toJSON()
+
+    expect(isConvexCallError(serialized)).toBe(false)
+    expect(isConvexCallError(serialized, 'CANCELLED')).toBe(false)
+    expect(isConvexCallError(new Error('plain'))).toBe(false)
+    expect(isConvexCallError(null)).toBe(false)
+    expect(isConvexCallError(normalizeConvexError(serialized), 'CANCELLED')).toBe(true)
+  })
+
+  it('names every library code in the public union', () => {
+    const codes = {
+      IDENTITY_CHANGED: true,
+      CANCELLED: true,
+      FILE_TOO_LARGE: true,
+      FILE_TYPE_NOT_ALLOWED: true,
+      UPLOAD_IN_PROGRESS: true,
+      SUBMIT_IN_PROGRESS: true,
+      UNAUTHENTICATED: true,
+      CLIENT_UNAVAILABLE: true,
+      NETWORK_ERROR: true,
+      TIMEOUT: true,
+      RESPONSE_TOO_LARGE: true,
+      UPSTREAM_ERROR: true,
+      INVALID_RESPONSE: true,
+      INVALID_UPLOAD_URL: true,
+      CONVEX_URL_MISSING: true,
+      SITE_URL_MISSING: true,
+      AUTH_UNAVAILABLE: true,
+      AUTH_CONFIRMATION_TIMEOUT: true,
+      PAGINATION_SPLIT_REQUIRED: true,
+    } satisfies Record<ConvexCallErrorCode, true>
+    expect(Object.keys(codes)).toHaveLength(19)
+  })
+})
+
+describe('normalizeConvexError revives serialized errors from the H3 wire', () => {
+  const original = new ConvexCallError({
+    kind: 'authentication',
+    code: 'UNAUTHENTICATED',
+    status: 401,
+    message: 'Sign in to continue',
+    data: { reason: 'missing-session' },
+    functionName: 'notes:list',
+  })
+  const wire = () => JSON.parse(JSON.stringify(original)) as Record<string, unknown>
+
+  function expectRevived(value: unknown) {
+    const revived = normalizeConvexError(value)
+    expect(revived).toBeInstanceOf(ConvexCallError)
+    expect(revived.toJSON()).toStrictEqual(original.toJSON())
+    expect('cause' in revived).toBe(false)
+    return revived
+  }
+
+  it('revives the serialized error itself', () => {
+    expectRevived(wire())
+  })
+
+  it('revives the data of an H3 error or H3 JSON body', () => {
+    const h3Body = {
+      error: true,
+      url: '/api/notes',
+      statusCode: 401,
+      statusMessage: 'Unauthorized',
+      message: 'Sign in to continue',
+      data: wire(),
+    }
+    expectRevived(h3Body)
+    expectRevived(Object.assign(new Error('H3Error'), { statusCode: 401, data: wire() }))
+  })
+
+  it('revives the nested data of an ofetch FetchError of an H3 error', () => {
+    const fetchError = Object.assign(new Error('[GET] "/api/notes": 401 Unauthorized'), {
+      name: 'FetchError',
+      status: 401,
+      statusCode: 401,
+      data: { error: true, statusCode: 401, message: 'Sign in to continue', data: wire() },
+    })
+    expectRevived(fetchError)
+  })
+
+  it('fills a missing function name from context but keeps a serialized one', () => {
+    const { functionName: _omit, ...unnamed } = wire()
+    expect(normalizeConvexError(unnamed, { functionName: 'client:ctx' }).functionName).toBe(
+      'client:ctx',
+    )
+    expect(normalizeConvexError(wire(), { functionName: 'client:ctx' }).functionName).toBe(
+      'notes:list',
+    )
+  })
+
+  it('keeps a ConvexError whose payload looks serialized as a server error', () => {
+    const forged = new ConvexError(wire() as never)
+    const normalized = normalizeConvexError(forged)
+    expect(normalized.kind).toBe('server')
+    expect(normalized.message).toBe('Sign in to continue')
+  })
+
+  const hostile: Array<[string, (valid: Record<string, unknown>) => unknown]> = [
+    ['an extra field', (valid) => ({ ...valid, stack: 'at secret (private.ts:1:1)' })],
+    ['an extra cause', (valid) => ({ ...valid, cause: { authorization: SECRET } })],
+    ['an unknown kind', (valid) => ({ ...valid, kind: 'validation' })],
+    ['a missing kind', ({ kind: _kind, ...rest }) => rest],
+    ['a non-string message', (valid) => ({ ...valid, message: { text: SECRET } })],
+    ['a missing message', ({ message: _message, ...rest }) => rest],
+    ['a numeric code', (valid) => ({ ...valid, code: 401 })],
+    ['an empty code', (valid) => ({ ...valid, code: '' })],
+    ['a string status', (valid) => ({ ...valid, status: '401' })],
+    ['a non-finite status', (valid) => ({ ...valid, status: Number.POSITIVE_INFINITY })],
+    ['an empty function name', (valid) => ({ ...valid, functionName: '' })],
+    ['a non-string function name', (valid) => ({ ...valid, functionName: ['notes:list'] })],
+    ['a different name', (valid) => ({ ...valid, name: 'Error' })],
+    [
+      'a class instance',
+      (valid) => Object.assign(Object.create({ inherited: true }) as object, valid),
+    ],
+    ['an array', () => [wire()]],
+    ['a string', () => JSON.stringify(wire())],
+  ]
+
+  for (const [name, make] of hostile) {
+    it(`does not revive ${name} at any wrapper depth`, () => {
+      const candidate = make(wire())
+      expect(isSerializedConvexCallError(candidate)).toBe(false)
+      for (const value of [candidate, { data: candidate }, { data: { data: candidate } }]) {
+        const normalized = normalizeConvexError(value)
+        expect(normalized.kind).toBe('unknown')
+        expect(normalized.message).toBe('Unknown Convex error')
+        expect(normalized.code).toBeUndefined()
+        expect(JSON.stringify(normalized)).not.toContain(SECRET)
+      }
+    })
+  }
+
+  it('does not revive deeper than data.data', () => {
+    expect(normalizeConvexError({ data: { data: { data: wire() } } }).kind).toBe('unknown')
+    expect(normalizeConvexError({ cause: wire() }).kind).toBe('unknown')
+    expect(normalizeConvexError({ error: wire() }).kind).toBe('unknown')
+  })
+
+  it('never throws on throwing getters and reads each field once', () => {
+    const throwing = {
+      get data() {
+        throw new Error(SECRET)
+      },
+    }
+    expect(normalizeConvexError(throwing)).toMatchObject({ kind: 'unknown' })
+    expect(isSerializedConvexCallError(throwing)).toBe(false)
+
+    let reads = 0
+    const flipping = {
+      name: 'ConvexCallError',
+      kind: 'unknown',
+      get message() {
+        reads += 1
+        return reads === 1 ? 'first read' : { secret: SECRET }
+      },
+    }
+    // An accessor-backed message is copied once, so validation and the revived
+    // value always agree.
+    const revived = normalizeConvexError(flipping)
+    expect(reads).toBe(1)
+    expect(revived.message).toBe('first read')
   })
 })
 
@@ -286,6 +542,18 @@ describe('isSerializedConvexCallError strictness ', () => {
       data: undefined,
     }
     expect(isSerializedConvexCallError(valid)).toBe(true)
+  })
+
+  it('accepts and round-trips functionName', () => {
+    const named = new ConvexCallError({
+      kind: 'server',
+      message: 'Title is already taken',
+      code: 'TITLE_TAKEN',
+      functionName: 'notes:create',
+    })
+    const json = JSON.parse(JSON.stringify(named)) as unknown
+    expect(isSerializedConvexCallError(json)).toBe(true)
+    expect(payloadRoundTrip(named)).toMatchObject({ functionName: 'notes:create' })
   })
 
   it('rejects an arbitrary object that only carries the name string', () => {

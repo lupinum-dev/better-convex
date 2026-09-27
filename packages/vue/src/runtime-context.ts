@@ -28,12 +28,38 @@ const ownerAuthRefresh = new WeakMap<BetterConvexPlugin, () => Promise<void>>()
 
 export type BetterConvexAuthAdapter = BrowserAuthAdapter
 
+/**
+ * The `ConvexClient` options Better Convex passes through to every browser
+ * client it constructs (the identity-scoped primary and the anonymous
+ * `auth: 'none'` client). Authentication, `disabled`, and logging hooks stay
+ * owned by the runtime and are not accepted here.
+ */
+export interface BetterConvexClientOptions {
+  /** Log Convex client debug output. Convex defaults this to `false`. */
+  readonly verbose?: boolean
+  /** Use this `WebSocket` constructor instead of the global one. */
+  readonly webSocketConstructor?: typeof WebSocket
+  /** Allow a self-hosted deployment URL that does not look like `*.convex.cloud`. */
+  readonly skipConvexDeploymentUrlCheck?: boolean
+  /**
+   * Prompt before the page unloads while mutations are pending. Better Convex
+   * defaults this to `false`; Convex itself defaults it to `true` in browsers.
+   */
+  readonly unsavedChangesWarning?: boolean
+}
+
 export type CreateBetterConvexOptions =
-  | { convexUrl: string; auth?: BetterConvexAuthAdapter; attachment?: never }
+  | {
+      convexUrl: string
+      auth?: BetterConvexAuthAdapter
+      clientOptions?: BetterConvexClientOptions
+      attachment?: never
+    }
   | {
       attachment: BetterConvexAttachment
       convexUrl?: never
       auth?: never
+      clientOptions?: never
     }
 
 export type BetterConvexPlugin = ObjectPlugin & {
@@ -41,11 +67,61 @@ export type BetterConvexPlugin = ObjectPlugin & {
   attachment(): BetterConvexAttachment
 }
 
-function makeClient(convexUrl: string) {
-  return new ConvexClient(convexUrl, { unsavedChangesWarning: false })
+const BOOLEAN_CLIENT_OPTIONS = [
+  'verbose',
+  'skipConvexDeploymentUrlCheck',
+  'unsavedChangesWarning',
+] as const
+
+/**
+ * Copy only the supported `ConvexClient` options. JavaScript callers can pass
+ * any object, so every accepted key is type-checked and every other key is
+ * rejected rather than forwarded to the client.
+ */
+function normalizeClientOptions(
+  input: BetterConvexClientOptions | undefined,
+): BetterConvexClientOptions {
+  if (input === undefined) return {}
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new TypeError('[better-convex-vue] clientOptions must be an object')
+  }
+  const normalized: {
+    -readonly [Key in keyof BetterConvexClientOptions]: BetterConvexClientOptions[Key]
+  } = {}
+  for (const key of Object.keys(input)) {
+    const value = (input as Record<string, unknown>)[key]
+    if (value === undefined) continue
+    if ((BOOLEAN_CLIENT_OPTIONS as readonly string[]).includes(key)) {
+      if (typeof value !== 'boolean') {
+        throw new TypeError(`[better-convex-vue] clientOptions.${key} must be a boolean`)
+      }
+      normalized[key as (typeof BOOLEAN_CLIENT_OPTIONS)[number]] = value
+    } else if (key === 'webSocketConstructor') {
+      if (typeof value !== 'function') {
+        throw new TypeError(
+          '[better-convex-vue] clientOptions.webSocketConstructor must be a WebSocket constructor',
+        )
+      }
+      normalized.webSocketConstructor = value as typeof WebSocket
+    } else {
+      throw new TypeError(`[better-convex-vue] clientOptions.${key} is not supported`)
+    }
+  }
+  return Object.freeze(normalized)
+}
+
+function makeClient(convexUrl: string, clientOptions: BetterConvexClientOptions) {
+  return new ConvexClient(convexUrl, { unsavedChangesWarning: false, ...clientOptions })
 }
 
 export function createBetterConvex(options: CreateBetterConvexOptions): BetterConvexPlugin {
+  if (options.attachment !== undefined && options.clientOptions !== undefined) {
+    throw new TypeError(
+      '[better-convex-vue] clientOptions cannot be combined with attachment; the owning application configures its clients',
+    )
+  }
+  const clientOptions =
+    options.attachment !== undefined ? {} : normalizeClientOptions(options.clientOptions)
   let installed = false
   let dispose: (() => Promise<void> | void) | null = null
   let installedAttachment: BetterConvexAttachment | null = null
@@ -59,7 +135,7 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
       const browser = attached
         ? null
         : createBetterConvexBrowserRuntime({
-            clientFactory: () => makeClient(options.convexUrl!),
+            clientFactory: () => makeClient(options.convexUrl!, clientOptions),
             auth: options.auth,
           })
       ownedBrowser = browser

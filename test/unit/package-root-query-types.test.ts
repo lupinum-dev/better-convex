@@ -1,24 +1,53 @@
-import type { FunctionReference } from 'convex/server'
+import type {
+  ConvexQueryArgs as VueConvexQueryArgs,
+  PaginatedQueryArgs as VuePaginatedQueryArgs,
+  PaginatedQueryItem as VuePaginatedQueryItem,
+  UseConvexActionReturn as VueUseConvexActionReturn,
+  UseConvexConnectionStateReturn as VueUseConvexConnectionStateReturn,
+  UseConvexMutationReturn as VueUseConvexMutationReturn,
+  UseConvexPaginatedQueryState as VueUseConvexPaginatedQueryState,
+  UseConvexQueryOptions as VueUseConvexQueryOptions,
+  UseConvexQueryState as VueUseConvexQueryState,
+} from '@lupinum/better-convex-vue'
+import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { getPackageEntry } from '../../scripts/package-entry-manifest.mjs'
 import type {
+  ConvexCallError,
+  ConvexCallErrorCode,
+  ConvexQueryArgs,
   ConvexRuntimeConfig,
+  ConvexUser,
   NuxtConvexPaginatedQuery,
   NuxtConvexQuery,
-  UseConvexPaginatedQueryOptions,
+  PaginatedQueryArgs,
+  PaginatedQueryItem,
+  UseConvexActionReturn,
+  UseConvexConnectionStateReturn,
+  UseConvexMutationReturn,
   UseConvexPaginatedQueryState,
-  UseConvexQueryOptions,
   UseConvexQueryParameters,
   UseConvexQueryState,
+  UseNuxtConvexPaginatedQueryOptions,
+  UseNuxtConvexQueryOptions,
 } from '../../src/module'
+import type { ConvexCallError as ErrorsEntryConvexCallError } from '../../src/runtime/errors'
 
 type EmptyQuery = FunctionReference<'query', 'public', Record<string, never>, string>
 type OptionalArgsQuery = FunctionReference<'query', 'public', { term?: string }, string[]>
+type PaginatedQuery = FunctionReference<
+  'query',
+  'public',
+  { owner: string; paginationOpts: PaginationOptions },
+  PaginationResult<{ id: string }>
+>
+type Mutation = FunctionReference<'mutation', 'public', { text: string }, string>
+type Action = FunctionReference<'action', 'public', { to: string }, { ok: boolean }>
 
 function readonlyContracts(
-  queryOptions: UseConvexQueryOptions,
-  paginationOptions: UseConvexPaginatedQueryOptions,
+  queryOptions: UseNuxtConvexQueryOptions,
+  paginationOptions: UseNuxtConvexPaginatedQueryOptions,
   queryState: UseConvexQueryState<string>,
 ) {
   // @ts-expect-error public options are immutable configuration values
@@ -40,16 +69,21 @@ function removedModulePolicyContracts() {
     // @ts-expect-error upload queue policy was removed with the queue
     upload: { maxConcurrent: 3 },
   }
-  return { defaults, upload }
+  const webSocket: import('../../src/module').ModuleOptions = {
+    // @ts-expect-error a WebSocket constructor is not a serializable module option
+    client: { webSocketConstructor: 'ws' },
+  }
+  return { defaults, upload, webSocket }
 }
 
 describe('Nuxt package-root query type contract', () => {
-  it('uses one Nuxt-facing options name and exports nameable state contracts', () => {
+  it('gives each exported name exactly one meaning across Nuxt and Vue', () => {
     expectTypeOf<keyof ConvexRuntimeConfig>().toEqualTypeOf<'siteUrl' | 'url'>()
-    expectTypeOf<keyof UseConvexQueryOptions>().toEqualTypeOf<
+    // The Nuxt options extend the Vue ones under their own names.
+    expectTypeOf<keyof UseNuxtConvexQueryOptions>().toEqualTypeOf<
       'auth' | 'keepPreviousData' | 'immediate' | 'lazy' | 'server'
     >()
-    expectTypeOf<keyof UseConvexPaginatedQueryOptions>().toEqualTypeOf<
+    expectTypeOf<keyof UseNuxtConvexPaginatedQueryOptions>().toEqualTypeOf<
       | 'auth'
       | 'initialCursor'
       | 'initialNumItems'
@@ -58,6 +92,35 @@ describe('Nuxt package-root query type contract', () => {
       | 'lazy'
       | 'server'
     >()
+    expectTypeOf<keyof VueUseConvexQueryOptions>().toEqualTypeOf<
+      'auth' | 'keepPreviousData' | 'immediate'
+    >()
+
+    // Shared names are the Vue declarations, unchanged.
+    expectTypeOf<ConvexQueryArgs<{ id: string }>>().toEqualTypeOf<
+      VueConvexQueryArgs<{ id: string }>
+    >()
+    expectTypeOf<PaginatedQueryArgs<PaginatedQuery>>().toEqualTypeOf<
+      VuePaginatedQueryArgs<PaginatedQuery>
+    >()
+    expectTypeOf<PaginatedQueryItem<PaginatedQuery>>().toEqualTypeOf<{ id: string }>()
+    expectTypeOf<PaginatedQueryItem<PaginatedQuery>>().toEqualTypeOf<
+      VuePaginatedQueryItem<PaginatedQuery>
+    >()
+    expectTypeOf<UseConvexQueryState<string>>().toEqualTypeOf<VueUseConvexQueryState<string>>()
+    expectTypeOf<UseConvexPaginatedQueryState<string>>().toEqualTypeOf<
+      VueUseConvexPaginatedQueryState<string>
+    >()
+    expectTypeOf<UseConvexMutationReturn<Mutation>>().toEqualTypeOf<
+      VueUseConvexMutationReturn<Mutation>
+    >()
+    expectTypeOf<UseConvexActionReturn<Action>>().toEqualTypeOf<VueUseConvexActionReturn<Action>>()
+    expectTypeOf<UseConvexConnectionStateReturn>().toEqualTypeOf<VueUseConvexConnectionStateReturn>()
+    expectTypeOf<ConvexCallError>().toEqualTypeOf<ErrorsEntryConvexCallError>()
+    expectTypeOf<'CLIENT_UNAVAILABLE'>().toMatchTypeOf<ConvexCallErrorCode>()
+    expectTypeOf<'UNAUTHENTICATED'>().toMatchTypeOf<ConvexCallErrorCode>()
+    expectTypeOf<ConvexUser['id']>().toEqualTypeOf<string>()
+
     expectTypeOf<NuxtConvexQuery<string>>().toMatchTypeOf<Promise<UseConvexQueryState<string>>>()
     expectTypeOf<NuxtConvexQuery<string>>().toMatchTypeOf<UseConvexQueryState<string>>()
     expectTypeOf<NuxtConvexPaginatedQuery<string>>().toMatchTypeOf<
@@ -72,33 +135,52 @@ describe('Nuxt package-root query type contract', () => {
     const rootTypes = getPackageEntry('nuxt', '.').typeExports
     expect(rootTypes).toEqual(
       expect.arrayContaining([
+        'ConvexCallError',
+        'ConvexCallErrorCode',
+        'ConvexQueryArgs',
+        'ConvexUser',
         'NuxtConvexPaginatedQuery',
         'NuxtConvexQuery',
-        'UseConvexPaginatedQueryOptions',
+        'PaginatedQueryArgs',
+        'PaginatedQueryItem',
+        'UseConvexActionReturn',
+        'UseConvexConnectionStateReturn',
+        'UseConvexMutationReturn',
         'UseConvexPaginatedQueryState',
-        'UseConvexQueryOptions',
         'UseConvexQueryParameters',
         'UseConvexQueryState',
+        'UseNuxtConvexPaginatedQueryOptions',
+        'UseNuxtConvexQueryOptions',
       ]),
     )
-    expect(rootTypes).not.toContain('UseNuxtConvexPaginatedQueryOptions')
-    expect(rootTypes).not.toContain('UseNuxtConvexQueryOptions')
+    // A Vue name never carries the Nuxt meaning at the Nuxt root.
+    expect(rootTypes).not.toContain('UseConvexQueryOptions')
+    expect(rootTypes).not.toContain('UseConvexPaginatedQueryOptions')
+    expect(rootTypes).not.toContain('UseConvexCall')
   })
 
   it('keeps exact-empty args optional and declared optional keys positional', () => {
     expectTypeOf<
-      [] extends UseConvexQueryParameters<EmptyQuery> ? true : false
+      [] extends UseConvexQueryParameters<EmptyQuery, UseNuxtConvexQueryOptions> ? true : false
     >().toEqualTypeOf<true>()
     expectTypeOf<
-      [Record<PropertyKey, never>, { server: false }] extends UseConvexQueryParameters<EmptyQuery>
+      [Record<PropertyKey, never>, { server: false }] extends UseConvexQueryParameters<
+        EmptyQuery,
+        UseNuxtConvexQueryOptions
+      >
         ? true
         : false
     >().toEqualTypeOf<true>()
     expectTypeOf<
-      [] extends UseConvexQueryParameters<OptionalArgsQuery> ? true : false
+      [] extends UseConvexQueryParameters<OptionalArgsQuery, UseNuxtConvexQueryOptions>
+        ? true
+        : false
     >().toEqualTypeOf<false>()
     expectTypeOf<
-      [{ term: string }, { server: false }] extends UseConvexQueryParameters<OptionalArgsQuery>
+      [{ term: string }, { server: false }] extends UseConvexQueryParameters<
+        OptionalArgsQuery,
+        UseNuxtConvexQueryOptions
+      >
         ? true
         : false
     >().toEqualTypeOf<true>()

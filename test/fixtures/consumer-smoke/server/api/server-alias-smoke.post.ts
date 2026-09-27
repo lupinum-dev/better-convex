@@ -1,5 +1,5 @@
 import { api } from '#convex/api'
-import { serverConvex } from '#convex/server'
+import { getConvexUser, requireConvexUser, serverConvex, toConvexH3Error } from '#convex/server'
 
 export default defineEventHandler(async (event) => {
   const caller = serverConvex(event)
@@ -57,4 +57,22 @@ function _serverOptionContracts(event: Parameters<typeof serverConvex>[0]) {
   })
   // @ts-expect-error Better Auth session tokens are not public bearer credentials
   serverConvex(event, { credential: { type: 'bearer', value: 'k' } })
+}
+
+/**
+ * Request-identity helpers and the H3 error mapping. Never invoked.
+ */
+async function _serverUserContracts(event: Parameters<typeof serverConvex>[0]) {
+  const maybeUser = await getConvexUser(event)
+  // @ts-expect-error anonymous requests resolve null
+  void maybeUser.id
+  const optionalId: string | undefined = maybeUser?.id
+  const user = await requireConvexUser(event)
+  const requiredId: string = user.id
+
+  const h3Error = toConvexH3Error(new Error('failed'))
+  const statusCode: number = h3Error.statusCode
+  const kind: 'authentication' | 'transport' | 'server' | 'unknown' | undefined = h3Error.data?.kind
+  const functionName: string | undefined = h3Error.data?.functionName
+  return [optionalId, requiredId, statusCode, kind, functionName]
 }

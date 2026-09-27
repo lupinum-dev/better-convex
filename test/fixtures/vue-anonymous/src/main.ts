@@ -66,6 +66,26 @@ function packedTypeContracts() {
   void useConvexPaginatedQuery(paginatedQuery, () => null, paginationOptions)
   // @ts-expect-error a getter returning undefined is not a paginated query skip sentinel
   void useConvexPaginatedQuery(paginatedQuery, () => undefined, paginationOptions)
+
+  const pages = useConvexPaginatedQuery(paginatedQuery, 'skip', paginationOptions)
+  const loaded: Promise<void> = pages.loadMore(10)
+  const loadingMore: boolean = pages.isLoadingMore.value
+  const exhausted: boolean = pages.isExhausted.value
+  void [loaded, loadingMore, exhausted]
+  // @ts-expect-error the transport cursor is not public pagination state
+  void pages.cursor
+  // @ts-expect-error the transport page status is not public pagination state
+  void pages.pageStatus
+
+  const { mutate, reset } = useConvexMutation(mutation)
+  const { run } = useConvexAction(action)
+  const written: Promise<unknown> = mutate({})
+  const ran: Promise<unknown> = run({})
+  void [written, ran, reset]
+  // @ts-expect-error a mutation returns state and a verb, not a callable
+  void useConvexMutation(mutation)({})
+  // @ts-expect-error an action returns state and a verb, not a callable
+  void useConvexAction(action)({})
 }
 
 void packedTypeContracts

@@ -219,6 +219,7 @@ describe('query controller', () => {
     const normalized = controller.setOperationError(new TypeError('private details'), operation)
 
     expect(normalized?.kind).toBe('unknown')
+    expect(normalized?.functionName).toBe('notes:list')
     expect(state.error).toBe(normalized)
 
     controller.invalidateOperations()
@@ -243,6 +244,7 @@ describe('query controller', () => {
 
     expect(state.data).toEqual({ owner: 'alice', count: 1 })
     expect(state.error).toBeInstanceOf(Error)
+    expect(state.error?.functionName).toBe('notes:list')
   })
 
   it('retires first-value state and disposes the listener exactly once', () => {

@@ -226,24 +226,27 @@ describe('better-convex-vue package runtime', () => {
     )!
 
     expect(query.status.value).toBe('idle')
-    expect(query.cursor.value).toBe('resume-at')
+    expect(query.blockedBy.value).toBe('manual')
     expect(host.subscriptions).toHaveLength(0)
     const execution = query.execute()
+    expect(query.blockedBy.value).toBeNull()
     expect(host.subscriptions[0]?.active).toBe(true)
-    expect(host.subscriptions[0]).toBeDefined()
+    expect(host.subscriptions[0]?.args).toMatchObject({ paginationOpts: { cursor: 'resume-at' } })
     host.subscriptions[0]!.emit({
       page: ['a'],
       continueCursor: 'after-a',
       isDone: false,
     })
     await execution
-    expect(query.cursor.value).toBe('after-a')
+    expect(query.canLoadMore.value).toBe(true)
 
     const retired = host.subscriptions[0]!
     query.reset('resume-elsewhere')
     expect(retired.active).toBe(false)
-    expect(query.cursor.value).toBe('resume-elsewhere')
     expect(host.subscriptions).toHaveLength(2)
+    expect(host.subscriptions[1]?.args).toMatchObject({
+      paginationOpts: { cursor: 'resume-elsewhere' },
+    })
     scope.stop()
   })
 
@@ -273,13 +276,17 @@ describe('better-convex-vue package runtime', () => {
 
     expect(operation.mutation.status.value).toBe('idle')
     expect(operation.action.status.value).toBe('idle')
-    await expect(operation.mutation({ value: 'write' })).rejects.toMatchObject({
+    await expect(operation.mutation.mutate({ value: 'write' })).rejects.toMatchObject({
       kind: 'unknown',
+      code: 'CLIENT_UNAVAILABLE',
+      functionName: 'notes:write',
       message:
         '[better-convex-vue] useConvexMutation cannot execute without an installed browser runtime',
     })
-    await expect(operation.action({ value: 'work' })).rejects.toMatchObject({
+    await expect(operation.action.run({ value: 'work' })).rejects.toMatchObject({
       kind: 'unknown',
+      code: 'CLIENT_UNAVAILABLE',
+      functionName: 'notes:work',
       message:
         '[better-convex-vue] useConvexAction cannot execute without an installed browser runtime',
     })
@@ -335,11 +342,11 @@ describe('better-convex-vue package runtime', () => {
 
     expect(Object.isFrozen(operation.mutation)).toBe(true)
     expect(Object.isFrozen(operation.action)).toBe(true)
-    await expect(operation.mutation({ value: 'write' })).resolves.toEqual({
+    await expect(operation.mutation.mutate({ value: 'write' })).resolves.toEqual({
       label: 'alice',
       args: { value: 'write' },
     })
-    await expect(operation.action({ value: 'work' })).resolves.toEqual({
+    await expect(operation.action.run({ value: 'work' })).resolves.toEqual({
       label: 'alice',
       args: { value: 'work' },
     })
@@ -350,7 +357,7 @@ describe('better-convex-vue package runtime', () => {
     host.mutation.mockImplementationOnce(
       () => new Promise<{ label: string; args: unknown }>((resolve) => (resolvePending = resolve)),
     )
-    const retired = operation.mutation({ value: 'late' })
+    const retired = operation.mutation.mutate({ value: 'late' })
     await vi.waitFor(() => expect(resolvePending).not.toBeNull())
     host.emit({
       ...host.attachment.identity.snapshot(),
@@ -395,19 +402,19 @@ describe('better-convex-vue package runtime', () => {
       })),
     )!
 
-    for (const [callable, invoke] of [
-      [operation.mutation, host.mutation],
-      [operation.action, host.action],
+    for (const [call, callable, invoke] of [
+      [operation.mutation.mutate, operation.mutation, host.mutation],
+      [operation.action.run, operation.action, host.action],
     ] as const) {
       const result: Result = { label: 'alice', args: {}, nested: { id: 'n1' } }
       invoke.mockResolvedValueOnce(result)
-      await expect(callable({ value: 'exact' })).resolves.toBe(result)
+      await expect(call({ value: 'exact' })).resolves.toBe(result)
       expect(callable.data.value).toBe(result)
       expect(isProxy(callable.data.value)).toBe(false)
       expect(isReadonly(callable.data)).toBe(true)
 
       invoke.mockRejectedValueOnce(new Error('boom'))
-      const rejection: unknown = await callable({ value: 'fails' }).catch((error: unknown) => error)
+      const rejection: unknown = await call({ value: 'fails' }).catch((error: unknown) => error)
       expect(rejection).toBeInstanceOf(ConvexCallError)
       expect(callable.error.value).toBe(rejection)
       expect(isProxy(callable.error.value)).toBe(false)
@@ -431,7 +438,7 @@ describe('better-convex-vue package runtime', () => {
       ),
     )!
 
-    await mutation({})
+    await mutation.mutate({})
     const options = host.mutation.mock.calls[0]?.[2] as
       | { optimisticUpdate?: (store: unknown, args: unknown) => unknown }
       | undefined
@@ -582,7 +589,7 @@ describe('better-convex-vue package runtime', () => {
     })
     expect(query.data.value).toEqual([{ id: 'a' }])
     expect(query.canLoadMore.value).toBe(true)
-    query.loadMore(1)
+    void query.loadMore(1)
     expect(host.subscriptions).toHaveLength(3)
     host.subscriptions[2]!.emit({
       page: [{ id: 'b' }],
@@ -742,14 +749,15 @@ describe('better-convex-vue package runtime', () => {
     )!
 
     expect(Object.keys(query).sort()).toEqual([
+      'blockedBy',
       'canLoadMore',
-      'cursor',
       'data',
       'error',
       'execute',
+      'isExhausted',
+      'isLoadingMore',
       'isStale',
       'loadMore',
-      'pageStatus',
       'pending',
       'refresh',
       'reset',
@@ -931,7 +939,7 @@ describe('better-convex-vue package runtime', () => {
     scope.stop()
   })
 
-  it('holds one loadMore offered by a hydrated first page until the list goes live', () => {
+  it('holds one loadMore offered by a hydrated first page until the list goes live', async () => {
     const host = attachedRuntime('alice')
     host.emit({ ...host.attachment.identity.snapshot(), settled: false })
     const app = createApp({})
@@ -954,14 +962,20 @@ describe('better-convex-vue package runtime', () => {
     )!
 
     expect(() => pagination.state.loadMore(0)).toThrow('positive safe integer')
-    pagination.state.loadMore(2)
-    pagination.state.loadMore(5)
+    let heldSettled = false
+    const held = pagination.state.loadMore(2).then(() => {
+      heldSettled = true
+    })
+    expect(pagination.state.isLoadingMore.value).toBe(true)
+    expect(pagination.state.canLoadMore.value).toBe(false)
+    await expect(pagination.state.loadMore(5)).resolves.toBeUndefined()
     expect(host.subscriptions).toHaveLength(0)
 
     // Started while auth still settles: the held page waits with the list.
     void pagination.state.execute()
     expect(host.subscriptions).toHaveLength(0)
-    expect(pagination.state.status.value).toBe('pending')
+    expect(pagination.state.status.value).toBe('success')
+    expect(pagination.state.isLoadingMore.value).toBe(true)
     expect(pagination.state.data.value).toEqual(['ssr'])
 
     host.emit({ ...host.attachment.identity.snapshot(), settled: true })
@@ -969,14 +983,19 @@ describe('better-convex-vue package runtime', () => {
       { paginationOpts: { numItems: 1, cursor: null, endCursor: 'next' } },
       { paginationOpts: { numItems: 2, cursor: 'next' } },
     ])
+    await Promise.resolve()
+    expect(heldSettled).toBe(false)
     host.subscriptions[1]!.emit({ page: ['live'], isDone: true, continueCursor: 'end' })
+    await held
     expect(pagination.state.data.value).toEqual(['ssr', 'live'])
     expect(pagination.state.status.value).toBe('success')
+    expect(pagination.state.isLoadingMore.value).toBe(false)
+    expect(pagination.state.isExhausted.value).toBe(true)
     expect(pagination.state.canLoadMore.value).toBe(false)
     scope.stop()
   })
 
-  it('drops a held loadMore when the deferred list is reset before it starts', () => {
+  it('drops a held loadMore when the deferred list is reset before it starts', async () => {
     const host = attachedRuntime('alice')
     const app = createApp({})
     app.use(createBetterConvex({ attachment: host.attachment }))
@@ -997,8 +1016,10 @@ describe('better-convex-vue package runtime', () => {
       ),
     )!
 
-    pagination.state.loadMore(2)
+    const held = pagination.state.loadMore(2)
     pagination.state.reset()
+    await expect(held).resolves.toBeUndefined()
+    expect(pagination.state.isLoadingMore.value).toBe(false)
     void pagination.state.execute()
 
     expect(host.subscriptions.map((subscription) => subscription.args)).toMatchObject([

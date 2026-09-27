@@ -13,7 +13,7 @@ import {
 import { getFunctionName, type PaginationResult } from 'convex/server'
 import { computed, shallowRef, type MaybeRefOrGetter } from 'vue'
 
-import { ConvexCallError } from '../errors'
+import { ConvexCallError, type ConvexCallErrorCode } from '../errors'
 import { paginatedPayloadHash } from '../utils/convex-cache'
 import { executeQueryHttp } from '../utils/query-execution'
 import {
@@ -107,23 +107,35 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
   const result = live.state
   if (hydration.defersLiveStart) hydration.startLive(result)
 
+  // While hydrating, the list renders what the server rendered; a loadMore
+  // requested meanwhile is held by the live list and shows as loading more.
   const ssr = computed(() => {
     const view = hydration.view.value
-    return view ? projectConvexSsrPagination(view, initialCursor) : undefined
+    return view ? projectConvexSsrPagination(view) : undefined
   })
   const error = computed(() =>
     ssr.value ? ssr.value.error : (result.error.value ?? hydration.error.value),
   )
-  const status = computed(() => ssr.value?.status ?? (error.value ? 'error' : result.status.value))
+  // A bridged SSR error is a first-page error until the live list settles. A
+  // live error may be a later page's, which leaves the first page `success`.
+  const status = computed(
+    () =>
+      ssr.value?.status ??
+      (result.error.value === undefined && hydration.error.value !== undefined
+        ? 'error'
+        : result.status.value),
+  )
   const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
     ...result,
     data: computed(() => (ssr.value ? ssr.value.data : result.data.value)),
     error,
     status,
     pending: computed(() => status.value === 'pending'),
-    canLoadMore: computed(() => ssr.value?.canLoadMore ?? result.canLoadMore.value),
-    cursor: computed(() => (ssr.value ? ssr.value.cursor : result.cursor.value)),
-    pageStatus: computed(() => (ssr.value ? ssr.value.pageStatus : result.pageStatus.value)),
+    blockedBy: computed(() => (ssr.value ? ssr.value.blockedBy : result.blockedBy.value)),
+    canLoadMore: computed(() =>
+      ssr.value ? ssr.value.canLoadMore && !result.isLoadingMore.value : result.canLoadMore.value,
+    ),
+    isExhausted: computed(() => (ssr.value ? ssr.value.isExhausted : result.isExhausted.value)),
   })
   return {
     resultData,
@@ -145,7 +157,7 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
   const ssr = useConvexSsrQuery<PaginationResult<Item>>({
     ...boundary,
     lazy: options.lazy,
-    async fetch(convexUrl, token, signal) {
+    async fetch(convexUrl, token, signal, bounds) {
       const page = await executeQueryHttp<PaginationResult<Item>>(
         convexUrl,
         boundary.functionName,
@@ -155,30 +167,34 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
         },
         token,
         signal,
+        bounds,
       )
       if (isIncompletePaginationPage(page)) {
         throw new ConvexCallError({
           kind: 'unknown',
-          code: 'PAGINATION_SPLIT_REQUIRED',
+          code: 'PAGINATION_SPLIT_REQUIRED' satisfies ConvexCallErrorCode,
           message: 'Convex pagination page requires a bounded live split',
+          functionName: boundary.functionName,
         })
       }
       return page
     },
   })
-  const view = computed(() => projectConvexSsrPagination(ssr.view.value, startCursor.value))
+  const view = computed(() => projectConvexSsrPagination(ssr.view.value))
   const status = computed(() => view.value.status)
   const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
     data: computed(() => view.value.data),
     status,
     pending: computed(() => status.value === 'pending'),
-    isStale: computed(() => false),
-    canLoadMore: computed(() => view.value.canLoadMore),
-    cursor: computed(() => view.value.cursor),
-    pageStatus: computed(() => view.value.pageStatus),
-    execute: ssr.execute,
-    loadMore: () => {},
     error: computed(() => view.value.error),
+    isStale: computed(() => false),
+    blockedBy: computed(() => view.value.blockedBy),
+    canLoadMore: computed(() => view.value.canLoadMore),
+    isLoadingMore: computed(() => false),
+    isExhausted: computed(() => view.value.isExhausted),
+    // The server renders the first page only; later pages load in the browser.
+    loadMore: () => Promise.resolve(),
+    execute: ssr.execute,
     refresh: ssr.refresh,
     reset(cursor: string | null = null) {
       if (typeof cursor !== 'string' && cursor !== null) {

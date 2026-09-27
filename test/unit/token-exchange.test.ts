@@ -159,6 +159,7 @@ describe('exchangeConvexToken — HTTP failure classification', () => {
     expect(result.token).toBeNull()
     expect(result.status).toBe(500)
     expect(result.error!.kind).toBe('transport')
+    expect(result.error!.code).toBe('UPSTREAM_ERROR')
   })
 
   it('classifies a missing token (200, no token field) as transport', async () => {
@@ -172,6 +173,7 @@ describe('exchangeConvexToken — HTTP failure classification', () => {
     expect(result.token).toBeNull()
     expect(result.status).toBe(200)
     expect(result.error!.kind).toBe('transport')
+    expect(result.error!.code).toBe('INVALID_RESPONSE')
     expect(result.error!.message).toMatch(/did not include a token/)
   })
 

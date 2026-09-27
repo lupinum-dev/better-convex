@@ -9,7 +9,6 @@ const { data: currentUser } = await useConvexQuery(api.users.getCurrent, current
 })
 
 async function handleSignOut() {
-  if (!client) throw new Error('Authentication client unavailable')
   await client.signOut()
 }
 </script>

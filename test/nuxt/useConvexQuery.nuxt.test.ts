@@ -313,6 +313,54 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(result.listenersBeforeMount.value).toBe(0)
   })
 
+  it('renders the server blockedBy while hydrating, even before the browser identity settles', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:mine:ssr-blocked-by')
+    const key = payloadKey(query, {}, 'required', 'user:A')
+    const browserIdentity = {
+      snapshot: () => ({
+        authEnabled: true,
+        settled: false,
+        identityKey: null,
+        identityGeneration: 0,
+        error: null,
+      }),
+      waitForInitialSettlement: () => new Promise<void>(() => {}),
+      subscribe: () => () => {},
+    }
+    const { result } = await captureInNuxt(
+      () =>
+        hydrating(() => {
+          useState<boolean>('convex:pending').value = false
+          useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity('jwt-A', {
+            id: 'A',
+          })
+          const state = useConvexQueryState(query, {}, { auth: 'required' })
+          const skipped = useConvexQueryState(query, 'skip', { auth: 'required' })
+          const deferred = useConvexQueryState(query, {}, { auth: 'required', immediate: false })
+          const rendered = ref<unknown[]>()
+          onBeforeMount(() => {
+            rendered.value = [
+              state.blockedBy.value,
+              skipped.blockedBy.value,
+              deferred.blockedBy.value,
+            ]
+          })
+          return { state, rendered }
+        }),
+      {
+        convex,
+        identityObserver: browserIdentity,
+        payloadData: { [key]: { value: 'ssr' } },
+      },
+    )
+
+    // The server rendered `null`, `skip`, and `manual`; the browser identity
+    // is still settling but hydration renders the same values.
+    expect(result.rendered.value).toEqual([null, 'skip', 'manual'])
+    await waitFor(() => result.state.blockedBy.value === 'auth')
+  })
+
   it('renders an authenticated SSR query fetched without a token as idle, as the server did', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:mine:ssr-without-token')
@@ -492,6 +540,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(result.data.value).toBeUndefined()
     expect(result.pending.value).toBe(false)
     expect(result.status.value).toBe('idle')
+    expect(result.blockedBy.value).toBe('skip')
   })
 
   it('does not fetch or subscribe a deferred query until execute', async () => {
@@ -504,8 +553,10 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
 
     expect(result.status.value).toBe('idle')
     expect(result.pending.value).toBe(false)
+    expect(result.blockedBy.value).toBe('manual')
     expect(convex.calls.onUpdate).toHaveLength(0)
     const execution = result.execute()
+    expect(result.blockedBy.value).toBeNull()
     expect(convex.calls.onUpdate).toHaveLength(1)
     convex.emitQueryResult(query, {}, { ready: true })
     await execution

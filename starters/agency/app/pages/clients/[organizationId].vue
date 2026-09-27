@@ -14,7 +14,9 @@ const { data: projects } = await useConvexQuery(api.clientProjects.listForClient
   clientOrganizationId: clientOrganizationId.value,
   agencyOrganizationId: agencyOrganizationId.value,
 })
-const createProject = useConvexMutation(api.clientProjects.createForClient)
+const { mutate: createProject, pending: creating } = useConvexMutation(
+  api.clientProjects.createForClient,
+)
 
 async function addProject() {
   const name = projectName.value.trim()
@@ -35,7 +37,7 @@ async function addProject() {
 
     <form class="row" @submit.prevent="addProject">
       <input v-model="projectName" placeholder="Project name" />
-      <button :disabled="!projectName.trim() || !agencyOrganizationId">Create</button>
+      <button :disabled="creating || !projectName.trim() || !agencyOrganizationId">Create</button>
     </form>
 
     <ul>

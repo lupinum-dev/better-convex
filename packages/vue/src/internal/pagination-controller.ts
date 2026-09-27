@@ -1,4 +1,4 @@
-import type { FunctionReference, PaginationResult } from 'convex/server'
+import { getFunctionName, type FunctionReference, type PaginationResult } from 'convex/server'
 import { computed, shallowRef, watch, type ComputedRef, type Ref } from 'vue'
 
 import { normalizeConvexError, type ConvexCallError } from '../errors'
@@ -18,13 +18,13 @@ import {
   isInvalidCursorError,
   viewPaginationPages,
   withholdPaginationPage,
-  type PaginationFirstPageState,
   type PaginationOperationContext,
   type PaginationPageOptions,
   type PaginationPageState,
   type PaginationStatus,
 } from './pagination-state'
 import type { QueryIsolationTag, QuerySubscriptionClient } from './query-controller'
+import { createSettlementWaiters } from './settlement'
 
 export interface PaginationControllerInput<Item> {
   query: FunctionReference<'query'>
@@ -47,18 +47,25 @@ export interface PaginationControllerInput<Item> {
 export interface PaginationController<Item> {
   pages: Readonly<Ref<PaginationPageState<Item>[]>>
   data: ComputedRef<readonly Item[] | undefined>
-  /** Whole-list status: any failed or loading page makes the list error or pending. */
+  /** First-page status; a loading or failed later page leaves it `success`. */
   status: ComputedRef<PaginationStatus>
   pending: ComputedRef<boolean>
   isStale: ComputedRef<boolean>
+  /** The first page is `success`, the last loaded page is not done, and no later page loads. */
   canLoadMore: ComputedRef<boolean>
-  cursor: ComputedRef<string | null>
-  pageStatus: ComputedRef<'SplitRecommended' | 'SplitRequired' | null>
+  /** A later page is loading or withheld until its bounded split settles. */
+  isLoadingMore: ComputedRef<boolean>
+  /** The last loaded page is the end of the list. */
+  isExhausted: ComputedRef<boolean>
   /** The boundary error, else the first failed later page; loaded items stay in `data`. */
   error: ComputedRef<ConvexCallError | undefined>
   start(): void
   firstPageSettled(): Promise<void>
-  loadMore(numItems: number): void
+  /**
+   * Requests one later page. Settles, and never rejects, once that page is
+   * loaded, failed, superseded, reset, or disposed. A no-op unless `canLoadMore`.
+   */
+  loadMore(numItems: number): Promise<void>
   refresh(): Promise<void>
   reset(): void
   handleIdentityBoundary(input: {
@@ -106,6 +113,8 @@ export function createPaginationController<Item>(
   let pendingFirstPageSettlement: FirstPageSettlement | null = null
   let stopSettledWatch: (() => void) | null = null
   let disposed = false
+  const loadMoreSettlement = createSettlementWaiters()
+  const errorContext = { functionName: getFunctionName(input.query) }
 
   const initialOptions = computed<PaginationPageOptions>(() => ({
     numItems: input.initialNumItems,
@@ -256,11 +265,11 @@ export function createPaginationController<Item>(
       return
     }
     if (target === 'first') {
-      input.setBoundaryError(normalizeConvexError(error), input.getBoundaryKey())
+      input.setBoundaryError(normalizeConvexError(error, errorContext), input.getBoundaryKey())
       settleFirstPageIfTerminal()
       return
     }
-    pages.value = commitPaginationPageError(pages.value, findPageIndex(target), error)
+    pages.value = commitPaginationPageError(pages.value, findPageIndex(target), error, errorContext)
   }
 
   function subscribeFirstPage(options = initialOptions.value): void {
@@ -317,24 +326,14 @@ export function createPaginationController<Item>(
 
   const view = computed(() => viewPaginationPages(firstPage(), pages.value))
 
-  const status = computed<PaginationStatus>(() => {
-    const currentFirstPage = firstPage()
-    const { complete, last, loadingMore, error: pageError } = view.value
-    const firstPageState: PaginationFirstPageState = currentFirstPage
-      ? { state: 'ready', isDone: currentFirstPage.isDone }
-      : { state: 'loading' }
-    return computePaginationStatus({
+  const status = computed<PaginationStatus>(() =>
+    computePaginationStatus({
       disabled: input.isIdle(),
-      refresh: manualRefreshPending.value ? 'pending' : 'idle',
-      hasError: input.getBoundaryError() !== undefined || pageError !== undefined,
-      firstPage: firstPageState,
-      nextPage: loadingMore
-        ? { state: 'loading' }
-        : complete && last?.isDone
-          ? { state: 'exhausted' }
-          : { state: 'idle' },
-    })
-  })
+      refreshing: manualRefreshPending.value,
+      firstPageError: input.getBoundaryError() !== undefined,
+      firstPageReady: firstPage() !== null,
+    }),
+  )
 
   const currentData = computed<readonly Item[] | undefined>(() =>
     input.isIdle() ? undefined : view.value.items,
@@ -352,13 +351,16 @@ export function createPaginationController<Item>(
     isStale.value ? lastSettledResults.value : currentData.value,
   )
   const pending = computed(() => status.value === 'pending')
+  const isLoadingMore = computed(() => !input.isIdle() && view.value.loadingMore)
   // A settled list may load more while its auth gate still waits: the page is
   // held and subscribed with the rest of the list once it goes live.
   const canLoadMore = computed(
-    () => status.value === 'success' && view.value.last?.isDone === false,
+    () =>
+      status.value === 'success' && view.value.last?.isDone === false && !view.value.loadingMore,
   )
-  const cursor = computed(() => view.value.last?.continueCursor ?? initialOptions.value.cursor)
-  const pageStatus = computed(() => view.value.last?.pageStatus ?? null)
+  const isExhausted = computed(
+    () => currentData.value !== undefined && view.value.last?.isDone === true,
+  )
   const error = computed<ConvexCallError | undefined>(
     () => input.getBoundaryError() ?? view.value.error,
   )
@@ -402,18 +404,36 @@ export function createPaginationController<Item>(
     subscribePage(lastIndex)
   }
 
-  function loadMore(numItems: number): void {
+  /** Loaded, failed, superseded (retired or replaced), reset, or disposed. */
+  function isPageSettled(options: PaginationPageOptions): boolean {
+    if (disposed) return true
+    const page = pages.value.find((candidate) => candidate.paginationOpts === options)
+    if (page) return page.result !== undefined || page.error !== undefined
+    // Bounded split pages or a refresh replaced the requested page; its items
+    // are visible once no replacement is still loading. Retired or reset lists
+    // have nothing left loading either.
+    return !isLoadingMore.value
+  }
+
+  function loadMore(numItems: number): Promise<void> {
     assertLoadMoreNumItems(numItems)
     // Only subscriptions load later pages. Before the list is live the page
     // stays pending; `resubscribeLoadedPages` subscribes it with the others.
-    if (disposed || !canLoadMore.value || input.getArgs() === 'skip') return
+    if (disposed || !canLoadMore.value || input.getArgs() === 'skip') return Promise.resolve()
     const continueCursor = view.value.last!.continueCursor
+    // The list ends at a failed later page, so the request retries it and
+    // replaces everything that followed it.
+    const failedIndex = pages.value.findIndex((page) => page.result === undefined)
+    if (failedIndex >= 0) retirePagesFrom(failedIndex)
     boundLastLoadedPage(continueCursor)
-    pages.value = [
-      ...pages.value,
-      createPendingPaginationPage<Item>({ numItems, cursor: continueCursor, id: generation.value }),
-    ]
+    const page = createPendingPaginationPage<Item>({
+      numItems,
+      cursor: continueCursor,
+      id: generation.value,
+    })
+    pages.value = [...pages.value, page]
     subscribePage(pages.value.length - 1)
+    return loadMoreSettlement.until(() => isPageSettled(page.paginationOpts))
   }
 
   async function refresh(): Promise<void> {
@@ -577,6 +597,7 @@ export function createPaginationController<Item>(
     stopSettledWatch?.()
     stopSettledWatch = null
     settleFirstPageIfTerminal()
+    loadMoreSettlement.dispose()
   }
 
   return {
@@ -586,8 +607,8 @@ export function createPaginationController<Item>(
     pending,
     isStale,
     canLoadMore,
-    cursor,
-    pageStatus,
+    isLoadingMore,
+    isExhausted,
     error,
     start,
     firstPageSettled,

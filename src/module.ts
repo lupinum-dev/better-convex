@@ -38,14 +38,22 @@ import { CONVEX_MODULE_DEFAULTS } from './runtime/utils/config-defaults'
 import { getSiteUrlResolutionHint, resolveConvexSiteUrl } from './runtime/utils/convex-config'
 import type { LogLevel } from './runtime/utils/logger'
 import { normalizeConvexDeploymentUrl, normalizeConvexSiteUrl } from './runtime/utils/site-url'
+import {
+  normalizeConvexClientConfig,
+  normalizeConvexServerConfig,
+} from './runtime/utils/transport-config'
 
 const releaseRuntimeFingerprint = getPackedRuntimeFingerprint()
 
 // The root default export is the module; stable public types are
 // re-exported here. Do not export the raw `ConvexPublicRuntimeConfig` —
-// consumers read `useConvexConfig()`.
+// consumers read `useConvexConfig()`. Each exported name has exactly one
+// meaning across the Nuxt and Vue packages: types shared with the Vue package
+// are re-exported from it unchanged, and Nuxt-only shapes carry a Nuxt name.
 export type { ConvexAuthOptions } from './runtime/utils/auth-config'
 export type { ConvexAuthMode, ConvexAuthStatus } from './runtime/utils/auth-status'
+export type { ConvexCallError, ConvexCallErrorCode } from './runtime/errors'
+export type { ConvexUser } from './runtime/utils/types'
 export type {
   ConvexCallStatus,
   ConvexClientHandle,
@@ -53,38 +61,38 @@ export type {
   ConvexFormErrorMapping,
   ConvexFormIssue,
   ConvexFormSubmitResult,
+  ConvexQueryArgs,
+  ConvexQueryBlockedBy,
   OptimisticUpdate,
-  UseConvexCall,
+  PaginatedQueryArgs,
+  PaginatedQueryItem,
+  UseConvexActionReturn,
+  UseConvexConnectionStateReturn,
   UseConvexFormReturn,
+  UseConvexMutationOptions,
+  UseConvexMutationReturn,
+  UseConvexPaginatedQueryState,
+  UseConvexQueryParameters,
+  UseConvexQueryState,
 } from '@lupinum/better-convex-vue'
 export type { ConvexRuntimeConfig } from './runtime/utils/runtime-config'
 export type { UseConvexAuthReturn } from './runtime/utils/auth-contract'
 export type {
   UploadProgressInfo,
-  UploadStatus,
   UploadUrlMutation,
   UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from './runtime/composables/useConvexFileUpload'
-export type { UseConvexMutationOptions } from './runtime/composables/useConvexMutation'
+// The Nuxt query options extend the Vue ones with the SSR policy (`server`,
+// `lazy`), so they are exported under their own `UseNuxt*` names.
 export type {
   NuxtConvexPaginatedQuery,
-  UseConvexPaginatedQueryState,
+  UseNuxtConvexPaginatedQueryOptions,
 } from './runtime/composables/useConvexPaginatedQuery'
-export type { NuxtConvexQuery, UseConvexQueryState } from './runtime/composables/useConvexQuery'
-/** Per-call query options for the Nuxt composable, including its SSR policy. */
-export type UseConvexQueryOptions =
-  import('./runtime/composables/useConvexQuery').UseNuxtConvexQueryOptions
-
-/** The exact rest parameters accepted by Nuxt's `useConvexQuery`. */
-export type UseConvexQueryParameters<
-  Query extends import('convex/server').FunctionReference<'query'>,
-  Options extends UseConvexQueryOptions = UseConvexQueryOptions,
-> = import('@lupinum/better-convex-vue').UseConvexQueryParameters<Query, Options>
-
-/** Per-call pagination options for the Nuxt composable, including its SSR policy. */
-export type UseConvexPaginatedQueryOptions =
-  import('./runtime/composables/useConvexPaginatedQuery').UseNuxtConvexPaginatedQueryOptions
+export type {
+  NuxtConvexQuery,
+  UseNuxtConvexQueryOptions,
+} from './runtime/composables/useConvexQuery'
 
 const logger = useLogger('@lupinum/better-convex-nuxt')
 
@@ -109,6 +117,10 @@ function resolveModuleImports(
 
 /** The one convention filename searched in the host application's `srcDir`. */
 const AUTH_CLIENT_CONVENTION_FILENAME = 'convex-auth.ts'
+
+/** Auth-only generated declarations, relative to the Nuxt build directory. */
+const AUTH_CLIENT_TYPES_FILENAME = 'types/better-convex-auth-client.d.ts'
+const PAGE_META_TYPES_FILENAME = 'types/better-convex-page-meta.d.ts'
 
 /**
  * Resolve the single auth-client definition module ("Module option").
@@ -179,6 +191,28 @@ export interface ModuleOptions {
    * @default false
    */
   logging?: LogLevel
+  /**
+   * Options for the browser `ConvexClient`. They apply to every client the
+   * module creates, including the anonymous client used by `auth: 'none'`.
+   */
+  client?: {
+    /** Log Convex client debug output. @default false */
+    verbose?: boolean
+    /** Allow a self-hosted deployment URL that does not look like `*.convex.cloud`. @default false */
+    skipConvexDeploymentUrlCheck?: boolean
+    /** Prompt before the page unloads while mutations are pending. @default false */
+    unsavedChangesWarning?: boolean
+  }
+  /** Bounds for Convex HTTP calls made during SSR and by `serverConvex`. */
+  server?: {
+    /** Largest accepted Convex HTTP response body, in bytes. @default 1048576 */
+    maxResponseBytes?: number
+    /**
+     * Deadline for one Convex HTTP query, in milliseconds. Mutations (15 s) and
+     * actions (60 s) keep their own deadlines. @default 8000
+     */
+    queryTimeoutMs?: number
+  }
 }
 
 export default defineNuxtModule<ModuleOptions>({
@@ -229,6 +263,12 @@ export default defineNuxtModule<ModuleOptions>({
       )
     }
 
+    // Validate transport options at build time so a typo fails `nuxi build`
+    // rather than the first request. Runtime normalization repeats the checks
+    // for deploy-time `NUXT_PUBLIC_CONVEX_*` overrides.
+    const clientConfig = normalizeConvexClientConfig(options.client)
+    const serverConfig = normalizeConvexServerConfig(options.server)
+
     // Public runtime config. Normalized auth build policy is materialized
     // internally; build-only client selection never enters runtime config.
     const convexConfig = {
@@ -236,6 +276,8 @@ export default defineNuxtModule<ModuleOptions>({
         url: resolvedUrl || '',
         siteUrl: resolvedSiteUrl || '',
         logging: options.logging ?? CONVEX_MODULE_DEFAULTS.logging,
+        client: { ...clientConfig },
+        server: { ...serverConfig },
       }),
       // Auth is build policy, not a deploy-time/public runtime override.
       auth: normalizedAuthConfig,
@@ -301,7 +343,7 @@ export default defineNuxtModule<ModuleOptions>({
       // packed auth-client typing fixture). `addTypeTemplate` registers the
       // reference for us.
       addTypeTemplate({
-        filename: 'types/better-convex auth schema-client.d.ts',
+        filename: AUTH_CLIENT_TYPES_FILENAME,
         getContents: () =>
           [
             `import type definition from ${JSON.stringify(authClientDefinitionPath)}`,
@@ -361,9 +403,10 @@ export default defineNuxtModule<ModuleOptions>({
       })
 
       // Auth-only page metadata. A no-auth build does not advertise a policy it
-      // cannot execute.
-      addTemplate({
-        filename: 'types/better-convex auth schema.d.ts',
+      // cannot execute. `addTypeTemplate` references the declaration from
+      // `.nuxt/nuxt.d.ts`, so `definePageMeta({ convexAuth })` is type-checked.
+      addTypeTemplate({
+        filename: PAGE_META_TYPES_FILENAME,
         getContents: () =>
           getTypeAugmentationTemplateContents(
             resolver.resolve('./runtime/utils/auth-route-protection'),

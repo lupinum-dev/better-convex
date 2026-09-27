@@ -33,9 +33,7 @@ const NUXT_CHECKER_ENTRY_RULES = [
         '@nuxt/schema',
         '@lupinum/better-convex-vue',
         '@lupinum/better-convex-vue/errors',
-        'convex/browser',
         'convex/server',
-        'convex/values',
         'vue',
       ],
     },
@@ -164,7 +162,14 @@ const NUXT_CHECKER_ENTRY_RULES = [
       // directly importable by Node because server integrations can load it at
       // request time, outside Nuxt's transform pipeline. Lazy Nitro runtime
       // APIs remain valid for authenticated cache operations after import.
-      runtimeExternalSpecifiers: ['@lupinum/better-convex-vue/errors', 'convex/browser'],
+      // `h3` is a direct dependency (the H3 error mapping); `convex/server` is
+      // the Convex peer (function names on errors).
+      runtimeExternalSpecifiers: [
+        '@lupinum/better-convex-vue/errors',
+        'convex/browser',
+        'convex/server',
+        'h3',
+      ],
       typeExternalSpecifiers: ['@lupinum/better-convex-vue/errors', 'convex/server', 'h3'],
     },
     packedProbe: probeServerEntry,
@@ -182,7 +187,13 @@ const VUE_CHECKER_ENTRY_RULES = [
         'ohash',
         'vue',
       ],
-      typeExternalSpecifiers: ['@standard-schema/spec', 'convex/browser', 'convex/server', 'vue'],
+      typeExternalSpecifiers: [
+        '@standard-schema/spec',
+        'convex/browser',
+        'convex/server',
+        'convex/values',
+        'vue',
+      ],
     },
   },
   {
@@ -209,7 +220,13 @@ const VUE_CHECKER_ENTRY_RULES = [
         'ohash',
         'vue',
       ],
-      typeExternalSpecifiers: ['@standard-schema/spec', 'convex/browser', 'convex/server', 'vue'],
+      typeExternalSpecifiers: [
+        '@standard-schema/spec',
+        'convex/browser',
+        'convex/server',
+        'convex/values',
+        'vue',
+      ],
     },
   },
 ]

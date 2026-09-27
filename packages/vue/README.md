@@ -45,13 +45,17 @@ Use generated Convex references inside `setup`:
 import { useConvexMutation, useConvexQuery } from '@lupinum/better-convex-vue'
 import { api } from '../convex/_generated/api'
 
-const notes = useConvexQuery(api.notes.list, {})
-const rename = useConvexMutation(api.notes.rename)
+const { data: notes, status, error } = useConvexQuery(api.notes.list, {})
+const { mutate: renameNote, pending: renaming } = useConvexMutation(api.notes.rename)
 ```
+
+Pass `'skip'` to pause a query. A Convex `null` result remains valid data. `renameNote()` rejects with a `ConvexCallError` that carries its `code` and `functionName`.
 
 ## Exports
 
-Pass `'skip'` to pause a query. A Convex `null` result remains valid data.
+The root entry exports `createBetterConvex`, `useConvexQuery`, `useConvexPaginatedQuery`, `useConvexMutation`, `useConvexAction`, `useConvexForm`, `useConvexFileUpload`, `useConvexConnectionState`, and `useConvex`. `@lupinum/better-convex-vue/errors` exports `ConvexCallError`, `isConvexCallError`, and `normalizeConvexError`.
+
+Pass supported `ConvexClient` options with `createBetterConvex({ convexUrl, clientOptions })`.
 
 Advanced hosts can use the `embedded` export.
 

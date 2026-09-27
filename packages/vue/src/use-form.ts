@@ -1,16 +1,9 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
-import {
-  computed,
-  getCurrentScope,
-  onScopeDispose,
-  shallowReadonly,
-  shallowRef,
-  type ComputedRef,
-  type Ref,
-} from 'vue'
+import { getFunctionName } from 'convex/server'
+import { computed, getCurrentScope, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
 
-import { ConvexCallError } from './errors'
+import { ConvexCallError, type ConvexCallErrorCode } from './errors'
 import {
   createSubmissionFormError,
   createValidationFormError,
@@ -19,6 +12,8 @@ import {
   type ConvexFormIssue,
 } from './form-errors'
 import type { CallableControllerObserver } from './internal/callable-controller'
+import { isIdentityChangedError } from './internal/identity-changed-error'
+import { useOptionalBetterConvexRuntime } from './runtime-context'
 import type { ConvexCallStatus } from './use-callable'
 import { useConvexMutationInternal } from './use-callable'
 
@@ -46,23 +41,39 @@ export type ConvexFormSubmitResult<Result> =
   | Readonly<{ ok: true; data: Result }>
   | Readonly<{ ok: false; error: ConvexFormError }>
 
+/**
+ * The frozen state and verb returned by {@link useConvexForm}.
+ *
+ * `submit` resolves with `{ ok: false, error }` for validation and mutation
+ * failures, so templates can await it without `try`. It rejects with a
+ * {@link ConvexCallError} coded `SUBMIT_IN_PROGRESS` while an earlier
+ * submission is pending, and with a `TypeError` when form and contextual
+ * arguments overlap.
+ */
 export interface UseConvexFormReturn<
   Input extends FormRecord,
   ExtraArgs extends FormRecord,
   Result,
 > {
-  submit(
+  readonly submit: (
     values: Input,
     ...extraArgs: SubmitExtraParameters<ExtraArgs>
-  ): Promise<ConvexFormSubmitResult<Result>>
-  readonly data: Readonly<Ref<Result | undefined>>
+  ) => Promise<ConvexFormSubmitResult<Result>>
+  /** The latest successful mutation result, or `undefined`. */
+  readonly data: ComputedRef<Result | undefined>
   readonly status: ComputedRef<ConvexCallStatus>
   readonly pending: ComputedRef<boolean>
-  readonly error: Readonly<Ref<ConvexFormError | undefined>>
+  /** The latest validation or submission failure, or `undefined`. */
+  readonly error: ComputedRef<ConvexFormError | undefined>
   readonly issues: ComputedRef<readonly ConvexFormIssue[]>
   readonly fieldErrors: ComputedRef<Readonly<Record<string, readonly string[]>>>
   readonly formError: ComputedRef<string | undefined>
-  reset(): void
+  /**
+   * Returns to `idle`, clears `data` and `error`, and retires a pending
+   * submission: it still settles its own promise but no longer updates state,
+   * and a new submission may start at once. An identity change does the same.
+   */
+  readonly reset: () => void
 }
 
 interface FormOptionsBase<Schema extends StandardSchemaV1, Input extends FormRecord> {
@@ -121,6 +132,20 @@ function hasOverlappingKeys(left: FormRecord, right: FormRecord): boolean {
   return Object.keys(left).some((key) => Object.hasOwn(right, key))
 }
 
+/**
+ * Validates form values with a Standard Schema and submits one Convex mutation.
+ *
+ * ```ts
+ * const { submit, pending, fieldErrors, formError } = useConvexForm(api.notes.create, {
+ *   schema: z.object({ title: z.string().min(1) }),
+ * })
+ * const result = await submit({ title })
+ * ```
+ *
+ * Use `toArgs` to map validated values to mutation arguments. Pass the
+ * remaining mutation arguments as the second `submit` argument. `mapError`
+ * maps a {@link ConvexCallError} to field or form messages.
+ */
 export function useConvexForm<
   Mutation extends FunctionReference<'mutation'>,
   Schema extends StandardSchemaV1<FormRecord, FormRecord>,
@@ -137,6 +162,7 @@ export function useConvexForm<
   RemainingArgs<FunctionArgs<Mutation>, StandardSchemaV1.InferOutput<Schema>>,
   FunctionReturnType<Mutation>
 >
+/** Validates with `schema`, maps the output with `toArgs`, and submits one Convex mutation. */
 export function useConvexForm<
   Mutation extends FunctionReference<'mutation'>,
   Schema extends StandardSchemaV1<FormRecord, unknown>,
@@ -171,7 +197,8 @@ export function useConvexFormInternal(
   if (!getCurrentScope()) {
     throw new Error('[better-convex-vue] useConvexForm must run inside a Vue effect scope')
   }
-  const mutate = useConvexMutationInternal(
+  const functionName = getFunctionName(mutation)
+  const { mutate } = useConvexMutationInternal(
     mutation as FunctionReference<'mutation', 'public', FormRecord, unknown>,
     { observer },
   )
@@ -194,7 +221,16 @@ export function useConvexFormInternal(
     values: FormRecord,
     ...extraArgs: [FormRecord?]
   ): Promise<ConvexFormSubmitResult<unknown>> => {
-    if (activePromise) return activePromise
+    if (activePromise) {
+      return Promise.reject(
+        new ConvexCallError({
+          kind: 'unknown',
+          code: 'SUBMIT_IN_PROGRESS' satisfies ConvexCallErrorCode,
+          message: 'A submission is already in progress for this form',
+          functionName,
+        }),
+      )
+    }
     const snapshot = cloneSnapshot(values)
     const extra = cloneSnapshot(extraArgs[0] ?? {})
     const knownFields = new Set(Object.keys(snapshot))
@@ -231,7 +267,7 @@ export function useConvexFormInternal(
       } catch (rawError) {
         if (!(rawError instanceof ConvexCallError)) throw rawError
         const failure = createSubmissionFormError(rawError, knownFields, options.mapError)
-        const retiredIdentity = rawError.code === 'IDENTITY_CHANGED'
+        const retiredIdentity = isIdentityChangedError(rawError)
         if (!disposed && revision === attempt && !retiredIdentity) {
           error.value = failure
           currentStatus.value = 'error'
@@ -241,11 +277,11 @@ export function useConvexFormInternal(
     }
 
     const promise = execute().finally(() => {
+      // reset() and disposal retire the submission and already own the state.
       if (activePromise !== promise) return
       activePromise = undefined
-      if (!disposed && (revision !== attempt || currentStatus.value === 'pending')) {
-        currentStatus.value = 'idle'
-      }
+      // A thrown TypeError or non-call failure leaves no committed outcome.
+      if (currentStatus.value === 'pending') currentStatus.value = 'idle'
     })
     activePromise = promise
     return promise
@@ -253,25 +289,37 @@ export function useConvexFormInternal(
 
   const reset = () => {
     revision += 1
-    data.value = undefined
-    error.value = undefined
-    currentStatus.value = activePromise ? 'pending' : 'idle'
-  }
-
-  onScopeDispose(() => {
-    disposed = true
-    revision += 1
+    activePromise = undefined
     data.value = undefined
     error.value = undefined
     currentStatus.value = 'idle'
+  }
+
+  // A settled result or mapped error belongs to the identity that produced it;
+  // a new identity starts from a clean form, like the other callables.
+  const runtime = useOptionalBetterConvexRuntime()
+  const readGeneration = () => runtime?.identity.snapshot.value.identityGeneration ?? 0
+  let lastSeenGeneration = readGeneration()
+  const stopIdentity =
+    runtime?.browser.identity.subscribe(() => {
+      const generation = readGeneration()
+      if (generation === lastSeenGeneration) return
+      lastSeenGeneration = generation
+      reset()
+    }) ?? null
+
+  onScopeDispose(() => {
+    disposed = true
+    stopIdentity?.()
+    reset()
   })
 
   return Object.freeze({
     submit,
-    data: shallowReadonly(data),
+    data: computed(() => data.value),
     status,
     pending,
-    error: shallowReadonly(error),
+    error: computed(() => error.value),
     issues,
     fieldErrors,
     formError,

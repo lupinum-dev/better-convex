@@ -158,7 +158,6 @@ const permissionUserId = computed(() =>
 )
 
 async function signOut() {
-  if (!client) throw new Error('Authentication client unavailable')
   await client.signOut()
 }
 </script>

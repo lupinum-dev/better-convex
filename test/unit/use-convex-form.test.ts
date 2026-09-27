@@ -7,6 +7,7 @@ import { z } from 'zod'
 
 import { createBetterConvex, useConvexForm } from '../../packages/vue/src'
 import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
+import { ConvexCallError, isConvexCallError } from '../../packages/vue/src/errors'
 
 type SaveArgs = {
   accountId: string
@@ -136,7 +137,7 @@ describe('useConvexForm', () => {
     scope.stop()
   })
 
-  it('returns one active promise and performs one mutation for duplicate submissions', async () => {
+  it('rejects a concurrent submission without a second mutation or state change', async () => {
     let release!: (value: SaveResult) => void
     const { form, mutation, scope } = setup(
       () =>
@@ -150,16 +151,28 @@ describe('useConvexForm', () => {
     const first = form.submit({ balance: 1, note: 'first' }, { accountId: 'account-1' })
     const duplicate = form.submit({ balance: 2, note: 'second' }, { accountId: 'account-2' })
 
-    expect(duplicate).toBe(first)
+    const rejection = await duplicate.catch((error: unknown) => error)
+    expect(rejection).toBeInstanceOf(ConvexCallError)
+    expect(isConvexCallError(rejection, 'SUBMIT_IN_PROGRESS')).toBe(true)
+    expect(rejection).toMatchObject({ kind: 'unknown', functionName: 'accounts:save' })
     expect(form.pending.value).toBe(true)
+    expect(form.error.value).toBeUndefined()
+
     await vi.waitFor(() => expect(mutation).toHaveBeenCalledTimes(1))
     release({ id: 'checkpoint-1' })
     await expect(first).resolves.toEqual({ ok: true, data: { id: 'checkpoint-1' } })
+    expect(mutation).toHaveBeenCalledTimes(1)
     expect(mutation.mock.calls[0]?.[1]).toMatchObject({
       accountId: 'account-1',
       balanceCents: 100,
       note: 'first',
     })
+
+    // The guard is released once the first submission settles.
+    const next = form.submit({ balance: 3, note: '' }, { accountId: 'account-1' })
+    await vi.waitFor(() => expect(mutation).toHaveBeenCalledTimes(2))
+    release({ id: 'checkpoint-2' })
+    await expect(next).resolves.toEqual({ ok: true, data: { id: 'checkpoint-2' } })
     scope.stop()
   })
 
@@ -197,24 +210,36 @@ describe('useConvexForm', () => {
     scope.stop()
   })
 
-  it('keeps reset final while the underlying mutation settles', async () => {
-    let release!: (value: SaveResult) => void
+  it('returns to idle on reset and retires the pending submission', async () => {
+    const releases: Array<(value: SaveResult) => void> = []
     const { form, mutation, scope } = setup(
       () =>
         new Promise((resolve) => {
-          release = resolve
+          releases.push(resolve)
         }),
     )
-    const pending = form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+    const retired = form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
     await vi.waitFor(() => expect(mutation).toHaveBeenCalledTimes(1))
 
     form.reset()
+    expect(form.status.value).toBe('idle')
+    expect(form.pending.value).toBe(false)
+    expect(form.data.value).toBeUndefined()
+
+    // A reset form accepts a new submission while the retired one is in flight.
+    const current = form.submit({ balance: 2, note: '' }, { accountId: 'account-1' })
+    await vi.waitFor(() => expect(mutation).toHaveBeenCalledTimes(2))
+    releases[0]!({ id: 'retired' })
+    await expect(retired).resolves.toEqual({ ok: true, data: { id: 'retired' } })
     expect(form.status.value).toBe('pending')
     expect(form.data.value).toBeUndefined()
-    release({ id: 'retired' })
-    await pending
 
-    expect(form.pending.value).toBe(false)
+    releases[1]!({ id: 'current' })
+    await expect(current).resolves.toEqual({ ok: true, data: { id: 'current' } })
+    expect(form.status.value).toBe('success')
+    expect(form.data.value).toEqual({ id: 'current' })
+
+    form.reset()
     expect(form.status.value).toBe('idle')
     expect(form.data.value).toBeUndefined()
     expect(form.error.value).toBeUndefined()
@@ -265,6 +290,42 @@ describe('useConvexForm', () => {
     scope.stop()
   })
 
+  it('clears settled success and failure state when the identity changes', async () => {
+    let outcome: 'ok' | 'fail' = 'ok'
+    const { form, scope, advanceIdentity } = setup(async () => {
+      if (outcome === 'fail') throw new ConvexError({ code: 'BAD_NOTE' })
+      return { id: 'user-a' }
+    })
+
+    await form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+    expect(form.data.value).toEqual({ id: 'user-a' })
+    advanceIdentity()
+    expect(form.status.value).toBe('idle')
+    expect(form.data.value).toBeUndefined()
+
+    outcome = 'fail'
+    await form.submit({ balance: 1, note: 'forbidden' }, { accountId: 'account-1' })
+    expect(form.fieldErrors.value.note).toEqual(['The note is not allowed'])
+    advanceIdentity()
+    expect(form.status.value).toBe('idle')
+    expect(form.error.value).toBeUndefined()
+    expect(form.fieldErrors.value).toEqual({})
+    expect(form.formError.value).toBeUndefined()
+    scope.stop()
+  })
+
+  it('returns an in-flight submission to idle as soon as the identity changes', async () => {
+    const { form, mutation, scope, advanceIdentity } = setup(() => new Promise(() => {}))
+    void form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+    await vi.waitFor(() => expect(mutation).toHaveBeenCalledTimes(1))
+    expect(form.pending.value).toBe(true)
+
+    advanceIdentity()
+    expect(form.status.value).toBe('idle')
+    expect(form.pending.value).toBe(false)
+    scope.stop()
+  })
+
   it('rejects overlapping runtime arguments and releases its guard', async () => {
     const { form, mutation, scope } = setup(async () => ({ id: 'unused' }))
 
@@ -288,9 +349,35 @@ describe('useConvexForm', () => {
     if (result.ok) throw new Error('Expected form failure')
     expect(result.error.kind).toBe('submission')
     expect(result.error.callError?.code).toBe('BAD_NOTE')
+    expect(result.error.callError?.functionName).toBe('accounts:save')
     expect(form.fieldErrors.value.note).toEqual(['The note is not allowed'])
     expect(form.formError.value).toBeUndefined()
     expect(JSON.stringify(result.error)).not.toContain('cause')
+    scope.stop()
+  })
+
+  it('keeps developer-authored application text on the call error', async () => {
+    const { form, scope } = setup(async () => {
+      throw new ConvexError({ code: 'LOCKED', message: 'The account is locked' })
+    })
+    const unmapped = await form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+    expect(unmapped.ok).toBe(false)
+    // The fixture mapper maps every non-BAD_NOTE code to a fixed form message.
+    expect(form.formError.value).toBe('Could not save the checkpoint')
+    if (unmapped.ok) throw new Error('Expected form failure')
+    expect(unmapped.error.callError?.message).toBe('The account is locked')
+    scope.stop()
+  })
+
+  it('returns a frozen, destructurable object', async () => {
+    const { form, scope } = setup(async () => ({ id: 'checkpoint-1' }))
+    expect(Object.isFrozen(form)).toBe(true)
+    const { submit, status, data, reset } = form
+    await submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+    expect(status.value).toBe('success')
+    expect(data.value).toEqual({ id: 'checkpoint-1' })
+    reset()
+    expect(status.value).toBe('idle')
     scope.stop()
   })
 

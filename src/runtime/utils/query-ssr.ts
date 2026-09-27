@@ -1,5 +1,6 @@
+import type { ConvexQueryBlockedBy } from '@lupinum/better-convex-vue'
 import {
-  decideQueryExecution,
+  decideQueryGate,
   deriveQueryStatus,
   queryIsolationTag,
   type ClientIdentitySnapshot,
@@ -61,6 +62,8 @@ export function projectNuxtQueryIdentity(state: NuxtQueryAuthState): ClientIdent
 
 export interface ConvexQueryGate {
   readonly outcome: QueryExecutionOutcome
+  /** The public `blockedBy`, from the same decision the browser lifecycle makes. */
+  readonly blockedBy: ConvexQueryBlockedBy
   /** Identity dimension of the payload key. */
   readonly identity: ConvexIdentityKey
 }
@@ -71,10 +74,10 @@ export function resolveConvexQueryGate(input: {
   readonly skipped: boolean
   readonly identity: ClientIdentitySnapshot
 }): ConvexQueryGate {
+  const { outcome, blockedBy } = decideQueryGate(input)
   return {
-    outcome: input.started
-      ? decideQueryExecution({ auth: input.auth, skipped: input.skipped, identity: input.identity })
-      : 'idle',
+    outcome,
+    blockedBy,
     identity: queryIsolationTag(input.auth, input.identity).identityKey,
   }
 }
@@ -110,6 +113,7 @@ export interface ConvexSsrQueryView<T> {
   readonly status: ConvexCallStatus
   readonly value: T | undefined
   readonly error: ConvexCallError | undefined
+  readonly blockedBy: ConvexQueryBlockedBy
 }
 
 /**
@@ -118,53 +122,62 @@ export interface ConvexSsrQueryView<T> {
  * fetched on the server (`server: false`, no URL, no token) renders `idle`.
  */
 export function projectConvexSsrQuery<T>(input: {
-  readonly gate: QueryExecutionOutcome
+  readonly gate: Pick<ConvexQueryGate, 'outcome' | 'blockedBy'>
   readonly server: boolean
+  /** Names the query on an auth-gate error, like every other query failure. */
+  readonly functionName: string
   readonly authError: ConvexCallError | null
   readonly entry: ConvexQueryPayload<T> | null | undefined
   readonly fetching: boolean
 }): ConvexSsrQueryView<T> {
-  const fetched = input.gate === 'execute' && input.server
+  const { outcome, blockedBy } = input.gate
+  const fetched = outcome === 'execute' && input.server
   const entry = fetched ? input.entry : undefined
   const hasValue = entry !== null && entry !== undefined && 'value' in entry
   const error =
-    input.gate === 'error'
-      ? (input.authError ?? undefined)
+    outcome === 'error'
+      ? input.authError
+        ? normalizeConvexError(input.authError, { functionName: input.functionName })
+        : undefined
       : entry !== null && entry !== undefined && 'error' in entry
         ? entry.error
         : undefined
   return {
     status: deriveQueryStatus({
-      pending: input.gate === 'wait' || (fetched && input.fetching),
+      pending: outcome === 'wait' || (fetched && input.fetching),
       error: error !== undefined,
       hasData: hasValue,
     }),
     value: hasValue ? entry.value : undefined,
     error,
+    blockedBy,
   }
 }
 
-/** The SSR pagination view; `canLoadMore` matches the live first page it hands off to. */
+/**
+ * The SSR pagination view. It is exactly the state the live list starts from
+ * with the same first page, so the hand-off after hydration does not flicker.
+ * The server never loads a later page.
+ */
 export interface ConvexSsrPaginationView<Item> {
   readonly status: ConvexCallStatus
   readonly data: readonly Item[] | undefined
   readonly error: ConvexCallError | undefined
+  readonly blockedBy: ConvexQueryBlockedBy
   readonly canLoadMore: boolean
-  readonly cursor: string | null
-  readonly pageStatus: 'SplitRecommended' | 'SplitRequired' | null
+  readonly isExhausted: boolean
 }
 
 export function projectConvexSsrPagination<Item>(
   view: ConvexSsrQueryView<PaginationResult<Item>>,
-  initialCursor: string | null,
 ): ConvexSsrPaginationView<Item> {
   const page = view.value
   return {
     status: view.status,
     data: page?.page,
     error: view.error,
+    blockedBy: view.blockedBy,
     canLoadMore: view.status === 'success' && page?.isDone === false,
-    cursor: page?.continueCursor ?? initialCursor,
-    pageStatus: page?.pageStatus ?? null,
+    isExhausted: page?.isDone === true,
   }
 }

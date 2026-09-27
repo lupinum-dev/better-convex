@@ -16,7 +16,7 @@ import {
   type MaybeRefOrGetter,
 } from 'vue'
 
-import type { ConvexCallError } from './errors'
+import { normalizeConvexError, type ConvexCallError } from './errors'
 import { createPaginationController } from './internal/pagination-controller'
 import { assertLoadMoreNumItems } from './internal/pagination-state'
 import {
@@ -24,9 +24,9 @@ import {
   isConvexArgsSkipped,
   type ConvexArgsState,
 } from './internal/query-args'
-import { decideQueryExecution, queryIsolationTag } from './internal/query-execution'
+import { decideQueryGate, queryIsolationTag } from './internal/query-execution'
 import { useBetterConvexRuntime } from './runtime-context'
-import type { ConvexAuthMode } from './use-query'
+import type { ConvexAuthMode, ConvexCallStatus, ConvexQueryBlockedBy } from './use-query'
 
 export type PaginatedQueryReference = FunctionReference<
   'query',
@@ -59,17 +59,39 @@ export interface UseConvexPaginatedQueryOptions {
 }
 
 export interface UseConvexPaginatedQueryState<Item> {
+  /** Every loaded item, in order. A failed later page keeps the items before it. */
   readonly data: ComputedRef<readonly Item[] | undefined>
-  readonly status: ComputedRef<'idle' | 'pending' | 'success' | 'error'>
+  /** The first page's status, exactly like `useConvexQuery`: loading more stays `success`. */
+  readonly status: ComputedRef<ConvexCallStatus>
+  /** The first page is loading. */
   readonly pending: ComputedRef<boolean>
-  readonly canLoadMore: ComputedRef<boolean>
-  readonly cursor: ComputedRef<string | null>
-  readonly pageStatus: ComputedRef<'SplitRecommended' | 'SplitRequired' | null>
+  /**
+   * The first-page failure, else the first failed later page. `status` stays
+   * `success` for a failed later page. `error.functionName` names the query.
+   */
   readonly error: ComputedRef<ConvexCallError | undefined>
   readonly isStale: ComputedRef<boolean>
+  /** Why the list is not running; see `UseConvexQueryState.blockedBy`. */
+  readonly blockedBy: ComputedRef<ConvexQueryBlockedBy>
+  /**
+   * The first page is `success`, the last loaded page is not the end, and no
+   * later page is loading. A failed later page may be requested again.
+   */
+  readonly canLoadMore: ComputedRef<boolean>
+  /** A later page is loading. */
+  readonly isLoadingMore: ComputedRef<boolean>
+  /** The last loaded page is the end of the list. */
+  readonly isExhausted: ComputedRef<boolean>
+  /**
+   * Request `numItems` more items. The promise settles once that page is
+   * loaded, failed, superseded, reset, or disposed, and it never rejects, so
+   * templates may ignore it. Without `canLoadMore` the call does nothing.
+   * Throws synchronously when `numItems` is not a positive safe integer.
+   */
+  loadMore(numItems: number): Promise<void>
   execute(): Promise<void>
-  loadMore(numItems: number): void
   refresh(): Promise<void>
+  /** Restart the list, optionally from `cursor`, dropping every loaded page. */
   reset(cursor?: string | null): void
 }
 
@@ -142,15 +164,24 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
   const functionName = getFunctionName(query)
   const boundaryFirstPage = shallowRef<PaginationResult<Item> | null>(bridge?.initialPage ?? null)
   const boundaryError = shallowRef<ConvexCallError | undefined>(undefined)
+  // The shared identity error, named for this query like every other failure.
+  const gateError = computed(() => {
+    const error = identity.value.error
+    return error ? normalizeConvexError(error, { functionName }) : undefined
+  })
 
-  const gate = computed(() => {
-    if (!started.value) return 'idle' as const
-    return decideQueryExecution({
+  const decision = computed(() =>
+    decideQueryGate({
       auth,
+      started: started.value,
       skipped: isConvexArgsSkipped(currentArgs.value),
       identity: identity.value,
-    })
-  })
+    }),
+  )
+  // Primitive projections, so identity notifications that rebuild the
+  // decision do not re-run the reconcile watcher below.
+  const gate = computed(() => decision.value.outcome)
+  const blockedBy = computed(() => decision.value.blockedBy)
   const idle = computed(() => gate.value === 'idle' || gate.value === 'error')
   const live = computed(() => gate.value === 'execute')
   const tag = computed(() => queryIsolationTag(auth, identity.value))
@@ -187,7 +218,7 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
     isLive: () => live.value,
     getBoundaryFirstPage: () => boundaryFirstPage.value,
     getBoundaryError: () =>
-      auth === 'none' ? boundaryError.value : (identity.value.error ?? boundaryError.value),
+      auth === 'none' ? boundaryError.value : (gateError.value ?? boundaryError.value),
     setBoundaryError: (error) => {
       boundaryError.value = error
     },
@@ -247,24 +278,33 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
 
   // A deferred lifecycle can already show a server-rendered first page that
   // offers more items. Hold one loadMore until starting makes it runnable.
-  let deferredLoadMore: number | undefined
+  const heldLoadMore = shallowRef<{ numItems: number; settle: () => void } | undefined>(undefined)
+
+  function releaseHeldLoadMore(): void {
+    const held = heldLoadMore.value
+    heldLoadMore.value = undefined
+    held?.settle()
+  }
 
   function start(): void {
     if (started.value) return
     started.value = true
-    const numItems = deferredLoadMore
-    deferredLoadMore = undefined
-    if (numItems !== undefined) controller.loadMore(numItems)
+    const held = heldLoadMore.value
+    if (!held) return
+    // Request first, then release: `isLoadingMore` never flickers off between.
+    const settled = controller.loadMore(held.numItems)
+    heldLoadMore.value = undefined
+    void settled.then(held.settle)
   }
 
-  function loadMore(numItems: number): void {
-    const seed = boundaryFirstPage.value
-    if (started.value || !seed || seed.isDone) {
-      controller.loadMore(numItems)
-      return
-    }
+  function loadMore(numItems: number): Promise<void> {
+    if (started.value) return controller.loadMore(numItems)
     assertLoadMoreNumItems(numItems)
-    deferredLoadMore ??= numItems
+    const seed = boundaryFirstPage.value
+    if (!seed || seed.isDone || heldLoadMore.value) return Promise.resolve()
+    return new Promise<void>((settle) => {
+      heldLoadMore.value = { numItems, settle }
+    })
   }
 
   async function execute(): Promise<void> {
@@ -281,12 +321,13 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
     if (typeof cursor !== 'string' && cursor !== null) {
       throw new Error('[better-convex-vue] reset cursor must be a string or null')
     }
-    deferredLoadMore = undefined
+    releaseHeldLoadMore()
     if (initialCursor.value === cursor) controller.reset()
     else initialCursor.value = cursor
   }
   onScopeDispose(() => {
     stop()
+    releaseHeldLoadMore()
     controller.dispose()
   })
 
@@ -295,13 +336,16 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
       data: controller.data,
       status: controller.status,
       pending: controller.pending,
-      isStale: controller.isStale,
-      canLoadMore: controller.canLoadMore,
-      cursor: controller.cursor,
-      pageStatus: controller.pageStatus,
-      execute,
-      loadMore,
       error: controller.error,
+      isStale: controller.isStale,
+      blockedBy,
+      canLoadMore: computed(() => heldLoadMore.value === undefined && controller.canLoadMore.value),
+      isLoadingMore: computed(
+        () => heldLoadMore.value !== undefined || controller.isLoadingMore.value,
+      ),
+      isExhausted: controller.isExhausted,
+      loadMore,
+      execute,
       refresh,
       reset,
     }),

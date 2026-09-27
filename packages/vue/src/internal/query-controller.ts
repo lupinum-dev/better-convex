@@ -1,4 +1,4 @@
-import type { FunctionReference } from 'convex/server'
+import { getFunctionName, type FunctionReference } from 'convex/server'
 import { shallowRef } from 'vue'
 
 import { normalizeConvexError, type ConvexCallError } from '../errors'
@@ -91,13 +91,15 @@ function sameTag(a: QueryIsolationTag, b: QueryIsolationTag): boolean {
  * Framework-neutral regular-query lifecycle.
  *
  * It owns one subscription, operation-generation fencing, identity-partitioned
- * previous data, and first-value settlement. Framework adapters own SSR,
+ * previous data, and first-value settlement. Every error it reports names the
+ * query in `functionName`. Framework adapters own SSR,
  * request credentials, payload storage, and their data-fetching primitive.
  */
 export function createQueryController<RawT>(
   input: CreateQueryControllerInput<RawT>,
 ): QueryController<RawT> {
   const lastSettledArgsHash = shallowRef<string | undefined>(undefined)
+  const errorContext = { functionName: getFunctionName(input.query) }
 
   let operationRevision = 0
   let unsubscribe: (() => void) | null = null
@@ -146,7 +148,7 @@ export function createQueryController<RawT>(
     operation: QueryOperationContext,
   ): ConvexCallError | null {
     if (!isOperationCurrent(operation)) return null
-    const normalized = normalizeConvexError(error)
+    const normalized = normalizeConvexError(error, errorContext)
     input.boundary.setError(normalized)
     return normalized
   }
@@ -180,7 +182,7 @@ export function createQueryController<RawT>(
       },
       (error) => {
         if (!isOperationCurrent(operation)) return
-        const normalized = normalizeConvexError(error)
+        const normalized = normalizeConvexError(error, errorContext)
         input.boundary.setError(normalized)
         awaitingFirstValue = false
         input.events?.onError?.({ key, args, error, normalized })

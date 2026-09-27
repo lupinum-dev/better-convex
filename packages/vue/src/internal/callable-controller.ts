@@ -1,6 +1,6 @@
 import type { ComputedRef, Ref } from 'vue'
 
-import { ConvexCallError, normalizeConvexError } from '../errors'
+import { ConvexCallError, normalizeConvexError, type ConvexCallErrorCode } from '../errors'
 import { createClientCallState, type ClientCallStatus } from './call-state'
 import { createIdentityChangedError, isIdentityChangedError } from './identity-changed-error'
 
@@ -21,6 +21,8 @@ export interface CallableControllerObserver<Args, Result> {
 
 export interface CallableControllerInput<Args, Result> {
   operation: CallableOperation
+  /** The Convex function path, attached to every rejection this controller produces. */
+  functionName?: string
   getIdentityGeneration: () => number
   subscribeIdentityChange?: (listener: () => void) => () => void
   handlers: CallableControllerHandlers<Args, Result>
@@ -43,13 +45,15 @@ export interface CallableController<Args, Result> {
  * A call is bound to the identity generation visible at invocation entry.
  * Authentication settlement may delay dispatch, but it can never rebind an
  * already-started call to a later identity. A settlement-time transition masks
- * provisional state and the call fails before `invoke`. Reset and newer
- * attempts remain final.
+ * provisional state and the call fails before `invoke`. `reset()` and newer
+ * attempts are final: a retired attempt still settles its own promise but
+ * never commits state.
  */
 export function createCallableController<Args, Result>(
   input: CallableControllerInput<Args, Result>,
 ): CallableController<Args, Result> {
-  const { operation, getIdentityGeneration, handlers } = input
+  const { operation, functionName, getIdentityGeneration, handlers } = input
+  const errorContext = { functionName }
   const callState = createClientCallState<Result>()
   let lastSeenGeneration = getIdentityGeneration()
   let attemptRevision = 0
@@ -65,6 +69,15 @@ export function createCallableController<Args, Result>(
   }
 
   const run = async (args: Args): Promise<Result> => {
+    // A disposed callable has no owner left to observe state or DevTools.
+    if (disposed) {
+      throw new ConvexCallError({
+        kind: 'unknown',
+        code: 'CANCELLED' satisfies ConvexCallErrorCode,
+        message: `Convex ${operation} cancelled: its owning scope was disposed.`,
+        functionName,
+      })
+    }
     const startedAt = Date.now()
     let event: unknown
     if (input.observer) {
@@ -77,17 +90,10 @@ export function createCallableController<Args, Result>(
     let requestId = callState.start()
 
     try {
-      if (disposed) {
-        throw new ConvexCallError({
-          kind: 'unknown',
-          code: 'CALL_DISPOSED',
-          message: 'Convex callable is no longer active',
-        })
-      }
       if (handlers.settle) await handlers.settle()
 
       if (getIdentityGeneration() !== generation) {
-        throw createIdentityChangedError(operation)
+        throw createIdentityChangedError(operation, errorContext)
       }
 
       // Settlement may mask provisional state without changing identity. Only
@@ -99,7 +105,7 @@ export function createCallableController<Args, Result>(
       const result = await handlers.invoke(args)
 
       if (getIdentityGeneration() !== generation) {
-        throw createIdentityChangedError(operation)
+        throw createIdentityChangedError(operation, errorContext)
       }
 
       callState.commitSuccess(requestId, result)
@@ -108,14 +114,14 @@ export function createCallableController<Args, Result>(
       }
       return result
     } catch (rawError) {
-      const normalized = normalizeConvexError(rawError)
+      const normalized = normalizeConvexError(rawError, errorContext)
       const stale = isIdentityChangedError(normalized) || getIdentityGeneration() !== generation
 
       if (stale) {
         if (callState.isCurrent(requestId)) callState.mask()
         const identityError = isIdentityChangedError(normalized)
           ? normalized
-          : createIdentityChangedError(operation)
+          : createIdentityChangedError(operation, errorContext)
         if (input.observer) {
           observe(() => input.observer!.failEvent(event, identityError, startedAt))
         }

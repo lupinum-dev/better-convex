@@ -121,6 +121,9 @@ describe('better-convex-vue query type contracts', () => {
       ComputedRef<ConvexCallError | undefined>
     >()
     expectTypeOf<UseConvexQueryState<string>>().not.toHaveProperty('clear')
+    expectTypeOf<UseConvexQueryState<string>['blockedBy']>().toEqualTypeOf<
+      ComputedRef<'skip' | 'auth' | 'manual' | null>
+    >()
     expectTypeOf<keyof UseConvexPaginatedQueryOptions>().toEqualTypeOf<
       'auth' | 'initialCursor' | 'initialNumItems' | 'keepPreviousData' | 'immediate'
     >()
@@ -129,6 +132,27 @@ describe('better-convex-vue query type contracts', () => {
     >()
     expectTypeOf<UseConvexPaginatedQueryState<string>>().not.toHaveProperty('firstPageSettled')
     expectTypeOf<UseConvexPaginatedQueryState<string>>().not.toHaveProperty('results')
+    expectTypeOf<keyof UseConvexPaginatedQueryState<string>>().toEqualTypeOf<
+      | 'data'
+      | 'status'
+      | 'pending'
+      | 'error'
+      | 'isStale'
+      | 'blockedBy'
+      | 'canLoadMore'
+      | 'isLoadingMore'
+      | 'isExhausted'
+      | 'loadMore'
+      | 'execute'
+      | 'refresh'
+      | 'reset'
+    >()
+    expectTypeOf<UseConvexPaginatedQueryState<string>['loadMore']>().returns.toEqualTypeOf<
+      Promise<void>
+    >()
+    expectTypeOf<UseConvexPaginatedQueryState<string>['blockedBy']>().toEqualTypeOf<
+      UseConvexQueryState<string>['blockedBy']
+    >()
     expectTypeOf(typeContracts).toBeFunction()
   })
 })

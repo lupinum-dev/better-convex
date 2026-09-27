@@ -374,9 +374,10 @@ describe('useConvexPaginatedQuery controller', () => {
     )
 
     expect(result.status.value).toBe('idle')
-    expect(result.cursor.value).toBe('resume-at')
+    expect(result.blockedBy.value).toBe('manual')
     expect(primary.calls.onUpdate).toHaveLength(0)
     const execution = result.execute()
+    expect(result.blockedBy.value).toBeNull()
     expect(primary.calls.onUpdate).toHaveLength(1)
     primary.emitQueryResultWhere(
       (entry) =>
@@ -385,11 +386,14 @@ describe('useConvexPaginatedQuery controller', () => {
       page(['resumed'], false, 'next-cursor'),
     )
     await execution
-    expect(result.cursor.value).toBe('next-cursor')
+    expect(result.data.value).toEqual(['resumed'])
+    expect(result.canLoadMore.value).toBe(true)
 
     result.reset('another-cursor')
-    expect(result.cursor.value).toBe('another-cursor')
     expect(primary.calls.onUpdate).toHaveLength(2)
+    expect(primary.calls.onUpdate[1]?.args).toMatchObject({
+      paginationOpts: { cursor: 'another-cursor' },
+    })
     wrapper.unmount()
   })
 
@@ -488,7 +492,11 @@ describe('useConvexPaginatedQuery controller', () => {
 
     expect(queryResult.data.value).toEqual(['hydrated'])
     expect(queryResult.canLoadMore.value).toBe(true)
-    expect(queryResult.cursor.value).toBe('next')
+    expect(queryResult.isLoadingMore.value).toBe(false)
+    expect(queryResult.isExhausted.value).toBe(false)
+    expect(queryResult.blockedBy.value).toBeNull()
+    expect(queryResult).not.toHaveProperty('cursor')
+    expect(queryResult).not.toHaveProperty('pageStatus')
     await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
     expect(queryResult.data.value).toEqual(['hydrated'])
     expect(queryResult.canLoadMore.value).toBe(true)
@@ -544,7 +552,7 @@ describe('useConvexPaginatedQuery controller', () => {
 
     expect(result.data.value).toEqual(['ssr-a', 'ssr-b'])
     expect(primary.calls.onUpdate).toHaveLength(1)
-    result.loadMore(2)
+    void result.loadMore(2)
     expect(primary.calls.onUpdate).toHaveLength(3)
     expect(primary.calls.onUpdate[1]?.args).toMatchObject({
       paginationOpts: { cursor: null, endCursor: 'ssr-cursor' },
@@ -600,9 +608,11 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.state.data.value).toEqual(['ssr-a', 'ssr-b'])
 
     // Convex has not confirmed the token yet: the page waits with the list.
-    result.state.loadMore(2)
+    void result.state.loadMore(2)
     expect(primary.calls.onUpdate).toHaveLength(0)
-    expect(result.state.status.value).toBe('pending')
+    expect(result.state.status.value).toBe('success')
+    expect(result.state.isLoadingMore.value).toBe(true)
+    expect(result.state.canLoadMore.value).toBe(false)
     expect(result.state.data.value).toEqual(['ssr-a', 'ssr-b'])
 
     identityPort.set({
@@ -638,8 +648,16 @@ describe('useConvexPaginatedQuery controller', () => {
               initialNumItems: 2,
             },
           ).resultData
-          state.loadMore(3)
-          return { state, canLoadMoreWhileHydrating: state.canLoadMore.value }
+          const canLoadMoreWhileHydrating = state.canLoadMore.value
+          void state.loadMore(3)
+          return {
+            state,
+            canLoadMoreWhileHydrating,
+            held: {
+              canLoadMore: state.canLoadMore.value,
+              isLoadingMore: state.isLoadingMore.value,
+            },
+          }
         }),
       {
         owner: makeMockOwner(primary),
@@ -648,6 +666,7 @@ describe('useConvexPaginatedQuery controller', () => {
     )
 
     expect(result.canLoadMoreWhileHydrating).toBe(true)
+    expect(result.held).toEqual({ canLoadMore: false, isLoadingMore: true })
     await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(3))
     expect(primary.calls.onUpdate[1]?.args).toMatchObject({
       paginationOpts: { cursor: null, endCursor: 'ssr-cursor' },
@@ -655,7 +674,8 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(primary.calls.onUpdate[2]?.args).toMatchObject({
       paginationOpts: { numItems: 3, cursor: 'ssr-cursor' },
     })
-    expect(result.state.status.value).toBe('pending')
+    expect(result.state.status.value).toBe('success')
+    expect(result.state.isLoadingMore.value).toBe(true)
     expect(result.state.data.value).toEqual(['ssr-a', 'ssr-b'])
     expect(primary.calls.query).toHaveLength(0)
     wrapper.unmount()
@@ -776,9 +796,15 @@ describe('useConvexPaginatedQuery controller', () => {
 
     // Load the next page: the first page is rebound to a fixed end cursor and
     // one listener is acquired for the next range.
-    result.q.loadMore(2)
+    let loaded = false
+    const loading = result.q.loadMore(2).then(() => {
+      loaded = true
+    })
     await flush()
     expect(primary.calls.onUpdate.length).toBe(3)
+    expect(result.q.status.value).toBe('success')
+    expect(result.q.isLoadingMore.value).toBe(true)
+    expect(loaded).toBe(false)
 
     primary.emitQueryResultWhere(
       (e) =>
@@ -786,10 +812,42 @@ describe('useConvexPaginatedQuery controller', () => {
         'cursor-1',
       page(['c', 'd'], true, 'cursor-2'),
     )
-    await flush()
+    await loading
     expect(result.q.data.value).toEqual(['a', 'b', 'c', 'd'])
     expect(result.q.status.value).toBe('success')
+    expect(result.q.isLoadingMore.value).toBe(false)
+    expect(result.q.isExhausted.value).toBe(true)
+    expect(result.q.canLoadMore.value).toBe(false)
 
+    wrapper.unmount()
+  })
+
+  it('keeps loaded items when a later page fails and reports it with the function name', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:failing-tail')
+    const { result, flush, wrapper } = await captureInNuxt(
+      () => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 }),
+      { owner: makeMockOwner(primary) },
+    )
+
+    await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
+    primary.emitQueryResultWhere(() => true, page(['a', 'b'], false, 'cursor-1'))
+    await flush()
+    const loading = result.loadMore(2)
+    primary.emitQueryErrorWhere(
+      (e) =>
+        (e.args as { paginationOpts: { cursor: string | null } }).paginationOpts.cursor ===
+        'cursor-1',
+      new Error('tail failed'),
+    )
+    await expect(loading).resolves.toBeUndefined()
+
+    expect(result.data.value).toEqual(['a', 'b'])
+    expect(result.status.value).toBe('success')
+    expect(result.pending.value).toBe(false)
+    expect(result.isLoadingMore.value).toBe(false)
+    expect(result.error.value).toMatchObject({ functionName: 'feed:failing-tail' })
+    expect(result.canLoadMore.value).toBe(true)
     wrapper.unmount()
   })
 
@@ -876,7 +934,7 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.resultData.canLoadMore.value).toBe(true)
     await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
     expect(primary.calls.query).toHaveLength(0)
-    result.resultData.loadMore(2)
+    void result.resultData.loadMore(2)
     await flush()
     expect(primary.calls.onUpdate).toHaveLength(3)
     expect(primary.calls.onUpdate[1]?.args).toMatchObject({

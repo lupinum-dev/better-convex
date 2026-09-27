@@ -319,7 +319,10 @@ try {
     isDone: false,
   })
   assertDeepEqual(snapshot.pagination.data, [{ id: 'page-a' }], 'First live page')
-  await invoke('loadMore', 1)
+  assertDeepEqual(snapshot.pagination.exhausted, false, 'Continuable list state')
+  snapshot = await invoke('loadMore', 1)
+  assertDeepEqual(snapshot.pagination.loadingMore, true, 'Later page loading state')
+  assertDeepEqual(snapshot.pagination.status, 'success', 'First page status while loading more')
   snapshot = await invoke('emitPage', 'cursor-empty', {
     page: [],
     continueCursor: 'cursor-tail',
@@ -337,6 +340,9 @@ try {
     [{ id: 'page-a' }, { id: 'page-b' }],
     'Pagination cursor chain',
   )
+  assertDeepEqual(snapshot.pagination.exhausted, true, 'Exhausted list state')
+  assertDeepEqual(snapshot.pagination.loadingMore, false, 'Exhausted loading state')
+  assertDeepEqual(snapshot.pagination.canLoadMore, false, 'Exhausted continuation state')
 
   const beforeArgumentChange = await invoke('subscriptions')
   snapshot = await invoke('setOwner', 'bob')

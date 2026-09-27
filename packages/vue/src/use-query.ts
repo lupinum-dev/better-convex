@@ -10,7 +10,7 @@ import {
   type MaybeRefOrGetter,
 } from 'vue'
 
-import type { ConvexCallError } from './errors'
+import { normalizeConvexError, type ConvexCallError } from './errors'
 import type { ClientCallStatus } from './internal/call-state'
 import {
   createConvexArgsState,
@@ -18,7 +18,11 @@ import {
   type ConvexArgsState,
 } from './internal/query-args'
 import { createQueryController } from './internal/query-controller'
-import { decideQueryExecution, queryIsolationTag } from './internal/query-execution'
+import {
+  decideQueryGate,
+  queryIsolationTag,
+  type ConvexQueryBlockedBy,
+} from './internal/query-execution'
 import { deriveQueryStatus } from './internal/query-status'
 import { createSettlementWaiters } from './internal/settlement'
 import { useBetterConvexRuntime } from './runtime-context'
@@ -27,6 +31,7 @@ export type ConvexAuthMode = 'required' | 'optional' | 'none'
 export type ConvexQuerySkip = 'skip'
 export type ConvexQueryArgs<Args> = Args | ConvexQuerySkip
 export type ConvexCallStatus = ClientCallStatus
+export type { ConvexQueryBlockedBy }
 
 export interface UseConvexQueryOptions {
   readonly auth?: ConvexAuthMode
@@ -38,8 +43,16 @@ export interface UseConvexQueryState<Data> {
   readonly data: ComputedRef<Data | undefined>
   readonly status: ComputedRef<ConvexCallStatus>
   readonly pending: ComputedRef<boolean>
+  /** The last failure; `error.functionName` names the query. */
   readonly error: ComputedRef<ConvexCallError | undefined>
   readonly isStale: ComputedRef<boolean>
+  /**
+   * Why the query is not running: `'skip'` arguments, an `'auth'` gate that
+   * waits for or lacks the required identity, or a `'manual'` query
+   * (`immediate: false`) that was not executed yet. `null` once it may run.
+   * The server render and a hydrating browser report the same value.
+   */
+  readonly blockedBy: ComputedRef<ConvexQueryBlockedBy>
   execute(): Promise<void>
   refresh(): Promise<void>
 }
@@ -110,15 +123,24 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
   const identity = runtime.identity.snapshot
   const functionName = getFunctionName(query)
   const settlement = createSettlementWaiters()
+  // The shared identity error, named for this query like every other failure.
+  const gateError = computed(() => {
+    const error = identity.value.error
+    return error ? normalizeConvexError(error, { functionName }) : undefined
+  })
 
-  const gate = computed(() => {
-    if (!started.value) return 'idle' as const
-    return decideQueryExecution({
+  const decision = computed(() =>
+    decideQueryGate({
       auth,
+      started: started.value,
       skipped: isConvexArgsSkipped(args.args.value),
       identity: identity.value,
-    })
-  })
+    }),
+  )
+  // Primitive projections: dependents re-run only when the value changes, not
+  // on every identity notification that rebuilds the decision object.
+  const gate = computed(() => decision.value.outcome)
+  const blockedBy = computed(() => decision.value.blockedBy)
   const tag = computed(() => queryIsolationTag(auth, identity.value))
   const boundaryKey = computed(
     () => `${functionName}:${auth}:${tag.value.identityKey}:${args.hash.value}`,
@@ -197,7 +219,7 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
 
     switch (gate.value) {
       case 'error':
-        boundaryError.value = identity.value.error ?? undefined
+        boundaryError.value = gateError.value
         loading.value = false
         return
       case 'wait':
@@ -291,6 +313,7 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
     pending,
     status,
     isStale,
+    blockedBy,
     execute,
     refresh,
   })

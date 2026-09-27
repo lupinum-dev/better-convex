@@ -8,15 +8,20 @@ import type { UseConvexAuthReturn } from '../utils/auth-contract'
 import { useConvexIdentityState } from '../utils/auth-identity-state'
 import { useConvexAuthPendingState } from '../utils/auth-pending-state'
 import { deriveConvexAuthStatus, type ConvexAuthStatus } from '../utils/auth-status'
+import { UNAVAILABLE_AUTH_CLIENT } from '../utils/client-unavailable'
 import type { IntegratedAuthClient } from '../utils/integrated-auth-client'
 
 export type { UseConvexAuthReturn } from '../utils/auth-contract'
 
 /**
  * Access Convex authentication state and the inferred integrated Better Auth
- * client. The client is browser-owned, so it is `null` during SSR/early setup.
- * Synchronous Better Auth methods stay synchronous; PromiseLike operations do
- * not settle until their canonical provider session is accepted by Convex.
+ * client. Synchronous Better Auth methods stay synchronous; PromiseLike
+ * operations do not settle until Convex accepts the canonical provider session.
+ *
+ * `client` is never `null`. The real client is browser-owned; during server
+ * rendering, or before the browser runtime exists, it is an inert stand-in
+ * whose members throw a `ConvexCallError` with code `CLIENT_UNAVAILABLE` when
+ * called. Reading `status`, `user`, and `error` is always safe.
  */
 export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthClient> {
   const nuxtApp = useNuxtApp()
@@ -48,7 +53,7 @@ export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthCl
     user: readonly(user),
     error,
     client: (coordinator?.client ??
-      null) as IntegratedAuthClient<InferRegisteredConvexAuthClient> | null,
+      UNAVAILABLE_AUTH_CLIENT) as IntegratedAuthClient<InferRegisteredConvexAuthClient>,
     ready: async (options) => {
       if (!coordinator) return status.value
       return coordinator.ready(options)

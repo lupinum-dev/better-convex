@@ -31,12 +31,15 @@ export default defineNuxtConfig({
             compilerOptions: {
               paths: {
                 '@lupinum/better-convex-nuxt': ['../../../../dist/types.d.mts'],
-                // The published `./auth-client` subpath (imported by the API
-                // surface contract) has no node_modules copy in the linked
-                // fixture, so map it to the built entry. Installed CI resolves it
-                // through the package `exports` map instead.
+                // The published `./better-auth/client` and `./errors` subpaths
+                // (imported by the API surface contract) have no node_modules
+                // copy in the linked fixture, so map them to the built entries.
+                // Installed CI resolves them through the package `exports` map.
                 '@lupinum/better-convex-nuxt/better-auth/client': [
                   '../../../../dist/runtime/auth-client/index.d.ts',
+                ],
+                '@lupinum/better-convex-nuxt/errors': [
+                  '../../../../dist/runtime/errors/index.d.ts',
                 ],
               },
             },

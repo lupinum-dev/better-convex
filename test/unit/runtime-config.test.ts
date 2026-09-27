@@ -69,4 +69,32 @@ describe('runtime config normalization', () => {
       expect(() => normalizeConvexRuntimeConfig({ url })).toThrow()
     },
   )
+
+  it('defaults the browser client options and the server HTTP bounds', () => {
+    const config = normalizeConvexRuntimeConfig({})
+    expect(config.client).toEqual({})
+    expect(config.server).toEqual({ maxResponseBytes: 1_048_576, queryTimeoutMs: 8_000 })
+  })
+
+  it('keeps only explicitly configured client options and validated server bounds', () => {
+    const config = normalizeConvexRuntimeConfig({
+      client: { verbose: true, unsavedChangesWarning: false },
+      server: { maxResponseBytes: 2_097_152, queryTimeoutMs: 12_000 },
+    })
+    expect(config.client).toEqual({ verbose: true, unsavedChangesWarning: false })
+    expect(config.server).toEqual({ maxResponseBytes: 2_097_152, queryTimeoutMs: 12_000 })
+    expect(toPublicConvexRuntimeConfig(config)).not.toHaveProperty('client')
+    expect(toPublicConvexRuntimeConfig(config)).not.toHaveProperty('server')
+  })
+
+  it.each([
+    [{ client: { verbose: 'true' } }, 'client.verbose must be a boolean'],
+    [{ client: { logger: false } }, 'client.logger is not a supported option'],
+    [{ client: [] }, 'client must be an object'],
+    [{ server: { maxResponseBytes: '1048576' } }, 'server.maxResponseBytes must be a positive'],
+    [{ server: { queryTimeoutMs: 0 } }, 'server.queryTimeoutMs must be a positive'],
+    [{ server: { queryTimeoutMs: Number.POSITIVE_INFINITY } }, 'server.queryTimeoutMs'],
+  ])('rejects an invalid deploy-time transport override: %j', (input, message) => {
+    expect(() => normalizeConvexRuntimeConfig(input)).toThrow(message)
+  })
 })

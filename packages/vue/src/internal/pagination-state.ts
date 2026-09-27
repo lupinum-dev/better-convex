@@ -99,6 +99,7 @@ export function commitPaginationPageError<T>(
   pages: PaginationPageState<T>[],
   pageIndex: number,
   error: unknown,
+  context?: { readonly functionName?: string },
 ): PaginationPageState<T>[] {
   const page = pages[pageIndex]
   if (!page) return pages
@@ -106,7 +107,7 @@ export function commitPaginationPageError<T>(
   const nextPages = [...pages]
   nextPages[pageIndex] = {
     ...page,
-    error: normalizeConvexError(error),
+    error: normalizeConvexError(error, context),
   }
   return nextPages
 }
@@ -208,30 +209,24 @@ export function isInvalidCursorError(error: unknown): boolean {
 
 export type PaginationStatus = 'idle' | 'pending' | 'success' | 'error'
 
-export type PaginationFirstPageState = { state: 'loading' } | { state: 'ready'; isDone: boolean }
-
-export type PaginationNextPageState =
-  | { state: 'idle' }
-  | { state: 'loading' }
-  | { state: 'exhausted' }
-
+/** First-page facts; later pages report through `isLoadingMore` and `error` instead. */
 export interface PaginationStatusState {
+  /** The gate does not run the list (skipped, deferred, or blocked by auth). */
   disabled: boolean
-  refresh: 'idle' | 'pending'
-  hasError: boolean
-  firstPage: PaginationFirstPageState
-  nextPage: PaginationNextPageState
+  refreshing: boolean
+  /** The first page or the auth gate failed. A failed later page is not a list error. */
+  firstPageError: boolean
+  firstPageReady: boolean
 }
 
+/**
+ * The list status describes only the first page, the way a query's status
+ * describes its one value: loading or failing a later page leaves it `success`.
+ */
 export function computePaginationStatus(input: PaginationStatusState): PaginationStatus {
-  if (input.hasError) return 'error'
+  if (input.firstPageError) return 'error'
   if (input.disabled) return 'idle'
-  if (
-    input.refresh === 'pending' ||
-    input.firstPage.state === 'loading' ||
-    input.nextPage.state === 'loading'
-  )
-    return 'pending'
+  if (input.refreshing || !input.firstPageReady) return 'pending'
   return 'success'
 }
 

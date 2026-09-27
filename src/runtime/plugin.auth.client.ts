@@ -101,6 +101,7 @@ export default defineNuxtPlugin({
     const vuePlugin = createBetterConvex({
       convexUrl: convexConfig.url,
       auth: adapter,
+      clientOptions: convexConfig.client,
     })
     nuxtApp.vueApp.use(vuePlugin)
     const runtime = createConvexRuntimeContext(vuePlugin.attachment(), logger)

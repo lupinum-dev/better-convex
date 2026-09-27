@@ -16,9 +16,11 @@ function makeLifecycle<Result = string>(
   getIdentityGeneration: () => number = () => 0,
   subscribeIdentityChange?: (listener: () => void) => () => void,
   operation: 'mutation' | 'action' = 'mutation',
+  functionName?: string,
 ) {
   return createCallableController<Record<string, unknown>, Result>({
     operation,
+    functionName,
     getIdentityGeneration,
     subscribeIdentityChange,
     handlers,
@@ -331,6 +333,145 @@ describe('callable lifecycle: settlement and disposal', () => {
 
     generation = 2
     notifyIdentityChange?.()
-    await expect(lifecycle.run({})).rejects.toMatchObject({ code: 'CALL_DISPOSED' })
+    await expect(lifecycle.run({})).rejects.toMatchObject({ kind: 'unknown', code: 'CANCELLED' })
+    expect(lifecycle.status.value).toBe('idle')
+  })
+})
+
+describe('callable lifecycle: reset', () => {
+  it('returns to idle and retires an in-flight success', async () => {
+    let release!: (value: string) => void
+    const lifecycle = makeLifecycle({
+      invoke: () =>
+        new Promise<string>((resolve) => {
+          release = resolve
+        }),
+    })
+
+    const pending = lifecycle.run({})
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    expect(lifecycle.status.value).toBe('pending')
+    lifecycle.reset()
+    expect(lifecycle.status.value).toBe('idle')
+    expect(lifecycle.pending.value).toBe(false)
+
+    release('late')
+    await expect(pending).resolves.toBe('late')
+    expect(lifecycle.status.value).toBe('idle')
+    expect(lifecycle.data.value).toBeUndefined()
+  })
+
+  it('retires an in-flight failure and clears a settled result', async () => {
+    let fail!: (error: unknown) => void
+    let invocation = 0
+    const lifecycle = makeLifecycle({
+      invoke: () => {
+        invocation += 1
+        if (invocation === 1) return Promise.resolve('settled')
+        return new Promise<string>((_resolve, reject) => {
+          fail = reject
+        })
+      },
+    })
+
+    await lifecycle.run({})
+    expect(lifecycle.data.value).toBe('settled')
+    lifecycle.reset()
+    expect(lifecycle.status.value).toBe('idle')
+    expect(lifecycle.data.value).toBeUndefined()
+
+    const pending = lifecycle.run({})
+    await vi.waitFor(() => expect(fail).toBeTypeOf('function'))
+    lifecycle.reset()
+    fail(new ConvexError({ code: 'LATE' }))
+    await expect(pending).rejects.toMatchObject({ kind: 'server', code: 'LATE' })
+    expect(lifecycle.status.value).toBe('idle')
+    expect(lifecycle.error.value).toBeUndefined()
+  })
+})
+
+describe('callable lifecycle: function names and library codes', () => {
+  it('names normalized upstream failures', async () => {
+    const lifecycle = makeLifecycle(
+      { invoke: () => Promise.reject(new ConvexError('Title is already taken')) },
+      undefined,
+      undefined,
+      'mutation',
+      'notes:create',
+    )
+
+    await expect(lifecycle.run({})).rejects.toMatchObject({
+      kind: 'server',
+      message: 'Title is already taken',
+      functionName: 'notes:create',
+    })
+    expect(lifecycle.error.value?.functionName).toBe('notes:create')
+  })
+
+  it('names identity retirements from the controller and from the owner', async () => {
+    let generation = 0
+    let release!: (value: string) => void
+    const controllerRetired = makeLifecycle(
+      {
+        invoke: () =>
+          new Promise<string>((resolve) => {
+            release = resolve
+          }),
+      },
+      () => generation,
+      undefined,
+      'action',
+      'reports:generate',
+    )
+    const pending = controllerRetired.run({})
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    generation = 1
+    release('stale')
+    const rejection = await pending.catch((error: unknown) => error)
+    expect(isIdentityChangedError(rejection)).toBe(true)
+    expect(rejection).toMatchObject({
+      kind: 'authentication',
+      code: 'IDENTITY_CHANGED',
+      functionName: 'reports:generate',
+    })
+
+    const ownerRetired = makeLifecycle(
+      { invoke: () => Promise.reject(createIdentityChangedError('mutation')) },
+      undefined,
+      undefined,
+      'mutation',
+      'notes:create',
+    )
+    const ownerRejection = await ownerRetired.run({}).catch((error: unknown) => error)
+    expect(isIdentityChangedError(ownerRejection)).toBe(true)
+    expect(ownerRejection).toMatchObject({ functionName: 'notes:create' })
+    expect(ownerRetired.status.value).toBe('idle')
+  })
+
+  it('names the cancellation of a disposed callable', async () => {
+    const lifecycle = makeLifecycle(
+      { invoke: async () => 'unreachable' },
+      undefined,
+      undefined,
+      'mutation',
+      'notes:create',
+    )
+    lifecycle.dispose()
+    await expect(lifecycle.run({})).rejects.toMatchObject({
+      code: 'CANCELLED',
+      functionName: 'notes:create',
+    })
+  })
+
+  it('commits an application IDENTITY_CHANGED code as an ordinary server failure', async () => {
+    const lifecycle = makeLifecycle({
+      invoke: () => Promise.reject(new ConvexError({ code: 'IDENTITY_CHANGED' })),
+    })
+
+    const rejection = await lifecycle.run({}).catch((error: unknown) => error)
+    expect(rejection).toMatchObject({ kind: 'server', code: 'IDENTITY_CHANGED' })
+    expect(isIdentityChangedError(rejection)).toBe(false)
+    expect(lifecycle.status.value).toBe('error')
+    expect(lifecycle.error.value).toBe(rejection)
   })
 })

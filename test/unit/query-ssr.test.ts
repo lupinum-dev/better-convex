@@ -2,7 +2,7 @@ import { decideQueryExecution } from '@lupinum/better-convex-vue/internal'
 import type { PaginationResult } from 'convex/server'
 import { describe, expect, it } from 'vitest'
 
-import { ConvexCallError } from '../../src/runtime/errors'
+import { ConvexCallError, normalizeConvexError } from '../../src/runtime/errors'
 import { deriveConvexAuthStatus, type ConvexAuthMode } from '../../src/runtime/utils/auth-status'
 import {
   convexQueryAsyncDataKey,
@@ -115,27 +115,57 @@ describe('Nuxt auth state adapted to the one Vue execution decision', () => {
     ).toBe('convex:idle:notes:list')
   })
 
-  it('does not execute a deferred query', () => {
+  it('does not execute a deferred query and reports it as manual', () => {
     expect(
       resolveConvexQueryGate({
         auth: 'none',
         started: false,
         skipped: false,
         identity: projectNuxtQueryIdentity(states.anonymous),
-      }).outcome,
-    ).toBe('idle')
+      }),
+    ).toMatchObject({ outcome: 'idle', blockedBy: 'manual' })
+  })
+
+  it('reports auth as the blocker for every gate outcome auth causes', () => {
+    const expected: Record<keyof typeof states, Record<ConvexAuthMode, string | null>> = {
+      disabled: { required: 'auth', optional: null, none: null },
+      loading: { required: 'auth', optional: 'auth', none: null },
+      anonymous: { required: 'auth', optional: null, none: null },
+      authenticated: { required: null, optional: null, none: null },
+      error: { required: 'auth', optional: 'auth', none: null },
+    }
+    for (const [name, state] of Object.entries(states)) {
+      for (const auth of MODES) {
+        expect(gate(state, auth).blockedBy, `${name}/${auth}`).toBe(
+          expected[name as keyof typeof states][auth],
+        )
+        expect(gate(state, auth, true).blockedBy, `${name}/${auth}/skip`).toBe('skip')
+      }
+    }
   })
 })
 
 describe('SSR view shared by the server render and the hydrating browser', () => {
-  const view = (input: Partial<Parameters<typeof projectConvexSsrQuery<string>>[0]>) =>
+  const executing = { outcome: 'execute', blockedBy: null } as const
+  const gates = {
+    execute: executing,
+    wait: { outcome: 'wait', blockedBy: 'auth' },
+    error: { outcome: 'error', blockedBy: 'auth' },
+    idle: { outcome: 'idle', blockedBy: 'skip' },
+  } as const
+  const view = (
+    input: Partial<Omit<Parameters<typeof projectConvexSsrQuery<string>>[0], 'gate'>> & {
+      gate?: keyof typeof gates
+    },
+  ) =>
     projectConvexSsrQuery<string>({
-      gate: 'execute',
       server: true,
+      functionName: 'notes:list',
       authError: null,
       entry: undefined,
       fetching: false,
       ...input,
+      gate: gates[input.gate ?? 'execute'],
     })
 
   it('renders a fetched value as success and a fetched error as error', () => {
@@ -143,16 +173,39 @@ describe('SSR view shared by the server render and the hydrating browser', () =>
       status: 'success',
       value: 'ssr',
       error: undefined,
+      blockedBy: null,
     })
     const error = new ConvexCallError({ kind: 'transport', message: 'SSR failure' })
-    expect(view({ entry: { error } })).toEqual({ status: 'error', value: undefined, error })
+    expect(view({ entry: { error } })).toEqual({
+      status: 'error',
+      value: undefined,
+      error,
+      blockedBy: null,
+    })
+  })
+
+  it('carries the gate blocker into the rendered view', () => {
+    expect(view({ gate: 'wait' }).blockedBy).toBe('auth')
+    expect(view({ gate: 'idle' }).blockedBy).toBe('skip')
+    expect(view({ gate: 'error', authError }).blockedBy).toBe('auth')
+  })
+
+  it('names the query on an auth-gate error', () => {
+    const rendered = view({ gate: 'error', authError })
+    expect(rendered.error).toMatchObject({
+      kind: 'authentication',
+      message: authError.message,
+      functionName: 'notes:list',
+    })
+    expect(authError.functionName).toBeUndefined()
   })
 
   it('keeps a null Convex result as data', () => {
     expect(
       projectConvexSsrQuery<null>({
-        gate: 'execute',
+        gate: executing,
         server: true,
+        functionName: 'notes:list',
         authError: null,
         entry: { value: null },
         fetching: false,
@@ -161,20 +214,31 @@ describe('SSR view shared by the server render and the hydrating browser', () =>
   })
 
   it('renders server: false as idle, like Nuxt useAsyncData, never as pending', () => {
-    expect(view({ server: false })).toEqual({ status: 'idle', value: undefined, error: undefined })
+    expect(view({ server: false })).toEqual({
+      status: 'idle',
+      value: undefined,
+      error: undefined,
+      blockedBy: null,
+    })
     // A stale entry under the same key must not leak into a browser-only query.
     expect(view({ server: false, entry: { value: 'stale' } }).status).toBe('idle')
   })
 
   it('renders an unfetched execution (no token, no URL) as idle, never as empty success', () => {
-    expect(view({ entry: null })).toEqual({ status: 'idle', value: undefined, error: undefined })
+    expect(view({ entry: null })).toEqual({
+      status: 'idle',
+      value: undefined,
+      error: undefined,
+      blockedBy: null,
+    })
   })
 
-  it('renders the settled auth error gate as that error', () => {
+  it('renders the settled auth error gate as that error, named for the query', () => {
     expect(view({ gate: 'error', authError })).toEqual({
       status: 'error',
       value: undefined,
-      error: authError,
+      error: normalizeConvexError(authError, { functionName: 'notes:list' }),
+      blockedBy: 'auth',
     })
   })
 
@@ -199,36 +263,35 @@ describe('SSR view shared by the server render and the hydrating browser', () =>
       continueCursor: 'next',
       pageStatus: 'SplitRecommended',
     }
-    expect(
+    const project = (entry: { value: PaginationResult<string> } | undefined, server = true) =>
       projectConvexSsrPagination(
-        projectConvexSsrQuery({
-          gate: 'execute',
-          server: true,
+        projectConvexSsrQuery<PaginationResult<string>>({
+          gate: executing,
+          server,
+          functionName: 'notes:list',
           authError: null,
-          entry: { value: page },
+          entry,
           fetching: false,
         }),
-        null,
-      ),
-    ).toEqual({
+      )
+    // Transport internals (cursor, pageStatus) never reach the public view.
+    expect(project({ value: page })).toEqual({
       status: 'success',
       data: ['a'],
       error: undefined,
+      blockedBy: null,
       canLoadMore: true,
-      cursor: 'next',
-      pageStatus: 'SplitRecommended',
+      isExhausted: false,
     })
-    expect(
-      projectConvexSsrPagination(
-        projectConvexSsrQuery<PaginationResult<string>>({
-          gate: 'execute',
-          server: false,
-          authError: null,
-          entry: undefined,
-          fetching: false,
-        }),
-        'start',
-      ),
-    ).toMatchObject({ status: 'idle', data: undefined, canLoadMore: false, cursor: 'start' })
+    expect(project({ value: { ...page, isDone: true, continueCursor: '' } })).toMatchObject({
+      canLoadMore: false,
+      isExhausted: true,
+    })
+    expect(project(undefined, false)).toMatchObject({
+      status: 'idle',
+      data: undefined,
+      canLoadMore: false,
+      isExhausted: false,
+    })
   })
 })

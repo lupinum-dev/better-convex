@@ -62,7 +62,6 @@ async function handleSignIn() {
   error.value = null
 
   try {
-    if (!client) throw new Error('Authentication client unavailable')
     const result = await client.signIn.email({
       email: form.email,
       password: form.password,

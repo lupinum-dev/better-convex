@@ -6,8 +6,8 @@ import { api } from '#convex/api'
 const route = useRoute()
 const invitationId = computed(() => route.params.invitationId as string)
 const { status, error: authError, user } = useConvexAuth()
-const acceptInvitation = useConvexMutation(api.invitations.accept)
-const rejectInvitation = useConvexMutation(api.invitations.reject)
+const { mutate: acceptInvitation } = useConvexMutation(api.invitations.accept)
+const { mutate: rejectInvitation } = useConvexMutation(api.invitations.reject)
 const shouldLoadInvitation = computed(
   () => status.value === 'authenticated' && user.value?.emailVerified === true,
 )

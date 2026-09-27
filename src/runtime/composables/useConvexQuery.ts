@@ -1,5 +1,6 @@
 import type {
   ConvexAuthMode,
+  ConvexQueryBlockedBy,
   UseConvexQueryOptions,
   UseConvexQueryParameters,
   UseConvexQueryState,
@@ -30,7 +31,7 @@ import type { ConvexCallStatus } from '../utils/types'
 import { createNuxtAwaitableState } from './nuxt-awaitable-state'
 import { resolveQueryLifecycleOptions } from './query-lifecycle-options'
 
-export type { ConvexAuthMode, ConvexCallStatus }
+export type { ConvexAuthMode, ConvexCallStatus, ConvexQueryBlockedBy }
 export type ConvexQuerySkip = 'skip'
 export type ConvexQueryArgs<Args> = Args | ConvexQuerySkip
 
@@ -157,9 +158,11 @@ function createClientConvexQueryState<Query extends FunctionReference<'query'>>(
   )
   const pending = computed(() => status.value === 'pending')
   const data = computed(() => (view.value ? view.value.value : result.data.value))
+  // While hydrating, the gate is the server's: the browser identity may still settle.
+  const blockedBy = computed(() => (view.value ? view.value.blockedBy : result.blockedBy.value))
   if (import.meta.dev) trackQueryDevtools(boundary, options, { status, data, error })
 
-  const resultData = Object.freeze({ ...result, data, error, pending, status })
+  const resultData = Object.freeze({ ...result, data, error, pending, status, blockedBy })
   // A hydrating render never waits: the live lifecycle starts only after hydration.
   if (lazy || !immediate || !server || hydration.defersLiveStart || status.value !== 'pending') {
     return { resultData, resolvePromise: Promise.resolve() }
@@ -179,13 +182,14 @@ function createServerConvexQueryState<Query extends FunctionReference<'query'>>(
   const ssr = useConvexSsrQuery<RawT>({
     ...boundary,
     lazy: options.lazy,
-    fetch: (convexUrl, token, signal) =>
+    fetch: (convexUrl, token, signal, bounds) =>
       executeQueryHttp<RawT>(
         convexUrl,
         boundary.functionName,
         args.args.value as FunctionArgs<Query>,
         token,
         signal,
+        bounds,
       ),
   })
   const status = computed(() => ssr.view.value.status)
@@ -196,6 +200,7 @@ function createServerConvexQueryState<Query extends FunctionReference<'query'>>(
       pending: computed(() => status.value === 'pending'),
       status,
       isStale: computed(() => false),
+      blockedBy: computed(() => ssr.view.value.blockedBy),
       execute: ssr.execute,
       refresh: ssr.refresh,
     }),
