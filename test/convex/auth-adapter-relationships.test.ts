@@ -59,7 +59,10 @@ async function createRow(
 }
 
 async function findRow(test: ReturnType<typeof initRelationshipTest>, model: string, id: string) {
-  return test.query(auth.findOne, { model, where: [{ field: 'id', value: id }] })
+  return test.query(auth.findOne, {
+    model,
+    where: [{ field: 'id', value: id }],
+  })
 }
 
 async function createUser(test: ReturnType<typeof initRelationshipTest>, id: string) {
@@ -144,12 +147,12 @@ describe('Better Auth relationship enforcement', () => {
     })
   })
 
-  it('sets nullable session references to null without deleting delegated tokens', async () => {
+  it('retains inert refresh history when its authoritative session is deleted', async () => {
     const test = initRelationshipTest()
     await createUser(test, 'oauth_user')
     await createRow(test, 'session', {
       id: 'oauth_session',
-      expiresAt: now + 60_000,
+      expiresAt: Date.now() + 60_000,
       token: 'oauth-session-token',
       createdAt: now,
       updatedAt: now,
@@ -160,6 +163,25 @@ describe('Better Auth relationship enforcement', () => {
       clientId: 'oauth_client',
       userId: 'oauth_user',
       redirectUris: ['https://client.example.test/callback'],
+      scopes: ['notes.read', 'offline_access'],
+    })
+    await createRow(test, 'oauthResource', {
+      id: 'oauth_resource',
+      identifier: 'https://app.example/mcp',
+      name: 'MCP',
+      allowedScopes: ['notes.read', 'offline_access'],
+    })
+    await createRow(test, 'oauthClientResource', {
+      id: 'oauth_link',
+      clientId: 'oauth_client',
+      resourceId: 'https://app.example/mcp',
+    })
+    await createRow(test, 'oauthConsent', {
+      id: 'oauth_consent',
+      clientId: 'oauth_client',
+      userId: 'oauth_user',
+      resources: ['https://app.example/mcp'],
+      scopes: ['notes.read', 'offline_access'],
     })
     await createRow(test, 'oauthRefreshToken', {
       id: 'refresh_row',
@@ -167,7 +189,9 @@ describe('Better Auth relationship enforcement', () => {
       clientId: 'oauth_client',
       sessionId: 'oauth_session',
       userId: 'oauth_user',
-      scopes: ['notes.read'],
+      scopes: ['notes.read', 'offline_access'],
+      expiresAt: Date.now() + 60000,
+      resources: ['https://app.example/mcp'],
     })
 
     await test.mutation(auth.deleteOne, {
@@ -175,10 +199,14 @@ describe('Better Auth relationship enforcement', () => {
       where: [{ field: 'id', value: 'oauth_session' }],
     })
 
-    await expect(findRow(test, 'oauthRefreshToken', 'refresh_row')).resolves.toMatchObject({
-      id: 'refresh_row',
-      sessionId: null,
+    await expect(findRow(test, 'oauthRefreshToken', 'refresh_row')).resolves.toBeNull()
+    const retained = await test.query(auth.findMany, {
+      model: 'oauthRefreshToken',
+      paginationOpts: { cursor: null, numItems: 10 },
     })
+    expect(retained.page).toEqual([
+      expect.objectContaining({ id: 'refresh_row', sessionId: 'oauth_session' }),
+    ])
   })
 
   it('rejects restricted deletion without partially applying other relationship effects', async () => {
@@ -245,7 +273,10 @@ describe('Better Auth relationship enforcement', () => {
       data: { id: 'nullable_child', parentId: 'parent_mixed' },
     })
 
-    await test.mutation(deleteWithTriggers, { id: 'parent_mixed', model: 'parent' })
+    await test.mutation(deleteWithTriggers, {
+      id: 'parent_mixed',
+      model: 'parent',
+    })
 
     await expect(
       test.query(policies.findOne, {

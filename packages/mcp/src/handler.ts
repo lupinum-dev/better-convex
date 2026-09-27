@@ -2,7 +2,9 @@ import {
   bearerAuthChallengeResponse,
   buildOAuthProtectedResourceMetadata,
   createMcpHandler,
+  classifyInboundRequest,
   getOAuthProtectedResourceMetadataUrl,
+  isJSONRPCErrorResponse,
   OAuthError,
   OAuthErrorCode,
   oauthMetadataResponse,
@@ -12,6 +14,7 @@ import {
   type AuthInfo,
   type AuthMetadataOptions,
   type OAuthTokenVerifier,
+  type ServerOptions,
 } from '@modelcontextprotocol/server'
 
 import {
@@ -26,6 +29,7 @@ import {
   boundMcpResponse,
   McpTransportFailure,
   mcpTransportFailureResponse,
+  missingMcpProtocolHeaderResponse,
   prepareBoundedMcpRequest,
   runMcpRequestDeadline,
 } from './transport.js'
@@ -40,6 +44,14 @@ export interface HandleMcpRequestOptions {
     readonly version: string
   }
   readonly resource: URL
+  /** Additional scopes for named tools. Produces an OAuth step-up challenge before dispatch.
+   * Application operations must still authorize inside their own transaction. */
+  readonly requiredToolScopes?: Readonly<Record<string, readonly string[]>>
+  /** Build the official SDK's request-state verifier for this freshly authenticated principal.
+   * The SDK verifies echoed state before dispatch and supplies its decoded value to the handler. */
+  readonly requestState?: (
+    access: McpAccessContext,
+  ) => Required<Pick<NonNullable<ServerOptions['requestState']>, 'verify'>>
   readonly authorization:
     | {
         readonly mode: 'oauth'
@@ -75,6 +87,19 @@ export async function handleMcpRequest(
   const authorization = normalizeAuthorization(options.authorization, expectedResource)
   const requiredScopes =
     authorization.requiredScopes === undefined ? undefined : [...authorization.requiredScopes]
+  const supportedToolScopes =
+    options.authorization.mode === 'oauth' ? options.authorization.scopesSupported : undefined
+  const toolScopes = new Map<string, readonly string[]>()
+  for (const [name, scopes] of Object.entries(options.requiredToolScopes ?? {})) {
+    if (!name.trim()) throw new TypeError('MCP tool scope names must not be empty')
+    const normalized = normalizeConfiguredScopes(scopes) ?? []
+    if (
+      supportedToolScopes !== undefined &&
+      normalized.some((scope) => !supportedToolScopes.includes(scope))
+    )
+      throw new TypeError('MCP required tool scopes must be advertised as supported')
+    toolScopes.set(name, normalized)
+  }
 
   try {
     return await runMcpRequestDeadline(request.signal, async (signal) => {
@@ -102,9 +127,25 @@ export async function handleMcpRequest(
       }
 
       const boundedRequest = await prepareBoundedMcpRequest(request, signal)
+      const missingProtocolHeader = await missingMcpProtocolHeaderResponse(boundedRequest)
+      if (missingProtocolHeader) return missingProtocolHeader
+      if (toolScopes.size > 0) {
+        const challenge = await toolScopeChallenge(
+          boundedRequest,
+          authenticated.access,
+          toolScopes,
+          requiredScopes,
+          authorization.resourceMetadataUrl,
+        )
+        if (challenge) return await boundMcpResponse(challenge, signal)
+      }
       const handler = createMcpHandler(
         async () => {
-          const server = new McpServer(options.serverInfo)
+          const server = new McpServer(options.serverInfo, {
+            ...(options.requestState === undefined
+              ? {}
+              : { requestState: options.requestState(authenticated.access) }),
+          })
           try {
             const tools: McpRequestTools = Object.freeze({
               runTool: (name: string, operation: Parameters<typeof runMcpTool>[0]) =>
@@ -129,7 +170,12 @@ export async function handleMcpRequest(
         },
       )
       try {
-        return await boundMcpResponse(await handler.fetch(boundedRequest), signal)
+        const inspection =
+          boundedRequest.headers.get('mcp-method') === 'subscriptions/listen'
+            ? boundedRequest.clone()
+            : undefined
+        const response = await boundMcpResponse(await handler.fetch(boundedRequest), signal)
+        return inspection ? await rejectUnavailableSubscription(inspection, response) : response
       } finally {
         await handler.close()
       }
@@ -138,6 +184,87 @@ export async function handleMcpRequest(
     if (error instanceof McpTransportFailure) return mcpTransportFailureResponse(error)
     throw error
   }
+}
+
+/** SDK 2.0.0 intercepts subscriptions before dispatch, even with no advertised capability.
+ * Correct only its exact zero-capacity response after the SDK's request validation.
+ * Remove with the SDK disable-subscriptions fix; tracked in internals/migrations.md. */
+async function rejectUnavailableSubscription(
+  request: Request,
+  response: Response,
+): Promise<Response> {
+  if (response.status !== 200 || request.headers.get('mcp-method') !== 'subscriptions/listen')
+    return response
+  let body: unknown
+  let result: unknown
+  try {
+    body = await request.json()
+    result = await response.clone().json()
+  } catch {
+    return response
+  }
+  const classified = classifyInboundRequest({
+    httpMethod: request.method,
+    protocolVersionHeader: request.headers.get('mcp-protocol-version') ?? undefined,
+    mcpMethodHeader: request.headers.get('mcp-method') ?? undefined,
+    mcpNameHeader: request.headers.get('mcp-name') ?? undefined,
+    body,
+  })
+  if (
+    classified.kind !== 'modern' ||
+    classified.messageKind !== 'request' ||
+    classified.message.method !== 'subscriptions/listen' ||
+    !isJSONRPCErrorResponse(result) ||
+    result.id !== classified.message.id ||
+    result.error.code !== -32603 ||
+    result.error.message !== 'Subscription limit reached'
+  )
+    return response
+  return Response.json(
+    { jsonrpc: '2.0', id: result.id, error: { code: -32601, message: 'Method not found' } },
+    { status: 404, headers: { 'cache-control': 'no-store' } },
+  )
+}
+
+/** The SDK classifies the envelope; it retains all subsequent routing and parameter checks.
+ * As with initial bearer authentication, a scope challenge can precede those checks. */
+async function toolScopeChallenge(
+  request: Request,
+  access: McpAccessContext,
+  toolScopes: ReadonlyMap<string, readonly string[]>,
+  requiredScopes: readonly string[] | undefined,
+  resourceMetadataUrl: string | undefined,
+): Promise<Response | undefined> {
+  let body: unknown
+  try {
+    body = await request.clone().json()
+  } catch {
+    return undefined
+  }
+  const classified = classifyInboundRequest({
+    httpMethod: request.method,
+    protocolVersionHeader: request.headers.get('mcp-protocol-version') ?? undefined,
+    mcpMethodHeader: request.headers.get('mcp-method') ?? undefined,
+    mcpNameHeader: request.headers.get('mcp-name') ?? undefined,
+    body,
+  })
+  if (
+    classified.kind !== 'modern' ||
+    classified.messageKind !== 'request' ||
+    classified.message.method !== 'tools/call'
+  )
+    return undefined
+  const name = classified.message.params?.name
+  if (typeof name !== 'string') return undefined
+  const additional = toolScopes.get(name)
+  if (!additional || additional.every((scope) => access.scopes.includes(scope))) return undefined
+  return bearerAuthChallengeResponse(
+    new OAuthError(OAuthErrorCode.InsufficientScope, 'Additional tool permission required'),
+    {
+      requiredScopes: [...new Set([...(requiredScopes ?? []), ...additional])],
+      ...(resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl }),
+    },
+  )
 }
 
 type NormalizedAuthorization =

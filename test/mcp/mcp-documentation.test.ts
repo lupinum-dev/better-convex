@@ -1,10 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { runInNewContext } from 'node:vm'
 
-import { describe, expect, it, vi } from 'vitest'
-
-import { runMcpTool, type McpAccessContext } from '../../packages/mcp/src/index'
+import { describe, expect, it } from 'vitest'
 
 const root = process.cwd()
 const packageReadme = readFileSync(join(root, 'packages/mcp/README.md'), 'utf8')
@@ -90,41 +87,10 @@ describe('documented MCP authorization examples', () => {
     expect(packageReadme).not.toContain('async verifyAccessToken(')
   })
 
-  it.each([
-    { scopes: ['mcp:read'], allowed: false },
-    { scopes: ['mcp:read', 'mcp:write'], allowed: true },
-  ])(
-    'enforces the write scope before the documented mutation: $allowed',
-    async ({ scopes, allowed }) => {
-      const access: McpAccessContext = {
-        clientId: 'client-1',
-        issuer: 'https://accounts.example.com',
-        resource: 'https://deployment.convex.site/mcp',
-        scopes,
-        subject: 'user-1',
-      }
-      const runMutation = vi.fn().mockResolvedValue({ title: 'Updated' })
-      // Execute the actual Markdown callback, so changes to the example affect this test.
-      const callback = guide.match(/(async \(args\) =>[\s\S]*?),\n {8}\)/u)?.[1]
-      expect(callback).toBeDefined()
-      const rename = runInNewContext(`(${callback})`, {
-        access,
-        ctx: { runMutation },
-        internal: { notes: { renameFromMcp: 'notes.renameFromMcp' } },
-        runMcpTool,
-      }) as (args: { noteId: string; title: string }) => Promise<{ isError?: boolean }>
-      const args = { noteId: 'note-1', title: 'Updated' }
-      const result = await rename(args)
-      if (allowed) {
-        expect(result.isError).not.toBe(true)
-        expect(runMutation).toHaveBeenCalledExactlyOnceWith('notes.renameFromMcp', {
-          ...args,
-          access,
-        })
-      } else {
-        expect(result.isError).toBe(true)
-        expect(runMutation).not.toHaveBeenCalled()
-      }
-    },
-  )
+  it('links the executable ordinary application recipe separately from the release fixture', () => {
+    expect(guide).toContain('/docs/build/agents/mcp-application')
+    expect(delegatedGuide).toContain('/docs/build/agents/mcp-application')
+    expect(guide).toContain('specialized release fixture')
+    expect(guide).toContain('third `configureServer` argument')
+  })
 })

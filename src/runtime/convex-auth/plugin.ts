@@ -32,6 +32,7 @@ import {
   assertSafeStoredOAuthClientResource,
   assertSafeStoredOAuthResource,
   hardenOAuthProviderCallbacks,
+  hasOAuthRenewal,
   installUrlCanParseCompatibility,
   parseBoundedFormBody,
   parseBoundedFormRequest,
@@ -523,8 +524,37 @@ async function guardTokenRequest(
   }
   const parameters = await parseBoundedFormRequest(request, TOKEN_FIELDS)
   const authentication = guardedClientAuthentication(request, parameters)
+  const grant = requireSingleParameter(parameters, 'grant_type')
+  if (grant === 'refresh_token' && hasOAuthRenewal(options)) {
+    requireSingleParameter(parameters, 'refresh_token')
+    if (
+      parameters.has('scope') &&
+      !parameters.get('scope')!.split(' ').includes('offline_access')
+    ) {
+      throw new OAuthSecurityError('AUTH_OAUTH_SCOPE_INVALID')
+    }
+    if (
+      parameters.has('code') ||
+      parameters.has('code_verifier') ||
+      parameters.has('redirect_uri')
+    ) {
+      throw new OAuthSecurityError('AUTH_OAUTH_REQUEST_INVALID')
+    }
+    const resourceId = requireSingleParameter(parameters, 'resource')
+    const { client } = await loadSafeOAuthBinding(
+      context,
+      options,
+      authentication.clientId,
+      resourceId,
+    )
+    assertClientAuthenticationMethod(client, authentication)
+    if (!Array.isArray(client.scopes) || !client.scopes.includes('offline_access')) {
+      throw new OAuthSecurityError('AUTH_OAUTH_CLIENT_INVALID')
+    }
+    return
+  }
   if (
-    requireSingleParameter(parameters, 'grant_type') !== 'authorization_code' ||
+    grant !== 'authorization_code' ||
     parameters.has('refresh_token') ||
     parameters.has('scope')
   ) {
@@ -559,7 +589,11 @@ async function guardRevokeRequest(
   const authentication = guardedClientAuthentication(request, parameters)
   requireSingleParameter(parameters, 'token')
   const hint = parameters.get('token_type_hint')
-  if (hint !== null && hint !== 'access_token') {
+  if (
+    hint !== null &&
+    hint !== 'access_token' &&
+    !(hint === 'refresh_token' && hasOAuthRenewal(options))
+  ) {
     throw new OAuthSecurityError('AUTH_OAUTH_REQUEST_INVALID')
   }
   const { client } = await loadSafeOAuthBinding(context, options, authentication.clientId)
@@ -635,7 +669,10 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
         if (request.method !== 'GET' && request.method !== 'HEAD') {
           return {
             response: new Response(null, {
-              headers: { Allow: 'GET, HEAD', 'Cache-Control': 'private, no-store' },
+              headers: {
+                Allow: 'GET, HEAD',
+                'Cache-Control': 'private, no-store',
+              },
               status: 405,
             }),
           }
@@ -699,6 +736,7 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
             official,
             context.baseURL,
             oauthOptions.scopes!,
+            hasOAuthRenewal(oauthOptions),
           )
           return {
             response:
@@ -723,7 +761,11 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
           const invalidClient = error.code === 'AUTH_OAUTH_CLIENT_INVALID'
           return {
             response: oauthFailure(
-              invalidClient ? 'invalid_client' : 'invalid_request',
+              invalidClient
+                ? 'invalid_client'
+                : error.code === 'AUTH_OAUTH_SCOPE_INVALID'
+                  ? 'invalid_scope'
+                  : 'invalid_request',
               invalidClient ? 401 : 400,
             ),
           }
@@ -798,7 +840,9 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
                   content: {
                     'application/json': {
                       schema: {
-                        properties: { token: { nullable: true, type: 'string' } },
+                        properties: {
+                          token: { nullable: true, type: 'string' },
+                        },
                         required: ['token'],
                         type: 'object',
                       },

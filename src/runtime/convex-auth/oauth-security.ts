@@ -1,18 +1,20 @@
 import type { OAuthOptions, Scope } from '@better-auth/oauth-provider'
 
 import { readStreamWithByteLimit } from '../shared/bounded-stream'
+import { oauthRenewalGrantClaim } from './oauth-refresh-transport'
 
 const OAUTH_CONFIG_ERROR = 'AUTH_OAUTH_CONFIG_INVALID'
 const OAUTH_REQUEST_ERROR = 'AUTH_OAUTH_REQUEST_INVALID'
 const OAUTH_TOKEN_ERROR = 'AUTH_OAUTH_TOKEN_INVALID'
 
-const FORBIDDEN_SCOPES = new Set(['email', 'offline_access', 'openid', 'profile'])
+const FORBIDDEN_SCOPES = new Set(['email', 'openid', 'profile'])
 const SCOPE_PATTERN = /^[\w:./-]+$/
 
 const TOKEN_CLAIMS = new Set([
   'aud',
   'azp',
   'client_id',
+  'bcn_grant_id',
   'exp',
   'iat',
   'iss',
@@ -54,6 +56,8 @@ const PINNED_OAUTH_PROVIDER_KEYS = [
   'pairwiseSecret',
   'rateLimit',
   'requestUriResolver',
+  'refreshTokenExpiresIn',
+  'refreshTokenReuseInterval',
   'resourcePrivileges',
   'resources',
   'scopes',
@@ -93,6 +97,7 @@ export interface OAuthAccessTokenExpectations {
 }
 
 export interface OAuthPrincipal {
+  grantId?: string
   clientId: string
   expiresAt: number
   scopes: readonly string[]
@@ -109,7 +114,9 @@ interface PrivilegeContext {
 
 interface HardenedOAuthCallbacks {
   clientPrivileges: (context: PrivilegeContext) => Promise<boolean>
-  customAccessTokenClaims: (info: unknown) => Promise<{ token_use: 'oauth-access' }>
+  customAccessTokenClaims: (
+    info: unknown,
+  ) => Promise<{ token_use: 'oauth-access'; bcn_grant_id?: string }>
   resourcePrivileges: (context: PrivilegeContext) => Promise<boolean>
 }
 
@@ -244,6 +251,10 @@ function validateConfiguredResource(
   )
 }
 
+export function hasOAuthRenewal(options: PinnedOAuthProviderProfile): boolean {
+  return exactArray(options.grantTypes, ['authorization_code', 'refresh_token'])
+}
+
 export function validateOAuthProviderProfile(options: PinnedOAuthProviderProfile): void {
   if (!isRecord(options)) invalidConfig()
   for (const key of Reflect.ownKeys(options)) {
@@ -260,13 +271,27 @@ export function validateOAuthProviderProfile(options: PinnedOAuthProviderProfile
     options.storeTokens !== 'hashed' ||
     options.disableJwtPlugin === true ||
     options.clientRegistrationRequirePKCE === false ||
-    !exactArray(options.grantTypes, ['authorization_code']) ||
+    (!exactArray(options.grantTypes, ['authorization_code']) && !hasOAuthRenewal(options)) ||
     typeof options.clientPrivileges !== 'function' ||
     typeof options.resourcePrivileges !== 'function' ||
     typeof options.customAccessTokenClaims !== 'function'
   ) {
     invalidConfig()
   }
+
+  if (hasOAuthRenewal(options)) {
+    if (
+      options.refreshTokenExpiresIn !== 604800 ||
+      options.refreshTokenReuseInterval !== 10 ||
+      !options.scopes?.includes('offline_access')
+    )
+      invalidConfig()
+  } else if (
+    options.refreshTokenExpiresIn !== undefined ||
+    options.refreshTokenReuseInterval !== undefined ||
+    options.scopes?.includes('offline_access')
+  )
+    invalidConfig()
 
   validatePagePath(options.loginPage)
   validatePagePath(options.consentPage)
@@ -363,7 +388,8 @@ export function hardenOAuthProviderCallbacks(
       ) {
         invalidConfig()
       }
-      return { token_use: 'oauth-access' }
+      const renewable = hasOAuthRenewal(options)
+      return { token_use: 'oauth-access', ...(renewable ? await oauthRenewalGrantClaim(info) : {}) }
     },
   }
   try {
@@ -512,7 +538,11 @@ export function assertSafeStoredOAuthClient(
     client.enableEndSession !== false ||
     client.dpopBoundAccessTokens !== false ||
     (client.subjectType !== undefined && client.subjectType !== 'public') ||
-    !exactArray(client.grantTypes, ['authorization_code']) ||
+    (!exactArray(client.grantTypes, ['authorization_code']) &&
+      !(
+        allowedScopes.includes('offline_access') &&
+        exactArray(client.grantTypes, ['authorization_code', 'refresh_token'])
+      )) ||
     !exactArray(client.responseTypes, ['code'])
   ) {
     invalidConfig()
@@ -633,6 +663,7 @@ export function projectOAuthAuthorizationServerMetadata(
   officialMetadata: unknown,
   issuer: string,
   scopes: readonly string[],
+  renewable = false,
 ): Readonly<Record<string, unknown>> {
   if (!isRecord(officialMetadata)) invalidConfig()
   const expected = {
@@ -680,7 +711,9 @@ export function projectOAuthAuthorizationServerMetadata(
     revocation_endpoint: expected.revocation_endpoint,
     scopes_supported: [...scopes],
     response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: renewable
+      ? ['authorization_code', 'refresh_token']
+      : ['authorization_code'],
     token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'],
     code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
@@ -756,7 +789,18 @@ function assertOAuthAccessTokenClaimsAt(
     if (!allowed.has(required) || !scopes.includes(required)) invalidToken()
   }
 
-  return Object.freeze({ clientId, expiresAt, scopes, sessionId, subject })
+  const grantId =
+    scopes.includes('offline_access') || payload.bcn_grant_id !== undefined
+      ? requiredString(payload, 'bcn_grant_id')
+      : undefined
+  return Object.freeze({
+    clientId,
+    expiresAt,
+    scopes,
+    sessionId,
+    subject,
+    ...(grantId ? { grantId } : {}),
+  })
 }
 
 export function prepareOAuthAccessTokenVerification(expectations: OAuthAccessTokenExpectations) {

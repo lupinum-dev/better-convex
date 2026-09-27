@@ -171,6 +171,7 @@ export const tables = {
     authTime: v.union(v.null(), v.number()),
     confirmation: v.union(v.null(), v.string()),
     scopes: v.array(v.string()),
+    bcnConsentId: v.union(v.null(), v.string()),
   })
     .index('id', ['id'])
     .index('token', ['token'])
@@ -236,7 +237,7 @@ export const tables = {
 
 const schema = defineSchema(tables)
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:de26f24c2d072824',
+  value: 'bcn-auth-schema-v2:8f4af9d37057df40',
 })
 
 export default schema
