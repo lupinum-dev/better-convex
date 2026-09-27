@@ -48,10 +48,10 @@ Better Convex does not decide who may read or change data. Check the user, owner
 Install the module in a Nuxt application:
 
 ```bash
-pnpm add @lupinum/better-convex-nuxt@1.0.0-rc.0 convex@^1.42.2
+pnpm add @lupinum/better-convex-nuxt@next convex@^1.42.2
 ```
 
-This installs the exact `1.0.0-rc.0` release candidate. Upgrading from a beta?
+The `next` dist-tag is the 1.0 release candidate. Upgrading from a beta?
 See [MIGRATING.md](MIGRATING.md).
 
 Add the module to your Nuxt configuration:

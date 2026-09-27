@@ -5,13 +5,14 @@ The full guide, with old and new code for every change, is
 (source: `docs/content/docs/6.operations/7.upgrade-to-1-0.md`). This file is the
 checklist. It covers the move from `@lupinum/better-convex-nuxt` and
 `@lupinum/better-convex-vue` `1.0.0-beta.7`, and `@lupinum/better-convex-mcp`
-`1.0.0-beta.2`, to `1.0.0-rc.0`. 1.0 has no compatibility layer: the old names
+`1.0.0-beta.2`, to the 1.0 release candidate. 1.0 has no compatibility layer: the old names
 are gone, and TypeScript reports most places that you must change.
 
 ## Packages and data
 
-- [ ] Install the exact `1.0.0-rc.0` of `@lupinum/better-convex-nuxt` (or
-      `@lupinum/better-convex-vue`) and, with MCP, `@lupinum/better-convex-mcp`.
+- [ ] Install `@lupinum/better-convex-nuxt@next` (or
+      `@lupinum/better-convex-vue@next`) and, with MCP, `@lupinum/better-convex-mcp@next`.
+      The `next` dist-tag is the 1.0 release candidate.
 - [ ] With auth, install `better-auth`, `@better-auth/core`, and
       `@better-auth/oauth-provider` at exactly `1.7.6`, even without MCP.
 - [ ] With MCP, install `@modelcontextprotocol/server@2.1.0`; MCP Apps use
@@ -139,7 +140,7 @@ are gone, and TypeScript reports most places that you must change.
       `renewal: false`; beta tokens without it are rejected and hosts sign in
       again. Disabling an OAuth resource rejects tokens already issued.
 - [ ] Install the MCP SDK yourself; it is an exact peer:
-      `pnpm add @lupinum/better-convex-mcp@1.0.0-rc.0 @modelcontextprotocol/server@2.1.0`.
+      `pnpm add @lupinum/better-convex-mcp@next @modelcontextprotocol/server@2.1.0`.
 - [ ] Internal MCP functions take `principal: mcpPrincipalValidator` and call
       `auth.requireMcpPrincipal(ctx, principal, { scope })`.
 - [ ] Requests without the `MCP-Protocol-Version` header get HTTP `400`.

@@ -28,10 +28,10 @@ Use [`@lupinum/better-convex-nuxt`](https://www.npmjs.com/package/@lupinum/bette
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-vue@1.0.0-rc.0 convex@^1.42.2 vue@^3.5.0
+pnpm add @lupinum/better-convex-vue@next convex@^1.42.2 vue@^3.5.0
 ```
 
-This installs the exact `1.0.0-rc.0` release candidate.
+The `next` dist-tag is the 1.0 release candidate.
 
 ## Quick start
 

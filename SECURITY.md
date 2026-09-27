@@ -1,5 +1,18 @@
 # Security policy
 
+## Supported versions
+
+Security fixes go into the latest release line of each package: the newest
+published version of `@lupinum/better-convex-nuxt` and
+`@lupinum/better-convex-vue` (they share one version) and of
+`@lupinum/better-convex-mcp`. Older versions do not receive fixes; upgrade to
+the latest release.
+
+Each `package.json` declares the dependency and peer version ranges that a
+release supports. An application with authentication installs
+`better-auth`, `@better-auth/core`, and `@better-auth/oauth-provider` at
+exactly the versions that `@lupinum/better-convex-nuxt` lists.
+
 ## Reporting a vulnerability
 
 Do not open a public issue for a suspected vulnerability. Report it through a
@@ -7,45 +20,11 @@ private [GitHub Security Advisory](https://github.com/lupinum-dev/better-convex/
 for this repository.
 
 Include the affected package versions, the setup you used, the steps to
-reproduce, the impact, and any fix you propose. Maintainers acknowledge a
-complete report within three business days. We agree on disclosure with you
-after a fix is available.
+reproduce, the impact, and any fix you propose. We aim to acknowledge reports
+within a week, and we agree on disclosure with you after a fix is available.
 
 If the defect is in Better Auth or the Better Auth OAuth Provider, we report it
 to those projects privately and coordinate the fix with them.
-
-## Supported versions
-
-We fix security issues in the latest published minor release. An older minor
-release loses support when a newer minor release is published.
-
-The packages are prerelease software. This source version contains these
-packages:
-
-| Package                       | Version      | Security fixes                        |
-| ----------------------------- | ------------ | ------------------------------------- |
-| `@lupinum/better-convex-nuxt` | `1.0.0-rc.0` | Yes                                   |
-| `@lupinum/better-convex-vue`  | `1.0.0-rc.0` | Yes                                   |
-| `@lupinum/better-convex-mcp`  | `1.0.0-rc.0` | Yes                                   |
-| Any `1.0.0-beta.*` or `0.x`   | —            | No. Upgrade to the release candidate. |
-
-A release candidate loses support when the next release candidate or 1.0.0
-is published. The packages are tested with Node
-`^22.19.0 || ^24.11.0`, Nuxt `4.5.2`, Convex `1.42.2`, Better Auth `1.7.6`,
-`@better-auth/oauth-provider` `1.7.6`, and Convex Helpers `0.1.114`. Each
-`package.json` lists the exact dependency and peer versions. An application
-with authentication installs `better-auth`, `@better-auth/core`, and
-`@better-auth/oauth-provider` at exactly those versions.
-
-We respond to vulnerable dependencies in these times:
-
-- Critical or known-exploited production dependency: fix or mitigate within 24
-  hours.
-- High severity: acknowledge within 24 hours, decide within 72 hours, and fix
-  or mitigate within seven days.
-- Medium severity: decide within 30 days.
-- Low severity and development-only findings: decide in the next regular
-  maintenance cycle.
 
 ## Security model
 
