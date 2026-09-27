@@ -72,7 +72,6 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
   query: Query,
   args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
   options: ResolvedNuxtConvexPaginatedQueryOptions,
-  resolveImmediately: boolean,
 ): BuildConvexPaginatedQueryResult<PaginatedQueryItem<Query>> {
   type Item = PaginatedQueryItem<Query>
   const { auth, immediate, initialCursor, initialNumItems, keepPreviousData, lazy, server } =
@@ -228,7 +227,6 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
   return {
     resultData,
     resolvePromise:
-      resolveImmediately ||
       lazy ||
       !immediate ||
       !server ||
@@ -244,7 +242,6 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
   query: Query,
   args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
   options: ResolvedNuxtConvexPaginatedQueryOptions,
-  resolveImmediately: boolean,
   convexUrl: string | undefined,
 ): BuildConvexPaginatedQueryResult<PaginatedQueryItem<Query>> {
   type Item = PaginatedQueryItem<Query>
@@ -333,7 +330,7 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
         return null
       }
     },
-    { server, immediate, lazy: lazy || resolveImmediately, deep: false },
+    { server, immediate, lazy, deep: false },
   )
   const data = computed<readonly Item[] | undefined>(() => asyncData.data.value?.page)
   const error = computed(
@@ -398,7 +395,6 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
   query: Query,
   args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
   options: UseNuxtConvexPaginatedQueryOptions,
-  resolveImmediately = false,
 ): BuildConvexPaginatedQueryResult<PaginatedQueryItem<Query>> {
   const initialNumItems = options.initialNumItems
   if (!Number.isSafeInteger(initialNumItems) || initialNumItems < 1) {
@@ -416,12 +412,11 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
   }
 
   return import.meta.client
-    ? createClientConvexPaginatedQueryState(query, args, resolvedOptions, resolveImmediately)
+    ? createClientConvexPaginatedQueryState(query, args, resolvedOptions)
     : createServerConvexPaginatedQueryState(
         query,
         args,
         resolvedOptions,
-        resolveImmediately,
         getConvexRuntimeConfig().url,
       )
 }

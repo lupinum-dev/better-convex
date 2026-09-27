@@ -27,8 +27,8 @@ type HotImportMeta = ImportMeta & {
 }
 
 /**
- * Setup the DevTools bridge on the window object.
- * Only called in dev mode from plugin.client.ts.
+ * Set up the DevTools bridge over the app transport.
+ * Only called in dev mode from the client plugins.
  *
  * @param sink - Per-app bounded diagnostics store
  * @param convexToken - Ref to the current auth token
@@ -48,38 +48,15 @@ export async function setupDevToolsBridge(
   providedInstanceId?: string,
 ): Promise<() => void> {
   const bridge: ConvexDevToolsBridge = {
-    version: '1.1.0',
-
     getQueries: () => sink.getQueries(),
-
-    getQueryDetail: (id: string) => sink.getQuery(id),
-
-    subscribeToQueries: (callback) => sink.subscribeToQueries(callback),
 
     getMutations: () => sink.getMutations(),
 
-    subscribeToMutations: (callback) => sink.subscribeToMutations(callback),
-
-    getAuthState: (): AuthState => {
-      // Use toRaw to unwrap Vue proxy (BroadcastChannel can't clone proxies)
-      const rawUser = toRaw(convexUser.value) as ConvexUser | null
-      // Check for valid user by looking for required fields (more stable than Object.keys().length)
-      // Object.keys() on Vue proxies can be unreliable and cause flickering
-      const hasUser = !!(rawUser && typeof rawUser === 'object' && (rawUser.id || rawUser.email))
-      // Create a plain object copy to avoid proxy cloning issues
-      const plainUser = hasUser ? cloneDevtoolsPayload(rawUser) : null
-
-      const state = createDevtoolsAuthState(readAuthState(), convexToken.value, plainUser)
-      return {
-        isAuthenticated: state.isAuthenticated,
-        pending: state.pending,
-        tokenStatus: state.tokenStatus,
-        user: state.user,
-      }
-    },
-
     getEnhancedAuthState: (): EnhancedAuthState => {
+      // Use toRaw to unwrap the Vue proxy (BroadcastChannel can't clone proxies).
       const rawUser = toRaw(convexUser.value) as ConvexUser | null
+      // Check required fields instead of Object.keys(), which can be unreliable
+      // on Vue proxies and cause flickering.
       const hasUser = Boolean(
         rawUser && typeof rawUser === 'object' && (rawUser.id || rawUser.email),
       )
@@ -95,17 +72,6 @@ export async function setupDevToolsBridge(
       if (!waterfall) return null
       // Create a plain object copy to avoid proxy cloning issues
       return cloneDevtoolsPayload(toRaw(waterfall))
-    },
-
-    getAuthProxyStats: async () => {
-      // The proxy runs on the Nitro server, so it is read through the DevTools endpoint.
-      try {
-        const response = await fetch('/__convex_devtools__/proxy-stats')
-        if (!response.ok) return null
-        return await response.json()
-      } catch {
-        return null
-      }
     },
   }
 
@@ -174,15 +140,6 @@ export async function setupDevToolsBridge(
                 transport: transport.kind,
               })
             })
-        } else if (bridgeMethod !== undefined) {
-          // Property access
-          transport.postMessage({
-            type: 'CONVEX_DEVTOOLS_RESPONSE',
-            id,
-            result: bridgeMethod,
-            instanceId,
-            transport: transport.kind,
-          })
         } else {
           transport.postMessage({
             type: 'CONVEX_DEVTOOLS_RESPONSE',

@@ -122,8 +122,7 @@ within the 10-second grace returns the same encrypted receipt. Reuse outside
 that grace revokes the client/user consent. Every newly issued token under the
 renewable profile, including read-only tokens without `offline_access`, carries
 `bcn_grant_id`. Live validation checks that consent ID, so reconsent cannot
-revive those revoked tokens. Legacy unbound tokens retain their original
-maximum 10-minute lifetime; see `internals/migrations.md`.
+revive those revoked tokens.
 
 Family invalidation revokes authority independently of family size. It deletes
 at most 128 refresh rows synchronously. Additional hashed rows retain their old
@@ -156,7 +155,7 @@ The resource verifier requires signature, RS256, `typ = at+jwt`, exact issuer, e
 
 OAuth scopes are ceilings, not frozen application permissions. Every MCP operation performs live authorization in Convex. For a write, the live authorization check and state change must share the same transaction. Removing a membership, consent, client, session, or delegation takes effect at that live check; a self-contained token's remaining individual bearer window is otherwise bounded by its 10-minute lifetime.
 
-Enterprise workforce OIDC SSO is a later phase. The authorization-server beta must not be represented as enterprise SSO support.
+Enterprise OIDC SSO is a later phase. The authorization-server beta must not be represented as enterprise SSO support.
 
 The operational contract is documented in the [delegated OAuth and MCP guide](./docs/content/docs/4.build/3.authentication/10.delegated-oauth-and-mcp.md).
 
@@ -174,36 +173,9 @@ user helpers and OAuth live checks call it internally. A local component must
 export it from its component adapter and regenerate Convex bindings when adopting
 this candidate; there is no fallback to weaker admission for older adapters.
 
-Workforce-schema admission requires a verified mailbox and current full TOTP
-proof. Recovery and enrollment sessions cannot enter ordinary business functions.
-The shared predicate enforces the absolute lifetime and credential generation;
-application functions must still check live membership, suspension, and resource
-permissions. The fixed `workforce: true` factory uses the package-owned
-`createWorkforceAuthSchemaOptions()` contract. Its component-only `assertProfile`
-startup check rejects an ordinary/workforce mismatch in either direction. This
-check does not select or modify the component's admission policy.
-
-The candidate enforces a 60-minute idle deadline through explicit foreground
-touch and a 12-hour absolute limit. Its component-owned expiry chain removes
-expired rows so subscriptions can invalidate; scheduler latency still applies.
-Session-list and revoke helpers derive the actor from verified Convex identity
-and recheck live full authority in the canonical operation. Raw provider session
-management remains blocked.
-
-TOTP replay markers are consumed atomically with full session insertion or
-pending-factor promotion. Metadata carries only a factor fingerprint, a keyed
-digest, and matching counters. The final canonical counter gate bounds delayed
-proofs without assuming action/database clock synchronization. Marker cleanup
-uses canonical time in bounded batches. No plaintext OTP or factor seed belongs
-in metadata, logs, or returned session summaries.
-
-Local HTTP and uninterrupted WebSocket tests cover replay and scheduled session
-expiry, including a surviving-session control. Invitation recovery, complete
-reference-application verification, and hosted verification remain release gates,
-not a released security
-guarantee. Public signup needs an explicit application
-admission callback; an email allowlist alone does not prevent account
-pre-creation or establish invitation possession.
+Public signup needs an explicit application admission callback; an email
+allowlist alone does not prevent account pre-creation or establish invitation
+possession.
 
 ## Secrets, credentials, and logs
 

@@ -7,9 +7,6 @@ import type { ComponentApi } from '../../src/runtime/convex-auth/component/_gene
 type Adapter = ComponentApi['adapter']
 
 it('retains document, pagination, and count contracts in the real generated component API', () => {
-  expectTypeOf<Adapter['assertProfile']>().toExtend<
-    FunctionReference<'query', 'internal', { workforce: boolean }, null>
-  >()
   expectTypeOf<FunctionReturnType<Adapter['create']>>().toEqualTypeOf<AuthDocument>()
   expectTypeOf<FunctionReturnType<Adapter['findOne']>>().toEqualTypeOf<AuthDocument | null>()
   expectTypeOf<FunctionReturnType<Adapter['sessionAdmission']>>().toEqualTypeOf<{

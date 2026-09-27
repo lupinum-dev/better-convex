@@ -38,10 +38,14 @@ describe('MCP package documentation', () => {
     )
   })
 
-  it('documents the complete strict MCP App peer set', () => {
-    expect(appsGuide).toContain('@modelcontextprotocol/ext-apps@1.7.5')
-    expect(appsGuide).toContain('@modelcontextprotocol/sdk@1.30.0')
-    expect(appsGuide).toContain('zod@4.4.3')
+  it('documents MCP Apps as a recipe on the official Apps SDK', () => {
+    expect(appsGuide).toContain('pnpm add @modelcontextprotocol/ext-apps@2.0.0')
+    expect(appsGuide).toContain("from '@modelcontextprotocol/ext-apps/server'")
+    expect(appsGuide).toContain('registerAppResource(server,')
+    expect(appsGuide).toContain('registerAppTool(')
+    expect(appsGuide).toContain("import { App } from '@modelcontextprotocol/ext-apps'")
+    expect(appsGuide).toContain('{ autoResize: true }')
+    expect(appsGuide).toContain('viteSingleFile()')
   })
 
   it('keeps provider and application authorization ownership explicit', () => {
@@ -62,8 +66,6 @@ describe('MCP package documentation', () => {
     )
     expect(guide).toContain('automatic Convex-function exposure')
     expect(guide).toContain('prompts, Tasks, or a URL approval workflow')
-    expect(normalizedGuide).toContain('client entry lives in `@lupinum/better-convex-mcp/vue`')
-    expect(normalizedGuide).toContain('adds no server capability or authority')
     expect(guide).toContain('second Nitro MCP topology')
     expect(guide).toContain('hand-written MCP parser')
   })

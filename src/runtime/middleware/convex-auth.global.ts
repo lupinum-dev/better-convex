@@ -20,7 +20,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const decision = resolveRouteProtectionDecision({
     meta: pageMeta.convexAuth,
     defaultRedirectTo: authConfig.redirectTo,
-    preserveReturnTo: true,
     currentPath: to.path,
     currentFullPath: to.fullPath,
   })
@@ -35,11 +34,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
     if (settledStatus === 'authenticated') return
   }
 
-  if (import.meta.server && pending.value) {
-    // Avoid server-side waits; SSR should already have resolved auth.
-    // Fall through to secure default route protection if still pending.
-  }
-
+  // The server never waits: SSR already resolved auth, so a still-pending
+  // server state falls through to the secure default below.
   if (status.value === 'authenticated') return
   return navigateTo(decision.redirectTo)
 })

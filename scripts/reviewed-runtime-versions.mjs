@@ -11,17 +11,7 @@ export function derivePackagePhysicalVersions(packageId, manifest) {
       ? Object.fromEntries(
           ['convex', 'vue'].map((name) => [name, manifest.devDependencies?.[name]]),
         )
-      : packageId === 'mcp'
-        ? {
-            ...manifest.dependencies,
-            ...Object.fromEntries(
-              ['@modelcontextprotocol/ext-apps', '@modelcontextprotocol/sdk', 'vue'].map((name) => [
-                name,
-                manifest.devDependencies?.[name],
-              ]),
-            ),
-          }
-        : manifest.dependencies
+      : manifest.dependencies
   if (
     !sources ||
     Object.entries(sources).some(

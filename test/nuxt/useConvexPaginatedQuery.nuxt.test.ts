@@ -544,12 +544,8 @@ describe('useConvexPaginatedQuery controller', () => {
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
         identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        return createConvexPaginatedQueryState(
-          query,
-          {},
-          { auth: 'optional', initialNumItems: 2 },
-          true,
-        ).resultData
+        return createConvexPaginatedQueryState(query, {}, { auth: 'optional', initialNumItems: 2 })
+          .resultData
       },
       {
         owner: makeMockOwner(primary),
@@ -608,12 +604,8 @@ describe('useConvexPaginatedQuery controller', () => {
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
         identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        return createConvexPaginatedQueryState(
-          query,
-          {},
-          { auth: 'optional', initialNumItems: 2 },
-          true,
-        ).resultData
+        return createConvexPaginatedQueryState(query, {}, { auth: 'optional', initialNumItems: 2 })
+          .resultData
       },
       {
         owner: makeMockOwner(primary),
@@ -648,7 +640,6 @@ describe('useConvexPaginatedQuery controller', () => {
           query,
           {},
           { auth: 'optional', initialNumItems: 2 },
-          true,
         ).resultData
         return { q, identity }
       },
@@ -681,7 +672,6 @@ describe('useConvexPaginatedQuery controller', () => {
           query,
           {},
           { auth: 'optional', initialNumItems: 2 },
-          true,
         ).resultData
         return { q, pending, identity }
       },
@@ -734,7 +724,6 @@ describe('useConvexPaginatedQuery controller', () => {
           query,
           {},
           { auth: 'optional', initialNumItems: 2, keepPreviousData: true },
-          true,
         ).resultData
         return { q, pending, identity }
       },
@@ -770,12 +759,8 @@ describe('useConvexPaginatedQuery controller', () => {
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
         identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        return createConvexPaginatedQueryState(
-          query,
-          {},
-          { auth: 'none', initialNumItems: 2 },
-          true,
-        ).resultData
+        return createConvexPaginatedQueryState(query, {}, { auth: 'none', initialNumItems: 2 })
+          .resultData
       },
       { owner: makeMockOwner(primary, anon) },
     )
@@ -841,12 +826,10 @@ describe('useConvexPaginatedQuery controller', () => {
 
     const { result, wrapper } = await captureInNuxt(
       () =>
-        createConvexPaginatedQueryState(
-          query,
-          { digest } as never,
-          { auth: 'none', initialNumItems: 2 },
-          true,
-        ).resultData,
+        createConvexPaginatedQueryState(query, { digest } as never, {
+          auth: 'none',
+          initialNumItems: 2,
+        }).resultData,
       {
         owner: makeMockOwner(primary),
         payloadData: { [key]: page(['matching-bytes'], true, null) },

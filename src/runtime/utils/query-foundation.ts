@@ -13,13 +13,13 @@ import { getConvexRuntimeConfig } from './runtime-config'
 
 /**
  * Reactive canonical auth-identity inputs for query gating and isolation
- * tagging (architecture invariant). This is the single place query composables read auth
- * state; they never touch the auth engine directly.
+ * tagging. This is the single place query composables read auth state; they
+ * never touch the auth engine directly.
  *
- * Derived from the SSR-seeded reactive state (`convex:pending` / `convex:identity` /
- * `convex:authError`) so it is correct on both server and client, plus the
- * Query isolation generations are owned by the attached Vue runtime; this Nuxt
- * context only derives the server/client execution gate.
+ * Derived from the SSR-seeded reactive state (`convex:pending` /
+ * `convex:identity` / `convex:authError`) so it is correct on both server and
+ * client. Query isolation generations are owned by the attached Vue runtime;
+ * this Nuxt context only derives the server/client execution gate.
  */
 export interface ConvexQueryAuthContext {
   readonly status: ComputedRef<ConvexQueryAuthStatus>

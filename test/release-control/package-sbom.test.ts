@@ -142,7 +142,7 @@ describe('package-profile SBOM generation', () => {
     }
   }, 120_000)
 
-  it('roots the MCP SBOM in the official server and optional Vue App peers', () => {
+  it('roots the MCP SBOM in the official server SDK', () => {
     const directory = mkdtempSync(join(tmpdir(), 'bcm-sbom-output-'))
     try {
       const output = join(directory, 'sbom.cdx.json')
@@ -160,10 +160,7 @@ describe('package-profile SBOM generation', () => {
       expect(sbom.metadata.component.name).toBe('@lupinum/better-convex-mcp')
       expect(sbom.components.map(({ name }) => name).sort()).toEqual([
         '@modelcontextprotocol/core',
-        '@modelcontextprotocol/ext-apps',
-        '@modelcontextprotocol/sdk',
         '@modelcontextprotocol/server',
-        'vue',
         'zod',
       ])
       expect(sbom.components).toContainEqual(
@@ -172,19 +169,6 @@ describe('package-profile SBOM generation', () => {
           version: mcpPackageManifest.dependencies['@modelcontextprotocol/server'],
         }),
       )
-      for (const peer of ['@modelcontextprotocol/ext-apps', '@modelcontextprotocol/sdk', 'vue']) {
-        expect(sbom.components).toContainEqual(
-          expect.objectContaining({
-            name: peer,
-            properties: [
-              {
-                name: '@lupinum/better-convex-mcp:dependency-kind',
-                value: 'optional-peer',
-              },
-            ],
-          }),
-        )
-      }
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

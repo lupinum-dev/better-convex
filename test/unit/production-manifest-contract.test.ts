@@ -70,7 +70,7 @@ describe('production manifest certification profiles', () => {
       files: ['dist'],
       sideEffects: false,
       scripts: {
-        prepack: 'pnpm --dir ../.. docs:package && pnpm run build && pnpm --dir ../.. docs:package',
+        prepack: 'pnpm run build && pnpm --dir ../.. docs:package',
       },
     })
   })
@@ -128,8 +128,6 @@ describe('production manifest certification profiles', () => {
       'sideEffects',
       'exports',
       'dependencies',
-      'peerDependencies',
-      'peerDependenciesMeta',
       'engines',
       'scripts',
     ])
@@ -138,10 +136,23 @@ describe('production manifest certification profiles', () => {
       files: ['dist'],
       sideEffects: false,
       scripts: {
-        prepack: 'pnpm --dir ../.. docs:package && unbuild && pnpm --dir ../.. docs:package',
+        prepack: 'unbuild && pnpm --dir ../.. docs:package',
       },
     })
   })
+
+  it.each([
+    ['peerDependencies', { peerDependencies: { vue: '>=3.5.0 <4' } }],
+    ['peerDependenciesMeta', { peerDependenciesMeta: { vue: { optional: true } } }],
+  ] as const)(
+    'rejects MCP manifest field %s even when source and candidate match',
+    (field, addition) => {
+      const unreviewed = { ...structuredClone(mcpManifest), ...addition }
+      expect(() => assertProductionManifestContract('mcp', unreviewed, unreviewed)).toThrow(
+        `uses forbidden field ${field}`,
+      )
+    },
+  )
 
   it.each(['main', 'typesVersions', 'packageManager', 'publishConfig'])(
     'rejects Vue install-affecting field %s even when source and candidate match',

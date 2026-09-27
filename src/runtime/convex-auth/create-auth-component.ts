@@ -107,12 +107,6 @@ export function createAuthComponent<
     }
   }
 
-  const requireSessionIdentity = async (ctx: AuthCtx<DataModel>) => {
-    const actor = await sessionIdentity(ctx)
-    if (!actor) throw new ConvexError('Unauthenticated')
-    return actor
-  }
-
   const safeGetAuthSession = async (ctx: AuthCtx<DataModel>) => {
     const actor = await sessionIdentity(ctx)
     return actor ? ctx.runQuery(component.adapter.sessionAdmission, actor) : null
@@ -131,32 +125,6 @@ export function createAuthComponent<
       }),
 
     safeGetAuthUser,
-
-    // Actor comes only from the verified Convex identity. Each component call
-    // re-reads full live authority in its own canonical query or mutation.
-    workforceSessions: {
-      touch: async (ctx: WritableAuthCtx<DataModel>) =>
-        ctx.runMutation(component.adapter.touchWorkforceSession, {
-          actor: await requireSessionIdentity(ctx),
-        }),
-      list: async (
-        ctx: AuthCtx<DataModel>,
-        paginationOpts: { cursor: string | null; numItems: number },
-      ) =>
-        ctx.runQuery(component.adapter.listWorkforceSessions, {
-          actor: await requireSessionIdentity(ctx),
-          paginationOpts,
-        }),
-      revoke: async (ctx: WritableAuthCtx<DataModel>, sessionId: string) =>
-        ctx.runMutation(component.adapter.revokeWorkforceSession, {
-          actor: await requireSessionIdentity(ctx),
-          sessionId,
-        }),
-      revokeAll: async (ctx: WritableAuthCtx<DataModel>) =>
-        ctx.runMutation(component.adapter.revokeAllWorkforceSessions, {
-          actor: await requireSessionIdentity(ctx),
-        }),
-    },
 
     getAuthUser: async (ctx: AuthCtx<DataModel>) => {
       const user = await safeGetAuthUser(ctx)

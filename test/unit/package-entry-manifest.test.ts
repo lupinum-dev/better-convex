@@ -28,7 +28,7 @@ const nuxtEntrySubpaths = [
   './server',
 ]
 const vueEntrySubpaths = ['.', './errors', './embedded']
-const mcpEntrySubpaths = ['.', './vue']
+const mcpEntrySubpaths = ['.']
 
 type PackageEntry = {
   kind: 'runtime' | 'types-only'
@@ -90,22 +90,6 @@ describe('package entry manifest', () => {
     expect(getPackageCheckerProfile('vue')).toMatchObject({
       manifestPolicy: { requireLegacyRootFields: false },
       sourceRoots: ['src'],
-    })
-  })
-
-  it('keeps the MCP App subpath lifecycle contract exact', () => {
-    expect(getPackageEntry('mcp', './vue')).toMatchObject({
-      kind: 'runtime',
-      valueExports: ['useMcpApp'],
-      typeExports: [
-        'McpAppError',
-        'McpAppErrorCode',
-        'McpAppHostVersion',
-        'McpAppPhase',
-        'UseMcpAppOptions',
-        'UseMcpAppReturn',
-      ],
-      exactDeclaredExports: true,
     })
   })
 
@@ -460,17 +444,15 @@ describe('package entry manifest', () => {
     expect(typeAllowed.has('convex/server')).toBe(true)
     expect(runtimeAllowed.has('better-auth/db')).toBe(false)
     expect(runtimeAllowed.has('@better-auth/core/context')).toBe(true)
-    expect(runtimeAllowed.has('better-auth/cookies')).toBe(true)
     expect(runtimeAllowed.has('convex-helpers/validators')).toBe(true)
     expect(typeAllowed.has('better-auth/db')).toBe(false)
   })
 
-  it('keeps the workforce request context out of non-auth package entries', () => {
+  it('keeps the auth request context out of non-auth package entries', () => {
     for (const entry of getPackageCheckerEntries('nuxt')) {
       if (entry.subpath === './better-auth/server' || entry.subpath === './better-auth/test') {
         continue
       }
-      expect(entry.purity.runtimeExternalSpecifiers).not.toContain('better-auth/cookies')
       expect(entry.purity.runtimeExternalSpecifiers).not.toContain('@better-auth/core/context')
       expect(entry.purity.typeExternalSpecifiers).not.toContain('@better-auth/core/context')
     }

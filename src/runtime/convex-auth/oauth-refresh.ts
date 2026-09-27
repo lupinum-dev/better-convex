@@ -1,6 +1,6 @@
 import type { GenericDataModel, GenericMutationCtx, GenericQueryCtx } from 'convex/server'
 
-import { readAuthSessionAdmission } from './workforce/admission'
+import { readAuthSessionAdmission } from './session-generation'
 
 function strings(value: unknown): value is string[] {
   return (
@@ -15,7 +15,6 @@ function strings(value: unknown): value is string[] {
 export async function admitOAuthRefresh(
   ctx: GenericQueryCtx<GenericDataModel>,
   row: Record<string, unknown>,
-  workforce: boolean,
   creating = false,
 ): Promise<{ expiresAt: number; grantId: string } | null> {
   if (
@@ -28,11 +27,10 @@ export async function admitOAuthRefresh(
     !row.scopes.includes('offline_access')
   )
     return null
-  const admission = await readAuthSessionAdmission(
-    ctx,
-    { sessionId: row.sessionId, userId: row.userId },
-    workforce,
-  )
+  const admission = await readAuthSessionAdmission(ctx, {
+    sessionId: row.sessionId,
+    userId: row.userId,
+  })
   if (!admission) return null
   const clientId = row.clientId
   const userId = row.userId
@@ -91,9 +89,8 @@ export async function prepareOAuthRefreshCreate(
   ctx: GenericMutationCtx<GenericDataModel>,
   row: Record<string, unknown>,
   parentId: string | undefined,
-  workforce: boolean,
 ): Promise<Record<string, unknown>> {
-  const admission = await admitOAuthRefresh(ctx, row, workforce, true)
+  const admission = await admitOAuthRefresh(ctx, row, true)
   if (!admission || typeof row.expiresAt !== 'number') throw new Error('AUTH_OAUTH_REFRESH_INVALID')
   let expiresAt = Math.min(row.expiresAt, admission.expiresAt)
   if (parentId) {

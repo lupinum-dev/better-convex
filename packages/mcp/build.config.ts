@@ -3,7 +3,6 @@ import { defineBuildConfig } from 'unbuild'
 export default defineBuildConfig({
   entries: [
     'src/index',
-    'src/vue',
     {
       builder: 'copy',
       input: 'agent-docs',
@@ -15,5 +14,5 @@ export default defineBuildConfig({
   rollup: {
     emitCJS: false,
   },
-  externals: ['@modelcontextprotocol/ext-apps', '@modelcontextprotocol/server', 'vue'],
+  externals: ['@modelcontextprotocol/server'],
 })

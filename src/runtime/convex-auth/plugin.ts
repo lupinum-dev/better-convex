@@ -46,8 +46,6 @@ import {
 } from './oauth-security'
 import { normalizeAuthOrigin } from './origin'
 import { isConvexAuthRateLimitStorage } from './rate-limit-storage'
-import { workforceSchemaPlugin } from './workforce/schema'
-import { isFullWorkforceSession } from './workforce/session-assurance'
 
 type SessionJwtOptions = Pick<
   NonNullable<JwtOptions['jwt']>,
@@ -879,19 +877,6 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
             where: [{ field: 'id', value: persistedSession.userId }],
           })
           if (!persistedUser || persistedUser.id !== authenticated.user.id) unauthorized()
-          if (
-            ctx.context.getPlugin(workforceSchemaPlugin.id) &&
-            !isFullWorkforceSession({
-              user: persistedUser,
-              session: {
-                ...persistedSession,
-                // Better Auth materializes dates; the component stores epoch ms.
-                expiresAt: persistedSession.expiresAt.getTime(),
-              },
-              now: Date.now(),
-            })
-          )
-            unauthorized()
 
           const customClaims =
             (await options.sessionJwt.definePayload?.({

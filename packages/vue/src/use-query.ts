@@ -17,7 +17,7 @@ import type { ClientCallStatus } from './internal/call-state'
 import { normalizeConvexArgs, isConvexArgsSkipped } from './internal/query-args'
 import { createQueryController, type QueryIsolationTag } from './internal/query-controller'
 import { decideQueryExecution } from './internal/query-execution'
-import { useBetterConvexRuntime, type BetterConvexVueRuntime } from './runtime-context'
+import { useBetterConvexRuntime } from './runtime-context'
 
 export type ConvexAuthMode = 'required' | 'optional' | 'none'
 export type ConvexQuerySkip = 'skip'
@@ -66,7 +66,6 @@ type InternalQueryParameters<Query extends FunctionReference<'query'>> = [
   args?: MaybeRefOrGetter<ConvexQueryArgs<FunctionArgs<Query>>>,
   options?: UseConvexQueryOptions,
   hydrationSeed?: QueryHydrationSeed<FunctionReturnType<Query>>,
-  runtimeOverride?: BetterConvexVueRuntime,
 ]
 
 export function useConvexQuery<Query extends FunctionReference<'query'>>(
@@ -80,12 +79,11 @@ export function useConvexQuery<Query extends FunctionReference<'query'>>(
   // Nuxt passes an SSR seed in a fourth runtime-only slot. It is intentionally
   // absent from the public declaration: hydration is adapter machinery, not a
   // second public source of query data.
-  const [providedArgs, options, hydrationSeed, runtimeOverride] =
-    parameters as InternalQueryParameters<Query>
+  const [providedArgs, options, hydrationSeed] = parameters as InternalQueryParameters<Query>
   const args = (parameters.length === 0 ? {} : providedArgs) as MaybeRefOrGetter<
     ConvexQueryArgs<FunctionArgs<Query>>
   >
-  const runtime = runtimeOverride ?? useBetterConvexRuntime()
+  const runtime = useBetterConvexRuntime()
   const auth = options?.auth ?? 'optional'
   const currentArgs = computed(() => normalizeConvexArgs(args))
   const argsHash = computed(() => hash(currentArgs.value))

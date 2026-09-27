@@ -198,10 +198,6 @@ export function decodeUserFromJwt(token: string): ConvexUser | null {
 }
 
 // ============================================================================
-// Types
-// ============================================================================
-
-// ============================================================================
 // Query Status
 // ============================================================================
 
@@ -269,17 +265,8 @@ export function getFunctionName(
 // Cache Key Generation
 // ============================================================================
 
-/**
- * Generate a stable hash for any value using ohash.
- * Used for cache key generation and argument comparison.
- *
- * Benefits over custom stableStringify:
- * - Handles circular references gracefully
- * - Faster execution (optimized C++ implementation)
- * - Shorter, URL-safe output
- * - Handles Symbols, Functions, and edge cases
- */
-export function hashArgs(args: unknown): string {
+/** Generate a stable hash of query arguments for cache keys. */
+function hashArgs(args: unknown): string {
   return hash(args ?? {})
 }
 

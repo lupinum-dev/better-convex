@@ -20,9 +20,9 @@ export type LogLevel = false | 'info' | 'debug'
 // ============================================================================
 
 export interface AuthEvent {
-  phase: string // 'session-check', 'cache', 'exchange', 'hydrate', 'login', 'logout'
-  outcome: 'success' | 'error' | 'skip' | 'miss'
-  details?: Record<string, unknown> // user, duration, cache status, etc.
+  phase: string // e.g. 'init', 'session-check', 'ssr.jwt.exchange'
+  outcome: 'success' | 'error' | 'miss'
+  details?: Record<string, unknown> // stable codes, durations, flags
   error?: unknown
 }
 

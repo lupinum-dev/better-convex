@@ -15,13 +15,11 @@
     "test/fixtures/auth-security-plugins",
     "test/fixtures/better-auth-local-component",
     "test/fixtures/better-auth-two-factor",
-    "test/fixtures/workforce-http",
     "test/fixtures/ssr-errors-consumer",
     "test/fixtures/errors-consumer",
     "test/fixtures/server-consumer",
     "test/fixtures/user-projection-triggers-consumer",
     "test/fixtures/vue-anonymous",
-    "internal/labs/mcp-topology/convex/fixture",
     "src/runtime/server"
   ]
 }

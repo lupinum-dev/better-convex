@@ -12,6 +12,7 @@ import {
   paginationResultValidator,
   queryGeneric,
   type FunctionHandle,
+  type GenericQueryCtx,
   type SchemaDefinition,
 } from 'convex/server'
 import { v, type GenericId } from 'convex/values'
@@ -26,24 +27,15 @@ import {
   prepareOAuthRefreshCreate,
   revokeOAuthRefreshConsent,
 } from '../oauth-refresh'
-import { migrateBeta3UserGeneration, sessionGenerationAuthority } from '../session-generation'
-import { createWorkforceAdapterPolicy } from '../workforce/adapter-policy'
-import { readAuthSessionAdmission } from '../workforce/admission'
 import {
-  workforceConsumedChallengeValidator,
-  workforceOperationValidator,
-} from '../workforce/operations'
-import { hasWorkforceSchema } from '../workforce/schema'
-import {
-  expireWorkforceSession,
-  listWorkforceSessions,
-  revokeAllWorkforceSessions,
-  revokeWorkforceSession,
-  touchWorkforceSession,
-  workforceSessionActorValidator,
-  workforceSessionPageOptionsValidator,
-  workforceSessionPageValidator,
-} from '../workforce/session-management'
+  assertSessionGenerationUpdate,
+  currentSessionOrNull,
+  invalidateSessionCollection,
+  prepareSessionGenerationCreate,
+  readAuthSessionAdmission,
+  sessionGenerationAuthority,
+  withSessionGenerationSelect,
+} from '../session-generation'
 import type { AuthFieldMetadata, AuthSchemaMetadata } from './metadata'
 import {
   assertAuthSchemaMatchesMetadata,
@@ -104,7 +96,7 @@ const expireSessionReference = makeFunctionReference<
   'mutation',
   { storageId: GenericId<'session'> },
   null
->('adapter:expireWorkforceSession')
+>('adapter:expireSession')
 
 const pruneRateLimitsReference = makeFunctionReference<
   'mutation',
@@ -303,85 +295,39 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
   metadata,
 }: DefineAuthAdapterFunctionsOptions<Schema>) {
   assertAuthSchemaMatchesMetadata(schema, metadata)
-  const workforce = hasWorkforceSchema(metadata)
   const generationAuthority = sessionGenerationAuthority(metadata)
-  const workforcePolicy = createWorkforceAdapterPolicy(workforce, metadata)
-  const relationships = createAuthRelationshipEngine({
-    schema,
-    metadata,
-    runTrigger,
-    workforcePolicy,
-  })
-  function requireWorkforce(): void {
-    if (!workforce) throw new Error('AUTH_WORKFORCE_SCHEMA_REQUIRED')
+  const relationships = createAuthRelationshipEngine({ schema, metadata, runTrigger })
+  const readSelect = (model: string, select: readonly string[] | undefined) =>
+    generationAuthority ? withSessionGenerationSelect(model, select, generationAuthority) : select
+  const currentRow = async (
+    ctx: GenericQueryCtx<any>,
+    model: string,
+    row: Record<string, unknown> | null,
+  ): Promise<Record<string, unknown> | null> =>
+    generationAuthority && model === generationAuthority.sessionModel
+      ? await currentSessionOrNull(ctx, row, generationAuthority)
+      : row
+  const assertOwnedFieldsUntouched = (model: string, patch: Record<string, unknown>) => {
+    if (generationAuthority) assertSessionGenerationUpdate(model, patch, generationAuthority)
   }
   return {
-    migrateBeta3UserGeneration: internalMutationGeneric({
-      args: {
-        mode: v.union(v.literal('forward'), v.literal('rollback')),
-      },
-      returns: v.object({
-        patched: v.number(),
-        scanned: v.number(),
-      }),
-      handler: (ctx, args) => {
-        if (!generationAuthority) throw new Error('AUTH_SESSION_GENERATION_SCHEMA_INVALID')
-        return migrateBeta3UserGeneration(ctx, args.mode, generationAuthority)
-      },
-    }),
-    touchWorkforceSession: mutationGeneric({
-      args: { actor: workforceSessionActorValidator },
-      returns: v.object({ expiresAt: v.number() }),
-      handler: (ctx, args) => {
-        requireWorkforce()
-        return touchWorkforceSession(ctx, args.actor)
-      },
-    }),
-    listWorkforceSessions: queryGeneric({
-      args: {
-        actor: workforceSessionActorValidator,
-        paginationOpts: workforceSessionPageOptionsValidator,
-      },
-      returns: workforceSessionPageValidator,
-      handler: (ctx, args) => {
-        requireWorkforce()
-        return listWorkforceSessions(ctx, args.actor, args.paginationOpts, {
-          schema,
-          metadata,
-        })
-      },
-    }),
-    revokeWorkforceSession: mutationGeneric({
-      args: { actor: workforceSessionActorValidator, sessionId: v.string() },
-      returns: v.null(),
-      handler: (ctx, args) => {
-        requireWorkforce()
-        return revokeWorkforceSession(ctx, args.actor, args.sessionId)
-      },
-    }),
-    revokeAllWorkforceSessions: mutationGeneric({
-      args: { actor: workforceSessionActorValidator },
-      returns: v.null(),
-      handler: (ctx, args) => {
-        requireWorkforce()
-        return revokeAllWorkforceSessions(ctx, args.actor)
-      },
-    }),
-    expireWorkforceSession: internalMutationGeneric({
+    // Scheduled at creation; follows extended expiry and deletes the row once it lapses.
+    expireSession: internalMutationGeneric({
       args: { storageId: v.id('session') },
       returns: v.null(),
       handler: async (ctx, args) => {
-        const next = await expireWorkforceSession(ctx, args.storageId)
-        if (next !== null) await ctx.scheduler.runAt(next, expireSessionReference, args)
-        return null
-      },
-    }),
-    // Component-only startup check; no credentials or profile mutation.
-    assertProfile: queryGeneric({
-      args: { workforce: v.boolean() },
-      returns: v.null(),
-      handler: (_ctx, args) => {
-        if (args.workforce !== workforce) throw new Error('AUTH_WORKFORCE_SCHEMA_MISMATCH')
+        const session = await ctx.db.get('session', args.storageId)
+        if (!session) return null
+        const expiresAt = session.expiresAt
+        if (
+          typeof expiresAt === 'number' &&
+          Number.isSafeInteger(expiresAt) &&
+          expiresAt > Date.now()
+        ) {
+          await ctx.scheduler.runAt(expiresAt, expireSessionReference, args)
+          return null
+        }
+        await ctx.db.delete('session', args.storageId)
         return null
       },
     }),
@@ -398,7 +344,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         v.null(),
       ),
       handler: async (ctx, args) => {
-        const admitted = await readAuthSessionAdmission(ctx, args, workforce)
+        const admitted = await readAuthSessionAdmission(ctx, args)
         return admitted
           ? {
               user: toBetterAuthDocument(admitted.user),
@@ -414,28 +360,21 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         data: v.any(),
         oauthRefreshParentId: v.optional(v.string()),
         onCreateHandle: v.optional(v.string()),
-        workforce: v.optional(workforceOperationValidator),
-        workforceConsumedChallenge: v.optional(workforceConsumedChallengeValidator),
       },
       handler: async (ctx, args) => {
         let row = normalizeCreate(
           metadata,
           args.model,
-          await workforcePolicy.prepareCreateInput(ctx, args.model, args.data),
+          generationAuthority
+            ? await prepareSessionGenerationCreate(ctx, args.model, args.data, generationAuthority)
+            : args.data,
         )
         if (args.model === 'oauthRefreshToken') {
-          row = await prepareOAuthRefreshCreate(ctx, row, args.oauthRefreshParentId, workforce)
+          row = await prepareOAuthRefreshCreate(ctx, row, args.oauthRefreshParentId)
         } else if (args.oauthRefreshParentId !== undefined)
           throw new Error('AUTH_OAUTH_REFRESH_INVALID')
         await relationships.assertTargets(ctx, args.model, row)
         await assertUniqueConstraints(ctx, schema, metadata, args.model, row)
-        row = await workforcePolicy.prepareCreate(
-          ctx,
-          args.model,
-          row,
-          args.workforce,
-          args.workforceConsumedChallenge,
-        )
         const storageId = await ctx.db.insert(args.model as never, row as never)
         const created = await ctx.db.get(args.model as never, storageId as never)
         if (!created) throw new Error('AUTH_CREATE_READBACK_FAILED')
@@ -445,13 +384,15 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         })
         const finalRow = await ctx.db.get(args.model as never, storageId as never)
         if (!finalRow) throw new Error('AUTH_CREATE_TRIGGER_DELETED_ROW')
-        await workforcePolicy.scheduleCreatedSession(args.model, finalRow, async (expiresAt) => {
+        if (generationAuthority && args.model === generationAuthority.sessionModel) {
           const sessionId = ctx.db.normalizeId('session', storageId)
-          if (!sessionId) throw new Error('AUTH_SESSION_INVALID')
-          await ctx.scheduler.runAt(expiresAt, expireSessionReference, {
+          if (typeof finalRow.expiresAt !== 'number' || !sessionId) {
+            throw new Error('AUTH_SESSION_INVALID')
+          }
+          await ctx.scheduler.runAt(finalRow.expiresAt, expireSessionReference, {
             storageId: sessionId,
           })
-        })
+        }
         return toBetterAuthDocument(finalRow as never)
       },
     }),
@@ -461,7 +402,6 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
       args: {
         ...readArgs,
         join: v.optional(v.any()),
-        workforce: v.optional(workforceOperationValidator),
       },
       handler: async (ctx, args) => {
         const requested = readShape(args)
@@ -474,18 +414,14 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
             select:
               args.model === 'oauthRefreshToken'
                 ? undefined
-                : workforcePolicy.prepareReadSelect(args.model, requested.select),
+                : readSelect(args.model, requested.select),
           },
           2,
         )
         const row = oneOrNull(rows, 'AUTH_FIND_ONE')
-        if (
-          args.model === 'oauthRefreshToken' &&
-          row &&
-          !(await admitOAuthRefresh(ctx, row, workforce))
-        )
+        if (args.model === 'oauthRefreshToken' && row && !(await admitOAuthRefresh(ctx, row)))
           return null
-        const view = await workforcePolicy.projectFind(ctx, args.model, row, args.workforce)
+        const view = await currentRow(ctx, args.model, row)
         return toBetterAuthDocument(view, requested.select)
       },
     }),
@@ -506,15 +442,11 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           metadata,
           {
             ...requested,
-            select: workforcePolicy.prepareReadSelect(args.model, requested.select),
+            select: readSelect(args.model, requested.select),
           },
           args.paginationOpts,
         )
-        const page = (
-          await Promise.all(
-            result.page.map((row) => workforcePolicy.projectFind(ctx, args.model, row)),
-          )
-        )
+        const page = (await Promise.all(result.page.map((row) => currentRow(ctx, args.model, row))))
           .filter((row): row is AuthDocument => row !== null)
           .map((row) => toBetterAuthDocument(row, requested.select)!)
         return {
@@ -537,11 +469,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         where: v.array(whereValidator),
         update: v.any(),
         onUpdateHandle: v.optional(v.string()),
-        workforce: v.optional(workforceOperationValidator),
       },
       handler: async (ctx, args) => {
         if (args.where.length === 0) return null
-        let patch = normalizeUpdate(metadata, args.model, args.update, {
+        const patch = normalizeUpdate(metadata, args.model, args.update, {
           allowUnique: true,
         })
         const current = oneOrNull(
@@ -556,14 +487,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           new Set(Object.keys(patch)),
         )
         await assertUniqueConstraints(ctx, schema, metadata, args.model, patch, current)
-        patch = await workforcePolicy.prepareUpdate(
-          ctx,
-          args.model,
-          current,
-          patch,
-          args.workforce,
-          undefined,
-        )
+        assertOwnedFieldsUntouched(args.model, patch)
         await ctx.db.patch(args.model as never, current._id as never, patch as never)
         const updated = await ctx.db.get(args.model as never, current._id as never)
         if (!updated) throw new Error('AUTH_UPDATE_READBACK_FAILED')
@@ -602,8 +526,8 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           await assertUniqueConstraints(ctx, schema, metadata, args.model, patch, current)
         }
         for (const current of rows) {
-          const rowPatch = await workforcePolicy.prepareBulkUpdate(ctx, args.model, current, patch)
-          await ctx.db.patch(args.model as never, current._id as never, rowPatch as never)
+          assertOwnedFieldsUntouched(args.model, patch)
+          await ctx.db.patch(args.model as never, current._id as never, patch as never)
           if (!args.onUpdateHandle) continue
           const updated = await ctx.db.get(args.model as never, current._id as never)
           if (!updated) throw new Error('AUTH_BULK_UPDATE_READBACK_FAILED')
@@ -698,15 +622,11 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           await relationships.applyDeletion(ctx, rows, args.model, args)
           return rows.length
         }
-        const invalidated = await workforcePolicy.invalidateSessionCollection(
-          ctx,
-          args.model,
-          args.where,
-        )
+        const invalidated = generationAuthority
+          ? await invalidateSessionCollection(ctx, args.model, args.where, generationAuthority)
+          : null
         if (invalidated !== null) return invalidated
-        const rows =
-          (await workforcePolicy.expiredVerificationRows(ctx, args.model, args.where)) ??
-          (await relationships.collectOperationRows(ctx, readShape(args)))
+        const rows = await relationships.collectOperationRows(ctx, readShape(args))
         if (
           args.model === 'oauthRefreshToken' &&
           (args.where.some((clause) => clause.field === 'authorizationCodeId') ||
@@ -839,7 +759,6 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         where: v.array(whereValidator),
         increment: v.any(),
         set: v.optional(v.any()),
-        workforce: v.optional(workforceOperationValidator),
         onUpdateHandle: v.optional(v.string()),
       },
       handler: async (ctx, args) => {
@@ -869,7 +788,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         )
         if (!current) return null
         if (args.model === 'oauthRefreshToken') {
-          if (!(await admitOAuthRefresh(ctx, current, workforce))) return null
+          if (!(await admitOAuthRefresh(ctx, current))) return null
           if (set.revoked != null && set.rotatedAt == null)
             await revokeOAuthRefreshConsent(ctx, [current])
         }
@@ -890,15 +809,8 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           { ...current, ...patch },
           new Set(Object.keys(patch)),
         )
-        const rowPatch = await workforcePolicy.prepareUpdate(
-          ctx,
-          args.model,
-          current,
-          patch,
-          args.workforce,
-          { where: args.where, increment: args.increment },
-        )
-        await ctx.db.patch(args.model as never, current._id as never, rowPatch as never)
+        assertOwnedFieldsUntouched(args.model, patch)
+        await ctx.db.patch(args.model as never, current._id as never, patch as never)
         const updated = await ctx.db.get(args.model as never, current._id as never)
         if (!updated) throw new Error('AUTH_INCREMENT_READBACK_FAILED')
         await runTrigger(ctx, args.onUpdateHandle, {

@@ -15,9 +15,9 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-// architecture invariant-7.4: identity-owned state clears synchronously on an
-// identity change, keepPreviousData never crosses an identity boundary, and a
-// result captured under a stale identity cannot commit after the switch.
+// Identity-owned state clears synchronously on an identity change,
+// keepPreviousData never crosses an identity boundary, and a result captured
+// under a stale identity cannot commit after the switch.
 describe('useConvexQuery identity isolation', () => {
   it.each(['optional', 'required'] as const)(
     'retains matching %s SSR data through first identity settlement without a duplicate query',

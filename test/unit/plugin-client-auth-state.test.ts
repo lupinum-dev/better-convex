@@ -18,7 +18,6 @@ const {
   emitInitialProviderSession,
   failClosedMock,
   identityState,
-  isRestrictedSessionMock,
   pendingState,
   queryErrorsState,
   refreshSessionMock,
@@ -67,7 +66,6 @@ const {
     identityState: {
       value: { status: 'anonymous' } as AuthIdentity,
     },
-    isRestrictedSessionMock: vi.fn(() => false),
     pendingState: { value: false },
     queryErrorsState: {
       value: {} as Record<string, unknown>,
@@ -122,7 +120,6 @@ vi.mock('../../src/runtime/auth/better-auth-browser-adapter', () => ({
       return {
         dispose: vi.fn(),
         failClosed: failClosedMock,
-        isRestrictedSession: isRestrictedSessionMock,
         refreshSession: refreshSessionMock,
         snapshot: () => ({ sessionGeneration: adapterSessionGeneration.value }),
       }
@@ -178,8 +175,6 @@ describe('auth client app-facing state projection', () => {
     adapterCallbacks.sessionChanged = undefined
     adapterSessionGeneration.value = 0
     failClosedMock.mockReset()
-    isRestrictedSessionMock.mockReset()
-    isRestrictedSessionMock.mockReturnValue(false)
     refreshSessionMock.mockReset()
     refreshSessionMock.mockResolvedValue(undefined)
     authRefreshMock.mockReset()
@@ -201,78 +196,12 @@ describe('auth client app-facing state projection', () => {
     })
   })
 
-  it.each([
-    {
-      code: 'IDENTITY_CHANGED',
-      restricted: true,
-      settled: true,
-      identityKey: 'anonymous',
-      runtimeError: false,
-      matching: true,
-      succeeds: true,
-    },
-    {
-      code: 'AUTH_CONFIRMATION_TIMEOUT',
-      restricted: true,
-      settled: true,
-      identityKey: 'anonymous',
-      runtimeError: false,
-      matching: true,
-      succeeds: false,
-    },
-    {
-      code: 'IDENTITY_CHANGED',
-      restricted: false,
-      settled: true,
-      identityKey: 'anonymous',
-      runtimeError: false,
-      matching: true,
-      succeeds: false,
-    },
-    {
-      code: 'IDENTITY_CHANGED',
-      restricted: true,
-      settled: false,
-      identityKey: 'anonymous',
-      runtimeError: false,
-      matching: true,
-      succeeds: false,
-    },
-    {
-      code: 'IDENTITY_CHANGED',
-      restricted: true,
-      settled: true,
-      identityKey: 'user:alice',
-      runtimeError: false,
-      matching: true,
-      succeeds: false,
-    },
-    {
-      code: 'IDENTITY_CHANGED',
-      restricted: true,
-      settled: true,
-      identityKey: 'anonymous',
-      runtimeError: true,
-      matching: true,
-      succeeds: false,
-    },
-    {
-      code: 'IDENTITY_CHANGED',
-      restricted: true,
-      settled: true,
-      identityKey: 'anonymous',
-      runtimeError: false,
-      matching: false,
-      succeeds: false,
-    },
-  ])('bounds restricted refresh retirement: %j', async (scenario) => {
+  it('fails closed when the canonical refresh rejects', async () => {
     vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
-    const providerResult = {
-      data: { totpURI: 'synthetic-setup-only', backupCodes: ['synthetic'] },
-      error: null,
-    }
     createAuthClientMock.mockReturnValue({
-      twoFactor: { enable: vi.fn(async () => providerResult) },
+      twoFactor: {
+        enable: vi.fn(async () => ({ data: { totpURI: 'synthetic' }, error: null })),
+      },
     })
     const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
       setup(app: {
@@ -282,35 +211,26 @@ describe('auth client app-facing state projection', () => {
     }
     plugin.setup({ provide: vi.fn(), vueApp: { use: vi.fn(), onUnmount: vi.fn() } })
     authRefreshMock.mockImplementationOnce(async () => {
-      adapterCallbacks.sessionChanged?.('restricted-cookie', null, 2)
-      isRestrictedSessionMock.mockReturnValue(scenario.restricted)
-      snapshot.settled = scenario.settled
-      snapshot.identityKey = scenario.identityKey
+      adapterCallbacks.sessionChanged?.('replacement-cookie', null, 2)
+      snapshot.settled = true
+      snapshot.identityKey = 'anonymous'
       snapshot.identityGeneration += 1
-      snapshot.error = scenario.runtimeError ? new Error('runtime failure') : null
+      snapshot.error = null
       for (const subscriber of subscribers) subscriber()
-      if (!scenario.matching) adapterSessionGeneration.value = 3
       throw new ConvexCallError({
         kind: 'authentication',
-        code: scenario.code,
+        code: 'IDENTITY_CHANGED',
         message: 'Static refresh outcome',
       })
     })
     const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
       client: { twoFactor: { enable(): Promise<unknown> } }
-      ready(): Promise<string>
     }
-    if (scenario.succeeds) {
-      await expect(controller.client.twoFactor.enable()).resolves.toEqual(providerResult)
-      await expect(controller.ready()).resolves.toBe('anonymous')
-      expect(failClosedMock).not.toHaveBeenCalled()
-      expect(clearNuxtDataMock).toHaveBeenCalled()
-    } else {
-      await expect(controller.client.twoFactor.enable()).rejects.toMatchObject({
-        kind: 'authentication',
-      })
-      expect(failClosedMock).toHaveBeenCalledOnce()
-    }
+
+    await expect(controller.client.twoFactor.enable()).rejects.toMatchObject({
+      kind: 'authentication',
+    })
+    expect(failClosedMock).toHaveBeenCalledOnce()
   })
 
   it('projects a later canonical identity failure into Nuxt auth state', async () => {

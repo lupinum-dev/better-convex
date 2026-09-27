@@ -15,7 +15,7 @@ export function isAuthenticatedIdentityKey(key: ConvexIdentityKey | null): key i
  *
  * Use this everywhere an identity-varying holder is keyed: SSR snapshots, client
  * auth, cache keys, payload keys, subscription keys, and identity generation.
- * There is deliberately exactly one implementation .
+ * There is deliberately exactly one implementation.
  *
  * @throws TypeError when a user is present but has no non-empty string `id`.
  *   A token without a resolved user id is not a settled identity and must keep

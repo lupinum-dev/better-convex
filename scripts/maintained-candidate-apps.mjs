@@ -60,7 +60,6 @@ const candidateTestProfiles = Object.freeze({
     runners: Object.freeze([
       'scripts/check-mcp-package-consumer.mjs',
       'scripts/check-mcp-better-auth-consumer.mjs',
-      'scripts/check-mcp-external-convex-consumer.mjs',
     ]),
     tarballFilename: 'better-convex-mcp.tgz',
   }),

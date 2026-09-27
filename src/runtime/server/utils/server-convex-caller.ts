@@ -171,11 +171,11 @@ async function resolveServerToken(
 }
 
 // ---------------------------------------------------------------------------
-// serverConvex .
+// serverConvex
 // ---------------------------------------------------------------------------
 
 /**
- * Construct a request-scoped Convex server caller .
+ * Construct a request-scoped Convex server caller.
  *
  * The caller lazily resolves one authentication token and one
  * `ConvexHttpClient` (built with `logger: false` so arbitrary Convex function

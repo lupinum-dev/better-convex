@@ -1,8 +1,0 @@
-dist
-.nuxt
-.output
-node_modules
-coverage
-*.min.js
-pnpm-lock.yaml
-**/_generated

@@ -87,7 +87,6 @@ const ERRORS_DIR = p('packages/vue/src/errors.ts')
 const AUTH_CLIENT_DIR = p('src/runtime/auth-client')
 const CONVEX_AUTH_DIR = p('src/runtime/convex-auth')
 const CLIENT_LIFECYCLE_DIR = p('packages/vue/src')
-const MCP_APP_ENTRY = p('packages/mcp/src/vue.ts')
 const MCP_PACKAGE_DIR = p('packages/mcp/src')
 const SHARED_AUTH_COOKIE_FILE = p('src/runtime/shared/auth-cookie.ts')
 const SHARED_AUTH_ORIGIN_FILE = p('src/runtime/shared/auth-origin.ts')
@@ -184,12 +183,10 @@ function isAllowedVueEntryBareSpecifier(_absPath, specifier) {
   return isAllowedClientLifecycleBareSpecifier(specifier)
 }
 
-function isAllowedMcpBareSpecifier(absPath, specifier) {
+function isAllowedMcpBareSpecifier(specifier) {
   return (
     specifier === '@modelcontextprotocol/server' ||
-    specifier.startsWith('@modelcontextprotocol/server/') ||
-    (absPath === MCP_APP_ENTRY &&
-      (specifier === '@modelcontextprotocol/ext-apps' || specifier === 'vue'))
+    specifier.startsWith('@modelcontextprotocol/server/')
   )
 }
 
@@ -221,7 +218,7 @@ const RULES = [
       'packages/mcp/src/** may import only its own package and the exact official MCP server SDK; Nuxt, Nitro, H3, Better Auth, Vue, Node built-ins, aliases, and sibling workspace packages are forbidden.',
     from: isMcpPackage,
     disallow: (edge) => {
-      if (!edge.isRelative) return !isAllowedMcpBareSpecifier(edge.fromAbsPath, edge.specifier)
+      if (!edge.isRelative) return !isAllowedMcpBareSpecifier(edge.specifier)
       if (edge.resolvedAbsPath === null) return false
       return !isMcpPackage(edge.resolvedAbsPath)
     },

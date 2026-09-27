@@ -13,8 +13,7 @@ Auth owns human identity and sessions; Convex product data refers to people by
 Better Auth logical string IDs.** Tenant authorization has one explicit owner
 per starter. `team` uses the Better Auth Organization plugin; `agency` models
 its product-specific client/workspace delegation directly in Convex. None keeps
-a second copy of Better Auth user or session state. Experimental agent work
-remains under `internal/labs` until a real provider-backed path is proven.
+a second copy of Better Auth user or session state.
 
 | Starter           | Authorization model              | Status                           |
 | ----------------- | -------------------------------- | -------------------------------- |

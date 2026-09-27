@@ -2,18 +2,17 @@ import type { H3Event } from 'h3'
 
 import type { AuthWaterfall, AuthWaterfallPhase } from '../../devtools/types'
 import { decodeUserFromJwt, isJwtUsable } from '../../utils/convex-shared'
+import type { AuthEvent } from '../../utils/logger'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
 import type { ConvexUser } from '../../utils/types'
 import { exchangeConvexToken } from './token-exchange'
-
-type AuthLogOutcome = 'success' | 'error' | 'skip' | 'miss'
 
 const GENERIC_AUTH_ERROR_MESSAGE = 'Authentication is temporarily unavailable'
 const AUTH_TOKEN_EXCHANGE_FAILED = 'AUTH_TOKEN_EXCHANGE_FAILED'
 
 export interface ServerAuthLogEvent {
   phase: string
-  outcome: AuthLogOutcome
+  outcome: AuthEvent['outcome']
   details?: Record<string, unknown>
 }
 
@@ -59,7 +58,6 @@ export async function resolveServerAuthSnapshot(
   const waterfallStart = trackWaterfall ? Date.now() : 0
   const phases: AuthWaterfallPhase[] = []
   const logEvents: ServerAuthLogEvent[] = []
-  const cacheHit = false
   const buildWaterfall = (
     outcome: AuthWaterfall['outcome'],
     error?: string,
@@ -71,7 +69,6 @@ export async function resolveServerAuthSnapshot(
           phases,
           totalDuration: Date.now() - waterfallStart,
           outcome,
-          cacheHit,
           error,
         }
       : null
@@ -112,17 +109,6 @@ export async function resolveServerAuthSnapshot(
   }
 
   try {
-    if (trackWaterfall) {
-      phases.push({
-        name: 'cache-lookup',
-        start: 0,
-        end: 0,
-        duration: 0,
-        result: 'skipped',
-        details: 'Cache disabled',
-      })
-    }
-
     const exchangeStart = trackWaterfall ? Date.now() : 0
     const exchange = await exchangeConvexToken({
       event,

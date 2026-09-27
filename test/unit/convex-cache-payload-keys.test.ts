@@ -13,7 +13,7 @@ import { createConvexQueryKey } from '../../src/runtime/utils/convex-shared'
 
 const noArgs = {} as never
 
-describe('identity-partitioned payload-key grammar (decision 7)', () => {
+describe('identity-partitioned payload-key grammar', () => {
   it('appends a static none suffix for none mode (identity-independent)', () => {
     const base = createConvexQueryKey({ _path: 'notes.list' } as never, noArgs)
     expect(withAuthDimension(base, 'none', 'anonymous')).toBe(`${base}:auth:none`)

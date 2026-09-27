@@ -41,9 +41,9 @@ import { normalizeConvexDeploymentUrl, normalizeConvexSiteUrl } from './runtime/
 
 const releaseRuntimeFingerprint = getPackedRuntimeFingerprint()
 
-// Re-exported public types . The root default export is the module;
-// stable public types are re-exported here. Do not export the raw
-// `ConvexPublicRuntimeConfig` — consumers read `useConvexConfig()`.
+// The root default export is the module; stable public types are
+// re-exported here. Do not export the raw `ConvexPublicRuntimeConfig` —
+// consumers read `useConvexConfig()`.
 export type { ConvexAuthOptions } from './runtime/utils/auth-config'
 export type { ConvexAuthMode, ConvexAuthStatus } from './runtime/utils/auth-status'
 export type {
@@ -153,7 +153,7 @@ async function resolveAuthClientDefinitionPath(
 }
 
 /**
- * Better Convex Nuxt module options .
+ * Better Convex Nuxt module options.
  *
  * Omitted auth produces a Convex-only build. An object explicitly installs
  * authentication; `false` removes auth inherited from a Nuxt layer.
@@ -255,7 +255,7 @@ export default defineNuxtModule<ModuleOptions>({
     // Vue-owned runtime with the first-party provider adapter.
     if (!isAuthEnabled) addPlugin(resolver.resolve('./runtime/plugin.client'))
 
-    // Universal ConvexCallError payload plugin . Registered on both
+    // Universal ConvexCallError payload plugin. Registered on both
     // server and client with a negative order so the reviver is installed before
     // Nuxt parses the SSR payload. The framework-free `/errors` entry stays
     // unaware of Nuxt; this Nuxt-aware plugin bridges the two.
@@ -269,7 +269,7 @@ export default defineNuxtModule<ModuleOptions>({
     //    Better Auth client, engine, proxy handler, or middleware to the build
     //    graph (architecture invariant).
     if (isAuthEnabled) {
-      // Typed auth-client definition plumbing . Resolve the single
+      // Typed auth-client definition plumbing. Resolve the single
       // definition module, expose it to the auth-enabled client plugin through
       // the `#convex/auth-client` virtual module, and generate the consumer type
       // registry so `useConvexAuth().client` is typed to the resolved plugins.

@@ -6,6 +6,7 @@ import { ConvexCallError } from '../errors'
 import { readConvexRuntimeContext } from '../runtime-context'
 import type { UseConvexAuthReturn } from '../utils/auth-contract'
 import { useConvexIdentityState } from '../utils/auth-identity-state'
+import { useConvexAuthPendingState } from '../utils/auth-pending-state'
 import { deriveConvexAuthStatus, type ConvexAuthStatus } from '../utils/auth-status'
 import type { IntegratedAuthClient } from '../utils/integrated-auth-client'
 
@@ -22,7 +23,7 @@ export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthCl
   const identity = useConvexIdentityState()
   const user = computed(() => identityUser(identity.value))
   const authError = useState<string | null>('convex:authError', () => null)
-  const pending = useState<boolean>('convex:pending', () => import.meta.client)
+  const pending = useConvexAuthPendingState()
   const coordinator = readConvexRuntimeContext(nuxtApp)?.getAuthController() ?? undefined
 
   const status = computed<ConvexAuthStatus>(() =>

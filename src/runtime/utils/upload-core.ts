@@ -25,11 +25,11 @@ export function isUploadAbortError(error: unknown): boolean {
   )
 }
 
-// The XHR upload endpoint is a library-owned HTTP boundary (architecture invariant): it
-// knows the source, so it constructs `transport` errors directly. Network
-// failures, unexpected upstream statuses, and unusable/malformed responses are
-// all transport. Cancellation stays a DOMException so the composable can treat
-// it as a non-error cancel rather than a call failure.
+// The XHR upload endpoint is a library-owned HTTP boundary: it knows the
+// source, so it constructs `transport` errors directly. Network failures,
+// unexpected upstream statuses, and unusable/malformed responses are all
+// transport. Cancellation stays a DOMException so the composable can treat it
+// as a non-error cancel rather than a call failure.
 function createUploadTransportError(
   message: string,
   extra?: { status?: number; code?: string },
@@ -42,20 +42,11 @@ function createUploadTransportError(
   })
 }
 
-export async function requestUploadUrl<Mutation extends FunctionReference<'mutation'>>(
-  // Accepts the replacement-safe `useConvex()` handle , which exposes
-  // `mutation` with a stable identity, not only the raw `ConvexClient`.
-  client: Pick<ConvexClient, 'mutation'> | null,
+async function requestUploadUrl<Mutation extends FunctionReference<'mutation'>>(
+  client: Pick<ConvexClient, 'mutation'>,
   mutation: Mutation,
   mutationArgs: FunctionArgs<Mutation>,
 ): Promise<string> {
-  if (!client) {
-    throw new ConvexCallError({
-      kind: 'unknown',
-      message: 'ConvexClient not available - file uploads only work on client side',
-    })
-  }
-
   const postUrl = await client.mutation(mutation, mutationArgs)
   if (typeof postUrl !== 'string') {
     throw new ConvexCallError({
@@ -67,7 +58,9 @@ export async function requestUploadUrl<Mutation extends FunctionReference<'mutat
 }
 
 export async function executeFileUpload<Mutation extends FunctionReference<'mutation'>>(
-  client: Pick<ConvexClient, 'mutation'> | null,
+  // Accepts the replacement-safe `useConvex()` handle, which exposes
+  // `mutation` with a stable identity, not only the raw `ConvexClient`.
+  client: Pick<ConvexClient, 'mutation'>,
   mutation: Mutation,
   mutationArgs: FunctionArgs<Mutation>,
   file: File,
@@ -91,7 +84,7 @@ export async function executeFileUpload<Mutation extends FunctionReference<'muta
   }
 }
 
-export function uploadFileViaXhr(
+function uploadFileViaXhr(
   postUrl: string,
   file: File,
   options?: UploadFileViaXhrOptions,

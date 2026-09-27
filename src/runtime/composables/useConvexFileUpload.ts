@@ -142,7 +142,7 @@ export interface UseConvexFileUploadOptions {
  * - `status` - 'idle' | 'pending' | 'success' | 'error'
  * - `pending` - boolean shorthand for status === 'pending'
  * - `progress` - byte-level upload progress
- * - `error` - Error | undefined
+ * - `error` - ConvexCallError | undefined
  *
  * Note: File uploads only work on the client side.
  *

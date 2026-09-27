@@ -183,7 +183,7 @@ async function _arityContracts() {
   void useConvexQuery(optArgQuery, { term: 'x' })
   void useConvexQuery(optArgQuery, {})
   void useConvexQuery(optArgQuery, 'skip')
-  // @ts-expect-error all-optional args no longer omit the args slot (decision 9)
+  // @ts-expect-error all-optional args still require the args slot
   void useConvexQuery(optArgQuery)
   // @ts-expect-error all-optional args still reject unknown properties
   void useConvexQuery(optArgQuery, { limit: 5, wrong: 1 })

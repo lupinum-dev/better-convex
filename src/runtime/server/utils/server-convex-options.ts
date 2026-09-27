@@ -54,13 +54,12 @@ export type NormalizedServerConvexOptions =
     }
 
 /**
- * Synchronous validation failure for server-call options and credential values
- * . This is deliberately NOT a {@link ConvexCallError}: the public
- * error contract  has no `validation` kind, and an option/credential
- * contract violation is a caller programming error surfaced before any network
- * access — not a classifiable Convex call outcome. Callers that construct a
- * `serverConvex` caller receive this synchronously, before a request is ever
- * made.
+ * Synchronous validation failure for server-call options and credential values.
+ * This is deliberately NOT a {@link ConvexCallError}: the public error contract
+ * has no `validation` kind, and an option/credential contract violation is a
+ * caller programming error surfaced before any network access — not a
+ * classifiable Convex call outcome. Callers that construct a `serverConvex`
+ * caller receive this synchronously, before a request is ever made.
  */
 export class ServerConvexValidationError extends Error {
   constructor(message: string) {
@@ -88,7 +87,7 @@ export function credentialHasControlChars(value: string): boolean {
 
 /**
  * Reject an empty or control-character-bearing credential value synchronously,
- * before any network access . Shared by option validation and by the
+ * before any network access. Shared by option validation and by the
  * exchange primitive so both refuse a smuggling-capable credential at the door.
  */
 export function assertCredentialValueSafe(value: unknown, label: string): asserts value is string {
