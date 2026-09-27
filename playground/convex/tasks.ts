@@ -1,17 +1,18 @@
 import { v } from 'convex/values'
 
 import { query, mutation } from './_generated/server'
+import { auth } from './auth'
 
 // Get all tasks for the current user
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
+    const user = await auth.getUser(ctx)
+    if (!user) {
       return []
     }
 
-    const userId = identity.subject
+    const userId = user.id
 
     const tasks = await ctx.db
       .query('tasks')
@@ -27,12 +28,9 @@ export const list = query({
 export const add = mutation({
   args: { title: v.string() },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error('Not authenticated')
-    }
+    const user = await auth.requireUser(ctx)
 
-    const userId = identity.subject
+    const userId = user.id
     const title = args.title.trim()
     if (!title || title.length > 120) {
       throw new Error('Task title must be between 1 and 120 characters')
@@ -53,10 +51,7 @@ export const add = mutation({
 export const toggle = mutation({
   args: { id: v.id('tasks') },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error('Not authenticated')
-    }
+    const user = await auth.requireUser(ctx)
 
     const task = await ctx.db.get(args.id)
     if (!task) {
@@ -64,7 +59,7 @@ export const toggle = mutation({
     }
 
     // Ensure user owns the task
-    if (task.userId !== identity.subject) {
+    if (task.userId !== user.id) {
       throw new Error('Not authorized')
     }
 
@@ -78,10 +73,7 @@ export const toggle = mutation({
 export const remove = mutation({
   args: { id: v.id('tasks') },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error('Not authenticated')
-    }
+    const user = await auth.requireUser(ctx)
 
     const task = await ctx.db.get(args.id)
     if (!task) {
@@ -89,7 +81,7 @@ export const remove = mutation({
     }
 
     // Ensure user owns the task
-    if (task.userId !== identity.subject) {
+    if (task.userId !== user.id) {
       throw new Error('Not authorized')
     }
 

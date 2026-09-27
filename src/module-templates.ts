@@ -43,8 +43,10 @@ import type { ConvexAuthPageMeta } from ${authPageMetaImportSpecifier}
 declare module '#app' {
   interface PageMeta {
     /**
-     * Opt-in route protection powered by better-convex-nuxt.
-     * true = require auth (default redirect), object = custom redirect.
+     * Route protection powered by better-convex-nuxt.
+     * \`true\` = require auth (default redirect), object = custom sign-in redirect,
+     * \`'guest'\` = signed-out visitors only, \`false\` = public even when
+     * \`convex.auth.routes\` is \`'protected'\`. Omitted follows \`convex.auth.routes\`.
      */
     convexAuth?: ConvexAuthPageMeta
   }

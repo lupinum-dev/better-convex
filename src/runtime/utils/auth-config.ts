@@ -1,5 +1,13 @@
 import { isExactLoopbackHost, normalizeAuthOrigin } from '../shared/auth-origin'
 import { normalizeLocalRedirectPath } from './auth-route-protection'
+import type { ConvexAuthMode } from './auth-status'
+
+/**
+ * Route protection for pages whose `definePageMeta` has no `convexAuth`.
+ * `'public'` leaves them open; `'protected'` requires authentication, and
+ * `convexAuth: false` opts a page out.
+ */
+export type ConvexAuthRouteDefault = 'public' | 'protected'
 
 /** Build-time authentication options. An object opts the application into auth. */
 export interface ConvexAuthOptions {
@@ -9,8 +17,21 @@ export interface ConvexAuthOptions {
   client?: string
   /** Trusted ingress-owned header containing exactly one client IP address. */
   trustedClientIpHeader?: string
-  /** Local route used when protected navigation needs authentication. */
+  /** Local route used when protected navigation needs authentication. @default '/auth/signin' */
   redirectTo?: string
+  /**
+   * Local route for a signed-in user on a `convexAuth: 'guest'` page when the
+   * URL carries no valid `?redirect=` return path. @default '/'
+   */
+  guestRedirectTo?: string
+  /**
+   * Auth mode for `useConvexQuery` / `useConvexPaginatedQuery` calls that omit
+   * `auth`. Server rendering and the browser use the same value. A call site's
+   * own `auth` always wins. @default 'optional'
+   */
+  defaultQueryAuth?: ConvexAuthMode
+  /** Protection for pages without `convexAuth` page meta. @default 'public' */
+  routes?: ConvexAuthRouteDefault
 }
 
 /** Internal materialized auth policy. `false` exists only for a no-auth build. */
@@ -20,9 +41,28 @@ export type NormalizedConvexAuthConfig =
       origin: string
       trustedClientIpHeader: string
       redirectTo: string
+      guestRedirectTo: string
+      defaultQueryAuth: ConvexAuthMode
+      routes: ConvexAuthRouteDefault
     }>
 
 const DEFAULT_AUTH_REDIRECT = '/auth/signin'
+const DEFAULT_GUEST_REDIRECT = '/'
+const QUERY_AUTH_MODES: readonly ConvexAuthMode[] = ['optional', 'required', 'none']
+const ROUTE_DEFAULTS: readonly ConvexAuthRouteDefault[] = ['public', 'protected']
+
+function normalizeEnum<Value extends string>(
+  input: unknown,
+  allowed: readonly Value[],
+  fallback: Value,
+  name: string,
+): Value {
+  if (input === undefined) return fallback
+  if (!(allowed as readonly unknown[]).includes(input)) {
+    throw new TypeError(`${name} must be one of ${allowed.map((value) => `'${value}'`).join(', ')}`)
+  }
+  return input as Value
+}
 
 function normalizeTrustedClientIpHeader(input: unknown): string {
   if (input === undefined) return ''
@@ -40,6 +80,15 @@ function normalizeTrustedClientIpHeader(input: unknown): string {
     throw new TypeError('auth.trustedClientIpHeader must not use the reserved x-bcn-* namespace')
   }
   return header
+}
+
+function normalizeLocalPath(input: unknown, fallback: string, name: string): string {
+  const path =
+    typeof input === 'string' || input === undefined
+      ? normalizeLocalRedirectPath(input ?? fallback)
+      : null
+  if (!path) throw new TypeError(`${name} must be a safe local application path`)
+  return path
 }
 
 /**
@@ -67,12 +116,32 @@ export function normalizeConvexAuthConfig(
     )
   }
 
-  const redirectTo = normalizeLocalRedirectPath(options.redirectTo ?? DEFAULT_AUTH_REDIRECT)
-  if (!redirectTo) {
-    throw new TypeError('auth.redirectTo must be a safe local application path')
-  }
+  const redirectTo = normalizeLocalPath(
+    options.redirectTo,
+    DEFAULT_AUTH_REDIRECT,
+    'auth.redirectTo',
+  )
+  const guestRedirectTo = normalizeLocalPath(
+    options.guestRedirectTo,
+    DEFAULT_GUEST_REDIRECT,
+    'auth.guestRedirectTo',
+  )
+  const defaultQueryAuth = normalizeEnum(
+    options.defaultQueryAuth,
+    QUERY_AUTH_MODES,
+    'optional',
+    'auth.defaultQueryAuth',
+  )
+  const routes = normalizeEnum(options.routes, ROUTE_DEFAULTS, 'public', 'auth.routes')
 
-  return Object.freeze({ origin, trustedClientIpHeader, redirectTo })
+  return Object.freeze({
+    origin,
+    trustedClientIpHeader,
+    redirectTo,
+    guestRedirectTo,
+    defaultQueryAuth,
+    routes,
+  })
 }
 
 export function isConvexAuthEnabled(

@@ -15,8 +15,11 @@ export type { UseConvexAuthReturn } from '../utils/auth-contract'
 
 /**
  * Access Convex authentication state and the inferred integrated Better Auth
- * client. Synchronous Better Auth methods stay synchronous; PromiseLike
- * operations do not settle until Convex accepts the canonical provider session.
+ * client. Synchronous Better Auth methods stay synchronous. A PromiseLike
+ * operation that may change the session (any request outside the known
+ * read-only Better Auth routes, Better Auth's own session signal, or a new
+ * provider session revision) does not settle until Convex accepts the
+ * canonical provider session; read-only operations settle without touching it.
  *
  * `client` is never `null`. The real client is browser-owned; during server
  * rendering, or before the browser runtime exists, it is an inert stand-in

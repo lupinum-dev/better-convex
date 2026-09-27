@@ -89,7 +89,7 @@ function includes(values: readonly string[], value: string): boolean {
 
 /**
  * Recompute application-owned access from one transactional snapshot. Provider-owned OAuth
- * authority is validated immediately before this function by authComponent.validateOAuthAccess.
+ * authority is validated immediately before this function by auth.validateOAuthAccess.
  */
 export function assertLiveMcpAuthorization(
   state: LiveAuthorizationState,

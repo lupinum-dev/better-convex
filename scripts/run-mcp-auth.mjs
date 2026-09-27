@@ -496,7 +496,20 @@ async function assertConvexSessionToken(token, origin, convexSiteUrl) {
   }
   const header = decodeJwtPart(token, 0)
   const claims = decodeJwtPart(token, 1)
-  const approvedClaims = ['aud', 'exp', 'iat', 'iss', 'sid', 'sub', 'token_use']
+  // Registered claims, the session binding, and the bounded default profile
+  // claims (the fixture users have no image). Nothing else may be signed.
+  const approvedClaims = [
+    'aud',
+    'email',
+    'emailVerified',
+    'exp',
+    'iat',
+    'iss',
+    'name',
+    'sid',
+    'sub',
+    'token_use',
+  ]
   if (
     header?.alg !== 'RS256' ||
     typeof header?.kid !== 'string' ||

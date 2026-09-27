@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 
 import { query } from './_generated/server'
+import { auth } from './auth'
 
 export const getCurrent = query({
   args: {},
@@ -12,12 +13,12 @@ export const getCurrent = query({
     v.null(),
   ),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) return null
+    const authUser = await auth.getUser(ctx)
+    if (!authUser) return null
 
     const user = await ctx.db
       .query('users')
-      .withIndex('by_auth_id', (q) => q.eq('authId', identity.subject))
+      .withIndex('by_auth_id', (q) => q.eq('authId', authUser.id))
       .unique()
     if (!user?.active) return null
 

@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import authSchema from '../../src/runtime/convex-auth/component/schema'
-import { createAuthComponent } from '../../src/runtime/convex-auth/create-auth-component'
+import type { AuthCtx } from '../../src/runtime/convex-auth/context'
+import {
+  createAuthComponent,
+  readSessionClaims,
+} from '../../src/runtime/convex-auth/create-auth-component'
+import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
 import { readAuthSessionAdmission } from '../../src/runtime/convex-auth/session-generation'
 
@@ -45,30 +50,60 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
+const UNAUTHENTICATED = { code: 'UNAUTHENTICATED', message: 'Authentication required' }
+
+function countingQueries(ctx: AuthCtx) {
+  const calls: unknown[] = []
+  const counted = new Proxy(ctx, {
+    get(target, property, receiver) {
+      if (property === 'runQuery') {
+        return (reference: unknown, args: unknown) => {
+          calls.push(reference)
+          return target.runQuery(reference as never, args as never)
+        }
+      }
+      return Reflect.get(target, property, receiver)
+    },
+  })
+  return { calls, counted }
+}
+
 async function init() {
   const test = convexTest(rootSchema, rootModules)
   test.registerComponent('sessionAuth', authSchema, authModules)
   await test.mutation(auth.create, { model: 'user', data: user })
   await test.mutation(auth.create, { model: 'session', data: session })
   const client = test.withIdentity(identity)
+  const authApi = createBetterConvexAuth(components.sessionAuth)
+  // getAuth is exercised through the internal owner so the Better Auth
+  // construction can be observed without a live deployment environment.
   const helper = createAuthComponent(components.sessionAuth)
   const createAuth = vi.fn(async () => ({}))
-  const assertDenied = async () => {
-    expect(await client.query((ctx) => helper.safeGetAuthUser(ctx))).toBeNull()
-    await expect(client.query((ctx) => helper.getAuthUser(ctx))).rejects.toThrow('Unauthenticated')
-    await expect(client.mutation((ctx) => helper.getAuth(createAuth, ctx))).rejects.toThrow(
-      'Unauthenticated',
-    )
+  const assertDenied = async (denied = client) => {
+    expect(await denied.query((ctx) => authApi.getUser(ctx))).toBeNull()
+    await expect(denied.query((ctx) => authApi.requireUser(ctx))).rejects.toMatchObject({
+      data: UNAUTHENTICATED,
+    })
+    await expect(denied.mutation((ctx) => authApi.getAuth(ctx))).rejects.toMatchObject({
+      data: UNAUTHENTICATED,
+    })
+    await expect(denied.mutation((ctx) => helper.getAuth(createAuth, ctx))).rejects.toMatchObject({
+      data: UNAUTHENTICATED,
+    })
     expect(createAuth).not.toHaveBeenCalled()
   }
-  return { test, client, helper, createAuth, assertDenied }
+  return { test, client, authApi, helper, createAuth, assertDenied }
 }
 
 describe('backend helpers use canonical component admission', () => {
   it('admits a live session through every backend helper without requiring verified email', async () => {
-    const { client, helper, createAuth } = await init()
-    expect(await client.query((ctx) => helper.safeGetAuthUser(ctx))).toMatchObject(user)
-    expect(await client.query((ctx) => helper.getAuthUser(ctx))).toMatchObject(user)
+    const { client, authApi, helper, createAuth } = await init()
+    expect(await client.query((ctx) => authApi.getUser(ctx))).toMatchObject(user)
+    expect(await client.query((ctx) => authApi.requireUser(ctx))).toMatchObject(user)
+    expect(await client.query((ctx) => readSessionClaims(ctx))).toEqual({
+      sessionId: session.id,
+      userId: user.id,
+    })
     const headers = await client.mutation(async (ctx) => {
       const admitted = await helper.getAuth(createAuth, ctx)
       return {
@@ -80,6 +115,27 @@ describe('backend helpers use canonical component admission', () => {
     expect(createAuth).toHaveBeenCalledOnce()
   })
 
+  it('reads the live user with exactly one component query and no admission state', async () => {
+    const { client, authApi } = await init()
+    const result = await client.query(async (ctx) => {
+      const { calls, counted } = countingQueries(ctx)
+      const admitted = await authApi.getUser(counted)
+      const required = await authApi.requireUser(counted)
+      return { admitted, required, calls: calls.length }
+    })
+    expect(result.calls).toBe(2)
+    expect(result.admitted).toMatchObject(user)
+    expect(result.required).toMatchObject(user)
+    expect(Object.keys(result.admitted!).filter((field) => field.startsWith('bcn'))).toEqual([])
+
+    const claimsOnly = await client.query(async (ctx) => {
+      const { calls, counted } = countingQueries(ctx)
+      await readSessionClaims(counted)
+      return calls.length
+    })
+    expect(claimsOnly).toBe(0)
+  })
+
   it('denies an expired session through every backend helper', async () => {
     const { assertDenied } = await init()
     vi.setSystemTime(session.expiresAt)
@@ -87,7 +143,7 @@ describe('backend helpers use canonical component admission', () => {
   })
 
   it('denies a session whose user security generation advanced', async () => {
-    const { test, assertDenied } = await init()
+    const { test, client, assertDenied } = await init()
     await expect(
       test.mutation(auth.deleteMany, {
         model: 'session',
@@ -95,13 +151,35 @@ describe('backend helpers use canonical component admission', () => {
       }),
     ).resolves.toBe(0)
     await assertDenied()
+    // The internal claims reader is not revocation-aware; admission is.
+    expect(await client.query((ctx) => readSessionClaims(ctx))).toEqual({
+      sessionId: session.id,
+      userId: user.id,
+    })
+  })
+
+  it('keeps a superseded-generation token denied after a new session is admitted', async () => {
+    const { test, authApi, assertDenied } = await init()
+    await expect(
+      test.mutation(auth.deleteMany, {
+        model: 'session',
+        where: [{ field: 'userId', value: user.id }],
+      }),
+    ).resolves.toBe(0)
+    await test.mutation(auth.create, {
+      model: 'session',
+      data: { ...session, id: 'session-next', token: 'token-next' },
+    })
+    await assertDenied()
+    const next = test.withIdentity({ ...identity, sid: 'session-next' })
+    expect(await next.query((ctx) => authApi.getUser(ctx))).toMatchObject(user)
   })
 
   it.each(['user', 'session'])(
     'rechecks canonical %s deletion with the same identity',
     async (model) => {
-      const { test, client, helper, assertDenied } = await init()
-      expect(await client.query((ctx) => helper.safeGetAuthUser(ctx))).not.toBeNull()
+      const { test, client, authApi, assertDenied } = await init()
+      expect(await client.query((ctx) => authApi.getUser(ctx))).not.toBeNull()
       await test.mutation(auth.deleteOne, {
         model,
         where: [{ field: 'id', value: model === 'user' ? user.id : session.id }],
@@ -115,23 +193,23 @@ describe('backend helpers use canonical component admission', () => {
     { ...identity, sid: 'missing' },
     { ...identity, sid: '' },
     { subject: 'user', token_use: 'convex-session' },
+    { subject: 'user', sid: 'session' },
     { ...identity, token_use: 'oauth-access' },
+    { ...identity, token_use: 'Convex-Session' },
   ])('does not treat identity claims as admission %j', async (claims) => {
-    const { test, helper, createAuth } = await init()
-    const client = test.withIdentity(claims)
-    expect(await client.query((ctx) => helper.safeGetAuthUser(ctx))).toBeNull()
-    await expect(client.query((ctx) => helper.getAuthUser(ctx))).rejects.toThrow('Unauthenticated')
-    await expect(client.mutation((ctx) => helper.getAuth(createAuth, ctx))).rejects.toThrow(
-      'Unauthenticated',
-    )
-    expect(createAuth).not.toHaveBeenCalled()
+    const { test, assertDenied } = await init()
+    const denied = test.withIdentity(claims)
+    await assertDenied(denied)
+    if (claims.token_use !== 'convex-session' || !claims.sid) {
+      expect(await denied.query((ctx) => readSessionClaims(ctx))).toBeNull()
+    }
   })
 
   it.each([
     { model: 'user', field: 'bcnSecurityGeneration', id: user.id },
     { model: 'session', field: 'bcnAssuranceGeneration', id: session.id },
   ])('keeps $model.$field out of generic adapter writes', async ({ model, field, id }) => {
-    const { test, client, helper } = await init()
+    const { test, client, authApi } = await init()
     const where = [{ field: 'id', value: id }]
     const owned = 'AUTH_SESSION_GENERATION_FIELDS_OWNED'
     await expect(
@@ -143,13 +221,16 @@ describe('backend helpers use canonical component admission', () => {
     await expect(
       test.mutation(auth.incrementOne, { model, where, increment: { [field]: 1 } }),
     ).rejects.toThrow(owned)
-    expect(await client.query((ctx) => helper.safeGetAuthUser(ctx))).toMatchObject(user)
+    expect(await client.query((ctx) => authApi.getUser(ctx))).toMatchObject(user)
   })
 
   it('rejects anonymous access', async () => {
-    const { test, helper } = await init()
-    expect(await test.query((ctx) => helper.safeGetAuthUser(ctx))).toBeNull()
-    await expect(test.query((ctx) => helper.getAuthUser(ctx))).rejects.toThrow('Unauthenticated')
+    const { test, authApi } = await init()
+    expect(await test.query((ctx) => authApi.getUser(ctx))).toBeNull()
+    expect(await test.query((ctx) => readSessionClaims(ctx))).toBeNull()
+    await expect(test.query((ctx) => authApi.requireUser(ctx))).rejects.toMatchObject({
+      data: UNAUTHENTICATED,
+    })
   })
 
   it('revokes more than the bulk-delete limit atomically after a password reset', async () => {
@@ -169,8 +250,8 @@ describe('backend helpers use canonical component admission', () => {
 
     const staleIdentity = { ...identity, sid: 'session-128' }
     const staleClient = test.withIdentity(staleIdentity)
-    const helper = createAuthComponent(components.sessionAuth)
-    expect(await staleClient.query((ctx) => helper.safeGetAuthUser(ctx))).toMatchObject(user)
+    const authApi = createBetterConvexAuth(components.sessionAuth)
+    expect(await staleClient.query((ctx) => authApi.getUser(ctx))).toMatchObject(user)
 
     await expect(
       test.mutation(auth.deleteMany, {
@@ -193,7 +274,7 @@ describe('backend helpers use canonical component admission', () => {
         where: [{ field: 'userId', value: user.id }],
       }),
     ).resolves.toMatchObject({ page: [] })
-    await expect(staleClient.query((ctx) => helper.safeGetAuthUser(ctx))).resolves.toBeNull()
+    await expect(staleClient.query((ctx) => authApi.getUser(ctx))).resolves.toBeNull()
 
     await test.mutation(auth.create, {
       model: 'session',
@@ -207,9 +288,7 @@ describe('backend helpers use canonical component admission', () => {
       }),
     ).resolves.toEqual({ id: 'session-current' })
     const currentClient = test.withIdentity({ ...identity, sid: 'session-current' })
-    await expect(currentClient.query((ctx) => helper.safeGetAuthUser(ctx))).resolves.toMatchObject(
-      user,
-    )
+    await expect(currentClient.query((ctx) => authApi.getUser(ctx))).resolves.toMatchObject(user)
   })
 })
 

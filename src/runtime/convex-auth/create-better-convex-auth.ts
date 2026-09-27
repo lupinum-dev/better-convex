@@ -11,11 +11,18 @@ import {
   type TeamEndpoints,
   type TwoFactorOptions,
 } from 'better-auth/plugins'
-import type { GenericDataModel, HttpRouter } from 'convex/server'
+import type { GenericDataModel, HttpRouter, PublicHttpAction } from 'convex/server'
 
 import { createAuthJwtPlugin } from './auth-jwt'
-import type { AuthCtx } from './context'
-import { createAuthComponent } from './create-auth-component'
+import { isWritableAuthCtx, type AuthCtx, type WritableAuthCtx } from './context'
+import { createAuthComponent, type BetterConvexSessionHttpHandler } from './create-auth-component'
+import {
+  AUTH_EMAIL_DELIVERY_FAILED,
+  authConfigFailure,
+  logAuthEmailFailure,
+  type AuthConfigSubCode,
+} from './diagnostics'
+import type { OAuthLiveAccess } from './oauth-live-access'
 import { createOAuthOperator, type BetterConvexOAuthOperator } from './oauth-operator'
 import type { PinnedOAuthProviderProfile } from './oauth-security'
 import { requireAuthOrigin } from './origin'
@@ -26,6 +33,7 @@ import type {
   AuthAdapterComponentApi,
   AuthComponentTriggers,
   AuthFunctions,
+  BetterConvexAuthUser,
   CreateAuth,
 } from './types'
 
@@ -48,16 +56,6 @@ type BetterConvexPendingUser = Readonly<
   Pick<User, 'email' | 'emailVerified' | 'id' | 'image' | 'name'>
 >
 
-type ReviewedEmailAndPasswordOptions = Partial<
-  Pick<BetterAuthEmailAndPasswordOptions, (typeof reviewedPasswordOptionKeys)[number]>
->
-
-type ReviewedSessionOptions = Partial<Pick<BetterAuthSessionOptions, 'cookieCache'>>
-
-type RequestAuthOptions<DataModel extends GenericDataModel, Options> =
-  | Options
-  | ((ctx: AuthCtx<DataModel>) => Options | Promise<Options>)
-
 const reviewedPasswordOptionKeys = [
   'disableSignUp',
   'maxPasswordLength',
@@ -66,52 +64,243 @@ const reviewedPasswordOptionKeys = [
   'requireEmailVerification',
   'resetPasswordTokenExpiresIn',
   'revokeSessionsOnPasswordReset',
-  'sendResetPassword',
 ] as const
+
+const reviewedEmailVerificationOptionKeys = [
+  'afterEmailVerification',
+  'autoSignInAfterVerification',
+  'beforeEmailVerification',
+  'expiresIn',
+  'sendOnSignIn',
+  'sendOnSignUp',
+] as const
+
+type ReviewedEmailAndPasswordOptions = Partial<
+  Pick<BetterAuthEmailAndPasswordOptions, (typeof reviewedPasswordOptionKeys)[number]>
+> & {
+  /**
+   * Offer link-based password reset (`/request-password-reset`,
+   * `/reset-password`). Off by default; requires the `email` hook, which then
+   * receives `reset-password` messages.
+   */
+  readonly passwordReset?: boolean
+}
+
+type ReviewedEmailVerificationOptions = Partial<
+  Pick<EmailVerificationOptions, (typeof reviewedEmailVerificationOptionKeys)[number]>
+>
+
+type ReviewedEmailOTPOptions = Omit<EmailOTPOptions, 'sendVerificationOTP'> & {
+  readonly sendVerificationOTP?: never
+}
+
+type ReviewedTwoFactorOptions = Omit<TwoFactorOptions, 'otpOptions'> & {
+  readonly otpOptions?: Omit<NonNullable<TwoFactorOptions['otpOptions']>, 'sendOTP'> & {
+    readonly sendOTP?: never
+  }
+}
+
+type ReviewedOrganizationOptions<Options extends OrganizationOptions = OrganizationOptions> =
+  Options & { readonly sendInvitationEmail?: never }
+
+const SECONDS_PER_MINUTE = 60
+const SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE
+const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR
+
+/** Reviewed session lifetime bounds, in seconds. */
+export const SESSION_POLICY_BOUNDS = Object.freeze({
+  expiresIn: Object.freeze({ min: SECONDS_PER_HOUR, max: 30 * SECONDS_PER_DAY }),
+  updateAge: Object.freeze({ min: 5 * SECONDS_PER_MINUTE }),
+  cookieCacheMaxAge: Object.freeze({ min: 1, max: 5 * SECONDS_PER_MINUTE }),
+})
+
+const COOKIE_CACHE_STRATEGIES = ['compact', 'jwt', 'jwe'] as const
+/** Better Auth's own default cookie cache lifetime, in seconds. */
+const BETTER_AUTH_DEFAULT_COOKIE_CACHE_MAX_AGE = 5 * SECONDS_PER_MINUTE
+
+const DEFAULT_SESSION_EXPIRES_IN = 7 * SECONDS_PER_DAY
+const DEFAULT_SESSION_UPDATE_AGE = SECONDS_PER_DAY
+
+/**
+ * Bounded session policy. Lifetimes are seconds:
+ * `1h <= expiresIn <= 30d` (default 7d), `5m <= updateAge <= expiresIn` (default 1d).
+ *
+ * `cookieCache` lets Better Auth endpoints trust a signed session cookie
+ * instead of the database for at most `maxAge` seconds (`1..300`, default
+ * 300), so a revoked session can still pass them that long. Stateless cache
+ * refresh is not supported. Convex tokens always re-read the database.
+ */
+export interface BetterConvexSessionPolicy {
+  readonly expiresIn?: number
+  readonly updateAge?: number
+  readonly cookieCache?: {
+    readonly enabled?: boolean
+    readonly maxAge?: number
+    readonly strategy?: (typeof COOKIE_CACHE_STRATEGIES)[number]
+  }
+}
+
+/**
+ * Account policy. Everything except `trustedProviders` is owned by the factory:
+ * different-email linking, implicit linking, and unlinking the last account stay
+ * disabled. `trustedProviders` admits only configured social provider names.
+ */
+export interface BetterConvexAccountPolicy {
+  readonly accountLinking?: {
+    readonly trustedProviders?: readonly string[]
+  }
+}
+
+/** A user as it appears in a transactional email message. */
+export interface BetterConvexAuthEmailUser {
+  readonly id: string
+  readonly email: string
+  readonly name: string
+}
+
+/**
+ * Every transactional email the reviewed capabilities emit. `to` is always the
+ * recipient address; the other fields depend on `type`.
+ */
+export type BetterConvexAuthEmail =
+  | {
+      readonly type: 'verify-email'
+      readonly to: string
+      readonly url: string
+      readonly token: string
+      readonly user: BetterConvexAuthEmailUser
+    }
+  | {
+      readonly type: 'reset-password'
+      readonly to: string
+      readonly url: string
+      readonly token: string
+      readonly user: BetterConvexAuthEmailUser
+    }
+  | {
+      readonly type: 'email-otp'
+      readonly to: string
+      readonly otp: string
+      readonly purpose: 'sign-in' | 'email-verification' | 'forget-password' | 'change-email'
+    }
+  | {
+      readonly type: 'two-factor-otp'
+      readonly to: string
+      readonly otp: string
+      readonly user: BetterConvexAuthEmailUser
+    }
+  | {
+      readonly type: 'organization-invitation'
+      readonly to: string
+      readonly invitationId: string
+      readonly role: string
+      readonly organization: {
+        readonly id: string
+        readonly name: string
+        readonly slug: string
+      }
+      readonly inviter: BetterConvexAuthEmailUser
+    }
+
+export type BetterConvexAuthEmailType = BetterConvexAuthEmail['type']
+
+/**
+ * Deliver one auth email. `ctx` is always a mutation or action context: the
+ * library fails with `AUTH_EMAIL_REQUIRES_WRITABLE_CONTEXT` before calling this
+ * from a query. The library awaits the returned promise, but Better Auth runs
+ * every email send as a background task: a rejection does NOT fail the auth
+ * request (the caller still sees success, which also avoids account
+ * enumeration). The library logs `AUTH_EMAIL_DELIVERY_FAILED` with the message
+ * type and a sanitized cause, never the message or the raw error.
+ */
+export type BetterConvexAuthEmailSender<DataModel extends GenericDataModel = GenericDataModel> = (
+  ctx: WritableAuthCtx<DataModel>,
+  message: BetterConvexAuthEmail,
+) => Promise<void>
+
+type SessionClaimsDefinition = NonNullable<
+  Parameters<typeof convexAuth>[0]['sessionJwt']['definePayload']
+>
 
 export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataModel> {
   readonly appName?: string
+  readonly account?: BetterConvexAccountPolicy
   readonly authFunctions?: AuthFunctions
   readonly beforeUserCreate?: (input: {
     readonly ctx: AuthCtx<DataModel>
     readonly user: BetterConvexPendingUser
   }) => BetterConvexUserCreateDecision | Promise<BetterConvexUserCreateDecision>
   readonly triggers?: AuthComponentTriggers<DataModel>
-  readonly emailAndPassword?: RequestAuthOptions<DataModel, false | ReviewedEmailAndPasswordOptions>
-  readonly emailVerification?: RequestAuthOptions<DataModel, EmailVerificationOptions>
-  readonly emailOTP?: RequestAuthOptions<DataModel, false | EmailOTPOptions>
-  readonly organization?: false | OrganizationOptions
-  readonly twoFactor?: false | TwoFactorOptions
+  /** The one delivery hook for every auth email. See {@link BetterConvexAuthEmail}. */
+  readonly email?: BetterConvexAuthEmailSender<DataModel>
+  readonly emailAndPassword?: false | ReviewedEmailAndPasswordOptions
+  readonly emailVerification?: ReviewedEmailVerificationOptions
+  readonly emailOTP?: false | ReviewedEmailOTPOptions
+  readonly organization?: false | ReviewedOrganizationOptions
+  readonly twoFactor?: false | ReviewedTwoFactorOptions
   readonly oauthProvider?:
     | PinnedOAuthProviderProfile
     | ((
         ctx: AuthCtx<DataModel>,
       ) => PinnedOAuthProviderProfile | Promise<PinnedOAuthProviderProfile>)
-  readonly session?: ReviewedSessionOptions
+  readonly session?: BetterConvexSessionPolicy
   readonly socialProviders?: SocialProviders | (() => SocialProviders)
-  readonly defineSessionClaims?: NonNullable<
-    Parameters<typeof convexAuth>[0]['sessionJwt']['definePayload']
-  >
+  /**
+   * Extend or override the default session claims (`name`, `email`,
+   * `emailVerified`, `image`). Registered JWT claims, `sid`, and `token_use`
+   * stay library-owned, and the serialized claims are bounded.
+   */
+  readonly defineSessionClaims?: SessionClaimsDefinition
 }
-
-type OwnedAuthComponent<
-  DataModel extends GenericDataModel,
-  Api extends AuthAdapterComponentApi,
-> = ReturnType<typeof createAuthComponent<DataModel, Api>>
 
 export interface BetterConvexAuth<
   DataModel extends GenericDataModel,
-  Api extends AuthAdapterComponentApi = AuthAdapterComponentApi,
   AuthInstance extends BetterConvexAuthInstance = BetterConvexAuthInstance,
 > {
-  readonly authComponent: OwnedAuthComponent<DataModel, Api>
+  /** Construct the request-scoped Better Auth instance. */
   readonly createAuth: CreateAuth<DataModel, AuthInstance>
+  /** Mount the hardened `/api/auth/*` routes on the Convex HTTP router. */
   readonly registerRoutes: (http: HttpRouter) => void
-  readonly triggerFunctions: OwnedAuthComponent<DataModel, Api>['triggerFunctions']
+  /**
+   * Wrap an application HTTP action that must act as the caller's Better Auth
+   * session. It gets the same hardening as the `/api/auth/*` routes (signed
+   * client IP, public-origin rewrite, Better Auth rate limiting) plus a
+   * same-origin check for unsafe methods and the library's session admission.
+   * Denials answer `401 UNAUTHENTICATED` or `403 FORBIDDEN`.
+   */
+  readonly sessionHttpAction: (
+    handler: BetterConvexSessionHttpHandler<DataModel, AuthInstance>,
+  ) => PublicHttpAction
+  readonly triggerFunctions: () => ReturnType<
+    ReturnType<typeof createAuthComponent<DataModel>>['triggerFunctions']
+  >
   readonly jwksOperatorFunctions: () => ReturnType<
-    OwnedAuthComponent<DataModel, Api>['jwksOperatorFunctions']
+    ReturnType<typeof createAuthComponent<DataModel>>['jwksOperatorFunctions']
   >
   readonly oauthOperator: BetterConvexOAuthOperator<DataModel>
+  /**
+   * The live Better Auth user for the calling Convex session, or `null`.
+   * Performs exactly one component query; revoked, expired, superseded
+   * (security-generation), and non-session tokens resolve to `null`.
+   */
+  readonly getUser: (ctx: AuthCtx<DataModel>) => Promise<BetterConvexAuthUser | null>
+  /**
+   * Like {@link BetterConvexAuth.getUser}, but throws
+   * `ConvexError({ code: 'UNAUTHENTICATED', message: 'Authentication required' })`.
+   */
+  readonly requireUser: (ctx: AuthCtx<DataModel>) => Promise<BetterConvexAuthUser>
+  /**
+   * A Better Auth instance plus headers that act as the caller's admitted
+   * session, for server-side `auth.api` calls from a mutation or action.
+   */
+  readonly getAuth: (
+    ctx: WritableAuthCtx<DataModel>,
+  ) => Promise<{ readonly auth: AuthInstance; readonly headers: Headers }>
+  /** Recheck a verified MCP/OAuth principal against live grant state. */
+  readonly validateOAuthAccess: (
+    ctx: AuthCtx<DataModel>,
+    access: OAuthLiveAccess,
+  ) => Promise<boolean>
 }
 
 /** The stable Better Auth capabilities used at the Convex transport boundary. */
@@ -141,28 +330,213 @@ type ReviewedTeamOrganizationOptions = OrganizationOptions & {
 export type BetterConvexTeamOrganizationAuthInstance =
   BetterConvexOrganizationAuthInstance<ReviewedTeamOrganizationOptions>
 
-function rejectUnsupportedOptions(options: object): void {
-  for (const key of [
-    'plugins',
-    'database',
-    'databaseHooks',
-    'user',
-    'advanced',
-    'rateLimit',
-    'baseURL',
-    'basePath',
-  ]) {
-    if (Object.hasOwn(options, key)) {
-      throw new Error(
-        `[better-convex] createBetterConvexAuth owns "${key}"; arbitrary Better Auth configuration is not supported`,
+const OWNED_TOP_LEVEL_OPTIONS = [
+  'plugins',
+  'database',
+  'databaseHooks',
+  'user',
+  'advanced',
+  'rateLimit',
+  'baseURL',
+  'basePath',
+] as const
+
+const REVIEWED_TOP_LEVEL_OPTIONS = new Set([
+  'account',
+  'appName',
+  'authFunctions',
+  'beforeUserCreate',
+  'defineSessionClaims',
+  'email',
+  'emailAndPassword',
+  'emailOTP',
+  'emailVerification',
+  'oauthProvider',
+  'organization',
+  'session',
+  'socialProviders',
+  'triggers',
+  'twoFactor',
+])
+
+function configError(message: string): Error {
+  return new Error(`[better-convex] createBetterConvexAuth ${message}`)
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function assertOnlyKeys(value: unknown, allowed: readonly string[], path: string): void {
+  if (value === undefined || value === false) return
+  if (!isPlainRecord(value)) throw configError(`expected "${path}" to be an object`)
+  const admitted = new Set(allowed)
+  for (const key of Object.keys(value)) {
+    if (!admitted.has(key)) throw configError(`does not support "${path}.${key}"`)
+  }
+}
+
+function rejectEmailCallback(value: unknown, key: string, path: string): void {
+  if (isPlainRecord(value) && Object.hasOwn(value, key)) {
+    throw configError(`owns "${path}.${key}"; deliver auth email through the "email" option`)
+  }
+}
+
+function assertSessionSeconds(value: unknown, path: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
+    throw configError(`requires "${path}" to be whole seconds between ${min} and ${max}`)
+  }
+  return value
+}
+
+function resolveCookieCache(cookieCache: BetterConvexSessionPolicy['cookieCache']) {
+  if (cookieCache === undefined) return undefined
+  if (!isPlainRecord(cookieCache)) {
+    throw configError('expected "session.cookieCache" to be an object')
+  }
+  assertOnlyKeys(cookieCache, ['enabled', 'maxAge', 'strategy'], 'session.cookieCache')
+  if (cookieCache.enabled !== undefined && typeof cookieCache.enabled !== 'boolean') {
+    throw configError('expected "session.cookieCache.enabled" to be a boolean')
+  }
+  if (
+    cookieCache.strategy !== undefined &&
+    !(COOKIE_CACHE_STRATEGIES as readonly unknown[]).includes(cookieCache.strategy)
+  ) {
+    throw configError(
+      `requires "session.cookieCache.strategy" to be one of ${COOKIE_CACHE_STRATEGIES.join(', ')}`,
+    )
+  }
+  const maxAge =
+    cookieCache.maxAge === undefined
+      ? undefined
+      : assertSessionSeconds(
+          cookieCache.maxAge,
+          'session.cookieCache.maxAge',
+          SESSION_POLICY_BOUNDS.cookieCacheMaxAge.min,
+          SESSION_POLICY_BOUNDS.cookieCacheMaxAge.max,
+        )
+  return Object.freeze({
+    ...(cookieCache.enabled === undefined ? {} : { enabled: cookieCache.enabled }),
+    ...(maxAge === undefined ? {} : { maxAge }),
+    ...(cookieCache.strategy === undefined ? {} : { strategy: cookieCache.strategy }),
+  })
+}
+
+function resolveSessionPolicy(session: BetterConvexSessionPolicy | undefined) {
+  assertOnlyKeys(session, ['cookieCache', 'expiresIn', 'updateAge'], 'session')
+  const expiresIn =
+    session?.expiresIn === undefined
+      ? DEFAULT_SESSION_EXPIRES_IN
+      : assertSessionSeconds(
+          session.expiresIn,
+          'session.expiresIn',
+          SESSION_POLICY_BOUNDS.expiresIn.min,
+          SESSION_POLICY_BOUNDS.expiresIn.max,
+        )
+  const updateAge = assertSessionSeconds(
+    session?.updateAge ?? Math.min(DEFAULT_SESSION_UPDATE_AGE, expiresIn),
+    'session.updateAge',
+    SESSION_POLICY_BOUNDS.updateAge.min,
+    expiresIn,
+  )
+  return Object.freeze({
+    ...(session?.cookieCache === undefined
+      ? {}
+      : { cookieCache: resolveCookieCache(session.cookieCache) }),
+    expiresIn,
+    updateAge,
+  })
+}
+
+function assertTrustedProviderShape(account: BetterConvexAccountPolicy | undefined): void {
+  assertOnlyKeys(account, ['accountLinking'], 'account')
+  assertOnlyKeys(account?.accountLinking, ['trustedProviders'], 'account.accountLinking')
+  const trusted = account?.accountLinking?.trustedProviders
+  if (trusted === undefined) return
+  if (
+    !Array.isArray(trusted) ||
+    trusted.some((name) => typeof name !== 'string' || name.length === 0) ||
+    new Set(trusted).size !== trusted.length
+  ) {
+    throw configError(
+      'requires "account.accountLinking.trustedProviders" to be unique provider names',
+    )
+  }
+}
+
+function resolveTrustedProviders(
+  account: BetterConvexAccountPolicy | undefined,
+  socialProviders: SocialProviders | undefined,
+): string[] {
+  const trusted = account?.accountLinking?.trustedProviders ?? []
+  const configured = new Set(
+    Object.entries(socialProviders ?? {})
+      .filter(([, provider]) => provider !== undefined && provider !== null)
+      .map(([name]) => name),
+  )
+  for (const name of trusted) {
+    if (!configured.has(name)) {
+      throw configError(
+        `admits only configured social providers in "account.accountLinking.trustedProviders"; "${name}" is not configured`,
       )
     }
   }
-  const record = options as Record<string, unknown>
-  if (typeof record.emailAndPassword !== 'function') {
-    assertOnlyKeys(record.emailAndPassword, reviewedPasswordOptionKeys, 'emailAndPassword')
+  return [...trusted]
+}
+
+function rejectUnsupportedOptions(options: object): void {
+  for (const key of OWNED_TOP_LEVEL_OPTIONS) {
+    if (Object.hasOwn(options, key)) {
+      throw configError(`owns "${key}"; arbitrary Better Auth configuration is not supported`)
+    }
   }
-  assertOnlyKeys(record.session, ['cookieCache'], 'session')
+  for (const key of Object.keys(options)) {
+    if (!REVIEWED_TOP_LEVEL_OPTIONS.has(key)) throw configError(`does not support "${key}"`)
+  }
+  const record = options as Record<string, unknown>
+  if (record.email !== undefined && typeof record.email !== 'function') {
+    throw configError('expected "email" to be a function')
+  }
+  rejectEmailCallback(record.emailAndPassword, 'sendResetPassword', 'emailAndPassword')
+  assertOnlyKeys(
+    record.emailAndPassword,
+    [...reviewedPasswordOptionKeys, 'passwordReset'],
+    'emailAndPassword',
+  )
+  const passwordReset = isPlainRecord(record.emailAndPassword)
+    ? record.emailAndPassword.passwordReset
+    : undefined
+  if (passwordReset !== undefined && typeof passwordReset !== 'boolean') {
+    throw configError('expected "emailAndPassword.passwordReset" to be a boolean')
+  }
+  if (passwordReset === true && record.email === undefined) {
+    throw configError(
+      'requires the "email" option when "emailAndPassword.passwordReset" is enabled',
+    )
+  }
+  rejectEmailCallback(record.emailVerification, 'sendVerificationEmail', 'emailVerification')
+  assertOnlyKeys(record.emailVerification, reviewedEmailVerificationOptionKeys, 'emailVerification')
+  rejectEmailCallback(record.emailOTP, 'sendVerificationOTP', 'emailOTP')
+  rejectEmailCallback(record.organization, 'sendInvitationEmail', 'organization')
+  rejectEmailCallback(
+    isPlainRecord(record.twoFactor) ? record.twoFactor.otpOptions : undefined,
+    'sendOTP',
+    'twoFactor.otpOptions',
+  )
+  if (record.emailOTP !== undefined && record.emailOTP !== false) {
+    if (!isPlainRecord(record.emailOTP)) throw configError('expected "emailOTP" to be an object')
+    if (record.email === undefined) {
+      throw configError('requires the "email" option when "emailOTP" is enabled')
+    }
+  }
+  assertTrustedProviderShape(record.account as BetterConvexAccountPolicy | undefined)
+  // A lazy provider factory is re-validated for every auth construction.
+  if (typeof record.socialProviders !== 'function') {
+    resolveTrustedProviders(
+      record.account as BetterConvexAccountPolicy | undefined,
+      record.socialProviders as SocialProviders,
+    )
+  }
 }
 
 function rejectUserCreation(): never {
@@ -219,26 +593,6 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
   }
 }
 
-function assertOnlyKeys(value: unknown, allowed: readonly string[], path: string): void {
-  if (value === undefined || value === false) return
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`[better-convex] createBetterConvexAuth expected "${path}" to be an object`)
-  }
-  const admitted = new Set(allowed)
-  for (const key of Object.keys(value)) {
-    if (!admitted.has(key)) {
-      throw new Error(`[better-convex] createBetterConvexAuth does not support "${path}.${key}"`)
-    }
-  }
-}
-
-function assertFactoryResult(value: unknown, allowDisabled: boolean): void {
-  if (value === false && allowDisabled) return
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('AUTH_CONFIG_INVALID')
-  }
-}
-
 function assertVersionedSecrets(raw: string | undefined): void {
   if (!raw) throw new Error('BETTER_AUTH_SECRETS is required')
   const versions = new Set<number>()
@@ -259,8 +613,136 @@ function assertVersionedSecrets(raw: string | undefined): void {
   }
 }
 
+/** Serialized size bound for all non-registered session claims. */
+export const MAX_SESSION_CLAIMS_BYTES = 4096
+const LIBRARY_OWNED_SESSION_CLAIMS = new Set(['sid', 'token_use'])
+const MAX_DEFAULT_NAME_LENGTH = 256
+const MAX_DEFAULT_EMAIL_LENGTH = 320
+const MAX_DEFAULT_IMAGE_LENGTH = 2048
+
+function defaultSessionClaims(user: Record<string, unknown>): Record<string, unknown> {
+  const claims: Record<string, unknown> = {}
+  if (typeof user.name === 'string' && user.name.length <= MAX_DEFAULT_NAME_LENGTH) {
+    claims.name = user.name
+  }
+  if (typeof user.email === 'string' && user.email.length <= MAX_DEFAULT_EMAIL_LENGTH) {
+    claims.email = user.email
+  }
+  if (typeof user.emailVerified === 'boolean') claims.emailVerified = user.emailVerified
+  // Only a bounded http(s) URL; inline data: images would bloat every token.
+  if (
+    typeof user.image === 'string' &&
+    user.image.length <= MAX_DEFAULT_IMAGE_LENGTH &&
+    /^https?:\/\//iu.test(user.image)
+  ) {
+    claims.image = user.image
+  }
+  return claims
+}
+
+function createSessionClaims(define: SessionClaimsDefinition | undefined): SessionClaimsDefinition {
+  return async (input) => {
+    const custom = define ? await define(input) : undefined
+    if (custom !== undefined && !isPlainRecord(custom)) {
+      throw new Error('AUTH_SESSION_JWT_CLAIMS_INVALID')
+    }
+    for (const claim of Object.keys(custom ?? {})) {
+      if (LIBRARY_OWNED_SESSION_CLAIMS.has(claim)) {
+        throw new Error(`AUTH_SESSION_JWT_RESERVED_CLAIM:${claim}`)
+      }
+    }
+    const claims = { ...defaultSessionClaims(input.user), ...custom }
+    const serialized = JSON.stringify(claims)
+    if (new TextEncoder().encode(serialized).byteLength > MAX_SESSION_CLAIMS_BYTES) {
+      throw new Error('AUTH_SESSION_JWT_CLAIMS_TOO_LARGE')
+    }
+    return claims
+  }
+}
+
+function emailUser(user: { id: string; email: string; name: string }): BetterConvexAuthEmailUser {
+  return Object.freeze({ id: user.id, email: user.email, name: user.name })
+}
+
+function emailCredentials(message: BetterConvexAuthEmail): string[] {
+  switch (message.type) {
+    case 'verify-email':
+    case 'reset-password':
+      return [message.url, message.token]
+    case 'email-otp':
+    case 'two-factor-otp':
+      return [message.otp]
+    case 'organization-invitation':
+      return [message.invitationId]
+  }
+}
+
+function createEmailDelivery<DataModel extends GenericDataModel>(
+  ctx: AuthCtx<DataModel>,
+  sender: BetterConvexAuthEmailSender<DataModel>,
+) {
+  return async (message: BetterConvexAuthEmail): Promise<void> => {
+    if (!isWritableAuthCtx(ctx)) throw new Error('AUTH_EMAIL_REQUIRES_WRITABLE_CONTEXT')
+    // Awaited so the submission is part of the request, never fire-and-forget.
+    // Better Auth logs a rejected email task verbatim. An application error
+    // may echo its arguments (the reset URL, token, or code), so only a
+    // sanitized cause is logged here and a static error, deliberately without
+    // the raw cause, is handed to Better Auth.
+    const failed = await Promise.resolve()
+      .then(() => sender(ctx, Object.freeze(message)))
+      .then(
+        () => false,
+        (error: unknown) => {
+          logAuthEmailFailure(message.type, error, emailCredentials(message))
+          return true
+        },
+      )
+    if (failed) throw new Error(AUTH_EMAIL_DELIVERY_FAILED)
+  }
+}
+
+function cookieCacheWithinBounds(cookieCache: BetterAuthSessionOptions['cookieCache']): boolean {
+  if (cookieCache === undefined || cookieCache.enabled !== true) return true
+  const maxAge = cookieCache.maxAge ?? BETTER_AUTH_DEFAULT_COOKIE_CACHE_MAX_AGE
+  return (
+    Number.isSafeInteger(maxAge) &&
+    maxAge >= SESSION_POLICY_BOUNDS.cookieCacheMaxAge.min &&
+    maxAge <= SESSION_POLICY_BOUNDS.cookieCacheMaxAge.max &&
+    (cookieCache.refreshCache === undefined || cookieCache.refreshCache === false)
+  )
+}
+
+/** Invariants that no option may relax, re-asserted on the final options. */
+function assertOwnedInvariants(options: BetterAuthOptions, socialProviderNames: Set<string>): void {
+  const disabled = new Set(options.disabledPaths ?? [])
+  const linking = options.account?.accountLinking
+  if (
+    !['/token', '/get-access-token', '/refresh-token'].every((path) => disabled.has(path)) ||
+    options.account?.encryptOAuthTokens !== true ||
+    options.account.storeAccountCookie !== false ||
+    linking?.allowDifferentEmails !== false ||
+    linking.allowUnlinkingAll !== false ||
+    linking.disableImplicitLinking !== true ||
+    !Array.isArray(linking.trustedProviders) ||
+    linking.trustedProviders.some((name) => !socialProviderNames.has(name)) ||
+    (options.emailAndPassword?.enabled === true &&
+      (options.emailAndPassword.autoSignIn !== false ||
+        (options.emailAndPassword.minPasswordLength ?? 0) < 15)) ||
+    typeof options.session?.expiresIn !== 'number' ||
+    options.session.expiresIn < SESSION_POLICY_BOUNDS.expiresIn.min ||
+    options.session.expiresIn > SESSION_POLICY_BOUNDS.expiresIn.max ||
+    typeof options.session.updateAge !== 'number' ||
+    options.session.updateAge < SESSION_POLICY_BOUNDS.updateAge.min ||
+    options.session.updateAge > options.session.expiresIn ||
+    !cookieCacheWithinBounds(options.session.cookieCache)
+  ) {
+    throw new Error('AUTH_OWNED_INVARIANT_VIOLATED')
+  }
+}
+
 /**
  * Create the reviewed Better Auth + Convex integration as one owned unit.
+ * This is the only supported way to compose auth.
  *
  * Product authorization remains in application Convex functions. This factory
  * only establishes trustworthy identity, organization data, and OAuth access.
@@ -271,11 +753,11 @@ export function createBetterConvexAuth<
 >(
   component: Api,
   options: Omit<CreateBetterConvexAuthOptions<DataModel>, 'organization'> & {
-    readonly organization: OrganizationOptions & {
-      readonly teams: { readonly enabled: true }
-    }
+    readonly organization: ReviewedOrganizationOptions<
+      OrganizationOptions & { readonly teams: { readonly enabled: true } }
+    >
   },
-): BetterConvexAuth<DataModel, Api, BetterConvexTeamOrganizationAuthInstance>
+): BetterConvexAuth<DataModel, BetterConvexTeamOrganizationAuthInstance>
 export function createBetterConvexAuth<
   DataModel extends GenericDataModel,
   Api extends AuthAdapterComponentApi = AuthAdapterComponentApi,
@@ -283,23 +765,20 @@ export function createBetterConvexAuth<
 >(
   component: Api,
   options: Omit<CreateBetterConvexAuthOptions<DataModel>, 'organization'> & {
-    readonly organization: Options
+    readonly organization: ReviewedOrganizationOptions<Options>
   },
-): BetterConvexAuth<DataModel, Api, BetterConvexOrganizationAuthInstance<Options>>
+): BetterConvexAuth<DataModel, BetterConvexOrganizationAuthInstance<Options>>
 export function createBetterConvexAuth<
   DataModel extends GenericDataModel,
   Api extends AuthAdapterComponentApi = AuthAdapterComponentApi,
->(
-  component: Api,
-  options?: CreateBetterConvexAuthOptions<DataModel>,
-): BetterConvexAuth<DataModel, Api>
+>(component: Api, options?: CreateBetterConvexAuthOptions<DataModel>): BetterConvexAuth<DataModel>
 export function createBetterConvexAuth<
   DataModel extends GenericDataModel,
   Api extends AuthAdapterComponentApi = AuthAdapterComponentApi,
 >(
   component: Api,
   options: CreateBetterConvexAuthOptions<DataModel> = {},
-): BetterConvexAuth<DataModel, Api> {
+): BetterConvexAuth<DataModel> {
   return createBetterConvexAuthOwned(component, options)
 }
 
@@ -315,8 +794,10 @@ export function createBetterConvexAuthOwned<
   options: CreateBetterConvexAuthOptions<DataModel> = {},
   extraPlugins: readonly BetterAuthPlugin[] = [],
   assertExtraPluginsAllowed: () => void = () => {},
-): BetterConvexAuth<DataModel, Api> {
+): BetterConvexAuth<DataModel> {
   rejectUnsupportedOptions(options)
+  const sessionPolicy = resolveSessionPolicy(options.session)
+  const defineSessionClaims = createSessionClaims(options.defineSessionClaims)
   const authComponent = createAuthComponent<DataModel, Api>(component, {
     authFunctions: options.authFunctions,
     triggers: options.triggers,
@@ -329,8 +810,8 @@ export function createBetterConvexAuthOwned<
       return typeof options.oauthProvider === 'function'
         ? await options.oauthProvider(ctx)
         : options.oauthProvider
-    } catch {
-      throw new Error('AUTH_CONFIG_INVALID')
+    } catch (error) {
+      throw authConfigFailure('AUTH_CONFIG_OAUTH_PROFILE_FAILED', error)
     }
   }
 
@@ -338,42 +819,76 @@ export function createBetterConvexAuthOwned<
     ctx: AuthCtx<DataModel>,
     oauthProfile: PinnedOAuthProviderProfile | undefined,
   ): Promise<BetterConvexAuthInstance> => {
+    let stage: AuthConfigSubCode = 'AUTH_CONFIG_OPTIONS_INVALID'
     try {
       assertExtraPluginsAllowed()
+      stage = 'AUTH_CONFIG_SITE_URL_INVALID'
       const siteUrl = requireAuthOrigin('SITE_URL')
+      stage = 'AUTH_CONFIG_CONVEX_SITE_URL_INVALID'
       const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
+      stage = 'AUTH_CONFIG_SECRETS_INVALID'
       assertVersionedSecrets(process.env.BETTER_AUTH_SECRETS)
+      stage = 'AUTH_CONFIG_OPTIONS_INVALID'
       const authIssuer = `${siteUrl}/api/auth`
-      const emailAndPassword =
-        typeof options.emailAndPassword === 'function'
-          ? await options.emailAndPassword(ctx)
-          : options.emailAndPassword
-      const emailVerification =
-        typeof options.emailVerification === 'function'
-          ? await options.emailVerification(ctx)
-          : options.emailVerification
-      const emailOtpOptions =
-        typeof options.emailOTP === 'function' ? await options.emailOTP(ctx) : options.emailOTP
-      if (typeof options.emailAndPassword === 'function') {
-        assertFactoryResult(emailAndPassword, true)
-      }
-      if (typeof options.emailVerification === 'function') {
-        assertFactoryResult(emailVerification, false)
-      }
-      if (typeof options.emailOTP === 'function') {
-        assertFactoryResult(emailOtpOptions, true)
-      }
-      assertOnlyKeys(emailAndPassword, reviewedPasswordOptionKeys, 'emailAndPassword')
+      const socialProviders =
+        typeof options.socialProviders === 'function'
+          ? options.socialProviders()
+          : options.socialProviders
+      const trustedProviders = resolveTrustedProviders(options.account, socialProviders)
+      const deliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
+      const emailAndPassword = options.emailAndPassword
+      const { passwordReset = false, ...passwordOptions } = emailAndPassword || {}
+      const emailOtpOptions = options.emailOTP
+
       const featurePlugins = [
         options.organization === false || options.organization === undefined
           ? null
-          : organization(options.organization),
+          : organization({
+              ...options.organization,
+              ...(deliver
+                ? {
+                    sendInvitationEmail: async (data) =>
+                      deliver({
+                        type: 'organization-invitation',
+                        to: data.email,
+                        invitationId: data.id,
+                        role: data.role,
+                        organization: Object.freeze({
+                          id: data.organization.id,
+                          name: data.organization.name,
+                          slug: data.organization.slug,
+                        }),
+                        inviter: emailUser(data.inviter.user),
+                      }),
+                  }
+                : {}),
+            }),
         options.twoFactor === false || options.twoFactor === undefined
           ? null
-          : twoFactor(options.twoFactor),
-        emailOtpOptions === false || emailOtpOptions === undefined
+          : twoFactor({
+              ...options.twoFactor,
+              ...(deliver
+                ? {
+                    otpOptions: {
+                      ...options.twoFactor.otpOptions,
+                      sendOTP: async ({ user, otp }) =>
+                        deliver({
+                          type: 'two-factor-otp',
+                          to: user.email,
+                          otp,
+                          user: emailUser(user),
+                        }),
+                    },
+                  }
+                : {}),
+            }),
+        emailOtpOptions === false || emailOtpOptions === undefined || !deliver
           ? null
-          : emailOTP(emailOtpOptions),
+          : emailOTP({
+              ...emailOtpOptions,
+              sendVerificationOTP: async ({ email, otp, type }) =>
+                deliver({ type: 'email-otp', to: email, otp, purpose: type }),
+            }),
       ].filter((plugin) => plugin !== null)
       const jwtPlugin = createAuthJwtPlugin(authIssuer)
       const convexPlugin = convexAuth({
@@ -383,7 +898,7 @@ export function createBetterConvexAuthOwned<
           audience: 'convex',
           expirationTime: '15m',
           issuer: convexSiteUrl,
-          definePayload: options.defineSessionClaims,
+          definePayload: defineSessionClaims,
         },
       })
       const plugins: BetterAuthPlugin[] = [
@@ -403,7 +918,7 @@ export function createBetterConvexAuthOwned<
         maximumConfiguredPluginRateLimitWindow,
       )
 
-      const auth = betterAuth({
+      const authOptions = {
         appName: options.appName,
         account: {
           encryptOAuthTokens: true,
@@ -412,7 +927,7 @@ export function createBetterConvexAuthOwned<
             allowDifferentEmails: false,
             allowUnlinkingAll: false,
             disableImplicitLinking: true,
-            trustedProviders: [],
+            trustedProviders,
           },
         },
         advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
@@ -448,12 +963,41 @@ export function createBetterConvexAuthOwned<
           emailAndPassword === false
             ? { enabled: false }
             : {
-                ...emailAndPassword,
+                ...passwordOptions,
+                ...(deliver && passwordReset
+                  ? {
+                      sendResetPassword: async ({ user, url, token }) =>
+                        deliver({
+                          type: 'reset-password',
+                          to: user.email,
+                          url,
+                          token,
+                          user: emailUser(user),
+                        }),
+                    }
+                  : {}),
                 autoSignIn: false,
                 enabled: true,
                 minPasswordLength: 15,
               },
-        emailVerification,
+        emailVerification:
+          options.emailVerification === undefined && !deliver
+            ? undefined
+            : {
+                ...options.emailVerification,
+                ...(deliver
+                  ? {
+                      sendVerificationEmail: async ({ user, url, token }) =>
+                        deliver({
+                          type: 'verify-email',
+                          to: user.email,
+                          url,
+                          token,
+                          user: emailUser(user),
+                        }),
+                    }
+                  : {}),
+              },
         plugins,
         rateLimit: {
           customStorage: rateLimitStorage,
@@ -461,22 +1005,22 @@ export function createBetterConvexAuthOwned<
           modelName: 'rateLimit',
           storage: 'database',
         },
-        session: {
-          expiresIn: 7 * 24 * 60 * 60,
-          updateAge: 24 * 60 * 60,
-          ...options.session,
-        },
-        socialProviders:
-          typeof options.socialProviders === 'function'
-            ? options.socialProviders()
-            : options.socialProviders,
+        session: { ...sessionPolicy },
+        socialProviders,
         trustedOrigins: [siteUrl],
         verification: { storeIdentifier: 'hashed' },
-      })
-      await auth.$context
+      } satisfies BetterAuthOptions
+      const socialProviderNames = new Set(Object.keys(socialProviders ?? {}))
+      assertOwnedInvariants(authOptions, socialProviderNames)
+
+      stage = 'AUTH_CONFIG_CONSTRUCTION_FAILED'
+      const auth = betterAuth(authOptions)
+      const context = (await auth.$context) as { options?: BetterAuthOptions } | undefined
+      // Plugin init may merge options; the final graph must keep every invariant.
+      if (context?.options) assertOwnedInvariants(context.options, socialProviderNames)
       return auth
-    } catch {
-      throw new Error('AUTH_CONFIG_INVALID')
+    } catch (error) {
+      throw authConfigFailure(stage, error)
     }
   }
 
@@ -489,15 +1033,23 @@ export function createBetterConvexAuthOwned<
   })
 
   return Object.freeze({
-    authComponent,
     createAuth,
     registerRoutes(http: HttpRouter) {
       authComponent.registerRoutes(http, createAuth)
+    },
+    sessionHttpAction(
+      handler: BetterConvexSessionHttpHandler<DataModel, BetterConvexAuthInstance>,
+    ) {
+      return authComponent.sessionHttpAction(createAuth, handler)
     },
     triggerFunctions: authComponent.triggerFunctions,
     jwksOperatorFunctions() {
       return authComponent.jwksOperatorFunctions(createAuth)
     },
     oauthOperator,
+    getUser: authComponent.getUser,
+    requireUser: authComponent.requireUser,
+    getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
+    validateOAuthAccess: authComponent.validateOAuthAccess,
   })
 }

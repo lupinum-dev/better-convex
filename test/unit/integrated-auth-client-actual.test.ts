@@ -1,160 +1,225 @@
+import { emailOTPClient, organizationClient, twoFactorClient } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { watch } from 'vue'
 
+import { convexClientPlugin } from '../../src/runtime/auth-client/convex-client-plugin'
 import { createIntegratedAuthClient } from '../../src/runtime/auth/integrated-client'
 import {
+  BETTER_AUTH_SESSION_SIGNAL_DELAY_MS,
   createSessionSynchronization,
+  readBetterAuthSessionSignal,
   type ProviderSessionRevision,
 } from '../../src/runtime/auth/session-synchronization'
+
+/**
+ * Pins change detection to the real Better Auth 1.7.6 client: every request
+ * outside the known read-only routes, plus Better Auth's own `$sessionSignal`,
+ * decides which calls reconcile, so read-only calls never refetch the session
+ * or mint a token while session changes the signal misses still reconcile.
+ */
+function createHarness() {
+  let serverSessionToken: string | null = 'session:alice'
+  const fetchedPaths: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString())
+      const path = url.pathname.replace('/api/auth', '')
+      fetchedPaths.push(path)
+      const session = serverSessionToken
+        ? { session: { token: serverSessionToken }, user: { id: `user:${serverSessionToken}` } }
+        : null
+      switch (path) {
+        case '/get-session':
+          return Response.json(session ?? { session: null, user: null })
+        case '/sign-in/email':
+        case '/two-factor/verify-totp':
+          serverSessionToken = `session:${fetchedPaths.length}`
+          return Response.json({ token: serverSessionToken, user: { id: 'alice' } })
+        case '/sign-in/social':
+          serverSessionToken = `session:${fetchedPaths.length}`
+          return Response.json({ redirect: false, token: serverSessionToken })
+        case '/reset-password':
+        case '/email-otp/reset-password':
+          // `revokeSessionsOnPasswordReset` deletes the caller's sessions.
+          serverSessionToken = null
+          return Response.json({ status: true })
+        case '/email-otp/change-email':
+          return Response.json({ status: true })
+        case '/sign-out':
+          serverSessionToken = null
+          return Response.json({ success: true })
+        case '/organization/set-active':
+          return Response.json({ id: 'org-1' })
+        case '/revoke-session':
+          return Response.json({ status: true })
+        case '/organization/list':
+          return Response.json([{ id: 'org-1' }])
+        case '/organization/get-full-organization':
+          return Response.json({ message: 'boom' }, { status: 500 })
+        default:
+          return Response.json({ message: 'not found' }, { status: 404 })
+      }
+    }),
+  )
+
+  const refetchCanonicalSession = vi.fn(async () => {
+    await canonicalSession.value.refetch()
+    if (canonicalSession.value.error) throw new Error('canonical refresh failed')
+  })
+  const failClosed = vi.fn()
+  const synchronization = createSessionSynchronization({
+    timeoutMs: 1_000,
+    refetchCanonicalSession,
+    failClosed,
+    sessionSignalDelayMs: BETTER_AUTH_SESSION_SIGNAL_DELAY_MS,
+  })
+  const raw = createAuthClient({
+    baseURL: 'https://auth.example.test/api/auth',
+    plugins: [
+      convexClientPlugin({
+        observeRequest: (routePath) => synchronization.observeRequest(routePath),
+      }),
+      organizationClient(),
+      twoFactorClient(),
+      emailOTPClient(),
+    ],
+  })
+  const canonicalSession = raw.useSession()
+  const signal = readBetterAuthSessionSignal(raw)
+  expect(signal).not.toBeNull()
+  const stopSignal = signal!.listen(() => synchronization.observeSessionSignal())
+
+  let revision = 0
+  let lastToken: string | null | undefined
+  const stopWatch = watch(
+    [
+      () => canonicalSession.value.data?.session?.token ?? null,
+      () => canonicalSession.value.error,
+    ] as const,
+    ([sessionToken, error]) => {
+      if (sessionToken !== lastToken) revision += 1
+      lastToken = sessionToken
+      const provider: ProviderSessionRevision = {
+        sessionToken,
+        revision,
+        failed: error !== null,
+      }
+      synchronization.observeProvider(provider)
+      // Stand-in for the Convex runtime accepting this exact generation.
+      synchronization.observeAccepted(provider, false)
+    },
+    { flush: 'sync', immediate: true },
+  )
+  const integrated = createIntegratedAuthClient(raw, synchronization)
+  const sessionFetches = () => fetchedPaths.filter((path) => path === '/get-session').length
+
+  return {
+    integrated,
+    refetchCanonicalSession,
+    failClosed,
+    sessionFetches,
+    dispose() {
+      stopWatch()
+      stopSignal()
+      synchronization.dispose()
+    },
+  }
+}
 
 describe('integrated client against pinned Better Auth 1.7.6', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('uses the real canonical session refetch on resolve, reject, and sign-out', async () => {
-    let serverSessionToken: string | null = null
-    const fetchedPaths: string[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: string | URL | Request) => {
-        const rawUrl = input instanceof Request ? input.url : input.toString()
-        const url = new URL(rawUrl)
-        fetchedPaths.push(url.pathname)
-        const data = serverSessionToken
-          ? {
-              session: { token: serverSessionToken },
-              user: { id: `user:${serverSessionToken}` },
-            }
-          : { session: null, user: null }
-        return Response.json(data)
-      }),
-    )
+  it('resolves read-only calls without reconciling or refetching the session', async () => {
+    const harness = createHarness()
+    const before = harness.sessionFetches()
 
-    const originalRejection = new Error('provider operation rejected')
-    const raw = createAuthClient({
-      baseURL: 'https://auth.example.test/api/auth',
-      plugins: [
-        {
-          id: 'canonical-session-product-probe',
-          getActions() {
-            return {
-              lab: {
-                async signIn(name: string) {
-                  serverSessionToken = `session:${name}`
-                  return { data: { ok: true }, error: null }
-                },
-                async rejectAfterRotation() {
-                  serverSessionToken = 'session:rotated-on-error'
-                  throw originalRejection
-                },
-                async resultErrorAfterRotation() {
-                  serverSessionToken = 'session:rotated-on-result-error'
-                  return { data: null, error: { code: 'RESULT_ERROR' } }
-                },
-                async signOut() {
-                  serverSessionToken = null
-                  return { data: { success: true }, error: null }
-                },
-              },
-            }
-          },
-        },
-      ],
+    await expect(harness.integrated.organization.list()).resolves.toMatchObject({
+      data: [{ id: 'org-1' }],
     })
-    const canonicalSession = raw.useSession()
-    let provider: ProviderSessionRevision | undefined
-    let revision = 0
-    const synchronization = createSessionSynchronization({
-      timeoutMs: 1_000,
-      async refetchCanonicalSession() {
-        await canonicalSession.value.refetch()
-        if (canonicalSession.value.error) throw new Error('canonical refresh failed')
-      },
-      failClosed: vi.fn(),
-    })
-    const stop = watch(
-      [
-        () => canonicalSession.value.data?.session?.token ?? null,
-        () => canonicalSession.value.error,
-      ] as const,
-      ([sessionToken, error]) => {
-        revision += 1
-        provider = {
-          sessionToken,
-          revision,
-          failed: error !== null,
-        }
-        synchronization.observeProvider(provider)
-      },
-      { flush: 'sync', immediate: true },
-    )
-    if (provider) {
-      synchronization.observeAccepted(provider, false)
-    }
-    const integrated = createIntegratedAuthClient(raw, synchronization)
+    await harness.integrated.getSession()
 
-    const initialFetchCount = fetchedPaths.filter((path) => path.endsWith('/get-session')).length
-    let signInSettled = false
-    const signIn = integrated.lab.signIn('alice').then(() => {
-      signInSettled = true
-    })
-    await vi.waitFor(() => {
-      expect(canonicalSession.value.data?.session?.token).toBe('session:alice')
-    })
-    expect(signInSettled).toBe(false)
-    expect(provider).toBeDefined()
-    synchronization.observeAccepted(provider!, false)
-    await signIn
-    expect(signInSettled).toBe(true)
-    expect(fetchedPaths.filter((path) => path.endsWith('/get-session'))).toHaveLength(
-      initialFetchCount + 1,
-    )
+    expect(harness.refetchCanonicalSession).not.toHaveBeenCalled()
+    // Only the explicit getSession() read reached /get-session.
+    expect(harness.sessionFetches()).toBe(before + 1)
+    harness.dispose()
+  })
 
-    let caught: unknown
-    const rejected = integrated.lab.rejectAfterRotation().catch((error) => {
-      caught = error
-    })
-    await vi.waitFor(() => {
-      expect(canonicalSession.value.data?.session?.token).toBe('session:rotated-on-error')
-    })
-    expect(caught).toBeUndefined()
-    synchronization.observeAccepted(provider!, false)
-    await rejected
-    expect(caught).toBe(originalRejection)
+  it('does not fail closed when a read-only call fails', async () => {
+    const harness = createHarness()
 
-    let resultErrorSettled = false
-    const resultError = integrated.lab.resultErrorAfterRotation().then((result) => {
-      resultErrorSettled = true
-      return result
-    })
-    await vi.waitFor(() => {
-      expect(canonicalSession.value.data?.session?.token).toBe('session:rotated-on-result-error')
-    })
-    expect(resultErrorSettled).toBe(false)
-    synchronization.observeAccepted(provider!, false)
-    await expect(resultError).resolves.toEqual({
-      data: null,
-      error: { code: 'RESULT_ERROR' },
-    })
+    const result = await harness.integrated.organization.getFullOrganization()
+    expect(result.error).toMatchObject({ status: 500 })
+    await expect(
+      harness.integrated.organization.getFullOrganization({ fetchOptions: { throw: true } }),
+    ).rejects.toBeDefined()
 
-    let signOutSettled = false
-    const signOut = integrated.lab.signOut().then(() => {
-      signOutSettled = true
-    })
-    await vi.waitFor(() => {
-      expect(canonicalSession.value.data?.session?.token ?? null).toBeNull()
-    })
-    expect(signOutSettled).toBe(false)
-    synchronization.observeAccepted(provider!, false)
-    await signOut
-    expect(signOutSettled).toBe(true)
-    expect(fetchedPaths.filter((path) => path.endsWith('/get-session'))).toHaveLength(
-      initialFetchCount + 4,
-    )
+    expect(harness.refetchCanonicalSession).not.toHaveBeenCalled()
+    expect(harness.failClosed).not.toHaveBeenCalled()
+    harness.dispose()
+  })
 
-    stop()
-    synchronization.dispose()
+  it.each([
+    [
+      'sign-in',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.signIn.email({ email: 'alice@example.test', password: 'correct horse' }),
+    ],
+    ['sign-out', (client: ReturnType<typeof createHarness>['integrated']) => client.signOut()],
+    [
+      'two-factor verify',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.twoFactor.verifyTotp({ code: '123456' }),
+    ],
+    [
+      'organization set-active',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.organization.setActive({ organizationId: 'org-1' }),
+    ],
+    [
+      'revoke session',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.revokeSession({ token: 'session:other' }),
+    ],
+    [
+      'password reset (revokes sessions, no session signal)',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.resetPassword({ newPassword: 'new correct horse', token: 'reset-token' }),
+    ],
+    [
+      'email OTP password reset (no session signal)',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.emailOtp.resetPassword({
+          email: 'alice@example.test',
+          otp: '123456',
+          password: 'new correct horse',
+        }),
+    ],
+    [
+      'email OTP change-email (email claim, no session signal)',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.emailOtp.changeEmail({ newEmail: 'alice@new.example.test', otp: '123456' }),
+    ],
+    [
+      'social sign-in with an ID token (no redirect, no session signal)',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.signIn.social({ provider: 'google', idToken: { token: 'id-token' } }),
+    ],
+    [
+      'a session-changing call sent with disableSignal',
+      (client: ReturnType<typeof createHarness>['integrated']) =>
+        client.signOut({ fetchOptions: { disableSignal: true } }),
+    ],
+  ])('reconciles %s through the canonical session', async (_name, operation) => {
+    const harness = createHarness()
+
+    await operation(harness.integrated)
+
+    expect(harness.refetchCanonicalSession).toHaveBeenCalledOnce()
+    expect(harness.failClosed).not.toHaveBeenCalled()
+    harness.dispose()
   })
 })

@@ -1,16 +1,10 @@
-import type { oauthProvider } from '@better-auth/oauth-provider'
-import type { AuthCtx } from '@lupinum/better-convex-nuxt/better-auth/server'
-import type { BetterAuthPlugin } from 'better-auth'
-import {
-  APIError,
-  createAuthEndpoint,
-  dispatchAuthEndpoint,
-  getSessionFromCtx,
-  sessionMiddleware,
-} from 'better-auth/api'
+import { requireAuthOrigin } from '@lupinum/better-convex-nuxt/better-auth/server'
+import { APIError } from 'better-auth/api'
+import type { HttpRouter } from 'convex/server'
 
 import { internal } from './_generated/api'
-import type { DataModel } from './_generated/dataModel'
+import type { ActionCtx } from './_generated/server'
+import { auth } from './auth'
 import { MCP_SCOPES } from './mcp/scopes'
 
 interface PublicClientProfile {
@@ -66,8 +60,23 @@ const CONFIDENTIAL_CLIENT = {
   profile: 'bcn-confidential-code-fixture',
 } as const
 
-type ProviderPlugin = ReturnType<typeof oauthProvider>
-type ProviderCall = (endpoint: unknown, input?: Record<string, unknown>) => Promise<unknown>
+/** Server-side OAuth provider admin APIs used by the fixture routes. */
+type ProviderEndpoint =
+  | 'adminCreateOAuthClient'
+  | 'adminCreateOAuthResource'
+  | 'adminLinkClientResource'
+  | 'adminListOAuthResources'
+  | 'adminUnlinkClientResource'
+  | 'adminUpdateOAuthResource'
+  | 'deleteOAuthClient'
+  | 'deleteOAuthConsent'
+  | 'getOAuthClients'
+  | 'getOAuthConsents'
+  | 'rotateClientSecret'
+type ProviderCall = (
+  endpoint: ProviderEndpoint,
+  input?: { body?: Record<string, unknown>; params?: Record<string, string> },
+) => Promise<unknown>
 
 interface OAuthClientView {
   application_type?: unknown
@@ -197,15 +206,11 @@ function assertResourceProfile(value: OAuthResourceView, resource: string): void
   }
 }
 
-async function ensureResource(
-  call: ProviderCall,
-  provider: ProviderPlugin,
-  resource: string,
-): Promise<void> {
-  const resources = (await call(provider.endpoints.adminListOAuthResources)) as OAuthResourceView[]
+async function ensureResource(call: ProviderCall, resource: string): Promise<void> {
+  const resources = (await call('adminListOAuthResources')) as OAuthResourceView[]
   let storedResource = resources.find((candidate) => candidate.identifier === resource)
   if (!storedResource) {
-    storedResource = (await call(provider.endpoints.adminCreateOAuthResource, {
+    storedResource = (await call('adminCreateOAuthResource', {
       body: {
         accessTokenTtl: 600,
         allowedScopes: [...MCP_SCOPES],
@@ -222,7 +227,6 @@ async function ensureResource(
 
 async function ensurePublicClient(
   call: ProviderCall,
-  provider: ProviderPlugin,
   existingClients: OAuthClientView[],
   expected: PublicClientProfile,
   resource: string,
@@ -231,13 +235,13 @@ async function ensurePublicClient(
   if (matches.length > 1) profileDrift()
   let client: OAuthClientView | undefined = matches[0]
   if (client && client.application_type !== 'native') {
-    await call(provider.endpoints.deleteOAuthClient, {
+    await call('deleteOAuthClient', {
       body: { client_id: client.client_id },
     })
     client = undefined
   }
   if (!client) {
-    client = (await call(provider.endpoints.adminCreateOAuthClient, {
+    client = (await call('adminCreateOAuthClient', {
       body: {
         client_name: expected.name,
         dpop_bound_access_tokens: false,
@@ -256,7 +260,7 @@ async function ensurePublicClient(
     })) as OAuthClientView
   }
   assertClientProfile(client, expected)
-  await call(provider.endpoints.adminLinkClientResource, {
+  await call('adminLinkClientResource', {
     params: { client_id: client.client_id, identifier: resource },
   })
   return client.client_id
@@ -264,11 +268,9 @@ async function ensurePublicClient(
 
 async function provisionConfidentialClient(
   call: ProviderCall,
-  provider: ProviderPlugin,
   resource: string,
 ): Promise<{ id: string; secret: string }> {
-  const existingClients = ((await call(provider.endpoints.getOAuthClients)) ??
-    []) as OAuthClientView[]
+  const existingClients = ((await call('getOAuthClients')) ?? []) as OAuthClientView[]
   const matches = existingClients.filter(
     (candidate) => candidate.software_id === CONFIDENTIAL_CLIENT.profile,
   )
@@ -276,19 +278,19 @@ async function provisionConfidentialClient(
   let client: OAuthClientView | undefined = matches[0]
   let secretView: OAuthClientView
   if (client && client.application_type !== 'web') {
-    await call(provider.endpoints.deleteOAuthClient, {
+    await call('deleteOAuthClient', {
       body: { client_id: client.client_id },
     })
     client = undefined
   }
   if (client) {
     assertConfidentialClientProfile(client)
-    secretView = (await call(provider.endpoints.rotateClientSecret, {
+    secretView = (await call('rotateClientSecret', {
       body: { client_id: client.client_id },
     })) as OAuthClientView
     if (secretView.client_id !== client.client_id) profileDrift()
   } else {
-    client = (await call(provider.endpoints.adminCreateOAuthClient, {
+    client = (await call('adminCreateOAuthClient', {
       body: {
         client_name: CONFIDENTIAL_CLIENT.name,
         dpop_bound_access_tokens: false,
@@ -308,7 +310,7 @@ async function provisionConfidentialClient(
     assertConfidentialClientProfile(client)
     secretView = client
   }
-  await call(provider.endpoints.adminLinkClientResource, {
+  await call('adminLinkClientResource', {
     params: { client_id: client.client_id, identifier: resource },
   })
   return { id: client.client_id, secret: requireClientSecret(secretView) }
@@ -316,11 +318,9 @@ async function provisionConfidentialClient(
 
 async function requireFixtureClient(
   call: ProviderCall,
-  provider: ProviderPlugin,
   expected: PublicClientProfile,
 ): Promise<OAuthClientView & { client_id: string }> {
-  const existingClients = ((await call(provider.endpoints.getOAuthClients)) ??
-    []) as OAuthClientView[]
+  const existingClients = ((await call('getOAuthClients')) ?? []) as OAuthClientView[]
   const matches = existingClients.filter((candidate) => candidate.software_id === expected.profile)
   if (matches.length !== 1) profileDrift()
   const client = matches[0]
@@ -329,289 +329,195 @@ async function requireFixtureClient(
   return client
 }
 
-export function mcpOAuthAdminPlugin(
-  authCtx: AuthCtx<DataModel>,
-  provider: ProviderPlugin,
-  origin: string,
-): BetterAuthPlugin {
-  const resource = `${origin}/mcp`
+interface FixtureAdapter {
+  update(input: {
+    model: string
+    update: Record<string, unknown>
+    where: Array<{ field: string; value: string }>
+  }): Promise<unknown>
+}
 
-  const providerCall =
-    (context: unknown, headers: Headers | undefined): ProviderCall =>
-    async (endpoint, input = {}) => {
-      const configuredMethod = (endpoint as { options?: { method?: unknown } }).options?.method
-      const method = Array.isArray(configuredMethod) ? configuredMethod[0] : configuredMethod
-      if (typeof method !== 'string' || method === '*') profileDrift()
-      return await dispatchAuthEndpoint(
-        endpoint as never,
-        {
-          ...input,
-          asResponse: false,
-          context,
-          headers: headers ?? new Headers(),
-          method,
-        } as never,
+interface FixtureRequest {
+  readonly adapter: FixtureAdapter
+  readonly authUserId: string
+  readonly call: ProviderCall
+  readonly ctx: ActionCtx
+  readonly resource: string
+}
+
+type FixtureOperation = (request: FixtureRequest) => Promise<Record<string, unknown>>
+
+function noStoreJson(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { 'cache-control': 'no-store', 'content-type': 'application/json' },
+    status,
+  })
+}
+
+/**
+ * One session-authenticated fixture route. `auth.sessionHttpAction` applies the
+ * same hardening as `/api/auth/*` (signed client IP, Better Auth rate limiting,
+ * same-origin check, session admission). The provider admin APIs then re-check
+ * `clientPrivileges`/`resourcePrivileges`, so only a live projected OAuth
+ * administrator can provision.
+ */
+function fixtureRoute(operation: FixtureOperation) {
+  return auth.sessionHttpAction(async (ctx, session) => {
+    const api = session.auth.api as unknown as Record<
+      ProviderEndpoint,
+      (input: Record<string, unknown>) => Promise<unknown>
+    >
+    const call: ProviderCall = async (endpoint, input = {}) =>
+      await api[endpoint]({ ...input, headers: session.headers })
+    const { adapter } = (await session.auth.$context) as { adapter: FixtureAdapter }
+    try {
+      return noStoreJson(
+        await operation({
+          adapter,
+          authUserId: session.user.id,
+          call,
+          ctx,
+          resource: `${requireAuthOrigin('CONVEX_SITE_URL')}/mcp`,
+        }),
       )
+    } catch (error) {
+      if (error instanceof APIError) {
+        return noStoreJson(error.body ?? { code: error.status }, error.statusCode)
+      }
+      throw error
     }
+  })
+}
 
-  return {
-    id: 'mcp-oauth-admin',
-    endpoints: {
-      provisionMcpInteropProfile: createAuthEndpoint(
-        '/mcp/admin/provision',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          const call = providerCall(ctx.context, ctx.headers)
+async function grantFixtureDelegations(
+  ctx: ActionCtx,
+  authUserId: string,
+  clientIds: string[],
+): Promise<string> {
+  const delegation = await ctx.runMutation(internal.mcpAdmin.grantFixtureDelegations, {
+    authUserId,
+    clientIds,
+  })
+  if (
+    !delegation ||
+    typeof delegation !== 'object' ||
+    !('organizationId' in delegation) ||
+    typeof delegation.organizationId !== 'string'
+  ) {
+    profileDrift()
+  }
+  return delegation.organizationId
+}
 
-          const session = await getSessionFromCtx(ctx)
-          if (!session) throw new APIError('UNAUTHORIZED')
-          await ensureResource(call, provider, resource)
+const fixtureOperations: Record<string, FixtureOperation> = {
+  provision: async ({ authUserId, call, ctx, resource }) => {
+    await ensureResource(call, resource)
+    const existingClients = ((await call('getOAuthClients')) ?? []) as OAuthClientView[]
+    const clientIds: string[] = []
+    for (const expected of CLIENTS) {
+      clientIds.push(await ensurePublicClient(call, existingClients, expected, resource))
+    }
+    if (new Set(clientIds).size !== CLIENTS.length) profileDrift()
+    return {
+      clients: { inspector: clientIds[0], mcpRemote: clientIds[1] },
+      organizationId: await grantFixtureDelegations(ctx, authUserId, clientIds),
+      resource,
+    }
+  },
+  'provision-terminal-evidence': async ({ authUserId, call, ctx, resource }) => {
+    await ensureResource(call, resource)
+    const existingClients = ((await call('getOAuthClients')) ?? []) as OAuthClientView[]
+    const inspector = await ensurePublicClient(call, existingClients, CLIENTS[0], resource)
+    const terminalIds: string[] = []
+    for (const expected of TERMINAL_CLIENTS) {
+      terminalIds.push(await ensurePublicClient(call, existingClients, expected, resource))
+    }
+    if (new Set([inspector, ...terminalIds]).size !== TERMINAL_CLIENTS.length + 1) {
+      profileDrift()
+    }
+    return {
+      clients: {
+        clientDelete: terminalIds[2],
+        clientDisable: terminalIds[1],
+        conformance: terminalIds[4],
+        consentDelete: terminalIds[3],
+        sessionDelete: terminalIds[0],
+      },
+      organizationId: await grantFixtureDelegations(ctx, authUserId, [inspector, ...terminalIds]),
+      resource,
+    }
+  },
+  'disable-client-fixture': async ({ adapter, call }) => {
+    const client = await requireFixtureClient(call, TERMINAL_CLIENTS[1])
+    const updated = (await adapter.update({
+      model: 'oauthClient',
+      update: { disabled: true, updatedAt: new Date() },
+      where: [{ field: 'clientId', value: client.client_id }],
+    })) as { disabled?: unknown } | null
+    if (updated?.disabled !== true) profileDrift()
+    return { disabled: true }
+  },
+  'delete-client-fixture': async ({ call }) => {
+    const client = await requireFixtureClient(call, TERMINAL_CLIENTS[2])
+    await call('deleteOAuthClient', { body: { client_id: client.client_id } })
+    return { deleted: true }
+  },
+  'delete-consent-fixture': async ({ call }) => {
+    const client = await requireFixtureClient(call, TERMINAL_CLIENTS[3])
+    const consents = ((await call('getOAuthConsents')) ?? []) as OAuthConsentView[]
+    const matches = consents.filter((consent) => consent.clientId === client.client_id)
+    const consentId = matches[0]?.id
+    if (matches.length !== 1 || typeof consentId !== 'string' || consentId.length === 0) {
+      profileDrift()
+    }
+    await call('deleteOAuthConsent', { body: { id: consentId } })
+    return { deleted: true }
+  },
+  'disable-resource-fixture': async ({ call, resource }) => {
+    await call('adminUpdateOAuthResource', {
+      body: { disabled: true },
+      params: { identifier: resource },
+    })
+    return { disabled: true }
+  },
+  'enable-resource-fixture': async ({ call, resource }) => {
+    await call('adminUpdateOAuthResource', {
+      body: { disabled: false },
+      params: { identifier: resource },
+    })
+    return { disabled: false }
+  },
+  'unlink-inspector-resource-fixture': async ({ call, resource }) => {
+    const client = await requireFixtureClient(call, CLIENTS[0])
+    await call('adminUnlinkClientResource', {
+      params: { client_id: client.client_id, identifier: resource },
+    })
+    return { unlinked: true }
+  },
+  'link-inspector-resource-fixture': async ({ call, resource }) => {
+    const client = await requireFixtureClient(call, CLIENTS[0])
+    await call('adminLinkClientResource', {
+      params: { client_id: client.client_id, identifier: resource },
+    })
+    return { linked: true }
+  },
+  'provision-confidential': async ({ call, resource }) => {
+    await ensureResource(call, resource)
+    const client = await provisionConfidentialClient(call, resource)
+    return { client, resource }
+  },
+}
 
-          const existingClients = ((await call(provider.endpoints.getOAuthClients)) ??
-            []) as OAuthClientView[]
-          const clientIds: string[] = []
-          for (const expected of CLIENTS) {
-            clientIds.push(
-              await ensurePublicClient(call, provider, existingClients, expected, resource),
-            )
-          }
-
-          if (new Set(clientIds).size !== CLIENTS.length) profileDrift()
-
-          if (!('runMutation' in authCtx) || typeof authCtx.runMutation !== 'function') {
-            throw new APIError('INTERNAL_SERVER_ERROR')
-          }
-          const delegation = await authCtx.runMutation(internal.mcpAdmin.grantFixtureDelegations, {
-            authUserId: session.user.id,
-            clientIds,
-          })
-
-          if (
-            !delegation ||
-            typeof delegation !== 'object' ||
-            !('organizationId' in delegation) ||
-            typeof delegation.organizationId !== 'string'
-          ) {
-            profileDrift()
-          }
-
-          return ctx.json({
-            clients: { inspector: clientIds[0], mcpRemote: clientIds[1] },
-            organizationId: delegation.organizationId,
-            resource,
-          })
-        },
-      ),
-      provisionMcpTerminalEvidence: createAuthEndpoint(
-        '/mcp/admin/provision-terminal-evidence',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          const session = await getSessionFromCtx(ctx)
-          if (!session) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          await ensureResource(call, provider, resource)
-          const existingClients = ((await call(provider.endpoints.getOAuthClients)) ??
-            []) as OAuthClientView[]
-          const inspector = await ensurePublicClient(
-            call,
-            provider,
-            existingClients,
-            CLIENTS[0],
-            resource,
-          )
-          const terminalIds: string[] = []
-          for (const expected of TERMINAL_CLIENTS) {
-            terminalIds.push(
-              await ensurePublicClient(call, provider, existingClients, expected, resource),
-            )
-          }
-          if (new Set([inspector, ...terminalIds]).size !== TERMINAL_CLIENTS.length + 1) {
-            profileDrift()
-          }
-          if (!('runMutation' in authCtx) || typeof authCtx.runMutation !== 'function') {
-            throw new APIError('INTERNAL_SERVER_ERROR')
-          }
-          const delegation = await authCtx.runMutation(internal.mcpAdmin.grantFixtureDelegations, {
-            authUserId: session.user.id,
-            clientIds: [inspector, ...terminalIds],
-          })
-          if (
-            !delegation ||
-            typeof delegation !== 'object' ||
-            !('organizationId' in delegation) ||
-            typeof delegation.organizationId !== 'string'
-          ) {
-            profileDrift()
-          }
-          return ctx.json({
-            clients: {
-              clientDelete: terminalIds[2],
-              clientDisable: terminalIds[1],
-              conformance: terminalIds[4],
-              consentDelete: terminalIds[3],
-              sessionDelete: terminalIds[0],
-            },
-            organizationId: delegation.organizationId,
-            resource,
-          })
-        },
-      ),
-      disableMcpClientFixture: createAuthEndpoint(
-        '/mcp/admin/disable-client-fixture',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          if (!(await getSessionFromCtx(ctx))) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          const client = await requireFixtureClient(call, provider, TERMINAL_CLIENTS[1])
-          const updated = (await ctx.context.adapter.update({
-            model: 'oauthClient',
-            update: { disabled: true, updatedAt: new Date() },
-            where: [{ field: 'clientId', value: client.client_id }],
-          })) as { disabled?: unknown } | null
-          if (updated?.disabled !== true) profileDrift()
-          return ctx.json({ disabled: true })
-        },
-      ),
-      deleteMcpClientFixture: createAuthEndpoint(
-        '/mcp/admin/delete-client-fixture',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          if (!(await getSessionFromCtx(ctx))) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          const client = await requireFixtureClient(call, provider, TERMINAL_CLIENTS[2])
-          await call(provider.endpoints.deleteOAuthClient, {
-            body: { client_id: client.client_id },
-          })
-          return ctx.json({ deleted: true })
-        },
-      ),
-      deleteMcpConsentFixture: createAuthEndpoint(
-        '/mcp/admin/delete-consent-fixture',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          if (!(await getSessionFromCtx(ctx))) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          const client = await requireFixtureClient(call, provider, TERMINAL_CLIENTS[3])
-          const consents = ((await call(provider.endpoints.getOAuthConsents)) ??
-            []) as OAuthConsentView[]
-          const matches = consents.filter((consent) => consent.clientId === client.client_id)
-          if (
-            matches.length !== 1 ||
-            typeof matches[0]?.id !== 'string' ||
-            matches[0].id.length === 0
-          ) {
-            profileDrift()
-          }
-          await call(provider.endpoints.deleteOAuthConsent, {
-            body: { id: matches[0].id },
-          })
-          return ctx.json({ deleted: true })
-        },
-      ),
-      disableMcpResourceFixture: createAuthEndpoint(
-        '/mcp/admin/disable-resource-fixture',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          if (!(await getSessionFromCtx(ctx))) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          await call(provider.endpoints.adminUpdateOAuthResource, {
-            body: { disabled: true },
-            params: { identifier: resource },
-          })
-          return ctx.json({ disabled: true })
-        },
-      ),
-      enableMcpResourceFixture: createAuthEndpoint(
-        '/mcp/admin/enable-resource-fixture',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          if (!(await getSessionFromCtx(ctx))) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          await call(provider.endpoints.adminUpdateOAuthResource, {
-            body: { disabled: false },
-            params: { identifier: resource },
-          })
-          return ctx.json({ disabled: false })
-        },
-      ),
-      unlinkMcpInspectorResourceFixture: createAuthEndpoint(
-        '/mcp/admin/unlink-inspector-resource-fixture',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          if (!(await getSessionFromCtx(ctx))) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          const client = await requireFixtureClient(call, provider, CLIENTS[0])
-          await call(provider.endpoints.adminUnlinkClientResource, {
-            params: { client_id: client.client_id, identifier: resource },
-          })
-          return ctx.json({ unlinked: true })
-        },
-      ),
-      linkMcpInspectorResourceFixture: createAuthEndpoint(
-        '/mcp/admin/link-inspector-resource-fixture',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          if (!(await getSessionFromCtx(ctx))) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          const client = await requireFixtureClient(call, provider, CLIENTS[0])
-          await call(provider.endpoints.adminLinkClientResource, {
-            params: { client_id: client.client_id, identifier: resource },
-          })
-          return ctx.json({ linked: true })
-        },
-      ),
-      provisionMcpConfidentialFixture: createAuthEndpoint(
-        '/mcp/admin/provision-confidential',
-        {
-          method: 'POST',
-          metadata: { noStore: true },
-          use: [sessionMiddleware],
-        },
-        async (ctx) => {
-          const session = await getSessionFromCtx(ctx)
-          if (!session) throw new APIError('UNAUTHORIZED')
-          const call = providerCall(ctx.context, ctx.headers)
-          await ensureResource(call, provider, resource)
-          const client = await provisionConfidentialClient(call, provider, resource)
-          return ctx.json({ client, resource })
-        },
-      ),
-    },
+/**
+ * Mount the local interoperability and evidence fixtures under the auth proxy
+ * path. Exact Convex routes take precedence over the `/api/auth/` prefix.
+ */
+export function registerMcpOAuthFixtureRoutes(http: HttpRouter): void {
+  for (const [name, operation] of Object.entries(fixtureOperations)) {
+    http.route({
+      handler: fixtureRoute(operation),
+      method: 'POST',
+      path: `/api/auth/mcp/admin/${name}`,
+    })
   }
 }

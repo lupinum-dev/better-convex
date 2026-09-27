@@ -70,12 +70,9 @@ export function roleAllowsOrganizationPermissions(
 
 type OrganizationOptions = NonNullable<Parameters<typeof organization>[0]>
 
-export function createTeamAuthPlugins(
-  authIssuer: string,
-  callbacks: Pick<OrganizationOptions, 'sendInvitationEmail'> = {},
-) {
+export function createTeamAuthPlugins(authIssuer: string) {
   return [
-    organization(createTeamOrganizationOptions(callbacks)),
+    organization(createTeamOrganizationOptions()),
     jwt({
       disableSettingJwtHeader: true,
       jwks: {
@@ -88,14 +85,11 @@ export function createTeamAuthPlugins(
   ]
 }
 
-export function createTeamOrganizationOptions(
-  callbacks: Pick<OrganizationOptions, 'sendInvitationEmail'> = {},
-) {
+export function createTeamOrganizationOptions() {
   return {
     ac: accessControl,
     roles: organizationRoleConfig,
     requireEmailVerificationOnInvitation: true,
     teams: { enabled: true },
-    ...callbacks,
   } as const satisfies OrganizationOptions
 }

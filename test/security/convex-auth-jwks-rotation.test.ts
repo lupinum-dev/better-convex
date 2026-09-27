@@ -406,6 +406,133 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
     expect(raw).not.toContain('RECURSIVE_PRIVATE_SENTINEL')
   })
 
+  it.each<[string, (row: Record<string, unknown>) => void, string]>([
+    [
+      'an unparseable public key',
+      (row) => void (row.publicKey = '{not json'),
+      'AUTH_JWKS_PUBLIC_KEY_INVALID',
+    ],
+    [
+      'a private member in the public key',
+      (row) =>
+        void (row.publicKey = JSON.stringify({
+          d: 'RETIRED_PRIVATE_SENTINEL',
+          e: 'AQAB',
+          kty: 'RSA',
+          n: 'modulus',
+        })),
+      'AUTH_JWKS_PUBLIC_KEY_INVALID',
+    ],
+    ['a foreign algorithm', (row) => void (row.alg = 'EdDSA'), 'AUTH_JWKS_ALGORITHM_INVALID'],
+    ['a curve', (row) => void (row.crv = 'Ed25519'), 'AUTH_JWKS_ALGORITHM_INVALID'],
+    [
+      'a control-character id',
+      (row) => void (row.id = 'retired\u0000kid'),
+      'AUTH_JWKS_KEY_ID_INVALID',
+    ],
+    ['a non-Date expiry', (row) => void (row.expiresAt = 'yesterday'), 'AUTH_JWKS_EXPIRY_INVALID'],
+    [
+      'a non-Date creation time',
+      (row) => void (row.createdAt = 'long ago'),
+      'AUTH_JWKS_CREATED_AT_INVALID',
+    ],
+  ])(
+    'skips a retired row with %s in public JWKS and token signing',
+    async (_label, corrupt, reason) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(10_000)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const database: MemoryDB = {}
+        const value = createAuth(database, [{ value: currentSecret, version: 1 }])
+        const { context, options } = await contextAndOptions(value)
+        const retired = await rotateInMemory(database, context, options)
+        vi.setSystemTime(20_000)
+        const current = await rotateInMemory(database, context, options)
+        const storedRetired = database.jwks!.find((key) => key.id === retired.id)!
+        storedRetired.expiresAt = new Date(20_000)
+        const retiredId = `retired-${reason}-${_label.length}`
+        storedRetired.id = retiredId
+        corrupt(storedRetired)
+
+        const response = await value.auth.handler(new Request(`${issuer}/jwks`))
+        const raw = await response.text()
+        const jwks = JSON.parse(raw) as JSONWebKeySet
+
+        expect(response.status).toBe(200)
+        expect(jwks.keys.map((key) => key.kid)).toEqual([current.id])
+        expect(raw).not.toContain('RETIRED_PRIVATE_SENTINEL')
+
+        const token = await signJWT(endpointContext(context), {
+          options,
+          payload: { aud: issuer, exp: 10_000, iat: 20, iss: issuer, sub: 'subject-1' },
+        })
+        await expect(
+          jwtVerify(token, createLocalJWKSet(jwks), {
+            algorithms: ['RS256'],
+            audience: issuer,
+            issuer,
+          }),
+        ).resolves.toMatchObject({ protectedHeader: { kid: current.id } })
+
+        const logged = warn.mock.calls.map((call) => call.join(' '))
+        expect(logged.some((line) => line.includes('AUTH_JWKS_RETIRED_KEY_SKIPPED'))).toBe(true)
+        expect(logged.some((line) => line.includes(reason))).toBe(true)
+        for (const line of logged) {
+          expect(line).not.toContain('RETIRED_PRIVATE_SENTINEL')
+          expect(line).not.toContain(String(storedRetired.privateKey))
+          expect(line).not.toContain('\u0000')
+        }
+      } finally {
+        warn.mockRestore()
+      }
+    },
+  )
+
+  it.each<[string, (row: Record<string, unknown>) => void]>([
+    ['an unparseable public key', (row) => void (row.publicKey = '{not json')],
+    ['a foreign algorithm', (row) => void (row.alg = 'EdDSA')],
+    ['a non-Date creation time', (row) => void (row.createdAt = 'long ago')],
+    ['an unencrypted private key', (row) => void (row.privateKey = '{"kty":"RSA","d":"x"}')],
+  ])('fails closed with a logged code when the current key has %s', async (label, corrupt) => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const database: MemoryDB = {}
+      const value = createAuth(database, [{ value: currentSecret, version: 1 }])
+      const { context, options } = await contextAndOptions(value)
+      const current = await rotateInMemory(database, context, options)
+      corrupt(current as unknown as Record<string, unknown>)
+
+      await expect(
+        signJWT(endpointContext(context), {
+          options,
+          payload: { aud: issuer, exp: 10_000, iat: 20, iss: issuer, sub: 'subject-1' },
+        }),
+      ).rejects.toThrow('AUTH_JWKS_CURRENT_KEY_INVALID')
+
+      const response = await value.auth.handler(new Request(`${issuer}/jwks`))
+      if (label === 'an unencrypted private key') {
+        // Publication never reads private material; signing alone refuses the row.
+        expect(response.status).toBe(200)
+      } else {
+        expect(response.status).toBe(500)
+        expect(response.headers.get('cache-control')).toBe('private, no-store')
+        await expect(response.json()).resolves.toEqual({ code: 'AUTH_JWKS_UNAVAILABLE' })
+      }
+      const logged = error.mock.calls.map((call) => call.join(' '))
+      expect(
+        logged.some(
+          (line) =>
+            line.includes('AUTH_JWKS_CURRENT_KEY_INVALID') && line.includes(`kid=${current.id}`),
+        ),
+      ).toBe(true)
+      expect(logged.join('\n')).not.toContain(String(current.privateKey))
+      expect(database.jwks).toHaveLength(1)
+    } finally {
+      error.mockRestore()
+    }
+  })
+
   it('keeps a retired verification key published for exactly the 21-minute overlap', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(10_000)

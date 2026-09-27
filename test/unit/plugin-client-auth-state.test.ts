@@ -156,6 +156,32 @@ vi.mock('../../src/runtime/utils/runtime-config', () => ({
   })),
 }))
 
+/** Stand-in for Better Auth's `$sessionSignal` atom and its deferred flip. */
+function sessionSignalStore() {
+  let value = false
+  const listeners = new Set<() => void>()
+  const $sessionSignal = {
+    get: () => value,
+    set(next: boolean) {
+      value = next
+      for (const listener of [...listeners]) listener()
+    },
+    listen(listener: () => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+  return {
+    $store: { atoms: { $sessionSignal } },
+    listenerCount: () => listeners.size,
+    // Better Auth schedules the flip before the action's Promise settles.
+    fire() {
+      const current = value
+      setTimeout(() => $sessionSignal.set(!current), 10)
+    },
+  }
+}
+
 describe('auth client app-facing state projection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -201,9 +227,14 @@ describe('auth client app-facing state projection', () => {
 
   it('fails closed when the canonical refresh rejects', async () => {
     vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
+    const signal = sessionSignalStore()
     createAuthClientMock.mockReturnValue({
+      $store: signal.$store,
       twoFactor: {
-        enable: vi.fn(async () => ({ data: { totpURI: 'synthetic' }, error: null })),
+        enable: vi.fn(async () => {
+          signal.fire()
+          return { data: { totpURI: 'synthetic' }, error: null }
+        }),
       },
     })
     const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
@@ -346,17 +377,18 @@ describe('auth client app-facing state projection', () => {
     snapshot.settled = true
     snapshot.identityKey = 'anonymous'
     snapshot.identityGeneration = 1
-    const email = vi.fn(async () => ({
-      data: { user: { id: 'alice' } },
-      error: null,
-    }))
+    const signal = sessionSignalStore()
+    const email = vi.fn(async () => {
+      signal.fire()
+      return { data: { user: { id: 'alice' } }, error: null }
+    })
     createAuthClientMock.mockReturnValue({
       useSession: vi.fn(() => ({ value: { isPending: false } })),
       signIn: { email },
       signUp: {},
       signOut: vi.fn(async () => ({ data: { success: true }, error: null })),
       $fetch: vi.fn(),
-      $store: {},
+      $store: signal.$store,
       hydrateSession: vi.fn(),
       convex: { token: vi.fn() },
     })
@@ -420,10 +452,15 @@ describe('auth client app-facing state projection', () => {
     snapshot.settled = true
     snapshot.identityKey = 'user:alice'
     snapshot.identityGeneration = 0
-    const read = vi.fn(async () => ({ data: { ok: true }, error: null }))
+    const signal = sessionSignalStore()
+    const updateSession = vi.fn(async () => {
+      signal.fire()
+      return { data: { ok: true }, error: null }
+    })
     createAuthClientMock.mockReturnValue({
+      $store: signal.$store,
       useSession: vi.fn(() => ({ value: { isPending: false } })),
-      read,
+      updateSession,
     })
     refreshSessionMock.mockImplementation(async () => {
       adapterCallbacks.sessionChanged?.('session-alice', null, 0)
@@ -447,10 +484,10 @@ describe('auth client app-facing state projection', () => {
     })
     adapterCallbacks.sessionChanged?.('session-alice', null, 0)
     const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
-      client: { read(): Promise<unknown> }
+      client: { updateSession(): Promise<unknown> }
     }
 
-    await expect(controller.client.read()).resolves.toEqual({
+    await expect(controller.client.updateSession()).resolves.toEqual({
       data: { ok: true },
       error: null,
     })
@@ -465,8 +502,13 @@ describe('auth client app-facing state projection', () => {
     snapshot.settled = true
     snapshot.identityKey = 'user:alice'
     snapshot.identityGeneration = 1
-    const updateUser = vi.fn(async () => ({ data: { status: true }, error: null }))
+    const signal = sessionSignalStore()
+    const updateUser = vi.fn(async () => {
+      signal.fire()
+      return { data: { status: true }, error: null }
+    })
     createAuthClientMock.mockReturnValue({
+      $store: signal.$store,
       useSession: vi.fn(() => ({ value: { isPending: false } })),
       updateUser,
     })
@@ -523,5 +565,50 @@ describe('auth client app-facing state projection', () => {
       identityState.value.status === 'authenticated' ? identityState.value.user.name : null,
     ).toBe('Updated Alice')
     expect(updateUser).toHaveBeenCalledOnce()
+  })
+
+  it('resolves read-only calls without refreshing auth, minting, or failing closed', async () => {
+    vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
+    emitInitialProviderSession.value = false
+    const signal = sessionSignalStore()
+    const readFailure = new Error('organization list unavailable')
+    const list = vi.fn(async () => ({ data: [{ id: 'org-1' }], error: null }))
+    createAuthClientMock.mockReturnValue({
+      $store: signal.$store,
+      useSession: vi.fn(() => ({ value: { isPending: false } })),
+      organization: {
+        list,
+        getFullOrganization: vi.fn(async () => {
+          throw readFailure
+        }),
+      },
+    })
+
+    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
+      setup(nuxtApp: {
+        provide: ReturnType<typeof vi.fn>
+        vueApp: { onUnmount: ReturnType<typeof vi.fn>; use: ReturnType<typeof vi.fn> }
+      }): void
+    }
+    plugin.setup({ provide: vi.fn(), vueApp: { onUnmount: vi.fn(), use: vi.fn() } })
+    adapterCallbacks.sessionChanged?.('session-alice', null, 0)
+    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
+      client: {
+        organization: { list(): Promise<unknown>; getFullOrganization(): Promise<unknown> }
+      }
+      dispose(): void
+    }
+
+    await expect(controller.client.organization.list()).resolves.toEqual({
+      data: [{ id: 'org-1' }],
+      error: null,
+    })
+    await expect(controller.client.organization.getFullOrganization()).rejects.toBe(readFailure)
+    expect(authRefreshMock).not.toHaveBeenCalled()
+    expect(failClosedMock).not.toHaveBeenCalled()
+
+    expect(signal.listenerCount()).toBe(1)
+    controller.dispose()
+    expect(signal.listenerCount()).toBe(0)
   })
 })

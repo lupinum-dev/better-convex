@@ -18,6 +18,11 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<string | undefined>(auth.user.value?.id)
   assertType<Error | undefined>(auth.error.value)
 
+  // The validated `?redirect=` return path and its one normalizer.
+  const returnTo = useConvexAuthReturnTo()
+  assertType<ComputedRef<string | null>>(returnTo)
+  assertType<string | null>(normalizeLocalRedirectPath('/dashboard'))
+
   const config = useConvexConfig()
   assertType<string | undefined>(config.url)
   // @ts-expect-error `useConvexConfig()` returns a read-only projection

@@ -1,7 +1,12 @@
 import type { IntegratedAuthClient } from '../auth-client'
 
 export interface SessionCheckpoint {
+  /** Provider session revision observed when the call started. */
   readonly revision: number
+  /** Count of Better Auth `$sessionSignal` notifications when the call started. */
+  readonly sessionSignals: number
+  /** Count of potentially session-changing Better Auth requests when the call started. */
+  readonly sessionRequests: number
 }
 
 export interface CanonicalSessionReconciler {
@@ -12,6 +17,13 @@ export interface CanonicalSessionReconciler {
    * without changing its synchronous contract.
    */
   cancel(checkpoint: SessionCheckpoint): void
+  /**
+   * Finish a Promise call. Reconciles when the call (or a concurrent one) sent
+   * a Better Auth request outside the known read-only routes, Better Auth
+   * signalled a session change, or the provider session revision moved since
+   * the checkpoint; a read-only call resolves without minting a token.
+   */
+  settle(checkpoint: SessionCheckpoint): Promise<void>
   /** Re-read the provider session, then await matching Convex settlement (possibly anonymous). */
   reconcile(checkpoint: SessionCheckpoint): Promise<void>
 }
@@ -43,7 +55,9 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
  * synchronous APIs (`useSession()` and plugin permission checks) and
  * Promise-returning actions through recursive callable proxies. Synchronous
  * values pass through unchanged; only actual PromiseLike results cross the
- * canonical session reconciliation barrier.
+ * canonical session reconciliation barrier, and only when a request outside
+ * the known read-only routes, Better Auth's own session signal, or the
+ * provider session revision reports a possible change.
  */
 export function createIntegratedAuthClient<Client extends object>(
   client: Client,
@@ -172,11 +186,11 @@ export function createIntegratedAuthClient<Client extends object>(
 
         const reconciled = Promise.resolve(result).then(
           async (value) => {
-            await reconciler.reconcile(checkpoint)
+            await reconciler.settle(checkpoint)
             return exposeResult(value)
           },
           async (error) => {
-            await reconciler.reconcile(checkpoint)
+            await reconciler.settle(checkpoint)
             throw error
           },
         )

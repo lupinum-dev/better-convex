@@ -14,10 +14,13 @@ import {
 } from './internal/browser-runtime'
 import { DISCONNECTED_CONNECTION_STATE } from './internal/connection-state'
 import type { ClientIdentitySnapshot } from './internal/identity-port'
+import type { ConvexAuthMode } from './use-query'
 
 export interface BetterConvexVueRuntime {
   readonly browser: BetterConvexBrowserRuntime
   readonly identity: AttachedClientIdentityState
+  /** Auth mode for queries whose options omit `auth`. */
+  readonly defaultQueryAuth: ConvexAuthMode
 }
 
 const BETTER_CONVEX_KEY: InjectionKey<BetterConvexVueRuntime> = Symbol('@lupinum/better-convex-vue')
@@ -48,7 +51,7 @@ export interface BetterConvexClientOptions {
   readonly unsavedChangesWarning?: boolean
 }
 
-export type CreateBetterConvexOptions =
+export type CreateBetterConvexOptions = (
   | {
       convexUrl: string
       auth?: BetterConvexAuthAdapter
@@ -61,6 +64,25 @@ export type CreateBetterConvexOptions =
       auth?: never
       clientOptions?: never
     }
+) & {
+  /**
+   * Auth mode for `useConvexQuery` / `useConvexPaginatedQuery` calls that omit
+   * `auth`. A call site's own `auth` always wins. @default 'optional'
+   */
+  defaultQueryAuth?: ConvexAuthMode
+}
+
+const QUERY_AUTH_MODES: readonly ConvexAuthMode[] = ['optional', 'required', 'none']
+
+function normalizeDefaultQueryAuth(input: unknown): ConvexAuthMode {
+  if (input === undefined) return 'optional'
+  if (!(QUERY_AUTH_MODES as readonly unknown[]).includes(input)) {
+    throw new TypeError(
+      "[better-convex-vue] defaultQueryAuth must be 'optional', 'required', or 'none'",
+    )
+  }
+  return input as ConvexAuthMode
+}
 
 export type BetterConvexPlugin = ObjectPlugin & {
   /** Safe cross-framework attachment; available after plugin installation. */
@@ -122,6 +144,7 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
   }
   const clientOptions =
     options.attachment !== undefined ? {} : normalizeClientOptions(options.clientOptions)
+  const defaultQueryAuth = normalizeDefaultQueryAuth(options.defaultQueryAuth)
   let installed = false
   let dispose: (() => Promise<void> | void) | null = null
   let installedAttachment: BetterConvexAttachment | null = null
@@ -146,6 +169,7 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
       const runtime: BetterConvexVueRuntime = Object.freeze({
         browser: installedBrowser,
         identity,
+        defaultQueryAuth,
       })
       app.provide(BETTER_CONVEX_KEY, runtime)
       dispose = async () => {

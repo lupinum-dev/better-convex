@@ -15,6 +15,7 @@ import { computed, shallowRef, type MaybeRefOrGetter } from 'vue'
 
 import { ConvexCallError, type ConvexCallErrorCode } from '../errors'
 import { paginatedPayloadHash } from '../utils/convex-cache'
+import { resolveDefaultQueryAuth } from '../utils/default-query-auth'
 import { executeQueryHttp } from '../utils/query-execution'
 import {
   useConvexQueryHydration,
@@ -218,7 +219,7 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
   }
   const { immediate, lazy } = resolveQueryLifecycleOptions(options)
   const resolvedOptions: ResolvedNuxtConvexPaginatedQueryOptions = {
-    auth: options.auth ?? 'optional',
+    auth: options.auth ?? resolveDefaultQueryAuth(),
     immediate,
     initialCursor: options.initialCursor ?? null,
     initialNumItems,

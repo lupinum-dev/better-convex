@@ -5,12 +5,12 @@ authorization server, Better Convex Nuxt exposes it through the same-origin
 `/api/auth` proxy, and the deployment-owned Convex `/mcp` HTTP Action accepts
 short-lived OAuth access tokens. Convex remains the product-authorization authority.
 
-This is a specialized conformance and provisioning fixture. Normal applications
-must use `createBetterConvexAuth(...)`, which owns the reviewed plugin order,
-routes, JWT policy, triggers, and signing keys. This starter adds a narrow,
-fixture-only provider administration overlay so the black-box release runner can
-preregister disposable OAuth clients. Do not copy that low-level assembly into a
-normal application, and do not treat it as a generic plugin escape hatch.
+This is a specialized conformance and provisioning fixture. It composes auth
+with `createBetterConvexAuth(...)`, the only supported path, which owns the
+reviewed plugin order, routes, JWT policy, triggers, and signing keys. This
+starter adds narrow, fixture-only HTTP routes under `/api/auth/mcp/admin/` so
+the black-box release runner can preregister disposable OAuth clients. Do not
+copy those routes into a normal application; use `auth.oauthOperator` instead.
 
 It is a delegated-human example, not a universal machine-identity model. For
 controlled service automation, supply a provider-neutral bearer verifier to
@@ -171,10 +171,14 @@ operation.
 ## Provider-owned fixture provisioning
 
 The interoperability runner signs in as the bootstrapped administrator and
-calls `/api/auth/mcp/admin/provision`. That authenticated endpoint dispatches
-the OAuth Provider's own resource-list/create, client-list/create, and
-client-resource-link endpoints. It never writes OAuth component models through
-the raw adapter.
+calls `/api/auth/mcp/admin/provision`. The route is wrapped in
+`auth.sessionHttpAction`, so it has the same hardening as `/api/auth/*`: a
+signed client IP from the auth proxy, Better Auth rate limiting, a same-origin
+check, and the library's session admission. It then calls the OAuth Provider's
+own resource-list/create,
+client-list/create, and client-resource-link admin APIs. Those APIs re-check the
+live OAuth administrator privilege. The route never writes OAuth component
+models through the raw adapter.
 
 The provider generates the client IDs. Stable `software_id` values let a rerun
 find the preregistered fixture profiles without creating a second source of truth.

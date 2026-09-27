@@ -53,6 +53,7 @@ export type PaginatedQueryItem<Query extends PaginatedQueryReference> =
 export interface UseConvexPaginatedQueryOptions {
   readonly initialNumItems: number
   readonly initialCursor?: string | null
+  /** Defaults to the plugin's `defaultQueryAuth` (`'optional'` unless configured). */
   readonly auth?: ConvexAuthMode
   readonly keepPreviousData?: boolean
   readonly immediate?: boolean
@@ -154,7 +155,7 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
 
   type Item = PaginatedQueryItem<Query>
   const runtime = useBetterConvexRuntime()
-  const auth = options.auth ?? 'optional'
+  const auth = options.auth ?? runtime.defaultQueryAuth
   const initialNumItems = options.initialNumItems
   const initialCursor = shallowRef(options.initialCursor ?? null)
   const started = shallowRef(options.immediate !== false)

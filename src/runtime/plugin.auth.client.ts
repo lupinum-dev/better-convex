@@ -19,7 +19,9 @@ import type { AuthClientWithConvex } from './auth/client-engine-types'
 import { createIntegratedAuthClient } from './auth/integrated-client'
 import { createAuthOperationTracker } from './auth/operation-tracker'
 import {
+  BETTER_AUTH_SESSION_SIGNAL_DELAY_MS,
   createSessionSynchronization,
+  readBetterAuthSessionSignal,
   type ProviderSessionRevision,
 } from './auth/session-synchronization'
 import { validateConvexAuthClientDefinition } from './auth/validate-auth-client-definition'
@@ -48,17 +50,22 @@ export default defineNuxtPlugin({
     const logger = createLogger(getLogLevel(publicConvex))
     const definitionOptions = validateConvexAuthClientDefinition(convexAuthClientDefinition)
     const { plugins: consumerPlugins, ...baseOptions } = definitionOptions
+    let synchronization: ReturnType<typeof createSessionSynchronization> | null = null
     const authClient = createAuthClient({
       ...baseOptions,
       baseURL: `${window.location.origin}/api/auth`,
-      plugins: [convexClientPlugin(), ...(consumerPlugins ?? [])],
+      plugins: [
+        convexClientPlugin({
+          observeRequest: (routePath) => synchronization?.observeRequest(routePath),
+        }),
+        ...(consumerPlugins ?? []),
+      ],
       fetchOptions: { credentials: 'include' },
     }) as unknown as AuthClientWithConvex
 
     const identity = useConvexIdentityState()
     const authError = useState<string | null>('convex:authError', () => null)
     const pendingState = useConvexAuthPendingState()
-    let synchronization: ReturnType<typeof createSessionSynchronization> | null = null
     let latestProviderSession: ProviderSessionRevision | undefined
     let publishCurrentSessionAcceptance: () => void = () => {}
     const adapter = createBetterAuthBrowserAdapter(
@@ -102,6 +109,7 @@ export default defineNuxtPlugin({
       convexUrl: convexConfig.url,
       auth: adapter,
       clientOptions: convexConfig.client,
+      defaultQueryAuth: convexConfig.auth.defaultQueryAuth,
     })
     nuxtApp.vueApp.use(vuePlugin)
     const runtime = createConvexRuntimeContext(vuePlugin.attachment(), logger)
@@ -161,13 +169,18 @@ export default defineNuxtPlugin({
 
     let disposed = false
     const operations = createAuthOperationTracker()
+    const sessionSignal = readBetterAuthSessionSignal(authClient)
     synchronization = createSessionSynchronization({
       timeoutMs: SESSION_RECONCILIATION_TIMEOUT_MS,
       refetchCanonicalSession: () => refreshBetterConvexAuth(vuePlugin),
       failClosed(failure) {
         adapter.failClosed(failure.message)
       },
+      // Without an observable signal every Promise operation reconciles.
+      sessionSignalDelayMs: sessionSignal ? BETTER_AUTH_SESSION_SIGNAL_DELAY_MS : null,
     })
+    const stopSessionSignal =
+      sessionSignal?.listen(() => synchronization?.observeSessionSignal()) ?? (() => {})
     if (latestProviderSession) synchronization.observeProvider(latestProviderSession)
     // Seed already-settled SSR/browser identity so a Promise operation whose
     // canonical refetch finds the same session need not manufacture a new
@@ -209,6 +222,7 @@ export default defineNuxtPlugin({
       dispose() {
         if (disposed) return
         disposed = true
+        stopSessionSignal()
         synchronization?.dispose()
         adapter.dispose()
       },

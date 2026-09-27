@@ -1,10 +1,10 @@
 import { httpRouter } from 'convex/server'
 
-import { betterConvexAuth } from './auth'
+import { auth } from './auth'
 
 const http = httpRouter()
 
 // Register all Better Auth routes (/api/auth/*)
-betterConvexAuth.registerRoutes(http)
+auth.registerRoutes(http)
 
 export default http

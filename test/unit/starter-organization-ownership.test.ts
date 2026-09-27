@@ -20,7 +20,7 @@ describe('starter organization ownership', () => {
       'utf8',
     )
 
-    expect(starterAuth).toContain('organization: createTeamOrganizationOptions({')
+    expect(starterAuth).toContain('organization: createTeamOrganizationOptions(),')
     expect(schemaPlugins).toContain('requireEmailVerificationOnInvitation: true')
     expect(organizationGuide).toContain('requireEmailVerificationOnInvitation: true')
     expect(schemaPlugins).not.toContain('requireEmailVerificationOnInvitation: false')
@@ -59,14 +59,15 @@ describe('starter organization ownership', () => {
     expect(readme).toMatch(
       /source for organization,\s+member,\s+invitation,\s+team,\s+and team-member state/,
     )
-    expect(auth).toContain('organization: createTeamOrganizationOptions({')
+    expect(auth).toContain('organization: createTeamOrganizationOptions(),')
     expect(schemaPlugins).toMatch(/\borganization\s*\(/)
     expect(schemaPlugins).toContain("from 'better-auth/plugins'")
     expect(organizationCreateForm).toContain('api.organizations.create')
     expect(organizationCreateForm).not.toContain('authClient.organization.create')
     expect(organizationWorkspace).toContain('api.organizations.listMine')
     expect(organizationWorkspace).not.toContain('useTeamOrganizations')
-    expect(authz).toContain('authComponent.safeGetAuthUser(ctx)')
+    expect(authz).toContain('auth.getUser(ctx)')
+    expect(authz).toContain('auth.requireUser(ctx)')
     expect(authz).toContain('roleAllowsOrganizationPermissions')
     expect(authz).toContain('getBetterAuthMember(ctx')
     expect(projects).toContain('requireProjectTeamAccess')

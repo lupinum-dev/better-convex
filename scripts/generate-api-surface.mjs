@@ -112,6 +112,16 @@ const composableMeta = {
     purpose: 'Tracks auth state and user/session information in Nuxt.',
     guide: '/docs/build/authentication/auth-state-and-user',
   },
+  useConvexAuthReturnTo: {
+    kind: 'Composable',
+    purpose: 'Returns the validated local return path from the sign-in redirect query.',
+    guide: '/docs/build/authentication/route-protection',
+  },
+  normalizeLocalRedirectPath: {
+    kind: 'Helper',
+    purpose: 'Returns a safe local application path, or null for any other value.',
+    guide: '/docs/build/authentication/route-protection',
+  },
   useConvexConfig: {
     kind: 'Composable',
     purpose: 'Returns the readonly public Convex deployment URLs.',

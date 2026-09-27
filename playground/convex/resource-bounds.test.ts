@@ -1,14 +1,13 @@
-import { convexTest } from 'convex-test'
+import { signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { describe, expect, it } from 'vitest'
 
 import { api } from './_generated/api'
-import schema from './schema'
-import { modules } from './test.setup'
+import { initConvexTest } from './test.setup'
 
 describe('playground resource bounds', () => {
   it('caps task lists and normalizes bounded task titles', async () => {
-    const t = convexTest(schema, modules)
-    const asUser = t.withIdentity({ subject: 'user_a' })
+    const t = initConvexTest()
+    const asUser = await signInAs(t, 'user_a')
     await t.run(async (ctx) => {
       for (let index = 0; index < 101; index += 1) {
         await ctx.db.insert('tasks', {
@@ -31,7 +30,7 @@ describe('playground resource bounds', () => {
   })
 
   it('caps post lists, pagination, and create/update text', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     await t.run(async (ctx) => {
       await ctx.db.insert('users', {
         authId: 'user_a',
@@ -49,7 +48,7 @@ describe('playground resource bounds', () => {
         })
       }
     })
-    const asUser = t.withIdentity({ subject: 'user_a' })
+    const asUser = await signInAs(t, 'user_a')
 
     expect(await asUser.query(api.posts.list, {})).toHaveLength(100)
     await expect(

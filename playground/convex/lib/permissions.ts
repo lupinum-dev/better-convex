@@ -14,6 +14,7 @@ import { ConvexError } from 'convex/values'
 
 import type { Id } from '../_generated/dataModel'
 import type { QueryCtx, MutationCtx } from '../_generated/server'
+import { auth } from '../auth'
 import {
   checkPermission,
   type Permission,
@@ -38,14 +39,15 @@ export interface AuthUser {
 // Returns the current user projection or null if not signed in.
 
 export async function getUser(ctx: QueryCtx | MutationCtx): Promise<AuthUser | null> {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) {
+  // auth.getUser checks the live Better Auth session, not only the token.
+  const authUser = await auth.getUser(ctx)
+  if (!authUser) {
     return null
   }
 
   const user = await ctx.db
     .query('users')
-    .withIndex('by_auth_id', (q) => q.eq('authId', identity.subject))
+    .withIndex('by_auth_id', (q) => q.eq('authId', authUser.id))
     .first()
 
   if (!user) {

@@ -1,11 +1,10 @@
-import { convexTest } from 'convex-test'
+import { signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { describe, expect, it } from 'vitest'
 
 import { api } from './_generated/api'
-import schema from './schema'
-import { modules } from './test.setup'
+import { initConvexTest } from './test.setup'
 
-async function seedAgency(t: ReturnType<typeof convexTest>) {
+async function seedAgency(t: ReturnType<typeof initConvexTest>) {
   return await t.run(async (ctx) => {
     const userId = await ctx.db.insert('users', {
       subject: 'agency-owner',
@@ -32,7 +31,7 @@ async function seedAgency(t: ReturnType<typeof convexTest>) {
 
 describe('agency resource bounds', () => {
   it('queries active links before applying the client list limit', async () => {
-    const t = convexTest(schema, modules)
+    const t = initConvexTest()
     const { agencyOrganizationId, userId } = await seedAgency(t)
     await t.run(async (ctx) => {
       for (let index = 0; index < 105; index += 1) {
@@ -66,7 +65,9 @@ describe('agency resource bounds', () => {
     })
 
     expect(
-      await t.withIdentity({ subject: 'agency-owner' }).query(api.organizationLinks.listClients, {
+      await (
+        await signInAs(t, 'agency-owner')
+      ).query(api.organizationLinks.listClients, {
         agencyOrganizationId,
       }),
     ).toEqual([expect.objectContaining({ name: 'Active', kind: 'client' })])

@@ -19,8 +19,14 @@ import { v, type GenericId } from 'convex/values'
 
 import {
   JWKS_GRACE_PERIOD_SECONDS,
+  describeKeyIdForLog,
+  isPrunableSigningKeyExpiry,
   normalizeSigningKeyCandidate,
+  normalizeSigningKeyPruneBatchSize,
+  reportCurrentSigningKeyInvalid,
   signingKeyCandidateValidator,
+  storedSigningKeyDocumentIssue,
+  warnRetiredSigningKeySkipped,
 } from '../jwks-rotation'
 import {
   admitOAuthRefresh,
@@ -850,6 +856,13 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
             return byCreatedAt || String(left.id).localeCompare(String(right.id))
           })
         if (args.onlyIfEmpty && keysCurrentAtCommit.length > 0) {
+          // The signer fails closed if ANY current key is unusable, so ensure
+          // checks every one; it never reports a broken key set as ready.
+          // Rotation retires every current key and replaces them.
+          for (const key of keysCurrentAtCommit) {
+            const issue = storedSigningKeyDocumentIssue(key)
+            if (issue) throw reportCurrentSigningKeyInvalid(key.id, issue)
+          }
           const current = keysCurrentAtCommit.at(-1)!
           return {
             created: false,
@@ -863,9 +876,13 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (rows.some((row) => row.id === next.id)) {
           throw new Error('AUTH_UNIQUE_CONFLICT:jwks.id')
         }
+        // A malformed createdAt cannot order keys; skip it so one bad row
+        // cannot block the rotation that retires it. Every current key is
+        // retired below, so the new key is the only live signer either way.
         const latestCreatedAt = rows.reduce((latest, row) => {
           if (typeof row.createdAt !== 'number' || !Number.isSafeInteger(row.createdAt)) {
-            throw new TypeError('AUTH_JWKS_CREATED_AT_INVALID')
+            warnRetiredSigningKeySkipped(row.id, 'AUTH_JWKS_CREATED_AT_INVALID')
+            return latest
           }
           return Math.max(latest, row.createdAt)
         }, rotationNow - 1)
@@ -893,6 +910,34 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           previousKids: keysCurrentAtCommit.map((key) => String(key.id)),
           previousVerifyUntil: rotationNow + JWKS_GRACE_PERIOD_SECONDS * 1_000,
           rotatedAt: rotationNow,
+        }
+      },
+    }),
+
+    pruneSigningKeys: mutationGeneric({
+      returns: v.object({
+        deleted: v.number(),
+        deletedKids: v.array(v.string()),
+        hasMore: v.boolean(),
+      }),
+      args: {
+        batchSize: v.optional(v.number()),
+      },
+      handler: async (ctx, args) => {
+        const batchSize = normalizeSigningKeyPruneBatchSize(args.batchSize)
+        const now = Date.now()
+        const rows = await collectAuthRows(ctx, schema, metadata, { model: 'jwks' }, 10_000)
+        const prunable = rows
+          .filter((row) => isPrunableSigningKeyExpiry(row.expiresAt, now))
+          .sort((left, right) => Number(left.expiresAt) - Number(right.expiresAt))
+        const batch = prunable.slice(0, batchSize)
+        for (const row of batch) {
+          await ctx.db.delete('jwks' as never, row._id as never)
+        }
+        return {
+          deleted: batch.length,
+          deletedKids: batch.map((row) => describeKeyIdForLog(row.id)),
+          hasMore: prunable.length > batch.length,
         }
       },
     }),

@@ -59,7 +59,7 @@ const userProjection = createUserProjectionTriggers<BetterAuthUserProjectionSour
 })
 
 // Better Auth owns identity; this table is a rebuildable display projection.
-export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.betterAuth, {
+export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
   triggers: {
     user: {
@@ -75,19 +75,14 @@ export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.bet
         userProjection.user.onDelete(ctx, user as BetterAuthUserProjectionSource),
     },
   },
-  defineSessionClaims: ({ user }) => ({
-    authId: user.id,
-    email: user.email,
-    emailVerified: user.emailVerified,
-    image: user.image ?? undefined,
-    name: user.name,
-  }),
+  // name, email, emailVerified, and image are default claims; add the auth ID.
+  defineSessionClaims: ({ user }) => ({ authId: user.id }),
 })
 
-export const { authComponent, createAuth } = betterConvexAuth
+export const { createAuth } = auth
 
 // Export trigger handlers for the component
-export const { onCreate, onUpdate, onDelete } = betterConvexAuth.triggerFunctions()
+export const { onCreate, onUpdate, onDelete } = auth.triggerFunctions()
 
 /** Reconcile one bounded page of the display-only user projection. */
 export const rebuildUserProjectionBatch = internalMutation({
@@ -108,7 +103,8 @@ export const rebuildUserProjectionBatch = internalMutation({
 })
 
 // Pre-traffic operator ceremony: provision/rotate the one official JWT key graph.
-export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()
+// Schedule pruneSigningKeys to delete retired keys after the verification grace.
+export const { pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()
 
 // ============================================
 // GET PERMISSION CONTEXT
@@ -124,13 +120,13 @@ export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()
 export const getPermissionContext = query({
   args: {},
   handler: async (ctx): Promise<{ role: string; userId: string } | null> => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
+    const user = await auth.getUser(ctx)
+    if (!user) {
       return null
     }
 
     // `role` is a static placeholder — the playground has no org plugin. In a
     // real app, read the role from Better Auth (member row / hasPermission).
-    return { role: 'member', userId: identity.subject }
+    return { role: 'member', userId: user.id }
   },
 })

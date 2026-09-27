@@ -117,23 +117,101 @@ export function normalizeSigningKeyCandidate(candidate: SigningKeyCandidate): Si
   }
 }
 
+const MAX_LOGGED_KEY_ID_LENGTH = 64
+const MAX_WARNED_KEYS = 128
+const warnedRetiredKeys = new Set<string>()
+
+/** Operator logs carry the key id only, never key material. */
+export function describeKeyIdForLog(id: unknown): string {
+  if (typeof id !== 'string' || id.length === 0) return '<invalid>'
+  const printable = id.replace(/\p{C}/gu, '?')
+  return printable.length > MAX_LOGGED_KEY_ID_LENGTH
+    ? `${printable.slice(0, MAX_LOGGED_KEY_ID_LENGTH)}...`
+    : printable
+}
+
+function errorCode(error: unknown, fallback: string): string {
+  return error instanceof Error && /^AUTH_[A-Z_]+$/u.test(error.message) ? error.message : fallback
+}
+
 /**
- * The JWT plugin reads these rows for both signing and public serialization.
- * Keep the encrypted private field for signing, but replace the public JSON
- * with the exact public projection before Better Auth spreads it into `/jwks`.
+ * `current` keys may sign (no expiry, or expiry in the future). A row whose
+ * expiry cannot be read is never treated as current: it is neither published
+ * nor used for signing.
  */
-export function sanitizeStoredJwk(jwk: Jwk): Jwk {
-  return { ...jwk, publicKey: canonicalizePublicRsaJwk(jwk.publicKey) }
+function storedJwkState(expiresAt: unknown, now: number): 'current' | 'retired' | undefined {
+  if (expiresAt === null || expiresAt === undefined) return 'current'
+  if (!(expiresAt instanceof Date) || !Number.isFinite(expiresAt.getTime())) return undefined
+  return expiresAt.getTime() > now ? 'current' : 'retired'
+}
+
+function assertStoredKeyId(id: unknown): asserts id is string {
+  if (typeof id !== 'string') throw new Error('AUTH_JWKS_KEY_ID_INVALID')
+  assertBoundedString(id, MAX_KEY_ID_LENGTH, 'AUTH_JWKS_KEY_ID_INVALID')
+  if (/\p{C}/u.test(id)) throw new Error('AUTH_JWKS_KEY_ID_INVALID')
+}
+
+function validateStoredJwk(row: Jwk, state: 'current' | 'retired' | undefined): Jwk {
+  assertStoredKeyId(row.id)
+  if (row.alg !== 'RS256' || (row.crv !== null && row.crv !== undefined)) {
+    throw new Error('AUTH_JWKS_ALGORITHM_INVALID')
+  }
+  if (!(row.createdAt instanceof Date) || !Number.isFinite(row.createdAt.getTime())) {
+    throw new TypeError('AUTH_JWKS_CREATED_AT_INVALID')
+  }
+  if (state === undefined) throw new Error('AUTH_JWKS_EXPIRY_INVALID')
+  if (typeof row.publicKey !== 'string') throw new Error('AUTH_JWKS_PUBLIC_KEY_INVALID')
+  // The JWT plugin reads these rows for both signing and public serialization.
+  // Keep the encrypted private field for signing, but replace the public JSON
+  // with the exact public projection before Better Auth spreads it into `/jwks`.
+  return { ...row, publicKey: canonicalizePublicRsaJwk(row.publicKey) }
+}
+
+export function warnRetiredSigningKeySkipped(id: unknown, code: string): void {
+  const kid = describeKeyIdForLog(id)
+  const key = `${kid}:${code}`
+  if (warnedRetiredKeys.has(key)) return
+  if (warnedRetiredKeys.size >= MAX_WARNED_KEYS) warnedRetiredKeys.clear()
+  warnedRetiredKeys.add(key)
+  console.warn(`[better-convex] AUTH_JWKS_RETIRED_KEY_SKIPPED kid=${kid} reason=${code}`)
+}
+
+/**
+ * Validate stored signing-key rows once for every reader. A malformed retired
+ * row is skipped with an id-only warning so it cannot take down `/jwks` or
+ * token signing. A malformed current key fails closed: it is never signed with
+ * or published, and the caller receives `AUTH_JWKS_CURRENT_KEY_INVALID`.
+ */
+export function selectUsableStoredJwks(
+  rows: readonly Jwk[],
+  options: { now?: number; requireEncryptedCurrentKey?: boolean } = {},
+): Jwk[] {
+  const now = options.now ?? Date.now()
+  const usable: Jwk[] = []
+  for (const row of rows) {
+    const state = storedJwkState(row?.expiresAt, now)
+    try {
+      const key = validateStoredJwk(row, state)
+      if (state === 'current' && options.requireEncryptedCurrentKey) {
+        if (typeof key.privateKey !== 'string') {
+          throw new TypeError('AUTH_JWKS_PRIVATE_KEY_NOT_ENCRYPTED')
+        }
+        assertVersionedEncryptedPrivateJwk(key.privateKey)
+      }
+      usable.push(key)
+    } catch (error) {
+      const code = errorCode(error, 'AUTH_JWKS_ROW_INVALID')
+      if (state === 'current') throw reportCurrentSigningKeyInvalid(row?.id, code)
+      warnRetiredSigningKeySkipped(row?.id, code)
+    }
+  }
+  return usable
 }
 
 export function createPublicJwksResponse(rows: Jwk[], method: string, now = Date.now()): Response {
-  const live = rows.filter((row) => {
-    if (row.expiresAt === null || row.expiresAt === undefined) return true
-    if (!(row.expiresAt instanceof Date) || !Number.isFinite(row.expiresAt.getTime())) {
-      throw new TypeError('AUTH_JWKS_EXPIRY_INVALID')
-    }
-    return row.expiresAt.getTime() + JWKS_GRACE_PERIOD_SECONDS * 1_000 > now
-  })
+  const live = selectUsableStoredJwks(rows, { now }).filter(
+    (row) => !row.expiresAt || row.expiresAt.getTime() + JWKS_GRACE_PERIOD_SECONDS * 1_000 > now,
+  )
   if (live.length === 0) {
     return new Response(
       method === 'HEAD'
@@ -149,22 +227,11 @@ export function createPublicJwksResponse(rows: Jwk[], method: string, now = Date
     )
   }
 
-  const keys = live.map((stored) => {
-    const row = sanitizeStoredJwk(stored)
-    assertBoundedString(row.id, MAX_KEY_ID_LENGTH, 'AUTH_JWKS_PUBLIC_KEY_INVALID')
-    if (
-      /\p{C}/u.test(row.id) ||
-      row.alg !== 'RS256' ||
-      (row.crv !== null && row.crv !== undefined)
-    ) {
-      throw new Error('AUTH_JWKS_PUBLIC_KEY_INVALID')
-    }
-    return {
-      alg: 'RS256' as const,
-      ...(JSON.parse(row.publicKey) as Record<string, unknown>),
-      kid: row.id,
-    }
-  })
+  const keys = live.map((row) => ({
+    alg: 'RS256' as const,
+    ...(JSON.parse(row.publicKey) as Record<string, unknown>),
+    kid: row.id,
+  }))
   const headers = {
     'Cache-Control': JWKS_CACHE_CONTROL,
     'Content-Type': 'application/json',
@@ -172,6 +239,71 @@ export function createPublicJwksResponse(rows: Jwk[], method: string, now = Date
   return method === 'HEAD'
     ? new Response(null, { headers, status: 200 })
     : Response.json({ keys }, { headers })
+}
+
+/** Log the stable failure code of a JWKS read without echoing row data. */
+export function reportJwksFailure(error: unknown): string {
+  const code = errorCode(error, 'AUTH_JWKS_READ_FAILED')
+  console.error(`[better-convex] AUTH_JWKS_UNAVAILABLE reason=${code}`)
+  return code
+}
+
+export const JWKS_PRUNE_DEFAULT_BATCH_SIZE = 64
+export const JWKS_PRUNE_MAX_BATCH_SIZE = 256
+
+export function normalizeSigningKeyPruneBatchSize(value: number | undefined): number {
+  if (value === undefined) return JWKS_PRUNE_DEFAULT_BATCH_SIZE
+  if (!Number.isSafeInteger(value) || value < 1 || value > JWKS_PRUNE_MAX_BATCH_SIZE) {
+    throw new RangeError('AUTH_JWKS_PRUNE_BATCH_SIZE_INVALID')
+  }
+  return value
+}
+
+/**
+ * A stored key may be deleted only after its retirement plus the full
+ * verification overlap has passed. Current keys (`expiresAt: null`) and rows
+ * with an unreadable expiry are never prunable.
+ */
+export function isPrunableSigningKeyExpiry(expiresAt: unknown, now: number): expiresAt is number {
+  return (
+    typeof expiresAt === 'number' &&
+    Number.isFinite(expiresAt) &&
+    expiresAt + JWKS_GRACE_PERIOD_SECONDS * 1_000 <= now
+  )
+}
+
+/**
+ * Storage-level check for a current `jwks` document (timestamps are epoch
+ * milliseconds). It applies the same rules as the signer's reader
+ * (`selectUsableStoredJwks` with `requireEncryptedCurrentKey`), so a key it
+ * accepts can actually sign.
+ */
+export function storedSigningKeyDocumentIssue(row: Record<string, unknown>): string | undefined {
+  try {
+    assertStoredKeyId(row.id)
+    if (row.alg !== 'RS256' || (row.crv !== null && row.crv !== undefined)) {
+      throw new Error('AUTH_JWKS_ALGORITHM_INVALID')
+    }
+    if (typeof row.createdAt !== 'number' || !Number.isSafeInteger(row.createdAt)) {
+      throw new TypeError('AUTH_JWKS_CREATED_AT_INVALID')
+    }
+    if (typeof row.publicKey !== 'string') throw new Error('AUTH_JWKS_PUBLIC_KEY_INVALID')
+    canonicalizePublicRsaJwk(row.publicKey)
+    if (typeof row.privateKey !== 'string') {
+      throw new TypeError('AUTH_JWKS_PRIVATE_KEY_NOT_ENCRYPTED')
+    }
+    assertVersionedEncryptedPrivateJwk(row.privateKey)
+    return undefined
+  } catch (error) {
+    return errorCode(error, 'AUTH_JWKS_ROW_INVALID')
+  }
+}
+
+export function reportCurrentSigningKeyInvalid(id: unknown, code: string): Error {
+  console.error(
+    `[better-convex] AUTH_JWKS_CURRENT_KEY_INVALID kid=${describeKeyIdForLog(id)} reason=${code}`,
+  )
+  return new Error('AUTH_JWKS_CURRENT_KEY_INVALID')
 }
 
 export const rejectImplicitSigningKeyCreation: CreateJwkAdapter = async () => {

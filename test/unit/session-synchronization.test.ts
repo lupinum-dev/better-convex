@@ -16,13 +16,14 @@ describe('canonical session synchronization', () => {
     vi.useRealTimers()
   })
 
-  function fixture(timeoutMs = 1_000) {
+  function fixture(timeoutMs = 1_000, sessionSignalDelayMs: number | null = 10) {
     const refetchCanonicalSession = vi.fn(async () => {})
     const failClosed = vi.fn()
     const synchronization = createSessionSynchronization({
       timeoutMs,
       refetchCanonicalSession,
       failClosed,
+      sessionSignalDelayMs,
     })
     return { synchronization, refetchCanonicalSession, failClosed }
   }
@@ -31,9 +32,11 @@ describe('canonical session synchronization', () => {
     const { synchronization, refetchCanonicalSession } = fixture()
     synchronization.observeProvider(session('session-a', 3))
     let settled = false
-    const waiting = synchronization.reconcile({ revision: 2 }).then(() => {
-      settled = true
-    })
+    const waiting = synchronization
+      .reconcile({ revision: 2, sessionSignals: 0, sessionRequests: 0 })
+      .then(() => {
+        settled = true
+      })
 
     await Promise.resolve()
     synchronization.observeAccepted(session('session-a', 2), false)
@@ -52,7 +55,11 @@ describe('canonical session synchronization', () => {
   it('treats the signed-out null session as an exact accepted generation', async () => {
     const { synchronization } = fixture()
     synchronization.observeProvider(session(null, 4))
-    const waiting = synchronization.reconcile({ revision: 3 })
+    const waiting = synchronization.reconcile({
+      revision: 3,
+      sessionSignals: 0,
+      sessionRequests: 0,
+    })
     await Promise.resolve()
     synchronization.observeAccepted(session(null, 4), false)
     await expect(waiting).resolves.toBeUndefined()
@@ -62,9 +69,11 @@ describe('canonical session synchronization', () => {
     const { synchronization, refetchCanonicalSession } = fixture()
     synchronization.observeProvider(session('session-bob', 5))
     let settled = false
-    const waiting = synchronization.reconcile({ revision: 4 }).then(() => {
-      settled = true
-    })
+    const waiting = synchronization
+      .reconcile({ revision: 4, sessionSignals: 0, sessionRequests: 0 })
+      .then(() => {
+        settled = true
+      })
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     expect(refetchCanonicalSession).toHaveBeenCalledTimes(1)
 
@@ -84,12 +93,16 @@ describe('canonical session synchronization', () => {
     synchronization.observeProvider(session('session-bob', 7))
     let bobSettled = false
     let carolSettled = false
-    const bob = synchronization.reconcile({ revision: 6 }).then(() => {
-      bobSettled = true
-    })
-    const carol = synchronization.reconcile({ revision: 6 }).then(() => {
-      carolSettled = true
-    })
+    const bob = synchronization
+      .reconcile({ revision: 6, sessionSignals: 0, sessionRequests: 0 })
+      .then(() => {
+        bobSettled = true
+      })
+    const carol = synchronization
+      .reconcile({ revision: 6, sessionSignals: 0, sessionRequests: 0 })
+      .then(() => {
+        carolSettled = true
+      })
     await Promise.resolve()
 
     synchronization.observeProvider(session('session-carol', 8))
@@ -125,10 +138,13 @@ describe('canonical session synchronization', () => {
         throw rawFailure
       }),
       failClosed,
+      sessionSignalDelayMs: 10,
     })
     synchronization.observeProvider(session(null, 0))
 
-    const rejection = await synchronization.reconcile({ revision: 0 }).catch((error) => error)
+    const rejection = await synchronization
+      .reconcile({ revision: 0, sessionSignals: 0, sessionRequests: 0 })
+      .catch((error) => error)
     expect(rejection).toMatchObject({
       code: 'SESSION_RECONCILIATION_REFRESH_FAILED',
       kind: 'authentication',
@@ -140,7 +156,11 @@ describe('canonical session synchronization', () => {
   it('fails closed when Convex rejects the exact provider generation', async () => {
     const { synchronization, failClosed } = fixture()
     synchronization.observeProvider(session('session-a', 1))
-    const waiting = synchronization.reconcile({ revision: 0 })
+    const waiting = synchronization.reconcile({
+      revision: 0,
+      sessionSignals: 0,
+      sessionRequests: 0,
+    })
     await Promise.resolve()
     synchronization.observeAccepted(session('session-a', 1), true)
 
@@ -154,7 +174,11 @@ describe('canonical session synchronization', () => {
     vi.useFakeTimers()
     const { synchronization, failClosed } = fixture(50)
     synchronization.observeProvider(session('session-a', 1))
-    const waiting = synchronization.reconcile({ revision: 0 })
+    const waiting = synchronization.reconcile({
+      revision: 0,
+      sessionSignals: 0,
+      sessionRequests: 0,
+    })
     const rejection = expect(waiting).rejects.toMatchObject({
       code: 'SESSION_RECONCILIATION_TIMEOUT',
       kind: 'authentication',
@@ -168,7 +192,11 @@ describe('canonical session synchronization', () => {
   it('rejects active reconciliation when disposed and stays idempotent', async () => {
     const { synchronization, failClosed } = fixture()
     synchronization.observeProvider(session('session-a', 1))
-    const waiting = synchronization.reconcile({ revision: 0 })
+    const waiting = synchronization.reconcile({
+      revision: 0,
+      sessionSignals: 0,
+      sessionRequests: 0,
+    })
     await Promise.resolve()
 
     synchronization.dispose()
@@ -176,5 +204,118 @@ describe('canonical session synchronization', () => {
 
     await expect(waiting).rejects.toMatchObject({ code: 'AUTH_CLIENT_DISPOSED' })
     expect(failClosed).not.toHaveBeenCalled()
+  })
+
+  describe('settle', () => {
+    it('resolves a call without a session change without refetching or failing closed', async () => {
+      const { synchronization, refetchCanonicalSession, failClosed } = fixture()
+      synchronization.observeProvider(session('session-a', 1))
+      const checkpoint = synchronization.checkpoint()
+
+      await expect(synchronization.settle(checkpoint)).resolves.toBeUndefined()
+      expect(refetchCanonicalSession).not.toHaveBeenCalled()
+      expect(failClosed).not.toHaveBeenCalled()
+    })
+
+    it('reconciles after Better Auth fires its session signal', async () => {
+      const { synchronization, refetchCanonicalSession } = fixture()
+      synchronization.observeProvider(session('session-a', 1))
+      const checkpoint = synchronization.checkpoint()
+      synchronization.observeSessionSignal()
+
+      const waiting = synchronization.settle(checkpoint)
+      await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
+      synchronization.observeAccepted(session('session-a', 1), false)
+      await expect(waiting).resolves.toBeUndefined()
+    })
+
+    it('observes a signal Better Auth defers until after the call settled', async () => {
+      const { synchronization, refetchCanonicalSession } = fixture()
+      synchronization.observeProvider(session(null, 1))
+      const checkpoint = synchronization.checkpoint()
+      // Better Auth schedules the flip before the action's Promise settles.
+      setTimeout(() => synchronization.observeSessionSignal(), 10)
+
+      const waiting = synchronization.settle(checkpoint)
+      await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
+      synchronization.observeAccepted(session(null, 1), false)
+      await waiting
+    })
+
+    it.each(['/reset-password', '/email-otp/change-email', '/sign-in/social', '/unknown/plugin'])(
+      'reconciles after a %s request even without a session signal',
+      async (routePath) => {
+        const { synchronization, refetchCanonicalSession } = fixture()
+        synchronization.observeProvider(session('session-a', 1))
+        const checkpoint = synchronization.checkpoint()
+        synchronization.observeRequest(`${routePath}?callbackURL=%2F`)
+
+        const waiting = synchronization.settle(checkpoint)
+        await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
+        synchronization.observeAccepted(session('session-a', 1), false)
+        await waiting
+      },
+    )
+
+    it('does not reconcile after known read-only requests', async () => {
+      const { synchronization, refetchCanonicalSession } = fixture()
+      synchronization.observeProvider(session('session-a', 1))
+      const checkpoint = synchronization.checkpoint()
+      synchronization.observeRequest('/get-session?disableCookieCache=true')
+      synchronization.observeRequest('/organization/list')
+
+      await expect(synchronization.settle(checkpoint)).resolves.toBeUndefined()
+      expect(refetchCanonicalSession).not.toHaveBeenCalled()
+    })
+
+    it('reconciles when the provider revision moved without a signal', async () => {
+      const { synchronization, refetchCanonicalSession } = fixture()
+      synchronization.observeProvider(session('session-a', 1))
+      const checkpoint = synchronization.checkpoint()
+      synchronization.observeProvider(session('session-b', 2))
+
+      const waiting = synchronization.settle(checkpoint)
+      await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
+      synchronization.observeAccepted(session('session-b', 2), false)
+      await waiting
+    })
+
+    it('still fails closed when a signalled change cannot be reconciled', async () => {
+      const failClosed = vi.fn()
+      const synchronization = createSessionSynchronization({
+        timeoutMs: 1_000,
+        refetchCanonicalSession: vi.fn(async () => {
+          throw new Error('refresh failed')
+        }),
+        failClosed,
+        sessionSignalDelayMs: 0,
+      })
+      synchronization.observeProvider(session('session-a', 1))
+      const checkpoint = synchronization.checkpoint()
+      synchronization.observeSessionSignal()
+
+      await expect(synchronization.settle(checkpoint)).rejects.toMatchObject({
+        code: 'SESSION_RECONCILIATION_REFRESH_FAILED',
+      })
+      expect(failClosed).toHaveBeenCalledOnce()
+    })
+
+    it('reconciles every call when no session signal is observable', async () => {
+      const { synchronization, refetchCanonicalSession } = fixture(1_000, null)
+      synchronization.observeProvider(session('session-a', 1))
+      const waiting = synchronization.settle(synchronization.checkpoint())
+      await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
+      synchronization.observeAccepted(session('session-a', 1), false)
+      await waiting
+    })
+
+    it('ignores signals after disposal and rejects a pending settle', async () => {
+      const { synchronization } = fixture()
+      synchronization.observeProvider(session('session-a', 1))
+      const waiting = synchronization.settle(synchronization.checkpoint())
+      synchronization.dispose()
+      synchronization.observeSessionSignal()
+      await expect(waiting).rejects.toMatchObject({ code: 'AUTH_CLIENT_DISPOSED' })
+    })
   })
 })
