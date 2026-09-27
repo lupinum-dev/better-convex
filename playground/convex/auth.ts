@@ -75,8 +75,8 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
         userProjection.user.onDelete(ctx, user as BetterAuthUserProjectionSource),
     },
   },
-  // name, email, emailVerified, and image are default claims; add the auth ID.
-  defineSessionClaims: ({ user }) => ({ authId: user.id }),
+  // Profile claims are opt-in. The playground shows the name and email from the token.
+  defineSessionClaims: ({ user }) => ({ authId: user.id, name: user.name, email: user.email }),
 })
 
 export const { createAuth } = auth

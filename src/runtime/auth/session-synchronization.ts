@@ -40,23 +40,33 @@ export function readBetterAuthSessionSignal(client: object): BetterAuthSessionSi
 }
 
 /**
- * Better Auth routes known not to change the session or its signed claims.
- * `$sessionSignal` alone is not a complete change signal: several supported
- * endpoints (`/reset-password`, `/email-otp/*`, `/sign-in/social` with an ID
- * token, anything sent with `disableSignal`) rotate, revoke or re-claim the
- * session without flipping it. Every request outside this list is therefore
- * treated as a potential session change; the list only saves reconciliation
- * work for reads and may be incomplete without affecting correctness.
+ * Better Auth routes known not to change the session, its cookies, its active
+ * organization/team, or its signed claims. `$sessionSignal` alone is not a
+ * complete change signal: several supported endpoints (`/reset-password`,
+ * `/email-otp/*`, `/sign-in/social` with an ID token, anything sent with
+ * `disableSignal`) rotate, revoke or re-claim the session without flipping it.
+ * Every request outside this list is therefore treated as a potential session
+ * change; the list only saves reconciliation work for reads and may be
+ * incomplete without affecting correctness.
+ *
+ * Audited against Better Auth 1.7.6: none of these handlers or their plugin
+ * hooks write the session record or cookies. The only writes they share come
+ * from Better Auth's session middleware: the sliding expiry refresh keeps the
+ * same session token and Convex claims, and an already-expired session's
+ * cookies are cleared exactly as if no call had been made. Deliberately
+ * excluded: `/organization/get-full-organization` and
+ * `/organization/get-organization` clear the active organization for a
+ * non-member before failing, `/account-info` can rotate provider tokens and
+ * the account cookie, and plugin routes not shipped with the pinned version
+ * (passkey) cannot be audited.
  */
 export const READ_ONLY_AUTH_ROUTES: ReadonlySet<string> = new Set([
   '/get-session',
   '/convex/token',
   '/list-sessions',
   '/list-accounts',
-  '/account-info',
   '/ok',
   '/organization/list',
-  '/organization/get-full-organization',
   '/organization/list-members',
   '/organization/list-invitations',
   '/organization/list-user-invitations',
@@ -68,7 +78,6 @@ export const READ_ONLY_AUTH_ROUTES: ReadonlySet<string> = new Set([
   '/organization/list-teams',
   '/organization/list-team-members',
   '/organization/list-user-teams',
-  '/passkey/list-user-passkeys',
 ])
 
 /** Route path of a Better Auth client request, without query or fragment. */

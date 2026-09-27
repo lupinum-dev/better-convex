@@ -125,6 +125,8 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
         userProjection.user.onDelete(ctx, user as BetterAuthUserProjectionSource),
     },
   },
+  // The invitation page shows and checks the signed-in email from the token.
+  defineSessionClaims: ({ user }) => ({ email: user.email, emailVerified: user.emailVerified }),
   email: async (_ctx, message) => {
     const siteUrl = requireAuthOrigin('SITE_URL')
     switch (message.type) {

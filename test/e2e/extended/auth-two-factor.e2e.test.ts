@@ -604,21 +604,11 @@ describe('Better Auth two-factor final-session security', () => {
     const claimsB = decodeJwtPart(tokenB, 1)
     const headerA = decodeJwtPart(tokenA, 0)
     const headerB = decodeJwtPart(tokenB, 0)
-    // Registered claims, the session binding, and the bounded default profile
-    // claims (image is omitted because these users have none). Nothing else,
-    // in particular no two-factor state, may reach the Convex session JWT.
-    const approvedClaims = [
-      'aud',
-      'email',
-      'emailVerified',
-      'exp',
-      'iat',
-      'iss',
-      'name',
-      'sid',
-      'sub',
-      'token_use',
-    ]
+    // Only registered claims and the session binding: profile claims are
+    // opt-in through defineSessionClaims, which this fixture does not use.
+    // Nothing else, in particular no two-factor state, may reach the Convex
+    // session JWT.
+    const approvedClaims = ['aud', 'exp', 'iat', 'iss', 'sid', 'sub', 'token_use']
     expect(Object.keys(claimsA).sort()).toEqual(approvedClaims)
     expect(Object.keys(claimsB).sort()).toEqual(approvedClaims)
     expect(headerA).toMatchObject({ alg: 'RS256' })

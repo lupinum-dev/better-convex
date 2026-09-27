@@ -242,20 +242,26 @@ describe('canonical session synchronization', () => {
       await waiting
     })
 
-    it.each(['/reset-password', '/email-otp/change-email', '/sign-in/social', '/unknown/plugin'])(
-      'reconciles after a %s request even without a session signal',
-      async (routePath) => {
-        const { synchronization, refetchCanonicalSession } = fixture()
-        synchronization.observeProvider(session('session-a', 1))
-        const checkpoint = synchronization.checkpoint()
-        synchronization.observeRequest(`${routePath}?callbackURL=%2F`)
+    it.each([
+      '/reset-password',
+      '/email-otp/change-email',
+      '/sign-in/social',
+      '/organization/get-full-organization',
+      '/organization/get-organization',
+      '/account-info',
+      '/passkey/list-user-passkeys',
+      '/unknown/plugin',
+    ])('reconciles after a %s request even without a session signal', async (routePath) => {
+      const { synchronization, refetchCanonicalSession } = fixture()
+      synchronization.observeProvider(session('session-a', 1))
+      const checkpoint = synchronization.checkpoint()
+      synchronization.observeRequest(`${routePath}?callbackURL=%2F`)
 
-        const waiting = synchronization.settle(checkpoint)
-        await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
-        synchronization.observeAccepted(session('session-a', 1), false)
-        await waiting
-      },
-    )
+      const waiting = synchronization.settle(checkpoint)
+      await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
+      synchronization.observeAccepted(session('session-a', 1), false)
+      await waiting
+    })
 
     it('does not reconcile after known read-only requests', async () => {
       const { synchronization, refetchCanonicalSession } = fixture()

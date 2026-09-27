@@ -31,7 +31,6 @@ import {
   type ResolvedMcpProfile,
 } from './mcp-profile'
 import { createOAuthConnections, type BetterConvexOAuthConnections } from './oauth-connections'
-import type { OAuthLiveAccess } from './oauth-live-access'
 import { createOAuthOperator, type BetterConvexOAuthOperator } from './oauth-operator'
 import {
   createBetterAuthMcpAccessVerifier,
@@ -265,9 +264,12 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
   readonly session?: BetterConvexSessionPolicy
   readonly socialProviders?: SocialProviders | (() => SocialProviders)
   /**
-   * Extend or override the default session claims (`name`, `email`,
-   * `emailVerified`, `image`). Registered JWT claims, `sid`, and `token_use`
-   * stay library-owned, and the serialized claims are bounded.
+   * Add claims to the Convex session token. By default the token carries only
+   * the library claims (`sub`, `sid`, `token_use` and the registered JWT
+   * claims); profile fields such as `name`, `email`, `emailVerified` or
+   * `image` are opt-in here. Prefer `auth.getUser(ctx)` in Convex functions:
+   * claims are a snapshot from token issue time. Library claims cannot be
+   * overridden, and the serialized claims are bounded.
    */
   readonly defineSessionClaims?: SessionClaimsDefinition
 }
@@ -315,11 +317,6 @@ export interface BetterConvexAuth<
   readonly getAuth: (
     ctx: WritableAuthCtx<DataModel>,
   ) => Promise<{ readonly auth: AuthInstance; readonly headers: Headers }>
-  /** Recheck a verified MCP/OAuth principal against live grant state (one component query). */
-  readonly validateOAuthAccess: (
-    ctx: AuthCtx<DataModel>,
-    access: OAuthLiveAccess,
-  ) => Promise<boolean>
   /**
    * The configured MCP OAuth profile. Every accessor throws
    * `AUTH_OAUTH_MCP_PROFILE_REQUIRED` without `oauth.mcp`.
@@ -689,29 +686,6 @@ function assertVersionedSecrets(raw: string | undefined): void {
 /** Serialized size bound for all non-registered session claims. */
 export const MAX_SESSION_CLAIMS_BYTES = 4096
 const LIBRARY_OWNED_SESSION_CLAIMS = new Set(['sid', 'token_use'])
-const MAX_DEFAULT_NAME_LENGTH = 256
-const MAX_DEFAULT_EMAIL_LENGTH = 320
-const MAX_DEFAULT_IMAGE_LENGTH = 2048
-
-function defaultSessionClaims(user: Record<string, unknown>): Record<string, unknown> {
-  const claims: Record<string, unknown> = {}
-  if (typeof user.name === 'string' && user.name.length <= MAX_DEFAULT_NAME_LENGTH) {
-    claims.name = user.name
-  }
-  if (typeof user.email === 'string' && user.email.length <= MAX_DEFAULT_EMAIL_LENGTH) {
-    claims.email = user.email
-  }
-  if (typeof user.emailVerified === 'boolean') claims.emailVerified = user.emailVerified
-  // Only a bounded http(s) URL; inline data: images would bloat every token.
-  if (
-    typeof user.image === 'string' &&
-    user.image.length <= MAX_DEFAULT_IMAGE_LENGTH &&
-    /^https?:\/\//iu.test(user.image)
-  ) {
-    claims.image = user.image
-  }
-  return claims
-}
 
 function createSessionClaims(define: SessionClaimsDefinition | undefined): SessionClaimsDefinition {
   return async (input) => {
@@ -724,7 +698,7 @@ function createSessionClaims(define: SessionClaimsDefinition | undefined): Sessi
         throw new Error(`AUTH_SESSION_JWT_RESERVED_CLAIM:${claim}`)
       }
     }
-    const claims = { ...defaultSessionClaims(input.user), ...custom }
+    const claims = { ...custom }
     const serialized = JSON.stringify(claims)
     if (new TextEncoder().encode(serialized).byteLength > MAX_SESSION_CLAIMS_BYTES) {
       throw new Error('AUTH_SESSION_JWT_CLAIMS_TOO_LARGE')
@@ -1145,7 +1119,6 @@ export function createBetterConvexAuthOwned<
     getUser: authComponent.getUser,
     requireUser: authComponent.requireUser,
     getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
-    validateOAuthAccess: authComponent.validateOAuthAccess,
     mcp,
     createMcpAccessVerifier: (
       ctx: AuthCtx<DataModel>,

@@ -20,6 +20,7 @@ import {
  */
 function createHarness() {
   let serverSessionToken: string | null = 'session:alice'
+  let activeOrganizationId: string | null = 'org-1'
   const fetchedPaths: string[] = []
   vi.stubGlobal(
     'fetch',
@@ -28,7 +29,10 @@ function createHarness() {
       const path = url.pathname.replace('/api/auth', '')
       fetchedPaths.push(path)
       const session = serverSessionToken
-        ? { session: { token: serverSessionToken }, user: { id: `user:${serverSessionToken}` } }
+        ? {
+            session: { token: serverSessionToken, activeOrganizationId },
+            user: { id: `user:${serverSessionToken}` },
+          }
         : null
       switch (path) {
         case '/get-session':
@@ -56,8 +60,16 @@ function createHarness() {
           return Response.json({ status: true })
         case '/organization/list':
           return Response.json([{ id: 'org-1' }])
-        case '/organization/get-full-organization':
+        case '/organization/list-members':
           return Response.json({ message: 'boom' }, { status: 500 })
+        case '/organization/get-full-organization':
+          // Better Auth 1.7.6 clears a non-member's active organization on the
+          // session before it answers 403 (plugins/organization/routes/crud-org).
+          activeOrganizationId = null
+          return Response.json(
+            { code: 'USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION' },
+            { status: 403 },
+          )
         default:
           return Response.json({ message: 'not found' }, { status: 404 })
       }
@@ -151,13 +163,26 @@ describe('integrated client against pinned Better Auth 1.7.6', () => {
   it('does not fail closed when a read-only call fails', async () => {
     const harness = createHarness()
 
-    const result = await harness.integrated.organization.getFullOrganization()
+    const result = await harness.integrated.organization.listMembers()
     expect(result.error).toMatchObject({ status: 500 })
     await expect(
-      harness.integrated.organization.getFullOrganization({ fetchOptions: { throw: true } }),
+      harness.integrated.organization.listMembers({ fetchOptions: { throw: true } }),
     ).rejects.toBeDefined()
 
     expect(harness.refetchCanonicalSession).not.toHaveBeenCalled()
+    expect(harness.failClosed).not.toHaveBeenCalled()
+    harness.dispose()
+  })
+
+  it('reconciles a get-full-organization membership failure that cleared the active organization', async () => {
+    const harness = createHarness()
+
+    const result = await harness.integrated.organization.getFullOrganization({
+      query: { organizationId: 'org-foreign' },
+    })
+    expect(result.error).toMatchObject({ status: 403 })
+
+    expect(harness.refetchCanonicalSession).toHaveBeenCalledTimes(1)
     expect(harness.failClosed).not.toHaveBeenCalled()
     harness.dispose()
   })

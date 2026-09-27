@@ -254,7 +254,6 @@ describe('createBetterConvexAuth', () => {
       'requireUser',
       'sessionHttpAction',
       'triggerFunctions',
-      'validateOAuthAccess',
     ])
   })
 
@@ -854,11 +853,10 @@ describe('createBetterConvexAuth', () => {
     expect(loggedText()).toContain('AUTH_OWNED_INVARIANT_VIOLATED')
   })
 
-  it('includes bounded profile claims in the session token by default', async () => {
+  it('adds no profile claims to the session token by default', async () => {
     await createBetterConvexAuth(component()).createAuth(queryContext() as never)
-    const define = lastSessionClaims()
     await expect(
-      define({
+      lastSessionClaims()({
         session: { id: 'session' },
         user: {
           ...emailUserRow,
@@ -866,37 +864,16 @@ describe('createBetterConvexAuth', () => {
           image: 'https://cdn.example.test/avatar.png',
         },
       }),
-    ).resolves.toEqual({
-      email: 'person@example.test',
-      emailVerified: true,
-      image: 'https://cdn.example.test/avatar.png',
-      name: 'Person',
-    })
-    // Inline or oversized values are omitted instead of bloating every token.
-    await expect(
-      define({
-        session: { id: 'session' },
-        user: {
-          ...emailUserRow,
-          image: `data:image/png;base64,${'A'.repeat(64)}`,
-          name: 'N'.repeat(257),
-        },
-      }),
-    ).resolves.toEqual({ email: 'person@example.test', emailVerified: false })
+    ).resolves.toEqual({})
   })
 
-  it('lets defineSessionClaims extend and override defaults', async () => {
+  it('adds exactly the claims defineSessionClaims returns', async () => {
     await createBetterConvexAuth(component(), {
-      defineSessionClaims: ({ user }) => ({ name: `~${user.name}`, role: 'member' }),
+      defineSessionClaims: ({ user }) => ({ name: user.name, role: 'member' }),
     }).createAuth(queryContext() as never)
     await expect(
       lastSessionClaims()({ session: { id: 'session' }, user: emailUserRow }),
-    ).resolves.toEqual({
-      email: 'person@example.test',
-      emailVerified: false,
-      name: '~Person',
-      role: 'member',
-    })
+    ).resolves.toEqual({ name: 'Person', role: 'member' })
   })
 
   it.each(['sid', 'token_use'])(
