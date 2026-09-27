@@ -48,9 +48,10 @@ jobs:
           commitMode: github-api
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # Offer a release whenever no Version packages PR is open (empty changesets open none).
       # A manual run re-offers a rejected or failed release even while changesets are pending.
       - id: check
-        if: steps.changesets.outputs.hasChangesets == 'false' || github.event_name == 'workflow_dispatch'
+        if: steps.changesets.outputs.pullRequestNumber == '' || github.event_name == 'workflow_dispatch'
         run: node scripts/release.mjs check
 
   # Pull requests opened with GITHUB_TOKEN start no workflows, so start ci here. This job
