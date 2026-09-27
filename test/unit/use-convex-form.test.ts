@@ -96,11 +96,11 @@ describe('useConvexForm', () => {
     const result = await form.submit({ balance: 12.34, note: '' }, { accountId: 'account-1' })
 
     expect(result).toEqual({ ok: true, data: { id: 'checkpoint-1' } })
-    expect(mutation).toHaveBeenCalledWith(
-      saveReference,
-      { accountId: 'account-1', balanceCents: 1234, note: undefined },
-      { optimisticUpdate: undefined },
-    )
+    expect(mutation).toHaveBeenCalledWith(saveReference, {
+      accountId: 'account-1',
+      balanceCents: 1234,
+      note: undefined,
+    })
     expect(form.status.value).toBe('success')
     expect(form.data.value).toEqual({ id: 'checkpoint-1' })
     scope.stop()
@@ -283,10 +283,26 @@ describe('useConvexForm', () => {
     release({ id: 'old-identity' })
     const result = await pending
 
-    expect(result).toMatchObject({ ok: false, error: { callError: { code: 'IDENTITY_CHANGED' } } })
+    // Sent under the old identity: it may have committed.
+    expect(result).toMatchObject({
+      ok: false,
+      error: { callError: { code: 'IDENTITY_CHANGED', outcome: 'unknown' } },
+    })
     expect(form.status.value).toBe('idle')
     expect(form.data.value).toBeUndefined()
     expect(form.error.value).toBeUndefined()
+    scope.stop()
+  })
+
+  it('binds a submission to the identity current at submit, not at creation', async () => {
+    const { form, mutation, scope, advanceIdentity } = setup(async () => ({ id: 'bob-write' }))
+
+    // Created under Alice; Bob signs in before the first submission.
+    advanceIdentity()
+    const result = await form.submit({ balance: 1, note: '' }, { accountId: 'bob-account' })
+
+    expect(result).toEqual({ ok: true, data: { id: 'bob-write' } })
+    expect(mutation).toHaveBeenCalledTimes(1)
     scope.stop()
   })
 
@@ -324,6 +340,7 @@ describe('useConvexForm', () => {
           kind: 'authentication',
           code: 'IDENTITY_CHANGED',
           functionName: 'accounts:save',
+          outcome: 'not-sent',
         },
       },
     })
@@ -356,7 +373,10 @@ describe('useConvexForm', () => {
     const result = await pending
 
     expect(mutation.mock.calls).toEqual([])
-    expect(result).toMatchObject({ ok: false, error: { callError: { code: 'CANCELLED' } } })
+    expect(result).toMatchObject({
+      ok: false,
+      error: { callError: { code: 'CANCELLED', outcome: 'not-sent' } },
+    })
     expect(form.status.value).toBe('idle')
     expect(form.error.value).toBeUndefined()
     scope.stop()

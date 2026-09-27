@@ -128,6 +128,29 @@ describe('OAuth refresh admission index ranges', () => {
     expectExactSchemaIndexes(reads)
   })
 
+  it('denies a stored 1.0.0-beta row without a consent binding before any lookup', async () => {
+    const beta = {
+      sessionId: 'session',
+      userId: 'user',
+      clientId: 'client',
+      resources: [resource],
+      scopes,
+    }
+    for (const row of [beta, { ...beta, bcnConsentId: null }]) {
+      const { ctx, reads } = indexedDb()
+      await expect(admitOAuthRefresh(ctx, row)).resolves.toBeNull()
+      expect(reads).toEqual([])
+    }
+
+    // A row being created is bound by the adapter, so the same shape still reaches admission.
+    const { ctx, reads } = indexedDb()
+    await expect(admitOAuthRefresh(ctx, beta, true)).resolves.toEqual({
+      expiresAt: now + 60_000,
+      grantId: 'consent',
+    })
+    expect(reads.map(({ table }) => table)).toContain('session')
+  })
+
   it('revokes the bound consent through the (client, user) index range', async () => {
     const { ctx, deleted, reads } = indexedDb()
     await revokeOAuthRefreshConsent(ctx, [

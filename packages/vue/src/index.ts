@@ -1,5 +1,10 @@
 export { ConvexCallError, ConvexFormError } from './errors'
-export type { ConvexFormErrorKind, ConvexFormIssue } from './errors'
+export type {
+  ConvexCallOutcome,
+  ConvexFormErrorKind,
+  ConvexFormIssue,
+  ConvexUploadPhase,
+} from './errors'
 export { createBetterConvex } from './runtime-context'
 export type {
   BetterConvexAuthAdapter,
@@ -19,6 +24,13 @@ export type {
   UseConvexMutationOptions,
   UseConvexMutationReturn,
 } from './use-callable'
+export { useConvexOperation } from './use-operation'
+export type {
+  ConvexOperation,
+  ConvexOperationUploadOptions,
+  ConvexOperationWork,
+  UseConvexOperationReturn,
+} from './use-operation'
 export type { ConvexFormErrorMapping } from './form-errors'
 export { useConvexForm } from './use-form'
 export type { ConvexFormSubmitResult, UseConvexFormReturn } from './use-form'
@@ -41,6 +53,9 @@ export type {
 } from './use-paginated-query'
 export { useConvexFileUpload } from './use-file-upload'
 export type {
+  ConvexFileUploadResult,
+  UploadComplete,
+  UploadCompleteContext,
   UploadProgressInfo,
   UploadUrlMutation,
   UseConvexFileUploadOptions,

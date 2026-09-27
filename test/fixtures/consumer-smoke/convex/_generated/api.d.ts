@@ -22,6 +22,13 @@ export declare const api: {
       string
     >
     invalidUploadUrl: FunctionReference<'mutation', 'public', {}, number>
+    createUploadSession: FunctionReference<
+      'mutation',
+      'public',
+      {},
+      { uploadUrl: string; sessionId: string }
+    >
+    attach: FunctionReference<'mutation', 'public', { storageId: string }, string>
     getUrl: FunctionReference<'query', 'public', { storageId: string }, string | null>
   }
   tasks: {

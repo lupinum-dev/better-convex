@@ -27,7 +27,7 @@ const {
   status,
   progress,
   error: uploadError,
-  data: storageId,
+  data: uploaded,
   cancel,
   reset,
 } = useConvexFileUpload(api.files.generateUploadUrl, {
@@ -59,7 +59,7 @@ async function handleFileChange(event: Event) {
   registrationError.value = null
   registeredStorageId.value = null
   try {
-    const id = (await upload(file)) as Id<'_storage'>
+    const { storageId: id } = await upload(file)
     // Record ownership so getUrl/deleteFile can authorize this file.
     const result = await saveFile({ storageId: id })
     if (result.status === 'rejected') {
@@ -148,7 +148,9 @@ function handleReset() {
         </div>
         <div class="state-item">
           <span class="label">storageId:</span>
-          <span data-testid="storage-id" class="value">{{ storageId ?? 'undefined' }}</span>
+          <span data-testid="storage-id" class="value">{{
+            uploaded?.storageId ?? 'undefined'
+          }}</span>
         </div>
         <div class="state-item">
           <span class="label">imageUrl:</span>

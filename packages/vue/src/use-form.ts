@@ -1,10 +1,11 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'
-import { computed, getCurrentScope, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
+import { computed, onScopeDispose, shallowRef, type ComputedRef } from 'vue'
 
 import {
   ConvexCallError,
+  normalizeConvexError,
   type ConvexCallErrorCode,
   type ConvexFormError,
   type ConvexFormIssue,
@@ -15,13 +16,10 @@ import {
   type ConvexFormErrorMapping,
 } from './form-errors'
 import type { CallableControllerObserver } from './internal/callable-controller'
-import {
-  createIdentityChangedError,
-  isIdentityChangedError,
-} from './internal/identity-changed-error'
-import { useOptionalBetterConvexRuntime } from './runtime-context'
+import { isIdentityChangedError } from './internal/identity-changed-error'
+import type { InternalOperation } from './internal/operation-controller'
 import type { ConvexCallStatus } from './use-callable'
-import { useConvexMutationInternal } from './use-callable'
+import { useOperationController } from './use-operation'
 
 type FormRecord = Record<string, unknown>
 type RequiredKeys<Value> = {
@@ -200,23 +198,15 @@ export function useConvexFormInternal(
   options: ConvexFormInternalOptions,
   observer?: CallableControllerObserver<FormRecord, unknown>,
 ): UseConvexFormReturn<FormRecord, FormRecord, unknown> {
-  if (!getCurrentScope()) {
-    throw new Error('[better-convex-vue] useConvexForm must run inside a Vue effect scope')
-  }
+  const operations = useOperationController('useConvexForm')
   const functionName = getFunctionName(mutation)
-  const { mutate } = useConvexMutationInternal(
-    mutation as FunctionReference<'mutation', 'public', FormRecord, unknown>,
-    { observer },
-  )
-
-  const runtime = useOptionalBetterConvexRuntime()
-  const readGeneration = () => runtime?.identity.snapshot.value.identityGeneration ?? 0
 
   // Shallow refs keep the exact mutation result and the returned form error.
   const data = shallowRef<unknown>()
   const currentStatus = shallowRef<ConvexCallStatus>('idle')
   const error = shallowRef<ConvexFormError>()
   let activePromise: Promise<ConvexFormSubmitResult<unknown>> | undefined
+  let activeOperation: InternalOperation | undefined
   let revision = 0
   let disposed = false
 
@@ -225,6 +215,33 @@ export function useConvexFormInternal(
   const issues = computed(() => error.value?.issues ?? [])
   const fieldErrors = computed(() => error.value?.fieldErrors ?? {})
   const formError = computed(() => error.value?.formError)
+
+  const observe = (callback: () => void) => {
+    if (!observer) return
+    try {
+      callback()
+    } catch {
+      // Diagnostics are non-authoritative and cannot replace the remote outcome.
+    }
+  }
+
+  /** Send the mutation as a step of the submission's operation, observed for DevTools. */
+  const dispatch = async (operation: InternalOperation, args: FormRecord): Promise<unknown> => {
+    const startedAt = Date.now()
+    let event: unknown
+    observe(() => {
+      event = observer!.startEvent(args, startedAt)
+    })
+    try {
+      const result = await operation.mutation(mutation as never, args as never)
+      observe(() => observer!.finishEvent(event, result, startedAt))
+      return result
+    } catch (rawError) {
+      const failure = normalizeConvexError(rawError, { functionName })
+      observe(() => observer!.failEvent(event, failure, startedAt))
+      throw failure
+    }
+  }
 
   const submit = (
     values: FormRecord,
@@ -237,6 +254,7 @@ export function useConvexFormInternal(
           code: 'SUBMIT_IN_PROGRESS' satisfies ConvexCallErrorCode,
           message: 'A submission is already in progress for this form',
           functionName,
+          outcome: 'not-sent',
         }),
       )
     }
@@ -244,16 +262,20 @@ export function useConvexFormInternal(
     const extra = cloneSnapshot(extraArgs[0] ?? {})
     const knownFields = new Set(Object.keys(snapshot))
     const attempt = ++revision
-    const generation = readGeneration()
+    // The submission belongs to the identity that is current now, before
+    // async validation: values captured under one identity never reach another.
+    const operation = operations.begin()
+    activeOperation = operation
     currentStatus.value = 'pending'
     data.value = undefined
     error.value = undefined
+    const owns = () => !disposed && revision === attempt
 
     const execute = async (): Promise<ConvexFormSubmitResult<unknown>> => {
       const validation = await options.schema['~standard'].validate(snapshot)
       if (validation.issues) {
         const failure = createValidationFormError(validation.issues, knownFields)
-        if (!disposed && revision === attempt) {
+        if (owns()) {
           error.value = failure
           currentStatus.value = 'error'
         }
@@ -267,19 +289,9 @@ export function useConvexFormInternal(
         throw new TypeError('[better-convex-vue] form and contextual mutation arguments overlap')
       }
 
-      // Validation is async: values captured under one identity, or by a
-      // retired attempt, must never be dispatched afterwards.
-      const retirement = retiredBeforeDispatch(attempt, generation)
-      if (retirement) {
-        return Object.freeze({
-          ok: false,
-          error: createSubmissionFormError(retirement, knownFields, options.mapError),
-        })
-      }
-
       try {
-        const result = await mutate({ ...produced, ...extra })
-        if (!disposed && revision === attempt) {
+        const result = await dispatch(operation, { ...produced, ...extra })
+        if (owns()) {
           data.value = result
           currentStatus.value = 'success'
         }
@@ -287,8 +299,7 @@ export function useConvexFormInternal(
       } catch (rawError) {
         if (!(rawError instanceof ConvexCallError)) throw rawError
         const failure = createSubmissionFormError(rawError, knownFields, options.mapError)
-        const retiredIdentity = isIdentityChangedError(rawError)
-        if (!disposed && revision === attempt && !retiredIdentity) {
+        if (owns() && !isIdentityChangedError(rawError)) {
           error.value = failure
           currentStatus.value = 'error'
         }
@@ -300,6 +311,7 @@ export function useConvexFormInternal(
       // reset() and disposal retire the submission and already own the state.
       if (activePromise !== promise) return
       activePromise = undefined
+      activeOperation = undefined
       // A thrown TypeError or non-call failure leaves no committed outcome.
       if (currentStatus.value === 'pending') currentStatus.value = 'idle'
     })
@@ -307,26 +319,11 @@ export function useConvexFormInternal(
     return promise
   }
 
-  const retiredBeforeDispatch = (
-    attempt: number,
-    generation: number,
-  ): ConvexCallError | undefined => {
-    if (readGeneration() !== generation) {
-      return createIdentityChangedError('mutation', { functionName })
-    }
-    if (disposed || revision !== attempt) {
-      return new ConvexCallError({
-        kind: 'unknown',
-        code: 'CANCELLED' satisfies ConvexCallErrorCode,
-        message: 'Convex mutation cancelled: the form submission was reset before it was sent.',
-        functionName,
-      })
-    }
-    return undefined
-  }
-
   const reset = () => {
     revision += 1
+    // A submission not yet sent is never sent; one in flight settles its own promise.
+    activeOperation?.cancel()
+    activeOperation = undefined
     activePromise = undefined
     data.value = undefined
     error.value = undefined
@@ -335,18 +332,11 @@ export function useConvexFormInternal(
 
   // A settled result or mapped error belongs to the identity that produced it;
   // a new identity starts from a clean form, like the other callables.
-  let lastSeenGeneration = readGeneration()
-  const stopIdentity =
-    runtime?.browser.identity.subscribe(() => {
-      const generation = readGeneration()
-      if (generation === lastSeenGeneration) return
-      lastSeenGeneration = generation
-      reset()
-    }) ?? null
+  const stopIdentity = operations.onIdentityChange(reset)
 
   onScopeDispose(() => {
     disposed = true
-    stopIdentity?.()
+    stopIdentity()
     reset()
   })
 

@@ -24,6 +24,13 @@ export interface AuthFieldMetadata {
   sortable: boolean
   unique: boolean
   updatable: boolean
+  /**
+   * The Convex column may be absent, so rows written by a release that did not
+   * have this field still validate on schema push. The adapter writes it on
+   * every new row, so an absent value only ever means an earlier release wrote
+   * the row; code that depends on the field must deny such rows.
+   */
+  optional?: true
   reference?: AuthReferenceMetadata
 }
 
@@ -38,6 +45,12 @@ export interface AuthModelMetadata {
   physicalName: string
   fields: Readonly<Record<string, AuthFieldMetadata>>
   indexes: readonly AuthIndexMetadata[]
+  /**
+   * Columns an earlier release stored that Better Auth no longer defines, by
+   * physical name. They are optional in the Convex schema so existing rows
+   * still validate; the adapter never writes, reads, filters or indexes them.
+   */
+  legacyFields?: Readonly<Record<string, AuthFieldKind>>
 }
 
 export interface AuthSchemaMetadata {
@@ -164,14 +177,26 @@ export function assertAuthSchemaMatchesMetadata(
       }
 
       const fields = Object.values(model.fields)
+      const legacyFields = Object.entries(model.legacyFields ?? {})
       const exportedFields = table.documentType.value
-      if (fields.length !== Object.keys(exportedFields).length) mismatch()
+      if (fields.length + legacyFields.length !== Object.keys(exportedFields).length) mismatch()
+      for (const [name, kind] of legacyFields) {
+        const exportedField = exportedFields[name]
+        if (
+          Object.hasOwn(model.fields, name) ||
+          !exportedField ||
+          exportedField.optional !== true ||
+          JSON.stringify(exportedField.fieldType) !== JSON.stringify(expectedBaseValidator(kind))
+        ) {
+          mismatch()
+        }
+      }
       for (const field of fields) {
         if (model.fields[field.physicalName] !== field) mismatch()
         const exportedField = exportedFields[field.physicalName]
         if (
           !exportedField ||
-          exportedField.optional !== false ||
+          exportedField.optional !== (field.optional === true) ||
           !validatorMatches(field, exportedField.fieldType)
         ) {
           mismatch()

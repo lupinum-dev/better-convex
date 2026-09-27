@@ -6,7 +6,7 @@ import type {
   OptionalRestArgs,
 } from 'convex/server'
 import { getFunctionName } from 'convex/server'
-import { computed, getCurrentScope, onScopeDispose, type ComputedRef } from 'vue'
+import { computed, onScopeDispose, type ComputedRef } from 'vue'
 
 import { ConvexCallError, type ConvexCallErrorCode } from './errors'
 import type { ClientCallStatus } from './internal/call-state'
@@ -15,6 +15,7 @@ import {
   type CallableControllerObserver,
 } from './internal/callable-controller'
 import { useOptionalBetterConvexRuntime } from './runtime-context'
+import { useOperationController } from './use-operation'
 
 export type ConvexCallStatus = ClientCallStatus
 
@@ -40,7 +41,9 @@ export interface ConvexCallableInternalOptions<Args, Result> {
 export interface UseConvexMutationReturn<Mutation extends FunctionReference<'mutation'>> {
   /**
    * Runs the mutation. Resolves with its result and rejects with a
-   * {@link ConvexCallError} that carries the function name.
+   * {@link ConvexCallError} that carries the function name. An identity
+   * change rejects it with `IDENTITY_CHANGED`; `error.outcome` tells whether
+   * it was sent.
    */
   readonly mutate: (...args: OptionalRestArgs<Mutation>) => Promise<FunctionReturnType<Mutation>>
   /** The latest successful result, or `undefined`. */
@@ -50,8 +53,9 @@ export interface UseConvexMutationReturn<Mutation extends FunctionReference<'mut
   /** The latest failure, or `undefined`. */
   readonly error: ComputedRef<ConvexCallError | undefined>
   /**
-   * Returns to `idle` and clears `data` and `error`. An in-flight call still
-   * settles its own promise but no longer updates this state.
+   * Returns to `idle` and clears `data` and `error`. A call not yet sent is
+   * never sent: it rejects with `CANCELLED` and `outcome: 'not-sent'`. A call
+   * already sent still settles its own promise but no longer updates this state.
    */
   readonly reset: () => void
 }
@@ -66,7 +70,9 @@ export interface UseConvexMutationReturn<Mutation extends FunctionReference<'mut
 export interface UseConvexActionReturn<Action extends FunctionReference<'action'>> {
   /**
    * Runs the action. Resolves with its result and rejects with a
-   * {@link ConvexCallError} that carries the function name.
+   * {@link ConvexCallError} that carries the function name. An identity
+   * change rejects it with `IDENTITY_CHANGED`; `error.outcome` tells whether
+   * it was sent.
    */
   readonly run: (...args: OptionalRestArgs<Action>) => Promise<FunctionReturnType<Action>>
   /** The latest successful result, or `undefined`. */
@@ -76,8 +82,9 @@ export interface UseConvexActionReturn<Action extends FunctionReference<'action'
   /** The latest failure, or `undefined`. */
   readonly error: ComputedRef<ConvexCallError | undefined>
   /**
-   * Returns to `idle` and clears `data` and `error`. An in-flight call still
-   * settles its own promise but no longer updates this state.
+   * Returns to `idle` and clears `data` and `error`. A call not yet sent is
+   * never sent: it rejects with `CANCELLED` and `outcome: 'not-sent'`. A call
+   * already sent still settles its own promise but no longer updates this state.
    */
   readonly reset: () => void
 }
@@ -111,40 +118,40 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
   options?: ConvexCallableInternalOptions<FunctionArgs<Reference>, FunctionReturnType<Reference>>,
 ) {
   const composable = operation === 'mutation' ? 'useConvexMutation' : 'useConvexAction'
-  if (!getCurrentScope()) {
-    throw new Error(`[better-convex-vue] ${composable} must run inside a Vue effect scope`)
-  }
   type Args = FunctionArgs<Reference>
   type Result = FunctionReturnType<Reference>
+  const operations = useOperationController(composable)
   const functionName = getFunctionName(reference)
   const runtime = useOptionalBetterConvexRuntime()
+  const optimisticUpdate = wrapOptimisticUpdate(options?.optimisticUpdate)
   const lifecycle = createCallableController<Args, Result>({
     operation,
     functionName,
-    getIdentityGeneration: () => runtime?.identity.snapshot.value.identityGeneration ?? 0,
-    subscribeIdentityChange: runtime
-      ? (listener) => runtime.browser.identity.subscribe(listener)
-      : undefined,
+    operations,
     observer: options?.observer,
-    handlers: {
-      settle: () => runtime?.browser.ready() ?? Promise.resolve(),
-      invoke: async (args) => {
-        if (!runtime) {
-          throw new ConvexCallError({
-            kind: 'unknown',
-            code: 'CLIENT_UNAVAILABLE' satisfies ConvexCallErrorCode,
-            message: `[better-convex-vue] ${composable} cannot execute without an installed browser runtime`,
-            functionName,
-          })
-        }
-        if (operation === 'mutation') {
-          return (await runtime.browser.handle.mutation(reference as never, args as never, {
-            optimisticUpdate: wrapOptimisticUpdate(options?.optimisticUpdate),
-          })) as Result
-        }
-        return (await runtime.browser.handle.action(reference as never, args as never)) as Result
-      },
-    },
+    invoke: (call, args) =>
+      call.step({
+        kind: operation,
+        functionName,
+        dispatch: async () => {
+          if (!runtime) {
+            throw new ConvexCallError({
+              kind: 'unknown',
+              code: 'CLIENT_UNAVAILABLE' satisfies ConvexCallErrorCode,
+              message: `[better-convex-vue] ${composable} cannot execute without an installed browser runtime`,
+              functionName,
+              outcome: 'not-sent',
+            })
+          }
+          const handle = runtime.browser.handle
+          if (operation === 'mutation') {
+            return (await handle.mutation(reference as never, args as never, {
+              optimisticUpdate,
+            })) as Result
+          }
+          return (await handle.action(reference as never, args as never)) as Result
+        },
+      }),
   })
   onScopeDispose(lifecycle.dispose)
   // Computed, like every composable's state: read-only, and the exact result

@@ -58,6 +58,8 @@ describe('ConvexCallError golden fixtures ', () => {
       status: undefined,
       data: undefined,
       functionName: undefined,
+      outcome: undefined,
+      phase: undefined,
     })
   })
 
@@ -554,6 +556,39 @@ describe('isSerializedConvexCallError strictness ', () => {
     const json = JSON.parse(JSON.stringify(named)) as unknown
     expect(isSerializedConvexCallError(json)).toBe(true)
     expect(payloadRoundTrip(named)).toMatchObject({ functionName: 'notes:create' })
+  })
+
+  it('accepts and round-trips the dispatch outcome and upload phase', () => {
+    const crossed = new ConvexCallError({
+      kind: 'authentication',
+      message: 'Identity changed',
+      code: 'IDENTITY_CHANGED',
+      outcome: 'unknown',
+      phase: 'complete',
+    })
+    const json = JSON.parse(JSON.stringify(crossed)) as unknown
+    expect(json).toMatchObject({ outcome: 'unknown', phase: 'complete' })
+    expect(isSerializedConvexCallError(json)).toBe(true)
+    expect(payloadRoundTrip(crossed)).toMatchObject({ outcome: 'unknown', phase: 'complete' })
+    // Naming a function on a copy keeps the dispatch evidence.
+    expect(normalizeConvexError(crossed, { functionName: 'files:attach' })).toMatchObject({
+      functionName: 'files:attach',
+      outcome: 'unknown',
+      phase: 'complete',
+    })
+  })
+
+  it('rejects an unknown outcome or phase', () => {
+    const base = { name: 'ConvexCallError', kind: 'server', message: 'x' }
+    expect(isSerializedConvexCallError({ ...base, outcome: 'not-sent' })).toBe(true)
+    expect(isSerializedConvexCallError({ ...base, outcome: 'committed' })).toBe(false)
+    expect(isSerializedConvexCallError({ ...base, outcome: 1 })).toBe(false)
+    expect(isSerializedConvexCallError({ ...base, phase: 'prepare' })).toBe(true)
+    expect(isSerializedConvexCallError({ ...base, phase: 'verify' })).toBe(false)
+    expect(normalizeConvexError({ ...base, outcome: 'committed' })).toMatchObject({
+      kind: 'unknown',
+      outcome: undefined,
+    })
   })
 
   it('rejects an arbitrary object that only carries the name string', () => {

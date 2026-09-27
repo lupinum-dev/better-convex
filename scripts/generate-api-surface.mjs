@@ -159,6 +159,10 @@ const nuxtPaginationOptions = unionOf(
 const paginationState = readTypeMembers(vuePaginationFile, 'UseConvexPaginatedQueryState')
 const mutationReturn = readTypeMembers(vueCallableFile, 'UseConvexMutationReturn')
 const actionReturn = readTypeMembers(vueCallableFile, 'UseConvexActionReturn')
+const operationReturn = readTypeMembers(
+  'packages/vue/src/use-operation.ts',
+  'UseConvexOperationReturn',
+)
 const serverCaller = readTypeMembers(
   'src/runtime/server/utils/server-convex-caller.ts',
   'ServerConvexCaller',
@@ -212,8 +216,13 @@ const composableMeta = {
   useConvexFileUpload: {
     kind: 'Composable',
     purpose:
-      'Uploads one file at a time to Convex storage with progress, `cancel()`, and `reset()`.',
+      'Uploads one file at a time to Convex storage with progress, an optional `complete` step, `cancel()`, and `reset()`.',
     guide: '/docs/build/files/upload-files',
+  },
+  useConvexOperation: {
+    kind: 'Composable',
+    purpose: `Runs several Convex calls and uploads as one operation for the signed-in user who started it. Returns ${formatList(operationReturn)}.`,
+    guide: '/docs/build/write-data/multi-step-operations',
   },
   useConvexMutation: {
     kind: 'Composable',

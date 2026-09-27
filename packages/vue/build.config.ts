@@ -5,6 +5,8 @@ export default defineBuildConfig({
     'src/index',
     'src/errors',
     'src/embedded',
+    // Component-test runtime: the real composables against an in-memory transport.
+    'src/test',
     // Private Nuxt integration seam; see src/internal.ts. Not public API.
     'src/internal',
     {

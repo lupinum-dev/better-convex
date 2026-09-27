@@ -243,18 +243,19 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
   }
 
   // ---- pending consumer-held call tracking (IDENTITY_CHANGED rejection) -----
+  // A tracked call was already handed to the wire client: it may have committed.
   function rejectPendingForGeneration(generation: number) {
     for (const pending of [...pendingCalls]) {
       if (pending.generation === generation) {
         pendingCalls.delete(pending)
-        pending.reject(createIdentityChangedError())
+        pending.reject(createIdentityChangedError(undefined, { outcome: 'unknown' }))
       }
     }
   }
   function rejectAllPending() {
     for (const pending of [...pendingCalls]) {
       pendingCalls.delete(pending)
-      pending.reject(createIdentityChangedError())
+      pending.reject(createIdentityChangedError(undefined, { outcome: 'unknown' }))
     }
   }
 
@@ -274,7 +275,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
         // Replacement failure is surfaced by the null-primary check below.
       }
     }
-    if (disposed || !primary) throw createIdentityChangedError()
+    if (disposed || !primary) throw createIdentityChangedError(undefined, { outcome: 'not-sent' })
     return { client: primary, identityGeneration: currentIdentityGeneration }
   }
 
@@ -305,7 +306,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
       primary !== client ||
       currentIdentityGeneration !== generation
     ) {
-      throw createIdentityChangedError(method)
+      throw createIdentityChangedError(method, { outcome: 'not-sent' })
     }
     let reject!: (reason: unknown) => void
     const aborted = new Promise<never>((_, r) => {
@@ -329,7 +330,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
         currentIdentityGeneration !== generation ||
         (authPort?.snapshot().identityGeneration ?? currentIdentityGeneration) !== entryGeneration
       ) {
-        throw createIdentityChangedError(method)
+        throw createIdentityChangedError(method, { outcome: 'unknown' })
       }
       return result
     } finally {

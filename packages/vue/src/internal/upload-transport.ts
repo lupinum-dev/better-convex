@@ -1,8 +1,6 @@
-import type { FunctionArgs, FunctionReference } from 'convex/server'
 import type { GenericId } from 'convex/values'
 
-import { ConvexCallError, type ConvexCallErrorCode } from '../errors'
-import type { ConvexClientHandle } from './client-owner'
+import { ConvexCallError, type ConvexCallErrorCode, type ConvexCallOutcome } from '../errors'
 
 export interface UploadProgressInfo {
   readonly loaded: number
@@ -13,7 +11,7 @@ export interface UploadProgressInfo {
 export interface UploadTransportOptions {
   /** Aborting rejects the upload with `signal.reason`. */
   readonly signal: AbortSignal
-  readonly onProgress: (info: UploadProgressInfo) => void
+  readonly onProgress?: (info: UploadProgressInfo) => void
 }
 
 // The storage endpoint is a library-owned HTTP boundary, so it classifies its
@@ -22,58 +20,27 @@ export interface UploadTransportOptions {
 function transportError(
   code: ConvexCallErrorCode,
   message: string,
-  status?: number,
+  input: { status?: number; outcome?: ConvexCallOutcome } = {},
 ): ConvexCallError {
-  return new ConvexCallError({ kind: 'transport', code, message, status })
+  return new ConvexCallError({ kind: 'transport', code, message, ...input })
 }
 
-async function requestUploadUrl<Mutation extends FunctionReference<'mutation'>>(
-  client: Pick<ConvexClientHandle, 'mutation'>,
-  mutation: Mutation,
-  args: FunctionArgs<Mutation>,
-): Promise<string> {
-  const postUrl: unknown = await client.mutation(mutation, args)
-  if (typeof postUrl !== 'string') {
-    throw new ConvexCallError({
-      kind: 'unknown',
-      code: 'INVALID_UPLOAD_URL' satisfies ConvexCallErrorCode,
-      message: 'generateUploadUrl mutation must return a string URL',
-    })
-  }
-  return postUrl
+/** True where the storage POST can run: it needs XHR for byte progress. */
+export function canPostFiles(): boolean {
+  return typeof XMLHttpRequest === 'function'
 }
 
 /**
- * Upload one file to Convex storage: request an upload URL through the
- * mutation, then POST the file with XHR so byte progress is observable.
+ * POST one file to a Convex storage upload URL with XHR, so byte progress is
+ * observable, and resolve with the storage ID.
+ *
+ * Failures record their dispatch outcome: an unusable URL is `not-sent`; a
+ * network failure or an unusable success body is `unknown` (the file may be
+ * stored); a failure status is the endpoint's confirmed answer.
  */
-export async function uploadToConvexStorage<Mutation extends FunctionReference<'mutation'>>(
-  client: Pick<ConvexClientHandle, 'mutation'>,
-  mutation: Mutation,
-  args: FunctionArgs<Mutation>,
-  file: File,
-  options: UploadTransportOptions,
-): Promise<GenericId<'_storage'>> {
-  const { signal } = options
-  if (signal.aborted) throw signal.reason
-  let stopAbort = () => {}
-  // `Promise.race` attaches a handler, so a later abort is never unhandled.
-  const aborted = new Promise<never>((_, reject) => {
-    const onAbort = () => reject(signal.reason)
-    signal.addEventListener('abort', onAbort, { once: true })
-    stopAbort = () => signal.removeEventListener('abort', onAbort)
-  })
-  try {
-    const postUrl = await Promise.race([requestUploadUrl(client, mutation, args), aborted])
-    return await postFile(postUrl, file, options)
-  } finally {
-    stopAbort()
-  }
-}
-
-function postFile(
+export function postFileToConvexStorage(
   postUrl: string,
-  file: File,
+  file: Blob,
   { signal, onProgress }: UploadTransportOptions,
 ): Promise<GenericId<'_storage'>> {
   if (signal.aborted) return Promise.reject(signal.reason)
@@ -91,14 +58,23 @@ function postFile(
         fail(signal.reason)
       }
     }
-    signal.addEventListener('abort', onAbort, { once: true })
 
-    xhr.open('POST', postUrl)
-    if (file.type) xhr.setRequestHeader('Content-Type', file.type)
+    try {
+      xhr.open('POST', postUrl)
+      if (file.type) xhr.setRequestHeader('Content-Type', file.type)
+    } catch {
+      reject(
+        transportError('INVALID_UPLOAD_URL', 'The upload URL is not a valid URL', {
+          outcome: 'not-sent',
+        }),
+      )
+      return
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
 
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return
-      onProgress({
+      onProgress?.({
         loaded: event.loaded,
         total: event.total,
         percent: Math.round((event.loaded / event.total) * 100),
@@ -108,11 +84,9 @@ function postFile(
       signal.removeEventListener('abort', onAbort)
       if (xhr.status < 200 || xhr.status >= 300) {
         reject(
-          transportError(
-            'UPSTREAM_ERROR',
-            `Upload failed: ${xhr.status} ${xhr.statusText}`,
-            xhr.status,
-          ),
+          transportError('UPSTREAM_ERROR', `Upload failed: ${xhr.status} ${xhr.statusText}`, {
+            status: xhr.status,
+          }),
         )
         return
       }
@@ -120,18 +94,25 @@ function postFile(
       try {
         storageId = (JSON.parse(xhr.responseText) as { storageId?: unknown } | null)?.storageId
       } catch {
-        reject(transportError('INVALID_RESPONSE', 'Invalid response from upload endpoint'))
+        reject(
+          transportError('INVALID_RESPONSE', 'Invalid response from upload endpoint', {
+            outcome: 'unknown',
+          }),
+        )
         return
       }
       if (typeof storageId !== 'string' || storageId.length === 0) {
         reject(
-          transportError('INVALID_RESPONSE', 'Upload endpoint response missing valid storageId'),
+          transportError('INVALID_RESPONSE', 'Upload endpoint response missing valid storageId', {
+            outcome: 'unknown',
+          }),
         )
         return
       }
       resolve(storageId as GenericId<'_storage'>)
     }
-    xhr.onerror = () => fail(transportError('NETWORK_ERROR', 'Network error during upload'))
+    xhr.onerror = () =>
+      fail(transportError('NETWORK_ERROR', 'Network error during upload', { outcome: 'unknown' }))
     xhr.onabort = () => fail(signal.reason)
     xhr.send(file)
   })

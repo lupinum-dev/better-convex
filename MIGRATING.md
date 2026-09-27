@@ -16,11 +16,19 @@ are gone, and TypeScript reports most places that you must change.
       `@better-auth/oauth-provider` at exactly `1.7.6`, even without MCP.
 - [ ] With MCP, install `@modelcontextprotocol/server@2.1.0`; MCP Apps use
       `@modelcontextprotocol/ext-apps` `2.x`.
-- [ ] The auth component `account` table drops `issuer` and is keyed by
-      `(providerId, accountId)`. This needs data work: Convex rejects the deploy
-      while account rows still contain `issuer`, and 1.0 ships no migration. A
-      deployment with beta account rows needs a new, empty `betterAuth`
-      component (users sign up again).
+- [ ] The auth component `account` table is keyed by `(providerId, accountId)`.
+      Beta account rows keep their retired `issuer` column (optional, never
+      read or written), so the deploy accepts them, and users, account IDs,
+      passwords, and linked providers stay. After you deploy, run
+      `findAccountKeyCollisions` from an internal action. A reported group
+      (possible only when a provider's issuer changed during the beta) cannot
+      sign in until you merge or delete its extra rows.
+- [ ] Deploy normally: the auth component schema accepts every beta row, so
+      you do not export, import, or clear any table.
+- [ ] With MCP or the OAuth provider, expect beta refresh tokens to stop
+      working. They have no consent binding, so 1.0 answers them with
+      `invalid_grant`; MCP hosts and other OAuth clients sign in again. The
+      old rows can stay.
 - [ ] Regenerate a local auth component schema with
       `better-convex auth schema`.
 
@@ -90,12 +98,34 @@ are gone, and TypeScript reports most places that you must change.
       function wrote; check that it is safe to show.
 - [ ] Read error codes with `isConvexCallError(error, code)` from
       `@lupinum/better-convex-nuxt/errors` instead of reading `data`.
-- [ ] `upload()` failures have codes, and `cancel()` makes the pending upload
-      reject with `CANCELLED`.
+- [ ] `upload()` resolves with `{ storageId, prepared, completed }`, not the
+      storage ID, and `data` holds the same object. Move a follow-up save
+      mutation into the `complete` option. Pass the record to attach to as
+      `upload(file, args, { context })` and read it from `ctx.context` in
+      `complete`, not from component state. A prepare mutation that returns an
+      object needs the `url` option.
+- [ ] `upload()` failures have codes, `phase`, and `outcome`, and `cancel()`
+      makes the pending upload reject with `CANCELLED`.
+- [ ] Browser errors carry `outcome` (`'not-sent'` or `'unknown'`). An
+      `IDENTITY_CHANGED` with `'not-sent'` was never sent.
 - [ ] `useConvexAuth().client` is never `null`; during SSR its methods throw
       `CLIENT_UNAVAILABLE`.
 - [ ] A query with `server: false` is `idle` during SSR and hydration; treat
       `idle` like `pending`.
+
+## Component tests
+
+- [ ] `@lupinum/better-convex-nuxt/test` runs the real composables. The
+      `composables` map is gone: pass `convex.plugin` to `mountSuspended` and
+      bind only `useConvexAuth` with `mockNuxtImport`.
+- [ ] Requests stay pending until the test answers them. Mutation and action
+      calls are request objects with `args`, `identity`, `state`, `resolve()`,
+      and `reject()`; query calls have `identity`, and `'refresh'` is now
+      `'query'`.
+- [ ] The upload control uses `progress(loaded, total?)`, `fail(status)`, and
+      `nextCall()`; `reject(error)` fails the upload-URL mutation.
+- [ ] Plain Vue tests import `setupBetterConvexTest` from
+      `@lupinum/better-convex-vue/test`.
 
 ## MCP
 

@@ -28,6 +28,10 @@ describe('module auto-import surface', () => {
     })
     expect(autoImportNames).toContain('useConvexForm')
     expect(composableAutoImports).toContainEqual({
+      name: 'useConvexOperation',
+      from: './runtime/composables/useConvexOperation',
+    })
+    expect(composableAutoImports).toContainEqual({
       name: 'useConvexAttachment',
       from: './runtime/composables/useConvexAttachment',
     })

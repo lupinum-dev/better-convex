@@ -27,7 +27,7 @@ const nuxtEntrySubpaths = [
   './better-auth/test',
   './server',
 ]
-const vueEntrySubpaths = ['.', './errors', './embedded', './internal']
+const vueEntrySubpaths = ['.', './errors', './embedded', './test', './internal']
 const mcpEntrySubpaths = ['.', './test']
 
 type PackageEntry = {

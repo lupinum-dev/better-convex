@@ -1,117 +1,79 @@
+import type { ConvexAuthMode } from '@lupinum/better-convex-vue'
 import {
-  createBetterConvex,
-  useConvexAction,
-  useConvexConnectionState,
-  useConvexForm,
-  useConvexMutation,
-  useConvexPaginatedQuery,
-  useConvexQuery,
-  type BetterConvexPlugin,
-} from '@lupinum/better-convex-vue'
-import { createBetterConvexAttachment } from '@lupinum/better-convex-vue/embedded'
-import type { FunctionArgs, FunctionReference } from 'convex/server'
+  setupBetterConvexTest as setupVueTest,
+  type BetterConvexTestRuntime as VueTestRuntime,
+} from '@lupinum/better-convex-vue/test'
 
+import { ConvexCallError } from '../errors'
 import type { ConvexUser } from '../utils/types'
 import {
   createBetterConvexTestAuth,
+  DEFAULT_TEST_USER,
   type BetterConvexTestAuth,
   type BetterConvexTestAuthPreset,
 } from './auth'
-import {
-  BetterConvexTestClient,
-  type BetterConvexTestOperationController,
-  type BetterConvexTestQueryController,
-} from './client'
-import {
-  createBetterConvexTestUploads,
-  type BetterConvexTestFileUploadComposable,
-  type BetterConvexTestUploadController,
-} from './upload'
 
+export { invalidCursorError } from '@lupinum/better-convex-vue/test'
 export type {
-  BetterConvexTestCall,
-  BetterConvexTestOperationController,
+  BetterConvexTestOperationControl,
+  BetterConvexTestPaginatedQueryControl,
   BetterConvexTestQueryCall,
-  BetterConvexTestQueryController,
-} from './client'
+  BetterConvexTestQueryControl,
+  BetterConvexTestRequest,
+  BetterConvexTestStorageControl,
+  BetterConvexTestStorageRequest,
+  BetterConvexTestUploadCall,
+  BetterConvexTestUploadControl,
+  BetterConvexTestUploadOptions,
+} from '@lupinum/better-convex-vue/test'
 export type {
   BetterConvexTestAuth,
   BetterConvexTestAuthPreset,
   BetterConvexTestAuthResult,
 } from './auth'
-export type {
-  BetterConvexTestFileUploadComposable,
-  BetterConvexTestUploadCall,
-  BetterConvexTestUploadController,
-} from './upload'
 
 export interface BetterConvexTestOptions {
+  /** The identity the test starts with. @default 'authenticated' */
   readonly auth?: BetterConvexTestAuthPreset | ConvexUser
+  /** Mirrors `convex.auth.defaultQueryAuth` in `nuxt.config`. */
+  readonly defaultQueryAuth?: ConvexAuthMode
 }
 
-export interface BetterConvexTestRuntime {
-  readonly plugin: BetterConvexPlugin
+/**
+ * The Vue test runtime plus a `useConvexAuth()` double. Pass `plugin` to
+ * `mountSuspended` so the real Nuxt composables run against the in-memory
+ * transport, and bind `auth` to `useConvexAuth` with `mockNuxtImport`.
+ */
+export interface BetterConvexTestRuntime extends Omit<VueTestRuntime, 'auth'> {
   readonly auth: BetterConvexTestAuth
-  readonly composables: Readonly<{
-    useConvexAction: typeof useConvexAction
-    useConvexConnectionState: typeof useConvexConnectionState
-    useConvexFileUpload: BetterConvexTestFileUploadComposable
-    useConvexForm: typeof useConvexForm
-    useConvexMutation: typeof useConvexMutation
-    useConvexPaginatedQuery: typeof useConvexPaginatedQuery
-    useConvexQuery: typeof useConvexQuery
-    useConvexAuth: () => BetterConvexTestAuth
-  }>
-  query<Query extends FunctionReference<'query'>>(
-    query: Query,
-    args?: FunctionArgs<Query>,
-  ): BetterConvexTestQueryController<Query>
-  mutation<Mutation extends FunctionReference<'mutation'>>(
-    mutation: Mutation,
-  ): BetterConvexTestOperationController<Mutation>
-  action<Action extends FunctionReference<'action'>>(
-    action: Action,
-  ): BetterConvexTestOperationController<Action>
-  upload<Mutation extends FunctionReference<'mutation', 'public', Record<string, unknown>, string>>(
-    mutation: Mutation,
-  ): BetterConvexTestUploadController<Mutation>
 }
 
+const TEST_AUTH_FAILURE = () =>
+  new ConvexCallError({ kind: 'authentication', message: 'Test authentication failed' })
+
+/**
+ * Create a Better Convex runtime for Nuxt component tests.
+ *
+ * The component runs the real composables and controllers; only the Convex
+ * deployment is replaced. Answer queries, writes, and uploads by function
+ * reference, and move the identity with `auth`.
+ */
 export function setupBetterConvexTest(
   options: BetterConvexTestOptions = {},
 ): BetterConvexTestRuntime {
-  const client = new BetterConvexTestClient()
-  const { auth, observer } = createBetterConvexTestAuth(options.auth ?? 'authenticated')
-  const uploads = createBetterConvexTestUploads(observer)
-  const attachment = createBetterConvexAttachment({
-    client: client.handle,
-    anonymousClient: client.handle,
-    identity: observer,
-    connection: {
-      snapshot: () => client.connectionState(),
-      subscribe: (listener) => client.subscribeToConnectionState(listener),
-    },
+  const preset = options.auth ?? 'authenticated'
+  const user =
+    typeof preset === 'object' ? preset : preset === 'authenticated' ? DEFAULT_TEST_USER : null
+  const runtime = setupVueTest({
+    auth: user
+      ? { subject: user.id }
+      : (preset as Exclude<BetterConvexTestAuthPreset, 'authenticated'>),
+    defaultQueryAuth: options.defaultQueryAuth,
   })
-  const plugin = createBetterConvex({ attachment })
-
-  return Object.freeze({
-    plugin,
-    auth,
-    composables: Object.freeze({
-      useConvexAction,
-      useConvexConnectionState,
-      useConvexFileUpload: uploads.useConvexFileUpload,
-      useConvexForm,
-      useConvexMutation,
-      useConvexPaginatedQuery,
-      useConvexQuery,
-      useConvexAuth: () => auth,
-    }),
-    query: client.query.bind(client),
-    mutation: <Mutation extends FunctionReference<'mutation'>>(mutation: Mutation) =>
-      client.operation('mutation', mutation),
-    action: <Action extends FunctionReference<'action'>>(action: Action) =>
-      client.operation('action', action),
-    upload: uploads.upload,
-  })
+  const auth = createBetterConvexTestAuth(
+    runtime.auth,
+    user,
+    preset === 'error' ? TEST_AUTH_FAILURE() : undefined,
+  )
+  return Object.freeze({ ...runtime, auth })
 }

@@ -42,7 +42,9 @@ export async function admitOAuthRefresh(
     !strings(row.resources) ||
     row.resources.length !== 1 ||
     !strings(row.scopes) ||
-    !row.scopes.includes('offline_access')
+    !row.scopes.includes('offline_access') ||
+    // A stored row without a consent binding was issued by a 1.0 beta: it never renews.
+    (!creating && typeof row.bcnConsentId !== 'string')
   )
     return null
   const admission = await readAuthSessionAdmission(ctx, {

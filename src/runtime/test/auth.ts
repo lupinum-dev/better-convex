@@ -1,4 +1,4 @@
-import type { BetterConvexAttachment } from '@lupinum/better-convex-vue/embedded'
+import type { BetterConvexTestAuthControl } from '@lupinum/better-convex-vue/test'
 import { computed, readonly, shallowRef, type ComputedRef, type ShallowRef } from 'vue'
 
 import { ConvexCallError } from '../errors'
@@ -6,8 +6,13 @@ import type { ConvexUser } from '../utils/types'
 
 export type BetterConvexTestAuthPreset = 'authenticated' | 'anonymous' | 'loading' | 'error'
 
+/**
+ * Stands in for `useConvexAuth()`. Its verbs move the one test identity, so
+ * every component using the test plugin sees the change through the real
+ * auth port and client owner.
+ */
 export interface BetterConvexTestAuth {
-  readonly status: ComputedRef<'authenticated' | 'anonymous' | 'loading' | 'error'>
+  readonly status: ComputedRef<BetterConvexTestAuthPreset>
   readonly pending: ComputedRef<boolean>
   readonly user: Readonly<ShallowRef<ConvexUser | null>>
   readonly error: ComputedRef<ConvexCallError | undefined>
@@ -16,11 +21,11 @@ export interface BetterConvexTestAuth {
     readonly signUp: { email(input: Record<string, unknown>): Promise<BetterConvexTestAuthResult> }
     signOut(): Promise<BetterConvexTestAuthResult>
   }
-  ready(options?: {
-    timeoutMs?: number
-  }): Promise<'authenticated' | 'anonymous' | 'loading' | 'error'>
+  ready(options?: { timeoutMs?: number }): Promise<BetterConvexTestAuthPreset>
   signIn(user?: ConvexUser): void
   signOut(): void
+  /** Keep the user but replace the session; in-flight work of the old session is fenced. */
+  renewSession(): void
   setLoading(): void
   fail(error: unknown): void
 }
@@ -30,42 +35,43 @@ export interface BetterConvexTestAuthResult {
   readonly error: null
 }
 
-export interface BetterConvexTestAuthRuntime {
-  readonly auth: BetterConvexTestAuth
-  readonly observer: BetterConvexAttachment['identity']
-}
-
-const DEFAULT_USER: ConvexUser = Object.freeze({
+export const DEFAULT_TEST_USER: ConvexUser = Object.freeze({
   id: 'test-user',
   name: 'Test User',
   email: 'test@example.test',
   emailVerified: true,
 })
 
+const RESULT: BetterConvexTestAuthResult = Object.freeze({ data: Object.freeze({}), error: null })
+
+function presentationError(error: unknown): ConvexCallError {
+  return error instanceof ConvexCallError
+    ? error
+    : new ConvexCallError({
+        kind: 'authentication',
+        message: error instanceof Error ? error.message : String(error),
+      })
+}
+
+/** The Nuxt `useConvexAuth()` presentation over the test identity. */
 export function createBetterConvexTestAuth(
-  initial: BetterConvexTestAuthPreset | ConvexUser,
-): BetterConvexTestAuthRuntime {
-  let generation = 0
-  const preset = shallowRef<BetterConvexTestAuthPreset>(
-    typeof initial === 'string' ? initial : 'authenticated',
-  )
-  const currentUser = shallowRef<ConvexUser | null>(
-    preset.value === 'authenticated'
-      ? typeof initial === 'string'
-        ? DEFAULT_USER
-        : initial
-      : null,
-  )
-  const currentError = shallowRef<ConvexCallError | undefined>(
-    preset.value === 'error'
-      ? new ConvexCallError({ kind: 'authentication', message: 'Test authentication failed' })
-      : undefined,
-  )
-  const listeners = new Set<() => void>()
+  control: BetterConvexTestAuthControl,
+  initialUser: ConvexUser | null,
+  initialError?: ConvexCallError,
+): BetterConvexTestAuth {
+  const status = shallowRef<BetterConvexTestAuthPreset>(control.status)
+  const currentUser = shallowRef<ConvexUser | null>(initialUser)
+  const currentError = shallowRef<ConvexCallError | undefined>(initialError)
   const settledWaiters = new Set<() => void>()
 
+  control.subscribe(() => {
+    status.value = control.status
+    if (status.value === 'loading') return
+    for (const settle of [...settledWaiters]) settle()
+  })
+
   const waitForSettlement = (timeoutMs = 0) => {
-    if (preset.value !== 'loading') return Promise.resolve()
+    if (status.value !== 'loading') return Promise.resolve()
     return new Promise<void>((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const settle = () => {
@@ -78,100 +84,57 @@ export function createBetterConvexTestAuth(
     })
   }
 
-  const notify = () => {
-    for (const listener of listeners) listener()
-    if (preset.value !== 'loading') {
-      for (const resolve of settledWaiters) resolve()
-      settledWaiters.clear()
-    }
-  }
-  const change = (
-    next: BetterConvexTestAuthPreset,
-    user: ConvexUser | null,
-    error?: ConvexCallError,
-  ) => {
-    const previousKey = currentUser.value?.id ?? 'anonymous'
-    const nextKey = user?.id ?? 'anonymous'
-    if (previousKey !== nextKey) generation += 1
-    preset.value = next
+  const signIn = (user: ConvexUser = DEFAULT_TEST_USER) => {
     currentUser.value = user
-    currentError.value = error
-    notify()
+    currentError.value = undefined
+    control.signIn(user.id)
+  }
+  const signOut = () => {
+    currentUser.value = null
+    currentError.value = undefined
+    control.signOut()
   }
 
-  const observer: BetterConvexAttachment['identity'] = {
-    snapshot: () => ({
-      authEnabled: true,
-      settled: preset.value !== 'loading',
-      identityKey:
-        preset.value === 'loading'
-          ? null
-          : currentUser.value
-            ? (`user:${currentUser.value.id}` as const)
-            : 'anonymous',
-      identityGeneration: generation,
-      error: currentError.value ?? null,
-    }),
-    waitForInitialSettlement() {
-      return waitForSettlement()
-    },
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-  }
-
-  const status = computed(() =>
-    preset.value === 'loading'
-      ? ('loading' as const)
-      : currentError.value
-        ? ('error' as const)
-        : currentUser.value
-          ? ('authenticated' as const)
-          : ('anonymous' as const),
-  )
-  const auth = {
-    status,
-    pending: computed(() => preset.value === 'loading'),
+  return Object.freeze({
+    status: computed(() => status.value),
+    pending: computed(() => status.value === 'loading'),
     user: readonly(currentUser),
     error: computed(() => currentError.value),
     client: Object.freeze({
       signIn: Object.freeze({
         async email() {
-          change('authenticated', DEFAULT_USER)
-          return { data: {}, error: null }
+          signIn()
+          return RESULT
         },
       }),
       signUp: Object.freeze({
         async email() {
-          change('authenticated', DEFAULT_USER)
-          return { data: {}, error: null }
+          signIn()
+          return RESULT
         },
       }),
       async signOut() {
-        change('anonymous', null)
-        return { data: {}, error: null }
+        signOut()
+        return RESULT
       },
     }),
     async ready(options?: { timeoutMs?: number }) {
       await waitForSettlement(options?.timeoutMs)
       return status.value
     },
-    signIn: (user: ConvexUser = DEFAULT_USER) => change('authenticated', user),
-    signOut: () => change('anonymous', null),
-    setLoading: () => change('loading', null),
-    fail: (error: unknown) =>
-      change(
-        'error',
-        null,
-        error instanceof ConvexCallError
-          ? error
-          : new ConvexCallError({
-              kind: 'authentication',
-              message: error instanceof Error ? error.message : String(error),
-            }),
-      ),
-  } satisfies BetterConvexTestAuth
-
-  return { auth: Object.freeze(auth), observer }
+    signIn,
+    signOut,
+    renewSession: () => control.renewSession(),
+    setLoading() {
+      currentUser.value = null
+      currentError.value = undefined
+      control.setLoading()
+    },
+    fail(error: unknown) {
+      const presented = presentationError(error)
+      currentUser.value = null
+      currentError.value = presented
+      control.fail(presented)
+    },
+  })
 }

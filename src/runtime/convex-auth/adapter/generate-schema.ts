@@ -107,6 +107,33 @@ const explicitIndexes: Readonly<Record<string, readonly AuthIndexDeclaration[]>>
     { fields: ['identifier', 'createdAt'] },
   ],
 }
+/**
+ * Columns an earlier release wrote that Better Auth no longer defines, by
+ * logical model. Each stays in the Convex schema as an optional column so the
+ * rows that carry it still validate when the new schema is pushed. It is not
+ * adapter metadata: the adapter never writes, reads, filters, selects or
+ * indexes it, and Better Auth never sees it.
+ */
+const legacyFields: Readonly<Record<string, Readonly<Record<string, AuthFieldKind>>>> = {
+  // Better Auth 1.7.0-1.7.2 (every Better Convex 1.0.0-beta release) stored a
+  // required account `issuer` and keyed accounts by (issuer, accountId); 1.7.3+
+  // keys them by (providerId, accountId) again. Remove this entry only together
+  // with a future versioned component migration that unsets `issuer` on every
+  // account row; before that, removing it makes the schema push fail on beta data.
+  account: { issuer: 'string' },
+}
+
+/**
+ * Component-owned fields added after the 1.0.0 betas, by logical model. Beta
+ * rows lack them, so each is an optional Convex column: the schema push accepts
+ * those rows, and the adapter writes the field on every new row. Code that
+ * reads the field must deny a row without it.
+ */
+const postBetaFields: Readonly<Record<string, readonly string[]>> = {
+  // Beta refresh tokens have no consent binding; refresh admission denies them.
+  oauthRefreshToken: ['bcnConsentId'],
+}
+
 function physicalFieldName(logicalName: string, field: DBFieldAttribute): string {
   return field.fieldName ?? logicalName
 }
@@ -291,15 +318,25 @@ function buildMetadata(tables: BetterAuthDBSchema): AuthSchemaMetadata {
         updatable: !(
           logicalModelName === 'oauthRefreshToken' && logicalFieldName === 'bcnConsentId'
         ),
+        ...(postBetaFields[logicalModelName]?.includes(logicalFieldName)
+          ? { optional: true as const }
+          : {}),
         ...(reference ? { reference } : {}),
       }
     }
 
+    const legacy = legacyFields[logicalModelName]
+    for (const name of Object.keys(legacy ?? {})) {
+      if (fields[name]) {
+        throw new Error(`AUTH_SCHEMA_LEGACY_FIELD_COLLISION:${physicalModelName}.${name}`)
+      }
+    }
     models[physicalModelName] = {
       logicalName: logicalModelName,
       physicalName: physicalModelName,
       fields,
       indexes: buildIndexes(logicalModelName, fields, table.indexes ?? []),
+      ...(legacy ? { legacyFields: { ...legacy } } : {}),
     }
   }
   for (const model of Object.values(models)) {
@@ -413,10 +450,19 @@ function renderSchema(metadata: AuthSchemaMetadata): string {
   const renderedModels = models.map((model) => {
     const fields = Object.values(model.fields)
       .map((field) => {
-        const validator = validatorForKind(field.kind)
-        return `    ${renderPropertyName(field.physicalName)}: ${field.nullable ? `v.union(v.null(), ${validator})` : validator},`
+        const base = validatorForKind(field.kind)
+        const validator = field.nullable ? `v.union(v.null(), ${base})` : base
+        return field.optional
+          ? `    // Added after the 1.0 betas: optional so beta rows validate; always written.\n    ${renderPropertyName(field.physicalName)}: v.optional(${validator}),`
+          : `    ${renderPropertyName(field.physicalName)}: ${validator},`
       })
       .join('\n')
+    const legacy = Object.entries(model.legacyFields ?? {})
+      .map(
+        ([name, kind]) =>
+          `\n    // Retired column: optional so earlier rows validate; never read or written.\n    ${renderPropertyName(name)}: v.optional(${validatorForKind(kind)}),`,
+      )
+      .join('')
     const indexCalls = model.indexes.map(
       (index) => `.index(${renderString(index.descriptor)}, ${renderValue(index.fields)})`,
     )
@@ -424,7 +470,7 @@ function renderSchema(metadata: AuthSchemaMetadata): string {
       indexCalls.length === 1 && `  })${indexCalls[0]},`.length <= 100
         ? indexCalls[0]
         : indexCalls.map((call) => `\n    ${call}`).join('')
-    return `  ${renderPropertyName(model.physicalName)}: defineTable({\n${fields}\n  })${indexes},`
+    return `  ${renderPropertyName(model.physicalName)}: defineTable({\n${fields}${legacy}\n  })${indexes},`
   })
 
   return [
