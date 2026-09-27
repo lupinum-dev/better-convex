@@ -6,22 +6,10 @@ import { equalityRange } from './oauth-refresh'
 import { readAuthSessionAdmission } from './session-generation'
 import type { AuthAdapterComponentApi } from './types'
 
-/** Provider-owned authority needed to revalidate a verified OAuth access token. */
-export interface OAuthLiveAccess {
-  /** Required for renewable tokens; immutable provider consent identity. */
-  readonly grantId?: string
-  readonly clientId: string
-  readonly issuer: string
-  readonly resource: string
-  readonly scopes: readonly string[]
-  readonly sessionId: string
-  readonly subject: string
-}
-
 /** Arguments of the component's single live-grant query. */
 export const oauthLiveAccessArgs = {
   clientId: v.string(),
-  grantId: v.optional(v.string()),
+  grantId: v.string(),
   resource: v.string(),
   scopes: v.array(v.string()),
   sessionId: v.string(),
@@ -54,7 +42,7 @@ function containsEvery(values: readonly string[], required: readonly string[]): 
 
 function validRequest(value: {
   clientId: unknown
-  grantId?: unknown
+  grantId: unknown
   resource: unknown
   scopes: unknown
   sessionId: unknown
@@ -66,11 +54,10 @@ function validRequest(value: {
     nonEmptyString(value.resource) &&
     nonEmptyString(value.sessionId) &&
     nonEmptyString(value.userId) &&
-    (value.grantId === undefined || nonEmptyString(value.grantId)) &&
+    // Every token must name the consent it was issued under.
+    nonEmptyString(value.grantId) &&
     scopes !== undefined &&
-    scopes.length > 0 &&
-    // A renewable grant must name the consent it was issued under.
-    (!scopes.includes('offline_access') || nonEmptyString(value.grantId))
+    scopes.length > 0
   )
 }
 
@@ -82,16 +69,16 @@ async function single(rows: Promise<Row[]>): Promise<Row | null> {
 
 /**
  * Component-side live grant check: session admission (expiry and identity
- * generation), client, resource, client-resource link, and consent, all read
- * through indexes in one query transaction. A disabled resource remains valid
- * for an already-issued token, matching the pinned provider; deleting it
- * revokes access.
+ * generation), client, resource, client-resource link, and the exact consent
+ * the token was issued under, all read through indexes in one query
+ * transaction. Disabling or deleting the client or resource revokes
+ * already-issued tokens immediately.
  */
 export async function readOAuthLiveGrant(
   ctx: GenericQueryCtx<GenericDataModel>,
   args: {
     clientId: string
-    grantId?: string
+    grantId: string
     resource: string
     scopes: readonly string[]
     sessionId: string
@@ -151,6 +138,7 @@ export async function readOAuthLiveGrant(
     !containsEvery(clientScopes, scopes) ||
     !resource ||
     resource.identifier !== identifier ||
+    resource.disabled === true ||
     resourceScopes === undefined ||
     (resourceScopes !== null && !containsEvery(resourceScopes, scopes)) ||
     !link ||
@@ -158,7 +146,7 @@ export async function readOAuthLiveGrant(
     link.resourceId !== identifier ||
     !consent ||
     !nonEmptyString(consent.id) ||
-    (args.grantId !== undefined && consent.id !== args.grantId) ||
+    consent.id !== args.grantId ||
     consent.clientId !== clientId ||
     consent.userId !== userId ||
     !consentResources?.includes(identifier) ||
@@ -179,7 +167,7 @@ export async function queryOAuthLiveGrant<DataModel extends GenericDataModel>(
   component: AuthAdapterComponentApi,
   access: {
     readonly clientId: string
-    readonly grantId?: string
+    readonly grantId: string
     readonly resource: string
     readonly scopes: readonly string[]
     readonly sessionId: string
@@ -188,7 +176,7 @@ export async function queryOAuthLiveGrant<DataModel extends GenericDataModel>(
 ): Promise<{ readonly user: Record<string, unknown>; readonly grantId: string } | null> {
   const args = {
     clientId: access?.clientId,
-    ...(access?.grantId === undefined ? {} : { grantId: access.grantId }),
+    grantId: access?.grantId,
     resource: access?.resource,
     scopes: Array.isArray(access?.scopes) ? [...access.scopes] : access?.scopes,
     sessionId: access?.sessionId,
@@ -200,25 +188,4 @@ export async function queryOAuthLiveGrant<DataModel extends GenericDataModel>(
   } catch {
     return null
   }
-}
-
-/**
- * Rechecks provider-owned authority from indexed Better Auth records in one
- * component query.
- */
-export async function validateOAuthAccess<DataModel extends GenericDataModel>(
-  ctx: AuthCtx<DataModel>,
-  component: AuthAdapterComponentApi,
-  access: OAuthLiveAccess,
-): Promise<boolean> {
-  if (!access || !nonEmptyString(access.issuer)) return false
-  const grant = await queryOAuthLiveGrant(ctx, component, {
-    clientId: access.clientId,
-    ...(access.grantId === undefined ? {} : { grantId: access.grantId }),
-    resource: access.resource,
-    scopes: access.scopes,
-    sessionId: access.sessionId,
-    userId: access.subject,
-  })
-  return grant !== null
 }

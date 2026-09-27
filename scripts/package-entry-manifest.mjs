@@ -146,7 +146,6 @@ const nuxtPackageEntries = [
     distJs: 'dist/runtime/convex-auth/index.js',
     distDts: 'dist/runtime/convex-auth/index.d.ts',
     valueExports: [
-      'createBetterAuthMcpAccessVerifier',
       'createBetterConvexAuth',
       'createUserProjectionTriggers',
       'defineAuthAdapterFunctions',
@@ -186,7 +185,6 @@ const nuxtPackageEntries = [
       'CreateBetterConvexAuthOptions',
       'CreateUserProjectionTriggersOptions',
       'McpAccessErrorCode',
-      'OAuthLiveAccess',
       'VerifiedBetterConvexMcpAccess',
       'WritableAuthCtx',
     ],
@@ -198,6 +196,11 @@ const nuxtPackageEntries = [
       'requireWritableAuthCtx',
       'safeGetAuthUser',
       'getAuthUser',
+      // Low-level OAuth access checks: the only public path is
+      // auth.createMcpAccessVerifier(ctx) + auth.requireMcpPrincipal(ctx, principal, { scope }).
+      'createBetterAuthMcpAccessVerifier',
+      'validateOAuthAccess',
+      'OAuthLiveAccess',
     ],
   },
   {

@@ -24,7 +24,7 @@ import type { ComponentApi } from '../../src/runtime/convex-auth/component/_gene
 import authSchema from '../../src/runtime/convex-auth/component/schema'
 import authSchemaMetadata from '../../src/runtime/convex-auth/component/schemaMetadata'
 import { rotateSigningKeyWithOfficialJwt } from '../../src/runtime/convex-auth/jwks-rotation'
-import { validateOAuthAccess } from '../../src/runtime/convex-auth/oauth-live-access'
+import { queryOAuthLiveGrant } from '../../src/runtime/convex-auth/oauth-live-access'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
 import { createConvexAuthRateLimitStorage } from '../../src/runtime/convex-auth/rate-limit-storage'
 
@@ -489,14 +489,14 @@ describe('official provider renewal through the canonical Convex adapter', () =>
     const claims = decodeJwt(first.body.access_token)
     const access = {
       clientId: 'client',
-      subject: 'user',
+      userId: 'user',
       sessionId: 'session',
-      issuer,
       resource,
       scopes,
       grantId: String(claims.bcn_grant_id),
     }
-    const live = () => test.query((ctx) => validateOAuthAccess(ctx, component, access))
+    const live = () =>
+      test.query(async (ctx) => (await queryOAuthLiveGrant(ctx, component, access)) !== null)
     expect(await live()).toBe(true)
     await request(first.body.refresh_token, {}, 'revoke')
     expect(await live()).toBe(false)

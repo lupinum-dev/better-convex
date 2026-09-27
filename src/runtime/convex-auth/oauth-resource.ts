@@ -342,7 +342,7 @@ export function createBetterAuthMcpAccessVerifier<DataModel extends GenericDataM
       })
       const grant = await queryOAuthLiveGrant(ctx, component, {
         clientId: verified.clientId,
-        ...(verified.grantId === undefined ? {} : { grantId: verified.grantId }),
+        grantId: verified.grantId,
         resource,
         scopes: verified.scopes,
         sessionId: verified.sessionId,

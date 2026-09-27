@@ -97,6 +97,8 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
       },
     },
   },
+  // The workspace header shows the signed-in email from the token.
+  defineSessionClaims: ({ user }) => ({ email: user.email }),
 })
 
 export const { createAuth } = auth

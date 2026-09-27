@@ -38,6 +38,12 @@ export interface PaginationControllerInput<Item> {
   isIdle(): boolean
   isLive(): boolean
   getBoundaryFirstPage(): PaginationResult<Item> | null
+  /**
+   * Drops the hydration seed for good. Called once live first-page data owns
+   * the list and on every pagination restart, so the seed (and its cursor)
+   * never returns as fresh data; earlier results survive only as stale data.
+   */
+  retireBoundaryFirstPage(): void
   getBoundaryError(): ConvexCallError | undefined
   setBoundaryError(error: ConvexCallError | undefined, key: string): void
   getClient(): QuerySubscriptionClient | null
@@ -211,12 +217,14 @@ export function createPaginationController<Item>(
     if (result.pageStatus === 'SplitRequired') {
       firstPageWithheld.value = true
       firstPageRealtime.value = null
+      input.retireBoundaryFirstPage()
       splitController.begin('first', result)
       return
     }
     const previous = firstPage()
     if (previous && previous.continueCursor !== result.continueCursor && pages.value.length > 0)
       retirePagesFrom(0)
+    input.retireBoundaryFirstPage()
     firstPageWithheld.value = false
     firstPageRealtime.value = result
     input.setBoundaryError(undefined, operation.boundaryKey)
@@ -475,6 +483,7 @@ export function createPaginationController<Item>(
       for (const retiredPage of loadedPages.slice(refreshed.length)) retiredPage.unsubscribe?.()
       firstPageWithheld.value = firstResult.pageStatus === 'SplitRequired'
       firstPageRealtime.value = visiblePage(firstResult)
+      input.retireBoundaryFirstPage()
       pages.value = refreshed
       if (input.isLive()) {
         for (let index = 0; index < refreshed.length; index += 1) {
@@ -500,6 +509,7 @@ export function createPaginationController<Item>(
     errorKey: string
     renewGeneration: boolean
     subscribe: boolean
+    keepBoundaryFirstPage?: boolean
   }): void {
     fence.invalidate()
     teardownSubscriptions()
@@ -507,6 +517,7 @@ export function createPaginationController<Item>(
     manualRefreshPending.value = false
     firstPageRealtime.value = null
     firstPageWithheld.value = false
+    if (!options.keepBoundaryFirstPage) input.retireBoundaryFirstPage()
     pages.value = []
     if (options.clearSettledData) lastSettledResults.value = undefined
     input.setBoundaryError(undefined, options.errorKey)
@@ -583,6 +594,9 @@ export function createPaginationController<Item>(
       errorKey: boundary.previousBoundaryKey,
       renewGeneration: !idle,
       subscribe: !idle && boundary.nextLive,
+      // Losing liveness on the same key (an auth wait) keeps a hydrated page
+      // that live data has not replaced yet.
+      keepBoundaryFirstPage: !idle && boundary.nextBoundaryKey === boundary.previousBoundaryKey,
     })
     if (boundary.nextBoundaryKey !== boundary.previousBoundaryKey) {
       input.setBoundaryError(undefined, boundary.nextBoundaryKey)

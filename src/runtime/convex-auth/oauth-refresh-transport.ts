@@ -66,8 +66,12 @@ export async function matchesOAuthRefreshClient(row: unknown): Promise<boolean> 
   return matches
 }
 
-/** Bind renewable JWTs to the immutable provider consent row, not just its replaceable scope set. */
-export async function oauthRenewalGrantClaim(info: unknown): Promise<{ bcn_grant_id: string }> {
+/**
+ * Bind every OAuth access JWT to the immutable provider consent row, not just
+ * its replaceable scope set, so a revoked-then-regranted consent never revives
+ * a token issued under the old one.
+ */
+export async function oauthGrantClaim(info: unknown): Promise<{ bcn_grant_id: string }> {
   if (
     !info ||
     typeof info !== 'object' ||

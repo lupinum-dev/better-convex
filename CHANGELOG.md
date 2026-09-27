@@ -16,11 +16,14 @@
   rows need a new, empty auth component.
 - `useConvexMutation` returns `{ mutate, data, status, pending, error, reset }`
   and `useConvexAction` returns `{ run, ... }`. `useConvexForm` rejects a
-  concurrent submit with `SUBMIT_IN_PROGRESS`.
+  concurrent submit with `SUBMIT_IN_PROGRESS`, and never sends a submission
+  that an identity change (`IDENTITY_CHANGED`), `reset()`, or disposal
+  (`CANCELLED`) retired while it was still validating.
 - Pagination matches Convex `usePaginatedQuery`: `canLoadMore`, `isLoadingMore`,
   and `isExhausted` replace the public `pageStatus` and `cursor`; `loadMore()`
   returns a promise that never rejects, and a failed later page keeps the loaded
-  items.
+  items. The server-rendered first page is dropped once live data arrives and on
+  every restart, so an invalid cursor or `reset()` never shows it again.
 - `ConvexCallError` keeps the message written by your Convex function, carries
   `functionName` and a stable library `code`, and `isConvexCallError(error, code?)`
   checks it. File upload moves into the Vue package with `CANCELLED`,
@@ -36,8 +39,12 @@
   `requireWritableAuthCtx` are no longer exported.
 - One `email(ctx, message)` hook replaces the per-feature email callbacks, and
   password reset is opt-in. Session lifetimes, the cookie cache, and trusted
-  account-linking providers are bounded; session tokens carry `name`, `email`,
-  `emailVerified`, and `image` by default.
+  account-linking providers are bounded. Session tokens carry only the library
+  claims by default; add profile claims such as `name` and `email` with
+  `defineSessionClaims`.
+- Integrated-client calls to `/organization/get-full-organization` and
+  `/account-info` reconcile the session, because Better Auth can change the
+  active organization or the account cookie there.
 - The local auth adapter exports `expireSession`, `oauthLiveAccess`, and
   `pruneSigningKeys` instead of `assertProfile` and the workforce functions.
   `jwksOperatorFunctions()` adds `pruneSigningKeys`.
@@ -51,9 +58,14 @@
   `auth.requireMcpPrincipal(ctx, principal, { scope })`,
   `auth.oauthConnections`, and `auth.oauthOperator.setClientDisabled`. One component
   query checks live MCP access, and the verifier reads signing keys from the
-  component, so the `jwksUrl` option is gone.
+  component, so the `jwksUrl` option is gone. `createBetterAuthMcpAccessVerifier`,
+  `auth.validateOAuthAccess`, and the `OAuthLiveAccess` type are removed; use
+  `auth.createMcpAccessVerifier(ctx)` and `auth.requireMcpPrincipal`. Every
+  OAuth access token, with renewal on or off, is bound to the consent that
+  issued it, and disabling an OAuth resource rejects tokens already issued.
 - `@lupinum/better-convex-mcp` `1.0.0-rc.0` ships as its own release unit after
-  this one. It uses `@modelcontextprotocol/server` `2.1.0`, passes one
+  this one. It declares `@modelcontextprotocol/server` `2.1.0` as an exact peer
+  dependency that the application installs, passes one
   `{ access, principal, server, tools }` object to `configureServer`, adds
   `defineMcpTool`, `registerMcpTool`, `projectMcpToolError`, `exposeErrorCodes`,
   and `listMcpCatalog` from `/test`, and requires the `MCP-Protocol-Version`

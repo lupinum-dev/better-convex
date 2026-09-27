@@ -68,7 +68,7 @@ export interface ConvexAuthOptions {
 }
 
 // Registered JWT claims plus the claims that bind a token to its session and
-// token class. Custom (and default) session claims can never set these.
+// token class. Claims from `defineSessionClaims` can never set these.
 const forbiddenCustomClaims = new Set([
   'aud',
   'exp',

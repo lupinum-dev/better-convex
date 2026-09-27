@@ -303,7 +303,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "internal",
         {
           clientId: string;
-          grantId?: string;
+          grantId: string;
           resource: string;
           scopes: Array<string>;
           sessionId: string;

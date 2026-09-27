@@ -23,8 +23,10 @@ export const supportedPeerRanges = Object.freeze({
 })
 
 /**
- * Runtime dependencies whose instances cross a published package boundary. An application
- * that installs the package declares the same exact version so that it resolves one copy.
+ * Runtime dependencies whose instances cross the boundary of an already published package
+ * release (`@lupinum/better-convex-mcp` up to 1.0.0-beta.2 bundled the SDK as a dependency).
+ * An application pinned to such a release declares the same exact version so that it resolves
+ * one copy. Current releases declare the SDK as an exact peer instead.
  */
 export const sharedPackageRuntimes = Object.freeze({
   '@lupinum/better-convex-mcp': Object.freeze(['@modelcontextprotocol/server']),

@@ -1,7 +1,7 @@
 import type { OAuthOptions, Scope } from '@better-auth/oauth-provider'
 
 import { readStreamWithByteLimit } from '../shared/bounded-stream'
-import { oauthRenewalGrantClaim } from './oauth-refresh-transport'
+import { oauthGrantClaim } from './oauth-refresh-transport'
 
 const OAUTH_CONFIG_ERROR = 'AUTH_OAUTH_CONFIG_INVALID'
 const OAUTH_REQUEST_ERROR = 'AUTH_OAUTH_REQUEST_INVALID'
@@ -97,7 +97,8 @@ export interface OAuthAccessTokenExpectations {
 }
 
 export interface OAuthPrincipal {
-  grantId?: string
+  /** Immutable provider consent id (`bcn_grant_id`) the token was issued under. */
+  grantId: string
   clientId: string
   expiresAt: number
   scopes: readonly string[]
@@ -116,7 +117,7 @@ interface HardenedOAuthCallbacks {
   clientPrivileges: (context: PrivilegeContext) => Promise<boolean>
   customAccessTokenClaims: (
     info: unknown,
-  ) => Promise<{ token_use: 'oauth-access'; bcn_grant_id?: string }>
+  ) => Promise<{ token_use: 'oauth-access'; bcn_grant_id: string }>
   resourcePrivileges: (context: PrivilegeContext) => Promise<boolean>
 }
 
@@ -388,8 +389,7 @@ export function hardenOAuthProviderCallbacks(
       ) {
         invalidConfig()
       }
-      const renewable = hasOAuthRenewal(options)
-      return { token_use: 'oauth-access', ...(renewable ? await oauthRenewalGrantClaim(info) : {}) }
+      return { token_use: 'oauth-access', ...(await oauthGrantClaim(info)) }
     },
   }
   try {
@@ -789,18 +789,9 @@ function assertOAuthAccessTokenClaimsAt(
     if (!allowed.has(required) || !scopes.includes(required)) invalidToken()
   }
 
-  const grantId =
-    scopes.includes('offline_access') || payload.bcn_grant_id !== undefined
-      ? requiredString(payload, 'bcn_grant_id')
-      : undefined
-  return Object.freeze({
-    clientId,
-    expiresAt,
-    scopes,
-    sessionId,
-    subject,
-    ...(grantId ? { grantId } : {}),
-  })
+  // Every access token names the consent it was issued under, renewable or not.
+  const grantId = requiredString(payload, 'bcn_grant_id')
+  return Object.freeze({ clientId, expiresAt, grantId, scopes, sessionId, subject })
 }
 
 export function prepareOAuthAccessTokenVerification(expectations: OAuthAccessTokenExpectations) {

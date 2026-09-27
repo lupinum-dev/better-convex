@@ -309,8 +309,8 @@ credentials, private-key client authentication, introspection, UserInfo, or
 OIDC scopes. Do not enable one of them only to satisfy an unsupported client.
 
 OAuth access tokens are self-contained JWTs with a maximum ten-minute lifetime.
-Deleting a session or consent, disabling or deleting a client, deleting the
-resource, unlinking the resource, or changing a membership or role is checked
+Deleting a session or consent, disabling or deleting a client, disabling or
+deleting the resource, unlinking the resource, or changing a membership or role is checked
 live and blocks the next tool call. Revoking one already-issued JWT at the
 token endpoint has a residual window until its `exp`; disconnect the host to
 revoke its access immediately.

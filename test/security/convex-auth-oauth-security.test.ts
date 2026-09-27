@@ -1,3 +1,4 @@
+import { runWithEndpointContext } from '@better-auth/core/context'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -131,6 +132,7 @@ function validTokenClaims(overrides: Record<string, unknown> = {}) {
   return {
     aud: resource,
     azp: 'client-1',
+    bcn_grant_id: 'consent-1',
     client_id: 'client-1',
     exp: 1600,
     iat: 1000,
@@ -153,7 +155,12 @@ describe('fixed OAuth provider profile', () => {
     { futureProviderOption: true },
     { signup: { page: '/signup' } },
     { signup: { page: 'https://evil.example/signup' } },
-    { selectAccount: { page: '//evil.example/select', shouldRedirect: async () => true } },
+    {
+      selectAccount: {
+        page: '//evil.example/select',
+        shouldRedirect: async () => true,
+      },
+    },
     {
       postLogin: {
         consentReferenceId: async () => 'tenant',
@@ -221,7 +228,11 @@ describe('fixed OAuth provider profile', () => {
       },
     })
     const hardened = hardenOAuthProviderCallbacks(options)
-    const identity = { headers: new Headers(), session: { id: 's' }, user: { id: 'u' } }
+    const identity = {
+      headers: new Headers(),
+      session: { id: 's' },
+      user: { id: 'u' },
+    }
 
     await expect(hardened.clientPrivileges({ ...identity, action: 'allow' })).resolves.toBe(true)
     await expect(hardened.clientPrivileges({ ...identity, action: 'undefined' })).resolves.toBe(
@@ -240,12 +251,44 @@ describe('fixed OAuth provider profile', () => {
   it('enforces the one non-authorization token class claim', async () => {
     const safe = oauthOptions()
     const hardened = hardenOAuthProviderCallbacks(safe)
-    await expect(hardened.customAccessTokenClaims({})).resolves.toEqual({
+    // Contract change (1.0): every access token, renewable or not, is bound to
+    // its consent id. Without a user and live consent to bind, nothing is issued.
+    await expect(hardened.customAccessTokenClaims({})).rejects.toThrow('AUTH_OAUTH_GRANT_INVALID')
+
+    // Inside the token endpoint: bind to the live consent row, or fail closed.
+    const findOne = vi.fn(async (): Promise<{ id: string } | null> => null)
+    const tokenEndpoint = (body: Record<string, unknown>) =>
+      ({
+        path: '/oauth2/token',
+        body,
+        context: { adapter: { findOne } },
+      }) as never
+    const claimsAt = (body: Record<string, unknown>) =>
+      runWithEndpointContext(tokenEndpoint(body), () =>
+        hardened.customAccessTokenClaims({ user: { id: 'user-1' } }),
+      )
+    await expect(claimsAt({ client_id: 'client-1' })).rejects.toThrow('AUTH_OAUTH_GRANT_INVALID')
+    expect(findOne).toHaveBeenLastCalledWith({
+      model: 'oauthConsent',
+      where: [
+        { field: 'clientId', value: 'client-1' },
+        { field: 'userId', value: 'user-1' },
+      ],
+    })
+    findOne.mockResolvedValueOnce({ id: '' })
+    await expect(claimsAt({ client_id: 'client-1' })).rejects.toThrow('AUTH_OAUTH_GRANT_INVALID')
+    await expect(claimsAt({})).rejects.toThrow('AUTH_OAUTH_GRANT_INVALID')
+    findOne.mockResolvedValueOnce({ id: 'consent-1' })
+    await expect(claimsAt({ client_id: 'client-1' })).resolves.toEqual({
       token_use: 'oauth-access',
+      bcn_grant_id: 'consent-1',
     })
 
     const unsafe = oauthOptions({
-      customAccessTokenClaims: () => ({ role: 'admin', token_use: 'oauth-access' }),
+      customAccessTokenClaims: () => ({
+        role: 'admin',
+        token_use: 'oauth-access',
+      }),
     })
     await expect(hardenOAuthProviderCallbacks(unsafe).customAccessTokenClaims({})).rejects.toThrow(
       'AUTH_OAUTH_CONFIG_INVALID',
@@ -273,7 +316,11 @@ describe('stored OAuth beta inventory', () => {
       tokenEndpointAuthMethod: 'none',
       applicationType: 'native',
     },
-    { clientSecret: null, tokenEndpointAuthMethod: 'none', applicationType: 'web' },
+    {
+      clientSecret: null,
+      tokenEndpointAuthMethod: 'none',
+      applicationType: 'web',
+    },
     { tokenEndpointAuthMethod: 'client_secret_post' },
     { tokenEndpointAuthMethod: 'private_key_jwt', jwks: '{}' },
     { grantTypes: ['refresh_token'] },
@@ -402,7 +449,10 @@ describe('admin OAuth provisioning boundary', () => {
     {
       accepted: true,
       name: 'public-none native client',
-      request: { token_endpoint_auth_method: 'none', application_type: 'native' },
+      request: {
+        token_endpoint_auth_method: 'none',
+        application_type: 'native',
+      },
       stored: {
         clientSecret: null,
         tokenEndpointAuthMethod: 'none',
@@ -656,7 +706,9 @@ describe('admin OAuth provisioning boundary', () => {
 
 describe('pre-provider request parsing', () => {
   it('installs only the URL.canParse primitive missing from the Convex isolate', () => {
-    const target: { canParse?: (input: string | URL, base?: string | URL) => boolean } = {}
+    const target: {
+      canParse?: (input: string | URL, base?: string | URL) => boolean
+    } = {}
     installUrlCanParseCompatibility(target)
     expect(target.canParse?.('https://resource.example.test/mcp')).toBe(true)
     expect(target.canParse?.('/relative-only')).toBe(false)
@@ -775,7 +827,9 @@ describe('OAuth metadata projections', () => {
     ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
     expect(() =>
       projectOAuthAuthorizationServerMetadata(
-        officialMetadata({ pushed_authorization_request_endpoint: 'https://evil.example/par' }),
+        officialMetadata({
+          pushed_authorization_request_endpoint: 'https://evil.example/par',
+        }),
         issuer,
         scopes,
       ),
@@ -806,6 +860,7 @@ describe('exact OAuth access-token class and bindings', () => {
     expect(assertOAuthAccessTokenClaims(validTokenClaims(), expectations)).toEqual({
       clientId: 'client-1',
       expiresAt: 1600,
+      grantId: 'consent-1',
       scopes: ['mcp:read', 'mcp:write'],
       sessionId: 'session-1',
       subject: 'user-1',
@@ -831,6 +886,10 @@ describe('exact OAuth access-token class and bindings', () => {
     { iat: 1201 },
     { cnf: { jkt: 'dpop-key' } },
     { role: 'admin' },
+    // Non-renewable tokens must name their consent too.
+    { bcn_grant_id: undefined },
+    { bcn_grant_id: '' },
+    { bcn_grant_id: 42 },
   ])('rejects token confusion or binding drift %#', (override) => {
     expect(() => assertOAuthAccessTokenClaims(validTokenClaims(override), expectations)).toThrow(
       'AUTH_OAUTH_TOKEN_INVALID',

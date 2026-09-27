@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import type { EnhancedAuthState, AuthWaterfall, ConvexUser } from '../../types'
+import { userDisplayName } from '../user-label'
 import AuthWaterfallComponent from './AuthWaterfall.vue'
 
 const props = defineProps<{
@@ -11,10 +12,9 @@ const props = defineProps<{
 
 const user = computed<Partial<ConvexUser>>(() => props.authState?.user || {})
 
-const avatarInitial = computed(() => {
-  const name = user.value.name || user.value.email || '?'
-  return name.charAt(0).toUpperCase()
-})
+const displayName = computed(() => userDisplayName(user.value))
+
+const avatarInitial = computed(() => (displayName.value || '?').charAt(0).toUpperCase())
 
 const expirationDisplay = computed(() => {
   if (props.authState?.expiresInSeconds === undefined) return '-'
@@ -45,8 +45,10 @@ const expirationDisplay = computed(() => {
           <template v-else>{{ avatarInitial }}</template>
         </div>
         <div class="user-details">
-          <div class="user-name">{{ user.name || 'Unknown' }}</div>
-          <div class="user-email">{{ user.email || '-' }}</div>
+          <div class="user-name">{{ displayName || 'Unknown' }}</div>
+          <div v-if="user.email && user.email !== displayName" class="user-email">
+            {{ user.email }}
+          </div>
         </div>
       </div>
 

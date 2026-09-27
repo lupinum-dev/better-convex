@@ -22,7 +22,7 @@ const delegatedGuide = read(
 const starterReadme = read('starters/mcp-oauth-agent/README.md')
 const mcpManifest = JSON.parse(read('packages/mcp/package.json')) as {
   version: string
-  dependencies: Record<string, string>
+  peerDependencies: Record<string, string>
 }
 const normalizedGuide = guide.replace(/\s+/gu, ' ')
 
@@ -31,7 +31,7 @@ describe('MCP package documentation', () => {
     expect(guide).toContain('`@lupinum/better-convex-mcp`')
     expect(guide).toContain(`\`${mcpManifest.version}\``)
     expect(guide).toContain(
-      `\`@modelcontextprotocol/server@${mcpManifest.dependencies['@modelcontextprotocol/server']}\``,
+      `\`@modelcontextprotocol/server@${mcpManifest.peerDependencies['@modelcontextprotocol/server']}\``,
     )
     expect(normalizedGuide).toContain(
       'final MCP `2026-07-28` contract through exact `@modelcontextprotocol/server@2.1.0`',
@@ -40,6 +40,14 @@ describe('MCP package documentation', () => {
     expect(guide).toContain(
       `@lupinum/better-convex-mcp@${mcpManifest.version} @modelcontextprotocol/server@2.1.0 zod@4.6.5`,
     )
+    // The SDK is an exact peer: every install command must name it.
+    expect(normalizedGuide).toContain('is an exact peer dependency')
+    expect(packageReadme).toContain('is an exact peer dependency')
+    for (const source of [guide, packageReadme, recipe]) {
+      for (const [command] of source.matchAll(/pnpm add @lupinum\/better-convex-mcp[^\n]*/gu)) {
+        expect(command).toContain('@modelcontextprotocol/server@2.1.0')
+      }
+    }
   })
 
   it('teaches one golden path: profile, routes, verifier, tools, in-function check, connections', () => {
@@ -63,7 +71,7 @@ describe('MCP package documentation', () => {
     )
     for (const source of [...pages, delegatedGuide, packageReadme, starterReadme]) {
       expect(source).not.toMatch(
-        /jwksUrl|validateLiveAccess|validateOAuthAccess|createBetterAuthMcpAccessVerifier\(\{|configureServer\(access/,
+        /jwksUrl|validateLiveAccess|validateOAuthAccess|createBetterAuthMcpAccessVerifier|OAuthLiveAccess|configureServer\(access/,
       )
     }
   })

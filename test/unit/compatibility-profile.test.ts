@@ -83,7 +83,7 @@ describe('packed compatibility profiles', () => {
       },
       {
         name: '@lupinum/better-convex-mcp',
-        dependencies: { '@modelcontextprotocol/server': '2.1.0' },
+        peerDependencies: { '@modelcontextprotocol/server': '2.1.0' },
       },
     ])
 
@@ -95,8 +95,14 @@ describe('packed compatibility profiles', () => {
       convex: '1.42.2',
       zod: '4.4.3',
     })
-    expect(() =>
-      adoptCandidateTuple(manifest, [{ name: '@lupinum/better-convex-mcp', dependencies: {} }]),
-    ).toThrow('must declare one exact shared @modelcontextprotocol/server runtime')
+    // The MCP package's SDK is an exact peer, never a runtime dependency the app inherits.
+    const ranged = { dependencies: { '@modelcontextprotocol/server': '2.0.0' } }
+    adoptCandidateTuple(ranged, [
+      {
+        name: '@lupinum/better-convex-mcp',
+        peerDependencies: { '@modelcontextprotocol/server': '>=2 <3' },
+      },
+    ])
+    expect(ranged.dependencies['@modelcontextprotocol/server']).toBe('2.0.0')
   })
 })

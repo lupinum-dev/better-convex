@@ -67,8 +67,11 @@ are gone, and TypeScript reports most places that you must change.
       bounded; `refreshCache` is rejected.
 - [ ] `account.accountLinking.trustedProviders` accepts only configured social
       providers; any other key under `account` fails.
-- [ ] Session tokens carry `name`, `email`, `emailVerified`, and `image` by
-      default; remove them from `defineSessionClaims`.
+- [ ] Session tokens carry only library claims. If the client shows
+      `name`, `email`, `emailVerified`, or `image` from `useConvexAuth().user`,
+      return them from `defineSessionClaims`, for example
+      `defineSessionClaims: ({ user }) => ({ name: user.name, email: user.email })`.
+      In Convex functions, use `auth.getUser(ctx)`.
 
 ## Composables and errors
 
@@ -77,7 +80,9 @@ are gone, and TypeScript reports most places that you must change.
 - [ ] `useConvexAction` returns `{ run, data, status, pending, error, reset }`;
       destructure `run`.
 - [ ] A second `useConvexForm` `submit()` while one is pending rejects with
-      `SUBMIT_IN_PROGRESS`.
+      `SUBMIT_IN_PROGRESS`. A submission retired during validation sends
+      nothing and resolves `{ ok: false }` with `IDENTITY_CHANGED` or
+      `CANCELLED`.
 - [ ] Pagination: `pageStatus` and `cursor` are gone; `status` and `pending`
       describe the first page only; use `canLoadMore`, `isLoadingMore`, and
       `isExhausted`; `loadMore()` returns a promise that never rejects.
@@ -96,9 +101,15 @@ are gone, and TypeScript reports most places that you must change.
 
 - [ ] `configureServer` receives one `{ access, principal, server, tools }`
       object instead of positional arguments.
-- [ ] `createBetterAuthMcpAccessVerifier` takes `(ctx, component, options)`
-      and has no `jwksUrl` or `validateLiveAccess`; use
-      `auth.createMcpAccessVerifier(ctx)`.
+- [ ] `createBetterAuthMcpAccessVerifier`, `auth.validateOAuthAccess`, and the
+      `OAuthLiveAccess` type are removed. Use `auth.createMcpAccessVerifier(ctx)`
+      in the HTTP action and `auth.requireMcpPrincipal(ctx, principal, { scope })`
+      in the internal function.
+- [ ] Every OAuth access token carries its consent ID, also with
+      `renewal: false`; beta tokens without it are rejected and hosts sign in
+      again. Disabling an OAuth resource rejects tokens already issued.
+- [ ] Install the MCP SDK yourself; it is an exact peer:
+      `pnpm add @lupinum/better-convex-mcp@1.0.0-rc.0 @modelcontextprotocol/server@2.1.0`.
 - [ ] Internal MCP functions take `principal: mcpPrincipalValidator` and call
       `auth.requireMcpPrincipal(ctx, principal, { scope })`.
 - [ ] Requests without the `MCP-Protocol-Version` header get HTTP `400`.

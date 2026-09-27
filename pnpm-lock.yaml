@@ -149,11 +149,10 @@ importers:
         version: 4.6.5
 
   packages/mcp:
-    dependencies:
+    devDependencies:
       '@modelcontextprotocol/server':
         specifier: 2.1.0
         version: 2.1.0
-    devDependencies:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

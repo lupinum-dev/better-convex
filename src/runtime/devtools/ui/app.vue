@@ -6,6 +6,7 @@ import { useAuthProxy } from './composables/useAuthProxy'
 import { useBridge } from './composables/useBridge'
 import { useMutations } from './composables/useMutations'
 import { useQueries } from './composables/useQueries'
+import { userDisplayName } from './user-label'
 
 const bridge = useBridge()
 
@@ -70,7 +71,7 @@ function selectApplication(event: Event) {
               authState?.pending
                 ? 'Loading...'
                 : authState?.isAuthenticated
-                  ? authState.user?.name || 'Authenticated'
+                  ? userDisplayName(authState.user) || 'Authenticated'
                   : 'Not authenticated'
             }}
           </span>

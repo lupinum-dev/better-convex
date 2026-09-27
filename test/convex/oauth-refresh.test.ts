@@ -6,10 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import authSchema from '../../src/runtime/convex-auth/component/schema'
-import {
-  validateOAuthAccess as checkOAuthAccess,
-  type OAuthLiveAccess,
-} from '../../src/runtime/convex-auth/oauth-live-access'
+import { queryOAuthLiveGrant } from '../../src/runtime/convex-auth/oauth-live-access'
 import rootSchema from '../fixtures/auth-relationships-root/convex/schema'
 
 const rootModules = import.meta.glob('../fixtures/auth-relationships-root/convex/**/*.ts')
@@ -23,12 +20,11 @@ const now = 1_700_000_000_000
 const access = Object.freeze({
   grantId: 'oauth-consent-row',
   clientId: 'oauth-client',
-  issuer: 'https://accounts.example.test/api/auth',
   resource: 'https://deployment.example.test/mcp',
   scopes: Object.freeze(['mcp:read', 'mcp:write', 'offline_access']),
   sessionId: 'oauth-session',
   subject: 'oauth-user',
-}) satisfies OAuthLiveAccess
+})
 
 function initTest() {
   const test = convexTest(rootSchema, rootModules)
@@ -90,7 +86,11 @@ async function createLiveGrant(test: ReturnType<typeof initTest>): Promise<void>
 }
 
 async function validate(test: ReturnType<typeof initTest>): Promise<boolean> {
-  return await test.query((ctx) => checkOAuthAccess(ctx, components.relationshipAuth, access))
+  const { subject: userId, ...grant } = access
+  return await test.query(
+    async (ctx) =>
+      (await queryOAuthLiveGrant(ctx, components.relationshipAuth, { ...grant, userId })) !== null,
+  )
 }
 
 async function updateRow(

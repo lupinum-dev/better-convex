@@ -6,12 +6,16 @@ import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
 const exactVersion = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u
 
 export function derivePackagePhysicalVersions(packageId, manifest) {
+  // Vue peers are ranges, so their reviewed versions are the exact development pins. The MCP
+  // package's only runtime is its exact official SDK peer.
   const sources =
     packageId === 'vue'
       ? Object.fromEntries(
           ['convex', 'vue'].map((name) => [name, manifest.devDependencies?.[name]]),
         )
-      : manifest.dependencies
+      : packageId === 'mcp'
+        ? manifest.peerDependencies
+        : manifest.dependencies
   if (
     !sources ||
     Object.entries(sources).some(

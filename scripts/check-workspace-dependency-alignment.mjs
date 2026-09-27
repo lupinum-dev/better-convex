@@ -111,9 +111,9 @@ if (playgroundPackage.dependencies?.['@lupinum/better-convex-nuxt'] !== 'workspa
   failures.push('playground/package.json must declare @lupinum/better-convex-nuxt@workspace:*')
 }
 
-if (rootPackage.devDependencies?.[mcpServerSdk] !== mcpPackage.dependencies?.[mcpServerSdk]) {
+if (rootPackage.devDependencies?.[mcpServerSdk] !== mcpPackage.peerDependencies?.[mcpServerSdk]) {
   failures.push(
-    `package.json must exercise ${mcpServerSdk}@${mcpPackage.dependencies?.[mcpServerSdk]} from packages/mcp`,
+    `package.json must exercise ${mcpServerSdk}@${mcpPackage.peerDependencies?.[mcpServerSdk]} from packages/mcp`,
   )
 }
 
@@ -143,9 +143,9 @@ for (const manifestPath of manifestPaths) {
   }
   if (!published && dependencySpecifier(packageJson, mcpServerSdk) !== undefined) {
     const actual = dependencySpecifier(packageJson, mcpServerSdk)
-    if (actual !== mcpPackage.dependencies?.[mcpServerSdk]) {
+    if (actual !== mcpPackage.peerDependencies?.[mcpServerSdk]) {
       failures.push(
-        `${manifestPath} declares ${mcpServerSdk}@${actual}; packages/mcp requires ${mcpPackage.dependencies?.[mcpServerSdk]}`,
+        `${manifestPath} declares ${mcpServerSdk}@${actual}; packages/mcp requires ${mcpPackage.peerDependencies?.[mcpServerSdk]}`,
       )
     }
   }

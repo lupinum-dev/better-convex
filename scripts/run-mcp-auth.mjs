@@ -330,7 +330,7 @@ function verifyPublicClientTokenBindings(
             'token_use',
           ]),
         client: claims.client_id === clientId && claims.azp === clientId,
-        // The renewable MCP profile binds every access token to its consent row.
+        // Every MCP profile, renewable or not, binds each access token to its consent row.
         grant: typeof claims.bcn_grant_id === 'string' && claims.bcn_grant_id.length > 0,
         current:
           Number.isSafeInteger(claims.iat) &&
@@ -504,20 +504,10 @@ async function assertConvexSessionToken(token, origin, convexSiteUrl) {
   }
   const header = decodeJwtPart(token, 0)
   const claims = decodeJwtPart(token, 1)
-  // Registered claims, the session binding, and the bounded default profile
-  // claims (the fixture users have no image). Nothing else may be signed.
-  const approvedClaims = [
-    'aud',
-    'email',
-    'emailVerified',
-    'exp',
-    'iat',
-    'iss',
-    'name',
-    'sid',
-    'sub',
-    'token_use',
-  ]
+  // Registered claims and the session binding only: profile claims are opt-in
+  // through defineSessionClaims, which the starter does not use. Nothing else
+  // may be signed.
+  const approvedClaims = ['aud', 'exp', 'iat', 'iss', 'sid', 'sub', 'token_use']
   if (
     header?.alg !== 'RS256' ||
     typeof header?.kid !== 'string' ||
@@ -743,17 +733,11 @@ async function runLiveAuthorizationEvidence({
   await runWithFixtureState(
     () => fixture.runConvex('evidence:setResourceDisabled', { disabled: true }),
     () => fixture.runConvex('evidence:setResourceDisabled', { disabled: false }),
-    async () => {
-      const snapshot = await postMcpJson(context, resource, accessToken, list('resource-disabled'))
-      if (
-        snapshot.status !== 200 ||
-        snapshot.challenge !== null ||
-        snapshot.body?.result?.resultType !== 'complete' ||
-        snapshot.body?.result?.isError === true
-      ) {
-        throw new Error('Provider resource disable revoked an already-issued token')
-      }
-    },
+    async () =>
+      requireInvalidToken(
+        await postMcpJson(context, resource, accessToken, list('resource-disabled')),
+        'provider resource disable',
+      ),
   )
 
   await runWithFixtureState(

@@ -1,15 +1,12 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from 'convex-test'
-import { componentsGeneric, makeFunctionReference } from 'convex/server'
+import { componentsGeneric } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import authSchema from '../../src/runtime/convex-auth/component/schema'
-import {
-  validateOAuthAccess as checkOAuthAccess,
-  type OAuthLiveAccess,
-} from '../../src/runtime/convex-auth/oauth-live-access'
+import { queryOAuthLiveGrant } from '../../src/runtime/convex-auth/oauth-live-access'
 import rootSchema from '../fixtures/auth-relationships-root/convex/schema'
 
 const rootModules = import.meta.glob('../fixtures/auth-relationships-root/convex/**/*.ts')
@@ -17,20 +14,21 @@ const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**
 const components = componentsGeneric() as unknown as {
   relationshipAuth: ComponentApi<'relationshipAuth'>
 }
-const auth = components.relationshipAuth.adapter
-const validateOAuthAccess = makeFunctionReference<'query', { access: OAuthLiveAccess }, boolean>(
-  'relationshipHarness:validateOAuthAccess',
-)
+const component = components.relationshipAuth
+const auth = component.adapter
 
 const now = 1_700_000_000_000
 const access = Object.freeze({
   clientId: 'oauth-client',
-  issuer: 'https://accounts.example.test/api/auth',
+  grantId: 'oauth-consent-row',
   resource: 'https://deployment.example.test/mcp',
   scopes: Object.freeze(['mcp:read', 'mcp:write']),
   sessionId: 'oauth-session',
-  subject: 'oauth-user',
-}) satisfies OAuthLiveAccess
+  userId: 'oauth-user',
+})
+type Access = {
+  readonly [Key in keyof typeof access]: Key extends 'scopes' ? readonly string[] : string
+}
 
 function initTest() {
   const test = convexTest(rootSchema, rootModules)
@@ -51,7 +49,7 @@ async function createLiveGrant(test: ReturnType<typeof initTest>): Promise<void>
     createdAt: now,
     email: 'oauth-user@example.test',
     emailVerified: true,
-    id: access.subject,
+    id: access.userId,
     name: 'OAuth user',
     updatedAt: now,
   })
@@ -61,7 +59,7 @@ async function createLiveGrant(test: ReturnType<typeof initTest>): Promise<void>
     id: access.sessionId,
     token: 'session-token',
     updatedAt: now,
-    userId: access.subject,
+    userId: access.userId,
   })
   await createRow(test, 'oauthClient', {
     clientId: access.clientId,
@@ -87,12 +85,18 @@ async function createLiveGrant(test: ReturnType<typeof initTest>): Promise<void>
     id: 'oauth-consent-row',
     resources: [access.resource],
     scopes: [...access.scopes],
-    userId: access.subject,
+    userId: access.userId,
   })
 }
 
-async function validate(test: ReturnType<typeof initTest>): Promise<boolean> {
-  return await test.query(validateOAuthAccess, { access })
+async function validate(
+  test: ReturnType<typeof initTest>,
+  overrides: Partial<Access> = {},
+): Promise<boolean> {
+  return await test.query(
+    async (ctx) =>
+      (await queryOAuthLiveGrant(ctx, component, { ...access, ...overrides })) !== null,
+  )
 }
 
 async function updateRow(
@@ -117,12 +121,16 @@ describe('provider-owned OAuth live access validation', () => {
     vi.restoreAllMocks()
   })
 
-  it('accepts a current grant and preserves the provider disabled-resource semantics', async () => {
+  it('accepts a current grant; disabling or deleting the resource revokes issued tokens', async () => {
     const test = initTest()
     await createLiveGrant(test)
 
     await expect(validate(test)).resolves.toBe(true)
+    // Owner decision (1.0): a disabled resource denies already-issued access
+    // tokens immediately, not only renewal.
     await updateRow(test, 'oauthResource', 'oauth-resource-row', { disabled: true })
+    await expect(validate(test)).resolves.toBe(false)
+    await updateRow(test, 'oauthResource', 'oauth-resource-row', { disabled: false })
     await expect(validate(test)).resolves.toBe(true)
     await test.mutation(auth.deleteOne, {
       model: 'oauthResource',
@@ -180,19 +188,21 @@ describe('provider-owned OAuth live access validation', () => {
     await createLiveGrant(test)
     await test.query(async (ctx) => {
       const query = vi.spyOn(ctx, 'runQuery')
-      expect(await checkOAuthAccess(ctx, components.relationshipAuth, access)).toBe(true)
+      expect(await queryOAuthLiveGrant(ctx, component, access)).toMatchObject({
+        grantId: access.grantId,
+        user: { id: access.userId },
+      })
       expect(query).toHaveBeenCalledTimes(1)
       expect(query.mock.calls[0]?.[1]).toEqual({
         clientId: access.clientId,
+        grantId: access.grantId,
         resource: access.resource,
         scopes: [...access.scopes],
         sessionId: access.sessionId,
-        userId: access.subject,
+        userId: access.userId,
       })
     })
-    await expect(
-      test.query(validateOAuthAccess, { access: { ...access, subject: 'other' } }),
-    ).resolves.toBe(false)
+    await expect(validate(test, { userId: 'other' })).resolves.toBe(false)
   })
 
   it('rejects a revoked session and a security-generation bump', async () => {
@@ -209,7 +219,7 @@ describe('provider-owned OAuth live access validation', () => {
     // Better Auth's "revoke all sessions" selector advances the user's security generation.
     await bumped.mutation(auth.deleteMany, {
       model: 'session',
-      where: [{ field: 'userId', value: access.subject }],
+      where: [{ field: 'userId', value: access.userId }],
     })
     await expect(validate(bumped)).resolves.toBe(false)
   })
@@ -218,32 +228,48 @@ describe('provider-owned OAuth live access validation', () => {
     const test = initTest()
     await createLiveGrant(test)
     await expect(
-      test.query(validateOAuthAccess, {
-        access: { ...access, resource: 'https://deployment.example.test/other' },
-      }),
+      validate(test, { resource: 'https://deployment.example.test/other' }),
     ).resolves.toBe(false)
-    await expect(
-      test.query(validateOAuthAccess, { access: { ...access, clientId: 'other-client' } }),
-    ).resolves.toBe(false)
+    await expect(validate(test, { clientId: 'other-client' })).resolves.toBe(false)
   })
 
-  it('binds a renewable grant to its consent id', async () => {
+  it('binds every token to its exact consent id and requires one', async () => {
     const test = initTest()
     await createLiveGrant(test)
-    await test.query(async (ctx) => {
-      const component = components.relationshipAuth
-      await expect(
-        checkOAuthAccess(ctx, component, { ...access, grantId: 'oauth-consent-row' }),
-      ).resolves.toBe(true)
-      await expect(
-        checkOAuthAccess(ctx, component, { ...access, grantId: 'other-consent' }),
-      ).resolves.toBe(false)
-      await expect(
-        checkOAuthAccess(ctx, component, {
-          ...access,
-          scopes: [...access.scopes, 'offline_access'],
-        }),
-      ).resolves.toBe(false)
+    await expect(validate(test)).resolves.toBe(true)
+    await expect(validate(test, { grantId: 'other-consent' })).resolves.toBe(false)
+    await expect(validate(test, { grantId: '' })).resolves.toBe(false)
+    await expect(validate(test, { grantId: undefined as never })).resolves.toBe(false)
+    await expect(
+      validate(test, { grantId: undefined as never, scopes: ['mcp:read'] }),
+    ).resolves.toBe(false)
+    // The component query itself rejects a request without a consent id.
+    await expect(
+      test.query(auth.oauthLiveAccess, {
+        clientId: access.clientId,
+        resource: access.resource,
+        scopes: [...access.scopes],
+        sessionId: access.sessionId,
+        userId: access.userId,
+      } as never),
+    ).rejects.toThrow()
+  })
+
+  it('rejects a revoked consent even when an equivalent consent is granted again', async () => {
+    const test = initTest()
+    await createLiveGrant(test)
+    await test.mutation(auth.deleteOne, {
+      model: 'oauthConsent',
+      where: [{ field: 'id', value: 'oauth-consent-row' }],
     })
+    await createRow(test, 'oauthConsent', {
+      clientId: access.clientId,
+      id: 'regranted-consent-row',
+      resources: [access.resource],
+      scopes: [...access.scopes],
+      userId: access.userId,
+    })
+    await expect(validate(test)).resolves.toBe(false)
+    await expect(validate(test, { grantId: 'regranted-consent-row' })).resolves.toBe(true)
   })
 })
