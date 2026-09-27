@@ -2,7 +2,7 @@
 
 <h1 align="center">@lupinum/better-convex-vue</h1>
 
-<p align="center">Use identity-safe Convex queries and calls in plain or embedded Vue applications.</p>
+<p align="center">Live Convex queries, mutations, actions, forms, and uploads for Vue applications without Nuxt.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@lupinum/better-convex-vue"><img src="https://img.shields.io/npm/v/@lupinum/better-convex-vue?label=npm" alt="npm version"></a>
@@ -11,27 +11,36 @@
 </p>
 
 > [!WARNING]
-> This package is beta software. Read the changelog before every upgrade.
+> This package is prerelease software. Read the [changelog](https://github.com/lupinum-dev/better-convex/blob/main/CHANGELOG.md) before every upgrade.
 
 ## Purpose
 
-Use this package when Vue must own the Convex client lifecycle. Use `@lupinum/better-convex-nuxt` when Nuxt must own SSR, Nitro calls, generated aliases, or optional Better Auth.
+Use this package in a Vue application that talks to [Convex](https://convex.dev) from the browser, for example a Vite single-page application. It gives you composables that return reactive `data`, `status`, `pending`, and `error` state. Query results stay live. When the signed-in user changes, the package drops data that belonged to the previous user.
+
+Use [`@lupinum/better-convex-nuxt`](https://www.npmjs.com/package/@lupinum/better-convex-nuxt) instead when you use Nuxt. It adds server rendering, Nitro server calls, and Better Auth support on top of this package.
 
 ## Requirements
 
-The package requires Node.js `^22.19.0 || ^24.11.0`, Vue 3.5, and Convex 1.42.2.
+- Node.js `^22.19.0 || ^24.11.0`
+- Vue `>=3.5 <4`
+- Convex `>=1.42.2 <2`
 
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-vue@1.0.0-beta.7 convex@1.42.2 vue@^3.5.0
+pnpm add @lupinum/better-convex-vue@next convex@^1.42.2 vue@^3.5.0
 ```
+
+The `next` tag installs the newest 1.0 prerelease.
 
 ## Quick start
 
-```ts
-import { createApp } from 'vue'
+Install the plugin once, at the application root:
+
+```ts [src/main.ts]
 import { createBetterConvex } from '@lupinum/better-convex-vue'
+import { createApp } from 'vue'
+
 import App from './App.vue'
 
 createApp(App)
@@ -39,28 +48,43 @@ createApp(App)
   .mount('#app')
 ```
 
-Use generated Convex references inside `setup`:
+Use the composables inside `<script setup>`. Import function references from the API that Convex generates:
 
-```ts
+```vue [src/components/NoteList.vue]
+<script setup lang="ts">
 import { useConvexMutation, useConvexQuery } from '@lupinum/better-convex-vue'
-import { api } from '../convex/_generated/api'
 
-const { data: notes, status, error } = useConvexQuery(api.notes.list, {})
-const { mutate: renameNote, pending: renaming } = useConvexMutation(api.notes.rename)
+import { api } from '../../convex/_generated/api'
+
+const { data: notes, status, error } = useConvexQuery(api.notes.list)
+const { mutate: removeNote, pending: removing } = useConvexMutation(api.notes.remove)
+</script>
+
+<template>
+  <p v-if="status === 'pending'">Loading notes…</p>
+  <p v-else-if="error">Could not load notes: {{ error.message }}</p>
+  <ul v-else>
+    <li v-for="note in notes" :key="note._id">
+      {{ note.title }}
+      <button :disabled="removing" @click="removeNote({ id: note._id })">Delete</button>
+    </li>
+  </ul>
+</template>
 ```
 
-Pass `'skip'` to pause a query. A Convex `null` result remains valid data. `renameNote()` rejects with a `ConvexCallError` that carries its `code` and `functionName`.
+The list updates when the data changes in Convex. A query without arguments may omit the arguments object. Pass `'skip'` instead of arguments to pause a query. A `null` result from Convex is data, not a loading state. `removeNote()` rejects with a `ConvexCallError` that has a `message`, a `code`, and the `functionName`.
 
 ## Exports
 
-The root entry exports `createBetterConvex`, `useConvexQuery`, `useConvexPaginatedQuery`, `useConvexMutation`, `useConvexAction`, `useConvexForm`, `useConvexFileUpload`, `useConvexConnectionState`, and `useConvex`. `@lupinum/better-convex-vue/errors` exports `ConvexCallError`, `isConvexCallError`, and `normalizeConvexError`.
+| Import                                | Exports                                                                                                                                                                                                                          |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@lupinum/better-convex-vue`          | `createBetterConvex`, `useConvexQuery`, `useConvexPaginatedQuery`, `useConvexMutation`, `useConvexAction`, `useConvexForm`, `useConvexFileUpload`, `useConvexConnectionState`, `useConvex`, `ConvexCallError`, `ConvexFormError` |
+| `@lupinum/better-convex-vue/errors`   | `ConvexCallError`, `isConvexCallError`, `normalizeConvexError`, `isSerializedConvexCallError`                                                                                                                                    |
+| `@lupinum/better-convex-vue/embedded` | `createBetterConvexAttachment`, for a Vue application that runs inside another application and shares its Convex connection                                                                                                      |
 
-Pass supported `ConvexClient` options with `createBetterConvex({ convexUrl, clientOptions })`.
+`createBetterConvex` accepts `convexUrl`, an optional `auth` adapter, optional `clientOptions` for the Convex client, and `defaultQueryAuth`. The [plain Vue guide](https://better-convex.lupinum.com/docs/get-started/plain-vue) shows each option.
 
-Advanced hosts can use the `embedded` export.
-
-`@lupinum/better-convex-vue/internal` is the private integration seam for
-`@lupinum/better-convex-nuxt`. It is not public API and does not follow semver.
+`@lupinum/better-convex-vue/internal` exists only for `@lupinum/better-convex-nuxt`. It is not public API, and it can change in any release.
 
 <!-- BEGIN:consumer-onboarding -->
 
@@ -93,11 +117,11 @@ the matching documentation without copying it into your application.
 
 ## Documentation
 
-Read the [Vue documentation](https://better-convex.lupinum.com/docs/get-started/choose-your-path).
+Read the [plain Vue guide](https://better-convex.lupinum.com/docs/get-started/plain-vue) and the [composables reference](https://better-convex.lupinum.com/docs/reference/composables).
 
 ## Support and security
 
-Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report vulnerabilities through the [private security process](https://github.com/lupinum-dev/better-convex/security/policy).
+Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report a vulnerability privately through the [security policy](https://github.com/lupinum-dev/better-convex/security/policy).
 
 ## License
 

@@ -125,6 +125,6 @@ export const rebuildUserProjectionBatch = internalMutation({
   },
 })
 
-// Pre-traffic operator ceremony: provision/rotate the one official JWT key graph.
+// Run before the app receives public traffic: create or rotate the JWT signing key.
 // Schedule pruneSigningKeys to delete retired keys after the verification grace.
 export const { ensureSigningKey, pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()

@@ -9,7 +9,7 @@ import { getPackageEntryManifest } from './package-entry-manifest.mjs'
 
 const rootDir = process.cwd()
 const apiSurfacePath = resolve(rootDir, 'src/module-api-surface.ts')
-const outputPath = resolve(rootDir, 'docs/content/docs/6.reference/7.api-surface.md')
+const outputPath = resolve(rootDir, 'docs/content/docs/7.reference/7.api-surface.md')
 const packageJsonPath = resolve(rootDir, 'package.json')
 const checkOnly = process.argv.includes('--check')
 const packageEntryManifest = getPackageEntryManifest('nuxt')
@@ -90,26 +90,103 @@ function toPackageEntryRows(entries) {
     })
     .join('\n')
 }
+/**
+ * Read the member names of an exported interface or object type alias from
+ * source. Function-valued members get a `()` suffix. Heritage clauses and
+ * referenced types are not followed; callers combine the declarations they need.
+ */
+function readTypeMembers(relativePath, typeName) {
+  const path = resolve(rootDir, relativePath)
+  const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.ES2022, true)
+  const declaration = source.statements.find(
+    (statement) =>
+      (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) &&
+      statement.name.text === typeName,
+  )
+  if (!declaration) throw new TypeError(`Could not find ${typeName} in ${relativePath}`)
+
+  const names = []
+  const addMembers = (members) => {
+    for (const member of members) {
+      if (!member.name || !ts.isIdentifier(member.name)) continue
+      const isFunction =
+        ts.isMethodSignature(member) ||
+        (ts.isPropertySignature(member) && member.type && ts.isFunctionTypeNode(member.type))
+      const name = isFunction ? `${member.name.text}()` : member.name.text
+      if (!names.includes(name)) names.push(name)
+    }
+  }
+  const visitType = (node) => {
+    if (ts.isTypeLiteralNode(node)) addMembers(node.members)
+    else if (ts.isUnionTypeNode(node) || ts.isIntersectionTypeNode(node))
+      node.types.forEach(visitType)
+    else if (ts.isParenthesizedTypeNode(node)) visitType(node.type)
+  }
+  if (ts.isInterfaceDeclaration(declaration)) addMembers(declaration.members)
+  else visitType(declaration.type)
+  return names
+}
+
+function unionOf(...lists) {
+  return [...new Set(lists.flat())]
+}
+
+function formatList(names, conjunction = 'and') {
+  const items = names.map((name) => `\`${name}\``)
+  if (items.length <= 2) return items.join(` ${conjunction} `)
+  return `${items.slice(0, -1).join(', ')}, ${conjunction} ${items.at(-1)}`
+}
+
+const vueQueryFile = 'packages/vue/src/use-query.ts'
+const vuePaginationFile = 'packages/vue/src/use-paginated-query.ts'
+const vueCallableFile = 'packages/vue/src/use-callable.ts'
+const nuxtQueryFile = 'src/runtime/composables/useConvexQuery.ts'
+const nuxtPaginationFile = 'src/runtime/composables/useConvexPaginatedQuery.ts'
+
+const vueQueryOptions = readTypeMembers(vueQueryFile, 'UseConvexQueryOptions')
+const nuxtQueryOptions = unionOf(
+  vueQueryOptions,
+  readTypeMembers(nuxtQueryFile, 'UseNuxtConvexQueryBaseOptions'),
+  readTypeMembers(nuxtQueryFile, 'UseNuxtConvexQueryOptions'),
+)
+const queryState = readTypeMembers(vueQueryFile, 'UseConvexQueryState')
+const vuePaginationOptions = readTypeMembers(vuePaginationFile, 'UseConvexPaginatedQueryOptions')
+const nuxtPaginationOptions = unionOf(
+  vuePaginationOptions,
+  readTypeMembers(nuxtPaginationFile, 'UseNuxtConvexPaginatedQueryBaseOptions'),
+  readTypeMembers(nuxtPaginationFile, 'UseNuxtConvexPaginatedQueryOptions'),
+)
+const paginationState = readTypeMembers(vuePaginationFile, 'UseConvexPaginatedQueryState')
+const mutationReturn = readTypeMembers(vueCallableFile, 'UseConvexMutationReturn')
+const actionReturn = readTypeMembers(vueCallableFile, 'UseConvexActionReturn')
+const serverCaller = readTypeMembers(
+  'src/runtime/server/utils/server-convex-caller.ts',
+  'ServerConvexCaller',
+)
+const nuxtOnlyQueryOptions = nuxtQueryOptions.filter((name) => !vueQueryOptions.includes(name))
+
 const composableMeta = {
   useConvex: {
     kind: 'Composable',
-    purpose: 'Returns the stable replacement-safe handle for imperative Convex calls.',
-    guide: '/docs/understand/server-and-client-boundaries',
+    purpose:
+      'Returns one stable handle with `query`, `mutation`, `action`, and `onUpdate` for direct Convex calls.',
+    guide: '/docs/concepts/server-and-client-boundaries',
   },
   useConvexAction: {
     kind: 'Composable',
-    purpose:
-      'Returns `run` plus reactive action state: `data`, `status`, `pending`, `error`, `reset`.',
+    purpose: `Runs a Convex action. Returns ${formatList(actionReturn)}.`,
     guide: '/docs/build/write-data/actions',
   },
   useConvexAttachment: {
     kind: 'Composable',
-    purpose: 'Returns the frozen token-free runtime boundary for an embedded Vue application.',
-    guide: '/docs/reference/composables',
+    purpose:
+      'Returns the browser attachment that an embedded Vue application passes to `createBetterConvex`. It contains no credentials.',
+    guide: '/docs/reference/composables#client-and-configuration',
   },
   useConvexAuth: {
     kind: 'Composable',
-    purpose: 'Tracks auth state and user/session information in Nuxt.',
+    purpose:
+      'Returns auth `status`, `pending`, `user`, `error`, the Better Auth `client`, and `ready()`.',
     guide: '/docs/build/authentication/auth-state-and-user',
   },
   useConvexAuthReturnTo: {
@@ -129,7 +206,7 @@ const composableMeta = {
   },
   useConvexConnectionState: {
     kind: 'Composable',
-    purpose: 'Observes the exact live Convex transport state.',
+    purpose: 'Returns the live Convex connection state and the pending mutation and action counts.',
     guide: '/docs/build/application-behavior/connection-state',
   },
   useConvexFileUpload: {
@@ -140,23 +217,24 @@ const composableMeta = {
   },
   useConvexMutation: {
     kind: 'Composable',
-    purpose:
-      'Returns `mutate` plus reactive mutation state: `data`, `status`, `pending`, `error`, `reset`.',
+    purpose: `Runs a Convex mutation. Returns ${formatList(mutationReturn)}.`,
     guide: '/docs/build/write-data/mutations',
   },
   useConvexForm: {
     kind: 'Composable',
-    purpose: 'Validates external form values and submits one typed Convex mutation.',
+    purpose:
+      'Validates form values with a Standard Schema and submits them to one Convex mutation.',
     guide: '/docs/build/write-data/forms',
   },
   useConvexPaginatedQuery: {
     kind: 'Composable',
-    purpose: 'Returns one reactive, SSR-aware pagination lifecycle.',
+    purpose:
+      'Loads a paginated Convex query. The server renders the first page, and the browser loads more pages and keeps them live.',
     guide: '/docs/build/queries/pagination',
   },
   useConvexQuery: {
     kind: 'Composable',
-    purpose: 'Returns one reactive SSR-to-realtime query lifecycle.',
+    purpose: 'Loads a Convex query. The server renders it, and the browser keeps it live.',
     guide: '/docs/build/queries/queries',
   },
 }
@@ -180,8 +258,7 @@ const serverMeta = {
   },
   serverConvex: {
     kind: 'Server helper',
-    purpose:
-      'Creates a request-scoped server caller with query/mutation/action for server routes and handlers.',
+    purpose: `Creates a caller for one Nitro request. It has ${formatList(serverCaller)}.`,
     guide: '/docs/build/server/server-convex',
   },
 }
@@ -189,7 +266,7 @@ const serverMeta = {
 function fallbackMeta(name, defaultKind = 'Helper') {
   return {
     kind: name.startsWith('use') ? 'Composable' : defaultKind,
-    purpose: 'Auto-imported runtime API provided by this module.',
+    purpose: 'Auto-imported by the module.',
     guide: '/docs/reference/composables',
   }
 }
@@ -205,38 +282,32 @@ function toRows(names, meta, options = {}) {
 }
 
 const file = `---
-title: API Surface
+title: API surface
 description: Generated reference of auto-imported composables, server helpers, aliases, and package entries.
 navigation:
   icon: i-lucide-list
 ---
 
-This page is generated from the reviewed module and package entrypoint registries.
+A script generates this page from the source files below. Do not edit it by hand.
 
-Source of truth:
+Sources:
 - [src/module-api-surface.ts](${repoBase}/blob/main/src/module-api-surface.ts)
 - [scripts/package-entry-manifest.mjs](${repoBase}/blob/main/scripts/package-entry-manifest.mjs)
-- [src/runtime/server/utils](${repoBase}/tree/main/src/runtime/server/utils)
+- [packages/vue/src](${repoBase}/tree/main/packages/vue/src) for the option and state lists
 
-This reference answers:
-- Which APIs are auto-imported?
-- Which Nuxt aliases are registered?
-- What is each API for?
-- Where is the best guide for examples and deeper usage?
-
-Regenerate this page with:
+Regenerate this page from the repository root:
 
 \`\`\`bash
-node scripts/generate-api-surface.mjs
+pnpm docs:api-surface
 \`\`\`
 
 ## Nuxt aliases
 
-| Alias | Points To | Supported Contexts |
+| Alias | Points to | Use it in |
 | ----- | --------- | ------------------ |
 | \`#convex/api\` | Your app's \`convex/_generated/api\` | Vue components, composables, route middleware, Nitro server routes, tests |
-| \`#convex/server\` | \`better-convex-nuxt\` server exports | Nitro server routes and Convex-adjacent server utilities |
-| \`#convex/auth-client\` | The configured Better Auth client definition | Auth-enabled builds only |
+| \`#convex/server\` | The \`@lupinum/better-convex-nuxt/server\` exports | Nitro server routes and server utilities |
+| \`#convex/auth-client\` | The Better Auth client definition from \`convex.auth.client\` | Auth-enabled builds only |
 
 Use \`#convex/api\` for generated Convex functions:
 
@@ -244,21 +315,21 @@ Use \`#convex/api\` for generated Convex functions:
 import { api } from '#convex/api'
 \`\`\`
 
-Before Convex codegen creates \`convex/_generated/api\`, this alias points to a typed placeholder that keeps imports working and fails with a codegen message if accessed.
+Before Convex creates \`convex/_generated/api\`, this alias points to a placeholder. Imports still compile. Reading a function from it throws an error that tells you to run Convex codegen.
 
 ## Published package entries
 
-| Import Specifier | Runtime Exports | Type Exports |
+| Import | Runtime exports | Type exports |
 | ---------------- | --------------- | ------------ |
 ${toPackageEntryRows(packageContract)}
 
-Use \`#convex/server\` when an explicit server import is clearer than relying on Nuxt auto-imports, or for exports that are intentionally not auto-imported:
+Import from \`#convex/server\` when you want an explicit import instead of a Nitro auto-import, or when the export is not auto-imported:
 
 \`\`\`ts
 import { requireConvexUser, serverConvex } from '#convex/server'
 \`\`\`
 
-\`createUserProjectionTriggers\` runs inside your \`convex/\` functions. Import it from the Better Auth integration subpath:
+Code in your \`convex/\` folder imports the Better Auth helpers, such as \`createUserProjectionTriggers\`, from the \`better-auth/server\` entry:
 
 \`\`\`ts
 import { createUserProjectionTriggers } from '@lupinum/better-convex-nuxt/better-auth/server'
@@ -266,21 +337,23 @@ import { createUserProjectionTriggers } from '@lupinum/better-convex-nuxt/better
 
 ## Core composable auto-imports
 
-These composables are available in every build. Omitting \`convex.auth\` keeps Better Auth, its proxy, its middleware, its page metadata, and \`useConvexAuth\` out of the application surface.
+Every build auto-imports these composables. When you omit \`convex.auth\`, the module does not install Better Auth, the auth proxy, the auth route middleware, the \`convexAuth\` page metadata, or \`useConvexAuth\`.
 
-| Name | Kind | Purpose | Learn More |
+| Name | Kind | Purpose | Guide |
 | ---- | ---- | ------- | ---------- |
 ${toRows(composableImports, composableMeta)}
 
-\`useConvexQuery\` accepts \`auth\`, \`keepPreviousData\`, \`immediate\`, and Nuxt's \`server\` and \`lazy\` options. Its state is \`data\`, \`status\`, \`pending\`, \`error\`, \`isStale\`, \`blockedBy\`, \`execute()\`, and \`refresh()\`. These option and state lists are exhaustive.
+\`useConvexQuery\` options: ${formatList(nuxtQueryOptions)}. It returns ${formatList(queryState)}.
 
-\`useConvexPaginatedQuery\` requires a positive \`initialNumItems\`. Its state is \`data\`, \`status\`, \`pending\`, \`error\`, \`isStale\`, \`blockedBy\`, \`canLoadMore\`, \`isLoadingMore\`, \`isExhausted\`, \`execute()\`, \`loadMore()\`, \`refresh()\`, and \`reset()\`. \`status\` and \`pending\` describe the first page; \`loadMore()\` returns a Promise that never rejects.
+\`useConvexPaginatedQuery\` options: ${formatList(nuxtPaginationOptions)}. \`initialNumItems\` is required and must be a positive integer. It returns ${formatList(paginationState)}. \`status\` and \`pending\` describe the first page only. \`loadMore()\` returns a Promise that never rejects.
 
-\`useConvexMutation\` and \`useConvexAction\` return an object, so destructure the verb: \`const { mutate, pending, error } = useConvexMutation(api.notes.create)\`.
+In plain Vue, the query options do not include ${formatList(nuxtOnlyQueryOptions, 'or')}.
+
+\`useConvexMutation\` returns ${formatList(mutationReturn)}. \`useConvexAction\` returns ${formatList(actionReturn)}. Destructure the result: \`const { mutate, pending, error } = useConvexMutation(api.notes.create)\`.
 
 ## Auth-enabled auto-imports
 
-Auth is an explicit opt-in:
+Authentication is off until you add a \`convex.auth\` object:
 
 \`\`\`ts [nuxt.config.ts]
 export default defineNuxtConfig({
@@ -294,17 +367,17 @@ export default defineNuxtConfig({
 })
 \`\`\`
 
-Only an auth-enabled build auto-imports the following API. Define its typed Better Auth client with \`defineConvexAuthClient\` from \`@lupinum/better-convex-nuxt/better-auth/client\`, then access the integrated client through \`useConvexAuth().client\`.
+Only an auth-enabled build auto-imports the API below. To add Better Auth client plugins, define the client with \`defineConvexAuthClient\` from \`@lupinum/better-convex-nuxt/better-auth/client\` and set \`convex.auth.client\` to that file. Use the client through \`useConvexAuth().client\`.
 
-| Name | Kind | Purpose | Learn More |
+| Name | Kind | Purpose | Guide |
 | ---- | ---- | ------- | ---------- |
 ${toRows(authImports, composableMeta)}
 
-Render auth UI with ordinary Vue conditionals over \`status\`, \`pending\`, and \`error\`. The module does not register auth UI components.
+Render auth UI with ordinary Vue conditionals on \`status\`, \`pending\`, and \`error\`. The module does not register auth UI components.
 
 ## Server auto-imports
 
-| Name | Kind | Purpose | Learn More |
+| Name | Kind | Purpose | Guide |
 | ---- | ---- | ------- | ---------- |
 ${toRows(serverImports, serverMeta, { defaultKind: 'Server helper' })}
 `

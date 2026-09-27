@@ -9,15 +9,15 @@ import {
 } from '../../src/runtime/convex-auth/mcp-profile'
 
 const root = process.cwd()
-const agentsDirectory = join(root, 'docs/content/docs/4.build/7.agents')
+const agentsDirectory = join(root, 'docs/content/docs/3.build/7.agents')
 const read = (path: string) => readFileSync(join(root, path), 'utf8')
 const packageReadme = read('packages/mcp/README.md')
-const guide = read('docs/content/docs/4.build/7.agents/1.mcp.md')
-const recipe = read('docs/content/docs/4.build/7.agents/2.mcp-application.md')
-const hostsGuide = read('docs/content/docs/4.build/7.agents/3.connect-chatgpt-and-claude.md')
-const appsGuide = read('docs/content/docs/4.build/7.agents/4.mcp-apps.md')
+const guide = read('docs/content/docs/3.build/7.agents/1.mcp.md')
+const recipe = read('docs/content/docs/3.build/7.agents/2.mcp-application.md')
+const hostsGuide = read('docs/content/docs/3.build/7.agents/3.connect-chatgpt-and-claude.md')
+const appsGuide = read('docs/content/docs/3.build/7.agents/4.mcp-apps.md')
 const delegatedGuide = read(
-  'docs/content/docs/4.build/3.authentication/10.delegated-oauth-and-mcp.md',
+  'docs/content/docs/3.build/3.authentication/10.delegated-oauth-and-mcp.md',
 )
 const starterReadme = read('starters/mcp-oauth-agent/README.md')
 const mcpManifest = JSON.parse(read('packages/mcp/package.json')) as {
@@ -59,7 +59,7 @@ describe('MCP package documentation', () => {
 
   it('removes the hand-built verifier, closure principal, and positional configureServer', () => {
     const pages = readdirSync(agentsDirectory).map((name) =>
-      read(join('docs/content/docs/4.build/7.agents', name)),
+      read(join('docs/content/docs/3.build/7.agents', name)),
     )
     for (const source of [...pages, delegatedGuide, packageReadme, starterReadme]) {
       expect(source).not.toMatch(

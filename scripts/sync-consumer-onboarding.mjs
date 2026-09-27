@@ -17,7 +17,7 @@ function bounds(source) {
 }
 
 const source = await readFile(
-  resolve(root, 'docs/content/docs/3.get-started/1.choose-your-path.md'),
+  resolve(root, 'docs/content/docs/2.get-started/1.choose-your-path.md'),
   'utf8',
 )
 const [start, finish] = bounds(source)

@@ -20,21 +20,21 @@ const passwordForms = [
 ] as const
 const proxySecretExamples = [
   ...authEnvExamples,
-  'docs/content/docs/3.get-started/5.add-authentication.md',
-  'docs/content/docs/7.operations/1.environment-variables.md',
+  'docs/content/docs/2.get-started/5.add-authentication.md',
+  'docs/content/docs/6.operations/2.environment-variables.md',
 ] as const
-const proxySecretDocs = ['docs/content/docs/7.operations/1.environment-variables.md'] as const
+const proxySecretDocs = ['docs/content/docs/6.operations/2.environment-variables.md'] as const
 const genericSignInForms = [
   'playground/pages/auth/signin.vue',
   'starters/team/app/components/AuthPanel.vue',
 ] as const
 const convexManagedEnvDocs = [
   'starters/mcp-oauth-agent/README.md',
-  'docs/content/docs/3.get-started/5.add-authentication.md',
-  'docs/content/docs/4.build/3.authentication/2.better-auth-setup.md',
-  'docs/content/docs/7.operations/1.environment-variables.md',
-  'docs/content/docs/7.operations/2.deployment.md',
-  'docs/content/docs/7.operations/4.troubleshooting.md',
+  'docs/content/docs/2.get-started/5.add-authentication.md',
+  'docs/content/docs/3.build/3.authentication/2.better-auth-setup.md',
+  'docs/content/docs/6.operations/2.environment-variables.md',
+  'docs/content/docs/6.operations/1.deployment.md',
+  'docs/content/docs/6.operations/4.troubleshooting.md',
   'test/TESTING.md',
 ] as const
 const generatedDirectoryNames = new Set([
@@ -262,11 +262,11 @@ describe('shipped Better Auth factory invariants', () => {
   it('uses one explicit .env.local authority in the generic setup guides', () => {
     for (const path of [
       'README.md',
-      'docs/content/docs/3.get-started/2.installation.md',
-      'docs/content/docs/3.get-started/3.first-realtime-page.md',
-      'docs/content/docs/3.get-started/5.add-authentication.md',
-      'docs/content/docs/3.get-started/7.project-structure.md',
-      'docs/content/docs/7.operations/1.environment-variables.md',
+      'docs/content/docs/2.get-started/2.installation.md',
+      'docs/content/docs/2.get-started/3.first-realtime-page.md',
+      'docs/content/docs/2.get-started/5.add-authentication.md',
+      'docs/content/docs/2.get-started/7.project-structure.md',
+      'docs/content/docs/6.operations/2.environment-variables.md',
     ]) {
       const source = read(path)
 
@@ -275,10 +275,10 @@ describe('shipped Better Auth factory invariants', () => {
       expect(source).not.toMatch(/^├── \.env\s/mu)
     }
 
-    expect(read('docs/content/docs/3.get-started/2.installation.md')).toContain(
+    expect(read('docs/content/docs/2.get-started/2.installation.md')).toContain(
       'nuxt prepare --dotenv .env.local',
     )
-    expect(read('docs/content/docs/3.get-started/3.first-realtime-page.md')).toContain(
+    expect(read('docs/content/docs/2.get-started/3.first-realtime-page.md')).toContain(
       'nuxt dev --dotenv .env.local',
     )
   })
@@ -310,9 +310,9 @@ describe('shipped Better Auth factory invariants', () => {
   })
 
   it('keeps canonical signup recipes on the explicit sign-in ceremony', () => {
-    const guide = read('docs/content/docs/3.get-started/5.add-authentication.md')
+    const guide = read('docs/content/docs/2.get-started/5.add-authentication.md')
     const operationsGuide = read(
-      'docs/content/docs/4.build/3.authentication/4.sign-in-and-sign-out.md',
+      'docs/content/docs/3.build/3.authentication/4.sign-in-and-sign-out.md',
     )
 
     expect(guide).toContain('autoSignIn: false')
@@ -326,9 +326,9 @@ describe('shipped Better Auth factory invariants', () => {
   it('does not expose Better Auth account-state errors in maintained sign-in UI', () => {
     const genericMessage =
       'Sign in could not be completed. Check your credentials and verify your email if required.'
-    const guide = read('docs/content/docs/3.get-started/5.add-authentication.md')
+    const guide = read('docs/content/docs/2.get-started/5.add-authentication.md')
     const operationsGuide = read(
-      'docs/content/docs/4.build/3.authentication/4.sign-in-and-sign-out.md',
+      'docs/content/docs/3.build/3.authentication/4.sign-in-and-sign-out.md',
     )
 
     for (const path of genericSignInForms) {
@@ -353,7 +353,7 @@ describe('shipped Better Auth factory invariants', () => {
 
   it('keeps route components on the app-lifetime session observer', () => {
     const authStateGuide = read(
-      'docs/content/docs/4.build/3.authentication/3.auth-state-and-user.md',
+      'docs/content/docs/3.build/3.authentication/3.auth-state-and-user.md',
     )
 
     expect(authStateGuide).toContain('do not mount `client.useSession()` in route components')
@@ -361,15 +361,15 @@ describe('shipped Better Auth factory invariants', () => {
   })
 
   it('keeps plugin guidance from becoming a second auth-factory source', () => {
-    const pluginGuide = read('docs/content/docs/4.build/3.authentication/7.better-auth-plugins.md')
+    const pluginGuide = read('docs/content/docs/3.build/3.authentication/7.better-auth-plugins.md')
 
     expect(pluginGuide).toContain("Use the repository's `starters/team/convex/betterAuth`")
     expect(pluginGuide).not.toContain('export function createAuthOptions')
   })
 
   it('keeps schema-changing plugin docs on the maintained factory source', () => {
-    const setupGuide = read('docs/content/docs/4.build/3.authentication/2.better-auth-setup.md')
-    const pluginGuide = read('docs/content/docs/4.build/3.authentication/7.better-auth-plugins.md')
+    const setupGuide = read('docs/content/docs/3.build/3.authentication/2.better-auth-setup.md')
+    const pluginGuide = read('docs/content/docs/3.build/3.authentication/7.better-auth-plugins.md')
 
     expect(setupGuide).toContain('complete minimal versions are in [Add authentication]')
     expect(pluginGuide).not.toContain('export function createAuthOptions')
