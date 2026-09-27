@@ -92,7 +92,10 @@ describe('MCP package documentation', () => {
   })
 
   it('documents one explicit official-SDK topology and the unsupported surface', () => {
-    expect(normalizedGuide).toContain('Configure only reviewed application operations')
+    expect(normalizedGuide).toContain(
+      'Register as tools only the application operations you have checked',
+    )
+    expect(normalizedGuide).toContain('never turns Convex functions into tools automatically')
     expect(guide).toContain('one stateless Convex HTTP Action')
     expect(normalizedGuide).toContain('OAuth mode has five explicit Convex route registrations')
     expect(guide).toContain("for (const method of ['GET', 'OPTIONS'] as const)")
@@ -101,7 +104,7 @@ describe('MCP package documentation', () => {
     )
     expect(guide).toContain('automatic Convex-function exposure')
     expect(guide).toContain('prompts, Tasks, or a URL approval workflow')
-    expect(guide).toContain('second Nitro MCP topology')
+    expect(guide).toContain('a second MCP server in Nitro')
     expect(guide).toContain('hand-written MCP parser')
   })
 
