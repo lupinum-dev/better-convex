@@ -8,8 +8,8 @@ published version of `@lupinum/better-convex-nuxt` and
 `@lupinum/better-convex-mcp`. Older versions do not receive fixes; upgrade to
 the latest release.
 
-Each `package.json` lists the exact dependency and peer versions that the
-release is tested with. An application with authentication installs
+Each `package.json` declares the dependency and peer version ranges that a
+release supports. An application with authentication installs
 `better-auth`, `@better-auth/core`, and `@better-auth/oauth-provider` at
 exactly the versions that `@lupinum/better-convex-nuxt` lists.
 

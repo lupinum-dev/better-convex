@@ -73,9 +73,10 @@ if (hasBase) {
       ),
     )
   const bumped = new Set(
-    git('diff', '--name-only', '--diff-filter=A', `${base}..HEAD`, '--', '.changeset')
+    // Added or edited changesets count; archived ones under .changeset/pre/ do not release.
+    git('diff', '--name-only', '--diff-filter=AM', `${base}..HEAD`, '--', '.changeset')
       .stdout.split('\n')
-      .filter((path) => path.endsWith('.md'))
+      .filter((path) => /^\.changeset\/[^/]+\.md$/.test(path))
       .flatMap((path) => {
         const file = git('show', `HEAD:${path}`).stdout
         return bumps(/^---\r?\n([\s\S]*?)^---/m.exec(file)?.[1] ?? '')

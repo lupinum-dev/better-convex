@@ -88,7 +88,8 @@ starts one with synthetic auth secrets. Remove `playground/.convex` and
   and approves the protected `npm` environment (`.github/workflows/release.yml`).
 - Never add `NPM_TOKEN` or any other long-lived publish credential.
 - Add a changeset (`pnpm changeset`) to every pull request that changes what
-  users see. CI requires one when `src/` or `packages/*/src/` changes; use
+  package users install: code, types, runtime behaviour or dependencies.
+  Documentation, tests and CI changes need none. CI requires one when `src/` or `packages/*/src/` changes; use
   `pnpm changeset --empty` if users see nothing. When the `dependencies` or
   `peerDependencies` of a published package change, the changeset must bump
   that package (at least `patch`); an empty one does not count.
