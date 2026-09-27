@@ -85,7 +85,9 @@ describe.sequential('better-convex init', () => {
     await expect(runInitCommand(['--typed-client'], harness.dependencies)).resolves.toBe(0)
 
     expect(await readFile(join(root, 'convex/auth.ts'), 'utf8')).toContain('createBetterConvexAuth')
-    expect(await readFile(join(root, 'convex-auth.ts'), 'utf8')).toContain('defineConvexAuthClient')
+    expect(await readFile(join(root, 'app/convex-auth.ts'), 'utf8')).toContain(
+      'defineConvexAuthClient',
+    )
     expect(await readFile(join(root, 'convex/betterAuth/schema.ts'), 'utf8')).toBe(
       'generated schema\n',
     )
@@ -97,6 +99,30 @@ describe.sequential('better-convex init', () => {
       'SENTINEL_SECRET_DO_NOT_LOG',
     )
     expect(harness.confirmations.at(-1)).toContain('dev:fixture')
+  })
+
+  it('writes the same proxy secret to .env.local and Convex', async () => {
+    const harness = createHarness()
+    await writeFile(join(root, '.env.local'), 'CONVEX_URL=https://fixture.convex.cloud')
+
+    await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
+
+    expect(await readFile(join(root, '.env.local'), 'utf8')).toBe(
+      'CONVEX_URL=https://fixture.convex.cloud\nBCN_AUTH_PROXY_IP_SECRET=SENTINEL_SECRET_DO_NOT_LOG\n',
+    )
+    expect(harness.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBe('SENTINEL_SECRET_DO_NOT_LOG')
+    expect(JSON.stringify(harness.logs)).not.toContain('SENTINEL_SECRET_DO_NOT_LOG')
+  })
+
+  it('reuses the proxy secret already in .env.local', async () => {
+    const harness = createHarness()
+    const local = 'BCN_AUTH_PROXY_IP_SECRET="existing-local-secret"\n'
+    await writeFile(join(root, '.env.local'), local)
+
+    await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
+
+    expect(await readFile(join(root, '.env.local'), 'utf8')).toBe(local)
+    expect(harness.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBe('existing-local-secret')
   })
 
   it('writes nothing when the file plan is cancelled', async () => {

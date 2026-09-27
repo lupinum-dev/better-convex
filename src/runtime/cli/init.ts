@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
@@ -95,6 +95,11 @@ export default {
 } satisfies BetterAuthOptions
 `,
 } as const
+
+// Nuxt 4 looks for the auth-client definition in `<srcDir>/convex-auth.ts`; `app/` is the default srcDir.
+const TYPED_CLIENT_PATH = 'app/convex-auth.ts'
+const PROXY_SECRET_NAME = 'BCN_AUTH_PROXY_IP_SECRET'
+const LOCAL_ENV_FILE = '.env.local'
 
 const typedClientTemplate = `import { defineConvexAuthClient } from '@lupinum/better-convex-nuxt/better-auth/client'
 
@@ -194,7 +199,7 @@ function parseArguments(args: readonly string[]): { help: boolean; typedClient: 
 
 async function inspectFiles(root: string, typedClient: boolean): Promise<PlannedFile[]> {
   const entries: Record<string, string> = { ...templates }
-  if (typedClient) entries['convex-auth.ts'] = typedClientTemplate
+  if (typedClient) entries[TYPED_CLIENT_PATH] = typedClientTemplate
   const planned: PlannedFile[] = []
   const conflicts: string[] = []
   for (const [relativePath, contents] of Object.entries(entries)) {
@@ -236,7 +241,49 @@ async function writeMissing(files: readonly PlannedFile[]): Promise<void> {
   }
 }
 
-async function provisionDevelopment(dependencies: InitDependencies): Promise<void> {
+function readLocalEnvironmentValue(contents: string, name: string): string | undefined {
+  for (const line of contents.split(/\r?\n/u)) {
+    const separator = line.indexOf('=')
+    if (separator < 0) continue
+    const key = line
+      .slice(0, separator)
+      .trim()
+      .replace(/^export\s+/u, '')
+    if (key !== name) continue
+    let value = line.slice(separator + 1).trim()
+    const quote = value[0]
+    if (value.length >= 2 && (quote === '"' || quote === "'") && value.endsWith(quote)) {
+      value = value.slice(1, -1)
+    }
+    return value || undefined
+  }
+  return undefined
+}
+
+/**
+ * Nuxt and Convex must share one proxy secret. Reuse the value in `.env.local` when it
+ * exists; otherwise create one and write it to `.env.local` before Convex, so a failed
+ * Convex step can be retried with the same value.
+ */
+async function resolveLocalProxySecret(
+  root: string,
+  dependencies: InitDependencies,
+): Promise<string> {
+  const path = join(root, LOCAL_ENV_FILE)
+  const contents = (await readOptional(path)) ?? ''
+  const existing = readLocalEnvironmentValue(contents, PROXY_SECRET_NAME)
+  if (existing !== undefined) return existing
+  const secret = dependencies.randomSecret()
+  const separator = contents === '' || contents.endsWith('\n') ? '' : '\n'
+  await appendFile(path, `${separator}${PROXY_SECRET_NAME}=${secret}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  })
+  dependencies.log(`Wrote ${PROXY_SECRET_NAME} to ${LOCAL_ENV_FILE}.`)
+  return secret
+}
+
+async function provisionDevelopment(root: string, dependencies: InitDependencies): Promise<void> {
   const environmentNames = new Set(await dependencies.readEnvironmentNames())
   if (environmentNames.has('BCN_AUTH_INITIALIZED')) {
     dependencies.log('Development auth secrets and the first signing key are already provisioned.')
@@ -257,7 +304,19 @@ async function provisionDevelopment(dependencies: InitDependencies): Promise<voi
   }
   await set('SITE_URL', siteUrl)
   await set('BETTER_AUTH_SECRETS', `0:${dependencies.randomSecret()}`)
-  await set('BCN_AUTH_PROXY_IP_SECRET', dependencies.randomSecret())
+  if (environmentNames.has(PROXY_SECRET_NAME)) {
+    const local = readLocalEnvironmentValue(
+      (await readOptional(join(root, LOCAL_ENV_FILE))) ?? '',
+      PROXY_SECRET_NAME,
+    )
+    if (local === undefined) {
+      dependencies.log(
+        `${PROXY_SECRET_NAME} is set in Convex but not in ${LOCAL_ENV_FILE}. Add the same value to ${LOCAL_ENV_FILE}, or the Nuxt auth proxy rejects every request.`,
+      )
+    }
+  } else {
+    await set(PROXY_SECRET_NAME, await resolveLocalProxySecret(root, dependencies))
+  }
   const ensured = await dependencies.runConvex(['run', 'auth:ensureSigningKey', '{}'])
   if (ensured !== 0) {
     throw new Error(
@@ -324,6 +383,6 @@ export async function runInitCommand(
   ) {
     return 0
   }
-  await provisionDevelopment(dependencies)
+  await provisionDevelopment(root, dependencies)
   return 0
 }

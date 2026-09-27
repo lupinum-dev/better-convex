@@ -25,11 +25,9 @@ const ADMITTED_PLUGIN_IDS = new Set([
   'organization',
   'two-factor',
   'email-otp',
-  'oauth-popup',
   'oauth-provider-client',
 ])
-const ADMITTED_PLUGIN_LABEL =
-  'organization, two-factor, email-otp, oauth-popup, and oauth-provider-client'
+const ADMITTED_PLUGIN_LABEL = 'organization, two-factor, email-otp, and oauth-provider-client'
 
 export class ConvexAuthClientDefinitionError extends TypeError {
   constructor(message: string) {

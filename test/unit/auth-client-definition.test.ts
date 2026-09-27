@@ -179,6 +179,8 @@ describe('validateConvexAuthClientDefinition', () => {
 
   it('rejects a plugin outside the reviewed server capability profile', () => {
     expect(() => ok({ plugins: [{ id: 'api-key' }] })).toThrow(/unsupported id `api-key`/)
+    // The factory does not install the oauth-popup server plugin, so its client half would fail.
+    expect(() => ok({ plugins: [{ id: 'oauth-popup' }] })).toThrow(/unsupported id `oauth-popup`/)
   })
 
   it('rejects a duplicated reviewed capability', () => {

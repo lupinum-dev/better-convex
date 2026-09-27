@@ -4,7 +4,7 @@
 
 <h1 align="center">Better Convex</h1>
 
-<p align="center">Use Convex in Nuxt or Vue with one identity-safe query lifecycle from SSR to realtime.</p>
+<p align="center">Use Convex in Nuxt and Vue. Pages render on the server and then update live in the browser.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@lupinum/better-convex-nuxt"><img src="https://img.shields.io/npm/v/@lupinum/better-convex-nuxt?label=npm" alt="npm version"></a>
@@ -13,91 +13,126 @@
 </p>
 
 > [!WARNING]
-> These packages are beta software. The auth architecture is a hard cutover and is not compatible with an existing Better Auth component database. Read the changelog before every upgrade.
+> These packages are prerelease software. Read the [changelog](CHANGELOG.md) before every upgrade. The authentication component cannot reuse the database of another Better Auth integration. Start it with a fresh component.
 
 ## Why use Better Convex?
 
-Better Convex removes the integration code between Nuxt, Vue, Convex, and optional Better Auth. A query can render during SSR, reuse the server result during hydration, and continue as a browser subscription.
+[Convex](https://convex.dev) is a backend with a realtime database. Its queries push new results to the browser when data changes. Better Convex connects Convex to Nuxt and Vue:
 
-Identity changes cannot reuse query state from another user. Server calls are request scoped. Mutations, actions, uploads, connection state, and structured errors use the same runtime model.
+- `useConvexQuery` loads a query during server rendering, sends the result with the page, and keeps it live in the browser.
+- `useConvexMutation`, `useConvexAction`, `useConvexForm`, and `useConvexFileUpload` return reactive `pending`, `error`, and `data` state.
+- Every failure is one `ConvexCallError` with a `message`, a `code`, and the `functionName` that failed.
+- `serverConvex(event)` calls Convex from a Nitro route as the signed-in user.
+- Optional [Better Auth](https://www.better-auth.com) support keeps sessions in a Convex component and signs users in to Convex.
+- An optional MCP package lets AI hosts, such as ChatGPT and Claude, call your Convex functions as tools.
+
+Better Convex is a set of composables and helpers, not a framework. It does not require a registry or a fixed folder layout. The only generated code is Convex's own API and, when you use Better Auth, the auth component that `better-convex init` writes to `convex/betterAuth/` with its generated schema.
 
 ## When to use it
 
-Use the Nuxt package for SSR, Nitro calls, generated aliases, uploads, DevTools, and optional Better Auth. Use the Vue package for a Vite or embedded Vue application that does not need Nuxt or Nitro. Use the MCP package when a Convex HTTP Action must expose a bounded MCP server.
+Use `@lupinum/better-convex-nuxt` in a Nuxt 4 application. Use `@lupinum/better-convex-vue` in a Vue application without Nuxt, for example a Vite single-page application. Use `@lupinum/better-convex-mcp` to serve an MCP endpoint from a Convex HTTP action.
 
-Do not use Better Convex as an authorization layer. Every Convex function must still validate identity, ownership, membership, and roles on the backend.
+Better Convex does not decide who may read or change data. Check the user, ownership, membership, and roles in every Convex function. Route middleware and hidden buttons do not protect data.
 
 ## Requirements
 
-- Node.js `^22.19 || ^24.11`.
-- Nuxt `>=4.5.2 <5`, tested at the floor and latest Nuxt 4.
-- Convex `>=1.42.2 <2`, tested at the floor and latest 1.x.
-- Vue `>=3.5 <4`.
-
-Better Auth is optional. Auth-enabled applications must install the exact peer versions in the package manifest.
+- Node.js `^22.19.0 || ^24.11.0`
+- Nuxt `>=4.5.2 <5`
+- Convex `>=1.42.2 <2`
+- Vue `>=3.5 <4`
+- For authentication: `better-auth`, `@better-auth/core`, and `@better-auth/oauth-provider`, each at exactly `1.7.6`
 
 ## Installation
 
-Install the Nuxt package and its exact peers:
+Install the module in a Nuxt application:
 
 ```bash
-pnpm add @lupinum/better-convex-nuxt convex@1.42.2 nuxt@4.5.2
+pnpm add @lupinum/better-convex-nuxt@next convex@^1.42.2
 ```
 
-```ts
+The `next` tag installs the newest 1.0 prerelease.
+
+Add the module to your Nuxt configuration:
+
+```ts [nuxt.config.ts]
 export default defineNuxtConfig({
   modules: ['@lupinum/better-convex-nuxt'],
 })
 ```
 
-```dotenv
-NUXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
-```
-
-Store this value in `.env.local`. Run the checked configuration helper if you need to create that file:
+Connect a Convex deployment. This command signs you in to Convex, creates or selects a deployment, writes its URLs to `.env.local`, and creates the `convex/` folder:
 
 ```bash
 pnpm exec better-convex convex configure
 ```
 
+Keep it running while you work on Convex functions. It pushes each change to your development deployment.
+
+The default Nuxt template shows a welcome screen instead of your pages. Replace `app/app.vue`:
+
+```vue [app/app.vue]
+<template>
+  <NuxtPage />
+</template>
+```
+
 ## Quick start
 
-Call a generated Convex query from a page:
+Add a Convex query:
 
-```vue
+```ts [convex/tasks.ts]
+import { query } from './_generated/server'
+
+export const list = query({
+  args: {},
+  handler: async (ctx) => await ctx.db.query('tasks').order('desc').take(50),
+})
+```
+
+Show it on a page:
+
+```vue [app/pages/index.vue]
 <script setup lang="ts">
 import { api } from '#convex/api'
 
-const { data: tasks, status, error } = await useConvexQuery(api.tasks.list, {})
+const { data: tasks, status, error } = await useConvexQuery(api.tasks.list)
 </script>
 
 <template>
   <p v-if="status === 'pending'">Loading tasks…</p>
-  <p v-else-if="error">Could not load tasks.</p>
+  <p v-else-if="error">Could not load tasks: {{ error.message }}</p>
   <ul v-else>
     <li v-for="task in tasks" :key="task._id">{{ task.text }}</li>
   </ul>
 </template>
 ```
 
-Queries use SSR and realtime updates by default. Queries with empty validators may omit the arguments object. Use the literal `'skip'` to pause a query.
+Start Nuxt in a second terminal:
+
+```bash
+pnpm exec nuxt dev --dotenv .env.local
+```
+
+The server renders the list. After the page loads, the list stays live: add a row to the `tasks` table in the Convex dashboard, and the page updates without a reload.
+
+A query without arguments may omit the arguments object. Pass `'skip'` instead of arguments to pause a query. Follow the [first realtime page](https://better-convex.lupinum.com/docs/get-started/first-realtime-page) guide for the full walkthrough.
 
 ## Server calls and mutations
 
-Create a mutation composable inside component setup and destructure its function and state:
+Call a mutation from a component. Destructure the function and its state:
 
 ```ts
 const { mutate: createTask, pending, error } = useConvexMutation(api.tasks.create)
+
 await createTask({ text: 'Review the release' })
 ```
 
-`mutate` rejects with a `ConvexCallError`. For an error that your Convex function throws with `ConvexError`, `message` is the text you wrote. `code` and `functionName` identify the failure.
+`createTask` rejects with a `ConvexCallError`. When your Convex function throws `new ConvexError({ code: 'TASK_LOCKED', message: 'This task is locked' })`, the error has `message` `'This task is locked'`, `code` `'TASK_LOCKED'`, and `functionName` `'tasks:create'`.
 
-Create a server caller inside each Nitro request:
+Call Convex from a Nitro route with `serverConvex`. Create one caller in each request:
 
-```ts
+```ts [server/api/tasks.get.ts]
 import { api } from '#convex/api'
-import { serverConvex } from '#convex/server'
 
 export default defineEventHandler(async (event) => {
   const convex = serverConvex(event)
@@ -105,29 +140,32 @@ export default defineEventHandler(async (event) => {
 })
 ```
 
-Do not share an authenticated server caller across requests. Use `requireConvexUser(event)` to read the signed-in user in a handler, and `toConvexH3Error(error)` to return a failure with a matching HTTP status.
+Do not keep a caller between requests. `requireConvexUser(event)` returns the signed-in user or throws a 401 error. `toConvexH3Error(error)` turns any error into an H3 error with a matching HTTP status.
 
 ## Authentication
 
-Authentication is off when `convex.auth` is omitted. An auth-enabled application installs the exact Better Auth peers and supplies its public origin.
+Authentication is off until you add a `convex.auth` object to the Nuxt configuration. To turn it on, install the exact Better Auth versions and run the setup command:
 
-The module transports identity through a bounded same-origin proxy. Convex functions remain the source of truth for authorization. Route middleware is navigation behavior, not backend access control.
+```bash
+pnpm add better-auth@1.7.6 @better-auth/core@1.7.6 @better-auth/oauth-provider@1.7.6
+pnpm exec better-convex init --typed-client
+```
 
-Read the [authentication setup guide](https://better-convex.lupinum.com/docs/get-started/add-authentication) before you enable auth.
+The command shows every file it will write and asks before it writes. It asks again before it sets development secrets or creates the first signing key. It writes the proxy secret to `.env.local` and sets the same value in Convex. `--typed-client` also writes `app/convex-auth.ts`, the file for Better Auth client plugins. The command does not configure production.
 
-For a development setup, run `pnpm exec better-convex init`. It shows the exact
-file diff before writing and asks separately before creating development secrets
-or the first signing key. It refuses production provisioning.
+The browser talks to Better Auth through `/api/auth` on your own origin. Nuxt forwards these requests to Convex. `useConvexAuth()` returns the auth `status`, the `user`, and the Better Auth `client`. In Convex functions, `auth.requireUser(ctx)` returns the signed-in user or throws.
+
+Follow the [add authentication](https://better-convex.lupinum.com/docs/get-started/add-authentication) guide before you enable auth.
 
 ## Packages
 
-| Package                       | Use it for                                                       |
-| ----------------------------- | ---------------------------------------------------------------- |
-| `@lupinum/better-convex-nuxt` | Nuxt SSR, Nitro, uploads, DevTools, and optional Better Auth.    |
-| `@lupinum/better-convex-vue`  | Identity-safe Convex queries and calls in plain or embedded Vue. |
-| `@lupinum/better-convex-mcp`  | Provider-neutral MCP request handling in Convex HTTP Actions.    |
+| Package                       | Use it for                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| `@lupinum/better-convex-nuxt` | Nuxt: server rendering, Nitro calls, file uploads, DevTools, and Better Auth.  |
+| `@lupinum/better-convex-vue`  | Vue without Nuxt: queries, mutations, actions, forms, uploads, and errors.     |
+| `@lupinum/better-convex-mcp`  | An MCP endpoint in a Convex HTTP action, for hosts such as ChatGPT and Claude. |
 
-MCP remains opt in. Installing the Vue or Nuxt package does not start an MCP server or grant application authority.
+The MCP package is separate. Installing the Nuxt or Vue package does not start an MCP server.
 
 <!-- BEGIN:consumer-onboarding -->
 
@@ -160,13 +198,13 @@ the matching documentation without copying it into your application.
 
 ## Documentation
 
-Read the [Better Convex documentation](https://better-convex.lupinum.com). Start with [choose your path](https://better-convex.lupinum.com/docs/get-started/choose-your-path), the [mental model](https://better-convex.lupinum.com/docs/understand/mental-model), and [limitations](https://better-convex.lupinum.com/docs/overview/limitations).
+Read the [Better Convex documentation](https://better-convex.lupinum.com). Start with [choose your path](https://better-convex.lupinum.com/docs/get-started/choose-your-path). Read the [mental model](https://better-convex.lupinum.com/docs/concepts/mental-model) and the [limitations](https://better-convex.lupinum.com/docs/overview/limitations) before you plan a larger application.
 
-The generated [API surface](https://better-convex.lupinum.com/docs/reference/api-surface) is the source of truth for public exports.
+The [API surface](https://better-convex.lupinum.com/docs/reference/api-surface) page lists every public export. A script generates it from the source.
 
 ## Contributing and development
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. Run the normal handoff gate before you submit a change:
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. Run the full check before you submit a change:
 
 ```bash
 corepack enable
@@ -174,13 +212,13 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-Maintainers use the protected workflow in [MAINTAINING.md](MAINTAINING.md) and [RELEASING.md](RELEASING.md) for releases.
+Maintainers release through the protected workflow in [MAINTAINING.md](MAINTAINING.md) and [RELEASING.md](RELEASING.md).
 
 ## Support and security
 
 Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for bugs and focused proposals. Join the [Lupinum OSS Discord](https://discord.gg/RPH6SeA36N) for project discussion.
 
-Use the private process in [SECURITY.md](SECURITY.md) to report a vulnerability. Do not report a vulnerability in a public issue.
+Report a vulnerability privately as described in [SECURITY.md](SECURITY.md). Do not report a vulnerability in a public issue.
 
 ## License
 

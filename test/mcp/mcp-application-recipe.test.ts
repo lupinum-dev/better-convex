@@ -16,7 +16,7 @@ import {
 import { resolveMcpProfile } from '../../src/runtime/convex-auth/mcp-profile'
 import { validateOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 
-const recipe = readFileSync('docs/content/docs/4.build/7.agents/2.mcp-application.md', 'utf8')
+const recipe = readFileSync('docs/content/docs/3.build/7.agents/2.mcp-application.md', 'utf8')
 const addresses = {
   issuer: 'https://notes.example/api/auth',
   resource: 'https://notes.convex.site/mcp',

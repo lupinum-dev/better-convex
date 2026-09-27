@@ -16,7 +16,7 @@ describe('starter organization ownership', () => {
     const starterAuth = readStarterFile('team', 'convex/auth.ts')
     const schemaPlugins = readStarterFile('team', 'convex/betterAuth/schemaPlugins.ts')
     const organizationGuide = readFileSync(
-      join(repoRoot, 'docs/content/docs/5.recipes/6.organization-permissions.md'),
+      join(repoRoot, 'docs/content/docs/4.recipes/6.organization-permissions.md'),
       'utf8',
     )
 

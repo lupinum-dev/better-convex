@@ -2,7 +2,7 @@
 
 <h1 align="center">@lupinum/better-convex-mcp</h1>
 
-<p align="center">Serve a bounded, provider-neutral MCP endpoint from a Convex HTTP Action.</p>
+<p align="center">Serve MCP tools from a Convex HTTP action, so AI hosts such as ChatGPT and Claude can call your Convex functions.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@lupinum/better-convex-mcp"><img src="https://img.shields.io/npm/v/@lupinum/better-convex-mcp?label=npm" alt="npm version"></a>
@@ -11,17 +11,27 @@
 </p>
 
 > [!WARNING]
-> This package is experimental beta software. Applications remain responsible for tools, roles, permissions, and effects.
+> This package is experimental prerelease software. Your application decides which tools exist and what each tool may read or change.
 
 ## Purpose
 
-Use this package to serve MCP tools from a Convex HTTP Action to hosts such as ChatGPT and Claude. It handles the MCP transport, request bounds, bearer challenges, and exact issuer and resource verification. It gives each request the verified access context and the verifier's typed principal.
+[MCP](https://modelcontextprotocol.io) (Model Context Protocol) lets an AI host call tools that your application defines. This package runs an MCP server inside one Convex HTTP action. It:
 
-Tools stay explicit. Each tool calls one Convex function, and that function reloads and enforces current application authorization.
+- accepts only bounded MCP requests on the modern protocol version `2026-07-28`;
+- checks the OAuth access token of each request against your issuer and your MCP resource URL;
+- answers a missing or insufficient token with the standard OAuth challenge, so the host can ask the user to sign in or grant more scopes;
+- gives your tools the verified user as a typed `principal`;
+- turns errors that you choose to expose into structured tool errors, and every other error into one generic failure.
+
+The package does not export your Convex functions automatically. You register each tool yourself. Each tool calls one internal Convex function, and that function checks what the user may do before it reads or writes data.
 
 ## Requirements
 
-The package requires Node.js `^22.19.0 || ^24.11.0` and the modern MCP protocol `2026-07-28`. OAuth mode requires the documented transport and protected-resource metadata routes. Preconfigured bearer mode exposes only the transport routes.
+- Node.js `^22.19.0 || ^24.11.0`
+- A Convex deployment with HTTP actions
+- An OAuth token verifier. With Better Convex authentication, use `auth.createMcpAccessVerifier(ctx)` from `@lupinum/better-convex-nuxt/better-auth/server`.
+
+The package depends on `@modelcontextprotocol/server` `2.1.0`. Install the same version in your application when your code imports from it.
 
 ## Installation
 
@@ -31,11 +41,20 @@ pnpm add @lupinum/better-convex-mcp@1.0.0-beta.3 @modelcontextprotocol/server@2.
 
 ## Quick start
 
-With Better Convex auth, configure `oauth: { mcp: { scopes } }` in `createBetterConvexAuth` and use its verifier. The tool passes the typed principal to an internal Convex function, which calls `auth.requireMcpPrincipal` before it reads data.
+This example uses Better Convex authentication. First, turn on the MCP OAuth profile in `convex/auth.ts`:
 
-```ts
+```ts [convex/auth.ts]
+export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
+  oauth: { mcp: { scopes: { 'notes:read': 'Read your notes' } } },
+})
+```
+
+Handle MCP requests in an HTTP action. The tool passes the typed `principal` to an internal Convex function:
+
+```ts [convex/mcp.ts]
 import { handleMcpRequest, registerMcpTool } from '@lupinum/better-convex-mcp'
 import { z } from 'zod'
+
 import { internal } from './_generated/api'
 import { httpAction } from './_generated/server'
 import { auth } from './auth'
@@ -67,24 +86,59 @@ export const handleMcp = httpAction((ctx, request) =>
 )
 ```
 
-For another token provider, implement the
-[provider-neutral verifier contract](https://better-convex.lupinum.com/docs/build/agents/mcp#use-another-token-provider)
-in your application, for example as `applicationTokenVerifier` in
-`convex/mcp/verify.ts`. It must validate the token and its issuer, resource,
-identity, granted scopes, and actual expiry in Unix seconds. Never substitute a
-fixed identity or invented expiry. Then import it with
+Check the principal inside the internal function, before you read data:
+
+```ts [convex/notes.ts]
+import { mcpPrincipalValidator } from '@lupinum/better-convex-nuxt/better-auth/server'
+
+import { internalQuery } from './_generated/server'
+import { auth } from './auth'
+
+export const list = internalQuery({
+  args: { principal: mcpPrincipalValidator },
+  handler: async (ctx, { principal }) => {
+    const { user } = await auth.requireMcpPrincipal(ctx, principal, { scope: 'notes:read' })
+    const notes = await ctx.db
+      .query('notes')
+      .withIndex('by_owner', (q) => q.eq('ownerId', user.id))
+      .take(20)
+    return { notes: notes.map((note) => ({ id: note._id, title: note.title })) }
+  },
+})
+```
+
+Register the MCP route and its OAuth metadata route in `convex/http.ts`. The [MCP guide](https://better-convex.lupinum.com/docs/build/agents/mcp#register-the-routes) shows the five route registrations. Then [connect ChatGPT and Claude](https://better-convex.lupinum.com/docs/build/agents/connect-chatgpt-and-claude).
+
+Use `mcpPrincipalValidator` only on internal functions. A public function would let any caller name another user.
+
+### Use another token provider
+
+For another OAuth provider, write a verifier that implements the
+[verifier contract](https://better-convex.lupinum.com/docs/build/agents/mcp#use-another-token-provider),
+for example as `applicationTokenVerifier` in `convex/mcp/verify.ts`. It must
+check the token and its issuer, resource, identity, granted scopes, and
+actual expiry in Unix seconds. Never return a fixed identity or an invented
+expiry. Then import it with
 `import { applicationTokenVerifier } from './mcp/verify'` and pass
 `verifier: applicationTokenVerifier`.
 
 ## Exports
 
-`configureServer` receives one object: the verified `access`, the verifier's typed `principal`, the per-request `server`, and `tools` with `runTool(name, operation)` and `requireScopes(...scopes)`. `requestState` receives `{ access, principal }`.
+| Export                          | Use                                                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `handleMcpRequest`              | Handles one MCP HTTP request. Options: `serverInfo`, `resource`, `authorization`, `configureServer`, and optional `requestState`, `exposeErrorCodes`, and `onToolError`. |
+| `registerMcpTool`               | Defines one tool and registers it on the request's server.                                                                                                               |
+| `defineMcpTool`                 | Returns `{ name, config, handler }`. Pass it to `server.registerTool` or to `registerAppTool` for an MCP Apps tool.                                                      |
+| `runMcpTool`                    | Runs a tool operation outside `configureServer`. A thrown error becomes a tool result.                                                                                   |
+| `projectMcpToolError`           | Turns an exposed `ConvexError` into a tool error result. Returns `undefined` for any other error.                                                                        |
+| `McpUnsupportedCapabilityError` | Thrown when the server offers a capability other than tools and resources.                                                                                               |
+| `listMcpCatalog`                | From `@lupinum/better-convex-mcp/test`. Returns the `tools/list` and `resources/list` results that a client sees, for snapshot tests.                                    |
 
-`registerMcpTool(server, tools, definition)` and `defineMcpTool(tools, definition)` derive annotations from `risk`, `_meta.securitySchemes` and the scope step-up from `scopes`, and run the handler through `runTool`. Pass a `defineMcpTool` result to `registerAppTool` for an MCP Apps tool.
+`configureServer` receives one object with the verified `access`, the verifier's `principal`, the request's `server`, and `tools`. `tools.runTool(name, operation)` runs an operation with this request's error handling. `tools.requireScopes(...scopes)` returns the scope challenge for a tool or resource.
 
-`exposeErrorCodes` on `handleMcpRequest`, `runMcpTool()`, and `projectMcpToolError()` project a `ConvexError` whose `data.code` is allowlisted (plus `UNAUTHENTICATED`, `MCP_ACCESS_DENIED`, and `MCP_INSUFFICIENT_SCOPE`) as a structured tool error. Any other throw becomes one static failure. They are not a general authorization or SDK sanitizer.
+A tool definition sets `risk` to `read`, `write`, or `destructive`. The package turns `risk` into the MCP hints that hosts use to ask for confirmation. `scopes` lists the OAuth scopes the tool needs.
 
-`listMcpCatalog()` from `@lupinum/better-convex-mcp/test` returns the `tools/list` and `resources/list` results a client sees, for snapshot tests.
+Errors: a `ConvexError` whose `data.code` is in `exposeErrorCodes` becomes a structured tool error with its `data.message` and `data.retryable`. `UNAUTHENTICATED`, `MCP_ACCESS_DENIED`, and `MCP_INSUFFICIENT_SCOPE` are always exposed. Every other error becomes one generic failure, so internal details do not reach the model.
 
 <!-- BEGIN:consumer-onboarding -->
 
@@ -117,11 +171,11 @@ the matching documentation without copying it into your application.
 
 ## Documentation
 
-Read [MCP on Convex](https://better-convex.lupinum.com/docs/build/agents/mcp), [Connect ChatGPT and Claude](https://better-convex.lupinum.com/docs/build/agents/connect-chatgpt-and-claude), and the [delegated OAuth reference](https://better-convex.lupinum.com/docs/build/authentication/delegated-oauth-and-mcp).
+Read [MCP on Convex](https://better-convex.lupinum.com/docs/build/agents/mcp), [add MCP to your application](https://better-convex.lupinum.com/docs/build/agents/mcp-application), [connect ChatGPT and Claude](https://better-convex.lupinum.com/docs/build/agents/connect-chatgpt-and-claude), and the [delegated OAuth reference](https://better-convex.lupinum.com/docs/build/authentication/delegated-oauth-and-mcp).
 
 ## Support and security
 
-Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report vulnerabilities through the [private security process](https://github.com/lupinum-dev/better-convex/security/policy).
+Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for support. Report a vulnerability privately through the [security policy](https://github.com/lupinum-dev/better-convex/security/policy).
 
 ## License
 

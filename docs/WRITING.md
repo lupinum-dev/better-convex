@@ -33,6 +33,40 @@ Do not use filler such as `simply`, `just`, `obviously`, `easy`, `seamless`, or
 Do not use session cookie, Convex session token, and OAuth access token as
 interchangeable terms.
 
+## Use plain words
+
+Write for a Nuxt developer who has never seen this library. Replace internal
+project words with the plain word in the right column. Keep the internal word
+only in a code identifier, command output, or a generated report.
+
+| Do not write                              | Write                                    |
+| ----------------------------------------- | ---------------------------------------- |
+| authority, deployment authority           | deployment, the Convex deployment in use |
+| admission, admitted session               | session check, valid session             |
+| ceremony                                  | steps, flow                              |
+| certified, certification                  | tested, checked                          |
+| closed traffic gate                       | before the app receives public traffic   |
+| evidence                                  | test, test result                        |
+| file-bound                                | reads `.env.local`                       |
+| fence, fencing                            | stop, discard                            |
+| hard cut                                  | breaking change                          |
+| invariant                                 | rule                                     |
+| owner, owns (for code)                    | creates, controls, is responsible for    |
+| reviewed profile                          | default settings                         |
+| settle, settlement                        | finish, finish loading                   |
+| source candidate, release candidate prose | this version                             |
+| surface                                   | API, functions, options                  |
+| topology                                  | setup                                    |
+| utilize, leverage                         | use                                      |
+
+Also avoid these patterns:
+
+- Do not explain why a design is correct. Tell the reader what to do and what
+  happens.
+- Do not repeat a concept on every page. Explain it once in Concepts and link
+  to it.
+- Do not describe internal review, release, or test process on user pages.
+
 ## Structure public pages
 
 Public root and package READMEs use the shared Lupinum structure. Start with a
