@@ -24,6 +24,7 @@ import {
 } from '../jwks-rotation'
 import {
   admitOAuthRefresh,
+  equalityRange,
   prepareOAuthRefreshCreate,
   revokeOAuthRefreshConsent,
 } from '../oauth-refresh'
@@ -593,12 +594,12 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
             const grantId = args.oauthRefreshGrantId
             const rows = await ctx.db
               .query('oauthRefreshToken')
-              .withIndex('clientId', (query) => query.eq('clientId', clientId))
+              .withIndex(
+                'clientId_userId',
+                equalityRange(['clientId', clientId], ['userId', userId]),
+              )
               .filter((query) =>
-                query.and(
-                  query.eq(query.field('userId'), userId),
-                  grantId === undefined ? true : query.eq(query.field('bcnConsentId'), grantId),
-                ),
+                grantId === undefined ? true : query.eq(query.field('bcnConsentId'), grantId),
               )
               .take(128)
             await revokeOAuthRefreshConsent(ctx, rows)

@@ -47,7 +47,7 @@
     "unbuild": "3.6.1",
     "vue": "3.5.40",
     "vue-tsc": "^3.3.7",
-    "zod": "4.4.3"
+    "zod": "4.6.5"
   },
   "peerDependencies": {
     "convex": ">=1.42.2 <2",

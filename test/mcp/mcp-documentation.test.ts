@@ -30,11 +30,11 @@ describe('MCP package documentation', () => {
       `\`@modelcontextprotocol/server@${mcpManifest.dependencies['@modelcontextprotocol/server']}\``,
     )
     expect(normalizedGuide).toContain(
-      'final MCP `2026-07-28` contract through exact `@modelcontextprotocol/server@2.0.0`',
+      'final MCP `2026-07-28` contract through exact `@modelcontextprotocol/server@2.1.0`',
     )
     expect(normalizedGuide).toContain('The protocol is stable; this integration remains prerelease')
     expect(guide).toContain(
-      `@lupinum/better-convex-mcp@${mcpManifest.version} @modelcontextprotocol/server@2.0.0 zod@4.4.3`,
+      `@lupinum/better-convex-mcp@${mcpManifest.version} @modelcontextprotocol/server@2.1.0 zod@4.6.5`,
     )
   })
 

@@ -243,8 +243,8 @@ describe('real OAuth transport quota evidence', () => {
   it('preserves exact safe uniqueness evidence from the real-backend races', () => {
     expect(
       safeAuthConcurrencyFailure(
-        new Error('server error: AUTH_UNIQUE_CONFLICT:account.issuer_accountId'),
+        new Error('server error: AUTH_UNIQUE_CONFLICT:account.providerId_accountId'),
       ),
-    ).toBe('AUTH_UNIQUE_CONFLICT:account.issuer_accountId')
+    ).toBe('AUTH_UNIQUE_CONFLICT:account.providerId_accountId')
   })
 })

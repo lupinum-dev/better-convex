@@ -77,7 +77,7 @@ describe('package-profile SBOM generation', () => {
         expect(sbom.components).toContainEqual(
           expect.objectContaining({
             name: peer,
-            version: '1.7.2',
+            version: '1.7.6',
             properties: [
               {
                 name: '@lupinum/better-convex-nuxt:dependency-kind',

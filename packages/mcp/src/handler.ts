@@ -9,11 +9,13 @@ import {
   OAuthErrorCode,
   oauthMetadataResponse,
   originValidationResponse,
+  requireScopes,
   verifyBearerToken,
   McpServer,
   type AuthInfo,
   type AuthMetadataOptions,
   type OAuthTokenVerifier,
+  type ScopeChallengeHandler,
   type ServerOptions,
 } from '@modelcontextprotocol/server'
 
@@ -27,15 +29,19 @@ import type { McpAccessContext, McpAccessVerifier, VerifiedMcpAccess } from './i
 import { runMcpTool, type McpToolErrorMetadata } from './tools.js'
 import {
   boundMcpResponse,
+  maximumMcpRequestBytes,
   McpTransportFailure,
   mcpTransportFailureResponse,
-  missingMcpProtocolHeaderResponse,
   prepareBoundedMcpRequest,
   runMcpRequestDeadline,
 } from './transport.js'
 
 export interface McpRequestTools {
   runTool(name: string, operation: Parameters<typeof runMcpTool>[0]): ReturnType<typeof runMcpTool>
+  /** Official SDK `scopeChallenge` for a tool or resource that needs these scopes. The challenge
+   * also names `authorization.requiredScopes`. Throws a `TypeError` for a scope that
+   * `scopesSupported` does not advertise. */
+  requireScopes(...scopes: readonly [string, ...string[]]): ScopeChallengeHandler
 }
 
 export interface HandleMcpRequestOptions {
@@ -44,9 +50,6 @@ export interface HandleMcpRequestOptions {
     readonly version: string
   }
   readonly resource: URL
-  /** Additional scopes for named tools. Produces an OAuth step-up challenge before dispatch.
-   * Application operations must still authorize inside their own transaction. */
-  readonly requiredToolScopes?: Readonly<Record<string, readonly string[]>>
   /** Build the official SDK's request-state verifier for this freshly authenticated principal.
    * The SDK verifies echoed state before dispatch and supplies its decoded value to the handler. */
   readonly requestState?: (
@@ -87,19 +90,6 @@ export async function handleMcpRequest(
   const authorization = normalizeAuthorization(options.authorization, expectedResource)
   const requiredScopes =
     authorization.requiredScopes === undefined ? undefined : [...authorization.requiredScopes]
-  const supportedToolScopes =
-    options.authorization.mode === 'oauth' ? options.authorization.scopesSupported : undefined
-  const toolScopes = new Map<string, readonly string[]>()
-  for (const [name, scopes] of Object.entries(options.requiredToolScopes ?? {})) {
-    if (!name.trim()) throw new TypeError('MCP tool scope names must not be empty')
-    const normalized = normalizeConfiguredScopes(scopes) ?? []
-    if (
-      supportedToolScopes !== undefined &&
-      normalized.some((scope) => !supportedToolScopes.includes(scope))
-    )
-      throw new TypeError('MCP required tool scopes must be advertised as supported')
-    toolScopes.set(name, normalized)
-  }
 
   try {
     return await runMcpRequestDeadline(request.signal, async (signal) => {
@@ -127,18 +117,6 @@ export async function handleMcpRequest(
       }
 
       const boundedRequest = await prepareBoundedMcpRequest(request, signal)
-      const missingProtocolHeader = await missingMcpProtocolHeaderResponse(boundedRequest)
-      if (missingProtocolHeader) return missingProtocolHeader
-      if (toolScopes.size > 0) {
-        const challenge = await toolScopeChallenge(
-          boundedRequest,
-          authenticated.access,
-          toolScopes,
-          requiredScopes,
-          authorization.resourceMetadataUrl,
-        )
-        if (challenge) return await boundMcpResponse(challenge, signal)
-      }
       const handler = createMcpHandler(
         async () => {
           const server = new McpServer(options.serverInfo, {
@@ -155,6 +133,8 @@ export async function handleMcpRequest(
                     ? {}
                     : { onToolError: options.onToolError }),
                 }),
+              requireScopes: (...scopes: readonly [string, ...string[]]) =>
+                requireEndpointScopes(authorization, scopes),
             })
             await options.configureServer(authenticated.access, server, tools)
             return hardenUnaryServer(server)
@@ -165,6 +145,7 @@ export async function handleMcpRequest(
         },
         {
           legacy: 'reject',
+          maxRequestBodySize: maximumMcpRequestBytes,
           maxSubscriptions: 0,
           responseMode: 'json',
         },
@@ -174,7 +155,12 @@ export async function handleMcpRequest(
           boundedRequest.headers.get('mcp-method') === 'subscriptions/listen'
             ? boundedRequest.clone()
             : undefined
-        const response = await boundMcpResponse(await handler.fetch(boundedRequest), signal)
+        const response = await boundMcpResponse(
+          await handler.fetch(boundedRequest, {
+            authInfo: scopeChallengeAuthInfo(authenticated, authorization.resourceMetadataUrl),
+          }),
+          signal,
+        )
         return inspection ? await rejectUnavailableSubscription(inspection, response) : response
       } finally {
         await handler.close()
@@ -186,7 +172,7 @@ export async function handleMcpRequest(
   }
 }
 
-/** SDK 2.0.0 intercepts subscriptions before dispatch, even with no advertised capability.
+/** SDK 2.1.0 still intercepts subscriptions before dispatch, even with no advertised capability.
  * Correct only its exact zero-capacity response after the SDK's request validation.
  * Remove with the SDK disable-subscriptions fix. */
 async function rejectUnavailableSubscription(
@@ -226,45 +212,34 @@ async function rejectUnavailableSubscription(
   )
 }
 
-/** The SDK classifies the envelope; it retains all subsequent routing and parameter checks.
- * As with initial bearer authentication, a scope challenge can precede those checks. */
-async function toolScopeChallenge(
-  request: Request,
-  access: McpAccessContext,
-  toolScopes: ReadonlyMap<string, readonly string[]>,
-  requiredScopes: readonly string[] | undefined,
+/** The SDK challenges with exactly the scopes that one tool or resource declares. Add the base
+ * scopes, so a client that authorizes again for the challenge keeps the access it already has.
+ * Discovery must advertise every scope that a challenge can ask for, checked at registration. */
+function requireEndpointScopes(
+  authorization: NormalizedAuthorization,
+  scopes: readonly [string, ...string[]],
+): ScopeChallengeHandler {
+  const { requiredScopes = [], scopesSupported } = authorization
+  if (scopesSupported && scopes.some((scope) => !scopesSupported.includes(scope)))
+    throw new TypeError('MCP scope challenges must be advertised as supported')
+  const challenged = [...new Set([...requiredScopes, ...scopes])] as [string, ...string[]]
+  return requireScopes(...challenged)
+}
+
+/** Verified scopes and metadata URL for the SDK's `scopeChallenge` checks. Tool callbacks also
+ * receive this value as `ctx.http.authInfo`, so the raw bearer never leaves authentication.
+ * Omitting `resource` keeps preconfigured-bearer challenges free of discovery metadata. */
+function scopeChallengeAuthInfo(
+  verified: VerifiedMcpAccess,
   resourceMetadataUrl: string | undefined,
-): Promise<Response | undefined> {
-  let body: unknown
-  try {
-    body = await request.clone().json()
-  } catch {
-    return undefined
+): AuthInfo {
+  return {
+    token: '',
+    clientId: verified.access.clientId,
+    scopes: [...verified.access.scopes],
+    expiresAt: verified.expiresAt,
+    ...(resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl }),
   }
-  const classified = classifyInboundRequest({
-    httpMethod: request.method,
-    protocolVersionHeader: request.headers.get('mcp-protocol-version') ?? undefined,
-    mcpMethodHeader: request.headers.get('mcp-method') ?? undefined,
-    mcpNameHeader: request.headers.get('mcp-name') ?? undefined,
-    body,
-  })
-  if (
-    classified.kind !== 'modern' ||
-    classified.messageKind !== 'request' ||
-    classified.message.method !== 'tools/call'
-  )
-    return undefined
-  const name = classified.message.params?.name
-  if (typeof name !== 'string') return undefined
-  const additional = toolScopes.get(name)
-  if (!additional || additional.every((scope) => access.scopes.includes(scope))) return undefined
-  return bearerAuthChallengeResponse(
-    new OAuthError(OAuthErrorCode.InsufficientScope, 'Additional tool permission required'),
-    {
-      requiredScopes: [...new Set([...(requiredScopes ?? []), ...additional])],
-      ...(resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl }),
-    },
-  )
 }
 
 type NormalizedAuthorization =
@@ -275,6 +250,7 @@ type NormalizedAuthorization =
       readonly metadataOptions: AuthMetadataOptions
       readonly resourceMetadataUrl: string
       readonly requiredScopes?: readonly string[]
+      readonly scopesSupported?: readonly string[]
     }
   | {
       readonly mode: 'preconfigured-bearer'
@@ -282,6 +258,7 @@ type NormalizedAuthorization =
       readonly verifier: McpAccessVerifier
       readonly resourceMetadataUrl: undefined
       readonly requiredScopes?: readonly string[]
+      readonly scopesSupported?: undefined
     }
 
 function normalizeAuthorization(
@@ -327,6 +304,7 @@ function normalizeAuthorization(
     metadataOptions,
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(expectedResource),
     ...(requiredScopes === undefined ? {} : { requiredScopes }),
+    ...(scopesSupported === undefined ? {} : { scopesSupported }),
   })
 }
 

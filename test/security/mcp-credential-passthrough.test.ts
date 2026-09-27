@@ -57,6 +57,7 @@ describe('MCP credential passthrough absence', () => {
     const operationArguments: unknown[] = []
     const responseBodies: string[] = []
     const callbackHeaders: Headers[] = []
+    const callbackAuth: unknown[] = []
     const requestOptions = {
       serverInfo: { name: 'absence-proof', version: '0.1.0' },
       resource,
@@ -70,6 +71,7 @@ describe('MCP credential passthrough absence', () => {
           },
           async (input, extra) => {
             if (extra.http?.req) callbackHeaders.push(new Headers(extra.http.req.headers))
+            callbackAuth.push(extra.http?.authInfo)
             const args = {
               actor: { issuer: access.issuer, subject: access.subject },
               input,
@@ -86,6 +88,7 @@ describe('MCP credential passthrough absence', () => {
           { inputSchema: z.object({}).strict() },
           (_input, extra) => {
             if (extra.http?.req) callbackHeaders.push(new Headers(extra.http.req.headers))
+            callbackAuth.push(extra.http?.authInfo)
             return runMcpTool(() => {
               throw new Error(`${bearer}:${providerReference}`)
             })
@@ -142,6 +145,8 @@ describe('MCP credential passthrough absence', () => {
       },
     ])
     expect(callbackHeaders).toHaveLength(2)
+    expect(callbackAuth).toHaveLength(2)
+    for (const authInfo of callbackAuth) expect(authInfo).toMatchObject({ token: '' })
     for (const headers of callbackHeaders) {
       expect(headers.get('authorization')).toBeNull()
       expect(headers.get('cookie')).toBeNull()
@@ -150,6 +155,7 @@ describe('MCP credential passthrough absence', () => {
       expect(headers.get('content-type')).toContain('application/json')
     }
     const observable = JSON.stringify({
+      callbackAuth,
       callbackHeaders: callbackHeaders.map((headers) => Object.fromEntries(headers)),
       operationArguments,
       responseBodies,
@@ -157,6 +163,7 @@ describe('MCP credential passthrough absence', () => {
     expect(observable).not.toContain(bearer)
     expect(observable).not.toContain(providerReference)
     const publicObservable = JSON.stringify({
+      callbackAuth,
       callbackHeaders: callbackHeaders.map((headers) => Object.fromEntries(headers)),
       responseBodies,
     })

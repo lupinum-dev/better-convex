@@ -1,8 +1,15 @@
 /// <reference types="vite/client" />
 
+import {
+  diffSchema,
+  getExpectedSchema,
+  type IntrospectedTable,
+} from '@better-auth/core/db/internal'
+import type { BetterAuthOptions } from 'better-auth'
 import type { BetterAuthDBSchema, DBFieldAttribute } from 'better-auth/db'
 import { describe, expect, it, vi } from 'vitest'
 
+import packagedSchemaOptions from '../../internal/convex-auth/schema-options'
 import rootPackage from '../../package.json'
 import lockfile from '../../pnpm-lock.yaml?raw'
 import adapterProvenance from '../../security/upstream-convex-better-auth.json'
@@ -25,8 +32,12 @@ import packagedSchemaMetadata from '../../src/runtime/convex-auth/component/sche
 import { requireWritableAuthCtx } from '../../src/runtime/convex-auth/context'
 import teamSchema from '../../starters/team/convex/betterAuth/schema'
 import teamSchemaMetadata from '../../starters/team/convex/betterAuth/schemaMetadata'
+import teamSchemaOptions from '../../starters/team/convex/betterAuth/schemaOptions'
 import localComponentSchema from '../fixtures/better-auth-local-component/convex/betterAuth/schema'
 import localComponentSchemaMetadata from '../fixtures/better-auth-local-component/convex/betterAuth/schemaMetadata'
+import localComponentSchemaOptions from '../fixtures/better-auth-local-component/convex/betterAuth/schemaOptions'
+import twoFactorSchemaMetadata from '../fixtures/better-auth-two-factor/convex/betterAuth/schemaMetadata'
+import twoFactorSchemaOptions from '../fixtures/better-auth-two-factor/convex/betterAuth/schemaOptions'
 
 const tables = {
   user: {
@@ -50,6 +61,23 @@ const tables = {
   },
 } as unknown as BetterAuthDBSchema
 
+/** The component, not Better Auth, writes the session-generation authority fields. */
+const componentOwnedFields = new Set([
+  'user.bcnSecurityGeneration',
+  'session.bcnAssuranceGeneration',
+])
+
+function introspectComponent(metadata: AuthSchemaMetadata): IntrospectedTable[] {
+  return Object.values(metadata.models).map((model) => ({
+    name: model.physicalName,
+    columns: Object.values(model.fields).map((field) => ({
+      name: field.physicalName,
+      nullable: field.nullable,
+      hasDefault: componentOwnedFields.has(`${model.logicalName}.${field.logicalName}`),
+    })),
+  }))
+}
+
 const verificationTables = {
   verification: {
     modelName: 'verification',
@@ -68,7 +96,7 @@ describe('pinned Better Auth adapter contract provenance', () => {
     const contract = adapterProvenance.adapterContractTests
 
     expect(contract.upstreamCommit).toMatch(/^[0-9a-f]{40}$/u)
-    expect(contract.upstreamTag).toBe('v1.7.2')
+    expect(contract.upstreamTag).toBe('v1.7.6')
     expect(contract.sourceTestPaths).toEqual(
       expect.arrayContaining([
         'packages/core/src/db/adapter/factory.test.ts',
@@ -165,17 +193,50 @@ describe('greenfield Convex auth schema generation', () => {
     })
   })
 
-  it('uses the stable issuer-scoped account identity without the prerelease alias', () => {
+  it('identifies accounts by the provider key without the retired 1.7.0-1.7.2 issuer', () => {
     const account = packagedSchemaMetadata.models.account
 
-    expect(account?.fields).toHaveProperty('issuer')
+    expect(account?.fields).toHaveProperty('providerId')
     expect(account?.fields).toHaveProperty('accountId')
+    expect(account?.fields).not.toHaveProperty('issuer')
     expect(account?.fields).not.toHaveProperty('providerAccountId')
     expect(account?.indexes).toContainEqual({
-      descriptor: 'issuer_accountId',
-      fields: ['issuer', 'accountId'],
+      descriptor: 'providerId_accountId',
+      fields: ['providerId', 'accountId'],
       unique: true,
     })
+  })
+
+  it.each([
+    ['packaged component', packagedSchemaOptions, packagedSchemaMetadata],
+    ['team starter', teamSchemaOptions, teamSchemaMetadata],
+    ['local component fixture', localComponentSchemaOptions, localComponentSchemaMetadata],
+    ['two-factor fixture', twoFactorSchemaOptions, twoFactorSchemaMetadata],
+  ] as const)('passes Better Auth schema validation for the %s', (_label, options, metadata) => {
+    expect(
+      diffSchema(
+        getExpectedSchema(options as BetterAuthOptions),
+        introspectComponent(metadata as AuthSchemaMetadata),
+      ),
+    ).toEqual([])
+  })
+
+  it('fails Better Auth schema validation with a required 1.7.0-1.7.2 account issuer', () => {
+    const stale = structuredClone(packagedSchemaMetadata) as AuthSchemaMetadata
+    const account = stale.models.account
+    if (!account) throw new Error('Expected generated account metadata.')
+    ;(account.fields as Record<string, unknown>).issuer = {
+      ...account.fields.accountId,
+      logicalName: 'issuer',
+      physicalName: 'issuer',
+    }
+
+    expect(
+      diffSchema(
+        getExpectedSchema(packagedSchemaOptions as BetterAuthOptions),
+        introspectComponent(stale),
+      ),
+    ).toEqual([{ kind: 'unexpected-required-column', table: 'account', column: 'issuer' }])
   })
 
   it('materializes pinned relationship targets and deletion policies', () => {
@@ -286,7 +347,7 @@ describe('greenfield Convex auth schema generation', () => {
 
     const compoundUniqueTamper = structuredClone(packagedSchemaMetadata) as AuthSchemaMetadata
     const accountCompoundIndex = compoundUniqueTamper.models.account?.indexes.find(
-      (index) => index.descriptor === 'issuer_accountId',
+      (index) => index.descriptor === 'providerId_accountId',
     )
     if (!accountCompoundIndex) throw new Error('Expected generated account compound index.')
     delete (accountCompoundIndex as { unique?: true }).unique
@@ -334,11 +395,16 @@ describe('greenfield Convex auth schema generation', () => {
 
     expect(
       packagedSchemaMetadata.models.account?.indexes.find(
-        (index) => index.descriptor === 'issuer_accountId',
+        (index) => index.descriptor === 'providerId_accountId',
       ),
     ).toMatchObject({ unique: true })
 
     expect(accountIndexDescriptors).not.toContain('providerId_userId')
+    expect(
+      packagedSchemaMetadata.models.oauthRefreshToken?.indexes.find(
+        (index) => index.descriptor === 'clientId_userId',
+      ),
+    ).toEqual({ descriptor: 'clientId_userId', fields: ['clientId', 'userId'] })
     expect(
       packagedSchemaMetadata.models.oauthConsent?.indexes.find(
         (index) => index.descriptor === 'clientId_userId',

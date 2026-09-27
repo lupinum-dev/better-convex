@@ -6,7 +6,7 @@ import { parse } from 'yaml'
 
 import { checkDependencyPolicy } from './check-dependency-policy.mjs'
 import { validatePackageArtifactVersion } from './package-artifact-coordinates.mjs'
-import { supportedDependencyTuple } from './supported-dependency-tuple.mjs'
+import { sharedPackageRuntimes, supportedDependencyTuple } from './supported-dependency-tuple.mjs'
 
 const rootDir = process.cwd()
 const rootPackage = readPackage('package.json')
@@ -23,6 +23,10 @@ const distributedAppManifests = [
 ]
 
 const rootSpecifiers = new Map(Object.entries(supportedDependencyTuple))
+const mcpPackage = readPackage('packages/mcp/package.json')
+const mcpServerSdk = '@modelcontextprotocol/server'
+const publishedPackageNames = ['@lupinum/better-convex-nuxt', '@lupinum/better-convex-mcp']
+const exactVersionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u
 
 const manifestPaths = [
   'demo/package.json',
@@ -107,12 +111,42 @@ if (playgroundPackage.dependencies?.['@lupinum/better-convex-nuxt'] !== 'workspa
   failures.push('playground/package.json must declare @lupinum/better-convex-nuxt@workspace:*')
 }
 
+if (rootPackage.devDependencies?.[mcpServerSdk] !== mcpPackage.dependencies?.[mcpServerSdk]) {
+  failures.push(
+    `package.json must exercise ${mcpServerSdk}@${mcpPackage.dependencies?.[mcpServerSdk]} from packages/mcp`,
+  )
+}
+
+// A distributed app installs published releases, so it follows their exact dependency tuple.
+// Candidate checks move each app copy to the candidate tuple with the candidate tarballs.
+const publishedRequirements = new Map(
+  distributedAppManifests.map((manifestPath) => [manifestPath, publishedTuple(manifestPath)]),
+)
+
 for (const manifestPath of manifestPaths) {
   const packageJson = readPackage(manifestPath)
+  const published = publishedRequirements.get(manifestPath)
   for (const [name, expected] of rootSpecifiers) {
+    if (published?.has(name)) continue
     const actual = dependencySpecifier(packageJson, name)
     if (actual && normalizeSpecifier(actual) !== normalizeSpecifier(expected)) {
       failures.push(`${manifestPath} declares ${name}@${actual}; expected ${expected}`)
+    }
+  }
+  for (const [name, { expected, owner }] of published ?? []) {
+    const actual = dependencySpecifier(packageJson, name)
+    if (actual !== undefined && actual !== expected) {
+      failures.push(
+        `${manifestPath} declares ${name}@${actual}; its pinned ${owner} requires ${expected}`,
+      )
+    }
+  }
+  if (!published && dependencySpecifier(packageJson, mcpServerSdk) !== undefined) {
+    const actual = dependencySpecifier(packageJson, mcpServerSdk)
+    if (actual !== mcpPackage.dependencies?.[mcpServerSdk]) {
+      failures.push(
+        `${manifestPath} declares ${mcpServerSdk}@${actual}; packages/mcp requires ${mcpPackage.dependencies?.[mcpServerSdk]}`,
+      )
     }
   }
   if (dependencySpecifier(packageJson, '@convex-dev/better-auth')) {
@@ -157,16 +191,23 @@ for (const manifestPath of distributedAppManifests) {
   if (/@lupinum\/better-convex-nuxt@(?:file|link):/u.test(lock)) {
     failures.push(`${appDir}/pnpm-lock.yaml resolves @lupinum/better-convex-nuxt from a local path`)
   }
-  const lockedSpecifier = lock.match(
-    /\n {6}'?@lupinum\/better-convex-nuxt'?:\n {8}specifier: ['"]?([^'"\n]+)['"]?/u,
-  )?.[1]
-  if (lockedSpecifier !== actual) {
-    failures.push(
-      `${appDir}/pnpm-lock.yaml records @lupinum/better-convex-nuxt@${lockedSpecifier ?? '<missing>'}; manifest declares ${actual}`,
-    )
-  }
-  if (!lock.includes(`\n  '@lupinum/better-convex-nuxt@${actual}':`)) {
-    failures.push(`${appDir}/pnpm-lock.yaml has no registry package entry for ${actual}`)
+  for (const packageName of publishedPackageNames) {
+    const declared = dependencySpecifier(packageJson, packageName)
+    if (declared === undefined) continue
+    const escapedName = packageName.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    const lockedSpecifier = lock.match(
+      new RegExp(`\\n {6}'?${escapedName}'?:\\n {8}specifier: ['"]?([^'"\\n]+)['"]?`, 'u'),
+    )?.[1]
+    if (lockedSpecifier !== declared) {
+      failures.push(
+        `${appDir}/pnpm-lock.yaml records ${packageName}@${lockedSpecifier ?? '<missing>'}; manifest declares ${declared}`,
+      )
+    }
+    if (!lock.includes(`\n  '${packageName}@${declared}':`)) {
+      failures.push(
+        `${appDir}/pnpm-lock.yaml has no registry package entry for ${packageName}@${declared}`,
+      )
+    }
   }
 }
 
@@ -186,6 +227,48 @@ if (failures.length > 0) {
   console.log(
     `Workspace dependency alignment passed (${manifestPaths.length} manifest(s) checked).`,
   )
+}
+
+function publishedTuple(manifestPath) {
+  const appDir = manifestPath.slice(0, -'/package.json'.length)
+  const lockPath = resolve(rootDir, appDir, 'pnpm-lock.yaml')
+  const requirements = new Map()
+  if (!existsSync(lockPath)) return requirements
+  const lock = parse(readFileSync(lockPath, 'utf8'))
+  const packageJson = readPackage(manifestPath)
+  for (const packageName of publishedPackageNames) {
+    const version = dependencySpecifier(packageJson, packageName)
+    if (version === undefined) continue
+    const owner = `${packageName}@${version}`
+    if (!exactVersionPattern.test(version)) {
+      failures.push(`${manifestPath} must pin one exact published ${packageName} version`)
+      continue
+    }
+    const exact = Object.entries(lock?.packages?.[owner]?.peerDependencies ?? {}).filter(
+      ([, range]) => exactVersionPattern.test(String(range)),
+    )
+    const snapshot = Object.entries(lock?.snapshots ?? {}).find(
+      ([key]) => key === owner || key.startsWith(`${owner}(`),
+    )?.[1]
+    for (const name of sharedPackageRuntimes[packageName] ?? []) {
+      const resolved = snapshot?.dependencies?.[name]
+      if (resolved === undefined) {
+        failures.push(`${appDir}/pnpm-lock.yaml does not resolve ${name} for ${owner}`)
+      } else {
+        exact.push([name, String(resolved).replace(/\(.*$/u, '')])
+      }
+    }
+    for (const [name, expected] of exact) {
+      const current = requirements.get(name)
+      if (current && current.expected !== expected) {
+        failures.push(
+          `${manifestPath} pins ${current.owner} and ${owner} with conflicting ${name} requirements`,
+        )
+      }
+      requirements.set(name, { expected: String(expected), owner })
+    }
+  }
+  return requirements
 }
 
 function readPackage(path) {

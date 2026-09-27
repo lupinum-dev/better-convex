@@ -269,7 +269,6 @@ describe('Section 9.6 secret sentinel gate', () => {
       accessToken: encryptedAccessToken,
       id: 'social-account-row',
       idToken: protectedIdToken.idToken,
-      issuer: 'https://sentinel-provider.example.test',
       accountId: 'social-account',
       providerId: 'sentinel-provider',
       refreshToken: encryptedRefreshToken,

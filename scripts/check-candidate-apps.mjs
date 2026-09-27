@@ -17,7 +17,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 
-import { applyCompatibilityProfile } from './compatibility-profile.mjs'
+import { adoptCandidateTuple, applyCompatibilityProfile } from './compatibility-profile.mjs'
 import { prepareConsumerDependencyPolicy } from './consumer-dependency-policy.mjs'
 import { getMaintainedCandidateProfile } from './maintained-candidate-apps.mjs'
 import { canonicalNpmTarballFilename } from './package-artifact-coordinates.mjs'
@@ -303,10 +303,11 @@ function prepareFixtureCompanionCandidate(packageId, suppliedTarball, sourceMani
   run('tar', ['-xzf', tarballPath, '-C', extractedDir])
   const packageDir = join(extractedDir, 'package')
   const manifest = readJson(join(packageDir, 'package.json'))
+  // The fixture pins a published release; this candidate replaces it, as the main package does.
   if (
     manifest.name !== descriptor.packageName ||
     filename !== canonicalNpmTarballFilename(descriptor.packageName, manifest.version) ||
-    dependencySpecifier(sourceManifest, descriptor.packageName) !== manifest.version
+    dependencySpecifier(sourceManifest, descriptor.packageName) === undefined
   ) {
     throw new Error(`${label}: supplied MCP companion identity does not match the fixture`)
   }
@@ -738,6 +739,10 @@ try {
       )
       const appCompanions = [...companionCandidates, ...fixtureCompanions]
       addCompanionCandidates(appDir, manifest, appCompanions, app.path)
+      adoptCandidateTuple(manifest, [
+        candidateManifest,
+        ...appCompanions.map((companion) => companion.manifest),
+      ])
       writeJson(manifestPath, manifest)
       // Local file tarballs do not require registry age exemptions.
       addPnpmCompanionOverrides(appDir, appCompanions)

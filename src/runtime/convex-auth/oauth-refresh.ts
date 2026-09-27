@@ -1,6 +1,24 @@
-import type { GenericDataModel, GenericMutationCtx, GenericQueryCtx } from 'convex/server'
+import type {
+  GenericDataModel,
+  GenericMutationCtx,
+  GenericQueryCtx,
+  IndexRange,
+} from 'convex/server'
 
 import { readAuthSessionAdmission } from './session-generation'
+
+interface EqualityRange {
+  eq(field: string, value: string): EqualityRange
+}
+
+/** An exact range over a generated compound index, in the index's field order. */
+export function equalityRange(...bounds: ReadonlyArray<readonly [field: string, value: string]>) {
+  return (query: unknown): IndexRange =>
+    bounds.reduce(
+      (range, [field, value]) => range.eq(field, value),
+      query as EqualityRange,
+    ) as unknown as IndexRange
+}
 
 function strings(value: unknown): value is string[] {
   return (
@@ -46,13 +64,14 @@ export async function admitOAuthRefresh(
       .unique(),
     ctx.db
       .query('oauthClientResource')
-      .withIndex('clientId', (q) => q.eq('clientId', clientId))
-      .filter((q) => q.eq(q.field('resourceId'), identifier))
+      .withIndex(
+        'clientId_resourceId',
+        equalityRange(['clientId', clientId], ['resourceId', identifier]),
+      )
       .unique(),
     ctx.db
       .query('oauthConsent')
-      .withIndex('clientId', (q) => q.eq('clientId', clientId))
-      .filter((q) => q.eq(q.field('userId'), userId))
+      .withIndex('clientId_userId', equalityRange(['clientId', clientId], ['userId', userId]))
       .unique(),
   ])
   if (
@@ -141,8 +160,7 @@ export async function revokeOAuthRefreshConsent(
     seen.add(key)
     const consent = await ctx.db
       .query('oauthConsent')
-      .withIndex('clientId', (q) => q.eq('clientId', clientId))
-      .filter((q) => q.eq(q.field('userId'), userId))
+      .withIndex('clientId_userId', equalityRange(['clientId', clientId], ['userId', userId]))
       .unique()
     if (consent && consent.id === row.bcnConsentId && typeof consent._id === 'string') {
       const id = ctx.db.normalizeId('oauthConsent', consent._id)

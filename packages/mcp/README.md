@@ -26,7 +26,7 @@ The package requires Node.js `^22.19.0 || ^24.11.0`. OAuth mode requires the doc
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-mcp@1.0.0-beta.2 @modelcontextprotocol/server@2.0.0 zod@4.4.3
+pnpm add @lupinum/better-convex-mcp@1.0.0-beta.3 @modelcontextprotocol/server@2.1.0 zod@4.6.5
 ```
 
 ## Quick start
@@ -61,6 +61,8 @@ export const handleMcp = httpAction(async (_ctx, request) =>
 ## Exports
 
 `runMcpTool()` only converts unexpected throws inside a wrapped tool callback. It is not a general authorization or SDK sanitizer.
+
+The third `configureServer` argument provides `runTool(name, operation)` and `requireScopes(...scopes)`. Set `scopeChallenge: requireScopes('mcp:write')` on a tool or resource to require more OAuth scopes before its callback runs. The HTTP 403 challenge also names `authorization.requiredScopes`. In OAuth mode, `requireScopes` throws a `TypeError` for a scope that `scopesSupported` does not advertise.
 
 <!-- BEGIN:consumer-onboarding -->
 

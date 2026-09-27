@@ -257,7 +257,16 @@ describe('Convex-native official MCP handler composition', () => {
         'search:https://issuer.example.test/:integration-123',
         'rename:note-1:client-123',
       ])
-      expect(observedOfficialAuth).toEqual([undefined, undefined])
+      // The SDK passes its scope-challenge input to callbacks; it carries no bearer bytes.
+      const officialAuth = {
+        token: '',
+        clientId: 'client-123',
+        scopes: ['notes:read', 'notes:write'],
+        expiresAt: expect.any(Number),
+        resourceMetadataUrl: 'https://notes.example.test/.well-known/oauth-protected-resource/mcp',
+      }
+      expect(observedOfficialAuth).toEqual([officialAuth, officialAuth])
+      expect(JSON.stringify(observedOfficialAuth)).not.toContain(bearer)
       expect(client.getServerCapabilities()).toMatchObject({
         resources: { listChanged: false, subscribe: false },
         tools: { listChanged: false },
