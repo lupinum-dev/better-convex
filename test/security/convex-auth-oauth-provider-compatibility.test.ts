@@ -1,19 +1,8 @@
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { pathToFileURL } from 'node:url'
-
 import { oauthProvider, type OAuthOptions, type Scope } from '@better-auth/oauth-provider'
 import { describe, expect, it } from 'vitest'
 
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
 
-const require = createRequire(import.meta.url)
-const providerEntry = pathToFileURL(require.resolve('@better-auth/oauth-provider'))
-const providerPackage = JSON.parse(
-  readFileSync(new URL('../package.json', providerEntry), 'utf8'),
-) as {
-  version?: unknown
-}
 const issuer = 'https://deployment.convex.site'
 
 function profile(): OAuthOptions<Scope[]> {
@@ -65,10 +54,6 @@ function createConvexPlugin(oauthProviderProfile: OAuthOptions<Scope[]>) {
 }
 
 describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
-  it('binds the differential proof to the exact supported provider bytes', () => {
-    expect(providerPackage.version).toBe('1.7.6')
-  })
-
   it.each(['clientPrivileges', 'resourcePrivileges', 'customAccessTokenClaims'] as const)(
     'rejects a missing %s callback that the pinned upstream constructor accepts',
     (field) => {

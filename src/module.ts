@@ -28,7 +28,6 @@ import {
   getMissingConvexApiTemplateContents,
   getTypeAugmentationTemplateContents,
 } from './module-templates'
-import { getPackedRuntimeFingerprint } from './runtime/shared/release-fingerprint'
 import {
   normalizeConvexAuthConfig,
   isConvexAuthEnabled,
@@ -42,8 +41,6 @@ import {
   normalizeConvexClientConfig,
   normalizeConvexServerConfig,
 } from './runtime/utils/transport-config'
-
-const releaseRuntimeFingerprint = getPackedRuntimeFingerprint()
 
 // The root default export is the module; stable public types are
 // re-exported here. Do not export the raw `ConvexPublicRuntimeConfig` —
@@ -300,12 +297,6 @@ export default defineNuxtModule<ModuleOptions>({
     nuxt.options.runtimeConfig.public.convex = convexConfig as never
     registerConvexAliases({ nuxt, resolver, convexApiAlias })
     addServerPlugin(resolver.resolve('./runtime/server/plugins/runtime-config'))
-    if (releaseRuntimeFingerprint) {
-      addServerHandler({
-        route: '/api/_better-convex-nuxt/release-fingerprint',
-        handler: resolver.resolve('./runtime/server/api/release-fingerprint'),
-      })
-    }
 
     // Exactly one browser-runtime plugin is installed. The auth-disabled entry
     // has no Better Auth imports; the auth-enabled entry constructs the same

@@ -4,5 +4,5 @@ The published package exports `@lupinum/better-convex-vue/agent-docs`. That file
 documentation pages for the installed version, for coding agents. The pages
 are copied from the documentation site when the package is built.
 
-This source file is a placeholder. Run `pnpm docs:package` from the repository
+This source file is a placeholder. Run `pnpm build` from the repository
 root to build the real file before you inspect or pack the package.

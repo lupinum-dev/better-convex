@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 import {
   diffSchema,
   getExpectedSchema,
@@ -10,9 +8,6 @@ import type { BetterAuthDBSchema, DBFieldAttribute } from 'better-auth/db'
 import { describe, expect, it, vi } from 'vitest'
 
 import packagedSchemaOptions from '../../internal/convex-auth/schema-options'
-import rootPackage from '../../package.json'
-import lockfile from '../../pnpm-lock.yaml?raw'
-import adapterProvenance from '../../security/upstream-convex-better-auth.json'
 import { createConvexAuthAdapter } from '../../src/runtime/convex-auth/adapter/create-adapter'
 import {
   createAuthSchema,
@@ -90,34 +85,6 @@ const verificationTables = {
     },
   },
 } as unknown as BetterAuthDBSchema
-
-describe('pinned Better Auth adapter contract provenance', () => {
-  it('pins the exact npm artifacts, upstream tests, and intentional adaptations', () => {
-    const contract = adapterProvenance.adapterContractTests
-
-    expect(contract.upstreamCommit).toMatch(/^[0-9a-f]{40}$/u)
-    expect(contract.upstreamTag).toBe('v1.7.6')
-    expect(contract.sourceTestPaths).toEqual(
-      expect.arrayContaining([
-        'packages/core/src/db/adapter/factory.test.ts',
-        'packages/core/src/db/adapter/get-id-field.test.ts',
-        'packages/test-utils/src/adapter/suites/basic.ts',
-        'packages/test-utils/src/adapter/suites/case-insensitive.ts',
-        'packages/kysely-adapter/src/increment-one.test.ts',
-      ]),
-    )
-    expect(contract.intentionalAdaptations).toHaveLength(4)
-
-    for (const artifact of contract.npmArtifacts) {
-      const declared =
-        rootPackage.dependencies?.[artifact.name as keyof typeof rootPackage.dependencies] ??
-        rootPackage.devDependencies?.[artifact.name as keyof typeof rootPackage.devDependencies]
-      expect(declared).toBe(artifact.version)
-      expect(lockfile).toContain(artifact.integrity)
-      expect(artifact.typePaths.length).toBeGreaterThan(0)
-    }
-  })
-})
 
 describe('greenfield Convex auth schema generation', () => {
   it('preserves a first-class logical id and emits canonical null fields', () => {

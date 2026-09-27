@@ -7,7 +7,7 @@
     "docs",
     "demo",
     "starters",
-    "scripts/fixtures/mcp-oauth-agent-evidence.ts",
+    "test/fixtures/mcp-oauth-agent",
     "test/mcp",
     "test/fixtures/consumer-smoke",
     "test/fixtures/auth-client-typing",
@@ -18,9 +18,6 @@
     "test/fixtures/better-auth-local-component",
     "test/fixtures/better-auth-two-factor",
     "test/fixtures/ssr-errors-consumer",
-    "test/fixtures/errors-consumer",
-    "test/fixtures/server-consumer",
-    "test/fixtures/user-projection-triggers-consumer",
     "test/fixtures/vue-anonymous",
     "src/runtime/server"
   ]

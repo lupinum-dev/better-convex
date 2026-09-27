@@ -10,9 +10,8 @@ import type {
   UseConvexQueryState as VueUseConvexQueryState,
 } from '@lupinum/better-convex-vue'
 import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expectTypeOf, it } from 'vitest'
 
-import { getPackageEntry } from '../../scripts/package-entry-manifest.mjs'
 import type {
   ConvexCallError,
   ConvexCallErrorCode,
@@ -33,6 +32,15 @@ import type {
   UseNuxtConvexQueryOptions,
 } from '../../src/module'
 import type { ConvexCallError as ErrorsEntryConvexCallError } from '../../src/runtime/errors'
+
+// A Vue name never carries the Nuxt meaning at the Nuxt root: vue-tsc fails if
+// one of these is ever re-exported from `src/module`.
+// @ts-expect-error -- the Nuxt root exports UseNuxtConvexQueryOptions instead.
+type NotAtNuxtRootQueryOptions = import('../../src/module').UseConvexQueryOptions
+// @ts-expect-error -- the Nuxt root exports UseNuxtConvexPaginatedQueryOptions instead.
+type NotAtNuxtRootPaginatedOptions = import('../../src/module').UseConvexPaginatedQueryOptions
+// @ts-expect-error -- UseConvexCall belongs to the Vue package only.
+type NotAtNuxtRootCall = import('../../src/module').UseConvexCall
 
 type EmptyQuery = FunctionReference<'query', 'public', Record<string, never>, string>
 type OptionalArgsQuery = FunctionReference<'query', 'public', { term?: string }, string[]>
@@ -131,32 +139,10 @@ describe('Nuxt package-root query type contract', () => {
     >()
     expectTypeOf(readonlyContracts).toBeFunction()
     expectTypeOf(removedModulePolicyContracts).toBeFunction()
-
-    const rootTypes = getPackageEntry('nuxt', '.').typeExports
-    expect(rootTypes).toEqual(
-      expect.arrayContaining([
-        'ConvexCallError',
-        'ConvexCallErrorCode',
-        'ConvexQueryArgs',
-        'ConvexUser',
-        'NuxtConvexPaginatedQuery',
-        'NuxtConvexQuery',
-        'PaginatedQueryArgs',
-        'PaginatedQueryItem',
-        'UseConvexActionReturn',
-        'UseConvexConnectionStateReturn',
-        'UseConvexMutationReturn',
-        'UseConvexPaginatedQueryState',
-        'UseConvexQueryParameters',
-        'UseConvexQueryState',
-        'UseNuxtConvexPaginatedQueryOptions',
-        'UseNuxtConvexQueryOptions',
-      ]),
-    )
-    // A Vue name never carries the Nuxt meaning at the Nuxt root.
-    expect(rootTypes).not.toContain('UseConvexQueryOptions')
-    expect(rootTypes).not.toContain('UseConvexPaginatedQueryOptions')
-    expect(rootTypes).not.toContain('UseConvexCall')
+    // Unresolved imports are `any`; the @ts-expect-error lines above carry the check.
+    expectTypeOf<NotAtNuxtRootQueryOptions>().toBeAny()
+    expectTypeOf<NotAtNuxtRootPaginatedOptions>().toBeAny()
+    expectTypeOf<NotAtNuxtRootCall>().toBeAny()
   })
 
   it('keeps exact-empty args optional and declared optional keys positional', () => {

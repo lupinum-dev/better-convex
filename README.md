@@ -202,7 +202,7 @@ the matching documentation without copying it into your application.
 
 Read the [Better Convex documentation](https://better-convex.lupinum.com). Start with [choose your path](https://better-convex.lupinum.com/docs/get-started/choose-your-path). Read the [mental model](https://better-convex.lupinum.com/docs/concepts/mental-model) and the [limitations](https://better-convex.lupinum.com/docs/overview/limitations) before you plan a larger application.
 
-The [API surface](https://better-convex.lupinum.com/docs/reference/api-surface) page lists every public export. A script generates it from the source.
+The [API surface](https://better-convex.lupinum.com/docs/reference/api-surface) page lists every public export.
 
 ## Contributing and development
 
@@ -210,11 +210,11 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. Run the 
 
 ```bash
 corepack enable
-pnpm install --frozen-lockfile
+pnpm install
 pnpm verify
 ```
 
-Maintainers release through the protected workflow in [MAINTAINING.md](MAINTAINING.md) and [RELEASING.md](RELEASING.md).
+[AGENTS.md](AGENTS.md) lists every command. Releases use [Changesets](https://github.com/changesets/changesets): a maintainer merges the "Version packages" pull request and approves the publish, which uses npm trusted publishing with provenance.
 
 ## Support and security
 

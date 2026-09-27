@@ -15,11 +15,9 @@ is included at `LICENSES/Apache-2.0.txt`.
 - Upstream NOTICE status: the inspected baseline commit contains no `NOTICE`
   file.
 
-The authorized intake surface is limited to the component client/adapter/schema,
+The incorporated surface is limited to the component client/adapter/schema,
 Convex JWT integration, auth-provider configuration, component codegen, narrow
-context types, and compiled test helper recorded in
-`security/upstream-convex-better-auth.json`. Each incorporated target and its
-modifications must be recorded there before release.
+context types, and compiled test helper.
 
 Derived targets are restricted to `src/runtime/convex-auth/**`, the internal
 `src/runtime/auth-client/convex-client-plugin.ts` integration leaf, and the
@@ -35,13 +33,10 @@ Better Convex Nuxt modifies the retained integration for a Nuxt-and-Convex-only
 public API, logical Better Auth IDs, atomic Convex storage operations, explicit
 origin and token-class validation, additive signing-key rotation, and one shared
 packaged/local adapter implementation. Adapted files carry a prominent
-modification notice when required by the provenance ledger.
+modification notice.
 
 The OAuth renewal helpers `oauth-refresh.ts` and `oauth-refresh-transport.ts`
-under `src/runtime/convex-auth/` are original Better Convex extensions. Their
-`rewritten` ledger records identify the existing component API and provider
-integration seams; they do not claim that these helpers were copied from the
-upstream baseline. The extensions bind renewal to live sessions and immutable
+under `src/runtime/convex-auth/` are original Better Convex extensions, not
+copies of upstream code. They bind renewal to live sessions and immutable
 consent, constrain rotation, and pass request-local evidence to Convex-owned
-writes. The upstream source hashes and Apache notices for incorporated portions
-remain unchanged.
+writes. The Apache notices for incorporated portions remain unchanged.

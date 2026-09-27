@@ -2,7 +2,7 @@ import ConvexModule from '../../../src/module'
 
 // Auth is omitted: a Convex-only build by default. The module must add no Better
 // Auth client, auth engine, proxy handler, or auth middleware to the generated
-// client/Nitro graphs. `scripts/check-auth-disabled-build-graph.mjs` builds this
+// client/Nitro graphs. `test/packed/check-auth-disabled-build-graph.mjs` builds this
 // fixture and scans `.output` for markers unique to auth-enabled-only files.
 export default defineNuxtConfig({
   modules: [ConvexModule],

@@ -20,7 +20,7 @@
 
 ## Release note
 
-<!-- State the changelog entry. Write "None" and explain why when no package release note is required. -->
+- [ ] I added a changeset (`pnpm changeset`), or an empty one (`pnpm changeset --empty`) because users see no change.
 
 ## Risk
 

@@ -1,46 +1,24 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":dependencyDashboard", "schedule:weekly"],
-  "automerge": false,
-  "enabledManagers": ["npm", "github-actions"],
-  "timezone": "Europe/Vienna",
-  "labels": ["dependencies", "renovate"],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "minimumReleaseAge": "1 day",
-  "pinDigests": true,
-  "rangeStrategy": "bump",
-  "prConcurrentLimit": 8,
-  "prHourlyLimit": 2,
-  "rebaseWhen": "conflicted",
-  "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["before 5am on monday"]
-  },
-  "postUpdateOptions": ["pnpmDedupe"],
+  "internalChecksFilter": "strict",
+  "rangeStrategy": "replace",
+  "schedule": ["before 6am on Monday"],
+  "timezone": "Europe/Vienna",
   "packageRules": [
     {
-      "matchUpdateTypes": ["major"],
-      "automerge": false
+      "groupName": "Nuxt ecosystem",
+      "matchPackageNames": ["nuxt", "@nuxt/**", "@nuxtjs/**", "vue", "vue-router"]
     },
     {
-      "matchManagers": ["github-actions"],
-      "groupName": "github actions",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"]
-    },
-    {
-      "matchPackageNames": ["/^@nuxt\\//", "/^nuxt$/", "/^@nuxtjs\\//"],
-      "groupName": "nuxt ecosystem",
-      "automerge": false
-    },
-    {
-      "matchPackageNames": ["/^convex/", "/^@convex-dev\\//"],
-      "groupName": "convex ecosystem",
-      "automerge": false
+      "groupName": "Convex ecosystem",
+      "matchPackageNames": ["convex", "convex-*", "@convex-dev/**"]
     },
     {
       "description": "Stay on h3 v1 while Nuxt/Nitro remains on the 1.x line.",
       "matchPackageNames": ["h3"],
-      "allowedVersions": "<2.0.0",
-      "automerge": false
+      "allowedVersions": "<2.0.0"
     }
   ]
 }
