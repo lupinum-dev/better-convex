@@ -89,6 +89,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: node scripts/release.mjs pack
+      # Rehearse the publish command on the exact tarballs, so a broken publish fails before
+      # the maintainer is asked to approve. Needs no credentials.
+      - run: |
+          while read -r file; do
+            npm publish "./release/$file" --dry-run --access public --ignore-scripts --tag next
+          done < release/order.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release
@@ -117,7 +123,7 @@ jobs:
       # Versions with a `-` (prereleases) go to `next`, all others to `latest`.
       - run: |
           while read -r file; do
-            tarball="release/$file"
+            tarball="./release/$file"
             version="$(tar -xOzf "$tarball" package/package.json | jq -r .version)"
             spec="$(tar -xOzf "$tarball" package/package.json | jq -r .name)@$version"
             if npm view "$spec" version > /dev/null 2>&1; then echo "$spec is already on npm"; continue; fi
