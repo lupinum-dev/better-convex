@@ -262,7 +262,7 @@ describe('canonical Better Auth session matrix', async () => {
     }
   })
 
-  it('rejects public session bearer exchange while an issued Convex JWT remains replayable only until exp', async () => {
+  it('rejects public session bearer exchange and denies a replayed Convex JWT once its session is revoked', async () => {
     const browser = await chromium.launch()
     const contextA = await createIsolatedBrowserContext(browser)
     const contextB = await createIsolatedBrowserContext(browser)
@@ -300,8 +300,7 @@ describe('canonical Better Auth session matrix', async () => {
       expect(claimsA.sub).toBe(userId)
       expect(typeof claimsA.iat).toBe('number')
       expect(typeof claimsA.exp).toBe('number')
-      // Session JWTs stay within the supported 15-minute replay ceiling after
-      // the backing Better Auth session is removed.
+      // Session JWTs keep a bounded 15-minute lifetime.
       expect((claimsA.exp as number) - (claimsA.iat as number)).toBeGreaterThan(0)
       expect((claimsA.exp as number) - (claimsA.iat as number)).toBeLessThanOrEqual(15 * 60)
 
@@ -328,10 +327,9 @@ describe('canonical Better Auth session matrix', async () => {
 
       const replayClientA = new ConvexHttpClient(convexUrl)
       replayClientA.setAuth(convexTokenA)
-      await expect(replayClientA.query(getPermissionContext, {})).resolves.toEqual({
-        role: 'member',
-        userId,
-      })
+      // The JWT still verifies until exp, but auth.getUser admits the session
+      // live, so a revoked session reads as signed out immediately.
+      await expect(replayClientA.query(getPermissionContext, {})).resolves.toBeNull()
 
       await pageA.reload()
       await expectAnonymousIdentity(pageA)
@@ -361,10 +359,9 @@ describe('canonical Better Auth session matrix', async () => {
 
       const replayClientB = new ConvexHttpClient(convexUrl)
       replayClientB.setAuth(convexTokenB)
-      await expect(replayClientB.query(getPermissionContext, {})).resolves.toEqual({
-        role: 'member',
-        userId,
-      })
+      // The JWT still verifies until exp, but auth.getUser admits the session
+      // live, so a revoked session reads as signed out immediately.
+      await expect(replayClientB.query(getPermissionContext, {})).resolves.toBeNull()
       await pageB.reload()
       await expectAnonymousIdentity(pageB)
     } finally {
