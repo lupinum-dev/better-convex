@@ -28,7 +28,7 @@ const nuxtEntrySubpaths = [
   './server',
 ]
 const vueEntrySubpaths = ['.', './errors', './embedded', './internal']
-const mcpEntrySubpaths = ['.']
+const mcpEntrySubpaths = ['.', './test']
 
 type PackageEntry = {
   kind: 'runtime' | 'types-only'
@@ -110,17 +110,39 @@ describe('package entry manifest', () => {
     })
     expect(manifest.entries[0]).toMatchObject({
       kind: 'runtime',
-      valueExports: ['handleMcpRequest', 'McpUnsupportedCapabilityError', 'runMcpTool'],
+      valueExports: [
+        'defineMcpTool',
+        'handleMcpRequest',
+        'McpUnsupportedCapabilityError',
+        'projectMcpToolError',
+        'registerMcpTool',
+        'runMcpTool',
+      ],
       typeExports: [
+        'DefinedMcpTool',
         'HandleMcpRequestOptions',
         'McpAccessContext',
         'McpAccessVerifier',
+        'McpConfigureServerContext',
+        'McpRequestStateContext',
         'McpRequestTools',
+        'McpToolConfig',
+        'McpToolDefinition',
         'McpToolErrorMetadata',
+        'McpToolHandlerResult',
+        'McpToolResult',
+        'McpToolRisk',
         'McpVerificationExpectation',
+        'ProjectMcpToolErrorOptions',
         'RunMcpToolOptions',
         'VerifiedMcpAccess',
       ],
+    })
+    expect(manifest.entries[1]).toMatchObject({
+      kind: 'runtime',
+      subpath: './test',
+      valueExports: ['listMcpCatalog'],
+      typeExports: ['ListMcpCatalogOptions', 'McpCatalog'],
     })
   })
 

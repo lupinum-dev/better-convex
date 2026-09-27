@@ -242,11 +242,15 @@ describe('createBetterConvexAuth', () => {
     expect(options.rateLimit.customStorage.consume).toBeTypeOf('function')
     expect(Object.keys(auth).sort()).toEqual([
       'createAuth',
+      'createMcpAccessVerifier',
       'getAuth',
       'getUser',
       'jwksOperatorFunctions',
+      'mcp',
+      'oauthConnections',
       'oauthOperator',
       'registerRoutes',
+      'requireMcpPrincipal',
       'requireUser',
       'sessionHttpAction',
       'triggerFunctions',

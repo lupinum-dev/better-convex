@@ -1,64 +1,80 @@
-# Delegated human OAuth MCP starter
+# MCP OAuth agent starter
 
-This starter is the public, delegated-human MCP model. Better Auth is the OAuth
-authorization server, Better Convex Nuxt exposes it through the same-origin
-`/api/auth` proxy, and the deployment-owned Convex `/mcp` HTTP Action accepts
-short-lived OAuth access tokens. Convex remains the product-authorization authority.
+This starter is a complete MCP server that ChatGPT, Claude, and MCP Inspector
+can connect to. A person signs in to this Nuxt application, grants access on a
+consent page, and the host then calls project tools on their behalf. Convex
+checks the grant and the person's organization role again in every tool call.
 
-This is a specialized conformance and provisioning fixture. It composes auth
-with `createBetterConvexAuth(...)`, the only supported path, which owns the
-reviewed plugin order, routes, JWT policy, triggers, and signing keys. This
-starter adds narrow, fixture-only HTTP routes under `/api/auth/mcp/admin/` so
-the black-box release runner can preregister disposable OAuth clients. Do not
-copy those routes into a normal application; use `auth.oauthOperator` instead.
+It follows the Better Convex MCP path from end to end:
 
-It is a delegated-human example, not a universal machine-identity model. For
-controlled service automation, supply a provider-neutral bearer verifier to
-`@lupinum/better-convex-mcp` and keep credential state and authorization in the
-application. Do not combine service credentials with this OAuth profile or add
-an `MCP_SERVER_SECRET` bridge.
+| Step                                                                                           | File                                                 |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Configure the auth factory with the MCP OAuth profile                                          | `convex/auth.ts`                                     |
+| Mount the auth routes and the MCP routes                                                       | `convex/http.ts`                                     |
+| Handle MCP with one `handleMcpRequest` and the Better Auth verifier                            | `convex/mcp.ts`                                      |
+| Define each tool with `registerMcpTool`; pass the typed principal to one internal mutation     | `convex/mcp.ts`                                      |
+| Call `auth.requireMcpPrincipal` inside the mutation, then check app roles                      | `convex/projects.ts`                                 |
+| List and disconnect hosts with `auth.oauthConnections`; provision host clients as the operator | `convex/connections.ts`                              |
+| Let a person approve a destructive request                                                     | `convex/approvals.ts`                                |
+| Sign in and give consent for a verified authorization request                                  | `app/pages/login.vue`, `app/pages/oauth/consent.vue` |
 
-## What the starter proves
+## What the starter shows
 
-- Better Auth and its OAuth Provider use the same Convex component adapter and
-  canonical component database. There is no second OAuth table set.
-- OAuth supports only authorization code, mandatory PKCE, exact HTTPS or RFC
-  8252 loopback-IP redirects, explicit consent, the fixed
-  `mcp:read`/`mcp:write` scopes, and the exact Convex HTTP Actions `/mcp` resource.
-- There is no Nuxt MCP relay. The official MCP SDK and `@lupinum/better-convex-mcp`
-  terminate the bearer in one deployment-owned Convex HTTP Action.
-- The action verifies the issuer, resource, token class, algorithm, subject,
-  session, client, and scopes. Five explicit official-SDK registrations map to
-  five tool-specific internal mutations and never pass the raw token onward.
-- Each tool transaction re-reads the active Better Auth session, OAuth client,
-  resource link, consent, app user, organization membership, delegation,
-  resource ownership, and approval state before reading or changing product
-  data. Token scopes are only a ceiling.
-- Project deletion remains soft, previewable, and bound to a short-lived human
-  approval that can be used only once.
+- Better Auth is the OAuth authorization server. The `oauth.mcp` profile
+  admits only operator-provisioned public clients with S256 PKCE, explicit
+  consent, the `mcp:read` and `mcp:write` scopes, and the exact Convex `/mcp`
+  resource.
+- Access tokens live for at most ten minutes. With `offline_access`, a host
+  receives a refresh token that ends with the Better Auth session that granted
+  consent, and after at most seven days.
+- The Convex HTTP action verifies each token with keys from the auth component:
+  issuer, audience, algorithm, expiry, token class, and scopes. It then checks
+  the live session, client, resource link, and consent in one query. The raw
+  token never leaves the handler.
+- Each tool call runs one internal mutation. The mutation re-checks the grant
+  and the tool's scope with `auth.requireMcpPrincipal`, then checks the app
+  user, the organization membership and role, project ownership, and a
+  per-user, per-client rate limit, in the same transaction as the effect.
+- Deletion is soft and needs a short-lived approval. A person grants it in the
+  application for one project, one user, and one client. It can be used once.
+- Known failures reach the model as structured errors with a code and a short
+  message. Every other failure becomes `Tool execution failed`.
 
-`users` is a rebuildable app projection of the canonical Better Auth user. The
-`oauthAdmin` bit, organizations, memberships, delegations, projects, and
-approvals are app-owned Convex state. OAuth client/resource/consent rows remain
-provider-owned component state.
+`users` is a rebuildable projection of the Better Auth user. Organizations,
+memberships, projects, and approvals are app-owned Convex state. OAuth clients,
+resources, and consents stay in the auth component.
+
+### What one consent reaches
+
+The starter has no per-organization or per-client delegation. One consent lets
+the host act in every organization where the person has an active membership,
+up to their current role in each, and in no other organization. The consent
+page says so. Removing a membership or lowering a role blocks the next tool
+call in that organization; disconnecting the host blocks every organization at
+once.
+
+If your product needs a narrower grant, for example a host that may act only
+in one chosen workspace, add an app-owned table keyed by user, client, and
+organization (with a status, an expiry, and a scope list), let the person
+choose it on the consent page, and check it in `authorize()` in
+`convex/projects.ts` in the same transaction as the membership check.
 
 ## HTTP route graph
 
-The OAuth resource has exactly five registrations in `convex/http.ts`:
+`convex/http.ts` registers the auth routes and five MCP routes:
 
 - `POST`, `GET`, and `DELETE` at `/mcp`;
 - `GET` at `/.well-known/oauth-protected-resource/mcp`, which also serves
   `HEAD` through Convex's router; and
-- explicit `OPTIONS` at the metadata path for credential-free discovery CORS.
+- `OPTIONS` at the metadata path for credential-free discovery CORS.
 
-`GET` and `DELETE` on `/mcp` deliberately reach the MCP handler's `405`
-response. The starter does not register `OPTIONS /mcp`, so metadata discovery
-does not accidentally enable cross-origin MCP transport.
+`GET` and `DELETE` on `/mcp` reach the handler's `405` response. The starter
+does not register `OPTIONS /mcp`, so metadata discovery does not enable
+cross-origin MCP transport.
 
 ## Local setup
 
-Use a fresh deployment. This starter is greenfield and intentionally contains
-no legacy component migration or compatibility path.
+Use a fresh deployment. This starter has no migration path from older schemas.
 
 1. Install dependencies and create local configuration with one private proxy
    secret. The shell built-in writes it to the ignored file without printing it:
@@ -79,10 +95,10 @@ no legacy component migration or compatibility path.
    ```
 
 2. Set the exact Nuxt origin in `.env.local`. If the fresh deployment already
-   exists, fill its Convex URLs too; otherwise run `convex:configure` once and
-   then fill the remaining URL values. Do not change the
-   generated `BCN_AUTH_PROXY_IP_SECRET`. The Nuxt scripts load this file
-   explicitly. Never commit it.
+   exists, fill its Convex URLs too. Otherwise run `convex:configure` once and
+   then fill the remaining URL values. Do not change the generated
+   `BCN_AUTH_PROXY_IP_SECRET`. The Nuxt scripts load this file explicitly.
+   Never commit it.
 
 3. Start Convex in one terminal and keep it running:
 
@@ -106,25 +122,22 @@ no legacy component migration or compatibility path.
    ```
 
    Exact loopback development permits a blank
-   `BCN_AUTH_TRUSTED_CLIENT_IP_HEADER`. Before deploying any HTTPS origin, set
-   it to one header the ingress overwrites with exactly one client IP. Restrict
-   the Nuxt origin so public traffic cannot bypass that ingress, or independently
-   authenticate ingress requests at the origin.
+   `BCN_AUTH_TRUSTED_CLIENT_IP_HEADER`. Before you deploy any HTTPS origin, set
+   it to one header that the ingress overwrites with exactly one client IP.
+   Restrict the Nuxt origin so that public traffic cannot bypass that ingress.
 
-   Convex supplies `CONVEX_SITE_URL` to functions as a deployment-owned built-in
-   and uses its exact `/mcp` URL as the OAuth resource;
-   the CLI rejects attempts to set it manually. Keep the selected deployment's
-   generated value in `.env.local` for Nuxt, but set only the application-owned
-   variables above. `SITE_URL` must exactly match the public Nuxt origin. Now
-   create the fresh deployment's first signing key before allowing auth traffic:
+   Convex supplies `CONVEX_SITE_URL` to functions as a deployment-owned
+   built-in, and the starter uses its `/mcp` URL as the OAuth resource. The CLI rejects attempts to set it
+   manually. `SITE_URL` must exactly match the public Nuxt origin. Now create
+   the fresh deployment's first signing key before you allow auth traffic:
 
    ```bash
    pnpm exec better-convex convex run auth:rotateSigningKey '{}'
    ```
 
    On this fresh deployment, require `previousKids` to be empty and record the
-   returned `newKid`. A previous key means the deployment is not fresh; stop and
-   inventory it instead of deleting or reusing state.
+   returned `newKid`. A previous key means that the deployment is not fresh.
+   Stop and inventory it instead of deleting or reusing state.
 
 4. Start Nuxt in another terminal:
 
@@ -133,12 +146,12 @@ no legacy component migration or compatibility path.
    ```
 
    Fetch `http://localhost:3000/api/auth/jwks` and verify that its `keys` array
-   contains the exact recorded `newKid` before creating a user or opening
+   contains the exact recorded `newKid` before you create a user or open
    ingress.
 
 5. Create the first local Better Auth user. The starter has no public sign-up
-   page; this explicit local bootstrap call keeps account creation separate
-   from the OAuth login page:
+   page. This explicit local call keeps account creation separate from the
+   OAuth login page:
 
    ```bash
    BCN_LOCAL_ADMIN_PASSWORD="$(openssl rand -base64 24)"
@@ -147,84 +160,90 @@ no legacy component migration or compatibility path.
      -H 'Origin: http://localhost:3000' \
      --data-binary @- \
      http://localhost:3000/api/auth/sign-up/email <<JSON
-   {"name":"Local OAuth Admin","email":"admin@example.com","password":"${BCN_LOCAL_ADMIN_PASSWORD}"}
+   {"name":"Local Owner","email":"owner@example.com","password":"${BCN_LOCAL_ADMIN_PASSWORD}"}
    JSON
    ```
 
    Keep that generated password only in the calling shell or a test secret
    manager. It remains valid until you change the password or destroy the
-   disposable account or deployment; do not print, log, or commit it.
+   disposable account or deployment. Do not print, log, or commit it. The new
+   account owns one organization.
 
-6. Grant that projected user the app-owned OAuth administrator capability from
-   the trusted Convex CLI or dashboard operator context:
+## Connect MCP Inspector
+
+1. Create the Inspector client as the deployment operator:
 
    ```bash
-   pnpm exec better-convex convex run mcpAdmin:setOAuthAdministratorByEmail \
-     '{"email":"admin@example.com","enabled":true}'
+   pnpm exec better-convex convex run connections:createInspectorClient '{}'
    ```
 
-The administrator bit does not grant organization access. It only allows the
-provider's client/resource administration callbacks. Missing users, inactive
-users, ordinary sessions, callback errors, and callback timeouts deny the
-operation.
+   Record the returned `clientId`. The client accepts only the callback
+   `http://localhost:6274/oauth/callback`.
 
-## Provider-owned fixture provisioning
+2. Start MCP Inspector with `pnpm dlx @modelcontextprotocol/inspector`. Select
+   the Streamable HTTP transport and enter your `CONVEX_SITE_URL` followed by
+   `/mcp`.
+3. In the OAuth settings, enter the client ID, leave the client secret empty,
+   and request `mcp:read mcp:write`.
+4. Connect. Sign in with the local account and allow access on the consent
+   page. Then call `list_organizations` and `list_projects`.
 
-The interoperability runner signs in as the bootstrapped administrator and
-calls `/api/auth/mcp/admin/provision`. The route is wrapped in
-`auth.sessionHttpAction`, so it has the same hardening as `/api/auth/*`: a
-signed client IP from the auth proxy, Better Auth rate limiting, a same-origin
-check, and the library's session admission. It then calls the OAuth Provider's
-own resource-list/create,
-client-list/create, and client-resource-link admin APIs. Those APIs re-check the
-live OAuth administrator privilege. The route never writes OAuth component
-models through the raw adapter.
+To connect ChatGPT or Claude, deploy with an HTTPS origin and follow
+[Connect ChatGPT and Claude](https://better-convex.lupinum.com/docs/build/agents/connect-chatgpt-and-claude).
+Provision each host with `connections:createHostClient`.
 
-The provider generates the client IDs. Stable `software_id` values let a rerun
-find the preregistered fixture profiles without creating a second source of truth.
-The release runner uses two independent public clients through direct S256 PKCE;
-legacy profile names remain fixture identifiers, not release-tool dependencies:
+## Login and consent boundary
 
-- MCP Inspector: `http://localhost:6274/oauth/callback`;
-- `mcp-remote`: `http://127.0.0.1:3334/oauth/callback`.
+The provider signs the bounded continuation query. Before either page displays
+client data, the browser submits that signed value to the provider's
+`/oauth2/public-client-prelogin` endpoint. The UI then renders only the
+returned client ID and name, the exact Convex resource, and allowlisted scopes
+from the verified transaction. It never accepts display names from query input
+and cannot widen consent. Login and consent responses are no-store, deny
+framing, and use a no-referrer policy.
 
-Every stored field is compared with the fixed profile. A duplicate profile or
-any drift in callbacks, grants, scopes, PKCE, consent, DPoP, client type, token
-authentication, or resource policy fails closed. App-owned 24-hour fixture
-delegations are created only after the provider operations succeed.
+## Release evidence
 
-From the repository root, run the black-box interoperability harness:
+From the repository root, run the interoperability and revocation harness:
 
 ```bash
 pnpm test:mcp-auth
 ```
 
-That default command creates its own temporary starter copy, pinned local
-Convex backend, Nuxt server, administrator, and random secrets. It removes only
-that self-contained temporary fixture when the run ends.
+The command creates its own temporary starter copy, pinned local Convex
+backend, Nuxt server, user, and random secrets. It copies
+`scripts/fixtures/mcp-oauth-agent-evidence.ts` into that copy as
+`convex/evidence.ts`. These internal functions provision test clients through
+`auth.oauthOperator` and change app state between cases. They are not part of
+the starter. The run removes the temporary fixture when it ends.
 
-The harness drives the authorization code flow directly for both public clients,
-leaves client-secret fields empty, rejects dynamic registration, validates exact
-redirect/state/resource/issuer binding, redacts authorization URLs and runner
-secrets, and removes its isolated client state after every run.
+The harness drives the authorization code flow with direct S256 PKCE for two
+public clients, leaves client-secret fields empty, validates exact
+redirect, state, resource, and issuer binding, and redacts authorization URLs
+and runner secrets. It then checks that membership removal, role reduction,
+a foreign organization, user suspension, a client-resource unlink, session
+deletion, client disable, client deletion, and a disconnected connection each
+block the next tool call. A read-only token receives the `mcp:write` step-up
+challenge.
 
 ### External disposable deployment evidence
 
 An already-running deployment can be exercised only through the explicit
 `external-disposable` mode. This is a destructive, one-run release-evidence
 path, not a development convenience and never a production or shared staging
-check. Start from a fresh deployment and a fresh administrator account. Deploy
-this exact starter, keep Nuxt running at the supplied origin, and ensure the
-absolute app directory contains `.env.local` with exact matching `SITE_URL`,
-`CONVEX_URL`, `CONVEX_SITE_URL`, `NUXT_PUBLIC_CONVEX_URL`, and
-`NUXT_PUBLIC_CONVEX_SITE_URL` values. Its owner-only file (for example, mode 0600) must select the same managed Convex deployment through a canonical `dev:`
-or `preview:` `CONVEX_DEPLOYMENT` value and must not contain another Convex CLI
-authority or override. The disposable app must not have a sibling `.env` file.
-The account must already exist, use a password of at least 15 characters, and
-have `oauthAdmin` enabled.
-The deployment must already have completed the fresh signing-key ceremony above,
-and the recorded `newKid` must be visible through this exact app origin's
-`/api/auth/jwks` endpoint.
+check. Start from a fresh deployment and a fresh account. Copy
+`scripts/fixtures/mcp-oauth-agent-evidence.ts` to `convex/evidence.ts` in the
+app directory, deploy it with this exact starter, and keep Nuxt running at the
+supplied origin. The absolute app directory must contain `.env.local` with
+exact matching `SITE_URL`, `CONVEX_URL`, `CONVEX_SITE_URL`,
+`NUXT_PUBLIC_CONVEX_URL`, and `NUXT_PUBLIC_CONVEX_SITE_URL` values. Its
+owner-only file (for example, mode 0600) must select the same managed Convex
+deployment through a canonical `dev:` or `preview:` `CONVEX_DEPLOYMENT` value
+and must not contain another Convex CLI authority or override. The disposable
+app must not have a sibling `.env` file. The account must already exist and use
+a password of at least 15 characters. The deployment must already have
+completed the fresh signing-key ceremony above, and the recorded `newKid` must
+be visible through this exact app origin's `/api/auth/jwks` endpoint.
 
 ```bash
 BCN_MCP_TEST_MODE=external-disposable \
@@ -239,75 +258,62 @@ pnpm test:mcp-auth
 
 The runner does not provision, deploy, stop, reset, or delete the external app
 or deployment. Its release hook removes only its private temporary CLI
-authority directory. During evidence it
-does provision provider-owned test clients and app delegations, changes and
-deletes sessions, clients, and consents, changes membership and authorization
-state, and creates and soft-deletes projects. Terminal-revocation cases are not
-restored. Treat the deployment as consumed after the run and destroy it using
-the deployment owner's reviewed process. A rerun is not supported evidence.
-Before the first Convex mutation, the repository-pinned absolute CLI resolves
-the deployment in an isolated temporary directory and must report the exact
-managed origins plus a `dev` or `preview` deployment type. Subsequent calls run
-from the supplied app directory with both the validated deployment name and the
-private generated env file passed explicitly; the CLI cannot auto-load the
-app's dotenv files. Fixture credentials and every case variant of an ambient
-Convex override are stripped from every child process environment.
+authority directory. During evidence it creates test clients and an
+organization, changes and deletes sessions, clients, and consents, changes
+membership and authorization state, and creates and soft-deletes projects.
+Terminal-revocation cases are not restored. Treat the deployment as consumed
+after the run and destroy it with the deployment owner's reviewed process. A
+rerun is not supported evidence. Before the first Convex mutation, the
+repository-pinned absolute CLI resolves the deployment in an isolated temporary
+directory and must report the exact managed origins plus a `dev` or `preview`
+deployment type. Later calls run from the supplied app directory with both the
+validated deployment name and the private generated env file passed
+explicitly. The CLI cannot auto-load the app's dotenv files. Fixture
+credentials and every case variant of an ambient Convex override are stripped
+from every child process environment.
 
-The selected MCP protocol suite is a one-shot alternative
-entry to the same destructive harness. On a fresh external deployment, use the
-exact environment block above but replace its final command with:
+The selected MCP protocol suite is a one-shot alternative entry to the same
+destructive harness. On a fresh external deployment, use the exact environment
+block above but replace its final command with:
 
 ```bash
 pnpm test:mcp-conformance
 ```
 
-That command runs the complete OAuth/MCP evidence and stable-SDK stateless
-contract checks in one fixture lifecycle, using the freshly issued least-scope
-bearer internally. Do not run `test:mcp-auth` first and do not run both commands
-against one deployment; either run consumes it. Stable official conformance
-`0.1.16` has no `2026-07-28` scenarios, and no legacy relay is used. These checks
-are not matching stable MCP certification or OAuth certification.
-
-## Login and consent boundary
-
-The provider signs the bounded continuation query. Before either page displays
-client data, the browser submits that signed value to the provider's
-`/oauth2/public-client-prelogin` endpoint. The UI then renders only the returned
-client ID/name plus the exact deployment-owned Convex resource and allowlisted scopes from
-the verified transaction. It never accepts display names from query input and
-cannot widen consent. Login and consent responses are no-store, deny framing,
-and use a no-referrer policy.
+That command runs the complete OAuth and MCP evidence and the stable-SDK
+stateless contract checks in one fixture lifecycle, with the freshly issued
+least-scope bearer. Do not run `test:mcp-auth` first, and do not run both
+commands against one deployment: either run consumes it. Stable official
+conformance `0.1.16` has no `2026-07-28` scenarios, and no legacy relay is
+used. These checks are not stable MCP certification or OAuth certification.
 
 ## Production adaptation
 
-The two localhost clients and the 24-hour fixture delegation are test fixtures,
-not a generic client-registration product. For production:
-
-- replace the fixed profiles with reviewed client names, exact HTTPS callbacks,
-  exact scopes, and an operator-owned app grant workflow;
-- keep requesters from supplying restricted OAuth fields, resource identifiers,
-  callbacks, or consent-bypass settings;
-- continue using provider admin endpoints for OAuth rows and app mutations for
-  product grants; never add direct OAuth adapter writes;
-- govern or disable public account creation and use a reviewed operator process
-  for setting `oauthAdmin`;
-- revoke bootstrap administrator capability when it is no longer needed;
-- terminate TLS at a trusted ingress, configure deployment-level abuse controls,
-  keep Better Auth's database-backed rate limiter enabled, and never log
-  cookies, codes, tokens, signed continuation queries, or authorization headers;
-- rotate versioned Better Auth secrets, the proxy-IP signing secret, and OAuth
+- Provision one client per host with `connections:createHostClient`. Do not
+  accept callbacks, scopes, or resource identifiers from browser input.
+- Replace the example project model with your own data. Keep one internal
+  function per tool, and call `auth.requireMcpPrincipal` in it before any
+  effect.
+- Give people a page where they approve destructive requests. The starter's
+  `approvals:approveProjectDelete` mutation is that page's backend.
+- Govern or disable public account creation.
+- Terminate TLS at a trusted ingress, configure deployment-level abuse
+  controls, keep Better Auth's database-backed rate limiter enabled, and never
+  log cookies, codes, tokens, signed continuation queries, or authorization
+  headers.
+- Rotate versioned Better Auth secrets, the proxy-IP signing secret, and OAuth
   signing keys according to the deployment runbook.
 
-The beta deliberately does not enable refresh tokens, dynamic registration,
-CIMD, DPoP, client credentials, private-key client authentication,
-introspection, UserInfo, or OIDC scopes. Do not enable one merely to satisfy an
-unsupported client.
+The profile does not enable dynamic registration, CIMD, DPoP, client
+credentials, private-key client authentication, introspection, UserInfo, or
+OIDC scopes. Do not enable one of them only to satisfy an unsupported client.
 
 OAuth access tokens are self-contained JWTs with a maximum ten-minute lifetime.
-Deleting a session or consent, disabling a client, deleting a resource, unlinking the
-resource, or changing membership/delegation is checked live and blocks the next
-tool call. Revoking only one already-issued JWT has a residual window until its
-`exp`; the starter does not claim immediate individual-token revocation.
+Deleting a session or consent, disabling or deleting a client, deleting the
+resource, unlinking the resource, or changing a membership or role is checked
+live and blocks the next tool call. Revoking one already-issued JWT at the
+token endpoint has a residual window until its `exp`; disconnect the host to
+revoke its access immediately.
 
 ## Verification
 

@@ -133,13 +133,12 @@ contain no competing Convex CLI authority or override. A sibling `.env` is not
 allowed. The supplied password must satisfy the starter's 15-character minimum.
 
 External mode is destructive one-shot evidence for a fresh, already-running,
-disposable app and deployment only. The account must already exist with the
-starter's `oauthAdmin` capability, and the exact starter functions must already
-be deployed. The runner does not create, deploy, start, stop, reset, or destroy
+disposable app and deployment only. The account must already exist, and the
+exact starter functions and the evidence fixture functions must already be
+deployed. The runner does not create, deploy, start, stop, reset, or destroy
 external infrastructure, and its external release hook removes only the
 isolated temporary CLI authority directory. It provisions fixture clients and
-delegations, mutates live
-authorization, deletes terminal-case sessions/clients/consents, and creates and
+memberships, mutates live authorization, deletes terminal-case sessions/clients/consents, and creates and
 soft-deletes projects; terminal states are not restored. Never point it at
 production, shared staging, populated data, or a deployment that must be
 reused. Destroy the consumed deployment through its owner-controlled process.

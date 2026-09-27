@@ -34,7 +34,7 @@ function codecFor(access: McpAccessContext, ttlSeconds = 60) {
 function fixture(ttlSeconds = 60) {
   const invoked = vi.fn()
   const verify = vi.fn()
-  const stateFactory = vi.fn((access: McpAccessContext) => ({
+  const stateFactory = vi.fn(({ access }: { access: McpAccessContext }) => ({
     async verify(state: string, ctx: ServerContext) {
       verify(access, state)
       return await codecFor(access, ttlSeconds).verify(state, ctx)
@@ -64,7 +64,7 @@ function fixture(ttlSeconds = 60) {
       },
     },
     requestState: stateFactory,
-    configureServer(access, server) {
+    configureServer({ access, server }) {
       for (const name of ['review_project', 'other_review']) {
         server.registerTool(
           name,

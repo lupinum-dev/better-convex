@@ -1,7 +1,18 @@
 import { spawn } from 'node:child_process'
 import { randomBytes, randomInt } from 'node:crypto'
 import { once } from 'node:events'
-import { access, cp, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink } from 'node:fs/promises'
+import {
+  access,
+  copyFile,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  symlink,
+} from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -12,6 +23,7 @@ import { assertNoJwtShapedValue, redactEvidenceLog } from './mcp-auth-contracts.
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const starter = join(root, 'starters/mcp-oauth-agent')
+const evidenceFunctions = join(root, 'scripts/fixtures/mcp-oauth-agent-evidence.ts')
 const convexCli = join(root, 'node_modules/convex/bin/main.js')
 const nuxtCli = join(root, 'node_modules/nuxt/bin/nuxt.mjs')
 const MAX_LOG_BYTES = 256 * 1024
@@ -380,6 +392,8 @@ export async function startLocalMcpOAuthFixture(options = {}) {
       recursive: true,
     })
     await linkDependencies(cwd, releaseTarball, mcpReleaseTarball)
+    // Evidence-only operator functions stay out of the starter; install them into this copy.
+    await copyFile(evidenceFunctions, join(cwd, 'convex/evidence.ts'))
     const installedClientIpModule = await import(
       pathToFileURL(
         join(cwd, 'node_modules/@lupinum/better-convex-nuxt/dist/runtime/shared/client-ip.js'),
@@ -555,11 +569,6 @@ export async function startLocalMcpOAuthFixture(options = {}) {
     })
     await signup.body?.cancel().catch(() => {})
     if (signup.status !== 200) throw new Error(`Fixture user creation failed with ${signup.status}`)
-    await runCli([
-      'run',
-      'mcpAdmin:setOAuthAdministratorByEmail',
-      JSON.stringify({ email, enabled: true }),
-    ])
 
     const runConvex = async (functionName, args = {}) => {
       if (!/^[\w./-]+:\w+$/u.test(functionName)) {
@@ -580,7 +589,7 @@ export async function startLocalMcpOAuthFixture(options = {}) {
     }
 
     const readOAuthCredentialCountsForTest = async () => {
-      const counts = await runConvex('mcpOAuthEvidence:countCredentialRows')
+      const counts = await runConvex('evidence:countCredentialRows')
       if (
         !counts ||
         typeof counts !== 'object' ||

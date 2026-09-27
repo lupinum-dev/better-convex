@@ -21,6 +21,7 @@ function accessToken(overrides: Record<string, unknown> = {}): string {
     encoded({
       aud: resource,
       azp: clientId,
+      bcn_grant_id: 'consent-id',
       client_id: clientId,
       exp: now + 600,
       iat: now,
@@ -50,6 +51,19 @@ describe('OAuth authorization-code worker result projection', () => {
         { clientId, origin, resource },
       ),
     ).toEqual({ credentialFree: false, error: undefined, status: 200, success: true })
+
+    expect(
+      inspectTokenResponse(
+        200,
+        {
+          access_token: accessToken({ bcn_grant_id: undefined }),
+          expires_in: 600,
+          scope: 'mcp:read mcp:write',
+          token_type: 'Bearer',
+        },
+        { clientId, origin, resource },
+      ).success,
+    ).toBe(false)
 
     expect(
       inspectTokenResponse(

@@ -10,14 +10,11 @@
 
 import type * as approvals from "../approvals.js";
 import type * as auth from "../auth.js";
+import type * as connections from "../connections.js";
 import type * as http from "../http.js";
 import type * as mcp from "../mcp.js";
-import type * as mcp_policy from "../mcp/policy.js";
-import type * as mcpAdmin from "../mcpAdmin.js";
-import type * as mcpOAuthAdmin from "../mcpOAuthAdmin.js";
-import type * as mcpOAuthEvidence from "../mcpOAuthEvidence.js";
-import type * as mcpTools from "../mcpTools.js";
-import type * as users from "../users.js";
+import type * as projects from "../projects.js";
+import type * as scopes from "../scopes.js";
 
 import type {
   ApiFromModules,
@@ -28,14 +25,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   approvals: typeof approvals;
   auth: typeof auth;
+  connections: typeof connections;
   http: typeof http;
   mcp: typeof mcp;
-  "mcp/policy": typeof mcp_policy;
-  mcpAdmin: typeof mcpAdmin;
-  mcpOAuthAdmin: typeof mcpOAuthAdmin;
-  mcpOAuthEvidence: typeof mcpOAuthEvidence;
-  mcpTools: typeof mcpTools;
-  users: typeof users;
+  projects: typeof projects;
+  scopes: typeof scopes;
 }>;
 
 /**

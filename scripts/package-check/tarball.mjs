@@ -151,8 +151,15 @@ const packedArtifactProfiles = Object.freeze({
       'dist/agent/AGENTS.md',
       'dist/index.mjs',
       'dist/index.d.mts',
+      'dist/test.mjs',
+      'dist/test.d.mts',
     ]),
-    requiredBuildFiles: Object.freeze(['dist/index.mjs', 'dist/index.d.mts']),
+    requiredBuildFiles: Object.freeze([
+      'dist/index.mjs',
+      'dist/index.d.mts',
+      'dist/test.mjs',
+      'dist/test.d.mts',
+    ]),
     allowedHostPackages: Object.freeze([]),
     allowedVirtualSpecifiers: Object.freeze([]),
     archiveLimits: Object.freeze({

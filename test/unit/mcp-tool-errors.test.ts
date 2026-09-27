@@ -1,9 +1,10 @@
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
+import { ConvexError } from 'convex/values'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { runMcpTool } from '../../packages/mcp/src/tools'
+import { projectMcpToolError, runMcpTool } from '../../packages/mcp/src/tools'
 
 describe('MCP tool failure projection', () => {
   it('preserves the official input-required result shape', async () => {
@@ -181,5 +182,104 @@ describe('MCP tool failure projection', () => {
       await client.close()
       await server.close()
     }
+  })
+})
+
+describe('ConvexError projection', () => {
+  const projected = (code: string, message: string, retryable = false) => ({
+    isError: true,
+    content: [{ type: 'text', text: message }],
+    structuredContent: { error: { code, message, retryable } },
+  })
+
+  it('projects allowlisted codes with the developer message and retryable flag', () => {
+    expect(
+      projectMcpToolError(
+        new ConvexError({ code: 'RATE_LIMITED', message: 'Wait a minute.', retryable: true }),
+        { expose: ['RATE_LIMITED'] },
+      ),
+    ).toEqual(projected('RATE_LIMITED', 'Wait a minute.', true))
+    expect(
+      projectMcpToolError(new ConvexError('RATE_LIMITED'), { expose: ['RATE_LIMITED'] }),
+    ).toEqual(projected('RATE_LIMITED', 'The request could not be completed.'))
+  })
+
+  it('always projects the Better Convex auth codes', () => {
+    for (const code of ['UNAUTHENTICATED', 'MCP_ACCESS_DENIED', 'MCP_INSUFFICIENT_SCOPE']) {
+      expect(projectMcpToolError(new ConvexError({ code, message: `${code} message` }))).toEqual(
+        projected(code, `${code} message`),
+      )
+    }
+    expect(projectMcpToolError(new ConvexError({ code: 'MCP_ACCESS_DENIED' }))).toMatchObject({
+      structuredContent: { error: { code: 'MCP_ACCESS_DENIED', retryable: false } },
+    })
+  })
+
+  it('recognizes a ConvexError from another Convex copy only by its exact marker', () => {
+    const foreign = Object.assign(new Error('x'), {
+      [Symbol.for('ConvexError')]: true,
+      data: { code: 'MCP_ACCESS_DENIED', message: 'Revoked.' },
+    })
+    expect(projectMcpToolError(foreign)).toEqual(projected('MCP_ACCESS_DENIED', 'Revoked.'))
+    const lookalike = Object.assign(new Error('x'), {
+      name: 'ConvexError',
+      data: { code: 'MCP_ACCESS_DENIED', message: 'Revoked.' },
+    })
+    expect(projectMcpToolError(lookalike)).toBeUndefined()
+  })
+
+  it('does not project unlisted codes, plain errors, or unsafe messages', () => {
+    expect(
+      projectMcpToolError(new ConvexError({ code: 'INTERNAL', message: 'db-sentinel' })),
+    ).toBeUndefined()
+    expect(projectMcpToolError(new ConvexError({ message: 'no code' }))).toBeUndefined()
+    expect(projectMcpToolError(new Error('MCP_ACCESS_DENIED'))).toBeUndefined()
+    expect(projectMcpToolError('MCP_ACCESS_DENIED')).toBeUndefined()
+    expect(
+      projectMcpToolError(new ConvexError({ code: 'MCP_ACCESS_DENIED', message: 'bad\u0000text' })),
+    ).toMatchObject({
+      content: [{ text: 'This connection is no longer allowed to access this data.' }],
+    })
+    expect(
+      projectMcpToolError(
+        new ConvexError({ code: 'MCP_ACCESS_DENIED', message: 'x'.repeat(1_001) }),
+      ),
+    ).toMatchObject({
+      content: [{ text: 'This connection is no longer allowed to access this data.' }],
+    })
+    expect(() => projectMcpToolError(undefined, { expose: ['lower_case'] })).toThrow(
+      'Invalid MCP exposed error code',
+    )
+  })
+
+  it('never invokes getters on a hostile marker or data object', () => {
+    const hostile = {}
+    Object.defineProperty(hostile, Symbol.for('ConvexError'), {
+      get() {
+        throw new Error('marker-getter')
+      },
+    })
+    expect(projectMcpToolError(hostile)).toBeUndefined()
+    const data = {}
+    Object.defineProperty(data, 'code', {
+      enumerable: true,
+      get() {
+        throw new Error('data-getter')
+      },
+    })
+    const withGetter = Object.assign(new Error('x'), { [Symbol.for('ConvexError')]: true, data })
+    expect(projectMcpToolError(withGetter)).toBeUndefined()
+  })
+
+  it('reports the projected code to onToolError and returns the projection', async () => {
+    const observed: unknown[] = []
+    const result = await runMcpTool(
+      () => {
+        throw new ConvexError({ code: 'NOTE_LOCKED', message: 'Unlock the note first.' })
+      },
+      { name: 'notes.write', expose: ['NOTE_LOCKED'], onToolError: (m) => void observed.push(m) },
+    )
+    expect(result).toEqual(projected('NOTE_LOCKED', 'Unlock the note first.'))
+    expect(observed).toEqual([{ kind: 'tool', name: 'notes.write', code: 'NOTE_LOCKED' }])
   })
 })

@@ -1,8 +1,15 @@
 import type { GenericDataModel } from 'convex/server'
 
-import type { AuthCtx } from './context'
+import type { AuthCtx, WritableAuthCtx } from './context'
 import { authConfigFailure } from './diagnostics'
+import {
+  resolveMcpHostRedirectUri,
+  resolveMcpResource,
+  type BetterConvexMcpHost,
+  type ResolvedMcpProfile,
+} from './mcp-profile'
 import { validateOAuthProviderProfile, type PinnedOAuthProviderProfile } from './oauth-security'
+import type { AuthAdapterComponentApi } from './types'
 
 export interface BetterConvexPublicOAuthClientInput {
   readonly name: string
@@ -24,6 +31,29 @@ export interface BetterConvexOAuthOperator<DataModel extends GenericDataModel> {
   readonly deleteClient: (
     ctx: AuthCtx<DataModel>,
     input: { readonly clientId: string },
+  ) => Promise<void>
+  /**
+   * Provision a public PKCE client for an MCP host preset (requires
+   * `oauth.mcp` with the host listed in `hosts`). Claude uses its fixed
+   * callback; ChatGPT needs the per-connector `redirectUri` it displays.
+   * `scopes` defaults to every MCP scope, plus `offline_access` with renewal.
+   */
+  readonly createHostClient: (
+    ctx: WritableAuthCtx<DataModel>,
+    input: {
+      readonly host: BetterConvexMcpHost
+      readonly redirectUri?: string
+      readonly name?: string
+      readonly scopes?: readonly [string, ...string[]]
+    },
+  ) => Promise<{ readonly clientId: string }>
+  /**
+   * Disable or re-enable a client. A disabled client fails every live check
+   * immediately, so its issued access tokens stop working.
+   */
+  readonly setClientDisabled: (
+    ctx: WritableAuthCtx<DataModel>,
+    input: { readonly clientId: string; readonly disabled: boolean },
   ) => Promise<void>
 }
 
@@ -167,7 +197,15 @@ async function rollbackProvisioning(
   if (cleanupFailed) throw new Error('AUTH_OAUTH_CLIENT_PARTIAL_CLEANUP_FAILED')
 }
 
+const HOST_CLIENT_NAMES: Record<BetterConvexMcpHost, string> = {
+  chatgpt: 'ChatGPT',
+  claude: 'Claude',
+}
+
 export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
+  appName?: string
+  component: AuthAdapterComponentApi
+  mcp?: ResolvedMcpProfile
   createAuth: (
     ctx: AuthCtx<DataModel>,
     profile: PinnedOAuthProviderProfile,
@@ -176,7 +214,7 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
     ctx: AuthCtx<DataModel>,
   ) => PinnedOAuthProviderProfile | Promise<PinnedOAuthProviderProfile | undefined> | undefined
 }): BetterConvexOAuthOperator<DataModel> {
-  return Object.freeze({
+  const operator: BetterConvexOAuthOperator<DataModel> = Object.freeze({
     async createPublicClient(
       ctx: AuthCtx<DataModel>,
       clientInput: BetterConvexPublicOAuthClientInput,
@@ -315,5 +353,51 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
         resourceIdentifier: '',
       })
     },
+    async createHostClient(
+      ctx: WritableAuthCtx<DataModel>,
+      clientInput: {
+        readonly host: BetterConvexMcpHost
+        readonly redirectUri?: string
+        readonly name?: string
+        readonly scopes?: readonly [string, ...string[]]
+      },
+    ) {
+      const mcp = input.mcp
+      if (!mcp) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
+      if (!mcp.hosts.includes(clientInput?.host)) {
+        throw new Error('AUTH_OAUTH_CLIENT_HOST_NOT_ENABLED')
+      }
+      const redirectUri = resolveMcpHostRedirectUri(clientInput.host, clientInput.redirectUri)
+      const admitted = mcp.provider.scopes ?? []
+      const scopes = clientInput.scopes ?? (admitted as [string, ...string[]])
+      const appName = input.appName?.trim() || 'MCP'
+      return await operator.createPublicClient(ctx, {
+        name: clientInput.name ?? `${appName} for ${HOST_CLIENT_NAMES[clientInput.host]}`,
+        profile: `bcn-mcp-${clientInput.host}`,
+        redirectUris: [redirectUri],
+        resource: {
+          identifier: resolveMcpResource(mcp).href,
+          name: appName,
+          ownership: 'application',
+        },
+        scopes,
+      })
+    },
+    async setClientDisabled(
+      ctx: WritableAuthCtx<DataModel>,
+      clientInput: { readonly clientId: string; readonly disabled: boolean },
+    ) {
+      const clientId = requireString(clientInput?.clientId ?? '', 'ID')
+      if (typeof clientInput.disabled !== 'boolean') {
+        throw new TypeError('AUTH_OAUTH_CLIENT_DISABLED_INVALID')
+      }
+      const updated = await ctx.runMutation(input.component.adapter.updateOne, {
+        model: 'oauthClient',
+        where: [{ field: 'clientId', value: clientId }],
+        update: { disabled: clientInput.disabled, updatedAt: Date.now() },
+      })
+      if (!updated) throw new Error('AUTH_OAUTH_CLIENT_NOT_FOUND')
+    },
   })
+  return operator
 }

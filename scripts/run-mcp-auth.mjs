@@ -97,7 +97,7 @@ async function verifyDiscoveryDocuments(context, origin, resource) {
     authorization.revocation_endpoint !== `${issuer}/oauth2/revoke` ||
     authorization.jwks_uri !== `${issuer}/jwks` ||
     JSON.stringify(authorization.grant_types_supported) !==
-      JSON.stringify(['authorization_code']) ||
+      JSON.stringify(['authorization_code', 'refresh_token']) ||
     JSON.stringify(authorization.code_challenge_methods_supported) !== JSON.stringify(['S256'])
   ) {
     throw new Error('OAuth authorization-server discovery escaped the fixed profile')
@@ -113,7 +113,8 @@ async function verifyDiscoveryDocuments(context, origin, resource) {
   if (
     protectedResource.resource !== resource ||
     JSON.stringify(protectedResource.authorization_servers) !== JSON.stringify([issuer]) ||
-    JSON.stringify(protectedResource.scopes_supported) !== JSON.stringify(['mcp:read', 'mcp:write'])
+    JSON.stringify(protectedResource.scopes_supported) !==
+      JSON.stringify(['mcp:read', 'mcp:write', 'offline_access'])
   ) {
     throw new Error('OAuth protected-resource discovery escaped the fixed profile')
   }
@@ -317,6 +318,7 @@ function verifyPublicClientTokenBindings(
           JSON.stringify([
             'aud',
             'azp',
+            'bcn_grant_id',
             'client_id',
             'exp',
             'iat',
@@ -328,6 +330,8 @@ function verifyPublicClientTokenBindings(
             'token_use',
           ]),
         client: claims.client_id === clientId && claims.azp === clientId,
+        // The renewable MCP profile binds every access token to its consent row.
+        grant: typeof claims.bcn_grant_id === 'string' && claims.bcn_grant_id.length > 0,
         current:
           Number.isSafeInteger(claims.iat) &&
           Number.isSafeInteger(claims.exp) &&
@@ -424,27 +428,31 @@ function requireExactToolNames(snapshot, description) {
 }
 
 function requireApplicationFailure(snapshot, code, description) {
-  const content = snapshot.body?.result?.content
-  let projected
-  try {
-    projected =
-      Array.isArray(content) &&
-      content.length === 1 &&
-      content[0]?.type === 'text' &&
-      typeof content[0].text === 'string'
-        ? JSON.parse(content[0].text)
-        : undefined
-  } catch {
-    projected = undefined
-  }
+  const result = snapshot.body?.result
+  const error = result?.structuredContent?.error
   if (
     snapshot.status !== 200 ||
     snapshot.challenge !== null ||
-    snapshot.body?.result?.resultType !== 'complete' ||
-    snapshot.body?.result?.isError !== true ||
-    JSON.stringify(projected) !== JSON.stringify({ code })
+    result?.resultType !== 'complete' ||
+    result?.isError !== true ||
+    error?.code !== code ||
+    typeof error.message !== 'string' ||
+    result.content?.[0]?.text !== error.message
   ) {
     throw new Error(`${description} did not fail with ${code}`)
+  }
+}
+
+function requireScopeChallenge(snapshot, scope, description) {
+  if (
+    snapshot.status !== 403 ||
+    snapshot.body?.error !== 'insufficient_scope' ||
+    snapshot.body?.result !== undefined ||
+    typeof snapshot.challenge !== 'string' ||
+    !snapshot.challenge.includes('error="insufficient_scope"') ||
+    !snapshot.challenge.includes(`scope="${scope}"`)
+  ) {
+    throw new Error(`${description} did not return the ${scope} step-up challenge`)
   }
 }
 
@@ -546,23 +554,17 @@ async function assertConvexSessionToken(token, origin, convexSiteUrl) {
   }
 }
 
-async function provisionInteropProfile(
-  context,
-  origin,
-  resource,
-  convexSiteUrl,
-  fixtureEmail,
-  fixturePassword,
-) {
+async function provisionInteropProfile(context, fixture, resource, convexSiteUrl) {
+  const origin = fixture.origin
   const requestOptions = { headers: { origin } }
   const signIn = await context.request.post(`${origin}/api/auth/sign-in/email`, {
     ...requestOptions,
     data: {
-      email: fixtureEmail,
-      password: fixturePassword,
+      email: fixture.email,
+      password: fixture.password,
     },
   })
-  if (!signIn.ok()) throw new Error('MCP fixture administrator sign-in failed')
+  if (!signIn.ok()) throw new Error('MCP fixture user sign-in failed')
 
   const convexTokenResponse = await context.request.get(`${origin}/api/auth/convex/token`, {
     headers: { origin },
@@ -573,12 +575,8 @@ async function provisionInteropProfile(
   const convexTokenBody = await convexTokenResponse.json()
   await assertConvexSessionToken(convexTokenBody?.token, origin, convexSiteUrl)
 
-  const response = await context.request.post(`${origin}/api/auth/mcp/admin/provision`, {
-    ...requestOptions,
-    data: {},
-  })
-  if (!response.ok()) throw new Error('MCP provider-owned interoperability provisioning failed')
-  const profile = await response.json()
+  // Clients are provisioned only through the server-side operator, never over HTTP.
+  const profile = await fixture.runConvex('evidence:provision', { email: fixture.email })
   const inspector = profile?.clients?.inspector
   const mcpRemote = profile?.clients?.mcpRemote
   const organizationId = profile?.organizationId
@@ -599,24 +597,18 @@ async function provisionInteropProfile(
     ...requestOptions,
     data: {},
   })
-  if (!signOut.ok()) throw new Error('MCP fixture administrator session cleanup failed')
+  if (!signOut.ok()) throw new Error('MCP fixture user session cleanup failed')
   await context.clearCookies()
   return { inspector, mcpRemote, organizationId }
 }
 
-async function provisionTerminalEvidence(context, origin, resource, organizationId, excludedIds) {
-  const response = await context.request.post(
-    `${origin}/api/auth/mcp/admin/provision-terminal-evidence`,
-    { data: {}, headers: { origin } },
-  )
-  if (!response.ok()) throw new Error('MCP terminal evidence provisioning failed')
-  const profile = await response.json()
+async function provisionTerminalEvidence(fixture, resource, excludedIds) {
+  const profile = await fixture.runConvex('evidence:provisionTerminalClients')
   const clients = profile?.clients
   const keys = ['clientDelete', 'clientDisable', 'conformance', 'consentDelete', 'sessionDelete']
   const ids = keys.map((key) => clients?.[key])
   if (
     profile?.resource !== resource ||
-    profile?.organizationId !== organizationId ||
     Object.keys(clients ?? {})
       .sort()
       .join(',') !== keys.sort().join(',') ||
@@ -687,9 +679,10 @@ async function runLiveAuthorizationEvidence({
   if (typeof authUserId !== 'string' || authUserId.length === 0) {
     throw new Error('Live MCP evidence token had no subject')
   }
-  const list = (id = 'bcn-live-list') => toolCall(id, 'projects.list', { organizationId })
+  const list = (id = 'bcn-live-list', tenant = organizationId) =>
+    toolCall(id, 'list_projects', { organizationId: tenant })
   const create = (id, name = 'MCP authorization project') =>
-    toolCall(id, 'projects.create', { name, organizationId })
+    toolCall(id, 'create_project', { name, organizationId })
   const expectDenied = async (message, code, description) => {
     const snapshot = await postMcpJson(context, resource, accessToken, message)
     requireApplicationFailure(snapshot, code, description)
@@ -697,10 +690,7 @@ async function runLiveAuthorizationEvidence({
   const baseline = await postMcpJson(context, resource, accessToken, list())
   if (baseline.status !== 200) throw new Error('Baseline live MCP authorization failed')
 
-  const alternateOrganizationId = await fixture.runConvex(
-    'mcpAdmin:createFixtureAlternateOrganization',
-    { authUserId },
-  )
+  const alternateOrganizationId = await fixture.runConvex('evidence:createAlternateOrganization')
   if (typeof alternateOrganizationId !== 'string' || alternateOrganizationId.length === 0) {
     throw new Error('Alternate MCP fixture tenant was invalid')
   }
@@ -713,66 +703,37 @@ async function runLiveAuthorizationEvidence({
   }
   await runWithFixtureState(
     () =>
-      fixture.runConvex('mcpAdmin:setFixtureMembership', {
+      fixture.runConvex('evidence:setMembership', {
         ...activeMembership,
         status: 'removed',
       }),
-    () => fixture.runConvex('mcpAdmin:setFixtureMembership', activeMembership),
+    () => fixture.runConvex('evidence:setMembership', activeMembership),
     () => expectDenied(list('membership-removed'), 'MCP_ACCESS_REVOKED', 'membership removal'),
   )
   await runWithFixtureState(
     () =>
-      fixture.runConvex('mcpAdmin:setFixtureMembership', {
+      fixture.runConvex('evidence:setMembership', {
         ...activeMembership,
         role: 'viewer',
       }),
-    () => fixture.runConvex('mcpAdmin:setFixtureMembership', activeMembership),
+    () => fixture.runConvex('evidence:setMembership', activeMembership),
     () => expectDenied(create('role-lowered'), 'MCP_ACCESS_REVOKED', 'role reduction'),
   )
 
-  const activeDelegation = {
-    authUserId,
-    clientId,
-    organizationId,
-    scopes: ['mcp:read', 'mcp:write'],
-    status: 'active',
-  }
-  await runWithFixtureState(
-    () =>
-      fixture.runConvex('mcpAdmin:setFixtureDelegation', {
-        ...activeDelegation,
-        status: 'revoked',
-      }),
-    () => fixture.runConvex('mcpAdmin:setFixtureDelegation', activeDelegation),
-    () => expectDenied(list('delegation-revoked'), 'MCP_ACCESS_REVOKED', 'delegation revocation'),
+  // Membership in one organization never reaches another one.
+  await expectDenied(
+    list('foreign-tenant', alternateOrganizationId),
+    'MCP_ACCESS_REVOKED',
+    'foreign tenant',
   )
   await runWithFixtureState(
     () =>
-      fixture.runConvex('mcpAdmin:setFixtureDelegation', {
-        ...activeDelegation,
-        scopes: ['mcp:read'],
-      }),
-    () => fixture.runConvex('mcpAdmin:setFixtureDelegation', activeDelegation),
-    () =>
-      expectDenied(create('delegation-scope'), 'MCP_SCOPE_REQUIRED', 'delegation scope removal'),
-  )
-  await runWithFixtureState(
-    () =>
-      fixture.runConvex('mcpAdmin:setFixtureDelegation', {
-        ...activeDelegation,
-        organizationId: alternateOrganizationId,
-      }),
-    () => fixture.runConvex('mcpAdmin:setFixtureDelegation', activeDelegation),
-    () => expectDenied(list('tenant-changed'), 'MCP_ACCESS_REVOKED', 'delegation tenant change'),
-  )
-  await runWithFixtureState(
-    () =>
-      fixture.runConvex('mcpAdmin:setFixtureUserActive', {
+      fixture.runConvex('evidence:setUserActive', {
         active: false,
         authUserId,
       }),
     () =>
-      fixture.runConvex('mcpAdmin:setFixtureUserActive', {
+      fixture.runConvex('evidence:setUserActive', {
         active: true,
         authUserId,
       }),
@@ -780,20 +741,8 @@ async function runLiveAuthorizationEvidence({
   )
 
   await runWithFixtureState(
-    async () => {
-      const response = await context.request.post(
-        `${origin}/api/auth/mcp/admin/disable-resource-fixture`,
-        { data: {}, headers: { origin } },
-      )
-      await requireProviderOperation(response, 'Provider resource disable')
-    },
-    async () => {
-      const response = await context.request.post(
-        `${origin}/api/auth/mcp/admin/enable-resource-fixture`,
-        { data: {}, headers: { origin } },
-      )
-      await requireProviderOperation(response, 'Provider resource restore')
-    },
+    () => fixture.runConvex('evidence:setResourceDisabled', { disabled: true }),
+    () => fixture.runConvex('evidence:setResourceDisabled', { disabled: false }),
     async () => {
       const snapshot = await postMcpJson(context, resource, accessToken, list('resource-disabled'))
       if (
@@ -808,20 +757,8 @@ async function runLiveAuthorizationEvidence({
   )
 
   await runWithFixtureState(
-    async () => {
-      const response = await context.request.post(
-        `${origin}/api/auth/mcp/admin/unlink-inspector-resource-fixture`,
-        { data: {}, headers: { origin } },
-      )
-      await requireProviderOperation(response, 'Provider client-resource unlink')
-    },
-    async () => {
-      const response = await context.request.post(
-        `${origin}/api/auth/mcp/admin/link-inspector-resource-fixture`,
-        { data: {}, headers: { origin } },
-      )
-      await requireProviderOperation(response, 'Provider client-resource relink')
-    },
+    () => fixture.runConvex('evidence:setClientResourceLinked', { clientId, linked: false }),
+    () => fixture.runConvex('evidence:setClientResourceLinked', { clientId, linked: true }),
     async () =>
       requireInvalidToken(
         await postMcpJson(context, resource, accessToken, list('resource-unlinked')),
@@ -843,20 +780,18 @@ async function runLiveAuthorizationEvidence({
 
   await runWithFixtureState(
     () =>
-      fixture.runConvex('mcpAdmin:setFixtureProjectOrganization', {
-        authUserId,
+      fixture.runConvex('evidence:setProjectOrganization', {
         organizationId: alternateOrganizationId,
         projectId: project.id,
       }),
     () =>
-      fixture.runConvex('mcpAdmin:setFixtureProjectOrganization', {
-        authUserId,
+      fixture.runConvex('evidence:setProjectOrganization', {
         organizationId,
         projectId: project.id,
       }),
     () =>
       expectDenied(
-        toolCall('project-owner-changed', 'projects.delete.preview', {
+        toolCall('project-owner-changed', 'request_project_deletion', {
           organizationId,
           projectId: project.id,
         }),
@@ -865,41 +800,27 @@ async function runLiveAuthorizationEvidence({
       ),
   )
 
-  const previewResponse = await postMcpJson(
-    context,
-    resource,
-    accessToken,
-    toolCall('preview', 'projects.delete.preview', {
-      organizationId,
-      projectId: project.id,
-    }),
-  )
-  const preview = structuredToolResult(previewResponse, 'Convex deletion preview')
-  if (
-    preview.project?.name !== projectName ||
-    preview.operation !== 'projects.delete' ||
-    preview.requiresApproval !== true ||
-    preview.reversible !== true
-  ) {
-    throw new Error('Convex destructive preview evidence was invalid')
-  }
-
   const approvalResponse = await postMcpJson(
     context,
     resource,
     accessToken,
-    toolCall('approval', 'projects.delete.requestApproval', {
+    toolCall('approval', 'request_project_deletion', {
       organizationId,
       projectId: project.id,
     }),
   )
   const approval = structuredToolResult(approvalResponse, 'Convex approval request')
-  if (typeof approval.approvalId !== 'string' || approval.status !== 'waiting_for_approval') {
+  if (
+    typeof approval.approvalId !== 'string' ||
+    approval.status !== 'waiting_for_approval' ||
+    approval.project?.id !== project.id ||
+    approval.project?.name !== projectName
+  ) {
     throw new Error('Convex approval-request evidence was invalid')
   }
 
   const execute = (id, projectId, approvalId) =>
-    toolCall(id, 'projects.delete.execute', {
+    toolCall(id, 'delete_project', {
       approvalId,
       organizationId,
       projectId,
@@ -934,7 +855,7 @@ async function runLiveAuthorizationEvidence({
     throw new Error('Convex approved deletion evidence was invalid')
   }
 
-  const state = await fixture.runConvex('mcpAdmin:readFixtureDestructiveState', {
+  const state = await fixture.runConvex('evidence:readDestructiveState', {
     approvalIds: [approval.approvalId],
     projectIds: [project.id],
   })
@@ -953,6 +874,7 @@ async function runTerminalRevocationEvidence({
   callback,
   clients,
   email,
+  fixture,
   organizationId,
   origin,
   password,
@@ -993,7 +915,7 @@ async function runTerminalRevocationEvidence({
         context,
         resource,
         accessToken,
-        toolCall(`terminal-baseline-${seenTokens.size}`, 'projects.list', {
+        toolCall(`terminal-baseline-${seenTokens.size}`, 'list_projects', {
           organizationId,
         }),
       )
@@ -1011,18 +933,10 @@ async function runTerminalRevocationEvidence({
       evidence.context,
       resource,
       evidence.accessToken,
-      toolCall(`terminal-${description}`, 'projects.list', { organizationId }),
+      toolCall(`terminal-${description}`, 'list_projects', { organizationId }),
     )
     requireInvalidToken(snapshot, description)
   }
-  const postAdminTransition = async (context, path, description) => {
-    const response = await context.request.post(`${origin}/api/auth/mcp/admin/${path}`, {
-      data: {},
-      headers: { origin },
-    })
-    await requireProviderOperation(response, description)
-  }
-
   const session = await acquire(clients.sessionDelete)
   try {
     const signOut = await session.context.request.post(`${origin}/api/auth/sign-out`, {
@@ -1037,11 +951,10 @@ async function runTerminalRevocationEvidence({
 
   const disabledClient = await acquire(clients.clientDisable)
   try {
-    await postAdminTransition(
-      disabledClient.context,
-      'disable-client-fixture',
-      'Persisted OAuth client disable',
-    )
+    await fixture.runConvex('evidence:setClientDisabled', {
+      clientId: clients.clientDisable,
+      disabled: true,
+    })
     await requireRevoked(disabledClient, 'client disable')
   } finally {
     await disabledClient.context.close().catch(() => {})
@@ -1049,11 +962,7 @@ async function runTerminalRevocationEvidence({
 
   const deletedClient = await acquire(clients.clientDelete)
   try {
-    await postAdminTransition(
-      deletedClient.context,
-      'delete-client-fixture',
-      'Persisted OAuth client deletion',
-    )
+    await fixture.runConvex('evidence:deleteClient', { clientId: clients.clientDelete })
     await requireRevoked(deletedClient, 'client deletion')
   } finally {
     await deletedClient.context.close().catch(() => {})
@@ -1065,17 +974,36 @@ async function runTerminalRevocationEvidence({
 
   const deletedConsent = await acquire(clients.consentDelete)
   try {
-    await postAdminTransition(
-      deletedConsent.context,
-      'delete-consent-fixture',
-      'Persisted OAuth consent/grant deletion',
-    )
+    // The same library call the starter's connections page makes for the signed-in user.
+    await fixture.runConvex('evidence:revokeConnection', {
+      authUserId: decodeJwtPart(deletedConsent.accessToken, 1).sub,
+      clientId: clients.consentDelete,
+    })
     await requireRevoked(deletedConsent, 'consent deletion')
   } finally {
     await deletedConsent.context.close().catch(() => {})
   }
 
-  return await acquire(clients.conformance, 'mcp:read')
+  const conformance = await acquire(clients.conformance, 'mcp:read')
+  try {
+    requireScopeChallenge(
+      await postMcpJson(
+        conformance.context,
+        resource,
+        conformance.accessToken,
+        toolCall('terminal-step-up', 'create_project', {
+          name: 'Step-up evidence',
+          organizationId,
+        }),
+      ),
+      'mcp:write',
+      'read-only connection write',
+    )
+  } catch (error) {
+    await conformance.context.close().catch(() => {})
+    throw error
+  }
+  return conformance
 }
 
 export async function runMcpEvidence({ conformanceRunner, includeConformance = false } = {}) {
@@ -1099,14 +1027,7 @@ export async function runMcpEvidence({ conformanceRunner, includeConformance = f
       let clients
       try {
         await verifyDiscoveryDocuments(setupContext, origin, resource)
-        clients = await provisionInteropProfile(
-          setupContext,
-          origin,
-          resource,
-          convexSiteUrl,
-          fixture.email,
-          fixture.password,
-        )
+        clients = await provisionInteropProfile(setupContext, fixture, resource, convexSiteUrl)
       } finally {
         await setupContext.close().catch(() => {})
       }
@@ -1159,13 +1080,10 @@ export async function runMcpEvidence({ conformanceRunner, includeConformance = f
           origin,
           resource,
         )
-        const terminalClients = await provisionTerminalEvidence(
-          primary.context,
-          origin,
-          resource,
-          clients.organizationId,
-          [clients.inspector, clients.mcpRemote],
-        )
+        const terminalClients = await provisionTerminalEvidence(fixture, resource, [
+          clients.inspector,
+          clients.mcpRemote,
+        ])
         // The two interoperability transactions above consume two of the
         // provider's three sign-ins per ten-second fixed window. Start the
         // terminal-revocation matrix in a fresh canonical window.
@@ -1175,6 +1093,7 @@ export async function runMcpEvidence({ conformanceRunner, includeConformance = f
           callback: `${INSPECTOR_ORIGIN}/oauth/callback`,
           clients: terminalClients,
           email: fixture.email,
+          fixture,
           organizationId: clients.organizationId,
           origin,
           password: fixture.password,

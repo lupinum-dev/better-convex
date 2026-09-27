@@ -8,6 +8,7 @@ export type {
   BetterConvexAuthEmailType,
   BetterConvexAuthEmailUser,
   BetterConvexAuthInstance,
+  BetterConvexMcp,
   BetterConvexOrganizationAuthInstance,
   BetterConvexSessionPolicy,
   CreateBetterConvexAuthOptions,
@@ -16,6 +17,10 @@ export type {
   BetterConvexOAuthOperator,
   BetterConvexPublicOAuthClientInput,
 } from './oauth-operator'
+export type { BetterConvexOAuthConnection, BetterConvexOAuthConnections } from './oauth-connections'
+export { mcpPrincipalValidator } from './mcp-principal'
+export type { BetterConvexMcpPrincipal, McpAccessErrorCode } from './mcp-principal'
+export type { BetterConvexMcpHost, BetterConvexMcpOptions } from './mcp-profile'
 export { getConvexAuthProvider } from './provider'
 export { requireAuthOrigin } from './origin'
 export { createBetterAuthMcpAccessVerifier } from './oauth-resource'
@@ -32,7 +37,11 @@ export type {
   BetterConvexAuthUser,
   CreateAuth,
 } from './types'
-export type { BetterAuthMcpAccessVerifierOptions } from './oauth-resource'
+export type {
+  BetterAuthMcpAccessVerifierOptions,
+  BetterConvexMcpAccessVerifier,
+  VerifiedBetterConvexMcpAccess,
+} from './oauth-resource'
 export type {
   BetterAuthUserProjectionSource,
   CreateUserProjectionTriggersOptions,

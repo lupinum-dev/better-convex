@@ -4,6 +4,7 @@ import { memoryAdapter, type MemoryDB } from 'better-auth/adapters/memory'
 import { jwt } from 'better-auth/plugins'
 import { describe, expect, it } from 'vitest'
 
+import { resolveMcpProfile } from '../../src/runtime/convex-auth/mcp-profile'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
 import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
 
@@ -285,6 +286,29 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
   it('initializes the exact jwt -> convexAuth -> oauthProvider graph', async () => {
     const auth = createAuth(database())
     await expect(auth.$context).resolves.toBeDefined()
+  })
+
+  it('initializes the MCP profile graph with public PKCE discovery', async () => {
+    const scopes = { 'mcp:read': 'Read projects', 'mcp:write': 'Change projects' }
+    // Session-bound renewal is admitted only on the library's own adapter.
+    const renewable = resolveMcpProfile({ scopes }).provider
+    await expect(
+      createAuth(database(), (options) => Object.assign(options, renewable)).$context,
+    ).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
+
+    const { provider } = resolveMcpProfile({ scopes, renewal: false })
+    const auth = createAuth(database(), (options) => Object.assign(options, provider))
+    await expect(auth.$context).resolves.toBeDefined()
+    const response = await auth.handler(
+      new Request(`${origin}/.well-known/oauth-authorization-server/api/auth`),
+    )
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      code_challenge_methods_supported: ['S256'],
+      grant_types_supported: ['authorization_code'],
+      scopes_supported: ['mcp:read', 'mcp:write'],
+      token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'],
+    })
   })
 
   it('projects official discovery down to public-none and confidential-basic code clients', async () => {

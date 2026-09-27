@@ -22,8 +22,22 @@ import {
   logAuthEmailFailure,
   type AuthConfigSubCode,
 } from './diagnostics'
+import { requireMcpPrincipal, type BetterConvexMcpPrincipal } from './mcp-principal'
+import {
+  canonicalAuthIssuer,
+  resolveMcpProfile,
+  resolveMcpResource,
+  type BetterConvexMcpOptions,
+  type ResolvedMcpProfile,
+} from './mcp-profile'
+import { createOAuthConnections, type BetterConvexOAuthConnections } from './oauth-connections'
 import type { OAuthLiveAccess } from './oauth-live-access'
 import { createOAuthOperator, type BetterConvexOAuthOperator } from './oauth-operator'
+import {
+  createBetterAuthMcpAccessVerifier,
+  type BetterAuthMcpAccessVerifierOptions,
+  type BetterConvexMcpAccessVerifier,
+} from './oauth-resource'
 import type { PinnedOAuthProviderProfile } from './oauth-security'
 import { requireAuthOrigin } from './origin'
 import { convexAuth } from './plugin'
@@ -238,6 +252,11 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
   readonly emailOTP?: false | ReviewedEmailOTPOptions
   readonly organization?: false | ReviewedOrganizationOptions
   readonly twoFactor?: false | ReviewedTwoFactorOptions
+  /**
+   * OAuth for MCP hosts. `oauth.mcp` configures the OAuth provider with the
+   * reviewed MCP profile; it replaces a hand-written `oauthProvider`.
+   */
+  readonly oauth?: { readonly mcp: BetterConvexMcpOptions }
   readonly oauthProvider?:
     | PinnedOAuthProviderProfile
     | ((
@@ -296,11 +315,55 @@ export interface BetterConvexAuth<
   readonly getAuth: (
     ctx: WritableAuthCtx<DataModel>,
   ) => Promise<{ readonly auth: AuthInstance; readonly headers: Headers }>
-  /** Recheck a verified MCP/OAuth principal against live grant state. */
+  /** Recheck a verified MCP/OAuth principal against live grant state (one component query). */
   readonly validateOAuthAccess: (
     ctx: AuthCtx<DataModel>,
     access: OAuthLiveAccess,
   ) => Promise<boolean>
+  /**
+   * The configured MCP OAuth profile. Every accessor throws
+   * `AUTH_OAUTH_MCP_PROFILE_REQUIRED` without `oauth.mcp`.
+   */
+  readonly mcp: BetterConvexMcp
+  /**
+   * The access verifier for `handleMcpRequest`: keys from the component, the
+   * strict token checks, and one live grant query per token. With `oauth.mcp`,
+   * scopes and the resource default to the profile.
+   */
+  readonly createMcpAccessVerifier: (
+    ctx: AuthCtx<DataModel>,
+    options?: Partial<BetterAuthMcpAccessVerifierOptions>,
+  ) => BetterConvexMcpAccessVerifier
+  /**
+   * Re-validate an MCP principal in the calling function's transaction (one
+   * component query) and check `scope`. Throws `ConvexError` with code
+   * `MCP_ACCESS_DENIED` or `MCP_INSUFFICIENT_SCOPE`.
+   */
+  readonly requireMcpPrincipal: (
+    ctx: AuthCtx<DataModel>,
+    principal: BetterConvexMcpPrincipal,
+    options?: { readonly scope?: string },
+  ) => Promise<{
+    readonly user: BetterConvexAuthUser
+    readonly principal: BetterConvexMcpPrincipal
+  }>
+  /** List and revoke a user's OAuth grants. The app passes the authenticated user's id. */
+  readonly oauthConnections: BetterConvexOAuthConnections<DataModel>
+}
+
+/** Accessors for the configured `oauth.mcp` profile. */
+export interface BetterConvexMcp {
+  /** This deployment's Better Auth issuer, `${SITE_URL}/api/auth`. */
+  readonly issuer: () => string
+  /** The MCP resource URL, which is also the token audience. */
+  readonly resource: () => URL
+  /** The MCP scopes with their consent descriptions (without `offline_access`). */
+  readonly scopes: () => Readonly<Record<string, string>>
+  /**
+   * Every scope a token may carry: the MCP scopes, plus `offline_access` when
+   * renewal is on. Advertise it as the protected resource's `scopesSupported`.
+   */
+  readonly scopesSupported: () => readonly string[]
 }
 
 /** The stable Better Auth capabilities used at the Convex transport boundary. */
@@ -351,6 +414,7 @@ const REVIEWED_TOP_LEVEL_OPTIONS = new Set([
   'emailAndPassword',
   'emailOTP',
   'emailVerification',
+  'oauth',
   'oauthProvider',
   'organization',
   'session',
@@ -527,6 +591,15 @@ function rejectUnsupportedOptions(options: object): void {
     if (!isPlainRecord(record.emailOTP)) throw configError('expected "emailOTP" to be an object')
     if (record.email === undefined) {
       throw configError('requires the "email" option when "emailOTP" is enabled')
+    }
+  }
+  if (record.oauth !== undefined) {
+    assertOnlyKeys(record.oauth, ['mcp'], 'oauth')
+    if (!isPlainRecord(record.oauth) || record.oauth.mcp === undefined) {
+      throw configError('requires "oauth.mcp"')
+    }
+    if (record.oauthProvider !== undefined) {
+      throw configError('accepts either "oauth.mcp" or "oauthProvider", not both')
     }
   }
   assertTrustedProviderShape(record.account as BetterConvexAccountPolicy | undefined)
@@ -803,9 +876,14 @@ export function createBetterConvexAuthOwned<
     triggers: options.triggers,
   })
 
+  const mcpProfile: ResolvedMcpProfile | undefined = options.oauth
+    ? resolveMcpProfile(options.oauth.mcp)
+    : undefined
+
   const resolveOAuthProfile = async (
     ctx: AuthCtx<DataModel>,
   ): Promise<PinnedOAuthProviderProfile | undefined> => {
+    if (mcpProfile) return mcpProfile.provider
     try {
       return typeof options.oauthProvider === 'function'
         ? await options.oauthProvider(ctx)
@@ -1028,8 +1106,25 @@ export function createBetterConvexAuthOwned<
     await createAuthWithProfile(ctx, await resolveOAuthProfile(ctx))
 
   const oauthOperator = createOAuthOperator<DataModel>({
+    appName: options.appName,
+    component,
+    mcp: mcpProfile,
     createAuth: createAuthWithProfile,
     resolveProfile: resolveOAuthProfile,
+  })
+
+  const requireMcp = (): ResolvedMcpProfile => {
+    if (!mcpProfile) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
+    return mcpProfile
+  }
+  const mcp: BetterConvexMcp = Object.freeze({
+    issuer: () => {
+      requireMcp()
+      return canonicalAuthIssuer()
+    },
+    resource: () => resolveMcpResource(requireMcp()),
+    scopes: () => requireMcp().scopes,
+    scopesSupported: () => Object.freeze([...(requireMcp().provider.scopes ?? [])]),
   })
 
   return Object.freeze({
@@ -1051,5 +1146,30 @@ export function createBetterConvexAuthOwned<
     requireUser: authComponent.requireUser,
     getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
     validateOAuthAccess: authComponent.validateOAuthAccess,
+    mcp,
+    createMcpAccessVerifier: (
+      ctx: AuthCtx<DataModel>,
+      verifierOptions: Partial<BetterAuthMcpAccessVerifierOptions> = {},
+    ) => {
+      const allowedScopes = verifierOptions.allowedScopes ?? mcpProfile?.provider.scopes
+      if (!allowedScopes) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
+      const resource =
+        verifierOptions.resource ?? (mcpProfile ? resolveMcpResource(mcpProfile) : undefined)
+      return createBetterAuthMcpAccessVerifier(ctx, component, {
+        ...verifierOptions,
+        allowedScopes,
+        ...(resource === undefined ? {} : { resource }),
+      })
+    },
+    requireMcpPrincipal: (
+      ctx: AuthCtx<DataModel>,
+      principal: BetterConvexMcpPrincipal,
+      principalOptions: { readonly scope?: string } = {},
+    ) =>
+      requireMcpPrincipal(ctx, component, principal, {
+        ...(principalOptions.scope === undefined ? {} : { scope: principalOptions.scope }),
+        ...(mcpProfile ? { resource: () => resolveMcpResource(mcpProfile) } : {}),
+      }),
+    oauthConnections: createOAuthConnections<DataModel>(component),
   })
 }

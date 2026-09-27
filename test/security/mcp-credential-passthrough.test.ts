@@ -62,7 +62,7 @@ describe('MCP credential passthrough absence', () => {
       serverInfo: { name: 'absence-proof', version: '0.1.0' },
       resource,
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer, verifier },
-      configureServer(access, server) {
+      configureServer({ access, server }) {
         server.registerTool(
           'search_notes',
           {

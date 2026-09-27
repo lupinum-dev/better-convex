@@ -38,7 +38,7 @@ async function fixture() {
         },
       },
     },
-    configureServer(_access, server) {
+    configureServer({ server }) {
       server.registerTool(
         toolName,
         {

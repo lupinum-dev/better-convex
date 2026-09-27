@@ -116,6 +116,13 @@ export default defineConfig({
             '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
               new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
             ),
+            // The subpath entry must precede the root entry it extends.
+            '@lupinum/better-convex-mcp/test': fileURLToPath(
+              new URL('./packages/mcp/src/test.ts', import.meta.url),
+            ),
+            '@lupinum/better-convex-mcp': fileURLToPath(
+              new URL('./packages/mcp/src/index.ts', import.meta.url),
+            ),
           },
         },
         test: {

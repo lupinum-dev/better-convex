@@ -35,6 +35,8 @@ const packages = [
     packageRoot: resolve(repositoryRoot, 'packages/mcp'),
     startRoutes: [
       '/docs/build/agents/mcp',
+      '/docs/build/agents/mcp-application',
+      '/docs/build/agents/connect-chatgpt-and-claude',
       '/docs/build/authentication/delegated-oauth-and-mcp',
       '/docs/overview/limitations',
     ],

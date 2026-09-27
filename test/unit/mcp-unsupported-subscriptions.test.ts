@@ -10,7 +10,7 @@ const version = '2026-07-28'
 
 function fixture() {
   const invoked = vi.fn(() => ({ content: [{ type: 'text' as const, text: 'ok' }] }))
-  const configureServer = vi.fn<HandleMcpRequestOptions['configureServer']>((_access, server) => {
+  const configureServer = vi.fn<HandleMcpRequestOptions['configureServer']>(({ server }) => {
     server.registerTool('read_note', { inputSchema: z.object({}) }, invoked)
     server.registerResource('note', 'note://example', {}, () => ({ contents: [] }))
   })
@@ -184,7 +184,7 @@ describe('finite MCP subscription boundary', () => {
     const f = fixture()
     const response = await handleMcpRequest(request({ method: 'tools/list' }), {
       ...f.options,
-      configureServer(_access, server) {
+      configureServer({ server }) {
         server.server.registerCapabilities({ tools: {} })
         server.server.setRequestHandler('tools/list', () => {
           throw new ProtocolError(-32603, 'Subscription limit reached')

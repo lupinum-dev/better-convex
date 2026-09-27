@@ -14,6 +14,7 @@ export const {
   findMany,
   findOne,
   incrementOne,
+  oauthLiveAccess,
   pruneSigningKeys,
   rotateSigningKey,
   sessionAdmission,

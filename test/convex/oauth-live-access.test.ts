@@ -175,25 +175,75 @@ describe('provider-owned OAuth live access validation', () => {
     await expect(validate(test)).resolves.toBe(true)
   })
 
-  it('delegates session authority to component admission with exact subject binding', async () => {
+  it('performs the whole live check in exactly one component query with exact subject binding', async () => {
     const test = initTest()
     await createLiveGrant(test)
     await test.query(async (ctx) => {
       const query = vi.spyOn(ctx, 'runQuery')
       expect(await checkOAuthAccess(ctx, components.relationshipAuth, access)).toBe(true)
-      expect(query.mock.calls.map((call) => call[1])).toContainEqual({
+      expect(query).toHaveBeenCalledTimes(1)
+      expect(query.mock.calls[0]?.[1]).toEqual({
+        clientId: access.clientId,
+        resource: access.resource,
+        scopes: [...access.scopes],
         sessionId: access.sessionId,
         userId: access.subject,
       })
-      expect(query.mock.calls.map((call) => call[1])).not.toContainEqual(
-        expect.objectContaining({ model: 'session' }),
-      )
-      expect(query.mock.calls.map((call) => call[1])).not.toContainEqual(
-        expect.objectContaining({ model: 'user' }),
-      )
     })
     await expect(
       test.query(validateOAuthAccess, { access: { ...access, subject: 'other' } }),
     ).resolves.toBe(false)
+  })
+
+  it('rejects a revoked session and a security-generation bump', async () => {
+    const revoked = initTest()
+    await createLiveGrant(revoked)
+    await revoked.mutation(auth.deleteOne, {
+      model: 'session',
+      where: [{ field: 'id', value: access.sessionId }],
+    })
+    await expect(validate(revoked)).resolves.toBe(false)
+
+    const bumped = initTest()
+    await createLiveGrant(bumped)
+    // Better Auth's "revoke all sessions" selector advances the user's security generation.
+    await bumped.mutation(auth.deleteMany, {
+      model: 'session',
+      where: [{ field: 'userId', value: access.subject }],
+    })
+    await expect(validate(bumped)).resolves.toBe(false)
+  })
+
+  it('rejects an unknown or wrong resource and a foreign client', async () => {
+    const test = initTest()
+    await createLiveGrant(test)
+    await expect(
+      test.query(validateOAuthAccess, {
+        access: { ...access, resource: 'https://deployment.example.test/other' },
+      }),
+    ).resolves.toBe(false)
+    await expect(
+      test.query(validateOAuthAccess, { access: { ...access, clientId: 'other-client' } }),
+    ).resolves.toBe(false)
+  })
+
+  it('binds a renewable grant to its consent id', async () => {
+    const test = initTest()
+    await createLiveGrant(test)
+    await test.query(async (ctx) => {
+      const component = components.relationshipAuth
+      await expect(
+        checkOAuthAccess(ctx, component, { ...access, grantId: 'oauth-consent-row' }),
+      ).resolves.toBe(true)
+      await expect(
+        checkOAuthAccess(ctx, component, { ...access, grantId: 'other-consent' }),
+      ).resolves.toBe(false)
+      await expect(
+        checkOAuthAccess(ctx, component, {
+          ...access,
+          scopes: [...access.scopes, 'offline_access'],
+        }),
+      ).resolves.toBe(false)
+    })
   })
 })

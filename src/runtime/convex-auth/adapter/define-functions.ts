@@ -28,6 +28,7 @@ import {
   storedSigningKeyDocumentIssue,
   warnRetiredSigningKeySkipped,
 } from '../jwks-rotation'
+import { oauthLiveAccessArgs, readOAuthLiveGrant } from '../oauth-live-access'
 import {
   admitOAuthRefresh,
   equalityRange,
@@ -314,6 +315,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     generationAuthority && model === generationAuthority.sessionModel
       ? await currentSessionOrNull(ctx, row, generationAuthority)
       : row
+  const oauthGrantModels = ['oauthClient', 'oauthResource', 'oauthClientResource', 'oauthConsent']
+  const hasOAuthGrantModels = oauthGrantModels.every((model) =>
+    Object.hasOwn(metadata.models, model),
+  )
   const assertOwnedFieldsUntouched = (model: string, patch: Record<string, unknown>) => {
     if (generationAuthority) assertSessionGenerationUpdate(model, patch, generationAuthority)
   }
@@ -358,6 +363,24 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
               session: toBetterAuthDocument(admitted.session),
             }
           : null
+      },
+    }),
+    // Component API only, like sessionAdmission. The single live OAuth grant
+    // check: session admission, client, resource, client-resource link, and
+    // consent in one transaction. Returns the admitted user and consent id.
+    oauthLiveAccess: queryGeneric({
+      args: oauthLiveAccessArgs,
+      returns: v.union(
+        v.object({
+          user: authDocumentValidator,
+          grantId: v.string(),
+        }),
+        v.null(),
+      ),
+      handler: async (ctx, args) => {
+        if (!hasOAuthGrantModels) return null
+        const grant = await readOAuthLiveGrant(ctx, args)
+        return grant ? { user: toBetterAuthDocument(grant.user), grantId: grant.grantId } : null
       },
     }),
     create: mutationGeneric({

@@ -1,46 +1,46 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-const providerSource = readFileSync(
-  fileURLToPath(new URL('../../starters/mcp-oauth-agent/convex/mcpOAuthAdmin.ts', import.meta.url)),
-  'utf8',
-)
-const fixtureSource = readFileSync(
-  fileURLToPath(new URL('../../scripts/mcp-local-fixture.mjs', import.meta.url)),
-  'utf8',
-)
-const evidenceSource = readFileSync(
-  fileURLToPath(
-    new URL('../../starters/mcp-oauth-agent/convex/mcpOAuthEvidence.ts', import.meta.url),
-  ),
-  'utf8',
-)
+const read = (path: string) =>
+  readFileSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)), 'utf8')
+const evidenceSource = read('scripts/fixtures/mcp-oauth-agent-evidence.ts')
+const fixtureSource = read('scripts/mcp-local-fixture.mjs')
+const concurrencySource = read('scripts/run-oauth-code-concurrency.mjs')
 
-describe('confidential OAuth code fixture contracts', () => {
-  it('keeps confidential provisioning on one dedicated admin-only no-store endpoint', () => {
-    expect(providerSource).toContain("'provision-confidential': async ({ call, resource }) => {")
-    expect(providerSource).toContain('path: `/api/auth/mcp/admin/${name}`')
-    expect(providerSource).toContain("'cache-control': 'no-store'")
-    expect(providerSource).toContain('return auth.sessionHttpAction(async (ctx, session) => {')
-    expect(providerSource).not.toContain('x-bcn-confidential-fixture')
-    expect(providerSource).toContain('const client = await provisionConfidentialClient(')
-    expect(providerSource).toContain('return { client, resource }')
-    expect(providerSource).toContain(
-      'clients: { inspector: clientIds[0], mcpRemote: clientIds[1] },',
+describe('MCP evidence fixture contracts', () => {
+  it('installs evidence functions only into the disposable starter copy', () => {
+    expect(fixtureSource).toContain(
+      "const evidenceFunctions = join(root, 'scripts/fixtures/mcp-oauth-agent-evidence.ts')",
+    )
+    expect(fixtureSource).toContain(
+      "await copyFile(evidenceFunctions, join(cwd, 'convex/evidence.ts'))",
+    )
+    expect(
+      readdirSync(fileURLToPath(new URL('../../starters/mcp-oauth-agent/convex', import.meta.url))),
+    ).not.toContain('evidence.ts')
+  })
+
+  it('exposes only internal operator functions and no HTTP route', () => {
+    expect(evidenceSource).not.toMatch(
+      /export const \w+\s*=\s*(?:query|mutation|action|httpAction)\(/,
+    )
+    expect(evidenceSource).not.toMatch(/HttpRouter|http\.route|sessionHttpAction/)
+    expect(evidenceSource.match(/export const \w+ = internal(?:Mutation|Query)\(/g)?.length).toBe(
+      evidenceSource.match(/export const /g)?.length,
     )
   })
 
-  it('pins the client to the existing callback, resource, scopes, PKCE, and Basic auth', () => {
-    expect(providerSource).toContain("callback: 'https://client.example.test/oauth/callback'")
-    expect(providerSource).toContain("value.application_type !== 'web'")
-    expect(providerSource).toContain("value.token_endpoint_auth_method !== 'client_secret_basic'")
-    expect(providerSource).toContain('value.require_pkce !== true')
-    expect(providerSource).toContain("scope: MCP_SCOPES.join(' ')")
-    expect(providerSource).toContain("call('adminLinkClientResource'")
-    expect(providerSource).toContain("call('rotateClientSecret'")
-    expect(providerSource).not.toMatch(/console\.(?:debug|error|info|log|warn)/u)
+  it('provisions public clients through the operator and the confidential client with a hashed secret', () => {
+    expect(evidenceSource).toContain('auth.oauthOperator.createPublicClient(ctx, {')
+    expect(evidenceSource).toContain("tokenEndpointAuthMethod: 'client_secret_basic'")
+    expect(evidenceSource).toContain("applicationType: 'web'")
+    expect(evidenceSource).toContain('requirePKCE: true')
+    expect(evidenceSource).toContain("crypto.subtle.digest('SHA-256'")
+    expect(evidenceSource).toContain('clientSecret: hashedSecret')
+    expect(evidenceSource).not.toMatch(/clientSecret: secret\b/)
+    expect(evidenceSource).not.toMatch(/console\.(?:debug|error|info|log|warn)/u)
   })
 
   it('registers the one-time secret with the in-memory fixture redactor', () => {
@@ -48,10 +48,18 @@ describe('confidential OAuth code fixture contracts', () => {
     expect(fixtureSource).toContain('if (!secrets.includes(secret)) secrets.push(secret)')
     expect(fixtureSource).toContain('registerConfidentialClientSecretForRedaction,')
     expect(fixtureSource).not.toMatch(/writeFile\([^\n]*secret/u)
+    expect(concurrencySource).toContain(
+      'fixture.registerConfidentialClientSecretForRedaction(confidentialClient.secret)',
+    )
+  })
+
+  it('revokes and disables through the same library calls the starter uses', () => {
+    expect(evidenceSource).toContain('auth.oauthConnections.revoke(ctx, {')
+    expect(evidenceSource).toContain('auth.oauthOperator.setClientDisabled(ctx, args)')
+    expect(evidenceSource).toContain('auth.oauthOperator.deleteClient(ctx, args)')
   })
 
   it('exposes only bounded credential counts through the deployment-admin fixture seam', () => {
-    expect(providerSource).not.toContain('oauth-token-counts')
     expect(evidenceSource).toContain("model: 'oauthAccessToken'")
     expect(evidenceSource).toContain("model: 'oauthRefreshToken'")
     expect(evidenceSource).toContain("model: 'account'")
@@ -60,6 +68,6 @@ describe('confidential OAuth code fixture contracts', () => {
     expect(evidenceSource).toContain('count > 100')
     expect(evidenceSource).not.toContain('findMany')
     expect(fixtureSource).toContain('readOAuthCredentialCountsForTest')
-    expect(fixtureSource).toContain("runConvex('mcpOAuthEvidence:countCredentialRows')")
+    expect(fixtureSource).toContain("runConvex('evidence:countCredentialRows')")
   })
 })

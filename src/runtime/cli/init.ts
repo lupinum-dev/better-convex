@@ -61,7 +61,7 @@ import schema from './schema'
 import schemaMetadata from './schemaMetadata'
 
 // This module is inside the isolated betterAuth component, not the public app API.
-export const { consumeOne, consumeRateLimit, count, create, deleteMany, deleteOne, expireSession, findMany, findOne, incrementOne, pruneSigningKeys, rotateSigningKey, sessionAdmission, updateMany, updateOne } = defineAuthAdapterFunctions({ metadata: schemaMetadata, schema })
+export const { consumeOne, consumeRateLimit, count, create, deleteMany, deleteOne, expireSession, findMany, findOne, incrementOne, oauthLiveAccess, pruneSigningKeys, rotateSigningKey, sessionAdmission, updateMany, updateOne } = defineAuthAdapterFunctions({ metadata: schemaMetadata, schema })
 `,
   'convex/betterAuth/convex.config.ts': `import { defineComponent } from 'convex/server'
 

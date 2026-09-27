@@ -298,6 +298,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         > | null,
         Name
       >;
+      oauthLiveAccess: FunctionReference<
+        "query",
+        "internal",
+        {
+          clientId: string;
+          grantId?: string;
+          resource: string;
+          scopes: Array<string>;
+          sessionId: string;
+          userId: string;
+        },
+        {
+          grantId: string;
+          user: Record<
+            string,
+            string | number | boolean | Array<string> | Array<number> | null
+          >;
+        } | null,
+        Name
+      >;
       pruneSigningKeys: FunctionReference<
         "mutation",
         "internal",
