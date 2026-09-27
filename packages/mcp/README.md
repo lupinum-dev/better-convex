@@ -36,8 +36,10 @@ The package does not export your Convex functions automatically. You register ea
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-mcp@1.0.0-rc.0 @modelcontextprotocol/server@2.1.0 zod@4.6.5
+pnpm add @lupinum/better-convex-mcp@next @modelcontextprotocol/server@2.1.0 zod@4.6.5
 ```
+
+The `next` dist-tag is the 1.0 release candidate.
 
 ## Quick start
 

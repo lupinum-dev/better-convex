@@ -89,10 +89,13 @@ starts one with synthetic auth secrets. Remove `playground/.convex` and
 - Never add `NPM_TOKEN` or any other long-lived publish credential.
 - Add a changeset (`pnpm changeset`) to every pull request that changes what
   users see. CI requires one when `src/` or `packages/*/src/` changes; use
-  `pnpm changeset --empty` if users see nothing.
+  `pnpm changeset --empty` if users see nothing. When the `dependencies` or
+  `peerDependencies` of a published package change, the changeset must bump
+  that package (at least `patch`); an empty one does not count.
 - Changeset style: one line in present tense that starts with Fix, Add, Remove
-  or Change and says what changed for users. A breaking change adds a second
-  line that starts with `Migration:` and says what users must do.
+  or Change and says what changed for users. At most five short lines of
+  detail may follow. A breaking change adds a line that starts with
+  `Migration:` and says what users must do.
 - The repository is in Changesets prerelease mode (`rc`) until 1.0.0; see
   DECISIONS.md before you run `changeset pre exit`.
 - Do not bypass the 24-hour dependency quarantine (`minimumReleaseAge`). Do not

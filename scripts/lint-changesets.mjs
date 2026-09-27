@@ -1,5 +1,7 @@
 // Checks the changeset style described in AGENTS.md. When origin/main exists
-// (CI on pull requests), it also requires a changeset if published source changed.
+// (CI on pull requests), it also requires a changeset if published source changed,
+// and a changeset that bumps a published package whose dependencies or peer
+// dependencies changed.
 import { spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 
@@ -26,28 +28,68 @@ for (const file of readdirSync('.changeset').filter(
       `${file}: start with one user-facing line that begins with Fix, Add, Remove or Change.`,
     )
   }
-  const migration = rest.findIndex((line) => line.startsWith('Migration:'))
-  if (rest.length && migration !== 0)
-    failures.push(`${file}: keep the summary to one line. Only a "Migration:" note may follow.`)
-  if (/:\s*["']?major["']?\s*$/m.test(frontMatter) && migration === -1) {
+  if (rest.length > 5)
+    failures.push(`${file}: keep it short: one summary line, then at most five lines of detail.`)
+  if (
+    /:\s*["']?major["']?\s*$/m.test(frontMatter) &&
+    !rest.some((line) => line.startsWith('Migration:'))
+  ) {
     failures.push(`${file}: a major change needs a "Migration:" line that tells users what to do.`)
   }
 }
 
-const hasBase = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'origin/main']).status === 0
+const git = (...args) => spawnSync('git', args, { encoding: 'utf8' })
+const bumps = (frontMatter) =>
+  [
+    ...frontMatter.matchAll(
+      /^\s*['"]?([^\s'":]+)['"]?\s*:\s*['"]?(?:major|minor|patch)['"]?\s*$/gm,
+    ),
+  ].map(([, name]) => name)
+
+const hasBase = git('rev-parse', '--verify', '--quiet', 'origin/main').status === 0
 if (hasBase) {
-  const diff = spawnSync('git', ['diff', '--name-only', 'origin/main...HEAD'], { encoding: 'utf8' })
-  const sourceChanged = diff.stdout
-    .split('\n')
-    .some((path) => /^(?:src|packages\/[^/]+\/src)\//.test(path))
+  const base = git('merge-base', 'origin/main', 'HEAD').stdout.trim()
+  const changed = git('diff', '--name-only', `${base}..HEAD`).stdout.split('\n')
   if (
-    sourceChanged &&
+    changed.some((path) => /^(?:src|packages\/[^/]+\/src)\//.test(path)) &&
     spawnSync('pnpm', ['exec', 'changeset', 'status', '--since=origin/main'], { stdio: 'inherit' })
       .status !== 0
   ) {
     failures.push(
       'Published source changed without a changeset. Run `pnpm changeset`, or `pnpm changeset --empty` if users see no change.',
     )
+  }
+
+  // Users install new dependencies with the next version, so an empty changeset is not enough.
+  // Ranges on this repository's own packages are bumped by Changesets itself and are ignored.
+  const manifests = ['package.json', 'packages/mcp/package.json', 'packages/vue/package.json']
+  const internal = new Set(manifests.map((path) => JSON.parse(readFileSync(path, 'utf8')).name))
+  const installed = (pkg) =>
+    JSON.stringify(
+      ['dependencies', 'peerDependencies'].map((field) =>
+        Object.entries(pkg[field] ?? {})
+          .filter(([name]) => !internal.has(name))
+          .sort(),
+      ),
+    )
+  const bumped = new Set(
+    git('diff', '--name-only', '--diff-filter=A', `${base}..HEAD`, '--', '.changeset')
+      .stdout.split('\n')
+      .filter((path) => path.endsWith('.md'))
+      .flatMap((path) => {
+        const file = git('show', `HEAD:${path}`).stdout
+        return bumps(/^---\r?\n([\s\S]*?)^---/m.exec(file)?.[1] ?? '')
+      }),
+  )
+  for (const path of manifests.filter((path) => changed.includes(path))) {
+    const now = JSON.parse(readFileSync(path, 'utf8'))
+    const before = git('show', `${base}:${path}`)
+    if (now.private || before.status !== 0) continue
+    if (installed(JSON.parse(before.stdout)) !== installed(now) && !bumped.has(now.name)) {
+      failures.push(
+        `${path}: dependencies or peerDependencies changed. Add a changeset that bumps ${now.name} (at least patch).`,
+      )
+    }
   }
 }
 
