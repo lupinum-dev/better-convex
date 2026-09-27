@@ -135,7 +135,8 @@ jobs:
         run: |
           # A newer push to main has its own run; do not overwrite its Version packages PR.
           if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" != "$GITHUB_SHA" ]]; then
-            echo "main moved past $GITHUB_SHA; the newer run updates the PR."; exit 0
+            echo "main moved past $GITHUB_SHA; the newer run updates the PR."
+            echo pushed=false >> "$GITHUB_OUTPUT"; exit 0
           fi
           git -c user.name='github-actions[bot]' \
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
