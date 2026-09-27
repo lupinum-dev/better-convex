@@ -1,7 +1,11 @@
 packages:
+  # The Nuxt module is the root package. Listing it lets Changesets version it
+  # together with the Vue package (see DECISIONS.md).
+  - '.'
   - playground
   - packages/*
 
+# Dependency quarantine: never install versions younger than 24 hours.
 minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
@@ -21,6 +25,7 @@ overrides:
   svgo: 4.1.0
   hono: 4.13.7
 
+# Only these dependencies may run install scripts.
 allowBuilds:
   '@parcel/watcher': true
   esbuild: true

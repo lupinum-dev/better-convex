@@ -202,90 +202,30 @@ from the verified transaction. It never accepts display names from query input
 and cannot widen consent. Login and consent responses are no-store, deny
 framing, and use a no-referrer policy.
 
-## Release evidence
+## Integration tests
 
-From the repository root, run the interoperability and revocation harness:
+From the repository root, run the real-backend OAuth and MCP suite:
 
 ```bash
-pnpm test:mcp-auth
+pnpm exec vitest run --project=integration test/integration/mcp-auth.integration.test.ts
 ```
 
-The command creates its own temporary starter copy, pinned local Convex
-backend, Nuxt server, user, and random secrets. It copies
-`scripts/fixtures/mcp-oauth-agent-evidence.ts` into that copy as
+`pnpm test:integration` runs it together with the other real-backend suites.
+The suite creates its own temporary starter copy, pinned local Convex backend,
+Nuxt server, user, and random secrets. It copies
+`test/fixtures/mcp-oauth-agent/evidence.ts` into that copy as
 `convex/evidence.ts`. These internal functions provision test clients through
 `auth.oauthOperator` and change app state between cases. They are not part of
-the starter. The run removes the temporary fixture when it ends.
+the starter. The run removes the temporary copy when it ends.
 
-The harness drives the authorization code flow with direct S256 PKCE for two
-public clients, leaves client-secret fields empty, validates exact
-redirect, state, resource, and issuer binding, and redacts authorization URLs
-and runner secrets. It then checks that membership removal, role reduction,
-a foreign organization, user suspension, a client-resource unlink, session
-deletion, client disable, client deletion, and a disconnected connection each
-block the next tool call. A read-only token receives the `mcp:write` step-up
-challenge.
-
-### External disposable deployment evidence
-
-An already-running deployment can be exercised only through the explicit
-`external-disposable` mode. This is a destructive, one-run release-evidence
-path, not a development convenience and never a production or shared staging
-check. Start from a fresh deployment and a fresh account. Copy
-`scripts/fixtures/mcp-oauth-agent-evidence.ts` to `convex/evidence.ts` in the
-app directory, deploy it with this exact starter, and keep Nuxt running at the
-supplied origin. The absolute app directory must contain `.env.local` with
-exact matching `SITE_URL`, `CONVEX_URL`, `CONVEX_SITE_URL`,
-`NUXT_PUBLIC_CONVEX_URL`, and `NUXT_PUBLIC_CONVEX_SITE_URL` values. Its
-owner-only file (for example, mode 0600) must select the same managed Convex
-deployment through a canonical `dev:` or `preview:` `CONVEX_DEPLOYMENT` value
-and must not contain another Convex CLI authority or override. The disposable
-app must not have a sibling `.env` file. The account must already exist and use
-a password of at least 15 characters. The deployment must already have
-completed the fresh signing-key ceremony above, and the recorded `newKid` must
-be visible through this exact app origin's `/api/auth/jwks` endpoint.
-
-```bash
-BCN_MCP_TEST_MODE=external-disposable \
-BCN_MCP_TEST_APP_DIR=/absolute/path/to/fresh-mcp-oauth-agent \
-BCN_MCP_TEST_ORIGIN=https://fresh-app.example.test \
-BCN_MCP_TEST_CONVEX_URL=https://gentle-otter-123.convex.cloud \
-BCN_MCP_TEST_CONVEX_SITE_URL=https://gentle-otter-123.convex.site \
-BCN_MCP_TEST_EMAIL=mcp-evidence@example.test \
-BCN_MCP_TEST_PASSWORD="${BCN_LOCAL_ADMIN_PASSWORD:?set the generated disposable-admin password}" \
-pnpm test:mcp-auth
-```
-
-The runner does not provision, deploy, stop, reset, or delete the external app
-or deployment. Its release hook removes only its private temporary CLI
-authority directory. During evidence it creates test clients and an
-organization, changes and deletes sessions, clients, and consents, changes
-membership and authorization state, and creates and soft-deletes projects.
-Terminal-revocation cases are not restored. Treat the deployment as consumed
-after the run and destroy it with the deployment owner's reviewed process. A
-rerun is not supported evidence. Before the first Convex mutation, the
-repository-pinned absolute CLI resolves the deployment in an isolated temporary
-directory and must report the exact managed origins plus a `dev` or `preview`
-deployment type. Later calls run from the supplied app directory with both the
-validated deployment name and the private generated env file passed
-explicitly. The CLI cannot auto-load the app's dotenv files. Fixture
-credentials and every case variant of an ambient Convex override are stripped
-from every child process environment.
-
-The selected MCP protocol suite is a one-shot alternative entry to the same
-destructive harness. On a fresh external deployment, use the exact environment
-block above but replace its final command with:
-
-```bash
-pnpm test:mcp-conformance
-```
-
-That command runs the complete OAuth and MCP evidence and the stable-SDK
-stateless contract checks in one fixture lifecycle, with the freshly issued
-least-scope bearer. Do not run `test:mcp-auth` first, and do not run both
-commands against one deployment: either run consumes it. Stable official
-conformance `0.1.16` has no `2026-07-28` scenarios, and no legacy relay is
-used. These checks are not stable MCP certification or OAuth certification.
+The suite drives the authorization code flow with direct S256 PKCE for two
+public clients, leaves client-secret fields empty, and validates exact
+redirect, state, resource, and issuer binding. It then checks that membership
+removal, role reduction, a foreign organization, user suspension, a
+client-resource unlink, session deletion, client disable, client deletion, and
+a disconnected connection each block the next tool call. A read-only token
+receives the `mcp:write` step-up challenge. It also checks the stateless MCP
+protocol envelope and its error cases with the official SDK.
 
 ## Production adaptation
 

@@ -5,7 +5,7 @@ import net from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { assertCurrentBackendBinary } from '../../scripts/check-auth-backend.mjs'
+import { ensureLocalBackend } from './local-backend.mjs'
 
 interface LocalConvexHandle {
   authOrigin: string
@@ -980,7 +980,7 @@ async function startLocalConvex(
   requireAuthDeployment: boolean,
   provisionSigningKey: boolean,
 ): Promise<LocalConvexHandle> {
-  const reviewedBackend = await assertCurrentBackendBinary()
+  const reviewedBackend = await ensureLocalBackend()
   const configured = await readLocalConvexEnv(cwd)
   const hasSavedSelection = Boolean(
     configured.deployment ||
@@ -1185,7 +1185,7 @@ export async function ensureLocalConvex(
 
     let reachable = false
     try {
-      await assertCurrentBackendBinary()
+      await ensureLocalBackend()
       await waitForPort(port, 1500)
       reachable = true
     } catch (error) {

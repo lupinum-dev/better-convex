@@ -105,18 +105,6 @@ They must be partitioned by identity where applicable and reproducible from
 canonical Better Auth or Convex state. `createUserProjectionTriggers` includes a
 rebuild path; projections must not become an authorization source.
 
-## Release artifact fingerprint
-
-The release packer replaces one build-output token with a random fingerprint in
-both the packed Nuxt module and a read-only Nitro handler. Only a module carrying
-a valid packed fingerprint registers
-`/api/_better-convex-nuxt/release-fingerprint`; ordinary source and development
-builds remain unbound and do not register it. The response contains only the
-fixed schema version and embedded fingerprint—never environment, deployment, or
-secret data. This route exists solely to let the protected release gate reject a
-stale provider-hosted Nuxt build before staging writes; it is not an application
-identity or authorization source.
-
 ## Public boundaries
 
 The supported package entry points are:

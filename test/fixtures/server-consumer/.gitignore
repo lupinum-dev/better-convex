@@ -1,8 +1,0 @@
-node_modules
-.nuxt
-.output
-dist
-pnpm-lock.yaml
-package-lock.json
-yarn.lock
-better-convex-nuxt.tgz

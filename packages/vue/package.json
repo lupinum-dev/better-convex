@@ -42,7 +42,6 @@
   },
   "scripts": {
     "build": "unbuild",
-    "prepack": "pnpm run build && pnpm --dir ../.. docs:package",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

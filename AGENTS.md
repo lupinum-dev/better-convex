@@ -2,21 +2,25 @@
 
 Work like a maintainer whose name is on the release. Keep one source of truth
 for each behavior. Delete an obsolete path instead of keeping a compatibility
-layer for it.
+layer for it. The repository follows the
+[Lupinum OSS standard](https://oss.lupinum.com); procedures (releasing,
+dependencies, security incidents) live there, not here.
 
 ## Repository scope
 
 This repository contains three packages:
 
-- `@lupinum/better-convex-nuxt`: the Nuxt module, Nitro helpers, server
-  rendering, and optional Better Auth support.
-- `@lupinum/better-convex-vue`: the Vue composables and the browser client
-  lifecycle that the Nuxt package also uses.
-- `@lupinum/better-convex-mcp`: MCP request handling inside a Convex HTTP
-  action.
+- `@lupinum/better-convex-nuxt` (repository root): the Nuxt module, Nitro
+  helpers, server rendering, and optional Better Auth support.
+- `@lupinum/better-convex-vue` (`packages/vue`): the Vue composables and the
+  browser client lifecycle that the Nuxt package also uses.
+- `@lupinum/better-convex-mcp` (`packages/mcp`): MCP request handling inside a
+  Convex HTTP action.
 
-Convex functions decide what a user may read or change. Do not move that
-decision into Vue, Nuxt middleware, MCP transport, or cached client state.
+Nuxt and Vue always share one version (a Changesets `fixed` group); MCP
+versions on its own. Convex functions decide what a user may read or change.
+Do not move that decision into Vue, Nuxt middleware, MCP transport, or cached
+client state.
 
 ## A toolkit, not a framework
 
@@ -42,34 +46,64 @@ from. Keep it that way:
 Use the pinned pnpm version through Corepack.
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm check:dependencies
-pnpm check
-pnpm verify
+pnpm install
+pnpm dev               # source playground on port 4578 (see "Local backend")
+pnpm test              # unit, security, Convex, Nuxt, browser, auth-adapter and fuzz suites
+pnpm format            # apply formatting
+pnpm verify            # lint, typecheck, test, build, packed-package checks, pnpm audit
+pnpm changeset         # describe a user-facing change for the next release
 ```
 
-Run a focused test while you edit. Run `pnpm check` before handoff for ordinary
-code changes. Run the matching security or consumer check when a change touches
-authentication, package exports, generated schemas, or package boundaries.
-
-`pnpm dev` prepares and starts the source playground on port 4578. Its Convex
-backend must be a local backend that you select on purpose; follow the local
-development steps in `MAINTAINING.md`. `pnpm check:auth-backend --install`
-installs the tested local backend binary. `pnpm test:e2e` starts an anonymous
-local backend and restores the playground state afterwards. It tests built
-source and does not replace a browser check against the development server.
-Never give production credentials to either command.
-
-Use these repository checks when the change needs them:
+`pnpm verify` is the local definition of done. CI also runs three slower jobs
+as parallel checks; run them locally when your change touches their area:
 
 ```bash
-pnpm docs:build
-pnpm audit:all
-pnpm release:verify
+pnpm test:integration  # real-backend auth, OAuth, MCP suites and the beta-to-1.0 upgrade
+pnpm test:e2e --full   # full-stack playground journeys, including test/e2e/extended
+pnpm test:starters     # every starter and the packed Vue/Nuxt/MCP consumers, from local tarballs
 ```
 
-Release artifacts, their lock files, and `pnpm release:smoke` are built only in
-the Linux release workflow. Do not build or repair package tarballs on macOS.
+`pnpm build` builds the three packages, the docs site, and each package's
+`dist/agent/` (the rendered docs, exported as `<package>/agent-docs`).
+`pnpm test:packed` packs the packages like a release, runs publint and
+`@arethetypeswrong/cli`, imports every public entry from the tarballs, and
+fails when a tarball contains env files, keys, or test credentials.
+
+## Local backend
+
+The integration and end-to-end suites start an anonymous local Convex backend.
+The binary version and its SHA-256 are pinned in
+`test/helpers/local-backend.json`; `test/helpers/local-backend.mjs` downloads
+and verifies it.
+Never give production credentials to these commands, and never select a cloud
+deployment for them. `pnpm dev` also needs a local backend that you select on
+purpose; the e2e helper `test/helpers/local-convex.ts` (`ensureLocalConvex`)
+starts one with synthetic auth secrets. Remove `playground/.convex` and
+`playground/.env.local` from a disposable worktree afterwards.
+
+## Hard rules
+
+- Never publish to npm, push to `main`, create tags or releases by hand.
+  Releases happen when a maintainer merges the "Version packages" pull request
+  and approves the protected `npm` environment (`.github/workflows/release.yml`).
+- Never add `NPM_TOKEN` or any other long-lived publish credential.
+- Add a changeset (`pnpm changeset`) to every pull request that changes what
+  users see. CI requires one when `src/` or `packages/*/src/` changes; use
+  `pnpm changeset --empty` if users see nothing.
+- Changeset style: one line in present tense that starts with Fix, Add, Remove
+  or Change and says what changed for users. A breaking change adds a second
+  line that starts with `Migration:` and says what users must do.
+- The repository is in Changesets prerelease mode (`rc`) until 1.0.0; see
+  DECISIONS.md before you run `changeset pre exit`.
+- Do not bypass the 24-hour dependency quarantine (`minimumReleaseAge`). Do not
+  add dependencies to `allowBuilds` without a reason.
+- Pin GitHub Actions to full commit SHAs. Give each job only the permissions it needs.
+- Keep tooling lean. Add a script, check or workflow only when it guards
+  behavior users rely on or closes a real attack path. Process is not security.
+- Record lasting choices in [DECISIONS.md](DECISIONS.md).
+- Do not commit `dist/`, `.nuxt/`, `.output/`, credentials, or deployment URLs.
+- Use a short descriptive branch name, such as `fix/auth-proxy-limit`, without
+  a tool prefix such as `codex/` or `claude/`.
 
 ## Security
 
@@ -80,7 +114,10 @@ proxy, sessions, tokens, keys, secrets, or authorization.
   unsupported configuration pass. Fix the code.
 - Keep one owner for each session, identity, token, key, route, and package
   contract.
-- Keep server-only code out of browser bundles.
+- Keep server-only code out of browser bundles. `scripts/check-boundaries.mjs`
+  (part of `pnpm lint`) enforces the import layering: framework-free errors,
+  no Nuxt in the Vue package, only the MCP SDK in the MCP package, no Node or
+  Nuxt code in the Convex auth component, no server code in browser runtime.
 - Never let a caller choose an origin, issuer, upstream URL, function, or
   principal.
 - Check authorization in Convex, in the same transaction as the protected
@@ -89,26 +126,9 @@ proxy, sessions, tokens, keys, secrets, or authorization.
   auth store.
 - Add a negative test for every security or boundary failure you fix.
 
-## Release safety
-
-Never publish, promote, tag, or create a GitHub release from an agent session.
-Follow `RELEASING.md`. Only the protected workflow publishes packages, through
-npm trusted publishing.
-
-Do not commit `dist/`, `.nuxt/`, `.output/`, generated archives, credentials,
-deployment URLs, or release artifacts.
-
-Use a short descriptive branch name, such as `fix/auth-proxy-limit`. Do not
-add a tool prefix such as `codex/`, `claude/`, or `cursor/`.
-
 ## Documentation
 
 Follow `docs/WRITING.md`. When a public contract changes, update the docs,
-examples, types, tests, and package exports in the same change.
-
-`docs/content/docs/7.reference/7.api-surface.md` is generated. Change
-`scripts/generate-api-surface.mjs` or the source it reads, then run
-`pnpm docs:api-surface`.
-
-Do not rewrite legal text, code, API identifiers, quotations, changelog
-history, or generated reports to match the writing guide.
+examples, types, tests, and package exports in the same change. Do not rewrite
+legal text, code, API identifiers, quotations, or changelog history to match
+the writing guide.

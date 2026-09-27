@@ -18,8 +18,9 @@
   a `(providerId, accountId)` key. The schema push accepts every beta row
   without export, import, or manual clearing. Beta OAuth refresh tokens have no
   consent binding: they stay stored but are answered with `invalid_grant`, so
-  MCP hosts and other OAuth clients sign in again. `pnpm test:auth-upgrade`
-  proves the 1.0.0-beta.7 upgrade on the pinned local Convex backend.
+  MCP hosts and other OAuth clients sign in again. The repository's
+  integration suite proves the 1.0.0-beta.7 upgrade on a pinned local Convex
+  backend.
 - `useConvexMutation` returns `{ mutate, data, status, pending, error, reset }`
   and `useConvexAction` returns `{ run, ... }`. `useConvexForm` rejects a
   concurrent submit with `SUBMIT_IN_PROGRESS`, and never sends a submission
@@ -89,8 +90,12 @@
   `auth.createMcpAccessVerifier(ctx)` and `auth.requireMcpPrincipal`. Every
   OAuth access token, with renewal on or off, is bound to the consent that
   issued it, and disabling an OAuth resource rejects tokens already issued.
-- `@lupinum/better-convex-mcp` `1.0.0-rc.0` ships as its own release unit after
-  this one. It declares `@modelcontextprotocol/server` `2.1.0` as an exact peer
+- Remove the `/api/_better-convex-nuxt/release-fingerprint` route and the
+  `x-bcn-runtime-fingerprint` header on auth responses that beta release builds
+  added. They only served the retired release gate.
+- `@lupinum/better-convex-mcp` `1.0.0-rc.0` ships in the same release and keeps
+  its own version and `mcp-v` tags (see `packages/mcp/CHANGELOG.md`). It
+  declares `@modelcontextprotocol/server` `2.1.0` as an exact peer
   dependency that the application installs, passes one
   `{ access, principal, server, tools }` object to `configureServer`, adds
   `defineMcpTool`, `registerMcpTool`, `projectMcpToolError`, `exposeErrorCodes`,

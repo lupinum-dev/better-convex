@@ -13,10 +13,6 @@ import type { AuthProxyRequest } from '../../../devtools/types'
 import { getSessionCookieFlagViolation } from '../../../shared/auth-cookie'
 import { normalizeClientIp } from '../../../shared/client-ip'
 import {
-  getPackedRuntimeFingerprint,
-  PACKED_RUNTIME_FINGERPRINT_HEADER,
-} from '../../../shared/release-fingerprint'
-import {
   buildAuthProxyUnreachableMessage,
   buildAuthProxyUpstreamStatusMessage,
   buildBlockedOriginMessage,
@@ -249,10 +245,6 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
 
   return defineEventHandler(async (event: H3Event) => {
     setHeaders(event, { 'cache-control': 'private, no-store' })
-    const runtimeFingerprint = getPackedRuntimeFingerprint()
-    if (runtimeFingerprint) {
-      setHeaders(event, { [PACKED_RUNTIME_FINGERPRINT_HEADER]: runtimeFingerprint })
-    }
     if (publicMetadataCors) setHeaders(event, { 'access-control-allow-origin': '*' })
     const startedAt = Date.now()
     const requestUrl = getRequestURL(event)

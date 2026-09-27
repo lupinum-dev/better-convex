@@ -1,0 +1,151 @@
+name: release
+
+# Merging changesets into main opens or updates the "Version packages" PR.
+# Merging that PR publishes: pack (no credentials) -> publish (protected `npm`
+# environment, maintainer approval, OIDC) -> tag and GitHub release.
+# A version that is not on npm yet is always offered, so the unpublished
+# 1.0.0-rc.0 publishes on the first run with no pending changesets (DECISIONS.md).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  # Runs dependency code (the Changesets CLI) with a token that can push branches and open
+  # pull requests, but cannot start workflows, so it can never produce a green `ci` itself.
+  version:
+    name: Version packages
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Job-level, so a publish waiting for approval never blocks updates of the Version packages PR.
+    concurrency:
+      group: release-version
+      cancel-in-progress: false
+    permissions:
+      contents: write # push the changeset-release/main branch
+      pull-requests: write # open or update the Version packages PR
+    outputs:
+      pr: ${{ steps.changesets.outputs.pullRequestNumber }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          title: Version packages
+          commit: Version packages
+          commitMode: github-api
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      # A manual run re-offers a rejected or failed release even while changesets are pending.
+      - id: check
+        if: steps.changesets.outputs.hasChangesets == 'false' || github.event_name == 'workflow_dispatch'
+        run: node scripts/release.mjs check
+
+  # Pull requests opened with GITHUB_TOKEN start no workflows, so start ci here. This job
+  # checks out and installs nothing; its token expires before any other job could use it.
+  version-pr-ci:
+    needs: version
+    if: needs.version.outputs.pr != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write # start ci.yml on the Version packages PR
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref changeset-release/main
+
+  # Builds the Vue, MCP and Nuxt packages plus the docs they ship, and packs every
+  # package whose version is not on npm yet. No secrets.
+  pack:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node scripts/release.mjs pack
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release
+          path: release
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: pack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release
+          path: release
+      # order.txt lists Vue before Nuxt, which depends on that exact Vue version.
+      # Skips versions already on npm, so "Re-run failed jobs" is safe after a partial publish.
+      # Versions with a `-` (prereleases) go to `next`, all others to `latest`.
+      - run: |
+          while read -r file; do
+            tarball="release/$file"
+            version="$(tar -xOzf "$tarball" package/package.json | jq -r .version)"
+            spec="$(tar -xOzf "$tarball" package/package.json | jq -r .name)@$version"
+            if npm view "$spec" version > /dev/null 2>&1; then echo "$spec is already on npm"; continue; fi
+            tag=latest; if [[ "$version" == *-* ]]; then tag=next; fi
+            npm publish "$tarball" --provenance --access public --ignore-scripts --tag "$tag"
+          done < release/order.txt
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write # create the tag and the GitHub release
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release
+          path: release
+      # One release per entry in releases.json (`v<version>` for Nuxt + Vue, `mcp-v<version>`
+      # for MCP); existing releases are skipped, so re-runs are safe.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(jq 'keys[]' release/releases.json); do
+            tag="$(jq -r ".[$i].tag" release/releases.json)"
+            jq -r ".[$i].notes" release/releases.json > notes.md
+            prerelease=()
+            if [[ "$(jq -r ".[$i].prerelease" release/releases.json)" == true ]]; then prerelease=(--prerelease); fi
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+              gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+                --title "$tag" --notes-file notes.md "${prerelease[@]}"
+          done

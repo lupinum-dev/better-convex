@@ -6,17 +6,11 @@ import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vitest/config'
 
 /**
- * Vitest Configuration
+ * Vitest projects
  *
- * Test commands:
- *   pnpm test       - CI/local gate (unit + convex + nuxt + browser)
- *   pnpm test:e2e   - Full-stack tests used locally and by release:verify
- *
- * Supported focused commands:
- *   pnpm test:auth-adapter
- *   pnpm test:oauth
- *   pnpm test:nuxt
- *   pnpm test:e2e
+ *   pnpm test              unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp
+ *   pnpm test:integration  real local Convex backend suites (test/integration)
+ *   pnpm test:e2e          full-stack Nuxt suites (scripts/run-e2e.mjs, --full adds extended/)
  *
  * Prepare generated root types before an ad hoc project command:
  *   pnpm exec nuxt-module-build prepare
@@ -41,20 +35,9 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['test/unit/**/*.test.ts'],
+          // Runs in the edge-runtime auth-adapter project.
+          exclude: ['test/unit/convex-auth-adapter-invariants.test.ts'],
           environment: 'node',
-        },
-      },
-
-      // Release-control tests invoke real package builds, mutate dist, or pack
-      // artifacts. They share those outputs, so parallel execution is unsafe.
-      {
-        test: {
-          name: 'release-control',
-          include: ['test/release-control/**/*.test.ts'],
-          environment: 'node',
-          fileParallelism: false,
-          sequence: { groupOrder: 1 },
-          testTimeout: 240_000,
         },
       },
 
@@ -80,22 +63,6 @@ export default defineConfig({
         },
       },
 
-      // OAuth protocol and resource-server invariants. Real-client evidence is
-      // exercised by the MCP auth runner against the same canonical routes.
-      {
-        test: {
-          name: 'oauth',
-          include: [
-            'test/security/convex-auth-oauth-provider-integration.test.ts',
-            'test/security/convex-auth-oauth-resource.test.ts',
-            'test/security/convex-auth-oauth-security.test.ts',
-          ],
-          environment: 'node',
-          fileParallelism: false,
-          testTimeout: 60_000,
-        },
-      },
-
       // Deterministic bounded protocol-input corpora. A failing case reports
       // and persists its exact replay seed outside the repository.
       {
@@ -108,8 +75,8 @@ export default defineConfig({
         },
       },
 
-      // MCP resource/proxy/runner contracts. Real client and conformance
-      // evidence is orchestrated by the two root MCP runners.
+      // MCP package, starter and documentation-sample contracts. The real
+      // client journey runs in the integration project.
       {
         resolve: {
           alias: {
@@ -134,20 +101,7 @@ export default defineConfig({
         },
       },
 
-      // Closed Section 9.6 raw-secret location registry, scanner negative
-      // controls, and pinned-engine runtime evidence. Artifact scanning is
-      // orchestrated by scripts/run-auth-sentinels.mjs in the same gate.
-      {
-        test: {
-          name: 'auth-sentinels',
-          include: ['test/security/auth-secret-sentinels.test.ts'],
-          environment: 'node',
-          fileParallelism: false,
-          testTimeout: 60_000,
-        },
-      },
-
-      // Security regression tests are a mandatory release gate.
+      // Security regressions, including the OAuth provider and resource-server suites.
       {
         resolve: {
           alias: {
@@ -159,7 +113,7 @@ export default defineConfig({
           include: ['test/security/**/*.test.ts'],
           environment: 'node',
           fileParallelism: false,
-          testTimeout: 20_000,
+          testTimeout: 60_000,
         },
       },
 
@@ -229,6 +183,21 @@ export default defineConfig({
             instances: [{ browser: 'chromium' }],
             headless: true,
           },
+        },
+      },
+
+      // Real local Convex backend: OAuth/MCP journeys, auth concurrency,
+      // credentials at rest and the beta.7 upgrade. The global setup builds the
+      // packages the suites install and verifies the pinned backend binary.
+      {
+        test: {
+          name: 'integration',
+          include: ['test/integration/**/*.integration.test.ts'],
+          environment: 'node',
+          globalSetup: ['test/integration/global-setup.ts'],
+          fileParallelism: false,
+          testTimeout: 600_000,
+          hookTimeout: 600_000,
         },
       },
 

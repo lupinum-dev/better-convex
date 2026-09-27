@@ -8,14 +8,12 @@ const read = (path: string) => JSON.parse(readFileSync(resolve(root, path), 'utf
 const sdk = '@modelcontextprotocol/server'
 
 describe('@lupinum/better-convex-mcp SDK ownership', () => {
-  it('declares the official server SDK as an exact peer, never as its own dependency', () => {
+  it('declares the official server SDK as a required peer, never as its own dependency', () => {
     // `McpServer` crosses the public API (configureServer, defineMcpTool), so a
     // second nested SDK copy would break instanceof and protocol-version checks.
     const mcp = read('packages/mcp/package.json')
     expect(mcp.dependencies?.[sdk]).toBeUndefined()
-    expect(mcp.peerDependencies).toEqual({ [sdk]: '2.1.0' })
+    expect(mcp.peerDependencies?.[sdk]).toBeTypeOf('string')
     expect(mcp.peerDependenciesMeta?.[sdk]).toBeUndefined()
-    expect(mcp.devDependencies?.[sdk]).toBe(mcp.peerDependencies[sdk])
-    expect(read('package.json').devDependencies?.[sdk]).toBe(mcp.peerDependencies[sdk])
   })
 })

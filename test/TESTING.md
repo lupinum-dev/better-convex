@@ -1,289 +1,116 @@
-# Testing Guide
+# Testing
 
-## Why this layout
-
-Flaky tests came from using full browser E2E for composable-level behavior.
-The suite now uses deterministic tiers so we only use E2E where the full stack
-boundary is required.
-
-## Test layout
+## Layout
 
 ```
 test/
-├── unit/                                  # Pure TS logic
-├── auth-fuzz/                             # Seeded hostile auth/OAuth input corpus
-├── convex/                                # Component behavior via convex-test
-├── mcp/                                   # MCP boundary and live-authorization contracts
-├── nuxt/                                  # Composables in Nuxt runtime (happy-dom)
-├── browser/                               # Native browser component rendering
-├── e2e/                                   # Thin full-stack release-gate tests
-├── helpers/                               # Shared deterministic harnesses
-└── fixtures/                              # Minimal Nuxt fixture(s)
-
-playground/convex/
-├── *.test.ts                              # Backend function tests with convex-test
-└── lib/*.test.ts                          # Backend helper/permission unit tests
+├── unit/          Pure TypeScript logic, type tests
+├── security/      Auth, OAuth provider/resource-server and proxy regressions
+├── auth-fuzz/     Seeded hostile auth/OAuth input corpus
+├── convex/        Component behavior through convex-test
+├── mcp/           MCP package, starter and docs-sample contracts
+├── nuxt/          Composables in the Nuxt runtime (happy-dom)
+├── browser/       Component rendering in Chromium
+├── integration/   Real local Convex backend suites (+ check-auth-schema.mjs)
+├── packed/        Packed-tarball tests: exports, secrets, starters, Vue/Nuxt/MCP consumer apps
+├── e2e/           Full-stack Nuxt suites; extended/ runs with --full
+├── helpers/       Shared harnesses, including the pinned backend (local-backend.mjs)
+└── fixtures/      Consumer and component fixtures
 ```
 
-## Vitest projects
-
-- `unit`: Node-only tests.
-- `convex`: backend logic via `convex-test` (`edge-runtime`).
-- `nuxt`: composable contracts in Nuxt runtime.
-- `browser`: component rendering in Chromium via Vitest Browser Mode.
-- `e2e`: thin full-stack tests; serial execution.
-- `auth-adapter`: pinned adapter contract/reference-model suite in an edge-like runtime.
-- `oauth`: OAuth profile, provider integration, claims, and negative matrix.
-- `auth-fuzz`: deterministic bounded proxy/OAuth fuzz corpus.
-- `mcp`: fixed dispatch, bearer, proxy, and transactional-authorization contracts.
+`playground/convex/*.test.ts` and `demo/convex/*.test.ts` run in the `convex` project.
 
 ## Commands
 
 ```bash
-# CI/local reliability gate (unit + convex + nuxt + browser)
-pnpm test
-
-# Fast dev loop for frontend/runtime
-pnpm test:watch
-
-# Nuxt runtime composables only
-pnpm test:nuxt
-
-# Browser component suite
-pnpm test:browser
-
-# Full-stack E2E (local and final release gate)
-pnpm test:e2e
-
-# Full repository verification
-pnpm verify
-
-# Auth/OAuth deterministic contracts
-pnpm test:auth-adapter
-pnpm test:oauth
-pnpm test:auth-fuzz
-pnpm test:auth-sentinels
-
-# Static dependency, provenance, and live upstream review gates
-pnpm check:auth-advisories
-pnpm check:auth-provenance --source-only
-pnpm check:auth-upstream
-
-# Manifest-pinned real Convex backend proofs
-pnpm check:auth-backend --install
-pnpm check:auth-schema
-pnpm test:auth-concurrency
-pnpm test:auth-export-sentinels
-pnpm test:auth-mfa
-pnpm test:auth-upgrade
-
-# Real OAuth/MCP clients and advertised-surface protocol scenarios
-pnpm test:mcp-auth
-pnpm test:mcp-conformance
-
-# Complete auth release matrix
-pnpm verify:auth
+pnpm test               # unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp
+pnpm test:integration   # real local Convex backend (builds the packages first)
+pnpm test:e2e           # full-stack E2E; `node scripts/run-e2e.mjs --full` adds extended/
+pnpm test:packed        # after `pnpm build`: publint, attw, packed imports, secret scan, consumer typechecks
+pnpm test:starters      # every starter and the packed Vue/Nuxt/MCP consumer apps, from local tarballs
 ```
 
-`check:auth-upstream` reads the canonical review in
-`security/upstream-convex-better-auth.json`, queries the public GitHub API, and
-fails on release, advisory, issue, PR, default-branch, or enumerated source-seam
-drift. The checked-in review expires after 31 days, so the nightly and monthly
-security workflow cannot silently turn a stale review into release evidence.
+Run one project or file after `pnpm exec nuxt-module-build prepare`:
 
-`test:auth-concurrency` combines the direct adapter/OCC load with two
-self-contained provider gates. The transport-quota gate starts the maintained
-OAuth/MCP fixture on a real local Convex backend and verifies the exact
-authorize, token, and revoke database quotas across the Nuxt proxy and direct
-Convex transports. It releases independent child processes at the last quota
-slot, checks signed-IP isolation, invalid-pair rejection, and direct-metadata
-fallback, probes the disabled
-OAuth surface on both transports, and verifies the login/consent response
-headers. The authorization-code gate then obtains provider-issued codes in a
-browser and races one code through two independent child processes. It also
-proves replay denial, guard-preserved resource/redirect failures, the
-post-consume wrong-PKCE and alternate-client failures, and recovery through
-fresh authorization transactions. Signatures, codes, verifiers, and token
-bodies stay in process memory and are never written to the evidence log.
+```bash
+pnpm exec vitest run --project=convex
+pnpm exec vitest run --project=integration test/integration/oauth-code.integration.test.ts
+```
 
-`test:auth-export-sentinels` uses that same disposable pinned-backend fixture,
-but keeps one authorization code live and one access token persisted while it
-adds encrypted social-provider tokens, an encrypted provider ID token, and an
-encrypted signing-key canary through a temporary test-only action. It downloads
-the real Convex snapshot, requires the credential-bearing component tables,
-scans bounded extracted bytes for every raw canary, and deletes the entire
-fixture and export directory in `finally`. The same gate statically pins the
-live OAuth runner's local/session/cookie scans and its fail-closed empty Cache
-Storage and IndexedDB assertions.
+## The pinned local backend
 
-`test:auth-upgrade` proves the 1.0.0-beta.7 to 1.0 auth upgrade through normal
-`convex dev --once` pushes on the pinned backend, in a temporary copy of
-`test/fixtures/auth-upgrade`. It deploys the verbatim beta.7 component schema
-(`beta7/schema.ts`) and seeds beta-shaped users, credential and social accounts
-with `issuer`, sessions, an OAuth client, resource, consent, access token, and
-a refresh token without `bcnConsentId`. A control push of the 1.0 schema with a
-required `bcnConsentId` must fail schema validation. Then it pushes the 1.0
-schema, metadata, and adapter from `src/runtime/convex-auth/component` and runs
-`upgrade:verifyUpgrade`, which checks unchanged rows and document IDs,
-credential sign-in, account lookups, `invalid_grant` for the beta refresh
-token, renewal with a bound token, and `findAccountKeyCollisions` before and
-after removing a planted collision. Every push names the reviewed backend
-version and fixed ports, and the run fails if the stored local deployment config
-then names any other version: a Convex CLI backend upgrade would move the data
-through export and import, the path this proof rules out. Set
-`BCN_AUTH_UPGRADE_KEEP=1` to keep the temporary directory.
+E2E and integration suites run against one reviewed Convex local backend
+release, recorded with its archive and binary SHA-256 in
+`test/helpers/local-backend.json`. `ensureLocalBackend()` downloads and verifies
+it on first use into `~/.cache/convex/binaries/<version>`, so the Convex CLI
+never fetches an unreviewed binary. The manifest's `convexVersion` must equal the
+`convex` dev dependency; bump both together.
 
-`test:mcp-auth` is self-contained by default: it creates and owns a temporary
-starter, local Convex backend, Nuxt process, administrator, and secrets, then
-removes only that temporary root. The only external selector is the exact
-`BCN_MCP_TEST_MODE=external-disposable` value. It requires all of
-`BCN_MCP_TEST_APP_DIR` (absolute), `BCN_MCP_TEST_ORIGIN`,
-`BCN_MCP_TEST_CONVEX_URL`, `BCN_MCP_TEST_CONVEX_SITE_URL`,
-`BCN_MCP_TEST_EMAIL`, and `BCN_MCP_TEST_PASSWORD`. The three supplied origins
-must be distinct. The app origin may use loopback HTTP; both Convex origins must
-be canonical managed HTTPS origins, including the same region when present,
-and all three must exactly match
-`SITE_URL`, `CONVEX_URL`, `CONVEX_SITE_URL`, `NUXT_PUBLIC_CONVEX_URL`, and
-`NUXT_PUBLIC_CONVEX_SITE_URL` in the app directory's owner-only `.env.local`
-(for example, mode 0600). That file must select the same managed Convex
-deployment through a canonical non-production `CONVEX_DEPLOYMENT` value and
-contain no competing Convex CLI authority or override. A sibling `.env` is not
-allowed. The supplied password must satisfy the starter's 15-character minimum.
+## Integration suites
 
-External mode is destructive one-shot evidence for a fresh, already-running,
-disposable app and deployment only. The account must already exist, and the
-exact starter functions and the evidence fixture functions must already be
-deployed. The runner does not create, deploy, start, stop, reset, or destroy
-external infrastructure, and its external release hook removes only the
-isolated temporary CLI authority directory. It provisions fixture clients and
-memberships, mutates live authorization, deletes terminal-case sessions/clients/consents, and creates and
-soft-deletes projects; terminal states are not restored. Never point it at
-production, shared staging, populated data, or a deployment that must be
-reused. Destroy the consumed deployment through its owner-controlled process.
-Before the first mutation, the repository-pinned absolute CLI resolves the
-deployment in an isolated directory and must report the exact origins and a
-`dev` or `preview` type. External calls then use the supplied app directory as
-`cwd`, the validated deployment name, and the private generated env file as
-explicit arguments, preventing CLI auto-loading of app dotenv files. Test
-credentials and every case variant of an ambient Convex override are stripped
-from child environments.
+Each suite owns a temporary directory, its backend, ports and random secrets,
+and removes them when it ends. Most run on a temporary copy of
+`starters/mcp-oauth-agent` with the built packages installed and the operator-only
+functions from `test/fixtures/mcp-oauth-agent/evidence.ts`.
 
-The required `auth-contracts` and `auth-real-backend` CI lanes use the pinned
-local Convex backend. They verify session JWT acceptance, same-ID and increment
-concurrency, authorization-code single consumption and replay rejection, JWKS
-rotation, MFA lockout and reset behavior, rate-limit persistence and reset,
-and MCP authorization and revocation. The release smoke and candidate checks
-install the exact Vue, Nuxt, and MCP tarballs in clean consumers. Package
-publication does not depend on a permanent hosted staging deployment.
+- `mcp-auth`: OAuth discovery, two public PKCE clients, live Convex
+  authorization on every tool call (membership, role, tenant, user, resource,
+  client link, project ownership, approval), terminal revocation (session,
+  client disable/delete, consent), `mcp:write` step-up, and the stateless MCP
+  protocol envelope through the official client SDK.
+- `oauth-code`: a concurrent double redemption has one winner; replay,
+  wrong PKCE, another client, a wrong Basic secret and a post-consume signing
+  fault burn the code without persisting a token; no credential in browser storage.
+- `oauth-transport-quota`: authorize/token/revoke quotas shared across the Nuxt
+  proxy and direct Convex HTTP per signed client IP; forged IP pairs; disabled
+  OAuth routes; hardened login and consent pages.
+- `credentials-at-rest`: a browser auth lifecycle (SSR, hydration, revocation,
+  sign-out) and an OAuth flow, then a real Convex snapshot export that must not
+  contain any raw secret, token, code, verifier or password in any encoding.
+- `auth-concurrency` (playground copy): session admission only through the
+  component transport, logical-id/unique/compound races, consume-once, lost
+  updates, trigger rollback, exact rate limits and JWKS rotation.
+- `auth-upgrade`: 1.0.0-beta.7 auth data upgrades to 1.0 through a normal
+  `convex dev` push; a control push with a required `bcnConsentId` must fail.
+  Set `BCN_AUTH_UPGRADE_KEEP=1` to keep the temporary deployment.
 
-The artifact-aware `check:candidate-apps` gate builds every maintained consumer
-from the candidate tarball. Its production `mcp-oauth-agent` build additionally
-rejects `.map` files and inline maps under `.output/public`, starts the built
-Nitro server, and requires both a hashed client-asset `.map` URL and the
-predictable server-entry `.map` URL to return non-200.
+The MFA proof is `test/e2e/extended/auth-two-factor.e2e.test.ts` (run with `--full`).
+
+## E2E
+
+`pnpm test:e2e` starts the pinned backend itself (`CONVEX_E2E_AUTO_START=true`),
+configures the E2E-only auth values, and stops only the backend it started.
+
+To run the backend yourself, keep `convex dev` running in `playground` with the
+pinned version, then configure it and run with auto-start off:
+
+```bash
+cd playground
+pnpm exec convex dev --local-backend-version precompiled-2026-07-06-44f7aa7
+# in another terminal
+pnpm exec better-convex convex env set SITE_URL http://localhost:3050
+printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
+printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
+cd .. && CONVEX_E2E_AUTO_START=false pnpm test:e2e
+```
+
+Generate the two secrets in the shell; never pass them as arguments or print
+them. `CONVEX_SITE_URL` is a Convex built-in; do not set it with `convex env set`.
 
 ## Design rules
 
 1. Runtime/composable behavior goes to `test/nuxt`.
 2. Pure DOM visibility/render rules go to `test/browser`.
-3. End-to-end stays thin and intentional in `test/e2e`.
-4. Backend behavior belongs in `playground/convex/*.test.ts`.
+3. E2E stays thin: only what needs the full Nuxt stack.
+4. Backend behavior belongs in `playground/convex/*.test.ts` or `test/convex`;
+   behavior that needs the real backend (concurrency, exports, pushes) goes to
+   `test/integration`.
 5. Avoid fixed sleeps in `test/nuxt` and `test/browser`.
-6. Prefer direct reactive state assertions over scraping `body` text.
-
-## E2E local requirements
-
-1. Run a local Convex backend (or export its `CONVEX_URL` + `CONVEX_SITE_URL`).
-2. Configure Better Auth in local Convex env:
-   - `BETTER_AUTH_SECRETS`
-   - `SITE_URL` (must be `http://localhost:3050` for the auth-loop E2E)
-   - `CONVEX_SITE_URL` (the local HTTP Actions origin)
-   - `BCN_AUTH_PROXY_IP_SECRET`
-3. Run E2E locally when changing full-stack boundaries. Extended CI and the
-   immutable-artifact release verifier both run the full E2E and proxy DAST
-   suites; the faster compatibility job keeps the shorter deterministic set.
-
-`pnpm test:e2e` sets `CONVEX_E2E_AUTO_START=true`. The helper launches the root
-workspace's pinned Convex CLI directly with the exact backend version shown
-below, reads the URLs written by the CLI, configures the E2E-only auth values,
-and stops only the backend process it started. It does not assume fixed ports.
-
-This is the supported Convex 1.42 ceremony. In a clean non-interactive checkout,
-`convex dev` provisions an anonymous local deployment automatically. If
-`.env.local` already selects a local deployment, the same command starts that
-deployment. The removed `convex dev --local` flag is not supported by Convex
-1.42. The backend manifest records reviewed Darwin arm64 and Linux x64 binary
-digests. A clean machine downloads that exact version once, stops it, and runs
-`pnpm check:auth-backend` before any test claims real-backend evidence.
-
-### Auth-loop bootstrap
-
-The automatic path needs no separate bootstrap:
-
-```bash
-pnpm test:e2e
-```
-
-To run the backend yourself, keep this command running in one terminal:
-
-```bash
-cd playground
-CONVEX_DEPLOY_KEY= \
-CONVEX_DEPLOYMENT_TOKEN= \
-CONVEX_DEPLOYMENT= \
-CONVEX_OVERRIDE_ACCESS_TOKEN= \
-CONVEX_PROVISION_HOST= \
-CONVEX_SELF_HOSTED_URL= \
-CONVEX_SELF_HOSTED_ADMIN_KEY= \
-CONVEX_AGENT_MODE=anonymous \
-CONVEX_ALLOW_ANONYMOUS=true \
-CONVEX_RUNNING_LIVE_IN_MONOREPO= \
-CONVEX_VERSION_API_ORIGIN= \
-CONVEX_VERSION_OVERRIDE= \
-pnpm exec convex dev --local-backend-version precompiled-2026-07-06-44f7aa7
-```
-
-Then configure and run the suite from another terminal:
-
-```bash
-cd playground
-pnpm exec better-convex convex env set SITE_URL http://localhost:3050
-printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
-printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
-cd ..
-pnpm check:auth-backend
-CONVEX_E2E_AUTO_START=false pnpm test:e2e
-```
-
-Load the two secret variables from a secret manager or generate them in the
-shell first; never place their values in command arguments or print them.
-
-The selected backend supplies `CONVEX_SITE_URL` as a built-in. Keep its
-generated value in `.env.local`; `convex env set` must not be used for that
-reserved name.
-
-For an account-linked project whose local deployment is not currently selected,
-select it once before starting the backend:
-
-```bash
-cd playground
-pnpm exec better-convex convex deployment select local
-CONVEX_DEPLOY_KEY= \
-CONVEX_DEPLOYMENT_TOKEN= \
-CONVEX_DEPLOYMENT= \
-CONVEX_OVERRIDE_ACCESS_TOKEN= \
-CONVEX_PROVISION_HOST= \
-CONVEX_SELF_HOSTED_URL= \
-CONVEX_SELF_HOSTED_ADMIN_KEY= \
-CONVEX_AGENT_MODE= \
-CONVEX_ALLOW_ANONYMOUS= \
-CONVEX_VERSION_API_ORIGIN= \
-CONVEX_VERSION_OVERRIDE= \
-node -- node_modules/convex/bin/main.js dev --env-file .env.local --local-backend-version precompiled-2026-07-06-44f7aa7
-```
+6. Assert behavior, not source text. A static source check is fine only when it
+   cheaply guards a security boundary in code users copy (starters, samples).
 
 ## Regression workflow
 
 1. Reproduce with a failing test in the right tier.
 2. Fix the bug.
-3. Keep the regression test as a contract.
+3. Keep the test.

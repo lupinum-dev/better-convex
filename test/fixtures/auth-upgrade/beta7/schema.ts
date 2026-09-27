@@ -1,7 +1,7 @@
 /*
  * The auth component schema published in @lupinum/better-convex-nuxt 1.0.0-beta.7,
  * verbatim from `git show v1.0.0-beta.7:src/runtime/convex-auth/component/schema.ts`.
- * The upgrade tests and `pnpm test:auth-upgrade` deploy data in this shape first.
+ * The upgrade tests and test/integration/auth-upgrade.integration.test.ts deploy data in this shape first.
  * Never regenerate this file.
  */
 import { defineSchema, defineTable } from 'convex/server'

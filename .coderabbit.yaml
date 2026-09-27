@@ -9,7 +9,6 @@ reviews:
   poem: false
   review_status: true
   path_filters:
-    - '!release-artifacts/**'
     - '!reports/**'
     - '!test-results/**'
     - '!**/fixtures/baselines/**'
@@ -20,10 +19,10 @@ reviews:
   path_instructions:
     - path: '.github/workflows/**'
       instructions: |
-        Review permission boundaries, untrusted shell input, immutable action pins, artifact identity, source commit binding, and OIDC isolation. A token-capable publication or repository-write job must not install dependencies or run repository code.
+        Review permission boundaries, untrusted shell input, and immutable action pins. The publish job must stay in the protected `npm` environment, use OIDC, and neither check out nor install anything. A job that can start workflows must not install dependencies.
     - path: '**/*.md'
       instructions: |
-        Follow the repository writing guide and its explicit exemptions. Use short sentences and American English. Do not rewrite code, API names, legal text, quotations, changelog history, generated reports, or historical evidence.
+        Follow docs/WRITING.md and its explicit exemptions. Use short sentences and American English. Do not rewrite code, API names, legal text, quotations, or changelog history.
     - path: '**/*.test.*'
       instructions: |
         Prefer invariant and failure tests. Check that the test fails before the fix and proves the public contract.

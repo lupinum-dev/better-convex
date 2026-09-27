@@ -1,5 +1,5 @@
 /*
- * Functions for `pnpm test:auth-upgrade` (scripts/run-auth-upgrade.mjs).
+ * Functions for test/integration/auth-upgrade.integration.test.ts.
  *
  * `seedBeta` runs against the 1.0.0-beta.7 component schema and stores data
  * exactly as a beta deployment held it. `verifyUpgrade` runs after the normal
