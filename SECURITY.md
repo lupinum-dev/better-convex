@@ -19,10 +19,18 @@ to those projects privately and coordinate the fix with them.
 We fix security issues in the latest published minor release. An older minor
 release loses support when a newer minor release is published.
 
-The packages are prerelease software. This source version contains
-`@lupinum/better-convex-nuxt@1.0.0-beta.7`,
-`@lupinum/better-convex-vue@1.0.0-beta.7`, and
-`@lupinum/better-convex-mcp@1.0.0-beta.3`. They are tested with Node
+The packages are prerelease software. This source version contains these
+packages:
+
+| Package                       | Version      | Security fixes                        |
+| ----------------------------- | ------------ | ------------------------------------- |
+| `@lupinum/better-convex-nuxt` | `1.0.0-rc.0` | Yes                                   |
+| `@lupinum/better-convex-vue`  | `1.0.0-rc.0` | Yes                                   |
+| `@lupinum/better-convex-mcp`  | `1.0.0-rc.0` | Yes                                   |
+| Any `1.0.0-beta.*` or `0.x`   | —            | No. Upgrade to the release candidate. |
+
+A release candidate loses support when the next release candidate or 1.0.0
+is published. The packages are tested with Node
 `^22.19.0 || ^24.11.0`, Nuxt `4.5.2`, Convex `1.42.2`, Better Auth `1.7.6`,
 `@better-auth/oauth-provider` `1.7.6`, and Convex Helpers `0.1.114`. Each
 `package.json` lists the exact dependency and peer versions. An application

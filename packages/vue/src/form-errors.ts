@@ -1,66 +1,12 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
-import type { ConvexCallError } from './errors'
+import { ConvexFormError, type ConvexCallError, type ConvexFormIssue } from './errors'
 
 type StringKey<Value> = Extract<keyof Value, string>
-
-export interface ConvexFormIssue {
-  readonly message: string
-  readonly path: readonly PropertyKey[]
-  readonly field?: string
-}
-
-export type ConvexFormErrorKind = 'validation' | 'submission'
 
 export interface ConvexFormErrorMapping<Input extends object> {
   readonly form?: string
   readonly fields?: Readonly<Partial<Record<StringKey<Input>, string | readonly string[]>>>
-}
-
-type ConvexFormErrorInput = Readonly<{
-  kind: ConvexFormErrorKind
-  message: string
-  issues?: readonly ConvexFormIssue[]
-  fieldErrors?: Readonly<Record<string, readonly string[]>>
-  formError?: string
-  callError?: ConvexCallError
-}>
-
-/** A safe form-facing failure. Raw validator and mapper causes are never retained. */
-export class ConvexFormError extends Error {
-  readonly kind: ConvexFormErrorKind
-  readonly issues: readonly ConvexFormIssue[]
-  readonly fieldErrors: Readonly<Record<string, readonly string[]>>
-  readonly formError?: string
-  readonly callError?: ConvexCallError
-
-  constructor(input: ConvexFormErrorInput) {
-    super(input.message)
-    this.name = 'ConvexFormError'
-    this.kind = input.kind
-    this.issues = Object.freeze([...(input.issues ?? [])])
-    this.fieldErrors = Object.freeze({ ...(input.fieldErrors ?? {}) })
-    this.formError = input.formError
-    this.callError = input.callError
-  }
-
-  toJSON() {
-    return {
-      name: this.name,
-      kind: this.kind,
-      message: this.message,
-      issues: this.issues.map((issue) => ({
-        message: issue.message,
-        path: issue.path.map((segment) =>
-          typeof segment === 'symbol' ? (segment.description ?? 'symbol') : segment,
-        ),
-        field: issue.field,
-      })),
-      fieldErrors: this.fieldErrors,
-      formError: this.formError,
-      callError: this.callError?.toJSON(),
-    }
-  }
 }
 
 function normalizeIssuePath(path: StandardSchemaV1.Issue['path']): readonly PropertyKey[] {

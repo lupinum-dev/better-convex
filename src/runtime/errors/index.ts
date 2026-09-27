@@ -5,6 +5,7 @@
  */
 export {
   ConvexCallError,
+  ConvexFormError,
   isConvexCallError,
   isSerializedConvexCallError,
   normalizeConvexError,
@@ -13,5 +14,7 @@ export type {
   ConvexCallErrorCode,
   ConvexCallErrorInput,
   ConvexCallErrorKind,
+  ConvexFormErrorKind,
+  ConvexFormIssue,
   SerializedConvexCallError,
 } from '@lupinum/better-convex-vue/errors'

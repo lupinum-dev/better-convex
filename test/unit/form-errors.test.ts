@@ -1,10 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import {
+  ConvexFormError as VueConvexFormError,
+  type ConvexFormErrorKind as VueConvexFormErrorKind,
+} from '@lupinum/better-convex-vue'
+import { ConvexFormError as VueErrorsEntryConvexFormError } from '@lupinum/better-convex-vue/errors'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { ConvexCallError } from '../../packages/vue/src/errors'
 import {
   createSubmissionFormError,
   createValidationFormError,
 } from '../../packages/vue/src/form-errors'
+import type { ConvexFormError as NuxtRootConvexFormError } from '../../src/module'
+import {
+  ConvexFormError as NuxtErrorsEntryConvexFormError,
+  type ConvexFormErrorKind as NuxtConvexFormErrorKind,
+} from '../../src/runtime/errors'
 
 describe('Convex form errors', () => {
   it('routes nested known paths and keeps pathless or unknown issues visible', () => {
@@ -43,5 +53,16 @@ describe('Convex form errors', () => {
 
     expect(error.fieldErrors).toEqual({})
     expect(error.formError).toBe('The removed field failed')
+  })
+
+  it('exposes one ConvexFormError class from the Vue root, Vue /errors and Nuxt /errors', () => {
+    expect(NuxtErrorsEntryConvexFormError).toBe(VueConvexFormError)
+    expect(VueErrorsEntryConvexFormError).toBe(VueConvexFormError)
+    expectTypeOf<NuxtRootConvexFormError>().toEqualTypeOf<VueConvexFormError>()
+    expectTypeOf<NuxtConvexFormErrorKind>().toEqualTypeOf<VueConvexFormErrorKind>()
+
+    const error = new NuxtErrorsEntryConvexFormError({ kind: 'validation', message: 'Invalid' })
+    expect(error).toBeInstanceOf(VueConvexFormError)
+    expect(error.toJSON()).toMatchObject({ name: 'ConvexFormError', kind: 'validation' })
   })
 })

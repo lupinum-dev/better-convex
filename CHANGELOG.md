@@ -1,5 +1,64 @@
 # Changelog
 
+## v1.0.0-rc.0
+
+- First 1.0 release candidate of `@lupinum/better-convex-nuxt` and
+  `@lupinum/better-convex-vue`. It breaks the 1.0 beta API on purpose and has no
+  compatibility layer; follow
+  [Upgrade to 1.0](https://better-convex.lupinum.com/docs/operations/upgrade-to-1-0)
+  or the short checklist in `MIGRATING.md`.
+- Remove the workforce authentication profile, the beta.3 user migration,
+  `@lupinum/better-convex-mcp/vue` (`useMcpApp`), `oauthPopupClient()`,
+  `verifyOAuthBearerToken`, and `createWorkforceAuthSchemaOptions`.
+- Require Better Auth, `@better-auth/core`, and `@better-auth/oauth-provider`
+  `1.7.6` for every application with auth. The auth component `account` table
+  drops `issuer` and is keyed by `(providerId, accountId)`; existing beta account
+  rows need a new, empty auth component.
+- `useConvexMutation` returns `{ mutate, data, status, pending, error, reset }`
+  and `useConvexAction` returns `{ run, ... }`. `useConvexForm` rejects a
+  concurrent submit with `SUBMIT_IN_PROGRESS`.
+- Pagination matches Convex `usePaginatedQuery`: `canLoadMore`, `isLoadingMore`,
+  and `isExhausted` replace the public `pageStatus` and `cursor`; `loadMore()`
+  returns a promise that never rejects, and a failed later page keeps the loaded
+  items.
+- `ConvexCallError` keeps the message written by your Convex function, carries
+  `functionName` and a stable library `code`, and `isConvexCallError(error, code?)`
+  checks it. File upload moves into the Vue package with `CANCELLED`,
+  `FILE_TOO_LARGE`, `FILE_TYPE_NOT_ALLOWED`, and `UPLOAD_IN_PROGRESS` codes.
+  `ConvexFormError` is exported from `@lupinum/better-convex-nuxt/errors` and
+  `@lupinum/better-convex-vue/errors`.
+- `useConvexAuth().client` is never `null`; queries with `server: false` render
+  `idle` during SSR and hydration; queries expose `blockedBy`.
+- `createBetterConvexAuth` is the only way to build auth. `auth.getUser`,
+  `auth.requireUser` (code `UNAUTHENTICATED`), `auth.getAuth`, and
+  `auth.sessionHttpAction` replace `auth.authComponent`; `convexAuth`,
+  `createAuthComponent`, `createConvexAuthRateLimitStorage`, and
+  `requireWritableAuthCtx` are no longer exported.
+- One `email(ctx, message)` hook replaces the per-feature email callbacks, and
+  password reset is opt-in. Session lifetimes, the cookie cache, and trusted
+  account-linking providers are bounded; session tokens carry `name`, `email`,
+  `emailVerified`, and `image` by default.
+- The local auth adapter exports `expireSession`, `oauthLiveAccess`, and
+  `pruneSigningKeys` instead of `assertProfile` and the workforce functions.
+  `jwksOperatorFunctions()` adds `pruneSigningKeys`.
+- Add guest-only routes, `useConvexAuthReturnTo()`, `normalizeLocalRedirectPath()`,
+  the `convex.auth.routes` and `convex.auth.defaultQueryAuth` defaults, the
+  `convex.client` and `convex.server` options, and `getConvexUser`,
+  `requireConvexUser`, and `toConvexH3Error` for Nitro handlers. `signInAs`
+  ships from `@lupinum/better-convex-nuxt/better-auth/test`.
+- The Convex MCP side adds the `oauth.mcp` profile with ChatGPT and Claude host
+  presets, `auth.createMcpAccessVerifier(ctx)`, `mcpPrincipalValidator`,
+  `auth.requireMcpPrincipal(ctx, principal, { scope })`,
+  `auth.oauthConnections`, and `auth.oauthOperator.setClientDisabled`. One component
+  query checks live MCP access, and the verifier reads signing keys from the
+  component, so the `jwksUrl` option is gone.
+- `@lupinum/better-convex-mcp` `1.0.0-rc.0` ships as its own release unit after
+  this one. It uses `@modelcontextprotocol/server` `2.1.0`, passes one
+  `{ access, principal, server, tools }` object to `configureServer`, adds
+  `defineMcpTool`, `registerMcpTool`, `projectMcpToolError`, `exposeErrorCodes`,
+  and `listMcpCatalog` from `/test`, and requires the `MCP-Protocol-Version`
+  header.
+
 ## mcp-v1.0.0-beta.2
 
 - Ship version-matched `agent-docs` guidance with the MCP package so coding
