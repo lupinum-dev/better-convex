@@ -424,7 +424,6 @@ describe('useConvexOperation', () => {
       'must run inside a Vue effect scope',
     )
     const host = operationHost()
-    expect(Object.isFrozen(host.state)).toBe(true)
     expect(Object.keys(host.state).sort()).toEqual([
       'data',
       'error',

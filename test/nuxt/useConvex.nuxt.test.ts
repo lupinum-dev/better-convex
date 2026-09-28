@@ -46,7 +46,6 @@ describe('useConvex without a browser runtime', () => {
   it('reports the disconnected connection state', async () => {
     const state = await captureWithoutRuntime(() => useConvexConnectionState())
 
-    expect(Object.isFrozen(state)).toBe(true)
     expect(state.isConnected.value).toBe(false)
     expect(state.isReconnecting.value).toBe(false)
     expect(state.pendingMutations.value).toBe(0)

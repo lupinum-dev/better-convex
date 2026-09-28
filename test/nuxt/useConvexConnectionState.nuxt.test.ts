@@ -40,7 +40,6 @@ describe('useConvexConnectionState (Nuxt runtime)', () => {
       'pendingMutations',
       'state',
     ])
-    expect(Object.isFrozen(result)).toBe(true)
     expect(result.isConnected.value).toBe(false)
     expect(result.isReconnecting.value).toBe(false)
     expect(result.pendingMutations.value).toBe(0)

@@ -451,7 +451,6 @@ describe('useConvexFileUpload (Vue)', () => {
       'status',
       'upload',
     ])
-    expect(Object.isFrozen(upload)).toBe(true)
     host.stop()
   })
 

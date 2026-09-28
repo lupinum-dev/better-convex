@@ -1,6 +1,6 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
 import { describe, expectTypeOf, it } from 'vitest'
-import { ref, type ComputedRef } from 'vue'
+import { computed, ref, toRefs, type ComputedRef } from 'vue'
 
 import type { ConvexCallError } from '../../packages/vue/src/errors'
 import type {
@@ -13,6 +13,7 @@ declare const useConvexQuery: typeof import('../../packages/vue/src/use-query').
 declare const useConvexPaginatedQuery: typeof import('../../packages/vue/src/use-paginated-query').useConvexPaginatedQuery
 
 declare const requiredQuery: FunctionReference<'query', 'public', { id: string }, string>
+declare const props: Readonly<{ id: string }>
 // Convex codegen emits `{}` for an exactly-empty validator.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 declare const emptyQuery: FunctionReference<'query', 'public', {}, string | null>
@@ -69,8 +70,19 @@ function typeContracts() {
   // @ts-expect-error a getter returning undefined is not a query skip sentinel
   void useConvexQuery(requiredQuery, () => undefined)
 
+  // Each top-level argument field may be a ref, for example from toRefs(props).
+  const { id } = toRefs(props)
+  void useConvexQuery(requiredQuery, { id })
+  void useConvexQuery(requiredQuery, { id: ref('note') })
+  void useConvexQuery(requiredQuery, { id: computed(() => props.id) })
+  // @ts-expect-error a ref field must hold the argument's type
+  void useConvexQuery(requiredQuery, { id: ref(1) })
+  // @ts-expect-error exactly-empty args still reject unknown ref fields
+  void useConvexQuery(emptyQuery, { id: ref('note') })
+
   void useConvexQuery(optionalQuery, {})
   void useConvexQuery(optionalQuery, { limit: 10 })
+  void useConvexQuery(optionalQuery, { limit: ref(10) })
   // @ts-expect-error all-optional but nonempty validators still require args
   void useConvexQuery(optionalQuery)
 
@@ -82,6 +94,15 @@ function typeContracts() {
   void useConvexPaginatedQuery(requiredPaginatedQuery, () => 'skip' as const, {
     initialNumItems: 10,
   })
+  void useConvexPaginatedQuery(
+    requiredPaginatedQuery,
+    { owner: ref('alice') },
+    {
+      initialNumItems: 10,
+    },
+  )
+  // @ts-expect-error a paginated ref field must hold the argument's type
+  void useConvexPaginatedQuery(requiredPaginatedQuery, { owner: ref(1) }, { initialNumItems: 10 })
   void useConvexPaginatedQuery(emptyPaginatedQuery, {}, { initialNumItems: 10 })
   // @ts-expect-error an empty-args query still rejects a ref containing null
   void useConvexPaginatedQuery(emptyPaginatedQuery, ref(null), { initialNumItems: 10 })

@@ -1,6 +1,6 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
 import { describe, expectTypeOf, it } from 'vitest'
-import type { ComputedRef } from 'vue'
+import { ref, toRefs, type ComputedRef } from 'vue'
 
 import type {
   NuxtConvexPaginatedQuery,
@@ -196,6 +196,16 @@ async function _arityContracts() {
   void useConvexQuery(unionOptArgQuery)
   // @ts-expect-error union all-optional args still reject unknown properties
   void useConvexQuery(unionOptArgQuery, { wrong: 1 })
+
+  // --- Ref fields in args ------------------------------------------------
+  const { id } = toRefs({ id: 'x' } as Readonly<{ id: string }>)
+  void useConvexQuery(reqArgQuery, { id })
+  void useConvexQuery(optArgQuery, { limit: ref(5) })
+  // @ts-expect-error a ref field must hold the argument's type
+  void useConvexQuery(reqArgQuery, { id: ref(1) })
+  // @ts-expect-error exact-empty args still reject ref fields
+  void useConvexQuery(noArgQuery, { id: ref('x') })
+  void useConvexPaginatedQuery(reqArgPaginated, { owner: ref('x') }, { initialNumItems: 10 })
 
   // --- useConvexPaginatedQuery -------------------------------------------
   void useConvexPaginatedQuery(noArgPaginated, {}, { initialNumItems: 10 })

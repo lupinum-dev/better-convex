@@ -15,6 +15,7 @@ import type { ClientCallStatus } from './internal/call-state'
 import {
   createConvexArgsState,
   isConvexArgsSkipped,
+  type ConvexArgsInput,
   type ConvexArgsState,
 } from './internal/query-args'
 import { createQueryController } from './internal/query-controller'
@@ -66,7 +67,7 @@ type TightenEmptyConvexArgs<Args> = Args extends unknown
     : Args
   : never
 type QueryArgsParameter<Query extends FunctionReference<'query'>> = MaybeRefOrGetter<
-  ConvexQueryArgs<TightenEmptyConvexArgs<FunctionArgs<Query>>>
+  ConvexQueryArgs<ConvexArgsInput<TightenEmptyConvexArgs<FunctionArgs<Query>>>>
 >
 
 export type UseConvexQueryParameters<
@@ -308,7 +309,7 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
     }),
   )
 
-  return Object.freeze({
+  return {
     data,
     error,
     pending,
@@ -317,5 +318,5 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
     blockedBy,
     execute,
     refresh,
-  })
+  }
 }

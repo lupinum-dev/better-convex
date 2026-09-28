@@ -31,7 +31,6 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     const { result } = await captureInNuxt(() => useConvexAction(action), { convex })
 
-    expect(Object.isFrozen(result)).toBe(true)
     expect(Object.keys(result)).toEqual(['run', 'data', 'status', 'pending', 'error', 'reset'])
     const pending = result.run({ message: 'hello' } as never)
     expect(result.pending.value).toBe(true)

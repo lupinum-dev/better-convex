@@ -8,6 +8,7 @@ import type {
 import {
   createConvexArgsState,
   useConvexPaginatedQueryInternal,
+  type ConvexArgsInput,
   type ConvexArgsState,
 } from '@lupinum/better-convex-vue/internal'
 import { getFunctionName, type PaginationResult } from 'convex/server'
@@ -126,7 +127,7 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
         ? 'error'
         : result.status.value),
   )
-  const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
+  const resultData: UseConvexPaginatedQueryState<Item> = {
     ...result,
     data: computed(() => (ssr.value ? ssr.value.data : result.data.value)),
     error,
@@ -142,7 +143,7 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
       result.reset(cursor)
       hydration.retire()
     },
-  })
+  }
   return {
     resultData,
     resolvePromise:
@@ -191,7 +192,7 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
   })
   const view = computed(() => projectConvexSsrPagination(ssr.view.value))
   const status = computed(() => view.value.status)
-  const resultData: UseConvexPaginatedQueryState<Item> = Object.freeze({
+  const resultData: UseConvexPaginatedQueryState<Item> = {
     data: computed(() => view.value.data),
     status,
     pending: computed(() => status.value === 'pending'),
@@ -212,13 +213,13 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
       startCursor.value = cursor
       void ssr.reload()
     },
-  })
+  }
   return { resultData, resolvePromise: ssr.settled }
 }
 
 export function createConvexPaginatedQueryState<Query extends PaginatedQueryReference>(
   query: Query,
-  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  args: MaybeRefOrGetter<ConvexArgsInput<PaginatedQueryArgs<Query>> | 'skip'>,
   options: UseNuxtConvexPaginatedQueryOptions,
 ): BuildConvexPaginatedQueryResult<PaginatedQueryItem<Query>> {
   const initialNumItems = options.initialNumItems
@@ -235,7 +236,9 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
     lazy,
     server: options.server ?? true,
   }
-  const argsState = createConvexArgsState(args)
+  const argsState = createConvexArgsState(
+    args as MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  )
 
   return import.meta.client
     ? createClientConvexPaginatedQueryState(query, argsState, resolvedOptions)
@@ -244,7 +247,7 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
 
 export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   query: Query,
-  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  args: MaybeRefOrGetter<ConvexArgsInput<PaginatedQueryArgs<Query>> | 'skip'>,
   options: UseNuxtConvexPaginatedQueryOptions,
 ): NuxtConvexPaginatedQuery<PaginatedQueryItem<Query>> {
   const result = createConvexPaginatedQueryState(query, args, options)

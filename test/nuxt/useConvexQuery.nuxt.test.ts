@@ -422,6 +422,23 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(awaited.error.value).toBeInstanceOf(ConvexCallError)
   })
 
+  it('unwraps the awaited state into one live object with reactive()', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:reactive-object')
+
+    const { result } = await captureInNuxt(() => useConvexQuery(query, {}, { auth: 'none' }), {
+      convex,
+    })
+    await waitFor(() => convex.calls.onUpdate.length > 0)
+    convex.emitQueryResult(query, {}, ['first'])
+    const notes = reactive(await result)
+
+    expect(notes.status).toBe('success')
+    expect(notes.data).toEqual(['first'])
+    convex.emitQueryResult(query, {}, ['second'])
+    expect(notes.data).toEqual(['second'])
+  })
+
   it('refresh resolves after storing a query error', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:refresh-failure')

@@ -23,7 +23,7 @@ export type ConvexOperationWork<Args extends unknown[], Result> = (
 ) => Promise<Result>
 
 /**
- * The frozen state and verb returned by {@link useConvexOperation}.
+ * The state refs and verb returned by {@link useConvexOperation}.
  *
  * `data` and `error` hold the exact values of the latest run, not reactive
  * proxies. Only the newest run owns state; `reset()` and identity changes
@@ -116,12 +116,12 @@ export function useConvexOperation<Args extends unknown[], Result>(
   onScopeDispose(lifecycle.dispose)
   // Computed, like every composable's state: read-only, and the exact result
   // and error the run settled with rather than deep `readonly()` proxies.
-  return Object.freeze({
+  return {
     run: (...args: Args) => lifecycle.run(args),
     data: computed(() => lifecycle.data.value),
     status: lifecycle.status,
     pending: lifecycle.pending,
     error: computed(() => lifecycle.error.value),
     reset: lifecycle.reset,
-  })
+  }
 }

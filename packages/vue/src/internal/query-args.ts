@@ -1,10 +1,19 @@
 import { hash } from 'ohash'
-import { computed, toValue, type ComputedRef, type MaybeRefOrGetter } from 'vue'
+import { computed, toValue, type ComputedRef, type MaybeRef, type MaybeRefOrGetter } from 'vue'
 
 import { deepUnref } from './deep-unref'
 
 export type ConvexSkipArg = 'skip'
 export type ConvexArgs<Args> = Args | ConvexSkipArg
+
+/**
+ * Query arguments whose top-level fields may each be a ref, for example
+ * `{ projectId }` from `toRefs(props)`. `normalizeConvexArgs` unwraps them.
+ * `Args` stays a member of its own so generic wrappers can pass it through.
+ */
+export type ConvexArgsInput<Args> =
+  | Args
+  | (Args extends Record<PropertyKey, never> ? never : { [Key in keyof Args]: MaybeRef<Args[Key]> })
 
 export function normalizeConvexArgs<Args>(
   args: MaybeRefOrGetter<ConvexArgs<Args>>,

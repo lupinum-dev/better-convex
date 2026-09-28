@@ -5,7 +5,7 @@ import {
   type PaginationResult,
 } from 'convex/server'
 import { describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope, isProxy, isReadonly, ref } from 'vue'
+import { createApp, effectScope, isProxy, isReadonly, reactive, ref } from 'vue'
 
 import {
   createBetterConvex,
@@ -168,6 +168,69 @@ describe('better-convex-vue package runtime', () => {
     args.value = 'skip'
     expect(query.status.value).toBe('idle')
     expect(host.subscriptions[0]!.active).toBe(false)
+    scope.stop()
+  })
+
+  it('follows refs passed as individual query argument fields', () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const owner = ref('alice')
+    const query = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexQuery(
+          makeFunctionReference<'query'>('notes:list') as FunctionReference<
+            'query',
+            'public',
+            { owner: string },
+            string[]
+          >,
+          { owner },
+        ),
+      ),
+    )!
+
+    expect(query.status.value).toBe('pending')
+    expect(host.subscriptions[0]!.args).toEqual({ owner: 'alice' })
+
+    owner.value = 'bob'
+    expect(host.subscriptions[0]!.active).toBe(false)
+    expect(host.subscriptions[1]!.args).toEqual({ owner: 'bob' })
+    scope.stop()
+  })
+
+  it('unwraps into one live object with reactive()', async () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const state = app.runWithContext(() =>
+      scope.run(() => ({
+        query: reactive(useConvexQuery(makeFunctionReference<'query'>('notes:list'), {})),
+        create: reactive(
+          useConvexMutation(
+            makeFunctionReference<'mutation'>('notes:write') as FunctionReference<
+              'mutation',
+              'public',
+              { value: string },
+              { label: string; args: unknown }
+            >,
+          ),
+        ),
+      })),
+    )!
+
+    expect(state.query.pending).toBe(true)
+    host.subscriptions[0]!.emit(['first'])
+    expect(state.query.pending).toBe(false)
+    expect(state.query.data).toEqual(['first'])
+
+    const call = state.create.mutate({ value: 'write' })
+    expect(state.create.pending).toBe(true)
+    await call
+    expect(state.create.status).toBe('success')
+    expect(state.create.data).toEqual({ label: 'alice', args: { value: 'write' } })
     scope.stop()
   })
 
@@ -340,8 +403,6 @@ describe('better-convex-vue package runtime', () => {
       })),
     )!
 
-    expect(Object.isFrozen(operation.mutation)).toBe(true)
-    expect(Object.isFrozen(operation.action)).toBe(true)
     await expect(operation.mutation.mutate({ value: 'write' })).resolves.toEqual({
       label: 'alice',
       args: { value: 'write' },
@@ -763,7 +824,6 @@ describe('better-convex-vue package runtime', () => {
       'reset',
       'status',
     ])
-    expect(Object.isFrozen(query)).toBe(true)
     expect(query.data.value).toBeUndefined()
     expect(query.status.value).toBe('pending')
     scope.stop()
