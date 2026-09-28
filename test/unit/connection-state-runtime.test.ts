@@ -67,7 +67,6 @@ describe('useConvexConnectionState (Vue runtime)', () => {
 
     const connection = app.runWithContext(() => scope.run(() => useConvexConnectionState()))!
 
-    expect(Object.isFrozen(connection)).toBe(true)
     expect(host.listenerCount()).toBe(1)
     expect(connection.isConnected.value).toBe(false)
 

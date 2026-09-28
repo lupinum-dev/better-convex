@@ -18,7 +18,7 @@ export interface UseConvexConnectionStateReturn {
 export function projectConvexConnectionState(
   state: ComputedRef<ConnectionState>,
 ): UseConvexConnectionStateReturn {
-  return Object.freeze({
+  return {
     state,
     isConnected: computed(() => state.value.isWebSocketConnected),
     isReconnecting: computed(
@@ -26,7 +26,7 @@ export function projectConvexConnectionState(
     ),
     pendingMutations: computed(() => state.value.inflightMutations),
     pendingActions: computed(() => state.value.inflightActions),
-  })
+  }
 }
 
 export function useConvexConnectionState(): UseConvexConnectionStateReturn {

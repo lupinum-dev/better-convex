@@ -494,7 +494,6 @@ describe('useConvexPaginatedQuery controller', () => {
     const awaited = await result
 
     expect(awaited).not.toBe(result)
-    expect(Object.isFrozen(awaited)).toBe(true)
     expect(awaited.data).toBe(result.data)
     expect(awaited.data.value).toEqual([])
     expect(awaited.status.value).toBe('success')

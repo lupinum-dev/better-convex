@@ -8,14 +8,13 @@ import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
 
 describe('useConvexMutation (Nuxt runtime)', () => {
-  it('returns a frozen destructurable lifecycle with a mutate verb', async () => {
+  it('returns a destructurable lifecycle with a mutate verb', async () => {
     const convex = new MockConvexClient()
     const mutation = mockFnRef<'mutation'>('testing:save-note')
     convex.setMutationHandler('testing:save-note', async (args) => ({ saved: args }))
 
     const { result } = await captureInNuxt(() => useConvexMutation(mutation), { convex })
 
-    expect(Object.isFrozen(result)).toBe(true)
     expect(Object.keys(result)).toEqual(['mutate', 'data', 'status', 'pending', 'error', 'reset'])
     const { mutate, status, pending, data, reset } = result
 

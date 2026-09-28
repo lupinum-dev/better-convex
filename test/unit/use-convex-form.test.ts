@@ -461,9 +461,8 @@ describe('useConvexForm', () => {
     scope.stop()
   })
 
-  it('returns a frozen, destructurable object', async () => {
+  it('returns a destructurable object', async () => {
     const { form, scope } = setup(async () => ({ id: 'checkpoint-1' }))
-    expect(Object.isFrozen(form)).toBe(true)
     const { submit, status, data, reset } = form
     await submit({ balance: 1, note: '' }, { accountId: 'account-1' })
     expect(status.value).toBe('success')

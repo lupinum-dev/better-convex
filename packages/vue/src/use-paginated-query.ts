@@ -22,6 +22,7 @@ import { assertLoadMoreNumItems } from './internal/pagination-state'
 import {
   createConvexArgsState,
   isConvexArgsSkipped,
+  type ConvexArgsInput,
   type ConvexArgsState,
 } from './internal/query-args'
 import { decideQueryGate, queryIsolationTag } from './internal/query-execution'
@@ -136,11 +137,13 @@ function assertPaginatedQueryInput(options: UseConvexPaginatedQueryOptions): voi
 
 export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   query: Query,
-  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  args: MaybeRefOrGetter<ConvexArgsInput<PaginatedQueryArgs<Query>> | 'skip'>,
   options: UseConvexPaginatedQueryOptions,
 ): UseConvexPaginatedQueryState<PaginatedQueryItem<Query>> {
-  return useConvexPaginatedQueryInternal({ query, args: createConvexArgsState(args), options })
-    .state
+  const argsState = createConvexArgsState(
+    args as MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  )
+  return useConvexPaginatedQueryInternal({ query, args: argsState, options }).state
 }
 
 /**
@@ -336,7 +339,7 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
   })
 
   return {
-    state: Object.freeze({
+    state: {
       data: controller.data,
       status: controller.status,
       pending: controller.pending,
@@ -352,7 +355,7 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
       execute,
       refresh,
       reset,
-    }),
+    },
     firstPageSettled: controller.firstPageSettled,
   }
 }

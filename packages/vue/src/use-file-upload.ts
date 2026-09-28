@@ -270,7 +270,7 @@ export function useConvexFileUploadInternal<Mutation extends UploadUrlMutation>(
   onScopeDispose(controller.dispose)
 
   const state = controller.state
-  return Object.freeze({
+  return {
     upload: (file: File, args?: Record<string, unknown>, call?: { context?: unknown }) =>
       controller.upload(file, args ?? {}, call?.context),
     data: computed(() => state.value.data),
@@ -280,5 +280,5 @@ export function useConvexFileUploadInternal<Mutation extends UploadUrlMutation>(
     progress: computed(() => state.value.progress),
     cancel: controller.cancel,
     reset: controller.reset,
-  }) as unknown as UseConvexFileUploadReturn<Mutation, unknown, unknown>
+  } as unknown as UseConvexFileUploadReturn<Mutation, unknown, unknown>
 }

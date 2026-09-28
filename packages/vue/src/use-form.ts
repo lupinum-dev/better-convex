@@ -46,7 +46,7 @@ export type ConvexFormSubmitResult<Result> =
   | Readonly<{ ok: false; error: ConvexFormError }>
 
 /**
- * The frozen state and verb returned by {@link useConvexForm}.
+ * The state refs and verb returned by {@link useConvexForm}.
  *
  * `submit` resolves with `{ ok: false, error }` for validation and mutation
  * failures, so templates can await it without `try`. It rejects with a
@@ -340,7 +340,7 @@ export function useConvexFormInternal(
     reset()
   })
 
-  return Object.freeze({
+  return {
     submit,
     data: computed(() => data.value),
     status,
@@ -350,5 +350,5 @@ export function useConvexFormInternal(
     fieldErrors,
     formError,
     reset,
-  }) as UseConvexFormReturn<FormRecord, FormRecord, unknown>
+  } as UseConvexFormReturn<FormRecord, FormRecord, unknown>
 }

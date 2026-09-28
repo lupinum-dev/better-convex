@@ -163,7 +163,7 @@ function createClientConvexQueryState<Query extends FunctionReference<'query'>>(
   const blockedBy = computed(() => (view.value ? view.value.blockedBy : result.blockedBy.value))
   if (import.meta.dev) trackQueryDevtools(boundary, options, { status, data, error })
 
-  const resultData = Object.freeze({ ...result, data, error, pending, status, blockedBy })
+  const resultData = { ...result, data, error, pending, status, blockedBy }
   // A hydrating render never waits: the live lifecycle starts only after hydration.
   if (lazy || !immediate || !server || hydration.defersLiveStart || status.value !== 'pending') {
     return { resultData, resolvePromise: Promise.resolve() }
@@ -195,7 +195,7 @@ function createServerConvexQueryState<Query extends FunctionReference<'query'>>(
   })
   const status = computed(() => ssr.view.value.status)
   return {
-    resultData: Object.freeze({
+    resultData: {
       data: computed(() => ssr.view.value.value),
       error: computed(() => ssr.view.value.error),
       pending: computed(() => status.value === 'pending'),
@@ -204,7 +204,7 @@ function createServerConvexQueryState<Query extends FunctionReference<'query'>>(
       blockedBy: computed(() => ssr.view.value.blockedBy),
       execute: ssr.execute,
       refresh: ssr.refresh,
-    }),
+    },
     resolvePromise: ssr.settled,
   }
 }

@@ -32,7 +32,7 @@ export interface ConvexCallableInternalOptions<Args, Result> {
 }
 
 /**
- * The frozen state and verb returned by {@link useConvexMutation}.
+ * The state refs and verb returned by {@link useConvexMutation}.
  *
  * `data` and `error` hold the exact values of the latest call, not reactive
  * proxies. Only the newest call owns state; `reset()` and identity changes
@@ -61,7 +61,7 @@ export interface UseConvexMutationReturn<Mutation extends FunctionReference<'mut
 }
 
 /**
- * The frozen state and verb returned by {@link useConvexAction}.
+ * The state refs and verb returned by {@link useConvexAction}.
  *
  * `data` and `error` hold the exact values of the latest call, not reactive
  * proxies. Only the newest call owns state; `reset()` and identity changes
@@ -206,7 +206,7 @@ export function useConvexMutationInternal<Mutation extends FunctionReference<'mu
   options?: ConvexCallableInternalOptions<FunctionArgs<Mutation>, FunctionReturnType<Mutation>>,
 ): UseConvexMutationReturn<Mutation> {
   const { call, ...state } = createCallable('mutation', mutation, options)
-  return Object.freeze({ mutate: call, ...state })
+  return { mutate: call, ...state }
 }
 
 /** Adapter entry for {@link useConvexAction}; the same lifecycle plus an observer. */
@@ -218,5 +218,5 @@ export function useConvexActionInternal<Action extends FunctionReference<'action
   >,
 ): UseConvexActionReturn<Action> {
   const { call, ...state } = createCallable('action', action, options)
-  return Object.freeze({ run: call, ...state })
+  return { run: call, ...state }
 }
