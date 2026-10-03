@@ -14,10 +14,9 @@ const { data: tasks, status } = await useConvexQuery(api.tasks.list, {})
 // ============================================
 
 const standardInput = ref('')
-const standardAdd = useConvexMutation(api.tasks.add)
-const standardAddStatus = standardAdd.status
-const standardToggle = useConvexMutation(api.tasks.toggle)
-const standardDelete = useConvexMutation(api.tasks.remove)
+const { mutate: standardAdd, status: standardAddStatus } = useConvexMutation(api.tasks.add)
+const { mutate: standardToggle } = useConvexMutation(api.tasks.toggle)
+const { mutate: standardDelete } = useConvexMutation(api.tasks.remove)
 
 async function addStandard() {
   if (!standardInput.value.trim()) return
@@ -31,7 +30,7 @@ async function addStandard() {
 
 const optimisticInput = ref('')
 
-const optimisticAdd = useConvexMutation(api.tasks.add, {
+const { mutate: optimisticAdd, status: optimisticAddStatus } = useConvexMutation(api.tasks.add, {
   optimisticUpdate: (localStore, args) => {
     const current = localStore.getQuery(api.tasks.list, {})
     const now = Date.now()
@@ -46,9 +45,8 @@ const optimisticAdd = useConvexMutation(api.tasks.add, {
     localStore.setQuery(api.tasks.list, {}, [optimisticTask, ...(current ?? [])])
   },
 })
-const optimisticAddStatus = optimisticAdd.status
 
-const optimisticToggle = useConvexMutation(api.tasks.toggle, {
+const { mutate: optimisticToggle } = useConvexMutation(api.tasks.toggle, {
   optimisticUpdate: (localStore, args) => {
     const current = localStore.getQuery(api.tasks.list, {})
     localStore.setQuery(
@@ -61,7 +59,7 @@ const optimisticToggle = useConvexMutation(api.tasks.toggle, {
   },
 })
 
-const optimisticDelete = useConvexMutation(api.tasks.remove, {
+const { mutate: optimisticDelete } = useConvexMutation(api.tasks.remove, {
   optimisticUpdate: (localStore, args) => {
     const current = localStore.getQuery(api.tasks.list, {})
     localStore.setQuery(
@@ -231,7 +229,7 @@ function isOptimistic(taskId: string) {
 
       <pre
         class="text-xs bg-elevated p-4 rounded-lg overflow-x-auto"
-      ><code>const addTask = useConvexMutation(api.tasks.add, {
+      ><code>const { mutate: addTask } = useConvexMutation(api.tasks.add, {
   optimisticUpdate: (localStore, args) => {
     const current = localStore.getQuery(api.tasks.list, {})
     const now = Date.now()

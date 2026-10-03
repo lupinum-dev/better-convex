@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { api } from '@@/convex/_generated/api'
+import { isConvexCallError } from '@lupinum/better-convex-nuxt/errors'
 
 definePageMeta({
   middleware: 'auth',
@@ -20,15 +21,13 @@ const {
 })
 
 // Save file metadata after upload
-const saveFile = useConvexMutation(api.files.save)
-const saveError = saveFile.error
+const { mutate: saveFile, error: saveError } = useConvexMutation(api.files.save)
 
 // List files
 const { data: files, status: filesStatus } = await useConvexQuery(api.files.list, {})
 
 // Delete file
-const deleteFile = useConvexMutation(api.files.remove)
-const deleteError = deleteFile.error
+const { mutate: deleteFile, error: deleteError } = useConvexMutation(api.files.remove)
 
 // Combined error from any operation
 const operationError = computed(() => deleteError.value || saveError.value)
@@ -55,7 +54,7 @@ async function handleDrop(event: DragEvent) {
 
 async function uploadFile(file: File) {
   try {
-    const storageId = await upload(file)
+    const { storageId } = await upload(file)
     if (storageId) {
       await saveFile({
         storageId,
@@ -63,8 +62,8 @@ async function uploadFile(file: File) {
       })
     }
   } catch (e) {
-    // AbortError is expected when user cancels - don't log as error
-    if (e instanceof DOMException && e.name === 'AbortError') {
+    // Cancellation is expected when the user cancels.
+    if (isConvexCallError(e, 'CANCELLED')) {
       return
     }
     console.error('Upload failed:', e)

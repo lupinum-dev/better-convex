@@ -57,8 +57,7 @@ const {
 // ADD SAMPLE DATA
 // ============================================
 
-const seedMessages = useConvexMutation(api.messages.seed)
-const seedStatus = seedMessages.status
+const { mutate: seedMessages, status: seedStatus } = useConvexMutation(api.messages.seed)
 
 async function addSampleData() {
   await seedMessages({ count: 20 })

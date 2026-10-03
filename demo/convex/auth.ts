@@ -92,7 +92,7 @@ export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.bet
   },
 })
 
-export const { authComponent, createAuth } = betterConvexAuth
+export const { createAuth } = betterConvexAuth
 
 // Export trigger handlers for the component
 export const { onCreate, onUpdate, onDelete } = betterConvexAuth.triggerFunctions()
