@@ -13,7 +13,7 @@ interface Value {
   count: number
 }
 
-function makeHarness(options?: { keepPreviousData?: boolean }) {
+function makeHarness(options?: { keepPreviousData?: boolean; cached?: unknown }) {
   const query = mockFnRef<'query'>('notes:list')
   let args: Record<string, unknown> | 'skip' = { page: 1 }
   let argsHash = 'page:1'
@@ -32,6 +32,7 @@ function makeHarness(options?: { keepPreviousData?: boolean }) {
       }
     | undefined
   let unsubscribes = 0
+  let writes = 0
   const removed: string[] = []
 
   const client = {
@@ -42,10 +43,12 @@ function makeHarness(options?: { keepPreviousData?: boolean }) {
       onError?: (error: Error) => void,
     ) {
       active = { value: onValue, error: onError ?? (() => {}) }
-      return () => {
+      const unsubscribe = () => {
         unsubscribes += 1
         active = undefined
       }
+      // Like Convex: a result another subscription already holds.
+      return Object.assign(unsubscribe, { getCurrentValue: () => options?.cached })
     },
   }
 
@@ -66,6 +69,7 @@ function makeHarness(options?: { keepPreviousData?: boolean }) {
       writeData: (value) => {
         data = value
         hasData = true
+        writes += 1
       },
       setError: (value) => {
         error = value
@@ -93,6 +97,9 @@ function makeHarness(options?: { keepPreviousData?: boolean }) {
       },
       get unsubscribes() {
         return unsubscribes
+      },
+      get writes() {
+        return writes
       },
       removed,
       setArgs(next: Record<string, unknown> | 'skip', hash: string, key: string) {
@@ -124,6 +131,24 @@ describe('query controller', () => {
     expect(state.data).toEqual({ owner: 'alice', count: 2 })
     expect(controller.data()).toEqual({ owner: 'alice', count: 2 })
     expect(controller.hasSettledForCurrentArgs()).toBe(true)
+  })
+
+  it('starts from a cached result, skips its delayed repeat, and still recovers after an error', () => {
+    const { controller, state } = makeHarness({ cached: null })
+
+    controller.setupSubscription()
+    expect(controller.isAwaitingFirstValue()).toBe(false)
+    expect(controller.hasData()).toBe(true)
+    expect(state.writes).toBe(1)
+
+    state.active?.value(null) // Convex's delayed delivery of the same cached value
+    expect(state.writes).toBe(1)
+
+    state.active?.error(new Error('flaky'))
+    expect(state.error).toBeDefined()
+    state.active?.value(null) // a real recovery with an equal primitive
+    expect(state.error).toBeUndefined()
+    expect(state.writes).toBe(2)
   })
 
   it('rejects queued stale work and clears all protected state on identity change', () => {
