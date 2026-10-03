@@ -199,7 +199,10 @@ export function useConvexQueryHydration<T>(
   input: ConvexQueryBoundaryInput,
 ): ConvexQueryHydration<T> {
   const nuxtApp = useNuxtApp()
-  if (!nuxtApp.isHydrating || !input.immediate) {
+  // Nuxt also reports `isHydrating` on the first render of an `ssr: false`
+  // page. Nothing was rendered on the server there, so the query starts at
+  // once and an awaited query waits for its browser result.
+  if (!nuxtApp.isHydrating || !nuxtApp.payload.serverRendered || !input.immediate) {
     return {
       seed: undefined,
       defersLiveStart: false,
