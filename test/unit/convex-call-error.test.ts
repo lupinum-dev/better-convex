@@ -533,6 +533,29 @@ describe('ConvexCallError class contract: raw causes are not retained ', () => {
   })
 })
 
+describe('normalizeConvexError shows the dropped cause in development only (#180)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    { env: 'development', thrown: new TypeError('Ref is not a supported Convex type'), logs: 1 },
+    { env: 'production', thrown: new TypeError('Ref is not a supported Convex type'), logs: 0 },
+    { env: 'test', thrown: new TypeError('Ref is not a supported Convex type'), logs: 0 },
+    { env: 'development', thrown: new ConvexError({ code: 'FORBIDDEN' }), logs: 0 },
+  ])('NODE_ENV=$env, $thrown.name: $logs log line(s)', ({ env, thrown, logs }) => {
+    vi.stubEnv('NODE_ENV', env)
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    normalizeConvexError(thrown, { functionName: 'notes:create' })
+    normalizeConvexError(thrown, { functionName: 'notes:create' })
+
+    expect(log).toHaveBeenCalledTimes(logs)
+    if (logs) expect(log.mock.calls[0]).toEqual([expect.stringContaining('notes:create'), thrown])
+  })
+})
+
 describe('isSerializedConvexCallError strictness ', () => {
   it('accepts a valid serialized shape', () => {
     const valid = {
