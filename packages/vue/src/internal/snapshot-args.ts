@@ -2,12 +2,14 @@
  * Copy plain objects and arrays at call time, so later edits to the caller's
  * (often reactive) object cannot reach the client or a replayed optimistic
  * update. Values are read through Vue proxies, exactly as Convex would read
- * them, so refs inside a `reactive()` object arrive unwrapped. Other values
- * (refs in plain objects, Dates, buffers, class instances) keep their identity.
+ * them, so refs inside a `reactive()` object arrive unwrapped. `ArrayBuffer`
+ * bytes are copied too. Other values (refs in plain objects, Dates, class
+ * instances) keep their identity.
  */
 export function snapshotArgs<T>(value: T): T {
   if (value === null || typeof value !== 'object') return value
   if (Array.isArray(value)) return value.map(snapshotArgs) as T
+  if (value instanceof ArrayBuffer) return value.slice(0) as T
   if (!isPlainObject(value)) return value
 
   const result: Record<string, unknown> = {}

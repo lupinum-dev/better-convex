@@ -32,7 +32,9 @@ it('copies plain objects and arrays, and preserves opaque values', () => {
   expect(snapshot.source.plain).not.toBe(plain)
   expect(snapshot.source.bigint).toBe(42n)
   expect(snapshot.source.nil).toBeNull()
-  expect(snapshot.source.buffer).toBe(buffer)
+  expect(snapshot.source.buffer).not.toBe(buffer)
+  new Uint8Array(buffer)[0] = 1
+  expect(new Uint8Array(snapshot.source.buffer)[0]).toBe(0)
   expect(Object.hasOwn(snapshot.source, 'missing')).toBe(true)
   expect(snapshot.source.missing).toBeUndefined()
   expect(snapshot.date).toBe(date)
