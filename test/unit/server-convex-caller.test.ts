@@ -514,7 +514,7 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
 
     applyConvexAuthSsrHeaders(event, {
       hasBetterAuthCookie: true,
-      serializesToken: true,
+      rendersUser: true,
     })
 
     expect(headers.get('Vary')).toBe('Accept-Encoding, Cookie')
@@ -522,8 +522,8 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
   })
 
   it.each([
-    { hasBetterAuthCookie: true, serializesToken: false },
-    { hasBetterAuthCookie: false, serializesToken: true },
+    { hasBetterAuthCookie: true, rendersUser: false },
+    { hasBetterAuthCookie: false, rendersUser: true },
   ])('sets private/no-store for either private auth signal: %o', (options) => {
     const headers = new Map<string, string>()
     const event = {
@@ -560,7 +560,7 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
 
     applyConvexAuthSsrHeaders(event, {
       hasBetterAuthCookie: false,
-      serializesToken: false,
+      rendersUser: false,
     })
 
     expect(headers.get('Vary')).toBe('Cookie')
@@ -591,7 +591,7 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
 
     applyConvexAuthSsrHeaders(event, {
       hasBetterAuthCookie: true,
-      serializesToken: false,
+      rendersUser: false,
     })
 
     expect(Object.fromEntries(headers)).toEqual({

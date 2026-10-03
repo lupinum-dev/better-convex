@@ -451,7 +451,7 @@ describe('useConvexPaginatedQuery controller', () => {
     const { result, flush, wrapper } = await captureInNuxt(
       () => {
         const identity = useState<AuthIdentity>('convex:identity')
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        identity.value = toAuthenticatedIdentity({ id: 'A' })
         return {
           identity,
           query: useConvexPaginatedQuery(query, {}, { initialNumItems: 2 }),
@@ -464,7 +464,7 @@ describe('useConvexPaginatedQuery controller', () => {
       settled = true
     })
 
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'B' })
     await flush()
     expect(settled).toBe(false)
     expect(result.query.data.value).toBeUndefined()
@@ -546,7 +546,7 @@ describe('useConvexPaginatedQuery controller', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           return createConvexPaginatedQueryState(
             query,
             {},
@@ -607,7 +607,7 @@ describe('useConvexPaginatedQuery controller', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           const state = createConvexPaginatedQueryState(
             query,
             {},
@@ -809,7 +809,7 @@ describe('useConvexPaginatedQuery controller', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           return createConvexPaginatedQueryState(
             query,
             {},
@@ -848,7 +848,7 @@ describe('useConvexPaginatedQuery controller', () => {
         const pending = useState<boolean>('convex:pending', () => false)
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        identity.value = toAuthenticatedIdentity({ id: 'A' })
         const q = createConvexPaginatedQueryState(
           query,
           {},
@@ -861,7 +861,7 @@ describe('useConvexPaginatedQuery controller', () => {
 
     const refresh = result.q.refresh()
     await Promise.resolve()
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'B' })
     resolveA(page(['A'], true, null))
     await refresh
     expect(result.q.data.value ?? []).not.toContain('A')
@@ -880,7 +880,7 @@ describe('useConvexPaginatedQuery controller', () => {
         const pending = useState<boolean>('convex:pending', () => false)
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        identity.value = toAuthenticatedIdentity({ id: 'A' })
         const q = createConvexPaginatedQueryState(
           query,
           {},
@@ -972,7 +972,7 @@ describe('useConvexPaginatedQuery controller', () => {
         const pending = useState<boolean>('convex:pending', () => false)
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        identity.value = toAuthenticatedIdentity({ id: 'A' })
         const q = createConvexPaginatedQueryState(
           query,
           {},
@@ -989,7 +989,7 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.q.data.value).toEqual(['a1', 'a2'])
 
     // Switch identity: pages cleared, no A rows carried across.
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'B' })
     await flush()
     expect(result.q.data.value).toBeUndefined()
 
@@ -1011,7 +1011,7 @@ describe('useConvexPaginatedQuery controller', () => {
         const pending = useState<boolean>('convex:pending', () => false)
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        identity.value = toAuthenticatedIdentity({ id: 'A' })
         return createConvexPaginatedQueryState(query, {}, { auth: 'none', initialNumItems: 2 })
           .resultData
       },

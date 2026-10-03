@@ -106,7 +106,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
       const before = primary.calls.onUpdate.length
 
       const identity = useState<AuthIdentity>('convex:identity')
-      identity.value = toAuthenticatedIdentity('jwt-u1', { id: 'u1' })
+      identity.value = toAuthenticatedIdentity({ id: 'u1' })
       await flush()
       const delta = primary.calls.onUpdate.length - before
 
@@ -128,7 +128,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-u1', { id: 'u1' })
+          identity.value = toAuthenticatedIdentity({ id: 'u1' })
           return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
@@ -163,7 +163,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-u1-1', { id: 'u1' })
+          identity.value = toAuthenticatedIdentity({ id: 'u1' })
           return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
@@ -175,7 +175,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
       // `user.id`); the isolation dimension the composable keys off never
       // changes, so publishing a rotated token for the same user must not reacquire.
       const identity = useState<AuthIdentity>('convex:identity')
-      identity.value = toAuthenticatedIdentity('jwt-u1-2', { id: 'u1' })
+      identity.value = toAuthenticatedIdentity({ id: 'u1' })
       await flush()
 
       expect(primary.calls.onUpdate.length).toBe(before)
@@ -192,7 +192,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           return createConvexQueryState(query, {}, { auth: mode }).resultData
         },
         { owner: makeMockOwner(primary) },
@@ -201,7 +201,7 @@ describe('auth execution-count matrix — browser contexts ', () => {
       const before = primary.calls.onUpdate.length
 
       const identity = useState<AuthIdentity>('convex:identity')
-      identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+      identity.value = toAuthenticatedIdentity({ id: 'B' })
       await flush()
       const delta = primary.calls.onUpdate.length - before
 

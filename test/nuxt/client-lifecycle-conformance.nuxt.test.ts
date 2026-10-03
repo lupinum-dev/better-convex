@@ -38,7 +38,7 @@ describe('Nuxt shared client lifecycle conformance', () => {
       () => {
         const identity = useState<AuthIdentity>('convex:identity')
         useState<boolean>('convex:pending').value = false
-        identity.value = toAuthenticatedIdentity('jwt-a', { id: 'alice' })
+        identity.value = toAuthenticatedIdentity({ id: 'alice' })
         const identityHarness = installIdentityPortHarness()
         return {
           identity,
@@ -83,7 +83,7 @@ describe('Nuxt shared client lifecycle conformance', () => {
     }
 
     const retiredQuery = client.queuedQueryResultByPath('conformance:query', ['late'])
-    result.identity.value = toAuthenticatedIdentity('jwt-b', { id: 'bob' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'bob' })
     result.identityHarness.advance()
     await flush()
     const afterIdentityChange = {

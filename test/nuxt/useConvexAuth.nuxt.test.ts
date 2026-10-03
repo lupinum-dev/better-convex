@@ -42,7 +42,7 @@ describe('useConvexAuth Nuxt facade', () => {
 
     expect(result.auth.status.value).toBe('loading')
     expect(result.auth.error.value).toBeUndefined()
-    result.identity.value = toAuthenticatedIdentity('jwt-secret', { id: 'alice' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'alice' })
     result.pending.value = false
     expect(result.auth.status.value).toBe('authenticated')
     expect(result.auth.user.value?.id).toBe('alice')

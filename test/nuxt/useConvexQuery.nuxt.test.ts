@@ -362,7 +362,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
       () =>
         hydrating(() => {
           useState<boolean>('convex:pending').value = false
-          useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity('jwt-A', {
+          useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity({
             id: 'A',
           })
           const state = useConvexQueryState(query, {}, { auth: 'required' })
@@ -399,7 +399,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
       () =>
         hydrating(() => {
           useState<boolean>('convex:pending').value = false
-          useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity('jwt-A', {
+          useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity({
             id: 'A',
           })
           const state = useConvexQueryState(query, {}, { auth: 'required' })
@@ -752,7 +752,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(convex.calls.onUpdate.length).toBe(0)
 
     // A settled identity requires a resolved user , not just a token.
-    result.identity.value = toAuthenticatedIdentity('ready.jwt.token', {
+    result.identity.value = toAuthenticatedIdentity({
       id: 'u1',
     })
     result.authPending.value = false
