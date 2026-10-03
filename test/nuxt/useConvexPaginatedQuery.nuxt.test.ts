@@ -831,46 +831,6 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
-  it('drops a deferred refresh resolved during the synchronous A-to-B window', async () => {
-    const primary = new MockConvexClient()
-    const query = mockFnRef<'query'>('feed:deferred-refresh')
-    let resolveA!: (value: PaginationResult<string>) => void
-    let calls = 0
-    primary.setQueryHandler('feed:deferred-refresh', () => {
-      calls += 1
-      return calls === 1
-        ? new Promise((resolve) => (resolveA = resolve))
-        : Promise.resolve(page(['B'], true, null))
-    })
-
-    const { result, flush, wrapper } = await captureInNuxt(
-      () => {
-        const pending = useState<boolean>('convex:pending', () => false)
-        const identity = useState<AuthIdentity>('convex:identity')
-        pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        const q = createConvexPaginatedQueryState(
-          query,
-          {},
-          { auth: 'optional', initialNumItems: 2 },
-        ).resultData
-        return { q, identity }
-      },
-      { owner: makeMockOwner(primary) },
-    )
-
-    const refresh = result.q.refresh()
-    await Promise.resolve()
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
-    resolveA(page(['A'], true, null))
-    await refresh
-    expect(result.q.data.value ?? []).not.toContain('A')
-    expect(result.q.error.value).toBeUndefined()
-
-    await flush()
-    wrapper.unmount()
-  })
-
   it('loads the first page live, then appends a page via loadMore', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:list')

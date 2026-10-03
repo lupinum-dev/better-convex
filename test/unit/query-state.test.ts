@@ -8,7 +8,6 @@ import {
 
 const readyPaginatedState: PaginationStatusState = {
   disabled: false,
-  refreshing: false,
   firstPageError: false,
   firstPageReady: true,
 }
@@ -17,10 +16,6 @@ describe('query state helpers', () => {
   describe('computePaginationStatus', () => {
     it('returns idle when the gate does not run the list', () => {
       expect(computePaginationStatus({ ...readyPaginatedState, disabled: true })).toBe('idle')
-    })
-
-    it('prioritizes manual refresh loading before existing data state', () => {
-      expect(computePaginationStatus({ ...readyPaginatedState, refreshing: true })).toBe('pending')
     })
 
     it('returns error only for a first-page or auth-gate error', () => {
