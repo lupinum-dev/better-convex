@@ -24,6 +24,7 @@ import {
   useConvexQueryInternal,
 } from '../../packages/vue/src/internal'
 import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
+import { useConvexActionInternal } from '../../packages/vue/src/use-callable'
 
 function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
   let snapshot: ClientIdentitySnapshot = {
@@ -83,6 +84,78 @@ function attachedRuntime(label: string, options?: { queryResult?: unknown }) {
 }
 
 describe('better-convex-vue package runtime', () => {
+  it('retains call-time mutation args when an optimistic update is replayed', async () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    type Args = { projectId: string; name: string }
+    const optimisticUpdate = vi.fn((_store: unknown, args: Args) => {
+      observed.push({ name: args.name, proxy: isProxy(args) })
+      return undefined
+    })
+    const observed: Array<{ name: string; proxy: boolean }> = []
+    const mutation = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexMutation(makeFunctionReference<'mutation', Args>('projects:rename'), {
+          optimisticUpdate,
+        }),
+      ),
+    )!
+    let resolvePending!: (value: { label: string; args: unknown }) => void
+    host.mutation.mockImplementationOnce(() => new Promise((resolve) => (resolvePending = resolve)))
+    const form = reactive({ projectId: 'p1', name: 'Draft' })
+    const pending = mutation.mutate(form)
+    try {
+      await vi.waitFor(() => expect(host.mutation).toHaveBeenCalledTimes(1))
+      const [, args, options] = host.mutation.mock.calls[0]!
+      const retainedArgs = args as Args
+      const update = (options as { optimisticUpdate: typeof optimisticUpdate }).optimisticUpdate
+      update({}, retainedArgs)
+      form.name = 'Final'
+      // Replay with the exact args retained by the client, as on a server transition.
+      update({}, retainedArgs)
+      expect(retainedArgs).toEqual({ projectId: 'p1', name: 'Draft' })
+      expect(isProxy(retainedArgs)).toBe(false)
+      expect(observed).toEqual([
+        { name: 'Draft', proxy: false },
+        { name: 'Draft', proxy: false },
+      ])
+    } finally {
+      resolvePending({ label: 'alice', args: {} })
+      await pending
+      scope.stop()
+    }
+  })
+
+  it('passes a call-time action snapshot to the client and DevTools observer', async () => {
+    const host = attachedRuntime('alice')
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: host.attachment }))
+    const scope = effectScope()
+    const startEvent = vi.fn()
+    const action = app.runWithContext(() =>
+      scope.run(() =>
+        useConvexActionInternal(
+          makeFunctionReference<'action', { name: string }>('projects:export'),
+          { observer: { startEvent, finishEvent: vi.fn(), failEvent: vi.fn() } },
+        ),
+      ),
+    )!
+    const form = reactive({ name: 'Draft' })
+    const pending = action.run(form)
+    form.name = 'Final'
+    try {
+      await pending
+      const args = host.action.mock.calls[0]![1]
+      expect(args).toEqual({ name: 'Draft' })
+      expect(isProxy(args)).toBe(false)
+      expect(startEvent.mock.calls[0]![0]).toBe(args)
+    } finally {
+      scope.stop()
+    }
+  })
+
   it('keeps deferred queries idle until execute starts their live lifecycle', async () => {
     const host = attachedRuntime('alice')
     const app = createApp({})

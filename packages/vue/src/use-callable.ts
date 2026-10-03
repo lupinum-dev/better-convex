@@ -14,6 +14,7 @@ import {
   createCallableController,
   type CallableControllerObserver,
 } from './internal/callable-controller'
+import { snapshotArgs } from './internal/snapshot-args'
 import { useOptionalBetterConvexRuntime } from './runtime-context'
 import { useOperationController } from './use-operation'
 
@@ -158,7 +159,7 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
   // and error the call settled with rather than deep `readonly()` proxies.
   return {
     call: (...args: OptionalRestArgs<Reference>): Promise<Result> =>
-      lifecycle.run((args[0] ?? {}) as Args),
+      lifecycle.run(snapshotArgs((args[0] ?? {}) as Args)),
     data: computed(() => lifecycle.data.value),
     status: lifecycle.status,
     pending: lifecycle.pending,
