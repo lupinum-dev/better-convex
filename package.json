@@ -1,6 +1,6 @@
 {
   "name": "@lupinum/better-convex-nuxt",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "Full-featured Convex integration for Nuxt with SSR, real-time subscriptions, and authentication",
   "keywords": [
     "authentication",
