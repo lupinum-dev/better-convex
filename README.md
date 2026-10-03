@@ -202,7 +202,7 @@ the matching documentation without copying it into your application.
 
 Read the [Better Convex documentation](https://better-convex.lupinum.com). Start with [choose your path](https://better-convex.lupinum.com/docs/get-started/choose-your-path). Read the [mental model](https://better-convex.lupinum.com/docs/concepts/mental-model) and the [limitations](https://better-convex.lupinum.com/docs/overview/limitations) before you plan a larger application.
 
-The [API surface](https://better-convex.lupinum.com/docs/reference/api-surface) page lists every public export.
+The [API reference](https://better-convex.lupinum.com/docs/reference/api-surface) page lists every public export.
 
 ## Contributing and development
 
