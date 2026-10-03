@@ -6,6 +6,15 @@ layer for it. The repository follows the
 [Lupinum OSS standard](https://oss.lupinum.com); procedures (releasing,
 dependencies, security incidents) live there, not here.
 
+## Before you start
+
+- Run `git fetch origin` and branch from `origin/main`. A local `main` can be
+  behind, and work based on it can repeat a change that is already merged.
+- Search open pull requests and issues for the topic first
+  (`gh pr list --search`, `gh issue list --search`).
+- Check claims about Convex client or server behavior in the installed
+  `node_modules/convex` source, not from memory.
+
 ## Repository scope
 
 This repository contains three packages:
@@ -132,7 +141,20 @@ proxy, sessions, tokens, keys, secrets, or authorization.
 
 ## Documentation
 
-Follow `docs/WRITING.md`. When a public contract changes, update the docs,
+Follow `docs/WRITING.md`.
+
+The documentation is also agent documentation. `pnpm build` copies the rendered
+pages into every package as `dist/agent/`, and coding agents in user projects
+read them and copy their examples. Keep every example complete and safe to
+copy: authorization inside the Convex function, complete documents in
+optimistic updates, and reads from the local store, not from component state.
+`scripts/agent-docs.mjs` writes the entry page: a "Start here" task table and
+the rules agents most often get wrong. Update both when a page moves or a rule
+changes; the build fails when the table names a missing page or a page link
+cannot be resolved.
+
+The argument and data rules that the composables keep are D21 and D22 in
+[DECISIONS.md](DECISIONS.md). Do not change them in passing. When a public contract changes, update the docs,
 examples, types, tests, and package exports in the same change. Do not rewrite
 legal text, code, API identifiers, quotations, or changelog history to match
 the writing guide.
