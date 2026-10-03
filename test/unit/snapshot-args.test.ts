@@ -39,18 +39,24 @@ it('copies plain objects and arrays, and preserves opaque values', () => {
   expect(snapshot.source.missing).toBeUndefined()
   expect(snapshot.date).toBe(date)
   expect(snapshot.instance).toBe(instance)
-  expect(snapshot.valueRef).toBe(valueRef)
+  expect(snapshot.valueRef).toBe('Draft')
   expect(isProxy(snapshot.source)).toBe(false)
   expect(isProxy(snapshot.source.nested.items[0])).toBe(false)
   source.nested.items[0]!.name = 'Final'
   expect(snapshot.source.nested.items[0]!.name).toBe('Draft')
 })
 
-it('reads refs inside reactive objects as their values, like the Convex client does', () => {
+it('reads refs as their call-time values, at the top level, inside reactive objects and in arrays', () => {
   const boardId = ref('b1')
-  const snapshot = snapshotArgs(reactive({ boardId, tags: [{ name: 'a' }] }))
+  const tag = ref('a')
+  const fromReactive = snapshotArgs(reactive({ boardId, tags: [{ name: 'a' }] }))
+  // Vue does not unwrap refs inside arrays of a reactive object; the snapshot does.
+  const fromPlain = snapshotArgs({ boardId, tags: [tag] })
 
-  expect(snapshot).toEqual({ boardId: 'b1', tags: [{ name: 'a' }] })
+  expect(fromReactive).toEqual({ boardId: 'b1', tags: [{ name: 'a' }] })
+  expect(fromPlain).toEqual({ boardId: 'b1', tags: ['a'] })
   boardId.value = 'b2'
-  expect(snapshot.boardId).toBe('b1')
+  tag.value = 'b'
+  expect(fromReactive.boardId).toBe('b1')
+  expect(fromPlain).toEqual({ boardId: 'b1', tags: ['a'] })
 })
