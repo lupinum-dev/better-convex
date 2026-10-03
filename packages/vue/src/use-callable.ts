@@ -1,10 +1,5 @@
 import type { OptimisticLocalStore } from 'convex/browser'
-import type {
-  FunctionArgs,
-  FunctionReference,
-  FunctionReturnType,
-  OptionalRestArgs,
-} from 'convex/server'
+import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'
 import { computed, onScopeDispose, type ComputedRef } from 'vue'
 
@@ -14,11 +9,21 @@ import {
   createCallableController,
   type CallableControllerObserver,
 } from './internal/callable-controller'
+import type { ConvexArgsInput } from './internal/query-args'
 import { snapshotArgs } from './internal/snapshot-args'
 import { useOptionalBetterConvexRuntime } from './runtime-context'
 import { useOperationController } from './use-operation'
 
 export type ConvexCallStatus = ClientCallStatus
+
+/**
+ * The arguments of `mutate()` and `run()`: like query arguments, each
+ * top-level field may be a ref. The call reads them once and sends a snapshot.
+ */
+export type ConvexCallArgs<Reference extends FunctionReference<'mutation' | 'action'>> =
+  FunctionArgs<Reference> extends Record<string, never>
+    ? [args?: ConvexArgsInput<FunctionArgs<Reference>>]
+    : [args: ConvexArgsInput<FunctionArgs<Reference>>]
 
 export type OptimisticUpdate<Args> = (store: OptimisticLocalStore, args: Args) => undefined
 
@@ -46,7 +51,7 @@ export interface UseConvexMutationReturn<Mutation extends FunctionReference<'mut
    * change rejects it with `IDENTITY_CHANGED`; `error.outcome` tells whether
    * it was sent.
    */
-  readonly mutate: (...args: OptionalRestArgs<Mutation>) => Promise<FunctionReturnType<Mutation>>
+  readonly mutate: (...args: ConvexCallArgs<Mutation>) => Promise<FunctionReturnType<Mutation>>
   /** The latest successful result, or `undefined`. */
   readonly data: ComputedRef<FunctionReturnType<Mutation> | undefined>
   readonly status: ComputedRef<ConvexCallStatus>
@@ -75,7 +80,7 @@ export interface UseConvexActionReturn<Action extends FunctionReference<'action'
    * change rejects it with `IDENTITY_CHANGED`; `error.outcome` tells whether
    * it was sent.
    */
-  readonly run: (...args: OptionalRestArgs<Action>) => Promise<FunctionReturnType<Action>>
+  readonly run: (...args: ConvexCallArgs<Action>) => Promise<FunctionReturnType<Action>>
   /** The latest successful result, or `undefined`. */
   readonly data: ComputedRef<FunctionReturnType<Action> | undefined>
   readonly status: ComputedRef<ConvexCallStatus>
@@ -158,7 +163,7 @@ function createCallable<Reference extends FunctionReference<'mutation' | 'action
   // Computed, like every composable's state: read-only, and the exact result
   // and error the call settled with rather than deep `readonly()` proxies.
   return {
-    call: (...args: OptionalRestArgs<Reference>): Promise<Result> =>
+    call: (...args: ConvexCallArgs<Reference>): Promise<Result> =>
       lifecycle.run(snapshotArgs((args[0] ?? {}) as Args)),
     data: computed(() => lifecycle.data.value),
     status: lifecycle.status,
