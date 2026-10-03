@@ -20,7 +20,6 @@ const props = defineProps<{
   canUpdateProject?: boolean
   canDeleteProject?: boolean
   onLoadMore: () => void
-  onRefresh: () => Promise<void> | void
   onRename: (projectId: Id<'projects'>, name: string) => Promise<void> | void
   onDelete: (projectId: Id<'projects'>) => void
   onRestore: (projectId: Id<'projects'>) => void
@@ -55,7 +54,7 @@ async function submitRename(project: ProjectSummary) {
 
 <template>
   <section class="projects-panel" aria-label="Projects">
-    <ProjectCreateForm v-if="canCreateProject" :team-id="teamId" :on-created="onRefresh" />
+    <ProjectCreateForm v-if="canCreateProject" :team-id="teamId" />
     <p v-else class="empty">You do not have permission to create projects in this team.</p>
 
     <section class="toolbar">

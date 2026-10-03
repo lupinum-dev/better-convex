@@ -2,6 +2,7 @@ import {
   computed,
   getCurrentScope,
   onScopeDispose,
+  shallowRef,
   toValue,
   watch,
   type MaybeRefOrGetter,
@@ -9,59 +10,52 @@ import {
 
 import { api } from '#convex/api'
 
+/**
+ * The project-create rate limit for the signed-in user in a team.
+ *
+ * Convex re-runs the query when the rate limiter's data changes (each created
+ * project), but not when time passes. So the browser starts its own timer from
+ * `retryAfterMs` and allows the next attempt when it ends. The `create`
+ * mutation still enforces the limit on the server.
+ */
 export async function useProjectCreateRateLimit(teamId: MaybeRefOrGetter<string>) {
-  const currentScope = getCurrentScope()
+  // Captured before the await below: after it, Vue no longer knows the caller's scope.
+  const scope = getCurrentScope()
   const resolvedTeamId = computed(() => toValue(teamId).trim())
-  const rateLimitQuery = useConvexQuery(api.projects.getCreateRateLimit, () =>
+  const { data } = await useConvexQuery(api.projects.getCreateRateLimit, () =>
     resolvedTeamId.value ? { teamId: resolvedTeamId.value } : 'skip',
   )
 
-  let refreshTimer: ReturnType<typeof setTimeout> | undefined
-  let stopRefreshWatch: (() => void) | undefined
-  let disposed = false
-
-  function clearRefreshTimer() {
-    if (!refreshTimer) return
-    clearTimeout(refreshTimer)
-    refreshTimer = undefined
+  const waitEnded = shallowRef(false)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const clearTimer = () => {
+    clearTimeout(timer)
+    timer = undefined
   }
 
-  if (currentScope) {
-    onScopeDispose(() => {
-      disposed = true
-      clearRefreshTimer()
-      stopRefreshWatch?.()
-    })
-  }
-
-  const { data, refresh } = await rateLimitQuery
-
-  const startRefreshWatch = () =>
+  const startTimerWatch = () => {
     watch(
-      () => [resolvedTeamId.value, data.value?.retryAfterMs] as const,
-      ([, retryAfterMs]) => {
-        clearRefreshTimer()
-        if (!retryAfterMs) return
-
-        refreshTimer = setTimeout(
-          () => {
-            refreshTimer = undefined
-            void refresh()
-          },
-          Math.max(0, retryAfterMs),
-        )
+      () => data.value,
+      (limit) => {
+        clearTimer()
+        waitEnded.value = false
+        if (!limit || limit.allowed || !limit.retryAfterMs) return
+        timer = setTimeout(() => {
+          waitEnded.value = true
+        }, limit.retryAfterMs)
       },
       { immediate: true },
     )
-
-  if (!disposed) {
-    stopRefreshWatch = currentScope?.run(startRefreshWatch) ?? startRefreshWatch()
+    onScopeDispose(clearTimer)
   }
+  if (scope) scope.run(startTimerWatch)
+  else startTimerWatch()
+
+  const canSubmit = computed(() => data.value?.allowed !== false || waitEnded.value)
 
   return {
     rateLimit: data,
-    canSubmit: computed(() => data.value?.allowed !== false),
-    message: computed(() => data.value?.message ?? null),
-    refresh,
+    canSubmit,
+    message: computed(() => (canSubmit.value ? null : (data.value?.message ?? null))),
   }
 }
