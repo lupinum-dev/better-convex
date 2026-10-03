@@ -21,7 +21,7 @@ export interface QuerySubscriptionClient {
     args: Record<string, unknown>,
     onValue: (value: unknown) => void,
     onError?: (error: Error) => void,
-  ): () => void
+  ): (() => void) & { getCurrentValue?(): unknown }
 }
 
 export interface QueryControllerBoundary<RawT> {
@@ -168,27 +168,46 @@ export function createQueryController<RawT>(
     const operation = beginOperation()
     subscribedKey = key
     awaitingFirstValue = true
-    unsubscribe = client.onUpdate(
-      input.query,
-      args,
-      (raw) => {
-        if (!isOperationCurrent(operation)) return
-        const value = raw as RawT
-        input.boundary.setError(undefined)
-        input.boundary.writeData(value)
-        markSettled(operation)
-        awaitingFirstValue = false
-        input.events?.onUpdate?.({ key, args, value })
-      },
-      (error) => {
-        if (!isOperationCurrent(operation)) return
-        const normalized = normalizeConvexError(error, errorContext)
-        input.boundary.setError(normalized)
-        awaitingFirstValue = false
-        input.events?.onError?.({ key, args, error, normalized })
-      },
-    )
+    // The cached value delivered below arrives once more through Convex's
+    // delayed callback; only that one repeat is skipped.
+    let cachedRepeat: { raw: unknown } | undefined
+    const deliver = (raw: unknown) => {
+      if (!isOperationCurrent(operation)) return
+      const value = raw as RawT
+      input.boundary.setError(undefined)
+      input.boundary.writeData(value)
+      markSettled(operation)
+      awaitingFirstValue = false
+      input.events?.onUpdate?.({ key, args, value })
+    }
+    const onValue = (raw: unknown) => {
+      const repeat = cachedRepeat !== undefined && cachedRepeat.raw === raw
+      cachedRepeat = undefined
+      if (!repeat) deliver(raw)
+    }
+    const subscription = client.onUpdate(input.query, args, onValue, (error) => {
+      cachedRepeat = undefined
+      if (!isOperationCurrent(operation)) return
+      const normalized = normalizeConvexError(error, errorContext)
+      input.boundary.setError(normalized)
+      awaitingFirstValue = false
+      input.events?.onError?.({ key, args, error, normalized })
+    })
+    unsubscribe = subscription
     input.events?.onSubscribe?.({ key, args })
+    // Convex hands an already cached result to a new listener only after a
+    // timer, so a remounted component would render one loading frame. Read it
+    // now instead. A cached error throws here; the callback reports it.
+    let cached: unknown
+    try {
+      cached = subscription.getCurrentValue?.()
+    } catch {
+      cached = undefined
+    }
+    if (cached !== undefined) {
+      deliver(cached)
+      cachedRepeat = { raw: cached }
+    }
     return operation
   }
 

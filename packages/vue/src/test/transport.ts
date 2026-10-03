@@ -421,8 +421,18 @@ export function createTestTransport() {
         }
         return Object.assign(unsubscribe, {
           unsubscribe,
-          getCurrentValue: () =>
-            subscription.current?.state === 'resolved' ? subscription.current.value : undefined,
+          // Like Convex: a result is known while any subscription to the same
+          // query, arguments and identity holds it, not only this one.
+          getCurrentValue: () => {
+            const known = [subscription, ...subscriptions].find(
+              (other) =>
+                other.current?.state === 'resolved' &&
+                other.name === subscription.name &&
+                other.identity === subscription.identity &&
+                hash(other.args) === hash(subscription.args),
+            )?.current
+            return known?.state === 'resolved' ? known.value : undefined
+          },
           getQueryLogs: () => undefined,
         })
       },
