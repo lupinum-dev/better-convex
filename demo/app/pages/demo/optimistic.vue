@@ -234,11 +234,17 @@ function isOptimistic(taskId: string) {
       ><code>const addTask = useConvexMutation(api.tasks.add, {
   optimisticUpdate: (localStore, args) => {
     const current = localStore.getQuery(api.tasks.list, {})
-    localStore.setQuery(api.tasks.list, {}, [
-      { _id: 'temp', title: args.title, completed: false },
-      ...(current ?? [])
-    ])
-  }
+    const now = Date.now()
+    const optimisticTask = {
+      _id: `temp-${now}`,
+      _creationTime: now,
+      title: args.title,
+      completed: false,
+      userId: 'pending',
+      createdAt: now,
+    }
+    localStore.setQuery(api.tasks.list, {}, [optimisticTask, ...(current ?? [])])
+  },
 })</code></pre>
     </UCard>
   </div>
