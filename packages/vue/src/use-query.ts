@@ -225,7 +225,9 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
         loading.value = false
         return
       case 'wait':
-        loading.value = true
+        // A result for these arguments and this principal (a hydration seed)
+        // stays current while auth confirms; only a missing one is pending.
+        loading.value = !controller.hasSettledForCurrentArgs()
         return
       case 'idle':
         loading.value = false
