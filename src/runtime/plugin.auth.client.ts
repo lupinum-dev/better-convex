@@ -1,7 +1,7 @@
 import { createBetterConvex } from '@lupinum/better-convex-vue'
 import { refreshBetterConvexAuth } from '@lupinum/better-convex-vue/internal'
 import { createAuthClient } from 'better-auth/vue'
-import { computed } from 'vue'
+import { computed, shallowRef } from 'vue'
 
 import { clearNuxtData, defineNuxtPlugin, useRuntimeConfig, useState } from '#app'
 import convexAuthClientDefinition from '#convex/auth-client'
@@ -10,7 +10,6 @@ import { convexClientPlugin } from './auth-client/convex-client-plugin'
 import {
   ANONYMOUS_IDENTITY,
   identityKeyOf,
-  identityToken,
   identityUser,
   toAuthenticatedIdentity,
 } from './auth/auth-identity'
@@ -66,18 +65,23 @@ export default defineNuxtPlugin({
     const identity = useConvexIdentityState()
     const authError = useState<string | null>('convex:authError', () => null)
     const pendingState = useConvexAuthPendingState()
+    // DevTools shows token expiry. The token stays out of the identity state,
+    // which the server serializes into the page payload.
+    const devtoolsToken = shallowRef<string | null>(null)
     let latestProviderSession: ProviderSessionRevision | undefined
     let publishCurrentSessionAcceptance: () => void = () => {}
     const adapter = createBetterAuthBrowserAdapter(
       authClient,
       {
         authenticated(token, user) {
-          identity.value = toAuthenticatedIdentity(token, user)
+          identity.value = toAuthenticatedIdentity(user)
+          devtoolsToken.value = identity.value.status === 'authenticated' ? token : null
           authError.value = null
           pendingState.value = false
         },
         anonymous(error) {
           identity.value = ANONYMOUS_IDENTITY
+          devtoolsToken.value = null
           authError.value = error
           pendingState.value = false
         },
@@ -158,6 +162,7 @@ export default defineNuxtPlugin({
       observedIdentityGeneration = generation
       if (snapshot.error) {
         identity.value = ANONYMOUS_IDENTITY
+        devtoolsToken.value = null
         authError.value = snapshot.error.message
         pendingState.value = false
       }
@@ -241,7 +246,7 @@ export default defineNuxtPlugin({
       )
       setupNuxtDevtoolsClient({
         runtime,
-        token: computed(() => identityToken(identity.value)),
+        token: devtoolsToken,
         user: computed(() => identityUser(identity.value)),
         waterfall,
         instanceId: instanceId.value,

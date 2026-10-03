@@ -186,7 +186,7 @@ describe('auth client app-facing state projection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     subscribers.clear()
-    identityState.value = toAuthenticatedIdentity('alice-token', {
+    identityState.value = toAuthenticatedIdentity({
       id: 'alice',
       name: 'Alice',
     })
@@ -311,10 +311,11 @@ describe('auth client app-facing state projection', () => {
     })
     for (const subscriber of subscribers) subscriber()
 
-    expect(identityState.value.status).toBe('authenticated')
-    expect(identityState.value.status === 'authenticated' ? identityState.value.token : null).toBe(
-      'replacement-token',
-    )
+    expect(identityState.value).toEqual({
+      status: 'authenticated',
+      user: { id: 'alice', name: 'Alice' },
+      key: 'user:alice',
+    })
     expect(authErrorState.value).toBeNull()
     expect(clearNuxtDataMock).toHaveBeenCalledTimes(2)
   })

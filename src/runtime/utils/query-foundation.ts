@@ -8,9 +8,9 @@ import { computed, onScopeDispose, shallowRef, watch, type ComputedRef } from 'v
 
 import { onNuxtReady, useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
 
-import { identityKeyOf, identityToken } from '../auth/auth-identity'
+import { identityKeyOf } from '../auth/auth-identity'
 import { ConvexCallError, normalizeConvexError } from '../errors'
-import { useConvexIdentityState } from './auth-identity-state'
+import { readServerConvexToken, useConvexIdentityState } from './auth-identity-state'
 import { useConvexAuthPendingState } from './auth-pending-state'
 import type { ConvexAuthMode } from './auth-status'
 import {
@@ -109,8 +109,7 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
     convexQueryAsyncDataKey(input.namespace, input.functionName, input.keyHash(), auth, gate.value),
   )
   const event = useRequestEvent()
-  const identityState = useConvexIdentityState()
-  const cachedToken = computed(() => identityToken(identityState.value))
+  const nuxtApp = useNuxtApp()
   const { url: convexUrl, server: bounds } = getConvexRuntimeConfig()
   const asyncData = useAsyncData<ConvexQueryPayload<T> | null>(
     key,
@@ -121,7 +120,7 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
         const token = fetchAuthToken({
           auth,
           cookieHeader: event?.headers.get('cookie') ?? '',
-          cachedToken,
+          cachedToken: { value: readServerConvexToken(nuxtApp) },
         })
         if (auth !== 'none' && decision.identity !== 'anonymous' && !token) return null
         return {

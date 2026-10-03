@@ -45,7 +45,7 @@ describe('useConvexQuery auth execution gate', () => {
     expect(resolved).toBe(false)
     expect(result.queryState.status.value).toBe('pending')
 
-    result.identity.value = toAuthenticatedIdentity('jwt-u1', { id: 'u1' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'u1' })
     result.pending.value = false
     await flush()
     expect(primary.activeListenerCount(query, {})).toBe(1)
@@ -80,7 +80,7 @@ describe('useConvexQuery auth execution gate', () => {
     expect(result.q.blockedBy.value).toBe('auth')
 
     // Settles authenticated: executes with identity.
-    result.identity.value = toAuthenticatedIdentity('jwt-u1', { id: 'u1' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'u1' })
     result.pending.value = false
     await flush()
     expect(primary.activeListenerCount(query, {})).toBe(1)
