@@ -4,16 +4,20 @@
 //   package resolving before the workspace copy (dependencies resolve from the repo);
 // - fails when a tarball contains env files, keys, or secret-like test credentials.
 // Run after `pnpm build`.
-import { execFileSync } from 'node:child_process'
+import assert from 'node:assert/strict'
+import { execFileSync, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -58,9 +62,54 @@ function files(directory) {
     .filter((path) => statSync(path).isFile())
 }
 
+function checkOptionalAuthCli(tarball) {
+  // Outside the repository so its development peers cannot satisfy CLI imports.
+  const consumer = mkdtempSync(join(tmpdir(), 'better-convex-cli-no-auth-'))
+  try {
+    execFileSync('tar', ['-xzf', tarball, '-C', consumer, '--strip-components=1'])
+    const manifest = JSON.parse(readFileSync(join(consumer, 'package.json'), 'utf8'))
+    const cli = join(consumer, manifest.bin['better-convex'])
+    const require = createRequire(cli)
+    const peers = ['better-auth', '@better-auth/core', '@better-auth/oauth-provider']
+    for (const peer of peers) {
+      assert.throws(() => require.resolve(peer), { code: 'MODULE_NOT_FOUND' })
+    }
+    for (const [args, expected] of [
+      [['--help'], 'Usage:'],
+      [['--version'], manifest.version],
+      [['init', '--help'], 'Usage: better-convex init'],
+      [['convex', '--help'], 'Run the pinned Convex CLI'],
+    ]) {
+      const result = spawnSync(process.execPath, [cli, ...args], {
+        cwd: consumer,
+        encoding: 'utf8',
+      })
+      assert.equal(result.status, 0, `${args.join(' ')} failed:\n${result.stderr}`)
+      assert.ok(result.stdout.includes(expected), result.stdout)
+      assert.equal(result.stderr, '')
+    }
+    const auth = spawnSync(process.execPath, [cli, 'auth', 'schema'], {
+      cwd: consumer,
+      encoding: 'utf8',
+    })
+    assert.equal(auth.status, 1)
+    const install = peers.map((peer) => `${peer}@${manifest.peerDependencies[peer]}`).join(' ')
+    assert.equal(
+      auth.stderr.trim(),
+      `[better-convex] better-convex auth schema needs the optional Better Auth packages. Install them with: pnpm add ${install}`,
+    )
+    console.log(
+      'Packed CLI without Better Auth: help, version, init/convex help and auth install hint passed.',
+    )
+  } finally {
+    rmSync(consumer, { recursive: true, force: true })
+  }
+}
+
 function main() {
   const smoke = join(root, 'node_modules/.cache/packed-smoke')
   const tarballs = packWorkspace(join(smoke, 'tarballs'))
+  checkOptionalAuthCli(tarballs.nuxt)
   const failures = []
 
   for (const [id, tarball] of Object.entries(tarballs)) {
