@@ -10,7 +10,7 @@ import { basename, join } from 'node:path'
  * `src/runtime/devtools/ui/` — a self-contained Nuxt app whose *source*
  * (app.vue, composables/, components/, assets/, public/, nuxt.config.js)
  * only exists to produce the static build the devtools bridge actually
- * serves (`ui/dist/`, built separately by the `build:devtools` script and
+ * serves (`ui/dist/`, built separately by `pnpm build:packages`, which runs `nuxi build src/runtime/devtools/ui --preset static`, and
  * symlinked into `src/runtime/devtools/ui/dist`). None of that source is
  * needed — or usable — by a consumer; only the built static output ships.
  *
@@ -34,7 +34,7 @@ import { basename, join } from 'node:path'
  *   package entries do not import it, and component source keeps the exact
  *   schema type used by its generated data model.
  * - `dist/runtime/devtools/.output/`, nitro's raw static-build output
- *   directory (created by the `build:devtools` script at
+ *   directory (created by that `nuxi build` step at
  *   `src/runtime/devtools/.output`, sibling to `ui/`, not inside it) — a
  *   second, unreferenced copy of the exact same static site already kept at
  *   `ui/dist/`. `src/module.ts` only ever resolves

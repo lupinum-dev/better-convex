@@ -5,28 +5,14 @@
  * lockstep with this package. Nothing here follows semver; applications must
  * import from `@lupinum/better-convex-vue` or its documented subpaths.
  */
-export {
-  useConvexQueryInternal,
-  type ConvexQueryHydrationSeed,
-  type UseConvexQueryInternalInput,
-} from './use-query'
-export {
-  useConvexPaginatedQueryInternal,
-  type ConvexPaginatedQueryInternal,
-  type ConvexPaginationBridge,
-  type UseConvexPaginatedQueryInternalInput,
-} from './use-paginated-query'
-export {
-  useConvexActionInternal,
-  useConvexMutationInternal,
-  type ConvexCallableInternalOptions,
-} from './use-callable'
+export { useConvexQueryInternal } from './use-query'
+export { useConvexPaginatedQueryInternal } from './use-paginated-query'
+export { useConvexActionInternal, useConvexMutationInternal } from './use-callable'
 export { useConvexFormInternal, type ConvexFormInternalOptions } from './use-form'
 export {
   useConvexFileUploadInternal,
   type ConvexFileUploadInternalOptions,
 } from './use-file-upload'
-export type { ConvexFileUploadObserver } from './internal/upload-controller'
 export { projectConvexConnectionState } from './use-connection-state'
 export { refreshBetterConvexAuth, useBetterConvexIdentity } from './runtime-context'
 export type { CallableControllerObserver } from './internal/callable-controller'
@@ -43,7 +29,6 @@ export {
   decideQueryGate,
   queryIsolationTag,
   type QueryExecutionOutcome,
-  type QueryGateDecision,
 } from './internal/query-execution'
-export { deriveQueryStatus, type QueryStatusInput } from './internal/query-status'
-export { createSettlementWaiters, type SettlementWaiters } from './internal/settlement'
+export { deriveQueryStatus } from './internal/query-status'
+export { createSettlementWaiters } from './internal/settlement'
