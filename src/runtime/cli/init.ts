@@ -3,8 +3,8 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
-import { runAuthSchemaCommand } from './auth-schema'
 import { inspectConvexAuthority, runConvexCommand } from './convex'
+import { rethrowAuthSchemaImportError } from './optional-auth'
 
 export interface InitDependencies {
   confirm(message: string): Promise<boolean>
@@ -178,7 +178,12 @@ function defaultDependencies(root: string): InitDependencies {
       }
       return new Set(names)
     },
-    generateSchema: runAuthSchemaCommand,
+    async generateSchema(args) {
+      const { runAuthSchemaCommand } = await import('./auth-schema').catch(
+        rethrowAuthSchemaImportError,
+      )
+      return await runAuthSchemaCommand(args)
+    },
     randomSecret: () => randomBytes(32).toString('base64url'),
     log: console.log,
   }

@@ -3,9 +3,9 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { runAuthSchemaCommand } from './auth-schema'
 import { runConvexCommand } from './convex'
 import { runInitCommand } from './init'
+import { rethrowAuthSchemaImportError } from './optional-auth'
 
 function usage(): string {
   return [
@@ -44,6 +44,9 @@ export async function runBetterConvexCommand(arguments_: readonly string[]): Pro
     return await runConvexCommand([subcommand, ...rest])
   }
   if (command === 'auth' && subcommand === 'schema') {
+    const { runAuthSchemaCommand } = await import('./auth-schema').catch(
+      rethrowAuthSchemaImportError,
+    )
     return await runAuthSchemaCommand(rest)
   }
   if (command === 'init') {
