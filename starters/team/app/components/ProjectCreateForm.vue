@@ -5,17 +5,13 @@ import { api } from '#convex/api'
 import { useProjectCreateRateLimit } from '~/composables/useProjectCreateRateLimit'
 
 const props = defineProps<{
-  onCreated?: () => Promise<void> | void
   teamId: string
 }>()
 
 const name = ref('')
 const error = ref<string | null>(null)
-const {
-  canSubmit: canCreateProjectNow,
-  message: rateLimitMessage,
-  refresh: refreshCreateRateLimit,
-} = await useProjectCreateRateLimit(() => props.teamId)
+const { canSubmit: canCreateProjectNow, message: rateLimitMessage } =
+  await useProjectCreateRateLimit(() => props.teamId)
 const { mutate: createProject, pending } = useConvexMutation(api.projects.create)
 
 async function submit() {
@@ -35,9 +31,8 @@ async function submit() {
 
   error.value = null
   try {
+    // The project list and the rate limit update live; nothing to reload.
     await createProject(parsed.data)
-    await refreshCreateRateLimit()
-    await props.onCreated?.()
     name.value = ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Project was not created'

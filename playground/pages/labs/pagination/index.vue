@@ -73,11 +73,6 @@ function handleLoadMore() {
       </NuxtLink>
     </nav>
 
-    <h2>Feature Tests</h2>
-    <nav class="nav-links small">
-      <NuxtLink to="/labs/pagination/features/refresh" class="nav-link">refresh()</NuxtLink>
-    </nav>
-
     <section class="control-section">
       <button
         data-testid="add-btn"

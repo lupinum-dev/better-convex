@@ -20,7 +20,6 @@ const {
   pending: projectsLoading,
   canLoadMore,
   loadMore,
-  refresh,
 } = await useConvexPaginatedQuery(
   api.projects.list,
   computed(() => ({ teamId: props.teamId, status: statusFilter.value })),
@@ -68,7 +67,6 @@ async function restoreSelectedProject(projectId: Id<'projects'>) {
     :can-update-project="canUpdateProject"
     :can-delete-project="canDeleteProject"
     :on-load-more="loadMoreProjects"
-    :on-refresh="refresh"
     :on-rename="renameSelectedProject"
     :on-delete="deleteSelectedProject"
     :on-restore="restoreSelectedProject"
