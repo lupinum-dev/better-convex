@@ -10,3 +10,14 @@ overrides:
   '@tiptap/core@3.30.3': 3.30.5
   # Remove when fontless requires esbuild 0.28.1 or newer.
   'fontless>esbuild': 0.28.2
+
+auditConfig:
+  # No patched release exists for these two advisories (first_patched_version is
+  # null). Both reach this lockfile only through Nuxt development tooling:
+  # braces through nitropack > globby (build-time globbing of repository files)
+  # and node-forge through listhen (self-signed dev-server certificates). Neither
+  # is in a published package or handles untrusted input. Remove each entry as
+  # soon as a patched release passes the 24-hour quarantine.
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm # braces <=3.0.3
+    - GHSA-86w9-cpqp-85rv # node-forge <=1.4.0
