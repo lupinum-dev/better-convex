@@ -22,7 +22,7 @@
 - `useConvexQuery` loads a query during server rendering, sends the result with the page, and keeps it live in the browser.
 - `useConvexMutation`, `useConvexAction`, `useConvexForm`, and `useConvexFileUpload` return reactive `pending`, `error`, and `data` state.
 - Writes, uploads, and `useConvexOperation` belong to the user who started them. When that user changes, no later request is sent, and the error tells whether the last one was sent.
-- Every failure is one `ConvexCallError` with a `message`, a `code`, and the `functionName` that failed.
+- A failed call rejects with a `ConvexCallError` that has a `message`, a `code`, and the `functionName` that failed. `useConvexForm` reports validation and submission failures as `ConvexFormError`.
 - `serverConvex(event)` calls Convex from a Nitro route as the signed-in user.
 - Optional [Better Auth](https://www.better-auth.com) support keeps sessions in a Convex component and signs users in to Convex.
 - An optional MCP package lets AI hosts, such as ChatGPT and Claude, call your Convex functions as tools.
