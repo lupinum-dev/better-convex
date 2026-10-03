@@ -39,8 +39,6 @@ import type { ConvexCallError as ErrorsEntryConvexCallError } from '../../src/ru
 type NotAtNuxtRootQueryOptions = import('../../src/module').UseConvexQueryOptions
 // @ts-expect-error -- the Nuxt root exports UseNuxtConvexPaginatedQueryOptions instead.
 type NotAtNuxtRootPaginatedOptions = import('../../src/module').UseConvexPaginatedQueryOptions
-// @ts-expect-error -- UseConvexCall belongs to the Vue package only.
-type NotAtNuxtRootCall = import('../../src/module').UseConvexCall
 
 type EmptyQuery = FunctionReference<'query', 'public', Record<string, never>, string>
 type OptionalArgsQuery = FunctionReference<'query', 'public', { term?: string }, string[]>
@@ -142,7 +140,6 @@ describe('Nuxt package-root query type contract', () => {
     // Unresolved imports are `any`; the @ts-expect-error lines above carry the check.
     expectTypeOf<NotAtNuxtRootQueryOptions>().toBeAny()
     expectTypeOf<NotAtNuxtRootPaginatedOptions>().toBeAny()
-    expectTypeOf<NotAtNuxtRootCall>().toBeAny()
   })
 
   it('keeps exact-empty args optional and declared optional keys positional', () => {

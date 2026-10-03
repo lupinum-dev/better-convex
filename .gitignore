@@ -10,6 +10,8 @@ node_modules
 .temp
 .tmp
 .cache
+# Local Convex backend state (pnpm dev, e2e helpers)
+.convex
 .claude
 # Yarn
 **/.yarn/cache
