@@ -205,7 +205,6 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
     // The server renders the first page only; later pages load in the browser.
     loadMore: () => Promise.resolve(),
     execute: ssr.execute,
-    refresh: ssr.refresh,
     reset(cursor: string | null = null) {
       if (typeof cursor !== 'string' && cursor !== null) {
         throw new Error('[better-convex-nuxt] reset cursor must be a string or null')

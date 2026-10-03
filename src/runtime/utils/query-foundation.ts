@@ -85,7 +85,6 @@ export interface ConvexSsrQuery<T> {
   /** Settles with the initial SSR fetch that this render waits for. */
   readonly settled: Promise<void>
   execute(): Promise<void>
-  refresh(): Promise<void>
   /** Re-run the fetch for the current key without starting a deferred query. */
   reload(): Promise<void>
 }
@@ -158,10 +157,6 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
     async execute() {
       started.value = true
       await asyncData.execute().then(ignore, ignore)
-    },
-    async refresh() {
-      started.value = true
-      await asyncData.refresh().then(ignore, ignore)
     },
     async reload() {
       await asyncData.execute().then(ignore, ignore)

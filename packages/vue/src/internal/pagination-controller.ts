@@ -47,7 +47,6 @@ export interface PaginationControllerInput<Item> {
   getBoundaryError(): ConvexCallError | undefined
   setBoundaryError(error: ConvexCallError | undefined, key: string): void
   getClient(): QuerySubscriptionClient | null
-  fetchPage(options: PaginationPageOptions): Promise<PaginationResult<Item> | null>
 }
 
 export interface PaginationController<Item> {
@@ -72,7 +71,6 @@ export interface PaginationController<Item> {
    * loaded, failed, superseded, reset, or disposed. A no-op unless `canLoadMore`.
    */
   loadMore(numItems: number): Promise<void>
-  refresh(): Promise<void>
   reset(): void
   handleIdentityBoundary(input: {
     nextTag: QueryIsolationTag
@@ -113,7 +111,6 @@ export function createPaginationController<Item>(
   const firstPageRealtime = shallowRef<PaginationResult<Item> | null>(null)
   const firstPageOptions = shallowRef<PaginationPageOptions | null>(null)
   const firstPageWithheld = shallowRef(false)
-  const manualRefreshPending = shallowRef(false)
   const lastSettledResults = shallowRef<readonly Item[] | undefined>(undefined)
   let firstPageUnsubscribe: (() => void) | null = null
   let pendingFirstPageSettlement: FirstPageSettlement | null = null
@@ -195,14 +192,6 @@ export function createPaginationController<Item>(
       return Promise.resolve()
     pendingFirstPageSettlement ??= deferredSettlement()
     return pendingFirstPageSettlement.promise
-  }
-
-  async function fetchForOperation(
-    options: PaginationPageOptions,
-    operation: PaginationOperationContext,
-  ): Promise<PaginationResult<Item> | null> {
-    const result = await input.fetchPage(options)
-    return result && fence.isCurrent(operation) ? result : null
   }
 
   function retirePagesFrom(index: number): void {
@@ -337,7 +326,6 @@ export function createPaginationController<Item>(
   const status = computed<PaginationStatus>(() =>
     computePaginationStatus({
       disabled: input.isIdle(),
-      refreshing: manualRefreshPending.value,
       firstPageError: input.getBoundaryError() !== undefined,
       firstPageReady: firstPage() !== null,
     }),
@@ -417,7 +405,7 @@ export function createPaginationController<Item>(
     if (disposed) return true
     const page = pages.value.find((candidate) => candidate.paginationOpts === options)
     if (page) return page.result !== undefined || page.error !== undefined
-    // Bounded split pages or a refresh replaced the requested page; its items
+    // Bounded split pages replaced the requested page; its items
     // are visible once no replacement is still loading. Retired or reset lists
     // have nothing left loading either.
     return !isLoadingMore.value
@@ -444,66 +432,6 @@ export function createPaginationController<Item>(
     return loadMoreSettlement.until(() => isPageSettled(page.paginationOpts))
   }
 
-  async function refresh(): Promise<void> {
-    if (disposed || input.isIdle() || manualRefreshPending.value) return
-    manualRefreshPending.value = true
-    input.setBoundaryError(undefined, input.getBoundaryKey())
-    const loadedPages = [...pages.value]
-    const operation = fence.capture()
-    // A failed later page keeps the loaded list and reports on that page only.
-    let failedTarget: PaginationSplitTarget = 'first'
-    let failedSource = firstPageOptions.value ?? initialOptions.value
-    try {
-      const firstResult = await fetchForOperation(failedSource, operation)
-      if (!firstResult) return
-      const refreshed: PaginationPageState<Item>[] = []
-      const results: PaginationResult<Item>[] = []
-      let previous = firstResult
-      for (const page of loadedPages) {
-        if (previous.isDone || previous.pageStatus === 'SplitRequired') break
-        const cursor = previous.continueCursor
-        const paginationOpts =
-          cursor === page.paginationOpts.cursor
-            ? page.paginationOpts
-            : { ...page.paginationOpts, cursor }
-        failedTarget = page.paginationOpts
-        failedSource = paginationOpts
-        const result = await fetchForOperation(paginationOpts, operation)
-        if (!result) return
-        refreshed.push({
-          ...page,
-          paginationOpts,
-          result: visiblePage(result) ?? undefined,
-          error: undefined,
-        })
-        results.push(result)
-        previous = result
-      }
-      if (!fence.isCurrent(operation) || pages.value.length !== loadedPages.length) return
-      for (const retiredPage of loadedPages.slice(refreshed.length)) retiredPage.unsubscribe?.()
-      firstPageWithheld.value = firstResult.pageStatus === 'SplitRequired'
-      firstPageRealtime.value = visiblePage(firstResult)
-      input.retireBoundaryFirstPage()
-      pages.value = refreshed
-      if (input.isLive()) {
-        for (let index = 0; index < refreshed.length; index += 1) {
-          if (loadedPages[index]?.paginationOpts !== refreshed[index]?.paginationOpts) {
-            subscribePage(index)
-          }
-        }
-      }
-      input.setBoundaryError(undefined, operation.boundaryKey)
-      splitController.begin('first', firstResult)
-      refreshed.forEach((page, index) =>
-        splitController.begin(page.paginationOpts, results[index]!),
-      )
-    } catch (cause) {
-      if (fence.isCurrent(operation)) rejectPage(failedTarget, cause, failedSource)
-    } finally {
-      if (fence.isCurrent(operation)) manualRefreshPending.value = false
-    }
-  }
-
   function restartBoundary(options: {
     clearSettledData: boolean
     errorKey: string
@@ -514,7 +442,6 @@ export function createPaginationController<Item>(
     fence.invalidate()
     teardownSubscriptions()
     if (options.renewGeneration) generation.value = createPaginationGeneration()
-    manualRefreshPending.value = false
     firstPageRealtime.value = null
     firstPageWithheld.value = false
     if (!options.keepBoundaryFirstPage) input.retireBoundaryFirstPage()
@@ -540,7 +467,6 @@ export function createPaginationController<Item>(
     const options = firstPageOptions.value ?? initialOptions.value
     fence.invalidate()
     teardownSubscriptions()
-    manualRefreshPending.value = false
     subscribeFirstPage(options)
     for (let index = 0; index < pages.value.length; index += 1) subscribePage(index)
   }
@@ -627,7 +553,6 @@ export function createPaginationController<Item>(
     start,
     firstPageSettled,
     loadMore,
-    refresh,
     reset,
     handleIdentityBoundary,
     handleExecutionBoundary,

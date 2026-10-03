@@ -81,7 +81,6 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<boolean>(paginated.isExhausted.value)
   assertType<'skip' | 'auth' | 'manual' | null>(paginated.blockedBy.value)
   assertType<Promise<void>>(paginated.loadMore(5))
-  assertType<Promise<void>>(paginated.refresh())
   // @ts-expect-error the transport cursor is not public pagination state
   void paginated.cursor
   // @ts-expect-error the transport page status is not public pagination state

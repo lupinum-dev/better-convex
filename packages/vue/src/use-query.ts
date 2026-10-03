@@ -56,7 +56,6 @@ export interface UseConvexQueryState<Data> {
    */
   readonly blockedBy: ComputedRef<ConvexQueryBlockedBy>
   execute(): Promise<void>
-  refresh(): Promise<void>
 }
 
 type EmptyConvexArgs = Record<string, never>
@@ -192,7 +191,6 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
   let previousTag = tag.value
   let previousBoundaryKey = boundaryKey.value
   let previousLive = false
-  let refreshSequence = 0
 
   // Auth settlement changes the identity snapshot, which re-runs this through
   // the `gate` watcher; a waiting query needs no separate readiness callback.
@@ -246,33 +244,6 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
     reconcile()
   }
 
-  async function refresh(): Promise<void> {
-    start()
-    const currentArgs = args.args.value
-    if (gate.value !== 'execute' || isConvexArgsSkipped(currentArgs)) return
-    const sequence = ++refreshSequence
-    const operation = controller.beginOperation()
-    const isCurrentRefresh = () =>
-      sequence === refreshSequence && controller.isOperationCurrent(operation)
-    loading.value = true
-    boundaryError.value = undefined
-    try {
-      const value = await runtime.browser
-        .clientFor(auth)
-        .query(query, currentArgs as FunctionArgs<Query>)
-      if (!isCurrentRefresh()) return
-      raw.value = value
-      controller.markSettled(operation)
-    } catch (error) {
-      if (!isCurrentRefresh()) return
-      const normalized = controller.setOperationError(error, operation)
-      if (!normalized) return
-      boundaryError.value = normalized
-    } finally {
-      if (isCurrentRefresh()) loading.value = false
-    }
-  }
-
   async function execute(): Promise<void> {
     start()
     if (gate.value === 'idle' || gate.value === 'error') return
@@ -319,6 +290,5 @@ export function useConvexQueryInternal<Query extends FunctionReference<'query'>>
     isStale,
     blockedBy,
     execute,
-    refresh,
   }
 }
