@@ -8,12 +8,10 @@ definePageMeta({
 const { data: tasks, status } = await useConvexQuery(api.tasks.listMine, {})
 
 const input = ref('')
-const addTask = useConvexMutation(api.tasks.add)
-const addStatus = addTask.status
-const toggleTask = useConvexMutation(api.tasks.toggle)
-const deleteTask = useConvexMutation(api.tasks.remove)
-const clearTasks = useConvexMutation(api.tasks.clearAll)
-const clearStatus = clearTasks.status
+const { mutate: addTask, status: addStatus } = useConvexMutation(api.tasks.add)
+const { mutate: toggleTask } = useConvexMutation(api.tasks.toggle)
+const { mutate: deleteTask } = useConvexMutation(api.tasks.remove)
+const { mutate: clearTasks, status: clearStatus } = useConvexMutation(api.tasks.clearAll)
 
 async function add() {
   if (!input.value.trim()) return

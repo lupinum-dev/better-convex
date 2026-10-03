@@ -11,11 +11,10 @@ const { can } = await useDemoPermissions()
 const { data: feedItems, status } = await useConvexQuery(api.feed.list, {})
 
 // Add item mutation
-const addItem = useConvexMutation(api.feed.add)
-const addStatus = addItem.status
+const { mutate: addItem, status: addStatus } = useConvexMutation(api.feed.add)
 
 // Delete mutation
-const deleteItem = useConvexMutation(api.feed.remove)
+const { mutate: deleteItem } = useConvexMutation(api.feed.remove)
 
 // Form state
 const content = ref('')
