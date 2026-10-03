@@ -36,14 +36,6 @@ const aliceBoundary = {
   previousBoundaryKey: 'notes:list:alice',
 } as const
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise
-  })
-  return { promise, resolve }
-}
-
 function makeHarness(options?: { live?: boolean; initialCursor?: string | null }) {
   const query = mockFnRef<'query'>('notes:list')
   let args: Record<string, unknown> | 'skip' = { owner: 'alice' }
@@ -58,8 +50,6 @@ function makeHarness(options?: { live?: boolean; initialCursor?: string | null }
   const idle = shallowRef(false)
   const boundaryFirstPage = shallowRef<PaginationResult<Row> | null>(null)
   const boundaryError = shallowRef<ConvexCallError | undefined>(undefined)
-  const fetches: PaginationPageOptions[] = []
-  const fetchQueue: Array<Promise<PaginationResult<Row> | null>> = []
   const subscriptions: Array<{
     args: Record<string, unknown>
     active: boolean
@@ -107,10 +97,6 @@ function makeHarness(options?: { live?: boolean; initialCursor?: string | null }
       boundaryError.value = error
     },
     getClient: () => (live.value ? client : null),
-    fetchPage: async (paginationOptions) => {
-      fetches.push(paginationOptions)
-      return (await fetchQueue.shift()) ?? null
-    },
   })
   controller.start()
 
@@ -119,8 +105,6 @@ function makeHarness(options?: { live?: boolean; initialCursor?: string | null }
     state: {
       query,
       subscriptions,
-      fetches,
-      fetchQueue,
       get boundaryError() {
         return boundaryError.value
       },
@@ -475,41 +459,6 @@ describe('pagination controller', () => {
     },
   )
 
-  it('refreshes every loaded page from the new cursor chain and commits atomically', async () => {
-    const { controller, state } = makeHarness()
-    state.subscriptions[0]?.value(page(['a'], 'old-1'))
-    void controller.loadMore(2)
-    state.subscriptions[2]?.value(page(['b'], 'old-2'))
-    void controller.loadMore(2)
-    state.subscriptions[4]?.value(page(['c'], '', true))
-
-    state.fetchQueue.push(
-      Promise.resolve(page(['a2'], 'new-1')),
-      Promise.resolve(page(['b2'], 'new-2')),
-      Promise.resolve(page(['c2'], '', true)),
-    )
-    await controller.refresh()
-
-    expect(state.fetches.map((options) => options.cursor)).toEqual([null, 'new-1', 'new-2'])
-    expect(controller.data.value?.map((row) => row.id)).toEqual(['a2', 'b2', 'c2'])
-  })
-
-  it('retires a loaded tail when refresh makes an earlier page terminal', async () => {
-    const { controller, state } = makeHarness()
-    state.subscriptions[0]?.value(page(['a'], 'old-1'))
-    void controller.loadMore(2)
-    state.subscriptions[2]?.value(page(['b'], '', true))
-
-    state.fetchQueue.push(Promise.resolve(page(['a2'], '', true)))
-    await controller.refresh()
-
-    expect(state.fetches.map((options) => options.cursor)).toEqual([null])
-    expect(controller.data.value?.map((row) => row.id)).toEqual(['a2'])
-    expect(controller.pages.value).toEqual([])
-    expect(state.subscriptions[2]?.active).toBe(false)
-    expect(controller.status.value).toBe('success')
-  })
-
   it('retires only the tail invalidated by a live cursor-boundary change', () => {
     const { controller, state } = makeHarness()
     state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
@@ -528,15 +477,12 @@ describe('pagination controller', () => {
     expect(controller.canLoadMore.value).toBe(true)
   })
 
-  it('retires subscriptions and queued refresh results synchronously at an identity boundary', async () => {
+  it('retires subscriptions and ignores old results synchronously at an identity boundary', () => {
     const { controller, state } = makeHarness()
     state.subscriptions[0]?.value(page(['alice'], 'cursor-1'))
     void controller.loadMore(2)
     state.subscriptions[2]?.value(page(['tail'], '', true))
 
-    const pending = deferred<PaginationResult<Row> | null>()
-    state.fetchQueue.push(pending.promise)
-    const refresh = controller.refresh()
     const previousTag = {
       identityKey: 'user:alice',
       identityGeneration: 1,
@@ -552,8 +498,7 @@ describe('pagination controller', () => {
     expect(controller.data.value).toBeUndefined()
     expect(state.subscriptions.slice(0, 3).every((subscription) => !subscription.active)).toBe(true)
     expect(state.subscriptions[3]?.active).toBe(true)
-    pending.resolve(page(['stale-alice'], '', true))
-    await refresh
+    state.subscriptions[0]?.value(page(['stale-alice'], '', true))
     expect(controller.data.value).toBeUndefined()
   })
 
@@ -567,7 +512,6 @@ describe('pagination controller', () => {
     const held = controller.loadMore(2).then(() => {
       settled = true
     })
-    expect(state.fetches).toEqual([])
     expect(state.subscriptions).toHaveLength(0)
     expect(controller.pages.value).toHaveLength(1)
     expect(controller.status.value).toBe('success')
@@ -796,49 +740,6 @@ describe('pagination controller', () => {
     expect(controller.status.value).toBe('error')
     expect(controller.error.value).toBeInstanceOf(ConvexCallError)
     expect(controller.error.value?.functionName).toBe('notes:list')
-  })
-
-  it('resets when refresh meets an invalid cursor', async () => {
-    const { controller, state } = makeHarness()
-    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
-    void controller.loadMore(2)
-    state.subscriptions[2]?.value(page(['b'], '', true))
-
-    state.fetchQueue.push(Promise.reject(new Error('InvalidCursor: stale')))
-    await controller.refresh()
-
-    expect(state.subscriptions.slice(0, 3).every((subscription) => !subscription.active)).toBe(true)
-    expect(state.subscriptions[3]?.args.paginationOpts).toMatchObject({ cursor: null })
-    expect(controller.pages.value).toEqual([])
-    expect(controller.error.value).toBeUndefined()
-    expect(controller.status.value).toBe('pending')
-  })
-
-  it('keeps the loaded list when refresh fails on a later page', async () => {
-    const { controller, state } = makeHarness()
-    state.subscriptions[0]?.value(page(['a'], 'cursor-1'))
-    void controller.loadMore(2)
-    state.subscriptions[2]?.value(page(['b'], 'cursor-2'))
-    void controller.loadMore(2)
-    state.subscriptions[4]?.value(page(['c'], '', true))
-
-    state.fetchQueue.push(
-      Promise.resolve(page(['a2'], 'cursor-1')),
-      Promise.reject(new Error('page two failed')),
-    )
-    await controller.refresh()
-
-    expect(state.fetches.map((options) => options.cursor)).toEqual([null, 'cursor-1'])
-    expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b', 'c'])
-    expect(state.boundaryError).toBeUndefined()
-    expect(controller.error.value).toBeInstanceOf(ConvexCallError)
-    expect(controller.pages.value[0]?.error).toBe(controller.error.value)
-    expect(controller.status.value).toBe('success')
-    expect([1, 3, 4].every((index) => state.subscriptions[index]?.active)).toBe(true)
-
-    state.subscriptions[3]?.value(page(['b2'], 'cursor-2'))
-    expect(controller.error.value).toBeUndefined()
-    expect(controller.status.value).toBe('success')
   })
 
   it('splits a live page that grows beyond twice the initial page size', () => {

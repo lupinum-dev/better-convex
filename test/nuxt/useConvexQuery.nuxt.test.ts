@@ -439,20 +439,6 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(notes.data).toEqual(['second'])
   })
 
-  it('refresh resolves after storing a query error', async () => {
-    const convex = new MockConvexClient()
-    const query = mockFnRef<'query'>('notes:list:refresh-failure')
-    convex.setQueryHandler('notes:list:refresh-failure', async () => {
-      throw new Error('private refresh failure')
-    })
-
-    const { result } = await captureInNuxt(() => useConvexQueryState(query, {}), { convex })
-
-    await expect(result.refresh()).resolves.toBeUndefined()
-    expect(result.status.value).toBe('error')
-    expect(result.error.value).toBeInstanceOf(ConvexCallError)
-  })
-
   it('returns Nuxt-compatible immediate state on one native initial-settlement Promise', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:blocking-default')
@@ -622,13 +608,13 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(convex.calls.onUpdate.length).toBe(0)
   })
 
-  it('exposes execute and refresh but omits clear from query state', async () => {
+  it('exposes execute but omits refresh and clear from query state', async () => {
     const query = mockFnRef<'query'>('notes:list:return-shape')
     const { result } = await captureInNuxt(() => useConvexQueryState(query, 'skip'), {
       convex: new MockConvexClient(),
     })
 
-    expect(typeof result.refresh).toBe('function')
+    expect(result).not.toHaveProperty('refresh')
     expect('clear' in (result as unknown as Record<string, unknown>)).toBe(false)
     expect(typeof result.execute).toBe('function')
   })

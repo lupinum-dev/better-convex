@@ -277,42 +277,6 @@ describe('useConvexQuery identity isolation', () => {
     wrapper.unmount()
   })
 
-  it('drops a deferred one-shot result resolved during the synchronous A-to-B window', async () => {
-    const primary = new MockConvexClient()
-    const query = mockFnRef<'query'>('notes:deferred-once')
-    let resolveA!: (value: unknown) => void
-    let calls = 0
-    primary.setQueryHandler('notes:deferred-once', () => {
-      calls += 1
-      return calls === 1
-        ? new Promise((resolve) => (resolveA = resolve))
-        : Promise.resolve({ owner: 'B' })
-    })
-
-    const { result, flush, wrapper } = await captureInNuxt(
-      () => {
-        const pending = useState<boolean>('convex:pending', () => false)
-        const identity = useState<AuthIdentity>('convex:identity')
-        pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
-        const q = createConvexQueryState(query, {}, { auth: 'optional' }).resultData
-        return { q, identity }
-      },
-      { owner: makeMockOwner(primary) },
-    )
-
-    const refresh = result.q.refresh()
-    await Promise.resolve()
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
-    resolveA({ owner: 'A' })
-    await refresh
-    expect(result.q.data.value).not.toEqual({ owner: 'A' })
-    expect(result.q.error.value).toBeUndefined()
-
-    await flush()
-    wrapper.unmount()
-  })
-
   it('clears data on A->B and never carries keepPreviousData across the boundary', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:mine')

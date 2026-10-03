@@ -203,7 +203,6 @@ function createServerConvexQueryState<Query extends FunctionReference<'query'>>(
       isStale: computed(() => false),
       blockedBy: computed(() => ssr.view.value.blockedBy),
       execute: ssr.execute,
-      refresh: ssr.refresh,
     },
     resolvePromise: ssr.settled,
   }
