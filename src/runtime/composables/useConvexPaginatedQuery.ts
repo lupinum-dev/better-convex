@@ -9,6 +9,7 @@ import {
   createConvexArgsState,
   useConvexPaginatedQueryInternal,
   type ConvexArgsState,
+  type MaybeRefFields,
 } from '@lupinum/better-convex-vue/internal'
 import { getFunctionName, type PaginationResult } from 'convex/server'
 import { computed, shallowRef, type MaybeRefOrGetter } from 'vue'
@@ -218,7 +219,7 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
 
 export function createConvexPaginatedQueryState<Query extends PaginatedQueryReference>(
   query: Query,
-  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  args: MaybeRefOrGetter<MaybeRefFields<PaginatedQueryArgs<Query>> | 'skip'>,
   options: UseNuxtConvexPaginatedQueryOptions,
 ): BuildConvexPaginatedQueryResult<PaginatedQueryItem<Query>> {
   const initialNumItems = options.initialNumItems
@@ -235,7 +236,7 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
     lazy,
     server: options.server ?? true,
   }
-  const argsState = createConvexArgsState(args)
+  const argsState = createConvexArgsState<PaginatedQueryArgs<Query>>(args)
 
   return import.meta.client
     ? createClientConvexPaginatedQueryState(query, argsState, resolvedOptions)
@@ -244,7 +245,7 @@ export function createConvexPaginatedQueryState<Query extends PaginatedQueryRefe
 
 export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   query: Query,
-  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  args: MaybeRefOrGetter<MaybeRefFields<PaginatedQueryArgs<Query>> | 'skip'>,
   options: UseNuxtConvexPaginatedQueryOptions,
 ): NuxtConvexPaginatedQuery<PaginatedQueryItem<Query>> {
   const result = createConvexPaginatedQueryState(query, args, options)

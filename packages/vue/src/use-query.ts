@@ -15,6 +15,7 @@ import type { ClientCallStatus } from './internal/call-state'
 import {
   createConvexArgsState,
   isConvexArgsSkipped,
+  type MaybeRefFields,
   type ConvexArgsState,
 } from './internal/query-args'
 import { createQueryController } from './internal/query-controller'
@@ -66,7 +67,7 @@ type TightenEmptyConvexArgs<Args> = Args extends unknown
     : Args
   : never
 type QueryArgsParameter<Query extends FunctionReference<'query'>> = MaybeRefOrGetter<
-  ConvexQueryArgs<TightenEmptyConvexArgs<FunctionArgs<Query>>>
+  ConvexQueryArgs<MaybeRefFields<TightenEmptyConvexArgs<FunctionArgs<Query>>>>
 >
 
 export type UseConvexQueryParameters<

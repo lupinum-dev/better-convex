@@ -1,6 +1,7 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
+import type { GenericId } from 'convex/values'
 import { describe, expectTypeOf, it } from 'vitest'
-import type { ComputedRef } from 'vue'
+import { computed, reactive, ref, shallowRef, toRef, type ComputedRef } from 'vue'
 
 import type {
   NuxtConvexPaginatedQuery,
@@ -221,3 +222,74 @@ describe('query option type contracts', () => {
     void _arityContracts
   })
 })
+
+// Field refs must accept valid IDs while rejecting getters and invalid values.
+declare const fieldRefQuery: FunctionReference<
+  'query',
+  'public',
+  { id: GenericId<'notes'>; limit?: number },
+  string
+>
+declare const fieldRefPaginated: FunctionReference<
+  'query',
+  'public',
+  { id: GenericId<'notes'>; limit?: number; paginationOpts: PaginationOptions },
+  PaginationResult<string>
+>
+
+function fieldRefContracts() {
+  const id = 'note' as GenericId<'notes'>
+  const props = reactive({ id })
+  void useConvexQuery(fieldRefQuery, { id: ref(id) })
+  void useConvexQuery(fieldRefQuery, { id: computed(() => id) })
+  void useConvexQuery(fieldRefQuery, { id: toRef(props, 'id') })
+  void useConvexQuery(fieldRefQuery, { id: shallowRef(id) })
+  void useConvexQuery(fieldRefQuery, { id: ref(id), limit: 10 })
+  void useConvexQuery(fieldRefQuery, { id })
+  void useConvexQuery(fieldRefQuery, () => ({ id }))
+  void useConvexQuery(
+    fieldRefQuery,
+    computed(() => ({ id })),
+  )
+  void useConvexQuery(fieldRefQuery, ref({ id }))
+  void useConvexQuery(fieldRefQuery, 'skip')
+  // @ts-expect-error field refs must contain the declared ID type
+  void useConvexQuery(fieldRefQuery, { id: ref(123) })
+  // @ts-expect-error field getters are not evaluated
+  void useConvexQuery(fieldRefQuery, { id: () => id })
+  // @ts-expect-error unknown argument fields must be rejected
+  void useConvexQuery(fieldRefQuery, { id, extra: true })
+  void useConvexPaginatedQuery(fieldRefPaginated, { id: ref(id) }, { initialNumItems: 10 })
+  void useConvexPaginatedQuery(
+    fieldRefPaginated,
+    { id: computed(() => id) },
+    { initialNumItems: 10 },
+  )
+  void useConvexPaginatedQuery(
+    fieldRefPaginated,
+    { id: toRef(props, 'id') },
+    { initialNumItems: 10 },
+  )
+  void useConvexPaginatedQuery(fieldRefPaginated, { id: shallowRef(id) }, { initialNumItems: 10 })
+  void useConvexPaginatedQuery(
+    fieldRefPaginated,
+    { id: ref(id), limit: 10 },
+    { initialNumItems: 10 },
+  )
+  void useConvexPaginatedQuery(fieldRefPaginated, { id }, { initialNumItems: 10 })
+  void useConvexPaginatedQuery(fieldRefPaginated, () => ({ id }), { initialNumItems: 10 })
+  void useConvexPaginatedQuery(
+    fieldRefPaginated,
+    computed(() => ({ id })),
+    { initialNumItems: 10 },
+  )
+  void useConvexPaginatedQuery(fieldRefPaginated, ref({ id }), { initialNumItems: 10 })
+  void useConvexPaginatedQuery(fieldRefPaginated, 'skip', { initialNumItems: 10 })
+  // @ts-expect-error field refs must contain the declared ID type
+  void useConvexPaginatedQuery(fieldRefPaginated, { id: ref(123) }, { initialNumItems: 10 })
+  // @ts-expect-error field getters are not evaluated
+  void useConvexPaginatedQuery(fieldRefPaginated, { id: () => id }, { initialNumItems: 10 })
+  // @ts-expect-error unknown argument fields must be rejected
+  void useConvexPaginatedQuery(fieldRefPaginated, { id, extra: true }, { initialNumItems: 10 })
+}
+void fieldRefContracts

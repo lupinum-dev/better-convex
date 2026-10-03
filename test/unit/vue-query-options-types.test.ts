@@ -1,6 +1,7 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
+import type { GenericId } from 'convex/values'
 import { describe, expectTypeOf, it } from 'vitest'
-import { ref, type ComputedRef } from 'vue'
+import { computed, reactive, ref, shallowRef, toRef, type ComputedRef } from 'vue'
 
 import type { ConvexCallError } from '../../packages/vue/src/errors'
 import type {
@@ -156,3 +157,36 @@ describe('better-convex-vue query type contracts', () => {
     expectTypeOf(typeContracts).toBeFunction()
   })
 })
+
+// Field refs must accept valid IDs while rejecting getters and invalid values.
+declare const fieldRefQuery: FunctionReference<
+  'query',
+  'public',
+  { id: GenericId<'notes'>; limit?: number },
+  string
+>
+
+function fieldRefContracts() {
+  const id = 'note' as GenericId<'notes'>
+  const props = reactive({ id })
+  void useConvexQuery(fieldRefQuery, { id: ref(id) })
+  void useConvexQuery(fieldRefQuery, { id: computed(() => id) })
+  void useConvexQuery(fieldRefQuery, { id: toRef(props, 'id') })
+  void useConvexQuery(fieldRefQuery, { id: shallowRef(id) })
+  void useConvexQuery(fieldRefQuery, { id: ref(id), limit: 10 })
+  void useConvexQuery(fieldRefQuery, { id })
+  void useConvexQuery(fieldRefQuery, () => ({ id }))
+  void useConvexQuery(
+    fieldRefQuery,
+    computed(() => ({ id })),
+  )
+  void useConvexQuery(fieldRefQuery, ref({ id }))
+  void useConvexQuery(fieldRefQuery, 'skip')
+  // @ts-expect-error field refs must contain the declared ID type
+  void useConvexQuery(fieldRefQuery, { id: ref(123) })
+  // @ts-expect-error field getters are not evaluated
+  void useConvexQuery(fieldRefQuery, { id: () => id })
+  // @ts-expect-error unknown argument fields must be rejected
+  void useConvexQuery(fieldRefQuery, { id, extra: true })
+}
+void fieldRefContracts

@@ -1,6 +1,15 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
+import type { GenericId } from 'convex/values'
 import { describe, expectTypeOf, it } from 'vitest'
-import type { ComputedRef, MaybeRefOrGetter } from 'vue'
+import {
+  computed,
+  reactive,
+  ref,
+  shallowRef,
+  toRef,
+  type ComputedRef,
+  type MaybeRefOrGetter,
+} from 'vue'
 
 import type { ConvexCallError } from '../../packages/vue/src/errors'
 import type {
@@ -91,3 +100,37 @@ describe('pagination type contracts', () => {
     void typeContracts
   })
 })
+
+// Field refs must accept valid IDs while rejecting getters and invalid values.
+declare const fieldRefPaginated: FunctionReference<
+  'query',
+  'public',
+  { id: GenericId<'notes'>; limit?: number; paginationOpts: PaginationOptions },
+  PaginationResult<string>
+>
+
+function fieldRefContracts() {
+  const id = 'note' as GenericId<'notes'>
+  const props = reactive({ id })
+  void usePaginated(fieldRefPaginated, { id: ref(id) }, { initialNumItems: 10 })
+  void usePaginated(fieldRefPaginated, { id: computed(() => id) }, { initialNumItems: 10 })
+  void usePaginated(fieldRefPaginated, { id: toRef(props, 'id') }, { initialNumItems: 10 })
+  void usePaginated(fieldRefPaginated, { id: shallowRef(id) }, { initialNumItems: 10 })
+  void usePaginated(fieldRefPaginated, { id: ref(id), limit: 10 }, { initialNumItems: 10 })
+  void usePaginated(fieldRefPaginated, { id }, { initialNumItems: 10 })
+  void usePaginated(fieldRefPaginated, () => ({ id }), { initialNumItems: 10 })
+  void usePaginated(
+    fieldRefPaginated,
+    computed(() => ({ id })),
+    { initialNumItems: 10 },
+  )
+  void usePaginated(fieldRefPaginated, ref({ id }), { initialNumItems: 10 })
+  void usePaginated(fieldRefPaginated, 'skip', { initialNumItems: 10 })
+  // @ts-expect-error field refs must contain the declared ID type
+  void usePaginated(fieldRefPaginated, { id: ref(123) }, { initialNumItems: 10 })
+  // @ts-expect-error field getters are not evaluated
+  void usePaginated(fieldRefPaginated, { id: () => id }, { initialNumItems: 10 })
+  // @ts-expect-error unknown argument fields must be rejected
+  void usePaginated(fieldRefPaginated, { id, extra: true }, { initialNumItems: 10 })
+}
+void fieldRefContracts

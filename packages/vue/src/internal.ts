@@ -33,7 +33,11 @@ export type { CallableControllerObserver } from './internal/callable-controller'
 export { DISCONNECTED_CONNECTION_STATE } from './internal/connection-state'
 export { isAuthenticatedIdentityKey, type ConvexIdentityKey } from './internal/identity-key'
 export type { ClientIdentitySnapshot } from './internal/identity-port'
-export { createConvexArgsState, type ConvexArgsState } from './internal/query-args'
+export {
+  createConvexArgsState,
+  type ConvexArgsState,
+  type MaybeRefFields,
+} from './internal/query-args'
 export {
   decideQueryExecution,
   decideQueryGate,

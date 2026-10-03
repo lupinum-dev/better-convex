@@ -23,6 +23,7 @@ import {
   createConvexArgsState,
   isConvexArgsSkipped,
   type ConvexArgsState,
+  type MaybeRefFields,
 } from './internal/query-args'
 import { decideQueryGate, queryIsolationTag } from './internal/query-execution'
 import { useBetterConvexRuntime } from './runtime-context'
@@ -136,11 +137,14 @@ function assertPaginatedQueryInput(options: UseConvexPaginatedQueryOptions): voi
 
 export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   query: Query,
-  args: MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
+  args: MaybeRefOrGetter<MaybeRefFields<PaginatedQueryArgs<Query>> | 'skip'>,
   options: UseConvexPaginatedQueryOptions,
 ): UseConvexPaginatedQueryState<PaginatedQueryItem<Query>> {
-  return useConvexPaginatedQueryInternal({ query, args: createConvexArgsState(args), options })
-    .state
+  return useConvexPaginatedQueryInternal({
+    query,
+    args: createConvexArgsState<PaginatedQueryArgs<Query>>(args),
+    options,
+  }).state
 }
 
 /**

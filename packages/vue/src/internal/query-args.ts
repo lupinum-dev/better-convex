@@ -1,13 +1,22 @@
 import { hash } from 'ohash'
-import { computed, toValue, type ComputedRef, type MaybeRefOrGetter } from 'vue'
+import { computed, toValue, type ComputedRef, type MaybeRef, type MaybeRefOrGetter } from 'vue'
 
 import { deepUnref } from './deep-unref'
 
 export type ConvexSkipArg = 'skip'
 export type ConvexArgs<Args> = Args | ConvexSkipArg
 
+/**
+ * Arguments whose top-level fields may be refs; {@link normalizeConvexArgs}
+ * unwraps them. A `never` field (exact-empty args) stays `never`, so `{}`
+ * queries still reject unknown keys.
+ */
+export type MaybeRefFields<Args> = {
+  [Key in keyof Args]: Args[Key] | ([Args[Key]] extends [never] ? never : MaybeRef<Args[Key]>)
+}
+
 export function normalizeConvexArgs<Args>(
-  args: MaybeRefOrGetter<ConvexArgs<Args>>,
+  args: MaybeRefOrGetter<ConvexArgs<MaybeRefFields<Args>>>,
 ): ConvexArgs<Args> {
   const rawArgs = toValue(args)
   if (rawArgs === null || rawArgs === undefined) {
@@ -15,9 +24,10 @@ export function normalizeConvexArgs<Args>(
       '[better-convex-vue] query arguments cannot be null or undefined; pass {} or the literal "skip"',
     )
   }
-  if (rawArgs === 'skip') return rawArgs
+  if (rawArgs === 'skip') return 'skip'
 
-  return deepUnref(rawArgs) as Args
+  // deepUnref replaces every ref with its value, which turns MaybeRefFields<Args> into Args.
+  return deepUnref(rawArgs) as unknown as Args
 }
 
 export function isConvexArgsSkipped(args: unknown): boolean {
@@ -31,8 +41,8 @@ export interface ConvexArgsState<Args> {
 }
 
 export function createConvexArgsState<Args>(
-  source: MaybeRefOrGetter<ConvexArgs<Args>>,
+  source: MaybeRefOrGetter<ConvexArgs<MaybeRefFields<Args>>>,
 ): ConvexArgsState<Args> {
-  const args = computed(() => normalizeConvexArgs(source))
+  const args = computed(() => normalizeConvexArgs<Args>(source))
   return { args, hash: computed(() => hash(args.value)) }
 }
