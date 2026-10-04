@@ -93,8 +93,13 @@ export function createCallableController<Args, Result>(
       return result
     } catch (rawError) {
       const error = normalizeConvexError(rawError, errorContext)
-      // Identity-owned state never shows a retired identity's outcome.
-      if (isIdentityChangedError(error)) {
+      // Identity-owned state never shows a retired identity's outcome, and a
+      // library cancellation is the caller's intent, not a failure. An
+      // application error that uses the code CANCELLED stays an error.
+      if (
+        (error.code === 'CANCELLED' && error.kind !== 'server') ||
+        isIdentityChangedError(error)
+      ) {
         if (callState.isCurrent(requestId)) callState.mask()
       } else {
         callState.commitError(requestId, error)
