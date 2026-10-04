@@ -229,7 +229,12 @@ describe('createBetterConvexAuth', () => {
       advanced: {
         ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] },
       },
-      rateLimit: { modelName: 'rateLimit', storage: 'database' },
+      // Session reads skip the database counter: one write per session check.
+      rateLimit: {
+        modelName: 'rateLimit',
+        storage: 'database',
+        customRules: { '/get-session': false },
+      },
       verification: { storeIdentifier: 'hashed' },
     })
     expect(typeof auth.registerRoutes).toBe('function')

@@ -616,6 +616,20 @@ async function guardRevokeRequest(
   assertClientAuthenticationMethod(client, authentication)
 }
 
+/**
+ * The only rate-limit exemption the library allows: session reads. They run on
+ * every page load and reconnect, the database counter costs a Convex write each,
+ * and a missing or forged session cookie fails before any database read.
+ */
+export const LIBRARY_RATE_LIMIT_RULES = { '/get-session': false } as const
+
+function isLibraryRateLimitRules(rules: unknown): boolean {
+  if (rules === undefined) return true
+  if (!rules || typeof rules !== 'object') return false
+  const entries = Object.entries(rules)
+  return entries.length === 1 && entries[0]![0] === '/get-session' && entries[0]![1] === false
+}
+
 function hasSafeGlobalAuthRuntime(
   context: Parameters<NonNullable<BetterAuthPlugin['init']>>[0],
 ): boolean {
@@ -627,7 +641,7 @@ function hasSafeGlobalAuthRuntime(
     context.options.rateLimit.storage === 'database' &&
     context.options.rateLimit.modelName === 'rateLimit' &&
     isConvexAuthRateLimitStorage(context.options.rateLimit.customStorage) &&
-    context.options.rateLimit.customRules === undefined &&
+    isLibraryRateLimitRules(context.options.rateLimit.customRules) &&
     Array.isArray(ipHeaders) &&
     ipHeaders.length === 1 &&
     ipHeaders[0]?.toLowerCase() === VERIFIED_CLIENT_IP_HEADER &&

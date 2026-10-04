@@ -161,8 +161,8 @@ function directSignIn(siteUrl: string) {
   })
 }
 
-function getSession(siteUrl: string, clientIp: string) {
-  return fetch(`${siteUrl}/api/auth/get-session`, {
+function authGet(siteUrl: string, clientIp: string, path: '/ok' | '/get-session') {
+  return fetch(`${siteUrl}/api/auth${path}`, {
     headers: {
       origin: authOrigin,
       'x-bcn-client-ip': clientIp,
@@ -573,10 +573,11 @@ describe('auth adapter on the pinned backend', () => {
 
   it('counts rate limits exactly per signed client IP and resets after the window', async () => {
     const statuses = (responses: Response[]) => responses.map((response) => response.status)
-    const where = [{ field: 'key', value: '192.0.2.20|/get-session' }]
+    // /ok has the default limit; session reads are exempt from the database counter.
+    const where = [{ field: 'key', value: '192.0.2.20|/ok' }]
 
     const cold = await Promise.all(
-      Array.from({ length: 40 }, () => getSession(siteUrl, '192.0.2.20')),
+      Array.from({ length: 40 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
     )
     expect(statuses(cold), 'AUTH_RATE_LIMIT_COLD_START_FAILURE').toEqual(Array(40).fill(200))
     expect(
@@ -589,11 +590,11 @@ describe('auth adapter on the pinned backend', () => {
     ).toMatchObject({ count: 40 })
 
     const warm = await Promise.all(
-      Array.from({ length: 40 }, () => getSession(siteUrl, '192.0.2.20')),
+      Array.from({ length: 40 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
     )
     expect(statuses(warm), 'AUTH_RATE_LIMIT_WARM_FAILURE').toEqual(Array(40).fill(200))
     const limit = await Promise.all(
-      Array.from({ length: 21 }, () => getSession(siteUrl, '192.0.2.20')),
+      Array.from({ length: 21 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
     )
     expect(
       statuses(limit).filter((status) => status === 200),
@@ -615,9 +616,21 @@ describe('auth adapter on the pinned backend', () => {
       'AUTH_RATE_LIMIT_EXACT_FINAL_COUNT',
     ).toMatchObject({ count: 100 })
     expect(
-      (await getSession(siteUrl, '192.0.2.21')).status,
+      (await authGet(siteUrl, '192.0.2.21', '/ok')).status,
       'AUTH_RATE_LIMIT_INDEPENDENT_KEY_FAILURE',
     ).toBe(200)
+
+    const sessionReads = await Promise.all(
+      Array.from({ length: 5 }, () => authGet(siteUrl, '192.0.2.22', '/get-session')),
+    )
+    expect(statuses(sessionReads), 'AUTH_SESSION_READ_FAILURE').toEqual(Array(5).fill(200))
+    expect(
+      await client.function(adapter.count, componentPath, {
+        model: 'rateLimit',
+        where: [{ field: 'key', value: '192.0.2.22|/get-session' }],
+      }),
+      'AUTH_SESSION_READ_COUNTED',
+    ).toBe(0)
 
     const signed = await Promise.all(
       Array.from({ length: 4 }, () => signedSignIn(siteUrl, '192.0.2.10')),
