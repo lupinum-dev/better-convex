@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { NuxtApp } from '#app'
+
+import { readServerConvexToken } from '../../src/runtime/utils/auth-identity-state'
+
 const {
   defineNuxtPluginMock,
   useRuntimeConfigMock,
   useRequestEventMock,
+  useNuxtAppMock,
   useStateMock,
   getConvexRuntimeConfigMock,
   fetchWithTimeoutMock,
@@ -13,6 +18,7 @@ const {
   defineNuxtPluginMock: vi.fn((fn: unknown) => fn),
   useRuntimeConfigMock: vi.fn(),
   useRequestEventMock: vi.fn(),
+  useNuxtAppMock: vi.fn(),
   useStateMock: vi.fn(),
   getConvexRuntimeConfigMock: vi.fn(),
   fetchWithTimeoutMock: vi.fn(),
@@ -24,6 +30,7 @@ vi.mock('#app', () => ({
   defineNuxtPlugin: defineNuxtPluginMock,
   useRuntimeConfig: useRuntimeConfigMock,
   useRequestEvent: useRequestEventMock,
+  useNuxtApp: useNuxtAppMock,
   useState: useStateMock,
 }))
 
@@ -45,6 +52,8 @@ vi.mock('../../src/runtime/utils/convex-shared', () => ({
   isJwtUsable: isJwtUsableMock,
 }))
 
+const nuxtApp = {} as NuxtApp
+
 function createResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -58,6 +67,7 @@ describe('plugin.server token exchange failure policy', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    useNuxtAppMock.mockReturnValue(nuxtApp)
     stateStore.clear()
     delete (globalThis as typeof globalThis & { __BCN_AUTH_HEALTHCHECK_DONE__?: Set<string> })
       .__BCN_AUTH_HEALTHCHECK_DONE__
@@ -208,7 +218,7 @@ describe('plugin.server token exchange failure policy', () => {
     expect(setHeaderMock).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
   })
 
-  it('sets Cache-Control: private, no-store when a token is hydrated', async () => {
+  it('keeps the exchanged token out of the hydrated state and sets Cache-Control: private, no-store', async () => {
     decodeUserFromJwtMock.mockReturnValue({ id: 'user-1', email: 'user@example.com' })
     fetchWithTimeoutMock.mockImplementation(async (url: string) => {
       if (url.endsWith('/api/auth/convex/token')) {
@@ -222,10 +232,12 @@ describe('plugin.server token exchange failure policy', () => {
 
     expect(stateStore.get('convex:identity')?.value).toEqual({
       status: 'authenticated',
-      token: 'jwt-1',
       user: { id: 'user-1', email: 'user@example.com' },
       key: 'user:user-1',
     })
+    // useState is serialized into the page payload; SSR queries read the token here.
+    expect(JSON.stringify([...stateStore.values()])).not.toContain('jwt-1')
+    expect(readServerConvexToken(nuxtApp)).toBe('jwt-1')
     expect(setHeaderMock).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
   })
 

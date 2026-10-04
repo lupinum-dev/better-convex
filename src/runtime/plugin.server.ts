@@ -3,7 +3,8 @@
  * when auth is enabled. It runs during SSR to:
  * 1. Read the session cookie from the request
  * 2. Exchange the session cookie for a JWT token via Better Auth API
- * 3. Store the token and user data in useState for client hydration
+ * 3. Store the user in useState for client hydration, and the token only for
+ *    this server render (SSR queries), so it never reaches the page payload
  *
  * The exchange is the request's shared auth snapshot, so a Nitro handler or
  * middleware that already called `getConvexUser(event)` does not trigger a
@@ -11,14 +12,14 @@
  * render with zero flash.
  */
 
-import { defineNuxtPlugin, useState, useRuntimeConfig, useRequestEvent } from '#app'
+import { defineNuxtPlugin, useNuxtApp, useState, useRuntimeConfig, useRequestEvent } from '#app'
 
 import { ANONYMOUS_IDENTITY, toAuthenticatedIdentity } from './auth/auth-identity'
 import type { AuthWaterfall } from './devtools/types'
 import { resolveRequestAuthSnapshot } from './server/utils/request-auth'
 import { applyConvexAuthSsrHeaders } from './server/utils/ssr-auth-headers'
 import { buildMissingSiteUrlMessage } from './utils/auth-errors'
-import { useConvexIdentityState } from './utils/auth-identity-state'
+import { setServerConvexToken, useConvexIdentityState } from './utils/auth-identity-state'
 import { createLogger, getLogLevel, type AuthEvent } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
 import { filterBetterAuthCookies } from './utils/shared-helpers'
@@ -57,7 +58,7 @@ export default defineNuxtPlugin(async () => {
   if (!siteUrl) {
     applyConvexAuthSsrHeaders(event, {
       hasBetterAuthCookie: hasSupportedBetterAuthCookie,
-      serializesToken: false,
+      rendersUser: false,
     })
     const message = buildMissingSiteUrlMessage()
     const convexAuthError = useState<string | null>('convex:authError', () => null)
@@ -103,18 +104,20 @@ export default defineNuxtPlugin(async () => {
   })
 
   convexIdentity.value =
-    snapshot.token && snapshot.user
-      ? toAuthenticatedIdentity(snapshot.token, snapshot.user)
-      : ANONYMOUS_IDENTITY
+    snapshot.token && snapshot.user ? toAuthenticatedIdentity(snapshot.user) : ANONYMOUS_IDENTITY
+  setServerConvexToken(
+    useNuxtApp(),
+    convexIdentity.value.status === 'authenticated' ? snapshot.token : null,
+  )
   convexAuthError.value = snapshot.authError
   convexAuthWaterfall.value = snapshot.waterfall
 
   // This is an auth-enabled SSR response, so it always varies by cookie. A
-  // recognized Better Auth cookie OR a serialized per-user JWT also forbids
+  // recognized Better Auth cookie OR a rendered signed-in user also forbids
   // shared/CDN caching. Existing `Vary` values are preserved.
   applyConvexAuthSsrHeaders(event, {
     hasBetterAuthCookie: hasSupportedBetterAuthCookie,
-    serializesToken: snapshot.token !== null,
+    rendersUser: convexIdentity.value.status === 'authenticated',
   })
 
   endInit()
@@ -128,7 +131,6 @@ export default defineNuxtPlugin(async () => {
       {
         durationMs: Date.now() - snapshotStartedAt,
         identityHydrated: snapshot.user !== null,
-        tokenSerialized: snapshot.token !== null,
       },
     )
   }
