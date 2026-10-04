@@ -1,8 +1,10 @@
 import { inspect } from 'node:util'
 
+import type { AuthTokenFetcher, ConvexClient } from 'convex/browser'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { createAuthAdapterIdentityPort } from '../../packages/vue/src/internal/auth-adapter'
 import { createBetterAuthBrowserAdapter } from '../../src/runtime/auth/better-auth-browser-adapter'
 
 interface SessionState {
@@ -40,6 +42,104 @@ function source(
 }
 
 describe('Better Auth browser adapter', () => {
+  it('reports a 401 token response as an error when the session refetch hangs', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const fixture = source(
+      {
+        isPending: false,
+        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
+        error: null,
+      },
+      [{ data: { token: jwt('alice') } }, { error: { status: 401 } }],
+    )
+    fixture.refetch.mockReturnValue(new Promise(() => {}))
+    const anonymous = vi.fn()
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, {
+      authenticated: vi.fn(),
+      anonymous,
+    })
+    try {
+      await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBeTypeOf('string')
+      const refreshed = adapter.fetchToken({ forceRefreshToken: true })
+      await vi.advanceTimersByTimeAsync(5_000)
+      await expect(refreshed).resolves.toBeNull()
+      expect(anonymous).toHaveBeenLastCalledWith(
+        'Authentication credentials are invalid or expired',
+      )
+    } finally {
+      adapter.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    // Sign-out: the server revokes the session before Better Auth publishes it.
+    ['the provider reports the session gone', null, []],
+    // The server rejects a session the provider still holds: a real failure.
+    [
+      'the provider still reports the session',
+      { session: { token: 'session-a' }, user: { id: 'alice' } },
+      ['Authentication credentials are invalid or expired', 'Authentication failed'],
+    ],
+  ] as const)(
+    'on a 401 token response where %s, publishes the expected errors',
+    async (_case, settledData, expectedErrors) => {
+      const fixture = source(
+        {
+          isPending: false,
+          data: { session: { token: 'session-a' }, user: { id: 'alice' } },
+          error: null,
+        },
+        [{ data: { token: jwt('alice') } }],
+      )
+      const visibleErrors: string[] = []
+      const adapter = createBetterAuthBrowserAdapter(fixture.client, {
+        authenticated: vi.fn(),
+        anonymous(error) {
+          if (error) visibleErrors.push(error)
+        },
+      })
+      const port = createAuthAdapterIdentityPort(adapter)
+      const stop = port.subscribe(() => {
+        const error = port.snapshot().error
+        if (error) visibleErrors.push(error.message)
+      })
+      let onChange!: (authenticated: boolean) => void
+      const client = {
+        setAuth: vi.fn((_fetchToken: AuthTokenFetcher, changed: typeof onChange) => {
+          onChange = changed
+        }),
+      } as unknown as ConvexClient
+      try {
+        const initialized = port.initializePrimary(client)
+        await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBeTypeOf('string')
+        onChange(true)
+        await initialized
+
+        // Better Auth keeps the old data while its session refetch is running,
+        // and the token route answers 401 first.
+        fixture.session.value = { ...fixture.session.value, isRefetching: true }
+        fixture.token.mockResolvedValueOnce({ error: { status: 401 } })
+        const refreshed = adapter.fetchToken({ forceRefreshToken: true })
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        fixture.session.value = {
+          ...fixture.session.value,
+          isRefetching: false,
+          data: settledData,
+        }
+        await expect(refreshed).resolves.toBeNull()
+        onChange(false)
+
+        expect(port.snapshot().identityKey).toBe('anonymous')
+        expect(visibleErrors).toEqual(expectedErrors)
+      } finally {
+        stop()
+        port.dispose()
+        adapter.dispose()
+      }
+    },
+  )
+
   it.each(['full', 'rejected'] as const)(
     'ignores a late %s result after same-user cookie rotation',
     async (result) => {

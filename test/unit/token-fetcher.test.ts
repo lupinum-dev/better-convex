@@ -177,6 +177,7 @@ describe('client Convex token exchange outcomes', () => {
       identity: null,
       authError: 'Authentication credentials are invalid or expired',
       definitive: true,
+      sessionRejected: true,
     })
   })
 })
