@@ -20,6 +20,25 @@ const clientArgs = computed(() =>
 )
 const { data: clients } = await useConvexQuery(api.organizationLinks.listClients, clientArgs)
 
+const createOrganization = useConvexMutation(api.organizations.create)
+const organizationName = ref('')
+const organizationKind = ref<'agency' | 'client'>('agency')
+const createdOrganization = ref<{ id: Id<'organizations'>; kind: 'agency' | 'client' } | null>(null)
+
+async function submitOrganization() {
+  const name = organizationName.value.trim()
+  if (!name) return
+  const kind = organizationKind.value
+  try {
+    const id = await createOrganization.mutate({ name, kind })
+    createdOrganization.value = { id, kind }
+    organizationName.value = ''
+    if (kind === 'agency') agencyOrganizationId.value = id
+  } catch {
+    // `createOrganization.error` shows the message.
+  }
+}
+
 async function submitAuth() {
   if (pending.value) return
   if (password.value.length < 15 || !email.value.trim()) return
@@ -108,6 +127,30 @@ async function handleSignOut() {
         </button>
       </div>
 
+      <form class="create-panel" @submit.prevent="submitOrganization">
+        <label>
+          New organization
+          <input v-model="organizationName" maxlength="120" placeholder="Name" required />
+        </label>
+        <label>
+          Kind
+          <select v-model="organizationKind">
+            <option value="agency">Agency</option>
+            <option value="client">Client</option>
+          </select>
+        </label>
+        <button :disabled="createOrganization.pending.value" type="submit">
+          {{ createOrganization.pending.value ? 'Creating...' : 'Create' }}
+        </button>
+        <p v-if="createOrganization.error.value" class="error">
+          {{ createOrganization.error.value.message }}
+        </p>
+        <p v-else-if="createdOrganization" class="notice">
+          Created {{ createdOrganization.kind }} organization:
+          <code>{{ createdOrganization.id }}</code>
+        </p>
+      </form>
+
       <label>
         Agency organization id
         <input v-model="agencyOrganizationId" placeholder="Paste an agency organization id" />
@@ -172,7 +215,8 @@ button {
   color: #475467;
 }
 
-input {
+input,
+select {
   display: block;
   width: 100%;
   height: 40px;
@@ -181,6 +225,11 @@ input {
   border: 1px solid #d6dae1;
   border-radius: 6px;
   font: inherit;
+}
+
+.create-panel {
+  max-width: 440px;
+  margin-bottom: 32px;
 }
 
 .list {
