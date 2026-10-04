@@ -36,44 +36,47 @@ async function decidableApproval(ctx: QueryCtx, approvalId: Id<'approvals'>) {
   return { approval, user }
 }
 
-/** Deletion requests from agents that the signed-in user may approve or decline. */
+/**
+ * Deletion requests from agents that the signed-in user may approve or decline.
+ * The page passes `now`, because a query does not run again when time passes.
+ */
 export const listPending = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { now: v.number() },
+  handler: async (ctx, args) => {
     const user = await currentUser(ctx)
     if (!user) return []
     const memberships = await ctx.db
       .query('memberships')
       .withIndex('by_user', (q) => q.eq('userId', user._id).eq('status', 'active'))
       .take(100)
-    const now = Date.now()
     const pending = await Promise.all(
       memberships.filter(canApprove).map(async ({ organizationId }) => {
         const [organization, approvals] = await Promise.all([
           ctx.db.get(organizationId),
           ctx.db
             .query('approvals')
-            .withIndex('by_org_status', (q) =>
-              q.eq('organizationId', organizationId).eq('status', 'pending'),
+            .withIndex('by_org_status_expiry', (q) =>
+              q
+                .eq('organizationId', organizationId)
+                .eq('status', 'pending')
+                .gt('expiresAt', args.now),
             )
             .take(50),
         ])
         return await Promise.all(
-          approvals
-            .filter((approval) => approval.expiresAt > now)
-            .map(async (approval) => {
-              const [project, requester] = await Promise.all([
-                ctx.db.get(approval.projectId),
-                ctx.db.get(approval.userId),
-              ])
-              return {
-                id: approval._id,
-                organizationName: organization?.name ?? 'Unknown organization',
-                projectName: project?.name ?? 'Unknown project',
-                requestedBy: requester?.name ?? 'Unknown user',
-                expiresAt: approval.expiresAt,
-              }
-            }),
+          approvals.map(async (approval) => {
+            const [project, requester] = await Promise.all([
+              ctx.db.get(approval.projectId),
+              ctx.db.get(approval.userId),
+            ])
+            return {
+              id: approval._id,
+              organizationName: organization?.name ?? 'Unknown organization',
+              projectName: project?.name ?? 'Unknown project',
+              requestedBy: requester?.name ?? 'Unknown user',
+              expiresAt: approval.expiresAt,
+            }
+          }),
         )
       }),
     )

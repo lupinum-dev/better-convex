@@ -4,4 +4,4 @@
 '@lupinum/better-convex-mcp': patch
 ---
 
-Fix the MCP Inspector example in "Connect ChatGPT and Claude" (also in the packaged agent docs): the Inspector client now allows `offline_access`, which Inspector requests by default. Without it, authorization failed with `invalid_scope`.
+Fix the MCP Inspector example in "Connect ChatGPT and Claude" and in the packaged agent docs. Inspector requests `offline_access` by default, and the example client now allows it. Before, authorization failed with `invalid_scope`.

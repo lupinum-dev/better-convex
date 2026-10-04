@@ -8,7 +8,17 @@ const { data: connections } = await useConvexQuery(api.connections.list, connect
   server: false,
 })
 const { mutate: revoke, pending: revoking } = useConvexMutation(api.connections.revoke)
-const { data: approvals } = await useConvexQuery(api.approvals.listPending, connectionArgs, {
+// Rounded up to the minute, so a request leaves the list before it expires.
+const minute = 60_000
+const nextMinute = () => Math.ceil(Date.now() / minute) * minute
+const now = ref(nextMinute())
+let clock: ReturnType<typeof setInterval> | undefined
+onMounted(() => (clock = setInterval(() => (now.value = nextMinute()), minute)))
+onUnmounted(() => clearInterval(clock))
+const approvalArgs = computed(() =>
+  status.value === 'authenticated' ? { now: now.value } : 'skip',
+)
+const { data: approvals } = await useConvexQuery(api.approvals.listPending, approvalArgs, {
   auth: 'required',
   server: false,
 })
