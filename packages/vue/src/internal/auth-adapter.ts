@@ -86,6 +86,9 @@ export function createAuthAdapterIdentityPort(
   let currentClientGeneration = -1
   const activeAuthConfiguration = new WeakMap<AuthCapableClient, object>()
   let initialSettled = desired.status !== 'loading' && desired.status !== 'authenticated'
+  // Whether the provider has reported a principal (anonymous, a user, or an
+  // error) since the port started.
+  let resolvedPrincipal = desired.status !== 'loading'
   let snapshot: ClientIdentitySnapshot = {
     authEnabled: true,
     settled: initialSettled,
@@ -281,6 +284,18 @@ export function createAuthAdapterIdentityPort(
       previous.status !== next.status ||
       previous.identityKey !== next.identityKey ||
       previous.sessionGeneration !== next.sessionGeneration
+
+    // The first provider result after an unknown start that finds no session
+    // retires nothing: no principal existed, queries waited, and the client is
+    // already anonymous. Work started while loading continues as anonymous.
+    if (crossedIdentity && !resolvedPrincipal && previous.status === 'loading') {
+      resolvedPrincipal = true
+      if (next.status === 'anonymous') {
+        publish({ ...snapshot, settled: true, identityKey: 'anonymous', error: null })
+        return
+      }
+    }
+    if (next.status !== 'loading') resolvedPrincipal = true
 
     if (crossedIdentity) {
       const retired = createIdentityChangedError('authentication')
