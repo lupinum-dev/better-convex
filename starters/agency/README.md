@@ -1,10 +1,5 @@
 # Agency Starter
 
-> **1.0.0-rc.0 note.** This source already uses the Better Convex
-> `1.0.0-rc.0` API, but `package.json` pins the last published version until
-> `1.0.0-rc.0` is on npm. Until that pin moves, install
-> `@lupinum/better-convex-nuxt@1.0.0-rc.0` yourself or wait for the bump.
-
 Starter for agencies that manage multiple client workspaces.
 
 ## Organization Ownership
@@ -42,34 +37,102 @@ Active links are operator-approved canonical grants. This starter deliberately
 ships no public self-link operation: establish a link only through an
 application ceremony that proves authorization from both tenant sides.
 
-## Commands
+## Run it locally
+
+1. Install the dependencies. If pnpm stops with `ERR_PNPM_IGNORED_BUILDS`, run
+   `pnpm approve-builds`, allow `esbuild`, and install again.
+
+   ```bash
+   pnpm install
+   ```
+
+2. Create a Convex development deployment. Choose a new project when asked.
+   The command writes `.env.local` and keeps watching; stop it with Ctrl+C
+   after it reports that the Convex functions are ready.
+
+   ```bash
+   pnpm convex:configure
+   ```
+
+3. Nuxt reads other names than the ones `convex:configure` writes. Add these
+   lines to `.env.local`, with the values of `VITE_CONVEX_URL` and
+   `VITE_CONVEX_SITE_URL` from the same file:
+
+   ```bash
+   NUXT_PUBLIC_CONVEX_URL=https://<deployment>.convex.cloud
+   NUXT_PUBLIC_CONVEX_SITE_URL=https://<deployment>.convex.site
+   SITE_URL=http://localhost:3000
+   ```
+
+   `SITE_URL` is the Nuxt origin. If you run Nuxt on another port, change it
+   here and in the next step.
+
+4. Set the auth origin and both independent secrets in Convex:
+
+   ```bash
+   export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"
+   (
+     set -eu
+     umask 077
+     sed '/^BCN_AUTH_PROXY_IP_SECRET=/d' .env.local > .env.local.next
+     printf 'BCN_AUTH_PROXY_IP_SECRET=%s\n' "$BCN_AUTH_PROXY_IP_SECRET" >> .env.local.next
+     mv .env.local.next .env.local
+   )
+   pnpm exec better-convex convex env set SITE_URL http://localhost:3000
+   printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
+   printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
+   ```
+
+5. Create the fresh deployment's first signing key. Without it, sign-in fails
+   with `AUTH_JWKS_OPERATOR_SETUP_REQUIRED`:
+
+   ```bash
+   pnpm exec better-convex convex run auth:rotateSigningKey '{}'
+   ```
+
+   On a fresh deployment the result has an empty `previousKids`. A previous
+   key means the deployment is not fresh: stop and check it instead of
+   reusing state.
+
+6. Start Convex and Nuxt in two terminals:
+
+   ```bash
+   pnpm convex:dev
+   pnpm dev
+   ```
+
+7. Open <http://localhost:3000/agency>. Create an account, then sign in.
+
+8. Under **New organization**, create one organization of kind **Agency** and
+   one of kind **Client**. Each creation shows the new organization ID. The
+   agency ID fills the **Agency organization id** field.
+
+9. Link the client to the agency as the operator. The starter has no public
+   operation for this on purpose (see [Non-goals](#non-goals)): in a real
+   product, both organizations must agree first. For local testing, import one
+   link row with the two IDs:
+
+   ```bash
+   now=$(date +%s000)
+   cat > link.json <<JSON
+   [{ "agencyOrganizationId": "<agency id>", "clientOrganizationId": "<client id>",
+      "status": "active", "createdAt": $now, "updatedAt": $now }]
+   JSON
+   pnpm exec convex import --table organizationLinks --append link.json
+   ```
+
+10. The client appears in the list on `/agency`. Open it to see the client
+    workspace and create a project there.
+
+Checks:
 
 ```bash
-pnpm install
-pnpm convex:configure
-pnpm dev
 pnpm test
 pnpm typecheck
 ```
 
 Use `pnpm convex:dev` after `.env.local` exists; it selects only the deployment
 recorded in that file.
-
-Set the auth origin and both independent secrets before starting the auth routes:
-
-```bash
-export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"
-(
-  set -eu
-  umask 077
-  sed '/^BCN_AUTH_PROXY_IP_SECRET=/d' .env.local > .env.local.next
-  printf 'BCN_AUTH_PROXY_IP_SECRET=%s\n' "$BCN_AUTH_PROXY_IP_SECRET" >> .env.local.next
-  mv .env.local.next .env.local
-)
-pnpm exec better-convex convex env set SITE_URL http://localhost:3000
-printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
-printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
-```
 
 `SITE_URL` must be the exact public Nuxt origin, without a path, query, or
 fragment. In production, inject the same `BCN_AUTH_PROXY_IP_SECRET` into Nuxt

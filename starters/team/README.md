@@ -1,10 +1,5 @@
 # Team Starter
 
-> **1.0.0-rc.0 note.** This source already uses the Better Convex
-> `1.0.0-rc.0` API, but `package.json` pins the last published version until
-> `1.0.0-rc.0` is on npm. Until that pin moves, install
-> `@lupinum/better-convex-nuxt@1.0.0-rc.0` yourself or wait for the bump.
-
 Canonical Nuxt + Convex + Better Auth starter for team SaaS products.
 
 This starter is intentionally focused. It teaches one production-shaped path:
@@ -185,6 +180,16 @@ printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set
 
 In production, inject the same `BCN_AUTH_PROXY_IP_SECRET` into Nuxt with your
 secret manager. Do not print or commit it.
+
+Then create the fresh deployment's first signing key. Without it, sign-in fails
+with `AUTH_JWKS_OPERATOR_SETUP_REQUIRED`:
+
+```bash
+pnpm exec better-convex convex run auth:rotateSigningKey '{}'
+```
+
+On a fresh deployment the result has an empty `previousKids`. A previous key
+means the deployment is not fresh: stop and check it instead of reusing state.
 
 Email delivery with Resend:
 
