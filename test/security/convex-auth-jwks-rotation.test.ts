@@ -70,14 +70,14 @@ function createAuth(
     database: memoryAdapter(database),
     logger: { disabled: true },
     plugins: [jwtPlugin, createConvexPlugin()],
-    rateLimit:
-      runtimeOverrides.rateLimit ??
-      ({
-        customStorage: createMemoryRateLimitStorage(database),
-        enabled: true,
-        modelName: 'rateLimit',
-        storage: 'database',
-      } as const),
+    // Overrides change single fields, so each rejection names its own cause.
+    rateLimit: {
+      customStorage: createMemoryRateLimitStorage(database),
+      enabled: true,
+      modelName: 'rateLimit',
+      storage: 'database',
+      ...runtimeOverrides.rateLimit,
+    },
     secrets,
   })
   return { auth }
@@ -241,6 +241,17 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
         },
       },
     ],
+    [
+      'the session-read exemption plus another bypass',
+      {
+        rateLimit: {
+          customRules: { '/get-session': false, '/sign-in/email': false },
+          enabled: true,
+          modelName: 'rateLimit',
+          storage: 'database',
+        },
+      },
+    ],
     ['disabled rate limiting', { rateLimit: { enabled: false } }],
   ] satisfies [string, Partial<Pick<BetterAuthOptions, 'advanced' | 'rateLimit'>>][])(
     'rejects a non-OAuth runtime with %s',
@@ -249,6 +260,23 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
       await expect(value.auth.$context).rejects.toThrow('AUTH_CONFIG_INVALID')
     },
   )
+
+  it("accepts the library's session-read rate-limit exemption", async () => {
+    const value = createAuth(
+      {},
+      [{ value: currentSecret, version: 1 }],
+      {},
+      {
+        rateLimit: {
+          customRules: { '/get-session': false },
+          enabled: true,
+          modelName: 'rateLimit',
+          storage: 'database',
+        },
+      },
+    )
+    await expect(value.auth.$context).resolves.toBeDefined()
+  })
 
   it('accepts only terminal IP defaults that preserve /64 IPv6 rate-limit buckets', async () => {
     const value = createAuth(

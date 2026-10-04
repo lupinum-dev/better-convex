@@ -39,7 +39,7 @@ import {
 } from './oauth-resource'
 import type { PinnedOAuthProviderProfile } from './oauth-security'
 import { requireAuthOrigin } from './origin'
-import { convexAuth } from './plugin'
+import { convexAuth, LIBRARY_RATE_LIMIT_RULES } from './plugin'
 import { getConvexAuthProvider } from './provider'
 import { createConvexAuthRateLimitStorage } from './rate-limit-storage'
 import type {
@@ -1053,6 +1053,7 @@ export function createBetterConvexAuthOwned<
         plugins,
         rateLimit: {
           customStorage: rateLimitStorage,
+          customRules: { ...LIBRARY_RATE_LIMIT_RULES },
           enabled: true,
           modelName: 'rateLimit',
           storage: 'database',
