@@ -202,6 +202,23 @@ describe('auth proxy security regressions', () => {
     },
   )
 
+  it.each([undefined, 'short'])(
+    'reports a missing or weak proxy secret as configuration before upstream delivery: %s',
+    async (secret) => {
+      vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', secret)
+      const fetchMock = vi.fn(async () => new Response('{}'))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const handler = (await import('../../src/runtime/server/api/auth/[...]'))
+        .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+      await expect(handler(event())).rejects.toMatchObject({
+        statusCode: 500,
+        data: { code: 'BCN_AUTH_PROXY_IP_SECRET_INVALID' },
+      })
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
+
   it('keeps successful auth responses independent from development diagnostics storage', async () => {
     mocks.storage.mockImplementation(() => {
       throw new Error('diagnostics storage unavailable')
