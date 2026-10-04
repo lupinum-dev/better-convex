@@ -16,9 +16,10 @@ interface SessionState {
   refetch?: () => Promise<void>
 }
 
-function jwt(sub: string, expiresInSeconds = 3_600) {
+function jwt(sub: string, expiresInSeconds = 3_600, issuedAtMs = Date.now()) {
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url')
-  return `${encode({ alg: 'none' })}.${encode({ sub, exp: Math.floor(Date.now() / 1_000) + expiresInSeconds })}.signature`
+  const iat = Math.floor(issuedAtMs / 1_000)
+  return `${encode({ alg: 'none' })}.${encode({ sub, iat, exp: iat + expiresInSeconds })}.signature`
 }
 
 function source(
@@ -259,6 +260,58 @@ describe('Better Auth browser adapter', () => {
     await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBe(aliceToken)
     expect(JSON.stringify(adapter.snapshot())).not.toContain(aliceToken)
     adapter.dispose()
+  })
+
+  it.each([
+    // The browser clock is an hour fast: by local time this fresh token already expired.
+    [
+      'a 15-minute token issued an hour before local time',
+      jwt('alice', 900, Date.now() - 3_600_000),
+      true,
+    ],
+    ['a token that lives no longer than the safety buffer', jwt('alice', 30), false],
+  ])('judges %s by its own lifetime, not the local clock', async (_case, token, accepted) => {
+    const fixture = source(
+      {
+        isPending: false,
+        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
+        error: null,
+      },
+      Array.from({ length: 4 }, () => ({ data: { token }, error: null })),
+    )
+    const adapter = createBetterAuthBrowserAdapter(fixture.client)
+    await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBe(
+      accepted ? token : null,
+    )
+    adapter.dispose()
+  })
+
+  it('stands in with the cached token after a transient failure only for its lifetime', async () => {
+    const token = jwt('alice', 900)
+    const unavailable = { error: { status: 503 } }
+    const fixture = source(
+      {
+        isPending: false,
+        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
+        error: null,
+      },
+      [{ data: { token }, error: null }, ...Array.from({ length: 8 }, () => unavailable)],
+    )
+    let monotonicMs = 1_000
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs)
+    const adapter = createBetterAuthBrowserAdapter(fixture.client)
+    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+
+    monotonicMs += 60_000
+    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+
+    // The system clock moves back an hour, but 15 minutes really passed.
+    vi.setSystemTime(Date.now() - 3_600_000)
+    monotonicMs += 15 * 60_000
+    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBeNull()
+    adapter.dispose()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('rejects a token whose subject disagrees with the observed session user', async () => {

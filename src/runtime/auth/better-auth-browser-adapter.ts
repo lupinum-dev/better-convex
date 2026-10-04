@@ -2,7 +2,12 @@ import type { BetterConvexAuthAdapter } from '@lupinum/better-convex-vue'
 import { watch, type Ref } from 'vue'
 
 import type { ConvexUser } from '../utils/types'
-import { fetchConvexToken, isTokenUsable, type ConvexTokenSource } from './token-fetcher'
+import {
+  fetchConvexToken,
+  TOKEN_EXPIRY_SAFETY_BUFFER_MS,
+  usableTokenLifetimeMs,
+  type ConvexTokenSource,
+} from './token-fetcher'
 
 type BrowserAuthSnapshot = ReturnType<BetterConvexAuthAdapter['snapshot']>
 
@@ -58,6 +63,10 @@ export function createBetterAuthBrowserAdapter(
   let observedSessionToken: string | null | undefined
   let observedIdentityKey: string | null | undefined = options.initialIdentityKey
   let cachedToken: string | null = null
+  // Monotonic time until which `cachedToken` may stand in after a transient
+  // failure: receipt plus the token's own lifetime. `performance.now()` is
+  // immune to a wrong or corrected system clock.
+  let cachedTokenUsableUntil = 0
   let snapshot: BrowserAuthSnapshot = options.initialIdentityKey
     ? {
         status: 'authenticated',
@@ -249,10 +258,17 @@ export function createBetterAuthBrowserAdapter(
           return null
         }
         cachedToken = outcome.identity.token
+        // The fetcher admitted only tokens with a usable lifetime; 0 fails closed.
+        cachedTokenUsableUntil =
+          performance.now() +
+          (usableTokenLifetimeMs(cachedToken) ?? 0) -
+          TOKEN_EXPIRY_SAFETY_BUFFER_MS
         callbacks.authenticated(outcome.identity.token, outcome.identity.user)
         return cachedToken
       }
-      if (!outcome.definitive && isTokenUsable(cachedToken)) return cachedToken
+      if (!outcome.definitive && cachedToken && performance.now() < cachedTokenUsableUntil) {
+        return cachedToken
+      }
       cachedToken = null
       callbacks.anonymous(outcome.authError)
       return null

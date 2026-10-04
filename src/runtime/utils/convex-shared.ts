@@ -153,6 +153,19 @@ export function getJwtTimeUntilExpiryMs(token: string, nowMs = Date.now()): numb
 }
 
 /**
+ * Milliseconds between `iat` and `exp`: the lifetime the issuer gave the token,
+ * independent of this machine's clock. Null when either claim is missing or invalid.
+ */
+export function getJwtLifetimeMs(token: string): number | null {
+  const payload = decodeJwtPayload(token)
+  if (!payload) return null
+  const { exp, iat } = payload
+  if (typeof exp !== 'number' || typeof iat !== 'number') return null
+  const lifetimeMs = (exp - iat) * 1000
+  return Number.isFinite(lifetimeMs) && lifetimeMs > 0 ? lifetimeMs : null
+}
+
+/**
  * A locally retained token must have a finite `exp` beyond the safety window.
  * This is a lifecycle guard, not JWT verification: Convex still verifies the
  * signature, algorithm, key, issuer, audience, subject, and temporal claims.
