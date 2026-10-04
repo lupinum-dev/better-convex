@@ -1,6 +1,6 @@
 import {
   decodeUserFromJwt,
-  isJwtUsable,
+  getJwtLifetimeMs,
   TOKEN_EXPIRY_SAFETY_BUFFER_MS,
 } from '../utils/convex-shared'
 import type { ConvexUser } from '../utils/types'
@@ -39,12 +39,15 @@ const TOKEN_EXCHANGE_CANCELLED_MESSAGE = 'Convex authentication token exchange w
 const TOKEN_EXCHANGE_FAILURE_MESSAGE = 'Authentication is temporarily unavailable'
 
 /**
- * A token is retainable only while it carries a valid required `exp` still in
- * the future beyond the safety buffer. A token without a valid `exp`, or at/after
- * expiry, is never retained (architecture invariant).
+ * A fetched token's lifetime, read from its own `iat` and `exp`. The browser
+ * clock may be minutes or hours off; Convex checks the token's times against
+ * its own clock and corrects for the difference, so judging a fresh token by
+ * the local clock would reject valid tokens. Null when the token has no valid
+ * lifetime beyond the safety buffer.
  */
-export function isTokenUsable(token: string | null, nowMs = Date.now()): token is string {
-  return isJwtUsable(token, nowMs)
+export function usableTokenLifetimeMs(token: string): number | null {
+  const lifetimeMs = getJwtLifetimeMs(token)
+  return lifetimeMs !== null && lifetimeMs > TOKEN_EXPIRY_SAFETY_BUFFER_MS ? lifetimeMs : null
 }
 
 /**
@@ -85,7 +88,7 @@ export interface FetchOutcome {
  */
 export async function fetchConvexToken(
   source: ConvexTokenSource,
-  options: { maxAttempts?: number; nowMs?: () => number; signal?: AbortSignal } = {},
+  options: { maxAttempts?: number; signal?: AbortSignal } = {},
 ): Promise<FetchOutcome> {
   if (options.signal?.aborted) {
     return {
@@ -95,7 +98,6 @@ export async function fetchConvexToken(
     }
   }
   const maxAttempts = options.maxAttempts ?? MAX_FETCH_ATTEMPTS
-  const now = options.nowMs ?? Date.now
   let lastError: string | null = null
   const controller = new AbortController()
   let timedOut = false
@@ -159,7 +161,7 @@ export async function fetchConvexToken(
           // Clean anonymous outcome: the exchange reported no session.
           return { identity: null, authError: null, definitive: true }
         }
-        if (!isTokenUsable(token, now())) {
+        if (usableTokenLifetimeMs(token) === null) {
           lastError = 'Convex authentication token is expired or missing a valid expiry'
           continue
         }
