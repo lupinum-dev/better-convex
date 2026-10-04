@@ -456,7 +456,7 @@ describe('SSR hydration with auth enabled (F-016)', () => {
           })
           useState<boolean>('convex:pending').value = false
           if (ssr) {
-            useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity('ssr-token', {
+            useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity({
               id: ssr,
             })
           }
