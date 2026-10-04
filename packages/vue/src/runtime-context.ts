@@ -133,7 +133,14 @@ function normalizeClientOptions(
 }
 
 function makeClient(convexUrl: string, clientOptions: BetterConvexClientOptions) {
-  return new ConvexClient(convexUrl, { unsavedChangesWarning: false, ...clientOptions })
+  return new ConvexClient(convexUrl, {
+    unsavedChangesWarning: false,
+    // Keep the confirmed first token until its scheduled refresh. Without it,
+    // Convex fetches a second token at once, and because every session token
+    // is unique, re-authenticates and re-runs every authenticated query.
+    initialAuthTokenReuse: true,
+    ...clientOptions,
+  })
 }
 
 export function createBetterConvex(options: CreateBetterConvexOptions): BetterConvexPlugin {

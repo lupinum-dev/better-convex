@@ -139,9 +139,24 @@ describe('canonical Better Auth session matrix', async () => {
 
     try {
       await registerAndSignIn(page, `raw-logout-${Date.now()}@example.com`)
+      const authenticatesPerSocket: number[] = []
+      page.on('websocket', (socket) => {
+        const index = authenticatesPerSocket.push(0) - 1
+        socket.on('framesent', ({ payload }) => {
+          if (typeof payload === 'string' && payload.includes('"type":"Authenticate"')) {
+            authenticatesPerSocket[index]! += 1
+          }
+        })
+      })
       await page.goto('http://localhost:3050/labs/use-auth-test')
       await secondPage.goto('http://localhost:3050/labs/use-auth-test')
       const firstIdentity = await expectAuthenticatedIdentity(page)
+      // A confirmed first token is reused until its scheduled refresh. A second
+      // Authenticate on one socket would re-run every authenticated query.
+      await page.waitForTimeout(1_500)
+      const authenticated = authenticatesPerSocket.filter((count) => count > 0)
+      expect(authenticated.length).toBeGreaterThan(0)
+      expect(authenticated).toEqual(authenticated.map(() => 1))
       expect(await expectAuthenticatedIdentity(secondPage)).toBe(firstIdentity)
 
       await page.getByTestId('integrated-signout').click()
