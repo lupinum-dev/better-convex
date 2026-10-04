@@ -8,6 +8,7 @@ import type { FunctionReference, PaginationResult } from 'convex/server'
 import { makeFunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it } from 'vitest'
+import { effectScope, getCurrentInstance } from 'vue'
 
 import type {
   ConvexOperation,
@@ -118,6 +119,36 @@ export function defineTestKitScenarios(variant: TestKitVariant): void {
       await convex.flush()
       expect(state.status.value).toBe('idle')
       expect(notes.activeSubscriptions()).toBe(0)
+      unmount()
+      await convex.dispose()
+    })
+
+    it('live query: a second component on a live query renders its result at once', async () => {
+      const convex = setupBetterConvexTest({ auth: { subject: 'alice' } })
+      const notes = convex.query(listNotes, { owner: 'alice' })
+      notes.resolve([note('1')])
+      const useNotes = () =>
+        composables.useConvexQuery(listNotes, { owner: 'alice' }, { auth: 'required' })
+      const { state, unmount } = await mount(convex, () => {
+        const app = getCurrentInstance()!.appContext.app
+        return {
+          first: useNotes(),
+          // A component mounted later in the same app, e.g. a tab or a `v-if` branch.
+          mountSecond: () => app.runWithContext(() => effectScope().run(useNotes)!),
+        }
+      })
+      expect(state.first.data.value).toEqual([note('1')])
+
+      // Read before any task or microtask runs: what its first render shows.
+      const second = state.mountSecond()
+      expect({ pending: second.pending.value, data: second.data.value }).toEqual({
+        pending: false,
+        data: [note('1')],
+      })
+      expect(notes.activeSubscriptions()).toBe(2)
+
+      notes.push([note('1'), note('2')])
+      expect(second.data.value).toEqual([note('1'), note('2')])
       unmount()
       await convex.dispose()
     })
