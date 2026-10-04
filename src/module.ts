@@ -34,7 +34,11 @@ import {
   type ConvexAuthOptions,
 } from './runtime/utils/auth-config'
 import { CONVEX_MODULE_DEFAULTS } from './runtime/utils/config-defaults'
-import { getSiteUrlResolutionHint, resolveConvexSiteUrl } from './runtime/utils/convex-config'
+import {
+  getSiteUrlResolutionHint,
+  MISSING_CONVEX_URL_MESSAGE,
+  resolveConvexSiteUrl,
+} from './runtime/utils/convex-config'
 import type { LogLevel } from './runtime/utils/logger'
 import { normalizeConvexDeploymentUrl, normalizeConvexSiteUrl } from './runtime/utils/site-url'
 import {
@@ -295,6 +299,8 @@ export default defineNuxtModule<ModuleOptions>({
       auth: normalizedAuthConfig,
     }
     nuxt.options.runtimeConfig.public.convex = convexConfig as never
+    // A deploy can still supply NUXT_PUBLIC_CONVEX_URL at runtime, so warn, not fail.
+    if (!convexConfig.url) logger.warn(MISSING_CONVEX_URL_MESSAGE)
     registerConvexAliases({ nuxt, resolver, convexApiAlias })
     addServerPlugin(resolver.resolve('./runtime/server/plugins/runtime-config'))
 
