@@ -10,6 +10,7 @@ interface RegisteredTemplate {
 const kit = vi.hoisted(() => ({
   templates: [] as RegisteredTemplate[],
   typeTemplates: [] as RegisteredTemplate[],
+  warn: vi.fn(),
 }))
 
 vi.mock('@nuxt/kit', () => ({
@@ -30,7 +31,7 @@ vi.mock('@nuxt/kit', () => ({
   addServerPlugin: vi.fn(),
   addRouteMiddleware: vi.fn(),
   resolvePath: vi.fn(async (path: string) => path),
-  useLogger: () => ({ warn: vi.fn(), info: vi.fn() }),
+  useLogger: () => ({ warn: kit.warn, info: vi.fn() }),
 }))
 
 // eslint-disable-next-line import/first
@@ -71,8 +72,12 @@ function createNuxt(): TestNuxt {
   }
 }
 
-async function setup(options: ModuleOptions): Promise<TestNuxt> {
+async function setup(
+  options: ModuleOptions,
+  publicRuntimeConfig: Record<string, unknown> = {},
+): Promise<TestNuxt> {
   const nuxt = createNuxt()
+  Object.assign(nuxt.options.runtimeConfig.public, publicRuntimeConfig)
   const definition = convexModule as unknown as {
     setup: (options: ModuleOptions, nuxt: TestNuxt) => Promise<void>
   }
@@ -119,6 +124,20 @@ describe('module type templates', () => {
     expect(kit.templates.map((template) => template.filename)).toEqual([
       '@lupinum/better-convex-nuxt/convex-api-missing.ts',
     ])
+  })
+})
+
+describe('module Convex URL', () => {
+  it.each([
+    [{ url: undefined }, {}, true],
+    [{ url: 'https://demo.convex.cloud' }, {}, false],
+    [{ url: undefined }, { convex: { url: 'https://demo.convex.cloud' } }, false],
+  ] as const)('warns about a missing deployment URL: %o %o', async (options, runtime, warns) => {
+    kit.warn.mockClear()
+    await setup(options, runtime)
+    expect(
+      kit.warn.mock.calls.some(([message]) => String(message).includes('NUXT_PUBLIC_CONVEX_URL')),
+    ).toBe(warns)
   })
 })
 

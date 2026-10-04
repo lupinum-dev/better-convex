@@ -76,3 +76,7 @@ export function getSiteUrlResolutionHint(url?: string | null): string {
 
   return 'Set `convex.siteUrl` explicitly to your Convex HTTP Actions host (for example `https://your-app.convex.site`).'
 }
+
+/** Shared wording for a build or browser without a Convex deployment URL. */
+export const MISSING_CONVEX_URL_MESSAGE =
+  'No Convex deployment URL is configured. Set `NUXT_PUBLIC_CONVEX_URL` (or `CONVEX_URL` for the build). Until then the browser starts no Convex client, and Convex composables fail with "plugin is not installed".'

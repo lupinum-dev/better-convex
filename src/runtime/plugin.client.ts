@@ -8,6 +8,7 @@ import { setupNuxtDevtoolsClient } from './devtools/setup-client'
 import { createConvexRuntimeContext, readConvexRuntimeContext } from './runtime-context'
 import { useConvexIdentityState } from './utils/auth-identity-state'
 import { useConvexAuthPendingState } from './utils/auth-pending-state'
+import { MISSING_CONVEX_URL_MESSAGE } from './utils/convex-config'
 import { createLogger, getLogLevel } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
 
@@ -19,7 +20,11 @@ export default defineNuxtPlugin({
     const convexConfig = getConvexRuntimeConfig()
     const publicConvex = config.public.convex as Record<string, unknown> | undefined
     const logger = createLogger(getLogLevel(publicConvex))
-    if (readConvexRuntimeContext(nuxtApp) || !convexConfig.url) return
+    if (readConvexRuntimeContext(nuxtApp)) return
+    if (!convexConfig.url) {
+      console.error(`[better-convex-nuxt] ${MISSING_CONVEX_URL_MESSAGE}`)
+      return
+    }
 
     const plugin = createBetterConvex({
       convexUrl: convexConfig.url,
