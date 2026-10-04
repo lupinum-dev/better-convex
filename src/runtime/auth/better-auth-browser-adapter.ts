@@ -50,7 +50,13 @@ export function createBetterAuthBrowserAdapter(
       sessionGeneration: number,
     ): void
   } = { authenticated: () => {}, anonymous: () => {} },
-  options: { initialIdentityKey?: string } = {},
+  /**
+   * `initialIdentityKey` is the principal the server rendered: a user ID, or
+   * `null` for a page the server rendered anonymously. Left out, the identity
+   * is unknown (no server render) and starts as `loading`. A matching first
+   * provider settlement then confirms it without a new session generation.
+   */
+  options: { initialIdentityKey?: string | null } = {},
 ): BetterConvexAuthAdapter & {
   failClosed(message: string): void
   dispose(): void
@@ -74,12 +80,16 @@ export function createBetterAuthBrowserAdapter(
         sessionGeneration,
         error: null,
       }
-    : {
-        status: 'loading',
-        identityKey: null,
-        sessionGeneration,
-        error: null,
-      }
+    : options.initialIdentityKey === null
+      ? // Anonymous transport carries no token, so it may run before the provider
+        // confirms; a session found later is a new generation like any other.
+        { status: 'anonymous', identityKey: null, sessionGeneration, error: null }
+      : {
+          status: 'loading',
+          identityKey: null,
+          sessionGeneration,
+          error: null,
+        }
 
   const notify = () => {
     for (const listener of [...listeners]) {
@@ -103,7 +113,7 @@ export function createBetterAuthBrowserAdapter(
       if (
         observedSessionToken === undefined &&
         observedIdentityKey !== undefined &&
-        snapshot.status === 'authenticated'
+        (snapshot.status === 'authenticated' || snapshot.status === 'anonymous')
       ) {
         return
       }

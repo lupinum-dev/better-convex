@@ -71,6 +71,14 @@ export default defineNuxtPlugin({
     const authError = useState<string | null>('convex:authError', () => null)
     const pendingState = useConvexAuthPendingState()
     let latestProviderSession: ProviderSessionRevision | undefined
+    // The principal the server rendered this page for: its user ID, or `null`
+    // for a settled anonymous render. Unknown (`undefined`) for an `ssr: false`
+    // page or an unsettled or failed server auth check.
+    const serverRenderedPrincipal = (): string | null | undefined => {
+      if (identity.value.status === 'authenticated') return identity.value.user.id
+      if (!nuxtApp.payload.serverRendered || pendingState.value || authError.value) return undefined
+      return null
+    }
     let publishCurrentSessionAcceptance: () => void = () => {}
     const adapter = createBetterAuthBrowserAdapter(
       authClient,
@@ -103,10 +111,7 @@ export default defineNuxtPlugin({
           publishCurrentSessionAcceptance()
         },
       },
-      {
-        initialIdentityKey:
-          identity.value.status === 'authenticated' ? identity.value.user.id : undefined,
-      },
+      { initialIdentityKey: serverRenderedPrincipal() },
     )
 
     const vuePlugin = createBetterConvex({

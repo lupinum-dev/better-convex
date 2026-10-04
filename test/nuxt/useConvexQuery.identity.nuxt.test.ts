@@ -1,11 +1,16 @@
+import type { AuthTokenFetcher } from 'convex/browser'
 import { getFunctionName, type FunctionReference } from 'convex/server'
 import { hash } from 'ohash'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { onMounted } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 
-import { useNuxtApp, useState } from '#imports'
+import { onNuxtReady, useNuxtApp, useState } from '#imports'
 
+import { createBetterConvexBrowserRuntime } from '../../packages/vue/src/internal/browser-runtime'
+import type { OwnedConvexClient } from '../../packages/vue/src/internal/client-owner'
+import type { ConvexIdentityKey } from '../../packages/vue/src/internal/identity-key'
 import { toAuthenticatedIdentity, type AuthIdentity } from '../../src/runtime/auth/auth-identity'
+import { createBetterAuthBrowserAdapter } from '../../src/runtime/auth/better-auth-browser-adapter'
 import { createConvexQueryState } from '../../src/runtime/composables/useConvexQuery'
 import { ConvexCallError } from '../../src/runtime/errors'
 import { createConvexPayloadKey } from '../../src/runtime/utils/convex-cache'
@@ -391,5 +396,150 @@ describe('useConvexQuery identity isolation', () => {
     expect(result.q.data.value).toBeUndefined()
 
     wrapper.unmount()
+  })
+})
+
+// The real chain: Better Auth adapter, identity port, client owner and query
+// lifecycle. Only the provider session and the Convex wire are doubles.
+describe('SSR hydration with auth enabled (F-016)', () => {
+  class Wire extends MockConvexClient {
+    close = vi.fn(async () => {})
+    authChange: ((accepted: boolean) => void) | undefined
+    setAuth(_fetch: AuthTokenFetcher, onChange: (accepted: boolean) => void) {
+      this.authChange = onChange
+    }
+  }
+  type Session = {
+    isPending: boolean
+    data: null | { session: { token: string }; user: { id: string } }
+    error: null
+  }
+  const signedInAs = (id: string): Session => ({
+    isPending: false,
+    data: { session: { token: `session-${id}` }, user: { id } },
+    error: null,
+  })
+
+  it.each([
+    { name: 'anonymous render, provider confirms anonymous', ssr: null, provider: null },
+    { name: 'user A render, Convex confirms A after hydration', ssr: 'A', provider: 'A' },
+  ] as const)('$name: SSR data stays, no pending, one client', async ({ ssr, provider }) => {
+    const session = ref<Session>({ isPending: true, data: null, error: null })
+    const clients: Wire[] = []
+    const adapter = createBetterAuthBrowserAdapter(
+      { useSession: () => session, convex: { token: async () => ({ data: null, error: null }) } },
+      undefined,
+      { initialIdentityKey: ssr },
+    )
+    const runtime = createBetterConvexBrowserRuntime({
+      auth: adapter,
+      clientFactory() {
+        clients.push(new Wire())
+        return clients.at(-1) as unknown as OwnedConvexClient
+      },
+    })
+    const query = mockFnRef<'query'>(`notes:f016-${ssr ?? 'anonymous'}`)
+    const identity: ConvexIdentityKey = ssr ? `user:${ssr}` : 'anonymous'
+    const payloadData = {
+      [createConvexPayloadKey('convex', getFunctionName(query), hash({}), 'optional', identity)]: {
+        value: 'ssr',
+      },
+    }
+    const seen: string[] = []
+    let liveHandoff = false
+    const { result, flush, wrapper } = await captureInNuxt(
+      () =>
+        hydrating(() => {
+          // Registered after the query, so it runs after the query went live.
+          onNuxtReady(() => {
+            liveHandoff = true
+          })
+          useState<boolean>('convex:pending').value = false
+          if (ssr) {
+            useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity('ssr-token', {
+              id: ssr,
+            })
+          }
+          const state = createConvexQueryState(query, {}).resultData
+          watch(
+            () => `${state.status.value}/${String(state.data.value)}`,
+            (value) => seen.push(value),
+            { immediate: true },
+          )
+          return state
+        }),
+      { convex: runtime.handle, identityObserver: runtime.identity, payloadData },
+    )
+    const generationAtHydration = runtime.identity.snapshot().identityGeneration
+    // Auth settles after the live handoff, the order that made the page flash.
+    await waitFor(() => liveHandoff)
+    await flush()
+
+    session.value = provider ? signedInAs(provider) : { isPending: false, data: null, error: null }
+    await flush()
+    if (provider) clients[0]!.authChange!(true)
+    await runtime.ready()
+    await waitFor(() => clients[0]!.calls.onUpdate.length > 0)
+    clients[0]!.emitQueryResultByPath(getFunctionName(query), 'live')
+    await flush()
+
+    expect(new Set(seen)).toEqual(new Set(['success/ssr', 'success/live']))
+    expect(result.data.value).toBe('live')
+    expect(runtime.identity.snapshot().identityGeneration).toBe(generationAtHydration)
+    expect(clients).toHaveLength(1)
+    wrapper.unmount()
+    await runtime.dispose()
+    adapter.dispose()
+  })
+
+  it('anonymous render, provider finds user A: drops the anonymous data and runs as A', async () => {
+    const session = ref<Session>({ isPending: true, data: null, error: null })
+    const clients: Wire[] = []
+    const adapter = createBetterAuthBrowserAdapter(
+      { useSession: () => session, convex: { token: async () => ({ data: null, error: null }) } },
+      undefined,
+      { initialIdentityKey: null },
+    )
+    const runtime = createBetterConvexBrowserRuntime({
+      auth: adapter,
+      clientFactory() {
+        clients.push(new Wire())
+        return clients.at(-1) as unknown as OwnedConvexClient
+      },
+    })
+    const query = mockFnRef<'query'>('notes:f016-found-session')
+    const payloadData = {
+      [createConvexPayloadKey('convex', getFunctionName(query), hash({}), 'optional', 'anonymous')]:
+        {
+          value: 'anonymous-ssr',
+        },
+    }
+    const { result, flush, wrapper } = await captureInNuxt(
+      () =>
+        hydrating(() => {
+          useState<boolean>('convex:pending').value = false
+          return createConvexQueryState(query, {}).resultData
+        }),
+      { convex: runtime.handle, identityObserver: runtime.identity, payloadData },
+    )
+    const generationAtHydration = runtime.identity.snapshot().identityGeneration
+
+    session.value = signedInAs('A')
+    await flush()
+    expect(result.data.value).toBeUndefined()
+    expect(runtime.identity.snapshot()).toMatchObject({
+      identityKey: 'user:A',
+      identityGeneration: generationAtHydration + 1,
+    })
+    const userClient = clients.at(-1)!
+    userClient.authChange!(true)
+    await runtime.ready()
+    await waitFor(() => userClient.calls.onUpdate.length > 0)
+    userClient.emitQueryResultByPath(getFunctionName(query), 'for-A')
+    await flush()
+    expect(result.data.value).toBe('for-A')
+    wrapper.unmount()
+    await runtime.dispose()
+    adapter.dispose()
   })
 })

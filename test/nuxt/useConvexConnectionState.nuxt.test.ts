@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { onMounted } from 'vue'
+
+import { useNuxtApp } from '#app'
 
 import {
   createConvexClientOwner,
@@ -44,6 +47,33 @@ describe('useConvexConnectionState (Nuxt runtime)', () => {
     expect(result.isReconnecting.value).toBe(false)
     expect(result.pendingMutations.value).toBe(0)
     expect(result.pendingActions.value).toBe(0)
+    wrapper.unmount()
+  })
+
+  it('hydrates a server-rendered page with the server state, then shows the live state', async () => {
+    const convex = new MockConvexClient()
+    const owner = ownerFor(convex)
+
+    const { result, wrapper } = await captureInNuxt(
+      () => {
+        const nuxtApp = useNuxtApp()
+        nuxtApp.isHydrating = true
+        nuxtApp.payload.serverRendered = true
+        const state = useConvexConnectionState()
+        // An anonymous visitor's client may connect before hydration ends.
+        convex.updateConnectionState({ isWebSocketConnected: true, hasEverConnected: true })
+        const duringHydration = state.isConnected.value
+        onMounted(() => {
+          nuxtApp.isHydrating = false
+          void nuxtApp.callHook('app:suspense:resolve')
+        })
+        return { state, duringHydration }
+      },
+      { owner },
+    )
+
+    expect(result.duringHydration).toBe(false)
+    expect(result.state.isConnected.value).toBe(true)
     wrapper.unmount()
   })
 
