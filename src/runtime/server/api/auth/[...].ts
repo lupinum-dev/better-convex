@@ -11,7 +11,7 @@ import {
 
 import type { AuthProxyRequest } from '../../../devtools/types'
 import { getSessionCookieFlagViolation } from '../../../shared/auth-cookie'
-import { normalizeClientIp } from '../../../shared/client-ip'
+import { normalizeClientIp, requireProxyIpSecret } from '../../../shared/client-ip'
 import {
   buildAuthProxyUnreachableMessage,
   buildAuthProxyUpstreamStatusMessage,
@@ -300,6 +300,21 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         message: 'Auth proxy request is missing a valid ingress-owned client IP',
         data: { code: 'BCN_AUTH_PROXY_CLIENT_IP_INVALID' },
       })
+    }
+    // Signing the client IP needs the shared secret. Report its absence as
+    // configuration, not as an unreachable upstream.
+    if (trustedClientIpHeader) {
+      try {
+        requireProxyIpSecret(process.env.BCN_AUTH_PROXY_IP_SECRET)
+      } catch {
+        if (event.method === 'POST') closeRequestConnection(event)
+        rejected('BCN_AUTH_PROXY_IP_SECRET_INVALID', 500)
+        throw createError({
+          statusCode: 500,
+          message: 'Auth proxy client IP signing is not configured',
+          data: { code: 'BCN_AUTH_PROXY_IP_SECRET_INVALID' },
+        })
+      }
     }
     if (publicMetadataCors && hasPublicAuthCorsCredentials(event.headers)) {
       rejected('BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED', 403)
