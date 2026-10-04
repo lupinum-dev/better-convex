@@ -241,6 +241,28 @@ export function createBetterAuthBrowserAdapter(
     })
   }
 
+  // Refetch the provider session and wait for it to settle, bounded by the
+  // settlement timeout and cancelled on dispose: a hanging request must not
+  // hold a token fetch open. Never rejects.
+  const settleProviderSession = () =>
+    new Promise<void>((resolve) => {
+      let done = false
+      const finish = () => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        cancelSessionSettlement.delete(finish)
+        resolve()
+      }
+      const timer = setTimeout(finish, SESSION_SETTLEMENT_TIMEOUT_MS)
+      cancelSessionSettlement.add(finish)
+      const unsettled = session.value.isPending === true || session.value.isRefetching === true
+      void (async () => {
+        if (!unsettled) await session.value.refetch?.()
+        await waitForSessionSettlement()
+      })().then(finish, finish)
+    })
+
   return Object.freeze({
     snapshot: () => snapshot,
     subscribe(listener: () => void) {
@@ -253,6 +275,13 @@ export function createBetterAuthBrowserAdapter(
       const expectedKey = snapshot.identityKey
       const expectedGeneration = sessionGeneration
       const outcome = await fetchConvexToken(source)
+      if (outcome.sessionRejected && !disposed) {
+        // The session ended on the server (sign-out, revocation, expiry) before
+        // the provider published it. Let the provider settle first: a session
+        // it now reports as gone is a sign-out, not an authentication error,
+        // and the generation check below drops this result.
+        await settleProviderSession()
+      }
       if (
         disposed ||
         snapshot.status !== 'authenticated' ||
