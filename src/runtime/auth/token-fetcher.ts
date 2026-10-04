@@ -72,6 +72,8 @@ export interface FetchOutcome {
   identity: FetchedIdentity | null
   authError: string | null
   definitive: boolean
+  /** The exchange answered 401/403: the server no longer accepts the session. */
+  sessionRejected?: true
 }
 
 /**
@@ -149,6 +151,7 @@ export async function fetchConvexToken(
               identity: null,
               authError: 'Authentication credentials are invalid or expired',
               definitive: true,
+              sessionRejected: true,
             }
           }
           lastError = TOKEN_EXCHANGE_FAILURE_MESSAGE
