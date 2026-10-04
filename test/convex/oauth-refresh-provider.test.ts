@@ -93,8 +93,8 @@ const disabledPaths = [
 ]
 const originalToken = 'SyntheticOnlyRefreshTokenForProviderTest'
 
-/** The provider stores refresh tokens as unpadded base64url SHA-256 digests. */
-async function hashRefreshToken(token: string): Promise<string> {
+/** Unpadded base64url SHA-256: the stored refresh-token hash and the PKCE S256 challenge. */
+async function sha256Base64Url(token: string): Promise<string> {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
   return btoa(String.fromCharCode(...new Uint8Array(hash)))
     .replaceAll('+', '-')
@@ -277,7 +277,7 @@ async function init() {
   })
   await create('oauthRefreshToken', {
     id: 'refresh',
-    token: await hashRefreshToken(originalToken),
+    token: await sha256Base64Url(originalToken),
     clientId: 'client',
     userId: 'user',
     sessionId: 'session',
@@ -340,7 +340,18 @@ async function init() {
         text: await response.text(),
       }
     })
-  return { test, request, send }
+  const signIn = () =>
+    send(
+      new Request(`${issuer}/sign-in/email`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin },
+        body: JSON.stringify({
+          email: 'user@example.test',
+          password: 'Synthetic password for tests 2026',
+        }),
+      }),
+    )
+  return { test, request, send, signIn }
 }
 
 beforeEach(() => {
@@ -458,17 +469,8 @@ describe('official provider renewal through the canonical Convex adapter', () =>
     expect((await request(first.body.refresh_token)).status).toBe(400)
   })
   it('signs out the canonical session after a large renewal history', async () => {
-    const { test, request, send } = await init()
-    const login = await send(
-      new Request(`${issuer}/sign-in/email`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', origin },
-        body: JSON.stringify({
-          email: 'user@example.test',
-          password: 'Synthetic password for tests 2026',
-        }),
-      }),
-    )
+    const { test, request, send, signIn } = await init()
+    const login = await signIn()
     expect(login.status).toBe(200)
     const session = await test.query(component.adapter.findOne, {
       model: 'session',
@@ -588,26 +590,13 @@ describe('official provider renewal through the canonical Convex adapter', () =>
     ).not.toBeNull()
   })
   it('exchanges a normal signed-in authorization code for the first renewable token', async () => {
-    const { send, request } = await init()
-    const login = await send(
-      new Request(`${issuer}/sign-in/email`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', origin },
-        body: JSON.stringify({
-          email: 'user@example.test',
-          password: 'Synthetic password for tests 2026',
-        }),
-      }),
-    )
+    const { send, request, signIn } = await init()
+    const login = await signIn()
     expect(login.status).toBe(200)
     const cookie = login.headers['set-cookie']?.split(';')[0]
     expect(cookie).toBeTypeOf('string')
     const verifier = 'A'.repeat(64)
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
-    const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-      .replaceAll('+', '-')
-      .replaceAll('/', '_')
-      .replaceAll('=', '')
+    const challenge = await sha256Base64Url(verifier)
     const redirect = 'https://chatgpt.com/connector_platform_oauth_redirect'
     const parameters = new URLSearchParams({
       client_id: 'client',
@@ -660,7 +649,7 @@ describe('beta refresh tokens after the 1.0 upgrade', () => {
   async function betaRefreshRow() {
     return {
       id: 'beta-refresh',
-      token: await hashRefreshToken(betaToken),
+      token: await sha256Base64Url(betaToken),
       clientId: 'client',
       sessionId: 'session',
       userId: 'user',

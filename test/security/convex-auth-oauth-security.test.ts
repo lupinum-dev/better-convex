@@ -396,25 +396,15 @@ describe('stored OAuth beta inventory', () => {
 })
 
 describe('admin OAuth provisioning boundary', () => {
-  function expectClientProfile4xx(run: () => void): void {
+  function expectProfile4xx(message: string, run: () => void): void {
     expect(run).toThrow(
-      expect.objectContaining({
-        body: { message: 'AUTH_OAUTH_CLIENT_PROFILE_INVALID' },
-        status: 'BAD_REQUEST',
-        statusCode: 400,
-      }),
+      expect.objectContaining({ body: { message }, status: 'BAD_REQUEST', statusCode: 400 }),
     )
   }
-
-  function expectResourceProfile4xx(run: () => void): void {
-    expect(run).toThrow(
-      expect.objectContaining({
-        body: { message: 'AUTH_OAUTH_RESOURCE_PROFILE_INVALID' },
-        status: 'BAD_REQUEST',
-        statusCode: 400,
-      }),
-    )
-  }
+  const expectClientProfile4xx = (run: () => void) =>
+    expectProfile4xx('AUTH_OAUTH_CLIENT_PROFILE_INVALID', run)
+  const expectResourceProfile4xx = (run: () => void) =>
+    expectProfile4xx('AUTH_OAUTH_RESOURCE_PROFILE_INVALID', run)
 
   it.each(['mcp:read  mcp:write', 'mcp:read mcp:read'])(
     'maps malformed scope %j to the reviewed client-profile 4xx',

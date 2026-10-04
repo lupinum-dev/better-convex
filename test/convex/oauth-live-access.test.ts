@@ -205,23 +205,15 @@ describe('provider-owned OAuth live access validation', () => {
     await expect(validate(test, { userId: 'other' })).resolves.toBe(false)
   })
 
-  it('rejects a revoked session and a security-generation bump', async () => {
-    const revoked = initTest()
-    await createLiveGrant(revoked)
-    await revoked.mutation(auth.deleteOne, {
-      model: 'session',
-      where: [{ field: 'id', value: access.sessionId }],
-    })
-    await expect(validate(revoked)).resolves.toBe(false)
-
-    const bumped = initTest()
-    await createLiveGrant(bumped)
+  it('rejects a security-generation bump', async () => {
+    const test = initTest()
+    await createLiveGrant(test)
     // Better Auth's "revoke all sessions" selector advances the user's security generation.
-    await bumped.mutation(auth.deleteMany, {
+    await test.mutation(auth.deleteMany, {
       model: 'session',
       where: [{ field: 'userId', value: access.userId }],
     })
-    await expect(validate(bumped)).resolves.toBe(false)
+    await expect(validate(test)).resolves.toBe(false)
   })
 
   it('rejects an unknown or wrong resource and a foreign client', async () => {

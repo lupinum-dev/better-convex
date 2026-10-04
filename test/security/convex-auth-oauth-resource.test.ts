@@ -64,6 +64,15 @@ function fakeCtx(state: FakeState) {
   return { ctx: { runQuery } as never, runQuery }
 }
 
+const liveGrant = Object.freeze({ grantId: 'consent-1', user: {} })
+
+/** A verifier over the current signing key and the given live-authority answer. */
+function liveVerifier(live: FakeState['live'] = liveGrant) {
+  const state: FakeState = { keys: [jwksRow], live }
+  const { ctx, runQuery } = fakeCtx(state)
+  return { runQuery, state, verifier: createVerifier(ctx, { allowedScopes: ['mcp:read'] }) }
+}
+
 async function token(overrides: Record<string, unknown> = {}) {
   const now = Math.floor(Date.now() / 1_000)
   const claims: Record<string, unknown> = {
@@ -105,13 +114,7 @@ afterEach(() => {
 describe('Better Auth MCP resource verification without an HTTP JWKS loop', () => {
   it('verifies against component keys and never fetches over HTTP', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch')
-    const { ctx, runQuery } = fakeCtx({
-      keys: [jwksRow],
-      live: { grantId: 'consent-1', user: {} },
-    })
-    const verifier = createVerifier(ctx, {
-      allowedScopes: ['mcp:read'],
-    })
+    const { runQuery, verifier } = liveVerifier()
     await expect(verifier.verifyAccessToken(await token(), expectation())).resolves.toMatchObject({
       access: {
         clientId: 'client-1',
@@ -140,10 +143,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
 
   it('copies its options so a later caller mutation cannot widen the scope allowlist', async () => {
     const allowedScopes = ['mcp:read']
-    const { ctx } = fakeCtx({
-      keys: [jwksRow],
-      live: { grantId: 'consent-1', user: {} },
-    })
+    const { ctx } = fakeCtx({ keys: [jwksRow], live: liveGrant })
     const verifier = createVerifier(ctx, { allowedScopes })
     allowedScopes.push('admin')
     await expect(
@@ -155,10 +155,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
     ['denied', null],
     ['failed', new Error('private-live-check-sentinel')],
   ])('rejects a cryptographically valid token when live authority is %s', async (_label, live) => {
-    const { ctx } = fakeCtx({ keys: [jwksRow], live })
-    const verifier = createVerifier(ctx, {
-      allowedScopes: ['mcp:read'],
-    })
+    const { verifier } = liveVerifier(live)
     await expect(verifier.verifyAccessToken(await token(), expectation())).rejects.toThrow(
       'AUTH_OAUTH_TOKEN_INVALID',
     )
@@ -170,11 +167,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
   ])(
     'rejects a non-renewable token whose consent id is %s before the live query',
     async (_label, overrides) => {
-      const { ctx, runQuery } = fakeCtx({
-        keys: [jwksRow],
-        live: { grantId: 'consent-1', user: {} },
-      })
-      const verifier = createVerifier(ctx, { allowedScopes: ['mcp:read'] })
+      const { runQuery, verifier } = liveVerifier()
       await expect(
         verifier.verifyAccessToken(await token(overrides), expectation()),
       ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
@@ -187,14 +180,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
   )
 
   it('rechecks live authority on every use of the same signed token', async () => {
-    const state: FakeState = {
-      keys: [jwksRow],
-      live: { grantId: 'consent-1', user: {} },
-    }
-    const { ctx, runQuery } = fakeCtx(state)
-    const verifier = createVerifier(ctx, {
-      allowedScopes: ['mcp:read'],
-    })
+    const { runQuery, state, verifier } = liveVerifier()
     const signed = await token()
     await verifier.verifyAccessToken(signed, expectation())
     state.live = null
@@ -208,13 +194,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
   })
 
   it('rejects a caller-selected issuer before any key lookup', async () => {
-    const { ctx, runQuery } = fakeCtx({
-      keys: [jwksRow],
-      live: { grantId: 'consent-1', user: {} },
-    })
-    const verifier = createVerifier(ctx, {
-      allowedScopes: ['mcp:read'],
-    })
+    const { runQuery, verifier } = liveVerifier()
     await expect(
       verifier.verifyAccessToken(await token({ iss: 'https://evil.example.test/api/auth' }), {
         issuer: 'https://evil.example.test/api/auth',
@@ -230,13 +210,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
     'https://deployment.example.test/mcp?tenant=one',
     'https://deployment.example.test/mcp#fragment',
   ])('rejects an unsafe expected MCP resource before any query: %s', async (resource) => {
-    const { ctx, runQuery } = fakeCtx({
-      keys: [jwksRow],
-      live: { grantId: 'consent-1', user: {} },
-    })
-    const verifier = createVerifier(ctx, {
-      allowedScopes: ['mcp:read'],
-    })
+    const { runQuery, verifier } = liveVerifier()
     await expect(verifier.verifyAccessToken(await token(), expectation(resource))).rejects.toThrow(
       'AUTH_OAUTH_TOKEN_INVALID',
     )
@@ -280,10 +254,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
       { ...jwksRow, expiresAt: 'soon' },
     ]) {
       clearVerificationKeyCache()
-      const { ctx } = fakeCtx({
-        keys: [row],
-        live: { grantId: 'consent-1', user: {} },
-      })
+      const { ctx } = fakeCtx({ keys: [row], live: liveGrant })
       await expect(
         verifyOAuthBearerToken(ctx, component, await token(), {
           allowedScopes: ['mcp:read'],
@@ -318,13 +289,7 @@ describe('Better Auth MCP resource verification without an HTTP JWKS loop', () =
     vi.stubEnv('SITE_URL', 'http://127.0.0.1:3210')
     const loopbackIssuer = 'http://127.0.0.1:3210/api/auth'
     const loopbackAudience = 'http://127.0.0.1:3211/mcp'
-    const { ctx } = fakeCtx({
-      keys: [jwksRow],
-      live: { grantId: 'consent-1', user: {} },
-    })
-    const verifier = createVerifier(ctx, {
-      allowedScopes: ['mcp:read'],
-    })
+    const { verifier } = liveVerifier()
     await expect(
       verifier.verifyAccessToken(await token({ aud: loopbackAudience, iss: loopbackIssuer }), {
         issuer: loopbackIssuer,

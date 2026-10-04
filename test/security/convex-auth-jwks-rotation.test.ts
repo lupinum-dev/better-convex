@@ -54,37 +54,45 @@ function createConvexPlugin() {
 }
 
 function createAuth(
-  database: MemoryDB,
-  secrets: { value: string; version: number }[],
-  overrides: Partial<JwtOptions['jwks']> = {},
-  runtimeOverrides: Partial<Pick<BetterAuthOptions, 'advanced' | 'rateLimit'>> = {},
-  jwtPlugin = createJwtPlugin(overrides),
+  database: MemoryDB = {},
+  {
+    secrets = [{ value: currentSecret, version: 1 }],
+    jwks = {},
+    runtime = {},
+    jwtPlugin = createJwtPlugin(jwks),
+    convexFirst = false,
+  }: {
+    secrets?: { value: string; version: number }[]
+    jwks?: Partial<JwtOptions['jwks']>
+    runtime?: Partial<Pick<BetterAuthOptions, 'advanced' | 'rateLimit'>>
+    jwtPlugin?: ReturnType<typeof createJwtPlugin>
+    convexFirst?: boolean
+  } = {},
 ) {
   database.rateLimit ??= []
-  const auth = betterAuth({
+  return betterAuth({
     advanced:
-      runtimeOverrides.advanced ??
+      runtime.advanced ??
       ({ ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } } as const),
     basePath: '/api/auth',
     baseURL: origin,
     database: memoryAdapter(database),
     logger: { disabled: true },
-    plugins: [jwtPlugin, createConvexPlugin()],
+    plugins: convexFirst ? [createConvexPlugin(), jwtPlugin] : [jwtPlugin, createConvexPlugin()],
     // Overrides change single fields, so each rejection names its own cause.
     rateLimit: {
       customStorage: createMemoryRateLimitStorage(database),
       enabled: true,
       modelName: 'rateLimit',
       storage: 'database',
-      ...runtimeOverrides.rateLimit,
+      ...runtime.rateLimit,
     },
     secrets,
   })
-  return { auth }
 }
 
-async function contextAndOptions(value: ReturnType<typeof createAuth>) {
-  const context = await value.auth.$context
+async function contextAndOptions(auth: ReturnType<typeof createAuth>) {
+  const context = await auth.$context
   const plugin = context.getPlugin('jwt')
   if (!plugin) throw new Error('Expected the JWT plugin.')
   return { context, options: plugin.options as JwtOptions }
@@ -256,16 +264,14 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
   ] satisfies [string, Partial<Pick<BetterAuthOptions, 'advanced' | 'rateLimit'>>][])(
     'rejects a non-OAuth runtime with %s',
     async (_label, runtimeOverrides) => {
-      const value = createAuth({}, [{ value: currentSecret, version: 1 }], {}, runtimeOverrides)
-      await expect(value.auth.$context).rejects.toThrow('AUTH_CONFIG_INVALID')
+      const auth = createAuth({}, { runtime: runtimeOverrides })
+      await expect(auth.$context).rejects.toThrow('AUTH_CONFIG_INVALID')
     },
   )
 
-  it("accepts the library's session-read rate-limit exemption", async () => {
-    const value = createAuth(
-      {},
-      [{ value: currentSecret, version: 1 }],
-      {},
+  it.each([
+    [
+      "the library's session-read rate-limit exemption",
       {
         rateLimit: {
           customRules: { '/get-session': false },
@@ -274,15 +280,9 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
           storage: 'database',
         },
       },
-    )
-    await expect(value.auth.$context).resolves.toBeDefined()
-  })
-
-  it('accepts only terminal IP defaults that preserve /64 IPv6 rate-limit buckets', async () => {
-    const value = createAuth(
-      {},
-      [{ value: currentSecret, version: 1 }],
-      {},
+    ],
+    [
+      'terminal IP defaults that preserve /64 IPv6 rate-limit buckets',
       {
         advanced: {
           ipAddress: {
@@ -292,17 +292,18 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
           },
         },
       },
-    )
-    await expect(value.auth.$context).resolves.toBeDefined()
-  })
+    ],
+  ] satisfies [string, Partial<Pick<BetterAuthOptions, 'advanced' | 'rateLimit'>>][])(
+    'accepts %s',
+    async (_label, runtime) => {
+      await expect(createAuth({}, { runtime }).$context).resolves.toBeDefined()
+    },
+  )
 
   it('constructs auth repeatedly over the same reviewed JWT plugin', async () => {
     const sharedJwtPlugin = createJwtPlugin()
-    const first = createAuth({}, [{ value: currentSecret, version: 1 }], {}, {}, sharedJwtPlugin)
-    await expect(first.auth.$context).resolves.toBeDefined()
-
-    const second = createAuth({}, [{ value: currentSecret, version: 1 }], {}, {}, sharedJwtPlugin)
-    await expect(second.auth.$context).resolves.toBeDefined()
+    await expect(createAuth({}, { jwtPlugin: sharedJwtPlugin }).$context).resolves.toBeDefined()
+    await expect(createAuth({}, { jwtPlugin: sharedJwtPlugin }).$context).resolves.toBeDefined()
   })
 
   it('rejects a foreign shared JWKS reader', async () => {
@@ -311,13 +312,13 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
     jwtOptions.adapter = {
       getJwks: async () => [],
     }
-    const value = createAuth({}, [{ value: currentSecret, version: 1 }], {}, {}, jwtPlugin)
-    await expect(value.auth.$context).rejects.toThrow('AUTH_JWKS_CONFIG_INVALID')
+    const auth = createAuth({}, { jwtPlugin })
+    await expect(auth.$context).rejects.toThrow('AUTH_JWKS_CONFIG_INVALID')
   })
 
   it('uses official key generation and versioned private-key encryption before commit', async () => {
-    const value = createAuth({}, [{ value: currentSecret, version: 7 }])
-    const { context, options } = await contextAndOptions(value)
+    const auth = createAuth({}, { secrets: [{ value: currentSecret, version: 7 }] })
+    const { context, options } = await contextAndOptions(auth)
     let captured: SigningKeyCandidate | undefined
 
     const metadata = await rotateSigningKeyWithOfficialJwt(
@@ -354,14 +355,14 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
 
   it('publishes bounded public JWKS with the reviewed cache lifetime and no private row data', async () => {
     const database: MemoryDB = {}
-    const value = createAuth(database, [{ value: currentSecret, version: 1 }])
-    const { context, options } = await contextAndOptions(value)
+    const auth = createAuth(database)
+    const { context, options } = await contextAndOptions(auth)
     await rotateInMemory(database, context, options)
     const stored = database.jwks?.[0]
     if (!stored) throw new Error('Expected a stored signing key.')
     stored.privateKey = 'PRIVATE_ROW_SENTINEL'
 
-    const response = await value.auth.handler(new Request(`${issuer}/jwks`))
+    const response = await auth.handler(new Request(`${issuer}/jwks`))
     const raw = await response.text()
     const body = JSON.parse(raw) as unknown
 
@@ -373,11 +374,11 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
 
   it('keeps anonymous empty and concurrent discovery read-only', async () => {
     const database: MemoryDB = { jwks: [] }
-    const value = createAuth(database, [{ value: currentSecret, version: 1 }])
-    const { context, options } = await contextAndOptions(value)
+    const auth = createAuth(database)
+    const { context, options } = await contextAndOptions(auth)
 
     const responses = await Promise.all(
-      Array.from({ length: 8 }, () => value.auth.handler(new Request(`${issuer}/jwks`))),
+      Array.from({ length: 8 }, () => auth.handler(new Request(`${issuer}/jwks`))),
     )
 
     expect(responses.map((response) => response.status)).toEqual(Array(8).fill(503))
@@ -393,13 +394,13 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
 
   it('keeps HEAD and unsupported JWKS methods read-only', async () => {
     const database: MemoryDB = {}
-    const value = createAuth(database, [{ value: currentSecret, version: 1 }])
-    const { context, options } = await contextAndOptions(value)
+    const auth = createAuth(database)
+    const { context, options } = await contextAndOptions(auth)
     await rotateInMemory(database, context, options)
     const before = structuredClone(database.jwks)
 
-    const head = await value.auth.handler(new Request(`${issuer}/jwks`, { method: 'HEAD' }))
-    const post = await value.auth.handler(new Request(`${issuer}/jwks`, { method: 'POST' }))
+    const head = await auth.handler(new Request(`${issuer}/jwks`, { method: 'HEAD' }))
+    const post = await auth.handler(new Request(`${issuer}/jwks`, { method: 'POST' }))
 
     expect(head.status).toBe(200)
     expect(await head.text()).toBe('')
@@ -425,8 +426,8 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
         },
       ],
     }
-    const value = createAuth(database, [{ value: currentSecret, version: 1 }])
-    const response = await value.auth.handler(new Request(`${issuer}/jwks`))
+    const auth = createAuth(database)
+    const response = await auth.handler(new Request(`${issuer}/jwks`))
     const raw = await response.text()
 
     expect(response.status).toBe(500)
@@ -472,8 +473,8 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
         const database: MemoryDB = {}
-        const value = createAuth(database, [{ value: currentSecret, version: 1 }])
-        const { context, options } = await contextAndOptions(value)
+        const auth = createAuth(database)
+        const { context, options } = await contextAndOptions(auth)
         const retired = await rotateInMemory(database, context, options)
         vi.setSystemTime(20_000)
         const current = await rotateInMemory(database, context, options)
@@ -483,7 +484,7 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
         storedRetired.id = retiredId
         corrupt(storedRetired)
 
-        const response = await value.auth.handler(new Request(`${issuer}/jwks`))
+        const response = await auth.handler(new Request(`${issuer}/jwks`))
         const raw = await response.text()
         const jwks = JSON.parse(raw) as JSONWebKeySet
 
@@ -526,8 +527,8 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       const database: MemoryDB = {}
-      const value = createAuth(database, [{ value: currentSecret, version: 1 }])
-      const { context, options } = await contextAndOptions(value)
+      const auth = createAuth(database)
+      const { context, options } = await contextAndOptions(auth)
       const current = await rotateInMemory(database, context, options)
       corrupt(current as unknown as Record<string, unknown>)
 
@@ -538,7 +539,7 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
         }),
       ).rejects.toThrow('AUTH_JWKS_CURRENT_KEY_INVALID')
 
-      const response = await value.auth.handler(new Request(`${issuer}/jwks`))
+      const response = await auth.handler(new Request(`${issuer}/jwks`))
       if (label === 'an unencrypted private key') {
         // Publication never reads private material; signing alone refuses the row.
         expect(response.status).toBe(200)
@@ -565,8 +566,8 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
     vi.useFakeTimers()
     vi.setSystemTime(10_000)
     const database: MemoryDB = {}
-    const value = createAuth(database, [{ value: currentSecret, version: 1 }])
-    const { context, options } = await contextAndOptions(value)
+    const auth = createAuth(database)
+    const { context, options } = await contextAndOptions(auth)
     const k1 = await rotateInMemory(database, context, options)
     const token = await signJWT(endpointContext(context), {
       options,
@@ -585,7 +586,7 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
     if (!storedK1) throw new Error('Expected K1.')
     storedK1.expiresAt = new Date(20_000)
 
-    const currentResponse = await value.auth.handler(new Request(`${issuer}/jwks`))
+    const currentResponse = await auth.handler(new Request(`${issuer}/jwks`))
     const currentJwks = (await currentResponse.json()) as JSONWebKeySet
     expect(currentJwks.keys.map((key) => key.kid).sort()).toEqual([k1.id, k2.id].sort())
     await expect(
@@ -598,13 +599,13 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
 
     vi.setSystemTime(20_000 + JWKS_GRACE_PERIOD_SECONDS * 1_000 - 1)
     const beforeBoundary = (await (
-      await value.auth.handler(new Request(`${issuer}/jwks`))
+      await auth.handler(new Request(`${issuer}/jwks`))
     ).json()) as JSONWebKeySet
     expect(beforeBoundary.keys.map((key) => key.kid)).toContain(k1.id)
 
     vi.setSystemTime(20_000 + JWKS_GRACE_PERIOD_SECONDS * 1_000)
     const atBoundary = (await (
-      await value.auth.handler(new Request(`${issuer}/jwks`))
+      await auth.handler(new Request(`${issuer}/jwks`))
     ).json()) as JSONWebKeySet
     expect(atBoundary.keys.map((key) => key.kid)).not.toContain(k1.id)
     expect(atBoundary.keys.map((key) => key.kid)).toContain(k2.id)
@@ -612,14 +613,16 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
 
   it('decrypts retained keys with a prior secret version and fails without deleting on retirement', async () => {
     const database: MemoryDB = {}
-    const first = createAuth(database, [{ value: previousSecret, version: 1 }])
+    const first = createAuth(database, { secrets: [{ value: previousSecret, version: 1 }] })
     const firstContext = await contextAndOptions(first)
     const k1 = await rotateInMemory(database, firstContext.context, firstContext.options)
 
-    const retained = createAuth(database, [
-      { value: currentSecret, version: 2 },
-      { value: previousSecret, version: 1 },
-    ])
+    const retained = createAuth(database, {
+      secrets: [
+        { value: currentSecret, version: 2 },
+        { value: previousSecret, version: 1 },
+      ],
+    })
     const retainedContext = await contextAndOptions(retained)
     await expect(
       resolveSigningKey(endpointContext(retainedContext.context), retainedContext.options, {
@@ -627,7 +630,7 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
       }),
     ).resolves.toMatchObject({ alg: 'RS256', kid: k1.id })
 
-    const retired = createAuth(database, [{ value: currentSecret, version: 2 }])
+    const retired = createAuth(database, { secrets: [{ value: currentSecret, version: 2 }] })
     const retiredContext = await contextAndOptions(retired)
     await expect(
       resolveSigningKey(endpointContext(retiredContext.context), retiredContext.options, {
@@ -638,28 +641,12 @@ describe('official Better Auth JWKS lifecycle hardening', () => {
   })
 
   it('rejects automatic action-timestamp rotation configuration', async () => {
-    const value = createAuth({}, [{ value: currentSecret, version: 1 }], {
-      rotationInterval: 60,
-    })
-    await expect(value.auth.$context).rejects.toThrow('AUTH_JWKS_CONFIG_INVALID')
+    const auth = createAuth({}, { jwks: { rotationInterval: 60 } })
+    await expect(auth.$context).rejects.toThrow('AUTH_JWKS_CONFIG_INVALID')
   })
 
   it('rejects a plugin order that initializes Convex auth before the shared JWT graph', async () => {
-    const value = betterAuth({
-      advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
-      basePath: '/api/auth',
-      baseURL: origin,
-      database: memoryAdapter({}),
-      logger: { disabled: true },
-      plugins: [createConvexPlugin(), createJwtPlugin()],
-      rateLimit: {
-        customStorage: createMemoryRateLimitStorage({}),
-        enabled: true,
-        modelName: 'rateLimit',
-        storage: 'database',
-      },
-      secrets: [{ value: currentSecret, version: 1 }],
-    })
-    await expect(value.$context).rejects.toThrow('AUTH_JWKS_CONFIG_INVALID')
+    const auth = createAuth({}, { convexFirst: true })
+    await expect(auth.$context).rejects.toThrow('AUTH_JWKS_CONFIG_INVALID')
   })
 })

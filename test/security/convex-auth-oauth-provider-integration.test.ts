@@ -20,6 +20,7 @@ const noncanonicalLoopbackRedirects = [
   'http://0177.0.0.1:49152/oauth/callback',
   'http://127.0.0.1:49152/oauth/callback#',
 ] as const
+const codeVerifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~'
 const secret = 'd0f9e60506f248f7b87656005dd789a3282eb7f6a1224eebb6417261d8cf6d47'
 
 const disabledPaths = [
@@ -134,9 +135,12 @@ function database(): MemoryDB {
 function createAuth(
   db: MemoryDB,
   configure?: (options: ReturnType<typeof createOAuthOptions>) => void,
+  { providerBeforeConvexAuth = false } = {},
 ) {
   const options = createOAuthOptions()
   configure?.(options)
+  // A provider built before convexAuth runs never sees the hardened callbacks.
+  const earlyProvider = providerBeforeConvexAuth ? oauthProvider(options) : undefined
   return betterAuth({
     account: { encryptOAuthTokens: true, storeAccountCookie: false },
     advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
@@ -174,7 +178,7 @@ function createAuth(
           issuer: 'https://deployment.convex.site',
         },
       }),
-      oauthProvider(options),
+      earlyProvider ?? oauthProvider(options),
     ],
     rateLimit: {
       customStorage: createMemoryRateLimitStorage(db),
@@ -203,7 +207,7 @@ function tokenRequest(body: string, authorization?: string): Request {
 function authorizationCodeBody(overrides: Record<string, null | string> = {}): string {
   const parameters = new URLSearchParams({
     code: 'not-a-code',
-    code_verifier: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~',
+    code_verifier: codeVerifier,
     grant_type: 'authorization_code',
     redirect_uri: 'https://client.example.test/callback',
     resource,
@@ -283,11 +287,6 @@ function authorizationError(response: Response): URL {
 }
 
 describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
-  it('initializes the exact jwt -> convexAuth -> oauthProvider graph', async () => {
-    const auth = createAuth(database())
-    await expect(auth.$context).resolves.toBeDefined()
-  })
-
   it('initializes the MCP profile graph with public PKCE discovery', async () => {
     const scopes = { 'mcp:read': 'Read projects', 'mcp:write': 'Change projects' }
     // Session-bound renewal is admitted only on the library's own adapter.
@@ -312,6 +311,7 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
   })
 
   it('projects official discovery down to public-none and confidential-basic code clients', async () => {
+    // Also proves the exact jwt -> convexAuth -> oauthProvider graph initializes.
     const auth = createAuth(database())
     const response = await auth.handler(
       new Request(`${origin}/.well-known/oauth-authorization-server/api/auth`),
@@ -335,20 +335,18 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
   it('rejects post/assertion/mixed and duplicate resource input before code lookup', async () => {
     const db = database()
     const auth = createAuth(db)
-    const common =
-      'grant_type=authorization_code&code=not-a-code&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&code_verifier=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~'
 
     const post = await auth.handler(
-      tokenRequest(`${common}&resource=${encodeURIComponent(resource)}&client_secret=body-secret`),
+      tokenRequest(authorizationCodeBody({ client_secret: 'body-secret' })),
     )
     const assertion = await auth.handler(
       tokenRequest(
-        `${common}&resource=${encodeURIComponent(resource)}&client_assertion=jwt&client_assertion_type=urn`,
+        authorizationCodeBody({ client_assertion: 'jwt', client_assertion_type: 'urn' }),
       ),
     )
     const duplicate = await auth.handler(
       tokenRequest(
-        `${common}&resource=${encodeURIComponent(resource)}&resource=${encodeURIComponent(resource)}`,
+        `${authorizationCodeBody()}&resource=${encodeURIComponent(resource)}`,
         `Basic ${btoa('client-1:wrong-secret')}`,
       ),
     )
@@ -426,15 +424,14 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
   it('rejects an unregistered redirect shape before authorization-code consumption', async () => {
     const db = database()
     const code = 'registered-shape-code'
-    const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~'
-    await seedPublicAuthorizationCode(db, code, verifier)
+    await seedPublicAuthorizationCode(db, code, codeVerifier)
     const auth = createAuth(db)
     const wrongRedirect = await auth.handler(
       tokenRequest(
         authorizationCodeBody({
           client_id: publicClientId,
           code,
-          code_verifier: verifier,
+          code_verifier: codeVerifier,
           redirect_uri: 'http://127.0.0.1:3334/not-registered',
         }),
       ),
@@ -629,15 +626,14 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     async (redirectUri) => {
       const db = database()
       const code = `noncanonical-${redirectUri}`
-      const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~'
-      await seedPublicAuthorizationCode(db, code, verifier)
+      await seedPublicAuthorizationCode(db, code, codeVerifier)
       const auth = createAuth(db)
       const response = await auth.handler(
         tokenRequest(
           authorizationCodeBody({
             client_id: publicClientId,
             code,
-            code_verifier: verifier,
+            code_verifier: codeVerifier,
             redirect_uri: redirectUri,
           }),
         ),
@@ -736,8 +732,7 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     expect(`${missingResource.origin}${missingResource.pathname}`).toBe(ephemeralRedirect)
     expect(missingResource.searchParams.get('error')).toBe('invalid_target')
 
-    const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~'
-    await seedPublicAuthorizationCode(db, 'localhost-code', verifier, ephemeralRedirect)
+    await seedPublicAuthorizationCode(db, 'localhost-code', codeVerifier, ephemeralRedirect)
     for (const redirectUri of [
       'http://localhost:49152/other',
       'http://127.0.0.1:49152/oauth/callback',
@@ -747,7 +742,7 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
           authorizationCodeBody({
             client_id: publicClientId,
             code: 'localhost-code',
-            code_verifier: verifier,
+            code_verifier: codeVerifier,
             redirect_uri: redirectUri,
           }),
         ),
@@ -774,15 +769,14 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     const alternateRedirect = 'http://127.0.0.1:3334/other-registered'
     db.oauthClient![1]!.redirectUris.push(alternateRedirect)
     const code = 'code-bound-redirect-code'
-    const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~'
-    await seedPublicAuthorizationCode(db, code, verifier)
+    await seedPublicAuthorizationCode(db, code, codeVerifier)
     const auth = createAuth(db)
     const response = await auth.handler(
       tokenRequest(
         authorizationCodeBody({
           client_id: publicClientId,
           code,
-          code_verifier: verifier,
+          code_verifier: codeVerifier,
           redirect_uri: alternateRedirect,
         }),
       ),
@@ -826,10 +820,7 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     Object.assign(db.oauthClient![0]!, drift)
     const auth = createAuth(db)
     const response = await auth.handler(
-      tokenRequest(
-        `grant_type=authorization_code&code=not-a-code&redirect_uri=https%3A%2F%2Fclient.example.test%2Fcallback&code_verifier=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~&resource=${encodeURIComponent(resource)}`,
-        `Basic ${btoa('client-1:any-secret')}`,
-      ),
+      tokenRequest(authorizationCodeBody(), `Basic ${btoa('client-1:any-secret')}`),
     )
     expect(response.status).toBe(401)
     await expect(response.json()).resolves.toEqual({
@@ -859,50 +850,7 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
   })
 
   it('rejects a provider instance created before convexAuth can harden the shared callbacks', async () => {
-    const db = database()
-    const options = createOAuthOptions()
-    const prematurelyCreatedProvider = oauthProvider(options)
-    const auth = betterAuth({
-      account: { encryptOAuthTokens: true, storeAccountCookie: false },
-      advanced: {
-        ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] },
-      },
-      basePath: '/api/auth',
-      baseURL: origin,
-      database: memoryAdapter(db),
-      disabledPaths,
-      logger: { disabled: true },
-      plugins: [
-        jwt({
-          jwks: {
-            disablePrivateKeyEncryption: false,
-            keyPairConfig: { alg: 'RS256' },
-          },
-          jwt: { audience: issuer, expirationTime: '10m', issuer },
-        }),
-        convexAuth({
-          authConfig: {
-            providers: [
-              {
-                algorithm: 'RS256',
-                applicationID: 'convex',
-                issuer: 'https://deployment.convex.site',
-                type: 'customJwt',
-              },
-            ],
-          },
-          oauthProvider: options,
-          sessionJwt: {
-            audience: 'convex',
-            expirationTime: '15m',
-            issuer: 'https://deployment.convex.site',
-          },
-        }),
-        prematurelyCreatedProvider,
-      ],
-      rateLimit: { enabled: true, modelName: 'rateLimit', storage: 'database' },
-      secret,
-    })
+    const auth = createAuth(database(), undefined, { providerBeforeConvexAuth: true })
     await expect(auth.$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
   })
 })

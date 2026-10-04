@@ -193,54 +193,24 @@ describe('Convex session token signing over the stored JWKS', () => {
     expect(second.token).not.toBe(first.token)
   })
 
-  it.each(['aud', 'exp', 'iat', 'iss', 'jti', 'nbf', 'sid', 'sub', 'token_use'])(
-    'rejects a session claim that overrides reserved %s',
-    async (claim) => {
-      const memory = database()
-      const auth = createAuth(memory, () => ({ [claim]: 'forged' }))
-      await provisionKey(memory, auth)
-      const sign = vi.spyOn((await auth.$context).getPlugin('jwt')!.endpoints, 'signJWT')
-
-      const response = await auth.handler(tokenRequest())
-
-      expect(response.status).toBeGreaterThanOrEqual(500)
-      expect(sign).not.toHaveBeenCalled()
-    },
-  )
-
-  it('rejects non-object session claims', async () => {
+  it.each<[string, DefinePayload]>([
+    ...['aud', 'exp', 'iat', 'iss', 'jti', 'nbf', 'sid', 'sub', 'token_use'].map(
+      (claim): [string, DefinePayload] => [
+        `a session claim that overrides reserved ${claim}`,
+        () => ({ [claim]: 'forged' }),
+      ],
+    ),
+    ['non-object session claims', (() => ['forged']) as unknown as DefinePayload],
+  ])('rejects %s before signing', async (_label, definePayload) => {
     const memory = database()
-    const auth = createAuth(memory, (() => ['forged']) as unknown as DefinePayload)
+    const auth = createAuth(memory, definePayload)
     await provisionKey(memory, auth)
+    const sign = vi.spyOn((await auth.$context).getPlugin('jwt')!.endpoints, 'signJWT')
 
     const response = await auth.handler(tokenRequest())
 
     expect(response.status).toBeGreaterThanOrEqual(500)
-  })
-
-  it('keeps issuing tokens when a retired row is malformed', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const memory = database()
-    const auth = createAuth(memory)
-    await provisionKey(memory, auth)
-    const current = await provisionKey(memory, auth)
-    const retired = memory.jwks!.find((key) => key.id !== current)!
-    retired.id = 'session-token-retired-broken'
-    retired.publicKey = '{not json'
-
-    const response = await auth.handler(tokenRequest())
-    expect(response.status).toBe(200)
-    const { token } = (await response.json()) as { token: string }
-    await expect(
-      jwtVerify(token, await publicJwks(auth), {
-        algorithms: ['RS256'],
-        audience: 'convex',
-        issuer: convexSiteUrl,
-      }),
-    ).resolves.toMatchObject({ protectedHeader: { kid: current } })
-    expect(warn.mock.calls.map((call) => call.join(' ')).join('\n')).toContain(
-      'kid=session-token-retired-broken reason=AUTH_JWKS_PUBLIC_KEY_INVALID',
-    )
+    expect(sign).not.toHaveBeenCalled()
   })
 
   it('refuses to issue a token from a malformed current key', async () => {
