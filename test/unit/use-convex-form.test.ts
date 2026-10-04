@@ -2,12 +2,16 @@ import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope, isProxy, isReadonly } from 'vue'
+import { createApp, effectScope, isProxy, isReadonly, ref } from 'vue'
 import { z } from 'zod'
 
-import { createBetterConvex, useConvexForm } from '../../packages/vue/src'
+import { createBetterConvex, useConvexForm, useConvexOperation } from '../../packages/vue/src'
 import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
 import { ConvexCallError, isConvexCallError } from '../../packages/vue/src/errors'
+import { createBetterConvexBrowserRuntime } from '../../packages/vue/src/internal/browser-runtime'
+import type { OwnedConvexClient } from '../../packages/vue/src/internal/client-owner'
+import { createBetterAuthBrowserAdapter } from '../../src/runtime/auth/better-auth-browser-adapter'
+import { MockConvexClient } from '../helpers/mock-convex-client'
 
 type SaveArgs = {
   accountId: string
@@ -90,6 +94,58 @@ function setup(
 }
 
 describe('useConvexForm', () => {
+  it('sends a submission made before the first auth result once it finds no session', async () => {
+    // Real provider adapter, identity port, client owner, form and operation;
+    // only the Better Auth session source and the Convex transport are doubles.
+    const session = ref({ isPending: true, data: null, error: null })
+    const adapter = createBetterAuthBrowserAdapter({
+      useSession: () => session,
+      convex: { token: vi.fn(async () => ({ data: null })) },
+    })
+    const clients: MockConvexClient[] = []
+    const runtime = createBetterConvexBrowserRuntime({
+      auth: adapter,
+      clientFactory: () => {
+        const client = new MockConvexClient()
+        client.setMutationHandler('accounts:save', () => ({ id: 'checkpoint-startup' }))
+        clients.push(client)
+        return Object.assign(client, { close: async () => {} }) as unknown as OwnedConvexClient
+      },
+    })
+    const app = createApp({})
+    app.use(createBetterConvex({ attachment: runtime.attachment }))
+    const scope = effectScope()
+    const { form, operation } = app.runWithContext(() =>
+      scope.run(() => ({
+        form: useConvexForm(saveReference, {
+          schema: formSchema,
+          toArgs: (values) => ({ balanceCents: values.balance * 100, note: values.note }),
+        }),
+        operation: useConvexOperation(async () => {
+          throw new ConvexCallError({ kind: 'unknown', code: 'PREFLIGHT', message: 'Preflight' })
+        }),
+      })),
+    )!
+    const sent = () => clients.reduce((total, client) => total + client.calls.mutation.length, 0)
+    try {
+      await expect(operation.run()).rejects.toMatchObject({ code: 'PREFLIGHT' })
+      const submission = form.submit({ balance: 1, note: '' }, { accountId: 'account-1' })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(sent()).toBe(0)
+
+      session.value = { isPending: false, data: null, error: null }
+
+      await expect(submission).resolves.toEqual({ ok: true, data: { id: 'checkpoint-startup' } })
+      expect(sent()).toBe(1)
+      // No user changed, so identity-owned state stays.
+      expect(operation.error.value).toMatchObject({ code: 'PREFLIGHT' })
+    } finally {
+      scope.stop()
+      await runtime.dispose()
+      adapter.dispose()
+    }
+  })
+
   it('validates external values, transforms them, and adds typed context', async () => {
     const { form, mutation, scope } = setup(async () => ({ id: 'checkpoint-1' }))
 

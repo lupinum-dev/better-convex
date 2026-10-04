@@ -491,8 +491,15 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
         }
       }
       // Only an identity-generation change replaces the primary. A
-      // same-generation notification keeps the current client.
-      if (snapshot.identityGeneration === observedGeneration) return
+      // same-generation notification keeps the current client, except that
+      // the first auth result can settle the initial generation before any
+      // client exists.
+      if (snapshot.identityGeneration === observedGeneration) {
+        if (becameSettled && !primary && !replacementInFlight) {
+          replaceGeneration(snapshot.identityGeneration)
+        }
+        return
+      }
       const targetGeneration = snapshot.identityGeneration
       observedGeneration = targetGeneration
       replaceGeneration(targetGeneration)
