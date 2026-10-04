@@ -370,9 +370,16 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
       capturedRequests.filter(
         (request) => request.url === '/api/auth/.well-known/oauth-authorization-server',
       ).length
+    // Browsers attach cookies to every same-origin visit: serve, but never forward them.
+    const withCookie = await requestProxy('/.well-known/oauth-authorization-server/api/auth', {
+      headers: { cookie: 'better-auth.session_token=secret; __vdpl=dpl_123' },
+    })
+    expect(withCookie.status).toBe(200)
+    expect(capturedRequests.at(-1)?.url).toBe('/api/auth/.well-known/oauth-authorization-server')
+    expect(capturedRequests.at(-1)?.headers.cookie).toBeUndefined()
+
     const start = metadataDeliveries()
     for (const [name, headers] of [
-      ['cookie', { cookie: 'better-auth.session_token=secret', origin: clientOrigin }],
       ['authorization', { authorization: 'Bearer secret', origin: clientOrigin }],
       ['dpop', { dpop: 'proof', origin: clientOrigin }],
       ['proxy-authorization', { 'proxy-authorization': 'Basic secret', origin: clientOrigin }],

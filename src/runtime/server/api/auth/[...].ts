@@ -46,7 +46,7 @@ import {
 import { authProxyFetchMode } from './response-mode'
 import {
   OAUTH_TOKEN_CORS_MAX_BODY_BYTES,
-  hasPublicAuthCorsCredentials,
+  hasPublicMetadataCredentials,
   isAllowedPublicOAuthTokenCorsPost,
   isAllowedPublicOAuthTokenCorsPreflight,
   isCrossOriginAuthRequest,
@@ -316,7 +316,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         })
       }
     }
-    if (publicMetadataCors && hasPublicAuthCorsCredentials(event.headers)) {
+    if (publicMetadataCors && hasPublicMetadataCredentials(event.headers)) {
       rejected('BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED', 403)
       throw createError({
         statusCode: 403,
@@ -436,6 +436,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       const forwardHeaders = await buildAuthProxyForwardHeaders(event, {
         trustedClientIpHeader,
       })
+      if (publicMetadataCors) delete forwardHeaders.cookie
       if (isPublicTokenCorsPost) {
         // Convex receives the proxy as the OAuth endpoint. Preserve Better
         // Auth's static trusted-origin boundary after the outer proxy has

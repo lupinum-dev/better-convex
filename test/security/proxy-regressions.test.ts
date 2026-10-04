@@ -657,7 +657,7 @@ describe('auth proxy security regressions', () => {
     })
   })
 
-  it('rejects credentials on the public JWKS route', async () => {
+  it('serves public JWKS to a browser with cookies and never forwards them', async () => {
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/jwks'))
     const fetchMock = vi.fn(async () => new Response('{"keys":[]}'))
     vi.stubGlobal('fetch', fetchMock)
@@ -665,18 +665,20 @@ describe('auth proxy security regressions', () => {
       input: ReturnType<typeof event>,
     ) => Promise<Uint8Array>
 
-    await expect(
-      handler(
-        event('GET', undefined, {
-          'cf-connecting-ip': '',
-          cookie: 'better-auth.session_token=secret',
-        }),
-      ),
-    ).rejects.toMatchObject({
-      statusCode: 403,
-      data: { code: 'BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED' },
-    })
-    expect(fetchMock).not.toHaveBeenCalled()
+    await handler(
+      event('GET', undefined, {
+        'cf-connecting-ip': '',
+        // A signed-in developer opening the URL, on a platform that sets its own cookie.
+        cookie: 'better-auth.session_token=secret; __vdpl=dpl_123',
+      }),
+    )
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://demo.convex.site/api/auth/jwks',
+      expect.objectContaining({
+        headers: expect.not.objectContaining({ cookie: expect.anything() }),
+      }),
+    )
   })
 
   it('rejects credentials entering or leaving public authorization-server metadata', async () => {
@@ -690,7 +692,6 @@ describe('auth proxy security regressions', () => {
     ).default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
 
     const credentialHeaders: Record<string, string>[] = [
-      { cookie: 'better-auth.session_token=secret' },
       { authorization: 'Bearer secret', origin: 'http://127.0.0.1:6274' },
       { dpop: 'proof', origin: 'http://127.0.0.1:6274' },
       { 'proxy-authorization': 'Basic secret', origin: 'http://127.0.0.1:6274' },

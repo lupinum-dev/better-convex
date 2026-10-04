@@ -35,6 +35,17 @@ export function hasPublicAuthCorsCredentials(headers: Headers): boolean {
   return FORBIDDEN_OAUTH_TOKEN_CORS_HEADERS.some((header) => headers.has(header))
 }
 
+/**
+ * Credentials a caller sends on purpose. Public metadata ignores cookies
+ * instead: a browser attaches them to every same-origin visit, including
+ * platform cookies such as Vercel's, so rejecting them blocks the page.
+ */
+export function hasPublicMetadataCredentials(headers: Headers): boolean {
+  return FORBIDDEN_OAUTH_TOKEN_CORS_HEADERS.some(
+    (header) => header !== 'cookie' && headers.has(header),
+  )
+}
+
 function isCrossOriginBrowserOrigin(headers: Headers, publicOrigin: string): boolean {
   const origin = headers.get('origin')
   return isCanonicalBrowserOrigin(origin) && !isSameOrigin(origin, publicOrigin)
