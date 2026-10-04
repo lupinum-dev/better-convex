@@ -101,14 +101,14 @@ describe.sequential('better-convex init', () => {
     expect(harness.confirmations.at(-1)).toContain('dev:fixture')
   })
 
-  it('writes the same proxy secret to .env.local and Convex', async () => {
+  it('writes the same site URL and proxy secret to .env.local and Convex', async () => {
     const harness = createHarness()
     await writeFile(join(root, '.env.local'), 'CONVEX_URL=https://fixture.convex.cloud')
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
     expect(await readFile(join(root, '.env.local'), 'utf8')).toBe(
-      'CONVEX_URL=https://fixture.convex.cloud\nBCN_AUTH_PROXY_IP_SECRET=SENTINEL_SECRET_DO_NOT_LOG\n',
+      'CONVEX_URL=https://fixture.convex.cloud\nSITE_URL=http://localhost:4173\nBCN_AUTH_PROXY_IP_SECRET=SENTINEL_SECRET_DO_NOT_LOG\n',
     )
     expect(harness.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBe('SENTINEL_SECRET_DO_NOT_LOG')
     expect(JSON.stringify(harness.logs)).not.toContain('SENTINEL_SECRET_DO_NOT_LOG')
@@ -116,13 +116,63 @@ describe.sequential('better-convex init', () => {
 
   it('reuses the proxy secret already in .env.local', async () => {
     const harness = createHarness()
-    const local = 'BCN_AUTH_PROXY_IP_SECRET="existing-local-secret"\n'
+    const local =
+      'SITE_URL=http://localhost:4173\nBCN_AUTH_PROXY_IP_SECRET="existing-local-secret"\n'
     await writeFile(join(root, '.env.local'), local)
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
     expect(await readFile(join(root, '.env.local'), 'utf8')).toBe(local)
     expect(harness.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBe('existing-local-secret')
+  })
+
+  it.each([
+    'SITE_URL=http://localhost:4173 # local app\n',
+    'SITE_URL=http://localhost:4173# local app\n',
+    'SITE_URL="http://localhost:4173" # local app\n',
+  ])('reads an existing .env.local value like dotenv: %s', async (local) => {
+    const harness = createHarness()
+    await writeFile(join(root, '.env.local'), local)
+
+    await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
+
+    expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
+  })
+
+  it('keeps .env.local unchanged and says what to add when Convex already has SITE_URL', async () => {
+    const harness = createHarness()
+    harness.environment.set('SITE_URL', 'http://localhost:5000')
+
+    await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
+
+    expect(await readFile(join(root, '.env.local'), 'utf8')).not.toContain('SITE_URL=')
+    expect(harness.logs.join('\n')).toContain('SITE_URL is set in Convex but not in .env.local')
+  })
+
+  it('keeps an interpolated .env.local SITE_URL and reminds that it must match', async () => {
+    const harness = createHarness()
+    const local = 'SITE_URL=http://localhost:${PORT}\n'
+    await writeFile(join(root, '.env.local'), local)
+
+    await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
+
+    expect(await readFile(join(root, '.env.local'), 'utf8')).toContain(local)
+    expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
+    expect(harness.logs.join('\n')).toContain('It must resolve to http://localhost:4173')
+  })
+
+  it('stops before provisioning when the entered site URL differs from .env.local', async () => {
+    const harness = createHarness()
+    await writeFile(join(root, '.env.local'), 'SITE_URL=http://localhost:3000\n')
+
+    await expect(runInitCommand([], harness.dependencies)).rejects.toThrow(
+      'SITE_URL=http://localhost:3000',
+    )
+
+    expect(harness.environment.has('SITE_URL')).toBe(false)
+    expect(await readFile(join(root, '.env.local'), 'utf8')).toBe(
+      'SITE_URL=http://localhost:3000\n',
+    )
   })
 
   it('writes nothing when the file plan is cancelled', async () => {

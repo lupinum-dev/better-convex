@@ -257,12 +257,34 @@ function readLocalEnvironmentValue(contents: string, name: string): string | und
     if (key !== name) continue
     let value = line.slice(separator + 1).trim()
     const quote = value[0]
-    if (value.length >= 2 && (quote === '"' || quote === "'") && value.endsWith(quote)) {
-      value = value.slice(1, -1)
+    if (quote === '"' || quote === "'") {
+      const end = value.indexOf(quote, 1)
+      if (end > 0) value = value.slice(1, end)
+    } else {
+      // As in dotenv: `#` starts a comment in an unquoted value.
+      value = value.split('#', 1)[0]!.trim()
     }
     return value || undefined
   }
   return undefined
+}
+
+/** Append `name=value` to `.env.local` unless the file already sets `name`. */
+async function ensureLocalEnvironmentValue(
+  root: string,
+  name: string,
+  createValue: () => string,
+  dependencies: InitDependencies,
+): Promise<string> {
+  const path = join(root, LOCAL_ENV_FILE)
+  const contents = (await readOptional(path)) ?? ''
+  const existing = readLocalEnvironmentValue(contents, name)
+  if (existing !== undefined) return existing
+  const value = createValue()
+  const separator = contents === '' || contents.endsWith('\n') ? '' : '\n'
+  await appendFile(path, `${separator}${name}=${value}\n`, { encoding: 'utf8', mode: 0o600 })
+  dependencies.log(`Wrote ${name} to ${LOCAL_ENV_FILE}.`)
+  return value
 }
 
 /**
@@ -270,22 +292,13 @@ function readLocalEnvironmentValue(contents: string, name: string): string | und
  * exists; otherwise create one and write it to `.env.local` before Convex, so a failed
  * Convex step can be retried with the same value.
  */
-async function resolveLocalProxySecret(
-  root: string,
-  dependencies: InitDependencies,
-): Promise<string> {
-  const path = join(root, LOCAL_ENV_FILE)
-  const contents = (await readOptional(path)) ?? ''
-  const existing = readLocalEnvironmentValue(contents, PROXY_SECRET_NAME)
-  if (existing !== undefined) return existing
-  const secret = dependencies.randomSecret()
-  const separator = contents === '' || contents.endsWith('\n') ? '' : '\n'
-  await appendFile(path, `${separator}${PROXY_SECRET_NAME}=${secret}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  })
-  dependencies.log(`Wrote ${PROXY_SECRET_NAME} to ${LOCAL_ENV_FILE}.`)
-  return secret
+function resolveLocalProxySecret(root: string, dependencies: InitDependencies): Promise<string> {
+  return ensureLocalEnvironmentValue(
+    root,
+    PROXY_SECRET_NAME,
+    () => dependencies.randomSecret(),
+    dependencies,
+  )
 }
 
 async function provisionDevelopment(root: string, dependencies: InitDependencies): Promise<void> {
@@ -294,7 +307,36 @@ async function provisionDevelopment(root: string, dependencies: InitDependencies
     dependencies.log('Development auth secrets and the first signing key are already provisioned.')
     return
   }
-  const siteUrl = await dependencies.prompt('Development site URL', 'http://localhost:3000')
+  const localSiteUrl = readLocalEnvironmentValue(
+    (await readOptional(join(root, LOCAL_ENV_FILE))) ?? '',
+    'SITE_URL',
+  )
+  // A `${...}` reference is expanded by Nuxt's env loader, not here.
+  const localSiteUrlIsLiteral = localSiteUrl !== undefined && !localSiteUrl.includes('$')
+  const siteUrl = await dependencies.prompt(
+    'Development site URL',
+    localSiteUrlIsLiteral ? localSiteUrl : 'http://localhost:3000',
+  )
+  // nuxt.config reads SITE_URL for `convex.auth.origin`; Convex and Nuxt must agree.
+  if (environmentNames.has('SITE_URL')) {
+    // Convex keeps its value; init cannot read it back to compare.
+    if (localSiteUrl === undefined) {
+      dependencies.log(
+        `SITE_URL is set in Convex but not in ${LOCAL_ENV_FILE}. Add the same value to ${LOCAL_ENV_FILE}, or Nuxt uses http://localhost:3000 as its origin.`,
+      )
+    }
+  } else if (localSiteUrl !== undefined && !localSiteUrlIsLiteral) {
+    dependencies.log(
+      `Kept SITE_URL in ${LOCAL_ENV_FILE}. It must resolve to ${siteUrl}, the value set in Convex.`,
+    )
+  } else {
+    if (localSiteUrl !== undefined && localSiteUrl !== siteUrl) {
+      throw new Error(
+        `${LOCAL_ENV_FILE} sets SITE_URL=${localSiteUrl}, but you entered ${siteUrl}. Nuxt and Convex must use the same origin: change ${LOCAL_ENV_FILE} or enter ${localSiteUrl}, then rerun init.`,
+      )
+    }
+    await ensureLocalEnvironmentValue(root, 'SITE_URL', () => siteUrl, dependencies)
+  }
   const completed: string[] = []
   const set = async (name: string, value: string) => {
     if (environmentNames.has(name)) return
