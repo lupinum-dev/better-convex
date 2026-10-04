@@ -1,7 +1,7 @@
 import type { FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import type { ComputedRef } from 'vue'
+import type { ComputedRef, MaybeRef, Ref } from 'vue'
 
 import type {
   ConvexCallStatus,
@@ -44,7 +44,10 @@ type _MutationKeys = Assert<
 type _MutationResult = Assert<
   IsEqual<Awaited<ReturnType<MutationReturn['mutate']>>, { id: string }>
 >
-type _MutationArgs = Assert<IsEqual<Parameters<MutationReturn['mutate']>, [args: { id: string }]>>
+// Like query arguments, each top-level argument may be a ref; the call reads it once.
+type _MutationArgs = Assert<
+  IsEqual<Parameters<MutationReturn['mutate']>, [args: { id: string } | { id: MaybeRef<string> }]>
+>
 type _ArglessMutationArgs = Assert<
   IsEqual<
     Parameters<UseConvexMutationReturn<MutationRef<Argless, string>>['mutate']>,
@@ -62,12 +65,20 @@ type _ActionKeys = Assert<
   IsEqual<keyof ActionReturn, 'run' | 'data' | 'status' | 'pending' | 'error' | 'reset'>
 >
 type _ActionResult = Assert<IsEqual<Awaited<ReturnType<ActionReturn['run']>>, { id: string }>>
-type _ActionArgs = Assert<IsEqual<Parameters<ActionReturn['run']>, [args: { id: string }]>>
+type _ActionArgs = Assert<
+  IsEqual<Parameters<ActionReturn['run']>, [args: { id: string } | { id: MaybeRef<string> }]>
+>
 type _ArglessActionArgs = Assert<
   IsEqual<Parameters<UseConvexActionReturn<ActionRef<Argless, string>>['run']>, [args?: Argless]>
 >
 type _ActionHasNoMutate = Assert<IsEqual<HasKey<ActionReturn, 'mutate'>, false>>
 type _ActionHasNoSafe = Assert<IsEqual<HasKey<ActionReturn, 'safe'>, false>>
+
+function argumentContract(mutation: MutationReturn, id: Ref<string>, count: Ref<number>) {
+  void mutation.mutate({ id })
+  // @ts-expect-error a ref still has to hold the argument's type
+  void mutation.mutate({ id: count })
+}
 
 function stateContract(mutation: MutationReturn, action: ActionReturn) {
   const { data, error, status, pending } = mutation
@@ -100,6 +111,7 @@ function errorContract(error: unknown) {
 describe('callable and error type contracts', () => {
   it('keeps one destructurable object contract per callable kind', () => {
     expect(stateContract).toBeTypeOf('function')
+    expect(argumentContract).toBeTypeOf('function')
     expect(errorContract).toBeTypeOf('function')
   })
 
