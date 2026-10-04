@@ -311,7 +311,7 @@ describe('better-convex-vue package runtime', () => {
     scope.stop()
   })
 
-  it('resumes and resets deferred pagination with generation-safe cursors', async () => {
+  it('resumes and restarts deferred pagination with generation-safe cursors', async () => {
     const host = attachedRuntime('alice')
     const app = createApp({})
     app.use(createBetterConvex({ attachment: host.attachment }))
@@ -347,7 +347,7 @@ describe('better-convex-vue package runtime', () => {
     expect(query.canLoadMore.value).toBe(true)
 
     const retired = host.subscriptions[0]!
-    query.reset('resume-elsewhere')
+    query.restart('resume-elsewhere')
     expect(retired.active).toBe(false)
     expect(host.subscriptions).toHaveLength(2)
     expect(host.subscriptions[1]?.args).toMatchObject({
@@ -863,7 +863,7 @@ describe('better-convex-vue package runtime', () => {
       'isStale',
       'loadMore',
       'pending',
-      'reset',
+      'restart',
       'status',
     ])
     expect(query.data.value).toBeUndefined()
@@ -1097,7 +1097,7 @@ describe('better-convex-vue package runtime', () => {
     scope.stop()
   })
 
-  it('drops a held loadMore when the deferred list is reset before it starts', async () => {
+  it('drops a held loadMore when the deferred list is restarted before it starts', async () => {
     const host = attachedRuntime('alice')
     const app = createApp({})
     app.use(createBetterConvex({ attachment: host.attachment }))
@@ -1105,7 +1105,7 @@ describe('better-convex-vue package runtime', () => {
     const pagination = app.runWithContext(() =>
       scope.run(() =>
         useConvexPaginatedQueryInternal({
-          query: makeFunctionReference<'query'>('notes:resetHeldPages') as FunctionReference<
+          query: makeFunctionReference<'query'>('notes:restartHeldPages') as FunctionReference<
             'query',
             'public',
             { paginationOpts: PaginationOptions },
@@ -1119,7 +1119,7 @@ describe('better-convex-vue package runtime', () => {
     )!
 
     const held = pagination.state.loadMore(2)
-    pagination.state.reset()
+    pagination.state.restart()
     await expect(held).resolves.toBeUndefined()
     expect(pagination.state.isLoadingMore.value).toBe(false)
     void pagination.state.execute()
