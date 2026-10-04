@@ -27,10 +27,13 @@ const getPermissionContext = makeFunctionReference<
 const testClientIpHeader = 'x-e2e-client-ip'
 let nextTestClientIp = 1
 
-function createIsolatedBrowserContext(browser: Browser) {
+async function createIsolatedBrowserContext(browser: Browser) {
   const clientIp = `192.0.2.${nextTestClientIp}`
   nextTestClientIp += 1
-  return browser.newContext({ extraHTTPHeaders: { [testClientIpHeader]: clientIp } })
+  const context = await browser.newContext({ extraHTTPHeaders: { [testClientIpHeader]: clientIp } })
+  // Real browsers carry unrelated cookies, such as Vercel's deployment cookie.
+  await context.addCookies([{ name: '__vdpl', value: 'dpl_e2e', url: 'http://localhost:3050' }])
+  return context
 }
 
 async function registerAndSignIn(page: Page, email: string) {
@@ -91,6 +94,33 @@ async function expectAnonymousIdentity(page: Page): Promise<void> {
   await expect
     .poll(() => page.getByTestId('convex-auth-subject').textContent(), pollOptions)
     .toBe('none')
+}
+
+const AUTH_TEST_PAGE = 'http://localhost:3050/labs/use-auth-test'
+
+/** The page's trace: `<auth status>|<notes status>:<rows>|<permission context>` per change. */
+async function readTrace(page: Page): Promise<string[]> {
+  return await page.evaluate(() => (window as { __bcnTrace?: string[] }).__bcnTrace ?? [])
+}
+
+/** Browser auth traffic of one page: token and session requests, Authenticate tokens per socket. */
+function recordAuthTraffic(page: Page) {
+  const traffic = { tokenRequests: 0, sessionRequests: 0, authenticates: [] as string[][] }
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (path === '/api/auth/convex/token') traffic.tokenRequests += 1
+    if (path === '/api/auth/get-session') traffic.sessionRequests += 1
+  })
+  page.on('websocket', (socket) => {
+    const tokens: string[] = []
+    traffic.authenticates.push(tokens)
+    socket.on('framesent', ({ payload }) => {
+      if (typeof payload !== 'string' || !payload.includes('"type":"Authenticate"')) return
+      const message = JSON.parse(payload) as { value?: string }
+      if (message.value) tokens.push(message.value)
+    })
+  })
+  return traffic
 }
 
 async function readSsrResponse(request: APIRequestContext) {
@@ -164,6 +194,102 @@ describe('canonical Better Auth session matrix', async () => {
       await page.getByTestId('integrated-signout').click()
       await expectAnonymousIdentity(page)
       await expectAnonymousIdentity(secondPage)
+    } finally {
+      await browser.close()
+    }
+  })
+
+  it('loads a signed-in page from server data with one token and no token in the HTML', async () => {
+    const browser = await chromium.launch()
+    const context = await createIsolatedBrowserContext(browser)
+    const page = await context.newPage()
+
+    try {
+      const email = `journey-load-${Date.now()}@example.com`
+      await registerAndSignIn(page, email)
+      await page.goto('about:blank')
+      const traffic = recordAuthTraffic(page)
+      const response = await page.goto(AUTH_TEST_PAGE)
+      const html = (await response!.text()).replaceAll('&#64;', '@')
+      expect(html).toContain(email)
+      expect(html).not.toMatch(/eyJ[\w-]+\.eyJ[\w-]+/)
+      const session = (await context.cookies()).find((cookie) =>
+        cookie.name.endsWith('better-auth.session_token'),
+      )
+      expect(html).not.toContain(decodeURIComponent(session!.value).split('.')[0])
+
+      await expectAuthenticatedIdentity(page)
+      await page.waitForTimeout(1_500)
+      // No loading, empty or pending frame after hydration.
+      expect(await readTrace(page)).toEqual(['authenticated|success:data|user'])
+      // The first confirmed token is reused: one token request, one Authenticate per socket.
+      expect(traffic.tokenRequests).toBe(1)
+      const authenticated = traffic.authenticates.filter((tokens) => tokens.length > 0)
+      expect(authenticated.map((tokens) => tokens.length)).toEqual([1])
+      // Public metadata stays readable for a browser that carries cookies.
+      expect((await page.request.get('http://localhost:3050/api/auth/jwks')).status()).toBe(200)
+    } finally {
+      await browser.close()
+    }
+  })
+
+  it('keeps server-rendered public data for an anonymous visitor through hydration', async () => {
+    const browser = await chromium.launch()
+    const context = await createIsolatedBrowserContext(browser)
+    const page = await context.newPage()
+
+    try {
+      await page.goto(AUTH_TEST_PAGE)
+      await expectAnonymousIdentity(page)
+      await page.waitForTimeout(1_500)
+      expect(await readTrace(page)).toEqual(['anonymous|success:data|none'])
+    } finally {
+      await browser.close()
+    }
+  })
+
+  it('refreshes the Convex token before it expires and stays authenticated', async () => {
+    const browser = await chromium.launch()
+    const context = await createIsolatedBrowserContext(browser)
+    const page = await context.newPage()
+
+    try {
+      await registerAndSignIn(page, `journey-refresh-${Date.now()}@example.com`)
+      await page.goto('about:blank')
+      await page.clock.install()
+      const traffic = recordAuthTraffic(page)
+      await page.goto(AUTH_TEST_PAGE)
+      const identity = await expectAuthenticatedIdentity(page)
+      const first = traffic.authenticates.flat()[0]!
+      const { exp, iat } = decodeJwtPayload(first) as { exp: number; iat: number }
+
+      // Jump to just before expiry; the client must have scheduled a refresh.
+      await page.clock.fastForward((exp - iat - 5) * 1_000)
+      await expect
+        .poll(() => new Set(traffic.authenticates.flat()).size, pollOptions)
+        .toBeGreaterThan(1)
+      expect(await expectAuthenticatedIdentity(page)).toBe(identity)
+      expect(
+        (await readTrace(page)).filter((entry) => !entry.startsWith('authenticated|')),
+      ).toEqual([])
+    } finally {
+      await browser.close()
+    }
+  })
+
+  it('signs in a browser whose clock runs an hour fast', async () => {
+    const browser = await chromium.launch()
+    const context = await createIsolatedBrowserContext(browser)
+    const page = await context.newPage()
+
+    try {
+      await registerAndSignIn(page, `journey-clock-${Date.now()}@example.com`)
+      await page.goto('about:blank')
+      await page.clock.install({ time: Date.now() + 60 * 60 * 1_000 })
+      await page.goto(AUTH_TEST_PAGE)
+      await expectAuthenticatedIdentity(page)
+      await page.waitForTimeout(1_500)
+      expect(await readTrace(page)).toEqual(['authenticated|success:data|user'])
     } finally {
       await browser.close()
     }

@@ -25,6 +25,10 @@
         </div>
       </ClientOnly>
       <div class="row">
+        <span>public notes</span>
+        <strong data-testid="public-notes">{{ notes ? notes.length : 'none' }}</strong>
+      </div>
+      <div class="row">
         <span>Convex ctx.auth subject</span>
         <strong data-testid="convex-auth-subject">{{ permissionContext?.userId || 'none' }}</strong>
       </div>
@@ -58,7 +62,23 @@ const { data: permissionContext } = await useConvexQuery(
   api.auth.getPermissionContext,
   permissionArgs,
 )
+// Public, default `auth: 'optional'`: must keep its server-rendered rows for anonymous visitors.
+const { data: notes, status: notesStatus } = await useConvexQuery(api.notes.list, {})
 const resultText = ref('(idle)')
+
+// E2E trace of every visible state change from the first hydrated frame on.
+// Entries: `<auth status>|<notes status>:<has rows>|<permission context>`.
+if (import.meta.client) {
+  const trace: string[] = ((window as { __bcnTrace?: string[] }).__bcnTrace ??= [])
+  watch(
+    () =>
+      `${status.value}|${notesStatus.value}:${notes.value ? 'data' : 'none'}|${permissionContext.value ? 'user' : 'none'}`,
+    (entry) => {
+      if (trace.at(-1) !== entry) trace.push(entry)
+    },
+    { immediate: true, flush: 'sync' },
+  )
+}
 
 const signInEmailType = computed(() => typeof client.signIn.email)
 const signUpEmailType = computed(() => typeof client.signUp.email)

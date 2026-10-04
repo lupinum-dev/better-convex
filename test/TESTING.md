@@ -97,9 +97,30 @@ cd .. && CONVEX_E2E_AUTO_START=false pnpm test:e2e
 Generate the two secrets in the shell; never pass them as arguments or print
 them. `CONVEX_SITE_URL` is a Convex built-in; do not set it with `convex env set`.
 
+## Real-stack journeys
+
+`test/e2e/extended/auth-session-matrix.e2e.test.ts` runs the journeys users
+notice in a real browser with the real Convex client and the local backend. The
+page `/labs/use-auth-test` records every visible state change in
+`window.__bcnTrace` (`<auth status>|<notes status>:<rows>|<permission context>`),
+and each journey compares that trace with a literal list:
+
+| Journey | Guards against |
+| --- | --- |
+| Signed-in hard reload | a loading or empty frame after hydration, a Convex JWT or session token in the HTML, more than one token request or `Authenticate` per socket, public JWKS refused for a browser with cookies |
+| Anonymous hard reload | server-rendered public data dropped during hydration |
+| Token refresh (`page.clock.fastForward`) | no new token before expiry |
+| Browser clock one hour fast | fresh tokens judged by the local clock |
+
+Every browser context also carries an unrelated platform cookie (`__vdpl`), as
+browsers on Vercel do. Add a journey when a bug shows only in the real stack.
+
 ## Design rules
 
-1. Runtime/composable behavior goes to `test/nuxt`.
+1. Composable behavior goes to `test/nuxt`. Behavior that depends on the real
+   Convex client (auth timing, token refresh, reconnects, re-execution after
+   authentication) needs a real-stack journey: the test transport fetches one
+   token and never refreshes, so it cannot show those bugs.
 2. Pure DOM visibility/render rules go to `test/browser`.
 3. E2E stays thin: only what needs the full Nuxt stack.
 4. Backend behavior belongs in `playground/convex/*.test.ts` or `test/convex`;
