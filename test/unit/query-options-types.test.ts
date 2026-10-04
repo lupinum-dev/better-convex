@@ -1,21 +1,15 @@
 import type { FunctionReference, PaginationOptions, PaginationResult } from 'convex/server'
 import { describe, expectTypeOf, it } from 'vitest'
-import { ref, toRefs, type ComputedRef } from 'vue'
+import { ref, toRefs } from 'vue'
 
 import type {
-  NuxtConvexPaginatedQuery,
   PaginatedQueryArgs,
-  UseConvexPaginatedQueryState,
   UseNuxtConvexPaginatedQueryOptions,
 } from '../../src/runtime/composables/useConvexPaginatedQuery'
 import type {
   ConvexQueryArgs,
-  NuxtConvexQuery,
-  UseConvexQueryState,
-  UseConvexQueryOptions,
   UseNuxtConvexQueryOptions,
 } from '../../src/runtime/composables/useConvexQuery'
-import type { ConvexCallError } from '../../src/runtime/errors'
 import type { ConvexAuthMode } from '../../src/runtime/utils/auth-status'
 
 // Type-only bindings for the composable functions. `typeof import(...)` is
@@ -35,85 +29,29 @@ declare const requiredQuery: FunctionReference<'query', 'public', { id: string }
 void deferredOptionContracts
 
 type Assert<T extends true> = T
-type HasKey<T, K extends PropertyKey> = K extends keyof T ? true : false
 type IsEqual<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 
-type QueryOptions = UseNuxtConvexQueryOptions
-type PaginatedOptions = UseNuxtConvexPaginatedQueryOptions
-type QueryArgs = ConvexQueryArgs<{ id: string }>
+// Option key budgets, state shapes and the native Promise contract are pinned at
+// the package root (package-root-query-types) and on the Vue types
+// (vue-query-options-types); this file pins the Nuxt argument and arity rules.
 type ExamplePaginatedReference = FunctionReference<
   'query',
   'public',
   { id: string; paginationOpts: PaginationOptions },
   PaginationResult<{ id: string }>
 >
-type PaginatedArgs = PaginatedQueryArgs<ExamplePaginatedReference> | 'skip'
-type QueryData = UseConvexQueryState<string>
-type PaginatedData = UseConvexPaginatedQueryState<{ id: string }>
 
-type _VueQueryOptionBudget = Assert<
-  IsEqual<keyof UseConvexQueryOptions, 'auth' | 'keepPreviousData' | 'immediate'>
->
-type _NuxtQueryOptionBudget = Assert<
-  IsEqual<keyof QueryOptions, 'auth' | 'keepPreviousData' | 'immediate' | 'lazy' | 'server'>
->
-type _NuxtPaginationOptionBudget = Assert<
-  IsEqual<
-    keyof PaginatedOptions,
-    | 'auth'
-    | 'initialCursor'
-    | 'initialNumItems'
-    | 'keepPreviousData'
-    | 'immediate'
-    | 'lazy'
-    | 'server'
-  >
->
-type _NuxtPaginationDoesNotExposeAdapterInitialPage = Assert<
-  IsEqual<HasKey<PaginatedOptions, 'initialPage'>, false>
->
-
-type _QueryHasNoDefaultOption = Assert<IsEqual<HasKey<QueryOptions, 'default'>, false>>
-type _PaginatedHasNoDefaultOption = Assert<IsEqual<HasKey<PaginatedOptions, 'default'>, false>>
-type _QueryHasNoEnabledOption = Assert<IsEqual<HasKey<QueryOptions, 'enabled'>, false>>
-type _PaginatedHasNoEnabledOption = Assert<IsEqual<HasKey<PaginatedOptions, 'enabled'>, false>>
-type _QueryHasNoDeepUnrefArgsOption = Assert<IsEqual<HasKey<QueryOptions, 'deepUnrefArgs'>, false>>
-type _PaginatedHasNoDeepUnrefArgsOption = Assert<
-  IsEqual<HasKey<PaginatedOptions, 'deepUnrefArgs'>, false>
->
 // The auth option accepts exactly the public ConvexAuthMode literals.
-type _QueryHasAuthOption = Assert<IsEqual<QueryOptions['auth'], ConvexAuthMode | undefined>>
-type _PaginatedHasAuthOption = Assert<IsEqual<PaginatedOptions['auth'], ConvexAuthMode | undefined>>
+type _PaginatedHasAuthOption = Assert<
+  IsEqual<UseNuxtConvexPaginatedQueryOptions['auth'], ConvexAuthMode | undefined>
+>
 type _AuthModeLiterals = Assert<IsEqual<ConvexAuthMode, 'required' | 'optional' | 'none'>>
-type _QueryArgsUseOnlySkipSentinel = Assert<IsEqual<QueryArgs, { id: string } | 'skip'>>
-type _PaginatedArgsUseOnlySkipSentinel = Assert<IsEqual<PaginatedArgs, { id: string } | 'skip'>>
-
-type _QueryDataIsReadonlyComputed = Assert<
-  IsEqual<QueryData['data'], ComputedRef<string | undefined>>
+type _QueryArgsUseOnlySkipSentinel = Assert<
+  IsEqual<ConvexQueryArgs<{ id: string }>, { id: string } | 'skip'>
 >
-type _QueryErrorIsComputedErrorUndefined = Assert<
-  IsEqual<QueryData['error'], ComputedRef<ConvexCallError | undefined>>
->
-type _QueryHasNoClear = Assert<IsEqual<HasKey<QueryData, 'clear'>, false>>
-type _NuxtQueryIsNativePromiseContract = Assert<
-  NuxtConvexQuery<string> extends Promise<UseConvexQueryState<string>> ? true : false
->
-type _PaginationDataIsReadonlyComputed = Assert<
-  IsEqual<PaginatedData['data'], ComputedRef<readonly { id: string }[] | undefined>>
->
-type _PaginationErrorIsComputedErrorUndefined = Assert<
-  IsEqual<PaginatedData['error'], ComputedRef<ConvexCallError | undefined>>
->
-type _PaginationHasNoHydrationProtocol = Assert<
-  IsEqual<HasKey<PaginatedData, 'firstPageSettled'>, false>
->
-type _NuxtPaginationIsNativePromiseContract = Assert<
-  NuxtConvexPaginatedQuery<{ id: string }> extends Promise<
-    UseConvexPaginatedQueryState<{ id: string }>
-  >
-    ? true
-    : false
+type _PaginatedArgsUseOnlySkipSentinel = Assert<
+  IsEqual<PaginatedQueryArgs<ExamplePaginatedReference> | 'skip', { id: string } | 'skip'>
 >
 
 // ============================================================================
@@ -127,6 +65,7 @@ type _NuxtPaginationIsNativePromiseContract = Assert<
 type ConvexGeneratedEmptyArgs = {}
 
 declare const noArgQuery: FunctionReference<'query', 'public', ConvexGeneratedEmptyArgs, string[]>
+declare const recordEmptyQuery: FunctionReference<'query', 'public', Record<string, never>, string>
 declare const reqArgQuery: FunctionReference<'query', 'public', { id: string }, string>
 declare const optArgQuery: FunctionReference<
   'query',
@@ -161,6 +100,8 @@ async function _arityContracts() {
   void useConvexQuery(noArgQuery, {})
   void useConvexQuery(noArgQuery, 'skip')
   void useConvexQuery(noArgQuery, {}, { server: false })
+  void useConvexQuery(recordEmptyQuery)
+  void useConvexQuery(recordEmptyQuery, {}, { server: false })
   // @ts-expect-error null is not the skip sentinel
   void useConvexQuery(noArgQuery, null)
   // @ts-expect-error undefined is not the skip sentinel
@@ -183,6 +124,7 @@ async function _arityContracts() {
   void useConvexQuery(optArgQuery, { term: 'x' })
   void useConvexQuery(optArgQuery, {})
   void useConvexQuery(optArgQuery, 'skip')
+  void useConvexQuery(optArgQuery, { term: 'x' }, { server: false })
   // @ts-expect-error all-optional args still require the args slot
   void useConvexQuery(optArgQuery)
   // @ts-expect-error all-optional args still reject unknown properties
@@ -227,7 +169,7 @@ async function _arityContracts() {
 
 describe('query option type contracts', () => {
   it('compiles the supported option and argument shapes', () => {
-    expectTypeOf<QueryOptions['auth']>().toEqualTypeOf<ConvexAuthMode | undefined>()
+    expectTypeOf<UseNuxtConvexQueryOptions['auth']>().toEqualTypeOf<ConvexAuthMode | undefined>()
     void _arityContracts
   })
 })

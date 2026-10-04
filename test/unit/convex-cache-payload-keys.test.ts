@@ -28,7 +28,9 @@ describe('identity-partitioned payload-key grammar', () => {
     const key = (auth: 'required' | 'optional', identity: 'anonymous' | `user:${string}`) =>
       createConvexPayloadKey('convex', 'notes:list', argsHash, auth, identity)
     const base = `convex:notes:list:${argsHash}`
+    // Same base and mode, partitioned only by identity: user B never reads user A's key.
     expect(key('required', 'user:u1')).toBe(`${base}:auth:required:user:u1`)
+    expect(key('required', 'user:u2')).toBe(`${base}:auth:required:user:u2`)
     expect(key('optional', 'user:u2')).toBe(`${base}:auth:optional:user:u2`)
     expect(key('optional', 'anonymous')).toBe(`${base}:auth:optional:anonymous`)
   })

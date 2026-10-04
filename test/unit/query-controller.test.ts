@@ -285,11 +285,4 @@ describe('query controller', () => {
     expect(state.active).toBeUndefined()
     expect(controller.setupSubscription()).toBeNull()
   })
-
-  it('does not subscribe when skipped', () => {
-    const { controller, state } = makeHarness()
-
-    state.setArgs('skip', 'skip', 'notes:list:idle')
-    expect(controller.setupSubscription()).toBeNull()
-  })
 })
