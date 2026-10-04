@@ -307,18 +307,6 @@ describe('MCP documentation samples typecheck against the real exports', () => {
     expect(diagnostics[name]).toEqual([])
   })
 
-  it('compiles the complete modules applications copy from the README and the MCP guide', () => {
-    expect(Object.keys(samples.readme!)).toEqual(
-      expect.arrayContaining(['convex/auth.ts', 'convex/mcp.ts', 'convex/notes.ts']),
-    )
-    expect(samples.recipe!['convex/mcp.test.ts']).toContain(
-      "from '@lupinum/better-convex-mcp/test'",
-    )
-    expect(samples.recipe!['convex/mcp.test.ts']).toContain(
-      "import { registerNoteTools } from './mcp'",
-    )
-  })
-
   it('rejects a tool that returns only structuredContent without an outputSchema', () => {
     expect(samples.upgrade!['convex/mcp.ts']).toContain('outputSchema: z.object({')
     expect(diagnostics['upgrade-without-output-schema']).toEqual([

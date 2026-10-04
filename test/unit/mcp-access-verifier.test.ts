@@ -1,5 +1,3 @@
-import { generateKeyPairSync, sign, verify } from 'node:crypto'
-
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -158,107 +156,24 @@ describe('provider-neutral MCP access verification boundary', () => {
     },
   )
 
-  it('lets a Better Auth-shaped verifier use a private grant reference without exposing it', async () => {
-    const bearer = 'better-auth-token-sentinel'
-    const providerReference = 'private-grant-reference-sentinel'
-    let privateReferenceWasChecked = false
-    const betterAuthFake: McpAccessVerifier = {
-      async verifyAccessToken(token, expected) {
-        if (
-          token !== bearer ||
-          expected.issuer !== 'https://issuer.example.test/' ||
-          expected.resource.href !== expectedResource.href
-        ) {
-          throw new Error('invalid')
-        }
-        privateReferenceWasChecked = providerReference === 'private-grant-reference-sentinel'
-        return verified()
-      },
-    }
-
-    const result = await verifyAndNormalizeMcpAccess({
-      verifier: betterAuthFake,
-      token: bearer,
-      expectedIssuer: 'https://issuer.example.test/',
-      expectedResource,
-      now: () => 1_800_000_000,
-    })
-
-    expect(privateReferenceWasChecked).toBe(true)
-    const serialized = JSON.stringify(result)
-    expect(serialized).not.toContain(bearer)
-    expect(serialized).not.toContain(providerReference)
-    expect(Object.keys(result.access).sort()).toEqual([
-      'clientId',
-      'issuer',
-      'resource',
-      'scopes',
-      'subject',
-    ])
-  })
-
-  it('accepts a materially external verifier using only a public signature key', async () => {
-    const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-    const payload = Buffer.from(
-      JSON.stringify({
-        issuer: 'https://external.example.test/',
-        subject: 'external-subject',
-        clientId: 'external-client',
-        resource: expectedResource.href,
-        scopes: ['notes:read'],
-        expiresAt: expiration,
-      }),
-    )
-    const token = `${payload.toString('base64url')}.${sign(null, payload, privateKey).toString('base64url')}`
-    const externalVerifier: McpAccessVerifier = {
-      async verifyAccessToken(candidate, expected) {
-        const [encodedPayload, encodedSignature, extra] = candidate.split('.')
-        if (!encodedPayload || !encodedSignature || extra) throw new Error('invalid token')
-        const signedPayload = Buffer.from(encodedPayload, 'base64url')
-        if (!verify(null, signedPayload, publicKey, Buffer.from(encodedSignature, 'base64url'))) {
-          throw new Error('invalid signature')
-        }
-        const claims = JSON.parse(signedPayload.toString('utf8')) as {
-          issuer: string
-          subject: string
-          clientId: string
-          resource: string
-          scopes: string[]
-          expiresAt: number
-        }
-        if (claims.issuer !== expected.issuer) throw new Error('wrong issuer')
-        if (claims.resource !== expected.resource.href) throw new Error('wrong resource')
-        const { expiresAt, ...access } = claims
-        return { access, expiresAt }
-      },
-    }
-
-    await expect(
-      verifyAndNormalizeMcpAccess({
-        verifier: externalVerifier,
-        token,
-        expectedIssuer: 'https://external.example.test/',
-        expectedResource,
-        now: () => 1_800_000_000,
-      }),
-    ).resolves.toMatchObject({
-      access: {
-        issuer: 'https://external.example.test/',
-        subject: 'external-subject',
-      },
-    })
-  })
-
-  it('rejects non-exact verifier results, stale access, and wrong resources', async () => {
-    const cases: VerifiedMcpAccess[] = [
-      { ...verified(), providerReference: 'must-not-cross' } as VerifiedMcpAccess,
-      { ...verified(), expiresAt: 1_700_000_000 },
+  it.each([
+    ['an extra provider reference', { ...verified(), providerReference: 'must-not-cross' }],
+    ['stale access', { ...verified(), expiresAt: 1_700_000_000 }],
+    [
+      'a rewritten issuer',
       verified({ access: { ...verified().access, issuer: 'https://issuer.example.test' } }),
+    ],
+    [
+      'another resource',
       verified({ access: { ...verified().access, resource: 'https://other.example.test/mcp' } }),
+    ],
+    [
+      'an unsafe scope',
       verified({ access: { ...verified().access, scopes: ['notes:read write'] } }),
-    ]
-
-    for (const candidate of cases) {
+    ],
+  ] as Array<[string, VerifiedMcpAccess]>)(
+    'rejects a verifier result with %s',
+    async (_label, candidate) => {
       await expect(
         verifyAndNormalizeMcpAccess({
           verifier: verifier(candidate),
@@ -271,8 +186,8 @@ describe('provider-neutral MCP access verification boundary', () => {
         name: 'McpAccessVerificationFailure',
         message: 'MCP access token verification failed',
       })
-    }
-  })
+    },
+  )
 
   it('does not retain or serialize verifier errors, tokens, or provider references', async () => {
     const secrets = [

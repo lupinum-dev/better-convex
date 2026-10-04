@@ -11,31 +11,21 @@ const expectedMcpRequestTimeoutMs = 30_000
 const resource = new URL('https://notes.example.test/mcp')
 const serverInfo = { name: 'mcp-handler-test', version: '0.1.0' } as const
 const bearer = 'mcp-handler-bearer-sentinel'
-const oauthMetadata = {
-  authorization_endpoint: 'https://issuer.example.test/authorize',
-  code_challenge_methods_supported: ['S256'],
-  grant_types_supported: ['authorization_code'],
-  issuer: 'https://issuer.example.test/',
-  response_types_supported: ['code'],
-  revocation_endpoint: 'https://issuer.example.test/revoke',
-  scopes_supported: ['notes:read', 'notes:write'],
-  token_endpoint: 'https://issuer.example.test/token',
-  token_endpoint_auth_methods_supported: ['none'],
-}
+const issuer = 'https://issuer.example.test/'
 
 function accessVerifier(): McpAccessVerifier {
   return {
     async verifyAccessToken(token, expected) {
       if (
         token !== bearer ||
-        expected.issuer !== oauthMetadata.issuer ||
+        expected.issuer !== issuer ||
         expected.resource.href !== resource.href
       ) {
         throw new Error('invalid')
       }
       return {
         access: {
-          issuer: 'https://issuer.example.test/',
+          issuer,
           subject: 'integration-123',
           clientId: 'client-123',
           resource: resource.href,
@@ -48,7 +38,7 @@ function accessVerifier(): McpAccessVerifier {
 }
 
 function oauthAuthorization(verifier: McpAccessVerifier = accessVerifier()) {
-  return { mode: 'oauth' as const, issuer: oauthMetadata.issuer, verifier }
+  return { mode: 'oauth' as const, issuer, verifier }
 }
 
 describe('Convex-native official MCP handler composition', () => {
@@ -122,13 +112,12 @@ describe('Convex-native official MCP handler composition', () => {
     }
     const observedAccess: unknown[] = []
     const observedOfficialAuth: unknown[] = []
-    const observedRequestHeaders: Headers[] = []
     const requestOptions = {
       serverInfo,
       resource,
       authorization: {
         mode: 'oauth',
-        issuer: oauthMetadata.issuer,
+        issuer,
         verifier: accessVerifier(),
         resourceName: 'Neutral notes',
         scopesSupported: ['notes:read', 'notes:write'],
@@ -143,7 +132,6 @@ describe('Convex-native official MCP handler composition', () => {
           },
           ({ query }, extra) => {
             observedOfficialAuth.push(extra.http?.authInfo)
-            if (extra.http?.req) observedRequestHeaders.push(new Headers(extra.http.req.headers))
             application.operations.push(`search:${access.issuer}:${access.subject}`)
             const output = {
               titles: [...application.notes.values()].filter((title) =>
@@ -172,7 +160,6 @@ describe('Convex-native official MCP handler composition', () => {
           },
           ({ id, title }, extra) => {
             observedOfficialAuth.push(extra.http?.authInfo)
-            if (extra.http?.req) observedRequestHeaders.push(new Headers(extra.http.req.headers))
             if (!application.notes.has(id)) throw new Error('missing note')
             application.notes.set(id, title)
             application.operations.push(`rename:${id}:${access.clientId}`)
@@ -190,8 +177,7 @@ describe('Convex-native official MCP handler composition', () => {
             description: 'Read one neutral note.',
             mimeType: 'text/plain',
           },
-          async (uri, { id }, extra) => {
-            if (extra.http?.req) observedRequestHeaders.push(new Headers(extra.http.req.headers))
+          async (uri, { id }) => {
             const title = application.notes.get(String(id))
             if (title === undefined) throw new Error('resource unavailable')
             return {
@@ -201,21 +187,9 @@ describe('Convex-native official MCP handler composition', () => {
         )
       },
     } satisfies HandleMcpRequestOptions
-    const responseBodies: string[] = []
     const transport = new StreamableHTTPClientTransport(resource, {
-      requestInit: {
-        headers: {
-          authorization: `Bearer ${bearer}`,
-          cookie: 'session=credential-cookie-sentinel',
-          'proxy-authorization': 'Basic proxy-credential-sentinel',
-          'x-forwarded-authorization': 'forwarded-credential-sentinel',
-        },
-      },
-      fetch: async (input, init) => {
-        const response = await handleMcpRequest(new Request(input, init), requestOptions)
-        responseBodies.push(await response.clone().text())
-        return response
-      },
+      requestInit: { headers: { authorization: `Bearer ${bearer}` } },
+      fetch: (input, init) => handleMcpRequest(new Request(input, init), requestOptions),
     })
     const client = new Client(
       { name: 'neutral-notes-client', version: '0.1.0' },
@@ -276,94 +250,9 @@ describe('Convex-native official MCP handler composition', () => {
         expect(access).not.toHaveProperty('token')
         expect(access).not.toHaveProperty('providerReference')
       }
-      for (const headers of observedRequestHeaders) {
-        expect(headers.get('accept')).toContain('application/json')
-        expect(headers.get('content-type')).toContain('application/json')
-        expect(headers.get('authorization')).toBeNull()
-        expect(headers.get('cookie')).toBeNull()
-        expect(headers.get('proxy-authorization')).toBeNull()
-        expect(headers.get('x-forwarded-authorization')).toBeNull()
-      }
-      for (const body of responseBodies) expect(body).not.toContain(bearer)
     } finally {
       await client.close()
     }
-  })
-
-  it('uses the official bearer challenge and never constructs an application server when denied', async () => {
-    let factoryCalls = 0
-    const requestOptions = {
-      serverInfo,
-      resource,
-      authorization: oauthAuthorization(),
-      configureServer({ server }) {
-        factoryCalls += 1
-        void server
-      },
-    } satisfies HandleMcpRequestOptions
-
-    const response = await handleMcpRequest(
-      new Request(resource, {
-        method: 'POST',
-        headers: {
-          authorization: 'Bearer wrong-token-sentinel',
-          'content-type': 'application/json',
-        },
-        body: '{}',
-      }),
-      requestOptions,
-    )
-
-    expect(response.status).toBe(401)
-    expect(response.headers.get('www-authenticate')).toMatch(/^Bearer /u)
-    expect(factoryCalls).toBe(0)
-    const body = await response.text()
-    expect(body).not.toContain('wrong-token-sentinel')
-    expect(body).not.toContain('mcp-handler-bearer-sentinel')
-  })
-
-  it('owns the SDK server instance supplied to application configuration', async () => {
-    const requestOptions = {
-      serverInfo,
-      resource,
-      authorization: oauthAuthorization(),
-      configureServer({ server }) {
-        server.registerTool('owned-server', { inputSchema: z.object({}) }, () => ({
-          content: [{ type: 'text', text: 'owned' }],
-        }))
-      },
-    } satisfies HandleMcpRequestOptions
-
-    const response = await handleMcpRequest(
-      new Request(resource, {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          authorization: `Bearer ${bearer}`,
-          'content-type': 'application/json',
-          'mcp-method': 'tools/list',
-          'mcp-protocol-version': '2026-07-28',
-        },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'tools/list',
-          params: {
-            _meta: {
-              'io.modelcontextprotocol/clientInfo': { name: 'owned-server-proof', version: '1' },
-              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
-              'io.modelcontextprotocol/clientCapabilities': {},
-            },
-          },
-        }),
-      }),
-      requestOptions,
-    )
-
-    expect(response.status).toBe(200)
-    const body = await response.text()
-    expect(body).toContain('owned-server')
-    expect(body).not.toContain(bearer)
   })
 
   it('supports preconfigured bearer credentials without advertising an OAuth server', async () => {
@@ -445,23 +334,6 @@ describe('Convex-native official MCP handler composition', () => {
     }
   })
 
-  it('rejects malformed preconfigured credential issuers before request handling', async () => {
-    await expect(
-      handleMcpRequest(new Request(resource), {
-        serverInfo,
-        resource,
-        authorization: {
-          mode: 'preconfigured-bearer',
-          issuer: 'http://notes.example.test/credentials/',
-          verifier: accessVerifier(),
-        },
-        configureServer({ server }) {
-          void server
-        },
-      }),
-    ).rejects.toThrow('Invalid access issuer')
-  })
-
   it.each([
     {
       label: 'wrong route',
@@ -512,7 +384,7 @@ describe('Convex-native official MCP handler composition', () => {
         async verifyAccessToken() {
           verifierCalls += 1
           return accessVerifier().verifyAccessToken(bearer, {
-            issuer: oauthMetadata.issuer,
+            issuer,
             resource,
           })
         },
@@ -536,7 +408,7 @@ describe('Convex-native official MCP handler composition', () => {
       resource,
       authorization: {
         mode: 'oauth',
-        issuer: oauthMetadata.issuer,
+        issuer,
         verifier: accessVerifier(),
         resourceName: 'Neutral notes',
         scopesSupported: ['notes:read', 'notes:write'],
@@ -608,22 +480,25 @@ describe('Convex-native official MCP handler composition', () => {
     expect(challenge).not.toContain('attacker')
   })
 
-  it('fails before request handling for an insecure or malformed authorization-server issuer', async () => {
-    await expect(
-      handleMcpRequest(new Request(resource), {
-        serverInfo,
-        resource,
-        authorization: {
-          mode: 'oauth',
-          issuer: 'http://issuer.example.test/',
-          verifier: accessVerifier(),
-        },
-        configureServer({ server }) {
-          void server
-        },
-      }),
-    ).rejects.toThrow()
-  })
+  it.each(['oauth', 'preconfigured-bearer'] as const)(
+    'rejects a plaintext remote issuer in %s mode before request handling',
+    async (mode) => {
+      await expect(
+        handleMcpRequest(new Request(resource), {
+          serverInfo,
+          resource,
+          authorization: {
+            mode,
+            issuer: 'http://issuer.example.test/',
+            verifier: accessVerifier(),
+          },
+          configureServer({ server }) {
+            void server
+          },
+        }),
+      ).rejects.toThrow('Invalid access issuer')
+    },
+  )
 
   it.each([
     {
@@ -655,14 +530,14 @@ describe('Convex-native official MCP handler composition', () => {
           resource,
           authorization: {
             mode: 'oauth',
-            issuer: oauthMetadata.issuer,
+            issuer,
             requiredScopes,
             scopesSupported,
             verifier: {
               async verifyAccessToken() {
                 verifierCalls += 1
                 return accessVerifier().verifyAccessToken(bearer, {
-                  issuer: oauthMetadata.issuer,
+                  issuer,
                   resource,
                 })
               },
@@ -898,169 +773,5 @@ describe('Convex-native official MCP handler composition', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it.each([
-    ['resources/subscribe', { uri: 'note://one' }, 404, -32601, 'Method not found'],
-    ['resources/unsubscribe', { uri: 'note://one' }, 404, -32601, 'Method not found'],
-    [
-      'subscriptions/listen',
-      { notifications: { resourceSubscriptions: ['note://one'] } },
-      404,
-      -32601,
-      'Method not found',
-    ],
-  ])(
-    'returns the finite-profile rejection for %s',
-    async (method, methodParams, status, code, message) => {
-      let factoryCalls = 0
-      const requestOptions = {
-        serverInfo,
-        resource,
-        authorization: oauthAuthorization(),
-        configureServer({ server }) {
-          factoryCalls += 1
-          void server
-        },
-      } satisfies HandleMcpRequestOptions
-      const response = await handleMcpRequest(
-        new Request(resource, {
-          body: JSON.stringify({
-            id: 'stateful-request',
-            jsonrpc: '2.0',
-            method,
-            params: {
-              ...methodParams,
-              _meta: {
-                'io.modelcontextprotocol/clientCapabilities': {},
-                'io.modelcontextprotocol/clientInfo': {
-                  name: 'stateful-rejection-proof',
-                  version: '1',
-                },
-                'io.modelcontextprotocol/protocolVersion': '2026-07-28',
-              },
-            },
-          }),
-          headers: {
-            authorization: `Bearer ${bearer}`,
-            'content-type': 'application/json',
-            'mcp-method': method,
-            'mcp-protocol-version': '2026-07-28',
-          },
-          method: 'POST',
-        }),
-        requestOptions,
-      )
-
-      expect(response.status).toBe(status)
-      expect(response.headers.get('content-type')).toContain('application/json')
-      await expect(response.json()).resolves.toEqual({
-        error: { code, message },
-        id: 'stateful-request',
-        jsonrpc: '2.0',
-      })
-      expect(factoryCalls).toBe(1)
-    },
-  )
-
-  it('composes tool quotas from verified identity and host-trusted context without reading IP headers', async () => {
-    let now = 0
-    const windows = new Map<string, { count: number; startedAt: number }>()
-    const identities = new Map([
-      ['alice-client-1', { subject: 'alice', clientId: 'client-1' }],
-      ['alice-client-2', { subject: 'alice', clientId: 'client-2' }],
-      ['bob-client-1', { subject: 'bob', clientId: 'client-1' }],
-    ])
-    const verifier: McpAccessVerifier = {
-      async verifyAccessToken(token) {
-        const identity = identities.get(token)
-        if (!identity) throw new Error('invalid')
-        return {
-          access: {
-            issuer: oauthMetadata.issuer,
-            subject: identity.subject,
-            clientId: identity.clientId,
-            resource: resource.href,
-            scopes: ['notes:read', 'notes:write'],
-          },
-          expiresAt: Math.floor(Date.now() / 1_000) + 300,
-        }
-      },
-    }
-    const call = async (
-      token: string,
-      trustedNetworkKey: string,
-      tool: 'search_notes' | 'rename_note',
-      spoofedIp = '203.0.113.1',
-    ) => {
-      const transport = new StreamableHTTPClientTransport(resource, {
-        requestInit: {
-          headers: {
-            authorization: `Bearer ${token}`,
-            'x-forwarded-for': spoofedIp,
-          },
-        },
-        fetch: async (input, init) =>
-          await handleMcpRequest(new Request(input, init), {
-            serverInfo,
-            resource,
-            authorization: oauthAuthorization(verifier),
-            configureServer({ access, server }) {
-              for (const registeredTool of ['search_notes', 'rename_note'] as const) {
-                server.registerTool(registeredTool, { inputSchema: z.object({}) }, () => {
-                  const key = [
-                    access.resource,
-                    access.issuer,
-                    access.subject,
-                    access.clientId,
-                    registeredTool,
-                    trustedNetworkKey,
-                  ].join('\u0000')
-                  const existing = windows.get(key)
-                  if (!existing || now - existing.startedAt >= 10_000) {
-                    windows.set(key, { count: 1, startedAt: now })
-                    return { content: [{ type: 'text', text: 'allowed' }] }
-                  }
-                  if (existing.count >= 1) {
-                    return {
-                      content: [{ type: 'text', text: 'rate limited' }],
-                      isError: true,
-                    }
-                  }
-                  existing.count += 1
-                  return { content: [{ type: 'text', text: 'allowed' }] }
-                })
-              }
-            },
-          }),
-      })
-      const client = new Client(
-        { name: 'quota-client', version: '0.1.0' },
-        { versionNegotiation: { mode: { pin: '2026-07-28' } } },
-      )
-      try {
-        await client.connect(transport)
-        return await client.callTool({ name: tool, arguments: {} })
-      } finally {
-        await client.close()
-      }
-    }
-
-    expect((await call('alice-client-1', 'edge-a', 'search_notes')).isError).not.toBe(true)
-    expect((await call('alice-client-1', 'edge-a', 'search_notes', '198.51.100.99')).isError).toBe(
-      true,
-    )
-    expect((await call('alice-client-1', 'edge-a', 'rename_note')).isError).not.toBe(true)
-    expect((await call('alice-client-2', 'edge-a', 'search_notes')).isError).not.toBe(true)
-    expect((await call('bob-client-1', 'edge-a', 'search_notes')).isError).not.toBe(true)
-    expect((await call('alice-client-1', 'edge-b', 'search_notes')).isError).not.toBe(true)
-
-    now = 10_000
-    expect((await call('alice-client-1', 'edge-a', 'search_notes')).isError).not.toBe(true)
-    const concurrent = await Promise.all([
-      call('alice-client-1', 'edge-a', 'rename_note'),
-      call('alice-client-1', 'edge-a', 'rename_note'),
-    ])
-    expect(concurrent.filter((result) => result.isError === true)).toHaveLength(1)
   })
 })

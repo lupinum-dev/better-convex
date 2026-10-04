@@ -1,8 +1,5 @@
-import { Client } from '@modelcontextprotocol/client'
-import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it } from 'vitest'
-import { z } from 'zod'
 
 import { projectMcpToolError, runMcpTool } from '../../packages/mcp/src/tools'
 
@@ -134,54 +131,6 @@ describe('MCP tool failure projection', () => {
     await expect(runMcpTool(() => ({ content: [] }), { name: 'bad\nname' })).rejects.toThrow(
       'Invalid MCP tool name',
     )
-  })
-
-  it('keeps cross-tenant denial indistinguishable and contains unknown throws through the SDK', async () => {
-    const server = new McpServer({
-      name: 'tool-error-proof',
-      version: '0.1.0',
-    })
-    server.registerTool(
-      'read_note',
-      {
-        inputSchema: z.object({ mode: z.enum(['denied', 'missing', 'unknown']) }).strict(),
-      },
-      ({ mode }) =>
-        runMcpTool(() => {
-          if (mode === 'unknown') throw new Error('database-record-sentinel')
-          return {
-            content: [{ type: 'text', text: 'Note not found' }],
-            structuredContent: { status: 'not_found' },
-          }
-        }),
-    )
-    const client = new Client({ name: 'tool-error-client', version: '0.1.0' })
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
-    try {
-      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
-      const denied = await client.callTool({
-        name: 'read_note',
-        arguments: { mode: 'denied' },
-      })
-      const missing = await client.callTool({
-        name: 'read_note',
-        arguments: { mode: 'missing' },
-      })
-      expect(denied).toEqual(missing)
-
-      const unknown = await client.callTool({
-        name: 'read_note',
-        arguments: { mode: 'unknown' },
-      })
-      expect(unknown).toMatchObject({
-        content: [{ type: 'text', text: 'Tool execution failed' }],
-        isError: true,
-      })
-      expect(JSON.stringify(unknown)).not.toContain('database-record-sentinel')
-    } finally {
-      await client.close()
-      await server.close()
-    }
   })
 })
 

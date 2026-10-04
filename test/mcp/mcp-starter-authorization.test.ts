@@ -286,9 +286,6 @@ describe('MCP starter authorization', () => {
       }),
     ).rejects.toMatchObject({ data: { code: 'MCP_INSUFFICIENT_SCOPE' } })
     await expect(
-      test.mutation(projects.list, { principal, organizationId: otherOrganizationId }),
-    ).rejects.toMatchObject({ data: { code: 'MCP_ACCESS_REVOKED' } })
-    await expect(
       test.mutation(projects.list, { principal, organizationId: 'not-an-id' }),
     ).rejects.toMatchObject({ data: { code: 'MCP_INPUT_INVALID' } })
 

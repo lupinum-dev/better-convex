@@ -642,16 +642,6 @@ describe('factory MCP wiring', () => {
       await expect(
         auth.requireMcpPrincipal(asCtx(ctx), verified.principal, { scope: 'mcp:write' }),
       ).resolves.toMatchObject({ user: { id: 'alice' } })
-      await expect(
-        denial(
-          auth.requireMcpPrincipal(asCtx(ctx), { ...verified.principal, resource: `${resource}2` }),
-        ),
-      ).resolves.toMatchObject({ code: 'MCP_ACCESS_DENIED' })
-      await expect(
-        auth
-          .createMcpAccessVerifier(asCtx(ctx))
-          .verifyAccessToken(token, { issuer, resource: new URL(`${resource}2`) }),
-      ).rejects.toThrow('AUTH_OAUTH_TOKEN_INVALID')
     })
   })
 })

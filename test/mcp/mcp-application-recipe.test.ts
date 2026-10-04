@@ -5,7 +5,7 @@ import { handleMcpRequest, registerMcpTool } from '@lupinum/better-convex-mcp'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { ConvexError, v } from 'convex/values'
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parse, compileScript, compileTemplate } from 'vue/compiler-sfc'
 import { z } from 'zod'
 
@@ -60,10 +60,6 @@ function loadRecipe<T>(path: string, bindings: Record<string, unknown>): T {
   })
   return exports as T
 }
-
-afterEach(() => {
-  vi.restoreAllMocks()
-})
 
 describe('MCP application recipe', () => {
   it('configures a valid MCP OAuth profile with renewal', () => {
