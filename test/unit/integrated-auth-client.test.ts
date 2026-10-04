@@ -75,6 +75,7 @@ describe('integrated Better Auth client', () => {
       expect(key in integrated, key).toBe(false)
       expect(Reflect.ownKeys(integrated), key).not.toContain(key)
       expect(Object.getOwnPropertyDescriptor(integrated, key), key).toBeUndefined()
+      expect(Object.getOwnPropertyDescriptors(integrated), key).not.toHaveProperty(key)
     }
     expect(() => Object.preventExtensions(integrated)).toThrow(TypeError)
   })
