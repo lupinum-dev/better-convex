@@ -476,11 +476,50 @@ export function normalizeConvexError(
     readSerialized(outerData) ??
     readSerialized(readField(outerData, 'data'))
   if (serialized) return revive(serialized, functionName)
+  logUnknownCauseInDevelopment(error, functionName)
   return new ConvexCallError({
     kind: 'unknown',
     message: UNKNOWN_CONVEX_ERROR_MESSAGE,
     functionName,
   })
+}
+
+// The package compiles without Node types; this is the one global it reads.
+declare const process: { readonly env: { readonly NODE_ENV?: string } }
+
+/**
+ * Nuxt and Vite dev servers replace `process.env.NODE_ENV` with
+ * `'development'` at build time, also in the browser where no `process`
+ * global exists, so the expression is read directly and never guarded with
+ * `typeof process`. Builds, tests and runtimes without a replacement or a
+ * `process` global answer false.
+ */
+function isDevelopment(): boolean {
+  try {
+    return process.env.NODE_ENV === 'development'
+  } catch {
+    return false
+  }
+}
+
+const loggedCauses = new WeakSet<object>()
+
+/**
+ * The public error drops the original on purpose (no `cause`, nothing in the
+ * SSR payload), so in development the original is logged once instead.
+ * Without it, a client-side argument error (`convexToJson`) or a plain server
+ * `Error` would leave no trace.
+ */
+function logUnknownCauseInDevelopment(error: unknown, functionName: string | undefined): void {
+  if (!isDevelopment()) return
+  if (typeof error === 'object' && error !== null) {
+    if (loggedCauses.has(error)) return
+    loggedCauses.add(error)
+  }
+  console.error(
+    `[better-convex] ${functionName ?? 'A Convex call'} failed with an unclassified error (shown only in development):`,
+    error,
+  )
 }
 
 /**
