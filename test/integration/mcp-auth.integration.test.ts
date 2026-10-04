@@ -129,6 +129,7 @@ async function expectConvexSessionToken(token: unknown, origin: string, convexSi
     'exp',
     'iat',
     'iss',
+    'jti',
     'sid',
     'sub',
     'token_use',
