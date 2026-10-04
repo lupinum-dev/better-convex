@@ -36,26 +36,22 @@ function installMockWindow() {
   return { windowMock, parentMessages }
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('devtools transport', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
-  })
-
-  it('falls back to postMessage when BroadcastChannel is unavailable', () => {
+  it.each([
+    ['unavailable', undefined],
+    [
+      'a throwing constructor',
+      function ThrowingBroadcastChannel() {
+        throw new Error('blocked')
+      },
+    ],
+  ])('falls back to postMessage when BroadcastChannel is %s', (_name, broadcastChannel) => {
     installMockWindow()
-    vi.stubGlobal('BroadcastChannel', undefined)
-
-    const transport = createUiDevtoolsTransport('convex-devtools')
-    expect(transport.kind).toBe('post-message')
-    transport.close()
-  })
-
-  it('falls back to postMessage when BroadcastChannel constructor throws', () => {
-    installMockWindow()
-    vi.stubGlobal('BroadcastChannel', function ThrowingBroadcastChannel() {
-      throw new Error('blocked')
-    })
+    vi.stubGlobal('BroadcastChannel', broadcastChannel)
 
     const transport = createUiDevtoolsTransport('convex-devtools')
     expect(transport.kind).toBe('post-message')
@@ -91,18 +87,13 @@ describe('devtools transport', () => {
 })
 
 describe('cloneDevtoolsPayload', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
-  })
-
   it('uses structuredClone when available', () => {
-    const structuredCloneMock = vi.fn((value: unknown) => ({ copied: value }))
-    vi.stubGlobal('structuredClone', structuredCloneMock)
-
-    const result = cloneDevtoolsPayload({ a: 1 })
-    expect(structuredCloneMock).toHaveBeenCalledTimes(1)
-    expect(result).toEqual({ copied: { a: 1 } })
+    const input = { at: new Date(0), nested: { a: 1 } }
+    const result = cloneDevtoolsPayload(input)
+    // A JSON clone would turn the Date into a string.
+    expect(result).toEqual(input)
+    expect(result.at).toBeInstanceOf(Date)
+    expect(result.nested).not.toBe(input.nested)
   })
 
   it('falls back to JSON clone when structuredClone throws', () => {

@@ -26,7 +26,7 @@ describe('sanitizeDiagnosticValue', () => {
 
   it('preserves bounded output for oversized control-character strings', () => {
     expect(sanitizeDiagnosticValue('\u0000'.repeat(1_000_000))).toBe(
-      sanitizeDiagnosticValue('\u0000'.repeat(1024)),
+      `${'\\u0000'.repeat(85)}\\u[Truncated]`,
     )
   })
 

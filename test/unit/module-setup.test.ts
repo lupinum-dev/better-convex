@@ -161,15 +161,10 @@ describe('module transport options', () => {
     expect(configured.server).toEqual({ maxResponseBytes: 4_194_304, queryTimeoutMs: 15_000 })
   })
 
+  // The full validation table lives in runtime-config.test.ts (same normalizers).
   it.each([
-    [{ client: { verbose: 'yes' } }, 'client.verbose must be a boolean'],
     [{ client: { webSocketConstructor: 'ws' } }, 'client.webSocketConstructor is not a supported'],
-    [{ client: { disabled: true } }, 'client.disabled is not a supported'],
-    [{ server: { maxResponseBytes: 0 } }, 'server.maxResponseBytes must be a positive integer'],
-    [{ server: { maxResponseBytes: 1.5 } }, 'server.maxResponseBytes must be a positive integer'],
     [{ server: { queryTimeoutMs: -1 } }, 'server.queryTimeoutMs must be a positive integer'],
-    [{ server: { queryTimeoutMs: 2_147_483_648 } }, 'no greater than 2147483647'],
-    [{ server: { timeoutMs: 1 } }, 'server.timeoutMs is not a supported'],
   ])('rejects invalid transport options at build time: %j', async (options, message) => {
     await expect(setup(options as ModuleOptions)).rejects.toThrow(message)
   })

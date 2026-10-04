@@ -25,6 +25,17 @@ const dotenvCredentialForms = [
   (name: string, value: string) => `${name}: ${value}`,
 ]
 
+/** Runs `check` in a temporary directory whose `.env.local` holds `envLocal`. */
+async function withEnvLocal(envLocal: string, check: (cwd: string) => Promise<void>) {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'bcn-local-convex-'))
+  try {
+    await writeFile(path.join(cwd, '.env.local'), envLocal, 'utf8')
+    await check(cwd)
+  } finally {
+    await rm(cwd, { force: true, recursive: true })
+  }
+}
+
 describe('local Convex deployment environment options', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
@@ -93,21 +104,16 @@ describe('local Convex deployment environment options', () => {
       dotenvCredentialForms.map((format) => [name, format] as const),
     ),
   )('rejects dotenv cloud credential %s before auto-starting', async (name, format) => {
-    const cwd = await mkdtemp(path.join(tmpdir(), 'bcn-local-convex-'))
     const credential = 'do-not-use-or-disclose-this-cloud-key'
-    await writeFile(
-      path.join(cwd, '.env.local'),
-      [
-        'CONVEX_DEPLOYMENT=anonymous:local-test',
-        'CONVEX_URL=http://127.0.0.1:3210',
-        'CONVEX_SITE_URL=http://127.0.0.1:3211',
-        format(name, credential),
-      ].join('\n'),
-      'utf8',
-    )
     vi.stubEnv('CONVEX_E2E_AUTO_START', 'true')
+    const envLocal = [
+      'CONVEX_DEPLOYMENT=anonymous:local-test',
+      'CONVEX_URL=http://127.0.0.1:3210',
+      'CONVEX_SITE_URL=http://127.0.0.1:3211',
+      format(name, credential),
+    ].join('\n')
 
-    try {
+    await withEnvLocal(envLocal, async (cwd) => {
       const error = await ensureLocalConvex({ cwd }).then(
         () => null,
         (cause: unknown) => cause,
@@ -117,15 +123,12 @@ describe('local Convex deployment environment options', () => {
         `remove forbidden deployment credential(s): ${name}`,
       )
       expect((error as Error).message).not.toContain(credential)
-    } finally {
-      await rm(cwd, { force: true, recursive: true })
-    }
+    })
   })
 
   it.each(['vite', 'canonical', 'matching-both'])(
     'reads %s CLI URL assignments without starting a backend',
     async (format) => {
-      const cwd = await mkdtemp(path.join(tmpdir(), 'bcn-local-convex-alias-'))
       const values = ['CONVEX_DEPLOYMENT=anonymous:alias-test']
       if (format !== 'vite')
         values.push('CONVEX_URL=http://127.0.0.1:3210', 'CONVEX_SITE_URL=http://127.0.0.1:3211')
@@ -134,31 +137,23 @@ describe('local Convex deployment environment options', () => {
           'VITE_CONVEX_URL=http://127.0.0.1:3210',
           'VITE_CONVEX_SITE_URL=http://127.0.0.1:3211',
         )
-      try {
-        await writeFile(path.join(cwd, '.env.local'), values.join('\n'), 'utf8')
+      await withEnvLocal(values.join('\n'), async (cwd) => {
         expect(await readLocalConvexEnv(cwd)).toEqual({
           deployment: 'anonymous:alias-test',
           forbiddenCredentialNames: [],
           url: 'http://127.0.0.1:3210',
           siteUrl: 'http://127.0.0.1:3211',
         })
-      } finally {
-        await rm(cwd, { force: true, recursive: true })
-      }
+      })
     },
   )
 
   it.each(['CONVEX_URL', 'CONVEX_SITE_URL'])(
     'rejects conflicting %s aliases without echoing values',
     async (name) => {
-      const cwd = await mkdtemp(path.join(tmpdir(), 'bcn-local-convex-conflict-'))
       const secret = 'synthetic-not-for-errors'
-      try {
-        await writeFile(
-          path.join(cwd, '.env.local'),
-          `${name}=http://127.0.0.1:3210\nVITE_${name}=https://${secret}@remote.example.test`,
-          'utf8',
-        )
+      const envLocal = `${name}=http://127.0.0.1:3210\nVITE_${name}=https://${secret}@remote.example.test`
+      await withEnvLocal(envLocal, async (cwd) => {
         await expect(readLocalConvexEnv(cwd)).rejects.toThrow(
           `Conflicting local Convex URL aliases: ${name} and VITE_${name}.`,
         )
@@ -167,9 +162,7 @@ describe('local Convex deployment environment options', () => {
         await expect(ensureLocalConvex({ cwd })).rejects.toThrow(
           'Conflicting local Convex URL aliases',
         )
-      } finally {
-        await rm(cwd, { force: true, recursive: true })
-      }
+      })
     },
   )
 
@@ -184,36 +177,23 @@ describe('local Convex deployment environment options', () => {
     'https://127.0.0.1:3210',
     'http://127.0.0.1',
   ])('refuses unsafe Vite alias selection %s before starting a process', async (url) => {
-    const cwd = await mkdtemp(path.join(tmpdir(), 'bcn-local-convex-unsafe-'))
     vi.stubEnv('CONVEX_E2E_AUTO_START', 'true')
-    try {
-      await writeFile(
-        path.join(cwd, '.env.local'),
-        `CONVEX_DEPLOYMENT=anonymous:alias-test\nVITE_CONVEX_URL=${url}\nVITE_CONVEX_SITE_URL=http://127.0.0.1:3211`,
-        'utf8',
-      )
+    const envLocal = `CONVEX_DEPLOYMENT=anonymous:alias-test\nVITE_CONVEX_URL=${url}\nVITE_CONVEX_SITE_URL=http://127.0.0.1:3211`
+    await withEnvLocal(envLocal, async (cwd) => {
       await expect(ensureLocalConvex({ cwd })).rejects.toThrow(
         'Refusing non-local Convex selection',
       )
-    } finally {
-      await rm(cwd, { force: true, recursive: true })
-    }
+    })
   })
 
   it('retains credential rejection when the CLI uses Vite aliases', async () => {
-    const cwd = await mkdtemp(path.join(tmpdir(), 'bcn-local-convex-credential-alias-'))
     vi.stubEnv('CONVEX_E2E_AUTO_START', 'true')
-    try {
-      await writeFile(
-        path.join(cwd, '.env.local'),
-        'CONVEX_DEPLOYMENT=anonymous:alias-test\nVITE_CONVEX_URL=http://127.0.0.1:3210\nVITE_CONVEX_SITE_URL=http://127.0.0.1:3211\nCONVEX_DEPLOY_KEY=synthetic-credential',
-        'utf8',
-      )
+    const envLocal =
+      'CONVEX_DEPLOYMENT=anonymous:alias-test\nVITE_CONVEX_URL=http://127.0.0.1:3210\nVITE_CONVEX_SITE_URL=http://127.0.0.1:3211\nCONVEX_DEPLOY_KEY=synthetic-credential'
+    await withEnvLocal(envLocal, async (cwd) => {
       await expect(ensureLocalConvex({ cwd })).rejects.toThrow(
         'remove forbidden deployment credential(s): CONVEX_DEPLOY_KEY',
       )
-    } finally {
-      await rm(cwd, { force: true, recursive: true })
-    }
+    })
   })
 })

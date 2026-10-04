@@ -39,6 +39,24 @@ function createFakeTransport(): FakeTransport {
   }
 }
 
+async function mountBridge() {
+  // Re-imported after `vi.resetModules()` so each test gets fresh bridge state.
+  const { useBridge } = await import('../../src/runtime/devtools/ui/composables/useBridge')
+  let bridge!: ReturnType<typeof useBridge>
+  const app = createApp(
+    defineComponent({
+      setup() {
+        bridge = useBridge()
+        return () => h('div')
+      },
+    }),
+  )
+  const root = document.createElement('div')
+  document.body.appendChild(root)
+  app.mount(root)
+  return { app, bridge }
+}
+
 describe('devtools useBridge instance binding', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -51,21 +69,7 @@ describe('devtools useBridge instance binding', () => {
   })
 
   it('requires explicit selection and ignores responses from other instances', async () => {
-    const bridgeModule = await import('../../src/runtime/devtools/ui/composables/useBridge')
-    let bridge!: ReturnType<typeof bridgeModule.useBridge>
-
-    const app = createApp(
-      defineComponent({
-        setup() {
-          bridge = bridgeModule.useBridge()
-          return () => h('div')
-        },
-      }),
-    )
-
-    const root = document.createElement('div')
-    document.body.appendChild(root)
-    app.mount(root)
+    const { app, bridge } = await mountBridge()
 
     expect(fakeTransport.postMessage).toHaveBeenCalledWith({ type: 'CONVEX_DEVTOOLS_INIT' })
 
@@ -116,25 +120,11 @@ describe('devtools useBridge instance binding', () => {
     })
 
     await expect(requestPromise).resolves.toEqual(['ok'])
-
     app.unmount()
-    expect(fakeTransport.close).toHaveBeenCalled()
   })
 
   it('rejects pending requests and closes the transport on UI teardown', async () => {
-    const bridgeModule = await import('../../src/runtime/devtools/ui/composables/useBridge')
-    let bridge!: ReturnType<typeof bridgeModule.useBridge>
-    const app = createApp(
-      defineComponent({
-        setup() {
-          bridge = bridgeModule.useBridge()
-          return () => h('div')
-        },
-      }),
-    )
-    const root = document.createElement('div')
-    document.body.appendChild(root)
-    app.mount(root)
+    const { app, bridge } = await mountBridge()
 
     fakeTransport.emit({ type: 'CONVEX_DEVTOOLS_READY', instanceId: 'tab-a' })
     bridge.selectInstance('tab-a')

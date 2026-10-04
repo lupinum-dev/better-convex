@@ -10,7 +10,6 @@ import {
   isSerializedConvexCallError,
   normalizeConvexError,
   type ConvexCallErrorCode,
-  type ConvexCallErrorInput,
 } from '../../src/runtime/errors'
 import {
   CONVEX_HTTP_ACTION_TIMEOUT_MS,
@@ -32,25 +31,41 @@ import { executeQueryHttp } from '../../src/runtime/utils/query-execution'
 
 const SECRET = 'super-secret-token-do-not-leak'
 
-/** Mirror the payload plugin's reducer + reviver without importing Nuxt. */
-function payloadRoundTrip(error: ConvexCallError): unknown {
-  const reduced = JSON.parse(JSON.stringify(error.toJSON())) as unknown
-  if (!isSerializedConvexCallError(reduced)) return undefined
-  return normalizeConvexError(reduced)
-}
-
 describe('ConvexCallError golden fixtures ', () => {
-  it('1. auth-context-created authentication error (boundary-owned, passes through)', () => {
-    const authError = new ConvexCallError({
-      kind: 'authentication',
-      message: 'Required identity missing',
-      code: 'UNAUTHENTICATED',
-    })
-
-    expect(authError.kind).toBe('authentication')
+  it.each([
+    [
+      '1. auth-context-created authentication error',
+      { kind: 'authentication', message: 'Required identity missing', code: 'UNAUTHENTICATED' },
+    ],
+    [
+      '3a. boundary-wrapped fetch rejection',
+      { kind: 'transport', message: 'The request could not reach Convex.' },
+    ],
+    [
+      '4. timeout / abort',
+      { kind: 'transport', code: 'ABORTED', message: 'The request timed out.' },
+    ],
+    [
+      '5. unexpected upstream HTTP response',
+      { kind: 'transport', status: 502, message: 'Convex returned an unexpected response.' },
+    ],
+    ['9. an existing server error', { kind: 'server', message: 'already normalized' }],
+  ] as const)('%s is boundary-owned and passes through unchanged', (_name, input) => {
+    const boundary = new ConvexCallError(input)
     // Re-normalizing a boundary-classified instance never downgrades it.
-    expect(normalizeConvexError(authError)).toBe(authError)
-    expect(authError.toJSON()).toStrictEqual({
+    expect(normalizeConvexError(boundary)).toBe(boundary)
+    expect(normalizeConvexError(boundary, {})).toBe(boundary)
+    expect('cause' in boundary).toBe(false)
+  })
+
+  it('serializes exactly the public fields', () => {
+    expect(
+      new ConvexCallError({
+        kind: 'authentication',
+        message: 'Required identity missing',
+        code: 'UNAUTHENTICATED',
+      }).toJSON(),
+    ).toStrictEqual({
       name: 'ConvexCallError',
       kind: 'authentication',
       message: 'Required identity missing',
@@ -63,55 +78,30 @@ describe('ConvexCallError golden fixtures ', () => {
     })
   })
 
-  it('2. unstructured Convex argument-validation failure stays unknown', () => {
+  it.each([
     // The pinned Convex packages surface arg-validation failures as plain errors
     // with no structured marker; they must not be classified from message text.
-    const validationFailure = new Error(
-      'ArgumentValidationError: Object contains extra field `foo`',
-    )
-    const normalized = normalizeConvexError(validationFailure)
-    expect(normalized.kind).toBe('unknown')
+    [
+      '2. unstructured argument-validation failure',
+      new Error('ArgumentValidationError: Object contains extra field `foo`'),
+    ],
+    [
+      '3b. application TypeError (never transport)',
+      new TypeError("Cannot read properties of undefined (reading 'id')"),
+    ],
+    [
+      '6c. `data` without the ConvexError marker',
+      { message: 'looks structured', data: { code: 'NOPE' } },
+    ],
+    ['7. plain Error', new Error('boom')],
+    ['8. bare string', 'a bare string failure'],
+    ['8. object with message', { message: 'object with message' }],
+    ['8. opaque object', { unrelated: true }],
+  ])('%s stays unknown', (_name, thrown) => {
+    const normalized = normalizeConvexError(thrown)
     expect(normalized).toBeInstanceOf(ConvexCallError)
-  })
-
-  it('3a. boundary-wrapped fetch rejection is transport and passes through', () => {
-    // The HTTP boundary constructs the transport error while it knows the source.
-    const boundary = new ConvexCallError({
-      kind: 'transport',
-      message: 'The request could not reach Convex.',
-    })
-    expect(boundary.kind).toBe('transport')
-    expect(normalizeConvexError(boundary)).toBe(boundary)
-    expect('cause' in boundary).toBe(false)
-  })
-
-  it('3b. a plain application TypeError stays unknown (never transport)', () => {
-    const appTypeError = new TypeError("Cannot read properties of undefined (reading 'id')")
-    const normalized = normalizeConvexError(appTypeError)
     expect(normalized.kind).toBe('unknown')
-  })
-
-  it('4. timeout / abort is boundary-owned transport', () => {
-    const boundary = new ConvexCallError({
-      kind: 'transport',
-      code: 'ABORTED',
-      message: 'The request timed out.',
-    })
-    expect(boundary.kind).toBe('transport')
-    expect(boundary.code).toBe('ABORTED')
-    expect(normalizeConvexError(boundary)).toBe(boundary)
-  })
-
-  it('5. unexpected upstream HTTP response is boundary-owned transport', () => {
-    const boundary = new ConvexCallError({
-      kind: 'transport',
-      status: 502,
-      message: 'Convex returned an unexpected response.',
-    })
-    expect(boundary.kind).toBe('transport')
-    expect(boundary.status).toBe(502)
-    // The sentinel lives only in cause and never reaches the public shape.
-    expect(JSON.stringify(boundary)).not.toContain(SECRET)
+    expect(normalized.message).toBe('Unknown Convex error')
   })
 
   it('6. Convex application error with structured data is server, data verbatim', () => {
@@ -187,45 +177,6 @@ describe('ConvexCallError golden fixtures ', () => {
     const normalized = normalizeConvexError(new ConvexError(data as never))
     expect(normalized.kind).toBe('server')
     expect(normalized.message).toBe('Convex application error')
-  })
-
-  it('6c. mere `data` property presence without the marker stays unknown', () => {
-    const notAnApplicationError = {
-      message: 'looks structured',
-      data: { code: 'NOPE' },
-    }
-    expect(normalizeConvexError(notAnApplicationError).kind).toBe('unknown')
-  })
-
-  it('7. plain Error is unknown', () => {
-    const normalized = normalizeConvexError(new Error('boom'))
-    expect(normalized.kind).toBe('unknown')
-    expect(normalized.message).toBe('Unknown Convex error')
-  })
-
-  it('8. string and object unknown errors', () => {
-    const fromString = normalizeConvexError('a bare string failure')
-    expect(fromString.kind).toBe('unknown')
-    expect(fromString.message).toBe('Unknown Convex error')
-
-    const fromMessageObject = normalizeConvexError({
-      message: 'object with message',
-    })
-    expect(fromMessageObject.kind).toBe('unknown')
-    expect(fromMessageObject.message).toBe('Unknown Convex error')
-
-    const fromOpaqueObject = normalizeConvexError({ unrelated: true })
-    expect(fromOpaqueObject.kind).toBe('unknown')
-    expect(fromOpaqueObject.message).toBe('Unknown Convex error')
-  })
-
-  it('9. an existing ConvexCallError passes through unchanged (identity)', () => {
-    const existing = new ConvexCallError({
-      kind: 'server',
-      message: 'already normalized',
-    })
-    expect(normalizeConvexError(existing)).toBe(existing)
-    expect(normalizeConvexError(existing, {})).toBe(existing)
   })
 
   it('10. context fills a missing function name without changing the classification', () => {
@@ -316,6 +267,10 @@ describe('isConvexCallError', () => {
   })
 })
 
+/**
+ * Revival from H3 errors, their JSON bodies and ofetch FetchErrors is asserted
+ * on real `toConvexH3Error` output in server-h3-error.test.ts.
+ */
 describe('normalizeConvexError revives serialized errors from the H3 wire', () => {
   const original = new ConvexCallError({
     kind: 'authentication',
@@ -327,39 +282,11 @@ describe('normalizeConvexError revives serialized errors from the H3 wire', () =
   })
   const wire = () => JSON.parse(JSON.stringify(original)) as Record<string, unknown>
 
-  function expectRevived(value: unknown) {
-    const revived = normalizeConvexError(value)
+  it('revives the serialized error itself', () => {
+    const revived = normalizeConvexError(wire())
     expect(revived).toBeInstanceOf(ConvexCallError)
     expect(revived.toJSON()).toStrictEqual(original.toJSON())
     expect('cause' in revived).toBe(false)
-    return revived
-  }
-
-  it('revives the serialized error itself', () => {
-    expectRevived(wire())
-  })
-
-  it('revives the data of an H3 error or H3 JSON body', () => {
-    const h3Body = {
-      error: true,
-      url: '/api/notes',
-      statusCode: 401,
-      statusMessage: 'Unauthorized',
-      message: 'Sign in to continue',
-      data: wire(),
-    }
-    expectRevived(h3Body)
-    expectRevived(Object.assign(new Error('H3Error'), { statusCode: 401, data: wire() }))
-  })
-
-  it('revives the nested data of an ofetch FetchError of an H3 error', () => {
-    const fetchError = Object.assign(new Error('[GET] "/api/notes": 401 Unauthorized'), {
-      name: 'FetchError',
-      status: 401,
-      statusCode: 401,
-      data: { error: true, statusCode: 401, message: 'Sign in to continue', data: wire() },
-    })
-    expectRevived(fetchError)
   })
 
   it('fills a missing function name from context but keeps a serialized one', () => {
@@ -448,42 +375,29 @@ describe('normalizeConvexError revives serialized errors from the H3 wire', () =
 })
 
 describe('ConvexCallError class contract: raw causes are not retained ', () => {
-  const publicInput: ConvexCallErrorInput = {
-    kind: 'transport',
-    message: 'boundary failure',
-    status: 500,
-  }
-
-  it('has no native or custom cause state', () => {
-    const error = new ConvexCallError(publicInput)
-    expect('cause' in error).toBe(false)
-    expect(Object.getOwnPropertyDescriptor(error, 'cause')).toBeUndefined()
-    expect(error).toBeInstanceOf(Error)
-  })
-
-  it('toJSON omits cause entirely', () => {
-    const error = new ConvexCallError(publicInput)
-    const json = error.toJSON()
-    expect('cause' in json).toBe(false)
-    expect(JSON.stringify(json)).not.toContain(SECRET)
-  })
-
-  it('JSON.stringify(error) is clean of cause content', () => {
-    const raw = new Error('safe upstream failure', {
+  const rawWithCause = () =>
+    new Error('safe upstream failure', {
       cause: { authorization: `Bearer ${SECRET}`, cookie: SECRET },
     })
-    const error = normalizeConvexError(raw)
+
+  it('has no native or custom cause state, and toJSON omits it', () => {
+    const error = new ConvexCallError({
+      kind: 'transport',
+      message: 'boundary failure',
+      status: 500,
+    })
+    expect(error).toBeInstanceOf(Error)
+    expect('cause' in error).toBe(false)
+    expect(Object.getOwnPropertyDescriptor(error, 'cause')).toBeUndefined()
+    expect('cause' in error.toJSON()).toBe(false)
+  })
+
+  it('keeps raw cause data out of JSON, enumeration and logs', () => {
+    const error = normalizeConvexError(rawWithCause())
+
     const serialized = JSON.stringify(error)
     expect(serialized).not.toContain(SECRET)
     expect(serialized).not.toContain('authorization')
-  })
-
-  it('keeps raw cause data out of enumeration and logs', () => {
-    const raw = new Error('safe upstream failure', {
-      cause: { authorization: `Bearer ${SECRET}`, cookie: SECRET },
-    })
-    const error = normalizeConvexError(raw)
-
     expect(Object.keys(error)).not.toContain('cause')
     expect(Object.prototype.hasOwnProperty.call({ ...error }, 'cause')).toBe(false)
 
@@ -494,10 +408,7 @@ describe('ConvexCallError class contract: raw causes are not retained ', () => {
   })
 
   it('keeps raw cause data out of structured clone and MessageChannel transfer', async () => {
-    const raw = new Error('safe upstream failure', {
-      cause: { authorization: `Bearer ${SECRET}`, cookie: SECRET },
-    })
-    const error = normalizeConvexError(raw)
+    const error = normalizeConvexError(rawWithCause())
     const cloned = structuredClone(error)
     expect(inspect(cloned, { depth: null })).not.toContain(SECRET)
     expect('cause' in cloned).toBe(false)
@@ -510,26 +421,6 @@ describe('ConvexCallError class contract: raw causes are not retained ', () => {
     port2.close()
     expect(inspect(received, { depth: null })).not.toContain(SECRET)
     expect(received && typeof received === 'object' && 'cause' in received).toBe(false)
-  })
-
-  it('survives a payload round-trip as instanceof ConvexCallError without cause', () => {
-    const original = new ConvexCallError({
-      kind: 'server',
-      message: 'application failure',
-      code: 'FORBIDDEN',
-      status: 403,
-      data: { code: 'FORBIDDEN', detail: 'nope' },
-    })
-
-    const revived = payloadRoundTrip(original)
-    expect(revived).toBeInstanceOf(ConvexCallError)
-    const typed = revived as ConvexCallError
-    expect(typed.kind).toBe('server')
-    expect(typed.message).toBe('application failure')
-    expect(typed.code).toBe('FORBIDDEN')
-    expect(typed.status).toBe(403)
-    expect(typed.data).toEqual({ code: 'FORBIDDEN', detail: 'nope' })
-    expect('cause' in typed).toBe(false)
   })
 })
 
@@ -557,31 +448,29 @@ describe('normalizeConvexError shows the dropped cause in development only (#180
 })
 
 describe('isSerializedConvexCallError strictness ', () => {
-  it('accepts a valid serialized shape', () => {
-    const valid = {
-      name: 'ConvexCallError',
-      kind: 'server',
-      message: 'ok',
-      code: undefined,
-      status: undefined,
-      data: undefined,
-    }
-    expect(isSerializedConvexCallError(valid)).toBe(true)
+  const base = { name: 'ConvexCallError', kind: 'server', message: 'x' }
+
+  it.each([
+    [
+      'a valid shape with undefined optionals',
+      { ...base, code: undefined, status: undefined },
+      true,
+    ],
+    ['a known outcome', { ...base, outcome: 'not-sent' }, true],
+    ['a known phase', { ...base, phase: 'prepare' }, true],
+    ['an unknown outcome', { ...base, outcome: 'committed' }, false],
+    ['a numeric outcome', { ...base, outcome: 1 }, false],
+    ['an unknown phase', { ...base, phase: 'verify' }, false],
+    ['only the name', { name: 'ConvexCallError' }, false],
+    ['an unknown kind', { ...base, kind: 'nope' }, false],
+    ['a numeric message', { ...base, message: 42 }, false],
+    ['the name string', 'ConvexCallError', false],
+    ['null', null, false],
+  ])('%s -> %s', (_name, value, expected) => {
+    expect(isSerializedConvexCallError(value)).toBe(expected)
   })
 
-  it('accepts and round-trips functionName', () => {
-    const named = new ConvexCallError({
-      kind: 'server',
-      message: 'Title is already taken',
-      code: 'TITLE_TAKEN',
-      functionName: 'notes:create',
-    })
-    const json = JSON.parse(JSON.stringify(named)) as unknown
-    expect(isSerializedConvexCallError(json)).toBe(true)
-    expect(payloadRoundTrip(named)).toMatchObject({ functionName: 'notes:create' })
-  })
-
-  it('accepts and round-trips the dispatch outcome and upload phase', () => {
+  it('round-trips the dispatch outcome and upload phase', () => {
     const crossed = new ConvexCallError({
       kind: 'authentication',
       message: 'Identity changed',
@@ -591,47 +480,17 @@ describe('isSerializedConvexCallError strictness ', () => {
     })
     const json = JSON.parse(JSON.stringify(crossed)) as unknown
     expect(json).toMatchObject({ outcome: 'unknown', phase: 'complete' })
-    expect(isSerializedConvexCallError(json)).toBe(true)
-    expect(payloadRoundTrip(crossed)).toMatchObject({ outcome: 'unknown', phase: 'complete' })
+    expect(normalizeConvexError(json)).toMatchObject({ outcome: 'unknown', phase: 'complete' })
     // Naming a function on a copy keeps the dispatch evidence.
     expect(normalizeConvexError(crossed, { functionName: 'files:attach' })).toMatchObject({
       functionName: 'files:attach',
       outcome: 'unknown',
       phase: 'complete',
     })
-  })
-
-  it('rejects an unknown outcome or phase', () => {
-    const base = { name: 'ConvexCallError', kind: 'server', message: 'x' }
-    expect(isSerializedConvexCallError({ ...base, outcome: 'not-sent' })).toBe(true)
-    expect(isSerializedConvexCallError({ ...base, outcome: 'committed' })).toBe(false)
-    expect(isSerializedConvexCallError({ ...base, outcome: 1 })).toBe(false)
-    expect(isSerializedConvexCallError({ ...base, phase: 'prepare' })).toBe(true)
-    expect(isSerializedConvexCallError({ ...base, phase: 'verify' })).toBe(false)
     expect(normalizeConvexError({ ...base, outcome: 'committed' })).toMatchObject({
       kind: 'unknown',
       outcome: undefined,
     })
-  })
-
-  it('rejects an arbitrary object that only carries the name string', () => {
-    expect(isSerializedConvexCallError({ name: 'ConvexCallError' })).toBe(false)
-    expect(
-      isSerializedConvexCallError({
-        name: 'ConvexCallError',
-        kind: 'nope',
-        message: 'x',
-      }),
-    ).toBe(false)
-    expect(
-      isSerializedConvexCallError({
-        name: 'ConvexCallError',
-        kind: 'server',
-        message: 42,
-      }),
-    ).toBe(false)
-    expect(isSerializedConvexCallError('ConvexCallError')).toBe(false)
-    expect(isSerializedConvexCallError(null)).toBe(false)
   })
 })
 
@@ -641,8 +500,16 @@ describe('isSerializedConvexCallError strictness ', () => {
  * format and adds only deadline, abort, cache, and response-size controls.
  */
 describe('executeQueryHttp boundary (architecture invariant)', () => {
+  const neverFetch: typeof fetch = async (_input, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+        once: true,
+      })
+    })
+
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('a fetch rejection becomes a boundary-owned transport error without retaining it', async () => {
@@ -788,12 +655,6 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
 
   it('propagates parent abort and enforces the request deadline', async () => {
     vi.useFakeTimers()
-    const neverFetch: typeof fetch = async (_input, init) =>
-      new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
-          once: true,
-        })
-      })
     const parent = new AbortController()
     const aborted = createBoundedConvexFetch({
       fetchImpl: neverFetch,
@@ -839,7 +700,6 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
     })
     await vi.advanceTimersByTimeAsync(25)
     await bodyExpectation
-    vi.useRealTimers()
   })
 
   it.each([
@@ -848,12 +708,6 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
     ['action', CONVEX_HTTP_ACTION_TIMEOUT_MS],
   ] as const)('applies the reviewed %s operation deadline', async (operation, timeoutMs) => {
     vi.useFakeTimers()
-    const neverFetch: typeof fetch = async (_input, init) =>
-      new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
-          once: true,
-        })
-      })
     const bounded = createBoundedConvexFetch({ fetchImpl: neverFetch })
     const pending = bounded(`https://example.convex.cloud/api/${operation}`)
     const expectation = expect(pending).rejects.toMatchObject({
@@ -873,6 +727,5 @@ describe('executeQueryHttp boundary (architecture invariant)', () => {
     ).resolves.toBe('pending')
     await vi.advanceTimersByTimeAsync(1)
     await expectation
-    vi.useRealTimers()
   })
 })
