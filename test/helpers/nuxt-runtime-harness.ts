@@ -204,6 +204,8 @@ interface CaptureOptions {
   owner?: unknown
   convexConfig?: Record<string, unknown>
   payloadData?: Record<string, unknown>
+  /** Whether the page came from the server. `false` models an `ssr: false` page. */
+  serverRendered?: boolean
   identityObserver?: ClientIdentityObserver
 }
 
@@ -465,6 +467,7 @@ export async function captureInNuxt<T>(
         )
         currentAuthEnabled = typeof convexConfig.auth === 'object' && convexConfig.auth !== null
 
+        nuxtApp.payload.serverRendered = options.serverRendered ?? true
         if (options.payloadData) {
           Object.assign(nuxtApp.payload.data, options.payloadData)
         }

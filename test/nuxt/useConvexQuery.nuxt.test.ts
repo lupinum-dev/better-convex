@@ -88,6 +88,36 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(result.state.status.value).toBe('pending')
   })
 
+  it('starts at once on the first render of an ssr: false page, and await waits for the result', async () => {
+    const convex = new MockConvexClient()
+    const query = mockFnRef<'query'>('notes:list:spa-first-render')
+    const { result } = await captureInNuxt(
+      () => {
+        // Nuxt reports `isHydrating` on the first render of an `ssr: false` page too.
+        const nuxtApp = useNuxtApp()
+        nuxtApp.isHydrating = true
+        onMounted(() => {
+          nuxtApp.isHydrating = false
+        })
+        return useConvexQuery(query, {}, { auth: 'none' })
+      },
+      { convex, serverRendered: false },
+    )
+
+    expect(result.status.value).toBe('pending')
+    let settled = false
+    const awaited = result.then(() => {
+      settled = true
+    })
+    await waitFor(() => convex.calls.onUpdate.length === 1)
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    convex.emitQueryResult(query, {}, [{ _id: 'n1', title: 'Loaded' }])
+    await awaited
+    expect(result.data.value).toEqual([{ _id: 'n1', title: 'Loaded' }])
+  })
+
   it('keeps an SSR value authoritative until hydration settles', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:hydrated-frame')
