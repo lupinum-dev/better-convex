@@ -15,7 +15,7 @@ It follows the Better Convex MCP path from end to end:
 | Define each tool with `registerMcpTool`; pass the typed principal to one internal mutation     | `convex/mcp.ts`                                      |
 | Call `auth.requireMcpPrincipal` inside the mutation, then check app roles                      | `convex/projects.ts`                                 |
 | List and disconnect hosts with `auth.oauthConnections`; provision host clients as the operator | `convex/connections.ts`                              |
-| Let a person approve a destructive request                                                     | `convex/approvals.ts`                                |
+| Let a person approve or decline a destructive request                                          | `convex/approvals.ts`, `app/pages/index.vue`         |
 | Sign in and give consent for a verified authorization request                                  | `app/pages/login.vue`, `app/pages/oauth/consent.vue` |
 
 ## What the starter shows
@@ -184,9 +184,11 @@ Use a fresh deployment. This starter has no migration path from older schemas.
    the Streamable HTTP transport and enter your `CONVEX_SITE_URL` followed by
    `/mcp`.
 3. In the OAuth settings, enter the client ID, leave the client secret empty,
-   and request `mcp:read mcp:write`.
+   and request `mcp:read mcp:write offline_access`.
 4. Connect. Sign in with the local account and allow access on the consent
    page. Then call `list_organizations` and `list_projects`.
+5. Call `create_project`, then `request_project_deletion`. Approve the request
+   on the start page, and call `delete_project` with the returned approval ID.
 
 To connect ChatGPT or Claude, deploy with an HTTPS origin and follow
 [Connect ChatGPT and Claude](https://better-convex.lupinum.com/docs/build/agents/connect-chatgpt-and-claude).
@@ -234,8 +236,9 @@ protocol envelope and its error cases with the official SDK.
 - Replace the example project model with your own data. Keep one internal
   function per tool, and call `auth.requireMcpPrincipal` in it before any
   effect.
-- Give people a page where they approve destructive requests. The starter's
-  `approvals:approveProjectDelete` mutation is that page's backend.
+- Decide who may approve destructive requests. The start page lists pending
+  deletions for organization owners and admins; adapt `approvals:listPending`
+  and its page to your roles and operations.
 - Govern or disable public account creation.
 - Terminate TLS at a trusted ingress, configure deployment-level abuse
   controls, keep Better Auth's database-backed rate limiter enabled, and never

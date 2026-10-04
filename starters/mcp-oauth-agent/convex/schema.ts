@@ -48,7 +48,9 @@ export default defineSchema({
     expiresAt: v.number(),
     approvedBy: v.optional(v.id('users')),
     usedAt: v.optional(v.number()),
-  }).index('by_project_client_user', ['projectId', 'clientId', 'userId']),
+  })
+    .index('by_project_client_user', ['projectId', 'clientId', 'userId'])
+    .index('by_org_status', ['organizationId', 'status']),
 
   mcpRateLimits: defineTable({
     key: v.string(),
