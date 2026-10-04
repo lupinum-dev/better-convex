@@ -38,6 +38,7 @@ function countOccurrences(haystack: string, needle: string): number {
 
 describe('real SSR ConvexCallError revival and redaction', async () => {
   let mockServer: Server
+  let queryCalls = 0
 
   beforeAll(async () => {
     // Deterministic stand-in for a structured Convex application failure.
@@ -55,6 +56,7 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
         res.end(JSON.stringify({ ignored: true }))
         return
       }
+      queryCalls += 1
       let body = ''
       req.on('data', (chunk) => {
         body += chunk
@@ -175,5 +177,13 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
     expect(payloadSentinel).toBe(0)
     expect(browserSentinel).toBe(0)
     expect(htmlPublicMessage + payloadPublicMessage + browserPublicMessage).toBeGreaterThan(0)
+  })
+
+  it('makes one Convex call for the same query and arguments used twice in one render', async () => {
+    const before = queryCalls
+    const html = String(await $fetch('/shared', { responseType: 'text' }))
+
+    expect(countOccurrences(html, PUBLIC_APPLICATION_MESSAGE)).toBeGreaterThanOrEqual(2)
+    expect(queryCalls - before).toBe(1)
   })
 })

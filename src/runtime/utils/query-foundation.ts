@@ -135,7 +135,10 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
         }
       }
     },
-    { server, immediate, lazy, deep: false, default: () => null },
+    // Components that render the same query and arguments share one entry.
+    // Nuxt's default `cancel` would restart the fetch for each of them, so
+    // each would call Convex again; `defer` joins the fetch in flight.
+    { server, immediate, lazy, deep: false, default: () => null, dedupe: 'defer' },
   )
   const view = computed(() =>
     projectConvexSsrQuery({
