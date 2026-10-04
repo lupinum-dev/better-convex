@@ -179,6 +179,20 @@ describe('Convex session token signing over the stored JWKS', () => {
     })
   })
 
+  it('mints a different token for each request in the same second', async () => {
+    // Convex schedules its proactive refresh only after it receives a new
+    // token; an identical refetch leaves it without a refresh timer.
+    const memory = database()
+    const auth = createAuth(memory)
+    await provisionKey(memory, auth)
+    vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 4, 12, 0, 0))
+
+    const first = (await (await auth.handler(tokenRequest())).json()) as { token: string }
+    const second = (await (await auth.handler(tokenRequest())).json()) as { token: string }
+
+    expect(second.token).not.toBe(first.token)
+  })
+
   it.each(['aud', 'exp', 'iat', 'iss', 'jti', 'nbf', 'sid', 'sub', 'token_use'])(
     'rejects a session claim that overrides reserved %s',
     async (claim) => {
