@@ -47,10 +47,15 @@ beforeEach(() => {
 })
 
 describe('createBetterConvex clientOptions', () => {
-  it('keeps the unsaved-changes prompt off by default', () => {
+  it('turns the unsaved-changes prompt off and reuses the first auth token by default', () => {
     install({ convexUrl: CONVEX_URL })
 
-    expect(clients).toEqual([{ address: CONVEX_URL, options: { unsavedChangesWarning: false } }])
+    expect(clients).toEqual([
+      {
+        address: CONVEX_URL,
+        options: { unsavedChangesWarning: false, initialAuthTokenReuse: true },
+      },
+    ])
   })
 
   it('passes exactly the supported ConvexClient options through', () => {
@@ -66,6 +71,7 @@ describe('createBetterConvex clientOptions', () => {
     })
 
     expect(clients[0]?.options).toEqual({
+      initialAuthTokenReuse: true,
       verbose: true,
       webSocketConstructor: TestWebSocket,
       skipConvexDeploymentUrlCheck: true,

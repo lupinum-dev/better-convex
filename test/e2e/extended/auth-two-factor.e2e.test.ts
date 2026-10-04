@@ -608,7 +608,7 @@ describe('Better Auth two-factor final-session security', () => {
     // opt-in through defineSessionClaims, which this fixture does not use.
     // Nothing else, in particular no two-factor state, may reach the Convex
     // session JWT.
-    const approvedClaims = ['aud', 'exp', 'iat', 'iss', 'sid', 'sub', 'token_use']
+    const approvedClaims = ['aud', 'exp', 'iat', 'iss', 'jti', 'sid', 'sub', 'token_use']
     expect(Object.keys(claimsA).sort()).toEqual(approvedClaims)
     expect(Object.keys(claimsB).sort()).toEqual(approvedClaims)
     expect(headerA).toMatchObject({ alg: 'RS256' })

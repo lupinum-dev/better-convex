@@ -947,6 +947,10 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
               payload: {
                 ...customClaims,
                 iat: Math.floor(Date.now() / 1000),
+                // Unique per token: Convex schedules its proactive refresh only
+                // after a refetch returns a new token, and two tokens minted in
+                // the same second would otherwise be identical.
+                jti: crypto.randomUUID(),
                 sid: persistedSession.id,
                 sub: persistedUser.id,
                 token_use: 'convex-session',
