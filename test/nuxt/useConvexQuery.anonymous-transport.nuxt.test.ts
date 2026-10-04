@@ -30,7 +30,7 @@ describe('useConvexQuery none transport isolation', () => {
       () => {
         // Auth is enabled and the subject is signed in.
         useState<boolean>('convex:pending', () => false).value = false
-        useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity('jwt.signed.in', {
+        useState<AuthIdentity>('convex:identity').value = toAuthenticatedIdentity({
           id: 'u1',
         })
         return createConvexQueryState(query, {}, { auth: 'none' }).resultData
@@ -65,11 +65,11 @@ describe('useConvexQuery none transport isolation', () => {
     expect(anon.calls.onUpdate.length).toBe(1)
 
     // Sign in.
-    result.identity.value = toAuthenticatedIdentity('jwt1', { id: 'u1' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'u1' })
     await flush()
 
     // Same-user token rotation.
-    result.identity.value = toAuthenticatedIdentity('jwt2', { id: 'u1' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'u1' })
     await flush()
 
     // Sign out.

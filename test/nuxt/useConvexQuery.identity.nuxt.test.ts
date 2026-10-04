@@ -58,7 +58,7 @@ describe('useConvexQuery identity isolation', () => {
             const pending = useState<boolean>('convex:pending', () => false)
             const identity = useState<AuthIdentity>('convex:identity')
             pending.value = false
-            identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+            identity.value = toAuthenticatedIdentity({ id: 'A' })
             return createConvexQueryState(query, {}, { auth }).resultData
           }),
         {
@@ -107,7 +107,7 @@ describe('useConvexQuery identity isolation', () => {
       () =>
         hydrating(() => {
           const identity = useState<AuthIdentity>('convex:identity')
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           return {
             identity,
             query: createConvexQueryState(query, {}, { auth: 'optional' }).resultData,
@@ -125,7 +125,7 @@ describe('useConvexQuery identity isolation', () => {
     await waitFor(() => primary.calls.onUpdate.length === 1)
     expect(result.query.error.value).toBe(ssrError)
 
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'B' })
     identityPort.set({
       authEnabled: true,
       settled: true,
@@ -159,7 +159,7 @@ describe('useConvexQuery identity isolation', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
         }),
       {
@@ -215,7 +215,7 @@ describe('useConvexQuery identity isolation', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
         }),
       {
@@ -247,7 +247,7 @@ describe('useConvexQuery identity isolation', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           return createConvexQueryState(query, {}, { auth: 'optional' }).resultData
         }),
       {
@@ -294,7 +294,7 @@ describe('useConvexQuery identity isolation', () => {
         const pending = useState<boolean>('convex:pending', () => false)
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        identity.value = toAuthenticatedIdentity({ id: 'A' })
         const q = createConvexQueryState(query, {}, { auth: 'optional' }).resultData
         return { q, identity }
       },
@@ -303,7 +303,7 @@ describe('useConvexQuery identity isolation', () => {
 
     const refresh = result.q.refresh()
     await Promise.resolve()
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'B' })
     resolveA({ owner: 'A' })
     await refresh
     expect(result.q.data.value).not.toEqual({ owner: 'A' })
@@ -322,7 +322,7 @@ describe('useConvexQuery identity isolation', () => {
         const pending = useState<boolean>('convex:pending', () => false)
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        identity.value = toAuthenticatedIdentity({ id: 'A' })
         const q = createConvexQueryState(
           query,
           {},
@@ -344,7 +344,7 @@ describe('useConvexQuery identity isolation', () => {
     expect(result.q.data.value).toEqual({ owner: 'A' })
 
     // Switch to user B.
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'B' })
     await flush()
 
     // A's data is gone and keepPreviousData did not carry it into B.
@@ -367,7 +367,7 @@ describe('useConvexQuery identity isolation', () => {
         const pending = useState<boolean>('convex:pending', () => false)
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = false
-        identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+        identity.value = toAuthenticatedIdentity({ id: 'A' })
         const q = createConvexQueryState(query, {}, { auth: 'optional' }).resultData
         return { q, pending, identity }
       },
@@ -383,7 +383,7 @@ describe('useConvexQuery identity isolation', () => {
     // Because the composable tears down A's listener on the identity change, and
     // any surviving A-tagged commit is masked, no A value reappears under B.
     const lateA = primary.queuedQueryResultByPath('notes:stale', { owner: 'A-stale' })
-    result.identity.value = toAuthenticatedIdentity('jwt-B', { id: 'B' })
+    result.identity.value = toAuthenticatedIdentity({ id: 'B' })
     // A late emission targeting the (now-removed) A listener must not commit.
     lateA()
     await flush()

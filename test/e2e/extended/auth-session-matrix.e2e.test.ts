@@ -232,6 +232,8 @@ describe('canonical Better Auth session matrix', async () => {
         expect(response.body).toContain(ownEmail)
         expect(response.body).not.toContain(otherEmail)
         expect(response.body).not.toContain(cookieValue)
+        // The exchanged Convex JWT stays on the server; the browser fetches its own.
+        expect(response.body).not.toMatch(/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/)
       }
 
       const sequentialA = await readSsrResponse(contextA.request)

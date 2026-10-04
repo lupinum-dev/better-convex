@@ -61,18 +61,18 @@ export function mergeVaryCookie(existing: string | number | string[] | undefined
  * - Every auth-enabled SSR response appends `Vary: Cookie`, preserving existing
  *   `Vary` values so a shared cache keys per cookie.
  * - A request carrying a recognized Better Auth cookie, or any response that
- *   serializes a token, additionally gets `Cache-Control: private, no-store`.
+ *   renders a signed-in user, additionally gets `Cache-Control: private, no-store`.
  *   Invalid/revoked sessions remain request-specific even when no token is
- *   produced, and a per-user JWT is never cacheable without a cookie signal.
+ *   produced, and a per-user page is never cacheable without a cookie signal.
  *   Shared-cache override headers already present on the response are removed;
  *   an operator/CDN rule that rewrites headers after this point remains external.
  */
 export function applyConvexAuthSsrHeaders(
   event: H3Event,
-  options: { hasBetterAuthCookie: boolean; serializesToken: boolean },
+  options: { hasBetterAuthCookie: boolean; rendersUser: boolean },
 ): void {
   setResponseHeader(event, 'Vary', mergeVaryCookie(getResponseHeader(event, 'Vary')))
-  if (options.hasBetterAuthCookie || options.serializesToken) {
+  if (options.hasBetterAuthCookie || options.rendersUser) {
     removeSharedCacheOverrides(event)
     setResponseHeader(event, 'Cache-Control', 'private, no-store')
   }

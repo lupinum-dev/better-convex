@@ -3,7 +3,7 @@ import { computed } from 'vue'
 
 import { defineNuxtPlugin, useRuntimeConfig, useState } from '#app'
 
-import { identityToken, identityUser } from './auth/auth-identity'
+import { identityUser } from './auth/auth-identity'
 import { setupNuxtDevtoolsClient } from './devtools/setup-client'
 import { createConvexRuntimeContext, readConvexRuntimeContext } from './runtime-context'
 import { useConvexIdentityState } from './utils/auth-identity-state'
@@ -40,7 +40,7 @@ export default defineNuxtPlugin({
       )
       setupNuxtDevtoolsClient({
         runtime,
-        token: computed(() => identityToken(identity.value)),
+        token: computed(() => null),
         user: computed(() => identityUser(identity.value)),
         waterfall,
         instanceId: instanceId.value,

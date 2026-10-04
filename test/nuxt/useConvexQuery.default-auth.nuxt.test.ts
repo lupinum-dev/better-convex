@@ -93,7 +93,7 @@ describe('convex.auth.defaultQueryAuth', () => {
           const pending = useState<boolean>('convex:pending', () => false)
           const identity = useState<AuthIdentity>('convex:identity')
           pending.value = false
-          identity.value = toAuthenticatedIdentity('jwt-A', { id: 'A' })
+          identity.value = toAuthenticatedIdentity({ id: 'A' })
           return useConvexQuery(query, {})
         }),
       {
