@@ -63,8 +63,9 @@ export function createBetterAuthBrowserAdapter(
   let observedSessionToken: string | null | undefined
   let observedIdentityKey: string | null | undefined = options.initialIdentityKey
   let cachedToken: string | null = null
-  // Local time until which `cachedToken` may stand in after a transient failure:
-  // receipt time plus the token's own lifetime, so a wrong system clock cancels out.
+  // Monotonic time until which `cachedToken` may stand in after a transient
+  // failure: receipt plus the token's own lifetime. `performance.now()` is
+  // immune to a wrong or corrected system clock.
   let cachedTokenUsableUntil = 0
   let snapshot: BrowserAuthSnapshot = options.initialIdentityKey
     ? {
@@ -259,11 +260,13 @@ export function createBetterAuthBrowserAdapter(
         cachedToken = outcome.identity.token
         // The fetcher admitted only tokens with a usable lifetime; 0 fails closed.
         cachedTokenUsableUntil =
-          Date.now() + (usableTokenLifetimeMs(cachedToken) ?? 0) - TOKEN_EXPIRY_SAFETY_BUFFER_MS
+          performance.now() +
+          (usableTokenLifetimeMs(cachedToken) ?? 0) -
+          TOKEN_EXPIRY_SAFETY_BUFFER_MS
         callbacks.authenticated(outcome.identity.token, outcome.identity.user)
         return cachedToken
       }
-      if (!outcome.definitive && cachedToken && Date.now() < cachedTokenUsableUntil) {
+      if (!outcome.definitive && cachedToken && performance.now() < cachedTokenUsableUntil) {
         return cachedToken
       }
       cachedToken = null

@@ -286,6 +286,34 @@ describe('Better Auth browser adapter', () => {
     adapter.dispose()
   })
 
+  it('stands in with the cached token after a transient failure only for its lifetime', async () => {
+    const token = jwt('alice', 900)
+    const unavailable = { error: { status: 503 } }
+    const fixture = source(
+      {
+        isPending: false,
+        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
+        error: null,
+      },
+      [{ data: { token }, error: null }, ...Array.from({ length: 8 }, () => unavailable)],
+    )
+    let monotonicMs = 1_000
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs)
+    const adapter = createBetterAuthBrowserAdapter(fixture.client)
+    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+
+    monotonicMs += 60_000
+    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+
+    // The system clock moves back an hour, but 15 minutes really passed.
+    vi.setSystemTime(Date.now() - 3_600_000)
+    monotonicMs += 15 * 60_000
+    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBeNull()
+    adapter.dispose()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
   it('rejects a token whose subject disagrees with the observed session user', async () => {
     const fixture = source(
       {
