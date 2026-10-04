@@ -308,6 +308,34 @@ describe('useConvexOperation', () => {
     host.stop()
   })
 
+  it('returns to idle after cancel(), like reset(), instead of showing CANCELLED as an error', async () => {
+    const host = operationHost()
+
+    await expect(
+      host.state.run(async (op) => {
+        op.cancel()
+        return op.mutation(createNote, { title: 'x' })
+      }),
+    ).rejects.toMatchObject({ code: 'CANCELLED', outcome: 'not-sent' })
+    expect(host.state.status.value).toBe('idle')
+    expect(host.state.error.value).toBeUndefined()
+    host.stop()
+  })
+
+  it('keeps an application error with the code CANCELLED as an error', async () => {
+    const host = operationHost({
+      mutation: () =>
+        Promise.reject(new ConvexError({ code: 'CANCELLED', message: 'Order cancelled' })),
+    })
+
+    await expect(
+      host.state.run((op) => op.mutation(createNote, { title: 'x' })),
+    ).rejects.toMatchObject({ kind: 'server', code: 'CANCELLED' })
+    expect(host.state.status.value).toBe('error')
+    expect(host.state.error.value).toMatchObject({ kind: 'server', code: 'CANCELLED' })
+    host.stop()
+  })
+
   it('keeps an identity change as the reason when cancel() follows it', async () => {
     const host = operationHost()
     const op = host.begin()
