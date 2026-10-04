@@ -1,5 +1,4 @@
 import type { FunctionReference } from 'convex/server'
-import { ConvexError } from 'convex/values'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type { ComputedRef, MaybeRef, Ref } from 'vue'
 
@@ -115,36 +114,21 @@ describe('callable and error type contracts', () => {
     expect(errorContract).toBeTypeOf('function')
   })
 
-  it('does not special-case a LIMIT_* message prefix into a code', () => {
-    // The normalizer never classifies from message text. A plain Error that
-    // happens to start with LIMIT_ stays opaque `unknown`, and no code is
-    // synthesized from it.
-    const normalized = normalizeConvexError(new Error('LIMIT_ITEMS: Limit reached'))
-    expect(normalized.kind).toBe('unknown')
-    expect(normalized.message).toBe('Unknown Convex error')
-    expect(normalized.code).toBeUndefined()
-  })
-
-  it('derives code and message from a Convex application error, preserving its data', () => {
-    // Structured extraction requires the pinned ConvexError contract: a plain
-    // Error carrying a `.data` bag is NOT a Convex application error and stays
-    // `unknown`. A real ConvexError becomes `server` with its `data.code` and
-    // developer-authored `data.message` surfaced and its data preserved.
-    const plain = new Error('fallback message') as Error & {
-      data?: { message: string; code: string }
-    }
-    plain.data = { message: 'Limit reached', code: 'LIMIT_ITEMS' }
-    const plainNormalized = normalizeConvexError(plain)
-    expect(plainNormalized.kind).toBe('unknown')
-    expect(plainNormalized.message).toBe('Unknown Convex error')
-    expect(plainNormalized.code).toBeUndefined()
-
-    const structured = normalizeConvexError(
-      new ConvexError({ message: 'Limit reached', code: 'LIMIT_ITEMS' }),
-    )
-    expect(structured.kind).toBe('server')
-    expect(structured.message).toBe('Limit reached')
-    expect(structured.code).toBe('LIMIT_ITEMS')
-    expect(structured.data).toEqual({ message: 'Limit reached', code: 'LIMIT_ITEMS' })
+  // A real ConvexError (test/unit/convex-call-error.test.ts) is the only source of
+  // a server code: neither message text nor a `.data` bag on a plain Error counts.
+  it.each([
+    ['a LIMIT_* message prefix', new Error('LIMIT_ITEMS: Limit reached')],
+    [
+      'a plain Error carrying a data bag',
+      Object.assign(new Error('fallback message'), {
+        data: { message: 'Limit reached', code: 'LIMIT_ITEMS' },
+      }),
+    ],
+  ])('keeps %s opaque without a code', (_label, error) => {
+    expect(normalizeConvexError(error)).toMatchObject({
+      kind: 'unknown',
+      message: 'Unknown Convex error',
+      code: undefined,
+    })
   })
 })

@@ -59,6 +59,12 @@ function connectionRuntime() {
 }
 
 describe('useConvexConnectionState (Vue runtime)', () => {
+  it('fails before returning inert state outside a Vue effect scope', () => {
+    expect(() => useConvexConnectionState()).toThrow(
+      '[better-convex-vue] useConvexConnectionState must run inside a Vue effect scope',
+    )
+  })
+
   it('owns one live subscription in a plain effect scope and retires it with that scope', () => {
     const host = connectionRuntime()
     const app = createApp({})

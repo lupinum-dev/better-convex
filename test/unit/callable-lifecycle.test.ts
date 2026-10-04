@@ -62,32 +62,20 @@ function makeLifecycle<Result = string>(
 }
 
 describe('callable lifecycle: one throwing error protocol', () => {
-  const rawFailures: Array<{ name: string; make: () => unknown }> = [
-    { name: 'plain Error', make: () => new Error('boom') },
-    {
-      name: 'ConvexError',
-      make: () => new ConvexError({ code: 'X', reason: 'y' }),
-    },
-    { name: 'string', make: () => 'bare string failure' },
-    { name: 'opaque object', make: () => ({ unrelated: 1 }) },
-  ]
+  it.each([
+    ['plain Error', () => new Error('boom')],
+    ['ConvexError', () => new ConvexError({ code: 'X', reason: 'y' })],
+    ['string', () => 'bare string failure'],
+    ['opaque object', () => ({ unrelated: 1 })],
+  ])('normalizes a %s to ConvexCallError', async (_name, make) => {
+    const lifecycle = makeLifecycle({ invoke: () => Promise.reject(make()) })
 
-  for (const { name, make } of rawFailures) {
-    it(`normalizes ${name} to ConvexCallError`, async () => {
-      const lifecycle = makeLifecycle({ invoke: () => Promise.reject(make()) })
+    const thrown = await lifecycle.run({}).catch((error: unknown) => error)
 
-      let thrown: unknown
-      try {
-        await lifecycle.run({})
-      } catch (error) {
-        thrown = error
-      }
-
-      expect(thrown).toBeInstanceOf(ConvexCallError)
-      expect(lifecycle.status.value).toBe('error')
-      expect(lifecycle.error.value).toBe(thrown)
-    })
-  }
+    expect(thrown).toBeInstanceOf(ConvexCallError)
+    expect(lifecycle.status.value).toBe('error')
+    expect(lifecycle.error.value).toBe(thrown)
+  })
 
   it('commits successful data and clears the previous error', async () => {
     let shouldFail = true
@@ -206,33 +194,40 @@ describe('callable lifecycle: newest invocation and identity retirement', () => 
     expect(lifecycle.data.value).toBeUndefined()
   })
 
-  it('passes owner-produced identity retirement through and remains masked', async () => {
-    const lifecycle = makeLifecycle({
-      invoke: () => Promise.reject(createIdentityChangedError('mutation')),
-    })
+  it('passes owner-produced identity retirement through, named and masked', async () => {
+    const lifecycle = makeLifecycle(
+      { invoke: () => Promise.reject(createIdentityChangedError('mutation')) },
+      undefined,
+      undefined,
+      'mutation',
+      'notes:create',
+    )
 
-    let rejection: unknown
-    try {
-      await lifecycle.run({})
-    } catch (error) {
-      rejection = error
-    }
+    const rejection = await lifecycle.run({}).catch((error: unknown) => error)
 
     expect(isIdentityChangedError(rejection)).toBe(true)
     // The transport recorded no outcome, so the sent call stays open.
-    expect(rejection).toMatchObject({ outcome: 'unknown' })
+    expect(rejection).toMatchObject({ outcome: 'unknown', functionName: 'notes:create' })
     expect(lifecycle.status.value).toBe('idle')
     expect(lifecycle.error.value).toBeUndefined()
   })
 
   it("keeps the transport's own not-sent identity rejection", async () => {
-    const lifecycle = makeLifecycle({
-      invoke: () => Promise.reject(createIdentityChangedError('mutation', { outcome: 'not-sent' })),
-    })
+    const lifecycle = makeLifecycle(
+      {
+        invoke: () =>
+          Promise.reject(createIdentityChangedError('mutation', { outcome: 'not-sent' })),
+      },
+      undefined,
+      undefined,
+      'mutation',
+      'notes:create',
+    )
 
     await expect(lifecycle.run({})).rejects.toMatchObject({
       code: 'IDENTITY_CHANGED',
       outcome: 'not-sent',
+      functionName: 'notes:create',
     })
   })
 
@@ -510,7 +505,7 @@ describe('callable lifecycle: function names and library codes', () => {
     expect(lifecycle.error.value?.outcome).toBeUndefined()
   })
 
-  it('names identity retirements from the controller and from the owner', async () => {
+  it('names an identity retirement detected at settlement', async () => {
     let generation = 0
     let release!: (value: string) => void
     const controllerRetired = makeLifecycle(
@@ -536,18 +531,6 @@ describe('callable lifecycle: function names and library codes', () => {
       code: 'IDENTITY_CHANGED',
       functionName: 'reports:generate',
     })
-
-    const ownerRetired = makeLifecycle(
-      { invoke: () => Promise.reject(createIdentityChangedError('mutation')) },
-      undefined,
-      undefined,
-      'mutation',
-      'notes:create',
-    )
-    const ownerRejection = await ownerRetired.run({}).catch((error: unknown) => error)
-    expect(isIdentityChangedError(ownerRejection)).toBe(true)
-    expect(ownerRejection).toMatchObject({ functionName: 'notes:create' })
-    expect(ownerRetired.status.value).toBe('idle')
   })
 
   it('names the cancellation of a disposed callable', async () => {
