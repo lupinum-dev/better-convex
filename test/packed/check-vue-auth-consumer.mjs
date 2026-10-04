@@ -137,10 +137,12 @@ try {
     identityKey: 'anonymous',
     identityGeneration: 0,
   })
+  // The first result after an unknown start that finds no session settles the
+  // same generation: no principal existed, so nothing is retired.
   assertSnapshot(await invoke('transition', 'anonymous', null, 1), {
     settled: true,
     identityKey: 'anonymous',
-    identityGeneration: 1,
+    identityGeneration: 0,
   })
 
   let operations = await invoke('operationSnapshot')
@@ -262,7 +264,7 @@ try {
   assertSnapshot(await invoke('transition', 'authenticated', 'alice', 2, tokenSentinel), {
     settled: true,
     identityKey: 'user:alice',
-    identityGeneration: 2,
+    identityGeneration: 1,
   })
   operations = await invoke('operationSnapshot')
   assertDeepEqual(operations.query.data, undefined, 'Query retirement across identity')
@@ -275,7 +277,7 @@ try {
   assertSnapshot(await invoke('transition', 'authenticated', 'alice', 2, tokenSentinel), {
     settled: true,
     identityKey: 'user:alice',
-    identityGeneration: 2,
+    identityGeneration: 1,
   })
   const afterProviderRefresh = await invoke('stats')
   if (afterProviderRefresh.tokenFetches !== beforeProviderRefresh.tokenFetches) {
@@ -284,32 +286,32 @@ try {
   assertSnapshot(await invoke('transition', 'authenticated', 'alice', 3, tokenSentinel), {
     settled: true,
     identityKey: 'user:alice',
-    identityGeneration: 3,
+    identityGeneration: 2,
   })
   assertSnapshot(await invoke('transition', 'authenticated', 'bob', 4, tokenSentinel), {
     settled: true,
     identityKey: 'user:bob',
-    identityGeneration: 4,
+    identityGeneration: 3,
   })
   assertSnapshot(await invoke('rejectCurrent'), {
     settled: true,
     identityKey: 'anonymous',
-    identityGeneration: 5,
+    identityGeneration: 4,
   })
   assertSnapshot(await invoke('transition', 'authenticated', 'carol', 6, tokenSentinel), {
     settled: true,
     identityKey: 'user:carol',
-    identityGeneration: 6,
+    identityGeneration: 5,
   })
   assertSnapshot(await invoke('transition', 'anonymous', null, 7), {
     settled: true,
     identityKey: 'anonymous',
-    identityGeneration: 7,
+    identityGeneration: 6,
   })
   assertSnapshot(await invoke('transition', 'error', null, 8, providerErrorSentinel), {
     settled: true,
     identityKey: 'anonymous',
-    identityGeneration: 8,
+    identityGeneration: 7,
   })
 
   const attachmentKeys = await invoke('attachmentKeys')
