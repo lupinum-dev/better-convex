@@ -148,11 +148,11 @@ describe('paginated query hydration seed', () => {
     scope.stop()
   })
 
-  it('retires the SSR page on reset', () => {
+  it('retires the SSR page on restart', () => {
     const { state, scope } = setup()
     expect(state.data.value).toEqual(['ssr'])
 
-    state.reset()
+    state.restart()
 
     expect(state.status.value).toBe('pending')
     expect(state.data.value).toBeUndefined()

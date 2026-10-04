@@ -138,9 +138,9 @@ function createClientConvexPaginatedQueryState<Query extends PaginatedQueryRefer
       ssr.value ? ssr.value.canLoadMore && !result.isLoadingMore.value : result.canLoadMore.value,
     ),
     isExhausted: computed(() => (ssr.value ? ssr.value.isExhausted : result.isExhausted.value)),
-    // A reset drops the server-rendered page along with the live pages.
-    reset(cursor?: string | null) {
-      result.reset(cursor)
+    // A restart drops the server-rendered page along with the live pages.
+    restart(cursor?: string | null) {
+      result.restart(cursor)
       hydration.retire()
     },
   }
@@ -205,9 +205,9 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
     // The server renders the first page only; later pages load in the browser.
     loadMore: () => Promise.resolve(),
     execute: ssr.execute,
-    reset(cursor: string | null = null) {
+    restart(cursor: string | null = null) {
       if (typeof cursor !== 'string' && cursor !== null) {
-        throw new Error('[better-convex-nuxt] reset cursor must be a string or null')
+        throw new Error('[better-convex-nuxt] restart cursor must be a string or null')
       }
       startCursor.value = cursor
       void ssr.reload()

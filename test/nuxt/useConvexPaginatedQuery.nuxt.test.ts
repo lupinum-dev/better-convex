@@ -376,7 +376,7 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
-  it('defers a resumed pagination subscription and resets from a new cursor', async () => {
+  it('defers a resumed pagination subscription and restarts from a new cursor', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:deferred-resume')
     const { result, wrapper } = await captureInNuxt(
@@ -410,7 +410,7 @@ describe('useConvexPaginatedQuery controller', () => {
     expect(result.data.value).toEqual(['resumed'])
     expect(result.canLoadMore.value).toBe(true)
 
-    result.reset('another-cursor')
+    result.restart('another-cursor')
     expect(primary.calls.onUpdate).toHaveLength(2)
     expect(primary.calls.onUpdate[1]?.args).toMatchObject({
       paginationOpts: { cursor: 'another-cursor' },
@@ -721,23 +721,23 @@ describe('useConvexPaginatedQuery controller', () => {
   })
 
   it.each([
-    { label: 'reset()', cursor: null },
-    { label: 'reset(cursor)', cursor: 'jump-to' },
+    { label: 'restart()', cursor: null },
+    { label: 'restart(cursor)', cursor: 'jump-to' },
   ])('stops showing the SSR page on $label before onNuxtReady', async ({ cursor }) => {
     const primary = new MockConvexClient()
-    const query = mockFnRef<'query'>(`feed:hydrating-reset-${cursor ?? 'start'}`)
+    const query = mockFnRef<'query'>(`feed:hydrating-restart-${cursor ?? 'start'}`)
     const key = pageKey(query, {})
 
     const { result, wrapper } = await captureInNuxt(
       () =>
         hydrating(() => {
           const state = useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 })
-          const beforeReset = {
+          const beforeRestart = {
             data: state.data.value,
             canLoadMore: state.canLoadMore.value,
           }
-          state.reset(cursor)
-          const afterReset = {
+          state.restart(cursor)
+          const afterRestart = {
             data: state.data.value,
             status: state.status.value,
             canLoadMore: state.canLoadMore.value,
@@ -745,9 +745,9 @@ describe('useConvexPaginatedQuery controller', () => {
           }
           return {
             state,
-            beforeReset,
-            afterReset,
-            onUpdatesAfterReset: primary.calls.onUpdate.length,
+            beforeRestart,
+            afterRestart,
+            onUpdatesAfterRestart: primary.calls.onUpdate.length,
           }
         }),
       {
@@ -758,19 +758,19 @@ describe('useConvexPaginatedQuery controller', () => {
       },
     )
 
-    expect(result.beforeReset).toEqual({
+    expect(result.beforeRestart).toEqual({
       data: ['ssr-a', 'ssr-b'],
       canLoadMore: true,
     })
-    // reset() drops the server page at once: no stale `success` page offering
+    // restart() drops the server page at once: no stale `success` page offering
     // a loadMore that would silently do nothing.
-    expect(result.afterReset.data).toBeUndefined()
-    expect(result.afterReset.status).not.toBe('success')
-    expect(result.afterReset.canLoadMore).toBe(false)
-    expect(result.afterReset.isExhausted).toBe(false)
-    expect(result.onUpdatesAfterReset).toBe(0)
+    expect(result.afterRestart.data).toBeUndefined()
+    expect(result.afterRestart.status).not.toBe('success')
+    expect(result.afterRestart.canLoadMore).toBe(false)
+    expect(result.afterRestart.isExhausted).toBe(false)
+    expect(result.onUpdatesAfterRestart).toBe(0)
 
-    // The list goes live from the reset cursor, not from the SSR page.
+    // The list goes live from the restart cursor, not from the SSR page.
     await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
     expect(primary.calls.onUpdate[0]?.args).toMatchObject({
       paginationOpts: { cursor, numItems: 2 },

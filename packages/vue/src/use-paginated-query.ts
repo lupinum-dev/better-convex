@@ -86,14 +86,14 @@ export interface UseConvexPaginatedQueryState<Item> {
   readonly isExhausted: ComputedRef<boolean>
   /**
    * Request `numItems` more items. The promise settles once that page is
-   * loaded, failed, superseded, reset, or disposed, and it never rejects, so
+   * loaded, failed, superseded, restarted, or disposed, and it never rejects, so
    * templates may ignore it. Without `canLoadMore` the call does nothing.
    * Throws synchronously when `numItems` is not a positive safe integer.
    */
   loadMore(numItems: number): Promise<void>
   execute(): Promise<void>
   /** Restart the list, optionally from `cursor`, dropping every loaded page. */
-  reset(cursor?: string | null): void
+  restart(cursor?: string | null): void
 }
 
 /** Adapter-owned SSR state for the browser pagination lifecycle. */
@@ -305,9 +305,9 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
     await controller.firstPageSettled()
   }
 
-  function reset(cursor: string | null = null): void {
+  function restart(cursor: string | null = null): void {
     if (typeof cursor !== 'string' && cursor !== null) {
-      throw new Error('[better-convex-vue] reset cursor must be a string or null')
+      throw new Error('[better-convex-vue] restart cursor must be a string or null')
     }
     releaseHeldLoadMore()
     if (initialCursor.value === cursor) controller.reset()
@@ -334,7 +334,7 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
       isExhausted: controller.isExhausted,
       loadMore,
       execute,
-      reset,
+      restart,
     },
     firstPageSettled: controller.firstPageSettled,
   }

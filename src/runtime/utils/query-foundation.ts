@@ -182,7 +182,7 @@ export interface ConvexQueryHydration<T> {
   readonly error: ComputedRef<ConvexCallError | undefined>
   /** Start a deferred live lifecycle once Nuxt hydration settles. */
   startLive(live: ConvexLiveQuery): void
-  /** Stop showing the server-rendered view, for example after a caller reset. */
+  /** Stop showing the server-rendered view, for example after a caller restarts the list. */
   retire(): void
 }
 
