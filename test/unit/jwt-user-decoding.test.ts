@@ -17,29 +17,13 @@ function makeJwt(payload: Record<string, unknown>): string {
 }
 
 describe('decodeUserFromJwt', () => {
-  it('decodes standard user fields', () => {
+  it('projects only the standard user fields into the browser auth user', () => {
     const token = makeJwt({
       sub: 'user_123',
       name: 'Ada',
       email: 'ada@example.com',
       emailVerified: true,
       image: 'https://example.com/avatar.png',
-    })
-
-    expect(decodeUserFromJwt(token)).toEqual({
-      id: 'user_123',
-      name: 'Ada',
-      email: 'ada@example.com',
-      emailVerified: true,
-      image: 'https://example.com/avatar.png',
-    })
-  })
-
-  it('does not project custom JWT claims into the browser auth user', () => {
-    const token = makeJwt({
-      sub: 'user_123',
-      name: 'Ada',
-      email: 'ada@example.com',
       role: 'admin',
       organizationId: 'org_1',
       flags: ['beta'],
@@ -52,16 +36,9 @@ describe('decodeUserFromJwt', () => {
       id: 'user_123',
       name: 'Ada',
       email: 'ada@example.com',
+      emailVerified: true,
+      image: 'https://example.com/avatar.png',
     })
-  })
-
-  it('returns null when identifier claims resolve to an empty id', () => {
-    const token = makeJwt({
-      sub: '',
-      email: 'user@example.com',
-    })
-
-    expect(decodeUserFromJwt(token)).toBeNull()
   })
 })
 

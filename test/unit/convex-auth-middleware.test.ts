@@ -109,22 +109,18 @@ describe('convex-auth route middleware', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/dashboard?tab=team')
   })
 
-  it('uses guestRedirectTo for a missing or unsafe return path', async () => {
+  it.each([
+    undefined,
+    '//evil.example',
+    '/\\evil.example',
+    'https://evil.example',
+    '/%2F%2Fevil.example',
+  ])('uses guestRedirectTo for the missing or unsafe return path %s', async (redirect) => {
     configure({ guestRedirectTo: '/app' })
     signedIn('authenticated')
     const middleware = await loadMiddleware()
-    const redirects = [
-      undefined,
-      '//evil.example',
-      '/\\evil.example',
-      'https://evil.example',
-      '/%2F%2Fevil.example',
-    ]
-    for (const redirect of redirects) {
-      navigateToMock.mockClear()
-      await middleware(route('/auth/signin', 'guest', redirect ? { redirect } : {}))
-      expect(navigateToMock).toHaveBeenCalledWith('/app')
-    }
+    await middleware(route('/auth/signin', 'guest', redirect ? { redirect } : {}))
+    expect(navigateToMock).toHaveBeenCalledExactlyOnceWith('/app')
   })
 
   it('lets signed-out and errored visitors use a guest page', async () => {

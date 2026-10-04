@@ -210,11 +210,7 @@ describe('findAccountKeyCollisions page contract', () => {
     }
     return {
       calls,
-      run: (pageSize?: number) =>
-        findAccountKeyCollisions(ctx as never, { adapter: { findMany: 'findMany' } } as never, {
-          pageSize,
-        }),
-      scanWith: (options: Parameters<typeof findAccountKeyCollisions>[2]) =>
+      scanWith: (options?: Parameters<typeof findAccountKeyCollisions>[2]) =>
         findAccountKeyCollisions(
           ctx as never,
           { adapter: { findMany: 'findMany' } } as never,
@@ -224,7 +220,7 @@ describe('findAccountKeyCollisions page contract', () => {
   }
 
   it('walks the (providerId, accountId) index in bounded pages', async () => {
-    const { calls, run } = scan([
+    const { calls, scanWith } = scan([
       {
         page: [row('a', 'github', '1'), row('b', 'google', '7')],
         isDone: false,
@@ -233,7 +229,7 @@ describe('findAccountKeyCollisions page contract', () => {
       { page: [row('c', 'google', '7')], isDone: true, continueCursor: 'c2' },
     ])
 
-    await expect(run(2)).resolves.toEqual({
+    await expect(scanWith({ pageSize: 2 })).resolves.toEqual({
       scannedAccounts: 3,
       collisions: [
         {
@@ -310,9 +306,12 @@ describe('findAccountKeyCollisions page contract', () => {
       isDone: false,
       continueCursor: `c${index}`,
     }))
-    const { calls, run } = scan(pages)
+    const { calls, scanWith } = scan(pages)
 
-    await expect(run(1)).resolves.toMatchObject({ scannedAccounts: 100, isDone: false })
+    await expect(scanWith({ pageSize: 1 })).resolves.toMatchObject({
+      scannedAccounts: 100,
+      isDone: false,
+    })
     expect(calls).toHaveLength(100)
   })
 
@@ -333,14 +332,14 @@ describe('findAccountKeyCollisions page contract', () => {
   })
 
   it('refuses to report when rows do not arrive in key order', async () => {
-    const { run } = scan([
+    const { scanWith } = scan([
       {
         page: [row('a', 'google', '7'), row('b', 'github', '1'), row('c', 'google', '7')],
         isDone: true,
         continueCursor: 'c1',
       },
     ])
-    await expect(run()).rejects.toThrow('AUTH_ACCOUNT_SCAN_ORDER_INVALID')
+    await expect(scanWith()).rejects.toThrow('AUTH_ACCOUNT_SCAN_ORDER_INVALID')
   })
 
   it('stops on a stalled cursor or a malformed row', async () => {
@@ -348,10 +347,12 @@ describe('findAccountKeyCollisions page contract', () => {
       scan([
         { page: [], isDone: false, continueCursor: 'same' },
         { page: [], isDone: false, continueCursor: 'same' },
-      ]).run(),
+      ]).scanWith(),
     ).rejects.toThrow('AUTH_ACCOUNT_SCAN_STALLED')
     await expect(
-      scan([{ page: [{ id: 'a', providerId: 'google' }], isDone: true, continueCursor: '' }]).run(),
+      scan([
+        { page: [{ id: 'a', providerId: 'google' }], isDone: true, continueCursor: '' },
+      ]).scanWith(),
     ).rejects.toThrow('AUTH_ACCOUNT_SCAN_ROW_INVALID')
   })
 })

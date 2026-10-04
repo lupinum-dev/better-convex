@@ -92,16 +92,12 @@ describe('Convex auth dependency boundaries', () => {
     )
   })
 
-  it('keeps the shared origin parser dependency-free', () => {
-    const boundary = rule('shared-auth-origin-dependency-free')
-    expect(boundary.from(sharedOrigin)).toBe(true)
-    expect(boundary.disallow(bare('convex/server'))).toBe(true)
-    expect(boundary.typeOnlyExempt).toBe(false)
-  })
-
-  it('keeps the shared client IP signer dependency-free', () => {
-    const boundary = rule('shared-client-ip-dependency-free')
-    expect(boundary.from(sharedClientIp)).toBe(true)
+  it.each([
+    ['shared-auth-origin-dependency-free', 'src/runtime/shared/auth-origin.ts'],
+    ['shared-client-ip-dependency-free', 'src/runtime/shared/client-ip.ts'],
+  ])('keeps %s', (name, file) => {
+    const boundary = rule(name)
+    expect(boundary.from(resolve(file))).toBe(true)
     expect(boundary.disallow(bare('convex/server'))).toBe(true)
     expect(boundary.typeOnlyExempt).toBe(false)
   })

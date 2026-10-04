@@ -15,15 +15,6 @@ const components = componentsGeneric() as unknown as {
 const auth = components.authInvariant.adapter
 type AuthWhere = NonNullable<(typeof auth.findMany)['_args']['where']>[number]
 
-type ReferenceUser = {
-  createdAt: number
-  email: string
-  emailVerified: boolean
-  id: string
-  image: string | null
-  name: string
-}
-
 type AuthTestPage = {
   continueCursor: string
   isDone: boolean
@@ -108,60 +99,12 @@ async function findAll(
   return rows
 }
 
-function referenceCompare(left: unknown, right: unknown): number {
-  if (left === right) return 0
-  if (left === null || left === undefined) return -1
-  if (right === null || right === undefined) return 1
-  if (typeof left === 'number' && typeof right === 'number') return left < right ? -1 : 1
-  if (typeof left === 'string' && typeof right === 'string') return left < right ? -1 : 1
-  if (typeof left === 'boolean' && typeof right === 'boolean') return left === false ? -1 : 1
-  return String(left).localeCompare(String(right))
-}
-
-function referenceMatches(row: ReferenceUser, where: readonly AuthWhere[]): boolean {
-  if (where.length === 0) return true
-  const evaluate = (clause: AuthWhere) => {
-    const actual = row[clause.field as keyof ReferenceUser]
-    const normalize = (value: unknown) =>
-      clause.mode === 'insensitive' && typeof value === 'string' ? value.toLowerCase() : value
-    const expected = Array.isArray(clause.value)
-      ? clause.value.map(normalize)
-      : normalize(clause.value)
-    const value = normalize(actual)
-    switch (clause.operator ?? 'eq') {
-      case 'eq':
-        return clause.value === null ? actual === null || actual === undefined : value === expected
-      case 'ne':
-        return value !== expected
-      case 'lt':
-        return clause.value !== null && referenceCompare(actual, clause.value) < 0
-      case 'lte':
-        return clause.value !== null && referenceCompare(actual, clause.value) <= 0
-      case 'gt':
-        return clause.value !== null && referenceCompare(actual, clause.value) > 0
-      case 'gte':
-        return clause.value !== null && referenceCompare(actual, clause.value) >= 0
-      case 'in':
-        return Array.isArray(expected) && expected.includes(value as never)
-      case 'not_in':
-        return Array.isArray(expected) && !expected.includes(value as never)
-      case 'contains':
-        return typeof value === 'string' && typeof expected === 'string' && value.includes(expected)
-      case 'starts_with':
-        return (
-          typeof value === 'string' && typeof expected === 'string' && value.startsWith(expected)
-        )
-      case 'ends_with':
-        return typeof value === 'string' && typeof expected === 'string' && value.endsWith(expected)
-    }
-  }
-
-  let matches = evaluate(where[0]!)
-  for (const clause of where.slice(1)) {
-    const next = evaluate(clause)
-    matches = clause.connector === 'OR' ? matches || next : matches && next
-  }
-  return matches
+async function rateLimitRow(
+  t: ReturnType<typeof initAuthTest>,
+  field: 'id' | 'key',
+  value: string,
+) {
+  return await t.query(auth.findOne, { model: 'rateLimit', where: [{ field, value }] })
 }
 
 async function findMany(
@@ -321,9 +264,9 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
     ])
   })
 
-  it('matches the pinned deterministic reference corpus and count contract', async () => {
+  it('matches the literal filter corpus and count contract', async () => {
     const t = initAuthTest()
-    const users: ReferenceUser[] = [
+    const users = [
       {
         id: 'reference_ada',
         name: 'Ada Lovelace',
@@ -359,21 +302,47 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
     ]
     await Promise.all(users.map((user) => createUser(t, user)))
 
-    const corpus: Array<{ name: string; where: AuthWhere[] }> = [
-      { name: 'indexed equality', where: [{ field: 'email', value: 'ada@example.com' }] },
-      { name: 'indexed name', where: [{ field: 'name', value: 'Alan Turing' }] },
-      { name: 'canonical null', where: [{ field: 'image', value: null }] },
-      { name: 'not null', where: [{ field: 'image', operator: 'ne', value: null }] },
-      { name: 'less than', where: [{ field: 'createdAt', operator: 'lt', value: 250 }] },
-      { name: 'less than or equal', where: [{ field: 'createdAt', operator: 'lte', value: 200 }] },
-      { name: 'greater than', where: [{ field: 'createdAt', operator: 'gt', value: 200 }] },
+    const ada = 'reference_ada'
+    const alan = 'reference_alan'
+    const bob = 'reference_bob'
+    const grace = 'reference_grace'
+    const corpus: Array<{ name: string; where: AuthWhere[]; ids: string[] }> = [
+      {
+        name: 'indexed equality',
+        where: [{ field: 'email', value: 'ada@example.com' }],
+        ids: [ada],
+      },
+      { name: 'indexed name', where: [{ field: 'name', value: 'Alan Turing' }], ids: [alan] },
+      { name: 'canonical null', where: [{ field: 'image', value: null }], ids: [ada, grace] },
+      {
+        name: 'not null',
+        where: [{ field: 'image', operator: 'ne', value: null }],
+        ids: [alan, bob],
+      },
+      {
+        name: 'less than',
+        where: [{ field: 'createdAt', operator: 'lt', value: 250 }],
+        ids: [ada, alan],
+      },
+      {
+        name: 'less than or equal',
+        where: [{ field: 'createdAt', operator: 'lte', value: 200 }],
+        ids: [ada, alan],
+      },
+      {
+        name: 'greater than',
+        where: [{ field: 'createdAt', operator: 'gt', value: 200 }],
+        ids: [bob, grace],
+      },
       {
         name: 'greater than or equal',
         where: [{ field: 'createdAt', operator: 'gte', value: 300 }],
+        ids: [bob, grace],
       },
       {
         name: 'in',
         where: [{ field: 'name', operator: 'in', value: ['Ada Lovelace', 'Grace Hopper'] }],
+        ids: [ada, grace],
       },
       {
         name: 'not in',
@@ -384,19 +353,27 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
             value: ['alan@example.com', 'grace@navy.mil'],
           },
         ],
+        ids: [ada, bob],
       },
-      { name: 'contains', where: [{ field: 'name', operator: 'contains', value: 'stone' }] },
+      {
+        name: 'contains',
+        where: [{ field: 'name', operator: 'contains', value: 'stone' }],
+        ids: [bob],
+      },
       {
         name: 'starts with',
         where: [{ field: 'email', operator: 'starts_with', value: 'grace@' }],
+        ids: [grace],
       },
       {
         name: 'ends with',
         where: [{ field: 'email', operator: 'ends_with', value: '@example.com' }],
+        ids: [ada, alan, bob],
       },
       {
         name: 'insensitive',
         where: [{ field: 'name', operator: 'contains', value: 'ADA', mode: 'insensitive' }],
+        ids: [ada],
       },
       {
         name: 'and',
@@ -404,6 +381,7 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
           { field: 'email', operator: 'ends_with', value: '@example.com' },
           { field: 'image', value: null, connector: 'AND' },
         ],
+        ids: [ada],
       },
       {
         name: 'or',
@@ -411,20 +389,17 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
           { field: 'image', value: null },
           { field: 'email', value: 'bob@example.com', connector: 'OR' },
         ],
+        ids: [ada, bob, grace],
       },
     ]
 
     for (const entry of corpus) {
-      const expected = users
-        .filter((row) => referenceMatches(row, entry.where))
-        .map((row) => row.id)
-        .sort()
       const found = await findAll(t, { model: 'user', where: entry.where })
       const foundIds = found.map((row) => String(row.id)).sort()
       const count = await t.query(auth.count, { model: 'user', where: entry.where })
 
-      expect(foundIds, entry.name).toEqual(expected)
-      expect(count, entry.name).toBe(found.length)
+      expect(foundIds, entry.name).toEqual(entry.ids)
+      expect(count, entry.name).toBe(entry.ids.length)
     }
   })
 
@@ -546,10 +521,7 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
       ),
     )
 
-    const row = await t.query(auth.findOne, {
-      model: 'rateLimit',
-      where: [{ field: 'id', value: 'rate_limit_counter' }],
-    })
+    const row = await rateLimitRow(t, 'id', 'rate_limit_counter')
     expect(row).toMatchObject({ id: 'rate_limit_counter', count: 12 })
   })
 
@@ -573,18 +545,8 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
       t.mutation(auth.consumeRateLimit, { key: 'tenant:two', ...rule }),
     ).resolves.toEqual({ allowed: true, retryAfter: null })
 
-    expect(
-      await t.query(auth.findOne, {
-        model: 'rateLimit',
-        where: [{ field: 'key', value: 'tenant:one' }],
-      }),
-    ).toMatchObject({ count: 2 })
-    expect(
-      await t.query(auth.findOne, {
-        model: 'rateLimit',
-        where: [{ field: 'key', value: 'tenant:two' }],
-      }),
-    ).toMatchObject({ count: 1 })
+    expect(await rateLimitRow(t, 'key', 'tenant:one')).toMatchObject({ count: 2 })
+    expect(await rateLimitRow(t, 'key', 'tenant:two')).toMatchObject({ count: 1 })
 
     await t.mutation(auth.create, {
       model: 'rateLimit',
@@ -607,24 +569,9 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
       },
     })
     await t.finishAllScheduledFunctions(vi.runAllTimers)
-    expect(
-      await t.query(auth.findOne, {
-        model: 'rateLimit',
-        where: [{ field: 'key', value: 'tenant:expired' }],
-      }),
-    ).toMatchObject({ count: 1 })
-    expect(
-      await t.query(auth.findOne, {
-        model: 'rateLimit',
-        where: [{ field: 'key', value: 'tenant:long-window' }],
-      }),
-    ).toMatchObject({ count: 4 })
-    expect(
-      await t.query(auth.findOne, {
-        model: 'rateLimit',
-        where: [{ field: 'key', value: 'tenant:stale' }],
-      }),
-    ).toBeNull()
+    expect(await rateLimitRow(t, 'key', 'tenant:expired')).toMatchObject({ count: 1 })
+    expect(await rateLimitRow(t, 'key', 'tenant:long-window')).toMatchObject({ count: 4 })
+    expect(await rateLimitRow(t, 'key', 'tenant:stale')).toBeNull()
 
     for (const invalidRule of [
       { key: '', ...rule },
@@ -675,12 +622,10 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
         set: { count: 99 },
       }),
     ).rejects.toThrow('AUTH_INCREMENT_SET_OVERLAP:count')
-    expect(
-      await t.query(auth.findOne, {
-        model: 'rateLimit',
-        where: [{ field: 'id', value: 'rate_limit_arithmetic' }],
-      }),
-    ).toMatchObject({ count: 7, lastRequest: 2 })
+    expect(await rateLimitRow(t, 'id', 'rate_limit_arithmetic')).toMatchObject({
+      count: 7,
+      lastRequest: 2,
+    })
 
     await t.mutation(auth.create, {
       model: 'rateLimit',
@@ -698,12 +643,10 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
         increment: { count: Number.MAX_VALUE },
       }),
     ).rejects.toThrow('AUTH_INCREMENT_OVERFLOW:count')
-    expect(
-      await t.query(auth.findOne, {
-        model: 'rateLimit',
-        where: [{ field: 'id', value: 'rate_limit_overflow' }],
-      }),
-    ).toMatchObject({ count: Number.MAX_VALUE, lastRequest: 1 })
+    expect(await rateLimitRow(t, 'id', 'rate_limit_overflow')).toMatchObject({
+      count: Number.MAX_VALUE,
+      lastRequest: 1,
+    })
   })
 
   it('rolls back consume and increment when their app trigger fails', async () => {

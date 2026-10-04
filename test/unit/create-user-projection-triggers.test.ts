@@ -24,44 +24,65 @@ describe('createUserProjectionTriggers', () => {
     email?: string | null
   }
 
-  it('inserts, patches, and deletes synced user records', async () => {
+  /** A scripted `db`: each projection lookup (`take`/`collect`) returns the next listed result. */
+  function projectionDb(...lookups: unknown[][]) {
     const insert = vi.fn(async () => 'new-id')
     const patch = vi.fn(async () => undefined)
     const remove = vi.fn(async () => undefined)
-    const collect = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ _id: 'user-1' }])
-      .mockResolvedValueOnce([{ _id: 'user-1' }])
-    const withIndex = vi.fn(() => ({ collect, take: collect }))
+    const lookup = vi.fn()
+    for (const result of lookups) lookup.mockResolvedValueOnce(result)
+    const withIndex = vi.fn(() => ({ collect: lookup, take: lookup }))
     const query = vi.fn(() => ({ withIndex }))
-
-    const ctx = {
-      db: {
-        insert,
-        patch,
-        delete: remove,
-        query,
-      },
+    return {
+      ctx: { db: { insert, patch, delete: remove, query } },
+      insert,
+      lookup,
+      patch,
+      query,
+      remove,
+      withIndex,
     }
+  }
 
+  const createAuthIdDoc = ({ user, now }: { user: TestAuthUser; now: number }) => ({
+    authId: user.id,
+    email: user.email,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  const patchChangedEmail = ({
+    user,
+    previousUser,
+    now,
+  }: {
+    user: TestAuthUser
+    previousUser: TestAuthUser
+    now: number
+  }) => (user.email === previousUser.email ? null : { email: user.email, updatedAt: now })
+
+  const rebuildChangedEmail = ({
+    user,
+    existing,
+    now,
+  }: {
+    user: TestAuthUser
+    existing: TestProjectionUser
+    now: number
+  }) => (user.email === existing.email ? null : { email: user.email, updatedAt: now })
+
+  it('inserts, patches, and deletes synced user records', async () => {
+    const { ctx, insert, patch, query, remove, withIndex } = projectionDb(
+      [],
+      [{ _id: 'user-1' }],
+      [{ _id: 'user-1' }],
+    )
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
       table: 'users',
       index: 'by_auth_id',
-      createDoc: ({ user, now }) => ({
-        authId: user.id,
-        email: user.email,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      patchDoc: ({ user, previousUser, now }) => {
-        if (user.email === previousUser.email) return null
-        return { email: user.email, updatedAt: now }
-      },
-      rebuildDoc: ({ user, existing, now }) => {
-        if (user.email === existing.email) return null
-        return { email: user.email, updatedAt: now }
-      },
+      createDoc: createAuthIdDoc,
+      patchDoc: patchChangedEmail,
+      rebuildDoc: rebuildChangedEmail,
     })
 
     await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'a@example.com' })
@@ -76,7 +97,7 @@ describe('createUserProjectionTriggers', () => {
       { id: 'auth-1', email: 'a@example.com' },
     )
     expect(query).toHaveBeenCalledWith('users')
-    expect(withIndex).toHaveBeenCalled()
+    expect(withIndex).toHaveBeenCalledWith('by_auth_id', expect.any(Function))
     expect(patch).toHaveBeenCalledWith(
       'user-1',
       expect.objectContaining({ email: 'b@example.com' }),
@@ -87,25 +108,11 @@ describe('createUserProjectionTriggers', () => {
   })
 
   it('rebuilds user projections from Better Auth users', async () => {
-    const insert = vi.fn(async () => 'new-id')
-    const patch = vi.fn(async () => undefined)
-    const collect = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ _id: 'user-2', authId: 'auth-2', email: 'old@example.com' }])
-      .mockResolvedValueOnce([{ _id: 'user-3', authId: 'auth-3', email: 'c@example.com' }])
-    const withIndex = vi.fn(() => ({ collect, take: collect }))
-    const query = vi.fn(() => ({ withIndex }))
-
-    const ctx = {
-      db: {
-        insert,
-        patch,
-        delete: vi.fn(),
-        query,
-      },
-    }
-
+    const { ctx, insert, patch, query, withIndex } = projectionDb(
+      [],
+      [{ _id: 'user-2', authId: 'auth-2', email: 'old@example.com' }],
+      [{ _id: 'user-3', authId: 'auth-3', email: 'c@example.com' }],
+    )
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
       table: 'userProfiles',
       index: 'by_auth_user_id',
@@ -116,10 +123,7 @@ describe('createUserProjectionTriggers', () => {
         createdAt: now,
         updatedAt: now,
       }),
-      rebuildDoc: ({ user, existing, now }) => {
-        if (user.email === existing.email) return null
-        return { email: user.email, updatedAt: now }
-      },
+      rebuildDoc: rebuildChangedEmail,
     })
 
     const result = await triggers.user.rebuild(ctx, [
@@ -142,33 +146,14 @@ describe('createUserProjectionTriggers', () => {
   })
 
   it('does not insert duplicate projection rows for repeated create events', async () => {
-    const insert = vi.fn(async () => 'new-id')
-    const patch = vi.fn(async () => undefined)
-    const collect = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1', email: 'a@example.com' }])
-    const withIndex = vi.fn(() => ({ collect, take: collect }))
-    const query = vi.fn(() => ({ withIndex }))
-
-    const ctx = {
-      db: {
-        insert,
-        patch,
-        delete: vi.fn(),
-        query,
-      },
-    }
-
+    const { ctx, insert, patch, query } = projectionDb(
+      [],
+      [{ _id: 'user-1', authId: 'auth-1', email: 'a@example.com' }],
+    )
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
       table: 'users',
       index: 'by_auth_id',
-      createDoc: ({ user, now }) => ({
-        authId: user.id,
-        email: user.email,
-        createdAt: now,
-        updatedAt: now,
-      }),
+      createDoc: createAuthIdDoc,
     })
 
     await triggers.user.onCreate(ctx, { id: 'auth-1', email: 'a@example.com' })
@@ -180,48 +165,27 @@ describe('createUserProjectionTriggers', () => {
   })
 
   it('rejects ambiguous projections before callbacks or writes and deletes all rows on user deletion', async () => {
-    const insert = vi.fn(async () => 'new-id')
-    const patch = vi.fn(async () => undefined)
-    const remove = vi.fn(async () => undefined)
     const privateSentinels = [
       'private-auth-id-sentinel',
       'private-first-row-sentinel',
       'private-second-row-sentinel',
     ]
     const duplicates = [
-      {
-        _id: 'user-1',
-        authId: privateSentinels[0],
-        email: privateSentinels[1],
-      },
-      {
-        _id: 'user-2',
-        authId: privateSentinels[0],
-        email: privateSentinels[2],
-      },
+      { _id: 'user-1', authId: privateSentinels[0], email: privateSentinels[1] },
+      { _id: 'user-2', authId: privateSentinels[0], email: privateSentinels[2] },
     ]
-    const lookup = vi
-      .fn()
-      .mockResolvedValueOnce(duplicates)
-      .mockResolvedValueOnce(duplicates)
-      .mockResolvedValueOnce(duplicates)
-      .mockResolvedValueOnce(duplicates)
-    const withIndex = vi.fn(() => ({ collect: lookup, take: lookup }))
+    const { ctx, insert, lookup, patch, remove } = projectionDb(
+      duplicates,
+      duplicates,
+      duplicates,
+      duplicates,
+    )
     const createDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({
       authId: user.id,
       email: user.email,
     }))
     const patchDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({ email: user.email }))
     const rebuildDoc = vi.fn(({ user }: { user: TestAuthUser }) => ({ email: user.email }))
-    const ctx = {
-      db: {
-        insert,
-        patch,
-        delete: remove,
-        query: vi.fn(() => ({ withIndex })),
-      },
-    }
-
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
       table: 'users',
       index: 'by_auth_id',
@@ -331,37 +295,12 @@ describe('createUserProjectionTriggers', () => {
   })
 
   it('creates from the current update snapshot when onUpdate arrives before onCreate', async () => {
-    const insert = vi.fn(async () => 'new-id')
-    const patch = vi.fn(async () => undefined)
-    const collect = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1' }])
-    const withIndex = vi.fn(() => ({ collect, take: collect }))
-    const query = vi.fn(() => ({ withIndex }))
-
-    const ctx = {
-      db: {
-        insert,
-        patch,
-        delete: vi.fn(),
-        query,
-      },
-    }
-
+    const { ctx, insert, patch } = projectionDb([], [{ _id: 'user-1', authId: 'auth-1' }])
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
       table: 'users',
       index: 'by_auth_id',
-      createDoc: ({ user, now }) => ({
-        authId: user.id,
-        email: user.email,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      patchDoc: ({ user, previousUser, now }) => {
-        if (user.email === previousUser.email) return null
-        return { email: user.email, updatedAt: now }
-      },
+      createDoc: createAuthIdDoc,
+      patchDoc: patchChangedEmail,
     })
 
     await triggers.user.onUpdate(
@@ -382,30 +321,11 @@ describe('createUserProjectionTriggers', () => {
   })
 
   it('does not overwrite existing projection rows during rebuild without an explicit rebuild patch', async () => {
-    const insert = vi.fn(async () => 'new-id')
-    const patch = vi.fn(async () => undefined)
-    const collect = vi.fn().mockResolvedValueOnce([{ _id: 'user-1', authId: 'auth-1' }])
-    const withIndex = vi.fn(() => ({ collect, take: collect }))
-    const query = vi.fn(() => ({ withIndex }))
-
-    const ctx = {
-      db: {
-        insert,
-        patch,
-        delete: vi.fn(),
-        query,
-      },
-    }
-
+    const { ctx, insert, patch } = projectionDb([{ _id: 'user-1', authId: 'auth-1' }])
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
-      table: 'userProfiles',
-      index: 'by_auth_user_id',
-      createDoc: ({ user, now }) => ({
-        authUserId: user.id,
-        email: user.email,
-        createdAt: now,
-        updatedAt: now,
-      }),
+      table: 'users',
+      index: 'by_auth_id',
+      createDoc: createAuthIdDoc,
     })
 
     await expect(
@@ -416,23 +336,8 @@ describe('createUserProjectionTriggers', () => {
   })
 
   it('owns the indexed auth id even when projection callbacks omit or misstate it', async () => {
-    const insert = vi.fn(async () => 'new-id')
-    const patch = vi.fn(async () => undefined)
-    const collect = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ _id: 'user-1', authUserId: 'auth-1' }])
-      .mockResolvedValueOnce([{ _id: 'user-1', authUserId: 'auth-1' }])
-    const withIndex = vi.fn(() => ({ collect, take: collect }))
-    const ctx = {
-      db: {
-        insert,
-        patch,
-        delete: vi.fn(),
-        query: vi.fn(() => ({ withIndex })),
-      },
-    }
-
+    const existing = [{ _id: 'user-1', authUserId: 'auth-1' }]
+    const { ctx, insert, patch } = projectionDb([], existing, existing)
     const triggers = createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
       table: 'userProfiles',
       index: 'by_auth_user_id',
@@ -463,31 +368,27 @@ describe('createUserProjectionTriggers', () => {
     ])
   })
 
-  it('rejects invalid Convex top-level application fields as projection keys', () => {
-    for (const authIdField of [
-      '',
-      '_id',
-      '_creationTime',
-      '_authId',
-      '$authId',
-      '__proto__',
-      'prototype',
-      'constructor',
-      'nested.authId',
-      'auth\u0000Id',
-      'authéId',
-      'a'.repeat(1025),
-    ]) {
-      expect(() =>
-        createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
-          table: 'users',
-          index: 'by_auth_id',
-          authIdField,
-          createDoc: () => ({}),
-        }),
-      ).toThrow(
-        '[better-convex-nuxt] authIdField must be a valid top-level Convex application field',
-      )
-    }
+  it.each([
+    '',
+    '_id',
+    '_creationTime',
+    '_authId',
+    '$authId',
+    '__proto__',
+    'prototype',
+    'constructor',
+    'nested.authId',
+    'auth\u0000Id',
+    'authéId',
+    'a'.repeat(1025),
+  ])('rejects the invalid Convex projection key %j', (authIdField) => {
+    expect(() =>
+      createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
+        table: 'users',
+        index: 'by_auth_id',
+        authIdField,
+        createDoc: () => ({}),
+      }),
+    ).toThrow('[better-convex-nuxt] authIdField must be a valid top-level Convex application field')
   })
 })

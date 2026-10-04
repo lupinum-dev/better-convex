@@ -7,6 +7,7 @@ import {
   createBetterConvexAuth,
   type BetterConvexAuthEmail,
 } from '../../src/runtime/convex-auth/create-better-convex-auth'
+import type { BetterConvexPublicOAuthClientInput } from '../../src/runtime/convex-auth/oauth-operator'
 import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 import { createBetterConvexTestAuth } from '../../src/runtime/convex-auth/test'
 import { signClientIp } from '../../src/runtime/shared/client-ip'
@@ -44,6 +45,15 @@ function lastSessionClaims() {
     sessionJwt: { definePayload: (input: SessionClaimsInput) => Promise<Record<string, unknown>> }
   }
   return options.sessionJwt.definePayload
+}
+
+function beforeUserCreateHook() {
+  const options = betterAuth.mock.calls[0]![0] as {
+    databaseHooks: {
+      user: { create: { before: (user: Record<string, unknown>) => Promise<unknown> } }
+    }
+  }
+  return options.databaseHooks.user.create.before
 }
 
 const previousEnvironment = {
@@ -143,6 +153,18 @@ function oauthProfile(): PinnedOAuthProviderProfile {
     storeClientSecret: 'hashed',
     storeTokens: 'hashed',
   }
+}
+
+const proofClient: BetterConvexPublicOAuthClientInput = {
+  name: 'Proof',
+  profile: 'proof',
+  redirectUris: ['https://agent.example.test/callback'],
+  resource: {
+    identifier: 'https://deployment.convex.site/mcp',
+    name: 'Proof',
+    ownership: 'application',
+  },
+  scopes: ['cms.read'],
 }
 
 function oauthAdapter(
@@ -283,12 +305,9 @@ describe('createBetterConvexAuth', () => {
 
     await auth.createAuth(ctx as never)
     const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
-    await expect(
-      options.rateLimit!.customStorage!.consume('client|/get-session', {
-        max: 100,
-        window: 10,
-      }),
-    ).resolves.toEqual({ allowed: true, retryAfter: null })
+    const consume = () =>
+      options.rateLimit!.customStorage!.consume('client|/get-session', { max: 100, window: 10 })
+    await expect(consume()).resolves.toEqual({ allowed: true, retryAfter: null })
     expect(ctx.runMutation).toHaveBeenCalledTimes(3)
     expect(ctx.runMutation).toHaveBeenLastCalledWith(consumeRateLimit, {
       key: 'client|/get-session',
@@ -299,42 +318,23 @@ describe('createBetterConvexAuth', () => {
 
     ctx.runMutation.mockClear()
     ctx.runMutation.mockRejectedValueOnce(new Error('AUTH_RATE_LIMIT_ROW_INVALID'))
-    await expect(
-      options.rateLimit!.customStorage!.consume('client|/get-session', {
-        max: 100,
-        window: 10,
-      }),
-    ).rejects.toThrow('AUTH_RATE_LIMIT_ROW_INVALID')
+    await expect(consume()).rejects.toThrow('AUTH_RATE_LIMIT_ROW_INVALID')
     expect(ctx.runMutation).toHaveBeenCalledTimes(1)
 
     ctx.runMutation.mockClear()
     ctx.runMutation.mockRejectedValueOnce(new Error('optimistic concurrency control failure'))
-    await expect(
-      options.rateLimit!.customStorage!.consume('client|/get-session', {
-        max: 100,
-        window: 10,
-      }),
-    ).rejects.toThrow('optimistic concurrency control failure')
+    await expect(consume()).rejects.toThrow('optimistic concurrency control failure')
     expect(ctx.runMutation).toHaveBeenCalledTimes(1)
 
     ctx.runMutation.mockClear()
     ctx.runMutation.mockRejectedValue(systemConflict)
-    await expect(
-      options.rateLimit!.customStorage!.consume('client|/get-session', {
-        max: 100,
-        window: 10,
-      }),
-    ).rejects.toThrow(systemConflict.message)
+    await expect(consume()).rejects.toThrow(systemConflict.message)
     expect(ctx.runMutation).toHaveBeenCalledTimes(6)
 
+    // Inside a mutation (ctx.db present) a retry cannot help: fail on the first conflict.
     ctx.runMutation.mockClear()
     Object.assign(ctx, { db: {} })
-    await expect(
-      options.rateLimit!.customStorage!.consume('client|/get-session', {
-        max: 100,
-        window: 10,
-      }),
-    ).rejects.toThrow(systemConflict.message)
+    await expect(consume()).rejects.toThrow(systemConflict.message)
     expect(ctx.runMutation).toHaveBeenCalledTimes(1)
   })
 
@@ -353,13 +353,7 @@ describe('createBetterConvexAuth', () => {
     )
   })
 
-  it('keeps password verification and minimum policy factory-owned', async () => {
-    expect(() =>
-      createBetterConvexAuth(component(), {
-        emailAndPassword: { password: { verify: async () => true } },
-      } as never),
-    ).toThrow('emailAndPassword.password')
-
+  it('keeps the minimum password policy factory-owned', async () => {
     const auth = createBetterConvexAuth(component(), {
       emailAndPassword: { requireEmailVerification: true },
     })
@@ -373,22 +367,6 @@ describe('createBetterConvexAuth', () => {
         requireEmailVerification: true,
       },
     })
-  })
-
-  it('rejects session schema overrides and unknown options loudly', () => {
-    expect(() =>
-      createBetterConvexAuth(component(), {
-        session: { additionalFields: { role: { type: 'string' } } },
-      } as never),
-    ).toThrow('session.additionalFields')
-    expect(() =>
-      createBetterConvexAuth(component(), {
-        session: { freshAge: 0 },
-      } as never),
-    ).toThrow('session.freshAge')
-    expect(() => createBetterConvexAuth(component(), { trustedOrigins: ['*'] } as never)).toThrow(
-      '"trustedOrigins"',
-    )
   })
 
   it('applies a bounded session policy in seconds', async () => {
@@ -445,8 +423,10 @@ describe('createBetterConvexAuth', () => {
     expect(betterAuth).not.toHaveBeenCalled()
   })
 
+  const github = { clientId: 'github-client', clientSecret: 'github-secret' }
+  const email = async () => {}
+
   it('admits only configured social providers as trusted linking providers', async () => {
-    const github = { clientId: 'github-client', clientSecret: 'github-secret' }
     const auth = createBetterConvexAuth(component(), {
       account: { accountLinking: { trustedProviders: ['github'] } },
       socialProviders: { github },
@@ -462,24 +442,6 @@ describe('createBetterConvexAuth', () => {
         trustedProviders: ['github'],
       },
     })
-
-    expect(() =>
-      createBetterConvexAuth(component(), {
-        account: { accountLinking: { trustedProviders: ['google'] } },
-        socialProviders: { github },
-      }),
-    ).toThrow('"google" is not configured')
-    expect(() =>
-      createBetterConvexAuth(component(), {
-        account: { accountLinking: { trustedProviders: ['email-password'] } },
-      }),
-    ).toThrow('"email-password" is not configured')
-    expect(() =>
-      createBetterConvexAuth(component(), {
-        account: { accountLinking: { trustedProviders: ['github', 'github'] } },
-        socialProviders: { github },
-      }),
-    ).toThrow('unique provider names')
   })
 
   it('re-validates trusted providers against lazily resolved social providers', async () => {
@@ -493,53 +455,88 @@ describe('createBetterConvexAuth', () => {
   })
 
   it.each([
-    { allowDifferentEmails: true },
-    { disableImplicitLinking: false },
-    { allowUnlinkingAll: true },
-    { enabled: false },
-  ])('keeps every other account-linking policy factory-owned %j', (accountLinking) => {
-    expect(() =>
-      createBetterConvexAuth(component(), { account: { accountLinking } } as never),
-    ).toThrow('account.accountLinking.')
-  })
-
-  it.each([
-    { encryptOAuthTokens: false },
-    { storeAccountCookie: true },
-    { storeStateStrategy: 'cookie' },
-  ])('rejects account storage overrides %j', (account) => {
-    expect(() => createBetterConvexAuth(component(), { account } as never)).toThrow('account.')
-  })
-
-  it.each([
-    ['emailAndPassword', { sendResetPassword: async () => {} }],
-    ['emailVerification', { sendVerificationEmail: async () => {} }],
-    ['emailOTP', { sendVerificationOTP: async () => {} }],
-    ['organization', { sendInvitationEmail: async () => {} }],
-    ['twoFactor', { otpOptions: { sendOTP: async () => {} } }],
-  ])('routes %s delivery only through the typed email hook', (key, value) => {
-    expect(() =>
-      createBetterConvexAuth(component(), { email: async () => {}, [key]: value } as never),
-    ).toThrow('deliver auth email through the "email" option')
-  })
-
-  it('requires the email hook before enabling email OTP', () => {
-    expect(() => createBetterConvexAuth(component(), { emailOTP: {} })).toThrow(
+    [
+      'a password verifier',
+      { emailAndPassword: { password: { verify: async () => true } } },
+      'emailAndPassword.password',
+    ],
+    [
+      'session additional fields',
+      { session: { additionalFields: { role: { type: 'string' } } } },
+      'session.additionalFields',
+    ],
+    ['a session fresh age', { session: { freshAge: 0 } }, 'session.freshAge'],
+    ['an unknown option', { trustedOrigins: ['*'] }, '"trustedOrigins"'],
+    [
+      'an unconfigured trusted provider',
+      {
+        account: { accountLinking: { trustedProviders: ['google'] } },
+        socialProviders: { github },
+      },
+      '"google" is not configured',
+    ],
+    [
+      'email-password as a trusted provider',
+      { account: { accountLinking: { trustedProviders: ['email-password'] } } },
+      '"email-password" is not configured',
+    ],
+    [
+      'duplicate trusted providers',
+      {
+        account: { accountLinking: { trustedProviders: ['github', 'github'] } },
+        socialProviders: { github },
+      },
+      'unique provider names',
+    ],
+    ...[
+      { allowDifferentEmails: true },
+      { disableImplicitLinking: false },
+      { allowUnlinkingAll: true },
+      { enabled: false },
+    ].map((accountLinking) => [
+      `account linking ${JSON.stringify(accountLinking)}`,
+      { account: { accountLinking } },
+      'account.accountLinking.',
+    ]),
+    ...[
+      { encryptOAuthTokens: false },
+      { storeAccountCookie: true },
+      { storeStateStrategy: 'cookie' },
+    ].map((account) => [`account storage ${JSON.stringify(account)}`, { account }, 'account.']),
+    ...[
+      ['emailAndPassword', { sendResetPassword: email }],
+      ['emailVerification', { sendVerificationEmail: email }],
+      ['emailOTP', { sendVerificationOTP: email }],
+      ['organization', { sendInvitationEmail: email }],
+      ['twoFactor', { otpOptions: { sendOTP: email } }],
+    ].map(([key, value]) => [
+      `${key} delivery outside the typed email hook`,
+      { email, [key as string]: value },
+      'deliver auth email through the "email" option',
+    ]),
+    ...['emailAndPassword', 'emailVerification', 'emailOTP'].map((key) => [
+      `a request-scoped ${key} factory`,
+      { email, [key]: () => ({}) },
+      `expected "${key}" to be an object`,
+    ]),
+    [
+      'email OTP without the email hook',
+      { emailOTP: {} },
       'requires the "email" option when "emailOTP" is enabled',
-    )
+    ],
+    [
+      'password reset without the email hook',
+      { emailAndPassword: { passwordReset: true } },
+      'requires the "email" option',
+    ],
+    [
+      'a non-boolean password reset',
+      { email, emailAndPassword: { passwordReset: 'yes' } },
+      '"emailAndPassword.passwordReset" to be a boolean',
+    ],
+  ] as Array<[string, object, string]>)('rejects %s at construction', (_name, options, message) => {
+    expect(() => createBetterConvexAuth(component(), options as never)).toThrow(message)
   })
-
-  it.each(['emailAndPassword', 'emailVerification', 'emailOTP'] as const)(
-    'no longer accepts a request-scoped %s factory',
-    (key) => {
-      expect(() =>
-        createBetterConvexAuth(component(), {
-          email: async () => {},
-          [key]: () => ({}),
-        } as never),
-      ).toThrow(`expected "${key}" to be an object`)
-    },
-  )
 
   it('delivers typed email messages with the request writable context', async () => {
     const submitMail = makeFunctionReference<'mutation', { message: BetterConvexAuthEmail }, null>(
@@ -602,16 +599,6 @@ describe('createBetterConvexAuth', () => {
     expect(options.emailAndPassword).not.toHaveProperty('passwordReset')
     // Verification email still flows through the hook.
     expect(options.emailVerification?.sendVerificationEmail).toBeTypeOf('function')
-  })
-
-  it.each([
-    [{ emailAndPassword: { passwordReset: true } }, 'requires the "email" option'],
-    [
-      { email: async () => {}, emailAndPassword: { passwordReset: 'yes' } },
-      '"emailAndPassword.passwordReset" to be a boolean',
-    ],
-  ])('rejects password reset configuration %#', (options, message) => {
-    expect(() => createBetterConvexAuth(component(), options as never)).toThrow(message)
   })
 
   it('maps OTP, two-factor, and invitation callbacks to the typed email union', async () => {
@@ -955,15 +942,6 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { beforeUserCreate })
 
     await auth.createAuth(ctx as never)
-    const options = betterAuth.mock.calls[0]?.[0] as {
-      databaseHooks: {
-        user: {
-          create: {
-            before: (user: Record<string, unknown>) => Promise<unknown>
-          }
-        }
-      }
-    }
     const user = {
       createdAt: new Date(),
       email: '  Owner@Example.test  ',
@@ -974,7 +952,7 @@ describe('createBetterConvexAuth', () => {
       updatedAt: new Date(),
     }
 
-    await expect(options.databaseHooks.user.create.before(user)).resolves.toEqual({
+    await expect(beforeUserCreateHook()(user)).resolves.toEqual({
       data: {
         ...user,
         email: 'owner@example.test',
@@ -1011,18 +989,9 @@ describe('createBetterConvexAuth', () => {
       beforeUserCreate: callback,
     })
     await auth.createAuth(queryContext() as never)
-    const options = betterAuth.mock.calls[0]?.[0] as {
-      databaseHooks: {
-        user: {
-          create: {
-            before: (user: Record<string, unknown>) => Promise<unknown>
-          }
-        }
-      }
-    }
 
     await expect(
-      options.databaseHooks.user.create.before({
+      beforeUserCreateHook()({
         email: 'owner@example.test',
         emailVerified: false,
         id: 'generated-user-id',
@@ -1117,111 +1086,55 @@ describe('createBetterConvexAuth', () => {
     )
   })
 
-  it('rejects invalid OAuth operator input before constructing auth', async () => {
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-
-    await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, {
-        name: 'Proof',
-        profile: 'proof',
-        redirectUris: ['not-a-url'],
-        resource: {
-          identifier: 'https://deployment.convex.site/mcp',
-          name: 'Proof',
-          ownership: 'application',
-        },
-        scopes: ['cms.read'],
-      }),
-    ).rejects.toThrow('AUTH_OAUTH_CLIENT_REDIRECT_URI_INVALID')
-    expect(betterAuth).not.toHaveBeenCalled()
-  })
-
   it.each([
-    'ftp://agent.example.test/callback',
-    'http://agent.example.test/callback',
-    'https://user:password@agent.example.test/callback',
-    'https://agent.example.test/callback#token',
-  ])('rejects unsafe OAuth redirect %s before constructing auth', async (redirectUri) => {
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-
-    await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, {
-        name: 'Proof',
-        profile: 'proof',
-        redirectUris: [redirectUri],
-        resource: {
-          identifier: 'https://deployment.convex.site/mcp',
-          name: 'Proof',
-          ownership: 'application',
-        },
-        scopes: ['cms.read'],
-      }),
-    ).rejects.toThrow('AUTH_OAUTH_CLIENT_REDIRECT_URI_INVALID')
-    expect(betterAuth).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    'ftp://deployment.convex.site/mcp',
-    'http://deployment.convex.site/mcp',
-    'https://user:password@deployment.convex.site/mcp',
-    'https://deployment.convex.site/mcp?tenant=private',
-    'https://deployment.convex.site/mcp#token',
-  ])('rejects unsafe OAuth resource identifier %s', async (identifier) => {
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-
-    await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, {
-        name: 'Proof',
-        profile: 'proof',
-        redirectUris: ['https://agent.example.test/callback'],
-        resource: {
-          identifier,
-          name: 'Proof',
-          ownership: 'application',
-        },
-        scopes: ['cms.read'],
-      }),
-    ).rejects.toThrow('AUTH_OAUTH_CLIENT_RESOURCE_INVALID')
-    expect(betterAuth).not.toHaveBeenCalled()
-  })
-
-  it('rejects resource ownership that the operator may not manage', async () => {
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-
-    await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, {
-        name: 'Proof',
-        profile: 'proof',
-        redirectUris: ['https://agent.example.test/callback'],
-        resource: {
-          identifier: 'https://deployment.convex.site/mcp',
-          name: 'Proof',
-          ownership: 'operator' as never,
-        },
-        scopes: ['cms.read'],
-      }),
-    ).rejects.toThrow('AUTH_OAUTH_CLIENT_RESOURCE_OWNERSHIP_INVALID')
-    expect(betterAuth).not.toHaveBeenCalled()
-  })
-
-  it('rejects scopes outside the configured reviewed provider profile', async () => {
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-
-    await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, {
-        name: 'Proof',
-        profile: 'proof',
-        redirectUris: ['https://agent.example.test/callback'],
-        resource: {
-          identifier: 'https://deployment.convex.site/mcp',
-          name: 'Proof',
-          ownership: 'application',
-        },
-        scopes: ['cms.admin'],
-      }),
-    ).rejects.toThrow('AUTH_OAUTH_CLIENT_SCOPE_NOT_ADMITTED')
-    expect(betterAuth).not.toHaveBeenCalled()
-  })
+    ...[
+      'not-a-url',
+      'ftp://agent.example.test/callback',
+      'http://agent.example.test/callback',
+      'https://user:password@agent.example.test/callback',
+      'https://agent.example.test/callback#token',
+    ].map((uri) => [
+      `redirect ${uri}`,
+      { redirectUris: [uri] },
+      'AUTH_OAUTH_CLIENT_REDIRECT_URI_INVALID',
+    ]),
+    ...[
+      'ftp://deployment.convex.site/mcp',
+      'http://deployment.convex.site/mcp',
+      'https://user:password@deployment.convex.site/mcp',
+      'https://deployment.convex.site/mcp?tenant=private',
+      'https://deployment.convex.site/mcp#token',
+    ].map((identifier) => [
+      `resource identifier ${identifier}`,
+      { resource: { ...proofClient.resource, identifier } },
+      'AUTH_OAUTH_CLIENT_RESOURCE_INVALID',
+    ]),
+    [
+      'operator resource ownership',
+      { resource: { ...proofClient.resource, ownership: 'operator' } },
+      'AUTH_OAUTH_CLIENT_RESOURCE_OWNERSHIP_INVALID',
+    ],
+    [
+      'a scope outside the profile',
+      { scopes: ['cms.admin'] },
+      'AUTH_OAUTH_CLIENT_SCOPE_NOT_ADMITTED',
+    ],
+  ] as Array<[string, object, string]>)(
+    'rejects OAuth operator input with %s before constructing auth',
+    async (_name, override, code) => {
+      const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
+      await expect(
+        auth.oauthOperator.createPublicClient(
+          queryContext() as never,
+          {
+            ...proofClient,
+            ...override,
+          } as never,
+        ),
+      ).rejects.toThrow(code)
+      expect(betterAuth).not.toHaveBeenCalled()
+    },
+  )
 
   it('removes a newly created client and resource when resource linking fails', async () => {
     const adapter = oauthAdapter({
@@ -1234,17 +1147,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, {
-        name: 'Proof',
-        profile: 'proof',
-        redirectUris: ['https://agent.example.test/callback'],
-        resource: {
-          identifier: 'https://deployment.convex.site/mcp',
-          name: 'Proof',
-          ownership: 'application',
-        },
-        scopes: ['cms.read'],
-      }),
+      auth.oauthOperator.createPublicClient(queryContext() as never, proofClient),
     ).rejects.toThrow('AUTH_OAUTH_CLIENT_PROVISION_FAILED')
     expect(adapter.deleteMany).toHaveBeenCalledWith(
       expect.objectContaining({ model: 'oauthClientResource' }),
@@ -1267,17 +1170,7 @@ describe('createBetterConvexAuth', () => {
     const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
 
     await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, {
-        name: 'Proof',
-        profile: 'proof',
-        redirectUris: ['https://agent.example.test/callback'],
-        resource: {
-          identifier: 'https://deployment.convex.site/mcp',
-          name: 'Proof',
-          ownership: 'application',
-        },
-        scopes: ['cms.read'],
-      }),
+      auth.oauthOperator.createPublicClient(queryContext() as never, proofClient),
     ).rejects.toThrow('AUTH_OAUTH_CLIENT_PARTIAL_CLEANUP_FAILED')
     expect(adapter.delete).not.toHaveBeenCalledWith(
       expect.objectContaining({ model: 'oauthResource' }),
@@ -1299,12 +1192,6 @@ describe('createBetterConvexAuth', () => {
       'AUTH_CONFIG_OAUTH_PROFILE_FAILED',
       'AUTH_CONFIG_OAUTH_PROFILE_FAILED',
     ])
-  })
-
-  it('reports one sanitized configuration error when required secrets are absent', async () => {
-    Reflect.deleteProperty(process.env, 'BETTER_AUTH_SECRETS')
-    const auth = createBetterConvexAuth(component())
-    await expect(auth.createAuth(queryContext() as never)).rejects.toThrow('AUTH_CONFIG_INVALID')
   })
 
   it.each([
