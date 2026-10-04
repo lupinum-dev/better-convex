@@ -1,10 +1,5 @@
 # Public Starter
 
-> **1.0.0-rc.0 note.** This source already uses the Better Convex
-> `1.0.0-rc.0` API, but `package.json` pins the last published version until
-> `1.0.0-rc.0` is on npm. Until that pin moves, install
-> `@lupinum/better-convex-nuxt@1.0.0-rc.0` yourself or wait for the bump.
-
 Small Nuxt + Convex starter for public apps.
 
 ## Includes
