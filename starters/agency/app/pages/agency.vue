@@ -189,6 +189,10 @@ body {
   max-width: 440px;
 }
 
+.session-row span {
+  overflow-wrap: anywhere;
+}
+
 .auth-modes,
 .session-row {
   display: flex;
@@ -198,6 +202,8 @@ body {
 }
 
 button {
+  flex-shrink: 0;
+  white-space: nowrap;
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid #d6dae1;
@@ -217,6 +223,7 @@ button {
 
 input,
 select {
+  box-sizing: border-box;
   display: block;
   width: 100%;
   height: 40px;
@@ -229,7 +236,7 @@ select {
 
 .create-panel {
   max-width: 440px;
-  margin-bottom: 32px;
+  margin: 24px 0 32px;
 }
 
 .list {
