@@ -92,7 +92,6 @@ export interface UseConvexPaginatedQueryState<Item> {
    */
   loadMore(numItems: number): Promise<void>
   execute(): Promise<void>
-  refresh(): Promise<void>
   /** Restart the list, optionally from `cursor`, dropping every loaded page. */
   reset(cursor?: string | null): void
 }
@@ -194,18 +193,6 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
       `${functionName}:${auth}:${tag.value.identityKey}:${argsHash.value}:${initialNumItems}:${initialCursor.value ?? ''}`,
   )
 
-  const fetchPage = async (paginationOpts: {
-    numItems: number
-    cursor: string | null
-    id: number
-  }): Promise<PaginationResult<Item> | null> => {
-    if (gate.value !== 'execute' || isConvexArgsSkipped(currentArgs.value)) return null
-    return (await runtime.browser.clientFor(auth).query(query, {
-      ...(currentArgs.value as PaginatedQueryArgs<Query>),
-      paginationOpts,
-    } as FunctionArgs<Query>)) as PaginationResult<Item>
-  }
-
   const controller = createPaginationController<Item>({
     query,
     initialNumItems,
@@ -230,7 +217,6 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
       boundaryError.value = error
     },
     getClient: () => (gate.value === 'execute' ? runtime.browser.clientFor(auth) : null),
-    fetchPage,
   })
   controller.start()
 
@@ -319,11 +305,6 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
     await controller.firstPageSettled()
   }
 
-  async function refresh(): Promise<void> {
-    start()
-    await controller.refresh()
-  }
-
   function reset(cursor: string | null = null): void {
     if (typeof cursor !== 'string' && cursor !== null) {
       throw new Error('[better-convex-vue] reset cursor must be a string or null')
@@ -353,7 +334,6 @@ export function useConvexPaginatedQueryInternal<Query extends PaginatedQueryRefe
       isExhausted: controller.isExhausted,
       loadMore,
       execute,
-      refresh,
       reset,
     },
     firstPageSettled: controller.firstPageSettled,

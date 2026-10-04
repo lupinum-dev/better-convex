@@ -213,7 +213,6 @@ export type PaginationStatus = 'idle' | 'pending' | 'success' | 'error'
 export interface PaginationStatusState {
   /** The gate does not run the list (skipped, deferred, or blocked by auth). */
   disabled: boolean
-  refreshing: boolean
   /** The first page or the auth gate failed. A failed later page is not a list error. */
   firstPageError: boolean
   firstPageReady: boolean
@@ -226,7 +225,7 @@ export interface PaginationStatusState {
 export function computePaginationStatus(input: PaginationStatusState): PaginationStatus {
   if (input.firstPageError) return 'error'
   if (input.disabled) return 'idle'
-  if (input.refreshing || !input.firstPageReady) return 'pending'
+  if (!input.firstPageReady) return 'pending'
   return 'success'
 }
 

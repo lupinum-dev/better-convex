@@ -125,9 +125,6 @@
             <NuxtLink to="/labs/query-features/error" class="link-card-mini"
               >Error Handling</NuxtLink
             >
-            <NuxtLink to="/labs/query-features/refresh" class="link-card-mini"
-              >Query Refresh</NuxtLink
-            >
             <NuxtLink to="/labs/query-features/middleware-permission-context" class="link-card-mini"
               >Middleware Caller Guard</NuxtLink
             >
