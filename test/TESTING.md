@@ -105,12 +105,12 @@ page `/labs/use-auth-test` records every visible state change in
 `window.__bcnTrace` (`<auth status>|<notes status>:<rows>|<permission context>`),
 and each journey compares that trace with a literal list:
 
-| Journey | Guards against |
-| --- | --- |
-| Signed-in hard reload | a loading or empty frame after hydration, a Convex JWT or session token in the HTML, more than one token request or `Authenticate` per socket, public JWKS refused for a browser with cookies |
-| Anonymous hard reload | server-rendered public data dropped during hydration |
-| Token refresh (`page.clock.fastForward`) | no new token before expiry |
-| Browser clock one hour fast | fresh tokens judged by the local clock |
+| Journey                                  | Guards against                                                                                                                                                                                |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signed-in hard reload                    | a loading or empty frame after hydration, a Convex JWT or session token in the HTML, more than one token request or `Authenticate` per socket, public JWKS refused for a browser with cookies |
+| Anonymous hard reload                    | server-rendered public data dropped during hydration                                                                                                                                          |
+| Token refresh (`page.clock.fastForward`) | no new token before expiry                                                                                                                                                                    |
+| Browser clock one hour fast              | fresh tokens judged by the local clock                                                                                                                                                        |
 
 Every browser context also carries an unrelated platform cookie (`__vdpl`), as
 browsers on Vercel do. Add a journey when a bug shows only in the real stack.
