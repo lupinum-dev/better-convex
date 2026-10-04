@@ -36,6 +36,10 @@ const baseOptions = {
   trustedClientIpHeader: 'cf-connecting-ip',
 }
 
+function snapshotFor(cookieHeader: string | null) {
+  return resolveServerAuthSnapshot({ ...baseOptions, cookieHeader })
+}
+
 const PROXY_IP_SECRET = 'server-auth-snapshot-test-secret-32-bytes-minimum'
 
 describe('resolveServerAuthSnapshot', () => {
@@ -49,10 +53,7 @@ describe('resolveServerAuthSnapshot', () => {
   afterEach(() => vi.unstubAllEnvs())
 
   it('returns an unauthenticated snapshot without a session cookie', async () => {
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: null,
-    })
+    const snapshot = await snapshotFor(null)
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
@@ -72,11 +73,9 @@ describe('resolveServerAuthSnapshot', () => {
     })
     fetchWithTimeoutMock.mockResolvedValue(createResponse(200, { token: 'fresh.jwt' }))
 
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader:
-        'private_app_cookie=secret; __Secure-better-auth.session_token=session-2; better-auth.callback=state',
-    })
+    const snapshot = await snapshotFor(
+      'private_app_cookie=secret; __Secure-better-auth.session_token=session-2; better-auth.callback=state',
+    )
 
     expect(snapshot.token).toBe('fresh.jwt')
     expect(snapshot.user).toEqual({ id: 'user-2', email: 'fresh@example.com' })
@@ -121,10 +120,7 @@ describe('resolveServerAuthSnapshot', () => {
     })
     fetchWithTimeoutMock.mockResolvedValue(createResponse(200, { token: 'fresh.jwt' }))
 
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: 'better-auth.session_token=session-log',
-    })
+    const snapshot = await snapshotFor('better-auth.session_token=session-log')
 
     const exchangeEvent = snapshot.logEvents.find(
       (event) => event.phase === 'ssr.jwt.exchange' && event.outcome === 'success',
@@ -139,10 +135,7 @@ describe('resolveServerAuthSnapshot', () => {
   it('treats 401 token exchange as graceful unauthenticated state', async () => {
     fetchWithTimeoutMock.mockResolvedValue(createResponse(401, { error: 'unauthorized' }))
 
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: 'better-auth.session_token=session-3',
-    })
+    const snapshot = await snapshotFor('better-auth.session_token=session-3')
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
@@ -155,35 +148,14 @@ describe('resolveServerAuthSnapshot', () => {
     })
   })
 
-  it('marks upstream token exchange failures as misconfiguration', async () => {
-    fetchWithTimeoutMock.mockResolvedValue(createResponse(500, {}))
-
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: 'better-auth.session_token=session-4',
-    })
-
-    expect(snapshot.token).toBeNull()
-    expect(snapshot.user).toBeNull()
-    expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
-    expect(snapshot.waterfall?.outcome).toBe('error')
-    expect(snapshot.logEvents.at(-1)).toMatchObject({
-      phase: 'ssr.jwt.exchange',
-      outcome: 'error',
-      details: { status: 500 },
-    })
-  })
-
   it.each([
     { status: 200, body: {}, label: 'a successful response without a token' },
     { status: 429, body: { error: 'rate limited' }, label: 'an upstream rate limit' },
+    { status: 500, body: {}, label: 'an upstream server error' },
   ])('fails closed on $label', async ({ status, body }) => {
     fetchWithTimeoutMock.mockResolvedValue(createResponse(status, body))
 
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: 'better-auth.session_token=session-protocol-failure',
-    })
+    const snapshot = await snapshotFor('better-auth.session_token=session-protocol-failure')
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
@@ -201,10 +173,7 @@ describe('resolveServerAuthSnapshot', () => {
     isJwtUsableMock.mockReturnValue(false)
     fetchWithTimeoutMock.mockResolvedValue(createResponse(200, { token: 'expired.jwt' }))
 
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: 'better-auth.session_token=session-invalid-jwt',
-    })
+    const snapshot = await snapshotFor('better-auth.session_token=session-invalid-jwt')
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
@@ -218,10 +187,7 @@ describe('resolveServerAuthSnapshot', () => {
   it('uses only fixed auth-safe diagnostics in hydration, waterfall, and logs', async () => {
     fetchWithTimeoutMock.mockResolvedValue(createResponse(500, {}))
 
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: 'better-auth.session_token=session-prod',
-    })
+    const snapshot = await snapshotFor('better-auth.session_token=session-prod')
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
@@ -244,10 +210,7 @@ describe('resolveServerAuthSnapshot', () => {
     rawError.stack = sentinels.stack
     fetchWithTimeoutMock.mockRejectedValue(rawError)
 
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: 'better-auth.session_token=session-error-sentinel',
-    })
+    const snapshot = await snapshotFor('better-auth.session_token=session-error-sentinel')
     const rendered = inspect(snapshot, { depth: null })
 
     expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
@@ -263,10 +226,9 @@ describe('resolveServerAuthSnapshot', () => {
     const sessionSecret = 'SESSION_SECRET_MUST_NOT_BE_LOGGED'
     fetchWithTimeoutMock.mockResolvedValue(createResponse(500, {}))
 
-    const snapshot = await resolveServerAuthSnapshot({
-      ...baseOptions,
-      cookieHeader: `private_app_cookie=also-secret; better-auth.session_token=${sessionSecret}`,
-    })
+    const snapshot = await snapshotFor(
+      `private_app_cookie=also-secret; better-auth.session_token=${sessionSecret}`,
+    )
 
     const serializedLogs = JSON.stringify(snapshot.logEvents)
     expect(serializedLogs).not.toContain(sessionSecret)

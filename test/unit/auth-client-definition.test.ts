@@ -123,19 +123,6 @@ describe('defineConvexAuthClient', () => {
     const _typed: ConvexAuthClientDefinition<[]> = definition
     void _typed
   })
-
-  it('preserves the plugin tuple through a mutable merged array', () => {
-    const definition = defineConvexAuthClient({ plugins: [organizationClientRuntime()] })
-    const convexStandIn = { id: 'convex' } as unknown as BetterAuthClientPlugin
-    // The resolved plugins array is [convexPlugin, ...consumerPlugins] — a
-    // MUTABLE array, so `push` works after the merge (tuple mutability is pinned
-    // at the type level by `_mergedAssignable` / `_readonlyRejected` below).
-    const consumerPlugins = Array.from(definition.options.plugins ?? [])
-    const merged: BetterAuthClientPlugin[] = [convexStandIn, ...consumerPlugins]
-    merged.push({ id: 'later' } as unknown as BetterAuthClientPlugin)
-    expect(merged).toHaveLength(3)
-    expect(merged[0]?.id).toBe('convex')
-  })
 })
 
 describe('validateConvexAuthClientDefinition', () => {

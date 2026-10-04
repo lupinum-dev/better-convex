@@ -182,9 +182,35 @@ function sessionSignalStore() {
   }
 }
 
+async function setupPlugin(payload?: {
+  data: Record<string, unknown>
+  state: Record<string, unknown>
+}) {
+  const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
+    setup(nuxtApp: {
+      payload?: typeof payload
+      provide: ReturnType<typeof vi.fn>
+      vueApp: { onUnmount: ReturnType<typeof vi.fn>; use: ReturnType<typeof vi.fn> }
+    }): void
+  }
+  const provide = vi.fn()
+  plugin.setup({
+    ...(payload ? { payload } : {}),
+    provide,
+    vueApp: { onUnmount: vi.fn(), use: vi.fn() },
+  })
+  return provide
+}
+
+/** The auth controller the plugin attached to the runtime. */
+function attachedController<Client>() {
+  return runtime.attachAuthController.mock.calls.at(-1)?.[0] as { client: Client; dispose(): void }
+}
+
 describe('auth client app-facing state projection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
     subscribers.clear()
     identityState.value = toAuthenticatedIdentity({
       id: 'alice',
@@ -226,7 +252,6 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('fails closed when the canonical refresh rejects', async () => {
-    vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
     const signal = sessionSignalStore()
     createAuthClientMock.mockReturnValue({
       $store: signal.$store,
@@ -237,13 +262,7 @@ describe('auth client app-facing state projection', () => {
         }),
       },
     })
-    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
-      setup(app: {
-        provide: ReturnType<typeof vi.fn>
-        vueApp: { use: ReturnType<typeof vi.fn>; onUnmount: ReturnType<typeof vi.fn> }
-      }): void
-    }
-    plugin.setup({ provide: vi.fn(), vueApp: { use: vi.fn(), onUnmount: vi.fn() } })
+    await setupPlugin()
     authRefreshMock.mockImplementationOnce(async () => {
       adapterCallbacks.sessionChanged?.('replacement-cookie', null, 2)
       snapshot.settled = true
@@ -257,9 +276,7 @@ describe('auth client app-facing state projection', () => {
         message: 'Static refresh outcome',
       })
     })
-    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
-      client: { twoFactor: { enable(): Promise<unknown> } }
-    }
+    const controller = attachedController<{ twoFactor: { enable(): Promise<unknown> } }>()
 
     await expect(controller.client.twoFactor.enable()).rejects.toMatchObject({
       kind: 'authentication',
@@ -268,25 +285,7 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('projects a later canonical identity failure into Nuxt auth state', async () => {
-    vi.stubGlobal('window', {
-      location: { origin: 'https://app.example.com' },
-    })
-    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
-      setup(nuxtApp: {
-        provide: ReturnType<typeof vi.fn>
-        vueApp: {
-          onUnmount: ReturnType<typeof vi.fn>
-          use: ReturnType<typeof vi.fn>
-        }
-      }): void
-    }
-    plugin.setup({
-      provide: vi.fn(),
-      vueApp: {
-        onUnmount: vi.fn(),
-        use: vi.fn(),
-      },
-    })
+    await setupPlugin()
     expect(clearNuxtDataMock).not.toHaveBeenCalled()
 
     snapshot.identityKey = 'anonymous'
@@ -321,25 +320,9 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('purges a mismatched initial browser identity once, then purges later generations once', async () => {
-    vi.stubGlobal('window', {
-      location: { origin: 'https://app.example.com' },
-    })
     snapshot.settled = false
     snapshot.identityKey = 'user:bob'
     snapshot.identityGeneration = 0
-    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
-      setup(nuxtApp: {
-        payload: {
-          data: Record<string, unknown>
-          state: Record<string, unknown>
-        }
-        provide: ReturnType<typeof vi.fn>
-        vueApp: {
-          onUnmount: ReturnType<typeof vi.fn>
-          use: ReturnType<typeof vi.fn>
-        }
-      }): void
-    }
     // SSR values and SSR errors share their identity-partitioned payload keys.
     const payload = {
       data: {
@@ -349,14 +332,7 @@ describe('auth client app-facing state projection', () => {
       } as Record<string, unknown>,
       state: {},
     }
-    plugin.setup({
-      payload,
-      provide: vi.fn(),
-      vueApp: {
-        onUnmount: vi.fn(),
-        use: vi.fn(),
-      },
-    })
+    await setupPlugin(payload)
 
     expect(clearNuxtDataMock).toHaveBeenCalledTimes(1)
     expect(Object.keys(payload.data)).toEqual(['convex:status:list:auth:none'])
@@ -372,9 +348,6 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('settles integrated sign-in only after Convex confirms the new identity', async () => {
-    vi.stubGlobal('window', {
-      location: { origin: 'https://app.example.com' },
-    })
     snapshot.settled = true
     snapshot.identityKey = 'anonymous'
     snapshot.identityGeneration = 1
@@ -397,30 +370,8 @@ describe('auth client app-facing state projection', () => {
       adapterCallbacks.sessionChanged?.('session-new', null, 2)
     })
 
-    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
-      setup(nuxtApp: {
-        provide: ReturnType<typeof vi.fn>
-        vueApp: {
-          onUnmount: ReturnType<typeof vi.fn>
-          use: ReturnType<typeof vi.fn>
-        }
-      }): void
-    }
-    const provide = vi.fn()
-    plugin.setup({
-      provide,
-      vueApp: {
-        onUnmount: vi.fn(),
-        use: vi.fn(),
-      },
-    })
-    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
-      client: {
-        signIn: {
-          email(): Promise<unknown>
-        }
-      }
-    }
+    const provide = await setupPlugin()
+    const controller = attachedController<{ signIn: { email(): Promise<unknown> } }>()
     let settled = false
     const signIn = controller.client.signIn.email().then(() => {
       settled = true
@@ -446,9 +397,6 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('accepts a late provider token for an already-settled matching SSR generation', async () => {
-    vi.stubGlobal('window', {
-      location: { origin: 'https://app.example.com' },
-    })
     emitInitialProviderSession.value = false
     snapshot.settled = true
     snapshot.identityKey = 'user:alice'
@@ -467,26 +415,9 @@ describe('auth client app-facing state projection', () => {
       adapterCallbacks.sessionChanged?.('session-alice', null, 0)
     })
 
-    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
-      setup(nuxtApp: {
-        provide: ReturnType<typeof vi.fn>
-        vueApp: {
-          onUnmount: ReturnType<typeof vi.fn>
-          use: ReturnType<typeof vi.fn>
-        }
-      }): void
-    }
-    plugin.setup({
-      provide: vi.fn(),
-      vueApp: {
-        onUnmount: vi.fn(),
-        use: vi.fn(),
-      },
-    })
+    await setupPlugin()
     adapterCallbacks.sessionChanged?.('session-alice', null, 0)
-    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
-      client: { updateSession(): Promise<unknown> }
-    }
+    const controller = attachedController<{ updateSession(): Promise<unknown> }>()
 
     await expect(controller.client.updateSession()).resolves.toEqual({
       data: { ok: true },
@@ -496,9 +427,6 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('reconfirms a changed Convex token before resolving a same-session operation', async () => {
-    vi.stubGlobal('window', {
-      location: { origin: 'https://app.example.com' },
-    })
     emitInitialProviderSession.value = false
     snapshot.settled = true
     snapshot.identityKey = 'user:alice'
@@ -528,26 +456,9 @@ describe('auth client app-facing state projection', () => {
       for (const subscriber of subscribers) subscriber()
     })
 
-    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
-      setup(nuxtApp: {
-        provide: ReturnType<typeof vi.fn>
-        vueApp: {
-          onUnmount: ReturnType<typeof vi.fn>
-          use: ReturnType<typeof vi.fn>
-        }
-      }): void
-    }
-    plugin.setup({
-      provide: vi.fn(),
-      vueApp: {
-        onUnmount: vi.fn(),
-        use: vi.fn(),
-      },
-    })
+    await setupPlugin()
     adapterCallbacks.sessionChanged?.('session-alice', null, 0)
-    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
-      client: { updateUser(): Promise<unknown> }
-    }
+    const controller = attachedController<{ updateUser(): Promise<unknown> }>()
 
     let settled = false
     const operation = controller.client.updateUser().then(() => {
@@ -569,7 +480,6 @@ describe('auth client app-facing state projection', () => {
   })
 
   it('resolves read-only calls without refreshing auth, minting, or failing closed', async () => {
-    vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })
     emitInitialProviderSession.value = false
     const signal = sessionSignalStore()
     const readFailure = new Error('organization list unavailable')
@@ -585,20 +495,11 @@ describe('auth client app-facing state projection', () => {
       },
     })
 
-    const plugin = (await import('../../src/runtime/plugin.auth.client')).default as unknown as {
-      setup(nuxtApp: {
-        provide: ReturnType<typeof vi.fn>
-        vueApp: { onUnmount: ReturnType<typeof vi.fn>; use: ReturnType<typeof vi.fn> }
-      }): void
-    }
-    plugin.setup({ provide: vi.fn(), vueApp: { onUnmount: vi.fn(), use: vi.fn() } })
+    await setupPlugin()
     adapterCallbacks.sessionChanged?.('session-alice', null, 0)
-    const controller = runtime.attachAuthController.mock.calls.at(-1)?.[0] as {
-      client: {
-        organization: { list(): Promise<unknown>; getFullOrganization(): Promise<unknown> }
-      }
-      dispose(): void
-    }
+    const controller = attachedController<{
+      organization: { list(): Promise<unknown>; getFullOrganization(): Promise<unknown> }
+    }>()
 
     await expect(controller.client.organization.list()).resolves.toEqual({
       data: [{ id: 'org-1' }],

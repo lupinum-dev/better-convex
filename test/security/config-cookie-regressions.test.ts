@@ -20,19 +20,13 @@ import {
 import { normalizeConvexSiteUrl } from '../../src/runtime/utils/site-url'
 
 describe('configuration and cookie security regressions', () => {
-  it('accepts only a bare HTTPS site origin except loopback development', () => {
-    expect(normalizeConvexSiteUrl('https://demo.convex.site')).toBe('https://demo.convex.site')
-    expect(normalizeConvexSiteUrl('http://127.0.0.1:3211')).toBe('http://127.0.0.1:3211')
-    expect(() => normalizeConvexSiteUrl('http://internal.example')).toThrow()
-    expect(() => normalizeConvexSiteUrl('https://demo.convex.site/private')).toThrow()
-    expect(() => normalizeConvexSiteUrl('https://user:pass@demo.convex.site')).toThrow()
-  })
-
   it.each([
+    ['https://demo.convex.site', 'https://demo.convex.site'],
     ['https://demo.convex.site/', 'https://demo.convex.site'],
     ['https://demo.convex.site:444/', 'https://demo.convex.site:444'],
     ['https://xn--bcher-kva.example/', 'https://xn--bcher-kva.example'],
     ['http://localhost:3211/', 'http://localhost:3211'],
+    ['http://127.0.0.1:3211', 'http://127.0.0.1:3211'],
     ['http://127.0.0.1:3211/', 'http://127.0.0.1:3211'],
     ['http://[::1]:3211/', 'http://[::1]:3211'],
   ])('accepts a canonical configured origin %s', (input, expected) => {
@@ -41,6 +35,7 @@ describe('configuration and cookie security regressions', () => {
 
   it.each([
     'http://example.test',
+    'http://internal.example',
     'http://localhost.',
     'http://preview.localhost:3211/',
     'http://127.1:3211/',
@@ -52,6 +47,8 @@ describe('configuration and cookie security regressions', () => {
     'https://example.test/?query=1',
     'https://example.test/#fragment',
     'https://user@example.test',
+    'https://user:pass@demo.convex.site',
+    'https://demo.convex.site/private',
     'https://DEMO.convex.site:443/',
     'https://demo.convex.site./',
     'https://bücher.example/',

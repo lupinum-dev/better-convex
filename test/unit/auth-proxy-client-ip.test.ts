@@ -1,5 +1,5 @@
 import { httpRouter } from 'convex/server'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAuthComponent } from '../../src/runtime/convex-auth/create-auth-component'
 import { buildAuthProxyForwardHeaders } from '../../src/runtime/server/api/auth/headers'
@@ -68,6 +68,10 @@ async function invokeRegisteredAuthRoute({
   return { getRequestMetadata, handledRequest, response }
 }
 
+beforeEach(() => {
+  vi.stubEnv('SITE_URL', 'https://app.example.test')
+  vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
+})
 afterEach(() => {
   vi.unstubAllEnvs()
 })
@@ -119,8 +123,6 @@ describe('authenticated proxy client-IP handoff', () => {
   })
 
   it('uses a valid signed proxy IP and exposes only the synthetic Better Auth header', async () => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
     const signature = await signClientIp('203.0.113.9', PROXY_IP_SECRET)
 
     const result = await invokeRegisteredAuthRoute({
@@ -147,8 +149,6 @@ describe('authenticated proxy client-IP handoff', () => {
   })
 
   it('hands a trusted ingress IP from Nitro through Convex to Better Auth end to end', async () => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
     const forwardHeaders = await buildAuthProxyForwardHeaders(
       {
         headers: new Headers({
@@ -176,9 +176,6 @@ describe('authenticated proxy client-IP handoff', () => {
   })
 
   it('preserves a POST body while replacing the internal header namespace', async () => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
-
     const result = await invokeRegisteredAuthRoute({
       body: '{"email":"agent@example.test"}',
       directClientIp: '198.51.100.7',
@@ -195,80 +192,68 @@ describe('authenticated proxy client-IP handoff', () => {
     expect(result.handledRequest?.headers.get(VERIFIED_CLIENT_IP_HEADER)).toBe('198.51.100.7')
   })
 
-  it('fails closed on a forged proxy pair instead of collapsing to the direct caller', async () => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
-    const validSignature = await signClientIp('203.0.113.9', PROXY_IP_SECRET)
-    const forgedSignature = `${validSignature[0] === 'A' ? 'B' : 'A'}${validSignature.slice(1)}`
-
-    const result = await invokeRegisteredAuthRoute({
-      directClientIp: '198.51.100.7',
-      headers: {
-        [CLIENT_IP_HEADER]: '203.0.113.9',
-        [CLIENT_IP_SIGNATURE_HEADER]: forgedSignature,
-        [VERIFIED_CLIENT_IP_HEADER]: '192.0.2.250',
-      },
-    })
-
-    expect(result.response.status).toBe(500)
-    expect(result.getRequestMetadata).not.toHaveBeenCalled()
-    expect(result.handledRequest).toBeUndefined()
-    await expect(result.response.json()).resolves.toEqual({
-      code: 'AUTH_REQUEST_METADATA_INVALID',
-    })
-  })
-
+  const forge = (signature: string) => `${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`
   it.each([
-    { [CLIENT_IP_HEADER]: '203.0.113.9' },
-    { [CLIENT_IP_SIGNATURE_HEADER]: 'A'.repeat(43) },
-    {
-      [CLIENT_IP_HEADER]: '203.0.113.9',
-      [CLIENT_IP_SIGNATURE_HEADER]: 'A'.repeat(2_000),
-    },
-    {
-      [CLIENT_IP_HEADER]: '203.0.113.9, 198.51.100.4',
-      [CLIENT_IP_SIGNATURE_HEADER]: 'A'.repeat(43),
-    },
-  ])('fails closed for partial, duplicated, or oversized internal headers', async (headers) => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
-    const result = await invokeRegisteredAuthRoute({
-      directClientIp: '198.51.100.7',
-      headers: headers as HeadersInit,
-    })
-
-    expect(result.response.status).toBe(500)
-    expect(result.getRequestMetadata).not.toHaveBeenCalled()
-    expect(result.handledRequest).toBeUndefined()
-    await expect(result.response.json()).resolves.toEqual({
-      code: 'AUTH_REQUEST_METADATA_INVALID',
-    })
-  })
-
-  it('fails closed when Nuxt and Convex proxy secrets drift', async () => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', `${PROXY_IP_SECRET}-different`)
-    const signature = await signClientIp('203.0.113.9', PROXY_IP_SECRET)
-
-    const result = await invokeRegisteredAuthRoute({
-      directClientIp: '198.51.100.7',
-      headers: {
+    [
+      'a forged pair',
+      PROXY_IP_SECRET,
+      (signature: string) => ({
+        [CLIENT_IP_HEADER]: '203.0.113.9',
+        [CLIENT_IP_SIGNATURE_HEADER]: forge(signature),
+        [VERIFIED_CLIENT_IP_HEADER]: '192.0.2.250',
+      }),
+    ],
+    [
+      'drifted Nuxt and Convex secrets',
+      `${PROXY_IP_SECRET}-different`,
+      (signature: string) => ({
         [CLIENT_IP_HEADER]: '203.0.113.9',
         [CLIENT_IP_SIGNATURE_HEADER]: signature,
-      },
-    })
+      }),
+    ],
+    ['an IP without a signature', PROXY_IP_SECRET, () => ({ [CLIENT_IP_HEADER]: '203.0.113.9' })],
+    [
+      'a signature without an IP',
+      PROXY_IP_SECRET,
+      () => ({ [CLIENT_IP_SIGNATURE_HEADER]: 'A'.repeat(43) }),
+    ],
+    [
+      'an oversized signature',
+      PROXY_IP_SECRET,
+      () => ({
+        [CLIENT_IP_HEADER]: '203.0.113.9',
+        [CLIENT_IP_SIGNATURE_HEADER]: 'A'.repeat(2_000),
+      }),
+    ],
+    [
+      'a duplicated IP',
+      PROXY_IP_SECRET,
+      () => ({
+        [CLIENT_IP_HEADER]: '203.0.113.9, 198.51.100.4',
+        [CLIENT_IP_SIGNATURE_HEADER]: 'A'.repeat(43),
+      }),
+    ],
+  ] as const)(
+    'fails closed on %s instead of collapsing to the direct caller',
+    async (_case, convexSecret, headers) => {
+      const signature = await signClientIp('203.0.113.9', PROXY_IP_SECRET)
+      vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', convexSecret)
 
-    expect(result.response.status).toBe(500)
-    expect(result.getRequestMetadata).not.toHaveBeenCalled()
-    expect(result.handledRequest).toBeUndefined()
-    await expect(result.response.json()).resolves.toEqual({
-      code: 'AUTH_REQUEST_METADATA_INVALID',
-    })
-  })
+      const result = await invokeRegisteredAuthRoute({
+        directClientIp: '198.51.100.7',
+        headers: headers(signature),
+      })
+
+      expect(result.response.status).toBe(500)
+      expect(result.getRequestMetadata).not.toHaveBeenCalled()
+      expect(result.handledRequest).toBeUndefined()
+      await expect(result.response.json()).resolves.toEqual({
+        code: 'AUTH_REQUEST_METADATA_INVALID',
+      })
+    },
+  )
 
   it('fails closed when trusted Convex request metadata lacks a valid IP', async () => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
     const result = await invokeRegisteredAuthRoute({
       directClientIp: 'not-an-ip',
       headers: { [VERIFIED_CLIENT_IP_HEADER]: '203.0.113.9' },
@@ -286,8 +271,6 @@ describe('authenticated proxy client-IP handoff', () => {
     ['config', 'AUTH_CONFIG_INVALID'],
     ['handler', 'AUTH_HANDLER_FAILED'],
   ] as const)('classifies %s failures without exposing their causes', async (failure, code) => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
     const result = await invokeRegisteredAuthRoute({
       directClientIp: '198.51.100.7',
       failure,

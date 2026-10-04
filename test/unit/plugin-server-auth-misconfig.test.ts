@@ -61,6 +61,20 @@ function createResponse(status: number, body: unknown): Response {
   })
 }
 
+/** Runs the server plugin, which must settle every auth failure without throwing. */
+async function runServerPlugin() {
+  const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
+  await expect(plugin()).resolves.toBeUndefined()
+}
+
+function answerTokenExchange(status: number, body: unknown) {
+  fetchWithTimeoutMock.mockImplementation(async (url: string) => {
+    if (url.endsWith('/api/auth/get-session')) return createResponse(200, { user: null })
+    if (url.endsWith('/api/auth/convex/token')) return createResponse(status, body)
+    throw new Error(`Unexpected URL: ${url}`)
+  })
+}
+
 describe('plugin.server token exchange failure policy', () => {
   const stateStore = new Map<string, { value: unknown }>()
   const setHeaderMock = vi.fn()
@@ -118,18 +132,9 @@ describe('plugin.server token exchange failure policy', () => {
   })
 
   it('settles token-exchange failures with the same fixed error in every environment', async () => {
-    fetchWithTimeoutMock.mockImplementation(async (url: string) => {
-      if (url.endsWith('/api/auth/get-session')) {
-        return createResponse(200, { user: null })
-      }
-      if (url.endsWith('/api/auth/convex/token')) {
-        return createResponse(500, {})
-      }
-      throw new Error(`Unexpected URL: ${url}`)
-    })
+    answerTokenExchange(500, {})
 
-    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
-    await expect(plugin()).resolves.toBeUndefined()
+    await runServerPlugin()
     expect(stateStore.get('convex:authError')?.value).toBe(
       'Authentication is temporarily unavailable',
     )
@@ -156,8 +161,7 @@ describe('plugin.server token exchange failure policy', () => {
       }),
     })
 
-    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
-    await expect(plugin()).resolves.toBeUndefined()
+    await runServerPlugin()
 
     expect(fetchWithTimeoutMock).not.toHaveBeenCalled()
     expect(stateStore.get('convex:authError')?.value).toBe(
@@ -166,30 +170,17 @@ describe('plugin.server token exchange failure policy', () => {
     expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
   })
 
-  it('isolates a non-session Better Auth cookie response when siteUrl is missing', async () => {
-    const runtimeConfig = getConvexRuntimeConfigMock()
-    getConvexRuntimeConfigMock.mockReturnValue({ ...runtimeConfig, siteUrl: undefined })
+  it.each([
+    ['the normal SSR path', {}],
+    ['a missing siteUrl', { siteUrl: undefined }],
+  ])('isolates a non-session Better Auth cookie response on %s', async (_case, config) => {
+    getConvexRuntimeConfigMock.mockReturnValue({ ...getConvexRuntimeConfigMock(), ...config })
     useRequestEventMock.mockReturnValue({
       ...useRequestEventMock(),
       headers: new Headers({ cookie: 'better-auth.oauth_state=opaque-state' }),
     })
 
-    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
-    await expect(plugin()).resolves.toBeUndefined()
-
-    expect(fetchWithTimeoutMock).not.toHaveBeenCalled()
-    expect(setHeaderMock).toHaveBeenCalledWith('Vary', 'Cookie')
-    expect(setHeaderMock).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
-  })
-
-  it('isolates a non-session Better Auth cookie on the normal SSR path', async () => {
-    useRequestEventMock.mockReturnValue({
-      ...useRequestEventMock(),
-      headers: new Headers({ cookie: 'better-auth.oauth_state=opaque-state' }),
-    })
-
-    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
-    await expect(plugin()).resolves.toBeUndefined()
+    await runServerPlugin()
 
     expect(fetchWithTimeoutMock).not.toHaveBeenCalled()
     expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
@@ -198,18 +189,9 @@ describe('plugin.server token exchange failure policy', () => {
   })
 
   it('keeps 401 token exchange as graceful unauthenticated (no throw)', async () => {
-    fetchWithTimeoutMock.mockImplementation(async (url: string) => {
-      if (url.endsWith('/api/auth/get-session')) {
-        return createResponse(200, { user: null })
-      }
-      if (url.endsWith('/api/auth/convex/token')) {
-        return createResponse(401, { error: 'unauthorized' })
-      }
-      throw new Error(`Unexpected URL: ${url}`)
-    })
+    answerTokenExchange(401, { error: 'unauthorized' })
 
-    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
-    await expect(plugin()).resolves.toBeUndefined()
+    await runServerPlugin()
 
     expect(stateStore.get('convex:authError')?.value).toBeNull()
     expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
@@ -227,8 +209,7 @@ describe('plugin.server token exchange failure policy', () => {
       throw new Error(`Unexpected URL: ${url}`)
     })
 
-    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
-    await expect(plugin()).resolves.toBeUndefined()
+    await runServerPlugin()
 
     expect(stateStore.get('convex:identity')?.value).toEqual({
       status: 'authenticated',
@@ -252,8 +233,7 @@ describe('plugin.server token exchange failure policy', () => {
     })
     fetchWithTimeoutMock.mockResolvedValueOnce(createResponse(200, { token: jwtSentinel }))
 
-    const plugin = (await import('../../src/runtime/plugin.server')).default as () => Promise<void>
-    await expect(plugin()).resolves.toBeUndefined()
+    await runServerPlugin()
 
     const output = JSON.stringify(log.mock.calls)
     expect(output).toContain('ssr.auth.started')

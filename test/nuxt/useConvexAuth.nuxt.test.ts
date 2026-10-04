@@ -15,6 +15,8 @@ import type { NuxtConvexAuthController } from '../../src/runtime/runtime-context
 import { UNAVAILABLE_AUTH_CLIENT } from '../../src/runtime/utils/client-unavailable'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
 
+const AUTH_ENABLED = { convexConfig: { auth: { origin: 'http://localhost:3000' } } }
+
 function controller(overrides: Partial<NuxtConvexAuthController> = {}): NuxtConvexAuthController {
   return {
     pending: computed(() => false),
@@ -27,18 +29,15 @@ function controller(overrides: Partial<NuxtConvexAuthController> = {}): NuxtConv
 
 describe('useConvexAuth Nuxt facade', () => {
   it('derives loading, authenticated, anonymous, and error from canonical Nuxt state', async () => {
-    const { result } = await captureInNuxt(
-      () => {
-        const identity = useState<AuthIdentity>('convex:identity')
-        const pending = useState<boolean>('convex:pending')
-        const authError = useState<string | null>('convex:authError')
-        identity.value = LOADING_IDENTITY
-        pending.value = true
-        authError.value = null
-        return { auth: useConvexAuth(), identity, pending, authError }
-      },
-      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
-    )
+    const { result } = await captureInNuxt(() => {
+      const identity = useState<AuthIdentity>('convex:identity')
+      const pending = useState<boolean>('convex:pending')
+      const authError = useState<string | null>('convex:authError')
+      identity.value = LOADING_IDENTITY
+      pending.value = true
+      authError.value = null
+      return { auth: useConvexAuth(), identity, pending, authError }
+    }, AUTH_ENABLED)
 
     expect(result.auth.status.value).toBe('loading')
     expect(result.auth.error.value).toBeUndefined()
@@ -62,13 +61,10 @@ describe('useConvexAuth Nuxt facade', () => {
       signIn: { email: vi.fn(async () => ({ data: {}, error: null })) },
     }
     const authController = controller({ client: integratedClient })
-    const { result } = await captureInNuxt(
-      () => {
-        useNuxtApp().$convexRuntime!.attachAuthController(authController)
-        return useConvexAuth()
-      },
-      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
-    )
+    const { result } = await captureInNuxt(() => {
+      useNuxtApp().$convexRuntime!.attachAuthController(authController)
+      return useConvexAuth()
+    }, AUTH_ENABLED)
 
     expect(result.client).toBe(integratedClient)
     expect(result.client?.useSession()).toEqual({ value: { isPending: false } })
@@ -90,24 +86,18 @@ describe('useConvexAuth Nuxt facade', () => {
       client: secondClient,
       ready: vi.fn(async () => 'anonymous' as const),
     })
-    const firstResult = await captureInNuxt(
-      () => {
-        useNuxtApp().$convexRuntime!.attachAuthController(first)
-        return useConvexAuth()
-      },
-      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
-    )
+    const firstResult = await captureInNuxt(() => {
+      useNuxtApp().$convexRuntime!.attachAuthController(first)
+      return useConvexAuth()
+    }, AUTH_ENABLED)
     expect(firstResult.result.client).toBe(firstClient)
     expect(await firstResult.result.ready()).toBe('authenticated')
     firstResult.wrapper.unmount()
 
-    const secondResult = await captureInNuxt(
-      () => {
-        useNuxtApp().$convexRuntime!.attachAuthController(second)
-        return useConvexAuth()
-      },
-      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
-    )
+    const secondResult = await captureInNuxt(() => {
+      useNuxtApp().$convexRuntime!.attachAuthController(second)
+      return useConvexAuth()
+    }, AUTH_ENABLED)
     expect(secondResult.result.client).toBe(secondClient)
     expect(await secondResult.result.ready()).toBe('anonymous')
     expect(first.ready).toHaveBeenCalledOnce()
@@ -115,18 +105,15 @@ describe('useConvexAuth Nuxt facade', () => {
   })
 
   it('returns a non-null inert client before the browser auth runtime exists', async () => {
-    const { result } = await captureInNuxt(
-      () => {
-        // Destructuring during setup must never throw.
-        const { client, status, user } = useConvexAuth()
-        const { signIn, useSession } = client as unknown as {
-          signIn: { email: (input: unknown) => unknown }
-          useSession: () => unknown
-        }
-        return { client, status, user, signIn, useSession }
-      },
-      { convexConfig: { auth: { origin: 'http://localhost:3000' } } },
-    )
+    const { result } = await captureInNuxt(() => {
+      // Destructuring during setup must never throw.
+      const { client, status, user } = useConvexAuth()
+      const { signIn, useSession } = client as unknown as {
+        signIn: { email: (input: unknown) => unknown }
+        useSession: () => unknown
+      }
+      return { client, status, user, signIn, useSession }
+    }, AUTH_ENABLED)
 
     expect(result.client).toBe(UNAVAILABLE_AUTH_CLIENT)
     expect(result.status.value).toBe('anonymous')
