@@ -35,7 +35,10 @@ export const createHostClient = internalMutation({
   handler: async (ctx, args) => await auth.oauthOperator.createHostClient(ctx, args),
 })
 
-/** Creates a client for MCP Inspector on this computer. Use it in development only. */
+/**
+ * Creates a client for MCP Inspector on this computer. Use it in development only.
+ * Inspector requests `offline_access` by default, so the client allows renewal.
+ */
 export const createInspectorClient = internalMutation({
   args: {},
   handler: async (ctx) =>
@@ -44,6 +47,6 @@ export const createInspectorClient = internalMutation({
       profile: 'mcp-inspector',
       redirectUris: ['http://localhost:6274/oauth/callback'],
       resource: { identifier: auth.mcp.resource().href, name: APP_NAME, ownership: 'application' },
-      scopes: ['mcp:read', 'mcp:write'],
+      scopes: ['mcp:read', 'mcp:write', 'offline_access'],
     }),
 })
