@@ -79,7 +79,7 @@ export type UseConvexFileUploadOptions<
   Context = undefined,
 > = UploadUrlOption<Prepared, Context> & {
   /**
-   * Maximum file size in bytes. A larger file fails with `FILE_TOO_LARGE`
+   * Maximum file size in bytes. Must be finite and positive; otherwise setup throws a TypeError. A larger file fails with `FILE_TOO_LARGE`
    * before any request is made.
    * @example 5 * 1024 * 1024 // 5 MB
    */

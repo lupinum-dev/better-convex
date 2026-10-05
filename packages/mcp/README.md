@@ -140,7 +140,7 @@ expiry. Then import it with
 
 A tool definition sets `risk` to `read`, `write`, or `destructive`. The package turns `risk` into the MCP hints that hosts use to ask for confirmation. `scopes` lists the OAuth scopes the tool needs.
 
-Errors: a `ConvexError` whose `data.code` is in `exposeErrorCodes` becomes a structured tool error with its `data.message` and `data.retryable`. `UNAUTHENTICATED`, `MCP_ACCESS_DENIED`, and `MCP_INSUFFICIENT_SCOPE` are always exposed. Every other error becomes one generic failure, so internal details do not reach the model.
+Errors: a `ConvexError` whose `data.code` is in `exposeErrorCodes` becomes a structured tool error with its `data.message` and `data.retryable`. `UNAUTHENTICATED`, `MCP_ACCESS_DENIED`, and `MCP_INSUFFICIENT_SCOPE` use static generic messages unless their codes are in `exposeErrorCodes`. Every other error becomes one generic failure, so internal details do not reach the model.
 
 <!-- BEGIN:consumer-onboarding -->
 
