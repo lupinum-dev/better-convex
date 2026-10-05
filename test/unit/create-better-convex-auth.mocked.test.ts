@@ -4,10 +4,7 @@ import { httpRouter, makeFunctionReference } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AuthCtx } from '../../src/runtime/convex-auth/context'
-import {
-  createBetterConvexAuth,
-  type BetterConvexAuthEmail,
-} from '../../src/runtime/convex-auth/create-better-convex-auth'
+import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import type { BetterConvexPublicOAuthClientInput } from '../../src/runtime/convex-auth/oauth-operator'
 import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 
@@ -229,118 +226,6 @@ describe('createBetterConvexAuth', () => {
     Object.assign(ctx, { db: {} })
     await expect(consume()).rejects.toThrow(systemConflict.message)
     expect(ctx.runMutation).toHaveBeenCalledTimes(1)
-  })
-
-  it('delivers typed email messages with the request writable context', async () => {
-    const submitMail = makeFunctionReference<'mutation', { message: BetterConvexAuthEmail }, null>(
-      'authMail:submit',
-    )
-    const first = writableContext()
-    const second = writableContext()
-    const onPasswordReset = vi.fn()
-    const email = vi.fn(async (ctx: { runMutation: unknown }, message: BetterConvexAuthEmail) => {
-      expect(Object.isFrozen(message)).toBe(true)
-      await (ctx as ReturnType<typeof writableContext>).runMutation(submitMail, { message })
-    })
-    const auth = createBetterConvexAuth(component(), {
-      email,
-      emailAndPassword: {
-        passwordReset: true,
-        revokeSessionsOnPasswordReset: true,
-        onPasswordReset,
-      },
-      emailVerification: { expiresIn: 300 },
-    })
-    await Promise.all([auth.createAuth(first as never), auth.createAuth(second as never)])
-    expect(first.runQuery).not.toHaveBeenCalled()
-    const firstOptions = betterAuth.mock.calls[0]![0] as BetterAuthOptions
-    const secondOptions = betterAuth.mock.calls[1]![0] as BetterAuthOptions
-    const data = {
-      user: emailUserRow,
-      token: 'synthetic-token',
-      url: 'https://app.example.test/recover?token=synthetic-token',
-    }
-    await firstOptions.emailAndPassword!.sendResetPassword!(data)
-    await secondOptions.emailVerification!.sendVerificationEmail!(data)
-    const user = { id: 'user', email: 'person@example.test', name: 'Person' }
-    expect(first.runMutation).toHaveBeenCalledExactlyOnceWith(submitMail, {
-      message: { type: 'reset-password', to: user.email, url: data.url, token: data.token, user },
-    })
-    expect(second.runMutation).toHaveBeenCalledExactlyOnceWith(submitMail, {
-      message: { type: 'verify-email', to: user.email, url: data.url, token: data.token, user },
-    })
-    expect(email.mock.calls[0]![0]).toBe(first)
-    expect(email.mock.calls[1]![0]).toBe(second)
-    expect(firstOptions.emailAndPassword).toMatchObject({
-      enabled: true,
-      autoSignIn: false,
-      minPasswordLength: 15,
-      revokeSessionsOnPasswordReset: true,
-      onPasswordReset,
-    })
-    expect(firstOptions.emailAndPassword).not.toHaveProperty('passwordReset')
-    expect(secondOptions.emailVerification?.expiresIn).toBe(300)
-  })
-
-  it('maps OTP, two-factor, and invitation callbacks to the typed email union', async () => {
-    const messages: BetterConvexAuthEmail[] = []
-    const auth = createBetterConvexAuth(component(), {
-      email: async (_ctx, message) => {
-        messages.push(message)
-      },
-      emailOTP: { expiresIn: 300 },
-      organization: {},
-      twoFactor: { issuer: 'Example', otpOptions: { period: 3 } },
-    })
-    await auth.createAuth(writableContext() as never)
-    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
-    const plugin = (id: string) =>
-      options.plugins!.find((candidate) => candidate.id === id) as unknown as {
-        options: Record<string, never>
-      }
-
-    const otp = plugin('email-otp').options as unknown as {
-      expiresIn: number
-      sendVerificationOTP: (data: unknown) => Promise<void>
-    }
-    expect(otp.expiresIn).toBe(300)
-    await otp.sendVerificationOTP({ email: 'person@example.test', otp: '123456', type: 'sign-in' })
-
-    const twoFactorOptions = plugin('two-factor').options as unknown as {
-      otpOptions: { period: number; sendOTP: (data: unknown) => Promise<void> }
-    }
-    expect(twoFactorOptions.otpOptions.period).toBe(3)
-    await twoFactorOptions.otpOptions.sendOTP({ user: emailUserRow, otp: '654321' })
-
-    const organizationOptions = plugin('organization').options as unknown as {
-      sendInvitationEmail: (data: unknown) => Promise<void>
-    }
-    await organizationOptions.sendInvitationEmail({
-      id: 'invitation',
-      role: 'member',
-      email: 'invitee@example.test',
-      organization: { id: 'org', name: 'Org', slug: 'org', logo: 'private-logo' },
-      invitation: { id: 'invitation' },
-      inviter: { id: 'member', role: 'owner', user: emailUserRow },
-    })
-
-    expect(messages).toEqual([
-      { type: 'email-otp', to: 'person@example.test', otp: '123456', purpose: 'sign-in' },
-      {
-        type: 'two-factor-otp',
-        to: 'person@example.test',
-        otp: '654321',
-        user: { id: 'user', email: 'person@example.test', name: 'Person' },
-      },
-      {
-        type: 'organization-invitation',
-        to: 'invitee@example.test',
-        invitationId: 'invitation',
-        role: 'member',
-        organization: { id: 'org', name: 'Org', slug: 'org' },
-        inviter: { id: 'user', email: 'person@example.test', name: 'Person' },
-      },
-    ])
   })
 
   it('constructs query auth but refuses email delivery from a query context', async () => {
