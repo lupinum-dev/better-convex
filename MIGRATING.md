@@ -58,7 +58,7 @@ are gone, and TypeScript reports most places that you must change.
 ## Auth
 
 - [ ] The local `convex/betterAuth/adapter.ts` exports `expireSession`,
-      `oauthLiveAccess`, and `pruneSigningKeys`, and no longer exports
+      `oauthLiveAccess`, `pruneRateLimits`, and `pruneSigningKeys`, and no longer exports
       `assertProfile` or the workforce functions.
 - [ ] Export `pruneSigningKeys` from `auth.jwksOperatorFunctions()` and
       schedule it.
