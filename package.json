@@ -111,7 +111,7 @@
     "lint": "eslint . && oxfmt --check && node scripts/check-boundaries.mjs && node scripts/lint-changesets.mjs",
     "format": "oxfmt",
     "typecheck": "pnpm --filter './packages/*' build && nuxt-module-build prepare && vue-tsc --noEmit && tsc --noEmit -p src/runtime/server/tsconfig.json && tsc -p test/mcp/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-local-component/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-two-factor/tsconfig.json && tsc --noEmit -p test/fixtures/auth-security-plugins/tsconfig.json",
-    "test": "pnpm --filter ./packages/vue build && nuxt-module-build prepare && vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser --project=auth-adapter --project=auth-fuzz --project=mcp",
+    "test": "nuxt-module-build prepare && vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser --project=auth-adapter --project=auth-fuzz --project=mcp",
     "test:packed": "node test/packed/check-packed.mjs && nuxi prepare --cwd test/fixtures/consumer-smoke && nuxi typecheck --cwd test/fixtures/consumer-smoke && nuxi prepare --cwd test/fixtures/missing-convex-api && nuxi typecheck --cwd test/fixtures/missing-convex-api && node test/packed/check-auth-disabled-build-graph.mjs",
     "test:integration": "pnpm --filter ./packages/vue build && nuxt-module-build prepare && vitest run --project=integration && node test/integration/check-auth-schema.mjs",
     "test:e2e": "pnpm --filter ./packages/vue build && node scripts/run-e2e.mjs",
