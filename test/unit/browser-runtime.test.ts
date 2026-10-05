@@ -1,6 +1,7 @@
 import type { AuthTokenFetcher } from 'convex/browser'
 import { describe, expect, it, vi } from 'vitest'
 
+import { ConvexCallError } from '../../packages/vue/src/errors'
 import type {
   BrowserAuthAdapter,
   BrowserAuthSnapshot,
@@ -169,7 +170,7 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('waits through loading and replaces before publishing a later identity', async () => {
-    const adapter = new Adapter(session('loading', null, 0))
+    const adapter = new Adapter(session('pending', null, 0))
     const { runtime, clients } = start(adapter)
     const ready = runtime.ready()
     expect(clients).toHaveLength(0)
@@ -187,7 +188,7 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('constructs one primary when loading settles anonymous', async () => {
-    const adapter = new Adapter(session('loading', null, 0))
+    const adapter = new Adapter(session('pending', null, 0))
     const { runtime, clients } = start(adapter)
     const ready = runtime.ready()
     expect(clients).toHaveLength(0)
@@ -236,6 +237,52 @@ describe('Better Convex browser runtime', () => {
       identityKey: 'user:alice',
       error: null,
     })
+    await runtime.dispose()
+  })
+  it('stops building clients when the factory keeps failing and the provider does not change', async () => {
+    const adapter = new Adapter(session('authenticated', 'alice', 1))
+    let attempts = 0
+    const runtime = createBetterConvexBrowserRuntime({
+      auth: adapter,
+      // Bounded so a regression fails the assertion instead of starving the event loop.
+      clientFactory: () => {
+        attempts += 1
+        if (attempts > 10) return client()
+        throw new Error('factory failed')
+      },
+    })
+    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve()
+
+    // One attempt for the user, one for the anonymous fallback, then it stays failed.
+    expect(attempts).toBeLessThanOrEqual(2)
+    const failed = runtime.identity.snapshot()
+    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve()
+    expect(runtime.identity.snapshot().identityGeneration).toBe(failed.identityGeneration)
+    expect(failed).toMatchObject({ settled: true, identityKey: 'anonymous' })
+    await runtime.dispose()
+  })
+
+  it('publishes a library authentication failure with its code', async () => {
+    const timeout = new ConvexCallError({
+      kind: 'authentication',
+      code: 'AUTH_CONFIRMATION_TIMEOUT',
+      message: 'Convex did not confirm the session in time',
+    })
+    const { runtime } = start(new Adapter(session('error', null, 1, timeout)))
+    await runtime.ready()
+    expect(runtime.identity.snapshot().error).toMatchObject({
+      code: 'AUTH_CONFIRMATION_TIMEOUT',
+      message: 'Convex did not confirm the session in time',
+    })
+    await runtime.dispose()
+  })
+
+  it('does not publish the message of a raw provider error', async () => {
+    const { runtime } = start(
+      new Adapter(session('error', null, 1, new Error('private-provider-sentinel'))),
+    )
+    await runtime.ready()
+    expect(runtime.identity.snapshot().error?.message).toBe('Authentication failed')
     await runtime.dispose()
   })
 })

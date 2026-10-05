@@ -9,7 +9,8 @@ const { message } = defineProps<{
   message: string
 }>()
 
-const { client, pending } = useConvexAuth()
+const { client } = useConvexAuth()
+const busy = ref(false)
 const route = useRoute()
 
 const mode = ref<'signIn' | 'signUp'>('signUp')
@@ -33,7 +34,7 @@ const canSubmit = computed(() => {
 })
 
 const submitLabel = computed(() => {
-  if (pending.value) return mode.value === 'signIn' ? 'Signing in...' : 'Creating account...'
+  if (busy.value) return mode.value === 'signIn' ? 'Signing in...' : 'Creating account...'
   return mode.value === 'signIn' ? 'Sign in' : 'Create account'
 })
 const passwordAutocomplete = computed(() =>
@@ -46,11 +47,12 @@ watch(mode, () => {
 })
 
 async function submitAuth() {
-  if (pending.value || !canSubmit.value) return
+  if (busy.value || !canSubmit.value) return
 
   error.value = null
   info.value = null
 
+  busy.value = true
   try {
     if (mode.value === 'signUp') {
       const parsed = signUpInputSchema.safeParse({
@@ -102,6 +104,8 @@ async function submitAuth() {
       'Signed in. If your email is not verified yet, check your inbox for a verification link.'
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Authentication failed'
+  } finally {
+    busy.value = false
   }
 }
 </script>
@@ -152,7 +156,7 @@ async function submitAuth() {
       <p v-if="info" class="auth-info">{{ info }}</p>
       <p v-if="error" class="auth-error">{{ error }}</p>
 
-      <button type="submit" :disabled="pending || !canSubmit">
+      <button type="submit" :disabled="busy || !canSubmit">
         {{ submitLabel }}
       </button>
     </form>

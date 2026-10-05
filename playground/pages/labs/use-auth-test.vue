@@ -35,9 +35,9 @@
     </div>
 
     <div class="panel actions">
-      <button class="btn" :disabled="pending" @click="callSignIn">Call signIn.email()</button>
-      <button class="btn" :disabled="pending" @click="callSignUp">Call signUp.email()</button>
-      <button class="btn" data-testid="integrated-signout" :disabled="pending" @click="callSignOut">
+      <button class="btn" :disabled="busy" @click="callSignIn">Call signIn.email()</button>
+      <button class="btn" :disabled="busy" @click="callSignUp">Call signUp.email()</button>
+      <button class="btn" data-testid="integrated-signout" :disabled="busy" @click="callSignOut">
         Integrated Better Auth signOut()
       </button>
       <pre class="result">{{ resultText }}</pre>
@@ -53,6 +53,7 @@ definePageMeta({
 })
 
 const { status, pending, user, client } = useConvexAuth()
+const busy = ref(false)
 // The integrated client exists only in the browser; calling it during SSR throws
 // CLIENT_UNAVAILABLE, so the reactive session store is created client-side.
 const publicSession = import.meta.client ? client.useSession() : undefined
@@ -84,24 +85,39 @@ const signInEmailType = computed(() => typeof client.signIn.email)
 const signUpEmailType = computed(() => typeof client.signUp.email)
 
 async function callSignIn() {
-  const result = await client.signIn.email({
-    email: 'stub@example.com',
-    password: 'Password123456!',
-  })
-  resultText.value = JSON.stringify(result, null, 2)
+  busy.value = true
+  try {
+    const result = await client.signIn.email({
+      email: 'stub@example.com',
+      password: 'Password123456!',
+    })
+    resultText.value = JSON.stringify(result, null, 2)
+  } finally {
+    busy.value = false
+  }
 }
 
 async function callSignUp() {
-  const result = await client.signUp.email({
-    name: 'Stub User',
-    email: 'stub@example.com',
-    password: 'Password123456!',
-  })
-  resultText.value = JSON.stringify(result, null, 2)
+  busy.value = true
+  try {
+    const result = await client.signUp.email({
+      name: 'Stub User',
+      email: 'stub@example.com',
+      password: 'Password123456!',
+    })
+    resultText.value = JSON.stringify(result, null, 2)
+  } finally {
+    busy.value = false
+  }
 }
 
 async function callSignOut() {
-  resultText.value = JSON.stringify(await client.signOut(), null, 2)
+  busy.value = true
+  try {
+    resultText.value = JSON.stringify(await client.signOut(), null, 2)
+  } finally {
+    busy.value = false
+  }
 }
 </script>
 

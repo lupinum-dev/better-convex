@@ -10,12 +10,12 @@ const authErr = new ConvexCallError({ kind: 'authentication', message: 'boom' })
 describe('deriveConvexAuthStatus', () => {
   it.each([
     // Unsettled auth is loading, whatever key or error is already recorded.
-    [false, null, null, 'loading'],
-    [false, 'anonymous', null, 'loading'],
-    [false, 'user:a', null, 'loading'],
-    [false, null, authErr, 'loading'],
-    [false, 'anonymous', authErr, 'loading'],
-    [false, 'user:a', authErr, 'loading'],
+    [false, null, null, 'pending'],
+    [false, 'anonymous', null, 'pending'],
+    [false, 'user:a', null, 'pending'],
+    [false, null, authErr, 'pending'],
+    [false, 'anonymous', authErr, 'pending'],
+    [false, 'user:a', authErr, 'pending'],
     // A usable identity outranks a background error.
     [true, 'user:a', null, 'authenticated'],
     [true, 'user:a', authErr, 'authenticated'],

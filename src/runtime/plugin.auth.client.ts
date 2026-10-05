@@ -16,7 +16,6 @@ import {
 import { createBetterAuthBrowserAdapter } from './auth/better-auth-browser-adapter'
 import type { AuthClientWithConvex } from './auth/client-engine-types'
 import { createIntegratedAuthClient } from './auth/integrated-client'
-import { createAuthOperationTracker } from './auth/operation-tracker'
 import {
   BETTER_AUTH_SESSION_SIGNAL_DELAY_MS,
   createSessionSynchronization,
@@ -32,6 +31,7 @@ import { purgeConvexIdentityPayloadKeys, readAuthMode } from './utils/convex-cac
 import { MISSING_CONVEX_URL_MESSAGE } from './utils/convex-config'
 import { createLogger, getLogLevel } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
+import type { ConvexUser } from './utils/types'
 
 const SESSION_RECONCILIATION_TIMEOUT_MS = 5_000
 
@@ -82,20 +82,22 @@ export default defineNuxtPlugin({
       return null
     }
     let publishCurrentSessionAcceptance: () => void = () => {}
+    let publishAcceptedIdentity: () => void = () => {}
+    // The provider's latest result, held until Convex accepts it. Nuxt shows a
+    // user only after the Vue runtime confirms that Convex accepted the token,
+    // so `useConvexAuth()` and `ready()` never disagree.
+    let staged: { user: ConvexUser; token: string } | { user: null; error: string | null } | null =
+      null
     const adapter = createBetterAuthBrowserAdapter(
       authClient,
       {
         authenticated(token, user) {
-          identity.value = toAuthenticatedIdentity(user)
-          devtoolsToken.value = identity.value.status === 'authenticated' ? token : null
-          authError.value = null
-          pendingState.value = false
+          staged = { user, token }
+          publishAcceptedIdentity()
         },
         anonymous(error) {
-          identity.value = ANONYMOUS_IDENTITY
-          devtoolsToken.value = null
-          authError.value = error
-          pendingState.value = false
+          staged = { user: null, error }
+          publishAcceptedIdentity()
         },
         sessionChanged(sessionToken, errorMessage, revision) {
           // The Better Auth cookie changing is necessary but not sufficient:
@@ -169,20 +171,42 @@ export default defineNuxtPlugin({
       }
 
       observedIdentityGeneration = generation
+      publishAcceptedIdentity()
+      publishCurrentSessionAcceptance()
+    }
+    publishAcceptedIdentity = () => {
+      const snapshot = runtime.attachment.identity.snapshot()
+      // Until the runtime settles, keep what is shown: the server-rendered
+      // identity while hydrating, or the previous settled identity during a
+      // sign-in, sign-out, or user switch.
+      if (!snapshot.settled) return
       if (snapshot.error) {
         identity.value = ANONYMOUS_IDENTITY
         devtoolsToken.value = null
         authError.value = snapshot.error.message
-        pendingState.value = false
+      } else if (snapshot.identityKey === 'anonymous') {
+        identity.value = ANONYMOUS_IDENTITY
+        devtoolsToken.value = null
+        authError.value = staged && staged.user === null ? staged.error : null
+      } else {
+        const accepted = staged?.user && toAuthenticatedIdentity(staged.user)
+        if (accepted && identityKeyOf(accepted) === snapshot.identityKey) {
+          identity.value = accepted
+          devtoolsToken.value = staged?.user ? staged.token : null
+        } else if (identityKeyOf(identity.value) !== snapshot.identityKey) {
+          // Accepted before the provider's user arrived and not the identity
+          // already shown: wait for the matching provider result.
+          return
+        }
+        authError.value = null
       }
-      publishCurrentSessionAcceptance()
+      pendingState.value = false
     }
     const stopProtectedPayloadObservation =
       runtime.attachment.identity.subscribe(reconcileProtectedPayload)
     reconcileProtectedPayload()
 
     let disposed = false
-    const operations = createAuthOperationTracker()
     const sessionSignal = readBetterAuthSessionSignal(authClient)
     synchronization = createSessionSynchronization({
       timeoutMs: SESSION_RECONCILIATION_TIMEOUT_MS,
@@ -200,14 +224,9 @@ export default defineNuxtPlugin({
     // canonical refetch finds the same session need not manufacture a new
     // Convex generation merely to prove an acceptance that already happened.
     reconcileProtectedPayload()
-    const integratedClient = createIntegratedAuthClient(
-      authClient,
-      synchronization,
-      operations.track,
-    )
+    const integratedClient = createIntegratedAuthClient(authClient, synchronization)
 
     const controller: NuxtConvexAuthController = {
-      pending: computed(() => pendingState.value || operations.pending.value),
       client: integratedClient,
       async ready(options) {
         const ready = runtime.attachment.identity.waitForInitialSettlement()
@@ -229,7 +248,7 @@ export default defineNuxtPlugin({
           })
         }
         const snapshot = runtime.attachment.identity.snapshot()
-        if (!snapshot.settled) return 'loading'
+        if (!snapshot.settled) return 'pending'
         if (snapshot.error) return 'error'
         return snapshot.identityKey === 'anonymous' ? 'anonymous' : 'authenticated'
       },

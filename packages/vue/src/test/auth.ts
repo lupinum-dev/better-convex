@@ -2,7 +2,7 @@ import type { BrowserAuthAdapter, BrowserAuthSnapshot } from '../internal/auth-a
 import { testTokenFor } from './transport'
 
 /** The identity a test starts with or moves to. */
-export type BetterConvexTestAuthState = 'authenticated' | 'anonymous' | 'loading' | 'error'
+export type BetterConvexTestAuthState = 'authenticated' | 'anonymous' | 'pending' | 'error'
 
 /**
  * The signed-in identity behind the test runtime. Each change runs through the
@@ -94,7 +94,7 @@ export function createTestAuth(initial: BetterConvexTestAuthInput) {
       change('authenticated', snapshot.identityKey)
     },
     setLoading() {
-      change('loading', null)
+      change('pending', null)
     },
     fail(error) {
       change('error', null, error)

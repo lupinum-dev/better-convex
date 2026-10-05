@@ -85,7 +85,7 @@ export function createBetterAuthBrowserAdapter(
         // confirms; a session found later is a new generation like any other.
         { status: 'anonymous', identityKey: null, sessionGeneration, error: null }
       : {
-          status: 'loading',
+          status: 'pending',
           identityKey: null,
           sessionGeneration,
           error: null,
@@ -118,7 +118,7 @@ export function createBetterAuthBrowserAdapter(
         return
       }
       snapshot = {
-        status: 'loading',
+        status: 'pending',
         identityKey: null,
         sessionGeneration,
         error: null,

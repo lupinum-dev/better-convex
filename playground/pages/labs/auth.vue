@@ -2,8 +2,8 @@
   <div class="container">
     <h1>Auth Lab</h1>
     <p class="description">
-      This page tests explicit rendering from <code>useConvexAuth().status</code> and keeps
-      operation progress in <code>pending</code>.
+      This page tests explicit rendering from <code>useConvexAuth().status</code> and shows
+      <code>pending</code> as true while status is 'pending' (first auth check).
     </p>
 
     <div class="current-state">
@@ -52,10 +52,10 @@
       <h2>Status Rendering</h2>
 
       <div class="demo-card">
-        <h3>status === 'loading'</h3>
+        <h3>status === 'pending'</h3>
         <p class="demo-description">Shows content only during initial auth resolution</p>
         <div class="demo-output">
-          <div v-if="status === 'loading'" class="loading-indicator">
+          <div v-if="status === 'pending'" class="loading-indicator">
             <span class="spinner" />
             Checking authentication...
           </div>
@@ -98,7 +98,7 @@
     <div class="combined-example">
       <h2>Combined Example (Real-World Pattern)</h2>
       <div class="demo-output">
-        <div v-if="status === 'loading'" class="loading-indicator">
+        <div v-if="status === 'pending'" class="loading-indicator">
           <span class="spinner" />
           Loading...
         </div>
@@ -126,10 +126,10 @@
         <button
           v-else-if="status === 'authenticated'"
           class="btn btn-secondary"
-          :disabled="pending"
+          :disabled="busy"
           @click="signOut"
         >
-          {{ pending ? 'Signing out...' : 'Sign Out' }}
+          {{ busy ? 'Signing out...' : 'Sign Out' }}
         </button>
       </div>
     </div>
@@ -144,6 +144,7 @@ definePageMeta({
 })
 
 const { status, pending, user, error: authError, client } = useConvexAuth()
+const busy = ref(false)
 
 const permissionQueryArgs = computed(() => (status.value === 'authenticated' ? {} : 'skip'))
 const { data: permissionContext } = await useConvexQuery(
@@ -158,7 +159,12 @@ const permissionUserId = computed(() =>
 )
 
 async function signOut() {
-  await client.signOut()
+  busy.value = true
+  try {
+    await client.signOut()
+  } finally {
+    busy.value = false
+  }
 }
 </script>
 

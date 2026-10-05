@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const { user, status, pending, error: authError, client } = useConvexAuth()
+const { user, status, error: authError, client } = useConvexAuth()
+const busy = ref(false)
 const { user: permissionUser } = await useDemoPermissions()
 const router = useRouter()
 
@@ -7,9 +8,14 @@ const router = useRouter()
 const avatarUrl = computed(() => permissionUser.value?.avatarUrl)
 
 async function signOut() {
-  if (!client) throw new Error('Authentication client unavailable')
-  await client.signOut()
-  await router.push('/')
+  busy.value = true
+  try {
+    if (!client) throw new Error('Authentication client unavailable')
+    await client.signOut()
+    await router.push('/')
+  } finally {
+    busy.value = false
+  }
 }
 
 const items = computed(() => [
@@ -31,7 +37,7 @@ const items = computed(() => [
 </script>
 
 <template>
-  <div v-if="status === 'loading'">
+  <div v-if="status === 'pending'">
     <USkeleton class="w-8 h-8 rounded-full" />
   </div>
 
@@ -40,7 +46,7 @@ const items = computed(() => [
     :items="items"
     :content="{ align: 'end' }"
   >
-    <UButton color="neutral" variant="ghost" class="p-0.5" :loading="pending">
+    <UButton color="neutral" variant="ghost" class="p-0.5" :loading="busy">
       <UAvatar :src="avatarUrl" :alt="user.name || user.email || 'User'" size="sm" />
     </UButton>
 

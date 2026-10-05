@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { useState } from '#imports'
 
 import {
-  LOADING_IDENTITY,
+  PENDING_IDENTITY,
   toAuthenticatedIdentity,
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
@@ -24,7 +24,7 @@ describe('useConvexQuery auth execution gate', () => {
         const pending = useState<boolean>('convex:pending')
         const identity = useState<AuthIdentity>('convex:identity')
         pending.value = true
-        identity.value = LOADING_IDENTITY
+        identity.value = PENDING_IDENTITY
         const queryState = useConvexQuery(query, {}, { auth: 'required' })
         return { queryState, pending, identity }
       },

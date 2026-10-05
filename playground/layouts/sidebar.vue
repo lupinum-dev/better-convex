@@ -1,13 +1,17 @@
 <script setup lang="ts">
-const { user, status, pending, error: authError, client } = useConvexAuth()
+const { user, status, error: authError, client } = useConvexAuth()
+const busy = ref(false)
 const route = useRoute()
 
 async function handleSignOut() {
+  busy.value = true
   try {
     await client.signOut()
     window.location.href = '/'
   } catch (error) {
     console.error('Sign out failed:', error)
+  } finally {
+    busy.value = false
   }
 }
 
@@ -83,14 +87,14 @@ const isActiveRoute = (to: string) => {
         </div>
 
         <div class="header-right">
-          <span v-if="status === 'loading'" class="auth-user">Checking session...</span>
+          <span v-if="status === 'pending'" class="auth-user">Checking session...</span>
           <span v-else-if="status === 'error'" class="auth-user">
             {{ authError?.message ?? 'Authentication unavailable' }}
           </span>
           <template v-else-if="status === 'authenticated'">
             <span class="auth-user">{{ user?.name || user?.email }}</span>
-            <button class="btn btn-sm" :disabled="pending" @click="handleSignOut">
-              {{ pending ? 'Signing out...' : 'Sign Out' }}
+            <button class="btn btn-sm" :disabled="busy" @click="handleSignOut">
+              {{ busy ? 'Signing out...' : 'Sign Out' }}
             </button>
           </template>
           <template v-else-if="status === 'anonymous'">

@@ -82,6 +82,10 @@ are gone, and TypeScript reports most places that you must change.
       `defineSessionClaims: ({ user }) => ({ name: user.name, email: user.email })`.
       In Convex functions, use `auth.getUser(ctx)`.
 
+- [ ] `useConvexAuth().status` uses `'pending'` instead of `'loading'`, and
+      `pending` follows `status`. Replace `status === 'loading'` and keep your
+      own `ref` to disable a button while a sign-in or sign-out runs.
+
 ## Composables and errors
 
 - [ ] `useConvexMutation` returns `{ mutate, data, status, pending, error, reset }`;

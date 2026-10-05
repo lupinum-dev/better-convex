@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { computed } from 'vue'
 
 import { useNuxtApp, useState } from '#imports'
 
 import {
   ANONYMOUS_IDENTITY,
-  LOADING_IDENTITY,
+  PENDING_IDENTITY,
   toAuthenticatedIdentity,
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
@@ -19,7 +18,6 @@ const AUTH_ENABLED = { convexConfig: { auth: { origin: 'http://localhost:3000' }
 
 function controller(overrides: Partial<NuxtConvexAuthController> = {}): NuxtConvexAuthController {
   return {
-    pending: computed(() => false),
     client: {},
     ready: vi.fn(async () => 'anonymous' as const),
     dispose: vi.fn(),
@@ -33,13 +31,13 @@ describe('useConvexAuth Nuxt facade', () => {
       const identity = useState<AuthIdentity>('convex:identity')
       const pending = useState<boolean>('convex:pending')
       const authError = useState<string | null>('convex:authError')
-      identity.value = LOADING_IDENTITY
+      identity.value = PENDING_IDENTITY
       pending.value = true
       authError.value = null
       return { auth: useConvexAuth(), identity, pending, authError }
     }, AUTH_ENABLED)
 
-    expect(result.auth.status.value).toBe('loading')
+    expect(result.auth.status.value).toBe('pending')
     expect(result.auth.error.value).toBeUndefined()
     result.identity.value = toAuthenticatedIdentity({ id: 'alice' })
     result.pending.value = false

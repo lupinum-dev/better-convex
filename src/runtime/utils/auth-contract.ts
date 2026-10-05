@@ -13,6 +13,7 @@ import type { ConvexUser } from './types'
  */
 export interface UseConvexAuthReturn<Client extends object = object> {
   readonly status: ComputedRef<ConvexAuthStatus>
+  /** `true` while `status` is `'pending'`, as in every other composable. */
   readonly pending: ComputedRef<boolean>
   /** The signed-in user. Server rendering hydrates it, so read identity here. */
   readonly user: Readonly<Ref<ConvexUser | null>>

@@ -62,7 +62,6 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 export function createIntegratedAuthClient<Client extends object>(
   client: Client,
   reconciler: CanonicalSessionReconciler,
-  track: <Value>(operation: Promise<Value>) => Promise<Value> = (operation) => operation,
 ): IntegratedAuthClient<Client> {
   const wrappedByRaw = new WeakMap<object, object>()
   const rawByWrapped = new WeakMap<object, object>()
@@ -184,7 +183,7 @@ export function createIntegratedAuthClient<Client extends object>(
           return exposeResult(result)
         }
 
-        const reconciled = Promise.resolve(result).then(
+        return Promise.resolve(result).then(
           async (value) => {
             await reconciler.settle(checkpoint)
             return exposeResult(value)
@@ -194,7 +193,6 @@ export function createIntegratedAuthClient<Client extends object>(
             throw error
           },
         )
-        return track(reconciled)
       },
     })
 

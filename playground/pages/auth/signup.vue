@@ -37,8 +37,8 @@
           {{ visibleError }}
         </div>
 
-        <button type="submit" class="btn btn-primary" :disabled="pending">
-          {{ pending ? 'Creating account...' : 'Create Account' }}
+        <button type="submit" class="btn btn-primary" :disabled="busy">
+          {{ busy ? 'Creating account...' : 'Create Account' }}
         </button>
       </form>
 
@@ -51,7 +51,8 @@
 </template>
 
 <script setup lang="ts">
-const { client, pending, error: authError } = useConvexAuth()
+const { client, error: authError } = useConvexAuth()
+const busy = ref(false)
 
 const form = reactive({
   name: '',
@@ -63,9 +64,10 @@ const error = ref<string | null>(null)
 const visibleError = computed(() => error.value ?? authError.value?.message ?? null)
 
 async function handleSignUp() {
-  if (pending.value) return
+  if (busy.value) return
   error.value = null
 
+  busy.value = true
   try {
     const result = await client.signUp.email({
       name: form.name,
@@ -84,6 +86,8 @@ async function handleSignUp() {
     await navigateTo('/auth/signin')
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'An unexpected error occurred'
+  } finally {
+    busy.value = false
   }
 }
 </script>

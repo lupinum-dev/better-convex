@@ -22,7 +22,7 @@ const organization = computed(
       <h1>Projects</h1>
     </section>
 
-    <section v-if="status === 'loading'" class="empty">Checking session...</section>
+    <section v-if="status === 'pending'" class="empty">Checking session...</section>
 
     <section v-else-if="status === 'error'" class="empty">
       {{ authError?.message ?? 'Authentication failed.' }}

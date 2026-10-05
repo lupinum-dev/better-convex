@@ -22,7 +22,7 @@ describe('useConvexQuery under an auth-disabled build ', () => {
     )
 
     // No auth-loading wait: the subscription is established on the very first
-    // flush (contrast the *enabled*-build 'loading' case in
+    // flush (contrast the *enabled*-build 'pending' case in
     // useConvexQuery.auth-gate.nuxt.test.ts, which defers subscribing until
     // auth settles). Any 'pending' status observed here is the query's own
     // network round-trip, never an auth-settlement wait.

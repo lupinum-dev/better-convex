@@ -19,11 +19,11 @@ import type { ConvexIdentityKey } from './identity-key'
 export type ConvexAuthMode = 'required' | 'optional' | 'none'
 
 /**
- * Current usable identity. Orthogonal to `pending`, which tracks auth work in
- * flight. A background refresh keeps `status === 'authenticated'` while
- * `pending === true`.
+ * The identity Convex accepted. `'pending'` until the first result; after that
+ * a sign-in, sign-out, or background refresh keeps the previous value until
+ * Convex accepts the next one.
  */
-export type ConvexAuthStatus = 'loading' | 'anonymous' | 'authenticated' | 'error'
+export type ConvexAuthStatus = 'pending' | 'anonymous' | 'authenticated' | 'error'
 
 /**
  * The two-dimensional inputs to status derivation. `settled` is the initial
@@ -38,7 +38,7 @@ export interface ConvexAuthStatusInput {
 
 /**
  * Derive the canonical status in this fixed precedence:
- * `loading` → `authenticated` → `error` → `anonymous`.
+ * `pending` → `authenticated` → `error` → `anonymous`.
  *
  * `authenticated` outranks `error` so a failed background refresh over a still
  * usable identity keeps `authenticated`. `error` outranks `anonymous` so a
@@ -47,7 +47,7 @@ export interface ConvexAuthStatusInput {
  * precedence from here.
  */
 export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexAuthStatus {
-  if (!input.settled) return 'loading'
+  if (!input.settled) return 'pending'
   if (isAuthenticatedIdentityKey(input.identityKey)) return 'authenticated'
   if (input.error) return 'error'
   return 'anonymous'

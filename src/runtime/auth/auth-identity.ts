@@ -8,7 +8,7 @@ import type { ConvexUser } from '../utils/types'
  * token: this value is SSR state and reaches the page payload.
  */
 export type AuthIdentity =
-  | { status: 'loading' }
+  | { status: 'pending' }
   | { status: 'anonymous' }
   | {
       status: 'authenticated'
@@ -16,7 +16,7 @@ export type AuthIdentity =
       key: `user:${string}`
     }
 
-export const LOADING_IDENTITY: AuthIdentity = { status: 'loading' }
+export const PENDING_IDENTITY: AuthIdentity = { status: 'pending' }
 export const ANONYMOUS_IDENTITY: AuthIdentity = { status: 'anonymous' }
 
 /**
