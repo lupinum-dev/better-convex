@@ -1,5 +1,6 @@
-import { defineNuxtRouteMiddleware, navigateTo, useRuntimeConfig } from '#app'
+import { defineNuxtRouteMiddleware, navigateTo, useRequestEvent, useRuntimeConfig } from '#app'
 
+import { useConvexActivation } from '../composables/useConvexActivation'
 import { useConvexAuth } from '../composables/useConvexAuth'
 import {
   resolveGuestRedirect,
@@ -8,6 +9,7 @@ import {
   type ConvexAuthPageMeta,
 } from '../utils/auth-route-protection'
 import { normalizeConvexRuntimeConfig } from '../utils/runtime-config'
+import { isSsrAuthEnabled } from '../utils/ssr-auth'
 
 const ROUTE_AUTH_SETTLE_TIMEOUT_MS = 5_000
 
@@ -18,7 +20,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const meta = (to.meta as { convexAuth?: ConvexAuthPageMeta }).convexAuth
   const policy = resolveRoutePolicy(meta, authConfig.routes)
   if (policy === 'public') return
+  // Without SSR auth the server does not know the visitor, so the browser decides.
+  if (import.meta.server && !isSsrAuthEnabled(useRequestEvent()?.context, authConfig.ssr)) return
 
+  // An on-demand build starts the browser runtime for the first page that
+  // needs to know who is signed in.
+  if (import.meta.client) await useConvexActivation().activate()
   const { status, pending, ready } = useConvexAuth()
 
   // Wait for auth to settle in the browser so neither a protected page nor a

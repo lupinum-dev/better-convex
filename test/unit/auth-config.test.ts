@@ -27,8 +27,19 @@ describe('auth config normalization', () => {
       guestRedirectTo: '/',
       defaultQueryAuth: 'optional',
       routes: 'public',
+      ssr: true,
     })
     expect(isConvexAuthEnabled(auth)).toBe(true)
+  })
+
+  it('turns SSR session resolution off and rejects a non-boolean ssr', () => {
+    const auth = normalizeConvexAuthConfig({ origin: 'http://localhost:3000', ssr: false })
+    if (auth === false) throw new Error('expected auth enabled')
+    expect(auth.ssr).toBe(false)
+    expect(normalizeConvexAuthConfig(auth)).toEqual(auth)
+    expect(() =>
+      normalizeConvexAuthConfig({ origin: 'http://localhost:3000', ssr: 'off' as never }),
+    ).toThrow('auth.ssr must be a boolean')
   })
 
   it('normalizes the local redirect and strips the build-only client path', () => {

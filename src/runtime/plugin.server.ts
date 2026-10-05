@@ -1,6 +1,7 @@
 /**
  * Auth-enabled-only server plugin. Registered by the module only
- * when auth is enabled. It runs during SSR to:
+ * when auth is enabled. Unless SSR auth is off for the route, it runs during
+ * SSR to:
  * 1. Read the session cookie from the request
  * 2. Exchange the session cookie for a JWT token via Better Auth API
  * 3. Store the user in useState for client hydration, and the token only for
@@ -23,6 +24,7 @@ import { setServerConvexToken, useConvexIdentityState } from './utils/auth-ident
 import { createLogger, getLogLevel, type AuthEvent } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
 import { filterBetterAuthCookies } from './utils/shared-helpers'
+import { isSsrAuthEnabled } from './utils/ssr-auth'
 
 export default defineNuxtPlugin(async () => {
   const config = useRuntimeConfig()
@@ -47,10 +49,19 @@ export default defineNuxtPlugin(async () => {
     })
     return
   }
+  const convexIdentity = useConvexIdentityState()
+  if (!isSsrAuthEnabled(event.context, authConfig.ssr)) {
+    // Identity-independent render (`auth.ssr: false` or the `convex.ssrAuth`
+    // route rule): anonymous, session cookies ignored, no cookie-varying cache
+    // headers. The browser resolves the session after hydration.
+    convexIdentity.value = ANONYMOUS_IDENTITY
+    endInit()
+    logger.auth({ phase: 'init', outcome: 'miss', details: { code: 'AUTH_SSR_DISABLED' } })
+    return
+  }
   const requestMethod = event.method || 'GET'
   const requestId = crypto.randomUUID()
   const traceEnabled = logLevel === 'debug'
-  const convexIdentity = useConvexIdentityState()
   const cookieHeader = event.headers.get('cookie')
   const hasSupportedBetterAuthCookie = filterBetterAuthCookies(cookieHeader) !== null
 

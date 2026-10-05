@@ -55,3 +55,51 @@ declare module '#app' {
 export {}
 `
 }
+
+/**
+ * `#convex/client-activation`: how `useConvexActivation()` starts the browser
+ * runtime. Eager builds install the client plugin and export no loader. The
+ * on-demand loader is a dynamic import behind `import.meta.client`, so the
+ * server bundle drops it and the browser downloads it only on activation.
+ */
+export function getClientActivationTemplateContents(
+  connect: 'eager' | 'on-demand',
+  browserRuntimePath: string,
+): string {
+  if (connect === 'eager') {
+    return `export const connect = 'eager'\nexport const loadBrowserRuntime = null\n`
+  }
+  return [
+    `export const connect = 'on-demand'`,
+    `export const loadBrowserRuntime = import.meta.client`,
+    `  ? () => import(${JSON.stringify(browserRuntimePath)}).then((m) => m.setupConvexBrowserRuntime)`,
+    `  : null`,
+    ``,
+  ].join('\n')
+}
+
+/** Types for the `convex: { ssrAuth }` Nitro route rule (auth builds only). */
+export function getRouteRulesTypeTemplateContents(ssrAuthTypeImport: string): string {
+  const specifier = JSON.stringify(ssrAuthTypeImport)
+  const augmentation = [
+    `  interface NitroRouteConfig {`,
+    `    convex?: ConvexRouteRules`,
+    `  }`,
+    `  interface NitroRouteRules {`,
+    `    convex?: ConvexRouteRules`,
+    `  }`,
+  ].join('\n')
+  return [
+    `import type { ConvexRouteRules } from ${specifier}`,
+    ``,
+    `declare module 'nitropack' {`,
+    augmentation,
+    `}`,
+    `declare module 'nitropack/types' {`,
+    augmentation,
+    `}`,
+    ``,
+    `export {}`,
+    ``,
+  ].join('\n')
+}

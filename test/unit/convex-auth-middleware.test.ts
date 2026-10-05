@@ -17,7 +17,12 @@ const { navigateToMock, runtimeConfig, authState } = vi.hoisted(() => ({
 vi.mock('#app', () => ({
   defineNuxtRouteMiddleware: (middleware: unknown) => middleware,
   navigateTo: navigateToMock,
+  useRequestEvent: () => undefined,
   useRuntimeConfig: () => runtimeConfig,
+}))
+
+vi.mock('../../src/runtime/composables/useConvexActivation', () => ({
+  useConvexActivation: () => ({ activate: async () => {} }),
 }))
 
 vi.mock('../../src/runtime/utils/runtime-config', async () => ({
