@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest'
 
 import { resolveMcpProfile } from '../../src/runtime/convex-auth/mcp-profile'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
-import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
+import {
+  createComponentRateLimitStorage,
+  readComponentRateLimits,
+} from '../helpers/component-rate-limit'
 
 const origin = 'https://app.example.test'
 const issuer = `${origin}/api/auth`
@@ -181,7 +184,7 @@ function createAuth(
       earlyProvider ?? oauthProvider(options),
     ],
     rateLimit: {
-      customStorage: createMemoryRateLimitStorage(db),
+      customStorage: createComponentRateLimitStorage(db),
       enabled: true,
       modelName: 'rateLimit',
       storage: 'database',
@@ -361,8 +364,8 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     await expect(duplicate.json()).resolves.toEqual({
       error: 'invalid_request',
     })
-    expect(db.rateLimit).toHaveLength(1)
-    expect(db.rateLimit![0]).toMatchObject({ count: 3 })
+    expect(await readComponentRateLimits(db)).toHaveLength(1)
+    expect((await readComponentRateLimits(db))[0]).toMatchObject({ count: 3 })
   })
 
   it('lets a safe Basic profile reach the official consume boundary without checking its secret early', async () => {

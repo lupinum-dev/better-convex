@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
-import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
+import {
+  createComponentRateLimitStorage,
+  readComponentRateLimits,
+} from '../helpers/component-rate-limit'
 
 const origin = 'https://app.example.test'
 const convexSiteUrl = 'https://deployment.convex.site'
@@ -83,7 +86,7 @@ function createAuth(memoryDatabase = database(), session?: BetterAuthOptions['se
       }),
     ],
     rateLimit: {
-      customStorage: createMemoryRateLimitStorage(memoryDatabase),
+      customStorage: createComponentRateLimitStorage(memoryDatabase),
       enabled: true,
       modelName: 'rateLimit',
       storage: 'database',
@@ -245,7 +248,7 @@ describe('internal Better Auth session bridge', () => {
       expect(unrelatedPath.status).toBe(200)
       await unrelatedPath.body?.cancel()
 
-      expect(memoryDatabase.rateLimit).toEqual(
+      expect(await readComponentRateLimits(memoryDatabase)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ count: 300, key: '192.0.2.10|/convex/token' }),
           expect.objectContaining({ count: 1, key: '192.0.2.11|/convex/token' }),
@@ -257,7 +260,7 @@ describe('internal Better Auth session bridge', () => {
       const reset = await exchange('192.0.2.10')
       expect(reset.status).toBe(200)
       await reset.body?.cancel()
-      expect(memoryDatabase.rateLimit).toEqual(
+      expect(await readComponentRateLimits(memoryDatabase)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ count: 1, key: '192.0.2.10|/convex/token' }),
         ]),

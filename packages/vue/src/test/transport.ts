@@ -1,9 +1,10 @@
-import type { ConnectionState } from 'convex/browser'
+import type { ConnectionState, MutationOptions } from 'convex/browser'
 import type { FunctionReference } from 'convex/server'
 import { getFunctionName } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { hash } from 'ohash'
 
+import { ConvexCallError } from '../errors'
 import type { OwnedConvexClient } from '../internal/client-owner'
 import type { ConvexIdentityKey } from '../internal/identity-key'
 
@@ -377,8 +378,19 @@ export function createTestTransport() {
           else pendingReads.add(read)
         })
       },
-      mutation(reference: FunctionReference<'mutation'>, args?: Args): Promise<unknown> {
+      async mutation(
+        reference: FunctionReference<'mutation'>,
+        args?: Args,
+        options?: MutationOptions,
+      ): Promise<unknown> {
         assertOpen()
+        if (options?.optimisticUpdate !== undefined) {
+          throw new ConvexCallError({
+            kind: 'unknown',
+            message:
+              'The Better Convex test kit does not run optimistic updates; test them with the real Convex client in real-stack end-to-end tests.',
+          })
+        }
         return dispatchWrite('mutation', reference, args, identity)
       },
       action(reference: FunctionReference<'action'>, args?: Args): Promise<unknown> {
@@ -405,7 +417,7 @@ export function createTestTransport() {
         queryLog.push({ kind: 'subscribe', name, args: callArgs, identity })
         subscriptions.add(subscription)
         owned.add(subscription)
-        // Convex reports an already-known result asynchronously, like here.
+        // Use microtasks for deterministic tests; Convex uses setTimeout(0).
         if (bestRecord(name, callArgs)) {
           queueMicrotask(() => {
             const best = bestRecord(name, callArgs)
@@ -422,16 +434,17 @@ export function createTestTransport() {
         return Object.assign(unsubscribe, {
           unsubscribe,
           // Like Convex: a result is known while any subscription to the same
-          // query, arguments and identity holds it, not only this one.
+          // query and arguments on this client holds it, not only this one.
           getCurrentValue: () => {
-            const known = [subscription, ...subscriptions].find(
+            const known = [...owned].find(
               (other) =>
-                other.current?.state === 'resolved' &&
+                other.current !== undefined &&
                 other.name === subscription.name &&
                 other.identity === subscription.identity &&
                 hash(other.args) === hash(subscription.args),
             )?.current
-            return known?.state === 'resolved' ? known.value : undefined
+            if (known?.state === 'rejected') throw asError(known.error)
+            return known?.value
           },
           getQueryLogs: () => undefined,
         })
@@ -477,7 +490,16 @@ export function createTestTransport() {
         ownedConnectionListeners.clear()
       },
     }
-    return client as unknown as OwnedConvexClient
+    // The controls store untyped answers keyed by function name. These four
+    // assertions bind those answers to the caller's generated reference types;
+    // the client surface and mutation options remain structurally checked.
+    return {
+      ...client,
+      query: client.query as OwnedConvexClient['query'],
+      mutation: client.mutation as OwnedConvexClient['mutation'],
+      action: client.action as OwnedConvexClient['action'],
+      onUpdate: client.onUpdate as OwnedConvexClient['onUpdate'],
+    }
   }
 
   return {

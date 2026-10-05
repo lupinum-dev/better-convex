@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { FunctionReference } from 'convex/server'
 import { makeFunctionReference } from 'convex/server'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 
 import {
@@ -108,6 +108,21 @@ defineTestKitScenarios({
 })
 
 describe('setupBetterConvexTest (Vue)', () => {
+  it('fails explicitly when a composable passes an optimistic updater', async () => {
+    const convex = setupBetterConvexTest()
+    const updater = vi.fn()
+    convex.mutation(createNote).resolve('new')
+    const { state } = mountStandalone(convex, () =>
+      useConvexMutation(createNote, { optimisticUpdate: updater }),
+    )
+    await expect(state.mutate({ title: 'New note' })).rejects.toThrow(
+      'The Better Convex test kit does not run optimistic updates',
+    )
+    expect(updater).not.toHaveBeenCalled()
+    expect(convex.mutation(createNote).calls).toEqual([])
+    await convex.dispose()
+  })
+
   it('answers requests by function reference, with sticky and per-request answers', async () => {
     const convex = setupBetterConvexTest()
     const create = convex.mutation(createNote)
