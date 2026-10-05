@@ -50,7 +50,7 @@ type UploadOptionsParameter<Prepared, Completed, Context> = [Prepared] extends [
  * `INVALID_UPLOAD_URL`.
  *
  * Pass the record the upload belongs to as per-call context:
- * `upload(file, args, { context })` captures it when called and hands it to
+ * `upload(file, { args, context })` captures it when called and hands it to
  * `url` and `complete` as `ctx.context`, so a selection that changes while the
  * file uploads does not change the target.
  *
@@ -74,7 +74,7 @@ type UploadOptionsParameter<Prepared, Completed, Context> = [Prepared] extends [
  *
  * async function onChange(event: Event) {
  *   const file = (event.target as HTMLInputElement).files?.[0]
- *   if (file) await upload(file, {}, { context: props.documentId }).catch(() => undefined)
+ *   if (file) await upload(file, { context: props.documentId }).catch(() => undefined)
  * }
  * </script>
  *

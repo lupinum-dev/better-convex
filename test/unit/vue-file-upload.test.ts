@@ -113,7 +113,7 @@ describe('useConvexFileUpload (Vue)', () => {
     ) as FunctionReference<'mutation', 'public', { workspaceId: string }, string>
     const upload = host.run(() => useConvexFileUpload(reference))
 
-    await upload.upload(textFile(), { workspaceId: 'workspace_1' })
+    await upload.upload(textFile(), { args: { workspaceId: 'workspace_1' } })
     expect(host.mutation.mock.calls[0]?.[1]).toEqual({ workspaceId: 'workspace_1' })
     host.stop()
   })

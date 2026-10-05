@@ -1,4 +1,4 @@
-import type { FunctionReference, FunctionReturnType, OptionalRestArgs } from 'convex/server'
+import type { FunctionReference, FunctionReturnType, FunctionArgs } from 'convex/server'
 import { getFunctionName } from 'convex/server'
 import { computed, onScopeDispose, type ComputedRef } from 'vue'
 
@@ -59,18 +59,19 @@ type UploadUrlOption<Prepared, Context> = [Prepared] extends [string]
       readonly url: UploadUrlSelector<Prepared, Context>
     }
 
-/**
- * The arguments of `upload()` after the file: the upload-URL mutation's
- * arguments, then `{ context }`, the per-call value `url` and `complete`
- * receive as `ctx.context`. `{ context }` is required once `complete` or
- * `url` declares a context type that does not include `undefined`.
- */
-type UploadCallArgs<
-  Mutation extends UploadUrlMutation,
-  Context = undefined,
-> = undefined extends Context
-  ? [...args: OptionalRestArgs<Mutation>, options?: { readonly context?: Context }]
-  : [args: OptionalRestArgs<Mutation>[0], options: { readonly context: Context }]
+/** The per-call mutation arguments and context received by `url` and `complete`. */
+type UploadCallOptions<Mutation extends UploadUrlMutation, Context> = (Record<
+  string,
+  never
+> extends FunctionArgs<Mutation>
+  ? { readonly args?: FunctionArgs<Mutation> }
+  : { readonly args: FunctionArgs<Mutation> }) &
+  (undefined extends Context ? { readonly context?: Context } : { readonly context: Context })
+
+type UploadCallArgs<Mutation extends UploadUrlMutation, Context = undefined> =
+  Record<string, never> extends UploadCallOptions<Mutation, Context>
+    ? [options?: UploadCallOptions<Mutation, Context>]
+    : [options: UploadCallOptions<Mutation, Context>]
 
 export type UseConvexFileUploadOptions<
   Prepared = string,
@@ -97,7 +98,7 @@ export type UseConvexFileUploadOptions<
    * holds its result.
    *
    * Take the record to attach to from `ctx.context`, the value passed as
-   * `upload(file, args, { context })`, rather than from component state: the
+   * `upload(file, { args, context })`, rather than from component state: the
    * context is captured when `upload()` is called, so a selection that
    * changes while the file uploads does not change the target. Declare its
    * type on the parameter, for example
@@ -141,15 +142,14 @@ export interface UseConvexFileUploadReturn<
    * `error`.
    *
    * @param file The file to upload.
-   * @param args Validator-derived arguments for the upload-URL mutation,
-   * then `{ context }`: a per-call value handed to `url` and `complete` as
-   * `ctx.context`, like Convex's `mutation(ref, args, options)`. Plain
-   * objects and arrays are copied when `upload()` is called, so pass values
-   * (IDs), not refs.
+   * @param options Validator-derived `args` for the upload-URL mutation and
+   * `context`, a per-call value handed to `url` and `complete` as
+   * `ctx.context`. Plain objects and arrays are copied when `upload()` is
+   * called, so pass values (IDs), not refs.
    */
   readonly upload: (
     file: File,
-    ...args: UploadCallArgs<Mutation, Context>
+    ...options: UploadCallArgs<Mutation, Context>
   ) => Promise<ConvexFileUploadResult<FunctionReturnType<Mutation>, Completed>>
   /** The result of the last successful upload. */
   readonly data: ComputedRef<
@@ -196,7 +196,7 @@ export type ConvexFileUploadInternalOptions = {
  *
  * Pass the record the upload belongs to as per-call context, not through
  * component state that may change while the file uploads:
- * `upload(file, args, { context })` hands it to `url` and `complete` as
+ * `upload(file, { args, context })` hands it to `url` and `complete` as
  * `ctx.context`.
  *
  * @example
@@ -215,7 +215,7 @@ export type ConvexFileUploadInternalOptions = {
  *
  * async function onChange(event: Event) {
  *   const file = (event.target as HTMLInputElement).files?.[0]
- *   if (file) await upload(file, {}, { context: props.noteId }).catch(() => undefined)
+ *   if (file) await upload(file, { context: props.noteId }).catch(() => undefined)
  * }
  * </script>
  *
@@ -271,8 +271,10 @@ export function useConvexFileUploadInternal<Mutation extends UploadUrlMutation>(
 
   const state = controller.state
   return {
-    upload: (file: File, args?: Record<string, unknown>, call?: { context?: unknown }) =>
-      controller.upload(file, args ?? {}, call?.context),
+    upload: (
+      file: File,
+      options?: { readonly args?: Record<string, unknown>; readonly context?: unknown },
+    ) => controller.upload(file, options?.args ?? {}, options?.context),
     data: computed(() => state.value.data),
     status: computed(() => state.value.status),
     pending: computed(() => state.value.status === 'pending'),

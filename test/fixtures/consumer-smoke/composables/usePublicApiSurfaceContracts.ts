@@ -221,7 +221,7 @@ function _uploadContracts(file: File) {
   void noArgs.upload(file, {})
 
   const requiredArgs = useConvexFileUpload(api.files.generateWorkspaceUploadUrl)
-  void requiredArgs.upload(file, { workspaceId: 'workspace_1' })
+  void requiredArgs.upload(file, { args: { workspaceId: 'workspace_1' } })
   // @ts-expect-error generated validator-required args cannot be omitted
   void requiredArgs.upload(file)
   // @ts-expect-error generated validator-derived args reject the wrong shape

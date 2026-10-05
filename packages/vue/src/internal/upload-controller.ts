@@ -33,7 +33,7 @@ export interface UploadCompleteContext<Prepared = unknown, Context = undefined> 
   readonly file: File
   /**
    * The `context` passed to this `upload()` call, captured when it was called:
-   * `upload(file, args, { context })`. `undefined` when none was passed.
+   * `upload(file, { args, context })`. `undefined` when none was passed.
    */
   readonly context: Context
 }

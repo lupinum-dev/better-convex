@@ -114,11 +114,9 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
       { convex },
     )
     const selected = { assetId: 'asset_a' }
-    const uploading = result.upload(
-      new File(['hello'], 'hello.txt', { type: 'text/plain' }),
-      {},
-      { context: selected },
-    )
+    const uploading = result.upload(new File(['hello'], 'hello.txt', { type: 'text/plain' }), {
+      context: selected,
+    })
     selected.assetId = 'asset_b'
     await uploading
 

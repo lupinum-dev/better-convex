@@ -250,7 +250,7 @@ describe('setupBetterConvexTest (Vue)', () => {
     )
     const file = new File(['x'], 'x.txt', { type: 'text/plain' })
 
-    await expect(state.upload(file, { folder: 'docs' })).resolves.toMatchObject({
+    await expect(state.upload(file, { args: { folder: 'docs' } })).resolves.toMatchObject({
       storageId: 'storage-1',
       prepared: { sessionId: 'session-docs' },
     })
