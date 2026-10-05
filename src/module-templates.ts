@@ -55,3 +55,62 @@ declare module '#app' {
 export {}
 `
 }
+
+/**
+ * `#convex/client-activation`: how `useConvexActivation()` starts the browser
+ * runtime. Eager builds install the client plugin and export no loader. The
+ * on-demand loader is a dynamic import behind `import.meta.client`, so the
+ * server bundle drops it and the browser downloads it only on activation.
+ * `#convex/browser-runtime` is an alias to the build's client plugin module.
+ */
+export function getClientActivationTemplateContents(connect: 'eager' | 'on-demand'): string {
+  if (connect === 'eager') {
+    return `export const connect = 'eager'\nexport const loadBrowserRuntime = null\n`
+  }
+  return [
+    `export const connect = 'on-demand'`,
+    `export const loadBrowserRuntime = import.meta.client`,
+    `  ? () => import('#convex/browser-runtime').then((m) => m.setupConvexBrowserRuntime)`,
+    `  : null`,
+    ``,
+  ].join('\n')
+}
+
+/** Types for the `convex: { ssrAuth }` Nitro route rule (auth builds only). */
+export function getRouteRulesTypeTemplateContents(ssrAuthTypeImport: string): string {
+  const specifier = JSON.stringify(ssrAuthTypeImport)
+  const augmentation = [
+    `  interface NitroRouteConfig {`,
+    `    convex?: ConvexRouteRules`,
+    `  }`,
+    `  interface NitroRouteRules {`,
+    `    convex?: ConvexRouteRules`,
+    `  }`,
+  ].join('\n')
+  return [
+    `import type { ConvexRouteRules } from ${specifier}`,
+    ``,
+    `declare module 'nitropack' {`,
+    augmentation,
+    `}`,
+    `declare module 'nitropack/types' {`,
+    augmentation,
+    `}`,
+    ``,
+    `export {}`,
+    ``,
+  ].join('\n')
+}
+
+/** Declaration of `#convex/client-activation` for every build mode. */
+export function getClientActivationTypeTemplateContents(): string {
+  return [
+    `declare module '#convex/client-activation' {`,
+    `  export const connect: 'eager' | 'on-demand'`,
+    `  export const loadBrowserRuntime:`,
+    `    | (() => Promise<(nuxtApp: import('#app').NuxtApp) => void>)`,
+    `    | null`,
+    `}`,
+    ``,
+  ].join('\n')
+}

@@ -36,6 +36,9 @@ vi.mock('@nuxt/kit', () => ({
 }))
 
 // eslint-disable-next-line import/first
+import { addPlugin } from '@nuxt/kit'
+
+// eslint-disable-next-line import/first
 import convexModule from '../../src/module'
 
 interface TestNuxt {
@@ -101,7 +104,9 @@ describe('module type templates', () => {
 
     expect(kit.typeTemplates.map((template) => template.filename).sort()).toEqual([
       'types/better-convex-auth-client.d.ts',
+      'types/better-convex-client-activation.d.ts',
       'types/better-convex-page-meta.d.ts',
+      'types/better-convex-route-rules.d.ts',
     ])
     // A plain template is never referenced from `.nuxt/nuxt.d.ts`, so no
     // declaration may be registered that way.
@@ -121,9 +126,12 @@ describe('module type templates', () => {
   it('generates no auth declaration for a Convex-only build', async () => {
     await setup({})
 
-    expect(kit.typeTemplates).toEqual([])
+    expect(kit.typeTemplates.map((template) => template.filename)).toEqual([
+      'types/better-convex-client-activation.d.ts',
+    ])
     expect(kit.templates.map((template) => template.filename)).toEqual([
       '@lupinum/better-convex-nuxt/convex-api-missing.ts',
+      '@lupinum/better-convex-nuxt/client-activation.mjs',
     ])
   })
 })
@@ -184,5 +192,57 @@ describe('module transport options', () => {
     [{ server: { queryTimeoutMs: -1 } }, 'server.queryTimeoutMs must be a positive integer'],
   ])('rejects invalid transport options at build time: %j', async (options, message) => {
     await expect(setup(options as ModuleOptions)).rejects.toThrow(message)
+  })
+})
+
+describe('module client.connect', () => {
+  const clientPlugins = () =>
+    vi
+      .mocked(addPlugin)
+      .mock.calls.map(([plugin]) => plugin)
+      .filter((plugin) => typeof plugin === 'object' && plugin.mode === 'client')
+
+  beforeEach(() => {
+    vi.mocked(addPlugin).mockClear()
+  })
+
+  it.each([
+    [{}, './runtime/plugin.client'],
+    [{ auth: { origin: 'http://localhost:3000' } }, './runtime/plugin.auth.client'],
+  ] as const)(
+    'installs the one browser runtime as a client plugin when eager: %j',
+    async (options, path) => {
+      const nuxt = await setup(options as ModuleOptions)
+      expect(clientPlugins()).toEqual([{ src: path, mode: 'client' }])
+      expect(publicConvex(nuxt).client).toEqual({})
+      const activation = kit.templates.find((template) =>
+        template.filename.endsWith('client-activation.mjs'),
+      )
+      expect(activation?.getContents?.()).toContain('loadBrowserRuntime = null')
+    },
+  )
+
+  it('installs no client plugin and loads the runtime on activation when on-demand', async () => {
+    const nuxt = await setup({
+      auth: { origin: 'http://localhost:3000' },
+      client: { connect: 'on-demand', verbose: true },
+    })
+    expect(clientPlugins()).toEqual([])
+    // `connect` is build policy; only ConvexClient options reach runtime config.
+    expect(publicConvex(nuxt).client).toEqual({ verbose: true })
+    const activation = kit.templates.find((template) =>
+      template.filename.endsWith('client-activation.mjs'),
+    )
+    expect(activation?.getContents?.()).toContain("import('#convex/browser-runtime')")
+    expect(nuxt.options.alias['#convex/browser-runtime']).toBe('./runtime/plugin.auth.client')
+    expect(nuxt.options.alias['#convex/client-activation']).toBe(
+      '/app/.nuxt/@lupinum/better-convex-nuxt/client-activation.mjs',
+    )
+  })
+
+  it('rejects an unknown connect mode', async () => {
+    await expect(setup({ client: { connect: 'lazy' as never } })).rejects.toThrow(
+      "client.connect must be 'eager' or 'on-demand'",
+    )
   })
 })

@@ -25,7 +25,10 @@ import {
   type ModuleImportRegistration,
 } from './module-api-surface'
 import {
+  getClientActivationTemplateContents,
+  getClientActivationTypeTemplateContents,
   getMissingConvexApiTemplateContents,
+  getRouteRulesTypeTemplateContents,
   getTypeAugmentationTemplateContents,
 } from './module-templates'
 import {
@@ -33,6 +36,10 @@ import {
   isConvexAuthEnabled,
   type ConvexAuthOptions,
 } from './runtime/utils/auth-config'
+import {
+  normalizeConvexClientConnect,
+  type ConvexClientConnect,
+} from './runtime/utils/client-connect'
 import { CONVEX_MODULE_DEFAULTS } from './runtime/utils/config-defaults'
 import {
   getSiteUrlResolutionHint,
@@ -61,6 +68,7 @@ export type {
   ConvexUploadPhase,
 } from './runtime/errors'
 export type { ConvexUser } from './runtime/utils/types'
+export type { ConvexClientConnect, UseConvexActivationReturn } from './runtime/utils/client-connect'
 export type {
   ConvexCallStatus,
   ConvexClientHandle,
@@ -135,6 +143,8 @@ const AUTH_CLIENT_CONVENTION_FILENAME = 'convex-auth.ts'
 /** Auth-only generated declarations, relative to the Nuxt build directory. */
 const AUTH_CLIENT_TYPES_FILENAME = 'types/better-convex-auth-client.d.ts'
 const PAGE_META_TYPES_FILENAME = 'types/better-convex-page-meta.d.ts'
+const ROUTE_RULES_TYPES_FILENAME = 'types/better-convex-route-rules.d.ts'
+const CLIENT_ACTIVATION_TYPES_FILENAME = 'types/better-convex-client-activation.d.ts'
 
 /**
  * Resolve the single auth-client definition module ("Module option").
@@ -210,6 +220,14 @@ export interface ModuleOptions {
    * module creates, including the anonymous client used by `auth: 'none'`.
    */
   client?: {
+    /**
+     * When the browser runtime starts. `'eager'` starts the Convex client (and
+     * the Better Auth client in auth builds) with the app. `'on-demand'` loads
+     * neither and opens no WebSocket until `useConvexActivation().activate()`
+     * runs or the route middleware reaches a page that needs authentication.
+     * Build-time only. @default 'eager'
+     */
+    connect?: ConvexClientConnect
     /** Log Convex client debug output. @default false */
     verbose?: boolean
     /** Allow a self-hosted deployment URL that does not look like `*.convex.cloud`. @default false */
@@ -280,7 +298,9 @@ export default defineNuxtModule<ModuleOptions>({
     // Validate transport options at build time so a typo fails `nuxi build`
     // rather than the first request. Runtime normalization repeats the checks
     // for deploy-time `NUXT_PUBLIC_CONVEX_*` overrides.
-    const clientConfig = normalizeConvexClientConfig(options.client)
+    const { connect: connectOption, ...clientOptions } = options.client ?? {}
+    const connect = normalizeConvexClientConnect(connectOption)
+    const clientConfig = normalizeConvexClientConfig(clientOptions)
     const serverConfig = normalizeConvexServerConfig(options.server)
 
     // Public runtime config. Normalized auth build policy is materialized
@@ -305,10 +325,26 @@ export default defineNuxtModule<ModuleOptions>({
     registerConvexAliases({ nuxt, resolver, convexApiAlias })
     addServerPlugin(resolver.resolve('./runtime/server/plugins/runtime-config'))
 
-    // Exactly one browser-runtime plugin is installed. The auth-disabled entry
-    // has no Better Auth imports; the auth-enabled entry constructs the same
-    // Vue-owned runtime with the first-party provider adapter.
-    if (!isAuthEnabled) addPlugin(resolver.resolve('./runtime/plugin.client'))
+    // Exactly one browser-runtime entry exists. The auth-disabled entry has no
+    // Better Auth imports; the auth-enabled entry constructs the same Vue-owned
+    // runtime with the first-party provider adapter. An eager build installs it
+    // as a client plugin; an on-demand build loads it only on activation.
+    const browserRuntimePath = resolver.resolve(
+      isAuthEnabled ? './runtime/plugin.auth.client' : './runtime/plugin.client',
+    )
+    if (connect === 'eager') addPlugin({ src: browserRuntimePath, mode: 'client' })
+    const clientActivationTemplate = addTemplate({
+      filename: '@lupinum/better-convex-nuxt/client-activation.mjs',
+      write: true,
+      getContents: () => getClientActivationTemplateContents(connect),
+    })
+    nuxt.options.alias['#convex/client-activation'] = clientActivationTemplate.dst
+    nuxt.options.alias['#convex/browser-runtime'] = browserRuntimePath
+    // One declaration for both modes, so code type-checks the same in each.
+    addTypeTemplate({
+      filename: CLIENT_ACTIVATION_TYPES_FILENAME,
+      getContents: getClientActivationTypeTemplateContents,
+    })
 
     // Universal ConvexCallError payload plugin. Registered on both
     // server and client with a negative order so the reviver is installed before
@@ -383,12 +419,16 @@ export default defineNuxtModule<ModuleOptions>({
         src: resolver.resolve('./runtime/plugin.server'),
         mode: 'server',
       })
-
-      // Auth-enabled-only client plugin creates the Better Auth client and engine.
-      addPlugin({
-        src: resolver.resolve('./runtime/plugin.auth.client'),
-        mode: 'client',
-      })
+      // Copies the `convex: { ssrAuth }` route rule onto each request.
+      addServerPlugin(resolver.resolve('./runtime/server/plugins/ssr-auth-route'))
+      addTypeTemplate(
+        {
+          filename: ROUTE_RULES_TYPES_FILENAME,
+          getContents: () =>
+            getRouteRulesTypeTemplateContents(resolver.resolve('./runtime/utils/ssr-auth')),
+        },
+        { nuxt: true, nitro: true, node: true },
+      )
 
       addRouteMiddleware({
         name: 'convex-auth',

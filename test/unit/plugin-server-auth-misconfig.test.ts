@@ -124,6 +124,7 @@ describe('plugin.server token exchange failure policy', () => {
         origin: 'http://localhost:3000',
         trustedClientIpHeader: '',
         redirectTo: '/auth/signin',
+        ssr: true,
       },
     })
 

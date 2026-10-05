@@ -5,6 +5,7 @@ export interface ModuleImportRegistration {
 
 export const composableAutoImports = [
   { name: 'useConvex', from: './runtime/composables/useConvex' },
+  { name: 'useConvexActivation', from: './runtime/composables/useConvexActivation' },
   {
     name: 'useConvexAttachment',
     from: './runtime/composables/useConvexAttachment',

@@ -100,6 +100,7 @@ function scanGeneratedPublicSurface() {
   const authOnlyTypeTemplates = [
     'types/better-convex-auth-client.d.ts',
     'types/better-convex-page-meta.d.ts',
+    'types/better-convex-route-rules.d.ts',
   ]
   for (const template of authOnlyTypeTemplates) {
     const generated = join(buildDir, template)

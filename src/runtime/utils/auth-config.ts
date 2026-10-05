@@ -32,6 +32,15 @@ export interface ConvexAuthOptions {
   defaultQueryAuth?: ConvexAuthMode
   /** Protection for pages without `convexAuth` page meta. @default 'public' */
   routes?: ConvexAuthRouteDefault
+  /**
+   * Resolve the session during server rendering. With `false`, pages render
+   * as an anonymous visitor: the server ignores session cookies, exchanges no
+   * token, and adds no `Vary: Cookie` or `private` cache headers, so the HTML
+   * can be cached and shared. The browser resolves the session after
+   * hydration. The route rule `convex: { ssrAuth }` overrides this per route.
+   * @default true
+   */
+  ssr?: boolean
 }
 
 /** Internal materialized auth policy. `false` exists only for a no-auth build. */
@@ -44,6 +53,7 @@ export type NormalizedConvexAuthConfig =
       guestRedirectTo: string
       defaultQueryAuth: ConvexAuthMode
       routes: ConvexAuthRouteDefault
+      ssr: boolean
     }>
 
 const DEFAULT_AUTH_REDIRECT = '/auth/signin'
@@ -133,6 +143,9 @@ export function normalizeConvexAuthConfig(
     'auth.defaultQueryAuth',
   )
   const routes = normalizeEnum(options.routes, ROUTE_DEFAULTS, 'public', 'auth.routes')
+  if (options.ssr !== undefined && typeof options.ssr !== 'boolean') {
+    throw new TypeError('auth.ssr must be a boolean')
+  }
 
   return Object.freeze({
     origin,
@@ -141,6 +154,7 @@ export function normalizeConvexAuthConfig(
     guestRedirectTo,
     defaultQueryAuth,
     routes,
+    ssr: options.ssr ?? true,
   })
 }
 

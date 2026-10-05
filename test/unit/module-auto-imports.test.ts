@@ -32,6 +32,10 @@ describe('module auto-import surface', () => {
       name: 'useConvexAttachment',
       from: './runtime/composables/useConvexAttachment',
     })
+    expect(composableAutoImports).toContainEqual({
+      name: 'useConvexActivation',
+      from: './runtime/composables/useConvexActivation',
+    })
     expect(autoImportNames).not.toContain('useConvexUser')
     expect(autoImportNames).not.toContain('defineSharedConvexQuery')
     expect(autoImportNames).not.toContain('useConvexStorageUrl')
