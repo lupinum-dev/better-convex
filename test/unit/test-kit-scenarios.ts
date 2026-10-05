@@ -15,10 +15,10 @@ import type {
   useConvexAction,
   useConvexFileUpload,
   useConvexMutation,
-  useConvexOperation,
   useConvexPaginatedQuery,
   useConvexQuery,
 } from '../../packages/vue/src'
+import type { useConvexOperation } from '../../packages/vue/src/experimental'
 import {
   invalidCursorError,
   setupBetterConvexTest,

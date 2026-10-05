@@ -58,6 +58,9 @@
       "errors": [
         "./dist/runtime/errors/index.d.ts"
       ],
+      "experimental": [
+        "./dist/runtime/experimental/index.d.ts"
+      ],
       "test": [
         "./dist/runtime/test/index.d.ts"
       ],
@@ -93,6 +96,10 @@
     "./errors": {
       "types": "./dist/runtime/errors/index.d.ts",
       "import": "./dist/runtime/errors/index.js"
+    },
+    "./experimental": {
+      "types": "./dist/runtime/experimental/index.d.ts",
+      "import": "./dist/runtime/experimental/index.js"
     },
     "./test": {
       "types": "./dist/runtime/test/index.d.ts",

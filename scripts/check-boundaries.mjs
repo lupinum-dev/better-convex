@@ -60,6 +60,7 @@ const SERVER_RUNTIME_DIR = p('src/runtime/server')
  */
 const BROWSER_RUNTIME_DIRS = [
   p('src/runtime/composables'),
+  p('src/runtime/experimental'),
   p('src/runtime/middleware'),
   p('src/runtime/auth'),
 ]

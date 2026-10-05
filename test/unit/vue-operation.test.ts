@@ -3,8 +3,9 @@ import { ConvexError } from 'convex/values'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
-import { useConvexOperation, type ConvexOperation } from '../../packages/vue/src'
+import type { ConvexOperation } from '../../packages/vue/src'
 import { isConvexCallError } from '../../packages/vue/src/errors'
+import { useConvexOperation } from '../../packages/vue/src/experimental'
 import { createOperationController } from '../../packages/vue/src/internal/operation-controller'
 import { attachedVueHost } from '../helpers/attached-vue-host'
 

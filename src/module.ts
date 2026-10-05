@@ -96,8 +96,6 @@ export type {
 export type {
   ConvexOperation,
   ConvexOperationUploadOptions,
-  ConvexOperationWork,
-  UseConvexOperationReturn,
 } from './runtime/composables/useConvexOperation'
 // The Nuxt query options extend the Vue ones with the SSR policy (`server`,
 // `lazy`), so they are exported under their own `UseNuxt*` names.

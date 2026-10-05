@@ -4,6 +4,7 @@ export default defineBuildConfig({
   entries: [
     'src/index',
     'src/errors',
+    'src/experimental',
     'src/embedded',
     // Component-test runtime: the real composables against an in-memory transport.
     'src/test',

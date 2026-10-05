@@ -30,6 +30,10 @@
       "types": "./dist/embedded.d.mts",
       "import": "./dist/embedded.mjs"
     },
+    "./experimental": {
+      "types": "./dist/experimental.d.mts",
+      "import": "./dist/experimental.mjs"
+    },
     "./test": {
       "types": "./dist/test.d.mts",
       "import": "./dist/test.mjs"

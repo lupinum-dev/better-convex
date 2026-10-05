@@ -92,6 +92,8 @@ export function useOperationController(composable: string): OperationController 
  * to stop it too.
  *
  * ```ts
+ * import { useConvexOperation } from '@lupinum/better-convex-vue/experimental'
+ *
  * const { run: publish, pending, error } = useConvexOperation(
  *   async (op, draftId: Id<'drafts'>) => {
  *     const draft = await op.query(api.drafts.get, { draftId })
