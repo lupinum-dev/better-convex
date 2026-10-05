@@ -12,6 +12,25 @@ const kit = vi.hoisted(() => ({
   templates: [] as RegisteredTemplate[],
   typeTemplates: [] as RegisteredTemplate[],
   warn: vi.fn(),
+  runtimeConfig: { public: {} } as { public: Record<string, unknown> },
+  createBetterConvex: vi.fn(() => ({
+    attachment: () => ({ identity: { subscribe: () => () => {} } }),
+  })),
+}))
+
+vi.mock('#app', () => ({
+  defineNuxtPlugin: (plugin: unknown) => plugin,
+  useRuntimeConfig: () => kit.runtimeConfig,
+  useState: (_key: string, init: () => unknown) => ({ value: init() }),
+}))
+
+vi.mock('#imports', () => ({
+  useRuntimeConfig: () => kit.runtimeConfig,
+  useState: (_key: string, init: () => unknown) => ({ value: init() }),
+}))
+
+vi.mock('@lupinum/better-convex-vue', () => ({
+  createBetterConvex: kit.createBetterConvex,
 }))
 
 vi.mock('@nuxt/kit', () => ({
@@ -167,6 +186,22 @@ describe('module site URL', () => {
 })
 
 describe('module transport options', () => {
+  it('does not lose experimental.keepAlive between module setup and createBetterConvex', async () => {
+    const nuxt = await setup({ experimental: { keepAlive: { ms: 60_000, max: 30 } } })
+    kit.runtimeConfig = nuxt.options.runtimeConfig
+    kit.createBetterConvex.mockClear()
+    const { setupConvexBrowserRuntime } = await import('../../src/runtime/plugin.client')
+    const app = { provide: vi.fn(), vueApp: { use: vi.fn(), onUnmount: vi.fn() } }
+    setupConvexBrowserRuntime(app as never)
+
+    expect(kit.createBetterConvex).toHaveBeenCalledExactlyOnceWith({
+      convexUrl: 'https://example.convex.cloud',
+      clientOptions: {},
+      experimental: { keepAlive: { ms: 60_000, max: 30 } },
+    })
+    expect(publicConvex(await setup({})).experimental).toStrictEqual({})
+  })
+
   it('materializes client options and server bounds with the documented defaults', async () => {
     const defaults = publicConvex(await setup({}))
     expect(defaults.client).toEqual({})
@@ -190,6 +225,10 @@ describe('module transport options', () => {
   it.each([
     [{ client: { webSocketConstructor: 'ws' } }, 'client.webSocketConstructor is not a supported'],
     [{ server: { queryTimeoutMs: -1 } }, 'server.queryTimeoutMs must be a positive integer'],
+    [
+      { experimental: { keepAlive: { ms: 0, max: 30 } } },
+      'keepAlive.ms and experimental.keepAlive.max must be positive safe integers',
+    ],
   ])('rejects invalid transport options at build time: %j', async (options, message) => {
     await expect(setup(options as ModuleOptions)).rejects.toThrow(message)
   })

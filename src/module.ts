@@ -47,6 +47,7 @@ import {
   resolveConvexSiteUrl,
 } from './runtime/utils/convex-config'
 import type { LogLevel } from './runtime/utils/logger'
+import { normalizeConvexKeepAlive } from './runtime/utils/runtime-config-normalize'
 import { normalizeConvexDeploymentUrl, normalizeConvexSiteUrl } from './runtime/utils/site-url'
 import {
   normalizeConvexClientConfig,
@@ -215,6 +216,8 @@ export interface ModuleOptions {
    * @default false
    */
   logging?: LogLevel
+  /** Experimental: not covered by semver */
+  experimental?: { keepAlive?: { ms: number; max: number } }
   /**
    * Options for the browser `ConvexClient`. They apply to every client the
    * module creates, including the anonymous client used by `auth: 'none'`.
@@ -302,6 +305,7 @@ export default defineNuxtModule<ModuleOptions>({
     const connect = normalizeConvexClientConnect(connectOption)
     const clientConfig = normalizeConvexClientConfig(clientOptions)
     const serverConfig = normalizeConvexServerConfig(options.server)
+    const keepAlive = normalizeConvexKeepAlive(options.experimental?.keepAlive)
 
     // Public runtime config. Normalized auth build policy is materialized
     // internally; build-only client selection never enters runtime config.
@@ -315,6 +319,8 @@ export default defineNuxtModule<ModuleOptions>({
         logging: options.logging ?? CONVEX_MODULE_DEFAULTS.logging,
         client: { ...clientConfig },
         server: { ...serverConfig },
+        // Nuxt serializes an unset key as "", so write keepAlive only when it is set.
+        experimental: keepAlive ? { keepAlive } : {},
       }),
       // Auth is build policy, not a deploy-time/public runtime override.
       auth: normalizedAuthConfig,

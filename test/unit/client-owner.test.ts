@@ -1,5 +1,5 @@
 import type { ConnectionState } from 'convex/browser'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createConvexClientOwner,
@@ -27,6 +27,7 @@ class CountingClient extends MockConvexClient {
   static closed = 0
   readonly ordinal: number
   closeCalls = 0
+  readonly unsubscribedQueries: unknown[] = []
 
   constructor() {
     super()
@@ -34,7 +35,11 @@ class CountingClient extends MockConvexClient {
     this.ordinal = CountingClient.created
     const subscribe = this.onUpdate
     this.onUpdate = ((...args: Parameters<typeof subscribe>) => {
-      const stop = subscribe(...args)
+      const underlying = subscribe(...args)
+      const stop = () => {
+        this.unsubscribedQueries.push(args[0])
+        underlying()
+      }
       const augmented = stop as typeof stop & {
         unsubscribe(): void
         getCurrentValue(): string
@@ -296,7 +301,7 @@ describe('createConvexClientOwner', () => {
   })
 
   describe('onUpdate rebinding', () => {
-    it('rebinds active listeners A→B with a stable unsubscribe and exactly one live subscription', async () => {
+    it('does not leave listeners on the old client or delay unsubscribe without keepAlive', async () => {
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       const cb = vi.fn()
@@ -322,9 +327,11 @@ describe('createConvexClientOwner', () => {
       // The unsubscribe identity is stable and removes the CURRENT (B) subscription.
       unsubscribe()
       expect(b.activeListenerCount()).toBe(0)
+      expect(b.unsubscribedQueries).toHaveLength(1)
       // Idempotent.
       unsubscribe()
       expect(b.activeListenerCount()).toBe(0)
+      expect(b.unsubscribedQueries).toHaveLength(1)
     })
 
     it('drops an already queued callback from the retired client', async () => {
@@ -355,6 +362,149 @@ describe('createConvexClientOwner', () => {
       })
       expect(CountingClient.created).toBe(2)
       expect(CountingClient.closed).toBeGreaterThanOrEqual(2)
+    })
+  })
+
+  describe('keepAlive', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('does not unsubscribe a stopped consumer before ms or unsubscribe it twice', async () => {
+      const client = new CountingClient()
+      const o = createConvexClientOwner({
+        primaryFactory: () => client as unknown as OwnedConvexClient,
+        keepAlive: { ms: 100, max: 2 },
+      })
+      const query = mockFnRef<'query'>('q')
+      const stop = o.handle.onUpdate(query, {}, vi.fn())
+
+      stop()
+      stop()
+      expect(client.activeListenerCount()).toBe(1)
+      expect(client.unsubscribedQueries).toEqual([])
+      expect(stop.getCurrentValue()).toBeUndefined()
+      vi.advanceTimersByTime(99)
+      expect(client.unsubscribedQueries).toEqual([])
+      vi.advanceTimersByTime(1)
+      expect(client.activeListenerCount()).toBe(0)
+      expect(client.unsubscribedQueries).toEqual([query])
+      await o.dispose()
+      expect(client.unsubscribedQueries).toEqual([query])
+    })
+
+    it('does not deliver retained results or errors to a stopped consumer', async () => {
+      const client = new CountingClient()
+      const o = createConvexClientOwner({
+        primaryFactory: () => client as unknown as OwnedConvexClient,
+        keepAlive: { ms: 100, max: 2 },
+      })
+      const callback = vi.fn()
+      const onError = vi.fn()
+      const stop = o.handle.onUpdate(mockFnRef<'query'>('q'), {}, callback, onError)
+      const queued = client.queuedQueryResultByPath('q', 'queued')
+      stop()
+      client.emitQueryResultByPath('q', 'retained')
+      client.emitQueryErrorByPath('q', new Error('retained error'))
+      queued()
+      expect(callback).not.toHaveBeenCalled()
+      expect(onError).not.toHaveBeenCalled()
+      expect(client.activeListenerCount()).toBe(1)
+      await o.dispose()
+    })
+
+    it('does not exceed max or evict a newer retained subscription before the oldest', async () => {
+      const client = new CountingClient()
+      const o = createConvexClientOwner({
+        primaryFactory: () => client as unknown as OwnedConvexClient,
+        keepAlive: { ms: 100, max: 2 },
+      })
+      const queries = ['first', 'second', 'third'].map((path) => mockFnRef<'query'>(path))
+      for (const query of queries) o.handle.onUpdate(query, {}, vi.fn())()
+      expect(client.calls.onUpdate).toHaveLength(3)
+      expect(client.unsubscribedQueries).toEqual([queries[0]])
+      expect(client.activeListenerCount()).toBe(2)
+      expect(vi.getTimerCount()).toBe(2)
+      vi.advanceTimersByTime(100)
+      expect(client.unsubscribedQueries).toEqual(queries)
+      expect(client.activeListenerCount()).toBe(0)
+      await o.dispose()
+    })
+
+    it('does not construct the new principal before every retained subscription is released', async () => {
+      const queries = ['first', 'second', 'third'].map((path) => mockFnRef<'query'>(path))
+      const clients: CountingClient[] = []
+      const o = createConvexClientOwner({
+        primaryFactory: () => {
+          if (clients.length > 0) {
+            expect(CountingClient.created).toBe(1)
+            expect(clients[0]!.unsubscribedQueries).toEqual(queries)
+            expect(clients[0]!.activeListenerCount()).toBe(0)
+            expect(vi.getTimerCount()).toBe(0)
+          }
+          const client = new CountingClient()
+          clients.push(client)
+          return client as unknown as OwnedConvexClient
+        },
+        keepAlive: { ms: 100, max: 3 },
+      })
+      for (const query of queries) o.handle.onUpdate(query, {}, vi.fn())()
+      expect(clients[0]!.unsubscribedQueries).toEqual([])
+      await replace(o, 1)
+      expect(clients).toHaveLength(2)
+      vi.advanceTimersByTime(100)
+      expect(clients[0]!.unsubscribedQueries).toEqual(queries)
+      await o.dispose()
+    })
+
+    it('does not leave retained subscriptions or their timers alive after disposal starts', async () => {
+      const client = new CountingClient()
+      const o = createConvexClientOwner({
+        primaryFactory: () => client as unknown as OwnedConvexClient,
+        keepAlive: { ms: 100, max: 3 },
+      })
+      const queries = ['first', 'second'].map((path) => mockFnRef<'query'>(path))
+      for (const query of queries) o.handle.onUpdate(query, {}, vi.fn())()
+      const disposal = o.dispose()
+      expect(client.unsubscribedQueries).toEqual(queries)
+      expect(client.activeListenerCount()).toBe(0)
+      expect(vi.getTimerCount()).toBe(0)
+      await disposal
+      vi.advanceTimersByTime(100)
+      expect(client.unsubscribedQueries).toEqual(queries)
+    })
+
+    it('does not clamp an accepted long retention duration to 1 ms', async () => {
+      const client = new CountingClient()
+      const o = createConvexClientOwner({
+        primaryFactory: () => client as unknown as OwnedConvexClient,
+        keepAlive: { ms: 2_147_483_648, max: 1 },
+      })
+      const query = mockFnRef<'query'>('q')
+      o.handle.onUpdate(query, {}, vi.fn())()
+      vi.advanceTimersByTime(2_147_483_647)
+      expect(client.unsubscribedQueries).toEqual([])
+      vi.advanceTimersByTime(1)
+      expect(client.unsubscribedQueries).toEqual([query])
+      await o.dispose()
+    })
+
+    it.each([
+      { ms: 0, max: 1 },
+      { ms: -1, max: 1 },
+      { ms: 1.5, max: 1 },
+      { ms: NaN, max: 1 },
+      { ms: Infinity, max: 1 },
+      { ms: Number.MAX_SAFE_INTEGER + 1, max: 1 },
+      { ms: 1, max: 0 },
+      { ms: 1, max: -1 },
+      { ms: 1, max: 1.5 },
+      { ms: 1, max: NaN },
+      { ms: 1, max: Infinity },
+      { ms: 1, max: Number.MAX_SAFE_INTEGER + 1 },
+    ])('does not create a client with invalid keepAlive bounds: %j', (keepAlive) => {
+      const primaryFactory = vi.fn(() => new CountingClient() as unknown as OwnedConvexClient)
+      expect(() => createConvexClientOwner({ primaryFactory, keepAlive })).toThrow(TypeError)
+      expect(primaryFactory).not.toHaveBeenCalled()
     })
   })
 

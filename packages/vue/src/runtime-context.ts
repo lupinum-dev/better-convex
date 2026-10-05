@@ -56,6 +56,8 @@ export type CreateBetterConvexOptions = (
       convexUrl: string
       auth?: BetterConvexAuthAdapter
       clientOptions?: BetterConvexClientOptions
+      /** Experimental: not covered by semver */
+      experimental?: { keepAlive?: { ms: number; max: number } }
       attachment?: never
     }
   | {
@@ -63,6 +65,7 @@ export type CreateBetterConvexOptions = (
       convexUrl?: never
       auth?: never
       clientOptions?: never
+      experimental?: never
     }
 ) & {
   /**
@@ -167,6 +170,7 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
         : createBetterConvexBrowserRuntime({
             clientFactory: () => makeClient(options.convexUrl!, clientOptions),
             auth: options.auth,
+            keepAlive: options.experimental?.keepAlive,
           })
       ownedBrowser = browser
       const attachment = attached ?? browser!.attachment

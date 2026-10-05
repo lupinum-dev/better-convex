@@ -32,6 +32,7 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
   const plugin = createBetterConvex({
     convexUrl: convexConfig.url,
     clientOptions: convexConfig.client,
+    experimental: { keepAlive: convexConfig.experimental?.keepAlive },
   })
   nuxtApp.vueApp.use(plugin)
   const runtime = createConvexRuntimeContext(plugin.attachment(), logger)

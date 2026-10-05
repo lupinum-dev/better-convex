@@ -134,6 +134,7 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
     convexUrl: convexConfig.url,
     auth: adapter,
     clientOptions: convexConfig.client,
+    experimental: { keepAlive: convexConfig.experimental?.keepAlive },
     defaultQueryAuth: convexConfig.auth.defaultQueryAuth,
   })
   nuxtApp.vueApp.use(vuePlugin)

@@ -38,6 +38,31 @@ describe('runtime config normalization', () => {
     })
   })
 
+  it('does not enable retention by default or lose configured keepAlive bounds', () => {
+    expect(normalizeConvexRuntimeConfig({}).experimental.keepAlive).toBeUndefined()
+    expect(
+      normalizeConvexRuntimeConfig({ experimental: { keepAlive: { ms: 60_000, max: 30 } } })
+        .experimental.keepAlive,
+    ).toEqual({ ms: 60_000, max: 30 })
+  })
+
+  it.each([
+    null,
+    {},
+    { ms: '60000', max: 30 },
+    { ms: 60_000, max: '30' },
+    { ms: 0, max: 30 },
+    { ms: 1.5, max: 30 },
+    { ms: Infinity, max: 30 },
+    { ms: Number.MAX_SAFE_INTEGER + 1, max: 30 },
+    { ms: 60_000, max: 0 },
+    { ms: 60_000, max: 1.5 },
+    { ms: 60_000, max: Infinity },
+    { ms: 60_000, max: Number.MAX_SAFE_INTEGER + 1 },
+  ])('does not accept invalid keepAlive bounds from runtime config: %j', (keepAlive) => {
+    expect(() => normalizeConvexRuntimeConfig({ experimental: { keepAlive } })).toThrow(TypeError)
+  })
+
   it.each([
     'https://user:pass@example.convex.cloud',
     'https://example.convex.cloud/path',
