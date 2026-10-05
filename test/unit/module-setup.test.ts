@@ -199,7 +199,7 @@ describe('module transport options', () => {
       clientOptions: {},
       experimental: { keepAlive: { ms: 60_000, max: 30 } },
     })
-    expect(publicConvex(await setup({})).experimental).toEqual({ keepAlive: undefined })
+    expect(publicConvex(await setup({})).experimental).toStrictEqual({})
   })
 
   it('materializes client options and server bounds with the documented defaults', async () => {

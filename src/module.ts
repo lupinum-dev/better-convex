@@ -319,7 +319,8 @@ export default defineNuxtModule<ModuleOptions>({
         logging: options.logging ?? CONVEX_MODULE_DEFAULTS.logging,
         client: { ...clientConfig },
         server: { ...serverConfig },
-        experimental: { keepAlive },
+        // Nuxt serializes an unset key as "", so write keepAlive only when it is set.
+        experimental: keepAlive ? { keepAlive } : {},
       }),
       // Auth is build policy, not a deploy-time/public runtime override.
       auth: normalizedAuthConfig,
