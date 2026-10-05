@@ -2,6 +2,7 @@ import type { FunctionReference } from 'convex/server'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useConvexFileUpload } from '../../src/runtime/composables/useConvexFileUpload'
+import { createLogger } from '../../src/runtime/utils/logger'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt, installIdentityPortHarness } from '../helpers/nuxt-runtime-harness'
 
@@ -86,6 +87,44 @@ describe('useConvexFileUpload (Nuxt runtime)', () => {
     expect(result.status.value).toBe('success')
     expect(result.data.value).toBe(uploaded)
     expect(result.error.value).toBeUndefined()
+  })
+
+  it('logs success and error events through the module logger', async () => {
+    const convex = new MockConvexClient()
+    const mutation = mockFnRef<'mutation'>('files:generateUploadUrl')
+    convex.setMutationHandler('files:generateUploadUrl', async () => 'http://upload.local')
+    const upload = vi.fn()
+    const { result } = await captureInNuxt(() => useConvexFileUpload(mutation), {
+      convex,
+      logger: { ...createLogger(false), upload },
+    })
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' })
+    await result.upload(file)
+    convex.setMutationHandler('files:generateUploadUrl', async () => {
+      throw new Error('upload URL unavailable')
+    })
+    await expect(result.upload(file)).rejects.toMatchObject({ phase: 'prepare' })
+    expect(upload.mock.calls).toEqual([
+      [
+        {
+          name: 'files:generateUploadUrl',
+          event: 'success',
+          filename: 'hello.txt',
+          size: 5,
+          duration: expect.any(Number),
+        },
+      ],
+      [
+        {
+          name: 'files:generateUploadUrl',
+          event: 'error',
+          filename: 'hello.txt',
+          size: 5,
+          duration: expect.any(Number),
+          error: expect.objectContaining({ phase: 'prepare' }),
+        },
+      ],
+    ])
   })
 
   it('hands the per-call context to url and complete through the Nuxt facade', async () => {

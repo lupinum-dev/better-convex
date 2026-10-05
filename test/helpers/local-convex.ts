@@ -234,7 +234,7 @@ export function resolveLocalConvexCli(cwd: string): string {
   return path.join(path.dirname(consumerRequire.resolve('convex/package.json')), 'bin/main.js')
 }
 
-function spawnConvex(
+export function spawnConvex(
   cwd: string,
   args: string[],
   overrides: Readonly<Record<string, string>> = {},
