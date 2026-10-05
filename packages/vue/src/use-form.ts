@@ -18,6 +18,7 @@ import {
 import type { CallableControllerObserver } from './internal/callable-controller'
 import { isIdentityChangedError } from './internal/identity-changed-error'
 import type { InternalOperation } from './internal/operation-controller'
+import { snapshotArgs } from './internal/snapshot-args'
 import type { ConvexCallStatus } from './use-callable'
 import { useOperationController } from './use-operation'
 
@@ -108,28 +109,6 @@ type MappedFormOptions<
 /** Options accepted by the untyped adapter entry {@link useConvexFormInternal}. */
 export type ConvexFormInternalOptions = FormOptionsBase<StandardSchemaV1, FormRecord> & {
   readonly toArgs?: (values: unknown) => FormRecord
-}
-
-function cloneSnapshot<Value>(value: Value): Value {
-  const seen = new WeakMap<object, unknown>()
-  const clone = (entry: unknown): unknown => {
-    if (!entry || typeof entry !== 'object') return entry
-    const prior = seen.get(entry)
-    if (prior) return prior
-    if (Array.isArray(entry)) {
-      const next: unknown[] = []
-      seen.set(entry, next)
-      for (const item of entry) next.push(clone(item))
-      return next
-    }
-    const prototype = Object.getPrototypeOf(entry)
-    if (prototype !== Object.prototype && prototype !== null) return entry
-    const next: Record<string, unknown> = {}
-    seen.set(entry, next)
-    for (const [key, item] of Object.entries(entry)) next[key] = clone(item)
-    return next
-  }
-  return clone(value) as Value
 }
 
 function hasOverlappingKeys(left: FormRecord, right: FormRecord): boolean {
@@ -258,38 +237,39 @@ export function useConvexFormInternal(
         }),
       )
     }
-    const snapshot = cloneSnapshot(values)
-    const extra = cloneSnapshot(extraArgs[0] ?? {})
+    const snapshot = snapshotArgs(values)
+    const extra = snapshotArgs(extraArgs[0] ?? {})
     const knownFields = new Set(Object.keys(snapshot))
     const attempt = ++revision
     // The submission belongs to the identity that is current now, before
     // async validation: values captured under one identity never reach another.
     const operation = operations.begin()
     activeOperation = operation
-    currentStatus.value = 'pending'
-    data.value = undefined
-    error.value = undefined
     const owns = () => !disposed && revision === attempt
 
     const execute = async (): Promise<ConvexFormSubmitResult<unknown>> => {
-      const validation = await options.schema['~standard'].validate(snapshot)
-      if (validation.issues) {
-        const failure = createValidationFormError(validation.issues, knownFields)
-        if (owns()) {
-          error.value = failure
-          currentStatus.value = 'error'
-        }
-        return Object.freeze({ ok: false, error: failure })
-      }
-
-      const produced = options.toArgs
-        ? options.toArgs(validation.value)
-        : (validation.value as FormRecord)
-      if (hasOverlappingKeys(produced, extra)) {
-        throw new TypeError('[better-convex-vue] form and contextual mutation arguments overlap')
-      }
-
       try {
+        const validation = await options.schema['~standard'].validate(snapshot)
+        const retirement = operation.retirement
+        if (retirement) {
+          throw new ConvexCallError({ ...retirement.toJSON(), functionName, outcome: 'not-sent' })
+        }
+        if (validation.issues) {
+          const failure = createValidationFormError(validation.issues, knownFields)
+          if (owns()) {
+            error.value = failure
+            currentStatus.value = 'error'
+          }
+          return Object.freeze({ ok: false, error: failure })
+        }
+
+        const produced = options.toArgs
+          ? options.toArgs(validation.value)
+          : (validation.value as FormRecord)
+        if (hasOverlappingKeys(produced, extra)) {
+          throw new TypeError('[better-convex-vue] form and contextual mutation arguments overlap')
+        }
+
         const result = await dispatch(operation, { ...produced, ...extra })
         if (owns()) {
           data.value = result
@@ -307,15 +287,21 @@ export function useConvexFormInternal(
       }
     }
 
-    const promise = execute().finally(() => {
-      // reset() and disposal retire the submission and already own the state.
-      if (activePromise !== promise) return
-      activePromise = undefined
-      activeOperation = undefined
-      // A thrown TypeError or non-call failure leaves no committed outcome.
-      if (currentStatus.value === 'pending') currentStatus.value = 'idle'
-    })
+    // Defer validation so the guard is reserved before synchronous pending watchers run.
+    const promise = Promise.resolve()
+      .then(execute)
+      .finally(() => {
+        // reset() and disposal retire the submission and already own the state.
+        if (activePromise !== promise) return
+        activePromise = undefined
+        activeOperation = undefined
+        // A thrown TypeError or non-call failure leaves no committed outcome.
+        if (currentStatus.value === 'pending') currentStatus.value = 'idle'
+      })
     activePromise = promise
+    data.value = undefined
+    error.value = undefined
+    currentStatus.value = 'pending'
     return promise
   }
 

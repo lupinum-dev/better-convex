@@ -30,9 +30,9 @@ export function createClientCallState<Result>(): ClientCallState<Result> {
 
   const start = () => {
     const requestId = ++activeRequestId
-    currentStatus.value = 'pending'
     error.value = undefined
     data.value = undefined
+    currentStatus.value = 'pending'
     return requestId
   }
 
@@ -40,23 +40,25 @@ export function createClientCallState<Result>(): ClientCallState<Result> {
 
   const commitSuccess = (requestId: number, result: Result) => {
     if (!isCurrent(requestId)) return false
-    currentStatus.value = 'success'
     data.value = result
+    error.value = undefined
+    currentStatus.value = 'success'
     return true
   }
 
   const commitError = (requestId: number, err: ConvexCallError) => {
     if (!isCurrent(requestId)) return false
-    currentStatus.value = 'error'
+    data.value = undefined
     error.value = err
+    currentStatus.value = 'error'
     return true
   }
 
   const reset = () => {
     activeRequestId += 1
-    currentStatus.value = 'idle'
     error.value = undefined
     data.value = undefined
+    currentStatus.value = 'idle'
   }
 
   return {

@@ -11,7 +11,7 @@ import {
 import type { ClientCallStatus } from './call-state'
 import { createIdentityChangedError, isIdentityChangedError } from './identity-changed-error'
 import type { InternalOperation, OperationController } from './operation-controller'
-import { snapshotUploadContext } from './upload-context'
+import { snapshotArgs } from './snapshot-args'
 import { canPostFiles, type UploadProgressInfo } from './upload-transport'
 import { checkUploadFile } from './upload-validation'
 
@@ -189,7 +189,8 @@ export function createFileUploadController(input: FileUploadControllerInput): Fi
     const startedAt = Date.now()
     // The completion target is fixed here, before anything awaits: later
     // changes to component state cannot redirect this upload.
-    const context = snapshotUploadContext(callContext)
+    const snapshot = snapshotArgs(args)
+    const context = snapshotArgs(callContext)
     if (disposed) {
       throw libraryError('CANCELLED', 'Convex upload cancelled: its owner was disposed.', {
         outcome: 'not-sent',
@@ -284,7 +285,7 @@ export function createFileUploadController(input: FileUploadControllerInput): Fi
       }
 
       enterPhase('prepare')
-      const prepared = await input.prepare(operation, args)
+      const prepared = await input.prepare(operation, snapshot)
 
       enterPhase('upload')
       const url = selectUrl(prepared, file, context)
