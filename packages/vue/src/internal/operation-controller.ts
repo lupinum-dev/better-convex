@@ -10,6 +10,7 @@ import {
 } from '../errors'
 import type { ConvexClientHandle } from './client-owner'
 import { createIdentityChangedError, isIdentityChangedError } from './identity-changed-error'
+import { snapshotArgs } from './snapshot-args'
 import { canPostFiles, postFileToConvexStorage, type UploadProgressInfo } from './upload-transport'
 import { checkUploadFile } from './upload-validation'
 
@@ -322,6 +323,7 @@ export function createOperationController(input: OperationControllerInput): Oper
       args: readonly unknown[],
     ): Promise<Result> => {
       const functionName = getFunctionName(reference)
+      const snapshot = snapshotArgs(args[0] ?? {})
       return runStep(state, {
         kind,
         functionName,
@@ -339,7 +341,7 @@ export function createOperationController(input: OperationControllerInput): Oper
             typeof kind,
             (reference: unknown, args: unknown) => Promise<Result>
           >
-          return target[kind](reference, args[0] ?? {})
+          return target[kind](reference, snapshot)
         },
       })
     }

@@ -60,3 +60,19 @@ it('reads refs as their call-time values, at the top level, inside reactive obje
   expect(fromReactive.boardId).toBe('b1')
   expect(fromPlain).toEqual({ boardId: 'b1', tags: ['a'] })
 })
+
+it('copies cycles and shared references without losing graph identity', () => {
+  const node: { self?: unknown; items?: unknown[] } = {}
+  const items = [node]
+  node.self = node
+  node.items = items
+  const buffer = new ArrayBuffer(1)
+  const snapshot = snapshotArgs({ node, alias: node, items, buffers: [buffer, buffer] })
+  expect(snapshot.node).not.toBe(node)
+  expect(snapshot.node.self).toBe(snapshot.node)
+  expect(snapshot.alias).toBe(snapshot.node)
+  expect(snapshot.items).toBe(snapshot.node.items)
+  expect(snapshot.items[0]).toBe(snapshot.node)
+  expect(snapshot.buffers[0]).not.toBe(buffer)
+  expect(snapshot.buffers[1]).toBe(snapshot.buffers[0])
+})

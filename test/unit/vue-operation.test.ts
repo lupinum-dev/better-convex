@@ -1,8 +1,9 @@
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope } from 'vue'
+import { effectScope, ref, watch } from 'vue'
 
+import { useConvexMutation } from '../../packages/vue/src'
 import type { ConvexOperation } from '../../packages/vue/src'
 import { isConvexCallError } from '../../packages/vue/src/errors'
 import { useConvexOperation } from '../../packages/vue/src/experimental'
@@ -584,4 +585,60 @@ describe('operation controller: transport evidence', () => {
       outcome: 'not-sent',
     })
   })
+})
+
+it.each(['query', 'mutation', 'action'] as const)(
+  'captures op.%s arguments before authentication settles',
+  async (kind) => {
+    let release!: () => void
+    const auth = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const client = vi.fn(async (_reference: unknown, _args: unknown) => 'saved')
+    const host = attachedVueHost({ [kind]: client }, { settlement: () => auth })
+    const title = ref('original')
+    const args = { title, nested: { label: 'original' } }
+    let called!: () => void
+    const started = new Promise<void>((resolve) => {
+      called = resolve
+    })
+    const operation = host.run(() =>
+      useConvexOperation((op) => {
+        const pending =
+          kind === 'query'
+            ? op.query(makeFunctionReference<'query'>('notes:read'), args)
+            : kind === 'mutation'
+              ? op.mutation(makeFunctionReference<'mutation'>('notes:write'), args)
+              : op.action(makeFunctionReference<'action'>('notes:write'), args)
+        called()
+        return pending
+      }),
+    )
+    const pending = operation.run()
+    await started
+    expect(client).not.toHaveBeenCalled()
+    title.value = 'changed'
+    args.nested.label = 'changed'
+    release()
+    await expect(pending).resolves.toBe('saved')
+    expect(client.mock.calls[0]?.[1]).toEqual({ title: 'original', nested: { label: 'original' } })
+    host.stop()
+  },
+)
+
+it('keeps mutation data cleared when a synchronous success watcher resets it', async () => {
+  const host = attachedVueHost({ mutation: vi.fn(async () => 'old-result') })
+  const mutation = host.run(() => useConvexMutation(createNote))
+  const stopWatch = watch(
+    mutation.status,
+    (status) => {
+      if (status === 'success') mutation.reset()
+    },
+    { flush: 'sync' },
+  )
+  await mutation.mutate({ title: 'test' })
+  expect(mutation.status.value).toBe('idle')
+  expect(mutation.data.value).toBeUndefined()
+  stopWatch()
+  host.stop()
 })

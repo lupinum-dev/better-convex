@@ -2,7 +2,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope, isProxy, isReadonly, ref } from 'vue'
+import { createApp, effectScope, isProxy, isReadonly, ref, watch } from 'vue'
 import { z } from 'zod'
 
 import { createBetterConvex, useConvexForm } from '../../packages/vue/src'
@@ -483,3 +483,102 @@ describe('useConvexForm', () => {
     stop()
   })
 })
+
+it('reserves a submission before a synchronous pending watcher can submit again', async () => {
+  const { form, mutation, stop } = setup(async () => ({ id: 'saved' }))
+  let duplicate: Promise<unknown> | undefined
+  const stopWatch = watch(
+    form.pending,
+    (pending) => {
+      if (pending)
+        duplicate = form
+          .submit({ balance: 2, note: 'duplicate' }, { accountId: 'account-2' })
+          .catch((error: unknown) => error)
+    },
+    { flush: 'sync' },
+  )
+  await form.submit({ balance: 1, note: 'first' }, { accountId: 'account-1' })
+  expect(await duplicate).toMatchObject({ code: 'SUBMIT_IN_PROGRESS', outcome: 'not-sent' })
+  expect(mutation).toHaveBeenCalledTimes(1)
+  stopWatch()
+  stop()
+})
+
+it('snapshots cyclic form values and reads refs and buffers before validation', async () => {
+  let release!: () => void
+  let captured: unknown
+  const schema: StandardSchemaV1<FormValues, FormValues> = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: async (value) => {
+        captured = value
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return { value: { balance: 1, note: 'validated' } }
+      },
+    },
+  }
+  const { form, mutation, stop } = setup(async () => ({ id: 'saved' }), schema)
+  const note = ref('original')
+  const buffer = new ArrayBuffer(1)
+  const values = { balance: 1, note, buffer, self: undefined as unknown }
+  values.self = values
+  const accountId = ref('account-1')
+  const pending = form.submit(values as never, { accountId } as never)
+  note.value = 'changed'
+  accountId.value = 'account-2'
+  new Uint8Array(buffer)[0] = 7
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+  expect(captured).toMatchObject({ note: 'original' })
+  const snapshot = captured as typeof values
+  expect(snapshot.self).toBe(snapshot)
+  expect(snapshot).not.toBe(values)
+  expect(new Uint8Array(snapshot.buffer)[0]).toBe(0)
+  release()
+  await pending
+  expect(mutation.mock.calls[0]?.[1]).toMatchObject({ accountId: 'account-1' })
+  stop()
+})
+
+it.each(['reset', 'identity', 'dispose'] as const)(
+  'returns retirement instead of validation issues after %s during validation',
+  async (cause) => {
+    let release!: () => void
+    const schema: StandardSchemaV1<FormValues, FormValues> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: async () => {
+          await new Promise<void>((resolve) => {
+            release = resolve
+          })
+          return { issues: [{ message: 'Invalid', path: ['balance'] }] }
+        },
+      },
+    }
+    const { form, mutation, stop, advanceIdentity } = setup(async () => ({ id: 'unused' }), schema)
+    const pending = form.submit({ balance: -1, note: '' }, { accountId: 'account-1' })
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    if (cause === 'reset') form.reset()
+    else if (cause === 'identity') advanceIdentity()
+    else stop()
+    release()
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      error: {
+        kind: 'submission',
+        callError: {
+          code: cause === 'identity' ? 'IDENTITY_CHANGED' : 'CANCELLED',
+          functionName: 'accounts:save',
+          outcome: 'not-sent',
+        },
+      },
+    })
+    expect(mutation).not.toHaveBeenCalled()
+    expect(form.status.value).toBe('idle')
+    expect(form.error.value).toBeUndefined()
+    stop()
+  },
+)

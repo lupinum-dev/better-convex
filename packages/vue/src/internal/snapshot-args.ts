@@ -9,23 +9,42 @@ import { isRef } from 'vue'
  * keep their identity.
  */
 export function snapshotArgs<T>(value: T): T {
-  if (isRef(value)) return snapshotArgs(value.value) as T
-  if (value === null || typeof value !== 'object') return value
-  if (Array.isArray(value)) return value.map(snapshotArgs) as T
-  if (value instanceof ArrayBuffer) return value.slice(0) as T
-  if (!isPlainObject(value)) return value
+  const seen = new WeakMap<object, unknown>()
+  const copy = (entry: unknown): unknown => {
+    if (isRef(entry)) return copy(entry.value)
+    if (entry === null || typeof entry !== 'object') return entry
+    const prior = seen.get(entry)
+    if (prior !== undefined) return prior
+    if (entry instanceof ArrayBuffer) {
+      const result = entry.slice(0)
+      seen.set(entry, result)
+      return result
+    }
+    if (Array.isArray(entry)) {
+      const result: unknown[] = []
+      seen.set(entry, result)
+      entry.forEach((item, index) => {
+        result[index] = copy(item)
+      })
+      result.length = entry.length
+      return result
+    }
+    if (!isPlainObject(entry)) return entry
 
-  const result: Record<string, unknown> = {}
-  for (const [key, entry] of Object.entries(value)) {
-    // defineProperty keeps a `__proto__` key as data instead of a prototype.
-    Object.defineProperty(result, key, {
-      value: snapshotArgs(entry),
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    })
+    const result: Record<string, unknown> = {}
+    seen.set(entry, result)
+    for (const [key, item] of Object.entries(entry)) {
+      // defineProperty keeps a `__proto__` key as data instead of a prototype.
+      Object.defineProperty(result, key, {
+        value: copy(item),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      })
+    }
+    return result
   }
-  return result as T
+  return copy(value) as T
 }
 
 // The same rule Convex uses for argument objects, including other realms.

@@ -1,10 +1,12 @@
 import { getFunctionName, makeFunctionReference, type FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 
 import { useConvexFileUpload, type UploadCompleteContext } from '../../packages/vue/src'
 import type { ConvexCallError } from '../../packages/vue/src/errors'
+import { createFileUploadController } from '../../packages/vue/src/internal/upload-controller'
+import { useOperationController } from '../../packages/vue/src/use-operation'
 import { attachedVueHost } from '../helpers/attached-vue-host'
 
 /** A storage endpoint whose answer each test releases explicitly. */
@@ -728,4 +730,71 @@ describe('useConvexFileUpload workflows', () => {
     expect(upload.data.value).toBeUndefined()
     host.stop()
   })
+})
+
+it('captures upload args and cyclic context before authentication settles', async () => {
+  const auth = deferred<undefined>()
+  const mutation = vi.fn(async (_reference: unknown, _args: unknown) => SESSION)
+  const host = attachedVueHost({ mutation }, { settlement: () => auth.promise })
+  const selected = ref('asset-original')
+  const context: { selected: typeof selected; self?: unknown } = { selected }
+  context.self = context
+  const complete = vi.fn(
+    async (_op: unknown, detail: UploadCompleteContext<Session, typeof context>) => {
+      expect(detail.context).not.toBe(context)
+      expect(detail.context.self).toBe(detail.context)
+      expect(detail.context.selected).toBe('asset-original')
+      return 'completed'
+    },
+  )
+  const upload = host.run(() =>
+    useConvexFileUpload(createSession, {
+      url: (session) => session.uploadUrl,
+      complete,
+    }),
+  )
+  const folder = ref('original')
+  const args = { folder, nested: { label: 'original' } }
+  const pending = upload.upload(textFile(), { args: args as never, context })
+  expect(mutation).not.toHaveBeenCalled()
+  folder.value = 'changed'
+  args.nested.label = 'changed'
+  selected.value = 'asset-changed'
+  auth.resolve(undefined)
+  const xhr = await nextXhr()
+  xhr.respond()
+  await pending
+  expect(mutation.mock.calls[0]?.[1]).toEqual({ folder: 'original', nested: { label: 'original' } })
+  expect(complete).toHaveBeenCalledTimes(1)
+  host.stop()
+})
+
+it('captures upload prepare arguments independently of operation step snapshots', async () => {
+  const auth = deferred<undefined>()
+  const mutation = vi.fn(async (_reference: unknown, _args: unknown) => SESSION)
+  const host = attachedVueHost({ mutation })
+  const operations = host.run(() => useOperationController('upload snapshot test'))
+  const upload = createFileUploadController({
+    functionName: 'files:createSession',
+    available: true,
+    operations,
+    prepare: async (operation, args) => {
+      await auth.promise
+      return operation.mutation(createSession, args as never)
+    },
+    url: () => SESSION.uploadUrl,
+  })
+  const folder = ref('original')
+  const args = { folder, nested: { label: 'original' } }
+  const pending = upload.upload(textFile(), args)
+  folder.value = 'changed'
+  args.nested.label = 'changed'
+  expect(mutation).not.toHaveBeenCalled()
+  auth.resolve(undefined)
+  const xhr = await nextXhr()
+  xhr.respond()
+  await pending
+  expect(mutation.mock.calls[0]?.[1]).toEqual({ folder: 'original', nested: { label: 'original' } })
+  upload.dispose()
+  host.stop()
 })
