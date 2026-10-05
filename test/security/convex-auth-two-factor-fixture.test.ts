@@ -20,8 +20,8 @@ describe('dedicated Better Auth two-factor fixture', () => {
     const schema = read(`${fixture}/betterAuth/schema.ts`)
     const metadata = read(`${fixture}/betterAuth/schemaMetadata.ts`)
 
-    expect(schema).toContain(`value: '${generated.metadata.fingerprint}'`)
-    expect(metadata).toContain(`fingerprint: '${generated.metadata.fingerprint}'`)
+    expect(schema).toContain(`value: ${JSON.stringify(generated.metadata.fingerprint)}`)
+    expect(metadata).toContain(`"fingerprint": ${JSON.stringify(generated.metadata.fingerprint)}`)
     expect(generated.metadata.models.twoFactor).toMatchObject({
       logicalName: 'twoFactor',
       fields: {
