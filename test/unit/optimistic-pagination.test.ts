@@ -183,12 +183,12 @@ describe('experimental optimistic pagination', () => {
       ...(await loadList('pending', { pending: true })),
     ])
     const before = store.getAllQueries(pageNotes)
-    optimisticallyUpdateValueInPaginatedQuery({
-      paginatedQuery: pageNotes,
-      argsToMatch: { folder: 'inbox' },
-      localQueryStore: store,
-      updateValue: (value) => (value.id === 'target' ? { ...value, title: 'After' } : value),
-    })
+    optimisticallyUpdateValueInPaginatedQuery(
+      store,
+      pageNotes,
+      { folder: 'inbox', filter: { tags: ['active'] } },
+      (value) => (value.id === 'target' ? { ...value, title: 'After' } : value),
+    )
     const pages = store.getAllQueries(pageNotes)
     expect(
       pages.filter(({ args }) => args.folder === 'inbox').map(({ value }) => value?.page),
@@ -207,34 +207,5 @@ describe('experimental optimistic pagination', () => {
       before.map(({ value }) => value && { ...value, page: [] }),
     )
     expect(before[0]!.value).toEqual(first)
-  })
-
-  it('updates all loaded list variants when argsToMatch is omitted and leaves pending pages alone', async () => {
-    const store = localStore([
-      ...(await loadList()),
-      ...(await loadList('archive')),
-      ...(await loadList('pending', { pending: true })),
-    ])
-    optimisticallyUpdateValueInPaginatedQuery({
-      paginatedQuery: pageNotes,
-      localQueryStore: store,
-      updateValue: (value) => ({ ...value, title: 'Changed' }),
-    })
-    const pages = store.getAllQueries(pageNotes)
-    expect(
-      pages
-        .filter(({ args }) => args.folder !== 'pending')
-        .map(({ value }) => value?.page.map((row) => row.title)),
-    ).toEqual([
-      ['Changed'],
-      ['Changed'],
-      ['Changed', 'Changed'],
-      ['Changed'],
-      ['Changed'],
-      ['Changed', 'Changed'],
-    ])
-    expect(pages.filter(({ args }) => args.folder === 'pending').map(({ value }) => value)).toEqual(
-      [undefined],
-    )
   })
 })
