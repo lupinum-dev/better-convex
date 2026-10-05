@@ -15,7 +15,7 @@ import type {
   ConvexRuntimeContext,
   NuxtConvexAuthController,
 } from '../../src/runtime/runtime-context'
-import { createLogger } from '../../src/runtime/utils/logger'
+import { createLogger, type Logger } from '../../src/runtime/utils/logger'
 
 let previousWrapper: { unmount: () => void } | null = null
 let currentConvexTarget: Record<PropertyKey, unknown> | null = null
@@ -23,6 +23,7 @@ let currentAuthTarget: Record<PropertyKey, unknown> | null = null
 let currentOwnerTarget: Record<PropertyKey, unknown> | null = null
 let currentAuthController: NuxtConvexAuthController | null = null
 let currentIdentityObserver: ClientIdentityObserver | null = null
+let currentLogger = createLogger(false)
 let currentAuthEnabled = true
 let nuxtVueRuntimeInstalled = false
 
@@ -181,7 +182,9 @@ const attachmentProxy = createBetterConvexAttachment({
 })
 const runtimeProxy: ConvexRuntimeContext = {
   attachment: attachmentProxy,
-  logger: createLogger(false),
+  get logger() {
+    return currentLogger
+  },
   getAuthController: () => currentAuthController,
   attachAuthController: (controller) => {
     currentAuthController = controller
@@ -199,6 +202,7 @@ const runtimeProxy: ConvexRuntimeContext = {
 }
 
 interface CaptureOptions {
+  logger?: Logger
   convex?: unknown
   auth?: unknown
   owner?: unknown
@@ -337,6 +341,7 @@ export async function captureInNuxt<T>(
   wrapper: ComponentPublicInstance & { unmount: () => void }
   flush: () => Promise<void>
 }> {
+  currentLogger = options.logger ?? createLogger(false)
   let result: T | undefined
   let nuxtAppRef: ReturnType<typeof useNuxtApp> | undefined
 

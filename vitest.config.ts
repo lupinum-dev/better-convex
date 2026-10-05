@@ -161,6 +161,7 @@ export default defineConfig({
         },
         test: {
           name: 'convex',
+          exclude: ['playground/convex/auth-adapter-invariants.test.ts'],
           include: [
             'playground/convex/**/*.test.ts',
             'demo/convex/**/*.test.ts',

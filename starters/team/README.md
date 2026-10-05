@@ -94,7 +94,6 @@ Rate limits are intentionally separate from permissions:
 ```bash
 pnpm install
 pnpm dev
-pnpm lint
 pnpm test
 pnpm typecheck
 pnpm convex:codegen
@@ -114,7 +113,7 @@ soft-delete query behavior.
 values, the module can warn that no Convex site URL was resolved; that warning is
 expected until the app is configured.
 
-`pnpm verify` is the normal local gate: formatting, unit/contract tests, Convex
+`pnpm verify` is the normal local gate: unit/contract tests, Convex
 codegen, Nuxt type checking, and production build.
 
 `pnpm verify:release` adds `pnpm convex:local:once`. Use it before publishing a

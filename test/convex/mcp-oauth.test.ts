@@ -475,6 +475,18 @@ describe('requireMcpPrincipal', () => {
     })
   })
 
+  it('denies a live grant for a resource other than this MCP server', async () => {
+    const { test } = await initGrant()
+    // The grant remains valid for its own resource; only the server resource changes.
+    vi.stubEnv('CONVEX_SITE_URL', 'https://other-deployment.example.test')
+    await test.query(async (ctx) => {
+      await expect(denial(auth.requireMcpPrincipal(asCtx(ctx), principal()))).resolves.toEqual({
+        code: 'MCP_ACCESS_DENIED',
+        message: 'MCP access denied',
+      })
+    })
+  })
+
   it('distinguishes insufficient scope from denied access', async () => {
     const { test } = await initGrant()
     await test.query(async (ctx) => {

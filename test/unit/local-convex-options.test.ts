@@ -8,6 +8,7 @@ import {
   ensureLocalConvex,
   readLocalConvexEnv,
   resolveLocalConvexCli,
+  spawnConvex,
 } from '../helpers/local-convex'
 
 const forbiddenLocalFileCredentials = [
@@ -63,6 +64,46 @@ describe('local Convex deployment environment options', () => {
       expect(resolveLocalConvexCli(cwd)).toBe(
         path.join(await realpath(packageDirectory), 'bin/main.js'),
       )
+    } finally {
+      await rm(cwd, { force: true, recursive: true })
+    }
+  })
+
+  it('blocks inherited cloud credentials in the local subprocess environment', async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), 'bcn-local-convex-env-'))
+    try {
+      const cliDirectory = path.join(cwd, 'node_modules/convex/bin')
+      await mkdir(cliDirectory, { recursive: true })
+      await writeFile(path.join(cwd, 'package.json'), '{"private":true}')
+      await writeFile(
+        path.join(cliDirectory, '../package.json'),
+        '{"name":"convex","exports":{"./package.json":"./package.json"}}',
+      )
+      // A real subprocess reports only synthetic credential values, without a backend.
+      await writeFile(
+        path.join(cliDirectory, 'main.js'),
+        `process.stdout.write(JSON.stringify(Object.fromEntries(${JSON.stringify(forbiddenLocalFileCredentials)}.map(name => [name, process.env[name]]))))`,
+      )
+      for (const name of forbiddenLocalFileCredentials) vi.stubEnv(name, 'synthetic-cloud-key')
+      const child = spawnConvex(cwd, [])
+      child.stdin.end()
+      let output = ''
+      child.stdout.on('data', (chunk) => {
+        output += chunk.toString()
+      })
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', resolve)
+      })
+      expect(code).toBe(0)
+      expect(JSON.parse(output)).toEqual({
+        CONVEX_DEPLOY_KEY: '',
+        CONVEX_DEPLOYMENT_TOKEN: '',
+        CONVEX_OVERRIDE_ACCESS_TOKEN: '',
+        CONVEX_PROVISION_HOST: '',
+        CONVEX_SELF_HOSTED_ADMIN_KEY: '',
+        CONVEX_SELF_HOSTED_URL: '',
+      })
     } finally {
       await rm(cwd, { force: true, recursive: true })
     }

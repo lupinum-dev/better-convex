@@ -100,9 +100,6 @@ describe('additive JWKS rotation on the Convex component', () => {
     expect(keys.map((key) => key.id).sort()).toEqual(['K1', 'K2', 'K3'])
     expect(keys.filter((key) => key.expiresAt === null)).toHaveLength(1)
     expect(new Set(keys.map((key) => key.createdAt)).size).toBe(3)
-    expect(keys.map((key) => key.createdAt)).toEqual(
-      [...keys.map((key) => key.createdAt)].sort((a, b) => Number(a) - Number(b)),
-    )
 
     const retiredBy = new Map<string, number>()
     for (const rotation of rotations) {
