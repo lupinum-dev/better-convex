@@ -15,7 +15,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import type { BrowserContext, Page } from 'playwright'
 
-import { ensureLocalBackend } from '../helpers/local-backend.mjs'
+import {
+  cleanLocalConvexEnvironment,
+  startLocalConvexBackend,
+  type LocalConvexBackend,
+} from '../helpers/local-convex'
+
+export { cleanLocalConvexEnvironment as cleanEnvironment } from '../helpers/local-convex'
 
 export const root = fileURLToPath(new URL('../..', import.meta.url))
 export const convexCli = join(root, 'node_modules/convex/bin/main.js')
@@ -37,17 +43,6 @@ export function isRecord(value: unknown): value is JsonRecord {
 }
 
 // ---------- processes ----------
-
-/** The parent environment without any Convex selection, credential, or fixture secret. */
-export function cleanEnvironment(): NodeJS.ProcessEnv {
-  const inherited = (name: string) =>
-    !name.toUpperCase().startsWith('CONVEX_') &&
-    !/^(?:NUXT_PUBLIC|VITE)_CONVEX_/iu.test(name) &&
-    !/^(?:BETTER_AUTH_SECRETS?|BCN_AUTH_PROXY_IP_SECRET|BCN_AUTH_TRUSTED_CLIENT_IP_HEADER|MCP_SERVER_SECRET)$/u.test(
-      name,
-    )
-  return Object.fromEntries(Object.entries(process.env).filter(([name]) => inherited(name)))
-}
 
 export function redact(value: string, secrets: readonly string[]): string {
   let output = value
@@ -212,18 +207,7 @@ async function linkDependencies(cwd: string) {
   ])
 }
 
-function readDotenv(source: string): Record<string, string> {
-  return Object.fromEntries(
-    source
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#') && line.includes('='))
-      .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1).trim()]),
-  )
-}
-
 export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<McpFixture> {
-  const backend = await ensureLocalBackend()
   const tempRoot = await mkdtemp(join(tmpdir(), 'bcn-mcp-fixture-'))
   const cwd = join(tempRoot, 'app')
   const email = `mcp-gate-${randomBytes(8).toString('hex')}@example.test`
@@ -232,7 +216,7 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
     options.secrets?.betterAuthSecrets ?? `1:${randomBytes(32).toString('base64url')}`
   const proxyIpSecret = options.secrets?.proxyIpSecret ?? randomBytes(32).toString('base64url')
   const secrets = [password, betterAuthSecrets, proxyIpSecret]
-  let convex: ChildProcess | undefined
+  let convex: LocalConvexBackend | undefined
   let nuxt: ChildProcess | undefined
   let convexLog = () => ''
   let nuxtLog = () => ''
@@ -240,7 +224,7 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
   const release = async () => {
     if (released) return
     released = true
-    await Promise.all([stopProcess(nuxt), stopProcess(convex)])
+    await Promise.all([stopProcess(nuxt), convex?.release()])
     await rm(tempRoot, { force: true, recursive: true })
   }
 
@@ -270,38 +254,27 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
     const convexSiteUrl = `http://127.0.0.1:${sitePort}`
     const origin = `http://127.0.0.1:${appPort}`
     const baseEnv = {
-      ...cleanEnvironment(),
+      ...cleanLocalConvexEnvironment(),
       CONVEX_AGENT_MODE: 'anonymous',
       CONVEX_ALLOW_ANONYMOUS: 'true',
     }
 
-    convex = spawn(
-      process.execPath,
-      [
-        '--',
-        convexCli,
-        'dev',
-        '--local-backend-version',
-        backend.version,
-        '--local-cloud-port',
-        String(cloudPort),
-        '--local-site-port',
-        String(sitePort),
-        '--tail-logs',
-        'disable',
-        '--typecheck',
-        'disable',
-      ],
-      { cwd, detached: true, env: baseEnv, stdio: ['ignore', 'pipe', 'pipe'] },
+    convex = await startLocalConvexBackend({
+      cwd,
+      timeoutMs: START_TIMEOUT_MS,
+      ports: { cloud: cloudPort, site: sitePort },
+      devArguments: ['--tail-logs', 'disable', '--typecheck', 'disable'],
+      secrets,
+      logLength: MAX_LOG_BYTES,
+    })
+    convexLog = convex.logs
+    if (convex.url !== convexUrl || convex.siteUrl !== convexSiteUrl) {
+      throw new Error('Local Convex did not select the fixture ports.')
+    }
+    await waitUntil(
+      () => fetch(`${convexUrl}/version`).then((response) => response.status < 500),
+      'the local Convex backend',
     )
-    convexLog = capture(convex)
-    await waitUntil(async () => {
-      if (convex?.exitCode !== null)
-        throw new Error(`Convex exited: ${redact(convexLog(), secrets)}`)
-      const env = readDotenv(await readFile(join(cwd, '.env.local'), 'utf8').catch(() => ''))
-      if (env.CONVEX_URL !== convexUrl || env.CONVEX_SITE_URL !== convexSiteUrl) return false
-      return fetch(`${convexUrl}/version`).then((response) => response.status < 500)
-    }, 'the local Convex backend')
 
     const runCli = (args: string[], input?: string) =>
       runCommand(process.execPath, ['--', convexCli, ...args, '--env-file', '.env.local'], {
@@ -310,28 +283,12 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
         input,
         secrets,
       })
-    const setEnv = async (name: string, value: string) => {
-      // Concurrent pushes can hit an OCC conflict on the deployment environment.
-      for (let attempt = 1; ; attempt += 1) {
-        try {
-          await runCli(['env', 'set', name], value)
-          return
-        } catch (error) {
-          const occ =
-            error instanceof Error && /OptimisticConcurrencyControlFailure/u.test(error.message)
-          if (!occ || attempt === 4) throw error
-          await sleep(attempt * 100)
-        }
-      }
-    }
+    const backend = convex
+    const setEnv = (name: string, value: string) => backend.setEnv(name, value, 4)
     await setEnv('SITE_URL', origin)
     await setEnv('BETTER_AUTH_SECRETS', betterAuthSecrets)
     await setEnv('BCN_AUTH_PROXY_IP_SECRET', proxyIpSecret)
-    await waitUntil(() => {
-      if (convex?.exitCode !== null)
-        throw new Error(`Convex exited: ${redact(convexLog(), secrets)}`)
-      return convexLog().includes('Convex functions ready!')
-    }, 'the Convex function deployment')
+    await backend.waitForFunctions()
     await runCli(['run', 'auth:rotateSigningKey', '{}'])
 
     const trusted = options.trustedClientIpHeader
