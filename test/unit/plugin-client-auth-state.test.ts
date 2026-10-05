@@ -153,6 +153,7 @@ vi.mock('../../src/runtime/utils/runtime-config', () => ({
       trustedClientIpHeader: 'cf-connecting-ip',
       redirectTo: '/auth/signin',
     },
+    experimental: { keepAlive: { ms: 60_000, max: 30 } },
   })),
 }))
 
@@ -208,6 +209,13 @@ function attachedController<Client>() {
 }
 
 describe('auth client app-facing state projection', () => {
+  it('does not drop experimental.keepAlive when starting the authenticated runtime', async () => {
+    await setupPlugin()
+    expect(createBetterConvexMock).toHaveBeenCalledWith(
+      expect.objectContaining({ experimental: { keepAlive: { ms: 60_000, max: 30 } } }),
+    )
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('window', { location: { origin: 'https://app.example.com' } })

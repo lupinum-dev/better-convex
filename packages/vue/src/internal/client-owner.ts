@@ -119,6 +119,8 @@ export interface CreateConvexClientOwnerInput {
    * build so `getAnonymous()` reuses the already-anonymous primary.
    */
   anonymousFactory?: () => OwnedConvexClient
+  /** Experimental: retain stopped query subscriptions for a bounded time and count. */
+  keepAlive?: { ms: number; max: number }
 }
 
 type OwnedUnsubscribe = ReturnType<ConvexClient['onUpdate']> & {
@@ -141,7 +143,20 @@ interface PendingCall {
 }
 
 export function createConvexClientOwner(input: CreateConvexClientOwnerInput): ConvexClientOwner {
-  const { primaryFactory, identityPort, anonymousFactory } = input
+  const { primaryFactory, identityPort, anonymousFactory, keepAlive } = input
+  if (
+    keepAlive !== undefined &&
+    (!Number.isSafeInteger(keepAlive?.ms) ||
+      keepAlive.ms <= 0 ||
+      !Number.isSafeInteger(keepAlive.max) ||
+      keepAlive.max <= 0)
+  ) {
+    throw new TypeError(
+      '[client-owner] keepAlive.ms and keepAlive.max must be positive safe integers',
+    )
+  }
+  // Snapshot configuration so later caller mutations cannot change the bounds.
+  const retention = keepAlive && { ...keepAlive }
 
   let primary: OwnedConvexClient | null = identityPort ? null : primaryFactory()
   let currentIdentityGeneration = 0
@@ -158,6 +173,10 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
   const closedReplacementCandidates = new WeakSet<OwnedConvexClient>()
 
   const listeners = new Set<OnUpdateEntry>()
+  const retained = new Set<{
+    underlying: OwnedUnsubscribe
+    timer: ReturnType<typeof setTimeout>
+  }>()
   const pendingCalls = new Set<PendingCall>()
   const disposers = new Set<() => void>()
   const identityListeners = new Set<() => void>()
@@ -233,6 +252,40 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
   function detachEntry(entry: OnUpdateEntry) {
     entry.underlying?.()
     entry.underlying = null
+  }
+  function releaseRetained(subscription: {
+    underlying: OwnedUnsubscribe
+    timer: ReturnType<typeof setTimeout>
+  }) {
+    retained.delete(subscription)
+    clearTimeout(subscription.timer)
+    subscription.underlying()
+  }
+  function releaseAllRetained() {
+    for (const subscription of retained) releaseRetained(subscription)
+  }
+  function retainEntry(entry: OnUpdateEntry) {
+    if (!retention || !entry.underlying) {
+      detachEntry(entry)
+      return
+    }
+    const underlying = entry.underlying
+    entry.underlying = null
+    // Timers clamp larger delays to 1 ms. Split long safe-integer durations so
+    // an accepted configuration never releases a subscription early.
+    const schedule = (remaining: number): ReturnType<typeof setTimeout> => {
+      const delay = Math.min(remaining, 2_147_483_647)
+      return setTimeout(() => {
+        if (remaining > delay) subscription.timer = schedule(remaining - delay)
+        else releaseRetained(subscription)
+      }, delay)
+    }
+    const subscription = { underlying, timer: schedule(retention.ms) }
+    retained.add(subscription)
+    if (retained.size > retention.max) {
+      const oldest = retained.values().next().value
+      if (oldest) releaseRetained(oldest)
+    }
   }
   // Rebind every active listener A→B: detach from A first, swap `primary`, then
   // reattach on B — fully synchronous, before B is published to consumers.
@@ -377,7 +430,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
         if (!entry.active) return
         entry.active = false
         listeners.delete(entry)
-        detachEntry(entry)
+        retainEntry(entry)
       }
       const unsubscribe = stop as OwnedUnsubscribe
       unsubscribe.unsubscribe = stop
@@ -397,6 +450,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
     // principal before even constructing the candidate. A synchronous factory
     // failure must leave no dispatchable client authenticated as the old user.
     for (const entry of listeners) detachEntry(entry)
+    releaseAllRetained()
     primary = null
     resetConnectionForReplacement()
     rejectPendingForGeneration(previousGeneration)
@@ -568,6 +622,7 @@ export function createConvexClientOwner(input: CreateConvexClientOwnerInput): Co
         detachEntry(entry)
       }
       listeners.clear()
+      releaseAllRetained()
       rejectAllPending()
       identityListeners.clear()
       // Candidate confirmation is controlled by an external auth client and may

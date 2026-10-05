@@ -22,6 +22,7 @@ export interface NormalizedConvexRuntimeConfig {
   client: ConvexClientConfig
   /** Bounds for Convex HTTP calls made during SSR and by `serverConvex`. */
   server: ConvexServerConfig
+  experimental: { keepAlive?: { ms: number; max: number } }
 }
 
 /**
@@ -34,6 +35,27 @@ export interface ConvexRuntimeConfig {
 
 function asRecord(input: unknown): Record<string, unknown> | null {
   return input && typeof input === 'object' ? (input as Record<string, unknown>) : null
+}
+
+/** Validate at module setup and at runtime, with retention off by default. */
+export function normalizeConvexKeepAlive(input: unknown): { ms: number; max: number } | undefined {
+  if (input === undefined) return undefined
+  const raw = asRecord(input)
+  const ms = raw?.ms
+  const max = raw?.max
+  if (
+    typeof ms !== 'number' ||
+    !Number.isSafeInteger(ms) ||
+    ms <= 0 ||
+    typeof max !== 'number' ||
+    !Number.isSafeInteger(max) ||
+    max <= 0
+  ) {
+    throw new TypeError(
+      '[better-convex-nuxt] experimental.keepAlive.ms and experimental.keepAlive.max must be positive safe integers',
+    )
+  }
+  return { ms, max }
 }
 
 // One normalization per runtime config object. Nuxt and Nitro hand out the same
@@ -75,6 +97,7 @@ function normalizeUncached(raw: Record<string, unknown> | null): NormalizedConve
         : false,
     client: normalizeConvexClientConfig(raw?.client),
     server: normalizeConvexServerConfig(raw?.server),
+    experimental: { keepAlive: normalizeConvexKeepAlive(asRecord(raw?.experimental)?.keepAlive) },
   }
 }
 

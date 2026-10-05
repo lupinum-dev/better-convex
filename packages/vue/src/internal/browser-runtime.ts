@@ -30,6 +30,7 @@ export interface BetterConvexBrowserRuntime {
 export interface CreateBetterConvexBrowserRuntimeInput {
   clientFactory: () => OwnedConvexClient
   auth?: BrowserAuthAdapter
+  keepAlive?: { ms: number; max: number }
 }
 
 const ANONYMOUS_SNAPSHOT: ClientIdentitySnapshot = Object.freeze({
@@ -55,6 +56,7 @@ export function createBetterConvexBrowserRuntime(
     : null
   const owner = createConvexClientOwner({
     primaryFactory: input.clientFactory,
+    keepAlive: input.keepAlive,
     ...(authPort
       ? {
           anonymousFactory: input.clientFactory,
