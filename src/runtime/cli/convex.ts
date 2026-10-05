@@ -67,7 +67,7 @@ const FORBIDDEN_FILE_BOUND_ARGUMENTS = [
   '--type',
   '--url',
 ] as const
-const FILE_BOUND_COMMANDS = new Set(['codegen', 'deploy', 'dev', 'env', 'run'])
+const FILE_BOUND_COMMANDS = new Set(['codegen', 'data', 'deploy', 'dev', 'env', 'logs', 'run'])
 const DEPLOYMENT_KEY = /^(?:dev|prod):[^:|\s]+\|\S+$/u
 const DEPLOYMENT_NAME = /^(?:custom|dev|local|preview|prod):[a-z0-9_-]+$/u
 
@@ -263,7 +263,7 @@ function usage(): string {
     'Usage:',
     '  better-convex convex configure',
     '  better-convex convex dev --anonymous [options]',
-    '  better-convex convex <codegen|deploy|dev|env|run> [options]',
+    '  better-convex convex <codegen|data|deploy|dev|env|logs|run> [options]',
     '  better-convex convex deployment select <selector>',
     '',
     'File-bound commands use only .env.local. Configure, anonymous dev, and',
