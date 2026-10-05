@@ -99,6 +99,8 @@ are gone, and TypeScript reports most places that you must change.
       destructure `mutate`.
 - [ ] `useConvexAction` returns `{ run, data, status, pending, error, reset }`;
       destructure `run`.
+- [ ] Delete query and paginated query `refresh()` calls. Convex reruns a
+      query when its data changes; a query error stays until its cause changes.
 - [ ] A second `useConvexForm` `submit()` while one is pending rejects with
       `SUBMIT_IN_PROGRESS`. A submission retired during validation sends
       nothing and resolves `{ ok: false }` with `IDENTITY_CHANGED` or
