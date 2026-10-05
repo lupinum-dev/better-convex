@@ -86,6 +86,15 @@ describe('auth schema CLI authority', () => {
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
   })
 
+  it('accepts anonymous fields in a generated local component instead of rejecting its plugin', () => {
+    const directory = 'test/fixtures/better-auth-anonymous/convex/betterAuth'
+    const result = runCli(`${directory}/schemaOptions.ts`, directory)
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
+    expect(readFileSync(`${root}/${directory}/schema.ts`, 'utf8')).toContain(
+      'isAnonymous: v.union(v.null(), v.boolean())',
+    )
+  })
+
   it.each([
     { reason: 'unsupported', plugins: [{ id: 'admin' }], rejectedIndex: 0 },
     {

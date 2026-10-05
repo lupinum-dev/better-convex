@@ -12,6 +12,10 @@ if (unknown.length > 0) throw new Error(`Unknown argument: ${unknown[0]}`)
 
 const targets = [
   {
+    config: 'test/fixtures/better-auth-anonymous/convex/betterAuth/schemaOptions.ts',
+    output: 'test/fixtures/better-auth-anonymous/convex/betterAuth',
+  },
+  {
     config: 'internal/convex-auth/schema-options.ts',
     output: 'src/runtime/convex-auth/component',
   },

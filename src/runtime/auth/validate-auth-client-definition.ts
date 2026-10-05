@@ -22,12 +22,14 @@ const FORBIDDEN_OWN_KEYS = ['baseURL', 'basePath', 'fetchOptions'] as const
 /** The stable id of the single Convex client plugin the library prepends. */
 const CONVEX_PLUGIN_ID = 'convex'
 const ADMITTED_PLUGIN_IDS = new Set([
+  'anonymous',
   'organization',
   'two-factor',
   'email-otp',
   'oauth-provider-client',
 ])
-const ADMITTED_PLUGIN_LABEL = 'organization, two-factor, email-otp, and oauth-provider-client'
+const ADMITTED_PLUGIN_LABEL =
+  'anonymous, organization, two-factor, email-otp, and oauth-provider-client'
 
 export class ConvexAuthClientDefinitionError extends TypeError {
   constructor(message: string) {

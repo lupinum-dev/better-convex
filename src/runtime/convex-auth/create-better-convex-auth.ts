@@ -2,9 +2,11 @@ import { oauthProvider as createOAuthProvider } from '@better-auth/oauth-provide
 import type { Auth, BetterAuthOptions, BetterAuthPlugin, InferAPI, User } from 'better-auth'
 import { APIError, betterAuth } from 'better-auth'
 import {
+  anonymous,
   emailOTP,
   organization,
   twoFactor,
+  type AnonymousOptions,
   type EmailOTPOptions,
   type OrganizationEndpoints,
   type OrganizationOptions,
@@ -104,6 +106,15 @@ type ReviewedEmailAndPasswordOptions = Partial<
 
 type ReviewedEmailVerificationOptions = Partial<
   Pick<EmailVerificationOptions, (typeof reviewedEmailVerificationOptionKeys)[number]>
+>
+
+type ReviewedAnonymousOptions = Pick<
+  AnonymousOptions,
+  | 'onLinkAccount'
+  | 'emailDomainName'
+  | 'disableDeleteAnonymousUser'
+  | 'generateName'
+  | 'generateRandomEmail'
 >
 
 type ReviewedEmailOTPOptions = Omit<EmailOTPOptions, 'sendVerificationOTP'> & {
@@ -240,6 +251,10 @@ type SessionClaimsDefinition = NonNullable<
 
 export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataModel> {
   readonly appName?: string
+  /** Experimental: not covered by semver. Requires a local auth component with anonymous(). */
+  readonly experimental?: {
+    readonly anonymous?: true | ReviewedAnonymousOptions
+  }
   readonly account?: BetterConvexAccountPolicy
   readonly authFunctions?: AuthFunctions
   readonly beforeUserCreate?: (input: {
@@ -427,6 +442,7 @@ const REVIEWED_TOP_LEVEL_OPTIONS = new Set([
   'emailAndPassword',
   'emailOTP',
   'emailVerification',
+  'experimental',
   'oauth',
   'oauthProvider',
   'organization',
@@ -572,6 +588,53 @@ function rejectUnsupportedOptions(options: object): void {
     if (!REVIEWED_TOP_LEVEL_OPTIONS.has(key)) throw configError(`does not support "${key}"`)
   }
   const record = options as Record<string, unknown>
+  if (record.experimental !== undefined) {
+    assertOnlyKeys(record.experimental, ['anonymous'], 'experimental')
+    if (!isPlainRecord(record.experimental))
+      throw configError('expected "experimental" to be an object')
+    const guest = record.experimental.anonymous
+    // Anonymous links on sign-in before the two-factor hook withdraws its pending session.
+    // It also has no link hook for the later /two-factor/ verification endpoints.
+    if (guest !== undefined && record.twoFactor !== undefined && record.twoFactor !== false) {
+      throw configError(
+        'does not support "experimental.anonymous" together with "twoFactor"; anonymous linking cannot wait for two-factor verification',
+      )
+    }
+    if (guest !== undefined && guest !== true) {
+      if (!isPlainRecord(guest))
+        throw configError('expected "experimental.anonymous" to be true or an object')
+      assertOnlyKeys(
+        guest,
+        [
+          'onLinkAccount',
+          'emailDomainName',
+          'disableDeleteAnonymousUser',
+          'generateName',
+          'generateRandomEmail',
+        ],
+        'experimental.anonymous',
+      )
+      for (const key of ['onLinkAccount', 'generateName', 'generateRandomEmail']) {
+        if (guest[key] !== undefined && typeof guest[key] !== 'function')
+          throw configError(`expected "experimental.anonymous.${key}" to be a function`)
+      }
+      if (
+        guest.disableDeleteAnonymousUser !== undefined &&
+        typeof guest.disableDeleteAnonymousUser !== 'boolean'
+      )
+        throw configError(
+          'expected "experimental.anonymous.disableDeleteAnonymousUser" to be a boolean',
+        )
+      if (
+        guest.emailDomainName !== undefined &&
+        (typeof guest.emailDomainName !== 'string' ||
+          !/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/iu.test(
+            guest.emailDomainName,
+          ))
+      )
+        throw configError('requires "experimental.anonymous.emailDomainName" to be an email domain')
+    }
+  }
   if (record.email !== undefined && typeof record.email !== 'function') {
     throw configError('expected "email" to be a function')
   }
@@ -910,7 +973,9 @@ export function createBetterConvexAuthOwned<
       const { passwordReset = false, ...passwordOptions } = emailAndPassword || {}
       const emailOtpOptions = options.emailOTP
 
+      const guestOptions = options.experimental?.anonymous
       const featurePlugins = [
+        guestOptions === undefined ? null : anonymous(guestOptions === true ? {} : guestOptions),
         options.organization === false || options.organization === undefined
           ? null
           : organization({
