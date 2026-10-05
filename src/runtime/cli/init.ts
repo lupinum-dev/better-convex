@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { createInterface } from 'node:readline/promises'
+import { createInterface } from 'node:readline'
 import { parseEnv } from 'node:util'
 
+import { normalizeAuthOrigin } from '../shared/auth-origin'
 import { inspectConvexAuthority, runConvexCommand } from './convex'
 import { rethrowAuthSchemaImportError } from './optional-auth'
 
@@ -116,7 +117,7 @@ async function readOptional(path: string): Promise<string | undefined> {
   }
 }
 
-function defaultDependencies(root: string): InitDependencies {
+function defaultDependencies(root: string): InitDependencies & { close(): void } {
   let authorityPromise: ReturnType<typeof inspectConvexAuthority> | undefined
   const developmentAuthority = async () => {
     authorityPromise ??= inspectConvexAuthority(root)
@@ -139,13 +140,16 @@ function defaultDependencies(root: string): InitDependencies {
       quiet: true,
     })
   }
+  // One line reader for the whole run. The iterator buffers lines, so answers
+  // piped on stdin reach every question instead of only the first.
+  let terminal: ReturnType<typeof createInterface> | undefined
+  let lines: AsyncIterator<string> | undefined
   async function question(message: string): Promise<string> {
-    const terminal = createInterface({ input: process.stdin, output: process.stdout })
-    try {
-      return await terminal.question(message)
-    } finally {
-      terminal.close()
-    }
+    process.stdout.write(message)
+    terminal ??= createInterface({ input: process.stdin, crlfDelay: Infinity })
+    lines ??= terminal[Symbol.asyncIterator]()
+    const next = await lines.next()
+    return next.done ? '' : next.value
   }
   return {
     async confirm(message) {
@@ -187,20 +191,34 @@ function defaultDependencies(root: string): InitDependencies {
     },
     randomSecret: () => randomBytes(32).toString('base64url'),
     log: console.log,
+    close: () => terminal?.close(),
   }
 }
 
-function parseArguments(args: readonly string[]): { help: boolean; typedClient: boolean } {
-  let help = false
-  let typedClient = false
-  for (const argument of args) {
-    if (argument === '--help' || argument === '-h') help = true
-    else if (argument === '--typed-client') typedClient = true
-    else if (argument === '--prod' || argument === '--production') {
+interface InitArguments {
+  help: boolean
+  typedClient: boolean
+  /** Answer yes to every confirmation and use the default for every prompt. */
+  yes: boolean
+  siteUrl?: string
+}
+
+function parseArguments(args: readonly string[]): InitArguments {
+  const parsed: InitArguments = { help: false, typedClient: false, yes: false }
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!
+    if (argument === '--help' || argument === '-h') parsed.help = true
+    else if (argument === '--typed-client') parsed.typedClient = true
+    else if (argument === '--yes' || argument === '-y') parsed.yes = true
+    else if (argument === '--site-url' || argument.startsWith('--site-url=')) {
+      const value = argument === '--site-url' ? args[(index += 1)] : argument.slice(11)
+      if (!value) throw new Error('--site-url requires an origin')
+      parsed.siteUrl = normalizeAuthOrigin(value, 'SITE_URL')
+    } else if (argument === '--prod' || argument === '--production') {
       throw new Error('better-convex init refuses production provisioning')
     } else throw new Error(`Unknown init argument: ${argument}`)
   }
-  return { help, typedClient }
+  return parsed
 }
 
 async function inspectFiles(root: string, typedClient: boolean): Promise<PlannedFile[]> {
@@ -358,12 +376,38 @@ export async function runInitCommand(
 ): Promise<number> {
   const parsed = parseArguments(args)
   if (parsed.help) {
-    console.log('Usage: better-convex init [--typed-client]')
+    console.log(
+      [
+        'Usage: better-convex init [--typed-client] [--yes] [--site-url <origin>]',
+        '',
+        '  --typed-client       Also write app/convex-auth.ts.',
+        '  --yes, -y            Accept every step without asking (for scripts and CI).',
+        '  --site-url <origin>  Development site URL. Default: http://localhost:3000.',
+      ].join('\n'),
+    )
     return 0
   }
   const root = process.cwd()
   const defaults = defaultDependencies(root)
-  const dependencies: InitDependencies = { ...defaults, ...overrides }
+  const answers: Partial<InitDependencies> = {
+    ...(parsed.yes ? { confirm: async () => true } : {}),
+    ...(parsed.siteUrl || parsed.yes
+      ? { prompt: async (_message, defaultValue) => parsed.siteUrl ?? defaultValue }
+      : {}),
+  }
+  const dependencies: InitDependencies = { ...defaults, ...answers, ...overrides }
+  try {
+    return await initialize(root, parsed, dependencies)
+  } finally {
+    defaults.close()
+  }
+}
+
+async function initialize(
+  root: string,
+  parsed: InitArguments,
+  dependencies: InitDependencies,
+): Promise<number> {
   const schemaPath = join(root, 'convex/betterAuth/schema.ts')
   const metadataPath = join(root, 'convex/betterAuth/schemaMetadata.ts')
   const [schema, metadata] = await Promise.all([

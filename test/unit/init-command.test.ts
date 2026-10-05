@@ -299,6 +299,37 @@ describe.sequential('better-convex init', () => {
     expect(JSON.stringify(harness.logs)).not.toContain('SENTINEL_SECRET_DO_NOT_LOG')
   })
 
+  it('runs without questions with --yes and takes the site URL from --site-url', async () => {
+    const harness = createHarness([])
+    const { confirm: _confirm, prompt: _prompt, ...scripted } = harness.dependencies
+
+    await expect(
+      runInitCommand(['--yes', '--site-url', 'https://preview.example.test'], scripted),
+    ).resolves.toBe(0)
+
+    expect(await readFile(join(root, 'convex/auth.ts'), 'utf8')).toContain('createBetterConvexAuth')
+    expect(harness.environment.get('SITE_URL')).toBe('https://preview.example.test')
+    expect(harness.confirmations).toEqual([])
+  })
+
+  it('uses the default site URL with --yes alone', async () => {
+    const harness = createHarness([])
+    const { confirm: _confirm, prompt: _prompt, ...scripted } = harness.dependencies
+
+    await expect(runInitCommand(['-y'], scripted)).resolves.toBe(0)
+
+    expect(harness.environment.get('SITE_URL')).toBe('http://localhost:3000')
+  })
+
+  it.each([['--site-url'], ['--site-url=https://app.example.test/path'], ['--site-url=nope']])(
+    'rejects an invalid --site-url before any change: %s',
+    async (...args) => {
+      const harness = createHarness()
+      await expect(runInitCommand(args, harness.dependencies)).rejects.toThrow()
+      expect(harness.convexCalls).toHaveLength(0)
+    },
+  )
+
   it('refuses production provisioning flags', async () => {
     await expect(runInitCommand(['--prod'], createHarness().dependencies)).rejects.toThrow(
       'refuses production',

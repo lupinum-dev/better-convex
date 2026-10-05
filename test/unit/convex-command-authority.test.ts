@@ -316,6 +316,32 @@ describe('checked Convex CLI deployment authority', () => {
     })
   })
 
+  it.each([[['logs', '--history', '5']], [['data', 'messages', '--limit', '3']]])(
+    'passes read-only %j through with the file authority',
+    async (args) => {
+      const cwd = mkdtempSync(join(tmpdir(), 'bcn-convex-passthrough-'))
+      const cliDirectory = join(cwd, 'node_modules/convex/bin')
+      mkdirSync(cliDirectory, { recursive: true })
+      writeFileSync(join(cwd, '.env.local'), 'CONVEX_DEPLOYMENT=dev:file-owned\n', { mode: 0o600 })
+      writeFileSync(
+        join(cliDirectory, 'main.js'),
+        [
+          `const valid = process.argv.slice(2).join(' ') === ${JSON.stringify(args.join(' '))}`,
+          "  && process.env.CONVEX_DEPLOYMENT === 'dev:file-owned'",
+          'process.exitCode = valid ? 0 : 41',
+        ].join('\n'),
+      )
+      try {
+        await expect(runConvexCommand(args, { cwd, quiet: true })).resolves.toBe(0)
+        await expect(runConvexCommand([...args, '--prod'], { cwd })).rejects.toThrow(
+          'Deployment overrides are not supported',
+        )
+      } finally {
+        rmSync(cwd, { force: true, recursive: true })
+      }
+    },
+  )
+
   it('clears dotenv and ambient authority for configuration and anonymous development', async () => {
     const files = {
       '.env.local':
