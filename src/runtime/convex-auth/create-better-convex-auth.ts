@@ -22,6 +22,7 @@ import {
   AUTH_EMAIL_DELIVERY_FAILED,
   authConfigFailure,
   logAuthEmailFailure,
+  sanitizeAuthCause,
   type AuthConfigSubCode,
 } from './diagnostics'
 import { requireMcpPrincipal, type BetterConvexMcpPrincipal } from './mcp-principal'
@@ -70,9 +71,8 @@ type BetterConvexUserCreateDecision =
       }
     }
 
-type BetterConvexPendingUser = Readonly<
-  Pick<User, 'email' | 'emailVerified' | 'id' | 'image' | 'name'>
->
+// Better Auth assigns the user id after this hook, so the pending user has none.
+type BetterConvexPendingUser = Readonly<Pick<User, 'email' | 'emailVerified' | 'image' | 'name'>>
 
 const reviewedPasswordOptionKeys = [
   'disableSignUp',
@@ -689,7 +689,21 @@ function rejectUnsupportedOptions(options: object): void {
   }
 }
 
-function rejectUserCreation(): never {
+/**
+ * Better Auth answers this 403 with its generic sign-up response, so the client
+ * cannot tell a rejection from a success. A denial is a normal outcome; a hook
+ * failure or an invalid identity is an application bug and is logged.
+ */
+function rejectUserCreation(failure?: {
+  subCode: 'AUTH_USER_CREATE_HOOK_THREW' | 'AUTH_USER_CREATE_INVALID_IDENTITY'
+  cause?: unknown
+}): never {
+  if (failure) {
+    console.error('[better-convex] AUTH_USER_CREATE_REJECTED', {
+      subCode: failure.subCode,
+      ...(failure.cause === undefined ? {} : { cause: sanitizeAuthCause(failure.cause) }),
+    })
+  }
   throw new APIError('FORBIDDEN', { message: 'AUTH_USER_CREATE_REJECTED' })
 }
 
@@ -709,13 +723,12 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
         user: Object.freeze({
           email: user.email,
           emailVerified: user.emailVerified,
-          id: user.id,
           image: user.image,
           name: user.name,
         }),
       })
-    } catch {
-      rejectUserCreation()
+    } catch (error) {
+      rejectUserCreation({ subCode: 'AUTH_USER_CREATE_HOOK_THREW', cause: error })
     }
 
     if (!decision || typeof decision !== 'object' || decision.allowed !== true) {
@@ -730,7 +743,7 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
       (patch.id !== undefined && !requiredIdentityValue(patch.id)) ||
       (patch.email !== undefined && !requiredIdentityValue(patch.email))
     ) {
-      rejectUserCreation()
+      rejectUserCreation({ subCode: 'AUTH_USER_CREATE_INVALID_IDENTITY' })
     }
 
     return {
