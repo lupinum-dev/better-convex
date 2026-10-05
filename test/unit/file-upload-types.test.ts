@@ -70,18 +70,22 @@ function uploadTypeContracts(file: File) {
   // The Nuxt facade returns exactly the Vue lifecycle's state.
   expectTypeOf(noArgs).toEqualTypeOf(useVueConvexFileUpload(noArgsUploadUrl))
   void noArgs.upload(file, {})
+  void noArgs.upload(file, { args: {} })
 
   const requiredArgs = useConvexFileUpload(requiredArgsUploadUrl)
-  void requiredArgs.upload(file, { workspaceId: 'workspace_1' })
+  void requiredArgs.upload(file, { args: { workspaceId: 'workspace_1' } })
   // @ts-expect-error validator-required mutation args cannot be omitted
   void requiredArgs.upload(file)
   // @ts-expect-error validator-derived mutation args reject the wrong shape
   void requiredArgs.upload(file, {})
+  // @ts-expect-error validator-derived args must have the required fields
+  void requiredArgs.upload(file, { args: {} })
+  // @ts-expect-error mutation arguments belong inside the options object
+  void requiredArgs.upload(file, { workspaceId: 'workspace_1' })
 
   const optionalFields = useConvexFileUpload(optionalFieldsUploadUrl)
   void optionalFields.upload(file, {})
-  void optionalFields.upload(file, { folder: 'avatars' })
-  // @ts-expect-error a non-empty validator shape still owns an explicit args position
+  void optionalFields.upload(file, { args: { folder: 'avatars' } })
   void optionalFields.upload(file)
 
   // @ts-expect-error a non-string upload-URL result requires `url`
@@ -155,14 +159,16 @@ function uploadContextTypeContracts(file: File, assetId: AssetId, operation: Con
     complete: (op, { storageId, context }: UploadCompleteContext<string, AssetId>) =>
       op.mutation(attachToAsset, { assetId: context, storageId }),
   })
+  void toAsset.upload(file, { context: assetId })
+  void toAsset.upload(file, { args: {}, context: assetId })
+  // @ts-expect-error the old positional context parameter is removed
   void toAsset.upload(file, {}, { context: assetId })
-  void toAsset.upload(file, undefined, { context: assetId })
   // @ts-expect-error a declared context is required, so the target is never implicit
   void toAsset.upload(file)
   // @ts-expect-error a declared context is required, so the target is never implicit
   void toAsset.upload(file, {})
   // @ts-expect-error the context type is inferred from the completion
-  void toAsset.upload(file, {}, { context: 'asset_1' })
+  void toAsset.upload(file, { context: 'asset_1' })
   expectTypeOf(toAsset).toEqualTypeOf(
     useVueConvexFileUpload(noArgsUploadUrl, {
       complete: (op, { storageId, context }: UploadCompleteContext<string, AssetId>) =>
@@ -170,16 +176,20 @@ function uploadContextTypeContracts(file: File, assetId: AssetId, operation: Con
     }),
   )
 
-  // The URL selector receives the same context; required upload-URL args come first.
+  // The URL selector receives the same context; required args and context share options.
   const scoped = useConvexFileUpload(requiredArgsUploadUrl, {
     url: (prepared, { context, file: selected }: { file: File; context: { folder: string } }) => {
       expectTypeOf(selected).toEqualTypeOf<File>()
       return `${prepared}?folder=${context.folder}`
     },
   })
-  void scoped.upload(file, { workspaceId: 'workspace_1' }, { context: { folder: 'a' } })
-  // @ts-expect-error upload-URL args keep their position before the call options
+  void scoped.upload(file, { args: { workspaceId: 'workspace_1' }, context: { folder: 'a' } })
+  // @ts-expect-error required upload-URL args cannot be omitted
   void scoped.upload(file, { context: { folder: 'a' } })
+  // @ts-expect-error required context cannot be omitted even when args are present
+  void scoped.upload(file, { args: { workspaceId: 'workspace_1' } })
+  // @ts-expect-error both required args and context need an options object
+  void scoped.upload(file)
 
   // A context that admits `undefined` stays optional.
   const optionalContext = useConvexFileUpload(noArgsUploadUrl, {
@@ -187,7 +197,7 @@ function uploadContextTypeContracts(file: File, assetId: AssetId, operation: Con
       context,
   })
   void optionalContext.upload(file)
-  void optionalContext.upload(file, {}, { context: assetId })
+  void optionalContext.upload(file, { context: assetId })
 
   // Without a declared context, `ctx.context` is `undefined` and none may be passed.
   const plain = useConvexFileUpload(noArgsUploadUrl, {
@@ -198,7 +208,7 @@ function uploadContextTypeContracts(file: File, assetId: AssetId, operation: Con
   })
   void plain.upload(file)
   // @ts-expect-error no context was declared
-  void plain.upload(file, {}, { context: assetId })
+  void plain.upload(file, { context: assetId })
 
   // op.upload() accepts the same client-side limits as the composable.
   void operation.upload('https://upload.test', file, {

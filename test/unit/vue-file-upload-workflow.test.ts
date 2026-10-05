@@ -158,7 +158,7 @@ describe('useConvexFileUpload workflows', () => {
     })
     const upload = sessionUpload(host)
 
-    const pending = upload.upload(textFile(), { folder: 'evidence' })
+    const pending = upload.upload(textFile(), { args: { folder: 'evidence' } })
     ;(await nextXhr()).respond('storage_7')
     await vi.waitFor(() => expect(host.calls('files:claim')).toHaveLength(1))
     // The completion is part of the same lifecycle.
@@ -205,7 +205,7 @@ describe('useConvexFileUpload workflows', () => {
       }),
     )
 
-    const pending = upload.upload(textFile(), { folder: 'x' })
+    const pending = upload.upload(textFile(), { args: { folder: 'x' } })
     ;(await nextXhr()).respond('storage_3')
 
     await expect(pending).resolves.toMatchObject({
@@ -243,7 +243,7 @@ describe('useConvexFileUpload workflows', () => {
       }),
     )
 
-    const pending = upload.upload(textFile(), { folder: 'x' })
+    const pending = upload.upload(textFile(), { args: { folder: 'x' } })
     ;(await nextXhr()).respond()
     await vi.waitFor(() => expect(host.calls('files:claim')).toHaveLength(1))
     host.advanceIdentity()
@@ -289,7 +289,7 @@ describe('useConvexFileUpload workflows', () => {
       })
       const upload = twoStepUpload(host, () => host.advanceIdentity())
 
-      const pending = upload.upload(textFile(), { folder: 'x' })
+      const pending = upload.upload(textFile(), { args: { folder: 'x' } })
       ;(await nextXhr()).respond()
 
       await expect(pending).rejects.toMatchObject({
@@ -312,7 +312,7 @@ describe('useConvexFileUpload workflows', () => {
       })
       const upload: ReturnType<typeof twoStepUpload> = twoStepUpload(host, () => upload.cancel())
 
-      const pending = upload.upload(textFile(), { folder: 'x' })
+      const pending = upload.upload(textFile(), { args: { folder: 'x' } })
       ;(await nextXhr()).respond()
 
       await expect(pending).rejects.toMatchObject({
@@ -355,7 +355,7 @@ describe('useConvexFileUpload workflows', () => {
           }),
         )
 
-        const pending = upload.upload(textFile(), { folder: 'x' })
+        const pending = upload.upload(textFile(), { args: { folder: 'x' } })
         ;(await nextXhr()).respond()
 
         await expect(pending).rejects.toMatchObject({
@@ -390,7 +390,7 @@ describe('useConvexFileUpload workflows', () => {
     )
 
     for (let index = 0; index < 3; index += 1) {
-      const pending = upload.upload(textFile(), { folder: 'x' })
+      const pending = upload.upload(textFile(), { args: { folder: 'x' } })
       await vi.waitFor(() => expect(FakeXhr.sent).toHaveLength(index + 1), { interval: 1 })
       FakeXhr.sent[index]!.respond(`storage_${index}`)
       await pending
@@ -412,7 +412,7 @@ describe('useConvexFileUpload workflows', () => {
       }),
     )
 
-    const pending = upload.upload(textFile(), { folder: 'x' })
+    const pending = upload.upload(textFile(), { args: { folder: 'x' } })
     ;(await nextXhr()).respond()
     const error = (await pending.catch((cause: unknown) => cause)) as ConvexCallError
     expect(error).toMatchObject({ phase: 'complete', kind: 'unknown' })
@@ -430,7 +430,9 @@ describe('useConvexFileUpload workflows', () => {
       ),
     )
 
-    await expect(upload.upload(textFile(), { folder: 'x' } as never)).rejects.toMatchObject({
+    await expect(
+      upload.upload(textFile(), { args: { folder: 'x' } } as never),
+    ).rejects.toMatchObject({
       code: 'INVALID_UPLOAD_URL',
       phase: 'upload',
       outcome: 'not-sent',
@@ -449,7 +451,7 @@ describe('useConvexFileUpload workflows', () => {
       })
       const upload = sessionUpload(host)
 
-      const pending = upload.upload(textFile(), { folder: 'x' })
+      const pending = upload.upload(textFile(), { args: { folder: 'x' } })
       await vi.waitFor(() => expect(host.calls('files:createSession')).toHaveLength(1))
       host.advanceIdentity()
       expect(upload.status.value).toBe('idle')
@@ -474,7 +476,7 @@ describe('useConvexFileUpload workflows', () => {
       })
       const upload = sessionUpload(host, { url: () => host.advanceIdentity() })
 
-      await expect(upload.upload(textFile(), { folder: 'x' })).rejects.toMatchObject({
+      await expect(upload.upload(textFile(), { args: { folder: 'x' } })).rejects.toMatchObject({
         code: 'IDENTITY_CHANGED',
         phase: 'upload',
         outcome: 'not-sent',
@@ -492,7 +494,7 @@ describe('useConvexFileUpload workflows', () => {
       })
       const upload = sessionUpload(host)
 
-      const pending = upload.upload(textFile(), { folder: 'x' })
+      const pending = upload.upload(textFile(), { args: { folder: 'x' } })
       const xhr = await nextXhr()
       host.advanceIdentity()
       await expect(pending).rejects.toMatchObject({
@@ -515,7 +517,7 @@ describe('useConvexFileUpload workflows', () => {
       })
       const upload = sessionUpload(host, { complete: () => host.advanceIdentity() })
 
-      const pending = upload.upload(textFile(), { folder: 'x' })
+      const pending = upload.upload(textFile(), { args: { folder: 'x' } })
       ;(await nextXhr()).respond()
       // The stored file exists; the completion that would reference it was never sent.
       await expect(pending).rejects.toMatchObject({
@@ -578,7 +580,7 @@ describe('useConvexFileUpload workflows', () => {
       const host = workflowHost(handlers as Record<string, Handler>)
       const upload = sessionUpload(host)
 
-      const pending = upload.upload(textFile(), { folder: 'x' })
+      const pending = upload.upload(textFile(), { args: { folder: 'x' } })
       if (respond) respond(await nextXhr())
       const error = (await pending.catch((cause: unknown) => cause)) as ConvexCallError
       // `outcome: undefined` asserts no dispatch outcome was recorded.
@@ -615,7 +617,7 @@ describe('useConvexFileUpload workflows', () => {
       }),
     )
 
-    const pending = upload.upload(textFile(), { folder: 'x' }, { context: selection })
+    const pending = upload.upload(textFile(), { args: { folder: 'x' }, context: selection })
     // The selection changes while the upload-URL mutation and the POST run.
     selection.sessionId = 'selected_b'
     selection.token = 'token_b'
@@ -646,7 +648,7 @@ describe('useConvexFileUpload workflows', () => {
       }),
     )
 
-    const first = upload.upload(textFile(), {}, { context: 'first' })
+    const first = upload.upload(textFile(), { context: 'first' })
     ;(await nextXhr()).respond('storage_1')
     await expect(first).resolves.toEqual({
       storageId: 'storage_1',
@@ -658,7 +660,7 @@ describe('useConvexFileUpload workflows', () => {
       originalName: 'first',
     })
     FakeXhr.sent = []
-    const second = upload.upload(textFile(), undefined, { context: 'second' })
+    const second = upload.upload(textFile(), { context: 'second' })
     ;(await nextXhr()).respond('storage_2')
     await expect(second).resolves.toMatchObject({ completed: 'second' })
     host.stop()
@@ -671,7 +673,7 @@ describe('useConvexFileUpload workflows', () => {
     })
     const upload = sessionUpload(host)
 
-    const pending = upload.upload(textFile(), { folder: 'x' })
+    const pending = upload.upload(textFile(), { args: { folder: 'x' } })
     await nextXhr()
     upload.cancel()
     await expect(pending).rejects.toMatchObject({
@@ -690,7 +692,7 @@ describe('useConvexFileUpload workflows', () => {
     const host = workflowHost({ 'files:createSession': () => session.promise })
     const upload = sessionUpload(host)
 
-    const pending = upload.upload(textFile(), { folder: 'x' })
+    const pending = upload.upload(textFile(), { args: { folder: 'x' } })
     await vi.waitFor(() => expect(host.calls('files:createSession')).toHaveLength(1))
     upload.cancel()
     expect(upload.status.value).toBe('idle')
@@ -713,7 +715,7 @@ describe('useConvexFileUpload workflows', () => {
     })
     const upload = sessionUpload(host)
 
-    const pending = upload.upload(textFile(), { folder: 'x' })
+    const pending = upload.upload(textFile(), { args: { folder: 'x' } })
     ;(await nextXhr()).respond()
     await vi.waitFor(() => expect(host.calls('files:claim')).toHaveLength(1))
     upload.cancel()

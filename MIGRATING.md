@@ -88,6 +88,9 @@ are gone, and TypeScript reports most places that you must change.
 
 ## Composables and errors
 
+- [ ] Replace `upload(file, args, { context })` with
+      `upload(file, { args, context })`. Omit `args` when the prepare mutation
+      takes none.
 - [ ] `useConvexMutation` returns `{ mutate, data, status, pending, error, reset }`;
       destructure `mutate`.
 - [ ] `useConvexAction` returns `{ run, data, status, pending, error, reset }`;
@@ -106,8 +109,8 @@ are gone, and TypeScript reports most places that you must change.
 - [ ] `upload()` resolves with `{ storageId, prepared, completed }`, not the
       storage ID, and `data` holds the same object. Move a follow-up save
       mutation into the `complete` option. Pass the record to attach to as
-      `upload(file, args, { context })` and read it from `ctx.context` in
-      `complete`, not from component state. A prepare mutation that returns an
+      `upload(file, { args, context })`. In `complete`, read it from
+      `ctx.context`, not from component state. A prepare mutation that returns an
       object needs the `url` option.
 - [ ] `upload()` failures have codes, `phase`, and `outcome`, and `cancel()`
       makes the pending upload reject with `CANCELLED`.
