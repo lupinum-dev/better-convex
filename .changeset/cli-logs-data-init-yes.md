@@ -1,5 +1,5 @@
 ---
-'@lupinum/better-convex-nuxt': minor
+'@lupinum/better-convex-nuxt': patch
 ---
 
 Add `convex logs` and `convex data` to the `better-convex convex` runner, and `--yes` and `--site-url` to `better-convex init`.
