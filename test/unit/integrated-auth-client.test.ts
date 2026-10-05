@@ -6,7 +6,6 @@ import {
   createIntegratedAuthClient,
   type CanonicalSessionReconciler,
 } from '../../src/runtime/auth/integrated-client'
-import { createAuthOperationTracker } from '../../src/runtime/auth/operation-tracker'
 
 function reconciler(
   overrides: Partial<CanonicalSessionReconciler> = {},
@@ -169,8 +168,7 @@ describe('integrated Better Auth client', () => {
     expect(() => unsafe.unsafeSyncMutation()).toThrow(cancelFailure)
   })
 
-  it('tracks concurrent Promise operations without serializing their invocation', async () => {
-    const tracker = createAuthOperationTracker()
+  it('runs concurrent Promise operations without serializing their invocation', async () => {
     const releases: Array<() => void> = []
     const invoked: string[] = []
     const integrated = createIntegratedAuthClient(
@@ -181,20 +179,16 @@ describe('integrated Better Auth client', () => {
         },
       },
       reconciler(),
-      tracker.track,
     )
 
     const first = integrated.operation('first')
     const second = integrated.operation('second')
     expect(invoked).toEqual(['first', 'second'])
-    expect(tracker.pending.value).toBe(true)
 
     releases[1]?.()
-    await second
-    expect(tracker.pending.value).toBe(true)
+    await expect(second).resolves.toBe('second')
     releases[0]?.()
-    await first
-    expect(tracker.pending.value).toBe(false)
+    await expect(first).resolves.toBe('first')
   })
 
   it('keeps the root non-thenable', async () => {

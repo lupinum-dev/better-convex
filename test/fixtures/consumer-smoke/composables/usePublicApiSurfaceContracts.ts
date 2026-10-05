@@ -20,7 +20,7 @@ function assertType<T>(_value: T): void {}
 export async function usePublicApiSurfaceContracts(file: File) {
   const auth = useConvexAuth()
   assertType<Ref<boolean>>(auth.pending)
-  assertType<'loading' | 'anonymous' | 'authenticated' | 'error'>(auth.status.value)
+  assertType<'pending' | 'anonymous' | 'authenticated' | 'error'>(auth.status.value)
   assertType<string | undefined>(auth.user.value?.id)
   assertType<Error | undefined>(auth.error.value)
 

@@ -4,7 +4,7 @@ import { useState } from '#imports'
 
 import {
   ANONYMOUS_IDENTITY,
-  LOADING_IDENTITY,
+  PENDING_IDENTITY,
   toAuthenticatedIdentity,
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
@@ -27,7 +27,7 @@ import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
  * subscription path this file spies on.
  */
 type AuthState = { pending: boolean; identity: AuthIdentity }
-const loading: AuthState = { pending: true, identity: LOADING_IDENTITY }
+const loading: AuthState = { pending: true, identity: PENDING_IDENTITY }
 const anonymous: AuthState = { pending: false, identity: ANONYMOUS_IDENTITY }
 const user = (id: string): AuthState => ({
   pending: false,

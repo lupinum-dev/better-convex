@@ -1,5 +1,4 @@
 import type { BetterConvexAttachment } from '@lupinum/better-convex-vue/embedded'
-import type { ComputedRef } from 'vue'
 
 import type { DevtoolsSink } from './devtools/sink'
 import type { ConvexAuthStatus } from './utils/auth-status'
@@ -7,7 +6,6 @@ import type { Logger } from './utils/logger'
 
 /** Nuxt-owned Better Auth presentation; it never controls a Convex client. */
 export interface NuxtConvexAuthController {
-  readonly pending: ComputedRef<boolean>
   readonly client: object
   ready(options?: { timeoutMs?: number }): Promise<ConvexAuthStatus>
   dispose(): void

@@ -15,7 +15,7 @@
       </p>
 
       <!-- Loading state -->
-      <div v-if="status === 'loading' || (pending && status === 'authenticated')" class="loading">
+      <div v-if="status === 'pending' || (pending && status === 'authenticated')" class="loading">
         Loading posts...
       </div>
 

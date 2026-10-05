@@ -32,7 +32,7 @@ const formatTime = (timestamp: number) =>
 <template>
   <main>
     <h1>MCP connections</h1>
-    <p v-if="status === 'loading'">Checking session…</p>
+    <p v-if="status === 'pending'">Checking session…</p>
     <p v-else-if="status === 'error'">
       {{ authError?.message ?? 'Authentication failed.' }}
     </p>

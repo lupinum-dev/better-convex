@@ -62,7 +62,7 @@ const generateNote = makeFunctionReference<'action'>('notes:generate') as Functi
 >
 
 let authSnapshot: BrowserAuthSnapshot = {
-  status: 'loading',
+  status: 'pending',
   identityKey: null,
   sessionGeneration: 0,
   error: null,
@@ -83,7 +83,7 @@ const plugin = createBetterConvex({
   convexUrl: 'https://authenticated-consumer.invalid',
   auth: adapter,
 })
-const renderedSnapshot = ref('loading')
+const renderedSnapshot = ref('pending')
 const queryOwner = ref('alice')
 let operations: ReturnType<typeof createOperations> | null = null
 let deferredMutation: Promise<OperationValue> | null = null

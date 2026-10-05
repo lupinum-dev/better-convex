@@ -6,7 +6,7 @@
 
       <!-- Auth Status -->
       <div class="auth-status">
-        <span v-if="status === 'loading'" class="status">Checking session...</span>
+        <span v-if="status === 'pending'" class="status">Checking session...</span>
         <span v-else-if="status === 'error'" class="status">
           {{ authError?.message ?? 'Authentication unavailable' }}
         </span>
@@ -14,8 +14,8 @@
           <span class="status authenticated">
             Logged in as <strong>{{ user?.name || user?.email }}</strong>
           </span>
-          <button class="btn btn-sm" :disabled="pending" @click="handleSignOut">
-            {{ pending ? 'Signing out...' : 'Sign Out' }}
+          <button class="btn btn-sm" :disabled="busy" @click="handleSignOut">
+            {{ busy ? 'Signing out...' : 'Sign Out' }}
           </button>
         </template>
         <template v-else-if="status === 'anonymous'">
@@ -163,21 +163,25 @@
 </template>
 
 <script setup lang="ts">
-const { user, status, pending, error: authError, client } = useConvexAuth()
+const { user, status, error: authError, client } = useConvexAuth()
+const busy = ref(false)
 
 const debugInfo = computed(() => ({
   status: status.value,
-  pending: pending.value,
+  pending: status.value === 'pending',
   error: authError.value?.message,
   user: user.value,
 }))
 
 async function handleSignOut() {
+  busy.value = true
   try {
     await client.signOut()
     window.location.href = '/'
   } catch (error) {
     console.error('Sign out failed:', error)
+  } finally {
+    busy.value = false
   }
 }
 </script>

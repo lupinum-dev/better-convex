@@ -113,9 +113,9 @@ describe('setupBetterConvexTest (Nuxt)', () => {
   })
 
   it('honors ready() timeouts without inventing a settled identity', async () => {
-    const convex = setupBetterConvexTest({ auth: 'loading' })
+    const convex = setupBetterConvexTest({ auth: 'pending' })
 
-    await expect(convex.auth.ready({ timeoutMs: 1 })).resolves.toBe('loading')
+    await expect(convex.auth.ready({ timeoutMs: 1 })).resolves.toBe('pending')
     convex.auth.signIn()
     await expect(convex.auth.ready()).resolves.toBe('authenticated')
     await convex.dispose()

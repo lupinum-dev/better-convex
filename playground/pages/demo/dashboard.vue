@@ -3,14 +3,14 @@
     <div class="card">
       <header class="header">
         <h1>Dashboard</h1>
-        <button class="btn-signout" :disabled="pending" @click="handleSignOut">
-          {{ pending ? '...' : 'Sign Out' }}
+        <button class="btn-signout" :disabled="busy" @click="handleSignOut">
+          {{ busy ? '...' : 'Sign Out' }}
         </button>
       </header>
 
       <!-- Loading state -->
       <div
-        v-if="status === 'loading' || (status === 'authenticated' && isLoadingUser)"
+        v-if="status === 'pending' || (status === 'authenticated' && isLoadingUser)"
         class="loading"
       >
         Loading...
@@ -63,7 +63,7 @@
             </div>
             <div class="info-item">
               <span class="label">Operation pending</span>
-              <span class="value">{{ pending ? 'Yes' : 'No' }}</span>
+              <span class="value">{{ busy ? 'Yes' : 'No' }}</span>
             </div>
           </div>
         </section>
@@ -92,7 +92,8 @@ definePageMeta({
   layout: 'sidebar',
 })
 
-const { status, pending, error: authError, client } = useConvexAuth()
+const { status, error: authError, client } = useConvexAuth()
+const busy = ref(false)
 const isTestingConvex = ref(false)
 const convexResult = ref<string | null>(null)
 const convexError = ref(false)
@@ -109,11 +110,14 @@ const { data: user, pending: isLoadingUser } = await useConvexQuery(
 const convex = useConvex()
 
 async function handleSignOut() {
+  busy.value = true
   try {
     await client.signOut()
     window.location.href = '/'
   } catch (error) {
     console.error('Sign out failed:', error)
+  } finally {
+    busy.value = false
   }
 }
 

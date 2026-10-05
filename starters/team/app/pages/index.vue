@@ -13,7 +13,7 @@ function retryAuthentication() {
       <h1>Organizations</h1>
     </section>
 
-    <section v-if="status === 'loading'" class="empty">Checking session...</section>
+    <section v-if="status === 'pending'" class="empty">Checking session...</section>
 
     <section v-else-if="status === 'error'" class="empty">
       <p>{{ error?.message ?? 'Authentication failed.' }}</p>

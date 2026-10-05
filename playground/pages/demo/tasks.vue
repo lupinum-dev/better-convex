@@ -6,7 +6,7 @@
       <code>useConvexAuth</code> for authentication.
     </p>
 
-    <div v-if="status === 'loading'" class="auth-warning">Checking session...</div>
+    <div v-if="status === 'pending'" class="auth-warning">Checking session...</div>
 
     <div v-else-if="status === 'error'" class="auth-warning">
       {{ authError?.message ?? 'Authentication failed.' }}

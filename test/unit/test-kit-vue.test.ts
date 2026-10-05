@@ -138,7 +138,7 @@ describe('setupBetterConvexTest (Vue)', () => {
   })
 
   it('never sends a request started before sign-in as the signed-in user', async () => {
-    const convex = setupBetterConvexTest({ auth: 'loading' })
+    const convex = setupBetterConvexTest({ auth: 'pending' })
     const create = convex.mutation(createNote)
     const { state } = mountStandalone(convex, () => useConvexMutation(createNote))
 

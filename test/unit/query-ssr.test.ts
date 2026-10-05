@@ -74,7 +74,7 @@ describe('Nuxt auth state adapted to the one Vue execution decision', () => {
 
   it('gates on the same precedence useConvexAuth() reports as status', () => {
     const requiredOutcome = {
-      loading: 'wait',
+      pending: 'wait',
       authenticated: 'execute',
       error: 'error',
       anonymous: 'idle',

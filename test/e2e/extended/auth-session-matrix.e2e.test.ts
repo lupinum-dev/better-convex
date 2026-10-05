@@ -248,6 +248,39 @@ describe('canonical Better Auth session matrix', async () => {
     }
   })
 
+  it('never shows a session as signed in when Convex rejects its token', async () => {
+    const browser = await chromium.launch()
+    const context = await createIsolatedBrowserContext(browser)
+    const page = await context.newPage()
+
+    try {
+      await page.goto(AUTH_TEST_PAGE)
+      await expectAnonymousIdentity(page)
+      await page.getByRole('button', { name: 'Call signUp.email()' }).click()
+      await expect.poll(() => page.locator('.result').textContent(), pollOptions).not.toBe('(idle)')
+      // Corrupt the signature of every token the browser receives, so Convex rejects it.
+      await page.route('**/api/auth/convex/token', async (route) => {
+        const response = await route.fetch()
+        const body = (await response.json()) as { token?: string }
+        if (body.token) body.token = `${body.token.slice(0, -4)}AAAA`
+        await route.fulfill({ response, json: body })
+      })
+      await page.evaluate(() => {
+        ;(window as { __bcnTrace?: string[] }).__bcnTrace!.length = 0
+      })
+
+      await page.getByRole('button', { name: 'Call signIn.email()' }).click()
+      await expect
+        .poll(() => page.getByTestId('auth-state').textContent(), pollOptions)
+        .toBe('error')
+      expect((await readTrace(page)).filter((entry) => entry.startsWith('authenticated|'))).toEqual(
+        [],
+      )
+    } finally {
+      await browser.close()
+    }
+  })
+
   it('refreshes the Convex token before it expires and stays authenticated', async () => {
     const browser = await chromium.launch()
     const context = await createIsolatedBrowserContext(browser)

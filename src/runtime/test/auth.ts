@@ -4,7 +4,7 @@ import { computed, readonly, shallowRef, type ComputedRef, type ShallowRef } fro
 import { ConvexCallError } from '../errors'
 import type { ConvexUser } from '../utils/types'
 
-export type BetterConvexTestAuthPreset = 'authenticated' | 'anonymous' | 'loading' | 'error'
+export type BetterConvexTestAuthPreset = 'authenticated' | 'anonymous' | 'pending' | 'error'
 
 /**
  * Stands in for `useConvexAuth()`. Its verbs move the one test identity, so
@@ -66,12 +66,12 @@ export function createBetterConvexTestAuth(
 
   control.subscribe(() => {
     status.value = control.status
-    if (status.value === 'loading') return
+    if (status.value === 'pending') return
     for (const settle of [...settledWaiters]) settle()
   })
 
   const waitForSettlement = (timeoutMs = 0) => {
-    if (status.value !== 'loading') return Promise.resolve()
+    if (status.value !== 'pending') return Promise.resolve()
     return new Promise<void>((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const settle = () => {
@@ -97,7 +97,7 @@ export function createBetterConvexTestAuth(
 
   return Object.freeze({
     status: computed(() => status.value),
-    pending: computed(() => status.value === 'loading'),
+    pending: computed(() => status.value === 'pending'),
     user: readonly(currentUser),
     error: computed(() => currentError.value),
     client: Object.freeze({

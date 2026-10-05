@@ -7,7 +7,7 @@ export default defineNuxtRouteMiddleware(() => {
   const { status } = useConvexAuth()
 
   // Wait for auth to load
-  if (status.value === 'loading') {
+  if (status.value === 'pending') {
     return
   }
 

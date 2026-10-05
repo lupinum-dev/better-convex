@@ -5,7 +5,8 @@ import { api } from '#convex/api'
 
 defineOptions({ name: 'AgencyPage' })
 
-const { status, pending, user, error: authLifecycleError, client: authClient } = useConvexAuth()
+const { status, user, error: authLifecycleError, client: authClient } = useConvexAuth()
+const busy = ref(false)
 const authMode = ref<'signUp' | 'signIn'>('signUp')
 const name = ref('')
 const email = ref('')
@@ -40,12 +41,13 @@ async function submitOrganization() {
 }
 
 async function submitAuth() {
-  if (pending.value) return
+  if (busy.value) return
   if (password.value.length < 15 || !email.value.trim()) return
   if (authMode.value === 'signUp' && !name.value.trim()) return
 
   operationError.value = null
   authNotice.value = null
+  busy.value = true
   try {
     const signingUp = authMode.value === 'signUp'
     const result = signingUp
@@ -69,12 +71,19 @@ async function submitAuth() {
     }
   } catch (error) {
     operationError.value = error instanceof Error ? error.message : 'Authentication failed'
+  } finally {
+    busy.value = false
   }
 }
 
 async function handleSignOut() {
-  await authClient.signOut()
-  agencyOrganizationId.value = '' as Id<'organizations'>
+  busy.value = true
+  try {
+    await authClient.signOut()
+    agencyOrganizationId.value = '' as Id<'organizations'>
+  } finally {
+    busy.value = false
+  }
 }
 </script>
 
@@ -83,7 +92,7 @@ async function handleSignOut() {
     <p>Agency starter</p>
     <h1>Client workspaces</h1>
 
-    <p v-if="status === 'loading'">Checking session...</p>
+    <p v-if="status === 'pending'">Checking session...</p>
 
     <p v-else-if="status === 'error'" class="error">
       {{ authLifecycleError?.message ?? 'Authentication failed.' }}
@@ -114,16 +123,16 @@ async function handleSignOut() {
       </label>
       <p v-if="authNotice" class="notice">{{ authNotice }}</p>
       <p v-if="operationError" class="error">{{ operationError }}</p>
-      <button :disabled="pending" type="submit">
-        {{ pending ? 'Working...' : authMode === 'signUp' ? 'Create account' : 'Sign in' }}
+      <button :disabled="busy" type="submit">
+        {{ busy ? 'Working...' : authMode === 'signUp' ? 'Create account' : 'Sign in' }}
       </button>
     </form>
 
     <template v-else-if="status === 'authenticated'">
       <div class="session-row">
         <span>{{ user?.email ?? 'Signed in' }}</span>
-        <button type="button" :disabled="pending" @click="handleSignOut">
-          {{ pending ? 'Signing out...' : 'Sign out' }}
+        <button type="button" :disabled="busy" @click="handleSignOut">
+          {{ busy ? 'Signing out...' : 'Sign out' }}
         </button>
       </div>
 

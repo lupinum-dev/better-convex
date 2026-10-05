@@ -4,7 +4,7 @@ import { ConvexCallError, type ConvexCallErrorCode } from '../errors'
 import { createIdentityChangedError } from './identity-changed-error'
 import type { ClientIdentityPort, ClientIdentitySnapshot } from './identity-port'
 
-export type BrowserAuthStatus = 'loading' | 'authenticated' | 'anonymous' | 'error'
+export type BrowserAuthStatus = 'pending' | 'authenticated' | 'anonymous' | 'error'
 
 /** Provider-neutral browser identity snapshot. It contains no credential or client control. */
 export interface BrowserAuthSnapshot {
@@ -66,6 +66,9 @@ function clientIdentityKey(snapshot: BrowserAuthSnapshot): ClientIdentitySnapsho
 
 function publicError(snapshot: BrowserAuthSnapshot): ConvexCallError | null {
   if (snapshot.status !== 'error') return null
+  // A library-created failure is already safe to show and keeps its code.
+  // A raw provider error may carry private detail, so it gets generic text.
+  if (snapshot.error instanceof ConvexCallError) return snapshot.error
   return new ConvexCallError({
     kind: 'authentication',
     message: 'Authentication failed',
@@ -85,10 +88,10 @@ export function createAuthAdapterIdentityPort(
   let currentClient: AuthCapableClient | null = null
   let currentClientGeneration = -1
   const activeAuthConfiguration = new WeakMap<AuthCapableClient, object>()
-  let initialSettled = desired.status !== 'loading' && desired.status !== 'authenticated'
+  let initialSettled = desired.status !== 'pending' && desired.status !== 'authenticated'
   // Whether the provider has reported a principal (anonymous, a user, or an
   // error) since the port started.
-  let resolvedPrincipal = desired.status !== 'loading'
+  let resolvedPrincipal = desired.status !== 'pending'
   let snapshot: ClientIdentitySnapshot = {
     authEnabled: true,
     settled: initialSettled,
@@ -162,6 +165,13 @@ export function createAuthAdapterIdentityPort(
 
   const failClosed = (failedGeneration: number, cause: unknown) => {
     if (disposed || failedGeneration !== identityGeneration) return
+    // Already failed closed: a failure of the fallback client stays terminal
+    // until the provider reports a new state. A new generation here would make
+    // the owner build another client, which fails again, without end.
+    if (desired.status === 'error' && snapshot.settled) {
+      activeConfirmation?.cancel(snapshot.error ?? createIdentityChangedError('authentication'))
+      return
+    }
     const rejection =
       cause instanceof ConvexCallError
         ? cause
@@ -288,14 +298,14 @@ export function createAuthAdapterIdentityPort(
     // The first provider result after an unknown start that finds no session
     // retires nothing: no principal existed, queries waited, and the client is
     // already anonymous. Work started while loading continues as anonymous.
-    if (crossedIdentity && !resolvedPrincipal && previous.status === 'loading') {
+    if (crossedIdentity && !resolvedPrincipal && previous.status === 'pending') {
       resolvedPrincipal = true
       if (next.status === 'anonymous') {
         publish({ ...snapshot, settled: true, identityKey: 'anonymous', error: null })
         return
       }
     }
-    if (next.status !== 'loading') resolvedPrincipal = true
+    if (next.status !== 'pending') resolvedPrincipal = true
 
     if (crossedIdentity) {
       const retired = createIdentityChangedError('authentication')

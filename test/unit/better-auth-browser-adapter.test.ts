@@ -80,7 +80,10 @@ describe('Better Auth browser adapter', () => {
     [
       'the provider still reports the session',
       { session: { token: 'session-a' }, user: { id: 'alice' } },
-      ['Authentication credentials are invalid or expired', 'Authentication failed'],
+      [
+        'Authentication credentials are invalid or expired',
+        'Convex rejected the authentication token',
+      ],
     ],
   ] as const)(
     'on a 401 token response where %s, publishes the expected errors',
@@ -244,7 +247,7 @@ describe('Better Auth browser adapter', () => {
     )
     const adapter = createBetterAuthBrowserAdapter(fixture.client)
     expect(adapter.snapshot()).toMatchObject({
-      status: 'loading',
+      status: 'pending',
       sessionGeneration: 0,
     })
 
@@ -473,7 +476,7 @@ describe('Better Auth browser adapter', () => {
     const finished = vi.fn()
     const refresh = adapter.refreshSession().then(finished)
 
-    await vi.waitFor(() => expect(adapter.snapshot().status).toBe('loading'))
+    await vi.waitFor(() => expect(adapter.snapshot().status).toBe('pending'))
     expect(finished).not.toHaveBeenCalled()
 
     fixture.session.value = {

@@ -9,7 +9,8 @@ const { data: currentUser } = await useConvexQuery(
     server: false,
   },
 )
-const { client, pending } = useConvexAuth()
+const { client } = useConvexAuth()
+const busy = ref(false)
 const { data: organizations, pending: organizationsPending } = await useConvexQuery(
   api.organizations.listMine,
   {},
@@ -18,7 +19,12 @@ const { data: organizations, pending: organizationsPending } = await useConvexQu
 const hasUserProjection = computed(() => currentUser.value != null)
 
 async function handleSignOut() {
-  await client.signOut()
+  busy.value = true
+  try {
+    await client.signOut()
+  } finally {
+    busy.value = false
+  }
 }
 </script>
 
@@ -27,8 +33,8 @@ async function handleSignOut() {
     <span>
       {{ currentUser.email || currentUser.name || 'Signed in' }}
     </span>
-    <button type="button" :disabled="pending" @click="handleSignOut">
-      {{ pending ? 'Signing out...' : 'Sign out' }}
+    <button type="button" :disabled="busy" @click="handleSignOut">
+      {{ busy ? 'Signing out...' : 'Sign out' }}
     </button>
   </section>
 
