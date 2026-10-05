@@ -67,6 +67,9 @@ export interface ConvexAuthOptions {
   sessionJwt: SessionJwtOptions
 }
 
+/** Serialized size bound for all non-registered session claims. */
+export const MAX_SESSION_CLAIMS_BYTES = 4096
+
 // Registered JWT claims plus the claims that bind a token to its session and
 // token class. Claims from `defineSessionClaims` can never set these.
 const forbiddenCustomClaims = new Set([
@@ -917,18 +920,29 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
           })
           if (!persistedUser || persistedUser.id !== authenticated.user.id) unauthorized()
 
-          const customClaims =
-            (await options.sessionJwt.definePayload?.({
-              session: persistedSession,
-              user: persistedUser,
-            })) ?? {}
-          if (typeof customClaims !== 'object' || Array.isArray(customClaims)) {
+          const definedClaims = await options.sessionJwt.definePayload?.({
+            session: persistedSession,
+            user: persistedUser,
+          })
+          const customClaims = definedClaims === undefined ? {} : definedClaims
+          if (
+            customClaims === null ||
+            typeof customClaims !== 'object' ||
+            Array.isArray(customClaims)
+          ) {
             throw new TypeError('AUTH_SESSION_JWT_CLAIMS_INVALID')
           }
           for (const claim of Object.keys(customClaims)) {
             if (forbiddenCustomClaims.has(claim)) {
               throw new Error(`AUTH_SESSION_JWT_RESERVED_CLAIM:${claim}`)
             }
+          }
+
+          if (
+            new TextEncoder().encode(JSON.stringify({ ...customClaims })).byteLength >
+            MAX_SESSION_CLAIMS_BYTES
+          ) {
+            throw new Error('AUTH_SESSION_JWT_CLAIMS_TOO_LARGE')
           }
 
           const jwtPlugin = ctx.context.getPlugin('jwt')

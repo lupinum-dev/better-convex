@@ -24,6 +24,7 @@ import {
   takeOAuthRefreshParent,
 } from '../oauth-refresh-transport'
 import type { AuthAdapterComponentApi, AuthComponentTriggers, AuthFunctions } from '../types'
+import { parseVersionedSecrets } from '../versioned-secrets'
 import { createAuthSchema } from './generate-schema'
 
 interface AdapterOptions<DataModel extends GenericDataModel> {
@@ -65,24 +66,6 @@ interface IdTokenProtectionOptions {
 }
 
 const encryptedEnvelopePrefix = '$ba$'
-
-function parseVersionedSecrets(raw: string | undefined): Array<{ value: string; version: number }> {
-  if (!raw) return []
-  return raw.split(',').map((entry) => {
-    const separator = entry.indexOf(':')
-    const versionText = separator < 0 ? '' : entry.slice(0, separator).trim()
-    const value = separator < 0 ? '' : entry.slice(separator + 1).trim()
-    const version = Number(versionText)
-    if (
-      !/^(?:0|[1-9]\d*)$/u.test(versionText) ||
-      !Number.isSafeInteger(version) ||
-      value.length === 0
-    ) {
-      throw new Error('AUTH_VERSIONED_SECRETS_INVALID')
-    }
-    return { value, version }
-  })
-}
 
 function idTokenSecretConfig(options: IdTokenProtectionOptions): SecretConfig {
   const entries = options.secrets ?? parseVersionedSecrets(process.env.BETTER_AUTH_SECRETS)

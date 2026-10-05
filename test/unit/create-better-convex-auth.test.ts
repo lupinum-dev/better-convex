@@ -868,27 +868,6 @@ describe('createBetterConvexAuth', () => {
     ).resolves.toEqual({ name: 'Person', role: 'member' })
   })
 
-  it.each(['sid', 'token_use'])(
-    'keeps library-owned claim %s out of custom claims',
-    async (claim) => {
-      await createBetterConvexAuth(component(), {
-        defineSessionClaims: () => ({ [claim]: 'forged' }),
-      }).createAuth(queryContext() as never)
-      await expect(
-        lastSessionClaims()({ session: { id: 'session' }, user: emailUserRow }),
-      ).rejects.toThrow(`AUTH_SESSION_JWT_RESERVED_CLAIM:${claim}`)
-    },
-  )
-
-  it('bounds the serialized session claims', async () => {
-    await createBetterConvexAuth(component(), {
-      defineSessionClaims: () => ({ blob: 'x'.repeat(5000) }),
-    }).createAuth(queryContext() as never)
-    await expect(
-      lastSessionClaims()({ session: { id: 'session' }, user: emailUserRow }),
-    ).rejects.toThrow('AUTH_SESSION_JWT_CLAIMS_TOO_LARGE')
-  })
-
   it('logs a stable sub-code for each opaque configuration stage without secrets', async () => {
     const secret = `0:${'s3cr3t-value-'.repeat(2)}`
     process.env.BETTER_AUTH_SECRETS = secret

@@ -49,6 +49,9 @@ import type {
   BetterConvexAuthUser,
   CreateAuth,
 } from './types'
+import { parseVersionedSecrets } from './versioned-secrets'
+
+export { MAX_SESSION_CLAIMS_BYTES } from './plugin'
 
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>
 type EmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>
@@ -663,50 +666,6 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
   }
 }
 
-function assertVersionedSecrets(raw: string | undefined): void {
-  if (!raw) throw new Error('BETTER_AUTH_SECRETS is required')
-  const versions = new Set<number>()
-  for (const entry of raw.split(',')) {
-    const separator = entry.indexOf(':')
-    const versionText = separator < 0 ? '' : entry.slice(0, separator).trim()
-    const value = separator < 0 ? '' : entry.slice(separator + 1).trim()
-    const version = Number(versionText)
-    if (
-      !/^(?:0|[1-9]\d*)$/u.test(versionText) ||
-      !Number.isSafeInteger(version) ||
-      versions.has(version) ||
-      value.length < 32
-    ) {
-      throw new Error('BETTER_AUTH_SECRETS must contain unique versioned secrets of 32 characters')
-    }
-    versions.add(version)
-  }
-}
-
-/** Serialized size bound for all non-registered session claims. */
-export const MAX_SESSION_CLAIMS_BYTES = 4096
-const LIBRARY_OWNED_SESSION_CLAIMS = new Set(['sid', 'token_use'])
-
-function createSessionClaims(define: SessionClaimsDefinition | undefined): SessionClaimsDefinition {
-  return async (input) => {
-    const custom = define ? await define(input) : undefined
-    if (custom !== undefined && !isPlainRecord(custom)) {
-      throw new Error('AUTH_SESSION_JWT_CLAIMS_INVALID')
-    }
-    for (const claim of Object.keys(custom ?? {})) {
-      if (LIBRARY_OWNED_SESSION_CLAIMS.has(claim)) {
-        throw new Error(`AUTH_SESSION_JWT_RESERVED_CLAIM:${claim}`)
-      }
-    }
-    const claims = { ...custom }
-    const serialized = JSON.stringify(claims)
-    if (new TextEncoder().encode(serialized).byteLength > MAX_SESSION_CLAIMS_BYTES) {
-      throw new Error('AUTH_SESSION_JWT_CLAIMS_TOO_LARGE')
-    }
-    return claims
-  }
-}
-
 function emailUser(user: { id: string; email: string; name: string }): BetterConvexAuthEmailUser {
   return Object.freeze({ id: user.id, email: user.email, name: user.name })
 }
@@ -844,7 +803,10 @@ export function createBetterConvexAuthOwned<
 ): BetterConvexAuth<DataModel> {
   rejectUnsupportedOptions(options)
   const sessionPolicy = resolveSessionPolicy(options.session)
-  const defineSessionClaims = createSessionClaims(options.defineSessionClaims)
+  const defineSessionClaims: SessionClaimsDefinition = async (input) => {
+    const claims = await options.defineSessionClaims?.(input)
+    return claims === undefined ? {} : claims
+  }
   const authComponent = createAuthComponent<DataModel, Api>(component, {
     authFunctions: options.authFunctions,
     triggers: options.triggers,
@@ -879,7 +841,9 @@ export function createBetterConvexAuthOwned<
       stage = 'AUTH_CONFIG_CONVEX_SITE_URL_INVALID'
       const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
       stage = 'AUTH_CONFIG_SECRETS_INVALID'
-      assertVersionedSecrets(process.env.BETTER_AUTH_SECRETS)
+      if (parseVersionedSecrets(process.env.BETTER_AUTH_SECRETS).length === 0) {
+        throw new Error('BETTER_AUTH_SECRETS is required')
+      }
       stage = 'AUTH_CONFIG_OPTIONS_INVALID'
       const authIssuer = `${siteUrl}/api/auth`
       const socialProviders =

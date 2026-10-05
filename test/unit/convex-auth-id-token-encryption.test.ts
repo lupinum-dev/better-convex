@@ -88,6 +88,14 @@ describe('provider ID-token storage protection', () => {
     },
   )
 
+  it('rejects a short versioned environment secret before encryption', async () => {
+    process.env.BETTER_AUTH_SECRETS = '9:1234567890'
+    const protector = createAccountIdTokenProtector({ account: { encryptOAuthTokens: true } })
+    await expect(protector.protect('account', { idToken: sentinel })).rejects.toThrow(
+      'AUTH_VERSIONED_SECRETS_INVALID',
+    )
+  })
+
   it('parses the same versioned environment format required by Better Auth', async () => {
     process.env.BETTER_AUTH_SECRETS =
       '9:environment-current-secret-at-least-32-bytes,8:environment-old-secret-at-least-32-bytes'

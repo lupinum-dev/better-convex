@@ -117,6 +117,70 @@ async function resolveVerifiedClientIp(
   return forwardedClientIp
 }
 
+async function prepareAuthRequest<
+  DataModel extends GenericDataModel,
+  Auth extends { $context: Promise<unknown> },
+>(
+  ctx: GenericActionCtx<GenericDataModel>,
+  request: Request,
+  createAuth: CreateAuth<DataModel, Auth>,
+  requireSameOrigin = false,
+): Promise<
+  Response | { auth: Auth; request: Request; publicOrigin: string; verifiedClientIp: string }
+> {
+  let publicOrigin: string
+  try {
+    publicOrigin = requireAuthOrigin('SITE_URL')
+  } catch (error) {
+    logAuthFailure(AUTH_CONFIG_INVALID, 'AUTH_CONFIG_ROUTE_SITE_URL_INVALID', error)
+    return authFailure(AUTH_CONFIG_INVALID)
+  }
+
+  let verifiedClientIp: string
+  try {
+    verifiedClientIp = await resolveVerifiedClientIp(
+      request,
+      async () => (await ctx.meta.getRequestMetadata()).ip,
+      process.env.BCN_AUTH_PROXY_IP_SECRET,
+    )
+  } catch {
+    return authFailure('AUTH_REQUEST_METADATA_INVALID')
+  }
+
+  if (
+    requireSameOrigin &&
+    !SAFE_METHODS.has(request.method.toUpperCase()) &&
+    request.headers.get('origin') !== publicOrigin
+  ) {
+    return sessionRouteDenied('FORBIDDEN', 403)
+  }
+
+  let auth: Auth
+  try {
+    auth = await createAuth(ctx as unknown as AuthCtx<DataModel>)
+    await auth.$context
+  } catch (error) {
+    if (!isLoggedAuthConfigError(error)) {
+      logAuthFailure(AUTH_CONFIG_INVALID, 'AUTH_CONFIG_ROUTE_CONSTRUCTION_FAILED', error)
+    }
+    return authFailure(AUTH_CONFIG_INVALID)
+  }
+
+  try {
+    return {
+      auth,
+      request: rewriteToPublicOrigin(request, publicOrigin, verifiedClientIp),
+      publicOrigin,
+      verifiedClientIp,
+    }
+  } catch (error) {
+    // Route handlers include request rewriting in their handler failure mapping.
+    if (requireSameOrigin) throw error
+    logAuthFailure('AUTH_HANDLER_FAILED', 'AUTH_HANDLER_THREW', error)
+    return authFailure('AUTH_HANDLER_FAILED')
+  }
+}
+
 function identityClaim(identity: Record<string, unknown>, name: string): string | undefined {
   const value = identity[name]
   return typeof value === 'string' && value.length > 0 ? value : undefined
@@ -275,44 +339,9 @@ export function createAuthComponent<
       handler: BetterConvexSessionHttpHandler<DataModel, Auth>,
     ): PublicHttpAction =>
       httpActionGeneric(async (ctx, request) => {
-        let publicOrigin: string
-        try {
-          publicOrigin = requireAuthOrigin('SITE_URL')
-        } catch (error) {
-          logAuthFailure(AUTH_CONFIG_INVALID, 'AUTH_CONFIG_ROUTE_SITE_URL_INVALID', error)
-          return authFailure(AUTH_CONFIG_INVALID)
-        }
-
-        let verifiedClientIp: string
-        try {
-          verifiedClientIp = await resolveVerifiedClientIp(
-            request,
-            async () => (await ctx.meta.getRequestMetadata()).ip,
-            process.env.BCN_AUTH_PROXY_IP_SECRET,
-          )
-        } catch {
-          return authFailure('AUTH_REQUEST_METADATA_INVALID')
-        }
-
-        if (
-          !SAFE_METHODS.has(request.method.toUpperCase()) &&
-          request.headers.get('origin') !== publicOrigin
-        ) {
-          return sessionRouteDenied('FORBIDDEN', 403)
-        }
-
-        let auth: Auth
-        try {
-          auth = await createAuth(ctx as unknown as AuthCtx<DataModel>)
-          await auth.$context
-        } catch (error) {
-          if (!isLoggedAuthConfigError(error)) {
-            logAuthFailure(AUTH_CONFIG_INVALID, 'AUTH_CONFIG_ROUTE_CONSTRUCTION_FAILED', error)
-          }
-          return authFailure(AUTH_CONFIG_INVALID)
-        }
-
-        const forwarded = rewriteToPublicOrigin(request, publicOrigin, verifiedClientIp)
+        const prepared = await prepareAuthRequest(ctx, request, createAuth, true)
+        if (prepared instanceof Response) return prepared
+        const { auth, request: forwarded, publicOrigin, verifiedClientIp } = prepared
         const headers = new Headers({
           origin: publicOrigin,
           [VERIFIED_CLIENT_IP_HEADER]: verifiedClientIp,
@@ -374,38 +403,11 @@ export function createAuthComponent<
       createAuth: CreateAuth<DataModel, Auth>,
     ) => {
       const handler = httpActionGeneric(async (ctx, request) => {
-        let publicOrigin: string
+        const prepared = await prepareAuthRequest(ctx, request, createAuth)
+        if (prepared instanceof Response) return prepared
+        const { auth, request: forwarded } = prepared
         try {
-          publicOrigin = requireAuthOrigin('SITE_URL')
-        } catch (error) {
-          logAuthFailure(AUTH_CONFIG_INVALID, 'AUTH_CONFIG_ROUTE_SITE_URL_INVALID', error)
-          return authFailure(AUTH_CONFIG_INVALID)
-        }
-
-        let verifiedClientIp: string
-        try {
-          verifiedClientIp = await resolveVerifiedClientIp(
-            request,
-            async () => (await ctx.meta.getRequestMetadata()).ip,
-            process.env.BCN_AUTH_PROXY_IP_SECRET,
-          )
-        } catch {
-          return authFailure('AUTH_REQUEST_METADATA_INVALID')
-        }
-
-        let auth: Auth
-        try {
-          auth = await createAuth(ctx as unknown as AuthCtx<DataModel>)
-          await auth.$context
-        } catch (error) {
-          // The owned factory already logged its stage; log anything else once.
-          if (!isLoggedAuthConfigError(error)) {
-            logAuthFailure(AUTH_CONFIG_INVALID, 'AUTH_CONFIG_ROUTE_CONSTRUCTION_FAILED', error)
-          }
-          return authFailure(AUTH_CONFIG_INVALID)
-        }
-        try {
-          return await auth.handler(rewriteToPublicOrigin(request, publicOrigin, verifiedClientIp))
+          return await auth.handler(forwarded)
         } catch (error) {
           logAuthFailure('AUTH_HANDLER_FAILED', 'AUTH_HANDLER_THREW', error)
           return authFailure('AUTH_HANDLER_FAILED')

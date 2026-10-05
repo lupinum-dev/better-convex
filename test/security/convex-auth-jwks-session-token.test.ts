@@ -200,6 +200,8 @@ describe('Convex session token signing over the stored JWKS', () => {
         () => ({ [claim]: 'forged' }),
       ],
     ),
+    ['oversized session claims', () => ({ blob: 'x'.repeat(5000) })],
+    ['null session claims', (() => null) as unknown as DefinePayload],
     ['non-object session claims', (() => ['forged']) as unknown as DefinePayload],
   ])('rejects %s before signing', async (_label, definePayload) => {
     const memory = database()
