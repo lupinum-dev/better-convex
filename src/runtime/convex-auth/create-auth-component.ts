@@ -19,9 +19,12 @@ import { ConvexError, v } from 'convex/values'
 import {
   CLIENT_IP_HEADER,
   CLIENT_IP_SIGNATURE_HEADER,
+  PUBLIC_ORIGIN_HEADER,
+  PUBLIC_ORIGIN_SIGNATURE_HEADER,
   VERIFIED_CLIENT_IP_HEADER,
   normalizeClientIp,
   verifySignedClientIp,
+  verifySignedPublicOrigin,
 } from '../shared/client-ip'
 import { createConvexAuthAdapter } from './adapter/create-adapter'
 import type { AuthCtx, WritableAuthCtx } from './context'
@@ -41,10 +44,30 @@ import type {
 interface CreateAuthComponentOptions<DataModel extends GenericDataModel> {
   authFunctions?: AuthFunctions
   triggers?: AuthComponentTriggers<DataModel>
+  /**
+   * Site origins besides `SITE_URL` that this deployment serves. A route
+   * accepts one of them only from a signed Nuxt proxy hop.
+   */
+  siteOrigins?: (ctx: AuthCtx<DataModel>) => Promise<ReadonlySet<string>>
 }
+
+/** A request-scoped Better Auth factory for one verified public origin. */
+type CreateAuthForOrigin<DataModel extends GenericDataModel, Auth> = (
+  ctx: AuthCtx<DataModel>,
+  publicOrigin: string,
+) => Auth | Promise<Auth>
 
 class AuthRequestMetadataError extends Error {
   readonly code = 'AUTH_REQUEST_METADATA_INVALID'
+}
+
+class AuthSiteOriginError extends Error {
+  constructor(
+    readonly subCode: 'AUTH_CONFIG_SITE_ORIGINS_INVALID' | 'AUTH_CONFIG_SITE_ORIGIN_NOT_ALLOWED',
+    cause?: unknown,
+  ) {
+    super(subCode, { cause })
+  }
 }
 
 function authFailure(code: string): Response {
@@ -117,33 +140,76 @@ async function resolveVerifiedClientIp(
   return forwardedClientIp
 }
 
+/**
+ * The public origin for this request: `SITE_URL`, or the origin that a signed
+ * Nuxt proxy hop names when it is one of the configured site origins. An
+ * unsigned or wrongly signed origin pair is rejected like a forged client IP.
+ */
+async function resolvePublicOrigin<DataModel extends GenericDataModel>(
+  ctx: AuthCtx<DataModel>,
+  request: Request,
+  canonicalOrigin: string,
+  siteOrigins: CreateAuthComponentOptions<DataModel>['siteOrigins'],
+): Promise<string> {
+  const origin = request.headers.get(PUBLIC_ORIGIN_HEADER)
+  const signature = request.headers.get(PUBLIC_ORIGIN_SIGNATURE_HEADER)
+  if (origin === null && signature === null) return canonicalOrigin
+  const verified = await verifySignedPublicOrigin(
+    origin,
+    signature,
+    process.env.BCN_AUTH_PROXY_IP_SECRET,
+  )
+  if (!verified) throw new AuthRequestMetadataError()
+  if (verified === canonicalOrigin) return canonicalOrigin
+  let allowed: ReadonlySet<string>
+  try {
+    allowed = siteOrigins ? await siteOrigins(ctx) : new Set()
+  } catch (error) {
+    throw new AuthSiteOriginError('AUTH_CONFIG_SITE_ORIGINS_INVALID', error)
+  }
+  if (!allowed.has(verified)) throw new AuthSiteOriginError('AUTH_CONFIG_SITE_ORIGIN_NOT_ALLOWED')
+  return verified
+}
+
 async function prepareAuthRequest<
   DataModel extends GenericDataModel,
   Auth extends { $context: Promise<unknown> },
 >(
   ctx: GenericActionCtx<GenericDataModel>,
   request: Request,
-  createAuth: CreateAuth<DataModel, Auth>,
+  createAuth: CreateAuthForOrigin<DataModel, Auth>,
+  siteOrigins: CreateAuthComponentOptions<DataModel>['siteOrigins'],
   requireSameOrigin = false,
 ): Promise<
   Response | { auth: Auth; request: Request; publicOrigin: string; verifiedClientIp: string }
 > {
-  let publicOrigin: string
+  let canonicalOrigin: string
   try {
-    publicOrigin = requireAuthOrigin('SITE_URL')
+    canonicalOrigin = requireAuthOrigin('SITE_URL')
   } catch (error) {
     logAuthFailure(AUTH_CONFIG_INVALID, 'AUTH_CONFIG_ROUTE_SITE_URL_INVALID', error)
     return authFailure(AUTH_CONFIG_INVALID)
   }
 
   let verifiedClientIp: string
+  let publicOrigin: string
   try {
     verifiedClientIp = await resolveVerifiedClientIp(
       request,
       async () => (await ctx.meta.getRequestMetadata()).ip,
       process.env.BCN_AUTH_PROXY_IP_SECRET,
     )
-  } catch {
+    publicOrigin = await resolvePublicOrigin(
+      ctx as unknown as AuthCtx<DataModel>,
+      request,
+      canonicalOrigin,
+      siteOrigins,
+    )
+  } catch (error) {
+    if (error instanceof AuthSiteOriginError) {
+      logAuthFailure(AUTH_CONFIG_INVALID, error.subCode, error.cause)
+      return authFailure(AUTH_CONFIG_INVALID)
+    }
     return authFailure('AUTH_REQUEST_METADATA_INVALID')
   }
 
@@ -157,7 +223,7 @@ async function prepareAuthRequest<
 
   let auth: Auth
   try {
-    auth = await createAuth(ctx as unknown as AuthCtx<DataModel>)
+    auth = await createAuth(ctx as unknown as AuthCtx<DataModel>, publicOrigin)
     await auth.$context
   } catch (error) {
     if (!isLoggedAuthConfigError(error)) {
@@ -335,11 +401,17 @@ export function createAuthComponent<
         handler: (request: Request) => Promise<Response>
       },
     >(
-      createAuth: CreateAuth<DataModel, Auth>,
+      createAuth: CreateAuthForOrigin<DataModel, Auth>,
       handler: BetterConvexSessionHttpHandler<DataModel, Auth>,
     ): PublicHttpAction =>
       httpActionGeneric(async (ctx, request) => {
-        const prepared = await prepareAuthRequest(ctx, request, createAuth, true)
+        const prepared = await prepareAuthRequest(
+          ctx,
+          request,
+          createAuth,
+          options.siteOrigins,
+          true,
+        )
         if (prepared instanceof Response) return prepared
         const { auth, request: forwarded, publicOrigin, verifiedClientIp } = prepared
         const headers = new Headers({
@@ -400,10 +472,10 @@ export function createAuthComponent<
       },
     >(
       http: HttpRouter,
-      createAuth: CreateAuth<DataModel, Auth>,
+      createAuth: CreateAuthForOrigin<DataModel, Auth>,
     ) => {
       const handler = httpActionGeneric(async (ctx, request) => {
-        const prepared = await prepareAuthRequest(ctx, request, createAuth)
+        const prepared = await prepareAuthRequest(ctx, request, createAuth, options.siteOrigins)
         if (prepared instanceof Response) return prepared
         const { auth, request: forwarded } = prepared
         try {

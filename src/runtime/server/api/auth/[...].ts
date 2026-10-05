@@ -424,6 +424,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
     try {
       const forwardHeaders = await buildAuthProxyForwardHeaders(event, {
         trustedClientIpHeader,
+        publicOrigin,
       })
       if (publicMetadataCors) delete forwardHeaders.cookie
       if (isPublicTokenCorsPost) {

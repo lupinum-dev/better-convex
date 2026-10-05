@@ -3,6 +3,7 @@ import type { H3Event } from 'h3'
 import { ConvexCallError } from '../../errors'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
 import { normalizeConvexSiteUrl } from '../../utils/site-url'
+import { readEventConvexConfig } from './event-context'
 import { fetchWithTimeout, MAX_SERVER_AUTH_RESPONSE_BODY_BYTES, readBoundedJson } from './http'
 import type { ConvexCredential } from './server-convex-options'
 import {
@@ -10,7 +11,7 @@ import {
   assertCredentialValueSafe,
   ServerConvexValidationError,
 } from './server-convex-options'
-import { buildSignedClientIpHeaders } from './signed-client-ip'
+import { buildSignedClientIpHeaders, buildSignedPublicOriginHeaders } from './signed-client-ip'
 
 /** Better Auth HTTP endpoint that mints a Convex JWT from a session cookie. */
 const TOKEN_EXCHANGE_PATH = '/api/auth/convex/token'
@@ -97,7 +98,13 @@ export function exchangeConvexToken(
       const clientIpHeaders = await buildSignedClientIpHeaders(input.event, {
         trustedClientIpHeader: input.trustedClientIpHeader,
       })
-      return await runTokenExchange(input, { ...clientIpHeaders, Cookie: cookieHeader })
+      const auth = readEventConvexConfig(input.event).auth
+      const originHeaders = auth ? await buildSignedPublicOriginHeaders(auth.origin) : {}
+      return await runTokenExchange(input, {
+        ...clientIpHeaders,
+        ...originHeaders,
+        Cookie: cookieHeader,
+      })
     } catch {
       return tokenExchangeTransportFailure()
     }

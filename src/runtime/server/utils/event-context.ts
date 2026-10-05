@@ -11,10 +11,10 @@ import {
  * public server helpers stay free of Nuxt imports.
  */
 export function readEventConvexConfig(event: H3Event): NormalizedConvexRuntimeConfig {
-  const context = event.context as {
-    nitro?: { runtimeConfig?: { public?: { convex?: unknown } } }
-  }
-  return normalizeConvexRuntimeConfig(context.nitro?.runtimeConfig?.public?.convex)
+  const context = event.context as
+    | { nitro?: { runtimeConfig?: { public?: { convex?: unknown } } } }
+    | undefined
+  return normalizeConvexRuntimeConfig(context?.nitro?.runtimeConfig?.public?.convex)
 }
 
 /** The incoming `Cookie` header, from either the web or the Node request. */

@@ -38,7 +38,7 @@ import {
   type BetterConvexMcpAccessVerifier,
 } from './oauth-resource'
 import type { PinnedOAuthProviderProfile } from './oauth-security'
-import { requireAuthOrigin } from './origin'
+import { normalizeAuthOrigin, requireAuthOrigin } from './origin'
 import { convexAuth, LIBRARY_RATE_LIMIT_RULES } from './plugin'
 import { getConvexAuthProvider } from './provider'
 import { createConvexAuthRateLimitStorage } from './rate-limit-storage'
@@ -265,6 +265,19 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
         ctx: AuthCtx<DataModel>,
       ) => PinnedOAuthProviderProfile | Promise<PinnedOAuthProviderProfile>)
   readonly session?: BetterConvexSessionPolicy
+  /**
+   * More public site origins that this deployment serves besides `SITE_URL`,
+   * for one Convex deployment behind several Nuxt applications. Each Nuxt
+   * application signs its `auth.origin` with `BCN_AUTH_PROXY_IP_SECRET`; a
+   * request from a listed origin gets Better Auth with that origin as base URL
+   * and trusted origin, so cookies, email links and redirects stay on the site.
+   * A function is called per request with the HTTP action context, so the list
+   * can live in the database. Not supported with `oauth` or `oauthProvider`,
+   * whose issuer is always `SITE_URL`.
+   */
+  readonly siteOrigins?:
+    | readonly string[]
+    | ((ctx: AuthCtx<DataModel>) => readonly string[] | Promise<readonly string[]>)
   readonly socialProviders?: SocialProviders | (() => SocialProviders)
   /**
    * Add claims to the Convex session token. By default the token carries only
@@ -418,6 +431,7 @@ const REVIEWED_TOP_LEVEL_OPTIONS = new Set([
   'oauthProvider',
   'organization',
   'session',
+  'siteOrigins',
   'socialProviders',
   'triggers',
   'twoFactor',
@@ -747,6 +761,29 @@ function assertOwnedInvariants(options: BetterAuthOptions, socialProviderNames: 
 }
 
 /**
+ * Normalize `siteOrigins` into a per-request set. A static list is checked
+ * once here; a function's result is checked on every call.
+ */
+function resolveSiteOrigins<DataModel extends GenericDataModel>(
+  options: CreateBetterConvexAuthOptions<DataModel>,
+): ((ctx: AuthCtx<DataModel>) => Promise<ReadonlySet<string>>) | undefined {
+  const { siteOrigins } = options
+  if (siteOrigins === undefined) return undefined
+  if (options.oauth !== undefined || options.oauthProvider !== undefined) {
+    throw configError('does not support "siteOrigins" together with "oauth" or "oauthProvider"')
+  }
+  const normalize = (origins: unknown): ReadonlySet<string> => {
+    if (!Array.isArray(origins)) throw configError('expected "siteOrigins" to be an array')
+    return new Set(origins.map((origin) => normalizeAuthOrigin(origin as string, 'SITE_URL')))
+  }
+  if (typeof siteOrigins === 'function') {
+    return async (ctx) => normalize(await siteOrigins(ctx))
+  }
+  const fixed = normalize(siteOrigins)
+  return async () => fixed
+}
+
+/**
  * Create the reviewed Better Auth + Convex integration as one owned unit.
  * This is the only supported way to compose auth.
  *
@@ -809,6 +846,7 @@ export function createBetterConvexAuthOwned<
   }
   const authComponent = createAuthComponent<DataModel, Api>(component, {
     authFunctions: options.authFunctions,
+    siteOrigins: resolveSiteOrigins(options),
     triggers: options.triggers,
   })
 
@@ -832,12 +870,15 @@ export function createBetterConvexAuthOwned<
   const createAuthWithProfile = async (
     ctx: AuthCtx<DataModel>,
     oauthProfile: PinnedOAuthProviderProfile | undefined,
+    publicOrigin?: string,
   ): Promise<BetterConvexAuthInstance> => {
     let stage: AuthConfigSubCode = 'AUTH_CONFIG_OPTIONS_INVALID'
     try {
       assertExtraPluginsAllowed()
       stage = 'AUTH_CONFIG_SITE_URL_INVALID'
       const siteUrl = requireAuthOrigin('SITE_URL')
+      // The request's verified site origin; `SITE_URL` outside HTTP routes.
+      const baseURL = publicOrigin ?? siteUrl
       stage = 'AUTH_CONFIG_CONVEX_SITE_URL_INVALID'
       const convexSiteUrl = requireAuthOrigin('CONVEX_SITE_URL')
       stage = 'AUTH_CONFIG_SECRETS_INVALID'
@@ -948,7 +989,7 @@ export function createBetterConvexAuthOwned<
         },
         advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
         basePath: '/api/auth',
-        baseURL: siteUrl,
+        baseURL,
         database: authComponent.adapter(ctx),
         databaseHooks: options.beforeUserCreate
           ? {
@@ -1024,7 +1065,7 @@ export function createBetterConvexAuthOwned<
         },
         session: { ...sessionPolicy },
         socialProviders,
-        trustedOrigins: [siteUrl],
+        trustedOrigins: [baseURL],
         verification: { storeIdentifier: 'hashed' },
       } satisfies BetterAuthOptions
       const socialProviderNames = new Set(Object.keys(socialProviders ?? {}))
@@ -1043,6 +1084,8 @@ export function createBetterConvexAuthOwned<
 
   const createAuth: CreateAuth<DataModel, BetterConvexAuthInstance> = async (ctx) =>
     await createAuthWithProfile(ctx, await resolveOAuthProfile(ctx))
+  const createAuthForOrigin = async (ctx: AuthCtx<DataModel>, publicOrigin: string) =>
+    await createAuthWithProfile(ctx, await resolveOAuthProfile(ctx), publicOrigin)
 
   const oauthOperator = createOAuthOperator<DataModel>({
     appName: options.appName,
@@ -1069,12 +1112,12 @@ export function createBetterConvexAuthOwned<
   return Object.freeze({
     createAuth,
     registerRoutes(http: HttpRouter) {
-      authComponent.registerRoutes(http, createAuth)
+      authComponent.registerRoutes(http, createAuthForOrigin)
     },
     sessionHttpAction(
       handler: BetterConvexSessionHttpHandler<DataModel, BetterConvexAuthInstance>,
     ) {
-      return authComponent.sessionHttpAction(createAuth, handler)
+      return authComponent.sessionHttpAction(createAuthForOrigin, handler)
     },
     triggerFunctions: authComponent.triggerFunctions,
     jwksOperatorFunctions() {

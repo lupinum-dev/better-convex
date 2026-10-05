@@ -93,7 +93,7 @@ describe('seeded auth proxy HTTP input corpus', () => {
     for (const name of PROXY_CONTROL_HEADERS) {
       const forwarded = await buildAuthProxyForwardHeaders(
         { headers: new Headers({ [name]: 'attacker-value' }) } as never,
-        {},
+        { publicOrigin: 'https://app.example.test' },
       )
       expect(forwarded[name], name).toBeUndefined()
       if (name !== 'host') expect(shouldSkipProxyResponseHeader(name), name).toBe(true)
@@ -111,7 +111,9 @@ describe('seeded auth proxy HTTP input corpus', () => {
       ]
       const input = new Headers({ connection: `keep-alive, ${hop}`, [hop]: 'attacker-value' })
       for (const name of names) input.set(name, 'attacker-value')
-      const forwarded = await buildAuthProxyForwardHeaders({ headers: input } as never, {})
+      const forwarded = await buildAuthProxyForwardHeaders({ headers: input } as never, {
+        publicOrigin: 'https://app.example.test',
+      })
 
       expect(forwarded[hop]).toBeUndefined()
       for (const name of names) {
@@ -126,7 +128,10 @@ describe('seeded auth proxy HTTP input corpus', () => {
       const octets = Array.from({ length: 4 }, () => random.integer(400))
       const candidate = octets.join('.')
       const event = { headers: new Headers({ 'cf-connecting-ip': candidate }) } as never
-      const options = { trustedClientIpHeader: 'cf-connecting-ip' }
+      const options = {
+        publicOrigin: 'https://app.example.test',
+        trustedClientIpHeader: 'cf-connecting-ip',
+      }
       if (octets.every((octet) => octet <= 255)) {
         const headers = await buildAuthProxyForwardHeaders(event, options)
         expect(headers['x-bcn-client-ip']).toBe(candidate)

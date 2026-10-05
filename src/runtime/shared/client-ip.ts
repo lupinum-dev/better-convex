@@ -174,3 +174,61 @@ export async function verifySignedClientIp(
     return null
   }
 }
+
+/**
+ * Reserved request headers that carry the Nuxt application origin on the
+ * private Nuxt-to-Convex hop, so one Convex deployment can serve several site
+ * origins. The signature uses the proxy secret with its own prefix, so a
+ * client-IP signature never verifies as an origin signature.
+ */
+export const PUBLIC_ORIGIN_HEADER = 'x-bcn-public-origin'
+export const PUBLIC_ORIGIN_SIGNATURE_HEADER = 'x-bcn-public-origin-signature'
+const ORIGIN_SIGNATURE_PREFIX = 'origin-v1\n'
+const MAX_ORIGIN_LENGTH = 2048
+
+function originSignatureInput(origin: string): ArrayBuffer {
+  return ownedArrayBuffer(new TextEncoder().encode(`${ORIGIN_SIGNATURE_PREFIX}${origin}`))
+}
+
+function isOriginShaped(origin: string): boolean {
+  return (
+    origin.length > 0 && origin.length <= MAX_ORIGIN_LENGTH && !hasUnsafeHeaderCharacter(origin)
+  )
+}
+
+/** Sign the application origin for the private Nuxt-to-Convex hop. */
+export async function signPublicOrigin(origin: string, secret: string): Promise<string> {
+  if (!isOriginShaped(origin)) throw new TypeError('Public origin must be one origin string')
+  requireProxyIpSecret(secret)
+  const signature = await crypto.subtle.sign(
+    HMAC_ALGORITHM,
+    await importHmacKey(secret),
+    originSignatureInput(origin),
+  )
+  return bytesToBase64Url(new Uint8Array(signature))
+}
+
+/**
+ * Verify a signed origin pair and return the origin exactly as signed, or
+ * `null`. Callers must still check the origin against their own allowlist.
+ */
+export async function verifySignedPublicOrigin(
+  origin: string | null,
+  signature: string | null,
+  secret: string | null | undefined,
+): Promise<string | null> {
+  const signatureBytes = strictBase64UrlSignature(signature)
+  if (typeof origin !== 'string' || !isOriginShaped(origin) || !signatureBytes) return null
+  if (!secretBytes(secret)) return null
+  try {
+    const verified = await crypto.subtle.verify(
+      HMAC_ALGORITHM,
+      await importHmacKey(secret as string),
+      ownedArrayBuffer(signatureBytes),
+      originSignatureInput(origin),
+    )
+    return verified ? origin : null
+  } catch {
+    return null
+  }
+}

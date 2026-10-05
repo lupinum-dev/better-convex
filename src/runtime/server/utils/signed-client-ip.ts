@@ -3,9 +3,12 @@ import type { H3Event } from 'h3'
 import {
   CLIENT_IP_HEADER,
   CLIENT_IP_SIGNATURE_HEADER,
+  PUBLIC_ORIGIN_HEADER,
+  PUBLIC_ORIGIN_SIGNATURE_HEADER,
   normalizeClientIp,
   requireProxyIpSecret,
   signClientIp,
+  signPublicOrigin,
 } from '../../shared/client-ip'
 
 export interface SignedClientIpHeadersOptions {
@@ -43,5 +46,22 @@ export async function buildSignedClientIpHeaders(
   return {
     [CLIENT_IP_HEADER]: clientIp,
     [CLIENT_IP_SIGNATURE_HEADER]: await signClientIp(clientIp, secret),
+  }
+}
+
+/**
+ * The signed application origin for one Nuxt-to-Convex auth hop. Convex uses
+ * it to serve several site origins from one deployment. Without
+ * `BCN_AUTH_PROXY_IP_SECRET` (loopback development) no pair is sent and Convex
+ * uses its `SITE_URL`.
+ */
+export async function buildSignedPublicOriginHeaders(
+  origin: string,
+): Promise<Record<string, string>> {
+  const secret = process.env.BCN_AUTH_PROXY_IP_SECRET
+  if (!secret) return {}
+  return {
+    [PUBLIC_ORIGIN_HEADER]: origin,
+    [PUBLIC_ORIGIN_SIGNATURE_HEADER]: await signPublicOrigin(origin, requireProxyIpSecret(secret)),
   }
 }
