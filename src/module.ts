@@ -288,7 +288,10 @@ export default defineNuxtModule<ModuleOptions>({
     const convexConfig = {
       ...defu(nuxt.options.runtimeConfig.public.convex as Record<string, unknown> | undefined, {
         url: resolvedUrl || '',
-        siteUrl: resolvedSiteUrl || '',
+        // Only an explicit site URL is stored. Without one, the runtime derives it
+        // from the effective deployment URL, so a deploy-time URL override also
+        // moves the auth target.
+        siteUrl: siteUrlResolution.source === 'explicit' ? resolvedSiteUrl : '',
         logging: options.logging ?? CONVEX_MODULE_DEFAULTS.logging,
         client: { ...clientConfig },
         server: { ...serverConfig },
