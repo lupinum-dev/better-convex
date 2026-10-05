@@ -144,8 +144,21 @@ describe('user creation policy with real Better Auth', () => {
       const beforeUserCreate = vi.fn(callback)
       const { signUp, users } = setup(beforeUserCreate)
       const response = await signUp()
-      expect(response.status).toBe(200)
-      expect(response.body).toMatchObject({ token: null, user: { email: 'owner@example.test' } })
+      // The same address signing up again gets the existing-account response.
+      // Both must match field for field; only generated values may differ.
+      const allowed = setup(async () => ({ allowed: true as const }))
+      await allowed.signUp()
+      const existing = await allowed.signUp()
+      const generated = {
+        id: expect.any(String),
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+      }
+      expect(response).toEqual({
+        ...existing,
+        body: { ...existing.body, user: { ...existing.body.user, ...generated } },
+      })
+      expect(response.body.token).toBeNull()
       expect(beforeUserCreate).toHaveBeenCalledOnce()
       expect((await users()).page).toEqual([])
       const rejections = errors.mock.calls.filter(
