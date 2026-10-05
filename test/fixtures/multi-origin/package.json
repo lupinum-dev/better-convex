@@ -1,0 +1,9 @@
+{
+  "name": "multi-origin-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@lupinum/better-convex-nuxt": "workspace:*",
+    "convex": "1.42.2"
+  }
+}

@@ -173,7 +173,7 @@ export interface McpFixtureOptions {
   prepare?: (cwd: string) => Promise<void>
 }
 
-async function linkDependencies(cwd: string) {
+export async function linkDependencies(cwd: string) {
   const modules = join(cwd, 'node_modules')
   await mkdir(modules, { mode: 0o700 })
   const manifests = (await Promise.all(
@@ -205,6 +205,47 @@ async function linkDependencies(cwd: string) {
     cp(join(root, 'dist'), join(installed, 'dist'), { recursive: true }),
     cp(join(root, 'package.json'), join(installed, 'package.json')),
   ])
+}
+
+/** Start an independently configured Nuxt app against an existing local backend. */
+export async function startNuxtServer(
+  cwd: string,
+  origin: string,
+  env: NodeJS.ProcessEnv,
+  secrets: readonly string[],
+) {
+  const { hostname, port } = new URL(origin)
+  const child = spawn(process.execPath, [nuxtCli, 'dev'], {
+    cwd,
+    detached: true,
+    env: {
+      ...env,
+      HOST: hostname,
+      NITRO_HOST: hostname,
+      NITRO_PORT: port,
+      NUXT_HOST: hostname,
+      NUXT_PORT: port,
+      PORT: port,
+      SITE_URL: origin,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const log = capture(child)
+  try {
+    await waitUntil(async () => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(`Nuxt exited: ${redact(log(), secrets)}`)
+      }
+      return fetch(origin, { redirect: 'manual', signal: AbortSignal.timeout(5_000) }).then(
+        (response) => response.status === 200,
+      )
+    }, `Nuxt at ${origin}`)
+    return { release: () => stopProcess(child), logs: () => redact(log(), secrets) }
+  } catch (error) {
+    console.error(`[nuxt-fixture] ${redact(log(), secrets)}`)
+    await stopProcess(child)
+    throw error
+  }
 }
 
 export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<McpFixture> {
