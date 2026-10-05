@@ -24,7 +24,7 @@ const pages = {
   upgrade: read('docs/content/docs/6.operations/7.upgrade-to-1-0.md'),
 }
 const upgradeMcpSection = pages.upgrade.slice(
-  pages.upgrade.indexOf('## 14. Update the MCP server'),
+  pages.upgrade.search(/^## \d+\. Update the MCP server$/m),
   pages.upgrade.indexOf('## New options you can use'),
 )
 
