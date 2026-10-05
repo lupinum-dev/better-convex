@@ -65,7 +65,7 @@ async function setup() {
 
   const send = (
     path: string,
-    headers: Record<string, string> = {},
+    headers: Record<string, string | null> = {},
     body?: unknown,
     beforeAdmission?: () => Promise<void>,
   ) =>
@@ -88,11 +88,17 @@ async function setup() {
       const action = route[0] as unknown as {
         _handler: (ctx: unknown, request: Request) => Promise<Response>
       }
+      // A null value removes the header, so a test can send no origin at all.
+      const requestHeaders = new Headers({ origin, 'content-type': 'application/json' })
+      for (const [name, value] of Object.entries(headers)) {
+        if (value === null) requestHeaders.delete(name)
+        else requestHeaders.set(name, value)
+      }
       const response = await action._handler(
         { ...ctx, runQuery, meta: { getRequestMetadata: async () => ({ ip: '198.51.100.7' }) } },
         new Request(`https://deployment.convex.site${path}`, {
           method: 'POST',
-          headers: { origin, 'content-type': 'application/json', ...headers },
+          headers: requestHeaders,
           body: body === undefined ? undefined : JSON.stringify(body),
         }),
       )
@@ -123,7 +129,7 @@ async function setup() {
     sessionId,
     cookie: login.cookie!,
     call: (
-      headers: Record<string, string> = { cookie: login.cookie! },
+      headers: Record<string, string | null> = { cookie: login.cookie! },
       beforeAdmission?: () => Promise<void>,
     ) => send('/protected', headers, undefined, beforeAdmission),
   }
@@ -176,7 +182,7 @@ describe('sessionHttpAction with real Better Auth', () => {
       'AUTH_REQUEST_METADATA_INVALID',
     ],
     ['a cross-origin request', { origin: 'https://attacker.example.test' }, 403, 'FORBIDDEN'],
-    ['a missing origin', { origin: '' }, 403, 'FORBIDDEN'],
+    ['a missing origin', { origin: null }, 403, 'FORBIDDEN'],
   ] as const)('rejects %s before reading the session', async (_label, headers, status, code) => {
     const { call, handler, cookie } = await setup()
     const result = await call({ cookie, ...headers })
@@ -215,10 +221,15 @@ describe('sessionHttpAction with real Better Auth', () => {
             update: { expiresAt: now },
           })
         } else {
-          await test.mutation(adapter.deleteMany, {
-            model: 'session',
-            where: [{ field: 'userId', value: userId }],
-          })
+          // Revoking all of a user's sessions advances the user's security
+          // generation instead of deleting rows, so the session stays stored
+          // and only the generation check can deny it.
+          await expect(
+            test.mutation(adapter.deleteMany, {
+              model: 'session',
+              where: [{ field: 'userId', value: userId }],
+            }),
+          ).resolves.toBe(0)
         }
       })
       expect(result.admissions).toBe(1)
