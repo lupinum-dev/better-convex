@@ -4,3 +4,7 @@ export type {
   UseConvexOperationReturn,
   ConvexOperationWork,
 } from '../composables/useConvexOperation'
+export {
+  insertAtTop,
+  optimisticallyUpdateValueInPaginatedQuery,
+} from '@lupinum/better-convex-vue/experimental'

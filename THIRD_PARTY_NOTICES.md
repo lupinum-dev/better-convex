@@ -40,3 +40,19 @@ under `src/runtime/convex-auth/` are original Better Convex extensions, not
 copies of upstream code. They bind renewal to live sessions and immutable
 consent, constrain rotation, and pass request-local evidence to Convex-owned
 writes. The Apache notices for incorporated portions remain unchanged.
+
+## get-convex/convex-backend
+
+- Source: https://github.com/get-convex/convex-backend/tree/main/npm-packages/convex
+- Baseline package: `convex@1.42.2`
+- Import date: 2026-10-05
+- Original license: Apache-2.0
+- Upstream NOTICE status: the installed package contains no `NOTICE` file.
+
+The incorporated surface is limited to `insertAtTop` and
+`optimisticallyUpdateValueInPaginatedQuery` from `src/react/use_paginated_query.ts`.
+The derived target is `src/optimistic-pagination.ts` in the Vue package.
+
+Better Convex removes the React dependency and uses its existing pagination
+types. Both helpers keep the upstream signatures and matching rules. The adapted
+file carries an attribution comment.
