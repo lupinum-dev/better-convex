@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ convexAuth: 'protected' })
+definePageMeta({ convexAuth: true })
 </script>
 
 <template>
