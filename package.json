@@ -113,20 +113,23 @@
   },
   "scripts": {
     "dev": "pnpm --filter './packages/*' build && nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare --cwd playground --dotenv .env.local && nuxi dev --cwd playground --dotenv .env.local --port 4578",
-    "build": "pnpm build:packages && pnpm docs:build && node scripts/agent-docs.mjs",
+    "build": "pnpm build:packages && pnpm build:prepared",
     "build:packages": "pnpm --filter './packages/*' build && nuxt-module-build prepare && nuxi build src/runtime/devtools/ui --preset static && nuxt-module-build build",
     "lint": "eslint . && oxfmt --check && node scripts/check-boundaries.mjs && node scripts/lint-changesets.mjs",
     "format": "oxfmt",
-    "typecheck": "pnpm --filter './packages/*' build && nuxt-module-build prepare && vue-tsc --noEmit && tsc --noEmit -p src/runtime/server/tsconfig.json && tsc -p test/mcp/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-local-component/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-two-factor/tsconfig.json && tsc --noEmit -p test/fixtures/auth-security-plugins/tsconfig.json",
-    "test": "nuxt-module-build prepare && vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser --project=auth-adapter --project=auth-fuzz --project=mcp",
+    "typecheck": "pnpm --filter './packages/*' build && nuxt-module-build prepare && pnpm typecheck:prepared",
+    "test": "nuxt-module-build prepare && pnpm test:prepared",
     "test:packed": "node test/packed/check-packed.mjs && nuxi prepare --cwd test/fixtures/consumer-smoke && nuxi typecheck --cwd test/fixtures/consumer-smoke && nuxi prepare --cwd test/fixtures/missing-convex-api && nuxi typecheck --cwd test/fixtures/missing-convex-api && node test/packed/check-auth-disabled-build-graph.mjs",
     "test:integration": "pnpm --filter ./packages/vue build && nuxt-module-build prepare && vitest run --project=integration && node test/integration/check-auth-schema.mjs",
     "test:e2e": "pnpm --filter ./packages/vue build && node scripts/run-e2e.mjs",
     "test:starters": "pnpm build:packages && node test/packed/check-starters.mjs",
     "docs:dev": "pnpm --dir docs install --frozen-lockfile --ignore-scripts && pnpm --dir docs dev",
     "docs:build": "pnpm --dir docs install --frozen-lockfile --ignore-scripts && pnpm --dir docs build",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm test:packed && pnpm audit --audit-level=high && pnpm --dir docs audit --audit-level=high && pnpm --dir demo audit --audit-level=high",
-    "changeset": "changeset"
+    "verify": "pnpm lint && pnpm build:packages && pnpm typecheck:prepared && pnpm test:prepared && pnpm build:prepared && pnpm test:packed && pnpm audit --audit-level=high && pnpm --dir docs audit --audit-level=high && pnpm --dir demo audit --audit-level=high",
+    "changeset": "changeset",
+    "typecheck:prepared": "vue-tsc --noEmit && tsc --noEmit -p src/runtime/server/tsconfig.json && tsc -p test/mcp/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-local-component/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-two-factor/tsconfig.json && tsc --noEmit -p test/fixtures/auth-security-plugins/tsconfig.json",
+    "test:prepared": "vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser --project=auth-adapter --project=auth-fuzz --project=mcp",
+    "build:prepared": "pnpm docs:build && node scripts/agent-docs.mjs"
   },
   "dependencies": {
     "@lupinum/better-convex-vue": "workspace:*",
