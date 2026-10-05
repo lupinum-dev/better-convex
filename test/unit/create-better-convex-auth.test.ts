@@ -451,6 +451,20 @@ describe('createBetterConvexAuth', () => {
     })
   })
 
+  it('refuses BETTER_AUTH_TRUSTED_ORIGINS, which would trust origins next to the verified one', async () => {
+    vi.stubEnv('BETTER_AUTH_TRUSTED_ORIGINS', 'https://attacker.example.test')
+    try {
+      const auth = createBetterConvexAuth(component())
+      await expect(auth.createAuth(queryContext() as never)).rejects.toThrow(
+        /^AUTH_CONFIG_INVALID$/,
+      )
+      expect(betterAuth).not.toHaveBeenCalled()
+      expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_OPTIONS_INVALID'])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('re-validates trusted providers against lazily resolved social providers', async () => {
     const auth = createBetterConvexAuth(component(), {
       account: { accountLinking: { trustedProviders: ['github'] } },
@@ -1571,6 +1585,9 @@ describe('site origins', () => {
     expect(() =>
       createBetterConvexAuth(component(), { siteOrigins: 'https://site.test' as never }),
     ).toThrow('"siteOrigins"')
+    expect(() =>
+      createBetterConvexAuth(component(), { siteOrigins: ['https://*.example.test'] }),
+    ).toThrow('without "*"')
     expect(() =>
       createBetterConvexAuth(component(), {
         siteOrigins: [SITE_B],

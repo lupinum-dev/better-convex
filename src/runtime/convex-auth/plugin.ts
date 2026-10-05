@@ -65,6 +65,13 @@ export interface ConvexAuthOptions {
   }
   oauthProvider?: PinnedOAuthProviderProfile
   sessionJwt: SessionJwtOptions
+  /**
+   * The deployment's fixed JWT issuer and audience, `${SITE_URL}/api/auth`.
+   * A request for another site origin has a different `baseURL`, but its
+   * signing keys and issuer stay the deployment's. Defaults to the request's
+   * `baseURL`, which is the same for a single-origin deployment.
+   */
+  authIssuer?: string
 }
 
 /** Serialized size bound for all non-registered session claims. */
@@ -129,7 +136,9 @@ const sharedJwksReader: NonNullable<NonNullable<JwtOptions['adapter']>['getJwks'
 function configureSharedJwks(
   context: Parameters<NonNullable<BetterAuthPlugin['init']>>[0],
   errorCode: string,
+  authIssuer: string | undefined,
 ): void {
+  const expectedIssuer = authIssuer ?? context.baseURL
   const configuredPlugins = context.options.plugins ?? []
   const jwtIndexes = configuredPlugins
     .map((plugin, index) => (plugin.id === 'jwt' ? index : -1))
@@ -154,9 +163,9 @@ function configureSharedJwks(
     !jwtOptions ||
     (jwtOptions.adapter?.getJwks !== undefined &&
       jwtOptions.adapter.getJwks !== sharedJwksReader) ||
-    jwtOptions.jwt?.audience !== context.baseURL ||
+    jwtOptions.jwt?.audience !== expectedIssuer ||
     jwtOptions.jwt.expirationTime !== '10m' ||
-    jwtOptions.jwt.issuer !== context.baseURL
+    jwtOptions.jwt.issuer !== expectedIssuer
   ) {
     throw new Error(errorCode)
   }
@@ -687,6 +696,7 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
       configureSharedJwks(
         context,
         oauthOptions ? 'AUTH_OAUTH_CONFIG_INVALID' : 'AUTH_JWKS_CONFIG_INVALID',
+        options.authIssuer,
       )
       if (!hasSafeGlobalAuthRuntime(context)) {
         if (oauthOptions) throw new OAuthSecurityError('AUTH_OAUTH_CONFIG_INVALID')

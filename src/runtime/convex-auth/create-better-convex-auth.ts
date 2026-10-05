@@ -774,7 +774,15 @@ function resolveSiteOrigins<DataModel extends GenericDataModel>(
   }
   const normalize = (origins: unknown): ReadonlySet<string> => {
     if (!Array.isArray(origins)) throw configError('expected "siteOrigins" to be an array')
-    return new Set(origins.map((origin) => normalizeAuthOrigin(origin as string, 'SITE_URL')))
+    return new Set(
+      origins.map((origin) => {
+        // Exact origins only: a pattern such as https://*.example.test is not a wildcard here.
+        if (typeof origin === 'string' && origin.includes('*')) {
+          throw configError('expected "siteOrigins" to list exact origins without "*"')
+        }
+        return normalizeAuthOrigin(origin as string, 'SITE_URL')
+      }),
+    )
   }
   if (typeof siteOrigins === 'function') {
     return async (ctx) => normalize(await siteOrigins(ctx))
@@ -886,6 +894,11 @@ export function createBetterConvexAuthOwned<
         throw new Error('BETTER_AUTH_SECRETS is required')
       }
       stage = 'AUTH_CONFIG_OPTIONS_INVALID'
+      // Better Auth appends this variable to `trustedOrigins`, which would trust
+      // origins next to the one verified origin per request.
+      if (process.env.BETTER_AUTH_TRUSTED_ORIGINS) {
+        throw new Error('BETTER_AUTH_TRUSTED_ORIGINS is not supported')
+      }
       const authIssuer = `${siteUrl}/api/auth`
       const socialProviders =
         typeof options.socialProviders === 'function'
@@ -950,6 +963,7 @@ export function createBetterConvexAuthOwned<
       const jwtPlugin = createAuthJwtPlugin(authIssuer)
       const convexPlugin = convexAuth({
         authConfig: { providers: [getConvexAuthProvider()] },
+        authIssuer,
         oauthProvider: oauthProfile,
         sessionJwt: {
           audience: 'convex',

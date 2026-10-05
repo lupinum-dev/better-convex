@@ -2,7 +2,7 @@
 
 import type { jwt } from 'better-auth/plugins'
 import { convexTest } from 'convex-test'
-import { componentsGeneric, defineSchema } from 'convex/server'
+import { componentsGeneric, defineSchema, httpRouter } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
@@ -15,6 +15,11 @@ import {
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
 import { readAuthSessionAdmission } from '../../src/runtime/convex-auth/session-generation'
+import {
+  PUBLIC_ORIGIN_HEADER,
+  PUBLIC_ORIGIN_SIGNATURE_HEADER,
+  signPublicOrigin,
+} from '../../src/runtime/shared/client-ip'
 
 const rootModules = import.meta.glob('../fixtures/jwks-rotation/convex/**/*.ts')
 const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
@@ -401,5 +406,46 @@ describe('canonical session admission', () => {
     const { test, ids, read } = await initRows()
     await test.run((ctx) => ctx.db.patch('session', ids.session, patch))
     expect(await read()).toBeNull()
+  })
+})
+
+describe('site origins with real Better Auth', () => {
+  it('builds Better Auth for a listed site origin with the deployment issuer', async () => {
+    const secret = 'site-origins-proxy-secret-with-32-bytes'
+    const siteB = 'https://site-b.example.test'
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.convex.site')
+    vi.stubEnv('BETTER_AUTH_SECRETS', `0:${'test-secret'.repeat(4)}`)
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', secret)
+    try {
+      const { test } = await init()
+      const authApi = createBetterConvexAuth(components.sessionAuth, { siteOrigins: [siteB] })
+      const http = httpRouter()
+      authApi.registerRoutes(http)
+      const route = http.lookup('/api/auth/get-session', 'GET')!
+      const handler = route[0] as unknown as {
+        _handler: (ctx: unknown, request: Request) => Promise<Response>
+      }
+      const headers = {
+        [PUBLIC_ORIGIN_HEADER]: siteB,
+        [PUBLIC_ORIGIN_SIGNATURE_HEADER]: await signPublicOrigin(siteB, secret),
+      }
+      const status = await test.action(async (ctx) => {
+        const withMeta = {
+          ...ctx,
+          meta: { getRequestMetadata: async () => ({ ip: '198.51.100.7' }) },
+        }
+        const response = await handler._handler(
+          withMeta,
+          new Request('https://deployment.convex.site/api/auth/get-session', { headers }),
+        )
+        return response.status
+      })
+      // Before, the JWT plugin's fixed SITE_URL issuer failed the per-request
+      // baseURL check, and every listed origin answered 500.
+      expect(status).toBe(200)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
