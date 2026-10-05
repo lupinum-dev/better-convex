@@ -568,7 +568,8 @@ describe('Better Convex Nuxt auth component adapter invariants', () => {
         lastRequest: Date.now() - 30_000,
       },
     })
-    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    vi.advanceTimersByTime(0)
+    await t.finishInProgressScheduledFunctions()
     expect(await rateLimitRow(t, 'key', 'tenant:expired')).toMatchObject({ count: 1 })
     expect(await rateLimitRow(t, 'key', 'tenant:long-window')).toMatchObject({ count: 4 })
     expect(await rateLimitRow(t, 'key', 'tenant:stale')).toBeNull()

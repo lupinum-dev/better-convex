@@ -95,10 +95,10 @@ const explicitIndexes: Readonly<Record<string, readonly AuthIndexDeclaration[]>>
     { fields: ['organizationId', 'status', 'createdAt'] },
   ],
   member: [{ fields: ['organizationId', 'userId'], unique: true }],
-  oauthConsent: [{ fields: ['clientId', 'userId'] }],
+  oauthConsent: [{ fields: ['clientId', 'userId'] }, { fields: ['userId', 'createdAt'] }],
   // Refresh-family invalidation selects one (client, user) pair.
   oauthRefreshToken: [{ fields: ['clientId', 'userId'] }],
-  rateLimit: [{ fields: ['key'] }],
+  rateLimit: [{ fields: ['key'] }, { fields: ['lastRequest'] }],
   session: [{ fields: ['expiresAt'] }, { fields: ['userId', 'expiresAt'] }],
   teamMember: [{ fields: ['teamId', 'userId'], unique: true }],
   verification: [
@@ -480,6 +480,12 @@ function renderSchema(metadata: AuthSchemaMetadata): string {
     '',
     'export const tables = {',
     ...renderedModels,
+    ...(metadata.models.rateLimit
+      ? [
+          '  // Singleton owned by the scheduled rate-limit sweep, outside Better Auth metadata.',
+          '  bcnRateLimitCleanup: defineTable({ retentionWindow: v.number() }),',
+        ]
+      : []),
     '} as const',
     '',
     'const schema = defineSchema(tables)',

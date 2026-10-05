@@ -33,3 +33,5 @@ when a decision changes; git keeps the history.
 - D25 (2026-10-03): Query composables have no `refresh()` — Convex keeps every subscribed query current and answers a re-read from its cache, so a manual re-run cannot return anything new; a visible no-op teaches the wrong model ("my data is stale").
 
 - D26 (2026-10-04): The paginated query's list restart is `restart(cursor?)`, not `reset()` — every other composable's `reset()` clears local state and cancels unsent work, while this call drops loaded pages and subscribes again, so one name would mean opposite costs.
+
+- D27 (2026-10-05): Rate-limit cleanup uses one component-owned scheduling row and the `lastRequest` index, with at most 128 deletions per mutation — the persisted row debounces bursts, and the scheduled chain expires one-time keys without changing the atomic counters. The scheduling table is outside Better Auth metadata and cannot be accessed through the adapter.

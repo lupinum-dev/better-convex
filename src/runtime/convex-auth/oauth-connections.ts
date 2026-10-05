@@ -60,6 +60,7 @@ export function createOAuthConnections<DataModel extends GenericDataModel>(
         model: 'oauthConsent',
         where: [{ field: 'userId', value: userId }],
         select: ['clientId', 'createdAt', 'scopes', 'userId'],
+        sortBy: { field: 'createdAt', direction: 'desc' },
         paginationOpts: { cursor: null, numItems: MAX_CONNECTIONS },
       })) as { page: Record<string, unknown>[] }
       const rows = consents.page.filter(

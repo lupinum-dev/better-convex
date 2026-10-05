@@ -131,12 +131,15 @@ export const tables = {
     lastRequest: v.number(),
   })
     .index('id', ['id'])
-    .index('key', ['key']),
+    .index('key', ['key'])
+    .index('lastRequest', ['lastRequest']),
+  // Singleton owned by the scheduled rate-limit sweep, outside Better Auth metadata.
+  bcnRateLimitCleanup: defineTable({ retentionWindow: v.number() }),
 } as const
 
 const schema = defineSchema(tables)
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:be5f17d7bf75ddba',
+  value: 'bcn-auth-schema-v2:fde690f9cfb28044',
 })
 
 export default schema

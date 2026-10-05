@@ -159,7 +159,29 @@ export function assertAuthSchemaMatchesMetadata(
     if (!exported || !Array.isArray(exported.tables)) mismatch()
 
     const models = Object.values(metadata.models)
-    if (models.length !== exported.tables.length) mismatch()
+    const cleanupTable = exported.tables.find((table) => table.tableName === 'bcnRateLimitCleanup')
+    if (metadata.models.rateLimit) {
+      // The scheduler singleton is component-owned, never an adapter model. Validate
+      // it exactly as well: extra tables or columns must still fail closed.
+      if (
+        !cleanupTable ||
+        JSON.stringify(cleanupTable.documentType) !==
+          JSON.stringify({
+            type: 'object',
+            value: { retentionWindow: { fieldType: { type: 'number' }, optional: false } },
+          }) ||
+        [
+          cleanupTable.indexes,
+          cleanupTable.searchIndexes,
+          cleanupTable.stagedDbIndexes,
+          cleanupTable.stagedSearchIndexes,
+          cleanupTable.vectorIndexes,
+          cleanupTable.stagedVectorIndexes,
+        ].some((indexes) => indexes.length > 0)
+      )
+        mismatch()
+    } else if (cleanupTable) mismatch()
+    if (models.length + (metadata.models.rateLimit ? 1 : 0) !== exported.tables.length) mismatch()
 
     const tablesByName = new Map(exported.tables.map((table) => [table.tableName, table]))
     for (const model of models) {

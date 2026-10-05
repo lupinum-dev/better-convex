@@ -24,7 +24,7 @@ type TriggerRunner = (
   payload: Record<string, unknown>,
 ) => Promise<void>
 
-const AUTH_BULK_OPERATION_LIMIT = 128
+export const AUTH_BULK_OPERATION_LIMIT = 128
 
 function rejectOversizedOperation(): never {
   throw new Error('AUTH_BULK_OPERATION_LIMIT_EXCEEDED')
