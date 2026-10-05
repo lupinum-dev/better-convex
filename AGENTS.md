@@ -153,7 +153,7 @@ the rules agents most often get wrong. Update both when a page moves or a rule
 changes; the build fails when the table names a missing page or a page link
 cannot be resolved.
 
-The argument and data rules that the composables keep are D21 and D22 in
+The argument and data rules that the composables keep are D29 and D22 in
 [DECISIONS.md](DECISIONS.md). Do not change them in passing. When a public contract changes, update the docs,
 examples, types, tests, and package exports in the same change. Do not rewrite
 legal text, code, API identifiers, quotations, or changelog history to match

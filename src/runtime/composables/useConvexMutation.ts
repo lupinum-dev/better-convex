@@ -1,6 +1,9 @@
 import type { UseConvexMutationOptions, UseConvexMutationReturn } from '@lupinum/better-convex-vue'
-import { useConvexMutationInternal } from '@lupinum/better-convex-vue/internal'
-import type { OptimisticLocalStore } from 'convex/browser'
+import {
+  useConvexMutationInternal,
+  type OptimisticUpdateCandidate,
+  type SynchronousOptimisticUpdate,
+} from '@lupinum/better-convex-vue/internal'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'
 
@@ -8,17 +11,6 @@ import { useNuxtApp } from '#imports'
 
 import { readConvexRuntimeContext } from '../runtime-context'
 import { createCallableDevtoolsEvents } from '../utils/callable-devtools'
-
-type OptimisticUpdateCandidate<Args> = (store: OptimisticLocalStore, args: Args) => unknown
-type ReturnHasThen<Result> = Result extends unknown
-  ? 'then' extends keyof Result
-    ? true
-    : false
-  : never
-type SynchronousOptimisticUpdate<Update extends (...args: never[]) => unknown> =
-  true extends ReturnHasThen<ReturnType<Update>>
-    ? 'Optimistic update handlers must be synchronous'
-    : unknown
 
 /**
  * Binds a Convex mutation to reactive call state. Nuxt auto-import facade over

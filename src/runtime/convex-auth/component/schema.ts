@@ -2,6 +2,7 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
+// prettier-ignore
 export const tables = {
   user: defineTable({
     id: v.string(),
@@ -13,10 +14,10 @@ export const tables = {
     updatedAt: v.number(),
     bcnSecurityGeneration: v.number(),
   })
-    .index('id', ['id'])
-    .index('name', ['name'])
-    .index('email', ['email'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("name", ["name"])
+    .index("email", ["email"])
+    .index("createdAt", ["createdAt"]),
   session: defineTable({
     id: v.string(),
     expiresAt: v.number(),
@@ -28,12 +29,12 @@ export const tables = {
     userId: v.string(),
     bcnAssuranceGeneration: v.number(),
   })
-    .index('id', ['id'])
-    .index('expiresAt', ['expiresAt'])
-    .index('userId_expiresAt', ['userId', 'expiresAt'])
-    .index('token', ['token'])
-    .index('createdAt', ['createdAt'])
-    .index('userId', ['userId']),
+    .index("id", ["id"])
+    .index("expiresAt", ["expiresAt"])
+    .index("userId_expiresAt", ["userId","expiresAt"])
+    .index("token", ["token"])
+    .index("createdAt", ["createdAt"])
+    .index("userId", ["userId"]),
   account: defineTable({
     id: v.string(),
     accountId: v.string(),
@@ -51,10 +52,10 @@ export const tables = {
     // Retired column: optional so earlier rows validate; never read or written.
     issuer: v.optional(v.string()),
   })
-    .index('id', ['id'])
-    .index('providerId_accountId', ['providerId', 'accountId'])
-    .index('userId', ['userId'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("providerId_accountId", ["providerId","accountId"])
+    .index("userId", ["userId"])
+    .index("createdAt", ["createdAt"]),
   verification: defineTable({
     id: v.string(),
     identifier: v.string(),
@@ -63,11 +64,11 @@ export const tables = {
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index('id', ['id'])
-    .index('expiresAt', ['expiresAt'])
-    .index('identifier', ['identifier'])
-    .index('identifier_createdAt', ['identifier', 'createdAt'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("expiresAt", ["expiresAt"])
+    .index("identifier", ["identifier"])
+    .index("identifier_createdAt", ["identifier","createdAt"])
+    .index("createdAt", ["createdAt"]),
   jwks: defineTable({
     id: v.string(),
     publicKey: v.string(),
@@ -77,8 +78,8 @@ export const tables = {
     alg: v.union(v.null(), v.string()),
     crv: v.union(v.null(), v.string()),
   })
-    .index('id', ['id'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("createdAt", ["createdAt"]),
   oauthClient: defineTable({
     id: v.string(),
     clientId: v.string(),
@@ -117,10 +118,10 @@ export const tables = {
     referenceId: v.union(v.null(), v.string()),
     metadata: v.union(v.null(), v.string()),
   })
-    .index('id', ['id'])
-    .index('clientId', ['clientId'])
-    .index('userId', ['userId'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("clientId", ["clientId"])
+    .index("userId", ["userId"])
+    .index("createdAt", ["createdAt"]),
   oauthResource: defineTable({
     id: v.string(),
     identifier: v.string(),
@@ -138,9 +139,9 @@ export const tables = {
     policyVersion: v.union(v.null(), v.number()),
     metadata: v.union(v.null(), v.string()),
   })
-    .index('id', ['id'])
-    .index('identifier', ['identifier'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("identifier", ["identifier"])
+    .index("createdAt", ["createdAt"]),
   oauthClientResource: defineTable({
     id: v.string(),
     clientId: v.string(),
@@ -148,11 +149,11 @@ export const tables = {
     metadata: v.union(v.null(), v.string()),
     createdAt: v.union(v.null(), v.number()),
   })
-    .index('id', ['id'])
-    .index('clientId_resourceId', ['clientId', 'resourceId'])
-    .index('clientId', ['clientId'])
-    .index('resourceId', ['resourceId'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("clientId_resourceId", ["clientId","resourceId"])
+    .index("clientId", ["clientId"])
+    .index("resourceId", ["resourceId"])
+    .index("createdAt", ["createdAt"]),
   oauthRefreshToken: defineTable({
     id: v.string(),
     token: v.string(),
@@ -175,14 +176,14 @@ export const tables = {
     // Added after the 1.0 betas: optional so beta rows validate; always written.
     bcnConsentId: v.optional(v.union(v.null(), v.string())),
   })
-    .index('id', ['id'])
-    .index('clientId_userId', ['clientId', 'userId'])
-    .index('token', ['token'])
-    .index('clientId', ['clientId'])
-    .index('sessionId', ['sessionId'])
-    .index('userId', ['userId'])
-    .index('authorizationCodeId', ['authorizationCodeId'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("clientId_userId", ["clientId","userId"])
+    .index("token", ["token"])
+    .index("clientId", ["clientId"])
+    .index("sessionId", ["sessionId"])
+    .index("userId", ["userId"])
+    .index("authorizationCodeId", ["authorizationCodeId"])
+    .index("createdAt", ["createdAt"]),
   oauthAccessToken: defineTable({
     id: v.string(),
     token: v.union(v.null(), v.string()),
@@ -200,14 +201,14 @@ export const tables = {
     confirmation: v.union(v.null(), v.string()),
     scopes: v.array(v.string()),
   })
-    .index('id', ['id'])
-    .index('token', ['token'])
-    .index('clientId', ['clientId'])
-    .index('sessionId', ['sessionId'])
-    .index('userId', ['userId'])
-    .index('authorizationCodeId', ['authorizationCodeId'])
-    .index('refreshId', ['refreshId'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("token", ["token"])
+    .index("clientId", ["clientId"])
+    .index("sessionId", ["sessionId"])
+    .index("userId", ["userId"])
+    .index("authorizationCodeId", ["authorizationCodeId"])
+    .index("refreshId", ["refreshId"])
+    .index("createdAt", ["createdAt"]),
   oauthConsent: defineTable({
     id: v.string(),
     clientId: v.string(),
@@ -219,32 +220,33 @@ export const tables = {
     createdAt: v.union(v.null(), v.number()),
     updatedAt: v.union(v.null(), v.number()),
   })
-    .index('id', ['id'])
-    .index('clientId_userId', ['clientId', 'userId'])
-    .index('userId_createdAt', ['userId', 'createdAt'])
-    .index('clientId', ['clientId'])
-    .index('userId', ['userId'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("clientId_userId", ["clientId","userId"])
+    .index("userId_createdAt", ["userId","createdAt"])
+    .index("clientId", ["clientId"])
+    .index("userId", ["userId"])
+    .index("createdAt", ["createdAt"]),
   oauthClientAssertion: defineTable({
     id: v.string(),
     expiresAt: v.number(),
-  }).index('id', ['id']),
+  }).index("id", ["id"]),
   rateLimit: defineTable({
     id: v.string(),
     key: v.string(),
     count: v.number(),
     lastRequest: v.number(),
   })
-    .index('id', ['id'])
-    .index('key', ['key'])
-    .index('lastRequest', ['lastRequest']),
+    .index("id", ["id"])
+    .index("key", ["key"])
+    .index("lastRequest", ["lastRequest"]),
   // Singleton owned by the scheduled rate-limit sweep, outside Better Auth metadata.
   bcnRateLimitCleanup: defineTable({ retentionWindow: v.number() }),
 } as const
 
 const schema = defineSchema(tables)
+// prettier-ignore
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:daa14d0763243b90',
+  value: "bcn-auth-schema-v2:573a92e4296c409a",
 })
 
 export default schema

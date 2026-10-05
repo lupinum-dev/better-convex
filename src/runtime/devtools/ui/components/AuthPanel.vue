@@ -17,10 +17,10 @@ const displayName = computed(() => userDisplayName(user.value))
 const avatarInitial = computed(() => (displayName.value || '?').charAt(0).toUpperCase())
 
 const expirationDisplay = computed(() => {
-  if (props.authState?.expiresInSeconds === undefined) return '-'
-  const mins = Math.floor(props.authState.expiresInSeconds / 60)
-  const secs = props.authState.expiresInSeconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+  const expiresAt = props.authState?.expiresAt
+  if (expiresAt === undefined) return '-'
+  const iso = new Date(expiresAt).toISOString()
+  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`
 })
 </script>
 
@@ -54,11 +54,24 @@ const expirationDisplay = computed(() => {
 
       <div class="token-info">
         <div class="token-stat">
-          <div class="token-stat-value badge success">Valid</div>
+          <div
+            class="token-stat-value badge"
+            :class="
+              authState.tokenStatus === 'valid'
+                ? 'success'
+                : authState.tokenStatus === 'expired'
+                  ? 'error'
+                  : 'pending'
+            "
+          >
+            {{ authState.tokenStatus }}
+          </div>
           <div class="token-stat-label">Token</div>
         </div>
         <div class="token-stat">
-          <div class="token-stat-value">{{ expirationDisplay }}</div>
+          <div class="token-stat-value" style="font-size: 12px; overflow-wrap: anywhere">
+            {{ expirationDisplay }}
+          </div>
           <div class="token-stat-label">Expires</div>
         </div>
       </div>

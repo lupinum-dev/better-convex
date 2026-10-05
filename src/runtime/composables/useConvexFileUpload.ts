@@ -4,14 +4,11 @@
  * Inspired by nuxt-convex by @onmax (https://github.com/onmax/nuxt-convex)
  */
 
-import type {
-  UploadUrlMutation,
-  UseConvexFileUploadOptions,
-  UseConvexFileUploadReturn,
-} from '@lupinum/better-convex-vue'
+import type { UploadUrlMutation, UseConvexFileUploadReturn } from '@lupinum/better-convex-vue'
 import {
   useConvexFileUploadInternal,
   type ConvexFileUploadInternalOptions,
+  type UploadOptionsParameter,
 } from '@lupinum/better-convex-vue/internal'
 import type { FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'
@@ -31,10 +28,6 @@ export type {
   UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from '@lupinum/better-convex-vue'
-
-type UploadOptionsParameter<Prepared, Completed, Context> = [Prepared] extends [string]
-  ? [options?: UseConvexFileUploadOptions<Prepared, Completed, Context>]
-  : [options: UseConvexFileUploadOptions<Prepared, Completed, Context>]
 
 /**
  * Upload files to Convex storage with byte progress, as one identity-bound

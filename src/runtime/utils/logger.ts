@@ -120,167 +120,91 @@ function formatDetails(details: Record<string, unknown>): string {
     .join(' ')
 }
 
-// ============================================================================
-// Server Logger (ANSI)
-// ============================================================================
+interface PreparedAuthEvent {
+  phase: string
+  icon: string
+  tone: 'success' | 'error' | 'warning'
+  details?: Record<string, unknown>
+  hasError: boolean
+}
 
-function createServerLogger(level: 'info' | 'debug'): Logger {
-  const isDebug = level === 'debug'
-  const PREFIX = `${ANSI.cyan}[convex]${ANSI.reset}`
+interface PreparedUploadEvent {
+  name: string
+  icon: string
+  success: boolean
+  details: string[]
+  hasError: boolean
+}
 
+interface LogOutput {
+  auth(event: PreparedAuthEvent): void
+  upload(event: PreparedUploadEvent): void
+  debug(message: string): void
+  time(label: string, elapsed: number): void
+}
+
+function createServerOutput(): LogOutput {
+  const prefix = `${ANSI.cyan}[convex]${ANSI.reset}`
+  const colors = { success: ANSI.green, error: ANSI.red, warning: ANSI.yellow }
   return {
-    auth(event: AuthEvent): void {
-      const icon =
-        event.outcome === 'success'
-          ? `${ANSI.green}${ICONS.success}${ANSI.reset}`
-          : event.outcome === 'error'
-            ? `${ANSI.red}${ICONS.error}${ANSI.reset}`
-            : `${ANSI.yellow}${ICONS.warning}${ANSI.reset}`
-
-      let msg = `${PREFIX} ${icon} Auth:${event.phase}`
-
-      if (event.details) {
-        msg += `  ${ANSI.dim}${formatDetails(event.details)}${ANSI.reset}`
-      }
-
-      if (event.error) {
-        console.error(msg, '[Omitted]')
-      } else {
-        console.log(msg)
-      }
+    auth(event) {
+      const icon = `${colors[event.tone]}${event.icon}${ANSI.reset}`
+      let msg = `${prefix} ${icon} Auth:${event.phase}`
+      if (event.details) msg += `  ${ANSI.dim}${formatDetails(event.details)}${ANSI.reset}`
+      if (event.hasError) console.error(msg, '[Omitted]')
+      else console.log(msg)
     },
-
-    upload(event: UploadEvent): void {
-      const icon =
-        event.event === 'error'
-          ? `${ANSI.red}${ICONS.error}${ANSI.reset}`
-          : `${ANSI.green}${ICONS.upload}${ANSI.reset}`
-
-      let msg = `${PREFIX} ${icon} ${event.name}`
-
-      if (event.event === 'success') {
-        msg += `  ${ANSI.green}success${ANSI.reset}`
-        if (event.filename) {
-          msg += ` ${ANSI.dim}${event.filename}${ANSI.reset}`
-        }
-        if (event.size !== undefined) {
-          msg += ` ${ANSI.dim}(${formatBytes(event.size)})${ANSI.reset}`
-        }
-        if (event.duration !== undefined) {
-          msg += ` ${ANSI.dim}${formatDuration(event.duration)}${ANSI.reset}`
-        }
-      } else {
-        msg += `  ${ANSI.red}error${ANSI.reset}`
-        if (event.error) msg += ` ${ANSI.red}[Omitted]${ANSI.reset}`
-      }
-
+    upload(event) {
+      const color = event.success ? ANSI.green : ANSI.red
+      let msg = `${prefix} ${color}${event.icon}${ANSI.reset} ${event.name}`
+      msg += `  ${color}${event.success ? 'success' : 'error'}${ANSI.reset}`
+      for (const detail of event.details) msg += ` ${ANSI.dim}${detail}${ANSI.reset}`
+      if (!event.success && event.hasError) msg += ` ${ANSI.red}[Omitted]${ANSI.reset}`
       console.log(msg)
     },
-
-    debug(message: string, data?: unknown): void {
-      if (!isDebug) return
-      // Generic debug payloads have no reviewed schema. Keep the message only;
-      // structured diagnostics belong in a semantic event's safe details.
-      void data
-      console.log(`${PREFIX} ${ANSI.dim}[debug]${ANSI.reset} ${message}`)
+    debug(message) {
+      console.log(`${prefix} ${ANSI.dim}[debug]${ANSI.reset} ${message}`)
     },
-
-    time(label: string): () => void {
-      if (!isDebug) return () => {}
-      const start = performance.now()
-      return () => {
-        const elapsed = Math.round(performance.now() - start)
-        console.log(`${PREFIX} ${ANSI.dim}[time]${ANSI.reset} ${label}: ${elapsed}ms`)
-      }
+    time(label, elapsed) {
+      console.log(`${prefix} ${ANSI.dim}[time]${ANSI.reset} ${label}: ${elapsed}ms`)
     },
   }
 }
 
-// ============================================================================
-// Browser Logger (CSS badges + collapsed groups)
-// ============================================================================
-
-function createBrowserLogger(level: 'info' | 'debug'): Logger {
-  const isDebug = level === 'debug'
-
+function createBrowserOutput(): LogOutput {
   return {
-    auth(event: AuthEvent): void {
-      const icon =
-        event.outcome === 'success'
-          ? ICONS.success
-          : event.outcome === 'error'
-            ? ICONS.error
-            : ICONS.warning
-      const iconStyle =
-        event.outcome === 'success'
-          ? CSS.success
-          : event.outcome === 'error'
-            ? CSS.error
-            : CSS.warning
-
-      const hasDetails = event.details && Object.keys(event.details).length > 0
-
-      if (hasDetails || event.error) {
-        console.groupCollapsed(
-          `%cConvex%c Auth | %c${icon} ${event.phase}`,
-          CSS.badge,
-          '',
-          iconStyle,
-        )
+    auth(event) {
+      const label = `%cConvex%c Auth | %c${event.icon} ${event.phase}`
+      const styles = [CSS.badge, '', CSS[event.tone]]
+      if ((event.details && Object.keys(event.details).length > 0) || event.hasError) {
+        console.groupCollapsed(label, ...styles)
         if (event.details) console.log(event.details)
-        if (event.error) console.error('[Omitted]')
+        if (event.hasError) console.error('[Omitted]')
         console.groupEnd()
-      } else {
-        console.log(`%cConvex%c Auth | %c${icon} ${event.phase}`, CSS.badge, '', iconStyle)
-      }
+      } else console.log(label, ...styles)
     },
-
-    upload(event: UploadEvent): void {
-      const icon = event.event === 'error' ? ICONS.error : ICONS.upload
-
-      let label = `%cConvex%c ${icon} %c${event.name}`
+    upload(event) {
+      let label = `%cConvex%c ${event.icon} %c${event.name}`
       const styles = [CSS.badge, '', CSS.name]
-
-      if (event.event === 'success') {
-        if (event.filename) {
-          label += `%c ${event.filename}`
-          styles.push(CSS.dim)
-        }
-        if (event.size !== undefined) {
-          label += `%c (${formatBytes(event.size)})`
-          styles.push(CSS.dim)
-        }
-        if (event.duration !== undefined) {
-          label += `%c ${formatDuration(event.duration)}`
-          styles.push(CSS.dim)
-        }
-      } else {
+      for (const detail of event.details) {
+        label += `%c ${detail}`
+        styles.push(CSS.dim)
+      }
+      if (!event.success) {
         label += `%c Failed`
         styles.push(CSS.error)
       }
-
-      if (event.error) {
+      if (event.hasError) {
         console.groupCollapsed(label, ...styles)
         console.error('Error:', '[Omitted]')
         console.groupEnd()
-      } else {
-        console.log(label, ...styles)
-      }
+      } else console.log(label, ...styles)
     },
-
-    debug(message: string, data?: unknown): void {
-      if (!isDebug) return
-      void data
+    debug(message) {
       console.log(`%cConvex%c [debug] ${message}`, CSS.badge, CSS.dim)
     },
-
-    time(label: string): () => void {
-      if (!isDebug) return () => {}
-      const start = performance.now()
-      return () => {
-        const elapsed = Math.round(performance.now() - start)
-        console.log(`%cConvex%c [time] ${label}: ${elapsed}ms`, CSS.badge, CSS.dim)
-      }
+    time(label, elapsed) {
+      console.log(`%cConvex%c [time] ${label}: ${elapsed}ms`, CSS.badge, CSS.dim)
     },
   }
 }
@@ -297,7 +221,7 @@ export function createLogger(level: LogLevel): Logger {
   if (!level) return noopLogger
 
   // Use ANSI on server, CSS in browser
-  const sink = !isBrowserRuntime() ? createServerLogger(level) : createBrowserLogger(level)
+  const sink = !isBrowserRuntime() ? createServerOutput() : createBrowserOutput()
 
   const sanitizeEvent = <
     T extends {
@@ -324,10 +248,46 @@ export function createLogger(level: LogLevel): Logger {
     }) as T
 
   const safeLogger: Logger = {
-    auth: (event) => sink.auth(sanitizeEvent(event)),
-    upload: (event) => sink.upload(sanitizeEvent(event)),
-    debug: (message, data) => sink.debug(String(sanitizeDiagnosticValue(message)), data),
-    time: (label) => sink.time(String(sanitizeDiagnosticValue(label))),
+    auth(event) {
+      const safe = sanitizeEvent(event)
+      const tone = safe.outcome === 'miss' ? 'warning' : safe.outcome
+      sink.auth({
+        phase: safe.phase,
+        icon: ICONS[tone],
+        tone,
+        details: safe.details,
+        hasError: Boolean(safe.error),
+      })
+    },
+    upload(event) {
+      const safe = sanitizeEvent(event)
+      const success = safe.event === 'success'
+      const details: string[] = []
+      if (success) {
+        if (safe.filename) details.push(safe.filename)
+        if (safe.size !== undefined) details.push(`(${formatBytes(safe.size)})`)
+        if (safe.duration !== undefined) details.push(formatDuration(safe.duration))
+      }
+      sink.upload({
+        name: safe.name,
+        icon: success ? ICONS.upload : ICONS.error,
+        success,
+        details,
+        hasError: Boolean(safe.error),
+      })
+    },
+    debug(message, data) {
+      if (level !== 'debug') return
+      // Generic payloads have no reviewed schema. Semantic details carry structured diagnostics.
+      void data
+      sink.debug(String(sanitizeDiagnosticValue(message)))
+    },
+    time(label) {
+      if (level !== 'debug') return () => {}
+      const safeLabel = String(sanitizeDiagnosticValue(label))
+      const start = performance.now()
+      return () => sink.time(safeLabel, Math.round(performance.now() - start))
+    },
   }
   return Object.freeze(safeLogger)
 }

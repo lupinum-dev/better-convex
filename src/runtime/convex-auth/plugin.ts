@@ -630,7 +630,7 @@ async function guardRevokeRequest(
 }
 
 /**
- * The only rate-limit exemption the library allows: session reads. They run on
+ * Session reads (`/get-session`) are exempt from Better Auth rate limits. They run on
  * every page load and reconnect, the database counter costs a Convex write each,
  * and a missing or forged session cookie fails before any database read.
  */

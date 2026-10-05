@@ -27,7 +27,17 @@ export type ConvexCallArgs<Reference extends FunctionReference<'mutation' | 'act
 
 export type OptimisticUpdate<Args> = (store: OptimisticLocalStore, args: Args) => undefined
 
-type OptimisticUpdateCandidate<Args> = (store: OptimisticLocalStore, args: Args) => unknown
+export type OptimisticUpdateCandidate<Args> = (store: OptimisticLocalStore, args: Args) => unknown
+
+type ReturnHasThen<Result> = Result extends unknown
+  ? 'then' extends keyof Result
+    ? true
+    : false
+  : never
+export type SynchronousOptimisticUpdate<Update extends (...args: never[]) => unknown> =
+  true extends ReturnHasThen<ReturnType<Update>>
+    ? 'Optimistic update handlers must be synchronous'
+    : unknown
 
 export type UseConvexMutationOptions<Args> = Readonly<{ optimisticUpdate?: OptimisticUpdate<Args> }>
 

@@ -116,7 +116,7 @@ export type UseConvexFileUploadOptions<
   readonly complete?: UploadComplete<Prepared, Completed, Context>
 }
 
-type UploadOptionsParameter<Prepared, Completed, Context> = [Prepared] extends [string]
+export type UploadOptionsParameter<Prepared, Completed, Context> = [Prepared] extends [string]
   ? [options?: UseConvexFileUploadOptions<Prepared, Completed, Context>]
   : [options: UseConvexFileUploadOptions<Prepared, Completed, Context>]
 

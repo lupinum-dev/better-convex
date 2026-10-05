@@ -76,14 +76,30 @@ describe('devtools auth diagnostics', () => {
     emit({
       type: 'CONVEX_DEVTOOLS_AUTH',
       instanceId: 'tab-b',
-      authState: { isAuthenticated: true, pending: false, user: null, tokenStatus: 'valid' },
+      authState: {
+        isAuthenticated: true,
+        pending: false,
+        user: null,
+        tokenStatus: 'valid',
+        expiresAt: 200_000,
+        expiresInSeconds: 100,
+        issuedAt: 100_000,
+      },
     })
     expect(auth.authState.value?.isAuthenticated).toBe(false)
 
     emit({
       type: 'CONVEX_DEVTOOLS_AUTH',
       instanceId: 'tab-a',
-      authState: { isAuthenticated: true, pending: false, user: null, tokenStatus: 'valid' },
+      authState: {
+        isAuthenticated: true,
+        pending: false,
+        user: null,
+        tokenStatus: 'valid',
+        expiresAt: 200_000,
+        expiresInSeconds: 100,
+        issuedAt: 100_000,
+      },
       connectionState: {
         isConnected: false,
         hasEverConnected: true,
@@ -94,6 +110,33 @@ describe('devtools auth diagnostics', () => {
     })
     expect(auth.authState.value?.isAuthenticated).toBe(true)
     expect(auth.connectionState.value?.isConnected).toBe(false)
+
+    // A same-session renewal changes only the expiry/issue values.
+    emit({
+      type: 'CONVEX_DEVTOOLS_AUTH',
+      instanceId: 'tab-a',
+      authState: {
+        isAuthenticated: true,
+        pending: false,
+        user: null,
+        tokenStatus: 'valid',
+        expiresAt: 300_000,
+        expiresInSeconds: 200,
+        issuedAt: 200_000,
+      },
+    })
+    expect(auth.authState.value).toMatchObject({
+      expiresAt: 300_000,
+      expiresInSeconds: 200,
+      issuedAt: 200_000,
+    })
+    emit({
+      type: 'CONVEX_DEVTOOLS_AUTH',
+      instanceId: 'tab-a',
+      authState: { isAuthenticated: true, pending: false, user: null, tokenStatus: 'expired' },
+    })
+    expect(auth.authState.value?.tokenStatus).toBe('expired')
+    expect(auth.authState.value?.expiresAt).toBeUndefined()
 
     app.unmount()
     expect(transport.removeEventListener).toHaveBeenCalledTimes(1)

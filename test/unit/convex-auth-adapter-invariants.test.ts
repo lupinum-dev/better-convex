@@ -94,7 +94,6 @@ describe('greenfield Convex auth schema generation', () => {
       logicalName: 'id',
       physicalName: 'id',
       nullable: false,
-      required: true,
       unique: true,
       updatable: false,
     })
@@ -253,7 +252,7 @@ describe('greenfield Convex auth schema generation', () => {
       fields: ['identifier', 'createdAt'],
     })
     expect(artifacts.schemaCode).toContain(
-      ".index('identifier_createdAt', ['identifier', 'createdAt'])",
+      '.index("identifier_createdAt", ["identifier","createdAt"])',
     )
   })
 

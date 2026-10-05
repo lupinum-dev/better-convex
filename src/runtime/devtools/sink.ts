@@ -147,7 +147,18 @@ export function createDevtoolsSink(): DevtoolsSink {
     },
     clearIdentityOwned() {
       if (disposed) return
-      queries.clear()
+      // Keep mounted controllers' handles so their next update can publish again.
+      for (const [id, entry] of queries) {
+        queries.set(id, {
+          ...entry,
+          logicalKey: '',
+          args: undefined,
+          data: undefined,
+          error: undefined,
+          status: 'pending',
+          lastUpdated: Date.now(),
+        })
+      }
       mutations.clear()
       notifyQueries()
       notifyMutations()

@@ -18,9 +18,7 @@ export interface AuthFieldMetadata {
   physicalName: string
   kind: AuthFieldKind
   nullable: boolean
-  required: boolean
   indexed: boolean
-  selectable: boolean
   sortable: boolean
   unique: boolean
   updatable: boolean

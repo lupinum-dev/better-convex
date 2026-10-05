@@ -2,6 +2,7 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
+// prettier-ignore
 export const tables = {
   user: defineTable({
     id: v.string(),
@@ -13,10 +14,10 @@ export const tables = {
     updatedAt: v.number(),
     bcnSecurityGeneration: v.number(),
   })
-    .index('id', ['id'])
-    .index('name', ['name'])
-    .index('email', ['email'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("name", ["name"])
+    .index("email", ["email"])
+    .index("createdAt", ["createdAt"]),
   session: defineTable({
     id: v.string(),
     expiresAt: v.number(),
@@ -29,12 +30,12 @@ export const tables = {
     activeOrganizationId: v.union(v.null(), v.string()),
     bcnAssuranceGeneration: v.number(),
   })
-    .index('id', ['id'])
-    .index('expiresAt', ['expiresAt'])
-    .index('userId_expiresAt', ['userId', 'expiresAt'])
-    .index('token', ['token'])
-    .index('createdAt', ['createdAt'])
-    .index('userId', ['userId']),
+    .index("id", ["id"])
+    .index("expiresAt", ["expiresAt"])
+    .index("userId_expiresAt", ["userId","expiresAt"])
+    .index("token", ["token"])
+    .index("createdAt", ["createdAt"])
+    .index("userId", ["userId"]),
   account: defineTable({
     id: v.string(),
     accountId: v.string(),
@@ -52,10 +53,10 @@ export const tables = {
     // Retired column: optional so earlier rows validate; never read or written.
     issuer: v.optional(v.string()),
   })
-    .index('id', ['id'])
-    .index('providerId_accountId', ['providerId', 'accountId'])
-    .index('userId', ['userId'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("providerId_accountId", ["providerId","accountId"])
+    .index("userId", ["userId"])
+    .index("createdAt", ["createdAt"]),
   verification: defineTable({
     id: v.string(),
     identifier: v.string(),
@@ -64,11 +65,11 @@ export const tables = {
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index('id', ['id'])
-    .index('expiresAt', ['expiresAt'])
-    .index('identifier', ['identifier'])
-    .index('identifier_createdAt', ['identifier', 'createdAt'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("expiresAt", ["expiresAt"])
+    .index("identifier", ["identifier"])
+    .index("identifier_createdAt", ["identifier","createdAt"])
+    .index("createdAt", ["createdAt"]),
   organization: defineTable({
     id: v.string(),
     name: v.string(),
@@ -77,10 +78,10 @@ export const tables = {
     createdAt: v.number(),
     metadata: v.union(v.null(), v.string()),
   })
-    .index('id', ['id'])
-    .index('name', ['name'])
-    .index('slug', ['slug'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("name", ["name"])
+    .index("slug", ["slug"])
+    .index("createdAt", ["createdAt"]),
   member: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -88,12 +89,12 @@ export const tables = {
     role: v.string(),
     createdAt: v.number(),
   })
-    .index('id', ['id'])
-    .index('organizationId_userId', ['organizationId', 'userId'])
-    .index('organizationId', ['organizationId'])
-    .index('userId', ['userId'])
-    .index('role', ['role'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("organizationId_userId", ["organizationId","userId"])
+    .index("organizationId", ["organizationId"])
+    .index("userId", ["userId"])
+    .index("role", ["role"])
+    .index("createdAt", ["createdAt"]),
   invitation: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -104,15 +105,15 @@ export const tables = {
     createdAt: v.number(),
     inviterId: v.string(),
   })
-    .index('id', ['id'])
-    .index('email_organizationId_status', ['email', 'organizationId', 'status'])
-    .index('organizationId_status_createdAt', ['organizationId', 'status', 'createdAt'])
-    .index('organizationId', ['organizationId'])
-    .index('email', ['email'])
-    .index('role', ['role'])
-    .index('status', ['status'])
-    .index('createdAt', ['createdAt'])
-    .index('inviterId', ['inviterId']),
+    .index("id", ["id"])
+    .index("email_organizationId_status", ["email","organizationId","status"])
+    .index("organizationId_status_createdAt", ["organizationId","status","createdAt"])
+    .index("organizationId", ["organizationId"])
+    .index("email", ["email"])
+    .index("role", ["role"])
+    .index("status", ["status"])
+    .index("createdAt", ["createdAt"])
+    .index("inviterId", ["inviterId"]),
   jwks: defineTable({
     id: v.string(),
     publicKey: v.string(),
@@ -122,24 +123,25 @@ export const tables = {
     alg: v.union(v.null(), v.string()),
     crv: v.union(v.null(), v.string()),
   })
-    .index('id', ['id'])
-    .index('createdAt', ['createdAt']),
+    .index("id", ["id"])
+    .index("createdAt", ["createdAt"]),
   rateLimit: defineTable({
     id: v.string(),
     key: v.string(),
     count: v.number(),
     lastRequest: v.number(),
   })
-    .index('id', ['id'])
-    .index('key', ['key'])
-    .index('lastRequest', ['lastRequest']),
+    .index("id", ["id"])
+    .index("key", ["key"])
+    .index("lastRequest", ["lastRequest"]),
   // Singleton owned by the scheduled rate-limit sweep, outside Better Auth metadata.
   bcnRateLimitCleanup: defineTable({ retentionWindow: v.number() }),
 } as const
 
 const schema = defineSchema(tables)
+// prettier-ignore
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: 'bcn-auth-schema-v2:fde690f9cfb28044',
+  value: "bcn-auth-schema-v2:91e67496e2febbf6",
 })
 
 export default schema

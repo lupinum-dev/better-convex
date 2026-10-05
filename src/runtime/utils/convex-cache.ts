@@ -144,7 +144,7 @@ export interface FetchAuthTokenOptions {
   auth: ConvexAuthMode
   /** Cookie header from the request. */
   cookieHeader: string
-  /** Cached token state (must be obtained at setup time via useState). */
+  /** Cached token snapshot from the private per-NuxtApp server token store. */
   cachedToken: { value: string | null }
 }
 
@@ -152,13 +152,10 @@ export interface FetchAuthTokenOptions {
  * Resolve the SSR auth token for a query.
  *
  * Performs NO cookie -> JWT exchange. `plugin.server.ts` runs before any route
- * component's setup and already exchanged the session cookie once, writing the
- * result into the canonical `useState('convex:identity')`. SSR queries reuse that single
- * per-request exchange. `none` never attaches a token.
- *
- * The `cachedToken` must be obtained at component setup time via
- * the canonical identity state; calling `useState` inside an async function loses
- * Vue context.
+ * component's setup and already exchanged the session cookie once. The token
+ * stays in the private per-NuxtApp WeakMap in `auth-identity-state.ts`, outside
+ * the serialized identity state. SSR queries reuse that per-request token
+ * snapshot. `none` never attaches a token.
  */
 export function fetchAuthToken(options: FetchAuthTokenOptions): string | undefined {
   const { auth, cookieHeader, cachedToken } = options

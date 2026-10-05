@@ -326,7 +326,7 @@ export function createAuthComponent<
      * An HTTP action behind the same hardening as the `/api/auth/*` routes:
      * signed client IP (or the direct Convex client IP), public-origin
      * rewrite, a same-origin check for unsafe methods, Better Auth's own
-     * rate-limited `get-session` (database read, no cookie cache), and the
+     * `get-session` exempt from rate limits (database read, no cookie cache), and the
      * library's session admission with identity-generation fencing.
      */
     sessionHttpAction: <
@@ -360,7 +360,7 @@ export function createAuthComponent<
           logAuthFailure('AUTH_HANDLER_FAILED', 'AUTH_HANDLER_THREW', error)
           return authFailure('AUTH_HANDLER_FAILED')
         }
-        // Better Auth's own rate limit (keyed on the verified client IP).
+        // Preserve a handler's 429 response; the library exempts get-session from rate limits.
         if (sessionResponse.status === 429) return sessionResponse
         const body = sessionResponse.ok
           ? ((await sessionResponse.json().catch(() => null)) as {
