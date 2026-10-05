@@ -21,7 +21,8 @@ If you already run the release candidate, check only these:
 - [ ] Import `useConvexOperation` from `@lupinum/better-convex-nuxt/experimental`
       (or `@lupinum/better-convex-vue/experimental`).
 - [ ] Set `convex.auth.origin` and the Convex `SITE_URL` to the same origin, or
-      list the origin in `siteOrigins`. Remove `BETTER_AUTH_TRUSTED_ORIGINS`.
+      list the origin in `siteOrigins` (not possible with `oauth` or
+      `oauthProvider`). Remove `BETTER_AUTH_TRUSTED_ORIGINS`.
 - [ ] Component tests: a mutation that passes `optimisticUpdate` now fails.
 - [ ] Local auth component: regenerate the schema and export `pruneRateLimits`.
 
