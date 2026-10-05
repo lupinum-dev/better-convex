@@ -114,7 +114,7 @@ function setup(capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization') 
     expect(Object.isFrozen(message)).toBe(true)
     return message
   }
-  return { request, signUp, email, delivered }
+  return { test, auth, request, signUp, email, delivered }
 }
 
 describe('typed email delivery with real Better Auth', () => {
@@ -123,7 +123,142 @@ describe('typed email delivery with real Better Auth', () => {
     vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.convex.site')
     vi.stubEnv('BETTER_AUTH_SECRETS', `0:${'test-secret'.repeat(4)}`)
   })
-  afterEach(() => vi.unstubAllEnvs())
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+  })
+
+  it('constructs query auth but refuses email delivery from a query context', async () => {
+    const { test, auth, signUp, email } = setup('links')
+    await signUp()
+    await test.query(async (ctx) => {
+      const instance = await auth.createAuth(ctx)
+      expect(instance).toBeDefined()
+      await expect(
+        instance.api.sendVerificationEmail({
+          body: { email: 'person@example.test', callbackURL: 'https://app.example.test/verified' },
+        }),
+      ).rejects.toThrow(/^AUTH_EMAIL_REQUIRES_WRITABLE_CONTEXT$/)
+    })
+    expect(email).not.toHaveBeenCalled()
+  })
+
+  it('awaits delayed submission and logs a sanitized rejection without failing the request', async () => {
+    const { request, signUp, email } = setup('links')
+    await signUp()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const entered = Promise.withResolvers<undefined>()
+    const submission = Promise.withResolvers<undefined>()
+    let finished = false
+    email.mockImplementationOnce(async () => {
+      entered.resolve(undefined)
+      await submission.promise
+      finished = true
+    })
+    let requestFinished = false
+    let submissionFinishedAtResponse = false
+    const sending = request('/request-password-reset', {
+      email: 'person@example.test',
+      redirectTo: 'https://app.example.test/recover',
+    }).then((body) => {
+      requestFinished = true
+      submissionFinishedAtResponse = finished
+      return body
+    })
+    await entered.promise
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const finishedBeforeSubmission = requestFinished
+    submission.resolve(undefined)
+    expect(await sending).toEqual({
+      status: true,
+      message: 'If this email exists in our system, check your email for the reset link',
+    })
+    expect(submissionFinishedAtResponse).toBe(true)
+    expect(finishedBeforeSubmission).toBe(false)
+    expect(consoleError).not.toHaveBeenCalled()
+
+    email.mockRejectedValueOnce(new Error('submission failed token=synthetic-private-token'))
+    expect(await request('/request-password-reset', { email: 'person@example.test' })).toEqual({
+      status: true,
+      message: 'If this email exists in our system, check your email for the reset link',
+    })
+    expect(consoleError.mock.calls[0]).toEqual([
+      '[better-convex] AUTH_EMAIL_DELIVERY_FAILED',
+      { type: 'reset-password', cause: 'Error: submission failed token [redacted]' },
+    ])
+    const logged = consoleError.mock.calls.flat().map(String).join(' ')
+    expect(logged).toContain('Failed to run background task:')
+    expect(logged).toContain('Error: AUTH_EMAIL_DELIVERY_FAILED')
+    expect(logged).not.toContain('synthetic-private-token')
+  })
+
+  it.each([
+    [
+      'links',
+      '/request-password-reset',
+      { email: 'person@example.test' },
+      'reset-password',
+      {
+        status: true,
+        message: 'If this email exists in our system, check your email for the reset link',
+      },
+    ],
+    [
+      'emailOTP',
+      '/email-otp/send-verification-otp',
+      { email: 'person@example.test', type: 'sign-in' },
+      'email-otp',
+      { success: true },
+    ],
+  ] as const)(
+    'never exposes raw %s hook errors in console output or the response',
+    async (capability, path, body, type, expected) => {
+      const { request, signUp, email } = setup(capability)
+      if (capability === 'links') await signUp()
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const credentials: string[] = []
+      email.mockImplementation((_ctx, message) => {
+        if (message.type === 'reset-password') credentials.push(message.url, message.token)
+        else if (message.type === 'email-otp') credentials.push(message.otp)
+        else throw new Error('Unexpected message type')
+        throw new Error(`delivery failed: ${credentials.join(' ')}`)
+      })
+      const response = await request(path, body)
+      expect(response).toEqual(expected)
+      expect(email).toHaveBeenCalledOnce()
+      expect(credentials).toHaveLength(capability === 'links' ? 2 : 1)
+      expect(consoleError.mock.calls[0]).toEqual([
+        '[better-convex] AUTH_EMAIL_DELIVERY_FAILED',
+        {
+          type,
+          cause:
+            capability === 'links'
+              ? 'Error: delivery failed: [redacted] [redacted]'
+              : 'Error: delivery failed: [redacted]',
+        },
+      ])
+      // Error.message is not enumerable; stringify alone would miss Better Auth's raw errors.
+      const logged = consoleError.mock.calls
+        .flat()
+        .map((value) =>
+          value instanceof Error
+            ? value.stack
+            : typeof value === 'object'
+              ? JSON.stringify(value)
+              : String(value),
+        )
+        .join(' ')
+      expect(logged).toContain('Error: AUTH_EMAIL_DELIVERY_FAILED')
+      for (const credential of credentials) {
+        expect(logged).not.toContain(credential)
+        expect(JSON.stringify(response)).not.toContain(credential)
+      }
+      const errors = consoleError.mock.calls.flat().filter((value) => value instanceof Error)
+      expect(errors.map((error) => ({ message: error.message, cause: error.cause }))).toEqual([
+        { message: 'AUTH_EMAIL_DELIVERY_FAILED', cause: undefined },
+      ])
+    },
+  )
 
   it('delivers a password reset with the request writable context', async () => {
     const { request, signUp, delivered } = setup('links')
