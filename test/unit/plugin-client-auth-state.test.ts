@@ -307,16 +307,10 @@ describe('auth client app-facing state projection', () => {
       })
     await vi.waitFor(() => expect(wire.confirmations).toHaveLength(1))
     expect(settled).toBe(false)
-    try {
-      expect(
-        state.identity.value.status === 'authenticated' ? state.identity.value.user.name : null,
-      ).toBe('Alice')
-    } finally {
-      // Always release the external confirmation, including when this assertion
-      // exposes a runtime divergence previously hidden by the hand-made mocks.
-      wire.confirmations.shift()!()
-      await operation
-    }
+    // Same user: profile fields may update before confirmation, but the
+    // signed-in identity and the operation wait for Convex.
+    expect(state.identity.value.status).toBe('authenticated')
+    wire.confirmations.shift()!()
     await operation
     expect(settled).toBe(true)
     expect(

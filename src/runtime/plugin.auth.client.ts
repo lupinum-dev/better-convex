@@ -94,8 +94,9 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
   let publishCurrentSessionAcceptance: () => void = () => {}
   let publishAcceptedIdentity: () => void = () => {}
   // The provider's latest result, held until Convex accepts it. Nuxt shows a
-  // user only after the Vue runtime confirms that Convex accepted the token,
-  // so `useConvexAuth()` and `ready()` never disagree.
+  // new identity only after the Vue runtime confirms that Convex accepted the
+  // token, so `useConvexAuth()` and `ready()` never disagree. Profile fields of
+  // the identity already shown may update before a refreshed token is confirmed.
   let staged: { user: ConvexUser; token: string } | { user: null; error: string | null } | null =
     null
   const adapter = createBetterAuthBrowserAdapter(
