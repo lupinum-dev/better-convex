@@ -51,6 +51,20 @@ describe('devtools auth proxy registry', () => {
     expect(stats.recentRequests.map((r) => r.id)).toEqual(['2', '1'])
   })
 
+  it('counts a 302 as redirected rather than failed', async () => {
+    const registry = await import('../../src/runtime/devtools/auth-proxy-registry')
+    await registry.recordAuthProxyRequest({
+      id: 'redirect',
+      path: '/oauth/authorize',
+      method: 'GET',
+      timestamp: 0,
+      status: 302,
+      success: false,
+    })
+    const stats = await registry.getAuthProxyStats()
+    expect(stats).toMatchObject({ totalRequests: 1, successCount: 0, errorCount: 0 })
+  })
+
   it('persists only reviewed fields and drops raw error diagnostics', async () => {
     const registry = await import('../../src/runtime/devtools/auth-proxy-registry')
     const sentinels = {

@@ -1,3 +1,4 @@
+import { agentDiagnosticOutcome } from './auth-proxy-outcome'
 import type { AuthProxyRequest, AuthProxyStats } from './types'
 
 const MAX_REQUESTS = 20
@@ -41,13 +42,13 @@ export async function recordAuthProxyRequest(request: AuthProxyRequest): Promise
 
 export async function getAuthProxyStats(): Promise<AuthProxyStats> {
   const requests = await getRequests()
-  const successful = requests.filter((r) => r.success)
+  const successful = requests.filter((r) => agentDiagnosticOutcome(r).badge === 'success')
   const durations = successful.filter((r) => r.duration !== undefined).map((r) => r.duration!)
 
   return {
     totalRequests: requests.length,
     successCount: successful.length,
-    errorCount: requests.filter((r) => !r.success).length,
+    errorCount: requests.filter((r) => agentDiagnosticOutcome(r).badge === 'error').length,
     avgDuration:
       durations.length > 0
         ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)

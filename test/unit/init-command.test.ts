@@ -152,6 +152,16 @@ describe.sequential('better-convex init', () => {
     expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
   })
 
+  it('provisions the last SITE_URL assignment like the app environment loader', async () => {
+    const harness = createHarness()
+    await writeFile(
+      join(root, '.env.local'),
+      'SITE_URL=http://localhost:3000\nSITE_URL=http://localhost:4173\n',
+    )
+    await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
+    expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
+  })
+
   it('keeps .env.local unchanged and says what to add when Convex already has SITE_URL', async () => {
     const harness = createHarness()
     harness.environment.set('SITE_URL', 'http://localhost:5000')
