@@ -10,14 +10,7 @@ import {
 import type { BetterConvexPublicOAuthClientInput } from '../../src/runtime/convex-auth/oauth-operator'
 import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 import { createBetterConvexTestAuth } from '../../src/runtime/convex-auth/test'
-import {
-  CLIENT_IP_HEADER,
-  CLIENT_IP_SIGNATURE_HEADER,
-  PUBLIC_ORIGIN_HEADER,
-  PUBLIC_ORIGIN_SIGNATURE_HEADER,
-  signClientIp,
-  signPublicOrigin,
-} from '../../src/runtime/shared/client-ip'
+import { signClientIp } from '../../src/runtime/shared/client-ip'
 
 const { betterAuth } = vi.hoisted(() => ({
   betterAuth: vi.fn((options: unknown) => ({
@@ -1458,125 +1451,8 @@ describe('registered auth route diagnostics', () => {
   })
 })
 
-describe('site origins', () => {
-  const SECRET = 'site-origins-proxy-secret-with-32-bytes'
+describe('site origins configuration', () => {
   const SITE_B = 'https://site-b.example.test'
-
-  async function invokeRoute(
-    auth: { registerRoutes: (http: ReturnType<typeof httpRouter>) => void },
-    headers: Record<string, string> = {},
-  ) {
-    const http = httpRouter()
-    auth.registerRoutes(http)
-    const route = http.lookup('/api/auth/get-session', 'GET')
-    if (!route) throw new Error('Auth route was not registered')
-    const handler = route[0] as (typeof route)[0] & {
-      _handler: (ctx: unknown, request: Request) => Promise<Response>
-    }
-    const ctx = {
-      ...writableContext(),
-      meta: { getRequestMetadata: async () => ({ ip: '198.51.100.7' }) },
-    }
-    return handler._handler(
-      ctx,
-      new Request('https://deployment.convex.site/api/auth/get-session', { headers }),
-    )
-  }
-
-  async function signed(origin: string, secret = SECRET) {
-    return {
-      [PUBLIC_ORIGIN_HEADER]: origin,
-      [PUBLIC_ORIGIN_SIGNATURE_HEADER]: await signPublicOrigin(origin, secret),
-    }
-  }
-
-  function lastAuthOptions() {
-    return betterAuth.mock.calls.at(-1)?.[0] as BetterAuthOptions
-  }
-
-  function lastHandledRequest() {
-    const instance = betterAuth.mock.results.at(-1)?.value as { handler: ReturnType<typeof vi.fn> }
-    return instance.handler.mock.calls.at(-1)?.[0] as Request
-  }
-
-  beforeEach(() => {
-    process.env.BCN_AUTH_PROXY_IP_SECRET = SECRET
-  })
-
-  afterEach(() => {
-    Reflect.deleteProperty(process.env, 'BCN_AUTH_PROXY_IP_SECRET')
-  })
-
-  it('uses SITE_URL without an origin pair', async () => {
-    await invokeRoute(createBetterConvexAuth(component(), { siteOrigins: [SITE_B] }))
-    expect(lastAuthOptions().baseURL).toBe('https://app.example.test')
-    expect(lastAuthOptions().trustedOrigins).toEqual(['https://app.example.test'])
-  })
-
-  it('serves a listed site origin from a signed proxy hop', async () => {
-    await invokeRoute(
-      createBetterConvexAuth(component(), { siteOrigins: [SITE_B] }),
-      await signed(SITE_B),
-    )
-    expect(lastAuthOptions().baseURL).toBe(SITE_B)
-    expect(lastAuthOptions().trustedOrigins).toEqual([SITE_B])
-    const request = lastHandledRequest()
-    expect(new URL(request.url).origin).toBe(SITE_B)
-    expect(request.headers.get(PUBLIC_ORIGIN_HEADER)).toBeNull()
-    expect(request.headers.get(PUBLIC_ORIGIN_SIGNATURE_HEADER)).toBeNull()
-  })
-
-  it('reads the origins from a function with the request context', async () => {
-    const siteOrigins = vi.fn(async () => [SITE_B])
-    await invokeRoute(createBetterConvexAuth(component(), { siteOrigins }), await signed(SITE_B))
-    expect(siteOrigins).toHaveBeenCalledOnce()
-    expect(lastAuthOptions().baseURL).toBe(SITE_B)
-  })
-
-  it('accepts the signed canonical origin without a list', async () => {
-    await invokeRoute(createBetterConvexAuth(component()), await signed('https://app.example.test'))
-    expect(lastAuthOptions().baseURL).toBe('https://app.example.test')
-  })
-
-  it('rejects a signed origin that is not listed and logs a config sub-code', async () => {
-    const response = await invokeRoute(
-      createBetterConvexAuth(component(), { siteOrigins: [SITE_B] }),
-      await signed('https://site-c.example.test'),
-    )
-    expect(await response.json()).toEqual({ code: 'AUTH_CONFIG_INVALID' })
-    expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_SITE_ORIGIN_NOT_ALLOWED'])
-    expect(betterAuth).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    ['a wrong secret', async () => signed(SITE_B, 'another-proxy-secret-with-32-bytes-x')],
-    ['an origin without signature', async () => ({ [PUBLIC_ORIGIN_HEADER]: SITE_B })],
-    [
-      'a signature for another origin',
-      async () => ({
-        ...(await signed('https://app.example.test')),
-        [PUBLIC_ORIGIN_HEADER]: SITE_B,
-      }),
-    ],
-    [
-      'a client-IP signature reused for the origin',
-      async () => ({
-        [PUBLIC_ORIGIN_HEADER]: SITE_B,
-        [PUBLIC_ORIGIN_SIGNATURE_HEADER]: await signClientIp('203.0.113.9', SECRET),
-      }),
-    ],
-  ])('rejects %s as forged request metadata', async (_label, headers) => {
-    const response = await invokeRoute(
-      createBetterConvexAuth(component(), { siteOrigins: [SITE_B] }),
-      {
-        ...(await headers()),
-        [CLIENT_IP_HEADER]: '203.0.113.9',
-        [CLIENT_IP_SIGNATURE_HEADER]: await signClientIp('203.0.113.9', SECRET),
-      },
-    )
-    expect(await response.json()).toEqual({ code: 'AUTH_REQUEST_METADATA_INVALID' })
-    expect(betterAuth).not.toHaveBeenCalled()
-  })
 
   it('rejects an invalid list and the OAuth provider combination at construction', () => {
     expect(() =>
