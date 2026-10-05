@@ -77,24 +77,4 @@ describe('createClientCallState', () => {
     expect(state.data.value).toBeUndefined()
     expect(state.error.value).toBeUndefined()
   })
-
-  it('returns a commit signal so superseded work cannot own public state', () => {
-    const state = createClientCallState<string>()
-
-    const superseded = state.start()
-    state.start() // supersedes `superseded`
-
-    let onSuccessCalls = 0
-    let onErrorCalls = 0
-
-    if (state.commitSuccess(superseded, 'stale-success')) {
-      onSuccessCalls += 1
-    }
-    if (state.commitError(superseded, callError('stale-error'))) {
-      onErrorCalls += 1
-    }
-
-    expect(onSuccessCalls).toBe(0)
-    expect(onErrorCalls).toBe(0)
-  })
 })

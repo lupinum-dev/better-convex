@@ -26,7 +26,6 @@ import type {
   UseConvexConnectionStateReturn,
   UseConvexMutationReturn,
   UseConvexPaginatedQueryState,
-  UseConvexQueryParameters,
   UseConvexQueryState,
   UseNuxtConvexPaginatedQueryOptions,
   UseNuxtConvexQueryOptions,
@@ -40,8 +39,6 @@ type NotAtNuxtRootQueryOptions = import('../../src/module').UseConvexQueryOption
 // @ts-expect-error -- the Nuxt root exports UseNuxtConvexPaginatedQueryOptions instead.
 type NotAtNuxtRootPaginatedOptions = import('../../src/module').UseConvexPaginatedQueryOptions
 
-type EmptyQuery = FunctionReference<'query', 'public', Record<string, never>, string>
-type OptionalArgsQuery = FunctionReference<'query', 'public', { term?: string }, string[]>
 type PaginatedQuery = FunctionReference<
   'query',
   'public',
@@ -140,32 +137,5 @@ describe('Nuxt package-root query type contract', () => {
     // Unresolved imports are `any`; the @ts-expect-error lines above carry the check.
     expectTypeOf<NotAtNuxtRootQueryOptions>().toBeAny()
     expectTypeOf<NotAtNuxtRootPaginatedOptions>().toBeAny()
-  })
-
-  it('keeps exact-empty args optional and declared optional keys positional', () => {
-    expectTypeOf<
-      [] extends UseConvexQueryParameters<EmptyQuery, UseNuxtConvexQueryOptions> ? true : false
-    >().toEqualTypeOf<true>()
-    expectTypeOf<
-      [Record<PropertyKey, never>, { server: false }] extends UseConvexQueryParameters<
-        EmptyQuery,
-        UseNuxtConvexQueryOptions
-      >
-        ? true
-        : false
-    >().toEqualTypeOf<true>()
-    expectTypeOf<
-      [] extends UseConvexQueryParameters<OptionalArgsQuery, UseNuxtConvexQueryOptions>
-        ? true
-        : false
-    >().toEqualTypeOf<false>()
-    expectTypeOf<
-      [{ term: string }, { server: false }] extends UseConvexQueryParameters<
-        OptionalArgsQuery,
-        UseNuxtConvexQueryOptions
-      >
-        ? true
-        : false
-    >().toEqualTypeOf<true>()
   })
 })

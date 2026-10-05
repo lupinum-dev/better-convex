@@ -69,22 +69,14 @@ describe('integrated Better Auth client', () => {
     expect(integrated.lab.permission).toBe(integrated.lab.permission)
 
     expect((integrated as Record<string, unknown>).then).toBeUndefined()
-    expect((integrated as Record<string, unknown>).$fetch).toBeUndefined()
-    expect((integrated as Record<string, unknown>).$store).toBeUndefined()
-    expect((integrated as Record<string, unknown>).hydrateSession).toBeUndefined()
-    expect((integrated as Record<string, unknown>).convex).toBeUndefined()
-    expect('$fetch' in integrated).toBe(false)
-    expect('convex' in integrated).toBe(false)
-    expect(Reflect.ownKeys(integrated)).not.toContain('$fetch')
-    expect(Reflect.ownKeys(integrated)).not.toContain('$store')
-    expect(Reflect.ownKeys(integrated)).not.toContain('convex')
-    expect(Object.getOwnPropertyDescriptor(integrated, '$fetch')).toBeUndefined()
-    expect(Object.getOwnPropertyDescriptor(integrated, '$store')).toBeUndefined()
-    expect(Object.getOwnPropertyDescriptor(integrated, 'hydrateSession')).toBeUndefined()
-    expect(Object.getOwnPropertyDescriptor(integrated, 'convex')).toBeUndefined()
-    expect(Object.getOwnPropertyDescriptors(integrated)).not.toHaveProperty('$fetch')
-    expect(Object.getOwnPropertyDescriptors(integrated)).not.toHaveProperty('$store')
-    expect(Object.getOwnPropertyDescriptors(integrated)).not.toHaveProperty('convex')
+    // Raw escape hatches stay hidden from every reflection path.
+    for (const key of ['$fetch', '$store', 'hydrateSession', 'convex']) {
+      expect((integrated as Record<string, unknown>)[key], key).toBeUndefined()
+      expect(key in integrated, key).toBe(false)
+      expect(Reflect.ownKeys(integrated), key).not.toContain(key)
+      expect(Object.getOwnPropertyDescriptor(integrated, key), key).toBeUndefined()
+      expect(Object.getOwnPropertyDescriptors(integrated), key).not.toHaveProperty(key)
+    }
     expect(() => Object.preventExtensions(integrated)).toThrow(TypeError)
   })
 

@@ -54,10 +54,11 @@ function event(method = 'GET', headers: Record<string, string> = {}) {
   }
 }
 
-async function handler() {
-  return (await import('../../src/runtime/server/api/auth/[...]')).default as unknown as (
+async function proxy(input: ReturnType<typeof event>) {
+  const handler = (await import('../../src/runtime/server/api/auth/[...]')).default as unknown as (
     input: ReturnType<typeof event>,
   ) => Promise<unknown>
+  return handler(input)
 }
 
 describe('hosted OAuth navigation response negotiation', () => {
@@ -93,9 +94,7 @@ describe('hosted OAuth navigation response negotiation', () => {
       const request = event('GET', { 'sec-fetch-dest': destination })
       const originalHeaders = [...request.headers]
 
-      await (
-        await handler()
-      )(request)
+      await proxy(request)
 
       expect(upstream).toHaveBeenCalledOnce()
       expect(upstream.mock.calls[0]?.[1]).toMatchObject({
@@ -125,9 +124,7 @@ describe('hosted OAuth navigation response negotiation', () => {
     mocks.requestUrl.mockReturnValue(new URL(`https://app.example.test/api/auth${path}`))
     const upstream = vi.fn(async () => Response.json({ redirect: true }))
     vi.stubGlobal('fetch', upstream)
-    await (
-      await handler()
-    )(event(method, headers))
+    await proxy(event(method, headers))
     expect(upstream).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ mode: 'cors', redirect: 'manual' }),
@@ -146,7 +143,7 @@ describe('hosted OAuth navigation response negotiation', () => {
       const upstream = vi.fn()
       vi.stubGlobal('fetch', upstream)
       await expect(
-        (await handler())(event(method, { origin: 'https://evil.example.test' })),
+        proxy(event(method, { origin: 'https://evil.example.test' })),
       ).rejects.toMatchObject({
         statusCode: 403,
         data: { code: 'BCN_AUTH_PROXY_ORIGIN_BLOCKED' },
@@ -168,9 +165,7 @@ describe('hosted OAuth navigation response negotiation', () => {
     const upstream = vi.fn(async () => Response.json({ error: 'invalid_request' }, { status: 400 }))
     vi.stubGlobal('fetch', upstream)
     const request = event()
-    await (
-      await handler()
-    )(request)
+    await proxy(request)
     expect(upstream).toHaveBeenCalledWith(
       `https://demo.convex.site/api/auth/oauth2/authorize?${query}`,
       expect.objectContaining({ mode: 'same-origin', redirect: 'manual' }),

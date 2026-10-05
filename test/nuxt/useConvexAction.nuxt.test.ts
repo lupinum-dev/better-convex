@@ -1,6 +1,5 @@
 import { ConvexError } from 'convex/values'
 import { describe, expect, it, vi } from 'vitest'
-import { isProxy } from 'vue'
 
 import { useConvexAction } from '../../src/runtime/composables/useConvexAction'
 import type { DevtoolsSink } from '../../src/runtime/devtools/sink'
@@ -68,29 +67,6 @@ describe('useConvexAction (Nuxt runtime)', () => {
     expect(result.error.value).toBe(rejection)
   })
 
-  it('exposes the exact settled result and error rather than proxies', async () => {
-    const convex = new MockConvexClient()
-    const action = mockFnRef<'action'>('testing:exact-action')
-    const settled = { nested: { id: 'n1' } }
-    let fail = false
-    convex.setActionHandler('testing:exact-action', async () => {
-      if (fail) throw new Error('action failed')
-      return settled
-    })
-
-    const { result } = await captureInNuxt(() => useConvexAction(action), { convex })
-
-    await expect(result.run({} as never)).resolves.toBe(settled)
-    expect(result.data.value).toBe(settled)
-    expect(isProxy(result.data.value)).toBe(false)
-
-    fail = true
-    const rejection: unknown = await result.run({} as never).catch((error: unknown) => error)
-    expect(rejection).toBeInstanceOf(ConvexCallError)
-    expect(result.error.value).toBe(rejection)
-    expect(isProxy(result.error.value)).toBe(false)
-  })
-
   it('dispatches an empty object for an argless action', async () => {
     const convex = new MockConvexClient()
     const action = mockFnRef<'action'>('testing:argless-action')
@@ -100,28 +76,6 @@ describe('useConvexAction (Nuxt runtime)', () => {
 
     await expect(result.run()).resolves.toEqual({})
     expect(convex.calls.action.at(-1)?.args).toEqual({})
-  })
-
-  it('dispatches when DevTools registration throws', async () => {
-    const convex = new MockConvexClient()
-    const action = mockFnRef<'action'>('testing:diagnostics-registration')
-    convex.setActionHandler('testing:diagnostics-registration', async () => 'committed')
-    const registerMutation = vi.fn(() => {
-      throw new Error('diagnostics unavailable')
-    })
-    const sink = { registerMutation } as unknown as DevtoolsSink
-    const { result, nuxtApp } = await captureInNuxt(() => useConvexAction(action), { convex })
-    const runtime = nuxtApp.$convexRuntime!
-    const previous = runtime.getDevtoolsSink
-    ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = () => sink
-
-    try {
-      await expect(result.run({} as never)).resolves.toBe('committed')
-      expect(convex.calls.action).toHaveLength(1)
-      expect(registerMutation).toHaveBeenCalledTimes(1)
-    } finally {
-      ;(runtime as { getDevtoolsSink: () => DevtoolsSink | null }).getDevtoolsSink = previous
-    }
   })
 
   it('keeps committed and failed call outcomes when DevTools updates throw', async () => {

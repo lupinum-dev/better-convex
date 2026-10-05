@@ -79,18 +79,18 @@ describe.sequential('better-convex init', () => {
     await rm(root, { recursive: true, force: true })
   })
 
+  const read = (file: string) => readFile(join(root, file), 'utf8')
+  const expectMissing = (file: string) =>
+    expect(read(file)).rejects.toMatchObject({ code: 'ENOENT' })
+
   it('creates the reviewed files and provisions development without logging secrets', async () => {
     const harness = createHarness()
 
     await expect(runInitCommand(['--typed-client'], harness.dependencies)).resolves.toBe(0)
 
-    expect(await readFile(join(root, 'convex/auth.ts'), 'utf8')).toContain('createBetterConvexAuth')
-    expect(await readFile(join(root, 'app/convex-auth.ts'), 'utf8')).toContain(
-      'defineConvexAuthClient',
-    )
-    expect(await readFile(join(root, 'convex/betterAuth/schema.ts'), 'utf8')).toBe(
-      'generated schema\n',
-    )
+    expect(await read('convex/auth.ts')).toContain('createBetterConvexAuth')
+    expect(await read('app/convex-auth.ts')).toContain('defineConvexAuthClient')
+    expect(await read('convex/betterAuth/schema.ts')).toBe('generated schema\n')
     expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
     expect(harness.environment.get('BCN_AUTH_INITIALIZED')).toBe('1')
     expect(harness.convexCalls.some(({ args }) => args[1] === 'auth:ensureSigningKey')).toBe(true)
@@ -107,7 +107,7 @@ describe.sequential('better-convex init', () => {
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
-    expect(await readFile(join(root, '.env.local'), 'utf8')).toBe(
+    expect(await read('.env.local')).toBe(
       'CONVEX_URL=https://fixture.convex.cloud\nSITE_URL=http://localhost:4173\nBCN_AUTH_PROXY_IP_SECRET=SENTINEL_SECRET_DO_NOT_LOG\n',
     )
     expect(harness.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBe('SENTINEL_SECRET_DO_NOT_LOG')
@@ -122,7 +122,7 @@ describe.sequential('better-convex init', () => {
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
-    expect(await readFile(join(root, '.env.local'), 'utf8')).toBe(local)
+    expect(await read('.env.local')).toBe(local)
     expect(harness.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBe('existing-local-secret')
   })
 
@@ -145,7 +145,7 @@ describe.sequential('better-convex init', () => {
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
-    expect(await readFile(join(root, '.env.local'), 'utf8')).not.toContain('SITE_URL=')
+    expect(await read('.env.local')).not.toContain('SITE_URL=')
     expect(harness.logs.join('\n')).toContain('SITE_URL is set in Convex but not in .env.local')
   })
 
@@ -156,7 +156,7 @@ describe.sequential('better-convex init', () => {
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
-    expect(await readFile(join(root, '.env.local'), 'utf8')).toContain(local)
+    expect(await read('.env.local')).toContain(local)
     expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
     expect(harness.logs.join('\n')).toContain('It must resolve to http://localhost:4173')
   })
@@ -170,9 +170,7 @@ describe.sequential('better-convex init', () => {
     )
 
     expect(harness.environment.has('SITE_URL')).toBe(false)
-    expect(await readFile(join(root, '.env.local'), 'utf8')).toBe(
-      'SITE_URL=http://localhost:3000\n',
-    )
+    expect(await read('.env.local')).toBe('SITE_URL=http://localhost:3000\n')
   })
 
   it('writes nothing when the file plan is cancelled', async () => {
@@ -180,9 +178,7 @@ describe.sequential('better-convex init', () => {
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
-    await expect(readFile(join(root, 'convex/auth.ts'), 'utf8')).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
+    await expectMissing('convex/auth.ts')
     expect(harness.convexCalls).toHaveLength(0)
   })
 
@@ -191,10 +187,8 @@ describe.sequential('better-convex init', () => {
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
-    expect(await readFile(join(root, 'convex/auth.ts'), 'utf8')).toContain('createBetterConvexAuth')
-    await expect(readFile(join(root, 'convex/betterAuth/schema.ts'), 'utf8')).rejects.toMatchObject(
-      { code: 'ENOENT' },
-    )
+    expect(await read('convex/auth.ts')).toContain('createBetterConvexAuth')
+    await expectMissing('convex/betterAuth/schema.ts')
     expect(harness.convexCalls).toHaveLength(0)
   })
 
@@ -209,9 +203,7 @@ describe.sequential('better-convex init', () => {
         'incomplete generated auth schema',
       )
 
-      await expect(readFile(join(root, 'convex/auth.ts'), 'utf8')).rejects.toMatchObject({
-        code: 'ENOENT',
-      })
+      await expectMissing('convex/auth.ts')
       expect(harness.convexCalls).toHaveLength(0)
     },
   )
@@ -231,13 +223,13 @@ describe.sequential('better-convex init', () => {
   it('reruns without rewriting files or reprovisioning completed external state', async () => {
     const harness = createHarness()
     await runInitCommand([], harness.dependencies)
-    const authBefore = await readFile(join(root, 'convex/auth.ts'), 'utf8')
+    const authBefore = await read('convex/auth.ts')
     harness.confirmations.length = 0
     const rerun = { ...harness.dependencies, confirm: async () => true }
 
     await expect(runInitCommand([], rerun)).resolves.toBe(0)
 
-    expect(await readFile(join(root, 'convex/auth.ts'), 'utf8')).toBe(authBefore)
+    expect(await read('convex/auth.ts')).toBe(authBefore)
     expect(harness.logs.at(-1)).toContain('already provisioned')
   })
 
@@ -248,9 +240,7 @@ describe.sequential('better-convex init', () => {
 
     await expect(runInitCommand([], harness.dependencies)).rejects.toThrow('convex/auth.ts')
 
-    await expect(readFile(join(root, 'convex/http.ts'), 'utf8')).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
+    await expectMissing('convex/http.ts')
     expect(harness.convexCalls).toHaveLength(0)
   })
 
@@ -307,8 +297,6 @@ describe.sequential('better-convex init', () => {
         randomSecret: () => 'fixture-generated-secret-never-real',
       }),
     ).rejects.toThrow('refuses production or unclassified authority')
-    await expect(readFile(join(root, 'production-command-started'), 'utf8')).rejects.toMatchObject({
-      code: 'ENOENT',
-    })
+    await expectMissing('production-command-started')
   })
 })

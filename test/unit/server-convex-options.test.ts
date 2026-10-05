@@ -85,30 +85,13 @@ describe('validateServerConvexOptions — rejected combinations', () => {
 })
 
 describe('validateServerConvexOptions — empty and control-character values', () => {
-  it('rejects an empty authToken', () => {
-    expect(() => validateServerConvexOptions({ authToken: '' })).toThrow(
-      ServerConvexValidationError,
-    )
-  })
-
-  it('rejects an empty credential value', () => {
-    expect(() =>
-      validateServerConvexOptions({ credential: { type: 'cookie', value: '' } }),
-    ).toThrow(ServerConvexValidationError)
-  })
-
-  it('rejects a control-character authToken (CRLF)', () => {
-    expect(() =>
-      validateServerConvexOptions({ authToken: `jwt${String.fromCharCode(13, 10)}x` }),
-    ).toThrow(ServerConvexValidationError)
-  })
-
-  it('rejects a control-character credential value (bare LF)', () => {
-    expect(() =>
-      validateServerConvexOptions({
-        credential: { type: 'cookie', value: `c=1${String.fromCharCode(10)}evil` },
-      }),
-    ).toThrow(ServerConvexValidationError)
+  it.each([
+    ['an empty authToken', { authToken: '' }],
+    ['an empty credential value', { credential: { type: 'cookie', value: '' } }],
+    ['a CRLF authToken', { authToken: 'jwt\r\nx' }],
+    ['a bare-LF credential value', { credential: { type: 'cookie', value: 'c=1\nevil' } }],
+  ] as const)('rejects %s', (_name, options) => {
+    expect(() => validateServerConvexOptions(options)).toThrow(ServerConvexValidationError)
   })
 
   it('rejects a malformed credential shape', () => {

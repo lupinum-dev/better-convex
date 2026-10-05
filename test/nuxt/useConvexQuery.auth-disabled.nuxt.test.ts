@@ -1,13 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { createConvexQueryState } from '../../src/runtime/composables/useConvexQuery'
 import { makeMockOwner } from '../helpers/mock-client-owner'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
-
-afterEach(() => {
-  vi.clearAllMocks()
-})
 
 // A no-auth build never installs the auth engine. Optional queries execute
 // anonymously without any loading state, and required queries stay idle. This
@@ -54,17 +50,19 @@ describe('useConvexQuery under an auth-disabled build ', () => {
     expect(primary.activeListenerCount(query, {})).toBe(0)
   })
 
-  it('none still executes anonymously (auth-disabled builds reuse the already-anonymous primary)', async () => {
+  it('none reuses the already-anonymous primary, not the anonymous client', async () => {
     const primary = new MockConvexClient()
+    const anon = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:disabled-none')
 
     const { result, flush } = await captureInNuxt(
       () => createConvexQueryState(query, {}, { auth: 'none' }).resultData,
-      { owner: makeMockOwner(primary), convexConfig: { auth: false } },
+      { owner: makeMockOwner(primary, anon), convexConfig: { auth: false } },
     )
 
     await flush()
     expect(primary.activeListenerCount(query, {})).toBe(1)
+    expect(anon.calls.onUpdate).toHaveLength(0)
     primary.emitQueryResult(query, {}, ['x'])
     await flush()
     expect(result.status.value).toBe('success')

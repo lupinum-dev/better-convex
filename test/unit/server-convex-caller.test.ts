@@ -1,3 +1,5 @@
+import { inspect } from 'node:util'
+
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import type { H3Event } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -169,24 +171,6 @@ describe('serverConvex caller-scoped invariants', () => {
     expect(mocks.setAuthCalls).toEqual([USER_JWT])
   })
 
-  it('constructs ConvexHttpClient with logger:false and a fetch function', async () => {
-    mocks.exchangeMock.mockResolvedValue({
-      token: USER_JWT,
-      status: 200,
-      error: null,
-    })
-    mocks.queryMock.mockResolvedValue(null)
-
-    await serverConvex(createEvent(AUTH_COOKIE)).query(queryRef, {})
-
-    const options = mocks.ctorCalls[0]?.options as {
-      logger: unknown
-      fetch: unknown
-    }
-    expect(options.logger).toBe(false)
-    expect(typeof options.fetch).toBe('function')
-  })
-
   it('binds Convex response consumption to the incoming request abort signal', async () => {
     const request = new AbortController()
     let upstreamSignal: AbortSignal | undefined
@@ -287,15 +271,15 @@ describe('serverConvex caller-scoped invariants', () => {
     expect(mocks.setAuthCalls).toEqual(['explicit.jwt'])
   })
 
-  it.each(['required', 'optional', 'none'] as const)(
-    'rejects an explicit token combined with auth=%s before any network access',
-    (auth) => {
-      expect(() =>
-        // @ts-expect-error explicit tokens already imply required auth
-        serverConvex(createEvent(), { authToken: 'x', auth }),
-      ).toThrow(ServerConvexValidationError)
-    },
-  )
+  // Every rejected option combination is listed in server-convex-options.test.ts.
+  it('validates options before any network access', () => {
+    expect(() =>
+      // @ts-expect-error explicit tokens already imply required auth
+      serverConvex(createEvent(), { authToken: 'x', auth: 'none' }),
+    ).toThrow(ServerConvexValidationError)
+    expect(mocks.exchangeMock).not.toHaveBeenCalled()
+    expect(mocks.ctorCalls).toHaveLength(0)
+  })
 
   it('forwards omitted args for exact no-argument query, mutation, and action references', async () => {
     mocks.queryMock.mockResolvedValue('query')
@@ -418,18 +402,11 @@ describe('serverConvex auth-mode resolution', () => {
 describe('serverConvex boundary error sanitization', () => {
   const SENTINEL = 'SUPER_SECRET_UPSTREAM_BODY_9f8e7d'
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   it.each(serverOperations)(
-    'keeps a sentinel upstream body out of the public %s error, JSON, and logs',
+    'keeps a sentinel upstream body out of the public %s error, JSON, and inspect output',
     async (_name, getMock, invoke) => {
       // Simulate ConvexHttpClient placing a raw non-OK upstream body in Error.message.
       getMock().mockRejectedValue(new Error(SENTINEL))
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       let caught: unknown
       try {
@@ -442,16 +419,8 @@ describe('serverConvex boundary error sanitization', () => {
       const err = caught as ConvexCallError
       expect(err.kind).toBe('unknown')
       expect(err.message).toBe('Unknown Convex error')
-      expect(err.message).not.toContain(SENTINEL)
-      expect(JSON.stringify(err.toJSON())).not.toContain(SENTINEL)
       expect(JSON.stringify(err)).not.toContain(SENTINEL)
-
-      // Logging the public error (server-side console) must not leak the body.
-      console.log(err)
-      console.error(err)
-      const captured = [...logSpy.mock.calls, ...errorSpy.mock.calls, ...warnSpy.mock.calls]
-      const serialized = captured.map((call) => JSON.stringify(call)).join('|')
-      expect(serialized).not.toContain(SENTINEL)
+      expect(inspect(err)).not.toContain(SENTINEL)
     },
   )
 
@@ -489,6 +458,25 @@ describe('serverConvex boundary error sanitization', () => {
 })
 
 describe('SSR auth response headers (Vary/Cache-Control)', () => {
+  function applyHeaders(
+    initial: Array<[string, string]>,
+    options: Parameters<typeof applyConvexAuthSsrHeaders>[1],
+  ) {
+    const headers = new Map(initial)
+    const event = {
+      node: {
+        res: {
+          getHeader: (name: string) => headers.get(name),
+          getHeaders: () => Object.fromEntries(headers),
+          removeHeader: (name: string) => headers.delete(name),
+          setHeader: (name: string, value: string) => headers.set(name, value),
+        },
+      },
+    } as unknown as H3Event
+    applyConvexAuthSsrHeaders(event, options)
+    return Object.fromEntries(headers)
+  }
+
   it('merges Cookie into Vary while preserving existing values', () => {
     expect(mergeVaryCookie(undefined)).toBe('Cookie')
     expect(mergeVaryCookie('Accept-Encoding')).toBe('Accept-Encoding, Cookie')
@@ -499,102 +487,36 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
     expect(mergeVaryCookie('Accept-Encoding, *')).toBe('*')
   })
 
-  it('appends Vary: Cookie and sets private/no-store for a token-bearing cookie response', () => {
-    const headers = new Map<string, string>([['Vary', 'Accept-Encoding']])
-    const event = {
-      node: {
-        res: {
-          getHeader: (name: string) => headers.get(name),
-          getHeaders: () => Object.fromEntries(headers),
-          removeHeader: (name: string) => headers.delete(name),
-          setHeader: (name: string, value: string) => headers.set(name, value),
-        },
-      },
-    } as unknown as H3Event
-
-    applyConvexAuthSsrHeaders(event, {
-      hasBetterAuthCookie: true,
-      rendersUser: true,
-    })
-
-    expect(headers.get('Vary')).toBe('Accept-Encoding, Cookie')
-    expect(headers.get('Cache-Control')).toBe('private, no-store')
-  })
-
   it.each([
-    { hasBetterAuthCookie: true, rendersUser: false },
-    { hasBetterAuthCookie: false, rendersUser: true },
-  ])('sets private/no-store for either private auth signal: %o', (options) => {
-    const headers = new Map<string, string>()
-    const event = {
-      node: {
-        res: {
-          getHeader: (name: string) => headers.get(name),
-          getHeaders: () => Object.fromEntries(headers),
-          removeHeader: (name: string) => headers.delete(name),
-          setHeader: (name: string, value: string) => headers.set(name, value),
-        },
-      },
-    } as unknown as H3Event
-
-    applyConvexAuthSsrHeaders(event, {
-      ...options,
-    })
-
-    expect(headers.get('Vary')).toBe('Cookie')
-    expect(headers.get('Cache-Control')).toBe('private, no-store')
-  })
-
-  it('does not set private/no-store when neither private auth signal exists', () => {
-    const headers = new Map<string, string>()
-    const event = {
-      node: {
-        res: {
-          getHeader: (name: string) => headers.get(name),
-          getHeaders: () => Object.fromEntries(headers),
-          removeHeader: (name: string) => headers.delete(name),
-          setHeader: (name: string, value: string) => headers.set(name, value),
-        },
-      },
-    } as unknown as H3Event
-
-    applyConvexAuthSsrHeaders(event, {
-      hasBetterAuthCookie: false,
-      rendersUser: false,
-    })
-
-    expect(headers.get('Vary')).toBe('Cookie')
-    expect(headers.has('Cache-Control')).toBe(false)
-  })
+    [true, true, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
+    [true, false, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
+    [false, true, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
+    [false, false, { Vary: 'Accept-Encoding, Cookie' }],
+  ])(
+    'cookie=%s rendersUser=%s appends Vary: Cookie and is private only with an auth signal',
+    (hasBetterAuthCookie, rendersUser, expected) => {
+      expect(
+        applyHeaders([['Vary', 'Accept-Encoding']], { hasBetterAuthCookie, rendersUser }),
+      ).toEqual(expected)
+    },
+  )
 
   it('removes shared-cache overrides before marking a private auth response no-store', () => {
-    const headers = new Map<string, string>([
-      ['Surrogate-Control', 'max-age=86400'],
-      ['CDN-Cache-Control', 'public, max-age=86400'],
-      ['Cloudflare-CDN-Cache-Control', 'public, s-maxage=86400'],
-      ['Vercel-CDN-Cache-Control', 'public, s-maxage=86400'],
-      ['Netlify-CDN-Cache-Control', 'public, durable'],
-      ['Edge-Control', 'cache-maxage=1d'],
-      ['X-Accel-Expires', '86400'],
-      ['Content-Language', 'en'],
-    ])
-    const event = {
-      node: {
-        res: {
-          getHeader: (name: string) => headers.get(name),
-          getHeaders: () => Object.fromEntries(headers),
-          removeHeader: (name: string) => headers.delete(name),
-          setHeader: (name: string, value: string) => headers.set(name, value),
-        },
-      },
-    } as unknown as H3Event
-
-    applyConvexAuthSsrHeaders(event, {
-      hasBetterAuthCookie: true,
-      rendersUser: false,
-    })
-
-    expect(Object.fromEntries(headers)).toEqual({
+    expect(
+      applyHeaders(
+        [
+          ['Surrogate-Control', 'max-age=86400'],
+          ['CDN-Cache-Control', 'public, max-age=86400'],
+          ['Cloudflare-CDN-Cache-Control', 'public, s-maxage=86400'],
+          ['Vercel-CDN-Cache-Control', 'public, s-maxage=86400'],
+          ['Netlify-CDN-Cache-Control', 'public, durable'],
+          ['Edge-Control', 'cache-maxage=1d'],
+          ['X-Accel-Expires', '86400'],
+          ['Content-Language', 'en'],
+        ],
+        { hasBetterAuthCookie: true, rendersUser: false },
+      ),
+    ).toEqual({
       'Content-Language': 'en',
       Vary: 'Cookie',
       'Cache-Control': 'private, no-store',

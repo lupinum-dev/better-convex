@@ -21,6 +21,8 @@ export const HOSTILE_CALLBACK_PATHS = [
   '/callback/%0d%0aheader',
   '/callback/%',
   '//callback/apple',
+  '/oauth2/callback/apple',
+  '/plugin/callback/apple',
 ] as const
 
 export const PROXY_CONTROL_HEADERS = [

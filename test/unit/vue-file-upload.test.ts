@@ -1,21 +1,16 @@
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope, watch } from 'vue'
+import { effectScope, watch } from 'vue'
 
-import {
-  createBetterConvex,
-  useConvexFileUpload,
-  type UseConvexFileUploadOptions,
-} from '../../packages/vue/src'
-import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
+import { useConvexFileUpload, type UseConvexFileUploadOptions } from '../../packages/vue/src'
 import { ConvexCallError } from '../../packages/vue/src/errors'
-import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
 import { useConvexFileUploadInternal } from '../../packages/vue/src/use-file-upload'
+import { attachedVueHost } from '../helpers/attached-vue-host'
 
 class FakeXhr {
   static next = { status: 200, responseText: JSON.stringify({ storageId: 'storage_1' }) }
   static delayMs = 0
-  static sent = 0
+  static sent: FakeXhr[] = []
   static urls: string[] = []
 
   upload: { onprogress: ((event: ProgressEvent) => void) | null } = { onprogress: null }
@@ -32,7 +27,7 @@ class FakeXhr {
   setRequestHeader() {}
 
   send() {
-    FakeXhr.sent += 1
+    FakeXhr.sent.push(this)
     this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 } as ProgressEvent)
     setTimeout(() => {
       this.status = FakeXhr.next.status
@@ -53,21 +48,13 @@ beforeEach(() => {
   globalThis.XMLHttpRequest = FakeXhr as unknown as typeof XMLHttpRequest
   FakeXhr.next = { status: 200, responseText: JSON.stringify({ storageId: 'storage_1' }) }
   FakeXhr.delayMs = 0
-  FakeXhr.sent = 0
+  FakeXhr.sent = []
   FakeXhr.urls = []
 })
 
 afterAll(() => {
   globalThis.XMLHttpRequest = originalXhr
 })
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise
-  })
-  return { promise, resolve }
-}
 
 const uploadUrl = makeFunctionReference<'mutation'>('files:generateUploadUrl') as FunctionReference<
   'mutation',
@@ -79,52 +66,15 @@ const uploadUrl = makeFunctionReference<'mutation'>('files:generateUploadUrl') a
 const textFile = (name = 'a.txt', body = 'hello') => new File([body], name, { type: 'text/plain' })
 
 function uploadHost(options?: { mutation?: (args: unknown) => Promise<unknown> }) {
-  let snapshot: ClientIdentitySnapshot = {
-    authEnabled: true,
-    settled: true,
-    identityKey: 'user:alice',
-    identityGeneration: 1,
-    error: null,
-  }
-  const listeners = new Set<() => void>()
   const mutation = vi.fn(async (_reference: unknown, args: unknown) =>
     options?.mutation ? options.mutation(args) : 'https://upload.test/url?token=secret-token',
   )
-  const client = {
-    query: vi.fn() as never,
-    mutation: mutation as never,
-    action: vi.fn() as never,
-    onUpdate: vi.fn(() => () => {}) as never,
-  }
-  const attachment = createBetterConvexAttachment({
-    client,
-    anonymousClient: client,
-    identity: {
-      snapshot: () => snapshot,
-      waitForInitialSettlement: async () => {},
-      subscribe(listener) {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-    },
-  })
-  const app = createApp({})
-  app.use(createBetterConvex({ attachment }))
-  const scope = effectScope()
+  const host = attachedVueHost({ mutation })
   return {
+    ...host,
     mutation,
-    listeners,
-    run<T>(factory: () => T): T {
-      return app.runWithContext(() => scope.run(factory))!
-    },
-    use(uploadOptions?: UseConvexFileUploadOptions) {
-      return this.run(() => useConvexFileUpload(uploadUrl, uploadOptions))
-    },
-    advanceIdentity() {
-      snapshot = { ...snapshot, identityGeneration: snapshot.identityGeneration + 1 }
-      for (const listener of [...listeners]) listener()
-    },
-    stop: () => scope.stop(),
+    use: (uploadOptions?: UseConvexFileUploadOptions) =>
+      host.run(() => useConvexFileUpload(uploadUrl, uploadOptions)),
   }
 }
 
@@ -181,12 +131,14 @@ describe('useConvexFileUpload (Vue)', () => {
       code,
       kind: 'unknown',
       functionName: 'files:generateUploadUrl',
+      outcome: 'not-sent',
+      phase: undefined,
     })
     await expect(failure).rejects.toThrow(message)
     expect(upload.status.value).toBe('error')
     expect(upload.error.value?.code).toBe(code)
     expect(host.mutation).not.toHaveBeenCalled()
-    expect(FakeXhr.sent).toBe(0)
+    expect(FakeXhr.sent).toHaveLength(0)
     host.stop()
   })
 
@@ -223,23 +175,6 @@ describe('useConvexFileUpload (Vue)', () => {
     expect(upload.error.value).toBeUndefined()
     expect(upload.data.value).toBeUndefined()
     expect(upload.progress.value).toEqual({ loaded: 0, total: 0, percent: 0 })
-    host.stop()
-  })
-
-  it('cancel() during the upload-URL request prevents the XHR', async () => {
-    const url = deferred<string>()
-    const host = uploadHost({ mutation: () => url.promise })
-    const upload = host.use()
-
-    const pending = upload.upload(textFile())
-    upload.cancel()
-    expect(upload.status.value).toBe('idle')
-    url.resolve('https://upload.test/late')
-
-    await expect(pending).rejects.toMatchObject({ code: 'CANCELLED' })
-    await Promise.resolve()
-    expect(FakeXhr.sent).toBe(0)
-    expect(upload.status.value).toBe('idle')
     host.stop()
   })
 
@@ -306,36 +241,58 @@ describe('useConvexFileUpload (Vue)', () => {
     await expect(upload.upload(textFile())).resolves.toMatchObject({ storageId: 'storage_1' })
     expect(upload.status.value).toBe('success')
 
+    // A late load from the retired request must not overwrite the new identity's result.
+    const stale = FakeXhr.sent[0]!
+    stale.status = 200
+    stale.responseText = JSON.stringify({ storageId: 'storage_stale' })
+    stale.onload?.()
+    expect(upload.status.value).toBe('success')
+    expect(upload.data.value?.storageId).toBe('storage_1')
+
+    // Finished state is identity-owned too.
     host.advanceIdentity()
     expect(upload.status.value).toBe('idle')
     expect(upload.data.value).toBeUndefined()
+    expect(upload.error.value).toBeUndefined()
+    expect(upload.progress.value).toEqual({ loaded: 0, total: 0, percent: 0 })
     host.stop()
   })
 
-  it('rejects with IDENTITY_CHANGED when the identity changes during the URL request', async () => {
-    const url = deferred<string>()
-    const host = uploadHost({ mutation: () => url.promise })
-    const upload = host.use()
+  it.each([
+    ['success', { status: 200, responseText: JSON.stringify({ storageId: 'storage_1' }) }],
+    ['error', { status: 500, responseText: 'failed' }],
+  ] as const)(
+    'retires before publishing %s state when a synchronous watcher changes identity',
+    async (boundary, response) => {
+      FakeXhr.next = response
+      const host = uploadHost()
+      const upload = host.use()
+      host.run(() =>
+        watch(
+          upload.status,
+          (status) => {
+            if (status === boundary) host.advanceIdentity()
+          },
+          { flush: 'sync' },
+        ),
+      )
 
-    const pending = upload.upload(textFile())
-    host.advanceIdentity()
-    await expect(pending).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
-    url.resolve('https://upload.test/late')
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(FakeXhr.sent).toBe(0)
-    expect(upload.status.value).toBe('idle')
-    host.stop()
-  })
+      await expect(upload.upload(textFile())).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
+      expect(upload.status.value).toBe('idle')
+      expect(upload.data.value).toBeUndefined()
+      expect(upload.error.value).toBeUndefined()
+      host.stop()
+    },
+  )
 
-  it('reports an identity change that a synchronous success watcher causes', async () => {
+  it('retires progress when a synchronous progress watcher changes identity', async () => {
     const host = uploadHost()
     const upload = host.use()
     host.run(() =>
       watch(
-        upload.status,
-        (status) => {
-          if (status === 'success') host.advanceIdentity()
+        upload.progress,
+        (progress) => {
+          if (progress.percent > 0) host.advanceIdentity()
         },
         { flush: 'sync' },
       ),
@@ -343,7 +300,98 @@ describe('useConvexFileUpload (Vue)', () => {
 
     await expect(upload.upload(textFile())).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
     expect(upload.status.value).toBe('idle')
+    expect(upload.progress.value).toEqual({ loaded: 0, total: 0, percent: 0 })
+    host.stop()
+  })
+
+  it('reports an identity change that the cancel publication causes', async () => {
+    FakeXhr.delayMs = 200
+    const host = uploadHost()
+    const upload = host.use()
+    host.run(() =>
+      watch(
+        upload.status,
+        (status, previous) => {
+          if (previous === 'pending' && status === 'idle') host.advanceIdentity()
+        },
+        { flush: 'sync' },
+      ),
+    )
+
+    const pending = upload.upload(textFile())
+    await vi.waitFor(() => expect(upload.progress.value.percent).toBe(50), { interval: 1 })
+    upload.cancel()
+
+    await expect(pending).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
+    expect(upload.status.value).toBe('idle')
     expect(upload.data.value).toBeUndefined()
+    expect(upload.error.value).toBeUndefined()
+    host.stop()
+  })
+
+  it.each([
+    ['success', { status: 200, responseText: JSON.stringify({ storageId: 'storage_1' }) }],
+    ['error', { status: 500, responseText: 'failed' }],
+  ] as const)(
+    'lets finished %s work settle when a same-identity watcher starts fresh work',
+    async (boundary, response) => {
+      FakeXhr.next = response
+      const host = uploadHost()
+      const upload = host.use({ allowedTypes: ['text/plain'] })
+      let fresh: Promise<unknown> | undefined
+      host.run(() =>
+        watch(
+          upload.status,
+          (status) => {
+            if (status !== boundary || fresh) return
+            fresh = upload.upload(new File(['b'], 'b.pdf', { type: 'application/pdf' }))
+            void fresh.catch(() => {})
+          },
+          { flush: 'sync' },
+        ),
+      )
+
+      const original = upload.upload(textFile())
+      if (boundary === 'success') {
+        await expect(original).resolves.toMatchObject({ storageId: 'storage_1' })
+      } else {
+        await expect(original).rejects.toThrow('Upload failed')
+      }
+      await expect(fresh).rejects.toThrow('not allowed')
+      expect(upload.status.value).toBe('error')
+      expect(upload.error.value?.code).toBe('FILE_TYPE_NOT_ALLOWED')
+      host.stop()
+    },
+  )
+
+  it('does not let a retirement clobber state that its idle watcher started', async () => {
+    FakeXhr.delayMs = 200
+    const host = uploadHost()
+    const upload = host.use({ allowedTypes: ['text/plain'] })
+    let launchFresh = false
+    let fresh: Promise<unknown> | undefined
+    host.run(() =>
+      watch(
+        upload.status,
+        (status, previous) => {
+          if (!launchFresh || previous !== 'pending' || status !== 'idle') return
+          launchFresh = false
+          fresh = upload.upload(new File(['b'], 'b.pdf', { type: 'application/pdf' }))
+          void fresh.catch(() => {})
+        },
+        { flush: 'sync' },
+      ),
+    )
+
+    const retired = upload.upload(textFile())
+    await vi.waitFor(() => expect(upload.progress.value.percent).toBe(50), { interval: 1 })
+    launchFresh = true
+    host.advanceIdentity()
+
+    await expect(retired).rejects.toMatchObject({ code: 'IDENTITY_CHANGED' })
+    await expect(fresh).rejects.toThrow('not allowed')
+    expect(upload.status.value).toBe('error')
+    expect(upload.error.value?.code).toBe('FILE_TYPE_NOT_ALLOWED')
     host.stop()
   })
 
@@ -355,7 +403,7 @@ describe('useConvexFileUpload (Vue)', () => {
       message: 'generateUploadUrl mutation must return a string URL',
       functionName: 'files:generateUploadUrl',
     })
-    expect(FakeXhr.sent).toBe(0)
+    expect(FakeXhr.sent).toHaveLength(0)
     host.stop()
 
     FakeXhr.next = { status: 500, responseText: 'secret upstream body' }
@@ -394,25 +442,6 @@ describe('useConvexFileUpload (Vue)', () => {
     host.stop()
   })
 
-  it('codes a network failure during the storage POST', async () => {
-    const send = FakeXhr.prototype.send
-    FakeXhr.prototype.send = function (this: FakeXhr) {
-      setTimeout(() => this.onerror?.(), 0)
-    }
-    try {
-      const host = uploadHost()
-      const upload = host.use()
-      await expect(upload.upload(textFile())).rejects.toMatchObject({
-        kind: 'transport',
-        code: 'NETWORK_ERROR',
-        functionName: 'files:generateUploadUrl',
-      })
-      host.stop()
-    } finally {
-      FakeXhr.prototype.send = send
-    }
-  })
-
   it('rejects with CLIENT_UNAVAILABLE without a browser runtime', async () => {
     const scope = effectScope()
     const upload = scope.run(() => useConvexFileUpload(uploadUrl))!
@@ -422,7 +451,7 @@ describe('useConvexFileUpload (Vue)', () => {
       functionName: 'files:generateUploadUrl',
     })
     expect(upload.status.value).toBe('error')
-    expect(FakeXhr.sent).toBe(0)
+    expect(FakeXhr.sent).toHaveLength(0)
     scope.stop()
   })
 

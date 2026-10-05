@@ -2,162 +2,29 @@ import { describe, expect, it } from 'vitest'
 
 import { ConvexCallError } from '../../src/runtime/errors'
 import { deriveConvexAuthStatus } from '../../src/runtime/utils/auth-status'
-import { getConvexIdentityKey } from '../../src/runtime/utils/identity-key'
 
 const authErr = new ConvexCallError({ kind: 'authentication', message: 'boom' })
 
-describe('deriveConvexAuthStatus precedence', () => {
-  it('unsettled auth is loading regardless of identityKey', () => {
-    expect(deriveConvexAuthStatus({ settled: false, identityKey: null, error: null })).toBe(
-      'loading',
-    )
-  })
-
-  it('unsettled auth is loading even with a stale/pre-settlement identityKey present', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: false,
-        identityKey: 'user:a',
-        error: null,
-      }),
-    ).toBe('loading')
-  })
-
-  it('unsettled auth is loading even when an error is already recorded', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: false,
-        identityKey: null,
-        error: authErr,
-      }),
-    ).toBe('loading')
-  })
-
-  it('settled + authenticated key + no error is authenticated', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: true,
-        identityKey: 'user:a',
-        error: null,
-      }),
-    ).toBe('authenticated')
-  })
-
-  it('authenticated outranks a background error (usable identity retained)', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: true,
-        identityKey: 'user:a',
-        error: authErr,
-      }),
-    ).toBe('authenticated')
-  })
-
-  it('a second, distinct user key is also authenticated (key identity does not matter to the derivation)', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: true,
-        identityKey: 'user:b',
-        error: null,
-      }),
-    ).toBe('authenticated')
-  })
-
-  it('error outranks anonymous when initial resolution failed', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: true,
-        identityKey: 'anonymous',
-        error: authErr,
-      }),
-    ).toBe('error')
-  })
-
-  it('error outranks a null identityKey (settled without a resolved key) too', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: true,
-        identityKey: null,
-        error: authErr,
-      }),
-    ).toBe('error')
-  })
-
-  it('settled anonymous without error is anonymous', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: true,
-        identityKey: 'anonymous',
-        error: null,
-      }),
-    ).toBe('anonymous')
-  })
-
-  it('settled with a null identityKey and no error is anonymous (not authenticated, not error)', () => {
-    expect(
-      deriveConvexAuthStatus({
-        settled: true,
-        identityKey: null,
-        error: null,
-      }),
-    ).toBe('anonymous')
-  })
-})
-
-describe('deriveConvexAuthStatus — full two-dimensional matrix ', () => {
-  // `status` (4 outcomes) is a pure function of the (settled, identityKey,
-  // error) triple; `pending` is NOT one of the derivation inputs — it is the
-  // orthogonal second dimension of `UseConvexAuthReturn` and is deliberately
-  // absent from `ConvexAuthStatusInput` ("pending describes auth work in
-  // flight... independent").
-  const identityKeys = [null, 'anonymous', 'user:a'] as const
-  const errors = [null, authErr] as const
-
-  it('settled:false always yields loading, independent of identityKey/error', () => {
-    for (const identityKey of identityKeys) {
-      for (const error of errors) {
-        expect(deriveConvexAuthStatus({ settled: false, identityKey, error })).toBe('loading')
-      }
-    }
-  })
-
-  it('settled:true, authenticated identityKey always yields authenticated, independent of error', () => {
-    for (const error of errors) {
-      expect(
-        deriveConvexAuthStatus({
-          settled: true,
-          identityKey: 'user:a',
-          error,
-        }),
-      ).toBe('authenticated')
-    }
-  })
-
-  it('settled:true, non-authenticated identityKey (null or anonymous) yields error when an error is present', () => {
-    for (const identityKey of [null, 'anonymous'] as const) {
-      expect(deriveConvexAuthStatus({ settled: true, identityKey, error: authErr })).toBe('error')
-    }
-  })
-
-  it('settled:true, non-authenticated identityKey (null or anonymous) yields anonymous when no error', () => {
-    for (const identityKey of [null, 'anonymous'] as const) {
-      expect(deriveConvexAuthStatus({ settled: true, identityKey, error: null })).toBe('anonymous')
-    }
-  })
-})
-
-describe('getConvexIdentityKey ', () => {
-  it('maps null user to anonymous', () => {
-    expect(getConvexIdentityKey(null)).toBe('anonymous')
-  })
-
-  it('maps a user id to user:<id>', () => {
-    expect(getConvexIdentityKey({ id: 'abc' })).toBe('user:abc')
-  })
-
-  it('throws on a user with a missing/empty id (never user:undefined)', () => {
-    expect(() => getConvexIdentityKey({ id: '' })).toThrow(TypeError)
-    // @ts-expect-error id is required
-    expect(() => getConvexIdentityKey({ name: 'x' })).toThrow(TypeError)
+// `status` is a pure function of (settled, identityKey, error). `pending` is the
+// orthogonal second dimension of `UseConvexAuthReturn` and is not an input.
+describe('deriveConvexAuthStatus', () => {
+  it.each([
+    // Unsettled auth is loading, whatever key or error is already recorded.
+    [false, null, null, 'loading'],
+    [false, 'anonymous', null, 'loading'],
+    [false, 'user:a', null, 'loading'],
+    [false, null, authErr, 'loading'],
+    [false, 'anonymous', authErr, 'loading'],
+    [false, 'user:a', authErr, 'loading'],
+    // A usable identity outranks a background error.
+    [true, 'user:a', null, 'authenticated'],
+    [true, 'user:a', authErr, 'authenticated'],
+    // Without a usable identity, an error outranks anonymous.
+    [true, 'anonymous', authErr, 'error'],
+    [true, null, authErr, 'error'],
+    [true, 'anonymous', null, 'anonymous'],
+    [true, null, null, 'anonymous'],
+  ] as const)('settled=%s identityKey=%s error=%s -> %s', (settled, identityKey, error, status) => {
+    expect(deriveConvexAuthStatus({ settled, identityKey, error })).toBe(status)
   })
 })

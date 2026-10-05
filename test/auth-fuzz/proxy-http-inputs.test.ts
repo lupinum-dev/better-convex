@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildAuthProxyForwardHeaders,
   shouldSkipProxyResponseHeader,
 } from '../../src/runtime/server/api/auth/headers'
 import { isCrossOriginAuthRequest, isSameOrigin } from '../../src/runtime/server/api/auth/security'
+import { normalizeConvexSiteUrl } from '../../src/runtime/utils/site-url'
 import { HOSTILE_CALLBACK_PATHS, HOSTILE_ORIGINS, PROXY_CONTROL_HEADERS } from './regression-corpus'
 import { runSeededAuthCorpus } from './seeded'
 
@@ -19,6 +20,9 @@ function randomLabel(value: number): string {
 }
 
 describe('seeded auth proxy HTTP input corpus', () => {
+  beforeEach(() => vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'proxy-ip-property-secret-32-bytes'))
+  afterEach(() => vi.unstubAllEnvs())
+
   it('never derives the trusted origin from attacker-controlled host or origin syntax', async () => {
     for (const origin of HOSTILE_ORIGINS) {
       expect(isSameOrigin(origin, PUBLIC_ORIGIN), origin).toBe(false)
@@ -41,6 +45,8 @@ describe('seeded auth proxy HTTP input corpus', () => {
         `http://${label}.example.test`,
         `${canonical}.evil.test`,
         `${canonical}/${random.nextUint32().toString(36)}`,
+        `${canonical}?query=1`,
+        `${canonical}#fragment`,
         `https://${label}.example.test:${1024 + random.integer(50_000)}`,
       ]) {
         expect(isSameOrigin(candidate, canonical)).toBe(false)
@@ -112,6 +118,34 @@ describe('seeded auth proxy HTTP input corpus', () => {
         expect(forwarded[name]).toBeUndefined()
         expect(shouldSkipProxyResponseHeader(name)).toBe(true)
       }
+    })
+  })
+
+  it('accepts only one valid trusted-ingress IP and strips the source header', async () => {
+    await runSeededAuthCorpus('trusted-client-ip', 250, async (random) => {
+      const octets = Array.from({ length: 4 }, () => random.integer(400))
+      const candidate = octets.join('.')
+      const event = { headers: new Headers({ 'cf-connecting-ip': candidate }) } as never
+      const options = { trustedClientIpHeader: 'cf-connecting-ip' }
+      if (octets.every((octet) => octet <= 255)) {
+        const headers = await buildAuthProxyForwardHeaders(event, options)
+        expect(headers['x-bcn-client-ip']).toBe(candidate)
+        expect(headers['x-bcn-client-ip-signature']).toMatch(/^[\w-]{43}$/)
+        expect(headers['x-forwarded-for']).toBeUndefined()
+        expect(headers['cf-connecting-ip']).toBeUndefined()
+      } else {
+        await expect(buildAuthProxyForwardHeaders(event, options)).rejects.toThrow(
+          'exactly one valid IP address',
+        )
+      }
+    })
+  })
+
+  it('keeps generated non-loopback HTTP destinations outside the credential boundary', async () => {
+    await runSeededAuthCorpus('site-url', 125, (random) => {
+      const hostname = `host-${random.nextUint32().toString(36)}.example.test`
+      expect(() => normalizeConvexSiteUrl(`http://${hostname}`)).toThrow(/loopback/)
+      expect(normalizeConvexSiteUrl(`https://${hostname}`)).toBe(`https://${hostname}`)
     })
   })
 })

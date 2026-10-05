@@ -49,23 +49,21 @@ describe('JWT display-claim boundary', () => {
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })
 
-  it('omits all custom values without losing the identity', () => {
-    const tooDeep = { level: { level: { level: { level: { value: 'hidden' } } } } }
-    const token = makeJwt({
-      sub: 'user-1',
-      safe: 'visible',
-      huge: 'x'.repeat(4_097),
-      wide: Array.from({ length: 65 }, (_, index) => index),
-      deep: tooDeep,
-      boundedArray: Array.from({ length: 64 }, (_, index) => index),
-    })
-
-    expect(decodeUserFromJwt(token)).toEqual({ id: 'user-1' })
-  })
-
-  it('normalizes display fields by type instead of coercing attacker values', () => {
-    const user = decodeUserFromJwt(
-      makeJwt({
+  it.each([
+    [
+      'oversized, wide and deep custom values',
+      {
+        sub: 'user-1',
+        safe: 'visible',
+        huge: 'x'.repeat(4_097),
+        wide: Array.from({ length: 65 }, (_, index) => index),
+        deep: { level: { level: { level: { level: { value: 'hidden' } } } } },
+        boundedArray: Array.from({ length: 64 }, (_, index) => index),
+      },
+    ],
+    [
+      'mistyped display fields',
+      {
         sub: 'user-1',
         name: { toString: 'not executable' },
         email: 42,
@@ -74,10 +72,10 @@ describe('JWT display-claim boundary', () => {
         createdAt: 123,
         updatedAt: false,
         locale: '日本語',
-      }),
-    )
-
-    expect(user).toEqual({ id: 'user-1' })
+      },
+    ],
+  ])('keeps only the identity from %s instead of coercing them', (_case, payload) => {
+    expect(decodeUserFromJwt(makeJwt(payload))).toEqual({ id: 'user-1' })
   })
 
   it.each([null, [], 'user-1', 42, true])('rejects a non-object JWT payload (%j)', (payload) => {
@@ -160,6 +158,20 @@ describe('JWT display-claim boundary', () => {
 describe('server JWT hydration boundary', () => {
   afterEach(() => vi.restoreAllMocks())
 
+  function snapshotFromExchange(token: string) {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ token }), { status: 200 }),
+    )
+    return resolveServerAuthSnapshot({
+      event: { headers: new Headers() } as unknown as H3Event,
+      siteUrl: 'https://demo.convex.site',
+      cookieHeader: 'better-auth.session_token=session-secret',
+      requestId: 'jwt-hydration-test',
+      trackWaterfall: true,
+      trustedClientIpHeader: '',
+    })
+  }
+
   it.each([
     ['malformed', () => 'not-a-jwt'],
     ['missing exp', () => makeJwt({ sub: 'user-1' })],
@@ -168,18 +180,7 @@ describe('server JWT hydration boundary', () => {
     ['missing subject', () => makeJwt({ exp: Math.floor(Date.now() / 1_000) + 900 })],
     ['non-string subject', () => makeJwt({ sub: 123, exp: Math.floor(Date.now() / 1_000) + 900 })],
   ])('does not hydrate a %s token or start a session fallback', async (_case, tokenFactory) => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ token: tokenFactory() }), { status: 200 }),
-    )
-
-    const snapshot = await resolveServerAuthSnapshot({
-      event: { headers: new Headers() } as unknown as H3Event,
-      siteUrl: 'https://demo.convex.site',
-      cookieHeader: 'better-auth.session_token=session-secret',
-      requestId: 'jwt-retention-test',
-      trackWaterfall: true,
-      trustedClientIpHeader: '',
-    })
+    const snapshot = await snapshotFromExchange(tokenFactory())
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
@@ -203,18 +204,7 @@ describe('server JWT hydration boundary', () => {
       },
       { alg: 'none', typ: 'JWT' },
     )
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ token }), { status: 200 }),
-    )
-
-    const snapshot = await resolveServerAuthSnapshot({
-      event: { headers: new Headers() } as unknown as H3Event,
-      siteUrl: 'https://demo.convex.site',
-      cookieHeader: 'better-auth.session_token=session-secret',
-      requestId: 'jwt-provisional-test',
-      trackWaterfall: true,
-      trustedClientIpHeader: '',
-    })
+    const snapshot = await snapshotFromExchange(token)
 
     expect(snapshot).toMatchObject({ token, user: { id: 'user-1' }, authError: null })
     expect(globalThis.fetch).toHaveBeenCalledOnce()

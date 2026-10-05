@@ -1,17 +1,11 @@
 import { getFunctionName, makeFunctionReference, type FunctionReference } from 'convex/server'
-import { ConvexError, type GenericId } from 'convex/values'
+import { ConvexError } from 'convex/values'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope, reactive } from 'vue'
+import { reactive } from 'vue'
 
-import {
-  createBetterConvex,
-  useConvexFileUpload,
-  type UploadCompleteContext,
-} from '../../packages/vue/src'
-import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
+import { useConvexFileUpload, type UploadCompleteContext } from '../../packages/vue/src'
 import type { ConvexCallError } from '../../packages/vue/src/errors'
-import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
-import type { ConvexOperation } from '../../packages/vue/src/use-operation'
+import { attachedVueHost } from '../helpers/attached-vue-host'
 
 /** A storage endpoint whose answer each test releases explicitly. */
 class FakeXhr {
@@ -110,14 +104,6 @@ type Handler = (args: unknown) => unknown
 
 /** One Vue app over an attached client whose answers are keyed by function name. */
 function workflowHost(handlers: Record<string, Handler>) {
-  let snapshot: ClientIdentitySnapshot = {
-    authEnabled: true,
-    settled: true,
-    identityKey: 'user:alice',
-    identityGeneration: 1,
-    error: null,
-  }
-  const listeners = new Set<() => void>()
   const answer = (reference: unknown, args: unknown) => {
     const handler = handlers[getFunctionName(reference as FunctionReference<'mutation'>)]
     if (!handler) throw new Error('unexpected call')
@@ -125,42 +111,13 @@ function workflowHost(handlers: Record<string, Handler>) {
   }
   const mutation = vi.fn(answer)
   const action = vi.fn(answer)
-  const client = {
-    query: vi.fn() as never,
-    mutation: mutation as never,
-    action: action as never,
-    onUpdate: vi.fn(() => () => {}) as never,
-  }
-  const attachment = createBetterConvexAttachment({
-    client,
-    anonymousClient: client,
-    identity: {
-      snapshot: () => snapshot,
-      waitForInitialSettlement: async () => {},
-      subscribe(listener) {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-    },
-  })
-  const app = createApp({})
-  app.use(createBetterConvex({ attachment }))
-  const scope = effectScope()
   return {
+    ...attachedVueHost({ mutation, action }),
     mutation,
-    action,
     calls: (name: string) =>
       [...mutation.mock.calls, ...action.mock.calls].filter(
         ([reference]) => getFunctionName(reference as FunctionReference<'mutation'>) === name,
       ),
-    run<T>(factory: () => T): T {
-      return app.runWithContext(() => scope.run(factory))!
-    },
-    advanceIdentity() {
-      snapshot = { ...snapshot, identityGeneration: snapshot.identityGeneration + 1 }
-      for (const listener of [...listeners]) listener()
-    },
-    stop: () => scope.stop(),
   }
 }
 
@@ -223,39 +180,6 @@ describe('useConvexFileUpload workflows', () => {
       sessionId: 'session_1',
       token: 'claim-token',
       storageId: 'storage_7',
-    })
-    host.stop()
-  })
-
-  it('completes with an action and hands it the stored file context', async () => {
-    const host = workflowHost({
-      'files:generateUploadUrl': () => 'https://upload.test/plain',
-      'evidence:attach': () => 'evidence_1',
-    })
-    const complete = vi.fn(
-      (
-        op: ConvexOperation,
-        { storageId, file }: { storageId: GenericId<'_storage'>; file: File },
-      ) => op.action(attachEvidence, { storageId, originalName: file.name }),
-    )
-    const upload = host.run(() => useConvexFileUpload(uploadUrl, { complete }))
-
-    const pending = upload.upload(textFile())
-    ;(await nextXhr()).respond('storage_9')
-
-    await expect(pending).resolves.toEqual({
-      storageId: 'storage_9',
-      prepared: 'https://upload.test/plain',
-      completed: 'evidence_1',
-    })
-    expect(host.action).toHaveBeenCalledTimes(1)
-    expect(host.calls('evidence:attach')[0]?.[1]).toEqual({
-      storageId: 'storage_9',
-      originalName: 'evidence.pdf',
-    })
-    expect(complete.mock.calls[0]?.[1]).toMatchObject({
-      prepared: 'https://upload.test/plain',
-      storageId: 'storage_9',
     })
     host.stop()
   })
@@ -334,6 +258,7 @@ describe('useConvexFileUpload workflows', () => {
     })
     expect(host.calls('evidence:attach')).toHaveLength(0)
     expect(upload.status.value).toBe('idle')
+    expect(upload.data.value).toBeUndefined()
     host.stop()
   })
 
@@ -603,30 +528,6 @@ describe('useConvexFileUpload workflows', () => {
       expect(upload.status.value).toBe('idle')
       host.stop()
     })
-
-    it('while complete is in flight', async () => {
-      const claim = deferred<{ fileId: string }>()
-      const host = workflowHost({
-        'files:createSession': () => SESSION,
-        'files:claim': () => claim.promise,
-      })
-      const upload = sessionUpload(host)
-
-      const pending = upload.upload(textFile(), { folder: 'x' })
-      ;(await nextXhr()).respond()
-      await vi.waitFor(() => expect(host.calls('files:claim')).toHaveLength(1))
-      host.advanceIdentity()
-      claim.resolve({ fileId: 'file_1' })
-
-      await expect(pending).rejects.toMatchObject({
-        code: 'IDENTITY_CHANGED',
-        phase: 'complete',
-        outcome: 'unknown',
-      })
-      expect(upload.status.value).toBe('idle')
-      expect(upload.data.value).toBeUndefined()
-      host.stop()
-    })
   })
 
   it.each([
@@ -648,7 +549,13 @@ describe('useConvexFileUpload workflows', () => {
       label: 'a lost storage connection',
       handlers: { 'files:createSession': () => SESSION },
       respond: (xhr: FakeXhr) => xhr.failNetwork(),
-      expected: { code: 'NETWORK_ERROR', phase: 'upload', outcome: 'unknown' },
+      expected: {
+        kind: 'transport',
+        code: 'NETWORK_ERROR',
+        phase: 'upload',
+        outcome: 'unknown',
+        functionName: 'files:createSession',
+      },
     },
     {
       label: 'a complete rejection',
@@ -741,26 +648,19 @@ describe('useConvexFileUpload workflows', () => {
 
     const first = upload.upload(textFile(), {}, { context: 'first' })
     ;(await nextXhr()).respond('storage_1')
-    await expect(first).resolves.toMatchObject({ completed: 'first' })
+    await expect(first).resolves.toEqual({
+      storageId: 'storage_1',
+      prepared: 'https://upload.test/plain',
+      completed: 'first',
+    })
+    expect(host.calls('evidence:attach')[0]?.[1]).toEqual({
+      storageId: 'storage_1',
+      originalName: 'first',
+    })
     FakeXhr.sent = []
     const second = upload.upload(textFile(), undefined, { context: 'second' })
     ;(await nextXhr()).respond('storage_2')
     await expect(second).resolves.toMatchObject({ completed: 'second' })
-    host.stop()
-  })
-
-  it('records preflight rejections as not sent', async () => {
-    const host = workflowHost({ 'files:createSession': () => SESSION })
-    const upload = host.run(() =>
-      useConvexFileUpload(createSession, { url: (session) => session.uploadUrl, maxSize: 1 }),
-    )
-
-    const error = (await upload
-      .upload(textFile(), { folder: 'x' })
-      .catch((cause: unknown) => cause)) as ConvexCallError
-    expect(error).toMatchObject({ code: 'FILE_TOO_LARGE', outcome: 'not-sent' })
-    expect(error.phase).toBeUndefined()
-    expect(host.mutation).not.toHaveBeenCalled()
     host.stop()
   })
 

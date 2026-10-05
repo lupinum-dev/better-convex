@@ -42,18 +42,6 @@ describe('auth config normalization', () => {
     expect('client' in auth).toBe(false)
   })
 
-  it.each(['https://evil.example', '//evil.example', '/%2f%2fevil.example', '/bad\\path'])(
-    'rejects an unsafe redirect target: %s',
-    (redirectTo) => {
-      expect(() =>
-        normalizeConvexAuthConfig({
-          origin: 'http://localhost:3000',
-          redirectTo,
-        }),
-      ).toThrow('safe local application path')
-    },
-  )
-
   it('normalizes the global auth defaults', () => {
     const auth = normalizeConvexAuthConfig({
       origin: 'http://localhost:3000',
@@ -82,25 +70,16 @@ describe('auth config normalization', () => {
     [{ guestRedirectTo: '/%2F%2Fevil.example' }, 'auth.guestRedirectTo'],
     [{ guestRedirectTo: 42 }, 'auth.guestRedirectTo'],
     [{ redirectTo: 42 }, 'auth.redirectTo'],
-  ])('rejects an invalid default %j', (options, message) => {
+    [{ redirectTo: 'https://evil.example' }, 'safe local application path'],
+    [{ redirectTo: '//evil.example' }, 'safe local application path'],
+    [{ redirectTo: '/%2f%2fevil.example' }, 'safe local application path'],
+    [{ redirectTo: '/bad\\path' }, 'safe local application path'],
+    [{ trustedClientIpHeader: 'bad\nheader' }, 'valid HTTP header name'],
+    [{ trustedClientIpHeader: 'X-BCN-Verified-Client-IP' }, 'reserved x-bcn-* namespace'],
+  ])('rejects an invalid option %j', (options, message) => {
     expect(() =>
       normalizeConvexAuthConfig({ origin: 'http://localhost:3000', ...options }),
     ).toThrow(message)
-  })
-
-  it('rejects malformed or reserved trusted ingress header names', () => {
-    expect(() =>
-      normalizeConvexAuthConfig({
-        origin: 'https://app.example.test',
-        trustedClientIpHeader: 'bad\nheader',
-      }),
-    ).toThrow('valid HTTP header name')
-    expect(() =>
-      normalizeConvexAuthConfig({
-        origin: 'https://app.example.test',
-        trustedClientIpHeader: 'X-BCN-Verified-Client-IP',
-      }),
-    ).toThrow('reserved x-bcn-* namespace')
   })
 
   it('requires an ingress-owned client IP header outside exact loopback development', () => {
@@ -173,10 +152,5 @@ function _moduleOptionsTypeContracts() {
   assertModuleOptions({ auth: { origin: 'https://app.example.test', enabled: false } })
 }
 
+// Checked by `vue-tsc --noEmit` (pnpm typecheck); never executed.
 void _moduleOptionsTypeContracts
-
-describe('auth config type contracts', () => {
-  it('keeps invalid build states out of ModuleOptions', () => {
-    expect(true).toBe(true)
-  })
-})

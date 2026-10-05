@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -10,6 +10,22 @@ import {
   inspectConvexAuthority,
   runConvexCommand,
 } from '../../src/runtime/cli/convex'
+
+/** Runs `check` in a temporary project with the given files, then removes it. */
+async function withProject(files: Record<string, string>, check: (cwd: string) => Promise<void>) {
+  const cwd = mkdtempSync(join(tmpdir(), 'bcn-convex-authority-'))
+  for (const [name, contents] of Object.entries(files)) {
+    mkdirSync(dirname(join(cwd, name)), { recursive: true })
+    writeFileSync(join(cwd, name), contents, { mode: 0o600 })
+  }
+  try {
+    await check(cwd)
+  } finally {
+    rmSync(cwd, { force: true, recursive: true })
+  }
+}
+
+const CLI = 'node_modules/convex/bin/main.js'
 
 describe('checked Convex CLI deployment authority', () => {
   it.each(['--help', '-h'])('prints help through the consolidated CLI: %s', async (flag) => {
@@ -161,6 +177,7 @@ describe('checked Convex CLI deployment authority', () => {
   })
 
   it.each([
+    ['--deployment', 'prod'],
     '--admin-key=secret',
     '--anonymous',
     '--cloud',
@@ -181,15 +198,7 @@ describe('checked Convex CLI deployment authority', () => {
     '--url=https://wrong.invalid',
   ])('rejects a target or hidden authority override before starting the CLI: %s', async (flag) => {
     await expect(
-      runConvexCommand(['run', 'fixture:read', '{}', flag], {
-        cwd: process.cwd(),
-      }),
-    ).rejects.toThrow('Deployment overrides are not supported')
-  })
-
-  it('rejects separate-form deployment overrides before reading authority', async () => {
-    await expect(
-      runConvexCommand(['run', 'fixture:read', '{}', '--deployment', 'prod'], {
+      runConvexCommand(['run', 'fixture:read', '{}', ...[flag].flat()], {
         cwd: process.cwd(),
       }),
     ).rejects.toThrow('Deployment overrides are not supported')
@@ -200,63 +209,49 @@ describe('checked Convex CLI deployment authority', () => {
     'CONVEX_DEPLOYMENT=dev:safe\nIGNORED=x\rCONVEX_DEPLOY_KEY=prod:wrong|secret\n',
     'CONVEX_DEPLOYMENT=dev:expected\nCONVEX_DEPLOYMENT=prod:other\n',
   ])('rejects authority bytes with a parser differential before spawn', async (source) => {
-    const cwd = mkdtempSync(join(tmpdir(), 'bcn-convex-parser-authority-'))
-    writeFileSync(join(cwd, '.env.local'), source, { mode: 0o600 })
-    try {
+    await withProject({ '.env.local': source }, async (cwd) => {
       await expect(runConvexCommand(['run', 'fixture:read', '{}'], { cwd })).rejects.toThrow(
         'Convex authority file is missing, invalid, or too large',
       )
-    } finally {
-      rmSync(cwd, { force: true, recursive: true })
-    }
-  })
-
-  it('enforces command-specific authority classes before spawning Convex', async () => {
-    const keyDirectory = mkdtempSync(join(tmpdir(), 'bcn-convex-key-authority-'))
-    const prodDirectory = mkdtempSync(join(tmpdir(), 'bcn-convex-prod-authority-'))
-    const prodKeyDirectory = mkdtempSync(join(tmpdir(), 'bcn-convex-prod-key-authority-'))
-    writeFileSync(
-      join(keyDirectory, '.env.local'),
-      'CONVEX_DEPLOY_KEY=dev:fixture-deployment|fixture-key\n',
-      { mode: 0o600 },
-    )
-    writeFileSync(join(prodDirectory, '.env.local'), 'CONVEX_DEPLOYMENT=prod:fixture\n', {
-      mode: 0o600,
     })
-    writeFileSync(
-      join(prodKeyDirectory, '.env.local'),
-      'CONVEX_DEPLOY_KEY=prod:fixture-deployment|fixture-key\n',
-      { mode: 0o600 },
-    )
-
-    try {
-      await expect(runConvexCommand(['dev', '--once'], { cwd: prodDirectory })).rejects.toThrow(
-        'Dev requires a dev, local, anonymous, or development-key authority',
-      )
-      await expect(runConvexCommand(['deploy'], { cwd: prodDirectory })).rejects.toThrow(
-        'Deploy requires a deployment-scoped key or self-hosted authority',
-      )
-      await expect(runConvexCommand(['deploy'], { cwd: keyDirectory })).rejects.toThrow(
-        'Deploy requires a production deployment key or self-hosted authority',
-      )
-      await expect(runConvexCommand(['dev', '--once'], { cwd: prodKeyDirectory })).rejects.toThrow(
-        'Dev requires a development deployment key or local authority',
-      )
-    } finally {
-      rmSync(keyDirectory, { force: true, recursive: true })
-      rmSync(prodDirectory, { force: true, recursive: true })
-      rmSync(prodKeyDirectory, { force: true, recursive: true })
-    }
   })
+
+  it.each([
+    [
+      'CONVEX_DEPLOYMENT=prod:fixture\n',
+      ['dev', '--once'],
+      'Dev requires a dev, local, anonymous, or development-key authority',
+    ],
+    [
+      'CONVEX_DEPLOYMENT=prod:fixture\n',
+      ['deploy'],
+      'Deploy requires a deployment-scoped key or self-hosted authority',
+    ],
+    [
+      'CONVEX_DEPLOY_KEY=dev:fixture-deployment|fixture-key\n',
+      ['deploy'],
+      'Deploy requires a production deployment key or self-hosted authority',
+    ],
+    [
+      'CONVEX_DEPLOY_KEY=prod:fixture-deployment|fixture-key\n',
+      ['dev', '--once'],
+      'Dev requires a development deployment key or local authority',
+    ],
+  ])(
+    'enforces command-specific authority classes before spawning Convex: %s %j',
+    async (env, args, message) => {
+      await withProject({ '.env.local': env }, async (cwd) => {
+        await expect(runConvexCommand(args, { cwd })).rejects.toThrow(message)
+      })
+    },
+  )
 
   it('pins development-only commands to one confirmed authority snapshot', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'bcn-convex-development-authority-'))
-    const cliDirectory = join(cwd, 'node_modules/convex/bin')
-    mkdirSync(cliDirectory, { recursive: true })
-    writeFileSync(join(cwd, '.env.local'), 'CONVEX_DEPLOYMENT=dev:confirmed\n', { mode: 0o600 })
-    writeFileSync(join(cliDirectory, 'main.js'), 'process.exitCode = 0\n')
-
-    try {
+    const files = {
+      '.env.local': 'CONVEX_DEPLOYMENT=dev:confirmed\n',
+      [CLI]: 'process.exitCode = 0\n',
+    }
+    await withProject(files, async (cwd) => {
       const authority = await inspectConvexAuthority(cwd)
       expect(authority).toMatchObject({ development: true, label: 'dev:confirmed' })
       await expect(
@@ -288,26 +283,15 @@ describe('checked Convex CLI deployment authority', () => {
           quiet: true,
         }),
       ).rejects.toThrow('requires development, local, or anonymous authority')
-    } finally {
-      rmSync(cwd, { force: true, recursive: true })
-    }
+    })
   })
 
   it('executes the pinned CLI with the fixed file authority and no ambient Convex values', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'bcn-codegen-authority-'))
-    const cliDirectory = join(cwd, 'node_modules/convex/bin')
-    mkdirSync(cliDirectory, { recursive: true })
-    writeFileSync(join(cwd, '.env.local'), 'CONVEX_DEPLOYMENT=local:file-owned\n', {
-      mode: 0o600,
-    })
-    writeFileSync(
-      join(cwd, '.env'),
-      'CONVEX_DEPLOY_KEY=sibling-key\nCONVEX_OVERRIDE_ACCESS_TOKEN=sibling-override\nCONVEX_PROVISION_HOST=https://sibling.invalid\n',
-      { mode: 0o600 },
-    )
-    writeFileSync(
-      join(cliDirectory, 'main.js'),
-      [
+    const files = {
+      '.env.local': 'CONVEX_DEPLOYMENT=local:file-owned\n',
+      '.env':
+        'CONVEX_DEPLOY_KEY=sibling-key\nCONVEX_OVERRIDE_ACCESS_TOKEN=sibling-override\nCONVEX_PROVISION_HOST=https://sibling.invalid\n',
+      [CLI]: [
         "process.loadEnvFile('.env')",
         "const valid = process.argv.slice(2).join(' ') === 'codegen --dry-run'",
         "  && process.env.CONVEX_DEPLOYMENT === 'local:file-owned'",
@@ -316,9 +300,9 @@ describe('checked Convex CLI deployment authority', () => {
         "  && process.env.CONVEX_PROVISION_HOST === ''",
         'process.exitCode = valid ? 0 : 41',
       ].join('\n'),
-    )
+    }
 
-    try {
+    await withProject(files, async (cwd) => {
       await expect(
         runConvexCommand(['codegen', '--dry-run'], {
           cwd,
@@ -329,28 +313,16 @@ describe('checked Convex CLI deployment authority', () => {
           },
         }),
       ).resolves.toBe(0)
-    } finally {
-      rmSync(cwd, { force: true, recursive: true })
-    }
+    })
   })
 
   it('clears dotenv and ambient authority for configuration and anonymous development', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'bcn-convex-configure-authority-'))
-    const cliDirectory = join(cwd, 'node_modules/convex/bin')
-    mkdirSync(cliDirectory, { recursive: true })
-    writeFileSync(
-      join(cwd, '.env.local'),
-      'CONVEX_DEPLOYMENT=prod:stale\nCONVEX_AGENT_MODE=anonymous\nCONVEX_ALLOW_ANONYMOUS=true\n',
-      { mode: 0o600 },
-    )
-    writeFileSync(
-      join(cwd, '.env'),
-      'CONVEX_OVERRIDE_ACCESS_TOKEN=sibling-override\nCONVEX_PROVISION_HOST=https://sibling.invalid\n',
-      { mode: 0o600 },
-    )
-    writeFileSync(
-      join(cliDirectory, 'main.js'),
-      [
+    const files = {
+      '.env.local':
+        'CONVEX_DEPLOYMENT=prod:stale\nCONVEX_AGENT_MODE=anonymous\nCONVEX_ALLOW_ANONYMOUS=true\n',
+      '.env':
+        'CONVEX_OVERRIDE_ACCESS_TOKEN=sibling-override\nCONVEX_PROVISION_HOST=https://sibling.invalid\n',
+      [CLI]: [
         "process.loadEnvFile('.env.local')",
         "process.loadEnvFile('.env')",
         "const args = process.argv.slice(2).join(' ')",
@@ -367,9 +339,9 @@ describe('checked Convex CLI deployment authority', () => {
         "    : process.env.CONVEX_LOCAL_BACKEND_STARTUP_TIMEOUT_SECS === '45')",
         'process.exitCode = valid ? 0 : 42',
       ].join('\n'),
-    )
+    }
 
-    try {
+    await withProject(files, async (cwd) => {
       await expect(
         runConvexCommand(['configure'], {
           cwd,
@@ -401,8 +373,6 @@ describe('checked Convex CLI deployment authority', () => {
           },
         ),
       ).resolves.toBe(0)
-    } finally {
-      rmSync(cwd, { force: true, recursive: true })
-    }
+    })
   })
 })

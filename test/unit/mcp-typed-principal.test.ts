@@ -24,35 +24,25 @@ const access = {
   scopes: ['notes:read'],
 }
 
-function verifier(
-  principal: GrantPrincipal = { kind: 'oauth', userId: 'user-1', grantId: 'grant-1' },
-): McpAccessVerifier<GrantPrincipal> & { calls: number } {
-  const result = {
-    calls: 0,
-    async verifyAccessToken(token: string) {
-      result.calls += 1
+function verifier(principal: GrantPrincipal): McpAccessVerifier<GrantPrincipal> {
+  return {
+    async verifyAccessToken(token) {
       if (token !== bearer) throw new Error('invalid token')
       return { access, principal, expiresAt: Math.floor(Date.now() / 1_000) + 300 }
     },
   }
-  return result
 }
 
-function connect(options: HandleMcpRequestOptions<GrantPrincipal>, token = bearer) {
-  const exchanges: Response[] = []
+function connect(options: HandleMcpRequestOptions<GrantPrincipal>) {
   const transport = new StreamableHTTPClientTransport(resource, {
-    requestInit: { headers: { authorization: `Bearer ${token}` } },
-    fetch: async (input, init) => {
-      const response = await handleMcpRequest(new Request(input, init), options)
-      exchanges.push(response.clone())
-      return response
-    },
+    requestInit: { headers: { authorization: `Bearer ${bearer}` } },
+    fetch: (input, init) => handleMcpRequest(new Request(input, init), options),
   })
   const client = new Client(
     { name: 'typed-principal-client', version: '1.0.0' },
     { versionNegotiation: { mode: { pin: '2026-07-28' } } },
   )
-  return { client, transport, exchanges }
+  return { client, transport }
 }
 
 describe('typed MCP principal', () => {
@@ -107,68 +97,56 @@ describe('typed MCP principal', () => {
     }
   })
 
-  it('keeps the unchanged 401 challenge when the verifier throws', async () => {
-    const configureServer = vi.fn()
-    const failing: McpAccessVerifier<GrantPrincipal> = {
-      async verifyAccessToken() {
-        throw new Error('live access revoked sentinel')
-      },
-    }
-    const response = await handleMcpRequest(
-      new Request(resource, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${bearer}`,
-          'content-type': 'application/json',
-          accept: 'application/json, text/event-stream',
-        },
-        body: '{}',
-      }),
+  it.each([
+    [
+      'throws',
       {
-        resource,
-        serverInfo: { name: 'typed-principal', version: '1.0.0' },
-        authorization: { mode: 'oauth', issuer, verifier: failing },
-        configureServer,
-      },
-    )
-    expect(response.status).toBe(401)
-    expect(response.headers.get('www-authenticate')).toBe(
-      `Bearer error="invalid_token", error_description="Invalid access token", resource_metadata="${resourceMetadata}"`,
-    )
-    expect(await response.text()).not.toContain('sentinel')
-    expect(configureServer).not.toHaveBeenCalled()
-  })
-
-  it('rejects verifier results with fields beyond access, principal and expiresAt', async () => {
-    const configureServer = vi.fn()
-    const leaky = {
-      async verifyAccessToken() {
-        return {
-          access,
-          principal: { kind: 'oauth', userId: 'user-1', grantId: 'grant-1' },
-          expiresAt: Math.floor(Date.now() / 1_000) + 300,
-          token: bearer,
-        }
-      },
-    } as unknown as McpAccessVerifier<GrantPrincipal>
-    const response = await handleMcpRequest(
-      new Request(resource, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${bearer}`,
-          'content-type': 'application/json',
-          accept: 'application/json, text/event-stream',
+        async verifyAccessToken() {
+          throw new Error('live access revoked sentinel')
         },
-        body: '{}',
-      }),
-      {
-        resource,
-        serverInfo: { name: 'typed-principal', version: '1.0.0' },
-        authorization: { mode: 'oauth', issuer, verifier: leaky },
-        configureServer,
       },
-    )
-    expect(response.status).toBe(401)
-    expect(configureServer).not.toHaveBeenCalled()
-  })
+    ],
+    [
+      'returns fields beyond access, principal and expiresAt',
+      {
+        async verifyAccessToken() {
+          return {
+            access,
+            principal: { kind: 'oauth', userId: 'user-1', grantId: 'grant-1' },
+            expiresAt: Math.floor(Date.now() / 1_000) + 300,
+            token: bearer,
+          }
+        },
+      } as unknown as McpAccessVerifier<GrantPrincipal>,
+    ],
+  ] as Array<[string, McpAccessVerifier<GrantPrincipal>]>)(
+    'keeps the unchanged 401 challenge when the verifier %s',
+    async (_label, failing) => {
+      const configureServer = vi.fn()
+      const response = await handleMcpRequest(
+        new Request(resource, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${bearer}`,
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+          },
+          body: '{}',
+        }),
+        {
+          resource,
+          serverInfo: { name: 'typed-principal', version: '1.0.0' },
+          authorization: { mode: 'oauth', issuer, verifier: failing },
+          configureServer,
+        },
+      )
+      expect(response.status).toBe(401)
+      expect(response.headers.get('www-authenticate')).toBe(
+        `Bearer error="invalid_token", error_description="Invalid access token", resource_metadata="${resourceMetadata}"`,
+      )
+      // The bearer itself ends in "sentinel", so this also proves it is not echoed.
+      expect(await response.text()).not.toContain('sentinel')
+      expect(configureServer).not.toHaveBeenCalled()
+    },
+  )
 })

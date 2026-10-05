@@ -16,8 +16,11 @@ describe('canonical session synchronization', () => {
     vi.useRealTimers()
   })
 
-  function fixture(timeoutMs = 1_000, sessionSignalDelayMs: number | null = 10) {
-    const refetchCanonicalSession = vi.fn(async () => {})
+  function fixture({
+    timeoutMs = 1_000,
+    sessionSignalDelayMs = 10 as number | null,
+    refetchCanonicalSession = vi.fn(async () => {}),
+  } = {}) {
     const failClosed = vi.fn()
     const synchronization = createSessionSynchronization({
       timeoutMs,
@@ -130,15 +133,10 @@ describe('canonical session synchronization', () => {
   })
 
   it('fails closed with a static error when canonical refetch rejects', async () => {
-    const rawFailure = new Error('RAW_REFETCH_SECRET_ae74f9')
-    const failClosed = vi.fn()
-    const synchronization = createSessionSynchronization({
-      timeoutMs: 1_000,
+    const { synchronization, failClosed } = fixture({
       refetchCanonicalSession: vi.fn(async () => {
-        throw rawFailure
+        throw new Error('RAW_REFETCH_SECRET_ae74f9')
       }),
-      failClosed,
-      sessionSignalDelayMs: 10,
     })
     synchronization.observeProvider(session(null, 0))
 
@@ -172,7 +170,7 @@ describe('canonical session synchronization', () => {
 
   it('fails closed once when acceptance exceeds the bounded retry window', async () => {
     vi.useFakeTimers()
-    const { synchronization, failClosed } = fixture(50)
+    const { synchronization, failClosed } = fixture({ timeoutMs: 50 })
     synchronization.observeProvider(session('session-a', 1))
     const waiting = synchronization.reconcile({
       revision: 0,
@@ -287,14 +285,11 @@ describe('canonical session synchronization', () => {
     })
 
     it('still fails closed when a signalled change cannot be reconciled', async () => {
-      const failClosed = vi.fn()
-      const synchronization = createSessionSynchronization({
-        timeoutMs: 1_000,
+      const { synchronization, failClosed } = fixture({
+        sessionSignalDelayMs: 0,
         refetchCanonicalSession: vi.fn(async () => {
           throw new Error('refresh failed')
         }),
-        failClosed,
-        sessionSignalDelayMs: 0,
       })
       synchronization.observeProvider(session('session-a', 1))
       const checkpoint = synchronization.checkpoint()
@@ -307,7 +302,7 @@ describe('canonical session synchronization', () => {
     })
 
     it('reconciles every call when no session signal is observable', async () => {
-      const { synchronization, refetchCanonicalSession } = fixture(1_000, null)
+      const { synchronization, refetchCanonicalSession } = fixture({ sessionSignalDelayMs: null })
       synchronization.observeProvider(session('session-a', 1))
       const waiting = synchronization.settle(synchronization.checkpoint())
       await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())

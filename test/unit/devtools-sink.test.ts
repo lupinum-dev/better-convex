@@ -2,19 +2,25 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createDevtoolsSink } from '../../src/runtime/devtools/sink'
 
+function pendingMutation(name: string, args: Record<string, unknown> = {}, startedAt = 1) {
+  return {
+    name,
+    type: 'mutation' as const,
+    args,
+    state: 'pending' as const,
+    hasOptimisticUpdate: false,
+    startedAt,
+  }
+}
+
 describe('createDevtoolsSink', () => {
   it('keeps application instances isolated and redacts values before publication', () => {
     const first = createDevtoolsSink()
     const second = createDevtoolsSink()
 
-    const id = first.registerMutation({
-      name: 'notes:create',
-      type: 'mutation',
-      args: { authorization: 'private', title: 'Visible' },
-      state: 'pending',
-      hasOptimisticUpdate: false,
-      startedAt: 1,
-    })
+    const id = first.registerMutation(
+      pendingMutation('notes:create', { authorization: 'private', title: 'Visible' }),
+    )
     first.updateMutation(id, { state: 'success', result: { sessionToken: 'private' } })
 
     expect(second.getMutations()).toEqual([])
@@ -35,41 +41,22 @@ describe('createDevtoolsSink', () => {
     sink.subscribeToMutations(subscriber)
 
     for (let index = 0; index < 55; index += 1) {
-      sink.registerMutation({
-        name: `mutation:${index}`,
-        type: 'mutation',
-        args: {},
-        state: 'pending',
-        hasOptimisticUpdate: false,
-        startedAt: index,
-      })
+      sink.registerMutation(pendingMutation(`mutation:${index}`, {}, index))
     }
     expect(sink.getMutations()).toHaveLength(50)
 
     sink.dispose()
     expect(sink.getMutations()).toEqual([])
     const callsBefore = subscriber.mock.calls.length
-    sink.registerMutation({
-      name: 'after-dispose',
-      type: 'mutation',
-      args: {},
-      state: 'pending',
-      hasOptimisticUpdate: false,
-      startedAt: 100,
-    })
+    sink.registerMutation(pendingMutation('after-dispose'))
     expect(subscriber).toHaveBeenCalledTimes(callsBefore)
   })
 
   it('publishes independent snapshots that cannot mutate stored diagnostics', () => {
     const sink = createDevtoolsSink()
-    const id = sink.registerMutation({
-      name: 'notes:create',
-      type: 'mutation',
-      args: { nested: { title: 'Original' } },
-      state: 'pending',
-      hasOptimisticUpdate: false,
-      startedAt: 1,
-    })
+    const id = sink.registerMutation(
+      pendingMutation('notes:create', { nested: { title: 'Original' } }),
+    )
 
     const first = sink.getMutations()
     const firstArgs = first[0]!.args as { nested: { title: string } }

@@ -64,6 +64,14 @@ async function createTeam(
   })
 }
 
+function account(id: string, accountId: string, providerId: string, userId: string) {
+  return { id, accountId, providerId, userId, createdAt: now, updatedAt: now }
+}
+
+function member(id: string, organizationId: string, userId: string, role: string) {
+  return { id, organizationId, userId, role, createdAt: now }
+}
+
 describe('Better Auth adapter compound uniqueness', () => {
   it('rejects duplicate account, organization-member, and team-member identities', async () => {
     const test = initCompoundUniqueTest()
@@ -72,39 +80,27 @@ describe('Better Auth adapter compound uniqueness', () => {
     await createOrganization(test, 'organization_one')
     await createTeam(test, 'team_one', 'organization_one')
 
-    await createAuthRow(test, 'account', {
-      id: 'account_one',
-      accountId: 'subject_one',
-      providerId: 'provider_one',
-      userId: 'user_one',
-      createdAt: now,
-      updatedAt: now,
-    })
-    await createAuthRow(test, 'account', {
-      id: 'account_same_provider_user',
-      accountId: 'subject_two',
-      providerId: 'provider_one',
-      userId: 'user_one',
-      createdAt: now,
-      updatedAt: now,
-    })
-    await createAuthRow(test, 'account', {
-      id: 'account_same_subject_other_provider',
-      accountId: 'subject_one',
-      providerId: 'provider_two',
-      userId: 'user_two',
-      createdAt: now,
-      updatedAt: now,
-    })
+    await createAuthRow(
+      test,
+      'account',
+      account('account_one', 'subject_one', 'provider_one', 'user_one'),
+    )
+    await createAuthRow(
+      test,
+      'account',
+      account('account_same_provider_user', 'subject_two', 'provider_one', 'user_one'),
+    )
+    await createAuthRow(
+      test,
+      'account',
+      account('account_same_subject_other_provider', 'subject_one', 'provider_two', 'user_two'),
+    )
     await expect(
-      createAuthRow(test, 'account', {
-        id: 'account_two',
-        accountId: 'subject_one',
-        providerId: 'provider_one',
-        userId: 'user_two',
-        createdAt: now,
-        updatedAt: now,
-      }),
+      createAuthRow(
+        test,
+        'account',
+        account('account_two', 'subject_one', 'provider_one', 'user_two'),
+      ),
     ).rejects.toThrow('AUTH_UNIQUE_CONFLICT:account.providerId_accountId')
     await expect(
       test.mutation(auth.updateOne, {
@@ -114,21 +110,13 @@ describe('Better Auth adapter compound uniqueness', () => {
       }),
     ).rejects.toThrow('AUTH_UNIQUE_CONFLICT:account.providerId_accountId')
 
-    await createAuthRow(test, 'member', {
-      id: 'member_one',
-      organizationId: 'organization_one',
-      userId: 'user_one',
-      role: 'owner',
-      createdAt: now,
-    })
+    await createAuthRow(
+      test,
+      'member',
+      member('member_one', 'organization_one', 'user_one', 'owner'),
+    )
     await expect(
-      createAuthRow(test, 'member', {
-        id: 'member_two',
-        organizationId: 'organization_one',
-        userId: 'user_one',
-        role: 'member',
-        createdAt: now,
-      }),
+      createAuthRow(test, 'member', member('member_two', 'organization_one', 'user_one', 'member')),
     ).rejects.toThrow('AUTH_UNIQUE_CONFLICT:member.organizationId_userId')
 
     await createAuthRow(test, 'teamMember', {
@@ -175,20 +163,16 @@ describe('Better Auth adapter compound uniqueness', () => {
     await createOrganization(test, 'organization_two')
     await createOrganization(test, 'organization_three')
 
-    await createAuthRow(test, 'member', {
-      id: 'member_update_one',
-      organizationId: 'organization_one',
-      userId: 'user_shared',
-      role: 'owner',
-      createdAt: now,
-    })
-    await createAuthRow(test, 'member', {
-      id: 'member_update_two',
-      organizationId: 'organization_two',
-      userId: 'user_shared',
-      role: 'member',
-      createdAt: now,
-    })
+    await createAuthRow(
+      test,
+      'member',
+      member('member_update_one', 'organization_one', 'user_shared', 'owner'),
+    )
+    await createAuthRow(
+      test,
+      'member',
+      member('member_update_two', 'organization_two', 'user_shared', 'member'),
+    )
 
     await expect(
       test.mutation(auth.updateOne, {

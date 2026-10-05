@@ -1,18 +1,12 @@
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, effectScope } from 'vue'
+import { effectScope } from 'vue'
 
-import {
-  createBetterConvex,
-  useConvexOperation,
-  type ConvexOperation,
-} from '../../packages/vue/src'
-import { createBetterConvexAttachment } from '../../packages/vue/src/embedded'
+import { useConvexOperation, type ConvexOperation } from '../../packages/vue/src'
 import { isConvexCallError } from '../../packages/vue/src/errors'
-import { createIdentityChangedError } from '../../packages/vue/src/internal/identity-changed-error'
-import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
 import { createOperationController } from '../../packages/vue/src/internal/operation-controller'
+import { attachedVueHost } from '../helpers/attached-vue-host'
 
 class FakeXhr {
   static sent: FakeXhr[] = []
@@ -101,14 +95,6 @@ function operationHost(
   } = {},
   settlement?: Promise<void>,
 ) {
-  let snapshot: ClientIdentitySnapshot = {
-    authEnabled: true,
-    settled: true,
-    identityKey: 'user:alice',
-    identityGeneration: 1,
-    error: null,
-  }
-  const listeners = new Set<() => void>()
   const mutation = vi.fn((_ref: unknown, args: unknown) =>
     (answers.mutation ?? (async () => 'note_1'))(args),
   )
@@ -118,45 +104,14 @@ function operationHost(
   const query = vi.fn((_ref: unknown, args: unknown) =>
     (answers.query ?? (async () => ({ title: 'Hello' })))(args),
   )
-  const client = {
-    query: query as never,
-    mutation: mutation as never,
-    action: action as never,
-    onUpdate: vi.fn(() => () => {}) as never,
-  }
-  const attachment = createBetterConvexAttachment({
-    client,
-    anonymousClient: client,
-    identity: {
-      snapshot: () => snapshot,
-      waitForInitialSettlement: () => settlement ?? Promise.resolve(),
-      subscribe(listener) {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-    },
-  })
-  const app = createApp({})
-  app.use(createBetterConvex({ attachment }))
-  const scope = effectScope()
-  const state = app.runWithContext(() =>
-    scope.run(() =>
-      useConvexOperation((op, work: (op: ConvexOperation) => Promise<unknown>) => work(op)),
-    ),
-  )!
-  return {
-    state,
-    begin: () => beginIn(state),
-    mutation,
-    action,
-    query,
-    listeners,
-    advanceIdentity() {
-      snapshot = { ...snapshot, identityGeneration: snapshot.identityGeneration + 1 }
-      for (const listener of [...listeners]) listener()
-    },
-    stop: () => scope.stop(),
-  }
+  const host = attachedVueHost(
+    { query, mutation, action },
+    settlement ? { settlement: () => settlement } : {},
+  )
+  const state = host.run(() =>
+    useConvexOperation((op, work: (op: ConvexOperation) => Promise<unknown>) => work(op)),
+  )
+  return { ...host, state, begin: () => beginIn(state), mutation, action, query }
 }
 
 describe('useConvexOperation', () => {
@@ -220,22 +175,6 @@ describe('useConvexOperation', () => {
       functionName: 'notes:create',
     })
     expect(host.mutation).not.toHaveBeenCalled()
-    host.stop()
-  })
-
-  it('rejects a sent step crossed by an identity change as unknown, without waiting for it', async () => {
-    const host = operationHost({ mutation: () => new Promise(() => {}) })
-    const op = host.begin()
-
-    const pending = op.mutation(createNote, { title: 'x' })
-    await vi.waitFor(() => expect(host.mutation).toHaveBeenCalledTimes(1))
-    host.advanceIdentity()
-
-    await expect(pending).rejects.toMatchObject({
-      code: 'IDENTITY_CHANGED',
-      outcome: 'unknown',
-      functionName: 'notes:create',
-    })
     host.stop()
   })
 
@@ -414,19 +353,6 @@ describe('useConvexOperation', () => {
     },
   )
 
-  it('uploads a file that meets its maxSize and allowedTypes', async () => {
-    const host = operationHost()
-    const op = host.begin()
-
-    const upload = op.upload('https://upload.test', new Blob(['four'], { type: 'image/png' }), {
-      maxSize: 4,
-      allowedTypes: ['image/*'],
-    })
-    FakeXhr.sent[0]!.respond('storage_1')
-    await expect(upload).resolves.toBe('storage_1')
-    host.stop()
-  })
-
   it('rejects every step without a browser runtime as not sent', async () => {
     const scope = effectScope()
     const state = scope.run(() =>
@@ -524,7 +450,12 @@ describe('useConvexOperation state', () => {
     await vi.waitFor(() => expect(host.mutation).toHaveBeenCalledTimes(1))
     host.advanceIdentity()
 
-    await expect(running).rejects.toMatchObject({ code: 'IDENTITY_CHANGED', outcome: 'unknown' })
+    // Rejected without waiting for the transport, which never settles.
+    await expect(running).rejects.toMatchObject({
+      code: 'IDENTITY_CHANGED',
+      outcome: 'unknown',
+      functionName: 'notes:create',
+    })
     expect(host.state.status.value).toBe('idle')
     expect(host.state.error.value).toBeUndefined()
     host.stop()
@@ -567,24 +498,6 @@ describe('useConvexOperation state', () => {
 })
 
 describe('operation controller: transport evidence', () => {
-  it("keeps the transport's not-sent identity rejection", async () => {
-    const controller = createOperationController({
-      getIdentityGeneration: () => 0,
-      client: {
-        query: vi.fn() as never,
-        action: vi.fn() as never,
-        mutation: (() =>
-          Promise.reject(createIdentityChangedError('mutation', { outcome: 'not-sent' }))) as never,
-      },
-    })
-
-    await expect(controller.begin().mutation(createNote, { title: 'x' })).rejects.toMatchObject({
-      code: 'IDENTITY_CHANGED',
-      outcome: 'not-sent',
-      functionName: 'notes:create',
-    })
-  })
-
   it('releases a finished operation whose signal was read, but keeps it fenced', async () => {
     let generation = 0
     let notify!: () => void

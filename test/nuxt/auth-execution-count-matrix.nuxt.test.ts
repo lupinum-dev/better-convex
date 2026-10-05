@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { useState } from '#imports'
 
@@ -9,207 +9,97 @@ import {
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
 import { createConvexQueryState } from '../../src/runtime/composables/useConvexQuery'
+import type { ConvexAuthMode } from '../../src/runtime/utils/auth-status'
 import { makeMockOwner } from '../helpers/mock-client-owner'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
 
-afterEach(() => {
-  vi.clearAllMocks()
+/**
+ * "Auth execution-count matrix": spy on WebSocket subscription acquisition
+ * (`MockConvexClient.calls.onUpdate`, one entry per acquired live listener)
+ * across the browser-side auth transitions, every cell asserted with counts
+ * (architecture invariant "count effects, not only visible outcomes"). The
+ * delta across the transition is the number the table specifies.
+ *
+ * SSR / hydration rows are exercised by the dedicated SSR tests in
+ * `test/nuxt/useConvexQuery.nuxt.test.ts` and the auth-disabled fixture's
+ * build-graph scan; they need the HTTP `executeQueryHttp` path, not the live
+ * subscription path this file spies on.
+ */
+type AuthState = { pending: boolean; identity: AuthIdentity }
+const loading: AuthState = { pending: true, identity: LOADING_IDENTITY }
+const anonymous: AuthState = { pending: false, identity: ANONYMOUS_IDENTITY }
+const user = (id: string): AuthState => ({
+  pending: false,
+  identity: toAuthenticatedIdentity({ id }),
 })
 
-/**
- * "Auth execution-count matrix": spy on WebSocket subscription
- * acquisition (`MockConvexClient.calls.onUpdate`, one entry per acquired live
- * listener) across the browser-side contexts of the 7×3 table, every cell
- * asserted with counts (architecture invariant "count effects, not only visible
- * outcomes"). Counts are asserted as deltas across the observed transition
- * rather than hardcoded absolutes, because the composable's own mount-time
- * reactivity (auth-context + identity computed settling) may contribute a
- * fixed baseline of acquisitions before the transition under test; the delta
- * IS the number the table specifies.
- *
- * SSR / hydration rows are exercised qualitatively by the dedicated SSR tests
- * in `test/nuxt/useConvexQuery.nuxt.test.ts` (blocking-first-value / `server:
- * false`) and the auth-disabled fixture's build-graph scan; they are not
- * re-implemented here because they require the HTTP `executeQueryHttp` path,
- * not the live-subscription path this file spies on.
- */
-describe('auth execution-count matrix — browser contexts ', () => {
-  it('client navigation while loading: none acquires immediately; optional executes once on settlement; required stays idle', async () => {
-    // none: no wait, immediate anonymous acquisition.
-    {
-      const primary = new MockConvexClient()
-      const query = mockFnRef<'query'>('matrix:nav:none')
-      const { flush } = await captureInNuxt(
-        () => {
-          const pending = useState<boolean>('convex:pending', () => true)
-          const identity = useState<AuthIdentity>('convex:identity')
-          pending.value = true
-          identity.value = LOADING_IDENTITY
-          return createConvexQueryState(query, {}, { auth: 'none' }).resultData
-        },
-        { owner: makeMockOwner(primary) },
-      )
-      await flush()
-      expect(primary.calls.onUpdate.length).toBeGreaterThan(0)
-    }
+const transitions = {
+  // Client navigation while auth loads, then settles anonymous.
+  'loading -> anonymous': [loading, anonymous],
+  'sign-in': [anonymous, user('A')],
+  'sign-out': [user('A'), anonymous],
+  // A rotated token for the same user does not change the identity key.
+  'same-user token rotation': [user('A'), user('A')],
+  'user A -> user B': [user('A'), user('B')],
+} as const satisfies Record<string, readonly [AuthState, AuthState]>
 
-    // optional/required: zero acquisitions while loading, then a delta once
-    // settlement happens (optional -> anonymous execution; required -> idle).
-    for (const mode of ['optional', 'required'] as const) {
-      const primary = new MockConvexClient()
-      const query = mockFnRef<'query'>(`matrix:nav:${mode}`)
-      const { result, flush } = await captureInNuxt(
-        () => {
-          const pending = useState<boolean>('convex:pending', () => true)
-          const identity = useState<AuthIdentity>('convex:identity')
-          pending.value = true
-          identity.value = LOADING_IDENTITY
-          return createConvexQueryState(query, {}, { auth: mode }).resultData
-        },
-        { owner: makeMockOwner(primary) },
-      )
-      await flush()
-      expect(primary.calls.onUpdate.length).toBe(0) // waits while loading
+describe('auth execution-count matrix — browser contexts', () => {
+  it.each<{
+    transition: keyof typeof transitions
+    auth: ConvexAuthMode
+    before?: number
+    delta: number
+    idle?: true
+  }>([
+    // none never waits for auth; optional and required acquire nothing while loading.
+    { transition: 'loading -> anonymous', auth: 'none', before: 1, delta: 0 },
+    { transition: 'loading -> anonymous', auth: 'optional', before: 0, delta: 1 },
+    { transition: 'loading -> anonymous', auth: 'required', before: 0, delta: 0, idle: true },
+    { transition: 'sign-in', auth: 'none', delta: 0 },
+    { transition: 'sign-in', auth: 'optional', delta: 1 },
+    { transition: 'sign-in', auth: 'required', delta: 1 },
+    { transition: 'sign-out', auth: 'none', delta: 0 },
+    { transition: 'sign-out', auth: 'optional', delta: 1 },
+    { transition: 'sign-out', auth: 'required', delta: 0, idle: true },
+    { transition: 'same-user token rotation', auth: 'none', delta: 0 },
+    { transition: 'same-user token rotation', auth: 'optional', delta: 0 },
+    { transition: 'same-user token rotation', auth: 'required', delta: 0 },
+    { transition: 'user A -> user B', auth: 'none', delta: 0 },
+    { transition: 'user A -> user B', auth: 'optional', delta: 1 },
+    { transition: 'user A -> user B', auth: 'required', delta: 1 },
+  ])('$transition: $auth acquires $delta', async ({ transition, auth, before, delta, idle }) => {
+    const [from, to] = transitions[transition]
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>(`matrix:${transition}:${auth}`)
 
-      const pending = useState<boolean>('convex:pending')
-      const identity = useState<AuthIdentity>('convex:identity')
-      identity.value = ANONYMOUS_IDENTITY
-      pending.value = false // settles anonymous
-      await flush()
+    const { result, flush } = await captureInNuxt(
+      () => {
+        const pending = useState<boolean>('convex:pending')
+        const identity = useState<AuthIdentity>('convex:identity')
+        pending.value = from.pending
+        identity.value = from.identity
+        return {
+          pending,
+          identity,
+          query: createConvexQueryState(query, {}, { auth }).resultData,
+        }
+      },
+      { owner: makeMockOwner(primary) },
+    )
+    await flush()
+    const acquiredBefore = primary.calls.onUpdate.length
+    if (before !== undefined) expect(acquiredBefore).toBe(before)
 
-      if (mode === 'optional') {
-        expect(primary.calls.onUpdate.length).toBe(1)
-      } else {
-        expect(primary.calls.onUpdate.length).toBe(0) // required: stays idle
-        expect(result.status.value).toBe('idle')
-      }
-    }
-  })
+    result.identity.value = to.identity
+    result.pending.value = to.pending
+    await flush()
 
-  it('sign-in: none has zero auth-driven reruns; optional/required each acquire exactly one delta for the user', async () => {
-    for (const mode of ['none', 'optional', 'required'] as const) {
-      const primary = new MockConvexClient()
-      const query = mockFnRef<'query'>(`matrix:signin:${mode}`)
-
-      const { flush } = await captureInNuxt(
-        () => {
-          const pending = useState<boolean>('convex:pending', () => false)
-          const identity = useState<AuthIdentity>('convex:identity')
-          pending.value = false
-          identity.value = ANONYMOUS_IDENTITY
-          return createConvexQueryState(query, {}, { auth: mode }).resultData
-        },
-        { owner: makeMockOwner(primary) },
-      )
-      await flush()
-      const before = primary.calls.onUpdate.length
-
-      const identity = useState<AuthIdentity>('convex:identity')
-      identity.value = toAuthenticatedIdentity({ id: 'u1' })
-      await flush()
-      const delta = primary.calls.onUpdate.length - before
-
-      if (mode === 'none') {
-        expect(delta).toBe(0) // zero auth-driven reruns
-      } else {
-        expect(delta).toBe(1)
-      }
-    }
-  })
-
-  it('sign-out: none has zero auth-driven reruns; optional reruns once anonymously; required releases to idle with zero new calls', async () => {
-    for (const mode of ['none', 'optional', 'required'] as const) {
-      const primary = new MockConvexClient()
-      const query = mockFnRef<'query'>(`matrix:signout:${mode}`)
-
-      const { result, flush } = await captureInNuxt(
-        () => {
-          const pending = useState<boolean>('convex:pending', () => false)
-          const identity = useState<AuthIdentity>('convex:identity')
-          pending.value = false
-          identity.value = toAuthenticatedIdentity({ id: 'u1' })
-          return createConvexQueryState(query, {}, { auth: mode }).resultData
-        },
-        { owner: makeMockOwner(primary) },
-      )
-      await flush()
-      const before = primary.calls.onUpdate.length
-
-      const identity = useState<AuthIdentity>('convex:identity')
-      identity.value = ANONYMOUS_IDENTITY
-      await flush()
-      const delta = primary.calls.onUpdate.length - before
-
-      if (mode === 'none') {
-        expect(delta).toBe(0)
-      } else if (mode === 'optional') {
-        expect(delta).toBe(1)
-      } else {
-        expect(delta).toBe(0) // zero new calls; release to idle
-        expect(primary.activeListenerCount(query, {})).toBe(0)
-        expect(result.status.value).toBe('idle')
-      }
-    }
-  })
-
-  it('same-user token rotation: zero acquisitions/releases for every mode', async () => {
-    for (const mode of ['none', 'optional', 'required'] as const) {
-      const primary = new MockConvexClient()
-      const query = mockFnRef<'query'>(`matrix:rotation:${mode}`)
-
-      const { flush } = await captureInNuxt(
-        () => {
-          const pending = useState<boolean>('convex:pending', () => false)
-          const identity = useState<AuthIdentity>('convex:identity')
-          pending.value = false
-          identity.value = toAuthenticatedIdentity({ id: 'u1' })
-          return createConvexQueryState(query, {}, { auth: mode }).resultData
-        },
-        { owner: makeMockOwner(primary) },
-      )
-      await flush()
-      const before = primary.calls.onUpdate.length
-
-      // Same-user token rotation does not change the identity KEY (same
-      // `user.id`); the isolation dimension the composable keys off never
-      // changes, so publishing a rotated token for the same user must not reacquire.
-      const identity = useState<AuthIdentity>('convex:identity')
-      identity.value = toAuthenticatedIdentity({ id: 'u1' })
-      await flush()
-
-      expect(primary.calls.onUpdate.length).toBe(before)
-    }
-  })
-
-  it('user A to user B: zero for none; optional/required each acquire exactly one delta per authenticated identity transition', async () => {
-    for (const mode of ['none', 'optional', 'required'] as const) {
-      const primary = new MockConvexClient()
-      const query = mockFnRef<'query'>(`matrix:AtoB:${mode}`)
-
-      const { flush } = await captureInNuxt(
-        () => {
-          const pending = useState<boolean>('convex:pending', () => false)
-          const identity = useState<AuthIdentity>('convex:identity')
-          pending.value = false
-          identity.value = toAuthenticatedIdentity({ id: 'A' })
-          return createConvexQueryState(query, {}, { auth: mode }).resultData
-        },
-        { owner: makeMockOwner(primary) },
-      )
-      await flush()
-      const before = primary.calls.onUpdate.length
-
-      const identity = useState<AuthIdentity>('convex:identity')
-      identity.value = toAuthenticatedIdentity({ id: 'B' })
-      await flush()
-      const delta = primary.calls.onUpdate.length - before
-
-      if (mode === 'none') {
-        expect(delta).toBe(0) // identity-blind transport
-      } else {
-        expect(delta).toBe(1)
-      }
+    expect(primary.calls.onUpdate.length - acquiredBefore).toBe(delta)
+    if (idle) {
+      expect(primary.activeListenerCount(query, {})).toBe(0)
+      expect(result.query.status.value).toBe('idle')
+      expect(result.query.blockedBy.value).toBe('auth')
     }
   })
 })

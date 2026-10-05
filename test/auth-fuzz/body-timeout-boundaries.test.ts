@@ -48,17 +48,19 @@ describe('seeded auth proxy size and timeout boundaries', () => {
 
       await expect(
         readRequestBodyWithLimit(eventFrom(chunkedStream(bytes(limit), random)), limit),
-      ).resolves.toHaveLength(limit)
+      ).resolves.toEqual(bytes(limit))
       await expect(
         readRequestBodyWithLimit(eventFrom(chunkedStream(bytes(limit + 1), random)), limit),
       ).rejects.toMatchObject({
         code: 'BCN_AUTH_PROXY_REQUEST_BODY_TOO_LARGE',
+        maxBytes: limit,
         statusCode: 413,
       })
       await expect(
         readResponseBodyWithLimit(new Response(chunkedStream(bytes(limit + 1), random)), limit),
       ).rejects.toMatchObject({
         code: 'BCN_AUTH_PROXY_UPSTREAM_BODY_TOO_LARGE',
+        maxBytes: limit,
         statusCode: 502,
       })
     })

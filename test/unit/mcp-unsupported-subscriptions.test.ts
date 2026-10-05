@@ -82,19 +82,27 @@ function request({
 }
 
 describe('finite MCP subscription boundary', () => {
-  it.each(['listen-1', 42])(
-    'rejects unavailable subscriptions with the correlated SDK method error (%s)',
-    async (id) => {
+  // Only subscriptions/listen goes through the package's own rewrite (no-store); the SDK answers
+  // resources/subscribe and resources/unsubscribe itself.
+  it.each([
+    ['subscriptions/listen', 'listen-1', {}, 'no-store'],
+    ['subscriptions/listen', 42, {}, 'no-store'],
+    ['resources/subscribe', 'subscribe-1', { uri: 'note://example' }, null],
+    ['resources/unsubscribe', 'unsubscribe-1', { uri: 'note://example' }, null],
+  ] as const)(
+    'rejects unavailable %s with the correlated SDK method error (%s)',
+    async (method, id, params, cacheControl) => {
       const f = fixture()
-      const response = await handleMcpRequest(request({ id }), f.options)
+      const response = await handleMcpRequest(request({ method, id, params }), f.options)
       expect(response.status).toBe(404)
       expect(response.headers.get('content-type')).toContain('application/json')
-      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(response.headers.get('cache-control')).toBe(cacheControl)
       expect(await response.json()).toEqual({
         jsonrpc: '2.0',
         id,
         error: { code: -32601, message: 'Method not found' },
       })
+      expect(f.configureServer).toHaveBeenCalledOnce()
       expect(f.invoked).not.toHaveBeenCalled()
     },
   )

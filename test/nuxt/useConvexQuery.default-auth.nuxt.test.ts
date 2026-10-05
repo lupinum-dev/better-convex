@@ -1,6 +1,6 @@
 import { getFunctionName } from 'convex/server'
 import { hash } from 'ohash'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { onMounted } from 'vue'
 
 import { useNuxtApp, useState } from '#imports'
@@ -32,10 +32,6 @@ function hydrating<T>(factory: () => T): T {
   })
   return result
 }
-
-afterEach(() => {
-  vi.clearAllMocks()
-})
 
 describe('convex.auth.defaultQueryAuth', () => {
   it('gates queries that omit auth, while an explicit auth still wins', async () => {

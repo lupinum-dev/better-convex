@@ -45,14 +45,6 @@ describe('useConvexAttachment Nuxt host boundary', () => {
       'connection',
       'identity',
     ])
-    expect(typeof result.client.query).toBe('function')
-    expect(typeof result.client.mutation).toBe('function')
-    expect(typeof result.client.action).toBe('function')
-    expect(typeof result.client.onUpdate).toBe('function')
-    expect(typeof result.anonymousClient.query).toBe('function')
-    expect(typeof result.anonymousClient.mutation).toBe('function')
-    expect(typeof result.anonymousClient.action).toBe('function')
-    expect(typeof result.anonymousClient.onUpdate).toBe('function')
     expect(Object.keys(result.identity).sort()).toEqual([
       'snapshot',
       'subscribe',

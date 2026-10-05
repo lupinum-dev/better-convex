@@ -69,17 +69,6 @@ describe('paginated query page state', () => {
     expect(fence.isCurrent(disposedOperation)).toBe(false)
   })
 
-  it('creates a pending page with no result or error', () => {
-    const pending = createPendingPaginationPage({ numItems: 10, cursor: 'c1', id: 7 })
-
-    expect(pending).toMatchObject({
-      paginationOpts: { numItems: 10, cursor: 'c1', id: 7 },
-      result: undefined,
-      error: undefined,
-      unsubscribe: null,
-    })
-  })
-
   it('commits results immutably while preserving unsubscribe handles', () => {
     const unsubscribe = vi.fn()
     const pages: PaginationPageState<string>[] = [

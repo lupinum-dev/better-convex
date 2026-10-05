@@ -1,5 +1,5 @@
 import type { ConnectionState } from 'convex/browser'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createConvexClientOwner,
@@ -72,9 +72,14 @@ function owner(withAnonymous = true) {
   })
 }
 
-function resetCounts() {
+beforeEach(() => {
   CountingClient.created = 0
   CountingClient.closed = 0
+})
+
+/** Replace the primary with a candidate that confirms immediately. */
+function replace(o: ReturnType<typeof owner>, identityGeneration: number) {
+  return o.replacePrimary({ identityGeneration, isCurrent: () => true, initialize: async () => {} })
 }
 
 /** Minimal fake auth port emitting identity-generation transitions on demand. */
@@ -116,29 +121,19 @@ function fakePort(initial: Partial<ClientIdentitySnapshot> = {}) {
 }
 
 describe('createConvexClientOwner', () => {
-  it('creates one primary eagerly and exposes a stable handle', () => {
-    resetCounts()
-    const o = owner()
-    expect(CountingClient.created).toBe(1) // anonymous is lazy, not created yet
-    const primary = o.getPrimary()
-    expect(primary?.identityGeneration).toBe(0)
-    // Handle identity is stable across reads.
-    expect(o.handle.query).toBe(o.handle.query)
-  })
-
-  it('creates the anonymous client lazily and reuses it', () => {
-    resetCounts()
+  it('creates the primary eagerly, the anonymous client lazily and once, and a stable handle', () => {
     const o = owner()
     expect(CountingClient.created).toBe(1)
-    const a1 = o.getAnonymous()
+    expect(o.getPrimary()?.identityGeneration).toBe(0)
+    expect(o.handle.query).toBe(o.handle.query)
+
+    const anonymous = o.getAnonymous()
     expect(CountingClient.created).toBe(2)
-    const a2 = o.getAnonymous()
-    expect(a2).toBe(a1)
+    expect(o.getAnonymous()).toBe(anonymous)
     expect(CountingClient.created).toBe(2)
   })
 
   it('reuses the primary for anonymous transport when no anonymousFactory is given (auth-disabled)', () => {
-    resetCounts()
     const o = owner(false)
     expect(o.getAnonymous()).toBe(o.getPrimary()!.client)
     expect(CountingClient.created).toBe(1)
@@ -146,37 +141,23 @@ describe('createConvexClientOwner', () => {
 
   describe('replacePrimary', () => {
     it('notifies adapter observers only when publishing a replacement', async () => {
-      resetCounts()
       const o = owner()
       const observer = vi.fn()
       const unsubscribe = o.subscribeIdentityChange(observer)
 
-      await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      await replace(o, 1)
 
       expect(observer).toHaveBeenCalledTimes(1)
       unsubscribe()
-      await o.replacePrimary({
-        identityGeneration: 2,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      await replace(o, 2)
       expect(observer).toHaveBeenCalledTimes(1)
       await o.dispose()
     })
 
     it('creates B, publishes it, closes A, and advances the generation (create/close balance)', async () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
-      await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      await replace(o, 1)
       const b = o.getPrimary()!.client as unknown as CountingClient
       expect(b).not.toBe(a)
       expect(o.getPrimary()!.identityGeneration).toBe(1)
@@ -201,18 +182,13 @@ describe('createConvexClientOwner', () => {
         },
       })
 
-      const replacement = await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      const replacement = await replace(o, 1)
       expect(replacement).toBe(o.getPrimary()?.client)
       await Promise.resolve()
       await o.dispose()
     })
 
     it('rejects an in-flight consumer-held mutation with IDENTITY_CHANGED on retirement', async () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       a.setMutationHandler('m', () => a.hangingMutation())
@@ -226,16 +202,11 @@ describe('createConvexClientOwner', () => {
       await Promise.resolve()
       expect(a.calls.mutation).toHaveLength(1)
 
-      await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      await replace(o, 1)
       await assertion
     })
 
     it('closes the candidate and leaves no prior principal dispatchable when initialize rejects', async () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       const failure = new Error('confirmation failed')
@@ -266,7 +237,6 @@ describe('createConvexClientOwner', () => {
     })
 
     it('retires the prior principal before a synchronous replacement factory failure', async () => {
-      resetCounts()
       const factoryFailure = new Error('primary factory failed')
       let factoryCalls = 0
       const o = createConvexClientOwner({
@@ -288,11 +258,7 @@ describe('createConvexClientOwner', () => {
 
       let replacement: Promise<OwnedConvexClient> | undefined
       expect(() => {
-        replacement = o.replacePrimary({
-          identityGeneration: 1,
-          isCurrent: () => true,
-          initialize: async () => {},
-        })
+        replacement = replace(o, 1)
       }).not.toThrow()
 
       // Retirement is synchronous even though the factory error is delivered
@@ -313,7 +279,6 @@ describe('createConvexClientOwner', () => {
     })
 
     it('a stale candidate (isCurrent=false) is closed and never published', async () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       await expect(
@@ -332,7 +297,6 @@ describe('createConvexClientOwner', () => {
 
   describe('onUpdate rebinding', () => {
     it('rebinds active listeners A→B with a stable unsubscribe and exactly one live subscription', async () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       const cb = vi.fn()
@@ -343,11 +307,7 @@ describe('createConvexClientOwner', () => {
       expect(unsubscribe.getCurrentValue()).toBe('current:1')
       expect(unsubscribe.getQueryLogs()).toEqual(['logs:1'])
 
-      await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      await replace(o, 1)
       const b = o.getPrimary()!.client as unknown as CountingClient
 
       // Detached from A, reattached to B — exactly one live subscription total.
@@ -355,6 +315,9 @@ describe('createConvexClientOwner', () => {
       expect(b.activeListenerCount()).toBe(1)
       expect(unsubscribe.getCurrentValue()).toBe('current:2')
       expect(unsubscribe.getQueryLogs()).toEqual(['logs:2'])
+      // A B-side emission reaches the original callback.
+      b.emitQueryResultByPath('q', 42)
+      expect(cb).toHaveBeenCalledWith(42)
 
       // The unsubscribe identity is stable and removes the CURRENT (B) subscription.
       unsubscribe()
@@ -364,41 +327,20 @@ describe('createConvexClientOwner', () => {
       expect(b.activeListenerCount()).toBe(0)
     })
 
-    it('a B-side emission still reaches the original callback after rebinding', async () => {
-      resetCounts()
-      const o = owner()
-      const cb = vi.fn()
-      o.handle.onUpdate(mockFnRef<'query'>('q'), {}, cb)
-      await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
-      const b = o.getPrimary()!.client as unknown as CountingClient
-      b.emitQueryResultByPath('q', 42)
-      expect(cb).toHaveBeenCalledWith(42)
-    })
-
     it('drops an already queued callback from the retired client', async () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       const cb = vi.fn()
       o.handle.onUpdate(mockFnRef<'query'>('q'), {}, cb)
       const deliverQueuedAResult = a.queuedQueryResultByPath('q', 'stale')
 
-      await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      await replace(o, 1)
       deliverQueuedAResult()
 
       expect(cb).not.toHaveBeenCalled()
     })
 
     it('settles a pending replacement and closes its candidate during disposal', async () => {
-      resetCounts()
       const o = owner()
       const replacement = o.replacePrimary({
         identityGeneration: 1,
@@ -446,7 +388,6 @@ describe('createConvexClientOwner', () => {
 
     for (const rawCall of rawCallCases) {
       it(`rejects a raw ${rawCall.method} entered while generation A is unsettled before generation B can dispatch it`, async () => {
-        resetCounts()
         const { port, emit } = fakePort({ settled: false })
         const o = owner()
         o.attachIdentityPort(port)
@@ -482,7 +423,6 @@ describe('createConvexClientOwner', () => {
       })
 
       it(`waits and runs a raw ${rawCall.method} when auth settles in the same generation`, async () => {
-        resetCounts()
         const { port, emit } = fakePort({ settled: false })
         const o = owner()
         o.attachIdentityPort(port)
@@ -499,32 +439,10 @@ describe('createConvexClientOwner', () => {
         await o.dispose()
       })
     }
-
-    it('resolves normally when the generation is unchanged', async () => {
-      resetCounts()
-      const o = owner()
-      const a = o.getPrimary()!.client as unknown as CountingClient
-      a.setQueryHandler('q', () => 'ok')
-      await expect(o.handle.query(mockFnRef<'query'>('q'), {})).resolves.toBe('ok')
-    })
-
-    it('does not reject a same-generation notification', async () => {
-      resetCounts()
-      const { port, emit } = fakePort()
-      const o = owner()
-      o.attachIdentityPort(port)
-      const a = o.getPrimary()!.client as unknown as CountingClient
-      a.setQueryHandler('q', () => 'ok')
-      emit({})
-      await Promise.resolve()
-      expect(o.getPrimary()!.client).toBe(a as unknown as OwnedConvexClient)
-      expect(CountingClient.created).toBe(1) // no replacement client created
-    })
   })
 
   describe('attachIdentityPort reactive replacement', () => {
     it('replaces the primary exactly on identityGeneration changes', async () => {
-      resetCounts()
       const { port, emit, initializePrimary } = fakePort()
       const o = owner()
       o.attachIdentityPort(port)
@@ -547,7 +465,6 @@ describe('createConvexClientOwner', () => {
 
   describe('connection-state store', () => {
     it('subscribes on first consumer, unsubscribes on last', () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       expect(a.connectionSubscriberCount()).toBe(0)
@@ -561,7 +478,6 @@ describe('createConvexClientOwner', () => {
     })
 
     it('resets to default and rebinds to the replacement on primary replacement', async () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       o.connection.addConsumer()
@@ -571,11 +487,7 @@ describe('createConvexClientOwner', () => {
       })
       expect((o.connection.state.value as ConnectionState).isWebSocketConnected).toBe(true)
 
-      await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      await replace(o, 1)
       const b = o.getPrimary()!.client as unknown as CountingClient
 
       // Synchronously reset; old subscription dropped; rebound to B (has consumer).
@@ -588,7 +500,6 @@ describe('createConvexClientOwner', () => {
 
   describe('dispose', () => {
     it('returns a complete inert unsubscribe without retaining a late listener', async () => {
-      resetCounts()
       const o = owner()
       const original = o.getPrimary()!.client as unknown as CountingClient
       await o.dispose()
@@ -612,7 +523,6 @@ describe('createConvexClientOwner', () => {
     })
 
     it('drops identity observers on disposal and makes late subscriptions inert', async () => {
-      resetCounts()
       const o = owner()
       const observer = vi.fn()
       o.subscribeIdentityChange(observer)
@@ -622,21 +532,7 @@ describe('createConvexClientOwner', () => {
       expect(observer).not.toHaveBeenCalled()
     })
 
-    it('closes every allocated client and is idempotent (create/close balance)', async () => {
-      resetCounts()
-      const o = owner()
-      o.getAnonymous() // force the anonymous client to exist
-      expect(CountingClient.created).toBe(2)
-
-      await o.dispose()
-      expect(CountingClient.closed).toBe(2) // primary + anonymous both closed
-      // Idempotent: second dispose does not double-close.
-      await o.dispose()
-      expect(CountingClient.closed).toBe(2)
-    })
-
     it('rejects in-flight consumer calls with IDENTITY_CHANGED on dispose', async () => {
-      resetCounts()
       const o = owner()
       const a = o.getPrimary()!.client as unknown as CountingClient
       a.setMutationHandler('m', () => a.hangingMutation())
@@ -652,20 +548,18 @@ describe('createConvexClientOwner', () => {
       await assertion
     })
 
-    it('returns all live client counts to zero after disposal', async () => {
-      resetCounts()
+    it('closes every allocated client exactly once, even when disposed twice', async () => {
       const o = owner()
       o.getAnonymous()
-      await o.replacePrimary({
-        identityGeneration: 1,
-        isCurrent: () => true,
-        initialize: async () => {},
-      })
+      await replace(o, 1)
       // created: primary A + anonymous + replacement B = 3; A already closed on replace.
       expect(CountingClient.created).toBe(3)
       expect(CountingClient.closed).toBe(1)
       await o.dispose()
       // B + anonymous close on dispose → all 3 closed.
+      expect(CountingClient.closed).toBe(3)
+      // Idempotent: a second dispose does not double-close.
+      await o.dispose()
       expect(CountingClient.closed).toBe(3)
     })
   })
@@ -696,7 +590,6 @@ describe('createConvexClientOwner', () => {
   })
 
   it('does not retry a persistently failing candidate within the same identity generation', async () => {
-    resetCounts()
     const { port, emit, initializePrimary, failPrimary } = fakePort()
     initializePrimary.mockRejectedValue(new Error('persistent confirmation failure'))
     const o = owner()

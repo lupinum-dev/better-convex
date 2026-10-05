@@ -122,43 +122,25 @@ describe('provider-neutral auth adapter identity port', () => {
     port.dispose()
   })
 
-  it('maps Better Auth-style session changes without exposing its session token', async () => {
-    let session: { token: string; user: { id: string } } | null = null
-    let generation = 0
-    const listeners = new Set<() => void>()
-    const adapter: BrowserAuthAdapter = {
-      snapshot: () =>
-        session ? authSnapshot(session.user.id, generation) : anonymousSnapshot(generation),
-      subscribe(listener) {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-      fetchToken: async () => 'better-auth-convex-jwt-sentinel',
-      refreshSession: async () => {},
-    }
+  it('maps provider sessions to identity keys without exposing provider data', () => {
+    const adapter = new FakeAdapter(anonymousSnapshot(0))
     const port = createAuthAdapterIdentityPort(adapter)
 
-    session = { token: 'better-auth-session-secret', user: { id: 'alice' } }
-    generation += 1
-    for (const listener of [...listeners]) listener()
-
+    adapter.emit(authSnapshot('alice', 1))
     expect(port.snapshot()).toMatchObject({
       identityKey: 'user:alice',
       identityGeneration: 1,
       settled: false,
     })
-    expect(JSON.stringify(port.snapshot())).not.toContain('better-auth-session-secret')
-    expect(JSON.stringify(port.snapshot())).not.toContain('convex-jwt-sentinel')
+    expect(JSON.stringify(port.snapshot())).not.toContain('token-secret-sentinel')
+    expect(Object.keys(port)).not.toContain('fetchToken')
 
-    session = {
-      token: 'better-auth-new-session-secret',
-      user: { id: 'alice' },
-    }
-    generation += 1
-    for (const listener of [...listeners]) listener()
+    // A new session for the same user is a new identity generation.
+    adapter.emit(authSnapshot('alice', 2))
     expect(port.snapshot().identityGeneration).toBe(2)
 
     port.dispose()
+    expect(adapter.listenerCount()).toBe(0)
   })
 
   it('retires the old principal synchronously and publishes only after Convex confirms', async () => {
@@ -351,31 +333,6 @@ describe('provider-neutral auth adapter identity port', () => {
       settled: true,
     })
     port.dispose()
-  })
-
-  it('supports a callback-style provider without provider data entering snapshots', async () => {
-    let providerState = anonymousSnapshot(0)
-    const listeners = new Set<() => void>()
-    const customProvider: BrowserAuthAdapter = {
-      snapshot: () => providerState,
-      subscribe(listener) {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-      fetchToken: async () => 'custom-provider-token-sentinel',
-      refreshSession: async () => {},
-    }
-    const port = createAuthAdapterIdentityPort(customProvider)
-    providerState = authSnapshot('custom-subject', 1)
-    for (const listener of [...listeners]) listener()
-
-    const serialized = JSON.stringify(port.snapshot())
-    expect(serialized).not.toContain('token-sentinel')
-    expect(serialized).not.toContain('role')
-    expect(serialized).not.toContain('permission')
-    expect(Object.keys(port)).not.toContain('fetchToken')
-    port.dispose()
-    expect(listeners).toHaveLength(0)
   })
 
   it('fails closed on invalid provider state and redacts the raw provider error', () => {

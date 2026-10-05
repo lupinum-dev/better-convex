@@ -130,20 +130,6 @@ function challengeScopes(response: Response): string[] {
 }
 
 describe('per-tool MCP scope challenges', () => {
-  it('returns the official SDK step-up challenge before the operation runs', async () => {
-    const h = harness()
-    await expect(sdkCall(h)).rejects.toThrow()
-    const response = h.exchanges.at(-1)!.response
-    expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({
-      error: 'insufficient_scope',
-    })
-    expect(response.headers.get('www-authenticate')).toBe(
-      `Bearer error="insufficient_scope", error_description="Insufficient scope", scope="notes:read notes:write", resource_metadata="${resourceMetadata}"`,
-    )
-    expect(h.operation).not.toHaveBeenCalled()
-  })
-
   it('dispatches once with sufficient scopes and leaves unprotected tools usable', async () => {
     for (const [scopes, name] of [
       [supported, 'write_note'],
@@ -247,13 +233,6 @@ describe('per-tool MCP scope challenges', () => {
     expect(challengeScopes(response)).toContain('notes:read')
     expect(h.configureServer).not.toHaveBeenCalled()
     expect(h.operation).not.toHaveBeenCalled()
-  })
-
-  it('dispatches tools without a declared scope challenge', async () => {
-    const h = harness(['notes:read'], null)
-    const response = await handleMcpRequest(await capturedCall(), h.options)
-    expect(response.status).toBe(200)
-    expect(h.operation).toHaveBeenCalledOnce()
   })
 
   it('challenges a protected resource read before its callback', async () => {

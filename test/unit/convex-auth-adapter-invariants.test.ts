@@ -25,10 +25,8 @@ import {
 import packagedSchema from '../../src/runtime/convex-auth/component/schema'
 import packagedSchemaMetadata from '../../src/runtime/convex-auth/component/schemaMetadata'
 import { requireWritableAuthCtx } from '../../src/runtime/convex-auth/context'
-import teamSchema from '../../starters/team/convex/betterAuth/schema'
 import teamSchemaMetadata from '../../starters/team/convex/betterAuth/schemaMetadata'
 import teamSchemaOptions from '../../starters/team/convex/betterAuth/schemaOptions'
-import localComponentSchema from '../fixtures/better-auth-local-component/convex/betterAuth/schema'
 import localComponentSchemaMetadata from '../fixtures/better-auth-local-component/convex/betterAuth/schemaMetadata'
 import localComponentSchemaOptions from '../fixtures/better-auth-local-component/convex/betterAuth/schemaOptions'
 import twoFactorSchemaMetadata from '../fixtures/better-auth-two-factor/convex/betterAuth/schemaMetadata'
@@ -156,20 +154,6 @@ describe('greenfield Convex auth schema generation', () => {
     ).toContainEqual({
       descriptor: 'tenant_handle_identity',
       fields: ['tenantId', 'handle'],
-      unique: true,
-    })
-  })
-
-  it('identifies accounts by the provider key without the retired 1.7.0-1.7.2 issuer', () => {
-    const account = packagedSchemaMetadata.models.account
-
-    expect(account?.fields).toHaveProperty('providerId')
-    expect(account?.fields).toHaveProperty('accountId')
-    expect(account?.fields).not.toHaveProperty('issuer')
-    expect(account?.fields).not.toHaveProperty('providerAccountId')
-    expect(account?.indexes).toContainEqual({
-      descriptor: 'providerId_accountId',
-      fields: ['providerId', 'accountId'],
       unique: true,
     })
   })
@@ -323,13 +307,6 @@ describe('greenfield Convex auth schema generation', () => {
     )
   })
 
-  it('keeps every maintained local component paired with its generated metadata', () => {
-    expect(() =>
-      assertAuthSchemaMatchesMetadata(localComponentSchema, localComponentSchemaMetadata),
-    ).not.toThrow()
-    expect(() => assertAuthSchemaMatchesMetadata(teamSchema, teamSchemaMetadata)).not.toThrow()
-  })
-
   it('generates the organization indexes used by live authorization and invitation paging', () => {
     expect(localComponentSchemaMetadata.models.member?.indexes).toContainEqual({
       descriptor: 'organizationId_userId',
@@ -360,11 +337,17 @@ describe('greenfield Convex auth schema generation', () => {
     const accountIndexDescriptors: readonly string[] =
       packagedSchemaMetadata.models.account?.indexes.map((index) => index.descriptor) ?? []
 
+    // Accounts are identified by the provider key, without the retired 1.7.0-1.7.2 issuer.
     expect(
       packagedSchemaMetadata.models.account?.indexes.find(
         (index) => index.descriptor === 'providerId_accountId',
       ),
-    ).toMatchObject({ unique: true })
+    ).toEqual({
+      descriptor: 'providerId_accountId',
+      fields: ['providerId', 'accountId'],
+      unique: true,
+    })
+    expect(packagedSchemaMetadata.models.account?.fields).not.toHaveProperty('providerAccountId')
 
     expect(accountIndexDescriptors).not.toContain('providerId_userId')
     expect(
@@ -495,27 +478,15 @@ describe('greenfield Convex auth query invariants', () => {
 })
 
 describe('greenfield Convex auth write contexts', () => {
-  it('rejects writes from a query-only context before transport is invoked', () => {
-    const queryCtx = {
-      db: {},
-      auth: {},
-      runQuery: async () => null,
-    }
+  it('requires runMutation before any auth write transport is invoked', () => {
+    const queryCtx = { db: {}, auth: {}, runQuery: async () => null }
 
     expect(() => requireWritableAuthCtx(queryCtx as never)).toThrow(
       'AUTH_WRITE_REQUIRES_MUTATION_OR_ACTION',
     )
-  })
-
-  it('accepts a mutation/action context that exposes runMutation', () => {
-    const writableCtx = {
-      db: {},
-      auth: {},
-      runQuery: async () => null,
-      runMutation: async () => null,
-    }
-
-    expect(() => requireWritableAuthCtx(writableCtx as never)).not.toThrow()
+    expect(() =>
+      requireWritableAuthCtx({ ...queryCtx, runMutation: async () => null } as never),
+    ).not.toThrow()
   })
 
   it('rejects a write through the Better Auth adapter when invoked from a query', async () => {

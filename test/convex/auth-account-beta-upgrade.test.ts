@@ -322,23 +322,15 @@ describe('beta account rows under the 1.0 account identity', () => {
 
     const after = await rawAccounts()
     // No account was added or re-keyed, and the retired issuer was never rewritten.
-    expect(
-      after.map(({ id, providerId, accountId, userId, issuer }) => ({
+    const keys = (rows: Record<string, unknown>[]) =>
+      rows.map(({ id, providerId, accountId, userId, issuer }) => ({
         id,
         providerId,
         accountId,
         userId,
         issuer,
-      })),
-    ).toEqual(
-      before.map(({ id, providerId, accountId, userId, issuer }) => ({
-        id,
-        providerId,
-        accountId,
-        userId,
-        issuer,
-      })),
-    )
+      }))
+    expect(keys(after)).toEqual(keys(before))
     // The linked-account refresh on sign-in did write through the adapter.
     expect(after.find((row) => row.id === 'account-alice-google')?.idToken).toMatch(/^\$ba\$/u)
   })

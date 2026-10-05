@@ -61,16 +61,32 @@ function client(): Client {
   return result as unknown as Client
 }
 
+/** A runtime over `auth` that records every client it constructs. */
+function start(auth?: Adapter) {
+  const clients: Client[] = []
+  const runtime = createBetterConvexBrowserRuntime({
+    auth,
+    clientFactory: () => {
+      const value = client()
+      clients.push(value)
+      return value
+    },
+  })
+  return { runtime, clients }
+}
+
+function session(
+  status: BrowserAuthSnapshot['status'],
+  identityKey: string | null,
+  sessionGeneration: number,
+  error: Error | null = null,
+): BrowserAuthSnapshot {
+  return { status, identityKey, sessionGeneration, error }
+}
+
 describe('Better Convex browser runtime', () => {
   it('owns one anonymous primary and exposes only the stable attachment', async () => {
-    const clients: Client[] = []
-    const runtime = createBetterConvexBrowserRuntime({
-      clientFactory: () => {
-        const value = client()
-        clients.push(value)
-        return value
-      },
-    })
+    const { runtime, clients } = start()
     expect(clients).toHaveLength(1)
     await runtime.ready()
 
@@ -93,17 +109,9 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('confirms an initially authenticated provider before readiness', async () => {
-    const adapter = new Adapter({
-      status: 'authenticated',
-      identityKey: 'alice',
-      sessionGeneration: 1,
-      error: null,
-    })
-    const initialClient = client()
-    const runtime = createBetterConvexBrowserRuntime({
-      clientFactory: () => initialClient,
-      auth: adapter,
-    })
+    const adapter = new Adapter(session('authenticated', 'alice', 1))
+    const { runtime, clients } = start(adapter)
+    const initialClient = clients[0]!
     const ready = runtime.ready()
     expect(runtime.identity.snapshot().settled).toBe(false)
     expect(initialClient.setAuthCalls).toBe(1)
@@ -123,29 +131,11 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('ignores a stale initial confirmation failure after the identity changes', async () => {
-    const adapter = new Adapter({
-      status: 'authenticated',
-      identityKey: 'alice',
-      sessionGeneration: 1,
-      error: null,
-    })
-    const clients: Client[] = []
-    const runtime = createBetterConvexBrowserRuntime({
-      auth: adapter,
-      clientFactory: () => {
-        const value = client()
-        clients.push(value)
-        return value
-      },
-    })
+    const adapter = new Adapter(session('authenticated', 'alice', 1))
+    const { runtime, clients } = start(adapter)
     const ready = runtime.ready()
 
-    adapter.emit({
-      status: 'authenticated',
-      identityKey: 'bob',
-      sessionGeneration: 2,
-      error: null,
-    })
+    adapter.emit(session('authenticated', 'bob', 2))
     expect(clients).toHaveLength(2)
     clients[1]!.confirm(true)
 
@@ -161,21 +151,8 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('still fails closed when the initial generation is rejected', async () => {
-    const adapter = new Adapter({
-      status: 'authenticated',
-      identityKey: 'alice',
-      sessionGeneration: 1,
-      error: null,
-    })
-    const clients: Client[] = []
-    const runtime = createBetterConvexBrowserRuntime({
-      auth: adapter,
-      clientFactory: () => {
-        const value = client()
-        clients.push(value)
-        return value
-      },
-    })
+    const adapter = new Adapter(session('authenticated', 'alice', 1))
+    const { runtime, clients } = start(adapter)
     const ready = runtime.ready()
 
     clients[0]!.confirm(false)
@@ -192,30 +169,12 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('waits through loading and replaces before publishing a later identity', async () => {
-    const adapter = new Adapter({
-      status: 'loading',
-      identityKey: null,
-      sessionGeneration: 0,
-      error: null,
-    })
-    const clients: Client[] = []
-    const runtime = createBetterConvexBrowserRuntime({
-      auth: adapter,
-      clientFactory: () => {
-        const value = client()
-        clients.push(value)
-        return value
-      },
-    })
+    const adapter = new Adapter(session('loading', null, 0))
+    const { runtime, clients } = start(adapter)
     const ready = runtime.ready()
     expect(clients).toHaveLength(0)
 
-    adapter.emit({
-      status: 'authenticated',
-      identityKey: 'bob',
-      sessionGeneration: 1,
-      error: null,
-    })
+    adapter.emit(session('authenticated', 'bob', 1))
     expect(runtime.identity.snapshot()).toMatchObject({
       settled: false,
       identityKey: 'user:bob',
@@ -228,30 +187,12 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('constructs one primary when loading settles anonymous', async () => {
-    const adapter = new Adapter({
-      status: 'loading',
-      identityKey: null,
-      sessionGeneration: 0,
-      error: null,
-    })
-    const clients: Client[] = []
-    const runtime = createBetterConvexBrowserRuntime({
-      auth: adapter,
-      clientFactory: () => {
-        const value = client()
-        clients.push(value)
-        return value
-      },
-    })
+    const adapter = new Adapter(session('loading', null, 0))
+    const { runtime, clients } = start(adapter)
     const ready = runtime.ready()
     expect(clients).toHaveLength(0)
 
-    adapter.emit({
-      status: 'anonymous',
-      identityKey: null,
-      sessionGeneration: 1,
-      error: null,
-    })
+    adapter.emit(session('anonymous', null, 1))
 
     await ready
     expect(clients).toHaveLength(1)
@@ -267,13 +208,8 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('cancels an unconfirmed initial credential during disposal', async () => {
-    const adapter = new Adapter({
-      status: 'authenticated',
-      identityKey: 'alice',
-      sessionGeneration: 1,
-      error: null,
-    })
-    const runtime = createBetterConvexBrowserRuntime({ clientFactory: client, auth: adapter })
+    const adapter = new Adapter(session('authenticated', 'alice', 1))
+    const { runtime } = start(adapter)
     const ready = runtime.ready()
 
     await runtime.dispose()
@@ -282,29 +218,11 @@ describe('Better Convex browser runtime', () => {
   })
 
   it('refetches a failed provider session and waits for replacement confirmation', async () => {
-    const adapter = new Adapter({
-      status: 'error',
-      identityKey: null,
-      sessionGeneration: 1,
-      error: new Error('private-provider-sentinel'),
-    })
-    const clients: Client[] = []
-    const runtime = createBetterConvexBrowserRuntime({
-      auth: adapter,
-      clientFactory: () => {
-        const value = client()
-        clients.push(value)
-        return value
-      },
-    })
+    const adapter = new Adapter(session('error', null, 1, new Error('private-provider-sentinel')))
+    const { runtime, clients } = start(adapter)
     await runtime.ready()
     adapter.refreshSession.mockImplementationOnce(async () => {
-      adapter.emit({
-        status: 'authenticated',
-        identityKey: 'alice',
-        sessionGeneration: 2,
-        error: null,
-      })
+      adapter.emit(session('authenticated', 'alice', 2))
     })
 
     const refresh = runtime.refreshAuth()

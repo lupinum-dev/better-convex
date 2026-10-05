@@ -106,6 +106,24 @@ async function updateRow(
   })
 }
 
+function findRefresh(test: ReturnType<typeof initTest>, id: string) {
+  return test.query(auth.findOne, {
+    model: 'oauthRefreshToken',
+    where: [{ field: 'id', value: id }],
+  })
+}
+
+/** The same user consents again to the same client after a revocation. */
+function consentAgain(test: ReturnType<typeof initTest>, id = 'new-consent') {
+  return createRow(test, 'oauthConsent', {
+    id,
+    clientId: access.clientId,
+    userId: access.subject,
+    resources: [access.resource],
+    scopes: [...access.scopes],
+  })
+}
+
 function refresh(id = 'refresh-1') {
   return {
     id,
@@ -188,12 +206,10 @@ describe('canonical OAuth refresh protection', () => {
     await createLiveGrant(test)
     await createRow(test, 'oauthRefreshToken', refresh())
     await createOtherClientUsers(test, 3)
-    expect(
-      await test.query(auth.findOne, {
-        model: 'oauthRefreshToken',
-        where: [{ field: 'id', value: 'refresh-1' }],
-      }),
-    ).toMatchObject({ bcnConsentId: 'oauth-consent-row', userId: access.subject })
+    expect(await findRefresh(test, 'refresh-1')).toMatchObject({
+      bcnConsentId: 'oauth-consent-row',
+      userId: access.subject,
+    })
     expect(await invalidate(test)).toBe(1)
     expect(await validate(test)).toBe(false)
     expect(await test.query(auth.count, { model: 'oauthConsent' })).toBe(3)
@@ -211,10 +227,7 @@ describe('canonical OAuth refresh protection', () => {
     const test = initTest()
     await createLiveGrant(test)
     await createRow(test, 'oauthRefreshToken', refresh())
-    const row = await test.query(auth.findOne, {
-      model: 'oauthRefreshToken',
-      where: [{ field: 'id', value: 'refresh-1' }],
-    })
+    const row = await findRefresh(test, 'refresh-1')
     expect(row?.expiresAt).toBe(now + 60000)
     await rotate(test)
     await updateRow(test, 'session', access.sessionId, {
@@ -225,10 +238,7 @@ describe('canonical OAuth refresh protection', () => {
       data: refresh('refresh-2'),
       oauthRefreshParentId: 'refresh-1',
     })
-    const next = await test.query(auth.findOne, {
-      model: 'oauthRefreshToken',
-      where: [{ field: 'id', value: 'refresh-2' }],
-    })
+    const next = await findRefresh(test, 'refresh-2')
     expect(next?.expiresAt).toBe(now + 60000)
   })
 
@@ -271,13 +281,7 @@ describe('canonical OAuth refresh protection', () => {
     await createRow(test, 'oauthRefreshToken', refresh())
     await rotate(test)
     await invalidate(test)
-    await createRow(test, 'oauthConsent', {
-      id: 'new-consent',
-      clientId: access.clientId,
-      userId: access.subject,
-      resources: [access.resource],
-      scopes: [...access.scopes],
-    })
+    await consentAgain(test)
     await expect(
       test.mutation(auth.create, {
         model: 'oauthRefreshToken',
@@ -297,31 +301,10 @@ describe('canonical OAuth refresh protection', () => {
     await createLiveGrant(test)
     await createRow(test, 'oauthRefreshToken', refresh())
     await updateRow(test, model as string, id as string, update as Record<string, unknown>)
-    expect(
-      await test.query(auth.findOne, {
-        model: 'oauthRefreshToken',
-        where: [{ field: 'id', value: 'refresh-1' }],
-      }),
-    ).toBeNull()
+    expect(await findRefresh(test, 'refresh-1')).toBeNull()
     await expect(createRow(test, 'oauthRefreshToken', refresh('refresh-2'))).rejects.toThrow(
       'AUTH_OAUTH_REFRESH_INVALID',
     )
-  })
-
-  it('revokes current consent with an explicit refresh-token revocation', async () => {
-    const test = initTest()
-    await createLiveGrant(test)
-    await createRow(test, 'oauthRefreshToken', refresh())
-    await test.mutation(auth.incrementOne, {
-      model: 'oauthRefreshToken',
-      where: [
-        { field: 'id', value: 'refresh-1' },
-        { field: 'revoked', value: null },
-      ],
-      increment: {},
-      set: { revoked: now },
-    })
-    expect(await validate(test)).toBe(false)
   })
 
   it('rejects a successor with changed client, scope, resource, or unrotated parent', async () => {
@@ -350,41 +333,40 @@ describe('canonical OAuth refresh protection', () => {
       ).rejects.toThrow('AUTH_OAUTH_REFRESH_INVALID')
     }
   })
-  it('revokes a large family even when physical cleanup exceeds the bulk limit', async () => {
-    const test = initTest()
-    await createLiveGrant(test)
-    for (let index = 0; index < 130; index++)
-      await createRow(test, 'oauthRefreshToken', refresh(`refresh-${index}`))
-    expect(await invalidate(test)).toBe(128)
-    expect(await validate(test)).toBe(false)
-    const retained = await test.query(auth.findMany, {
-      model: 'oauthRefreshToken',
-      paginationOpts: { cursor: null, numItems: 10 },
-    })
-    expect(retained.page).toHaveLength(2)
-    for (const row of retained.page) {
-      expect(
-        await test.query(auth.findOne, {
-          model: 'oauthRefreshToken',
-          where: [{ field: 'id', value: String(row.id) }],
-        }),
-      ).toBeNull()
-    }
-    await createRow(test, 'oauthConsent', {
-      id: 'new-consent',
-      clientId: access.clientId,
-      userId: access.subject,
-      resources: [access.resource],
-      scopes: [...access.scopes],
-    })
-    for (const row of retained.page)
-      expect(
-        await test.query(auth.findOne, {
-          model: 'oauthRefreshToken',
-          where: [{ field: 'id', value: String(row.id) }],
-        }),
-      ).toBeNull()
-  })
+  it.each([
+    [
+      'by client and user',
+      [
+        { field: 'clientId', value: access.clientId },
+        { field: 'userId', value: access.subject },
+      ],
+    ],
+    [
+      'when its original authorization code is replayed',
+      [{ field: 'authorizationCodeId', value: 'original-code-hash' }],
+    ],
+  ])(
+    'revokes a large family %s even when physical cleanup exceeds the bulk limit',
+    async (_label, where) => {
+      const test = initTest()
+      await createLiveGrant(test)
+      for (let index = 0; index < 130; index++)
+        await createRow(test, 'oauthRefreshToken', {
+          ...refresh(`refresh-${index}`),
+          authorizationCodeId: 'original-code-hash',
+        })
+      expect(await test.mutation(auth.deleteMany, { model: 'oauthRefreshToken', where })).toBe(128)
+      expect(await validate(test)).toBe(false)
+      const retained = await test.query(auth.findMany, {
+        model: 'oauthRefreshToken',
+        paginationOpts: { cursor: null, numItems: 10 },
+      })
+      expect(retained.page).toHaveLength(2)
+      for (const row of retained.page) expect(await findRefresh(test, String(row.id))).toBeNull()
+      await consentAgain(test)
+      for (const row of retained.page) expect(await findRefresh(test, String(row.id))).toBeNull()
+    },
+  )
   it.each([
     ['session', access.sessionId],
     ['user', access.subject],
@@ -432,21 +414,10 @@ describe('canonical OAuth refresh protection', () => {
           resourceId: access.resource,
         })
       }
-      await createRow(test, 'oauthConsent', {
-        id: 'replacement-consent',
-        clientId: access.clientId,
-        userId: access.subject,
-        scopes: [...access.scopes],
-        resources: [access.resource],
-      })
+      await consentAgain(test, 'replacement-consent')
       expect(await validate(test)).toBe(false)
       expect(await rotate(test, 'refresh-127')).toBeNull()
-      expect(
-        await test.query(auth.findOne, {
-          model: 'oauthRefreshToken',
-          where: [{ field: 'id', value: 'refresh-127' }],
-        }),
-      ).toBeNull()
+      expect(await findRefresh(test, 'refresh-127')).toBeNull()
     },
   )
   it('does not let a stale in-flight family revoke replacement consent', async () => {
@@ -457,13 +428,7 @@ describe('canonical OAuth refresh protection', () => {
       model: 'oauthConsent',
       where: [{ field: 'id', value: 'oauth-consent-row' }],
     })
-    await createRow(test, 'oauthConsent', {
-      id: 'new-consent',
-      clientId: access.clientId,
-      userId: access.subject,
-      resources: [access.resource],
-      scopes: [...access.scopes],
-    })
+    await consentAgain(test)
     await createRow(test, 'oauthRefreshToken', refresh('new-grant-refresh'))
     await test.mutation(auth.deleteMany, {
       model: 'oauthRefreshToken',
@@ -479,39 +444,6 @@ describe('canonical OAuth refresh protection', () => {
         where: [{ field: 'id', value: 'new-consent' }],
       }),
     ).not.toBeNull()
-    expect(
-      await test.query(auth.findOne, {
-        model: 'oauthRefreshToken',
-        where: [{ field: 'id', value: 'new-grant-refresh' }],
-      }),
-    ).not.toBeNull()
-  })
-  it('revokes a large authorization-code family when its original code is replayed', async () => {
-    const test = initTest()
-    await createLiveGrant(test)
-    for (let index = 0; index < 130; index++)
-      await createRow(test, 'oauthRefreshToken', {
-        ...refresh(`refresh-${index}`),
-        authorizationCodeId: 'original-code-hash',
-      })
-    expect(
-      await test.mutation(auth.deleteMany, {
-        model: 'oauthRefreshToken',
-        where: [{ field: 'authorizationCodeId', value: 'original-code-hash' }],
-      }),
-    ).toBe(128)
-    expect(await validate(test)).toBe(false)
-    const retained = await test.query(auth.findMany, {
-      model: 'oauthRefreshToken',
-      paginationOpts: { cursor: null, numItems: 10 },
-    })
-    expect(retained.page).toHaveLength(2)
-    for (const row of retained.page)
-      expect(
-        await test.query(auth.findOne, {
-          model: 'oauthRefreshToken',
-          where: [{ field: 'id', value: String(row.id) }],
-        }),
-      ).toBeNull()
+    expect(await findRefresh(test, 'new-grant-refresh')).not.toBeNull()
   })
 })

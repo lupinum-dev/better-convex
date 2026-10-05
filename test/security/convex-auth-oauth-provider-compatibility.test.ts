@@ -100,30 +100,21 @@ describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
     )
     expect(provisioningHook).toBeDefined()
 
-    for (const path of ['/admin/oauth2/create-client', '/admin/oauth2/update-client']) {
-      expect(provisioningHook!.matcher({ path })).toBe(true)
-    }
-    expect(provisioningHook!.matcher({ path: '/admin/oauth2/resources' })).toBe(false)
-    expect(provisioningHook!.matcher({ path: '/admin/oauth2/resources/:identifier' })).toBe(false)
-    expect(provisioningHook!.matcher({ body: {}, path: '/admin/oauth2/resources' })).toBe(true)
+    // Each row: [request context, whether the provisioning guard must run].
+    const cases: Array<[{ body?: unknown; method?: string; path: string }, boolean]> = [
+      [{ path: '/admin/oauth2/create-client' }, true],
+      [{ path: '/admin/oauth2/update-client' }, true],
+      [{ path: '/admin/oauth2/resources' }, false],
+      [{ path: '/admin/oauth2/resources/:identifier' }, false],
+      [{ body: {}, path: '/admin/oauth2/resources' }, true],
+      [{ body: {}, path: '/admin/oauth2/resources/:identifier' }, true],
+      [{ method: 'GET', path: '/admin/oauth2/resources' }, false],
+      [{ method: 'GET', path: '/admin/oauth2/resources/:identifier' }, false],
+      [{ method: 'DELETE', path: '/admin/oauth2/resources/:identifier' }, false],
+    ]
     expect(
-      provisioningHook!.matcher({ body: {}, path: '/admin/oauth2/resources/:identifier' }),
-    ).toBe(true)
-    expect(provisioningHook!.matcher({ method: 'GET', path: '/admin/oauth2/resources' })).toBe(
-      false,
-    )
-    expect(
-      provisioningHook!.matcher({
-        method: 'GET',
-        path: '/admin/oauth2/resources/:identifier',
-      }),
-    ).toBe(false)
-    expect(
-      provisioningHook!.matcher({
-        method: 'DELETE',
-        path: '/admin/oauth2/resources/:identifier',
-      }),
-    ).toBe(false)
+      cases.filter(([context, guarded]) => provisioningHook!.matcher(context) !== guarded),
+    ).toEqual([])
 
     await expect(
       provisioningHook!.handler({

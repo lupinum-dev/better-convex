@@ -24,6 +24,10 @@ function jwt(sub: string, expiresInSeconds = 3_600, issuedAtMs = Date.now()) {
   return `${encode({ alg: 'none' })}.${encode({ sub, iat, exp: iat + expiresInSeconds })}.signature`
 }
 
+function signedIn(token = 'session-a', id = 'alice'): SessionState {
+  return { isPending: false, data: { session: { token }, user: { id } }, error: null }
+}
+
 function source(
   initial: SessionState,
   responses: Array<{ data?: { token: string | null } | null; error?: unknown }>,
@@ -45,14 +49,10 @@ function source(
 describe('Better Auth browser adapter', () => {
   it('reports a 401 token response as an error when the session refetch hangs', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    const fixture = source(
-      {
-        isPending: false,
-        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
-        error: null,
-      },
-      [{ data: { token: jwt('alice') } }, { error: { status: 401 } }],
-    )
+    const fixture = source(signedIn(), [
+      { data: { token: jwt('alice') } },
+      { error: { status: 401 } },
+    ])
     fixture.refetch.mockReturnValue(new Promise(() => {}))
     const anonymous = vi.fn()
     const adapter = createBetterAuthBrowserAdapter(fixture.client, {
@@ -85,14 +85,7 @@ describe('Better Auth browser adapter', () => {
   ] as const)(
     'on a 401 token response where %s, publishes the expected errors',
     async (_case, settledData, expectedErrors) => {
-      const fixture = source(
-        {
-          isPending: false,
-          data: { session: { token: 'session-a' }, user: { id: 'alice' } },
-          error: null,
-        },
-        [{ data: { token: jwt('alice') } }],
-      )
+      const fixture = source(signedIn(), [{ data: { token: jwt('alice') } }])
       const visibleErrors: string[] = []
       const adapter = createBetterAuthBrowserAdapter(fixture.client, {
         authenticated: vi.fn(),
@@ -176,61 +169,34 @@ describe('Better Auth browser adapter', () => {
     },
   )
 
-  it('keeps matching SSR identity provenance through initial provider settlement', () => {
-    const fixture = source({ isPending: true, data: null, error: null }, [])
-    const adapter = createBetterAuthBrowserAdapter(fixture.client, undefined, {
-      initialIdentityKey: 'alice',
-    })
+  it.each([
+    ['keeps matching', 'alice', 0],
+    ['retires mismatched', 'bob', 1],
+  ] as const)(
+    '%s SSR identity provenance at initial provider settlement',
+    (_case, userId, sessionGeneration) => {
+      const fixture = source({ isPending: true, data: null, error: null }, [])
+      const adapter = createBetterAuthBrowserAdapter(fixture.client, undefined, {
+        initialIdentityKey: 'alice',
+      })
+      expect(adapter.snapshot()).toMatchObject({
+        status: 'authenticated',
+        identityKey: 'alice',
+        sessionGeneration: 0,
+      })
 
-    expect(adapter.snapshot()).toMatchObject({
-      status: 'authenticated',
-      identityKey: 'alice',
-      sessionGeneration: 0,
-    })
-
-    fixture.session.value = {
-      isPending: false,
-      data: {
-        session: { token: 'session-a' },
-        user: { id: 'alice' },
-      },
-      error: null,
-    }
-    expect(adapter.snapshot()).toMatchObject({
-      status: 'authenticated',
-      identityKey: 'alice',
-      sessionGeneration: 0,
-    })
-    adapter.dispose()
-  })
-
-  it('retires mismatched SSR identity provenance before provider confirmation', () => {
-    const fixture = source({ isPending: true, data: null, error: null }, [])
-    const adapter = createBetterAuthBrowserAdapter(fixture.client, undefined, {
-      initialIdentityKey: 'alice',
-    })
-
-    fixture.session.value = {
-      isPending: false,
-      data: {
-        session: { token: 'session-b' },
-        user: { id: 'bob' },
-      },
-      error: null,
-    }
-    expect(adapter.snapshot()).toMatchObject({
-      status: 'authenticated',
-      identityKey: 'bob',
-      sessionGeneration: 1,
-    })
-    adapter.dispose()
-  })
+      fixture.session.value = signedIn(`session-${userId}`, userId)
+      expect(adapter.snapshot()).toMatchObject({
+        status: 'authenticated',
+        identityKey: userId,
+        sessionGeneration,
+      })
+      adapter.dispose()
+    },
+  )
 
   it('uses the same session parser for identity and reconciliation', () => {
-    const stableData = {
-      session: { token: 'session-a' },
-      user: { id: 'alice' },
-    }
+    const stableData = signedIn().data!
     const fixture = source({ isPending: true, data: null, error: null }, [])
     const sessionChanged = vi.fn()
     const adapter = createBetterAuthBrowserAdapter(fixture.client, {
@@ -321,10 +287,7 @@ describe('Better Auth browser adapter', () => {
   })
 
   it('assigns a new revision when a failed-closed session later recovers', () => {
-    const data = {
-      session: { token: 'session-a' },
-      user: { id: 'alice' },
-    }
+    const { data } = signedIn()
     const fixture = source({ isPending: false, data, error: null }, [])
     const sessionChanged = vi.fn()
     const adapter = createBetterAuthBrowserAdapter(fixture.client, {
@@ -346,23 +309,9 @@ describe('Better Auth browser adapter', () => {
     adapter.dispose()
   })
 
-  it('returns only a matching short-lived Convex identity token', async () => {
-    const aliceToken = jwt('alice')
-    const fixture = source(
-      {
-        isPending: false,
-        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
-        error: null,
-      },
-      [{ data: { token: aliceToken }, error: null }],
-    )
-    const adapter = createBetterAuthBrowserAdapter(fixture.client)
-    await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBe(aliceToken)
-    expect(JSON.stringify(adapter.snapshot())).not.toContain(aliceToken)
-    adapter.dispose()
-  })
-
   it.each([
+    ['a fresh token for the session user', jwt('alice'), true],
+    ['a token for another subject', jwt('bob'), false],
     // The browser clock is an hour fast: by local time this fresh token already expired.
     [
       'a 15-minute token issued an hour before local time',
@@ -370,33 +319,29 @@ describe('Better Auth browser adapter', () => {
       true,
     ],
     ['a token that lives no longer than the safety buffer', jwt('alice', 30), false],
-  ])('judges %s by its own lifetime, not the local clock', async (_case, token, accepted) => {
-    const fixture = source(
-      {
-        isPending: false,
-        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
-        error: null,
-      },
-      Array.from({ length: 4 }, () => ({ data: { token }, error: null })),
-    )
-    const adapter = createBetterAuthBrowserAdapter(fixture.client)
-    await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBe(
-      accepted ? token : null,
-    )
-    adapter.dispose()
-  })
+  ])(
+    'judges %s by subject and its own lifetime, not the local clock',
+    async (_case, token, accepted) => {
+      const fixture = source(
+        signedIn(),
+        Array.from({ length: 4 }, () => ({ data: { token }, error: null })),
+      )
+      const adapter = createBetterAuthBrowserAdapter(fixture.client)
+      await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBe(
+        accepted ? token : null,
+      )
+      expect(JSON.stringify(adapter.snapshot())).not.toContain(token)
+      adapter.dispose()
+    },
+  )
 
   it('stands in with the cached token after a transient failure only for its lifetime', async () => {
     const token = jwt('alice', 900)
     const unavailable = { error: { status: 503 } }
-    const fixture = source(
-      {
-        isPending: false,
-        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
-        error: null,
-      },
-      [{ data: { token }, error: null }, ...Array.from({ length: 8 }, () => unavailable)],
-    )
+    const fixture = source(signedIn(), [
+      { data: { token }, error: null },
+      ...Array.from({ length: 8 }, () => unavailable),
+    ])
     let monotonicMs = 1_000
     vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs)
     const adapter = createBetterAuthBrowserAdapter(fixture.client)
@@ -412,20 +357,6 @@ describe('Better Auth browser adapter', () => {
     adapter.dispose()
     vi.useRealTimers()
     vi.restoreAllMocks()
-  })
-
-  it('rejects a token whose subject disagrees with the observed session user', async () => {
-    const fixture = source(
-      {
-        isPending: false,
-        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
-        error: null,
-      },
-      [{ data: { token: jwt('bob') }, error: null }],
-    )
-    const adapter = createBetterAuthBrowserAdapter(fixture.client)
-    await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBeNull()
-    adapter.dispose()
   })
 
   it('fails malformed/error session state closed and disposes observation once', () => {
@@ -481,10 +412,7 @@ describe('Better Auth browser adapter', () => {
   })
 
   it('retains an established session on a transient refetch failure but retires it on 401', async () => {
-    const data = {
-      session: { token: 'session-a' },
-      user: { id: 'alice' },
-    }
+    const { data } = signedIn()
     const fixture = source({ isPending: false, data, error: null }, [])
     const listener = vi.fn()
     const adapter = createBetterAuthBrowserAdapter(fixture.client)
@@ -531,10 +459,7 @@ describe('Better Auth browser adapter', () => {
   })
 
   it('waits for the canonical session ref to settle after refetch resolves', async () => {
-    const data = {
-      session: { token: 'session-a' },
-      user: { id: 'alice' },
-    }
+    const { data } = signedIn()
     const fixture = source({ isPending: false, data, error: null }, [])
     fixture.refetch.mockImplementationOnce(async () => {
       fixture.session.value = {
@@ -564,10 +489,7 @@ describe('Better Auth browser adapter', () => {
   })
 
   it('waits for the winning refetch when a concurrent provider refresh aborts its request', async () => {
-    const data = {
-      session: { token: 'session-a' },
-      user: { id: 'alice' },
-    }
+    const { data } = signedIn()
     const fixture = source({ isPending: false, data, error: null }, [])
     fixture.refetch.mockImplementationOnce(async () => {
       fixture.session.value = {
@@ -601,10 +523,7 @@ describe('Better Auth browser adapter', () => {
   it('bounds a provider session ref that never settles', async () => {
     vi.useFakeTimers()
     try {
-      const data = {
-        session: { token: 'session-a' },
-        user: { id: 'alice' },
-      }
+      const { data } = signedIn()
       const fixture = source({ isPending: false, data, error: null }, [])
       fixture.refetch.mockImplementationOnce(async () => {
         fixture.session.value = {

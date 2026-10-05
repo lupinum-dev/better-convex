@@ -15,28 +15,14 @@ type TransportStateKeys =
   | 'pendingActions'
 
 describe('connection-state public contract', () => {
-  it('names one return type shared by Vue and Nuxt', () => {
+  it('names one return type of only transport facts, shared by Vue and Nuxt', () => {
     expectTypeOf<
       ReturnType<typeof useVueConvexConnectionState>
     >().toEqualTypeOf<UseConvexConnectionStateReturn>()
     expectTypeOf<
       ReturnType<typeof useNuxtConvexConnectionState>
     >().toEqualTypeOf<UseConvexConnectionStateReturn>()
-  })
-
-  it('contains only transport facts in Vue and Nuxt', () => {
-    expectTypeOf<
-      keyof ReturnType<typeof useVueConvexConnectionState>
-    >().toEqualTypeOf<TransportStateKeys>()
-    expectTypeOf<
-      keyof ReturnType<typeof useNuxtConvexConnectionState>
-    >().toEqualTypeOf<TransportStateKeys>()
-    expectTypeOf<ReturnType<typeof useVueConvexConnectionState>>().not.toHaveProperty(
-      'shouldShowOfflineUi',
-    )
-    expectTypeOf<ReturnType<typeof useNuxtConvexConnectionState>>().not.toHaveProperty(
-      'shouldShowOfflineUi',
-    )
+    expectTypeOf<keyof UseConvexConnectionStateReturn>().toEqualTypeOf<TransportStateKeys>()
   })
 
   it('uses a deterministic disconnected projection during SSR', () => {

@@ -2,7 +2,7 @@ import { decideQueryExecution } from '@lupinum/better-convex-vue/internal'
 import type { PaginationResult } from 'convex/server'
 import { describe, expect, it } from 'vitest'
 
-import { ConvexCallError, normalizeConvexError } from '../../src/runtime/errors'
+import { ConvexCallError } from '../../src/runtime/errors'
 import { deriveConvexAuthStatus, type ConvexAuthMode } from '../../src/runtime/utils/auth-status'
 import {
   convexQueryAsyncDataKey,
@@ -115,17 +115,6 @@ describe('Nuxt auth state adapted to the one Vue execution decision', () => {
     ).toBe('convex:idle:notes:list')
   })
 
-  it('does not execute a deferred query and reports it as manual', () => {
-    expect(
-      resolveConvexQueryGate({
-        auth: 'none',
-        started: false,
-        skipped: false,
-        identity: projectNuxtQueryIdentity(states.anonymous),
-      }),
-    ).toMatchObject({ outcome: 'idle', blockedBy: 'manual' })
-  })
-
   it('reports auth as the blocker for every gate outcome auth causes', () => {
     const expected: Record<keyof typeof states, Record<ConvexAuthMode, string | null>> = {
       disabled: { required: 'auth', optional: null, none: null },
@@ -187,30 +176,22 @@ describe('SSR view shared by the server render and the hydrating browser', () =>
   it('carries the gate blocker into the rendered view', () => {
     expect(view({ gate: 'wait' }).blockedBy).toBe('auth')
     expect(view({ gate: 'idle' }).blockedBy).toBe('skip')
-    expect(view({ gate: 'error', authError }).blockedBy).toBe('auth')
   })
 
-  it('names the query on an auth-gate error', () => {
+  it('renders the settled auth error gate as that error, named for the query', () => {
     const rendered = view({ gate: 'error', authError })
+    expect(rendered).toMatchObject({ status: 'error', value: undefined, blockedBy: 'auth' })
     expect(rendered.error).toMatchObject({
       kind: 'authentication',
-      message: authError.message,
+      message: 'Session exchange failed',
       functionName: 'notes:list',
     })
+    // The shared auth error is copied, not tagged with one query's name.
     expect(authError.functionName).toBeUndefined()
   })
 
   it('keeps a null Convex result as data', () => {
-    expect(
-      projectConvexSsrQuery<null>({
-        gate: executing,
-        server: true,
-        functionName: 'notes:list',
-        authError: null,
-        entry: { value: null },
-        fetching: false,
-      }).status,
-    ).toBe('success')
+    expect(view({ entry: { value: null as never } }).status).toBe('success')
   })
 
   it('renders server: false as idle, like Nuxt useAsyncData, never as pending', () => {
@@ -230,15 +211,6 @@ describe('SSR view shared by the server render and the hydrating browser', () =>
       value: undefined,
       error: undefined,
       blockedBy: null,
-    })
-  })
-
-  it('renders the settled auth error gate as that error, named for the query', () => {
-    expect(view({ gate: 'error', authError })).toEqual({
-      status: 'error',
-      value: undefined,
-      error: normalizeConvexError(authError, { functionName: 'notes:list' }),
-      blockedBy: 'auth',
     })
   })
 

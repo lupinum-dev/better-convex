@@ -140,6 +140,8 @@ function createHarness() {
   }
 }
 
+type Client = ReturnType<typeof createHarness>['integrated']
+
 describe('integrated client against pinned Better Auth 1.7.6', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -190,33 +192,24 @@ describe('integrated client against pinned Better Auth 1.7.6', () => {
   it.each([
     [
       'sign-in',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
+      (client: Client) =>
         client.signIn.email({ email: 'alice@example.test', password: 'correct horse' }),
     ],
-    ['sign-out', (client: ReturnType<typeof createHarness>['integrated']) => client.signOut()],
-    [
-      'two-factor verify',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
-        client.twoFactor.verifyTotp({ code: '123456' }),
-    ],
+    ['sign-out', (client: Client) => client.signOut()],
+    ['two-factor verify', (client: Client) => client.twoFactor.verifyTotp({ code: '123456' })],
     [
       'organization set-active',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
-        client.organization.setActive({ organizationId: 'org-1' }),
+      (client: Client) => client.organization.setActive({ organizationId: 'org-1' }),
     ],
-    [
-      'revoke session',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
-        client.revokeSession({ token: 'session:other' }),
-    ],
+    ['revoke session', (client: Client) => client.revokeSession({ token: 'session:other' })],
     [
       'password reset (revokes sessions, no session signal)',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
+      (client: Client) =>
         client.resetPassword({ newPassword: 'new correct horse', token: 'reset-token' }),
     ],
     [
       'email OTP password reset (no session signal)',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
+      (client: Client) =>
         client.emailOtp.resetPassword({
           email: 'alice@example.test',
           otp: '123456',
@@ -225,18 +218,17 @@ describe('integrated client against pinned Better Auth 1.7.6', () => {
     ],
     [
       'email OTP change-email (email claim, no session signal)',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
+      (client: Client) =>
         client.emailOtp.changeEmail({ newEmail: 'alice@new.example.test', otp: '123456' }),
     ],
     [
       'social sign-in with an ID token (no redirect, no session signal)',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
+      (client: Client) =>
         client.signIn.social({ provider: 'google', idToken: { token: 'id-token' } }),
     ],
     [
       'a session-changing call sent with disableSignal',
-      (client: ReturnType<typeof createHarness>['integrated']) =>
-        client.signOut({ fetchOptions: { disableSignal: true } }),
+      (client: Client) => client.signOut({ fetchOptions: { disableSignal: true } }),
     ],
   ])('reconciles %s through the canonical session', async (_name, operation) => {
     const harness = createHarness()

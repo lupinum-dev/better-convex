@@ -71,6 +71,23 @@ function event(
   }
 }
 
+function stubFetch<T extends (...args: never[]) => unknown>(fetchMock: T): T {
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+const handlers = {
+  proxy: () => import('../../src/runtime/server/api/auth/[...]'),
+  jwks: () => import('../../src/runtime/server/api/auth/jwks'),
+  metadata: () => import('../../src/runtime/server/api/auth/authorization-server-metadata'),
+}
+
+async function loadHandler(name: keyof typeof handlers = 'proxy') {
+  return (await handlers[name]()).default as unknown as (
+    input: ReturnType<typeof event>,
+  ) => Promise<Uint8Array>
+}
+
 describe('auth proxy security regressions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -93,16 +110,16 @@ describe('auth proxy security regressions', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('makes exactly one manual request and never follows an upstream redirect', async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response('', {
-          status: 302,
-          headers: { location: 'http://127.0.0.1/api/auth/get-session' },
-        }),
+    const fetchMock = stubFetch(
+      vi.fn(
+        async () =>
+          new Response('', {
+            status: 302,
+            headers: { location: 'http://127.0.0.1/api/auth/get-session' },
+          }),
+      ),
     )
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
     await handler(event())
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock).toHaveBeenCalledWith(
@@ -116,10 +133,8 @@ describe('auth proxy security regressions', () => {
   })
 
   it('preserves Better Auth navigation versus browser-fetch redirect semantics', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}'))
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn(async () => new Response('{}')))
+    const handler = await loadHandler()
 
     await handler(event('GET', undefined, { 'sec-fetch-mode': 'navigate' }))
     await handler(event('GET', undefined, { 'sec-fetch-mode': 'cors' }))
@@ -143,12 +158,10 @@ describe('auth proxy security regressions', () => {
   })
 
   it('denies a poisoned Host with a matching attacker Origin before upstream delivery', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}'))
-    vi.stubGlobal('fetch', fetchMock)
+    const fetchMock = stubFetch(vi.fn(async () => new Response('{}')))
     mocks.requestUrl.mockReturnValue(new URL('https://attacker.example.test/api/auth/get-session'))
 
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
 
     await expect(
       handler(
@@ -172,11 +185,9 @@ describe('auth proxy security regressions', () => {
       ...configured,
       auth: { ...configured.auth, origin: '' },
     })
-    const fetchMock = vi.fn(async () => new Response('{}'))
-    vi.stubGlobal('fetch', fetchMock)
+    const fetchMock = stubFetch(vi.fn(async () => new Response('{}')))
 
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
     await expect(handler(event())).rejects.toMatchObject({
       statusCode: 500,
       data: { code: 'BCN_AUTH_PROXY_PUBLIC_ORIGIN_MISSING' },
@@ -184,16 +195,20 @@ describe('auth proxy security regressions', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it.each([undefined, '203.0.113.10, 10.0.0.1', 'not-an-ip'])(
+  it.each([
+    undefined,
+    '203.0.113.10, 10.0.0.1',
+    '203.0.113.10 forwarded',
+    '999.0.0.1',
+    'not-an-ip',
+  ])(
     'rejects a missing or invalid trusted client IP before upstream delivery: %s',
     async (clientIp) => {
-      const fetchMock = vi.fn(async () => new Response('{}'))
-      vi.stubGlobal('fetch', fetchMock)
+      const fetchMock = stubFetch(vi.fn(async () => new Response('{}')))
       const headers =
         clientIp === undefined ? { 'cf-connecting-ip': '' } : { 'cf-connecting-ip': clientIp }
 
-      const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-        .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+      const handler = await loadHandler()
       await expect(handler(event('GET', undefined, headers))).rejects.toMatchObject({
         statusCode: 400,
         data: { code: 'BCN_AUTH_PROXY_CLIENT_IP_INVALID' },
@@ -206,11 +221,9 @@ describe('auth proxy security regressions', () => {
     'reports a missing or weak proxy secret as configuration before upstream delivery: %s',
     async (secret) => {
       vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', secret)
-      const fetchMock = vi.fn(async () => new Response('{}'))
-      vi.stubGlobal('fetch', fetchMock)
+      const fetchMock = stubFetch(vi.fn(async () => new Response('{}')))
 
-      const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-        .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+      const handler = await loadHandler()
       await expect(handler(event())).rejects.toMatchObject({
         statusCode: 500,
         data: { code: 'BCN_AUTH_PROXY_IP_SECRET_INVALID' },
@@ -223,13 +236,9 @@ describe('auth proxy security regressions', () => {
     mocks.storage.mockImplementation(() => {
       throw new Error('diagnostics storage unavailable')
     })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}')),
-    )
+    stubFetch(vi.fn(async () => new Response('{}')))
 
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
     const proxyEvent = event()
 
     await expect(handler(proxyEvent)).resolves.toBeUndefined()
@@ -246,16 +255,12 @@ describe('auth proxy security regressions', () => {
     const requestSentinel = 'BCN_PROXY_REQUEST_SECRET_SENTINEL'
     const responseSentinel = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJwcm94eS1zZW50aW5lbCJ9.signature'
     const requestBody = new TextEncoder().encode(`password=${requestSentinel}`)
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ token: responseSentinel }))),
-    )
+    stubFetch(vi.fn(async () => new Response(JSON.stringify({ token: responseSentinel }))))
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/sign-in/email'))
 
     try {
-      const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-        .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+      const handler = await loadHandler()
       await handler(
         event('POST', requestBody, {
           'content-length': String(requestBody.byteLength),
@@ -279,16 +284,14 @@ describe('auth proxy security regressions', () => {
   it('preserves bytes, regenerates framing, and drops proxy controls', async () => {
     const bytes = new Uint8Array([255, 0, 97])
     let forwarded: RequestInit | undefined
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(async (_url: string, init?: RequestInit) => {
         forwarded = init
         return new Response('{}')
       }),
     )
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/plugin/binary'))
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
     await handler(
       event('POST', bytes, {
         'content-length': '3',
@@ -318,12 +321,8 @@ describe('auth proxy security regressions', () => {
     })
     responseHeaders.append('set-cookie', 'better-auth.session_token=one; Path=/; HttpOnly')
     responseHeaders.append('set-cookie', 'better-auth.callback=two; Path=/; HttpOnly')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}', { headers: responseHeaders })),
-    )
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    stubFetch(vi.fn(async () => new Response('{}', { headers: responseHeaders })))
+    const handler = await loadHandler()
     await handler(event())
     expect(mocks.responseCookie).toHaveBeenCalledTimes(2)
     expect(mocks.responseCookie).toHaveBeenNthCalledWith(
@@ -366,15 +365,13 @@ describe('auth proxy security regressions', () => {
       'set-cookie',
       'better-auth.session_token=one; Domain=.example.test; Path=/; Secure; HttpOnly',
     )
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(
         async () =>
           new Response(new ReadableStream({ start() {}, cancel }), { headers: responseHeaders }),
       ),
     )
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
 
     await expect(handler(event())).rejects.toMatchObject({
       statusCode: 502,
@@ -388,15 +385,13 @@ describe('auth proxy security regressions', () => {
     const cancel = vi.fn()
     const responseHeaders = new Headers()
     responseHeaders.append('set-cookie', 'custom.session_token=one; Path=/; Secure; HttpOnly')
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(
         async () =>
           new Response(new ReadableStream({ start() {}, cancel }), { headers: responseHeaders }),
       ),
     )
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
 
     await expect(handler(event())).rejects.toMatchObject({
       statusCode: 502,
@@ -406,11 +401,55 @@ describe('auth proxy security regressions', () => {
     expect(mocks.responseCookie).not.toHaveBeenCalled()
   })
 
+  it('rejects weak session-cookie flags and cancels the upstream body', async () => {
+    const cancel = vi.fn()
+    const responseHeaders = new Headers()
+    responseHeaders.append(
+      'set-cookie',
+      '__Secure-better-auth.session_token=one; Path=/; HttpOnly; SameSite=Lax',
+    )
+    stubFetch(
+      vi.fn(
+        async () =>
+          new Response(new ReadableStream({ start() {}, cancel }), { headers: responseHeaders }),
+      ),
+    )
+    const handler = await loadHandler()
+
+    await expect(handler(event())).rejects.toMatchObject({
+      statusCode: 502,
+      data: { code: 'BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED', violation: 'secure-missing' },
+    })
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(mocks.responseCookie).not.toHaveBeenCalled()
+  })
+
+  it('forwards only the final upstream value for a duplicate cookie name', async () => {
+    const responseHeaders = new Headers()
+    responseHeaders.append(
+      'set-cookie',
+      'better-auth.session_token=old; Path=/; HttpOnly; SameSite=Lax',
+    )
+    responseHeaders.append(
+      'set-cookie',
+      'better-auth.session_token=new; Path=/; HttpOnly; SameSite=Lax',
+    )
+    stubFetch(vi.fn(async () => new Response('{}', { headers: responseHeaders })))
+    const handler = await loadHandler()
+
+    await handler(event())
+
+    expect(mocks.responseCookie).toHaveBeenCalledOnce()
+    expect(mocks.responseCookie).toHaveBeenCalledWith(
+      expect.anything(),
+      'set-cookie',
+      'better-auth.session_token=new; Path=/; HttpOnly; SameSite=Lax',
+    )
+  })
+
   it('rejects cross-origin and non-GET/POST requests before fetch', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn())
+    const handler = await loadHandler()
     await expect(handler(event('OPTIONS'))).rejects.toMatchObject({ statusCode: 405 })
     await expect(
       handler(event('GET', undefined, { origin: 'https://evil.example' })),
@@ -440,20 +479,20 @@ describe('auth proxy security regressions', () => {
   it('proxies only a credential-free cross-origin public-client token form', async () => {
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
     let forwardedInit: RequestInit | undefined
-    const fetchMock = vi.fn(async (_target: string, init?: RequestInit) => {
-      forwardedInit = init
-      return new Response('{"error":"invalid_grant"}', {
-        headers: {
-          'access-control-allow-credentials': 'true',
-          'access-control-allow-origin': 'https://upstream.example.test',
-          'content-type': 'application/json',
-        },
-        status: 400,
-      })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const fetchMock = stubFetch(
+      vi.fn(async (_target: string, init?: RequestInit) => {
+        forwardedInit = init
+        return new Response('{"error":"invalid_grant"}', {
+          headers: {
+            'access-control-allow-credentials': 'true',
+            'access-control-allow-origin': 'https://upstream.example.test',
+            'content-type': 'application/json',
+          },
+          status: 400,
+        })
+      }),
+    )
+    const handler = await loadHandler()
     const body = new TextEncoder().encode(
       'grant_type=authorization_code&client_id=public-client&code=opaque',
     )
@@ -490,10 +529,8 @@ describe('auth proxy security regressions', () => {
 
   it('answers only the exact public-client token preflight without upstream traffic', async () => {
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn())
+    const handler = await loadHandler()
     const preflight = event('OPTIONS', undefined, {
       'access-control-request-headers': 'content-type',
       'access-control-request-method': 'POST',
@@ -517,10 +554,8 @@ describe('auth proxy security regressions', () => {
   })
 
   it('rejects credential, media, header, method, path, query, and preflight expansion', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn())
+    const handler = await loadHandler()
     const base = {
       'content-type': 'application/x-www-form-urlencoded',
       origin: 'http://127.0.0.1:6274',
@@ -571,12 +606,8 @@ describe('auth proxy security regressions', () => {
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
     const responseHeaders = new Headers()
     responseHeaders.append('set-cookie', 'better-auth.session_token=secret; Path=/; HttpOnly')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}', { headers: responseHeaders })),
-    )
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    stubFetch(vi.fn(async () => new Response('{}', { headers: responseHeaders })))
+    const handler = await loadHandler()
 
     await expect(
       handler(
@@ -596,20 +627,19 @@ describe('auth proxy security regressions', () => {
     mocks.requestUrl.mockReturnValue(
       new URL('https://app.example.test/.well-known/oauth-authorization-server/api/auth'),
     )
-    const fetchMock = vi.fn(
-      async () =>
-        new Response('{}', {
-          headers: {
-            'access-control-allow-credentials': 'true',
-            'access-control-allow-origin': 'https://upstream.example.test',
-            'content-type': 'application/json',
-          },
-        }),
+    const fetchMock = stubFetch(
+      vi.fn(
+        async () =>
+          new Response('{}', {
+            headers: {
+              'access-control-allow-credentials': 'true',
+              'access-control-allow-origin': 'https://upstream.example.test',
+              'content-type': 'application/json',
+            },
+          }),
+      ),
     )
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (
-      await import('../../src/runtime/server/api/auth/authorization-server-metadata')
-    ).default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler('metadata')
     const metadataRequest = event('GET', undefined, { origin: 'http://127.0.0.1:6274' })
 
     await handler(metadataRequest)
@@ -631,11 +661,8 @@ describe('auth proxy security regressions', () => {
 
   it('serves credential-free JWKS to server verifiers without browser ingress metadata', async () => {
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/jwks'))
-    const fetchMock = vi.fn(async () => new Response('{"keys":[]}'))
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/jwks')).default as unknown as (
-      input: ReturnType<typeof event>,
-    ) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn(async () => new Response('{"keys":[]}')))
+    const handler = await loadHandler('jwks')
     const jwksRequest = event('GET', undefined, {
       'cf-connecting-ip': '',
       origin: '',
@@ -659,11 +686,8 @@ describe('auth proxy security regressions', () => {
 
   it('serves public JWKS to a browser with cookies and never forwards them', async () => {
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/jwks'))
-    const fetchMock = vi.fn(async () => new Response('{"keys":[]}'))
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/jwks')).default as unknown as (
-      input: ReturnType<typeof event>,
-    ) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn(async () => new Response('{"keys":[]}')))
+    const handler = await loadHandler('jwks')
 
     await handler(
       event('GET', undefined, {
@@ -685,11 +709,8 @@ describe('auth proxy security regressions', () => {
     mocks.requestUrl.mockReturnValue(
       new URL('https://app.example.test/.well-known/oauth-authorization-server/api/auth'),
     )
-    const fetchMock = vi.fn(async () => new Response('{}'))
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (
-      await import('../../src/runtime/server/api/auth/authorization-server-metadata')
-    ).default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn(async () => new Response('{}')))
+    const handler = await loadHandler('metadata')
 
     const credentialHeaders: Record<string, string>[] = [
       { authorization: 'Bearer secret', origin: 'http://127.0.0.1:6274' },
@@ -728,10 +749,8 @@ describe('auth proxy security regressions', () => {
   })
 
   it('rejects framed GET and encoded POST bodies before fetch and closes the connection', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn())
+    const handler = await loadHandler()
 
     const framedGet = event('GET', undefined, { 'content-length': '1' })
     framedGet.node.req.complete = false
@@ -759,8 +778,7 @@ describe('auth proxy security regressions', () => {
 
   it('cancels an upstream response with an unsupported content encoding', async () => {
     const cancel = vi.fn()
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(
         async () =>
           new Response(
@@ -774,8 +792,7 @@ describe('auth proxy security regressions', () => {
           ),
       ),
     )
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
 
     await expect(handler(event())).rejects.toMatchObject({
       statusCode: 502,
@@ -788,13 +805,11 @@ describe('auth proxy security regressions', () => {
   })
 
   it('preserves missing-origin GET callback semantics', async () => {
-    const fetchMock = vi.fn(async () => new Response('', { status: 302 }))
-    vi.stubGlobal('fetch', fetchMock)
+    const fetchMock = stubFetch(vi.fn(async () => new Response('', { status: 302 })))
     mocks.requestUrl.mockReturnValue(
       new URL('https://app.example.test/api/auth/callback/github?code=opaque&state=opaque'),
     )
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
     const callback = event('GET')
     callback.headers.delete('origin')
     callback.headers.set('referer', 'https://github.com/')
@@ -810,11 +825,9 @@ describe('auth proxy security regressions', () => {
   })
 
   it('forwards only the exact core Apple-style form_post callback shape', async () => {
-    const fetchMock = vi.fn(async () => new Response('', { status: 302 }))
-    vi.stubGlobal('fetch', fetchMock)
+    const fetchMock = stubFetch(vi.fn(async () => new Response('', { status: 302 })))
     mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/callback/apple'))
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
     const body = new TextEncoder().encode('code=opaque&state=opaque')
     const callbackHeaders = {
       'content-type': 'application/x-www-form-urlencoded',
@@ -848,8 +861,7 @@ describe('auth proxy security regressions', () => {
     vi.useFakeTimers()
     try {
       const cancel = vi.fn()
-      vi.stubGlobal(
-        'fetch',
+      stubFetch(
         vi.fn(
           async () =>
             new Response(
@@ -862,8 +874,7 @@ describe('auth proxy security regressions', () => {
             ),
         ),
       )
-      const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-        .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+      const handler = await loadHandler()
       const response = expect(handler(event())).rejects.toMatchObject({ statusCode: 502 })
       await vi.advanceTimersByTimeAsync(8_001)
       await response
@@ -880,8 +891,7 @@ describe('auth proxy security regressions', () => {
       const cancel = vi.fn(() => {
         if (timer) clearTimeout(timer)
       })
-      vi.stubGlobal(
-        'fetch',
+      stubFetch(
         vi.fn(
           async () =>
             new Response(
@@ -898,8 +908,7 @@ describe('auth proxy security regressions', () => {
             ),
         ),
       )
-      const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-        .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+      const handler = await loadHandler()
       const response = expect(handler(event())).rejects.toMatchObject({ statusCode: 502 })
 
       await vi.advanceTimersByTimeAsync(8_001)
@@ -913,8 +922,7 @@ describe('auth proxy security regressions', () => {
 
   it('cancels unread critical-error and declared-oversize upstream bodies', async () => {
     const criticalCancel = vi.fn()
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(
         async () =>
           new Response(new ReadableStream({ start() {}, cancel: criticalCancel }), {
@@ -922,8 +930,7 @@ describe('auth proxy security regressions', () => {
           }),
       ),
     )
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
 
     await expect(handler(event())).rejects.toMatchObject({
       statusCode: 502,
@@ -932,8 +939,7 @@ describe('auth proxy security regressions', () => {
     expect(criticalCancel).toHaveBeenCalledOnce()
 
     const oversizeCancel = vi.fn()
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(
         async () =>
           new Response(new ReadableStream({ start() {}, cancel: oversizeCancel }), {
@@ -960,10 +966,8 @@ describe('auth proxy security regressions', () => {
       }),
     )
     upload.node.req.complete = false
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const fetchMock = stubFetch(vi.fn())
+    const handler = await loadHandler()
     const uploadResult = expect(handler(upload)).rejects.toMatchObject({ statusCode: 502 })
 
     await Promise.resolve()
@@ -976,8 +980,7 @@ describe('auth proxy security regressions', () => {
     expect(upload.node.res.listenerCount('close')).toBe(0)
 
     let upstreamSignal: AbortSignal | undefined
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(
         async (_target: string, init?: RequestInit) =>
           await new Promise<Response>((_resolve, reject) => {
@@ -1001,8 +1004,7 @@ describe('auth proxy security regressions', () => {
 
   it('keeps the deadline and disconnect signal active until the Node response finishes', async () => {
     let upstreamSignal: AbortSignal | undefined
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(async (_target: string, init?: RequestInit) => {
         upstreamSignal = init?.signal ?? undefined
         return new Response('bounded')
@@ -1012,8 +1014,7 @@ describe('auth proxy security regressions', () => {
     download.node.res.socket = {} as never
     download.node.res.end = vi.fn()
     download.node.res.destroy = vi.fn()
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
     const result = expect(handler(download)).rejects.toMatchObject({ statusCode: 502 })
 
     await vi.waitFor(() => expect(download.node.res.end).toHaveBeenCalledOnce())
@@ -1035,14 +1036,12 @@ describe('auth proxy security regressions', () => {
     }
     const upstreamError = new Error(sentinels.message, { cause: new Error(sentinels.cause) })
     upstreamError.stack = sentinels.stack
-    vi.stubGlobal(
-      'fetch',
+    stubFetch(
       vi.fn(async () => {
         throw upstreamError
       }),
     )
-    const handler = (await import('../../src/runtime/server/api/auth/[...]'))
-      .default as unknown as (input: ReturnType<typeof event>) => Promise<Uint8Array>
+    const handler = await loadHandler()
     let rejection: unknown
     try {
       await handler(event())

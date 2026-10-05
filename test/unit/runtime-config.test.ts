@@ -10,14 +10,8 @@ vi.mock('#imports', () => ({
 }))
 
 describe('runtime config normalization', () => {
-  it('keeps auth disabled for an empty config', () => {
-    const config = normalizeConvexRuntimeConfig({})
-    expect(config.auth).toBe(false)
-  })
-
-  it('disables auth entirely when auth is false', () => {
-    const config = normalizeConvexRuntimeConfig({ auth: false })
-    expect(config.auth).toBe(false)
+  it.each([[{}], [{ auth: false }]])('keeps auth disabled for %j', (input) => {
+    expect(normalizeConvexRuntimeConfig(input).auth).toBe(false)
   })
 
   it('validates and retains the configured public auth origin', () => {
@@ -70,12 +64,6 @@ describe('runtime config normalization', () => {
     },
   )
 
-  it('defaults the browser client options and the server HTTP bounds', () => {
-    const config = normalizeConvexRuntimeConfig({})
-    expect(config.client).toEqual({})
-    expect(config.server).toEqual({ maxResponseBytes: 1_048_576, queryTimeoutMs: 8_000 })
-  })
-
   it('keeps only explicitly configured client options and validated server bounds', () => {
     const config = normalizeConvexRuntimeConfig({
       client: { verbose: true, unsavedChangesWarning: false },
@@ -90,11 +78,17 @@ describe('runtime config normalization', () => {
   it.each([
     [{ client: { verbose: 'true' } }, 'client.verbose must be a boolean'],
     [{ client: { logger: false } }, 'client.logger is not a supported option'],
+    [{ client: { webSocketConstructor: 'ws' } }, 'client.webSocketConstructor is not a supported'],
+    [{ client: { disabled: true } }, 'client.disabled is not a supported'],
     [{ client: [] }, 'client must be an object'],
     [{ server: { maxResponseBytes: '1048576' } }, 'server.maxResponseBytes must be a positive'],
+    [{ server: { maxResponseBytes: 0 } }, 'server.maxResponseBytes must be a positive integer'],
+    [{ server: { maxResponseBytes: 1.5 } }, 'server.maxResponseBytes must be a positive integer'],
     [{ server: { queryTimeoutMs: 0 } }, 'server.queryTimeoutMs must be a positive'],
     [{ server: { queryTimeoutMs: Number.POSITIVE_INFINITY } }, 'server.queryTimeoutMs'],
-  ])('rejects an invalid deploy-time transport override: %j', (input, message) => {
+    [{ server: { queryTimeoutMs: 2_147_483_648 } }, 'no greater than 2147483647'],
+    [{ server: { timeoutMs: 1 } }, 'server.timeoutMs is not a supported'],
+  ])('rejects an invalid transport option: %j', (input, message) => {
     expect(() => normalizeConvexRuntimeConfig(input)).toThrow(message)
   })
 })

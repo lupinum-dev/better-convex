@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { useState } from '#imports'
 
@@ -11,10 +11,6 @@ import { createConvexQueryState } from '../../src/runtime/composables/useConvexQ
 import { makeMockOwner } from '../helpers/mock-client-owner'
 import { MockConvexClient, mockFnRef } from '../helpers/mock-convex-client'
 import { captureInNuxt } from '../helpers/nuxt-runtime-harness'
-
-afterEach(() => {
-  vi.clearAllMocks()
-})
 
 // public runtime assertions (anonymous transport, architecture invariant): in an
 // auth-enabled app, a live `none` query runs through the dedicated anonymous
@@ -79,22 +75,5 @@ describe('useConvexQuery none transport isolation', () => {
     // The none subscription is identity-independent and never reacquired.
     expect(anon.calls.onUpdate.length).toBe(1)
     expect(primary.calls.onUpdate.length).toBe(0)
-  })
-
-  it('reuses the primary for none in an auth-disabled build', async () => {
-    const primary = new MockConvexClient()
-    const anon = new MockConvexClient()
-    const query = mockFnRef<'query'>('notes:public:auth-disabled')
-
-    const { flush } = await captureInNuxt(
-      () => createConvexQueryState(query, {}, { auth: 'none' }).resultData,
-      { owner: makeMockOwner(primary, anon), convexConfig: { auth: false } },
-    )
-
-    await flush()
-
-    // Auth disabled: the permanently-anonymous primary serves none .
-    expect(primary.calls.onUpdate.length).toBe(1)
-    expect(anon.calls.onUpdate.length).toBe(0)
   })
 })

@@ -65,6 +65,22 @@ async function findRow(test: ReturnType<typeof initRelationshipTest>, model: str
   })
 }
 
+async function createPolicyRow(
+  test: ReturnType<typeof initRelationshipTest>,
+  model: string,
+  data: Record<string, unknown>,
+) {
+  return test.mutation(policies.create, { model, data })
+}
+
+async function findPolicyRow(
+  test: ReturnType<typeof initRelationshipTest>,
+  model: string,
+  id: string,
+) {
+  return test.query(policies.findOne, { model, where: [{ field: 'id', value: id }] })
+}
+
 async function createUser(test: ReturnType<typeof initRelationshipTest>, id: string) {
   return createRow(test, 'user', {
     id,
@@ -209,21 +225,18 @@ describe('Better Auth relationship enforcement', () => {
 
   it('rejects restricted deletion without partially applying other relationship effects', async () => {
     const test = initRelationshipTest()
-    await test.mutation(policies.create, {
-      model: 'parent',
-      data: { id: 'parent_restricted' },
+    await createPolicyRow(test, 'parent', { id: 'parent_restricted' })
+    await createPolicyRow(test, 'cascadeChild', {
+      id: 'cascade_sibling',
+      parentId: 'parent_restricted',
     })
-    await test.mutation(policies.create, {
-      model: 'cascadeChild',
-      data: { id: 'cascade_sibling', parentId: 'parent_restricted' },
+    await createPolicyRow(test, 'nullableChild', {
+      id: 'nullable_sibling',
+      parentId: 'parent_restricted',
     })
-    await test.mutation(policies.create, {
-      model: 'nullableChild',
-      data: { id: 'nullable_sibling', parentId: 'parent_restricted' },
-    })
-    await test.mutation(policies.create, {
-      model: 'restrictChild',
-      data: { id: 'restrict_child', parentId: 'parent_restricted' },
+    await createPolicyRow(test, 'restrictChild', {
+      id: 'restrict_child',
+      parentId: 'parent_restricted',
     })
 
     await expect(
@@ -233,24 +246,13 @@ describe('Better Auth relationship enforcement', () => {
       }),
     ).rejects.toThrow('AUTH_REFERENCE_DELETE_RESTRICTED:parent.id')
 
-    await expect(
-      test.query(policies.findOne, {
-        model: 'parent',
-        where: [{ field: 'id', value: 'parent_restricted' }],
-      }),
-    ).resolves.toMatchObject({ id: 'parent_restricted' })
-    await expect(
-      test.query(policies.findOne, {
-        model: 'cascadeChild',
-        where: [{ field: 'id', value: 'cascade_sibling' }],
-      }),
-    ).resolves.toMatchObject({ id: 'cascade_sibling' })
-    await expect(
-      test.query(policies.findOne, {
-        model: 'nullableChild',
-        where: [{ field: 'id', value: 'nullable_sibling' }],
-      }),
-    ).resolves.toMatchObject({
+    await expect(findPolicyRow(test, 'parent', 'parent_restricted')).resolves.toMatchObject({
+      id: 'parent_restricted',
+    })
+    await expect(findPolicyRow(test, 'cascadeChild', 'cascade_sibling')).resolves.toMatchObject({
+      id: 'cascade_sibling',
+    })
+    await expect(findPolicyRow(test, 'nullableChild', 'nullable_sibling')).resolves.toMatchObject({
       id: 'nullable_sibling',
       parentId: 'parent_restricted',
     })
@@ -258,36 +260,20 @@ describe('Better Auth relationship enforcement', () => {
 
   it('applies cascade and set-null policies in one successful deletion', async () => {
     const test = initRelationshipTest()
-    await test.mutation(policies.create, {
-      model: 'parent',
-      data: { id: 'parent_mixed' },
-    })
-    await test.mutation(policies.create, {
-      model: 'cascadeChild',
-      data: { id: 'cascade_child', parentId: 'parent_mixed' },
-    })
-    await test.mutation(policies.create, {
-      model: 'nullableChild',
-      data: { id: 'nullable_child', parentId: 'parent_mixed' },
-    })
+    await createPolicyRow(test, 'parent', { id: 'parent_mixed' })
+    await createPolicyRow(test, 'cascadeChild', { id: 'cascade_child', parentId: 'parent_mixed' })
+    await createPolicyRow(test, 'nullableChild', { id: 'nullable_child', parentId: 'parent_mixed' })
 
     await test.mutation(deleteWithTriggers, {
       id: 'parent_mixed',
       model: 'parent',
     })
 
-    await expect(
-      test.query(policies.findOne, {
-        model: 'cascadeChild',
-        where: [{ field: 'id', value: 'cascade_child' }],
-      }),
-    ).resolves.toBeNull()
-    await expect(
-      test.query(policies.findOne, {
-        model: 'nullableChild',
-        where: [{ field: 'id', value: 'nullable_child' }],
-      }),
-    ).resolves.toMatchObject({ id: 'nullable_child', parentId: null })
+    await expect(findPolicyRow(test, 'cascadeChild', 'cascade_child')).resolves.toBeNull()
+    await expect(findPolicyRow(test, 'nullableChild', 'nullable_child')).resolves.toMatchObject({
+      id: 'nullable_child',
+      parentId: null,
+    })
     const events = await test.query(listEvents, {})
     expect(events.map(({ event, model, rowId }) => ({ event, model, rowId }))).toEqual([
       { event: 'update', model: 'nullableChild', rowId: 'nullable_child' },
@@ -298,14 +284,8 @@ describe('Better Auth relationship enforcement', () => {
 
   it('deletes cyclic cascade closures exactly once', async () => {
     const test = initRelationshipTest()
-    await test.mutation(policies.create, {
-      model: 'node',
-      data: { id: 'node_a', parentId: null },
-    })
-    await test.mutation(policies.create, {
-      model: 'node',
-      data: { id: 'node_b', parentId: 'node_a' },
-    })
+    await createPolicyRow(test, 'node', { id: 'node_a', parentId: null })
+    await createPolicyRow(test, 'node', { id: 'node_b', parentId: 'node_a' })
     await test.mutation(policies.updateOne, {
       model: 'node',
       where: [{ field: 'id', value: 'node_a' }],
@@ -317,30 +297,17 @@ describe('Better Auth relationship enforcement', () => {
       where: [{ field: 'id', value: 'node_a' }],
     })
 
-    await expect(
-      test.query(policies.findOne, {
-        model: 'node',
-        where: [{ field: 'id', value: 'node_a' }],
-      }),
-    ).resolves.toBeNull()
-    await expect(
-      test.query(policies.findOne, {
-        model: 'node',
-        where: [{ field: 'id', value: 'node_b' }],
-      }),
-    ).resolves.toBeNull()
+    await expect(findPolicyRow(test, 'node', 'node_a')).resolves.toBeNull()
+    await expect(findPolicyRow(test, 'node', 'node_b')).resolves.toBeNull()
   })
 
   it('rejects an oversized cascade plan before deleting any row', async () => {
     const test = initRelationshipTest()
-    await test.mutation(policies.create, {
-      model: 'parent',
-      data: { id: 'parent_oversized' },
-    })
+    await createPolicyRow(test, 'parent', { id: 'parent_oversized' })
     for (let index = 0; index < 128; index += 1) {
-      await test.mutation(policies.create, {
-        model: 'cascadeChild',
-        data: { id: `oversized_child_${index}`, parentId: 'parent_oversized' },
+      await createPolicyRow(test, 'cascadeChild', {
+        id: `oversized_child_${index}`,
+        parentId: 'parent_oversized',
       })
     }
 
@@ -350,12 +317,9 @@ describe('Better Auth relationship enforcement', () => {
         model: 'parent',
       }),
     ).rejects.toThrow('AUTH_BULK_OPERATION_LIMIT_EXCEEDED')
-    await expect(
-      test.query(policies.findOne, {
-        model: 'parent',
-        where: [{ field: 'id', value: 'parent_oversized' }],
-      }),
-    ).resolves.toMatchObject({ id: 'parent_oversized' })
+    await expect(findPolicyRow(test, 'parent', 'parent_oversized')).resolves.toMatchObject({
+      id: 'parent_oversized',
+    })
     await expect(
       test.query(policies.count, {
         model: 'cascadeChild',
@@ -367,19 +331,16 @@ describe('Better Auth relationship enforcement', () => {
 
   it('accepts an at-limit mixed plan and triggers only configured models', async () => {
     const test = initRelationshipTest()
-    await test.mutation(policies.create, {
-      model: 'parent',
-      data: { id: 'parent_at_limit' },
-    })
+    await createPolicyRow(test, 'parent', { id: 'parent_at_limit' })
     for (let index = 0; index < 126; index += 1) {
-      await test.mutation(policies.create, {
-        model: 'cascadeChild',
-        data: { id: `at_limit_child_${index}`, parentId: 'parent_at_limit' },
+      await createPolicyRow(test, 'cascadeChild', {
+        id: `at_limit_child_${index}`,
+        parentId: 'parent_at_limit',
       })
     }
-    await test.mutation(policies.create, {
-      model: 'nullableChild',
-      data: { id: 'at_limit_nullable', parentId: 'parent_at_limit' },
+    await createPolicyRow(test, 'nullableChild', {
+      id: 'at_limit_nullable',
+      parentId: 'parent_at_limit',
     })
 
     const { metrics } = await test.mutation(deleteWithParentTriggerOnly, {
@@ -393,12 +354,9 @@ describe('Better Auth relationship enforcement', () => {
         where: [{ field: 'parentId', value: 'parent_at_limit' }],
       }),
     ).resolves.toBe(0)
-    await expect(
-      test.query(policies.findOne, {
-        model: 'nullableChild',
-        where: [{ field: 'id', value: 'at_limit_nullable' }],
-      }),
-    ).resolves.toMatchObject({ parentId: null })
+    await expect(findPolicyRow(test, 'nullableChild', 'at_limit_nullable')).resolves.toMatchObject({
+      parentId: null,
+    })
     const events = await test.query(listEvents, {})
     expect(events.map(({ event, model, rowId }) => ({ event, model, rowId }))).toEqual([
       { event: 'delete', model: 'parent', rowId: 'parent_at_limit' },
@@ -410,13 +368,10 @@ describe('Better Auth relationship enforcement', () => {
 
   it('rolls back the complete plan when a late configured trigger fails', async () => {
     const test = initRelationshipTest()
-    await test.mutation(policies.create, {
-      model: 'parent',
-      data: { id: 'parent_trigger_failure' },
-    })
-    await test.mutation(policies.create, {
-      model: 'cascadeChild',
-      data: { id: 'rollback_child', parentId: 'parent_trigger_failure' },
+    await createPolicyRow(test, 'parent', { id: 'parent_trigger_failure' })
+    await createPolicyRow(test, 'cascadeChild', {
+      id: 'rollback_child',
+      parentId: 'parent_trigger_failure',
     })
 
     await expect(
@@ -425,18 +380,12 @@ describe('Better Auth relationship enforcement', () => {
         model: 'parent',
       }),
     ).rejects.toThrow('EXPECTED_TRIGGER_FAILURE')
-    await expect(
-      test.query(policies.findOne, {
-        model: 'parent',
-        where: [{ field: 'id', value: 'parent_trigger_failure' }],
-      }),
-    ).resolves.toMatchObject({ id: 'parent_trigger_failure' })
-    await expect(
-      test.query(policies.findOne, {
-        model: 'cascadeChild',
-        where: [{ field: 'id', value: 'rollback_child' }],
-      }),
-    ).resolves.toMatchObject({ id: 'rollback_child' })
+    await expect(findPolicyRow(test, 'parent', 'parent_trigger_failure')).resolves.toMatchObject({
+      id: 'parent_trigger_failure',
+    })
+    await expect(findPolicyRow(test, 'cascadeChild', 'rollback_child')).resolves.toMatchObject({
+      id: 'rollback_child',
+    })
     await expect(test.query(listEvents, {})).resolves.toEqual([])
   })
 })
