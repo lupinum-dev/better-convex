@@ -42,7 +42,9 @@ export default defineNuxtPlugin({
     const config = useRuntimeConfig()
     const convexConfig = getConvexRuntimeConfig()
     if (convexConfig.auth === false) {
-      throw new Error('[better-convex-nuxt] auth client plugin loaded in a no-auth build')
+      throw new Error(
+        '[better-convex-nuxt] `convex.auth` is build-time configuration. This build includes authentication, but the runtime config disables it; NUXT_PUBLIC_CONVEX_AUTH* environment overrides are not supported. Set `convex.auth` in nuxt.config and rebuild.',
+      )
     }
     if (!convexConfig.url) {
       console.error(`[better-convex-nuxt] ${MISSING_CONVEX_URL_MESSAGE}`)

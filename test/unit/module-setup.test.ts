@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ModuleOptions } from '../../src/module'
+import { normalizeConvexRuntimeConfig } from '../../src/runtime/utils/runtime-config-normalize'
 
 interface RegisteredTemplate {
   filename: string
@@ -138,6 +139,22 @@ describe('module Convex URL', () => {
     expect(
       kit.warn.mock.calls.some(([message]) => String(message).includes('NUXT_PUBLIC_CONVEX_URL')),
     ).toBe(warns)
+  })
+})
+
+describe('module site URL', () => {
+  it('derives the site URL from a deploy-time URL override, but keeps an explicit one', async () => {
+    const derived = publicConvex(await setup({ url: 'https://old.convex.cloud' }))
+    expect(
+      normalizeConvexRuntimeConfig({ ...derived, url: 'https://new.convex.cloud' }).siteUrl,
+    ).toBe('https://new.convex.site')
+
+    const explicit = publicConvex(
+      await setup({ url: 'https://old.convex.cloud', siteUrl: 'https://auth.example.test' }),
+    )
+    expect(
+      normalizeConvexRuntimeConfig({ ...explicit, url: 'https://new.convex.cloud' }).siteUrl,
+    ).toBe('https://auth.example.test')
   })
 })
 

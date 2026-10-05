@@ -36,9 +36,20 @@ function asRecord(input: unknown): Record<string, unknown> | null {
   return input && typeof input === 'object' ? (input as Record<string, unknown>) : null
 }
 
+// One normalization per runtime config object. Nuxt and Nitro hand out the same
+// object for an app or request, so repeated reads during a render reuse it.
+const normalized = new WeakMap<object, NormalizedConvexRuntimeConfig>()
+
 export function normalizeConvexRuntimeConfig(input: unknown): NormalizedConvexRuntimeConfig {
   const raw = asRecord(input)
+  const cached = raw && normalized.get(raw)
+  if (cached) return cached
+  const result = normalizeUncached(raw)
+  if (raw) normalized.set(raw, result)
+  return result
+}
 
+function normalizeUncached(raw: Record<string, unknown> | null): NormalizedConvexRuntimeConfig {
   // URL/siteUrl are resolved from runtimeConfig only. module.ts reads env at build
   // time; Nuxt's native `NUXT_PUBLIC_*` runtime override supplies deploy-time
   // values. Re-reading process.env here would be server-only and silently diverge.

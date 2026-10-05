@@ -27,7 +27,6 @@ import {
   hasSetCookieDomainAttribute,
   isBetterAuthSetCookie,
 } from '../../../utils/shared-helpers'
-import { normalizeConvexSiteUrl } from '../../../utils/site-url'
 import { DEFAULT_SERVER_FETCH_TIMEOUT_MS } from '../../utils/http'
 import {
   cancelResponseBody,
@@ -414,18 +413,8 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       })
     }
 
-    let siteUrl: string
-    try {
-      siteUrl = normalizeConvexSiteUrl(config.siteUrl)
-    } catch {
-      if (event.method === 'POST') closeRequestConnection(event)
-      rejected('BCN_AUTH_PROXY_SITE_URL_INVALID', 500)
-      throw createError({
-        statusCode: 500,
-        message: 'Auth proxy site URL configuration is invalid',
-        data: { code: 'BCN_AUTH_PROXY_SITE_URL_INVALID' },
-      })
-    }
+    // getConvexRuntimeConfig() already normalized and validated the site URL.
+    const siteUrl = config.siteUrl
     const target = `${siteUrl}${AUTH_ROUTE}${normalizedPath}${fixedAuthPath ? '' : requestUrl.search}`
     const lifecycle = createAuthProxyLifecycle(event, startedAt)
     const { controller } = lifecycle
