@@ -432,8 +432,6 @@ export function createAuthComponent<
           logAuthFailure('AUTH_HANDLER_FAILED', 'AUTH_HANDLER_THREW', error)
           return authFailure('AUTH_HANDLER_FAILED')
         }
-        // Preserve a handler's 429 response; the library exempts get-session from rate limits.
-        if (sessionResponse.status === 429) return sessionResponse
         const body = sessionResponse.ok
           ? ((await sessionResponse.json().catch(() => null)) as {
               session?: { id?: unknown }
