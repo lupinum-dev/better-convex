@@ -10,7 +10,7 @@ import {
   rotateSigningKeyWithOfficialJwt,
 } from '../../src/runtime/convex-auth/jwks-rotation'
 import { convexAuth, type ConvexAuthOptions } from '../../src/runtime/convex-auth/plugin'
-import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
+import { createComponentRateLimitStorage } from '../helpers/component-rate-limit'
 
 const origin = 'https://app.example.test'
 const issuer = `${origin}/api/auth`
@@ -97,7 +97,7 @@ function createAuth(memory: MemoryDB, definePayload: DefinePayload = defaultClai
       }),
     ],
     rateLimit: {
-      customStorage: createMemoryRateLimitStorage(memory),
+      customStorage: createComponentRateLimitStorage(memory),
       enabled: true,
       modelName: 'rateLimit',
       storage: 'database',

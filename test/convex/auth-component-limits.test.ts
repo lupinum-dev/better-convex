@@ -4,6 +4,7 @@ import { convexTest } from 'convex-test'
 import { componentsGeneric, defineSchema } from 'convex/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { api } from '../../src/runtime/convex-auth/component/_generated/api'
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import schema from '../../src/runtime/convex-auth/component/schema'
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
@@ -23,6 +24,27 @@ function init() {
 afterEach(() => vi.useRealTimers())
 
 describe('auth component limits', () => {
+  it('rejects a malformed quota row instead of admitting another request', async () => {
+    const test = convexTest(schema, authModules)
+    // Model an already-corrupt persisted row; the public adapter rejects NaN at creation.
+    await test.run((ctx) =>
+      ctx.db.insert('rateLimit', {
+        id: 'malformed',
+        key: 'malformed',
+        count: Number.NaN,
+        lastRequest: Date.now(),
+      }),
+    )
+    await expect(
+      test.mutation(api.adapter.consumeRateLimit, {
+        key: 'malformed',
+        max: 2,
+        window: 10,
+        retentionWindow: 60,
+      }),
+    ).rejects.toThrow('AUTH_RATE_LIMIT_ROW_INVALID')
+  })
+
   it('A01 removes 300 stale rate limits and one-time keys after a burst', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_700_000_000_000)

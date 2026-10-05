@@ -11,7 +11,7 @@ import {
   type SigningKeyCandidate,
 } from '../../src/runtime/convex-auth/jwks-rotation'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
-import { createMemoryRateLimitStorage } from '../helpers/memory-rate-limit'
+import { createComponentRateLimitStorage } from '../helpers/component-rate-limit'
 
 const origin = 'https://app.example.test'
 const issuer = `${origin}/api/auth`
@@ -81,7 +81,7 @@ function createAuth(
     plugins: convexFirst ? [createConvexPlugin(), jwtPlugin] : [jwtPlugin, createConvexPlugin()],
     // Overrides change single fields, so each rejection names its own cause.
     rateLimit: {
-      customStorage: createMemoryRateLimitStorage(database),
+      customStorage: createComponentRateLimitStorage(database),
       enabled: true,
       modelName: 'rateLimit',
       storage: 'database',
