@@ -4,14 +4,11 @@
  * Inspired by nuxt-convex by @onmax (https://github.com/onmax/nuxt-convex)
  */
 
-import type {
-  UploadOptionsParameter,
-  UploadUrlMutation,
-  UseConvexFileUploadReturn,
-} from '@lupinum/better-convex-vue'
+import type { UploadUrlMutation, UseConvexFileUploadReturn } from '@lupinum/better-convex-vue'
 import {
   useConvexFileUploadInternal,
   type ConvexFileUploadInternalOptions,
+  type UploadOptionsParameter,
 } from '@lupinum/better-convex-vue/internal'
 import type { FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'

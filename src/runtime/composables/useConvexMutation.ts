@@ -1,10 +1,9 @@
-import type {
-  OptimisticUpdateCandidate,
-  SynchronousOptimisticUpdate,
-  UseConvexMutationOptions,
-  UseConvexMutationReturn,
-} from '@lupinum/better-convex-vue'
-import { useConvexMutationInternal } from '@lupinum/better-convex-vue/internal'
+import type { UseConvexMutationOptions, UseConvexMutationReturn } from '@lupinum/better-convex-vue'
+import {
+  useConvexMutationInternal,
+  type OptimisticUpdateCandidate,
+  type SynchronousOptimisticUpdate,
+} from '@lupinum/better-convex-vue/internal'
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from 'convex/server'
 import { getFunctionName } from 'convex/server'
 
