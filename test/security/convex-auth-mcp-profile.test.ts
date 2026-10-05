@@ -50,6 +50,23 @@ describe('MCP OAuth profile', () => {
     expect(resolveMcpResource(profile).href).toBe('https://deployment.example.test/mcp')
   })
 
+  it('B03 validates the final 64-scope limit including renewal', () => {
+    const applicationScopes = Object.fromEntries(
+      Array.from({ length: 64 }, (_, index) => [`scope:${index}`, 'Read projects']),
+    )
+    expect(() => resolveMcpProfile({ scopes: applicationScopes })).toThrow(
+      'at most 63 application scopes when renewal is enabled (64 provider scopes including offline_access)',
+    )
+    delete applicationScopes['scope:63']
+    const profile = resolveMcpProfile({ scopes: applicationScopes })
+    expect(profile.provider.scopes).toHaveLength(64)
+    expect(() => validateOAuthProviderProfile(profile.provider)).not.toThrow()
+    applicationScopes['scope:63'] = 'Read projects'
+    const withoutRenewal = resolveMcpProfile({ scopes: applicationScopes, renewal: false })
+    expect(withoutRenewal.provider.scopes).toHaveLength(64)
+    expect(() => validateOAuthProviderProfile(withoutRenewal.provider)).not.toThrow()
+  })
+
   it('omits renewal entirely when disabled', () => {
     const profile = resolveMcpProfile({ scopes, renewal: false, loginPage: '/sign-in' })
     expect(() => validateOAuthProviderProfile(profile.provider)).not.toThrow()

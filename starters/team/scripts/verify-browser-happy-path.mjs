@@ -185,6 +185,12 @@ async function configureConvexAuthEnv() {
     30_000,
     { ...options, input: authSecrets },
   )
+  await runProcess(
+    'convex-signing-key',
+    ['exec', 'better-convex', 'convex', 'run', 'auth:ensureSigningKey', '{}'],
+    30_000,
+    options,
+  )
 }
 
 async function submitNamedForm(page, placeholder, value) {

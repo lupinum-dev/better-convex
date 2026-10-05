@@ -132,12 +132,13 @@ export async function signInAs<Client>(
   }
   const name = options.componentName ?? 'betterAuth'
   const { adapter } = (componentsGeneric() as unknown as Record<string, ComponentApi>)[name]!
-  const sessionId = `${subject}-session`
+  let sessionId = `${subject}-session`
   const now = Date.now()
   const find = (model: 'user' | 'session', id: string) =>
     test.query(adapter.findOne, { model, where: [{ field: 'id', value: id }] })
 
-  if (!(await find('user', subject))) {
+  const existingUser = await find('user', subject)
+  if (!existingUser) {
     await test.mutation(adapter.create, {
       model: 'user',
       data: {
@@ -151,12 +152,13 @@ export async function signInAs<Client>(
     })
   }
   if (!(await find('session', sessionId))) {
+    if (existingUser) sessionId = `${subject}-session-${crypto.randomUUID()}`
     await test.mutation(adapter.create, {
       model: 'session',
       data: {
         id: sessionId,
         userId: subject,
-        token: `${subject}-token`,
+        token: `${sessionId}-token`,
         createdAt: now,
         updatedAt: now,
         expiresAt: now + lifetime,

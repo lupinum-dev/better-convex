@@ -92,13 +92,26 @@ describe.sequential('better-convex init', () => {
     expect(await read('app/convex-auth.ts')).toContain('defineConvexAuthClient')
     expect(await read('convex/betterAuth/schema.ts')).toBe('generated schema\n')
     expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
-    expect(harness.environment.get('BCN_AUTH_INITIALIZED')).toBe('1')
+    expect(harness.environment.has('BCN_AUTH_INITIALIZED')).toBe(false)
     expect(harness.convexCalls.some(({ args }) => args[1] === 'auth:ensureSigningKey')).toBe(true)
     expect(JSON.stringify(harness.logs)).not.toContain('SENTINEL_SECRET_DO_NOT_LOG')
     expect(JSON.stringify(harness.convexCalls.map(({ args }) => args))).not.toContain(
       'SENTINEL_SECRET_DO_NOT_LOG',
     )
     expect(harness.confirmations.at(-1)).toContain('dev:fixture')
+  })
+
+  it('E04 provisions missing secrets and signing keys despite an old init marker', async () => {
+    const harness = createHarness()
+    harness.environment.set('BCN_AUTH_INITIALIZED', '1')
+    await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
+    expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
+    expect(harness.environment.get('BETTER_AUTH_SECRETS')).toBe('0:SENTINEL_SECRET_DO_NOT_LOG')
+    expect(harness.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBe('SENTINEL_SECRET_DO_NOT_LOG')
+    expect(
+      harness.convexCalls.filter(({ args }) => args[1] === 'auth:ensureSigningKey'),
+    ).toHaveLength(1)
+    expect(harness.logs.join(' ')).not.toContain('already provisioned')
   })
 
   it('writes the same site URL and proxy secret to .env.local and Convex', async () => {
@@ -220,17 +233,23 @@ describe.sequential('better-convex init', () => {
     expect(harness.convexCalls).toHaveLength(0)
   })
 
-  it('reruns without rewriting files or reprovisioning completed external state', async () => {
+  it('reruns without rewriting files or secrets and rechecks the signing key', async () => {
     const harness = createHarness()
     await runInitCommand([], harness.dependencies)
     const authBefore = await read('convex/auth.ts')
+    const envBefore = await read('.env.local')
+    const completedCalls = harness.convexCalls.length
     harness.confirmations.length = 0
     const rerun = { ...harness.dependencies, confirm: async () => true }
 
     await expect(runInitCommand([], rerun)).resolves.toBe(0)
 
     expect(await read('convex/auth.ts')).toBe(authBefore)
-    expect(harness.logs.at(-1)).toContain('already provisioned')
+    expect(await read('.env.local')).toBe(envBefore)
+    expect(harness.convexCalls.slice(completedCalls)).toEqual([
+      { args: ['run', 'auth:ensureSigningKey', '{}'], input: undefined },
+    ])
+    expect(harness.logs.at(-1)).toBe('Development provisioning complete: signing key.')
   })
 
   it('stops before all writes when an existing setup conflicts', async () => {
@@ -266,7 +285,7 @@ describe.sequential('better-convex init', () => {
     await expect(
       runInitCommand([], { ...harness.dependencies, confirm: async () => true }),
     ).resolves.toBe(0)
-    expect(harness.environment.get('BCN_AUTH_INITIALIZED')).toBe('1')
+    expect(harness.environment.has('BCN_AUTH_INITIALIZED')).toBe(false)
     expect(JSON.stringify(harness.logs)).not.toContain('SENTINEL_SECRET_DO_NOT_LOG')
   })
 

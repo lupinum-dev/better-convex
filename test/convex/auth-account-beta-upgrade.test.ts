@@ -275,7 +275,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('beta account rows under the 1.0 account identity', () => {
-  it('keeps every beta account id, owner and provider link readable', async () => {
+  it('A04 keeps beta account links readable without leaking the retired issuer', async () => {
     const { test } = await init()
     for (const expected of await betaAccounts()) {
       const row = await test.query(component.adapter.findOne, {
@@ -285,6 +285,7 @@ describe('beta account rows under the 1.0 account identity', () => {
           { field: 'accountId', value: expected.accountId },
         ],
       })
+      expect(row).not.toHaveProperty('issuer')
       expect(row).toMatchObject({
         id: expected.id,
         providerId: expected.providerId,

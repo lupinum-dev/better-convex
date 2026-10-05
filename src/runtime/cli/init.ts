@@ -61,7 +61,7 @@ import schema from './schema'
 import schemaMetadata from './schemaMetadata'
 
 // This module is inside the isolated betterAuth component, not the public app API.
-export const { consumeOne, consumeRateLimit, count, create, deleteMany, deleteOne, expireSession, findMany, findOne, incrementOne, oauthLiveAccess, pruneSigningKeys, rotateSigningKey, sessionAdmission, updateMany, updateOne } = defineAuthAdapterFunctions({ metadata: schemaMetadata, schema })
+export const { consumeOne, consumeRateLimit, count, create, deleteMany, deleteOne, expireSession, findMany, findOne, incrementOne, oauthLiveAccess, pruneRateLimits, pruneSigningKeys, rotateSigningKey, sessionAdmission, updateMany, updateOne } = defineAuthAdapterFunctions({ metadata: schemaMetadata, schema })
 `,
   'convex/betterAuth/convex.config.ts': `import { defineComponent } from 'convex/server'
 
@@ -303,10 +303,6 @@ function resolveLocalProxySecret(root: string, dependencies: InitDependencies): 
 
 async function provisionDevelopment(root: string, dependencies: InitDependencies): Promise<void> {
   const environmentNames = new Set(await dependencies.readEnvironmentNames())
-  if (environmentNames.has('BCN_AUTH_INITIALIZED')) {
-    dependencies.log('Development auth secrets and the first signing key are already provisioned.')
-    return
-  }
   const localSiteUrl = readLocalEnvironmentValue(
     (await readOptional(join(root, LOCAL_ENV_FILE))) ?? '',
     'SITE_URL',
@@ -371,7 +367,6 @@ async function provisionDevelopment(root: string, dependencies: InitDependencies
     )
   }
   completed.push('signing key')
-  await set('BCN_AUTH_INITIALIZED', '1')
   dependencies.log(`Development provisioning complete: ${completed.join(', ')}.`)
 }
 

@@ -115,14 +115,20 @@ function validateResource(value: unknown): string {
   return value
 }
 
-function validateScopes(value: unknown): Readonly<Record<string, string>> {
+function validateScopes(value: unknown, renewal: boolean): Readonly<Record<string, string>> {
   if (!isRecord(value)) {
     throw configError('requires "oauth.mcp.scopes" to map scope names to descriptions')
   }
   const names = Object.keys(value)
   try {
-    validateOAuthScopes(names)
+    if (names.length === 0) throw configError('requires at least one application scope')
+    validateOAuthScopes([...names, ...(renewal ? [OFFLINE_ACCESS] : [])])
   } catch {
+    if (renewal && names.length > 63) {
+      throw configError(
+        'allows at most 63 application scopes when renewal is enabled (64 provider scopes including offline_access)',
+      )
+    }
     throw configError(
       'requires "oauth.mcp.scopes" to name 1-64 unique scopes (letters, digits, ":", ".", "/", "-", "_"), without openid, profile, or email',
     )
@@ -172,12 +178,12 @@ export function resolveMcpProfile(value: unknown): ResolvedMcpProfile {
     if (!MCP_OPTION_KEYS.includes(key)) throw configError(`does not support "oauth.mcp.${key}"`)
   }
   const resource = validateResource(value.resource)
-  const scopes = validateScopes(value.scopes)
   const hosts = validateHosts(value.hosts)
   if (value.renewal !== undefined && typeof value.renewal !== 'boolean') {
     throw configError('expected "oauth.mcp.renewal" to be a boolean')
   }
   const renewal = value.renewal !== false
+  const scopes = validateScopes(value.scopes, renewal)
   const loginPage = validatePage(value.loginPage ?? '/login', 'loginPage')
   const consentPage = validatePage(value.consentPage ?? '/oauth/consent', 'consentPage')
 

@@ -13,6 +13,7 @@ import {
   queryGeneric,
   type FunctionHandle,
   type GenericQueryCtx,
+  type GenericMutationCtx,
   type SchemaDefinition,
 } from 'convex/server'
 import { v, type GenericId } from 'convex/values'
@@ -62,7 +63,7 @@ import {
   type AuthReadArgs,
   type AuthWhere,
 } from './query'
-import { createAuthRelationshipEngine } from './relationships'
+import { AUTH_BULK_OPERATION_LIMIT, createAuthRelationshipEngine } from './relationships'
 
 const whereValidator = v.object({
   field: v.string(),
@@ -106,14 +107,9 @@ const expireSessionReference = makeFunctionReference<
   null
 >('adapter:expireSession')
 
-const pruneRateLimitsReference = makeFunctionReference<
-  'mutation',
-  {
-    model: string
-    where: Array<{ field: string; operator: 'lt'; value: number }>
-  },
-  number
->('adapter:deleteMany')
+const pruneRateLimitsReference = makeFunctionReference<'mutation', Record<string, never>, null>(
+  'adapter:pruneRateLimits',
+)
 
 export interface DefineAuthAdapterFunctionsOptions<Schema extends SchemaDefinition<any, any>> {
   schema: Schema
@@ -315,6 +311,39 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     generationAuthority && model === generationAuthority.sessionModel
       ? await currentSessionOrNull(ctx, row, generationAuthority)
       : row
+  function document(
+    model: string,
+    row: Record<string, unknown>,
+    select?: readonly string[],
+  ): AuthDocument
+  function document(
+    model: string,
+    row: Record<string, unknown> | null,
+    select?: readonly string[],
+  ): AuthDocument | null
+  function document(
+    model: string,
+    row: Record<string, unknown> | null,
+    select?: readonly string[],
+  ): AuthDocument | null {
+    return toBetterAuthDocument(
+      row,
+      select?.length ? select : Object.keys(getAuthModelMetadata(metadata, model).fields),
+    )
+  }
+  const scheduleRateLimitCleanup = async (
+    ctx: GenericMutationCtx<any>,
+    retentionWindow: number,
+  ) => {
+    const pending = await ctx.db.query('bcnRateLimitCleanup').unique()
+    if (pending) {
+      if (pending.retentionWindow < retentionWindow)
+        await ctx.db.patch(pending._id, { retentionWindow })
+      return
+    }
+    await ctx.db.insert('bcnRateLimitCleanup', { retentionWindow })
+    await ctx.scheduler.runAfter(0, pruneRateLimitsReference, {})
+  }
   const oauthGrantModels = ['oauthClient', 'oauthResource', 'oauthClientResource', 'oauthConsent']
   const hasOAuthGrantModels = oauthGrantModels.every((model) =>
     Object.hasOwn(metadata.models, model),
@@ -323,6 +352,40 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     if (generationAuthority) assertSessionGenerationUpdate(model, patch, generationAuthority)
   }
   return {
+    // Reads one scheduling singleton and the lastRequest index. Deletes at most
+    // 128 rateLimit rows per mutation; only rate-limit subscriptions are invalidated.
+    pruneRateLimits: internalMutationGeneric({
+      args: {},
+      returns: v.null(),
+      handler: async (ctx) => {
+        const pending = await ctx.db.query('bcnRateLimitCleanup').unique()
+        if (!pending) return null
+        const cutoff = Date.now() - pending.retentionWindow
+        const stale = await ctx.db
+          .query('rateLimit')
+          .withIndex('lastRequest', (q) => q.lt('lastRequest', cutoff))
+          .take(AUTH_BULK_OPERATION_LIMIT)
+        for (const row of stale) await ctx.db.delete(row._id)
+        if (stale.length === AUTH_BULK_OPERATION_LIMIT) {
+          await ctx.scheduler.runAfter(0, pruneRateLimitsReference, {})
+        } else {
+          const oldest = await ctx.db.query('rateLimit').withIndex('lastRequest').first()
+          if (oldest) {
+            // Keep the singleton through the chain, including the next expiry, so
+            // bursts schedule only one sweep and one-time keys are eventually removed.
+            await ctx.scheduler.runAt(
+              oldest.lastRequest + pending.retentionWindow + 1,
+              pruneRateLimitsReference,
+              {},
+            )
+          } else {
+            await ctx.db.delete(pending._id)
+          }
+        }
+        return null
+      },
+    }),
+
     // Scheduled at creation; follows extended expiry and deletes the row once it lapses.
     expireSession: internalMutationGeneric({
       args: { storageId: v.id('session') },
@@ -359,8 +422,8 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         const admitted = await readAuthSessionAdmission(ctx, args)
         return admitted
           ? {
-              user: toBetterAuthDocument(admitted.user),
-              session: toBetterAuthDocument(admitted.session),
+              user: document('user', admitted.user),
+              session: document('session', admitted.session),
             }
           : null
       },
@@ -380,7 +443,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
       handler: async (ctx, args) => {
         if (!hasOAuthGrantModels) return null
         const grant = await readOAuthLiveGrant(ctx, args)
-        return grant ? { user: toBetterAuthDocument(grant.user), grantId: grant.grantId } : null
+        return grant ? { user: document('user', grant.user), grantId: grant.grantId } : null
       },
     }),
     create: mutationGeneric({
@@ -410,7 +473,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (!created) throw new Error('AUTH_CREATE_READBACK_FAILED')
         await runTrigger(ctx, args.onCreateHandle, {
           model: args.model,
-          doc: toBetterAuthDocument(created as never),
+          doc: document(args.model, created as never),
         })
         const finalRow = await ctx.db.get(args.model as never, storageId as never)
         if (!finalRow) throw new Error('AUTH_CREATE_TRIGGER_DELETED_ROW')
@@ -423,7 +486,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
             storageId: sessionId,
           })
         }
-        return toBetterAuthDocument(finalRow as never)
+        return document(args.model, finalRow as never)
       },
     }),
 
@@ -452,7 +515,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (args.model === 'oauthRefreshToken' && row && !(await admitOAuthRefresh(ctx, row)))
           return null
         const view = await currentRow(ctx, args.model, row)
-        return toBetterAuthDocument(view, requested.select)
+        return document(args.model, view, requested.select)
       },
     }),
 
@@ -478,7 +541,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         )
         const page = (await Promise.all(result.page.map((row) => currentRow(ctx, args.model, row))))
           .filter((row): row is AuthDocument => row !== null)
-          .map((row) => toBetterAuthDocument(row, requested.select)!)
+          .map((row) => document(args.model, row, requested.select)!)
         return {
           ...result,
           page: args.limit === undefined ? page : page.slice(0, args.limit),
@@ -489,7 +552,22 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     count: queryGeneric({
       returns: v.number(),
       args: { model: v.string(), where: v.optional(v.array(whereValidator)) },
-      handler: (ctx, args) => countAuthRows(ctx, schema, metadata, readShape(args)),
+      handler: async (ctx, args) => {
+        if (!generationAuthority || args.model !== generationAuthority.sessionModel)
+          return countAuthRows(ctx, schema, metadata, readShape(args))
+        let count = 0
+        let cursor: string | null = null
+        while (true) {
+          const page = await paginateAuthRows(ctx, schema, metadata, readShape(args), {
+            cursor,
+            numItems: 100,
+          })
+          for (const row of page.page) if (await currentRow(ctx, args.model, row)) count++
+          if (page.isDone) return count
+          if (page.continueCursor === cursor) throw new Error('AUTH_COUNT_PAGINATION_STALLED')
+          cursor = page.continueCursor
+        }
+      },
     }),
 
     updateOne: mutationGeneric({
@@ -523,12 +601,12 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (!updated) throw new Error('AUTH_UPDATE_READBACK_FAILED')
         await runTrigger(ctx, args.onUpdateHandle, {
           model: args.model,
-          oldDoc: toBetterAuthDocument(current),
-          newDoc: toBetterAuthDocument(updated as never),
+          oldDoc: document(args.model, current),
+          newDoc: document(args.model, updated as never),
         })
         const finalRow = await ctx.db.get(args.model as never, current._id as never)
         if (!finalRow) throw new Error('AUTH_UPDATE_TRIGGER_DELETED_ROW')
-        return toBetterAuthDocument(finalRow as never)
+        return document(args.model, finalRow as never)
       },
     }),
 
@@ -563,8 +641,8 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           if (!updated) throw new Error('AUTH_BULK_UPDATE_READBACK_FAILED')
           await runTrigger(ctx, args.onUpdateHandle, {
             model: args.model,
-            oldDoc: toBetterAuthDocument(current),
-            newDoc: toBetterAuthDocument(updated as never),
+            oldDoc: document(args.model, current),
+            newDoc: document(args.model, updated as never),
           })
         }
         return rows.length
@@ -588,7 +666,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         )
         if (!current) return null
         await relationships.applyDeletion(ctx, [current], args.model, args)
-        return toBetterAuthDocument(current)
+        return document(args.model, current)
       },
     }),
 
@@ -688,7 +766,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         )
         if (!current) return null
         await relationships.applyDeletion(ctx, [current], args.model, args)
-        return toBetterAuthDocument(current)
+        return document(args.model, current)
       },
     }),
 
@@ -740,6 +818,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
               lastRequest: now,
             } as never,
           )
+          await scheduleRateLimitCleanup(ctx, retentionWindowInMs)
           return { allowed: true, retryAfter: null }
         }
         if (
@@ -751,18 +830,9 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         ) {
           throw new Error('AUTH_RATE_LIMIT_ROW_INVALID')
         }
+        await scheduleRateLimitCleanup(ctx, retentionWindowInMs)
         if (now - current.lastRequest >= windowInMs) {
           await ctx.db.patch(current._id as never, { count: 1, lastRequest: now } as never)
-          await ctx.scheduler.runAfter(0, pruneRateLimitsReference, {
-            model: 'rateLimit',
-            where: [
-              {
-                field: 'lastRequest',
-                operator: 'lt',
-                value: now - retentionWindowInMs,
-              },
-            ],
-          })
           return { allowed: true, retryAfter: null }
         }
         if (current.count >= args.max) {
@@ -845,10 +915,10 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (!updated) throw new Error('AUTH_INCREMENT_READBACK_FAILED')
         await runTrigger(ctx, args.onUpdateHandle, {
           model: args.model,
-          oldDoc: toBetterAuthDocument(current),
-          newDoc: toBetterAuthDocument(updated as never),
+          oldDoc: document(args.model, current),
+          newDoc: document(args.model, updated as never),
         })
-        return toBetterAuthDocument(updated as never)
+        return document(args.model, updated as never)
       },
     }),
 

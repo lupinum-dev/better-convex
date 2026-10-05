@@ -383,18 +383,15 @@ export function toBetterAuthDocument(
 ): AuthDocument | null {
   if (!doc) return null
   const clean: Record<string, unknown> = Object.fromEntries(
-    Object.entries(doc).filter(([field]) => field !== '_id' && field !== '_creationTime'),
+    Object.entries(doc).filter(
+      ([field]) =>
+        field !== '_id' && field !== '_creationTime' && (!select?.length || select.includes(field)),
+    ),
   )
   if (Object.values(clean).includes(undefined) || !validate(authDocumentValidator, clean)) {
     throw new Error('AUTH_DOCUMENT_INVALID')
   }
-  if (!select?.length) return clean
-  const selected: AuthDocument = {}
-  for (const field of select) {
-    const value = clean[field]
-    if (value !== undefined) selected[field] = value
-  }
-  return selected
+  return clean
 }
 
 export async function paginateAuthRows(
@@ -410,7 +407,14 @@ export async function paginateAuthRows(
   })
   return {
     ...result,
-    page: result.page.map((doc: Record<string, unknown>) => toBetterAuthDocument(doc, args.select)),
+    page: result.page.map((doc: Record<string, unknown>) =>
+      toBetterAuthDocument(
+        doc,
+        args.select?.length
+          ? args.select
+          : Object.keys(getAuthModelMetadata(metadata, args.model).fields),
+      ),
+    ),
   }
 }
 

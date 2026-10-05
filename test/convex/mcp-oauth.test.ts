@@ -561,6 +561,29 @@ describe('OAuth connections', () => {
     return test
   }
 
+  it('B02 includes the newest grant when more than 100 consents exist', async () => {
+    const test = initTest()
+    await createResource(test)
+    await createUser(test, 'alice')
+    for (let index = 0; index < 101; index++) {
+      const client = `client-${index}`
+      await createClient(test, client)
+      await create(test, 'oauthConsent', {
+        id: `consent-${index}`,
+        clientId: client,
+        userId: 'alice',
+        createdAt: index,
+        resources: [resource],
+        scopes,
+      })
+    }
+    const connections = createOAuthConnections(component)
+    const rows = await test.query((ctx) => connections.list(asCtx(ctx), { userId: 'alice' }))
+    expect(rows).toHaveLength(100)
+    expect(rows[0]?.clientId).toBe('client-100')
+    expect(rows.at(-1)?.clientId).toBe('client-1')
+  })
+
   it("lists only the given user's grants", async () => {
     const test = await initTwoUsers()
     const connections = createOAuthConnections(component)
