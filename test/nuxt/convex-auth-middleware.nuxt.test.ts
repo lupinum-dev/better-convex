@@ -30,7 +30,9 @@ vi.mock('../../src/runtime/composables/useConvexAuth', () => ({
 
 describe('convex-auth route middleware in the browser', () => {
   it('reads auth only after an on-demand runtime finished starting', async () => {
-    useRuntimeConfig().public.convex = { auth: { origin: 'http://localhost:3000' } }
+    ;(useRuntimeConfig().public as Record<string, unknown>).convex = {
+      auth: { origin: 'http://localhost:3000' },
+    }
     const middleware = (await import('../../src/runtime/middleware/convex-auth.global'))
       .default as unknown as (to: object) => Promise<unknown>
 
