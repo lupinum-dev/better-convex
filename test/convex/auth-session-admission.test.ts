@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { jwt } from 'better-auth/plugins'
+import type { JwtOptions, jwt } from 'better-auth/plugins'
 import { convexTest } from 'convex-test'
 import { componentsGeneric, defineSchema } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,6 +14,7 @@ import {
 } from '../../src/runtime/convex-auth/create-auth-component'
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
+import { rotateSigningKeyWithOfficialJwt } from '../../src/runtime/convex-auth/jwks-rotation'
 import { readAuthSessionAdmission } from '../../src/runtime/convex-auth/session-generation'
 const rootModules = import.meta.glob('../fixtures/jwks-rotation/convex/**/*.ts')
 const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
@@ -95,7 +96,106 @@ async function init() {
   return { test, client, authApi, helper, createAuth, assertDenied }
 }
 
+async function issueSessionToken(
+  options: NonNullable<Parameters<typeof createBetterConvexAuth>[1]> = {},
+  secrets = `0:${'test-secret'.repeat(4)}`,
+) {
+  vi.stubEnv('SITE_URL', 'https://app.example.test')
+  vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.convex.site')
+  vi.stubEnv('BETTER_AUTH_SECRETS', secrets)
+  try {
+    const { test } = await init()
+    await test.mutation(auth.updateOne, {
+      model: 'session',
+      where: [{ field: 'id', value: session.id }],
+      update: { expiresAt: now + 7 * 24 * 60 * 60 * 1000 },
+    })
+    const authApi = createBetterConvexAuth(components.sessionAuth, options)
+    const token = await test.mutation(async (ctx) => {
+      const instance = await authApi.createAuth(ctx)
+      const context = (await instance.$context) as Parameters<
+        typeof rotateSigningKeyWithOfficialJwt
+      >[0] & {
+        getPlugin(id: 'jwt'): ReturnType<typeof jwt> | undefined
+      }
+      await rotateSigningKeyWithOfficialJwt(
+        context,
+        context.getPlugin('jwt')!.options as JwtOptions,
+        (next) => ctx.runMutation(auth.rotateSigningKey, { next }),
+      )
+      const response = await instance.handler(
+        new Request('https://app.example.test/api/auth/convex/token', {
+          headers: {
+            authorization: `Bearer ${session.token}`,
+            [INTERNAL_SESSION_HEADER]: '1',
+            'x-bcn-verified-client-ip': '192.0.2.1',
+          },
+        }),
+      )
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.token).toEqual(expect.any(String))
+      return body.token as string
+    })
+    expect(token.split('.')).toHaveLength(3)
+    return JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >
+  } finally {
+    vi.unstubAllEnvs()
+  }
+}
+
 describe('backend helpers use canonical component admission', () => {
+  it('adds no profile claims to the session token by default', async () => {
+    const payload = await issueSessionToken()
+    for (const claim of ['name', 'email', 'emailVerified', 'image']) {
+      expect(payload).not.toHaveProperty(claim)
+    }
+    expect(payload).toMatchObject({ sub: 'user', sid: 'session', token_use: 'convex-session' })
+  })
+
+  it('adds exactly the claims defineSessionClaims returns', async () => {
+    const payload = await issueSessionToken({
+      defineSessionClaims: ({ user }) => ({ name: user.name, role: 'member' }),
+    })
+    // Better Auth adds JWT protocol claims beside the canonical session binding.
+    expect(Object.keys(payload).sort()).toEqual(
+      ['aud', 'exp', 'iat', 'iss', 'jti', 'sid', 'sub', 'token_use', 'name', 'role'].sort(),
+    )
+    expect(payload).toEqual({
+      aud: 'convex',
+      exp: 1_700_000_900,
+      iat: 1_700_000_000,
+      iss: 'https://deployment.convex.site',
+      jti: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+      ),
+      sid: 'session',
+      sub: 'user',
+      token_use: 'convex-session',
+      name: 'User',
+      role: 'member',
+    })
+  })
+
+  it('accepts unique versioned secrets when every value meets the minimum', async () => {
+    const payload = await issueSessionToken(
+      {},
+      `2:${'a'.repeat(32)},1:${'b'.repeat(32)},0:${'c'.repeat(32)}`,
+    )
+    expect(payload).toMatchObject({
+      aud: 'convex',
+      iss: 'https://deployment.convex.site',
+      sub: 'user',
+      sid: 'session',
+      token_use: 'convex-session',
+      iat: 1_700_000_000,
+      exp: 1_700_000_900,
+    })
+  })
+
   it('rejects an issuer returned by defineSessionClaims at real factory token issuance', async () => {
     vi.stubEnv('SITE_URL', 'https://app.example.test')
     vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.convex.site')

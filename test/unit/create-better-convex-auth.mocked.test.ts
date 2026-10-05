@@ -24,28 +24,6 @@ vi.mock('better-auth', async (importOriginal) => ({
   betterAuth,
 }))
 
-const { convexAuthOptions } = vi.hoisted(() => ({ convexAuthOptions: [] as unknown[] }))
-
-vi.mock('../../src/runtime/convex-auth/plugin', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/runtime/convex-auth/plugin')>()
-  return {
-    ...actual,
-    convexAuth: (options: Parameters<typeof actual.convexAuth>[0]) => {
-      convexAuthOptions.push(options)
-      return actual.convexAuth(options)
-    },
-  }
-})
-
-type SessionClaimsInput = { session: Record<string, unknown>; user: Record<string, unknown> }
-
-function lastSessionClaims() {
-  const options = convexAuthOptions.at(-1) as {
-    sessionJwt: { definePayload: (input: SessionClaimsInput) => Promise<Record<string, unknown>> }
-  }
-  return options.sessionJwt.definePayload
-}
-
 function beforeUserCreateHook() {
   const options = betterAuth.mock.calls[0]![0] as {
     databaseHooks: {
@@ -68,7 +46,6 @@ beforeEach(() => {
   process.env.CONVEX_SITE_URL = 'https://deployment.convex.site'
   process.env.SITE_URL = 'https://app.example.test'
   betterAuth.mockClear()
-  convexAuthOptions.length = 0
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -452,29 +429,6 @@ describe('createBetterConvexAuth', () => {
     expect(logged).not.toContain('482913')
   })
 
-  it('adds no profile claims to the session token by default', async () => {
-    await createBetterConvexAuth(component()).createAuth(queryContext() as never)
-    await expect(
-      lastSessionClaims()({
-        session: { id: 'session' },
-        user: {
-          ...emailUserRow,
-          emailVerified: true,
-          image: 'https://cdn.example.test/avatar.png',
-        },
-      }),
-    ).resolves.toEqual({})
-  })
-
-  it('adds exactly the claims defineSessionClaims returns', async () => {
-    await createBetterConvexAuth(component(), {
-      defineSessionClaims: ({ user }) => ({ name: user.name, role: 'member' }),
-    }).createAuth(queryContext() as never)
-    await expect(
-      lastSessionClaims()({ session: { id: 'session' }, user: emailUserRow }),
-    ).resolves.toEqual({ name: 'Person', role: 'member' })
-  })
-
   it('logs a stable sub-code for each opaque configuration stage without secrets', async () => {
     const secret = `0:${'s3cr3t-value-'.repeat(2)}`
     process.env.BETTER_AUTH_SECRETS = secret
@@ -779,14 +733,6 @@ describe('createBetterConvexAuth', () => {
     expect(adapter.delete).not.toHaveBeenCalledWith(
       expect.objectContaining({ model: 'oauthResource' }),
     )
-  })
-
-  it('accepts unique versioned secrets when every value meets the minimum', async () => {
-    process.env.BETTER_AUTH_SECRETS = `2:${'a'.repeat(32)},1:${'b'.repeat(32)}`
-    const auth = createBetterConvexAuth(component())
-
-    await expect(auth.createAuth(queryContext() as never)).resolves.toBeDefined()
-    expect(betterAuth).toHaveBeenCalledOnce()
   })
 })
 
