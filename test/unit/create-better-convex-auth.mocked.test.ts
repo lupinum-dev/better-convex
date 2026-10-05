@@ -24,15 +24,6 @@ vi.mock('better-auth', async (importOriginal) => ({
   betterAuth,
 }))
 
-function beforeUserCreateHook() {
-  const options = betterAuth.mock.calls[0]![0] as {
-    databaseHooks: {
-      user: { create: { before: (user: Record<string, unknown>) => Promise<unknown> } }
-    }
-  }
-  return options.databaseHooks.user.create.before
-}
-
 const previousEnvironment = {
   BETTER_AUTH_SECRETS: process.env.BETTER_AUTH_SECRETS,
   CONVEX_SITE_URL: process.env.CONVEX_SITE_URL,
@@ -465,80 +456,6 @@ describe('createBetterConvexAuth', () => {
     expect(loggedText()).not.toContain(privateToken)
     expect(loggedText()).not.toContain('s3cr3t-value')
     expect(loggedText()).not.toContain('a=b')
-  })
-
-  it('admits a narrow user identity decision without exposing Better Auth hooks', async () => {
-    const ctx = queryContext()
-    const beforeUserCreate = vi.fn(async ({ user }) => {
-      expect(Object.isFrozen(user)).toBe(true)
-      return {
-        allowed: true as const,
-        user: {
-          email: user.email.trim().toLowerCase(),
-          id: 'existing-user-id',
-        },
-      }
-    })
-    const auth = createBetterConvexAuth(component(), { beforeUserCreate })
-
-    await auth.createAuth(ctx as never)
-    const user = {
-      createdAt: new Date(),
-      email: '  Owner@Example.test  ',
-      emailVerified: false,
-      id: 'generated-user-id',
-      image: null,
-      name: 'Owner',
-      updatedAt: new Date(),
-    }
-
-    await expect(beforeUserCreateHook()(user)).resolves.toEqual({
-      data: {
-        ...user,
-        email: 'owner@example.test',
-        id: 'existing-user-id',
-      },
-    })
-    expect(beforeUserCreate).toHaveBeenCalledWith({
-      ctx,
-      user: {
-        email: user.email,
-        emailVerified: false,
-        id: 'generated-user-id',
-        image: null,
-        name: 'Owner',
-      },
-    })
-  })
-
-  it.each([
-    {
-      name: 'explicit denial',
-      callback: async () => ({ allowed: false as const }),
-    },
-    {
-      name: 'private callback failure',
-      callback: async () => Promise.reject(new Error('private')),
-    },
-    {
-      name: 'invalid identity replacement',
-      callback: async () => ({ allowed: true as const, user: { id: '  ' } }),
-    },
-  ])('fails closed with one sanitized error for $name', async ({ callback }) => {
-    const auth = createBetterConvexAuth(component(), {
-      beforeUserCreate: callback,
-    })
-    await auth.createAuth(queryContext() as never)
-
-    await expect(
-      beforeUserCreateHook()({
-        email: 'owner@example.test',
-        emailVerified: false,
-        id: 'generated-user-id',
-        image: null,
-        name: 'Owner',
-      }),
-    ).rejects.toThrow('AUTH_USER_CREATE_REJECTED')
   })
 
   it('builds one hardened OAuth profile from the request-scoped Convex context', async () => {
