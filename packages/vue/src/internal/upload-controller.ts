@@ -13,7 +13,7 @@ import { createIdentityChangedError, isIdentityChangedError } from './identity-c
 import type { InternalOperation, OperationController } from './operation-controller'
 import { snapshotArgs } from './snapshot-args'
 import { canPostFiles, type UploadProgressInfo } from './upload-transport'
-import { checkUploadFile } from './upload-validation'
+import { assertUploadMaxSize, checkUploadFile } from './upload-validation'
 
 /** What one finished upload produced. */
 export interface ConvexFileUploadResult<Prepared = string, Completed = undefined> {
@@ -126,6 +126,7 @@ const RETIREMENT_CODES: ReadonlySet<string> = new Set(['IDENTITY_CHANGED', 'CANC
  * never observes (or re-enters through) a half-cleared state.
  */
 export function createFileUploadController(input: FileUploadControllerInput): FileUploadController {
+  assertUploadMaxSize(input.maxSize)
   const { functionName, operations } = input
   const state = shallowRef<FileUploadViewState>(IDLE_STATE)
   let currentAttempt: { readonly operation: InternalOperation } | null = null

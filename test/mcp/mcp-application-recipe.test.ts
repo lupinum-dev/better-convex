@@ -205,7 +205,12 @@ describe('MCP application recipe', () => {
       const readsBeforeDenial = paginate.mock.calls.length
       expect(await client.callTool({ name: 'list_notes', arguments: {} })).toMatchObject({
         isError: true,
-        structuredContent: { error: { code: 'MCP_ACCESS_DENIED', message: 'Access denied.' } },
+        structuredContent: {
+          error: {
+            code: 'MCP_ACCESS_DENIED',
+            message: 'This connection is no longer allowed to access this data.',
+          },
+        },
       })
       expect(paginate).toHaveBeenCalledTimes(readsBeforeDenial)
       expect(diagnostics).toHaveBeenLastCalledWith('MCP tool failed', {

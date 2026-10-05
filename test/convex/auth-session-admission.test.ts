@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import type { jwt } from 'better-auth/plugins'
 import { convexTest } from 'convex-test'
 import { componentsGeneric, defineSchema } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -96,6 +97,50 @@ async function init() {
 }
 
 describe('backend helpers use canonical component admission', () => {
+  it('rejects an issuer returned by defineSessionClaims at real factory token issuance', async () => {
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.convex.site')
+    vi.stubEnv('BETTER_AUTH_SECRETS', `0:${'test-secret'.repeat(4)}`)
+    const defineSessionClaims = vi.fn(() => ({ iss: 'forged' }))
+    try {
+      const { test } = await init()
+      await test.mutation(auth.updateOne, {
+        model: 'session',
+        where: [{ field: 'id', value: session.id }],
+        update: { expiresAt: now + 7 * 24 * 60 * 60 * 1000 },
+      })
+      const authApi = createBetterConvexAuth(components.sessionAuth, { defineSessionClaims })
+      const result = await test.mutation(async (ctx) => {
+        const instance = await authApi.createAuth(ctx)
+        // The public factory keeps Better Auth's plugin context opaque.
+        const context = (await instance.$context) as {
+          getPlugin(id: 'jwt'): ReturnType<typeof jwt> | undefined
+        }
+        const jwtPlugin = context.getPlugin('jwt')!
+        const sign = vi.spyOn(jwtPlugin.endpoints, 'signJWT')
+        try {
+          const response = await instance.handler(
+            new Request('https://app.example.test/api/auth/convex/token', {
+              headers: {
+                authorization: `Bearer ${session.token}`,
+                [INTERNAL_SESSION_HEADER]: '1',
+                'x-bcn-verified-client-ip': '192.0.2.1',
+              },
+            }),
+          )
+          return { status: response.status, signed: sign.mock.calls.length }
+        } finally {
+          sign.mockRestore()
+        }
+      })
+      expect(defineSessionClaims).toHaveBeenCalledOnce()
+      expect(result.status).toBeGreaterThanOrEqual(500)
+      expect(result.signed).toBe(0)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('admits a live session through every backend helper without requiring verified email', async () => {
     const { client, authApi, helper, createAuth } = await init()
     expect(await client.query((ctx) => authApi.getUser(ctx))).toMatchObject(user)

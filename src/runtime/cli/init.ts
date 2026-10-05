@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
+import { parseEnv } from 'node:util'
 
 import { inspectConvexAuthority, runConvexCommand } from './convex'
 import { rethrowAuthSchemaImportError } from './optional-auth'
@@ -247,26 +248,7 @@ async function writeMissing(files: readonly PlannedFile[]): Promise<void> {
 }
 
 function readLocalEnvironmentValue(contents: string, name: string): string | undefined {
-  for (const line of contents.split(/\r?\n/u)) {
-    const separator = line.indexOf('=')
-    if (separator < 0) continue
-    const key = line
-      .slice(0, separator)
-      .trim()
-      .replace(/^export\s+/u, '')
-    if (key !== name) continue
-    let value = line.slice(separator + 1).trim()
-    const quote = value[0]
-    if (quote === '"' || quote === "'") {
-      const end = value.indexOf(quote, 1)
-      if (end > 0) value = value.slice(1, end)
-    } else {
-      // As in dotenv: `#` starts a comment in an unquoted value.
-      value = value.split('#', 1)[0]!.trim()
-    }
-    return value || undefined
-  }
-  return undefined
+  return parseEnv(contents)[name] || undefined
 }
 
 /** Append `name=value` to `.env.local` unless the file already sets `name`. */

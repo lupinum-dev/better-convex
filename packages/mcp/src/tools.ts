@@ -23,7 +23,7 @@ export interface RunMcpToolOptions extends ProjectMcpToolErrorOptions {
   readonly onToolError?: (metadata: McpToolErrorMetadata) => void | Promise<void>
 }
 
-/** Codes raised by the Better Convex auth helpers. They are always safe to project. */
+/** Generic messages for auth codes; custom messages still require explicit exposure. */
 const alwaysExposed: Readonly<Record<string, string>> = Object.freeze({
   UNAUTHENTICATED: 'Authentication is required.',
   MCP_ACCESS_DENIED: 'This connection is no longer allowed to access this data.',
@@ -120,8 +120,10 @@ function projectWith(
     return undefined
   }
   const message =
-    safeMessage(ownField(data, 'message')) ?? alwaysExposed[code] ?? defaultExposedMessage
-  const retryable = ownField(data, 'retryable') === true
+    (exposed.has(code) ? safeMessage(ownField(data, 'message')) : undefined) ??
+    alwaysExposed[code] ??
+    defaultExposedMessage
+  const retryable = exposed.has(code) && ownField(data, 'retryable') === true
   return {
     code,
     result: {
@@ -136,9 +138,10 @@ function projectWith(
  * Projects an allowlisted `ConvexError` into an MCP tool error the model can act on.
  *
  * Only `data.code` values in `expose` (plus `UNAUTHENTICATED`, `MCP_ACCESS_DENIED` and
- * `MCP_INSUFFICIENT_SCOPE`) are projected, with the developer-authored `data.message` and
- * `data.retryable`. Returns `undefined` for anything else; callers then fall back to one static
- * failure so unexpected internals never reach the client.
+ * `MCP_INSUFFICIENT_SCOPE`) are projected. Developer-authored `data.message` and
+ * `data.retryable` require `expose`; auth codes otherwise use static generic messages.
+ * Returns `undefined` for anything else; callers then fall back to one static failure
+ * so unexpected internals never reach the client.
  */
 export function projectMcpToolError(
   error: unknown,

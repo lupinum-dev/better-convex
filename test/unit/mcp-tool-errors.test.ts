@@ -154,9 +154,13 @@ describe('ConvexError projection', () => {
   })
 
   it('always projects the Better Convex auth codes', () => {
-    for (const code of ['UNAUTHENTICATED', 'MCP_ACCESS_DENIED', 'MCP_INSUFFICIENT_SCOPE']) {
+    for (const [code, message] of Object.entries({
+      UNAUTHENTICATED: 'Authentication is required.',
+      MCP_ACCESS_DENIED: 'This connection is no longer allowed to access this data.',
+      MCP_INSUFFICIENT_SCOPE: 'This connection lacks the permission this tool requires.',
+    })) {
       expect(projectMcpToolError(new ConvexError({ code, message: `${code} message` }))).toEqual(
-        projected(code, `${code} message`),
+        projected(code, message),
       )
     }
     expect(projectMcpToolError(new ConvexError({ code: 'MCP_ACCESS_DENIED' }))).toMatchObject({
@@ -164,12 +168,30 @@ describe('ConvexError projection', () => {
     })
   })
 
+  it('hides an application UNAUTHENTICATED message unless explicitly exposed', async () => {
+    const error = new ConvexError({
+      code: 'UNAUTHENTICATED',
+      message: 'private-account-sentinel',
+      retryable: true,
+    })
+    await expect(
+      runMcpTool(() => {
+        throw error
+      }),
+    ).resolves.toEqual(projected('UNAUTHENTICATED', 'Authentication is required.'))
+    expect(projectMcpToolError(error, { expose: ['UNAUTHENTICATED'] })).toEqual(
+      projected('UNAUTHENTICATED', 'private-account-sentinel', true),
+    )
+  })
+
   it('recognizes a ConvexError from another Convex copy only by its exact marker', () => {
     const foreign = Object.assign(new Error('x'), {
       [Symbol.for('ConvexError')]: true,
       data: { code: 'MCP_ACCESS_DENIED', message: 'Revoked.' },
     })
-    expect(projectMcpToolError(foreign)).toEqual(projected('MCP_ACCESS_DENIED', 'Revoked.'))
+    expect(projectMcpToolError(foreign, { expose: ['MCP_ACCESS_DENIED'] })).toEqual(
+      projected('MCP_ACCESS_DENIED', 'Revoked.'),
+    )
     const lookalike = Object.assign(new Error('x'), {
       name: 'ConvexError',
       data: { code: 'MCP_ACCESS_DENIED', message: 'Revoked.' },

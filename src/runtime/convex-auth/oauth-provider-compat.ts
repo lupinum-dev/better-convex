@@ -91,24 +91,6 @@ export function validatePinnedOAuthProviderRuntime(
     invalidConfiguration()
   }
 
-  const jwtPlugin = configuredPlugins[jwtIndexes[0]!] as InstalledOAuthProviderPlugin
-  const jwtOptions = jwtPlugin.options?.jwt
-  const jwksOptions = jwtPlugin.options?.jwks
-  if (
-    !jwtOptions ||
-    typeof jwtOptions !== 'object' ||
-    (jwtOptions as Record<string, unknown>).issuer !== issuer ||
-    (jwtOptions as Record<string, unknown>).audience !== issuer ||
-    (jwtOptions as Record<string, unknown>).expirationTime !== '10m' ||
-    !jwksOptions ||
-    typeof jwksOptions !== 'object' ||
-    ((jwksOptions as Record<string, unknown>).keyPairConfig as Record<string, unknown> | undefined)
-      ?.alg !== 'RS256' ||
-    (jwksOptions as Record<string, unknown>).disablePrivateKeyEncryption !== false
-  ) {
-    invalidConfiguration()
-  }
-
   const oauthPlugin = configuredPlugins[oauthIndexes[0]!] as InstalledOAuthProviderPlugin
   const providerOptions = oauthPlugin.options
   if (

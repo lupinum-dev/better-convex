@@ -23,6 +23,12 @@ export interface UploadFileLimits {
   readonly allowedTypes?: readonly string[]
 }
 
+export function assertUploadMaxSize(maxSize: number | undefined): void {
+  if (maxSize !== undefined && (!Number.isFinite(maxSize) || maxSize <= 0)) {
+    throw new TypeError('maxSize must be a finite positive number')
+  }
+}
+
 /**
  * The one client-side upload preflight, shared by `useConvexFileUpload` and
  * `op.upload()`: the `FILE_TOO_LARGE` or `FILE_TYPE_NOT_ALLOWED` failure for
@@ -35,6 +41,7 @@ export function checkUploadFile(
   functionName?: string,
 ): ConvexCallError | undefined {
   const { maxSize, allowedTypes } = limits
+  assertUploadMaxSize(maxSize)
   if (maxSize !== undefined && file.size > maxSize) {
     return new ConvexCallError({
       kind: 'unknown',

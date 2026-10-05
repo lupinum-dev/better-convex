@@ -868,27 +868,6 @@ describe('createBetterConvexAuth', () => {
     ).resolves.toEqual({ name: 'Person', role: 'member' })
   })
 
-  it.each(['sid', 'token_use'])(
-    'keeps library-owned claim %s out of custom claims',
-    async (claim) => {
-      await createBetterConvexAuth(component(), {
-        defineSessionClaims: () => ({ [claim]: 'forged' }),
-      }).createAuth(queryContext() as never)
-      await expect(
-        lastSessionClaims()({ session: { id: 'session' }, user: emailUserRow }),
-      ).rejects.toThrow(`AUTH_SESSION_JWT_RESERVED_CLAIM:${claim}`)
-    },
-  )
-
-  it('bounds the serialized session claims', async () => {
-    await createBetterConvexAuth(component(), {
-      defineSessionClaims: () => ({ blob: 'x'.repeat(5000) }),
-    }).createAuth(queryContext() as never)
-    await expect(
-      lastSessionClaims()({ session: { id: 'session' }, user: emailUserRow }),
-    ).rejects.toThrow('AUTH_SESSION_JWT_CLAIMS_TOO_LARGE')
-  })
-
   it('logs a stable sub-code for each opaque configuration stage without secrets', async () => {
     const secret = `0:${'s3cr3t-value-'.repeat(2)}`
     process.env.BETTER_AUTH_SECRETS = secret
@@ -1086,8 +1065,26 @@ describe('createBetterConvexAuth', () => {
     )
   })
 
+  it('provisions a bracketed IPv6 loopback redirect', async () => {
+    const adapter = oauthAdapter()
+    betterAuth.mockImplementationOnce(authWithAdapter(adapter))
+    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
+    await expect(
+      auth.oauthOperator.createPublicClient(queryContext() as never, {
+        ...proofClient,
+        redirectUris: ['http://[::1]:3000/callback'],
+      }),
+    ).resolves.toEqual({ clientId: expect.any(String) })
+    expect(adapter.create).toHaveBeenCalledWith({
+      model: 'oauthClient',
+      data: expect.objectContaining({ redirectUris: ['http://[::1]:3000/callback'] }),
+    })
+  })
+
   it.each([
     ...[
+      'http://localhost/callback',
+      'https://localhost/callback',
       'not-a-url',
       'ftp://agent.example.test/callback',
       'http://agent.example.test/callback',

@@ -156,6 +156,9 @@ describe('stored JWKS helpers', () => {
     expect(
       storedSigningKeyDocumentIssue({ ...valid, privateKey: JSON.stringify({ kty: 'RSA' }) }),
     ).toBe('AUTH_JWKS_PRIVATE_KEY_NOT_ENCRYPTED')
+    expect(storedSigningKeyDocumentIssue({ ...valid, createdAt: 8640000000000001 })).toBe(
+      'AUTH_JWKS_CREATED_AT_INVALID',
+    )
     expect(storedSigningKeyDocumentIssue({ ...valid, createdAt: 1.5 })).toBe(
       'AUTH_JWKS_CREATED_AT_INVALID',
     )

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { AuthProxyStats, AuthProxyRequest } from '../../types'
+import type { AuthProxyStats } from '../../types'
+import { agentDiagnosticOutcome } from '../agent-diagnostics'
 
 const props = defineProps<{
   stats: AuthProxyStats | null
@@ -17,13 +18,12 @@ function formatTime(timestamp: number): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-function getStatusClass(req: AuthProxyRequest): string {
-  if (!req.success) return 'error'
-  if (req.status && req.status >= 200 && req.status < 300) return 'success'
-  if (req.status && req.status >= 300 && req.status < 400) return 'pending'
-  // If success is true but status is missing/unknown, treat as success
-  return req.success ? 'success' : 'error'
-}
+const redirectCount = computed(
+  () =>
+    (props.stats?.recentRequests ?? []).filter(
+      (request) => agentDiagnosticOutcome(request).label === 'redirected',
+    ).length,
+)
 
 const hasRequests = computed(() => props.stats && props.stats.totalRequests > 0)
 </script>
@@ -60,6 +60,10 @@ const hasRequests = computed(() => props.stats && props.stats.totalRequests > 0)
           <div class="proxy-stat-label">Success</div>
         </div>
         <div class="proxy-stat">
+          <div class="proxy-stat-value">{{ redirectCount }}</div>
+          <div class="proxy-stat-label">Redirects</div>
+        </div>
+        <div class="proxy-stat">
           <div class="proxy-stat-value error-text">{{ stats!.errorCount }}</div>
           <div class="proxy-stat-label">Errors</div>
         </div>
@@ -75,7 +79,7 @@ const hasRequests = computed(() => props.stats && props.stats.totalRequests > 0)
           <span class="request-method" :class="req.method.toLowerCase()">{{ req.method }}</span>
           <span class="request-path">{{ req.path }}</span>
           <span class="request-status">
-            <span class="badge" :class="getStatusClass(req)">
+            <span class="badge" :class="agentDiagnosticOutcome(req).badge">
               {{ req.status || 'ERR' }}
             </span>
           </span>

@@ -79,6 +79,22 @@ function uploadHost(options?: { mutation?: (args: unknown) => Promise<unknown> }
 }
 
 describe('useConvexFileUpload (Vue)', () => {
+  it.each([NaN, Infinity, -Infinity, 0, -1])(
+    'rejects invalid maxSize %s at composable setup',
+    (maxSize) => {
+      const host = uploadHost()
+      try {
+        expect(() => host.use({ maxSize })).toThrow(
+          new TypeError('maxSize must be a finite positive number'),
+        )
+        expect(host.mutation).not.toHaveBeenCalled()
+        expect(FakeXhr.sent).toHaveLength(0)
+      } finally {
+        host.stop()
+      }
+    },
+  )
+
   it('uploads a file, publishes byte progress, and returns the storage ID', async () => {
     const host = uploadHost()
     const upload = host.use()

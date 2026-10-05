@@ -94,7 +94,8 @@ export interface HandleMcpRequestOptions<Principal = undefined> {
    * for this token; pass it to Convex functions instead of re-deriving it. */
   readonly configureServer: (context: McpConfigureServerContext<Principal>) => void | Promise<void>
   /** `ConvexError` `data.code` values that `tools.runTool` projects to the client with their
-   * message. `UNAUTHENTICATED`, `MCP_ACCESS_DENIED` and `MCP_INSUFFICIENT_SCOPE` always are. */
+   * message. `UNAUTHENTICATED`, `MCP_ACCESS_DENIED` and `MCP_INSUFFICIENT_SCOPE`
+   * otherwise use static generic messages. */
   readonly exposeErrorCodes?: readonly string[]
   readonly onToolError?: (metadata: McpToolErrorMetadata) => void | Promise<void>
 }
