@@ -10,10 +10,10 @@ import {
   useConvexConnectionState,
   useConvexFileUpload,
   useConvexMutation,
-  useConvexOperation,
   useConvexPaginatedQuery,
   useConvexQuery,
 } from '../../packages/vue/src'
+import { useConvexOperation } from '../../packages/vue/src/experimental'
 import { setupBetterConvexTest, type BetterConvexTestRuntime } from '../../packages/vue/src/test'
 import {
   createNote,

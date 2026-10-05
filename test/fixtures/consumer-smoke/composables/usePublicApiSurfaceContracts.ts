@@ -8,6 +8,7 @@ import type {
 import { defineConvexAuthClient } from '@lupinum/better-convex-nuxt/better-auth/client'
 import type { ConvexAuthClientDefinition } from '@lupinum/better-convex-nuxt/better-auth/client'
 import { isConvexCallError, type ConvexCallError } from '@lupinum/better-convex-nuxt/errors'
+import { useConvexOperation } from '@lupinum/better-convex-nuxt/experimental'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { GenericId } from 'convex/values'
 import type { ComputedRef, Ref } from 'vue'

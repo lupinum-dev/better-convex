@@ -2,19 +2,19 @@ import {
   useConvexOperation as useVueConvexOperation,
   type ConvexOperationWork,
   type UseConvexOperationReturn,
-} from '@lupinum/better-convex-vue'
+} from '@lupinum/better-convex-vue/experimental'
 
 export type {
-  ConvexOperation,
-  ConvexOperationUploadOptions,
   ConvexOperationWork,
   UseConvexOperationReturn,
-} from '@lupinum/better-convex-vue'
+} from '@lupinum/better-convex-vue/experimental'
+
+export type { ConvexOperation, ConvexOperationUploadOptions } from '@lupinum/better-convex-vue'
 
 /**
  * Run several Convex steps as one operation that belongs to one signed-in
  * identity, with `run`, `data`, `status`, `pending`, `error`, and `reset`.
- * Nuxt auto-import of the Vue composable; it adds nothing.
+ * Nuxt experimental entry for the Vue composable; it adds nothing.
  *
  * Each `run()` starts an operation for the identity that is current then.
  * Each step checks it immediately before sending: after an identity change a
@@ -24,6 +24,8 @@ export type {
  * `CLIENT_UNAVAILABLE`.
  *
  * ```ts
+ * import { useConvexOperation } from '@lupinum/better-convex-nuxt/experimental'
+ *
  * const { run: publish, pending, error } = useConvexOperation(
  *   async (op, draftId: Id<'drafts'>) => {
  *     const draft = await op.query(api.drafts.get, { draftId })

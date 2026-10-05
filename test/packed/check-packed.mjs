@@ -168,7 +168,10 @@ function main() {
     const script = join(smoke, `import-${id}.mjs`)
     writeFileSync(
       script,
-      specifiers.map((specifier) => `await import(${JSON.stringify(specifier)})\n`).join(''),
+      specifiers.map((specifier) => `await import(${JSON.stringify(specifier)})\n`).join('') +
+        (id === 'vue' || id === 'nuxt'
+          ? `const { default: assert } = await import('node:assert/strict')\nconst stable = await import(${JSON.stringify(manifest.name)})\nconst experimental = await import(${JSON.stringify(`${manifest.name}/experimental`)})\nassert.equal(typeof experimental.useConvexOperation, 'function')\nassert.equal('useConvexOperation' in stable, false)\n`
+          : ''),
     )
     try {
       execFileSync(process.execPath, [script], { cwd: smoke, stdio: 'pipe' })

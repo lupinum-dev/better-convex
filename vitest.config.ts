@@ -19,6 +19,9 @@ const vueSourceAliases = {
   '@lupinum/better-convex-vue/embedded': fileURLToPath(
     new URL('./packages/vue/src/embedded.ts', import.meta.url),
   ),
+  '@lupinum/better-convex-vue/experimental': fileURLToPath(
+    new URL('./packages/vue/src/experimental.ts', import.meta.url),
+  ),
   '@lupinum/better-convex-vue': fileURLToPath(
     new URL('./packages/vue/src/index.ts', import.meta.url),
   ),

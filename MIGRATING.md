@@ -88,6 +88,10 @@ are gone, and TypeScript reports most places that you must change.
 
 ## Composables and errors
 
+- [ ] Import `useConvexOperation` from
+      `@lupinum/better-convex-nuxt/experimental` (Nuxt) or
+      `@lupinum/better-convex-vue/experimental` (Vue). Nuxt no longer
+      auto-imports it.
 - [ ] Replace `upload(file, args, { context })` with
       `upload(file, { args, context })`. Omit `args` when the prepare mutation
       takes none.

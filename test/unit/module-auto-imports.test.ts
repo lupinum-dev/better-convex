@@ -27,10 +27,7 @@ describe('module auto-import surface', () => {
       from: './runtime/utils/auth-route-protection',
     })
     expect(autoImportNames).toContain('useConvexForm')
-    expect(composableAutoImports).toContainEqual({
-      name: 'useConvexOperation',
-      from: './runtime/composables/useConvexOperation',
-    })
+    expect(autoImportNames).not.toContain('useConvexOperation')
     expect(composableAutoImports).toContainEqual({
       name: 'useConvexAttachment',
       from: './runtime/composables/useConvexAttachment',

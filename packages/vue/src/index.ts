@@ -24,13 +24,7 @@ export type {
   UseConvexMutationOptions,
   UseConvexMutationReturn,
 } from './use-callable'
-export { useConvexOperation } from './use-operation'
-export type {
-  ConvexOperation,
-  ConvexOperationUploadOptions,
-  ConvexOperationWork,
-  UseConvexOperationReturn,
-} from './use-operation'
+export type { ConvexOperation, ConvexOperationUploadOptions } from './use-operation'
 export type { ConvexFormErrorMapping } from './form-errors'
 export { useConvexForm } from './use-form'
 export type { ConvexFormSubmitResult, UseConvexFormReturn } from './use-form'
