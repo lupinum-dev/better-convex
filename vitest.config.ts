@@ -5,6 +5,25 @@ import vue from '@vitejs/plugin-vue'
 import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vitest/config'
 
+// Keep package subpaths before the root alias; integration and E2E use the build.
+const vueSourceAliases = {
+  '@lupinum/better-convex-vue/internal': fileURLToPath(
+    new URL('./packages/vue/src/internal.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-vue/test': fileURLToPath(
+    new URL('./packages/vue/src/test.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-vue/errors': fileURLToPath(
+    new URL('./packages/vue/src/errors.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-vue/embedded': fileURLToPath(
+    new URL('./packages/vue/src/embedded.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-vue': fileURLToPath(
+    new URL('./packages/vue/src/index.ts', import.meta.url),
+  ),
+}
+
 /**
  * Vitest projects
  *
@@ -29,6 +48,7 @@ export default defineConfig({
       {
         resolve: {
           alias: {
+            ...vueSourceAliases,
             '#app': fileURLToPath(new URL('./test/unit/shims/app.ts', import.meta.url)),
           },
         },
@@ -45,6 +65,7 @@ export default defineConfig({
       {
         resolve: {
           alias: {
+            ...vueSourceAliases,
             '@lupinum/better-convex-nuxt/better-auth/test': fileURLToPath(
               new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
             ),
@@ -66,6 +87,7 @@ export default defineConfig({
       // Deterministic bounded protocol-input corpora. A failing case reports
       // and persists its exact replay seed outside the repository.
       {
+        resolve: { alias: vueSourceAliases },
         test: {
           name: 'auth-fuzz',
           include: ['test/auth-fuzz/**/*.test.ts'],
@@ -80,6 +102,7 @@ export default defineConfig({
       {
         resolve: {
           alias: {
+            ...vueSourceAliases,
             '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
               new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
             ),
@@ -105,6 +128,7 @@ export default defineConfig({
       {
         resolve: {
           alias: {
+            ...vueSourceAliases,
             '#app': fileURLToPath(new URL('./test/unit/shims/app.ts', import.meta.url)),
           },
         },
@@ -123,6 +147,7 @@ export default defineConfig({
       {
         resolve: {
           alias: {
+            ...vueSourceAliases,
             '@lupinum/better-convex-nuxt/better-auth/test': fileURLToPath(
               new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
             ),
@@ -151,6 +176,7 @@ export default defineConfig({
       // Nuxt Runtime Tests: composables/components needing nuxtApp context
       // Fast-medium (~seconds) - run with `pnpm test:nuxt`.
       await defineVitestProject({
+        resolve: { alias: vueSourceAliases },
         test: {
           name: 'nuxt',
           include: ['test/nuxt/**/*.test.ts'],
@@ -158,6 +184,7 @@ export default defineConfig({
           environmentOptions: {
             nuxt: {
               rootDir: fileURLToPath(new URL('.', import.meta.url)),
+              overrides: { alias: vueSourceAliases },
             },
           },
         },
@@ -171,6 +198,7 @@ export default defineConfig({
         },
         resolve: {
           alias: {
+            ...vueSourceAliases,
             '#imports': fileURLToPath(new URL('./test/browser/shims/imports.ts', import.meta.url)),
           },
         },

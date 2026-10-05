@@ -20,6 +20,8 @@ test/
 
 `playground/convex/*.test.ts` and `demo/convex/*.test.ts` run in the `convex` project.
 
+The `pnpm test` suites import the Vue package from source; packed checks use the build.
+
 ## Commands
 
 ```bash
