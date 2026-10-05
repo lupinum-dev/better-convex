@@ -293,6 +293,8 @@ describe('canonical Better Auth session matrix', async () => {
       const traffic = recordAuthTraffic(page)
       await page.goto(AUTH_TEST_PAGE)
       const identity = await expectAuthenticatedIdentity(page)
+      // The page can show the user before the frame listener has stored the frame.
+      await expect.poll(() => traffic.authenticates.flat().length, pollOptions).toBeGreaterThan(0)
       const first = traffic.authenticates.flat()[0]!
       const { exp, iat } = decodeJwtPayload(first) as { exp: number; iat: number }
 
