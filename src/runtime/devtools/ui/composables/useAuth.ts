@@ -4,27 +4,15 @@ import type { EnhancedAuthState, ConnectionState, AuthWaterfall } from '../../ty
 import type { DevtoolsBridgeController } from './useBridge'
 
 /**
- * Keys to ignore when comparing auth state (these change frequently but don't affect UI)
- */
-const VOLATILE_AUTH_KEYS = new Set(['expiresInSeconds', 'expiresAt', 'issuedAt'])
-
-/**
  * Check if two objects have the same values (shallow comparison for our use case)
  */
-function hasChanged<T extends object>(
-  prev: T | null,
-  next: T | null,
-  ignoreKeys: Set<string> = new Set(),
-): boolean {
+function hasChanged<T extends object>(prev: T | null, next: T | null): boolean {
   if (prev === null && next === null) return false
   if (prev === null || next === null) return true
 
   // Compare key properties that matter for UI updates
   const keys = Object.keys(next) as (keyof T)[]
   for (const key of keys) {
-    // Skip volatile keys that change frequently but don't affect display
-    if (ignoreKeys.has(key as string)) continue
-
     const prevVal = prev[key]
     const nextVal = next[key]
 
@@ -62,11 +50,7 @@ export function useAuth(bridge: DevtoolsBridgeController) {
   async function updateAuthState() {
     try {
       const newState = await bridge.call<EnhancedAuthState>('getEnhancedAuthState')
-      // Only update if changed to prevent flickering
-      // Ignore volatile keys like expiresInSeconds that change every second
-      if (hasChanged(authState.value, newState, VOLATILE_AUTH_KEYS)) {
-        authState.value = newState
-      }
+      authState.value = newState
     } catch {
       // Ignore errors
     }
@@ -99,7 +83,7 @@ export function useAuth(bridge: DevtoolsBridgeController) {
       ) {
         return
       }
-      if (message.authState && hasChanged(authState.value, message.authState, VOLATILE_AUTH_KEYS)) {
+      if (message.authState) {
         authState.value = message.authState
       }
       if (message.connectionState && hasChanged(connectionState.value, message.connectionState)) {

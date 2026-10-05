@@ -102,6 +102,30 @@ describe('createDevtoolsSink', () => {
     expect(byId(firstId)).toMatchObject({ status: 'success', data: ['first'] })
     expect(byId(secondId)).toMatchObject({ status: 'pending' })
 
+    // A user change must erase private values without retiring mounted controllers.
+    sink.updateQuery(firstId, { args: { owner: 'alice' }, error: 'Alice-only error' })
+    sink.clearIdentityOwned()
+    expect(sink.getQueries()).toHaveLength(2)
+    expect(byId(firstId)).toMatchObject({
+      logicalKey: '',
+      args: undefined,
+      data: undefined,
+      error: undefined,
+      status: 'pending',
+    })
+    sink.updateQuery(firstId, {
+      logicalKey: 'notes:bob',
+      args: { owner: 'bob' },
+      status: 'success',
+      data: ['bob'],
+    })
+    expect(byId(firstId)).toMatchObject({
+      logicalKey: 'notes:bob',
+      args: { owner: 'bob' },
+      status: 'success',
+      data: ['bob'],
+    })
+
     sink.removeQuery(firstId)
     expect(sink.getQueries()).toHaveLength(1)
     expect(byId(secondId)).toBeDefined()

@@ -64,3 +64,23 @@ test('both proxy panels show a 302 as redirected and exclude it from error count
   expect(counts).toContain('1Redirects')
   expect(counts).toContain('0Errors')
 })
+
+test('<AuthPanel> shows the current token status and absolute expiry', () => {
+  render(AuthPanel, {
+    props: {
+      authState: {
+        isAuthenticated: true,
+        pending: false,
+        user: { id: 'user_1' },
+        tokenStatus: 'expired',
+        expiresAt: 200_000,
+        expiresInSeconds: 0,
+      },
+    },
+  })
+  expect(document.querySelector('.token-stat-value.badge')?.textContent?.trim()).toBe('expired')
+  expect(document.querySelector('.token-stat-value.badge')?.classList.contains('error')).toBe(true)
+  expect(document.querySelectorAll('.token-stat-value')[1]?.textContent?.trim()).toBe(
+    '1970-01-01 00:03:20 UTC',
+  )
+})
