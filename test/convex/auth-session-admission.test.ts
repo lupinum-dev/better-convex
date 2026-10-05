@@ -15,7 +15,6 @@ import {
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
 import { readAuthSessionAdmission } from '../../src/runtime/convex-auth/session-generation'
-
 const rootModules = import.meta.glob('../fixtures/jwks-rotation/convex/**/*.ts')
 const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
 const rootSchema = defineSchema({})

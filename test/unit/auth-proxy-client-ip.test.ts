@@ -159,6 +159,7 @@ describe('authenticated proxy client-IP handoff', () => {
         }),
       } as never,
       {
+        publicOrigin: 'https://app.example.test',
         trustedClientIpHeader: 'cf-connecting-ip',
       },
     )

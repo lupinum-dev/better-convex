@@ -444,6 +444,20 @@ describe('createBetterConvexAuth', () => {
     })
   })
 
+  it('refuses BETTER_AUTH_TRUSTED_ORIGINS, which would trust origins next to the verified one', async () => {
+    vi.stubEnv('BETTER_AUTH_TRUSTED_ORIGINS', 'https://attacker.example.test')
+    try {
+      const auth = createBetterConvexAuth(component())
+      await expect(auth.createAuth(queryContext() as never)).rejects.toThrow(
+        /^AUTH_CONFIG_INVALID$/,
+      )
+      expect(betterAuth).not.toHaveBeenCalled()
+      expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_OPTIONS_INVALID'])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('re-validates trusted providers against lazily resolved social providers', async () => {
     const auth = createBetterConvexAuth(component(), {
       account: { accountLinking: { trustedProviders: ['github'] } },
@@ -1434,6 +1448,28 @@ describe('registered auth route diagnostics', () => {
     expect(consoleError.mock.calls[0]![0]).toBe('[better-convex] AUTH_HANDLER_FAILED')
     expect(loggedText()).not.toContain('private-session-token')
     expect(loggedText()).not.toContain('private-cookie-value')
+  })
+})
+
+describe('site origins configuration', () => {
+  const SITE_B = 'https://site-b.example.test'
+
+  it('rejects an invalid list and the OAuth provider combination at construction', () => {
+    expect(() =>
+      createBetterConvexAuth(component(), { siteOrigins: ['https://site.test/path'] }),
+    ).toThrow()
+    expect(() =>
+      createBetterConvexAuth(component(), { siteOrigins: 'https://site.test' as never }),
+    ).toThrow('"siteOrigins"')
+    expect(() =>
+      createBetterConvexAuth(component(), { siteOrigins: ['https://*.example.test'] }),
+    ).toThrow('without "*"')
+    expect(() =>
+      createBetterConvexAuth(component(), {
+        siteOrigins: [SITE_B],
+        oauthProvider: {} as PinnedOAuthProviderProfile,
+      }),
+    ).toThrow('"siteOrigins" together with "oauth"')
   })
 })
 

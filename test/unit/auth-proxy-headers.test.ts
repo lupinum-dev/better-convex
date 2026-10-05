@@ -1,12 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildAuthProxyForwardHeaders,
   isSupportedProxyResponseContentEncoding,
   shouldSkipProxyResponseHeader,
 } from '../../src/runtime/server/api/auth/headers'
+import { verifySignedPublicOrigin } from '../../src/runtime/shared/client-ip'
+
+const PROXY_IP_SECRET = 'proxy-ip-test-secret-with-32-bytes'
 
 describe('auth proxy header helpers', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   it('strips hop-by-hop headers and preserves useful headers', async () => {
     const event = {
       headers: new Headers({
@@ -27,7 +32,9 @@ describe('auth proxy header helpers', () => {
       }),
     } as never
 
-    const headers = await buildAuthProxyForwardHeaders(event, {})
+    const headers = await buildAuthProxyForwardHeaders(event, {
+      publicOrigin: 'https://app.example.test',
+    })
 
     expect(headers.cookie).toBe(
       'better-auth.session_token=session; __Secure-better-auth.callback=state',
@@ -58,6 +65,8 @@ describe('auth proxy header helpers', () => {
         'x-bcn-client-ip-signature': 'attacker-signature',
         'x-bcn-verified-client-ip': '10.0.0.6',
         'x-bcn-future-internal-control': 'attacker-value',
+        'x-bcn-public-origin': 'https://evil.test',
+        'x-bcn-public-origin-signature': 'attacker-signature',
         'x-forwarded-for': '10.0.0.1',
         'x-forwarded-host': 'evil.test',
         'x-forwarded-proto': 'http',
@@ -76,8 +85,31 @@ describe('auth proxy header helpers', () => {
         'x-arr-ssl': 'insecure',
       }),
     } as never
-    const headers = await buildAuthProxyForwardHeaders(event, {})
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
+    const headers = await buildAuthProxyForwardHeaders(event, {
+      publicOrigin: 'https://app.example.test',
+    })
 
+    // Only the proxy's own signed origin pair remains.
+    expect(Object.keys(headers).sort()).toEqual([
+      'x-bcn-public-origin',
+      'x-bcn-public-origin-signature',
+    ])
+    expect(headers['x-bcn-public-origin']).toBe('https://app.example.test')
+    await expect(
+      verifySignedPublicOrigin(
+        headers['x-bcn-public-origin']!,
+        headers['x-bcn-public-origin-signature']!,
+        PROXY_IP_SECRET,
+      ),
+    ).resolves.toBe('https://app.example.test')
+  })
+
+  it('sends no origin pair without the proxy secret (loopback development)', async () => {
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', '')
+    const headers = await buildAuthProxyForwardHeaders({ headers: new Headers() } as never, {
+      publicOrigin: 'http://localhost:3000',
+    })
     expect(headers).toEqual({})
   })
 

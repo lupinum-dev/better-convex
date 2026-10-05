@@ -3,6 +3,7 @@ import type { H3Event } from 'h3'
 import { filterBetterAuthCookies } from '../../../utils/shared-helpers'
 import {
   buildSignedClientIpHeaders,
+  buildSignedPublicOriginHeaders,
   type SignedClientIpHeadersOptions,
 } from '../../utils/signed-client-ip'
 
@@ -108,7 +109,10 @@ function stripUnsafeRequestHeaders(headers: Headers): Headers {
   return result
 }
 
-export type AuthProxyForwardHeadersOptions = SignedClientIpHeadersOptions
+export interface AuthProxyForwardHeadersOptions extends SignedClientIpHeadersOptions {
+  /** The configured application origin (`auth.origin`), signed for Convex. */
+  publicOrigin: string
+}
 
 export async function buildAuthProxyForwardHeaders(
   event: H3Event,
@@ -116,6 +120,7 @@ export async function buildAuthProxyForwardHeaders(
 ): Promise<Record<string, string>> {
   const trustedHeader = options.trustedClientIpHeader
   const signedClientIpHeaders = await buildSignedClientIpHeaders(event, options)
+  const signedOriginHeaders = await buildSignedPublicOriginHeaders(options.publicOrigin)
   const headers = stripUnsafeRequestHeaders(event.headers)
   if (trustedHeader) headers.delete(trustedHeader)
   const authCookieHeader = filterBetterAuthCookies(headers.get('cookie'))
@@ -126,6 +131,7 @@ export async function buildAuthProxyForwardHeaders(
   }
 
   for (const [name, value] of Object.entries(signedClientIpHeaders)) headers.set(name, value)
+  for (const [name, value] of Object.entries(signedOriginHeaders)) headers.set(name, value)
 
   return Object.fromEntries(headers.entries())
 }
