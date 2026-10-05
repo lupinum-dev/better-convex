@@ -8,6 +8,23 @@ checklist. It covers the move from `@lupinum/better-convex-nuxt` and
 `1.0.0-beta.2`, to the 1.0 release candidate. 1.0 has no compatibility layer: the old names
 are gone, and TypeScript reports most places that you must change.
 
+## From 1.0.0-rc.1
+
+If you already run the release candidate, check only these:
+
+- [ ] Replace `status === 'loading'` with `status === 'pending'` on
+      `useConvexAuth()`. Keep your own `ref` around a sign-in or sign-out call
+      to disable a button; `pending` no longer covers it.
+- [ ] Replace `upload(file, args, { context })` with `upload(file, { args, context })`.
+- [ ] Delete query and paginated query `refresh()` calls.
+- [ ] Rename `reset(` to `restart(` on `useConvexPaginatedQuery` results.
+- [ ] Import `useConvexOperation` from `@lupinum/better-convex-nuxt/experimental`
+      (or `@lupinum/better-convex-vue/experimental`).
+- [ ] Set `convex.auth.origin` and the Convex `SITE_URL` to the same origin, or
+      list the origin in `siteOrigins`. Remove `BETTER_AUTH_TRUSTED_ORIGINS`.
+- [ ] Component tests: a mutation that passes `optimisticUpdate` now fails.
+- [ ] Local auth component: regenerate the schema and export `pruneRateLimits`.
+
 ## Packages and data
 
 - [ ] Install `@lupinum/better-convex-nuxt@next` (or
@@ -101,6 +118,7 @@ are gone, and TypeScript reports most places that you must change.
       destructure `run`.
 - [ ] Delete query and paginated query `refresh()` calls. Convex reruns a
       query when its data changes; a query error stays until its cause changes.
+- [ ] Rename `reset(` to `restart(` on `useConvexPaginatedQuery` results.
 - [ ] A second `useConvexForm` `submit()` while one is pending rejects with
       `SUBMIT_IN_PROGRESS`. A submission retired during validation sends
       nothing and resolves `{ ok: false }` with `IDENTITY_CHANGED` or
