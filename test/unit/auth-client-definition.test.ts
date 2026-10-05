@@ -7,7 +7,10 @@
 import { oauthProviderClient } from '@better-auth/oauth-provider/client'
 import type { BetterAuthClientOptions, BetterAuthClientPlugin } from 'better-auth/client'
 import type { organizationClient } from 'better-auth/client/plugins'
-import { organizationClient as organizationClientRuntime } from 'better-auth/client/plugins'
+import {
+  anonymousClient,
+  organizationClient as organizationClientRuntime,
+} from 'better-auth/client/plugins'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -29,21 +32,23 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 
 // -----------------------------------------------------------------------------
-// Register an organization-plugin definition in the GLOBAL registry for this program.
+// Register an organization and anonymous plugin definition in the GLOBAL registry for this program.
 // `InferRegisteredConvexAuthClient` reads the registry; `BaseAuthClient` is the
 // no-plugin client and is independent of it, so one TypeScript program checks
 // both the plugin-typed and base-fallback paths. The packed fixture checks the
 // true empty-registry fallback in a separate program.
 // -----------------------------------------------------------------------------
-const _organizationDefinition = defineConvexAuthClient({ plugins: [organizationClientRuntime()] })
+const _pluginDefinition = defineConvexAuthClient({
+  plugins: [organizationClientRuntime(), anonymousClient()],
+})
 
 declare module '../../src/runtime/auth-client' {
   interface ConvexAuthClientRegistry {
-    definition: typeof _organizationDefinition
+    definition: typeof _pluginDefinition
   }
 }
 
-// (a) The registered organization definition exposes typed plugin methods.
+// (a) The registered plugin definition exposes typed plugin methods.
 declare const registeredClient: InferRegisteredConvexAuthClient | null
 declare const integratedClient: IntegratedAuthClient<InferRegisteredConvexAuthClient>
 export function _assertPluginClient() {
@@ -52,6 +57,8 @@ export function _assertPluginClient() {
   type ListFn = typeof registeredClient.organization.list
   type _listNotAny = Expect<Equal<IsAny<ListFn>, false>>
   void registeredClient.organization.list()
+  type _anonymousNotAny = Expect<Equal<IsAny<typeof registeredClient.signIn.anonymous>, false>>
+  void registeredClient.signIn.anonymous()
 }
 
 export function _assertIntegratedClient() {
@@ -99,8 +106,8 @@ type _readonlyRejected = Expect<
 >
 // The definition holds the tuple; extracting it back yields the same tuple.
 type _defTuple = Expect<
-  typeof _organizationDefinition extends ConvexAuthClientDefinition<infer P>
-    ? P extends readonly [OrganizationPlugin]
+  typeof _pluginDefinition extends ConvexAuthClientDefinition<infer P>
+    ? P extends readonly [OrganizationPlugin, ReturnType<typeof anonymousClient>]
       ? true
       : false
     : false
@@ -162,6 +169,12 @@ describe('validateConvexAuthClientDefinition', () => {
     expect(() => ok({ plugins: [{ id: 'organization' }, { id: 'convex' }] })).toThrow(
       /reserved id `convex`/,
     )
+  })
+
+  it('accepts the experimental anonymous client without rejecting its ID', () => {
+    expect(() =>
+      validateConvexAuthClientDefinition(defineConvexAuthClient({ plugins: [anonymousClient()] })),
+    ).not.toThrow()
   })
 
   it('rejects a plugin outside the reviewed server capability profile', () => {

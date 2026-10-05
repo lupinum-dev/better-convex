@@ -1,12 +1,14 @@
 import type { oauthProviderClient } from '@better-auth/oauth-provider/client'
 import type { BetterAuthClientOptions } from 'better-auth/client'
 import type {
+  anonymousClient,
   emailOTPClient,
   organizationClient,
   twoFactorClient,
 } from 'better-auth/client/plugins'
 
 type AdmittedAuthClientPlugin =
+  | ReturnType<typeof anonymousClient>
   | ReturnType<typeof oauthProviderClient>
   | ReturnType<typeof organizationClient>
   | ReturnType<typeof twoFactorClient>
