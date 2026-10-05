@@ -1,4 +1,7 @@
-const COOKIE_NAME_PATTERN = /^[!#$%&'*+\-.^`|~\w]+$/
+export const BETTER_AUTH_SESSION_COOKIE_NAME = 'better-auth.session_token'
+export const BETTER_AUTH_SECURE_SESSION_COOKIE_NAME = '__Secure-better-auth.session_token'
+
+export const COOKIE_NAME_PATTERN = /^[!#$%&'*+\-.^`|~\w]+$/
 
 export function trimOptionalWhitespace(value: string): string {
   let start = 0
@@ -35,7 +38,7 @@ export function getSessionCookieFlagViolation(
   name: string,
 ): CookieFlagViolation | null {
   const isSession =
-    name === 'better-auth.session_token' || name === '__Secure-better-auth.session_token'
+    name === BETTER_AUTH_SESSION_COOKIE_NAME || name === BETTER_AUTH_SECURE_SESSION_COOKIE_NAME
   if (name.startsWith('__Secure-') && !hasSetCookieAttribute(cookie, 'secure')) {
     return 'secure-missing'
   }

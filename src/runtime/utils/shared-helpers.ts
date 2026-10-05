@@ -3,14 +3,22 @@
  * server utilities.
  */
 
-import { isBetterAuthCookieName, trimOptionalWhitespace } from '../shared/auth-cookie'
+import {
+  BETTER_AUTH_SESSION_COOKIE_NAME,
+  BETTER_AUTH_SECURE_SESSION_COOKIE_NAME,
+  COOKIE_NAME_PATTERN,
+  hasSetCookieAttribute,
+  isBetterAuthCookieName,
+  trimOptionalWhitespace,
+} from '../shared/auth-cookie'
 
-export { hasBetterAuthCookie, isBetterAuthCookieName } from '../shared/auth-cookie'
+export {
+  BETTER_AUTH_SESSION_COOKIE_NAME,
+  BETTER_AUTH_SECURE_SESSION_COOKIE_NAME,
+  hasBetterAuthCookie,
+  isBetterAuthCookieName,
+} from '../shared/auth-cookie'
 
-export const BETTER_AUTH_SESSION_COOKIE_NAME = 'better-auth.session_token'
-export const BETTER_AUTH_SECURE_SESSION_COOKIE_NAME = '__Secure-better-auth.session_token'
-
-const COOKIE_NAME_PATTERN = /^[!#$%&'*+\-.^`|~\w]+$/
 const COOKIE_VALUE_PATTERN = /^[\x20\x21\x23-\x3A\x3C-\x5B\x5D-\x7E]*$/
 
 interface ParsedCookiePair {
@@ -102,14 +110,5 @@ export function deduplicateSetCookies(cookies: readonly string[]): readonly stri
 
 /** Domain cookies are outside the supported host-only Better Auth contract. */
 export function hasSetCookieDomainAttribute(setCookie: string): boolean {
-  const segments = setCookie.split(';')
-  for (let index = 1; index < segments.length; index += 1) {
-    const attribute = trimOptionalWhitespace(segments[index] ?? '')
-    const separator = attribute.indexOf('=')
-    const name = trimOptionalWhitespace(
-      separator === -1 ? attribute : attribute.slice(0, separator),
-    ).toLowerCase()
-    if (name === 'domain') return true
-  }
-  return false
+  return hasSetCookieAttribute(setCookie, 'domain')
 }
