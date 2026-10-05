@@ -1,3 +1,5 @@
+import type { Ref } from 'vue'
+
 /**
  * When the browser runtime (Convex WebSocket client, and the Better Auth
  * client in auth builds) starts.
@@ -8,6 +10,20 @@
  *   browser downloads and runs none of it.
  */
 export type ConvexClientConnect = 'eager' | 'on-demand'
+
+/** What `useConvexActivation()` returns. */
+export interface UseConvexActivationReturn {
+  /** The build's `convex.client.connect` mode. */
+  readonly connect: ConvexClientConnect
+  /** `true` once the browser runtime exists. Always `false` during server rendering. */
+  readonly active: Readonly<Ref<boolean>>
+  /**
+   * Start the browser runtime if it is not running yet. Concurrent calls share
+   * one start. Resolves without effect during server rendering; rejects when
+   * the runtime code cannot be loaded, and a later call retries.
+   */
+  activate(): Promise<void>
+}
 
 const CONNECT_MODES: readonly ConvexClientConnect[] = ['eager', 'on-demand']
 

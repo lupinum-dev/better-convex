@@ -4,22 +4,9 @@ import { useNuxtApp, type NuxtApp } from '#app'
 import { connect, loadBrowserRuntime } from '#convex/client-activation'
 
 import { readConvexRuntimeContext } from '../runtime-context'
-import type { ConvexClientConnect } from '../utils/client-connect'
+import type { UseConvexActivationReturn } from '../utils/client-connect'
 
-export type { ConvexClientConnect } from '../utils/client-connect'
-
-export interface UseConvexActivationReturn {
-  /** The build's `convex.client.connect` mode. */
-  readonly connect: ConvexClientConnect
-  /** `true` once the browser runtime exists. Always `false` during server rendering. */
-  readonly active: Readonly<Ref<boolean>>
-  /**
-   * Start the browser runtime if it is not running yet. Concurrent calls share
-   * one start. Resolves without effect during server rendering; rejects when
-   * the runtime code cannot be loaded, and a later call retries.
-   */
-  activate(): Promise<void>
-}
+export type { ConvexClientConnect, UseConvexActivationReturn } from '../utils/client-connect'
 
 interface ActivationState {
   readonly active: Ref<boolean>

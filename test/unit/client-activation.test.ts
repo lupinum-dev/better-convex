@@ -21,17 +21,17 @@ describe('client.connect', () => {
   })
 
   it('exports no loader in an eager build', () => {
-    const contents = getClientActivationTemplateContents('eager', '/runtime/plugin.client')
+    const contents = getClientActivationTemplateContents('eager')
     expect(contents).toContain(`export const connect = 'eager'`)
     expect(contents).toContain('export const loadBrowserRuntime = null')
     expect(contents).not.toContain('import(')
   })
 
   it('loads the browser runtime lazily and only in the client bundle when on-demand', () => {
-    const contents = getClientActivationTemplateContents('on-demand', '/runtime/plugin.auth.client')
+    const contents = getClientActivationTemplateContents('on-demand')
     expect(contents).toContain(`export const connect = 'on-demand'`)
     expect(contents).toContain('import.meta.client')
-    expect(contents).toContain('import("/runtime/plugin.auth.client")')
+    expect(contents).toContain("import('#convex/browser-runtime')")
     expect(contents).toContain('setupConvexBrowserRuntime')
   })
 })

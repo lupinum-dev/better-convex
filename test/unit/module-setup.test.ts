@@ -104,6 +104,7 @@ describe('module type templates', () => {
 
     expect(kit.typeTemplates.map((template) => template.filename).sort()).toEqual([
       'types/better-convex-auth-client.d.ts',
+      'types/better-convex-client-activation.d.ts',
       'types/better-convex-page-meta.d.ts',
       'types/better-convex-route-rules.d.ts',
     ])
@@ -125,7 +126,9 @@ describe('module type templates', () => {
   it('generates no auth declaration for a Convex-only build', async () => {
     await setup({})
 
-    expect(kit.typeTemplates).toEqual([])
+    expect(kit.typeTemplates.map((template) => template.filename)).toEqual([
+      'types/better-convex-client-activation.d.ts',
+    ])
     expect(kit.templates.map((template) => template.filename)).toEqual([
       '@lupinum/better-convex-nuxt/convex-api-missing.ts',
       '@lupinum/better-convex-nuxt/client-activation.mjs',
@@ -230,7 +233,8 @@ describe('module client.connect', () => {
     const activation = kit.templates.find((template) =>
       template.filename.endsWith('client-activation.mjs'),
     )
-    expect(activation?.getContents?.()).toContain('import("./runtime/plugin.auth.client")')
+    expect(activation?.getContents?.()).toContain("import('#convex/browser-runtime')")
+    expect(nuxt.options.alias['#convex/browser-runtime']).toBe('./runtime/plugin.auth.client')
     expect(nuxt.options.alias['#convex/client-activation']).toBe(
       '/app/.nuxt/@lupinum/better-convex-nuxt/client-activation.mjs',
     )

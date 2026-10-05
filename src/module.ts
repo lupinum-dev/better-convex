@@ -26,6 +26,7 @@ import {
 } from './module-api-surface'
 import {
   getClientActivationTemplateContents,
+  getClientActivationTypeTemplateContents,
   getMissingConvexApiTemplateContents,
   getRouteRulesTypeTemplateContents,
   getTypeAugmentationTemplateContents,
@@ -67,10 +68,7 @@ export type {
   ConvexUploadPhase,
 } from './runtime/errors'
 export type { ConvexUser } from './runtime/utils/types'
-export type {
-  ConvexClientConnect,
-  UseConvexActivationReturn,
-} from './runtime/composables/useConvexActivation'
+export type { ConvexClientConnect, UseConvexActivationReturn } from './runtime/utils/client-connect'
 export type {
   ConvexCallStatus,
   ConvexClientHandle,
@@ -146,6 +144,7 @@ const AUTH_CLIENT_CONVENTION_FILENAME = 'convex-auth.ts'
 const AUTH_CLIENT_TYPES_FILENAME = 'types/better-convex-auth-client.d.ts'
 const PAGE_META_TYPES_FILENAME = 'types/better-convex-page-meta.d.ts'
 const ROUTE_RULES_TYPES_FILENAME = 'types/better-convex-route-rules.d.ts'
+const CLIENT_ACTIVATION_TYPES_FILENAME = 'types/better-convex-client-activation.d.ts'
 
 /**
  * Resolve the single auth-client definition module ("Module option").
@@ -337,15 +336,14 @@ export default defineNuxtModule<ModuleOptions>({
     const clientActivationTemplate = addTemplate({
       filename: '@lupinum/better-convex-nuxt/client-activation.mjs',
       write: true,
-      getContents: () => getClientActivationTemplateContents(connect, browserRuntimePath),
+      getContents: () => getClientActivationTemplateContents(connect),
     })
     nuxt.options.alias['#convex/client-activation'] = clientActivationTemplate.dst
-    nuxt.hook('prepare:types', (opts) => {
-      opts.tsConfig.compilerOptions ??= {}
-      opts.tsConfig.compilerOptions.paths ??= {}
-      opts.tsConfig.compilerOptions.paths['#convex/client-activation'] = [
-        clientActivationTemplate.dst,
-      ]
+    nuxt.options.alias['#convex/browser-runtime'] = browserRuntimePath
+    // One declaration for both modes, so code type-checks the same in each.
+    addTypeTemplate({
+      filename: CLIENT_ACTIVATION_TYPES_FILENAME,
+      getContents: getClientActivationTypeTemplateContents,
     })
 
     // Universal ConvexCallError payload plugin. Registered on both
