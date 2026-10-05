@@ -117,9 +117,21 @@ and each journey compares that trace with a literal list:
 Every browser context also carries an unrelated platform cookie (`__vdpl`), as
 browsers on Vercel do. Add a journey when a bug shows only in the real stack.
 
+## One layer per behavior
+
+Vue unit tests cover the client lifecycle: queries, writes, and discarded results
+after identity changes. Nuxt tests cover SSR, hydration, and auth wiring.
+Real-stack E2E journeys cover Convex client timing: refresh, acceptance, and
+reconnect. Use convex-test with real Better Auth for auth component behavior.
+The local-backend integration suite covers real HTTP between Nuxt and Convex.
+
+Do not mock Better Auth to test behavior. Better Auth disables origin (CSRF)
+checks in test environments. Enable production checks in tests that depend on
+these checks. See `test/convex/auth-site-origins.test.ts`.
+
 ## Design rules
 
-1. Composable behavior goes to `test/nuxt`. Behavior that depends on the real
+1. Nuxt composable wiring goes to `test/nuxt`. Behavior that depends on the real
    Convex client (auth timing, token refresh, reconnects, re-execution after
    authentication) needs a real-stack journey: the test transport fetches one
    token and never refreshes, so it cannot show those bugs.

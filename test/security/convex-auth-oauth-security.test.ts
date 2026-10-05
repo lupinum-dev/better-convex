@@ -242,10 +242,16 @@ describe('fixed OAuth provider profile', () => {
     await expect(
       hardened.clientPrivileges({ headers: new Headers(), action: 'allow' }),
     ).resolves.toBe(false)
-    const started = Date.now()
-    await expect(hardened.clientPrivileges({ ...identity, action: 'timeout' })).resolves.toBe(false)
-    expect(Date.now() - started).toBeGreaterThanOrEqual(450)
-    expect(Date.now() - started).toBeLessThan(900)
+    vi.useFakeTimers()
+    try {
+      const denied = expect(
+        hardened.clientPrivileges({ ...identity, action: 'timeout' }),
+      ).resolves.toBe(false)
+      await vi.advanceTimersByTimeAsync(500)
+      await denied
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('enforces the one non-authorization token class claim', async () => {

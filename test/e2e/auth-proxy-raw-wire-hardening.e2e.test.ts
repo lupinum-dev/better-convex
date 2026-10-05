@@ -306,6 +306,10 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
     })
   })
 
+  it('renders the index page', async () => {
+    expect((await requestProxy('/')).body.toString()).toContain('<div>basic</div>')
+  })
+
   it('exposes only public OAuth metadata and the credential-free browser token exchange', async () => {
     const clientOrigin = 'http://127.0.0.1:6274'
     const metadataStart = capturedRequests.length
