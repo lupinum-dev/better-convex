@@ -20,6 +20,8 @@ export { useConvexMutation, useConvexAction } from './use-callable'
 export type {
   ConvexCallStatus,
   OptimisticUpdate,
+  OptimisticUpdateCandidate,
+  SynchronousOptimisticUpdate,
   UseConvexActionReturn,
   UseConvexMutationOptions,
   UseConvexMutationReturn,
@@ -52,6 +54,7 @@ export type {
   UploadCompleteContext,
   UploadProgressInfo,
   UploadUrlMutation,
+  UploadOptionsParameter,
   UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from './use-file-upload'

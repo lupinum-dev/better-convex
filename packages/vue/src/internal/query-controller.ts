@@ -33,7 +33,6 @@ export interface QueryControllerBoundary<RawT> {
 }
 
 export interface QueryControllerEvent<RawT> {
-  onSubscribe?(input: { key: string; args: Record<string, unknown> }): void
   onUpdate?(input: { key: string; args: Record<string, unknown>; value: RawT }): void
   onError?(input: {
     key: string
@@ -41,7 +40,6 @@ export interface QueryControllerEvent<RawT> {
     error: Error
     normalized: ConvexCallError
   }): void
-  onRemove?(key: string): void
 }
 
 export interface CreateQueryControllerInput<RawT> {
@@ -57,13 +55,8 @@ export interface CreateQueryControllerInput<RawT> {
 }
 
 export interface QueryController<RawT> {
-  beginOperation(): QueryOperationContext
-  invalidateOperations(): void
-  isOperationCurrent(operation: QueryOperationContext): boolean
   markSettled(operation?: QueryOperationContext): void
-  setOperationError(error: unknown, operation: QueryOperationContext): ConvexCallError | null
   setupSubscription(): QueryOperationContext | null
-  teardownSubscription(): void
   isAwaitingFirstValue(): boolean
   hasData(): boolean
   hasSettledForCurrentArgs(): boolean
@@ -135,22 +128,10 @@ export function createQueryController<RawT>(
   }
 
   function teardownSubscription(): void {
-    const previousKey = subscribedKey
     unsubscribe?.()
     unsubscribe = null
     awaitingFirstValue = false
     subscribedKey = null
-    if (previousKey) input.events?.onRemove?.(previousKey)
-  }
-
-  function setOperationError(
-    error: unknown,
-    operation: QueryOperationContext,
-  ): ConvexCallError | null {
-    if (!isOperationCurrent(operation)) return null
-    const normalized = normalizeConvexError(error, errorContext)
-    input.boundary.setError(normalized)
-    return normalized
   }
 
   function setupSubscription(): QueryOperationContext | null {
@@ -194,7 +175,6 @@ export function createQueryController<RawT>(
       input.events?.onError?.({ key, args, error, normalized })
     })
     unsubscribe = subscription
-    input.events?.onSubscribe?.({ key, args })
     // Convex hands an already cached result to a new listener only after a
     // timer, so a remounted component would render one loading frame. Read it
     // now instead. A cached error throws here; the callback reports it.
@@ -283,13 +263,8 @@ export function createQueryController<RawT>(
   }
 
   return {
-    beginOperation,
-    invalidateOperations,
-    isOperationCurrent,
     markSettled,
-    setOperationError,
     setupSubscription,
-    teardownSubscription,
     isAwaitingFirstValue: () => awaitingFirstValue,
     hasData: input.boundary.hasData,
     hasSettledForCurrentArgs,

@@ -5,8 +5,8 @@
  */
 
 import type {
+  UploadOptionsParameter,
   UploadUrlMutation,
-  UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from '@lupinum/better-convex-vue'
 import {
@@ -31,10 +31,6 @@ export type {
   UseConvexFileUploadOptions,
   UseConvexFileUploadReturn,
 } from '@lupinum/better-convex-vue'
-
-type UploadOptionsParameter<Prepared, Completed, Context> = [Prepared] extends [string]
-  ? [options?: UseConvexFileUploadOptions<Prepared, Completed, Context>]
-  : [options: UseConvexFileUploadOptions<Prepared, Completed, Context>]
 
 /**
  * Upload files to Convex storage with byte progress, as one identity-bound

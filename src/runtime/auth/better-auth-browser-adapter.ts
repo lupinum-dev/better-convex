@@ -38,7 +38,7 @@ function isUnauthorized(error: unknown): boolean {
   )
 }
 
-/** Private first-party adapter proof. It becomes a Nuxt adapter only after the atomic package cut. */
+/** Private first-party Better Auth browser adapter used by Nuxt. */
 export function createBetterAuthBrowserAdapter(
   source: BetterAuthBrowserSource,
   callbacks: {

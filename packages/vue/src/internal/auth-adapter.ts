@@ -24,14 +24,6 @@ export interface BrowserAuthAdapter {
   refreshSession(): Promise<void>
 }
 
-interface AuthCapableClient extends ConvexClient {
-  setAuth(
-    fetchToken: AuthTokenFetcher,
-    onChange: (isAuthenticated: boolean) => void,
-    onRefreshChange?: (isRefreshing: boolean) => void,
-  ): void
-}
-
 export interface AuthAdapterIdentityPort extends ClientIdentityPort {
   refresh(): Promise<void>
   dispose(): void
@@ -85,9 +77,9 @@ export function createAuthAdapterIdentityPort(
   let desired = validateSnapshot(adapter.snapshot())
   let identityGeneration = 0
   let disposed = false
-  let currentClient: AuthCapableClient | null = null
+  let currentClient: ConvexClient | null = null
   let currentClientGeneration = -1
-  const activeAuthConfiguration = new WeakMap<AuthCapableClient, object>()
+  const activeAuthConfiguration = new WeakMap<ConvexClient, object>()
   let initialSettled = desired.status !== 'pending' && desired.status !== 'authenticated'
   // Whether the provider has reported a principal (anonymous, a user, or an
   // error) since the port started.
@@ -106,7 +98,7 @@ export function createAuthAdapterIdentityPort(
     cancel(error: ConvexCallError): void
   }>()
   let activeConfirmation: {
-    client: AuthCapableClient
+    client: ConvexClient
     generation: number
     promise: Promise<void>
     cancel(error: ConvexCallError): void
@@ -198,7 +190,7 @@ export function createAuthAdapterIdentityPort(
     activeConfirmation?.cancel(rejection)
   }
 
-  const confirm = (client: AuthCapableClient, expectedGeneration: number): Promise<void> => {
+  const confirm = (client: ConvexClient, expectedGeneration: number): Promise<void> => {
     if (
       activeConfirmation?.client === client &&
       activeConfirmation.generation === expectedGeneration
@@ -355,7 +347,7 @@ export function createAuthAdapterIdentityPort(
     },
     async initializePrimary(candidate: ConvexClient) {
       if (disposed) throw new Error('Auth adapter identity port is disposed.')
-      const client = candidate as AuthCapableClient
+      const client = candidate
       const generation = identityGeneration
       currentClient = client
       currentClientGeneration = generation

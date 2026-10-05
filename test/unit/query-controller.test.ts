@@ -33,7 +33,6 @@ function makeHarness(options?: { keepPreviousData?: boolean; cached?: unknown })
     | undefined
   let unsubscribes = 0
   let writes = 0
-  const removed: string[] = []
 
   const client = {
     onUpdate(
@@ -79,7 +78,6 @@ function makeHarness(options?: { keepPreviousData?: boolean; cached?: unknown })
         hasData = false
       },
     },
-    events: { onRemove: (key) => removed.push(key) },
   })
 
   return {
@@ -101,7 +99,6 @@ function makeHarness(options?: { keepPreviousData?: boolean; cached?: unknown })
       get writes() {
         return writes
       },
-      removed,
       setArgs(next: Record<string, unknown> | 'skip', hash: string, key: string) {
         args = next
         argsHash = hash
@@ -167,7 +164,6 @@ describe('query controller', () => {
     expect(state.data).toBeNull()
     expect(state.error).toBeUndefined()
     expect(state.unsubscribes).toBe(1)
-    expect(state.removed).toEqual(['notes:list:alice:page:1'])
   })
 
   it('replaces the listener on an args boundary and marks retained data stale', () => {
@@ -236,20 +232,6 @@ describe('query controller', () => {
 
     expect(state.data).toBeNull()
     expect(state.unsubscribes).toBe(1)
-  })
-
-  it('normalizes current errors but ignores errors from retired operations', () => {
-    const { controller, state } = makeHarness()
-    const operation = controller.beginOperation()
-    const normalized = controller.setOperationError(new TypeError('private details'), operation)
-
-    expect(normalized?.kind).toBe('unknown')
-    expect(normalized?.functionName).toBe('notes:list')
-    expect(state.error).toBe(normalized)
-
-    controller.invalidateOperations()
-    expect(controller.setOperationError(new Error('late'), operation)).toBeNull()
-    expect(state.error).toBe(normalized)
   })
 
   it('surfaces a current subscription error even while retaining previous data', () => {
