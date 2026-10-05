@@ -5,19 +5,35 @@ import { createAuthClient } from 'better-auth/vue'
 import { convexTest } from 'convex-test'
 import { componentsGeneric, defineSchema, type GenericDataModel } from 'convex/server'
 import { createLocalJWKSet, jwtVerify } from 'jose'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { defineConvexAuthClient } from '../../src/runtime/auth-client'
 import { validateConvexAuthClientDefinition } from '../../src/runtime/auth/validate-auth-client-definition'
 import { defineAuthAdapterFunctions } from '../../src/runtime/convex-auth/adapter/define-functions'
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
-import {
-  createBetterConvexAuth,
-  type CreateBetterConvexAuthOptions,
-} from '../../src/runtime/convex-auth/create-better-convex-auth'
+import type { CreateBetterConvexAuthOptions } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import { rotateSigningKeyWithOfficialJwt } from '../../src/runtime/convex-auth/jwks-rotation'
 import schema from '../fixtures/better-auth-anonymous/convex/betterAuth/schema'
 import metadata from '../fixtures/better-auth-anonymous/convex/betterAuth/schemaMetadata'
+
+// Better Auth captures NODE_ENV at import and checks TEST when creating the request context.
+// The edge runtime has a separate process shim; set the host environment so
+// these real routes enforce production origin checks, then restore it after use.
+const restoreHostEnvironment = await vi.hoisted(async () => {
+  const { env } = await import('node:process')
+  const previous = { NODE_ENV: env.NODE_ENV, TEST: env.TEST }
+  env.NODE_ENV = 'production'
+  env.TEST = 'false'
+  return () => {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) Reflect.deleteProperty(env, name)
+      else env[name] = value
+    }
+  }
+})
+const { createBetterConvexAuth } =
+  await import('../../src/runtime/convex-auth/create-better-convex-auth')
+afterAll(restoreHostEnvironment)
 
 const component = (componentsGeneric() as unknown as { guests: ComponentApi<'guests'> }).guests
 const adapter = defineAuthAdapterFunctions({ metadata, schema })
@@ -49,11 +65,6 @@ function setup(
     const body = await incoming.text()
     const response = await test.mutation(async (ctx) => {
       const instance = await auth.createAuth(ctx)
-      // The transport interface deliberately hides Better Auth's request context.
-      const context = (await instance.$context) as AuthContext
-      // Better Auth defaults to skipping origins in tests. Exercise the real checks.
-      context.skipOriginCheck = false
-      context.skipCSRFCheck = false
       const headers = new Headers(incoming.headers)
       if (!headers.has('origin')) headers.set('origin', origin)
       if (cookie) headers.set('cookie', cookie)

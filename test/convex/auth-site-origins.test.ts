@@ -16,7 +16,7 @@ import {
   signPublicOrigin,
 } from '../../src/runtime/shared/client-ip'
 
-// Better Auth captures NODE_ENV at import and also checks TEST per request.
+// Better Auth captures NODE_ENV at import and checks TEST when creating the request context.
 // The edge runtime has a separate process shim; set the host environment so
 // these real routes enforce production origin checks, then restore it after use.
 const restoreHostEnvironment = await vi.hoisted(async () => {

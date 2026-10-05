@@ -127,7 +127,12 @@ The local-backend integration suite covers real HTTP between Nuxt and Convex.
 
 Do not mock Better Auth to test behavior. Better Auth disables origin (CSRF)
 checks in test environments. Enable production checks in tests that depend on
-these checks. See `test/convex/auth-site-origins.test.ts`.
+these checks. Set the host `NODE_ENV=production` and `TEST=false` in
+`vi.hoisted` before importing Better Auth, then restore both in `afterAll`.
+Better Auth captures `NODE_ENV` at import and reads `TEST` when it creates the
+request context. Changing only the edge-runtime environment is insufficient.
+Explicit `disableOriginCheck: false` and `disableCSRFCheck: false` also enable
+both checks. See `test/convex/auth-site-origins.test.ts`.
 
 ## Design rules
 
