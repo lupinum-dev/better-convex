@@ -322,6 +322,16 @@ async function loadSafeOAuthBinding(
   }
   if (resourceId === undefined) return { client }
 
+  return await loadSafeOAuthResourceBinding(context, options, client, resourceId)
+}
+
+async function loadSafeOAuthResourceBinding(
+  context: OAuthGuardContext,
+  options: PinnedOAuthProviderProfile,
+  client: OAuthClientRecord,
+  resourceId: string,
+): Promise<{ client: OAuthClientRecord; resource: OAuthResourceRecord }> {
+  const clientId = client.clientId
   const resource = await context.adapter.findOne<OAuthResourceRecord>({
     model: 'oauthResource',
     where: [{ field: 'identifier', value: resourceId }],
@@ -513,7 +523,7 @@ async function guardAuthorizeProfile(
   let resourceErrorDescription = 'exactly one resource is required'
   if (resources.length === 1) {
     try {
-      await loadSafeOAuthBinding(context, options, clientIds[0]!, resources[0]!)
+      await loadSafeOAuthResourceBinding(context, options, client, resources[0]!)
       return
     } catch (error) {
       if (!(error instanceof OAuthSecurityError)) throw error

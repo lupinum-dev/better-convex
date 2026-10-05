@@ -8,7 +8,11 @@ import {
   type BetterConvexMcpHost,
   type ResolvedMcpProfile,
 } from './mcp-profile'
-import { validateOAuthProviderProfile, type PinnedOAuthProviderProfile } from './oauth-security'
+import {
+  validateOAuthRedirectUris,
+  validateOAuthProviderProfile,
+  type PinnedOAuthProviderProfile,
+} from './oauth-security'
 import type { AuthAdapterComponentApi } from './types'
 
 export interface BetterConvexPublicOAuthClientInput {
@@ -94,7 +98,8 @@ function requireValues(values: readonly [string, ...string[]], name: string): st
   return normalized
 }
 
-function requireUrl(value: string, name: 'REDIRECT_URI' | 'RESOURCE'): string {
+function requireResourceUrl(value: string): string {
+  const name = 'RESOURCE'
   const normalized = requireString(value, name)
   let url: URL
   try {
@@ -108,7 +113,8 @@ function requireUrl(value: string, name: 'REDIRECT_URI' | 'RESOURCE'): string {
     url.password ||
     url.hash ||
     (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
-    (name === 'RESOURCE' && (url.search || url.pathname === '/'))
+    url.search ||
+    url.pathname === '/'
   ) {
     throw new Error(`AUTH_OAUTH_CLIENT_${name}_INVALID`)
   }
@@ -221,11 +227,14 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
     ) {
       const name = requireString(clientInput.name, 'NAME')
       const profile = requireString(clientInput.profile, 'PROFILE')
-      const redirectUris = requireValues(clientInput.redirectUris, 'REDIRECT_URI').map((value) =>
-        requireUrl(value, 'REDIRECT_URI'),
-      )
+      const redirectUris = requireValues(clientInput.redirectUris, 'REDIRECT_URI')
+      try {
+        validateOAuthRedirectUris(redirectUris)
+      } catch {
+        throw new Error('AUTH_OAUTH_CLIENT_REDIRECT_URI_INVALID')
+      }
       const scopes = requireValues(clientInput.scopes, 'SCOPE')
-      const resourceIdentifier = requireUrl(clientInput.resource.identifier, 'RESOURCE')
+      const resourceIdentifier = requireResourceUrl(clientInput.resource.identifier)
       if (clientInput.resource.ownership !== 'application') {
         throw new Error('AUTH_OAUTH_CLIENT_RESOURCE_OWNERSHIP_INVALID')
       }

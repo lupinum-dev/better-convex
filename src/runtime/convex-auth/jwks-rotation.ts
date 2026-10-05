@@ -151,14 +151,21 @@ function assertStoredKeyId(id: unknown): asserts id is string {
   if (/\p{C}/u.test(id)) throw new Error('AUTH_JWKS_KEY_ID_INVALID')
 }
 
+function assertValidCreatedAt(timestamp: number): void {
+  if (!Number.isSafeInteger(timestamp) || !Number.isFinite(new Date(timestamp).getTime())) {
+    throw new TypeError('AUTH_JWKS_CREATED_AT_INVALID')
+  }
+}
+
 function validateStoredJwk(row: Jwk, state: 'current' | 'retired' | undefined): Jwk {
   assertStoredKeyId(row.id)
   if (row.alg !== 'RS256' || (row.crv !== null && row.crv !== undefined)) {
     throw new Error('AUTH_JWKS_ALGORITHM_INVALID')
   }
-  if (!(row.createdAt instanceof Date) || !Number.isFinite(row.createdAt.getTime())) {
+  if (!(row.createdAt instanceof Date)) {
     throw new TypeError('AUTH_JWKS_CREATED_AT_INVALID')
   }
+  assertValidCreatedAt(row.createdAt.getTime())
   if (state === undefined) throw new Error('AUTH_JWKS_EXPIRY_INVALID')
   if (typeof row.publicKey !== 'string') throw new Error('AUTH_JWKS_PUBLIC_KEY_INVALID')
   // The JWT plugin reads these rows for both signing and public serialization.
@@ -284,9 +291,10 @@ export function storedSigningKeyDocumentIssue(row: Record<string, unknown>): str
     if (row.alg !== 'RS256' || (row.crv !== null && row.crv !== undefined)) {
       throw new Error('AUTH_JWKS_ALGORITHM_INVALID')
     }
-    if (typeof row.createdAt !== 'number' || !Number.isSafeInteger(row.createdAt)) {
+    if (typeof row.createdAt !== 'number') {
       throw new TypeError('AUTH_JWKS_CREATED_AT_INVALID')
     }
+    assertValidCreatedAt(row.createdAt)
     if (typeof row.publicKey !== 'string') throw new Error('AUTH_JWKS_PUBLIC_KEY_INVALID')
     canonicalizePublicRsaJwk(row.publicKey)
     if (typeof row.privateKey !== 'string') {

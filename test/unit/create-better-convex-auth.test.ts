@@ -1065,8 +1065,26 @@ describe('createBetterConvexAuth', () => {
     )
   })
 
+  it('provisions a bracketed IPv6 loopback redirect', async () => {
+    const adapter = oauthAdapter()
+    betterAuth.mockImplementationOnce(authWithAdapter(adapter))
+    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
+    await expect(
+      auth.oauthOperator.createPublicClient(queryContext() as never, {
+        ...proofClient,
+        redirectUris: ['http://[::1]:3000/callback'],
+      }),
+    ).resolves.toEqual({ clientId: expect.any(String) })
+    expect(adapter.create).toHaveBeenCalledWith({
+      model: 'oauthClient',
+      data: expect.objectContaining({ redirectUris: ['http://[::1]:3000/callback'] }),
+    })
+  })
+
   it.each([
     ...[
+      'http://localhost/callback',
+      'https://localhost/callback',
       'not-a-url',
       'ftp://agent.example.test/callback',
       'http://agent.example.test/callback',
