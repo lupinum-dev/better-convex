@@ -54,6 +54,5 @@ The incorporated surface is limited to `insertAtTop` and
 The derived target is `src/optimistic-pagination.ts` in the Vue package.
 
 Better Convex removes the React dependency and uses its existing pagination
-types. The update helper accepts an options object and matches a partial set of
-list arguments, as the insertion helper does. The adapted file carries an
-attribution comment.
+types. Both helpers keep the upstream signatures and matching rules. The adapted
+file carries an attribution comment.
