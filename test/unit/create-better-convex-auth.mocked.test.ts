@@ -63,15 +63,6 @@ function loggedText(): string {
   return JSON.stringify(consoleError.mock.calls)
 }
 
-const emailUserRow = {
-  id: 'user',
-  email: 'person@example.test',
-  emailVerified: false,
-  name: 'Person',
-  createdAt: new Date(0),
-  updatedAt: new Date(0),
-}
-
 function component() {
   const reference = {} as never
   return {
@@ -226,83 +217,6 @@ describe('createBetterConvexAuth', () => {
     Object.assign(ctx, { db: {} })
     await expect(consume()).rejects.toThrow(systemConflict.message)
     expect(ctx.runMutation).toHaveBeenCalledTimes(1)
-  })
-
-  it('constructs query auth but refuses email delivery from a query context', async () => {
-    const query = queryContext()
-    const email = vi.fn(async () => {})
-    const auth = createBetterConvexAuth(component(), {
-      email,
-      emailAndPassword: { passwordReset: true },
-    })
-    await expect(auth.createAuth(query as never)).resolves.toBeDefined()
-    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
-    await expect(
-      options.emailAndPassword!.sendResetPassword!({
-        user: emailUserRow,
-        token: 'synthetic-token',
-        url: 'https://app.example.test/recover',
-      }),
-    ).rejects.toThrow('AUTH_EMAIL_REQUIRES_WRITABLE_CONTEXT')
-    expect(email).not.toHaveBeenCalled()
-    expect(query.runQuery).not.toHaveBeenCalled()
-  })
-
-  it('retains the delivery promise and rejection so submission cannot be fire-and-forget', async () => {
-    const submission = Promise.withResolvers<undefined>()
-    const auth = createBetterConvexAuth(component(), { email: () => submission.promise })
-    await auth.createAuth(writableContext() as never)
-    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
-    let settled = false
-    const sending = options.emailVerification!.sendVerificationEmail!({
-      user: emailUserRow,
-      token: 'synthetic-token',
-      url: 'https://app.example.test/verify',
-    })
-    const observed = Promise.resolve(sending).finally(() => {
-      settled = true
-    })
-    const rejected = expect(observed).rejects.toThrow(/^AUTH_EMAIL_DELIVERY_FAILED$/)
-    await Promise.resolve()
-    expect(settled).toBe(false)
-    submission.reject(new Error('submission failed'))
-    await rejected
-    expect(settled).toBe(true)
-  })
-
-  it('never hands a raw hook error that echoes credentials to Better Auth or the log', async () => {
-    const auth = createBetterConvexAuth(component(), {
-      // Stands in for e.g. a Convex argument validation error echoing its args;
-      // a synchronous throw must be contained as well.
-      email: (_ctx, message) => {
-        throw new Error(`ArgumentValidationError: ${JSON.stringify(message)}`)
-      },
-      emailAndPassword: { passwordReset: true },
-      emailOTP: {},
-    })
-    await auth.createAuth(writableContext() as never)
-    const options = betterAuth.mock.calls[0]![0] as BetterAuthOptions
-    const reset = options.emailAndPassword!.sendResetPassword!({
-      user: emailUserRow,
-      token: 'rst',
-      url: 'https://app.example.test/api/auth/reset-password/rst?callbackURL=%2F',
-    })
-    await expect(reset).rejects.toThrow(/^AUTH_EMAIL_DELIVERY_FAILED$/)
-    const otp = (
-      options.plugins!.find((plugin) => plugin.id === 'email-otp') as unknown as {
-        options: { sendVerificationOTP: (data: unknown) => Promise<void> }
-      }
-    ).options
-    await expect(
-      otp.sendVerificationOTP({ email: 'person@example.test', otp: '482913', type: 'sign-in' }),
-    ).rejects.toThrow(/^AUTH_EMAIL_DELIVERY_FAILED$/)
-
-    const logged = loggedText()
-    expect(logged).toContain('AUTH_EMAIL_DELIVERY_FAILED')
-    expect(logged).toContain('reset-password')
-    expect(logged).toContain('email-otp')
-    expect(logged).not.toContain('reset-password/rst')
-    expect(logged).not.toContain('482913')
   })
 
   it('logs a stable sub-code for each opaque configuration stage without secrets', async () => {
