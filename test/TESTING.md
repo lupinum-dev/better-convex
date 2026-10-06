@@ -59,6 +59,7 @@ and removes them when it ends. Most run on a temporary copy of
 `starters/mcp-oauth-agent` with the built packages installed and the operator-only
 functions from `test/fixtures/mcp-oauth-agent/evidence.ts`.
 
+- `multi-origin`: two Nuxt sites share sign-in on one deployment; forged and signed unlisted origins fail over real HTTP.
 - `mcp-auth`: OAuth discovery, two public PKCE clients, live Convex
   authorization on every tool call (membership, role, tenant, user, resource,
   client link, project ownership, approval), terminal revocation (session,
