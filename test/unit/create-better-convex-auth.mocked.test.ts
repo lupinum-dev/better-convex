@@ -1,9 +1,8 @@
 // Temporary: these behavior tests still mock Better Auth. Each group moves to a convex-test file with real Better Auth; delete this file when it is empty. See test/TESTING.md.
 import type { BetterAuthOptions } from 'better-auth'
-import { httpRouter, makeFunctionReference } from 'convex/server'
+import { httpRouter } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AuthCtx } from '../../src/runtime/convex-auth/context'
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import type { BetterConvexPublicOAuthClientInput } from '../../src/runtime/convex-auth/oauth-operator'
 import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
@@ -255,107 +254,6 @@ describe('createBetterConvexAuth', () => {
     expect(loggedText()).not.toContain(privateToken)
     expect(loggedText()).not.toContain('s3cr3t-value')
     expect(loggedText()).not.toContain('a=b')
-  })
-
-  it('builds one hardened OAuth profile from the request-scoped Convex context', async () => {
-    const ctx = {
-      runQuery: vi.fn().mockResolvedValueOnce(oauthProfile()).mockResolvedValue(null),
-    }
-    const profileQuery = makeFunctionReference<'query'>('authPolicy:oauthProfile')
-    const createProfile = vi.fn(async (requestCtx: AuthCtx) => requestCtx.runQuery(profileQuery))
-    const auth = createBetterConvexAuth(component(), {
-      oauthProvider: createProfile,
-    })
-
-    await auth.createAuth(ctx as never)
-
-    expect(createProfile).toHaveBeenCalledOnce()
-    expect(createProfile).toHaveBeenCalledWith(ctx)
-    expect(ctx.runQuery).toHaveBeenCalledExactlyOnceWith(profileQuery)
-    const options = betterAuth.mock.calls[0]?.[0] as {
-      plugins: Array<{ id: string }>
-    }
-    expect(options.plugins.map(({ id }) => id)).toEqual([
-      'jwt',
-      '@lupinum/better-convex-nuxt',
-      'oauth-provider',
-    ])
-  })
-
-  it('preregisters and deletes a reviewed public OAuth client without exposing plugin APIs', async () => {
-    const adapter = oauthAdapter()
-    const authInstance = authWithAdapter(adapter)
-    betterAuth.mockImplementationOnce(authInstance).mockImplementationOnce(authInstance)
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-    const ctx = queryContext() as never
-
-    await expect(
-      auth.oauthOperator.createPublicClient(ctx, {
-        name: 'Ginko certification',
-        profile: 'ginko-certification-proof',
-        redirectUris: ['http://localhost:3000/oauth-proof/callback'],
-        resource: {
-          identifier: 'https://deployment.convex.site/mcp',
-          name: 'Ginko CMS MCP',
-          ownership: 'application',
-        },
-        scopes: ['cms.read', 'cms.entries.edit'],
-      }),
-    ).resolves.toEqual({ clientId: expect.stringMatching(/^[a-f\d]{32}$/u) })
-    expect(adapter.create).toHaveBeenCalledWith({
-      model: 'oauthResource',
-      data: expect.objectContaining({
-        accessTokenTtl: 600,
-        allowedScopes: ['cms.read', 'cms.entries.edit'],
-        disabled: false,
-        dpopBoundAccessTokensRequired: false,
-        identifier: 'https://deployment.convex.site/mcp',
-        name: 'Ginko CMS MCP',
-        signingAlgorithm: 'RS256',
-      }),
-    })
-    const clientCreate = adapter.create.mock.calls.find(([input]) => input.model === 'oauthClient')
-    expect(clientCreate?.[0].data).toMatchObject({
-      applicationType: 'native',
-      grantTypes: ['authorization_code'],
-      redirectUris: ['http://localhost:3000/oauth-proof/callback'],
-      requirePKCE: true,
-      scopes: ['cms.read', 'cms.entries.edit'],
-      softwareId: 'ginko-certification-proof',
-      subjectType: 'public',
-      tokenEndpointAuthMethod: 'none',
-    })
-    expect(clientCreate?.[0].data).not.toHaveProperty('clientSecret')
-
-    const clientId = clientCreate?.[0].data.clientId as string
-    await auth.oauthOperator.deleteClient(ctx, { clientId })
-    expect(adapter.deleteMany).toHaveBeenCalledWith({
-      model: 'oauthClientResource',
-      where: [{ field: 'clientId', value: clientId }],
-    })
-    expect(adapter.delete).toHaveBeenCalledWith({
-      model: 'oauthClient',
-      where: [{ field: 'clientId', value: clientId }],
-    })
-    expect(adapter.delete).not.toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'oauthResource' }),
-    )
-  })
-
-  it('provisions a bracketed IPv6 loopback redirect', async () => {
-    const adapter = oauthAdapter()
-    betterAuth.mockImplementationOnce(authWithAdapter(adapter))
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-    await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, {
-        ...proofClient,
-        redirectUris: ['http://[::1]:3000/callback'],
-      }),
-    ).resolves.toEqual({ clientId: expect.any(String) })
-    expect(adapter.create).toHaveBeenCalledWith({
-      model: 'oauthClient',
-      data: expect.objectContaining({ redirectUris: ['http://[::1]:3000/callback'] }),
-    })
   })
 
   it.each([
