@@ -6,6 +6,9 @@ minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 
 overrides:
+  # Several compiler/build owners pin the vulnerable patch exactly.
+  # Remove when clean resolution selects source-map-js >=1.2.2 without this pin.
+  source-map-js: 1.2.2
   # Remove when Nuxt UI resolves the patched Tiptap core without this audit pin.
   '@tiptap/core@3.30.3': 3.30.5
   # Remove when fontless requires esbuild 0.28.1 or newer.
@@ -21,3 +24,13 @@ auditConfig:
   ignoreGhsas:
     - GHSA-vfj7-8cjw-p6xm # braces <=3.0.3
     - GHSA-86w9-cpqp-85rv # node-forge <=1.4.0
+    # simple-git reaches these lockfiles only through @nuxt/devtools, which runs
+    # git on the developer's own checkout and passes no untrusted arguments. All
+    # four advisories bypass simple-git's unsafe-operation guard and need
+    # attacker-controlled arguments. The only fix is simple-git 4, which
+    # @nuxt/devtools 3.4.1 cannot load (it imports the removed default export).
+    # Remove these when a stable @nuxt/devtools depends on simple-git >=4.0.1.
+    - GHSA-x6jw-m9v5-85vh # simple-git >=3.15.0 <4.0.1
+    - GHSA-858h-whjf-mvg5 # simple-git <=3.36.0
+    - GHSA-g4wm-2vf7-vfgr # simple-git <=3.36.0
+    - GHSA-v5rq-49vh-5v5c # @simple-git/argv-parser <2.0.1
