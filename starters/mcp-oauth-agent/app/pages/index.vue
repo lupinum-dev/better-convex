@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { can } from '@lupinum/better-convex-functions'
+import { can } from '@lupinum/better-convex-functions/policy'
 import type { Id } from '~~/convex/_generated/dataModel'
 import { policy } from '~~/convex/policy'
 

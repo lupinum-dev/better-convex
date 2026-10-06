@@ -85,11 +85,12 @@ Spread `libraryTables` into your schema. A table without a rule is a type error.
 
 ## Entry points
 
-| Import                                        | Contents                                                                                         |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `@lupinum/better-convex-functions`            | `defineFunctions`, `definePolicy`, the row rules, `libraryTables`, `trusted`, `fail` and helpers |
-| `@lupinum/better-convex-functions/test`       | `unguardedFunctions`, `countDocuments` and `testAuth`, for tests                                 |
-| `@lupinum/better-convex-functions/agent-docs` | Markdown file for coding agents; not a JavaScript module                                         |
+| Import                                        | Contents                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `@lupinum/better-convex-functions`            | `defineFunctions`, `definePolicy`, the row rules, `libraryTables`, `trusted`, `fail` and helpers  |
+| `@lupinum/better-convex-functions/policy`     | `definePolicy`, `can`, `consentScopes` and the policy types, without server code, for the browser |
+| `@lupinum/better-convex-functions/test`       | `unguardedFunctions`, `countDocuments` and `testAuth`, for tests                                  |
+| `@lupinum/better-convex-functions/agent-docs` | Markdown file for coding agents; not a JavaScript module                                          |
 
 `@lupinum/better-convex-functions/internal` exists only for `@lupinum/better-convex-agents` and
 the in-app agent runtime. It is not public API, is not covered by semver, and can change in any

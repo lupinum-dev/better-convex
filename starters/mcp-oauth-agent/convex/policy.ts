@@ -1,4 +1,4 @@
-import { definePolicy } from '@lupinum/better-convex-functions'
+import { definePolicy } from '@lupinum/better-convex-functions/policy'
 
 /** Who may do what. Shared by Convex functions, MCP consent and the page (`can`). */
 export const policy = definePolicy({

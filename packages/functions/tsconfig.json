@@ -11,6 +11,7 @@
     "paths": {
       "@lupinum/better-convex-functions": ["./src/index.ts"],
       "@lupinum/better-convex-functions/internal": ["./src/internal.ts"],
+      "@lupinum/better-convex-functions/policy": ["./src/policy-entry.ts"],
       "@lupinum/better-convex-functions/test": ["./src/test.ts"]
     }
   },

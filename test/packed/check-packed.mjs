@@ -18,7 +18,7 @@ import {
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const root = resolve(import.meta.dirname, '../..')
@@ -65,6 +65,23 @@ function files(directory) {
   return readdirSync(directory, { recursive: true })
     .map((name) => join(directory, name))
     .filter((path) => statSync(path).isFile())
+}
+
+/** Every import outside the package that a built module reaches, through its own relative imports. */
+function packageImports(entry) {
+  const outside = new Set()
+  const seen = new Set()
+  const visit = (file) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    const text = readFileSync(file, 'utf8')
+    for (const [, specifier] of text.matchAll(/(?:\bfrom|\bimport\(?)\s*['"]([^'"]+)['"]/g)) {
+      if (specifier.startsWith('.')) visit(join(dirname(file), specifier))
+      else outside.add(specifier)
+    }
+  }
+  visit(entry)
+  return [...outside]
 }
 
 function checkOptionalAuthCli(tarball) {
@@ -152,6 +169,13 @@ function main() {
       if (hit) failures.push(`${manifest.name}: ${name} contains "${hit.slice(0, 40)}"`)
       if (id === 'nuxt' && text.includes('packages/vue/src'))
         failures.push(`${manifest.name}: ${name} bundles Vue package source`)
+    }
+
+    // V8: the browser imports `can` and the policy from ./policy, so nothing it loads may reach
+    // Convex's server code (or any other package).
+    if (id === 'functions') {
+      for (const outside of packageImports(join(directory, manifest.exports['./policy'].import)))
+        failures.push(`${manifest.name}/policy: its build imports ${outside}`)
     }
 
     const specifiers = []

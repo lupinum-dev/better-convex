@@ -4,6 +4,8 @@ export default defineBuildConfig({
   entries: [
     'src/index',
     'src/internal',
+    // Client-safe: imports nothing, checked on the packed build (test/packed/check-packed.mjs).
+    { input: 'src/policy-entry', name: 'policy' },
     'src/test',
     {
       builder: 'copy',
