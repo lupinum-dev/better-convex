@@ -18,6 +18,7 @@ export {
   owner,
   publicRead,
   anyOf,
+  allOf,
   custom,
   unchecked,
   type Rule,

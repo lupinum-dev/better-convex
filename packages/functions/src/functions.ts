@@ -572,7 +572,7 @@ export function defineFunctions<
     Name extends string,
   > = {
     action: A
-    /** IDs of tables with a `tenant` rule name the call's tenant; see `anyOf` for the tables that do not. */
+    /** IDs of tables with a `tenant` rule (alone or in `allOf`) name the call's tenant; see `anyOf` for the tables that do not. */
     args: Args
     returns: Returns
     tool?: ToolSpec<Name, Args>

@@ -1,5 +1,7 @@
 import {
+  allOf,
   anyOf,
+  custom,
   defineFunctions,
   definePolicy,
   owner,
@@ -8,14 +10,21 @@ import {
   unchecked,
 } from '@lupinum/better-convex-functions'
 import { testAuth } from '@lupinum/better-convex-functions/test'
-import type { DataModelFromSchemaDefinition } from 'convex/server'
+import type { DataModelFromSchemaDefinition, DocumentByName } from 'convex/server'
 
 import type schema from './schema'
 
 type DataModel = DataModelFromSchemaDefinition<typeof schema>
 
 export const policy = definePolicy({
-  actions: ['projects.read', 'projects.archive', 'notes.read', 'pages.read', 'pages.edit'],
+  actions: [
+    'projects.read',
+    'projects.archive',
+    'projects.rename',
+    'notes.read',
+    'pages.read',
+    'pages.edit',
+  ],
   roles: { owner: ['*'], viewer: ['projects.read', 'pages.read'] },
   scopes: { all: { label: 'Everything', actions: ['*'] } },
   public: ['pages.read'],
@@ -47,7 +56,14 @@ export const { query, mutation, internalQuery, internalMutation, internalAction,
       users: owner('_id'),
       orgs: tenant('_id'),
       memberships: owner('userId'),
-      projects: tenant('orgId'),
+      // An archived project is read-only: a state condition in the rule, not in each handler.
+      projects: allOf(
+        tenant('orgId'),
+        custom<DocumentByName<DataModel, 'projects'>>(
+          (ctx, project) =>
+            ctx.mode === 'read' || !project.archived || ctx.action === 'projects.archive',
+        ),
+      ),
       notes: unchecked('Test table for the escape hatch.'),
       pages: anyOf(
         publicRead((page: { published: boolean }) => page.published),

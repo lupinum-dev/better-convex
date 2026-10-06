@@ -116,6 +116,17 @@ export const pair = query({
   handler: async () => null,
 })
 
+/** Renames a project, with no check of its own that it is still active. */
+export const renameProject = mutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { projectId, name }) => {
+    await ctx.db.patch(projectId, { name })
+    return null
+  },
+})
+
 /** A table-qualified get naming the wrong table. */
 export const wrongTable = query({
   action: 'projects.read',

@@ -94,6 +94,24 @@ test('a foreign ID next to an own one answers like a missing ID', async () => {
   await expect(ann.query(fn('pair'), { orgId: a, projectId: gone })).rejects.toThrow(/NOT_FOUND/)
 })
 
+// V1, S17: a state condition only in handlers fails open for the first operation that forgets it.
+test('every part of an allOf rule holds, even for an operation without its own check', async () => {
+  const { t, ann, pa, pb } = await setup()
+  await ann.mutation(fn('renameProject'), { projectId: pa, name: 'Renamed' })
+  await ann.mutation(fn('archiveByString'), { id: pa })
+  await expect(ann.mutation(fn('renameProject'), { projectId: pa, name: 'Late' })).rejects.toThrow(
+    /FORBIDDEN/,
+  )
+  await expect(ann.mutation(fn('renameProject'), { projectId: pb, name: 'Pwned' })).rejects.toThrow(
+    /NOT_FOUND/,
+  )
+  const rows = await t.run((ctx) => ctx.db.query('projects').collect())
+  expect(rows.map((p) => [p.name, p.archived])).toEqual([
+    ['Renamed', true],
+    ['B secret', false],
+  ])
+})
+
 // Catches: a table-qualified get applying another table's (looser) rule.
 test('a table-qualified get only finds rows of that table', async () => {
   const { ann, pb } = await setup()

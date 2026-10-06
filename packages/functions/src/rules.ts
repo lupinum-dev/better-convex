@@ -13,6 +13,7 @@ export type Rule<Row = any, User = any, DM extends GenericDataModel = GenericDat
   | { kind: 'owner'; field: keyof Row & string }
   | { kind: 'publicRead'; where?: (row: Row) => boolean }
   | { kind: 'anyOf'; rules: readonly Rule<Row, User, DM>[] }
+  | { kind: 'allOf'; rules: readonly Rule<Row, User, DM>[] }
   | { kind: 'custom'; check: (ctx: RuleCtx<User, DM>, row: Row) => boolean | Promise<boolean> }
   | { kind: 'unchecked'; reason: string }
 
@@ -105,6 +106,20 @@ export function anyOf<const R extends readonly unknown[]>(...rules: R) {
 }
 
 /**
+ * The row passes when every rule passes: a condition on the row's state
+ * ("only drafts change") sits in the rule, so an operation that forgets it in
+ * its handler still cannot break it. A write is checked on the row before and
+ * after the change. The row is hidden when one rule hides it, else refused
+ * when one refuses it.
+ *
+ * With a `tenant` rule among its parts, every row belongs to that tenant, so
+ * an ID of the table names the call's tenant as for a plain `tenant` rule.
+ */
+export function allOf<const R extends readonly [unknown, ...unknown[]]>(...rules: R) {
+  return { kind: 'allOf' as const, rules }
+}
+
+/**
  * Any other rule. Return `false` and the row does not exist for this actor; a
  * refused write of a row the actor may read fails with FORBIDDEN instead.
  * Use `ctx.allows(tenant)` to apply the role layer: a custom rule that checks
@@ -147,8 +162,20 @@ const libraryTableNames = new Set(Object.keys(libraryTables))
  * tenant check (`functions.ts`) and the row check below.
  */
 export function tenancy(rules: Record<string, Rule>) {
-  const tenantRules = (rule: Rule): Extract<Rule, { kind: 'tenant' }>[] =>
-    rule.kind === 'tenant' ? [rule] : rule.kind === 'anyOf' ? rule.rules.flatMap(tenantRules) : []
+  type TenantRule = Extract<Rule, { kind: 'tenant' }>
+  const tenantRules = (rule: Rule): TenantRule[] =>
+    rule.kind === 'tenant'
+      ? [rule]
+      : rule.kind === 'anyOf' || rule.kind === 'allOf'
+        ? rule.rules.flatMap(tenantRules)
+        : []
+  /** Tenant rules every row of the table must pass: the rule itself, or parts of an `allOf`. */
+  const requiredTenantRules = (rule: Rule): TenantRule[] =>
+    rule.kind === 'tenant'
+      ? [rule]
+      : rule.kind === 'allOf'
+        ? rule.rules.flatMap(requiredTenantRules)
+        : []
   /** Tenant tables and the field naming their parent tenant. */
   const tenantTables = new Map(
     Object.entries(rules).flatMap(([table, rule]) =>
@@ -163,9 +190,10 @@ export function tenancy(rules: Record<string, Rule>) {
    * its rows may be private; each of its rows is checked on its own.
    */
   const tenantFieldsOf = new Map(
-    Object.entries(rules).flatMap(([table, rule]) =>
-      rule.kind === 'tenant' ? [[table, [rule.field]] as const] : [],
-    ),
+    Object.entries(rules).flatMap(([table, rule]) => {
+      const fields = requiredTenantRules(rule).map((r) => r.field)
+      return fields.length > 0 ? [[table, fields] as const] : []
+    }),
   )
 
   function refOf(
@@ -312,6 +340,16 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
           verdicts.push(verdict)
         }
         return verdicts.includes('denied') ? 'denied' : 'hidden'
+      }
+      case 'allOf': {
+        // Every part runs, so a part that hides the row wins over one that refuses it.
+        let verdict: Verdict = 'ok'
+        for (const member of rule.rules) {
+          const part = await judgeRule(member, table, row, mode)
+          if (part === 'hidden') return 'hidden'
+          if (part === 'denied') verdict = 'denied'
+        }
+        return verdict
       }
       case 'tenant': {
         if (rule.field === '_id' && mode === 'insert') {
