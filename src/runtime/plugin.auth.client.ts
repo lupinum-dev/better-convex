@@ -31,6 +31,7 @@ import {
 } from './runtime-context'
 import { useConvexIdentityState } from './utils/auth-identity-state'
 import { useConvexAuthPendingState } from './utils/auth-pending-state'
+import { publishedConvexAuthStatus } from './utils/auth-status'
 import { purgeConvexIdentityPayloadKeys, readAuthMode } from './utils/convex-cache'
 import { MISSING_CONVEX_URL_MESSAGE } from './utils/convex-config'
 import { createLogger, getLogLevel } from './utils/logger'
@@ -259,10 +260,11 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
           )
         })
       }
-      const snapshot = runtime.attachment.identity.snapshot()
-      if (!snapshot.settled) return 'pending'
-      if (snapshot.error) return 'error'
-      return snapshot.identityKey === 'anonymous' ? 'anonymous' : 'authenticated'
+      return publishedConvexAuthStatus({
+        pending: pendingState.value,
+        identityKey: identityKeyOf(identity.value),
+        authError: authError.value,
+      })
     },
     dispose() {
       if (disposed) return

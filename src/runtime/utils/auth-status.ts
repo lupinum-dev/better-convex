@@ -1,6 +1,6 @@
 import { isAuthenticatedIdentityKey } from '@lupinum/better-convex-vue/internal'
 
-import type { ConvexCallError } from '../errors'
+import { ConvexCallError } from '../errors'
 import type { ConvexIdentityKey } from './identity-key'
 
 /**
@@ -51,4 +51,22 @@ export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexAuth
   if (isAuthenticatedIdentityKey(input.identityKey)) return 'authenticated'
   if (input.error) return 'error'
   return 'anonymous'
+}
+
+/**
+ * The status `useConvexAuth()` shows, from the state Nuxt published after
+ * Convex accepted it. `ready()` returns the same value, so the two never differ.
+ */
+export function publishedConvexAuthStatus(state: {
+  pending: boolean
+  identityKey: ConvexIdentityKey | null
+  authError: string | null
+}): ConvexAuthStatus {
+  return deriveConvexAuthStatus({
+    settled: !state.pending,
+    identityKey: state.identityKey,
+    error: state.authError
+      ? new ConvexCallError({ kind: 'authentication', message: state.authError })
+      : null,
+  })
 }

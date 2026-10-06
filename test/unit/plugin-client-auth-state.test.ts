@@ -167,6 +167,7 @@ async function setupPlugin(
 function controller() {
   return runtime.getAuthController()! as {
     client: ReturnType<typeof provider>['client']
+    ready(): Promise<string>
     dispose(): void
   }
 }
@@ -274,9 +275,13 @@ describe('auth client app-facing state projection', () => {
     await vi.waitFor(() => expect(wire.confirmations).toHaveLength(1))
     expect(settled).toBe(false)
     expect(runtime.attachment.identity.snapshot().settled).toBe(false)
+    // ready() returns what useConvexAuth() shows, not the unconfirmed runtime state.
+    expect(state.pending.value).toBe(false)
+    expect(await controller().ready()).toBe('anonymous')
     wire.confirmations.shift()!()
     await signIn
     expect(settled).toBe(true)
+    expect(await controller().ready()).toBe('authenticated')
     expect(source.client.signIn.email).toHaveBeenCalledOnce()
     expect(provide).toHaveBeenCalledWith('convexRuntime', runtime)
     expect(provide).not.toHaveBeenCalledWith('auth', expect.anything())
