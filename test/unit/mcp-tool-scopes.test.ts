@@ -7,7 +7,7 @@ import {
   handleMcpRequest,
   type HandleMcpRequestOptions,
   type McpRequestTools,
-} from '../../packages/mcp/src/handler'
+} from '../../packages/agents/src/handler'
 
 const resource = new URL('https://tool-scopes.example.test/mcp')
 const resourceMetadata = 'https://tool-scopes.example.test/.well-known/oauth-protected-resource/mcp'

@@ -56,6 +56,12 @@ importers:
       '@edge-runtime/vm':
         specifier: ^5.0.0
         version: 5.0.0
+      '@lupinum/better-convex-agents':
+        specifier: workspace:*
+        version: link:packages/agents
+      '@lupinum/better-convex-functions':
+        specifier: workspace:*
+        version: link:packages/functions
       '@modelcontextprotocol/client':
         specifier: 2.1.0
         version: 2.1.0
@@ -144,8 +150,14 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
-  packages/functions:
+  packages/agents:
     devDependencies:
+      '@lupinum/better-convex-functions':
+        specifier: workspace:*
+        version: link:../functions
+      '@modelcontextprotocol/server':
+        specifier: 2.1.0
+        version: 2.1.0
       convex:
         specifier: 1.42.2
         version: 1.42.2
@@ -156,11 +168,11 @@ importers:
         specifier: 3.6.1
         version: 3.6.1(typescript@5.9.3)(vue-sfc-transformer@0.1.17(@vue/compiler-core@3.5.42)(esbuild@0.28.2)(vue@3.5.42(typescript@5.9.3)))(vue-tsc@3.3.9(typescript@5.9.3))(vue@3.5.42(typescript@5.9.3))
 
-  packages/mcp:
+  packages/functions:
     devDependencies:
-      '@modelcontextprotocol/server':
-        specifier: 2.1.0
-        version: 2.1.0
+      convex:
+        specifier: 1.42.2
+        version: 1.42.2
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

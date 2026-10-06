@@ -1,0 +1,243 @@
+/**
+ * Application-facing identity provenance for one freshly verified MCP access token.
+ *
+ * This is not an application actor, role, permission grant, or authorization decision.
+ * Applications map `(issuer, subject)` to canonical state and re-authorize every effect.
+ */
+export interface McpAccessContext {
+  readonly issuer: string
+  readonly subject: string
+  readonly clientId: string
+  readonly resource: string
+  readonly scopes: readonly string[]
+}
+
+/**
+ * Result returned by an access-token verifier.
+ *
+ * `access` is the normalized, credential-free identity provenance. `principal` is the verifier's
+ * typed application principal for this token, for example the live grant a Convex verifier just
+ * resolved. The package hands it unchanged to `requestState` and `configureServer`, so the
+ * application never captures verifier state in a closure. It must never contain the raw token or
+ * other provider secrets.
+ */
+export type VerifiedMcpAccess<Principal = undefined> = {
+  readonly access: McpAccessContext
+  readonly expiresAt: number
+} & (undefined extends Principal
+  ? { readonly principal?: Principal }
+  : { readonly principal: Principal })
+
+/** Captured verification target with a frozen outer record and a request-local resource clone. */
+export interface McpVerificationExpectation {
+  readonly issuer: string
+  readonly resource: URL
+}
+
+/**
+ * Provider-neutral token verifier consumed by the Better Convex MCP resource boundary.
+ *
+ * Implementations validate signature or introspection, token class, issuer, client, subject,
+ * expiration, scopes, and the exact expected resource. Provider-private references remain inside
+ * the adapter and never become part of {@link McpAccessContext}; the typed principal is the one
+ * application-facing value a verifier adds.
+ */
+export interface McpAccessVerifier<Principal = undefined> {
+  verifyAccessToken(
+    token: string,
+    expected: McpVerificationExpectation,
+  ): Promise<VerifiedMcpAccess<Principal>>
+}
+
+const maximumIdentityLength = 512
+const maximumScopeCount = 128
+const maximumScopeLength = 256
+
+export class McpAccessVerificationFailure extends Error {
+  constructor() {
+    super('MCP access token verification failed')
+    this.name = 'McpAccessVerificationFailure'
+  }
+}
+
+export async function verifyAndNormalizeMcpAccess<Principal = undefined>(options: {
+  verifier: McpAccessVerifier<Principal>
+  token: string
+  expectedIssuer: string
+  expectedResource: URL
+  now?: () => number
+}): Promise<VerifiedMcpAccess<Principal>> {
+  const issuer = canonicalMcpIssuer(options.expectedIssuer)
+  const resource = canonicalMcpResource(options.expectedResource)
+  let verified: VerifiedMcpAccess<Principal>
+
+  try {
+    verified = await options.verifier.verifyAccessToken(
+      options.token,
+      Object.freeze({ issuer, resource: new URL(resource) }),
+    )
+  } catch {
+    throw new McpAccessVerificationFailure()
+  }
+
+  try {
+    return normalizeVerifiedAccess(
+      verified,
+      issuer,
+      resource,
+      options.now?.() ?? Date.now() / 1_000,
+    )
+  } catch {
+    throw new McpAccessVerificationFailure()
+  }
+}
+
+function normalizeVerifiedAccess<Principal>(
+  verified: VerifiedMcpAccess<Principal>,
+  expectedIssuer: string,
+  expectedResource: string,
+  nowSeconds: number,
+): VerifiedMcpAccess<Principal> {
+  assertExactObject(
+    verified,
+    Object.hasOwn(verified, 'principal')
+      ? ['access', 'expiresAt', 'principal']
+      : ['access', 'expiresAt'],
+  )
+  assertExactObject(verified.access, ['issuer', 'subject', 'clientId', 'resource', 'scopes'])
+
+  if (
+    !Number.isFinite(nowSeconds) ||
+    !Number.isSafeInteger(verified.expiresAt) ||
+    verified.expiresAt <= nowSeconds
+  ) {
+    throw new TypeError('Invalid access expiration')
+  }
+
+  const issuer = canonicalMcpIssuer(verified.access.issuer)
+  if (issuer !== expectedIssuer) throw new TypeError('Unexpected access issuer')
+  const subject = safeIdentity(verified.access.subject)
+  const clientId = safeIdentity(verified.access.clientId)
+  const resource = canonicalResourceString(verified.access.resource)
+  if (resource !== expectedResource) throw new TypeError('Unexpected access resource')
+  const scopes = normalizeMcpScopes(verified.access.scopes)
+  const access: McpAccessContext = Object.freeze({
+    issuer,
+    subject,
+    clientId,
+    resource,
+    scopes,
+  })
+
+  // The principal is application-owned and passed through unchanged; the verifier owns its checks.
+  return Object.freeze({
+    access,
+    expiresAt: verified.expiresAt,
+    principal: verified.principal,
+  }) as VerifiedMcpAccess<Principal>
+}
+
+export function canonicalMcpIssuer(value: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.trim() !== value ||
+    /\s/u.test(value) ||
+    hasUnsafeTextCharacter(value)
+  ) {
+    throw new TypeError('Invalid access issuer')
+  }
+  const issuer = new URL(value)
+  if (
+    !isSecureResource(issuer) ||
+    issuer.username ||
+    issuer.password ||
+    issuer.search ||
+    issuer.hash
+  ) {
+    throw new TypeError('Invalid access issuer')
+  }
+  // OAuth issuer identifiers are exact strings. Parsing validates the
+  // structure, but the package deliberately does not rewrite a caller's
+  // identifier (for example by adding a trailing slash).
+  return value
+}
+
+export function canonicalMcpResource(value: URL): string {
+  if (!(value instanceof URL)) throw new TypeError('Invalid expected resource')
+  if (!isSecureResource(value) || value.username || value.password || value.search || value.hash) {
+    throw new TypeError('Invalid access resource')
+  }
+  return value.href
+}
+
+function isSecureResource(value: URL): boolean {
+  return (
+    value.protocol === 'https:' ||
+    (value.protocol === 'http:' &&
+      (value.hostname === '127.0.0.1' ||
+        value.hostname === 'localhost' ||
+        value.hostname === '[::1]'))
+  )
+}
+
+function canonicalResourceString(value: string): string {
+  const resource = new URL(value)
+  if (resource.href !== value) throw new TypeError('Noncanonical access resource')
+  return canonicalMcpResource(resource)
+}
+
+function safeIdentity(value: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > maximumIdentityLength ||
+    value.trim() !== value ||
+    hasUnsafeTextCharacter(value)
+  ) {
+    throw new TypeError('Invalid access identity')
+  }
+  return value
+}
+
+export function normalizeMcpScopes(value: readonly string[]): readonly string[] {
+  if (!Array.isArray(value) || value.length > maximumScopeCount) {
+    throw new TypeError('Invalid access scopes')
+  }
+  const scopes = value.map((scope) => {
+    if (
+      typeof scope !== 'string' ||
+      scope.length === 0 ||
+      scope.length > maximumScopeLength ||
+      scope.trim() !== scope ||
+      hasUnsafeTextCharacter(scope) ||
+      /\s/u.test(scope)
+    ) {
+      throw new TypeError('Invalid access scope')
+    }
+    return scope
+  })
+  return Object.freeze([...new Set(scopes)].sort())
+}
+
+function hasUnsafeTextCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0)
+    return codePoint !== undefined && (codePoint <= 31 || codePoint === 127)
+  })
+}
+
+function assertExactObject(
+  value: unknown,
+  fields: readonly string[],
+): asserts value is Record<string, unknown> {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype ||
+    Object.keys(value).sort().join(',') !== [...fields].sort().join(',')
+  ) {
+    throw new TypeError('Invalid verified access object')
+  }
+}

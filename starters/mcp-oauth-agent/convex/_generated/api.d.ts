@@ -8,13 +8,14 @@
  * @module
  */
 
-import type * as approvals from "../approvals.js";
+import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
 import type * as connections from "../connections.js";
+import type * as crons from "../crons.js";
+import type * as functions from "../functions.js";
 import type * as http from "../http.js";
-import type * as mcp from "../mcp.js";
+import type * as policy from "../policy.js";
 import type * as projects from "../projects.js";
-import type * as scopes from "../scopes.js";
 
 import type {
   ApiFromModules,
@@ -23,13 +24,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  approvals: typeof approvals;
+  agents: typeof agents;
   auth: typeof auth;
   connections: typeof connections;
+  crons: typeof crons;
+  functions: typeof functions;
   http: typeof http;
-  mcp: typeof mcp;
+  policy: typeof policy;
   projects: typeof projects;
-  scopes: typeof scopes;
 }>;
 
 /**

@@ -1,12 +1,12 @@
 import { ConvexError } from 'convex/values'
 import { describe, expect, it } from 'vitest'
 
-import { projectMcpToolError, runMcpTool } from '../../packages/mcp/src/tools'
+import { projectMcpToolError, runToolSafely } from '../../packages/agents/src/errors'
 
 describe('MCP tool failure projection', () => {
   it('preserves the official input-required result shape', async () => {
     await expect(
-      runMcpTool(async () => ({
+      runToolSafely(async () => ({
         requestState: 'opaque-state',
         resultType: 'input_required' as const,
       })),
@@ -17,7 +17,7 @@ describe('MCP tool failure projection', () => {
   })
 
   it('preserves expected values and explicit safe actionable failures', async () => {
-    const expected = await runMcpTool(() => ({
+    const expected = await runToolSafely(() => ({
       content: [{ type: 'text', text: 'Entry changed; refresh before retrying.' }],
       structuredContent: { status: 'conflict' },
     }))
@@ -26,7 +26,7 @@ describe('MCP tool failure projection', () => {
       structuredContent: { status: 'conflict' },
     })
 
-    const actionable = await runMcpTool(() => ({
+    const actionable = await runToolSafely(() => ({
       content: [{ type: 'text', text: 'Upstream is temporarily unavailable.' }],
       isError: true,
     }))
@@ -49,7 +49,7 @@ describe('MCP tool failure projection', () => {
     new (class RawConstructorSentinelError extends Error {})('constructor-message-sentinel'),
     'plain-throw-sentinel',
   ])('replaces unexpected throw with one static failure', async (cause) => {
-    const result = await runMcpTool(() => {
+    const result = await runToolSafely(() => {
       throw cause
     })
     expect(result).toEqual({
@@ -84,7 +84,7 @@ describe('MCP tool failure projection', () => {
         },
       })
     }
-    const result = await runMcpTool(() => {
+    const result = await runToolSafely(() => {
       throw cause
     })
     expect(getters).toBe(0)
@@ -96,7 +96,7 @@ describe('MCP tool failure projection', () => {
 
   it('reports only frozen operation metadata to a request-scoped hook', async () => {
     const observed: unknown[] = []
-    const result = await runMcpTool(
+    const result = await runToolSafely(
       () => {
         throw new Error('raw-tool-cause-sentinel')
       },
@@ -116,7 +116,7 @@ describe('MCP tool failure projection', () => {
 
   it('contains diagnostic hook failures and rejects unsafe operation names', async () => {
     await expect(
-      runMcpTool(
+      runToolSafely(
         () => {
           throw new Error('operation')
         },
@@ -128,7 +128,7 @@ describe('MCP tool failure projection', () => {
         },
       ),
     ).resolves.toMatchObject({ isError: true })
-    await expect(runMcpTool(() => ({ content: [] }), { name: 'bad\nname' })).rejects.toThrow(
+    await expect(runToolSafely(() => ({ content: [] }), { name: 'bad\nname' })).rejects.toThrow(
       'Invalid MCP tool name',
     )
   })
@@ -175,7 +175,7 @@ describe('ConvexError projection', () => {
       retryable: true,
     })
     await expect(
-      runMcpTool(() => {
+      runToolSafely(() => {
         throw error
       }),
     ).resolves.toEqual(projected('UNAUTHENTICATED', 'Authentication is required.'))
@@ -244,7 +244,7 @@ describe('ConvexError projection', () => {
 
   it('reports the projected code to onToolError and returns the projection', async () => {
     const observed: unknown[] = []
-    const result = await runMcpTool(
+    const result = await runToolSafely(
       () => {
         throw new ConvexError({ code: 'NOTE_LOCKED', message: 'Unlock the note first.' })
       },

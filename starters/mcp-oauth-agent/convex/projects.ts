@@ -1,201 +1,144 @@
-import {
-  mcpPrincipalValidator,
-  type BetterConvexMcpPrincipal,
-} from '@lupinum/better-convex-nuxt/better-auth/server'
-import { ConvexError, v } from 'convex/values'
+import { fail, oneLine } from '@lupinum/better-convex-functions'
+import { paginationOptsValidator, paginationResultValidator } from 'convex/server'
+import { v } from 'convex/values'
 
-import type { Doc, Id, TableNames } from './_generated/dataModel'
-import { internalMutation, type MutationCtx } from './_generated/server'
-import { auth } from './auth'
+import { mutation, query } from './functions'
+import { role } from './schema'
 
-/** Codes these functions raise. `convex/mcp.ts` shows them to the model with their message. */
-export const PROJECT_ERROR_CODES = [
-  'MCP_ACCESS_REVOKED',
-  'MCP_APPROVAL_REQUIRED',
-  'MCP_INPUT_INVALID',
-  'MCP_RATE_LIMITED',
-  'MCP_RESOURCE_NOT_FOUND',
-] as const
+// Each operation is a web function and, with `tool`, an MCP tool (convex/agents.ts). The library
+// checks the caller, the policy and every row before and while the handler runs.
 
-function fail(code: (typeof PROJECT_ERROR_CODES)[number], message: string): never {
-  throw new ConvexError({ code, message })
+const project = v.object({ id: v.id('projects'), name: v.string() })
+
+/** A name a person can read: one line, no invisible characters, 1 to 100 characters. */
+function projectName(name: string) {
+  const clean = oneLine(name, 101)
+  if (!clean || clean.length > 100) fail('INVALID_INPUT', 'name: use 1 to 100 visible characters.')
+  return clean
 }
 
-const ROLE_RANK = { viewer: 1, member: 2, admin: 3, owner: 4 } as const
-
-/** The scope, minimum role, and per-minute call budget of each operation. */
-const RULES = {
-  listOrganizations: { scope: 'mcp:read', role: 'viewer', limit: 60 },
-  list: { scope: 'mcp:read', role: 'viewer', limit: 60 },
-  create: { scope: 'mcp:write', role: 'member', limit: 20 },
-  requestDelete: { scope: 'mcp:write', role: 'admin', limit: 10 },
-  remove: { scope: 'mcp:write', role: 'admin', limit: 10 },
-} as const
-
-function normalize<Table extends TableNames>(ctx: MutationCtx, table: Table, id: string) {
-  return ctx.db.normalizeId(table, id) ?? fail('MCP_INPUT_INVALID', `The ${table} ID is invalid.`)
-}
-
-async function consumeRateLimit(ctx: MutationCtx, key: string, limit: number) {
-  const now = Date.now()
-  const row = await ctx.db
-    .query('mcpRateLimits')
-    .withIndex('by_key', (q) => q.eq('key', key))
-    .unique()
-  if (!row) return await ctx.db.insert('mcpRateLimits', { count: 1, key, windowStartedAt: now })
-  if (now - row.windowStartedAt >= 60_000) {
-    return await ctx.db.patch(row._id, { count: 1, windowStartedAt: now })
-  }
-  if (row.count >= limit) fail('MCP_RATE_LIMITED', 'Too many requests. Wait a minute.')
-  await ctx.db.patch(row._id, { count: row.count + 1 })
-}
-
-/**
- * The first checks of every tool call, in the tool's own transaction: the
- * live OAuth grant and its scope, the active app user, and a per-user,
- * per-client rate limit.
- */
-async function authorizeUser(
-  ctx: MutationCtx,
-  principal: BetterConvexMcpPrincipal,
-  operation: keyof typeof RULES,
-) {
-  const rule = RULES[operation]
-  await auth.requireMcpPrincipal(ctx, principal, { scope: rule.scope })
-  const user = await ctx.db
-    .query('users')
-    .withIndex('by_auth_id', (q) => q.eq('authId', principal.userId))
-    .unique()
-  if (!user?.active) fail('MCP_ACCESS_REVOKED', 'This account can no longer use MCP.')
-  await consumeRateLimit(ctx, `${principal.userId}:${principal.clientId}:${operation}`, rule.limit)
-  return user
-}
-
-/** `authorizeUser`, then a current membership with at least the operation's role. */
-async function authorize(
-  ctx: MutationCtx,
-  input: { principal: BetterConvexMcpPrincipal; organizationId: string },
-  operation: Exclude<keyof typeof RULES, 'listOrganizations'>,
-) {
-  const user = await authorizeUser(ctx, input.principal, operation)
-  const organizationId = normalize(ctx, 'organizations', input.organizationId)
-  const membership = await ctx.db
-    .query('memberships')
-    .withIndex('by_org_user', (q) => q.eq('organizationId', organizationId).eq('userId', user._id))
-    .unique()
-  const role = RULES[operation].role
-  if (membership?.status !== 'active' || ROLE_RANK[membership.role] < ROLE_RANK[role]) {
-    fail('MCP_ACCESS_REVOKED', `This needs the ${role} role in the organization.`)
-  }
-  return { organizationId, user }
-}
-
-async function activeProject(
-  ctx: MutationCtx,
-  organizationId: Id<'organizations'>,
-  projectId: string,
-): Promise<Doc<'projects'>> {
-  const project = await ctx.db.get(normalize(ctx, 'projects', projectId))
-  if (project?.organizationId !== organizationId || project.status !== 'active') {
-    fail('MCP_RESOURCE_NOT_FOUND', 'No active project with this ID is in the organization.')
-  }
-  return project
-}
-
-export const listOrganizations = internalMutation({
-  args: { principal: mcpPrincipalValidator },
-  handler: async (ctx, { principal }) => {
-    const user = await authorizeUser(ctx, principal, 'listOrganizations')
+export const organizations = query({
+  action: 'organizations.list',
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(
+    v.object({ id: v.id('organizations'), name: v.string(), role }),
+  ),
+  tool: {
+    name: 'list_organizations',
+    description: 'List your organizations and your role in each. Use an ID with the project tools.',
+  },
+  handler: async (ctx, { paginationOpts }) => {
     const memberships = await ctx.db
       .query('memberships')
-      .withIndex('by_user', (q) => q.eq('userId', user._id).eq('status', 'active'))
-      .take(100)
-    const organizations = await Promise.all(
-      memberships.map(async ({ organizationId, role }) => {
-        const organization = await ctx.db.get(organizationId)
-        return { id: organizationId, name: organization?.name ?? '', role }
-      }),
-    )
-    return { organizations }
-  },
-})
-
-const orgArgs = { principal: mcpPrincipalValidator, organizationId: v.string() }
-const projectArgs = { ...orgArgs, projectId: v.string() }
-
-export const list = internalMutation({
-  args: orgArgs,
-  handler: async (ctx, args) => {
-    const { organizationId } = await authorize(ctx, args, 'list')
-    const projects = await ctx.db
-      .query('projects')
-      .withIndex('by_org_status', (q) =>
-        q.eq('organizationId', organizationId).eq('status', 'active'),
-      )
-      .take(100)
-    return { projects: projects.map(({ _id, name }) => ({ id: _id, name })) }
-  },
-})
-
-export const create = internalMutation({
-  args: { ...orgArgs, name: v.string() },
-  handler: async (ctx, args) => {
-    const { organizationId, user } = await authorize(ctx, args, 'create')
-    const name = args.name.trim()
-    if (!name || name.length > 100) fail('MCP_INPUT_INVALID', 'Use 1 to 100 characters.')
-    const id = await ctx.db.insert('projects', {
-      createdBy: user._id,
-      name,
-      organizationId,
-      status: 'active',
-    })
-    return { id, name }
-  },
-})
-
-/** Records a deletion request that a person must approve in the app. Changes no project. */
-export const requestDelete = internalMutation({
-  args: projectArgs,
-  handler: async (ctx, args) => {
-    const { organizationId, user } = await authorize(ctx, args, 'requestDelete')
-    const project = await activeProject(ctx, organizationId, args.projectId)
-    const approvalId = await ctx.db.insert('approvals', {
-      clientId: args.principal.clientId,
-      expiresAt: Date.now() + 10 * 60_000,
-      operation: 'projects.delete',
-      organizationId,
-      projectId: project._id,
-      status: 'pending',
-      userId: user._id,
-    })
-    // The deletion is soft, so the app can restore the project.
+      .withIndex('by_user', (q) => q.eq('userId', ctx.actor.user._id).eq('status', 'active'))
+      .paginate(paginationOpts)
     return {
-      approvalId,
-      project: { id: project._id, name: project.name },
-      status: 'waiting_for_approval' as const,
+      ...memberships,
+      page: await Promise.all(
+        memberships.page.map(async ({ organizationId, role }) => ({
+          id: organizationId,
+          name: (await ctx.db.get(organizationId))?.name ?? '',
+          role,
+        })),
+      ),
     }
   },
 })
 
-/** Soft-deletes a project with an approval that a person granted for this user and client. */
-export const remove = internalMutation({
-  args: { ...projectArgs, approvalId: v.string() },
-  handler: async (ctx, args) => {
-    const { organizationId, user } = await authorize(ctx, args, 'remove')
-    const project = await activeProject(ctx, organizationId, args.projectId)
-    const approval = await ctx.db.get(normalize(ctx, 'approvals', args.approvalId))
-    if (
-      approval?.status !== 'approved' ||
-      approval.expiresAt <= Date.now() ||
-      approval.projectId !== project._id ||
-      approval.userId !== user._id ||
-      approval.clientId !== args.principal.clientId
-    ) {
-      fail('MCP_APPROVAL_REQUIRED', 'A person must approve this deletion in the app first.')
+export const search = query({
+  action: 'projects.search',
+  args: {
+    organizationId: v.id('organizations'),
+    text: v.optional(v.string()),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: paginationResultValidator(project),
+  tool: {
+    name: 'search_projects',
+    description:
+      'Find active projects in an organization by name, newest first when there is no text.',
+    args: { text: 'Words from the project name. Leave it out to list all.' },
+  },
+  handler: async (ctx, { organizationId, text, paginationOpts }) => {
+    const rows = text?.trim()
+      ? await ctx.db
+          .query('projects')
+          .withSearchIndex('search_name', (q) =>
+            q.search('name', text).eq('organizationId', organizationId).eq('status', 'active'),
+          )
+          .paginate(paginationOpts)
+      : await ctx.db
+          .query('projects')
+          .withIndex('by_org_status', (q) =>
+            q.eq('organizationId', organizationId).eq('status', 'active'),
+          )
+          .order('desc')
+          .paginate(paginationOpts)
+    return { ...rows, page: rows.page.map(({ _id, name }) => ({ id: _id, name })) }
+  },
+})
+
+export const create = mutation({
+  action: 'projects.create',
+  args: { organizationId: v.id('organizations'), name: v.string() },
+  returns: project,
+  tool: {
+    name: 'create_project',
+    description: 'Create one project in an organization.',
+    args: { name: '1 to 100 characters, one line.' },
+  },
+  handler: async (ctx, { organizationId, name }) => {
+    const clean = projectName(name)
+    const id = await ctx.db.insert('projects', {
+      organizationId,
+      name: clean,
+      status: 'active',
+      createdBy: ctx.actor.user._id,
+    })
+    return { id, name: clean }
+  },
+})
+
+export const rename = mutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string(), from: v.optional(v.string()) },
+  returns: project,
+  tool: {
+    name: 'rename_project',
+    description: 'Rename one project.',
+    args: {
+      name: '1 to 100 characters, one line.',
+      from: 'The current name as you last saw it. If someone renamed it since, nothing changes and you are told.',
+    },
+  },
+  handler: async (ctx, { projectId, name, from }) => {
+    const clean = projectName(name)
+    const current = await ctx.db.get(projectId)
+    if (!current) fail('NOT_FOUND', 'No projects with this ID.')
+    // Two people (or agents) renaming at once: the second learns about the first instead of overwriting it.
+    if (from !== undefined && current.name !== from) {
+      fail(
+        'CONFLICT',
+        `The project is now called "${current.name}". Check that the new name still fits.`,
+      )
     }
-    const now = Date.now()
-    await ctx.db.patch(project._id, { deletedAt: now, status: 'deleted' })
-    await ctx.db.patch(approval._id, { status: 'used', usedAt: now })
-    return { projectId: project._id, status: 'deleted' as const }
+    await ctx.db.patch(projectId, { name: clean })
+    return { id: projectId, name: clean }
+  },
+})
+
+export const archive = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects') },
+  returns: v.object({ id: v.id('projects'), status: v.literal('archived') }),
+  tool: { name: 'archive_project', description: 'Archive a project. The app can restore it.' },
+  // What the person reads before approving an agent's request.
+  approval: async (ctx, { projectId }) =>
+    `Archive the project "${(await ctx.db.get(projectId))?.name ?? 'unknown'}".`,
+  handler: async (ctx, { projectId }) => {
+    const found = await ctx.db.get(projectId)
+    if (found?.status !== 'active') fail('NOT_FOUND', 'This project is not active.')
+    await ctx.db.patch(projectId, { status: 'archived', archivedAt: Date.now() })
+    return { id: projectId, status: 'archived' as const }
   },
 })

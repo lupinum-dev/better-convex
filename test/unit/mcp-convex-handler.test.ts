@@ -3,8 +3,8 @@ import { ResourceTemplate } from '@modelcontextprotocol/server'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
-import type { McpAccessVerifier } from '../../packages/mcp/src/index'
+import type { McpAccessVerifier } from '../../packages/agents/src/access'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
 const expectedMaximumMcpRequestBytes = 65_536
 const expectedMcpRequestTimeoutMs = 30_000
 

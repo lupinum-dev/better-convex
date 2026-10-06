@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   McpAccessVerificationFailure,
   verifyAndNormalizeMcpAccess,
-} from '../../packages/mcp/src/access'
-import type { McpAccessVerifier, VerifiedMcpAccess } from '../../packages/mcp/src/index'
+} from '../../packages/agents/src/access'
+import type { McpAccessVerifier, VerifiedMcpAccess } from '../../packages/agents/src/access'
 
 const expectedResource = new URL('https://mcp.example.test/api/mcp')
 const expiration = 4_102_444_800

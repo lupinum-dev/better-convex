@@ -1,3 +1,4 @@
+import { consentScopes } from '@lupinum/better-convex-functions'
 import {
   createBetterConvexAuth,
   type AuthFunctions,
@@ -5,7 +6,7 @@ import {
 
 import { components, internal } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
-import { MCP_SCOPES } from './scopes'
+import { policy } from './policy'
 
 const authFunctions: AuthFunctions = internal.auth
 
@@ -30,7 +31,7 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   // The MCP OAuth profile: operator-provisioned PKCE clients, a consent page,
   // 10-minute access tokens bound to `${CONVEX_SITE_URL}/mcp`, and renewal that
   // ends with the Better Auth session that granted consent.
-  oauth: { mcp: { scopes: MCP_SCOPES, hosts: ['chatgpt', 'claude'] } },
+  oauth: { mcp: { scopes: consentScopes(policy), hosts: ['chatgpt', 'claude'] } },
   triggers: {
     user: {
       onCreate: async (ctx, input) => {

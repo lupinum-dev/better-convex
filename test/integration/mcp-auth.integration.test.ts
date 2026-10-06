@@ -1,6 +1,7 @@
 // The MCP OAuth starter end to end: OAuth discovery, two public PKCE clients,
-// live Convex authorization on every tool call, terminal revocation, least-scope
-// step-up, and the stateless MCP protocol envelope through the official client SDK.
+// live Convex authorization on every tool call through the agents door, an approval
+// decided in the app, terminal revocation (signing out included), least-scope tool
+// lists, and the stateless MCP protocol envelope through the official client SDK.
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { verifyBearerToken } from 'better-auth/oauth2'
@@ -28,11 +29,13 @@ import {
 const PROTOCOL_VERSION = '2026-07-28'
 const TOOL_NAMES = [
   'list_organizations',
-  'list_projects',
+  'search_projects',
   'create_project',
-  'request_project_deletion',
-  'delete_project',
+  'rename_project',
+  'archive_project',
+  'check_approval',
 ]
+const READ_TOOL_NAMES = ['list_organizations', 'search_projects', 'check_approval']
 // Better Auth allows three sign-ins per ten-second window; fresh sessions are paced, not unlimited.
 const SIGN_IN_WINDOW_MS = 10_100
 
@@ -94,6 +97,13 @@ function structured(response: McpResponse): JsonRecord {
   expect(response.status).toBe(200)
   expect(isRecord(result.structuredContent)).toBe(true)
   return result.structuredContent as JsonRecord
+}
+
+/** The result of a tool that ran: `{ status: 'done', result }`. */
+function done(response: McpResponse): JsonRecord {
+  const content = structured(response)
+  expect(content.status).toBe('done')
+  return content.result as JsonRecord
 }
 
 function expectApplicationError(response: McpResponse, code: string, description: string) {
@@ -326,7 +336,7 @@ describe('MCP OAuth starter end to end', () => {
     const organizationId = clients.organizationId
     const authUserId = decodeJwtPart(token, 1).sub as string
     const list = (id: string, tenant = organizationId) =>
-      toolCall(id, 'list_projects', { organizationId: tenant })
+      toolCall(id, 'search_projects', { organizationId: tenant })
     const create = (id: string, name = 'MCP authorization project') =>
       toolCall(id, 'create_project', { name, organizationId })
     const denied = async (message: JsonRecord, code: string, description: string) =>
@@ -355,22 +365,22 @@ describe('MCP OAuth starter end to end', () => {
     await whileState(
       { fn: 'evidence:setMembership', ...membership, status: 'removed' },
       { fn: 'evidence:setMembership', ...membership },
-      () => denied(list('membership-removed'), 'MCP_ACCESS_REVOKED', 'membership removal'),
+      () => denied(list('membership-removed'), 'NOT_FOUND', 'membership removal'),
     )
     await whileState(
       { fn: 'evidence:setMembership', ...membership, role: 'viewer' },
       { fn: 'evidence:setMembership', ...membership },
-      () => denied(create('role-lowered'), 'MCP_ACCESS_REVOKED', 'role reduction'),
+      () => denied(create('role-lowered'), 'FORBIDDEN', 'role reduction'),
     )
     await denied(
       list('foreign-tenant', foreignOrganizationId as string),
-      'MCP_ACCESS_REVOKED',
+      'NOT_FOUND',
       'foreign tenant',
     )
     await whileState(
       { fn: 'evidence:setUserActive', active: false, authUserId },
       { fn: 'evidence:setUserActive', active: true, authUserId },
-      () => denied(list('user-disabled'), 'MCP_ACCESS_REVOKED', 'product capability removal'),
+      () => denied(list('user-disabled'), 'ACCOUNT_DISABLED', 'product capability removal'),
     )
     await whileState(
       { fn: 'evidence:setResourceDisabled', disabled: true },
@@ -391,11 +401,10 @@ describe('MCP OAuth starter end to end', () => {
         ),
     )
 
-    const projectName = 'MCP destructive fixture'
-    const project = structured(
-      await postMcp(resource, token, create('create-project', projectName)),
-    )
+    const projectName = 'MCP approval fixture'
+    const project = done(await postMcp(resource, token, create('create-project', projectName)))
     expect(project).toMatchObject({ id: expect.any(String), name: projectName })
+    const archive = (id: string) => toolCall(id, 'archive_project', { projectId: project.id })
     await whileState(
       {
         fn: 'evidence:setProjectOrganization',
@@ -403,40 +412,17 @@ describe('MCP OAuth starter end to end', () => {
         projectId: project.id as string,
       },
       { fn: 'evidence:setProjectOrganization', organizationId, projectId: project.id as string },
-      () =>
-        denied(
-          toolCall('project-owner-changed', 'request_project_deletion', {
-            organizationId,
-            projectId: project.id,
-          }),
-          'MCP_RESOURCE_NOT_FOUND',
-          'project resource ownership change',
-        ),
+      () => denied(archive('project-owner-changed'), 'NOT_FOUND', 'project tenant change'),
     )
 
-    const approval = structured(
-      await postMcp(
-        resource,
-        token,
-        toolCall('approval', 'request_project_deletion', { organizationId, projectId: project.id }),
-      ),
-    )
-    expect(approval).toMatchObject({
+    // Archiving waits for a person; the tool returns the request and its link.
+    const asked = structured(await postMcp(resource, token, archive('approval')))
+    expect(asked).toMatchObject({
+      status: 'needs_approval',
       approvalId: expect.any(String),
-      status: 'waiting_for_approval',
-      project: { id: project.id, name: projectName },
+      summary: `Archive the project "${projectName}".`,
+      url: `${fixture.origin}/approvals/${String(asked.approvalId)}`,
     })
-    const execute = (id: string) =>
-      toolCall(id, 'delete_project', {
-        approvalId: approval.approvalId,
-        organizationId,
-        projectId: project.id,
-      })
-    await denied(
-      execute('execute-unapproved'),
-      'MCP_APPROVAL_REQUIRED',
-      'unapproved destructive operation',
-    )
 
     // A human approves in the app with their own Convex session.
     const sessionToken = await primary.context.request.get(
@@ -450,22 +436,27 @@ describe('MCP OAuth starter end to end', () => {
     await expectConvexSessionToken(convexToken, fixture.origin, fixture.convexSiteUrl)
     const convex = new ConvexHttpClient(fixture.convexUrl)
     convex.setAuth(convexToken as string)
-    await convex.mutation(makeFunctionReference<'mutation'>('approvals:approveProjectDelete'), {
-      approvalId: approval.approvalId,
-    })
-    expect(structured(await postMcp(resource, token, execute('execute-approved')))).toMatchObject({
-      status: 'deleted',
-    })
-    expect(
-      await fixture.runConvex('evidence:readDestructiveState', {
-        approvalIds: [approval.approvalId as string],
-        projectIds: [project.id as string],
+    await expect(
+      convex.mutation(makeFunctionReference<'mutation'>('agents:approve'), {
+        approvalId: asked.approvalId,
       }),
-      'soft delete and single-use approval',
-    ).toEqual({
-      projects: [{ exists: true, hasDeletedAt: true, status: 'deleted' }],
-      approvals: [{ exists: true, hasUsedAt: true, status: 'used' }],
-    })
+    ).resolves.toEqual({ status: 'approved' })
+    expect(
+      done(
+        await postMcp(
+          resource,
+          token,
+          toolCall('check-approval', 'check_approval', { approvalId: asked.approvalId }),
+        ),
+      ),
+    ).toMatchObject({ status: 'approved' })
+    expect(
+      await fixture.runConvex('evidence:readApprovalState', {
+        approvalId: asked.approvalId as string,
+        projectId: project.id as string,
+      }),
+      'approved request ran once',
+    ).toEqual({ approval: 'approved', project: { status: 'archived', archived: true } })
 
     // Revoking one JWT is not a blacklist: the self-contained token stays valid until expiry.
     const revoke = await fetch(`${fixture.origin}/api/auth/oauth2/revoke`, {
@@ -488,7 +479,7 @@ describe('MCP OAuth starter end to end', () => {
     ).toBe(200)
   })
 
-  it('revokes live access on session, client, and consent deletion, and steps up read-only grants', async () => {
+  it('revokes live access on sign-out, client, and consent deletion, and lists only granted tools', async () => {
     const terminal = await fixture.runConvex('evidence:provisionTerminalClients')
     const terminalClients = (
       isRecord(terminal) && isRecord(terminal.clients) ? terminal.clients : {}
@@ -521,7 +512,9 @@ describe('MCP OAuth starter end to end', () => {
       const baseline = await postMcp(
         resource,
         grant.accessToken,
-        toolCall('terminal-baseline', 'list_projects', { organizationId: clients.organizationId }),
+        toolCall('terminal-baseline', 'search_projects', {
+          organizationId: clients.organizationId,
+        }),
       )
       expect(baseline.status, 'fresh terminal-case grant is live').toBe(200)
       return grant
@@ -531,7 +524,7 @@ describe('MCP OAuth starter end to end', () => {
         await postMcp(
           resource,
           grant.accessToken,
-          toolCall(`terminal-${description}`, 'list_projects', {
+          toolCall(`terminal-${description}`, 'search_projects', {
             organizationId: clients.organizationId,
           }),
         ),
@@ -566,20 +559,21 @@ describe('MCP OAuth starter end to end', () => {
     })
     await expectRevoked(consent, 'consent deletion')
 
+    // A read-only grant sees only read tools, and a write tool is not there to call.
     const readOnly = await acquire(terminalClients.conformance!, 'mcp:read')
-    const stepUp = await postMcp(
+    const readTools = await postMcp(resource, readOnly.accessToken, toolsList('read-only-tools'))
+    const readResult = isRecord(readTools.body.result) ? readTools.body.result : {}
+    expect((readResult.tools as JsonRecord[]).map((tool) => tool.name)).toEqual(READ_TOOL_NAMES)
+    const write = await postMcp(
       resource,
       readOnly.accessToken,
-      toolCall('terminal-step-up', 'create_project', {
-        name: 'Step-up evidence',
+      toolCall('read-only-write', 'create_project', {
+        name: 'Read-only evidence',
         organizationId: clients.organizationId,
       }),
     )
-    expect(stepUp.status).toBe(403)
-    expect(stepUp.body.error).toBe('insufficient_scope')
-    expect(stepUp.body.result).toBeUndefined()
-    expect(stepUp.challenge).toContain('error="insufficient_scope"')
-    expect(stepUp.challenge).toContain('scope="mcp:write"')
+    expect(JSON.stringify(write.body)).toMatch(/create_project/)
+    expect(JSON.stringify(write.body)).not.toContain('"status":"done"')
 
     await expectStatelessProtocol(readOnly.accessToken)
   })

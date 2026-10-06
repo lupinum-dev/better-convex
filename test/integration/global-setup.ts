@@ -9,7 +9,8 @@ export default async function setup() {
   await ensureLocalBackend()
   if (process.env.BCN_INTEGRATION_SKIP_BUILD === '1') return
   for (const args of [
-    ['--filter', '@lupinum/better-convex-mcp', 'build'],
+    ['--filter', '@lupinum/better-convex-functions', 'build'],
+    ['--filter', '@lupinum/better-convex-agents', 'build'],
     ['--filter', '@lupinum/better-convex-vue', 'build'],
     ['exec', 'nuxt-module-build', 'prepare'],
     ['exec', 'nuxt-module-build', 'build'],

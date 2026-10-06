@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { handleMcpRequest } from '../../packages/mcp/src/handler'
-import type { McpAccessVerifier } from '../../packages/mcp/src/index'
+import type { McpAccessVerifier } from '../../packages/agents/src/access'
+import { handleMcpRequest } from '../../packages/agents/src/handler'
 
 const bearer = 'mcp-routing-bearer-sentinel'
 const issuer = 'https://issuer.example.test/'

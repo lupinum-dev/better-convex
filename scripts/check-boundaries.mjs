@@ -88,7 +88,17 @@ const ERRORS_DIR = p('packages/vue/src/errors.ts')
 const AUTH_CLIENT_DIR = p('src/runtime/auth-client')
 const CONVEX_AUTH_DIR = p('src/runtime/convex-auth')
 const CLIENT_LIFECYCLE_DIR = p('packages/vue/src')
-const MCP_PACKAGE_DIR = p('packages/mcp/src')
+const AGENTS_PACKAGE_DIR = p('packages/agents/src')
+/** The agents package's MCP door and transport: the only modules that may load the MCP SDK. */
+const AGENTS_MCP_FILES = [
+  'door.ts',
+  'handler.ts',
+  'access.ts',
+  'transport.ts',
+  'errors.ts',
+  'mcp.ts',
+  'test.ts',
+].map((file) => p('packages/agents/src', file))
 const FUNCTIONS_PACKAGE_DIR = p('packages/functions/src')
 const SHARED_AUTH_COOKIE_FILE = p('src/runtime/shared/auth-cookie.ts')
 const SHARED_AUTH_ORIGIN_FILE = p('src/runtime/shared/auth-origin.ts')
@@ -112,7 +122,7 @@ const isModuleBuild = (absPath) => isAnyFile(absPath, MODULE_BUILD_FILES)
 const isRuntimeEntry = (absPath) => inDir(absPath, RUNTIME_ROOT)
 const isConvexAuth = (absPath) => inDir(absPath, CONVEX_AUTH_DIR)
 const isClientLifecycle = (absPath) => inDir(absPath, CLIENT_LIFECYCLE_DIR)
-const isMcpPackage = (absPath) => inDir(absPath, MCP_PACKAGE_DIR)
+const isAgentsPackage = (absPath) => inDir(absPath, AGENTS_PACKAGE_DIR)
 const isFunctionsPackage = (absPath) => inDir(absPath, FUNCTIONS_PACKAGE_DIR)
 const isSharedAuthCookie = (absPath) => absPath === SHARED_AUTH_COOKIE_FILE
 const isSharedAuthOrigin = (absPath) => absPath === SHARED_AUTH_ORIGIN_FILE
@@ -186,10 +196,20 @@ function isAllowedVueEntryBareSpecifier(_absPath, specifier) {
   return isAllowedClientLifecycleBareSpecifier(specifier)
 }
 
-function isAllowedMcpBareSpecifier(specifier) {
+function isMcpSdkSpecifier(specifier) {
   return (
     specifier === '@modelcontextprotocol/server' ||
     specifier.startsWith('@modelcontextprotocol/server/')
+  )
+}
+
+function isAllowedAgentsBareSpecifier(absPath, specifier) {
+  if (isMcpSdkSpecifier(specifier)) return AGENTS_MCP_FILES.includes(absPath)
+  return (
+    specifier === 'convex/server' ||
+    specifier === 'convex/values' ||
+    specifier === '@lupinum/better-convex-functions' ||
+    specifier === '@lupinum/better-convex-functions/internal'
   )
 }
 
@@ -229,14 +249,14 @@ const RULES = [
     typeOnlyExempt: false,
   },
   {
-    name: 'mcp-package-official-sdk-only',
+    name: 'agents-package-functions-convex-and-sdk-only',
     description:
-      'packages/mcp/src/** may import only its own package and the exact official MCP server SDK; Nuxt, Nitro, H3, Better Auth, Vue, Node built-ins, aliases, and sibling workspace packages are forbidden.',
-    from: isMcpPackage,
+      'packages/agents/src/** may import only its own package, the functions package, the Convex server and value entries, and (in the MCP door and transport modules only) the exact official MCP server SDK; Nuxt, Nitro, H3, Better Auth, Vue, Node built-ins and aliases are forbidden. The root entry must work without the MCP SDK.',
+    from: isAgentsPackage,
     disallow: (edge) => {
-      if (!edge.isRelative) return !isAllowedMcpBareSpecifier(edge.specifier)
+      if (!edge.isRelative) return !isAllowedAgentsBareSpecifier(edge.fromAbsPath, edge.specifier)
       if (edge.resolvedAbsPath === null) return false
-      return !isMcpPackage(edge.resolvedAbsPath)
+      return !isAgentsPackage(edge.resolvedAbsPath)
     },
     typeOnlyExempt: false,
   },

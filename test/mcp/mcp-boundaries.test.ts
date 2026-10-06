@@ -20,14 +20,11 @@ const read = (path: string) => readFileSync(join(starter, path), 'utf8')
 
 describe('delegated MCP static trust boundaries', () => {
   it('accepts a principal argument only on internal functions', () => {
-    expect(read('convex/projects.ts')).not.toMatch(
-      /export const \w+\s*=\s*(?:query|mutation|action)\s*\(/,
-    )
     const docs = files(join(root, 'docs/content/docs')).filter((path) => path.endsWith('.md'))
     const sources = [
       ...files(join(starter, 'convex')).filter((path) => path.endsWith('.ts')),
       ...docs,
-      join(root, 'packages/mcp/README.md'),
+      join(root, 'packages/agents/README.md'),
     ].map((path) => readFileSync(path, 'utf8'))
     const principalFunctions = sources.flatMap((source) =>
       source

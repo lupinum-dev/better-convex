@@ -214,7 +214,8 @@ describe('workspace package dependency direction', () => {
   it('discovers the root and current workspace package ownership', () => {
     const packages = discoverWorkspacePackages()
     expect(packages.map((item) => item.name).sort()).toEqual([
-      '@lupinum/better-convex-mcp',
+      '@lupinum/better-convex-agents',
+      '@lupinum/better-convex-functions',
       '@lupinum/better-convex-nuxt',
       '@lupinum/better-convex-vue',
       'better-convex-nuxt-playground',

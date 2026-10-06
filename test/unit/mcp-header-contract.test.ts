@@ -3,7 +3,7 @@ import { SERVER_INFO_META_KEY } from '@modelcontextprotocol/server'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
 
 const resource = new URL('https://notes.example.test/mcp')
 const issuer = 'https://issuer.example.test/'

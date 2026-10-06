@@ -7,8 +7,8 @@ import {
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
-import type { McpAccessContext } from '../../packages/mcp/src/index'
+import type { McpAccessContext } from '../../packages/agents/src/access'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
 
 const resource = new URL('https://state.example.test/mcp')
 const issuer = 'https://issuer.example.test/'

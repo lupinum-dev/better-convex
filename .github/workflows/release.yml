@@ -174,7 +174,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref changeset-release/main
 
-  # Builds the Vue, MCP, Functions and Nuxt packages plus the docs they ship, and packs every
+  # Builds the Vue, Functions, Agents and Nuxt packages plus the docs they ship, and packs every
   # package whose version is not on npm yet. No secrets.
   pack:
     needs: version-prepare
@@ -251,8 +251,8 @@ jobs:
         with:
           name: release
           path: release
-      # One release per entry in releases.json (`v<version>` for Nuxt + Vue, `mcp-v<version>`
-      # for MCP, `functions-v<version>` for Functions); existing releases are skipped, so re-runs
+      # One release per entry in releases.json (`v<version>` for Nuxt + Vue, `functions-v<version>`
+      # for Functions, `agents-v<version>` for Agents); existing releases are skipped, so re-runs
       # are safe. Tags point only at the released commit: an existing tag that points elsewhere
       # fails the job.
       - env:

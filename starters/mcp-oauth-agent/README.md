@@ -5,18 +5,19 @@ can connect to. A person signs in to this Nuxt application, grants access on a
 consent page, and the host then calls project tools on their behalf. Convex
 checks the grant and the person's organization role again in every tool call.
 
-It follows the Better Convex MCP path from end to end:
+It follows the Better Convex agents path from end to end:
 
-| Step                                                                                           | File                                                 |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Configure the auth factory with the MCP OAuth profile                                          | `convex/auth.ts`                                     |
-| Mount the auth routes and the MCP routes                                                       | `convex/http.ts`                                     |
-| Handle MCP with one `handleMcpRequest` and the Better Auth verifier                            | `convex/mcp.ts`                                      |
-| Define each tool with `registerMcpTool`; pass the typed principal to one internal mutation     | `convex/mcp.ts`                                      |
-| Call `auth.requireMcpPrincipal` inside the mutation, then check app roles                      | `convex/projects.ts`                                 |
-| List and disconnect hosts with `auth.oauthConnections`; provision host clients as the operator | `convex/connections.ts`                              |
-| Let a person approve or decline a destructive request                                          | `convex/approvals.ts`, `app/pages/index.vue`         |
-| Sign in and give consent for a verified authorization request                                  | `app/pages/login.vue`, `app/pages/oauth/consent.vue` |
+| Step                                                                                       | File                                                  |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| Configure the auth factory with the MCP OAuth profile; consent text comes from the policy  | `convex/auth.ts`, `convex/policy.ts`                  |
+| Say who may do what: actions, roles, MCP scopes, and which agent actions wait for a person | `convex/policy.ts`                                    |
+| One row rule per table; the user and the organization role of the caller                   | `convex/functions.ts`                                 |
+| Operations for the web; a `tool` field makes one an MCP tool                               | `convex/projects.ts`                                  |
+| Collect the tools, approvals and activity feed with `defineTools`                          | `convex/agents.ts`                                    |
+| Serve them to MCP hosts with `createMcpServer`, next to the auth routes                    | `convex/http.ts`                                      |
+| List and disconnect hosts with `auth.oauthConnections`; provision host clients as operator | `convex/connections.ts`                               |
+| Approve or decline an agent's request; see what agents did                                 | `app/pages/index.vue`, `app/pages/approvals/[id].vue` |
+| Sign in and give consent for a verified authorization request                              | `app/pages/login.vue`, `app/pages/oauth/consent.vue`  |
 
 ## What the starter shows
 
@@ -26,23 +27,28 @@ It follows the Better Convex MCP path from end to end:
   resource.
 - Access tokens live for at most ten minutes. With `offline_access`, a host
   receives a refresh token that ends with the Better Auth session that granted
-  consent, and after at most seven days.
+  consent, and after at most seven days. Signing out of the app ends the
+  session, so it also disconnects the person's hosts.
 - The Convex HTTP action verifies each token with keys from the auth component:
   issuer, audience, algorithm, expiry, token class, and scopes. It then checks
   the live session, client, resource link, and consent in one query. The raw
   token never leaves the handler.
-- Each tool call runs one internal mutation. The mutation re-checks the grant
-  and the tool's scope with `auth.requireMcpPrincipal`, then checks the app
-  user, the organization membership and role, project ownership, and a
-  per-user, per-client rate limit, in the same transaction as the effect.
-- Deletion is soft and needs a short-lived approval. A person grants it in the
-  application for one project, one user, and one client. It can be used once.
-- Known failures reach the model as structured errors with a code and a short
-  message. Every other failure becomes `Tool execution failed`.
+- A host sees only the tools of the scopes the person granted. Each tool call
+  runs the tool's own internal function. It checks the grant again, then the
+  app user, the organization role and every row it reads or writes, with the
+  same policy and row rules as the web, in the same transaction as the effect.
+  Agent writes are limited per connection and minute.
+- Archiving a project is held for a person. The tool returns a link to the
+  approval page; approving runs the archive as the agent, and fails if the
+  project changed since the request. Owners and admins of the organization may
+  decide a teammate's request.
+- Every agent write appears in the organization's activity feed on the start
+  page. Known failures reach the model as a code and a short message; every
+  other failure becomes a generic one.
 
 `users` is a rebuildable projection of the Better Auth user. Organizations,
-memberships, projects, and approvals are app-owned Convex state. OAuth clients,
-resources, and consents stay in the auth component.
+memberships, projects, approvals and activity are app-owned Convex state. OAuth
+clients, resources, and consents stay in the auth component.
 
 ### What one consent reaches
 
@@ -56,8 +62,9 @@ once.
 If your product needs a narrower grant, for example a host that may act only
 in one chosen workspace, add an app-owned table keyed by user, client, and
 organization (with a status, an expiry, and a scope list), let the person
-choose it on the consent page, and check it in `authorize()` in
-`convex/projects.ts` in the same transaction as the membership check.
+choose it on the consent page, and check it in `roleOf` in
+`convex/functions.ts`, which every call runs in the same transaction as its
+effect.
 
 ## HTTP route graph
 
@@ -186,9 +193,9 @@ Use a fresh deployment. This starter has no migration path from older schemas.
 3. In the OAuth settings, enter the client ID, leave the client secret empty,
    and request `mcp:read mcp:write offline_access`.
 4. Connect. Sign in with the local account and allow access on the consent
-   page. Then call `list_organizations` and `list_projects`.
-5. Call `create_project`, then `request_project_deletion`. Approve the request
-   on the start page, and call `delete_project` with the returned approval ID.
+   page. Then call `list_organizations` and `search_projects`.
+5. Call `create_project`, then `archive_project`. Open the returned link,
+   approve the request, and call `check_approval` with the approval ID.
 
 To connect ChatGPT or Claude, deploy with an HTTPS origin and follow
 [Connect ChatGPT and Claude](https://better-convex.lupinum.com/docs/build/agents/connect-chatgpt-and-claude).
@@ -225,20 +232,20 @@ public clients, leaves client-secret fields empty, and validates exact
 redirect, state, resource, and issuer binding. It then checks that membership
 removal, role reduction, a foreign organization, user suspension, a
 client-resource unlink, session deletion, client disable, client deletion, and
-a disconnected connection each block the next tool call. A read-only token
-receives the `mcp:write` step-up challenge. It also checks the stateless MCP
+a disconnected connection each block the next tool call, and that a read-only
+token sees and calls only read tools. It also checks the stateless MCP
 protocol envelope and its error cases with the official SDK.
 
 ## Production adaptation
 
 - Provision one client per host with `connections:createHostClient`. Do not
   accept callbacks, scopes, or resource identifiers from browser input.
-- Replace the example project model with your own data. Keep one internal
-  function per tool, and call `auth.requireMcpPrincipal` in it before any
-  effect.
-- Decide who may approve destructive requests. The start page lists pending
-  deletions for organization owners and admins; adapt `approvals:listPending`
-  and its page to your roles and operations.
+- Replace the example project model with your own data: one row rule per
+  table in `convex/functions.ts`, and an operation with a `tool` field for
+  each action an agent may take.
+- Decide which agent actions wait for a person (`agents` in the policy) and
+  who may approve them (`approvers`).
+- Set `SITE_URL` on the deployment: approval links point to it.
 - Govern or disable public account creation.
 - Terminate TLS at a trusted ingress, configure deployment-level abuse
   controls, keep Better Auth's database-backed rate limiter enabled, and never
@@ -270,12 +277,8 @@ pnpm typecheck
 pnpm build
 ```
 
-The committed `package.json` pins the last published tuple: Better Auth and
-OAuth Provider `1.7.2`, Convex `1.42.2`, Better Convex Nuxt `1.0.0-beta.3`,
-`@lupinum/better-convex-mcp@1.0.0-beta.2`, and official MCP server SDK `2.0.0`.
-This source already uses the `1.0.0-rc.0` API. The repository checks build it
-against the `1.0.0-rc.0` Nuxt and MCP candidates with Better Auth `1.7.6` and
-MCP server SDK `2.1.0`. The pins move to that tuple after `1.0.0-rc.0` is
-published.
+The committed `package.json` names `@lupinum/better-convex-functions` and
+`@lupinum/better-convex-agents` before their first release; the repository
+checks build the starter against the packed workspace packages.
 Better Auth owns its Kysely runtime; this starter does not add a standalone
 Kysely dependency.

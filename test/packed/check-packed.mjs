@@ -25,8 +25,8 @@ const root = resolve(import.meta.dirname, '../..')
 export const packageDirectories = {
   vue: 'packages/vue',
   nuxt: '.',
-  mcp: 'packages/mcp',
   functions: 'packages/functions',
+  agents: 'packages/agents',
 }
 
 /** Packs every published package into `destination` and returns its tarball path by id. */

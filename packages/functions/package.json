@@ -22,6 +22,10 @@
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs"
     },
+    "./internal": {
+      "types": "./dist/internal.d.mts",
+      "import": "./dist/internal.mjs"
+    },
     "./test": {
       "types": "./dist/test.d.mts",
       "import": "./dist/test.mjs"

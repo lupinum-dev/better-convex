@@ -1,7 +1,9 @@
 import { v } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
+import { tools } from './agents'
 import { APP_NAME, auth } from './auth'
+import { policy } from './policy'
 
 /** The MCP hosts, such as ChatGPT or Claude, that the signed-in user connected. */
 export const list = query({
@@ -17,7 +19,14 @@ export const revoke = mutation({
   args: { clientId: v.string() },
   handler: async (ctx, { clientId }) => {
     const user = await auth.requireUser(ctx)
-    return await auth.oauthConnections.revoke(ctx, { userId: user.id, clientId })
+    const result = await auth.oauthConnections.revoke(ctx, { userId: user.id, clientId })
+    // Its open requests can no longer run: take them off the approval list.
+    const appUser = await ctx.db
+      .query('users')
+      .withIndex('by_auth_id', (q) => q.eq('authId', user.id))
+      .unique()
+    if (appUser) await tools.disconnected(ctx, appUser._id, clientId)
+    return result
   },
 })
 
@@ -47,6 +56,6 @@ export const createInspectorClient = internalMutation({
       profile: 'mcp-inspector',
       redirectUris: ['http://localhost:6274/oauth/callback'],
       resource: { identifier: auth.mcp.resource().href, name: APP_NAME, ownership: 'application' },
-      scopes: ['mcp:read', 'mcp:write', 'offline_access'],
+      scopes: ['offline_access', ...Object.keys(policy.scopes)],
     }),
 })

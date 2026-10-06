@@ -5,7 +5,6 @@
 import { v } from 'convex/values'
 
 import { components } from './_generated/api'
-import type { Id } from './_generated/dataModel'
 import { internalMutation, internalQuery, type MutationCtx } from './_generated/server'
 import { APP_NAME, auth } from './auth'
 
@@ -257,33 +256,16 @@ export const setClientResourceLinked = internalMutation({
   },
 })
 
-export const readDestructiveState = internalQuery({
-  args: { approvalIds: v.array(v.id('approvals')), projectIds: v.array(v.id('projects')) },
-  handler: async (ctx, { approvalIds, projectIds }) => {
-    if (approvalIds.length > 4 || projectIds.length > 4) {
-      throw new Error('MCP_EVIDENCE_BOUND_EXCEEDED')
-    }
-    const approvals = await Promise.all(approvalIds.map((id) => ctx.db.get(id)))
-    const projects = await Promise.all(projectIds.map((id: Id<'projects'>) => ctx.db.get(id)))
+/** Where an approved agent request and its project stand. */
+export const readApprovalState = internalQuery({
+  args: { approvalId: v.id('approvals'), projectId: v.id('projects') },
+  handler: async (ctx, { approvalId, projectId }) => {
+    const [approval, project] = await Promise.all([ctx.db.get(approvalId), ctx.db.get(projectId)])
     return {
-      approvals: approvals.map((approval) =>
-        approval
-          ? {
-              exists: true,
-              hasUsedAt: typeof approval.usedAt === 'number',
-              status: approval.status,
-            }
-          : { exists: false },
-      ),
-      projects: projects.map((project) =>
-        project
-          ? {
-              exists: true,
-              hasDeletedAt: typeof project.deletedAt === 'number',
-              status: project.status,
-            }
-          : { exists: false },
-      ),
+      approval: approval?.status ?? null,
+      project: project
+        ? { status: project.status, archived: project.archivedAt !== undefined }
+        : null,
     }
   },
 })

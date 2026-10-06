@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
+import type { McpAccessVerifier } from '../../packages/agents/src/access'
 import {
   handleMcpRequest,
   type HandleMcpRequestOptions,
   type McpRequestTools,
-} from '../../packages/mcp/src/handler'
-import type { McpAccessVerifier } from '../../packages/mcp/src/index'
+} from '../../packages/agents/src/handler'
 
 const resource = new URL('https://lifecycle.example.test/mcp')
 const bearer = 'request-lifecycle-bearer'

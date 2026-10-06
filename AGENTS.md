@@ -23,19 +23,22 @@ This repository contains four packages:
   helpers, server rendering, and optional Better Auth support.
 - `@lupinum/better-convex-vue` (`packages/vue`): the Vue composables and the
   browser client lifecycle that the Nuxt package also uses.
-- `@lupinum/better-convex-mcp` (`packages/mcp`): MCP request handling inside a
-  Convex HTTP action.
 - `@lupinum/better-convex-functions` (`packages/functions`): operations,
   policy, row rules and internal operations for Convex functions
   (`defineFunctions`). It imports only `convex`.
+- `@lupinum/better-convex-agents` (`packages/agents`): tools derived from those
+  operations (`defineTools`), approvals, agent limits and activity, and the
+  MCP door (`./mcp`: `createMcpServer` and the `handleMcpRequest` transport)
+  inside a Convex HTTP action. Only `./mcp` loads the MCP SDK.
 
-Nuxt and Vue always share one version (a Changesets `fixed` group); MCP and
-Functions version on their own. Functions is an opt-in layer, not part of the
-toolkit below: it wraps every function of an app that installs it, checks one
-policy and one rule per table, and fails a test for every other path to the
-database (D31). The toolkit rules apply to the other three packages; inside
-`packages/functions`, keep the layer small, and add an option only for a
-failing test or a real application that needs it.
+Nuxt and Vue always share one version (a Changesets `fixed` group); Functions
+and Agents version on their own. Functions and Agents are an opt-in layer, not part
+of the toolkit below: Functions wraps every function of an app that installs
+it, checks one policy and one rule per table, and fails a test for every other
+path to the database (D31); Agents builds on it. The toolkit rules apply to the
+Nuxt and Vue packages; inside `packages/functions` and `packages/agents`, keep
+the layer small, and add an option only for a failing test or a real
+application that needs it.
 
 Convex functions decide what a user may read or change. Do not move that
 decision into Vue, Nuxt middleware, MCP transport, or cached client state.
@@ -78,7 +81,7 @@ as parallel checks; run them locally when your change touches their area:
 ```bash
 pnpm test:integration  # real-backend auth, OAuth, MCP suites and the beta-to-1.0 upgrade
 pnpm test:e2e --full   # full-stack playground journeys, including test/e2e/extended
-pnpm test:starters     # every starter and the packed Vue/Nuxt/MCP consumers, from local tarballs
+pnpm test:starters     # every starter and the packed Vue/Nuxt/Agents consumers, from local tarballs
 ```
 
 `pnpm build` builds the four packages, the docs site, and each package's
@@ -138,7 +141,7 @@ proxy, sessions, tokens, keys, secrets, or authorization.
   contract.
 - Keep server-only code out of browser bundles. `scripts/check-boundaries.mjs`
   (part of `pnpm lint`) enforces the import layering: framework-free errors,
-  no Nuxt in the Vue package, only the MCP SDK in the MCP package, no Node or
+  no Nuxt in the Vue package, only functions, Convex and (in `./mcp`) the MCP SDK in the agents package, no Node or
   Nuxt code in the Convex auth component, no server code in browser runtime.
 - Never let a caller choose an origin, issuer, upstream URL, function, or
   principal.

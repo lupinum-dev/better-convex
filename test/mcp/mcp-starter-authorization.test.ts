@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+// The starter's tools against the real Better Auth component: every tool call re-checks the
+// live grant (session, client, consent), the app user and the organization role in Convex.
+// The door that turns a host's request into these calls is tested in packages/agents.
+
 import { convexTest } from 'convex-test'
 import { anyApi, componentsGeneric } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +17,7 @@ const rootModules = import.meta.glob('../../starters/mcp-oauth-agent/convex/**/*
 const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
 const adapter = (componentsGeneric() as unknown as { betterAuth: ComponentApi<'betterAuth'> })
   .betterAuth.adapter
-const projects = anyApi.projects
+const agents = anyApi.agents
 const connections = anyApi.connections
 
 const siteUrl = 'https://starter-app.example.test'
@@ -120,17 +124,19 @@ async function setup() {
     sid: 'alice-session',
     token_use: 'convex-session',
   })
-  return { test, principal, session, userId, ...ids }
+  /** One tool call as the MCP door makes it, with the verified principal of a host. */
+  const tool = (name: string, input: Record<string, unknown>, from = principal) => {
+    const call = { caller: { door: 'mcp', principal: from }, input }
+    return name === 'search_projects' || name === 'list_organizations' || name === 'check_approval'
+      ? test.query(agents[name]!, call)
+      : test.mutation(agents[name]!, call)
+  }
+  return { test, principal, session, userId, tool, ...ids }
 }
 
-async function requestDeletion(context: Awaited<ReturnType<typeof setup>>) {
-  const { test, principal, organizationId, projectId } = context
-  return (await test.mutation(projects.requestDelete, {
-    principal,
-    organizationId,
-    projectId,
-  })) as { approvalId: string }
-}
+type Setup = Awaited<ReturnType<typeof setup>>
+const code = (error: unknown) => (error as { data?: { code?: string } }).data?.code
+const failure = (promise: Promise<unknown>) => promise.then(() => 'no error', code)
 
 beforeEach(() => {
   vi.stubEnv('SITE_URL', siteUrl)
@@ -142,47 +148,49 @@ afterEach(() => {
 })
 
 describe('MCP starter authorization', () => {
-  it('runs the full tool chain for a live grant and a current membership', async () => {
-    const context = await setup()
-    const { test, principal, session, organizationId, projectId } = context
+  it('runs a tool for a live grant and a current membership; archiving waits for a person', async () => {
+    const { tool, session, organizationId, projectId, test } = await setup()
 
-    await expect(test.mutation(projects.listOrganizations, { principal })).resolves.toEqual({
-      organizations: [{ id: organizationId, name: 'Acme', role: 'admin' }],
+    await expect(tool('list_organizations', {})).resolves.toMatchObject({
+      result: { items: [{ id: organizationId, name: 'Acme', role: 'admin' }] },
     })
-    await expect(test.mutation(projects.list, { principal, organizationId })).resolves.toEqual({
-      projects: [{ id: projectId, name: 'Roadmap' }],
+    await expect(tool('search_projects', { organizationId })).resolves.toMatchObject({
+      result: { items: [{ id: projectId, name: 'Roadmap' }] },
     })
     await expect(
-      test.mutation(projects.create, { principal, organizationId, name: '  Launch  ' }),
-    ).resolves.toMatchObject({ name: 'Launch' })
+      tool('create_project', { organizationId, name: '  Launch  ' }),
+    ).resolves.toMatchObject({ result: { name: 'Launch' } })
 
-    const { approvalId } = await requestDeletion(context)
+    const asked = (await tool('archive_project', { projectId })) as { approvalId: string }
+    expect(asked).toMatchObject({
+      status: 'needs_approval',
+      summary: 'Archive the project "Roadmap".',
+    })
     await expect(
-      test.mutation(projects.remove, { principal, organizationId, projectId, approvalId }),
-    ).rejects.toMatchObject({ data: { code: 'MCP_APPROVAL_REQUIRED' } })
-    await session.mutation(anyApi.approvals.approveProjectDelete, { approvalId })
-    await expect(
-      test.mutation(projects.remove, { principal, organizationId, projectId, approvalId }),
-    ).resolves.toEqual({ projectId, status: 'deleted' })
-    await expect(test.run((ctx) => ctx.db.get(approvalId as never))).resolves.toMatchObject({
-      status: 'used',
+      session.mutation(agents.approve, { approvalId: asked.approvalId }),
+    ).resolves.toEqual({
+      status: 'approved',
+    })
+    await expect(test.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({
+      status: 'archived',
     })
   })
 
-  it.each<[string, (context: Awaited<ReturnType<typeof setup>>) => Promise<unknown>, string]>([
+  // Section 7 of the plan: logging out of the web app also disconnects the person's agents.
+  it.each<[string, (context: Setup) => Promise<unknown>, string]>([
     [
       'the user disconnects the host',
       ({ session }) => session.mutation(connections.revoke, { clientId: 'client-1' }),
-      'MCP_ACCESS_DENIED',
+      'AGENT_DISABLED',
     ],
     [
-      'the Better Auth session ends',
+      'the user signs out (the Better Auth session ends)',
       ({ test }) =>
         test.mutation(adapter.deleteOne, {
           model: 'session',
           where: [{ field: 'id', value: 'alice-session' }],
         }),
-      'MCP_ACCESS_DENIED',
+      'AGENT_DISABLED',
     ],
     [
       'the operator disables the client',
@@ -192,32 +200,39 @@ describe('MCP starter authorization', () => {
           where: [{ field: 'clientId', value: 'client-1' }],
           update: { disabled: true },
         }),
-      'MCP_ACCESS_DENIED',
+      'AGENT_DISABLED',
     ],
     [
       'the app suspends the user',
       ({ test, userId }) => test.run((ctx) => ctx.db.patch(userId, { active: false })),
-      'MCP_ACCESS_REVOKED',
+      'ACCOUNT_DISABLED',
     ],
     [
       'the membership is removed',
       ({ test, membershipId }) =>
         test.run((ctx) => ctx.db.patch(membershipId, { status: 'removed' })),
-      'MCP_ACCESS_REVOKED',
+      'NOT_FOUND',
     ],
-  ])('denies the next call after %s', async (_name, revoke, code) => {
+  ])('denies the next call after %s', async (_name, revoke, expected) => {
     const context = await setup()
-    const { test, principal, organizationId } = context
-    await test.mutation(projects.list, { principal, organizationId })
+    const { tool, organizationId } = context
+    await tool('search_projects', { organizationId })
     await revoke(context)
-    await expect(test.mutation(projects.list, { principal, organizationId })).rejects.toMatchObject(
-      { data: { code } },
-    )
+    await expect(failure(tool('search_projects', { organizationId }))).resolves.toBe(expected)
+  })
+
+  it('cancels the open requests of a host the person disconnects', async () => {
+    const { tool, session, projectId } = await setup()
+    const asked = (await tool('archive_project', { projectId })) as { approvalId: string }
+    await session.mutation(connections.revoke, { clientId: 'client-1' })
+    await expect(session.query(agents.pending, {})).resolves.toEqual([])
+    await expect(
+      failure(session.mutation(agents.approve, { approvalId: asked.approvalId })),
+    ).resolves.toBe('APPROVAL_NOT_FOUND')
   })
 
   it('reaches every organization with an active membership, up to its role, and no other', async () => {
-    const context = await setup()
-    const { test, principal, userId, organizationId, otherOrganizationId } = context
+    const { test, tool, userId, organizationId, otherOrganizationId } = await setup()
     const { viewerOrganizationId, formerOrganizationId } = await test.run(async (ctx) => {
       const viewerOrganizationId = await ctx.db.insert('organizations', { name: 'Viewer org' })
       const formerOrganizationId = await ctx.db.insert('organizations', { name: 'Former org' })
@@ -236,103 +251,66 @@ describe('MCP starter authorization', () => {
       return { viewerOrganizationId, formerOrganizationId }
     })
 
-    const { organizations } = (await test.mutation(projects.listOrganizations, {
-      principal,
-    })) as { organizations: { id: string; role: string }[] }
-    expect(
-      organizations.map(({ id, role }) => ({ id, role })).sort((a, b) => a.id.localeCompare(b.id)),
-    ).toEqual(
-      [
+    const listed = (await tool('list_organizations', {})) as {
+      result: { items: { id: string; role: string }[] }
+    }
+    expect(listed.result.items.map(({ id, role }) => ({ id, role }))).toEqual(
+      expect.arrayContaining([
         { id: organizationId, role: 'admin' },
         { id: viewerOrganizationId, role: 'viewer' },
-      ].sort((a, b) => a.id.localeCompare(b.id)),
+      ]),
     )
+    expect(listed.result.items).toHaveLength(2)
 
     // The same consent reads in the viewer organization but cannot write there.
     await expect(
-      test.mutation(projects.list, { principal, organizationId: viewerOrganizationId }),
-    ).resolves.toEqual({ projects: [] })
+      tool('search_projects', { organizationId: viewerOrganizationId }),
+    ).resolves.toMatchObject({ result: { items: [] } })
     await expect(
-      test.mutation(projects.create, {
-        principal,
-        organizationId: viewerOrganizationId,
-        name: 'X',
-      }),
-    ).rejects.toMatchObject({ data: { code: 'MCP_ACCESS_REVOKED' } })
+      failure(tool('create_project', { organizationId: viewerOrganizationId, name: 'X' })),
+    ).resolves.toBe('FORBIDDEN')
     for (const denied of [formerOrganizationId, otherOrganizationId]) {
-      await expect(
-        test.mutation(projects.list, { principal, organizationId: denied }),
-      ).rejects.toMatchObject({ data: { code: 'MCP_ACCESS_REVOKED' } })
-    }
-
-    // Disconnecting the host blocks every organization at once.
-    await context.session.mutation(connections.revoke, { clientId: 'client-1' })
-    for (const reachable of [organizationId, viewerOrganizationId]) {
-      await expect(
-        test.mutation(projects.list, { principal, organizationId: reachable }),
-      ).rejects.toMatchObject({ data: { code: 'MCP_ACCESS_DENIED' } })
+      await expect(failure(tool('search_projects', { organizationId: denied }))).resolves.toBe(
+        'NOT_FOUND',
+      )
     }
   })
 
-  it('enforces token scope, role, tenant, and project ownership', async () => {
-    const context = await setup()
-    const { test, principal, organizationId, otherOrganizationId, projectId, membershipId } =
-      context
+  it('needs the scope for a tool, and keeps a foreign project out of reach', async () => {
+    const { test, tool, organizationId, otherOrganizationId, projectId } = await setup()
     await expect(
-      test.mutation(projects.create, {
-        principal: principalFor('alice', ['mcp:read']),
-        organizationId,
-        name: 'Blocked',
-      }),
-    ).rejects.toMatchObject({ data: { code: 'MCP_INSUFFICIENT_SCOPE' } })
-    await expect(
-      test.mutation(projects.list, { principal, organizationId: 'not-an-id' }),
-    ).rejects.toMatchObject({ data: { code: 'MCP_INPUT_INVALID' } })
-
-    await test.run((ctx) => ctx.db.patch(membershipId, { role: 'member' }))
-    await expect(requestDeletion(context)).rejects.toMatchObject({
-      data: { code: 'MCP_ACCESS_REVOKED' },
-    })
-    await test.run((ctx) => ctx.db.patch(membershipId, { role: 'owner' }))
-    await test.run((ctx) => ctx.db.patch(projectId, { organizationId: otherOrganizationId }))
-    await expect(requestDeletion(context)).rejects.toMatchObject({
-      data: { code: 'MCP_RESOURCE_NOT_FOUND' },
-    })
-  })
-
-  it('binds an approval to its project, user, client, and lifetime', async () => {
-    const context = await setup()
-    const { test, principal, session, organizationId, projectId } = context
-    const { approvalId } = await requestDeletion(context)
-    await session.mutation(anyApi.approvals.approveProjectDelete, { approvalId })
-    const remove = (overrides: Partial<BetterConvexMcpPrincipal> = {}) =>
-      test.mutation(projects.remove, {
-        principal: { ...principal, ...overrides },
-        organizationId,
-        projectId,
-        approvalId,
-      })
-
-    await test.run((ctx) => ctx.db.patch(approvalId as never, { clientId: 'client-2' } as never))
-    await expect(remove()).rejects.toMatchObject({ data: { code: 'MCP_APPROVAL_REQUIRED' } })
-    await test.run((ctx) =>
-      ctx.db.patch(approvalId as never, { clientId: 'client-1', expiresAt: Date.now() } as never),
+      failure(
+        tool(
+          'create_project',
+          { organizationId, name: 'Blocked' },
+          principalFor('alice', ['mcp:read']),
+        ),
+      ),
+    ).resolves.toBe('FORBIDDEN')
+    await expect(failure(tool('search_projects', { organizationId: 'not-an-id' }))).resolves.toBe(
+      'INVALID_INPUT',
     )
-    await expect(remove()).rejects.toMatchObject({ data: { code: 'MCP_APPROVAL_REQUIRED' } })
+    await test.run((ctx) => ctx.db.patch(projectId, { organizationId: otherOrganizationId }))
+    await expect(failure(tool('archive_project', { projectId }))).resolves.toBe('NOT_FOUND')
   })
 
-  it('limits calls per user and client', async () => {
-    const { test, principal, organizationId } = await setup()
-    for (let call = 0; call < 20; call += 1) {
-      await test.mutation(projects.create, { principal, organizationId, name: `Project ${call}` })
-    }
+  it('lets an approver decide only with a live session', async () => {
+    const { test, tool, session, projectId } = await setup()
+    const asked = (await tool('archive_project', { projectId })) as { approvalId: string }
+    await test.mutation(adapter.deleteOne, {
+      model: 'session',
+      where: [{ field: 'id', value: 'alice-session' }],
+    })
     await expect(
-      test.mutation(projects.create, { principal, organizationId, name: 'One too many' }),
-    ).rejects.toMatchObject({ data: { code: 'MCP_RATE_LIMITED' } })
+      failure(session.mutation(agents.approve, { approvalId: asked.approvalId })),
+    ).resolves.toBe('NOT_SIGNED_IN')
+    await expect(test.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({
+      status: 'active',
+    })
   })
 
   it('lists and revokes only the signed-in user’s own connections', async () => {
-    const { test, principal, organizationId, session } = await setup()
+    const { test, tool, organizationId, session } = await setup()
     await createGrantedUser(test, 'bob')
     const bob = test.withIdentity({
       subject: 'bob',
@@ -345,6 +323,6 @@ describe('MCP starter authorization', () => {
     ])
     await bob.mutation(connections.revoke, { clientId: 'client-1' })
     await expect(bob.query(connections.list, {})).resolves.toEqual([])
-    await expect(test.mutation(projects.list, { principal, organizationId })).resolves.toBeDefined()
+    await expect(tool('search_projects', { organizationId })).resolves.toBeDefined()
   })
 })

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 
-import { handleMcpRequest, registerMcpTool } from '@lupinum/better-convex-mcp'
+import { handleMcpRequest } from '@lupinum/better-convex-agents/mcp'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { ConvexError, v } from 'convex/values'
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript'
@@ -156,7 +156,6 @@ describe('MCP application recipe', () => {
       auth,
       z,
       handleMcpRequest,
-      registerMcpTool,
       console: { error: diagnostics },
       httpAction: (handler: unknown) => handler,
       internal: { notes: { listNotes: 'internal-list-notes' } },
@@ -181,7 +180,7 @@ describe('MCP application recipe', () => {
       expect(tools).toHaveLength(1)
       expect(tools[0]).toMatchObject({
         name: 'list_notes',
-        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         outputSchema: {},
         _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['notes:read'] }] },
       })

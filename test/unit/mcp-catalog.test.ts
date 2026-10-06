@@ -2,9 +2,8 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { registerMcpTool } from '../../packages/mcp/src/define'
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
-import { listMcpCatalog } from '../../packages/mcp/src/test'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
+import { listMcpCatalog } from '../../packages/agents/src/test'
 
 const resource = new URL('https://catalog.example.test/mcp')
 const issuer = 'https://issuer.example.test/'
@@ -26,17 +25,19 @@ describe('listMcpCatalog', () => {
     tools,
   }) => {
     for (let index = 0; index < 3; index += 1) {
-      registerMcpTool(server, tools, {
-        name: `tool_${index}`,
-        description: `Tool ${index}`,
-        risk: 'read',
-        scopes: ['notes:read'],
-        inputSchema: z.object({ id: z.string().describe('Note id') }),
-        handler: () => {
+      server.registerTool(
+        `tool_${index}`,
+        {
+          description: `Tool ${index}`,
+          inputSchema: z.object({ id: z.string().describe('Note id') }),
+          annotations: { readOnlyHint: true },
+          scopeChallenge: tools.requireScopes('notes:read'),
+        },
+        () => {
           toolCallback()
           return { content: [] }
         },
-      })
+      )
     }
     if (principal.plan === 'pro') {
       server.registerResource(

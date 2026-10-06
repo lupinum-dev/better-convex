@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@lupinum/better-convex-functions": ["../functions/src/index.ts"],
+      "@lupinum/better-convex-functions/internal": ["../functions/src/internal.ts"],
+      "@lupinum/better-convex-functions/test": ["../functions/src/test.ts"],
+      "@lupinum/better-convex-agents": ["./src/index.ts"],
+      "@lupinum/better-convex-agents/mcp": ["./src/mcp.ts"],
+      "@lupinum/better-convex-agents/internal": ["./src/internal.ts"],
+      "@lupinum/better-convex-agents/test": ["./src/test.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

@@ -17,7 +17,7 @@ const root = process.cwd()
 const read = (path: string) => readFileSync(join(root, path), 'utf8')
 const pages = {
   guide: read('docs/content/docs/3.build/7.agents/1.mcp.md'),
-  readme: read('packages/mcp/README.md'),
+  readme: read('packages/agents/README.md'),
   recipe: read('docs/content/docs/3.build/7.agents/2.mcp-application.md'),
   connect: read('docs/content/docs/3.build/7.agents/3.connect-chatgpt-and-claude.md'),
   apps: read('docs/content/docs/3.build/7.agents/4.mcp-apps.md'),
@@ -287,18 +287,14 @@ describe('MCP documentation samples typecheck against the real exports', () => {
   let diagnostics: Record<string, string[]>
 
   beforeAll(() => {
-    // The old upgrade-guide tool returned only structuredContent without an outputSchema
-    // (TS2322 against McpToolHandlerResult). Keep it as a negative control, so this check can
-    // never pass because the program silently stopped seeing the samples.
-    const withoutOutputSchema = samples.upgrade!['convex/mcp.ts']!.replace(
-      /\n {8}outputSchema: z\.object\(\{[\s\S]*?\n {8}\}\),/u,
-      '',
-    )
+    // A tool that forgets to pass the principal must not compile. A negative control, so this
+    // check can never pass because the program silently stopped seeing the samples.
+    const withoutPrincipal = samples.upgrade!['convex/mcp.ts']!.replace(', { principal })', ', {})')
     diagnostics = typecheckSamples({
       ...samples,
-      'upgrade-without-output-schema': {
+      'upgrade-without-principal': {
         ...samples.upgrade!,
-        'convex/mcp.ts': withoutOutputSchema,
+        'convex/mcp.ts': withoutPrincipal,
       },
     })
   }, 120_000)
@@ -307,10 +303,10 @@ describe('MCP documentation samples typecheck against the real exports', () => {
     expect(diagnostics[name]).toEqual([])
   })
 
-  it('rejects a tool that returns only structuredContent without an outputSchema', () => {
-    expect(samples.upgrade!['convex/mcp.ts']).toContain('outputSchema: z.object({')
-    expect(diagnostics['upgrade-without-output-schema']).toEqual([
-      expect.stringMatching(/^upgrade-without-output-schema\/convex\/mcp\.ts:\d+ TS2322: /u),
+  it('rejects a tool that does not pass the principal to its Convex function', () => {
+    expect(samples.upgrade!['convex/mcp.ts']).toContain(', { principal })')
+    expect(diagnostics['upgrade-without-principal']).toEqual([
+      expect.stringMatching(/^upgrade-without-principal\/convex\/mcp\.ts:\d+ TS\d+: /u),
     ])
   })
 })

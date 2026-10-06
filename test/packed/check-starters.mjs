@@ -48,7 +48,7 @@ try {
     ]),
   )
   const exactPeers = Object.fromEntries(
-    [packed.nuxt, packed.mcp]
+    [packed.nuxt, packed.agents]
       .flatMap((manifest) => Object.entries(manifest.peerDependencies ?? {}))
       .filter(([, version]) => /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(version)),
   )
@@ -102,7 +102,13 @@ try {
       '--vue-tarball',
       tarballs.vue,
     ],
-    ['check-mcp-package-consumer.mjs', '--tarball', tarballs.mcp],
+    [
+      'check-agents-package-consumer.mjs',
+      '--tarball',
+      tarballs.agents,
+      '--functions-tarball',
+      tarballs.functions,
+    ],
   ]
   for (const [script, ...args] of consumers) {
     console.log(`\n=== ${script} ===`)

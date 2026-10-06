@@ -27,10 +27,36 @@ const vueSourceAliases = {
   ),
 }
 
+// The agents package and the functions package it builds on, from source. Subpath entries must
+// precede the root entry they extend.
+const agentsSourceAliases = {
+  '@lupinum/better-convex-functions/internal': fileURLToPath(
+    new URL('./packages/functions/src/internal.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-functions/test': fileURLToPath(
+    new URL('./packages/functions/src/test.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-functions': fileURLToPath(
+    new URL('./packages/functions/src/index.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-agents/internal': fileURLToPath(
+    new URL('./packages/agents/src/internal.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-agents/mcp': fileURLToPath(
+    new URL('./packages/agents/src/mcp.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-agents/test': fileURLToPath(
+    new URL('./packages/agents/src/test.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-agents': fileURLToPath(
+    new URL('./packages/agents/src/index.ts', import.meta.url),
+  ),
+}
+
 /**
  * Vitest projects
  *
- *   pnpm test              unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions
+ *   pnpm test              unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions, agents
  *   pnpm test:integration  real local Convex backend suites (test/integration)
  *   pnpm test:e2e          full-stack Nuxt suites (scripts/run-e2e.mjs, --full adds extended/)
  *
@@ -52,6 +78,7 @@ export default defineConfig({
         resolve: {
           alias: {
             ...vueSourceAliases,
+            ...agentsSourceAliases,
             '#app': fileURLToPath(new URL('./test/unit/shims/app.ts', import.meta.url)),
           },
         },
@@ -109,13 +136,7 @@ export default defineConfig({
             '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
               new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
             ),
-            // The subpath entry must precede the root entry it extends.
-            '@lupinum/better-convex-mcp/test': fileURLToPath(
-              new URL('./packages/mcp/src/test.ts', import.meta.url),
-            ),
-            '@lupinum/better-convex-mcp': fileURLToPath(
-              new URL('./packages/mcp/src/index.ts', import.meta.url),
-            ),
+            ...agentsSourceAliases,
           },
         },
         test: {
@@ -149,11 +170,26 @@ export default defineConfig({
         },
       },
 
+      // Agents package: tools, approvals, limits, activity and the MCP door against its fixture apps
+      // (packages/agents/test), through convex-test's HTTP router with the real MCP SDK.
+      {
+        resolve: { alias: agentsSourceAliases },
+        test: {
+          name: 'agents',
+          include: ['packages/agents/test/**/*.test.ts'],
+          environment: 'node',
+          testTimeout: 30_000,
+          // Approval links need it; nothing is called.
+          env: { SITE_URL: 'https://placeholder.example' },
+        },
+      },
+
       // Security regressions, including the OAuth provider and resource-server suites.
       {
         resolve: {
           alias: {
             ...vueSourceAliases,
+            ...agentsSourceAliases,
             '#app': fileURLToPath(new URL('./test/unit/shims/app.ts', import.meta.url)),
           },
         },
