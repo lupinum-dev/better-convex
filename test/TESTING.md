@@ -48,6 +48,10 @@ it on first use into `~/.cache/convex/binaries/<version>`, so the Convex CLI
 never fetches an unreviewed binary. The manifest's `convexVersion` must equal the
 `convex` dev dependency; bump both together.
 
+`test/helpers/local-convex.ts` owns backend startup, local selection, environment
+writes, deployment readiness and backend cleanup for both suites. E2E keeps its
+retained backend; integration keeps its per-fixture ports and random secrets.
+
 ## Integration suites
 
 Each suite owns a temporary directory, its backend, ports and random secrets,
