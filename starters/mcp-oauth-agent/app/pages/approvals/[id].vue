@@ -52,7 +52,7 @@ const outcome = {
   <main>
     <section class="card attention">
       <h1>Agent request</h1>
-      <p v-if="status === 'loading' || (status === 'authenticated' && loading === 'pending')">
+      <p v-if="status === 'pending' || (status === 'authenticated' && loading === 'pending')">
         Loading…
       </p>
       <p v-else-if="status !== 'authenticated'">

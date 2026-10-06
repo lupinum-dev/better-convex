@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 // The MCP starter and docs samples are copied by users. These cheap static
 // checks guard the three trust boundaries a copy must not lose; the runtime
-// behaviour is covered by mcp-starter-authorization and the integration suite.
+// behaviour is covered by the starter's own tests and the integration suite.
 const root = process.cwd()
 const starter = join(root, 'starters/mcp-oauth-agent')
 

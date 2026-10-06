@@ -128,7 +128,8 @@ export default defineConfig({
       },
 
       // MCP package, starter and documentation-sample contracts. The real
-      // client journey runs in the integration project.
+      // client journey runs in the integration project. The starter's own tests
+      // run here from source, and in `pnpm test:starters` against the packed packages.
       {
         resolve: {
           alias: {
@@ -136,12 +137,15 @@ export default defineConfig({
             '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
               new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
             ),
+            '@lupinum/better-convex-nuxt/better-auth/test': fileURLToPath(
+              new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
+            ),
             ...agentsSourceAliases,
           },
         },
         test: {
           name: 'mcp',
-          include: ['test/mcp/**/*.test.ts'],
+          include: ['test/mcp/**/*.test.ts', 'starters/mcp-oauth-agent/convex/**/*.test.ts'],
           environment: 'node',
           fileParallelism: false,
           testTimeout: 30_000,

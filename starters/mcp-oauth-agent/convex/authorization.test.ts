@@ -1,20 +1,14 @@
-/// <reference types="vite/client" />
-
 // The starter's tools against the real Better Auth component: every tool call re-checks the
 // live grant (session, client, consent), the app user and the organization role in Convex.
-// The door that turns a host's request into these calls is tested in packages/agents.
+// The door that turns a host's request into these calls is tested in @lupinum/better-convex-agents.
 
-import { convexTest } from 'convex-test'
+import type { ComponentApi } from '@lupinum/better-convex-nuxt/better-auth/_generated/component.js'
+import type { BetterConvexMcpPrincipal } from '@lupinum/better-convex-nuxt/better-auth/server'
 import { anyApi, componentsGeneric } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
-import authSchema from '../../src/runtime/convex-auth/component/schema'
-import type { BetterConvexMcpPrincipal } from '../../src/runtime/convex-auth/mcp-principal'
-import schema from '../../starters/mcp-oauth-agent/convex/schema'
+import { initConvexTest } from './test.setup'
 
-const rootModules = import.meta.glob('../../starters/mcp-oauth-agent/convex/**/*.ts')
-const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
 const adapter = (componentsGeneric() as unknown as { betterAuth: ComponentApi<'betterAuth'> })
   .betterAuth.adapter
 const agents = anyApi.agents
@@ -25,7 +19,7 @@ const issuer = `${siteUrl}/api/auth`
 const resource = 'https://starter-deployment.example.test/mcp'
 const grantScopes = ['mcp:read', 'mcp:write']
 
-type Test = ReturnType<typeof convexTest>
+type Test = ReturnType<typeof initConvexTest>
 
 async function create(test: Test, model: string, data: Record<string, unknown>) {
   await test.mutation(adapter.create, { model, data })
@@ -78,8 +72,7 @@ function principalFor(authId: string, scopes = grantScopes): BetterConvexMcpPrin
 }
 
 async function setup() {
-  const test = convexTest(schema, rootModules)
-  test.registerComponent('betterAuth', authSchema, authModules)
+  const test = initConvexTest()
   await create(test, 'oauthResource', {
     id: 'resource-row',
     identifier: resource,

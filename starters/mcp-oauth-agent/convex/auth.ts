@@ -1,4 +1,4 @@
-import { consentScopes } from '@lupinum/better-convex-functions'
+import { consentScopes, trusted } from '@lupinum/better-convex-functions'
 import {
   createBetterConvexAuth,
   type AuthFunctions,
@@ -69,5 +69,17 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
 })
 
 export const { createAuth } = auth
-export const { onCreate, onDelete, onUpdate } = auth.triggerFunctions()
-export const { ensureSigningKey, pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()
+
+// Internal functions of the auth component's own: they keep `users` in step with Better Auth and
+// rotate signing keys. They run as the auth library or an operator, never for a person or agent.
+const triggers = auth.triggerFunctions()
+const byAuth = 'Better Auth triggers: they project the auth user into users.'
+export const onCreate = trusted(byAuth, triggers.onCreate)
+export const onDelete = trusted(byAuth, triggers.onDelete)
+export const onUpdate = trusted(byAuth, triggers.onUpdate)
+
+const keys = auth.jwksOperatorFunctions()
+const operator = 'Operator function: run it from the Convex dashboard or with `convex run`.'
+export const ensureSigningKey = trusted(operator, keys.ensureSigningKey)
+export const pruneSigningKeys = trusted(operator, keys.pruneSigningKeys)
+export const rotateSigningKey = trusted(operator, keys.rotateSigningKey)

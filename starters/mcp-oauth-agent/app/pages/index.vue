@@ -171,7 +171,7 @@ const activityLabel = {
 
 <template>
   <main>
-    <p v-if="status === 'loading'">Checking session…</p>
+    <p v-if="status === 'pending'">Checking session…</p>
 
     <form v-else-if="!signedIn" class="card" @submit.prevent="signIn('in')">
       <h1>Projects</h1>

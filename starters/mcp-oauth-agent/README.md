@@ -211,6 +211,21 @@ from the verified transaction. It never accepts display names from query input
 and cannot widen consent. Login and consent responses are no-store, deny
 framing, and use a no-referrer policy.
 
+## Tests
+
+`pnpm test` runs the starter's own tests in `convex-test`, with the real Better
+Auth component:
+
+| File                           | Fails when                                                                   |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| `convex/no-bypass.test.ts`     | a function skips the policy and the row rules (not built from `./functions`) |
+| `convex/leaks.test.ts`         | an operation returns or changes a project of another organization            |
+| `convex/cost.test.ts`          | a call reads or writes more documents than its budget                        |
+| `convex/authorization.test.ts` | a tool runs after its grant, session, membership or role ended               |
+
+[Test your app](https://better-convex.lupinum.com/docs/build/functions/testing)
+explains each one.
+
 ## Integration tests
 
 From the repository root, run the real-backend OAuth and MCP suite:
@@ -272,6 +287,7 @@ the clean-tarball candidate matrix, both real OAuth client paths, and the
 official MCP server-mode suite:
 
 ```bash
+pnpm test
 pnpm convex:codegen
 pnpm typecheck
 pnpm build
