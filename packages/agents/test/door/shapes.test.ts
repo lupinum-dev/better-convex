@@ -1,5 +1,4 @@
 import { can, type Policy } from '@lupinum/better-convex-functions'
-import { roleAllows } from '@lupinum/better-convex-functions/internal'
 import { expect, test } from 'vitest'
 
 import { policy } from './fns'
@@ -144,8 +143,8 @@ test.each(['superuser', 'toString', 'constructor', '__proto__'])(
 // E13: three-part prefixes match; the type accepts them too (stress/types/probes/E13-patterns.ts).
 test('E13: a two-segment prefix matches only its own actions', () => {
   const billing = { ...policy, roles: { accountant: ['billing.invoices.*'] } } as unknown as Policy
-  expect(roleAllows(billing, 'accountant', 'billing.invoices.create')).toBe(true)
-  expect(roleAllows(billing, 'accountant', 'billing.plans.read')).toBe(false)
+  expect(can(billing, 'billing.invoices.create', 'accountant')).toBe(true)
+  expect(can(billing, 'billing.plans.read', 'accountant')).toBe(false)
 })
 
 // E10: returning a whole document needed a hand-built validator.
