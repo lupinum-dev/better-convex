@@ -1,0 +1,57 @@
+import {
+  anyOf,
+  defineFunctions,
+  definePolicy,
+  owner,
+  publicRead,
+  tenant,
+  unchecked,
+} from '@lupinum/better-convex-functions'
+import { testAuth } from '@lupinum/better-convex-functions/test'
+import type { DataModelFromSchemaDefinition } from 'convex/server'
+
+import type schema from './schema'
+
+type DataModel = DataModelFromSchemaDefinition<typeof schema>
+
+export const policy = definePolicy({
+  actions: ['projects.read', 'projects.archive', 'notes.read', 'pages.read', 'pages.edit'],
+  roles: { owner: ['*'], viewer: ['projects.read', 'pages.read'] },
+  scopes: { all: { label: 'Everything', actions: ['*'] } },
+  public: ['pages.read'],
+})
+
+// Auth is the one outside service; the fake names a person by the test identity's subject.
+const { auth } = testAuth<DataModel>()
+
+export const { query, mutation, internalQuery, internalMutation, internalAction, job } =
+  defineFunctions({
+    auth,
+    policy,
+    user: async (ctx, authId) => {
+      const user = await ctx.db
+        .query('users')
+        .withIndex('by_auth_id', (q) => q.eq('authId', authId))
+        .unique()
+      return user?.active === false ? null : user
+    },
+    roleOf: async (ctx, user, tenant) => {
+      if (tenant.table !== 'orgs') return null
+      const membership = await ctx.db
+        .query('memberships')
+        .withIndex('by_org_user', (q) => q.eq('orgId', tenant.id).eq('userId', user._id))
+        .unique()
+      return membership?.role ?? null
+    },
+    rules: {
+      users: owner('_id'),
+      orgs: tenant('_id'),
+      memberships: owner('userId'),
+      projects: tenant('orgId'),
+      notes: unchecked('Test table for the escape hatch.'),
+      pages: anyOf(
+        publicRead((page: { published: boolean }) => page.published),
+        tenant('orgId'),
+      ),
+    },
+  })

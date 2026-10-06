@@ -161,11 +161,12 @@ Follow the [add authentication](https://better-convex.lupinum.com/docs/get-start
 
 ## Packages
 
-| Package                       | Use it for                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------ |
-| `@lupinum/better-convex-nuxt` | Nuxt: server rendering, Nitro calls, file uploads, DevTools, and Better Auth.  |
-| `@lupinum/better-convex-vue`  | Vue without Nuxt: queries, mutations, actions, forms, uploads, and errors.     |
-| `@lupinum/better-convex-mcp`  | An MCP endpoint in a Convex HTTP action, for hosts such as ChatGPT and Claude. |
+| Package                            | Use it for                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| `@lupinum/better-convex-nuxt`      | Nuxt: server rendering, Nitro calls, file uploads, DevTools, and Better Auth.  |
+| `@lupinum/better-convex-vue`       | Vue without Nuxt: queries, mutations, actions, forms, uploads, and errors.     |
+| `@lupinum/better-convex-mcp`       | An MCP endpoint in a Convex HTTP action, for hosts such as ChatGPT and Claude. |
+| `@lupinum/better-convex-functions` | Optional: one policy and one row rule per table for every Convex function.     |
 
 The MCP package is separate. Installing the Nuxt or Vue package does not start an MCP server.
 

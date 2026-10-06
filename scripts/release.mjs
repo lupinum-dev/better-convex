@@ -3,7 +3,7 @@
 //   node scripts/release.mjs pack   packs those packages into release/ (run `pnpm build` first)
 // release/ then holds the tarballs, order.txt (publish order: Vue before Nuxt, which pins it)
 // and releases.json. Tags keep the existing scheme: `v<version>` for the fixed Nuxt + Vue
-// group and `mcp-v<version>` for the independently versioned MCP package.
+// group, `mcp-v<version>` and `functions-v<version>` for the independently versioned packages.
 import { spawnSync } from 'node:child_process'
 import {
   appendFileSync,
@@ -36,10 +36,14 @@ function isOnNpm({ name, version }) {
 const publishOrder = [
   '@lupinum/better-convex-vue',
   '@lupinum/better-convex-nuxt',
+  '@lupinum/better-convex-functions',
   '@lupinum/better-convex-mcp',
 ]
-const tagFor = (pkg) =>
-  pkg.name === '@lupinum/better-convex-mcp' ? `mcp-v${pkg.version}` : `v${pkg.version}`
+const ownTag = {
+  '@lupinum/better-convex-mcp': 'mcp-v',
+  '@lupinum/better-convex-functions': 'functions-v',
+}
+const tagFor = (pkg) => `${ownTag[pkg.name] ?? 'v'}${pkg.version}`
 
 // Every public package in pnpm-workspace.yaml, including the Nuxt module at the root.
 const packages = JSON.parse(run('pnpm', ['-r', 'ls', '--json', '--depth', '-1']))
@@ -69,7 +73,7 @@ for (const pkg of unpublished) {
   // Changesets writes `## <version>` sections; hand-written 1.0.0-rc.0 notes use `## v<version>`.
   const changelogPath = join(pkg.path, 'CHANGELOG.md')
   const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, 'utf8') : ''
-  const heading = new RegExp(`^(?:mcp-)?v?${pkg.version.replaceAll('.', '\\.')}\\s*\\n`)
+  const heading = new RegExp(`^(?:mcp-|functions-)?v?${pkg.version.replaceAll('.', '\\.')}\\s*\\n`)
   const section = changelog.split(/^## /m).find((part) => heading.test(part))
   const body = section ? section.replace(heading, '').trim() : `Release ${pkg.version}.`
   const tag = tagFor(pkg)

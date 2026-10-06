@@ -127,8 +127,8 @@
     "docs:build": "pnpm --dir docs install --frozen-lockfile --ignore-scripts && pnpm --dir docs build",
     "verify": "pnpm lint && pnpm build:packages && pnpm typecheck:prepared && pnpm test:prepared && pnpm build:prepared && pnpm test:packed && pnpm audit --audit-level=high && pnpm --dir docs audit --audit-level=high && pnpm --dir demo audit --audit-level=high",
     "changeset": "changeset",
-    "typecheck:prepared": "vue-tsc --noEmit && tsc --noEmit -p src/runtime/server/tsconfig.json && tsc -p test/mcp/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-local-component/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-two-factor/tsconfig.json && tsc --noEmit -p test/fixtures/auth-security-plugins/tsconfig.json",
-    "test:prepared": "vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser --project=auth-adapter --project=auth-fuzz --project=mcp",
+    "typecheck:prepared": "vue-tsc --noEmit && tsc --noEmit -p src/runtime/server/tsconfig.json && tsc -p test/mcp/tsconfig.json && tsc --noEmit -p packages/functions/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-local-component/tsconfig.json && tsc --noEmit -p test/fixtures/better-auth-two-factor/tsconfig.json && tsc --noEmit -p test/fixtures/auth-security-plugins/tsconfig.json",
+    "test:prepared": "vitest run --project=unit --project=security --project=convex --project=nuxt --project=browser --project=auth-adapter --project=auth-fuzz --project=mcp --project=functions",
     "build:prepared": "pnpm docs:build && node scripts/agent-docs.mjs"
   },
   "dependencies": {

@@ -17,7 +17,7 @@ dependencies, security incidents) live there, not here.
 
 ## Repository scope
 
-This repository contains three packages:
+This repository contains four packages:
 
 - `@lupinum/better-convex-nuxt` (repository root): the Nuxt module, Nitro
   helpers, server rendering, and optional Better Auth support.
@@ -25,11 +25,20 @@ This repository contains three packages:
   browser client lifecycle that the Nuxt package also uses.
 - `@lupinum/better-convex-mcp` (`packages/mcp`): MCP request handling inside a
   Convex HTTP action.
+- `@lupinum/better-convex-functions` (`packages/functions`): operations,
+  policy, row rules and internal operations for Convex functions
+  (`defineFunctions`). It imports only `convex`.
 
-Nuxt and Vue always share one version (a Changesets `fixed` group); MCP
-versions on its own. Convex functions decide what a user may read or change.
-Do not move that decision into Vue, Nuxt middleware, MCP transport, or cached
-client state.
+Nuxt and Vue always share one version (a Changesets `fixed` group); MCP and
+Functions version on their own. Functions is an opt-in layer, not part of the
+toolkit below: it wraps every function of an app that installs it, checks one
+policy and one rule per table, and fails a test for every other path to the
+database (D31). The toolkit rules apply to the other three packages; inside
+`packages/functions`, keep the layer small, and add an option only for a
+failing test or a real application that needs it.
+
+Convex functions decide what a user may read or change. Do not move that
+decision into Vue, Nuxt middleware, MCP transport, or cached client state.
 
 ## A toolkit, not a framework
 
@@ -72,7 +81,7 @@ pnpm test:e2e --full   # full-stack playground journeys, including test/e2e/exte
 pnpm test:starters     # every starter and the packed Vue/Nuxt/MCP consumers, from local tarballs
 ```
 
-`pnpm build` builds the three packages, the docs site, and each package's
+`pnpm build` builds the four packages, the docs site, and each package's
 `dist/agent/` (the rendered docs, exported as `<package>/agent-docs`).
 `pnpm test:packed` packs the packages like a release, runs publint and
 `@arethetypeswrong/cli`, imports every public entry from the tarballs, and

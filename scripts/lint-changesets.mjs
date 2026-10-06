@@ -62,7 +62,12 @@ if (hasBase) {
 
   // Users install new dependencies with the next version, so an empty changeset is not enough.
   // Ranges on this repository's own packages are bumped by Changesets itself and are ignored.
-  const manifests = ['package.json', 'packages/mcp/package.json', 'packages/vue/package.json']
+  const manifests = [
+    'package.json',
+    'packages/functions/package.json',
+    'packages/mcp/package.json',
+    'packages/vue/package.json',
+  ]
   const internal = new Set(manifests.map((path) => JSON.parse(readFileSync(path, 'utf8')).name))
   const installed = (pkg) =>
     JSON.stringify(

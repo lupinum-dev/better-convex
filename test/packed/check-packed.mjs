@@ -1,4 +1,4 @@
-// Packs the three published packages exactly as `pnpm pack` does for a release, then:
+// Packs the published packages exactly as `pnpm pack` does for a release, then:
 // - runs publint and @arethetypeswrong/cli (ESM-only profile) on each tarball;
 // - imports every public entry through the packed `exports` map, with the packed Vue
 //   package resolving before the workspace copy (dependencies resolve from the repo);
@@ -22,9 +22,14 @@ import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const root = resolve(import.meta.dirname, '../..')
-export const packageDirectories = { vue: 'packages/vue', nuxt: '.', mcp: 'packages/mcp' }
+export const packageDirectories = {
+  vue: 'packages/vue',
+  nuxt: '.',
+  mcp: 'packages/mcp',
+  functions: 'packages/functions',
+}
 
-/** Packs every published package into `destination` and returns `{ vue, nuxt, mcp }` tarball paths. */
+/** Packs every published package into `destination` and returns its tarball path by id. */
 export function packWorkspace(destination) {
   rmSync(destination, { recursive: true, force: true })
   mkdirSync(destination, { recursive: true })

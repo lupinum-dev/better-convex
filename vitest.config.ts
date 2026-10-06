@@ -30,7 +30,7 @@ const vueSourceAliases = {
 /**
  * Vitest projects
  *
- *   pnpm test              unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp
+ *   pnpm test              unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions
  *   pnpm test:integration  real local Convex backend suites (test/integration)
  *   pnpm test:e2e          full-stack Nuxt suites (scripts/run-e2e.mjs, --full adds extended/)
  *
@@ -123,6 +123,28 @@ export default defineConfig({
           include: ['test/mcp/**/*.test.ts'],
           environment: 'node',
           fileParallelism: false,
+          testTimeout: 30_000,
+        },
+      },
+
+      // Functions package: row rules, policy, no-bypass, budgets and type tests against its
+      // fixture apps (packages/functions/test). convex-test runs here as in the skeleton.
+      {
+        resolve: {
+          alias: {
+            // The subpath entry must precede the root entry it extends.
+            '@lupinum/better-convex-functions/test': fileURLToPath(
+              new URL('./packages/functions/src/test.ts', import.meta.url),
+            ),
+            '@lupinum/better-convex-functions': fileURLToPath(
+              new URL('./packages/functions/src/index.ts', import.meta.url),
+            ),
+          },
+        },
+        test: {
+          name: 'functions',
+          include: ['packages/functions/test/**/*.test.ts'],
+          environment: 'node',
           testTimeout: 30_000,
         },
       },

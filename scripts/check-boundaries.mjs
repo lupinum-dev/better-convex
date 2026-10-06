@@ -89,6 +89,7 @@ const AUTH_CLIENT_DIR = p('src/runtime/auth-client')
 const CONVEX_AUTH_DIR = p('src/runtime/convex-auth')
 const CLIENT_LIFECYCLE_DIR = p('packages/vue/src')
 const MCP_PACKAGE_DIR = p('packages/mcp/src')
+const FUNCTIONS_PACKAGE_DIR = p('packages/functions/src')
 const SHARED_AUTH_COOKIE_FILE = p('src/runtime/shared/auth-cookie.ts')
 const SHARED_AUTH_ORIGIN_FILE = p('src/runtime/shared/auth-origin.ts')
 const SHARED_BOUNDED_STREAM_FILE = p('src/runtime/shared/bounded-stream.ts')
@@ -112,6 +113,7 @@ const isRuntimeEntry = (absPath) => inDir(absPath, RUNTIME_ROOT)
 const isConvexAuth = (absPath) => inDir(absPath, CONVEX_AUTH_DIR)
 const isClientLifecycle = (absPath) => inDir(absPath, CLIENT_LIFECYCLE_DIR)
 const isMcpPackage = (absPath) => inDir(absPath, MCP_PACKAGE_DIR)
+const isFunctionsPackage = (absPath) => inDir(absPath, FUNCTIONS_PACKAGE_DIR)
 const isSharedAuthCookie = (absPath) => absPath === SHARED_AUTH_COOKIE_FILE
 const isSharedAuthOrigin = (absPath) => absPath === SHARED_AUTH_ORIGIN_FILE
 const isSharedBoundedStream = (absPath) => absPath === SHARED_BOUNDED_STREAM_FILE
@@ -213,6 +215,19 @@ function isAllowedMcpBareSpecifier(specifier) {
 
 /** @type {Rule[]} */
 const RULES = [
+  {
+    name: 'functions-package-convex-only',
+    description:
+      'packages/functions/src/** may import only its own package and the Convex server and value entries; it runs inside Convex functions of any app, with any frontend.',
+    from: isFunctionsPackage,
+    disallow: (edge) => {
+      if (!edge.isRelative)
+        return edge.specifier !== 'convex/server' && edge.specifier !== 'convex/values'
+      if (edge.resolvedAbsPath === null) return false
+      return !isFunctionsPackage(edge.resolvedAbsPath)
+    },
+    typeOnlyExempt: false,
+  },
   {
     name: 'mcp-package-official-sdk-only',
     description:
