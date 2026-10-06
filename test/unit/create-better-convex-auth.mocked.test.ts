@@ -1,6 +1,5 @@
 // Temporary: these behavior tests still mock Better Auth. Each group moves to a convex-test file with real Better Auth; delete this file when it is empty. See test/TESTING.md.
 import type { BetterAuthOptions } from 'better-auth'
-import { httpRouter } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
@@ -24,18 +23,14 @@ const previousEnvironment = {
   SITE_URL: process.env.SITE_URL,
 }
 
-let consoleError: ReturnType<typeof vi.spyOn>
-
 beforeEach(() => {
   process.env.BETTER_AUTH_SECRETS = `0:${'test-secret'.repeat(4)}`
   process.env.CONVEX_SITE_URL = 'https://deployment.convex.site'
   process.env.SITE_URL = 'https://app.example.test'
   betterAuth.mockClear()
-  consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
 afterEach(() => {
-  consoleError.mockRestore()
   for (const [name, value] of Object.entries(previousEnvironment)) {
     if (value === undefined) Reflect.deleteProperty(process.env, name)
     else process.env[name] = value
@@ -44,20 +39,6 @@ afterEach(() => {
 
 function queryContext() {
   return { runQuery: vi.fn().mockResolvedValue(null) }
-}
-
-function writableContext() {
-  return { ...queryContext(), runMutation: vi.fn().mockResolvedValue(null) }
-}
-
-function loggedSubCodes(): unknown[] {
-  return consoleError.mock.calls.map(
-    (call: unknown[]) => (call[1] as { subCode?: unknown }).subCode,
-  )
-}
-
-function loggedText(): string {
-  return JSON.stringify(consoleError.mock.calls)
 }
 
 function component() {
@@ -134,102 +115,5 @@ describe('createBetterConvexAuth', () => {
     Object.assign(ctx, { db: {} })
     await expect(consume()).rejects.toThrow(systemConflict.message)
     expect(ctx.runMutation).toHaveBeenCalledTimes(1)
-  })
-
-  it('logs a stable sub-code for each opaque configuration stage without secrets', async () => {
-    const secret = `0:${'s3cr3t-value-'.repeat(2)}`
-    process.env.BETTER_AUTH_SECRETS = secret
-    const weak = createBetterConvexAuth(component())
-    await expect(weak.createAuth(queryContext() as never)).rejects.toThrow(/^AUTH_CONFIG_INVALID$/)
-    expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_SECRETS_INVALID'])
-    expect(consoleError.mock.calls[0]![0]).toBe('[better-convex] AUTH_CONFIG_INVALID')
-
-    consoleError.mockClear()
-    process.env.BETTER_AUTH_SECRETS = `0:${'test-secret'.repeat(4)}`
-    process.env.SITE_URL = 'not a url'
-    await expect(weak.createAuth(queryContext() as never)).rejects.toThrow(/^AUTH_CONFIG_INVALID$/)
-    expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_SITE_URL_INVALID'])
-
-    consoleError.mockClear()
-    process.env.SITE_URL = 'https://app.example.test'
-    Reflect.deleteProperty(process.env, 'CONVEX_SITE_URL')
-    await expect(weak.createAuth(queryContext() as never)).rejects.toThrow(/^AUTH_CONFIG_INVALID$/)
-    expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_CONVEX_SITE_URL_INVALID'])
-
-    consoleError.mockClear()
-    process.env.CONVEX_SITE_URL = 'https://deployment.convex.site'
-    const privateToken = 'eyJhbGciOiJSUzI1NiJ9.private-session-token-value'
-    betterAuth.mockImplementationOnce(() => {
-      throw new Error(`construction failed with token=${privateToken} cookie: a=b`)
-    })
-    const failure = await Promise.resolve(weak.createAuth(queryContext() as never)).catch(
-      (error: unknown) => error,
-    )
-    expect(failure).toEqual(new Error('AUTH_CONFIG_INVALID'))
-    expect(JSON.stringify(failure)).toBe('{}')
-    expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_CONSTRUCTION_FAILED'])
-    expect(loggedText()).toContain('construction failed')
-    expect(loggedText()).not.toContain(privateToken)
-    expect(loggedText()).not.toContain('s3cr3t-value')
-    expect(loggedText()).not.toContain('a=b')
-  })
-})
-
-describe('registered auth route diagnostics', () => {
-  async function invokeRoute(auth: {
-    registerRoutes: (http: ReturnType<typeof httpRouter>) => void
-  }) {
-    const http = httpRouter()
-    auth.registerRoutes(http)
-    const route = http.lookup('/api/auth/get-session', 'GET')
-    if (!route) throw new Error('Auth route was not registered')
-    const handler = route[0] as (typeof route)[0] & {
-      _handler: (ctx: unknown, request: Request) => Promise<Response>
-    }
-    const ctx = {
-      ...writableContext(),
-      meta: { getRequestMetadata: async () => ({ ip: '198.51.100.7' }) },
-    }
-    return handler._handler(
-      ctx,
-      new Request('https://deployment.convex.site/api/auth/get-session', {
-        headers: { cookie: 'better-auth.session_token=private-cookie-value' },
-      }),
-    )
-  }
-
-  it('keeps the public body opaque and logs one stable construction sub-code', async () => {
-    Reflect.deleteProperty(process.env, 'BETTER_AUTH_SECRETS')
-    const response = await invokeRoute(createBetterConvexAuth(component()))
-    expect(response.status).toBe(500)
-    const body = await response.text()
-    expect(JSON.parse(body)).toEqual({ code: 'AUTH_CONFIG_INVALID' })
-    expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_SECRETS_INVALID'])
-    expect(loggedText()).not.toContain('private-cookie-value')
-  })
-
-  it('logs a route sub-code when the public origin is invalid', async () => {
-    process.env.SITE_URL = 'ftp://app.example.test'
-    const response = await invokeRoute(createBetterConvexAuth(component()))
-    expect(await response.json()).toEqual({ code: 'AUTH_CONFIG_INVALID' })
-    expect(loggedSubCodes()).toEqual(['AUTH_CONFIG_ROUTE_SITE_URL_INVALID'])
-  })
-
-  it('logs handler failures without request material', async () => {
-    betterAuth.mockImplementationOnce(
-      () =>
-        ({
-          $context: Promise.resolve(),
-          handler: async () => {
-            throw new Error('handler exploded with token=private-session-token')
-          },
-        }) as never,
-    )
-    const response = await invokeRoute(createBetterConvexAuth(component()))
-    expect(await response.json()).toEqual({ code: 'AUTH_HANDLER_FAILED' })
-    expect(loggedSubCodes()).toEqual(['AUTH_HANDLER_THREW'])
-    expect(consoleError.mock.calls[0]![0]).toBe('[better-convex] AUTH_HANDLER_FAILED')
-    expect(loggedText()).not.toContain('private-session-token')
-    expect(loggedText()).not.toContain('private-cookie-value')
   })
 })
