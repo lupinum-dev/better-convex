@@ -5,22 +5,8 @@ import * as agents from './agents'
 import { APP_NAME, auth } from './auth'
 
 const http = httpRouter()
-const mcp = createMcpServer(
-  {
-    mcpAuthorization: (ctx) => ({
-      resource: auth.mcp.resource(),
-      authorization: {
-        mode: 'oauth',
-        issuer: auth.mcp.issuer(),
-        verifier: auth.createMcpAccessVerifier(ctx),
-        resourceName: APP_NAME,
-        // Hosts that read this list request `offline_access` and receive renewal.
-        scopesSupported: auth.mcp.scopesSupported(),
-      },
-    }),
-  },
-  { name: APP_NAME, agents },
-)
+// The auth factory supplies the MCP resource, issuer, scopes and token check.
+const mcp = createMcpServer(auth, { name: APP_NAME, agents })
 
 auth.registerRoutes(http)
 // GET and DELETE reach the handler's deliberate 405 instead of a router 404.

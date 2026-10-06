@@ -363,6 +363,13 @@ export interface BetterConvexAuth<
     options?: Partial<BetterAuthMcpAccessVerifierOptions>,
   ) => BetterConvexMcpAccessVerifier
   /**
+   * The MCP door's OAuth settings for one request, from the `oauth.mcp` profile: the resource,
+   * the issuer, the profile's scopes and this verifier. Pass `auth` to `createMcpServer` from
+   * `@lupinum/better-convex-agents/mcp`, or spread the result into the `handleMcpRequest`
+   * options. Throws `AUTH_OAUTH_MCP_PROFILE_REQUIRED` without `oauth.mcp`.
+   */
+  readonly mcpAuthorization: (ctx: AuthCtx<DataModel>) => BetterConvexMcpAuthorization
+  /**
    * Re-validate an MCP principal in the calling function's transaction (one
    * component query) and check `scope`. Throws `ConvexError` with code
    * `MCP_ACCESS_DENIED` or `MCP_INSUFFICIENT_SCOPE`.
@@ -377,6 +384,19 @@ export interface BetterConvexAuth<
   }>
   /** List and revoke a user's OAuth grants. The app passes the authenticated user's id. */
   readonly oauthConnections: BetterConvexOAuthConnections<DataModel>
+}
+
+/** What `auth.mcpAuthorization(ctx)` returns: the `resource` and `authorization` options of the MCP door. */
+export interface BetterConvexMcpAuthorization {
+  readonly resource: URL
+  readonly authorization: {
+    readonly mode: 'oauth'
+    readonly issuer: string
+    readonly verifier: BetterConvexMcpAccessVerifier
+    /** The protected resource's name in its metadata: `appName`. */
+    readonly resourceName?: string
+    readonly scopesSupported: readonly string[]
+  }
 }
 
 /** Accessors for the configured `oauth.mcp` profile. */
@@ -1201,6 +1221,21 @@ export function createBetterConvexAuthOwned<
     scopesSupported: () => Object.freeze([...(requireMcp().provider.scopes ?? [])]),
   })
 
+  const createMcpAccessVerifier = (
+    ctx: AuthCtx<DataModel>,
+    verifierOptions: Partial<BetterAuthMcpAccessVerifierOptions> = {},
+  ) => {
+    const allowedScopes = verifierOptions.allowedScopes ?? mcpProfile?.provider.scopes
+    if (!allowedScopes) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
+    const resource =
+      verifierOptions.resource ?? (mcpProfile ? resolveMcpResource(mcpProfile) : undefined)
+    return createBetterAuthMcpAccessVerifier(ctx, component, {
+      ...verifierOptions,
+      allowedScopes,
+      ...(resource === undefined ? {} : { resource }),
+    })
+  }
+
   return Object.freeze({
     createAuth,
     registerRoutes(http: HttpRouter) {
@@ -1220,19 +1255,19 @@ export function createBetterConvexAuthOwned<
     requireUser: authComponent.requireUser,
     getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
     mcp,
-    createMcpAccessVerifier: (
-      ctx: AuthCtx<DataModel>,
-      verifierOptions: Partial<BetterAuthMcpAccessVerifierOptions> = {},
-    ) => {
-      const allowedScopes = verifierOptions.allowedScopes ?? mcpProfile?.provider.scopes
-      if (!allowedScopes) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
-      const resource =
-        verifierOptions.resource ?? (mcpProfile ? resolveMcpResource(mcpProfile) : undefined)
-      return createBetterAuthMcpAccessVerifier(ctx, component, {
-        ...verifierOptions,
-        allowedScopes,
-        ...(resource === undefined ? {} : { resource }),
-      })
+    createMcpAccessVerifier,
+    mcpAuthorization(ctx: AuthCtx<DataModel>): BetterConvexMcpAuthorization {
+      return {
+        resource: mcp.resource(),
+        authorization: {
+          mode: 'oauth',
+          issuer: mcp.issuer(),
+          verifier: createMcpAccessVerifier(ctx),
+          ...(options.appName === undefined ? {} : { resourceName: options.appName }),
+          // Hosts that read this list request `offline_access` and receive renewal.
+          scopesSupported: mcp.scopesSupported(),
+        },
+      }
     },
     requireMcpPrincipal: (
       ctx: AuthCtx<DataModel>,

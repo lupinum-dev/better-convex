@@ -102,13 +102,8 @@ import { auth } from './auth'
 export const handleMcp = httpAction((ctx, request) =>
   handleMcpRequest(request, {
     serverInfo: { name: 'notes', version: '1.0.0' },
-    resource: auth.mcp.resource(),
-    authorization: {
-      mode: 'oauth',
-      issuer: auth.mcp.issuer(),
-      verifier: auth.createMcpAccessVerifier(ctx),
-      scopesSupported: auth.mcp.scopesSupported(),
-    },
+    // The resource, issuer, scopes and token verifier of the `oauth.mcp` profile.
+    ...auth.mcpAuthorization(ctx),
     configureServer({ principal, server, tools }) {
       server.registerTool(
         'list_notes',

@@ -9,6 +9,7 @@ export type {
   BetterConvexAuthEmailUser,
   BetterConvexAuthInstance,
   BetterConvexMcp,
+  BetterConvexMcpAuthorization,
   BetterConvexOrganizationAuthInstance,
   BetterConvexSessionPolicy,
   BetterConvexTeamOrganizationAuthInstance,

@@ -102,27 +102,31 @@ describe('MCP application recipe', () => {
         },
       })),
     }
-    const auth = {
-      mcp: {
-        issuer: () => addresses.issuer,
-        resource: () => new URL(addresses.resource),
-        scopes: () => ({ 'notes:read': 'Read your notes.' }),
-        scopesSupported: () => ['notes:read', 'offline_access'],
+    const verifier = {
+      async verifyAccessToken(token: string) {
+        if (token !== 'private-bearer') throw new Error('invalid')
+        return {
+          access: {
+            issuer: principal.issuer,
+            subject: principal.userId,
+            clientId: principal.clientId,
+            resource: principal.resource,
+            scopes: principal.scopes,
+          },
+          principal,
+          expiresAt: principal.expiresAt,
+        }
       },
-      createMcpAccessVerifier: () => ({
-        async verifyAccessToken(token: string) {
-          if (token !== 'private-bearer') throw new Error('invalid')
-          return {
-            access: {
-              issuer: principal.issuer,
-              subject: principal.userId,
-              clientId: principal.clientId,
-              resource: principal.resource,
-              scopes: principal.scopes,
-            },
-            principal,
-            expiresAt: principal.expiresAt,
-          }
+    }
+    const auth = {
+      // The shape `createBetterConvexAuth` returns for the recipe's `oauth.mcp` profile.
+      mcpAuthorization: () => ({
+        resource: new URL(addresses.resource),
+        authorization: {
+          mode: 'oauth' as const,
+          issuer: addresses.issuer,
+          verifier,
+          scopesSupported: ['notes:read', 'offline_access'],
         },
       }),
       async requireMcpPrincipal(
