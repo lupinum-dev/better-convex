@@ -13,6 +13,12 @@ allowBuilds:
   vue-demi: true
 
 overrides:
+  # Express retains a vulnerable proxy-addr selection after targeted updates.
+  # Remove when clean resolution selects proxy-addr >=2.0.8 without this pin.
+  proxy-addr: 2.0.8
+  # Several compiler/build owners pin the vulnerable patch exactly.
+  # Remove when clean resolution selects source-map-js >=1.2.2 without this pin.
+  source-map-js: 1.2.2
   # Remove these audit pins when normal resolution retains the patched versions.
   'ajv@8>fast-uri': 3.1.7
   'express@5>qs': 6.16.0

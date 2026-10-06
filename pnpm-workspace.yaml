@@ -15,6 +15,12 @@ shamefullyHoist: true
 strictPeerDependencies: true
 
 overrides:
+  # Several compiler/build owners pin the vulnerable patch exactly.
+  # Remove when clean resolution selects source-map-js >=1.2.2 without this pin.
+  source-map-js: 1.2.2
+  # oxfmt 0.59 pins the vulnerable worker pool exactly.
+  # Remove when oxfmt requires tinypool >=2.1.2.
+  'oxfmt>tinypool': 2.1.2
   # Express 4 and body-parser 1 constrain qs below the patched minor.
   # Remove when both owners accept qs >=6.16.0 and the audit stays clean.
   'express@4>qs': 6.16.0
