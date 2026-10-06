@@ -104,6 +104,69 @@ const rules = [
   'For local development without a Convex account, run `pnpm exec better-convex convex dev --anonymous`. Run Nuxt commands with `--dotenv .env.local`.',
 ]
 
+// The functions and agents packages open with their own tasks and rules; the full page index
+// follows on every entry page.
+const focus = {
+  '@lupinum/better-convex-functions': {
+    startHere: [
+      [
+        'Check who may do what in every Convex function',
+        [
+          '/docs/build/functions/start-here',
+          '/docs/build/functions/policy-and-roles',
+          '/docs/build/functions/row-rules',
+        ],
+      ],
+      [
+        'Run follow-up work, outside calls and crons',
+        ['/docs/build/functions/internal-operations'],
+      ],
+      [
+        'Prove that nothing leaks and calls stay cheap',
+        ['/docs/build/functions/testing', '/docs/build/functions/cost'],
+      ],
+      ['Know what is and is not protected', ['/docs/build/functions/threat-model']],
+      ['Handle an error code', ['/docs/reference/operation-error-codes']],
+    ],
+    rules: [
+      'Build every Convex function with `query`, `mutation`, `internalQuery`, `internalMutation`, `internalAction` or `job` from `defineFunctions`, never from `./_generated/server`. Wrap a function that must skip the library in `trusted(reason, fn)`, and keep the `unguardedFunctions` test green.',
+      'Add an action to `policy.actions` before an operation uses it. Give every table a row rule; do not check membership in the handler.',
+      'Read rows by an index that starts with the field the table rule checks (the tenant or owner field, or the `publicRead` condition). A query that returns a row the caller may not read fails.',
+      'An operation on an `anyOf` table names its tenant in its own arguments (`organizationId`).',
+      'Fail with `fail(code, message)` and an `ErrorCode`. Any other error reaches callers as a generic message.',
+      'Call follow-up work with `ctx.runQuery`, `ctx.runMutation` or `ctx.scheduler` from the handler, and build the target with `internalQuery`, `internalMutation` or `internalAction` from `defineFunctions`.',
+    ],
+  },
+  '@lupinum/better-convex-agents': {
+    startHere: [
+      [
+        'Let agents call your operations',
+        ['/docs/build/functions/start-here', '/docs/build/agents/tools-and-approvals'],
+      ],
+      [
+        'Serve the tools to ChatGPT and Claude',
+        ['/docs/build/agents/mcp-door', '/docs/build/agents/connect-chatgpt-and-claude'],
+      ],
+      [
+        'Know the limits and the risks',
+        ['/docs/build/agents/limits', '/docs/build/functions/threat-model'],
+      ],
+      [
+        'Register MCP tools by hand',
+        ['/docs/build/agents/mcp', '/docs/build/agents/mcp-application'],
+      ],
+      ['Handle an error code', ['/docs/reference/operation-error-codes']],
+    ],
+    rules: [
+      "Give the agent rule `'approve'` to every action that deletes, archives, publishes, sends, spends or changes access, and an `approval` function that names the rows in one sentence.",
+      'Export every tool function from the module that calls `defineTools`: `export const { <tool names>, check_approval, housekeeping } = tools.functions`, and pass `internal.<that module>` as `functions`.',
+      'Change a tool only by adding optional arguments. A breaking change gets a new tool name.',
+      'Set `SITE_URL` on the Convex deployment, run `housekeeping` from a cron, and call `tools.disconnected` next to the revoke of a host.',
+      'Never pass the bearer token to a Convex function. Tools receive the verified principal and check the grant again.',
+    ],
+  },
+}
+
 const sectionName = (route) => {
   const segment = route.split('/')[2]
   if (!segment) return 'Overview'
@@ -120,8 +183,9 @@ for (const page of pages) {
   index.push(`- [${page.title}](./pages/${page.file})`)
 }
 
-const entryPage = (pkg) =>
-  [
+const entryPage = (pkg) => {
+  const own = focus[pkg.name] ?? { startHere, rules }
+  return [
     `# ${pkg.name} ${pkg.version} documentation`,
     '',
     `These pages describe the installed version ${pkg.version}. Prefer them over the`,
@@ -131,16 +195,17 @@ const entryPage = (pkg) =>
     '',
     '| Task | Read in this order |',
     '| ---- | ------------------ |',
-    ...startHere.map(([task, routes]) => `| ${task} | ${routes.map(pageLink).join(' → ')} |`),
+    ...own.startHere.map(([task, routes]) => `| ${task} | ${routes.map(pageLink).join(' → ')} |`),
     '',
     '## Rules',
     '',
-    ...rules.map((rule) => `- ${rule}`),
+    ...own.rules.map((rule) => `- ${rule}`),
     '',
     '## All pages',
     ...index,
     '',
   ].join('\n')
+}
 
 const directories = [
   '.',

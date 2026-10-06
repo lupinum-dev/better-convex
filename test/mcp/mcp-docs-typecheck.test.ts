@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -15,12 +23,17 @@ import { beforeAll, describe, expect, it } from 'vitest'
  */
 const root = process.cwd()
 const read = (path: string) => readFileSync(join(root, path), 'utf8')
+const functionsPage = (name: string) => read(`docs/content/docs/3.build/8.functions/${name}.md`)
+const agentsPage = (name: string) => read(`docs/content/docs/3.build/7.agents/${name}.md`)
+const startHere = functionsPage('1.start-here')
+/** The example app the later pages build on: the start page with the full schema, rules and policy. */
+const exampleApp = [startHere, functionsPage('3.row-rules'), functionsPage('2.policy-and-roles')]
 const pages = {
-  guide: read('docs/content/docs/3.build/7.agents/1.mcp.md'),
+  guide: read('docs/content/docs/3.build/7.agents/4.mcp.md'),
   readme: read('packages/agents/README.md'),
-  recipe: read('docs/content/docs/3.build/7.agents/2.mcp-application.md'),
-  connect: read('docs/content/docs/3.build/7.agents/3.connect-chatgpt-and-claude.md'),
-  apps: read('docs/content/docs/3.build/7.agents/4.mcp-apps.md'),
+  recipe: read('docs/content/docs/3.build/7.agents/5.mcp-application.md'),
+  connect: read('docs/content/docs/3.build/7.agents/6.connect-chatgpt-and-claude.md'),
+  apps: read('docs/content/docs/3.build/7.agents/7.mcp-apps.md'),
   upgrade: read('docs/content/docs/6.operations/7.upgrade-to-1-0.md'),
 }
 const upgradeMcpSection = pages.upgrade.slice(
@@ -156,7 +169,70 @@ function notesCardScript(): string {
 
 const recipeSchema = schemaModule(block(pages.recipe, 'convex/schema.ts'))
 
+/**
+ * Codegen for an app on `@lupinum/better-convex-functions`: the shape Convex writes, with the
+ * page's own modules in `api` and `internal`.
+ */
+function appGenerated(modules: readonly string[]): VirtualProject {
+  const imports = modules.map((name) => `import type * as ${name} from '../${name}'`)
+  const entries = modules.map((name) => `${name}: typeof ${name}`).join('; ')
+  return {
+    'convex/_generated/dataModel.ts': [
+      "import type { DataModelFromSchemaDefinition, DocumentByName, TableNamesInDataModel } from 'convex/server'",
+      "import type { GenericId } from 'convex/values'",
+      "import type schema from '../schema'",
+      'export type DataModel = DataModelFromSchemaDefinition<typeof schema>',
+      'export type Doc<T extends TableNamesInDataModel<DataModel>> = DocumentByName<DataModel, T>',
+      'export type Id<T extends TableNamesInDataModel<DataModel>> = GenericId<T>',
+    ].join('\n'),
+    'convex/_generated/server.ts': generated['convex/_generated/server.ts'],
+    'convex/_generated/api.ts': [
+      "import type { ApiFromModules, FilterApi, FunctionReference } from 'convex/server'",
+      "import type { ComponentApi } from '@lupinum/better-convex-nuxt/better-auth/_generated/component.js'",
+      ...imports,
+      `declare const fullApi: ApiFromModules<{ ${entries} }>`,
+      "export declare const api: FilterApi<typeof fullApi, FunctionReference<any, 'public'>>",
+      "export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, 'internal'>>",
+      "export declare const components: { betterAuth: ComponentApi<'betterAuth'> }",
+    ].join('\n'),
+  }
+}
+
+/** Every `[convex/<file>.ts]` block of a page, by path. A page shows each file at most once. */
+function appFiles(source: string): VirtualProject {
+  const files: Record<string, string> = {}
+  for (const [, path] of source.matchAll(/^ *```ts \[((?:convex|app|tests)\/[^\]]+\.ts)\]$/gmu)) {
+    files[path!] = block(source, path!)
+  }
+  return files
+}
+
+/** An app project: the start page's modules, then each later page's files over them. */
+function appProject(...sources: string[]): VirtualProject {
+  const files: Record<string, string> = Object.assign({}, ...sources.map(appFiles))
+  const modules = Object.keys(files)
+    .filter((path) => /^convex\/\w+\.ts$/u.test(path) && !path.endsWith('.test.ts'))
+    .map((path) => path.slice('convex/'.length, -'.ts'.length))
+  return { ...appGenerated(modules), ...files }
+}
+
 type VirtualProject = Readonly<Record<string, string>>
+
+/**
+ * The testing page shows the starter's own tests, which run in its `pnpm test`. Its blocks must
+ * stay those files, and they compile together with the starter's modules and generated types.
+ */
+const starterRoot = 'starters/mcp-oauth-agent'
+const testingPage = functionsPage('5.testing')
+const starterProject: VirtualProject = {
+  'vitest.config.ts': read(`${starterRoot}/vitest.config.ts`),
+  ...Object.fromEntries(
+    readdirSync(join(root, starterRoot, 'convex'), { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith('.ts') && !file.endsWith('.config.ts'))
+      .map((file) => [`convex/${file}`, read(`${starterRoot}/convex/${file}`)]),
+  ),
+}
 
 const samples: Record<string, VirtualProject> = {
   recipe: {
@@ -196,6 +272,16 @@ const samples: Record<string, VirtualProject> = {
     'convex/mcp/notesCardHtml.ts': 'export const NOTES_CARD_HTML = "<!doctype html>"',
     'mcp-ui/NotesCard.ts': notesCardScript(),
   },
+  'start-here': appProject(startHere),
+  starter: starterProject,
+  'example-app': appProject(...exampleApp),
+  'internal-operations': appProject(...exampleApp, functionsPage('4.internal-operations')),
+  'tools-and-approvals': appProject(...exampleApp, agentsPage('1.tools-and-approvals')),
+  'mcp-door': appProject(
+    ...exampleApp,
+    agentsPage('1.tools-and-approvals'),
+    agentsPage('2.mcp-door'),
+  ),
   upgrade: {
     ...generated,
     'convex/schema.ts': recipeSchema,
@@ -221,6 +307,7 @@ function compilerOptions(): ts.CompilerOptions {
       '@lupinum/better-convex-nuxt/better-auth/_generated/component.js': [
         'src/runtime/convex-auth/component/_generated/component.ts',
       ],
+      '@lupinum/better-convex-nuxt/better-auth/test': ['src/runtime/convex-auth/test.ts'],
     },
   }
 }
@@ -299,8 +386,14 @@ describe('MCP documentation samples typecheck against the real exports', () => {
     })
   }, 120_000)
 
-  it.each(['recipe', 'readme', 'apps', 'upgrade'])('compiles the %s sample', (name) => {
+  it.each(Object.keys(samples))('compiles the %s sample', (name) => {
     expect(diagnostics[name]).toEqual([])
+  })
+
+  it('shows the starter’s tests on the testing page, unchanged', () => {
+    const shown = [...testingPage.matchAll(/^```ts \[([^\]]+)\]$/gmu)].map(([, path]) => path!)
+    expect(shown.length).toBeGreaterThan(0)
+    for (const path of shown) expect(block(testingPage, path)).toBe(starterProject[path])
   })
 
   it('rejects a tool that does not pass the principal to its Convex function', () => {

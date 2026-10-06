@@ -216,7 +216,7 @@ instructions.
 
 ## Documentation
 
-Read [MCP on Convex](https://better-convex.lupinum.com/docs/build/agents/mcp), [add MCP to your application](https://better-convex.lupinum.com/docs/build/agents/mcp-application), [connect ChatGPT and Claude](https://better-convex.lupinum.com/docs/build/agents/connect-chatgpt-and-claude), and the [delegated OAuth reference](https://better-convex.lupinum.com/docs/build/authentication/delegated-oauth-and-mcp).
+Read [tools and approvals](https://better-convex.lupinum.com/docs/build/agents/tools-and-approvals), [the MCP door](https://better-convex.lupinum.com/docs/build/agents/mcp-door) and [limits](https://better-convex.lupinum.com/docs/build/agents/limits). For tools you register by hand, read [MCP on Convex](https://better-convex.lupinum.com/docs/build/agents/mcp), [add MCP to your application](https://better-convex.lupinum.com/docs/build/agents/mcp-application), [connect ChatGPT and Claude](https://better-convex.lupinum.com/docs/build/agents/connect-chatgpt-and-claude), and the [delegated OAuth reference](https://better-convex.lupinum.com/docs/build/authentication/delegated-oauth-and-mcp).
 
 ## Support and security
 

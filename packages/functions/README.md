@@ -92,6 +92,18 @@ Spread `libraryTables` into your schema. A table without a rule is a type error.
 - `countDocuments(call)` counts the documents one call reads and writes, for budget tests.
 - `testAuth()` fakes the auth component.
 
+## Documentation
+
+[Start here](https://better-convex.lupinum.com/docs/build/functions/start-here) builds one
+operation, one rule and one tool. Then read
+[policy and roles](https://better-convex.lupinum.com/docs/build/functions/policy-and-roles),
+[row rules](https://better-convex.lupinum.com/docs/build/functions/row-rules),
+[internal operations](https://better-convex.lupinum.com/docs/build/functions/internal-operations),
+[test your app](https://better-convex.lupinum.com/docs/build/functions/testing),
+the [threat model](https://better-convex.lupinum.com/docs/build/functions/threat-model) and the
+[error codes](https://better-convex.lupinum.com/docs/reference/operation-error-codes).
+The package exports the same pages for coding agents as `@lupinum/better-convex-functions/agent-docs`.
+
 ## License
 
 [MIT](https://github.com/lupinum-dev/better-convex/blob/main/LICENSE)
