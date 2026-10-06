@@ -20,7 +20,7 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
 type Edit = [file: string, find: string, replace: string]
 
-async function typeErrors(id: string, edits: Edit[]) {
+async function typeErrors(id: string, edits: Edit[], tsconfig = 'tsconfig.json') {
   const dir = join(scratch, id)
   rmSync(dir, { recursive: true, force: true })
   cpSync(join(import.meta.dirname, 'app'), dir, { recursive: true })
@@ -31,7 +31,7 @@ async function typeErrors(id: string, edits: Edit[]) {
     writeFileSync(path, text.replace(find, replace))
   }
   // Run in the copy, so tsc names files as test/app does: `functions.ts(44,5): error TS…`.
-  const out = await run(process.execPath, [tsc, '--noEmit', '--pretty', 'false'], {
+  const out = await run(process.execPath, [tsc, '-p', tsconfig, '--pretty', 'false'], {
     cwd: dir,
   }).then(
     ({ stdout }) => stdout,
@@ -41,8 +41,9 @@ async function typeErrors(id: string, edits: Edit[]) {
   return out.split(/\n(?=\S)/).filter((entry) => entry.includes('error TS'))
 }
 
-test.concurrent('the app type-checks', { timeout: 60_000 }, async () => {
-  expect(await typeErrors('baseline', [])).toEqual([])
+// V5: `export const fns = defineFunctions(...)` failed declaration emit (TS4023, a type it could not name).
+test.concurrent('the app type-checks and emits declarations', { timeout: 60_000 }, async () => {
+  expect(await typeErrors('baseline', [], 'tsconfig.declaration.json')).toEqual([])
 })
 
 // E1: a typo in `rules` added unrelated `Id<"users">` errors in other files.

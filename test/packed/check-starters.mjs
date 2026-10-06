@@ -2,7 +2,7 @@
 // runs its typecheck, tests and production build, then runs the packed Vue, Nuxt and
 // MCP consumer apps in a browser. Nothing is fetched from npm for our own packages.
 // Run after `pnpm build:packages`.
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import {
   copyFileSync,
   cpSync,
@@ -87,6 +87,31 @@ try {
       app,
     )
     run('pnpm', ['run', 'typecheck'], app)
+    // An app with `declaration: true` (or project references) must be able to emit its Convex
+    // code: every type an exported function has must be nameable from a public entry (V5).
+    writeFileSync(
+      join(app, 'convex/tsconfig.declaration.json'),
+      JSON.stringify({
+        extends: './tsconfig.json',
+        compilerOptions: {
+          noEmit: false,
+          declaration: true,
+          emitDeclarationOnly: true,
+          outDir: join(scratch, `${name}-declarations`),
+        },
+        // Tests run under Vitest, with its types.
+        exclude: ['**/*.test.ts', '**/test.*.ts'],
+      }),
+    )
+    const emitted = spawnSync('pnpm', ['exec', 'tsc', '-p', 'convex/tsconfig.declaration.json'], {
+      cwd: app,
+      env,
+      encoding: 'utf8',
+    })
+    // Only types from our packages count: a starter's own Better Auth plugins have unrelated ones.
+    const ours = emitted.stdout.split('\n').filter((line) => /error TS.*@lupinum\//.test(line))
+    if (ours.length > 0)
+      throw new Error(`starters/${name} cannot emit declarations:\n${ours.join('\n')}`)
     if (manifest.scripts?.test) run('pnpm', ['run', 'test'], app)
     run('pnpm', ['run', 'build'], app, { NODE_ENV: 'production' })
   }

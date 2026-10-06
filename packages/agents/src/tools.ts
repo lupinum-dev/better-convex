@@ -4,7 +4,6 @@ import {
   type Actor,
   type ErrorCode,
   type Policy,
-  type Rule,
   type TenantRef,
 } from '@lupinum/better-convex-functions'
 import {
@@ -18,7 +17,7 @@ import {
   idsIn,
   inertMarkdown,
   jsonOf,
-  KIT,
+  internalsOf,
   OPERATION,
   scopesFor,
   storable,
@@ -48,29 +47,25 @@ type Lib = GenericMutationCtx<LibraryDataModel>['db']
 type ToolOp = Operation & { tool: ToolSpec<string, any> }
 type Agent = Extract<Actor<{ _id: string }>, { kind: 'agent' }>
 
-/** The parts of `defineFunctions(...)` the tools need. */
-interface ToolKit {
-  policy: Policy
-  internals: {
-    person(ctx: Ctx): Promise<Extract<Actor<{ _id: string }>, { kind: 'person' }>>
-    agent(ctx: Ctx, caller: AgentCaller, options?: { approved?: boolean }): Promise<Agent>
-    authorize(
-      ctx: Ctx,
-      op: Pick<Operation, 'action' | 'args'>,
-      actor: Actor<{ _id: string }>,
-      input: Record<string, unknown>,
-    ): Promise<{
-      decision: 'allow' | 'approve'
-      tenant: TenantRef | undefined
-      rows: Map<string, Record<string, unknown> | null>
-      settle: <T>(value: T) => T
-      ctx: any
-    }>
-    lib(ctx: { db: unknown }): Lib
-    tenants: { refOf(db: unknown, value: unknown): TenantRef | undefined }
-    rules: Record<string, Rule>
-    roleOf(ctx: Ctx, user: { _id: string }, tenant: TenantRef): Promise<string | null>
-  }
+/** The internals of `defineFunctions(...)` the tools need. */
+interface Internals {
+  person(ctx: Ctx): Promise<Extract<Actor<{ _id: string }>, { kind: 'person' }>>
+  agent(ctx: Ctx, caller: AgentCaller, options?: { approved?: boolean }): Promise<Agent>
+  authorize(
+    ctx: Ctx,
+    op: Pick<Operation, 'action' | 'args'>,
+    actor: Actor<{ _id: string }>,
+    input: Record<string, unknown>,
+  ): Promise<{
+    decision: 'allow' | 'approve'
+    tenant: TenantRef | undefined
+    rows: Map<string, Record<string, unknown> | null>
+    settle: <T>(value: T) => T
+    ctx: any
+  }>
+  lib(ctx: { db: unknown }): Lib
+  tenants: { refOf(db: unknown, value: unknown): TenantRef | undefined }
+  roleOf(ctx: Ctx, user: { _id: string }, tenant: TenantRef): Promise<string | null>
 }
 
 /** One tool as a door publishes it. */
@@ -145,16 +140,16 @@ export function toolFailure(error: unknown): { code: string; message: string } {
  * TypeScript resolves without a type loop only for a plain signature.
  */
 export function defineTools(
-  fns: { [KIT]: unknown },
+  /** The object `defineFunctions` returned. */
+  fns: { policy: Policy },
   modules: Record<string, Record<string, unknown>>,
   options: {
     /** `internal.<module>` of the module that calls this and exports the tool functions. */
     functions: Record<string, FunctionReference<'query' | 'mutation', 'internal'>>
   },
 ) {
-  const kit = fns[KIT] as ToolKit
-  const { policy } = kit
-  const { person, agent, authorize, lib, tenants, roleOf } = kit.internals
+  const { policy } = fns
+  const { person, agent, authorize, lib, tenants, roleOf } = internalsOf(fns) as Internals
   const ownRef = (name: string) => options.functions[name] as FunctionReference<any, 'internal'>
 
   const operations = new Map<string, ToolOp>()

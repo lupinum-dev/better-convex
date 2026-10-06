@@ -92,10 +92,19 @@ export interface Operation {
 const idsPerCall = 1000
 
 /**
- * Where `defineTools` and the agent runtime find what they need from
- * `defineFunctions`. A symbol, so it stays out of the app's autocomplete.
+ * What `defineTools` and the agent runtime need from one `defineFunctions`
+ * call besides its policy, keyed by its result. Not a property of the result:
+ * the declaration file of an app that exports `fns` would have to name its
+ * type (V5), and app code has no use for it.
  */
-export const KIT: unique symbol = Symbol('better-convex.kit')
+const kits = new WeakMap<object, unknown>()
+
+/** The internals of a `defineFunctions` result, for `defineTools` and the agent runtime. */
+export function internalsOf(fns: object): unknown {
+  if (!kits.has(fns))
+    throw new Error('Pass the object defineFunctions returned, not a copy or a part of it.')
+  return kits.get(fns)
+}
 
 /** Each app table with its typed ID: what `roleOf` receives. */
 export type TenantOf<DM extends GenericDataModel> = {
@@ -840,18 +849,18 @@ export function defineFunctions<
     )
   }
 
-  const internals = { auth, person, agent, authorize, lib, tenants, roleOf: config.roleOf }
-
-  return {
+  const fns = {
+    /** The policy every operation here checks. */
+    policy,
     query,
     mutation,
     internalQuery,
     internalMutation,
     internalAction,
     job,
-    /** For `defineTools` and the agent runtime; not for app code. */
-    [KIT]: { policy, internals },
   }
+  kits.set(fns, { auth, person, agent, authorize, lib, tenants, roleOf: config.roleOf })
+  return fns
 }
 
 /** The registered type of an internal operation, so `internal.x.y` is a ref `ctx.run` accepts with typed input. */
