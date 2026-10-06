@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from 'convex-test'
-import { componentsGeneric, defineSchema } from 'convex/server'
+import { componentsGeneric, defineSchema, getFunctionAddress } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
@@ -180,5 +180,132 @@ describe('OAuth operators with real Better Auth', () => {
     const clients = await rows('oauthClient')
     expect(clients).toHaveLength(1)
     expect(clients[0]).toMatchObject({ clientId, redirectUris: ['http://[::1]:3000/callback'] })
+  })
+
+  it.each([
+    ...[
+      'http://localhost/callback',
+      'https://localhost/callback',
+      'not-a-url',
+      'ftp://agent.example.test/callback',
+      'http://agent.example.test/callback',
+      'https://user:password@agent.example.test/callback',
+      'https://agent.example.test/callback#token',
+    ].map((uri) => [
+      `redirect ${uri}`,
+      { redirectUris: [uri] },
+      'AUTH_OAUTH_CLIENT_REDIRECT_URI_INVALID',
+    ]),
+    ...[
+      'ftp://deployment.convex.site/mcp',
+      'http://deployment.convex.site/mcp',
+      'https://user:password@deployment.convex.site/mcp',
+      'https://deployment.convex.site/mcp?tenant=private',
+      'https://deployment.convex.site/mcp#token',
+    ].map((identifier) => [
+      `resource identifier ${identifier}`,
+      { resource: { ...clientInput.resource, identifier } },
+      'AUTH_OAUTH_CLIENT_RESOURCE_INVALID',
+    ]),
+    [
+      'operator resource ownership',
+      { resource: { ...clientInput.resource, ownership: 'operator' } },
+      'AUTH_OAUTH_CLIENT_RESOURCE_OWNERSHIP_INVALID',
+    ],
+    [
+      'a scope outside the profile',
+      { scopes: ['cms.admin'] },
+      'AUTH_OAUTH_CLIENT_SCOPE_NOT_ADMITTED',
+    ],
+  ] as Array<[string, object, string]>)(
+    'rejects OAuth operator input with %s before provisioning',
+    async (_name, override, code) => {
+      const { test, auth, rows } = setup()
+      await expect(
+        test.action(async (ctx) =>
+          auth.oauthOperator.createPublicClient(ctx, {
+            ...clientInput,
+            ...override,
+          } as BetterConvexPublicOAuthClientInput),
+        ),
+      ).rejects.toThrow(new RegExp(`^${code}$`, 'u'))
+      expect(await rows('oauthClient')).toEqual([])
+      expect(await rows('oauthResource')).toEqual([])
+      expect(await rows('oauthClientResource')).toEqual([])
+    },
+  )
+
+  it('removes a newly created client and resource when resource linking fails', async () => {
+    const { test, auth, rows } = setup()
+    let rowsBeforeLinkFailure: number[] = []
+    await expect(
+      test.action(async (ctx) => {
+        const runMutation: typeof ctx.runMutation = async (reference, args) => {
+          if (
+            getFunctionAddress(reference).reference ===
+              getFunctionAddress(component.adapter.create).reference &&
+            args?.model === 'oauthClientResource'
+          ) {
+            rowsBeforeLinkFailure = [
+              (await rows('oauthClient')).length,
+              (await rows('oauthResource')).length,
+            ]
+            throw new Error('private provider failure')
+          }
+          return ctx.runMutation(reference, args)
+        }
+        return auth.oauthOperator.createPublicClient({ ...ctx, runMutation }, clientInput)
+      }),
+    ).rejects.toThrow(/^AUTH_OAUTH_CLIENT_PROVISION_FAILED$/u)
+    expect(rowsBeforeLinkFailure).toEqual([1, 1])
+    expect(await rows('oauthClient')).toEqual([])
+    expect(await rows('oauthResource')).toEqual([])
+    expect(await rows('oauthClientResource')).toEqual([])
+  })
+
+  it('reports partial cleanup precisely and preserves the resource when client cleanup fails', async () => {
+    const { test, auth, rows } = setup()
+    let rowsBeforeLinkFailure: number[] = []
+    await expect(
+      test.action(async (ctx) => {
+        const runMutation: typeof ctx.runMutation = async (reference, args) => {
+          const address = getFunctionAddress(reference).reference
+          if (
+            address === getFunctionAddress(component.adapter.create).reference &&
+            args?.model === 'oauthClientResource'
+          ) {
+            rowsBeforeLinkFailure = [
+              (await rows('oauthClient')).length,
+              (await rows('oauthResource')).length,
+            ]
+            throw new Error('private provider failure')
+          }
+          if (
+            address === getFunctionAddress(component.adapter.deleteOne).reference &&
+            args?.model === 'oauthClient'
+          ) {
+            throw new Error('private cleanup failure')
+          }
+          return ctx.runMutation(reference, args)
+        }
+        return auth.oauthOperator.createPublicClient({ ...ctx, runMutation }, clientInput)
+      }),
+    ).rejects.toThrow(/^AUTH_OAUTH_CLIENT_PARTIAL_CLEANUP_FAILED$/u)
+    expect(rowsBeforeLinkFailure).toEqual([1, 1])
+    const clients = await rows('oauthClient')
+    expect(clients).toHaveLength(1)
+    expect(clients[0]).toMatchObject({
+      name: 'Ginko certification',
+      softwareId: 'ginko-certification-proof',
+    })
+    const resources = await rows('oauthResource')
+    expect(resources).toHaveLength(1)
+    expect(resources[0]).toMatchObject({
+      identifier: 'https://deployment.convex.site/mcp',
+      name: 'Ginko CMS MCP',
+      allowedScopes: ['cms.read', 'cms.entries.edit'],
+      disabled: false,
+    })
+    expect(await rows('oauthClientResource')).toEqual([])
   })
 })

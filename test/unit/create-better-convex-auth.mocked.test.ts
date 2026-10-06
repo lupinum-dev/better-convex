@@ -4,8 +4,6 @@ import { httpRouter } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
-import type { BetterConvexPublicOAuthClientInput } from '../../src/runtime/convex-auth/oauth-operator'
-import type { PinnedOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 
 const { betterAuth } = vi.hoisted(() => ({
   betterAuth: vi.fn((options: unknown) => ({
@@ -81,86 +79,6 @@ function component() {
       updateOne: reference,
     },
   } as never
-}
-
-function oauthProfile(): PinnedOAuthProviderProfile {
-  return {
-    accessTokenExpiresIn: 600,
-    allowDynamicClientRegistration: false,
-    allowPublicClientPrelogin: true,
-    allowUnauthenticatedClientRegistration: false,
-    clientPrivileges: async () => true,
-    codeExpiresIn: 120,
-    consentPage: '/oauth/consent',
-    customAccessTokenClaims: () => ({ token_use: 'oauth-access' }),
-    dpop: { signingAlgorithms: [] },
-    enforcePerClientResources: true,
-    grantTypes: ['authorization_code'],
-    loginPage: '/login',
-    rateLimit: {
-      authorize: { max: 30, window: 60 },
-      revoke: { max: 30, window: 60 },
-      token: { max: 20, window: 60 },
-    },
-    resourcePrivileges: async () => true,
-    scopes: ['cms.read', 'cms.entries.edit'],
-    storeClientSecret: 'hashed',
-    storeTokens: 'hashed',
-  }
-}
-
-const proofClient: BetterConvexPublicOAuthClientInput = {
-  name: 'Proof',
-  profile: 'proof',
-  redirectUris: ['https://agent.example.test/callback'],
-  resource: {
-    identifier: 'https://deployment.convex.site/mcp',
-    name: 'Proof',
-    ownership: 'application',
-  },
-  scopes: ['cms.read'],
-}
-
-function oauthAdapter(
-  overrides: {
-    create?: (input: {
-      data: Record<string, unknown>
-      model: string
-    }) => Promise<Record<string, unknown>>
-    delete?: (input: {
-      model: string
-      where: Array<{ field: string; value: string }>
-    }) => Promise<unknown>
-    deleteMany?: (input: {
-      model: string
-      where: Array<{ field: string; value: string }>
-    }) => Promise<unknown>
-  } = {},
-) {
-  const resources = new Map<string, Record<string, unknown>>()
-  const create = vi.fn(
-    overrides.create ??
-      (async ({ data, model }) => {
-        if (model === 'oauthResource') resources.set(data.identifier as string, data)
-        return data
-      }),
-  )
-  const deleteRecord = vi.fn(overrides.delete ?? (async () => undefined))
-  const deleteMany = vi.fn(overrides.deleteMany ?? (async () => undefined))
-  const findOne = vi.fn(async ({ where }: { where: Array<{ value: string }> }) => {
-    return resources.get(where[0]!.value) ?? null
-  })
-  return { create, delete: deleteRecord, deleteMany, findOne }
-}
-
-function authWithAdapter(adapter: ReturnType<typeof oauthAdapter>) {
-  return (options: unknown) =>
-    ({
-      $context: Promise.resolve({ adapter }),
-      api: {},
-      handler: vi.fn(),
-      options,
-    }) as never
 }
 
 describe('createBetterConvexAuth', () => {
@@ -254,99 +172,6 @@ describe('createBetterConvexAuth', () => {
     expect(loggedText()).not.toContain(privateToken)
     expect(loggedText()).not.toContain('s3cr3t-value')
     expect(loggedText()).not.toContain('a=b')
-  })
-
-  it.each([
-    ...[
-      'http://localhost/callback',
-      'https://localhost/callback',
-      'not-a-url',
-      'ftp://agent.example.test/callback',
-      'http://agent.example.test/callback',
-      'https://user:password@agent.example.test/callback',
-      'https://agent.example.test/callback#token',
-    ].map((uri) => [
-      `redirect ${uri}`,
-      { redirectUris: [uri] },
-      'AUTH_OAUTH_CLIENT_REDIRECT_URI_INVALID',
-    ]),
-    ...[
-      'ftp://deployment.convex.site/mcp',
-      'http://deployment.convex.site/mcp',
-      'https://user:password@deployment.convex.site/mcp',
-      'https://deployment.convex.site/mcp?tenant=private',
-      'https://deployment.convex.site/mcp#token',
-    ].map((identifier) => [
-      `resource identifier ${identifier}`,
-      { resource: { ...proofClient.resource, identifier } },
-      'AUTH_OAUTH_CLIENT_RESOURCE_INVALID',
-    ]),
-    [
-      'operator resource ownership',
-      { resource: { ...proofClient.resource, ownership: 'operator' } },
-      'AUTH_OAUTH_CLIENT_RESOURCE_OWNERSHIP_INVALID',
-    ],
-    [
-      'a scope outside the profile',
-      { scopes: ['cms.admin'] },
-      'AUTH_OAUTH_CLIENT_SCOPE_NOT_ADMITTED',
-    ],
-  ] as Array<[string, object, string]>)(
-    'rejects OAuth operator input with %s before constructing auth',
-    async (_name, override, code) => {
-      const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-      await expect(
-        auth.oauthOperator.createPublicClient(
-          queryContext() as never,
-          {
-            ...proofClient,
-            ...override,
-          } as never,
-        ),
-      ).rejects.toThrow(code)
-      expect(betterAuth).not.toHaveBeenCalled()
-    },
-  )
-
-  it('removes a newly created client and resource when resource linking fails', async () => {
-    const adapter = oauthAdapter({
-      create: async ({ data, model }) => {
-        if (model === 'oauthClientResource') throw new Error('private provider failure')
-        return data
-      },
-    })
-    betterAuth.mockImplementationOnce(authWithAdapter(adapter))
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-
-    await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, proofClient),
-    ).rejects.toThrow('AUTH_OAUTH_CLIENT_PROVISION_FAILED')
-    expect(adapter.deleteMany).toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'oauthClientResource' }),
-    )
-    expect(adapter.delete).toHaveBeenCalledWith(expect.objectContaining({ model: 'oauthClient' }))
-    expect(adapter.delete).toHaveBeenCalledWith(expect.objectContaining({ model: 'oauthResource' }))
-  })
-
-  it('reports partial cleanup precisely and preserves the resource when client cleanup fails', async () => {
-    const adapter = oauthAdapter({
-      create: async ({ data, model }) => {
-        if (model === 'oauthClientResource') throw new Error('private provider failure')
-        return data
-      },
-      delete: async ({ model }) => {
-        if (model === 'oauthClient') throw new Error('private cleanup failure')
-      },
-    })
-    betterAuth.mockImplementationOnce(authWithAdapter(adapter))
-    const auth = createBetterConvexAuth(component(), { oauthProvider: oauthProfile() })
-
-    await expect(
-      auth.oauthOperator.createPublicClient(queryContext() as never, proofClient),
-    ).rejects.toThrow('AUTH_OAUTH_CLIENT_PARTIAL_CLEANUP_FAILED')
-    expect(adapter.delete).not.toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'oauthResource' }),
-    )
   })
 })
 
