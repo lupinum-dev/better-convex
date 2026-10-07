@@ -2,7 +2,10 @@ import { v } from 'convex/values'
 
 import { query } from './fns'
 
-/** E8: every validator kind JSON can carry, as one tool. Echoes what arrived. */
+/**
+ * E8: every validator kind JSON can carry, as one tool. Echoes what arrived. The text "crash"
+ * throws a plain Error, as a bug in app code does.
+ */
 export const echo = query({
   action: 'shapes.echo',
   args: {
@@ -23,7 +26,10 @@ export const echo = query({
     description: 'Echo the arguments.',
     args: { list: 'Project IDs.' },
   },
-  handler: async (_ctx, args) => ({
-    types: Object.fromEntries(Object.entries(args).map(([k, value]) => [k, typeof value])),
-  }),
+  handler: async (_ctx, args) => {
+    if (args.text === 'crash') throw new Error('The handler crashed.')
+    return {
+      types: Object.fromEntries(Object.entries(args).map(([k, value]) => [k, typeof value])),
+    }
+  },
 })

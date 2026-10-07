@@ -1,6 +1,6 @@
-import { testAuth } from '@lupinum/better-convex-agents/test'
 import { defineFunctions, definePolicy, owner, tenant } from '@lupinum/better-convex-functions'
 
+import { testAuth } from '../support'
 import type { DataModel } from './dataModel'
 
 export const policy = definePolicy({

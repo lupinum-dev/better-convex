@@ -1,14 +1,14 @@
-import { guarded, unsendable } from '@lupinum/better-convex-functions/internal'
+import { guarded } from '@lupinum/better-convex-functions/internal'
 import {
   fromJsonSchema,
   type CallToolResult,
   type jsonSchemaValidator,
 } from '@modelcontextprotocol/server'
-import { httpActionGeneric, type FunctionReference } from 'convex/server'
+import { httpActionGeneric } from 'convex/server'
 
 import type { McpDoorAuth, McpPrincipal } from './access'
 import { handleMcpRequest } from './handler'
-import { toolFailure, type CatalogEntry } from './tools'
+import { grantedTools, toolCall, toolFailure, type CatalogEntry } from './tools'
 
 /** What `createMcpServer` needs from the module that calls `defineTools`. */
 interface ToolsModule {
@@ -98,13 +98,7 @@ export function createMcpServer(
         resource,
         authorization,
         configureServer: ({ principal, server }) => {
-          const caller = { door: 'mcp' as const, principal }
-          const granted = tools.catalog.filter(
-            (entry) =>
-              entry.scopes.length === 0 ||
-              entry.scopes.some((scope) => principal.scopes.includes(scope)),
-          )
-          for (const entry of granted) {
+          for (const entry of grantedTools(tools.catalog, principal)) {
             const write = entry.kind === 'mutation'
             const properties = { ...(entry.inputSchema.properties as object) }
             const schema = write
@@ -127,24 +121,8 @@ export function createMcpServer(
                   : { readOnlyHint: true, openWorldHint: false },
               },
               async (args: Record<string, unknown>) => {
-                const { request_id: rawRequestId, ...input } = args ?? {}
-                // Models send numbers for "IDs" they make up; the same number must still deduplicate.
-                const requestId =
-                  typeof rawRequestId === 'number' ? String(rawRequestId) : rawRequestId
-                const invalid = unsendable(input)
-                if (invalid) return failure(invalid)
                 try {
-                  const call = {
-                    caller,
-                    input,
-                    ...(typeof requestId === 'string' ? { requestId } : {}),
-                  }
-                  const output = write
-                    ? await ctx.runMutation(
-                        entry.ref as FunctionReference<'mutation', 'internal'>,
-                        call,
-                      )
-                    : await ctx.runQuery(entry.ref as FunctionReference<'query', 'internal'>, call)
+                  const output = await toolCall(entry, args, principal, ctx)
                   return {
                     content: [{ type: 'text', text: resultText(output) }],
                     structuredContent: output,

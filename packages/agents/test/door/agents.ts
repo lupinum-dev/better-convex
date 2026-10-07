@@ -1,6 +1,6 @@
 import { defineTools } from '@lupinum/better-convex-agents'
-import { refs } from '@lupinum/better-convex-agents/test'
 
+import { refs } from '../support'
 import { fns } from './fns'
 import * as projects from './projects'
 import * as shapes from './shapes'

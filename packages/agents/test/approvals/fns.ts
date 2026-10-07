@@ -1,4 +1,3 @@
-import { testAuth } from '@lupinum/better-convex-agents/test'
 import {
   defineFunctions,
   definePolicy,
@@ -9,6 +8,7 @@ import {
 } from '@lupinum/better-convex-functions'
 import type { DataModelFromSchemaDefinition } from 'convex/server'
 
+import { testAuth } from '../support'
 import type schema from './schema'
 
 type DataModel = DataModelFromSchemaDefinition<typeof schema>

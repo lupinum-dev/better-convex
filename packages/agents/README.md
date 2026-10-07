@@ -166,15 +166,15 @@ expiry. Then import it with
 
 ## Exports
 
-| Export                          | Entry   | Use                                                                                                                                                                      |
-| ------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `defineTools`                   | `.`     | Tools, approvals, activity and housekeeping from the operations that have a `tool` field.                                                                                |
-| `createMcpServer`               | `/mcp`  | The MCP door: an HTTP action that publishes the tools of `defineTools` to MCP hosts.                                                                                     |
-| `handleMcpRequest`              | `/mcp`  | Handles one MCP HTTP request. Options: `serverInfo`, `resource`, `authorization`, `configureServer`, and optional `requestState`, `exposeErrorCodes`, and `onToolError`. |
-| `projectMcpToolError`           | `/mcp`  | Turns an exposed `ConvexError` into a tool error result. Returns `undefined` for any other error.                                                                        |
-| `McpUnsupportedCapabilityError` | `/mcp`  | Thrown when the server offers a capability other than tools and resources.                                                                                               |
-| `listMcpCatalog`                | `/mcp`  | Returns the `tools/list` and `resources/list` results that a client sees, for snapshot tests.                                                                            |
-| `testAuth`, `mcpClient`, `refs` | `/test` | The auth component and MCP token check faked for convex-test (with `revoke`), a JSON-RPC client over its HTTP router, and `internal.<module>` without codegen.           |
+| Export                          | Entry   | Use                                                                                                                                                                                                  |
+| ------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defineTools`                   | `.`     | Tools, approvals, activity and housekeeping from the operations that have a `tool` field.                                                                                                            |
+| `createMcpServer`               | `/mcp`  | The MCP door: an HTTP action that publishes the tools of `defineTools` to MCP hosts.                                                                                                                 |
+| `handleMcpRequest`              | `/mcp`  | Handles one MCP HTTP request. Options: `serverInfo`, `resource`, `authorization`, `configureServer`, and optional `requestState`, `exposeErrorCodes`, and `onToolError`.                             |
+| `projectMcpToolError`           | `/mcp`  | Turns an exposed `ConvexError` into a tool error result. Returns `undefined` for any other error.                                                                                                    |
+| `McpUnsupportedCapabilityError` | `/mcp`  | Thrown when the server offers a capability other than tools and resources.                                                                                                                           |
+| `listMcpCatalog`                | `/mcp`  | Returns the `tools/list` and `resources/list` results that a client sees, for snapshot tests.                                                                                                        |
+| `callTool`                      | `/test` | Calls a tool in convex-test as the MCP door does: only the tools the principal's scopes unlock. It resolves with the tool's output and rejects with the tool's own error. Loads without the MCP SDK. |
 
 `@lupinum/better-convex-agents/internal` exists only for the in-app agent runtime, which lives
 outside this package for now: `toolFailure` and the run state helpers (`cancelRequests`,

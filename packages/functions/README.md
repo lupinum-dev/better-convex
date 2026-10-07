@@ -129,9 +129,9 @@ release.
   the map has no `defineFunctions` operation.
 - `countDocuments(call)` counts the documents one call reads and writes, for budget tests.
 
-Test sign-in with the real Better Auth component (`@lupinum/better-convex-nuxt/better-auth/test`).
-For fixtures without it, `testAuth()` from `@lupinum/better-convex-agents/test` fakes the auth
-component and the MCP token check.
+Test sign-in and MCP grants with the real Better Auth component
+(`signInAs` and `grantMcp` from `@lupinum/better-convex-nuxt/better-auth/test`). Call tools as a
+host does with `callTool` from `@lupinum/better-convex-agents/test`.
 
 ## Documentation
 

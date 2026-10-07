@@ -1,7 +1,7 @@
-import { mcpClient } from '@lupinum/better-convex-agents/test'
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
 
+import { mcpClient } from '../support'
 import { testing } from './fns'
 import schema from './schema'
 

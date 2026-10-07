@@ -266,12 +266,28 @@ export const mutants: Mutant[] = [
     ],
   },
   {
+    // The door and callTool share this filter, so it fails both.
     id: 'S9-door-scopes',
     guards: 'S9',
-    file: 'packages/agents/src/door.ts',
+    file: 'packages/agents/src/tools.ts',
     find: 'entry.scopes.some((scope) => principal.scopes.includes(scope))',
     replace: 'true',
-    kills: [`${A}/door/door.test.ts > a read-only grant lists only read tools`],
+    kills: [
+      `${A}/door/door.test.ts > a read-only grant lists only read tools`,
+      `${A}/door/call-tool.test.ts > callTool refuses a tool the grant does not unlock, and names the tools it unlocks`,
+    ],
+  },
+  {
+    // STRESS G2: input Convex cannot carry is named as a field, at the door and in callTool.
+    id: 'G2-unsendable-input',
+    guards: 'G2',
+    file: 'packages/agents/src/tools.ts',
+    find: 'if (invalid) fail(invalid.code, invalid.message)',
+    replace: 'if (false) fail(invalid.code, invalid.message)',
+    kills: [
+      `${A}/door/door.test.ts > wrong input {"name":"x","$schema":"tool"} is named in the error`,
+      `${A}/door/call-tool.test.ts > callTool rejects with an input Convex cannot carry, as the tool threw it`,
+    ],
   },
   {
     id: 'S9-decide-grant',

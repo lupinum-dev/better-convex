@@ -24,6 +24,7 @@ import {
   storable,
   toJsonSchema,
   toolNamePattern,
+  unsendable,
   type AgentCaller,
   type LibraryDataModel,
   type Operation,
@@ -40,6 +41,7 @@ import {
 } from 'convex/server'
 import { v, type GenericId, type Value } from 'convex/values'
 
+import type { McpPrincipal } from './access'
 import { cancelRequests, finish, shownStatus, stallAfter, wake } from './runs'
 
 type Ctx = GenericQueryCtx<any>
@@ -134,6 +136,52 @@ export function toolFailure(error: unknown): { code: string; message: string } {
     )
   } else console.error('tool failed', error)
   return { code: 'FAILED', message: 'The tool failed. Try again later.' }
+}
+
+/** The tools a grant unlocks: the built-in tools, and each tool one of its scopes names. */
+export function grantedTools(catalog: readonly CatalogEntry[], principal: McpPrincipal) {
+  return catalog.filter(
+    (entry) =>
+      entry.scopes.length === 0 || entry.scopes.some((scope) => principal.scopes.includes(scope)),
+  )
+}
+
+/** What a tool call returns: the object the MCP door puts in `structuredContent`. */
+export type ToolSuccess =
+  | { status: 'done'; result: unknown }
+  | { status: 'needs_approval'; approvalId: string; summary: string; url: string }
+
+/** What runs a tool's internal function: an action's `ctx`, or a convex-test client. */
+export interface ToolRunner {
+  runQuery(ref: FunctionReference<'query', 'internal'>, args: object): Promise<any>
+  runMutation(ref: FunctionReference<'mutation', 'internal'>, args: object): Promise<any>
+}
+
+/**
+ * One tool call as an MCP host sends it: `args` are the host's arguments, `request_id`
+ * included. The MCP door and `callTool` both use it, so a test calls a tool exactly as a host
+ * does. It rejects with the tool's own error; the door turns that into a result with
+ * `toolFailure`.
+ */
+export async function toolCall(
+  entry: CatalogEntry,
+  args: Record<string, unknown> | undefined,
+  principal: McpPrincipal,
+  run: ToolRunner,
+): Promise<ToolSuccess> {
+  const { request_id: rawRequestId, ...input } = args ?? {}
+  // Models send numbers for "IDs" they make up; the same number must still deduplicate.
+  const requestId = typeof rawRequestId === 'number' ? String(rawRequestId) : rawRequestId
+  const invalid = unsendable(input)
+  if (invalid) fail(invalid.code, invalid.message)
+  const call = {
+    caller: { door: 'mcp' as const, principal },
+    input,
+    ...(typeof requestId === 'string' ? { requestId } : {}),
+  }
+  return entry.kind === 'mutation'
+    ? await run.runMutation(entry.ref as FunctionReference<'mutation', 'internal'>, call)
+    : await run.runQuery(entry.ref as FunctionReference<'query', 'internal'>, call)
 }
 
 /**

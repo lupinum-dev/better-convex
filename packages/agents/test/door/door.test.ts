@@ -1,11 +1,11 @@
 import { defineTools } from '@lupinum/better-convex-agents'
 import { toolFailure } from '@lupinum/better-convex-agents/internal'
 import { createMcpServer } from '@lupinum/better-convex-agents/mcp'
-import { refs } from '@lupinum/better-convex-agents/test'
 import type { FunctionReference } from 'convex/server'
 import { v } from 'convex/values'
 import { expect, test, vi } from 'vitest'
 
+import { refs } from '../support'
 import { tools } from './agents'
 import { fns, query, testing } from './fns'
 import * as projects from './projects'

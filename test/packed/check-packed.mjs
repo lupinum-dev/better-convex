@@ -192,7 +192,7 @@ function main() {
     }
 
     // The MCP SDK is an optional peer: only ./mcp may need it to load (an in-app agent, or tests
-    // with testAuth, run without it).
+    // with callTool, run without it).
     if (id === 'agents') {
       for (const [subpath, target] of Object.entries(manifest.exports)) {
         if (subpath === './mcp' || typeof target !== 'object') continue
@@ -224,6 +224,10 @@ function main() {
       specifiers.map((specifier) => `await import(${JSON.stringify(specifier)})\n`).join('') +
         (id === 'vue' || id === 'nuxt'
           ? `const { default: assert } = await import('node:assert/strict')\nconst stable = await import(${JSON.stringify(manifest.name)})\nconst experimental = await import(${JSON.stringify(`${manifest.name}/experimental`)})\nassert.equal(typeof experimental.useConvexOperation, 'function')\nassert.equal('useConvexOperation' in stable, false)\n`
+          : '') +
+        // Only callTool: a fixture that creates authority (the old testAuth) must not return to ./test.
+        (id === 'agents'
+          ? `const { default: assert } = await import('node:assert/strict')\nassert.deepEqual(Object.keys(await import(${JSON.stringify(`${manifest.name}/test`)})).sort(), ['callTool'])\n`
           : ''),
     )
     try {
