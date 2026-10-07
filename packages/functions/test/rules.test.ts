@@ -112,6 +112,25 @@ test('every part of an allOf rule holds, even for an operation without its own c
   ])
 })
 
+// E15: library failures carry codes the UI can switch on.
+test('the web client sees coded failures', async () => {
+  const { t, ann, vic, b, pa } = await setup()
+  const codeOf = (promise: Promise<unknown>) =>
+    promise.then(
+      () => 'no error',
+      (error) => (error as { data?: { code?: string } }).data?.code ?? 'uncoded',
+    )
+  expect({
+    signedOut: await codeOf(t.query(fn('orgProjects'), { orgId: b })),
+    foreignTenant: await codeOf(ann.query(fn('orgProjects'), { orgId: b })),
+    roleTooLow: await codeOf(vic.mutation(fn('archiveByString'), { id: pa })),
+  }).toEqual({
+    signedOut: 'NOT_SIGNED_IN',
+    foreignTenant: 'NOT_FOUND',
+    roleTooLow: 'FORBIDDEN',
+  })
+})
+
 // Catches: a table-qualified get applying another table's (looser) rule.
 test('a table-qualified get only finds rows of that table', async () => {
   const { ann, pb } = await setup()

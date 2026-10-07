@@ -6,13 +6,11 @@ import {
   custom,
   owner,
   tenant,
-  unchecked,
 } from '@lupinum/better-convex-functions'
 import type { DocumentByName } from 'convex/server'
 import { v } from 'convex/values'
 
-import type { DataModel } from './dataModel'
-import { testing } from './fns'
+import { auth, type DataModel, notUsed, orgRole, user } from './common'
 
 // K6: a note is private to its author, or shared with an organization. Viewers may read
 // shared notes but not edit them.
@@ -23,49 +21,40 @@ const policy = definePolicy({
 })
 
 const shared = {
-  auth: testing.auth,
+  auth,
   policy,
-  user: (ctx: any, authId: string) =>
-    ctx.db
-      .query('users')
-      .withIndex('by_auth_id', (q: any) => q.eq('authId', authId))
-      .unique(),
-}
-
-const roleOf = async (ctx: any, user: { _id: string }, tenant: { table: string; id: string }) => {
-  if (tenant.table !== 'orgs') return null
-  const membership = await ctx.db
-    .query('memberships')
-    .withIndex('by_org_user', (q: any) => q.eq('orgId', tenant.id).eq('userId', user._id))
-    .unique()
-  return (membership?.role as RoleOf<typeof policy> | undefined) ?? null
+  user,
+  roleOf: async (ctx: any, user: { _id: any }, tenant: { table: string; id: any }) =>
+    tenant.table === 'orgs'
+      ? ((await orgRole(ctx, user._id, tenant.id)) as RoleOf<typeof policy> | null)
+      : null,
 }
 
 const others = {
   users: owner('_id'),
   orgs: tenant('_id'),
   memberships: owner('userId'),
-  projects: unchecked('Not used here.'),
-  workspaces: unchecked('Not used here.'),
-  docs: unchecked('Not used here.'),
-  agencies: unchecked('Not used here.'),
-  agencyMembers: unchecked('Not used here.'),
-  clients: unchecked('Not used here.'),
-  clientProjects: unchecked('Not used here.'),
-  clientContacts: unchecked('Not used here.'),
+  ...notUsed(
+    'projects',
+    'workspaces',
+    'docs',
+    'agencies',
+    'agencyMembers',
+    'clients',
+    'clientProjects',
+    'clientContacts',
+  ),
 }
 
 /** The presets: the author, or a member whose role allows the action in the note's organization. */
 const presets = defineFunctions({
   ...shared,
-  roleOf,
   rules: { ...others, notes: anyOf(owner('authorId'), tenant('orgId')) },
 })
 
 /** The same rule written by hand: `ctx.allows` applies the role layer. */
 const handWritten = defineFunctions({
   ...shared,
-  roleOf,
   rules: {
     ...others,
     notes: custom(async (ctx, note: DocumentByName<DataModel, 'notes'>) => {

@@ -4,11 +4,10 @@ import {
   type RoleOf,
   owner,
   tenant,
-  unchecked,
 } from '@lupinum/better-convex-functions'
 import { v } from 'convex/values'
 
-import { testing } from './fns'
+import { auth, notUsed, user } from './common'
 
 // K3: agency -> client -> project. An agency member works on every client's projects; a
 // client contact sees only their client.
@@ -19,13 +18,9 @@ const policy = definePolicy({
 })
 
 const { query, mutation } = defineFunctions({
-  auth: testing.auth,
+  auth,
   policy,
-  user: (ctx, authId) =>
-    ctx.db
-      .query('users')
-      .withIndex('by_auth_id', (q) => q.eq('authId', authId))
-      .unique(),
+  user,
   // A client inherits its agency's roles; contacts are members of the client itself.
   roleOf: async (ctx, user, tenant) => {
     let agencyId
@@ -51,12 +46,7 @@ const { query, mutation } = defineFunctions({
     clients: tenant('_id', { parent: 'agencyId', createdBy: 'clients.create' }),
     clientProjects: tenant('clientId'),
     clientContacts: owner('userId'),
-    orgs: unchecked('Not used here.'),
-    memberships: unchecked('Not used here.'),
-    projects: unchecked('Not used here.'),
-    workspaces: unchecked('Not used here.'),
-    docs: unchecked('Not used here.'),
-    notes: unchecked('Not used here.'),
+    ...notUsed('orgs', 'memberships', 'projects', 'workspaces', 'docs', 'notes'),
   },
 })
 

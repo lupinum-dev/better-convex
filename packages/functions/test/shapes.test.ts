@@ -1,11 +1,33 @@
-import { can, type Policy } from '@lupinum/better-convex-functions'
+import { convexTest } from 'convex-test'
+import { makeFunctionReference } from 'convex/server'
 import { expect, test } from 'vitest'
 
-import { policy } from './fns'
-import { fn, setup } from './setup'
+import schema from './shapes/schema'
 
-// App shapes the presets must express, and the policy edge cases. Each test
-// names the STRESS.md row whose break it keeps fixed.
+// App shapes the rule presets must express, and the role edge cases. Each module of the
+// fixture is its own app. Each test names the STRESS.md row whose break it keeps fixed.
+
+const modules = import.meta.glob(['./shapes/*.ts', './shapes/_generated/*.ts'])
+const fn = (path: string) => makeFunctionReference<any>(path)
+
+/** Ann owns org A, Vic views A, Bob owns B. A has one project. */
+async function setup() {
+  const t = convexTest(schema, modules)
+  const ids = await t.run(async (ctx) => {
+    const [ann, vic, bob] = await Promise.all(
+      ['ann', 'vic', 'bob'].map((authId) => ctx.db.insert('users', { authId })),
+    )
+    const a = await ctx.db.insert('orgs', { name: 'A' })
+    const b = await ctx.db.insert('orgs', { name: 'B' })
+    await ctx.db.insert('memberships', { orgId: a, userId: ann!, role: 'owner' })
+    await ctx.db.insert('memberships', { orgId: a, userId: vic!, role: 'viewer' })
+    await ctx.db.insert('memberships', { orgId: b, userId: bob!, role: 'owner' })
+    const pa = await ctx.db.insert('projects', { orgId: a, name: 'A one' })
+    return { users: { ann: ann!, vic: vic!, bob: bob! }, a, b, pa }
+  })
+  const as = (authId: string) => t.withIdentity({ subject: authId })
+  return { t, ...ids, ann: as('ann'), vic: as('vic'), bob: as('bob') }
+}
 
 async function withNotes() {
   const s = await setup()
@@ -22,8 +44,8 @@ async function withNotes() {
 
 // K6: a viewer edited a shared note: the custom rule could not see the action, and the call skipped the role layer.
 test.each([
-  ['anyOf(owner, tenant)', 'k6:read', 'k6:edit'],
-  ['custom with ctx.allows', 'k6:readCustom', 'k6:editCustom'],
+  ['anyOf(owner, tenant)', 'notes:read', 'notes:edit'],
+  ['custom with ctx.allows', 'notes:readCustom', 'notes:editCustom'],
 ])('K6 %s: author or member reads; only a role that allows it edits', async (_, read, edit) => {
   const { t, ann, vic, bob, privateNote, sharedNote } = await withNotes()
   // Not visible: `null`, or NOT_FOUND when the note's ID names an organization the actor is not in.
@@ -45,7 +67,7 @@ test.each([
 })
 
 // Codex review: the author of a note shared with an organization she is not in got NOT_FOUND.
-test.each(['k6:read', 'k6:readCustom'])(
+test.each(['notes:read', 'notes:readCustom'])(
   'K6 %s: the author reads her own note in an organization she is not in',
   async (read) => {
     const s = await setup()
@@ -79,46 +101,44 @@ async function withAgency() {
 // K3: agency -> client -> project could not be expressed; a client ID made the agency the call's tenant.
 test('K3: nested tenants: the agency reaches its clients and their projects; a client contact only theirs', async () => {
   const { ann, vic, bob, agency, client } = await withAgency()
-  expect(await ann.query(fn('k3:clients'), { agencyId: agency })).toEqual(['Client'])
-  expect(await ann.query(fn('k3:projectsOfClient'), { clientId: client })).toEqual(['Client site'])
+  expect(await ann.query(fn('agencies:clients'), { agencyId: agency })).toEqual(['Client'])
+  expect(await ann.query(fn('agencies:projectsOfClient'), { clientId: client })).toEqual([
+    'Client site',
+  ])
   expect(
-    await ann.query(fn('k3:projectsOfAgencyClient'), { agencyId: agency, clientId: client }),
+    await ann.query(fn('agencies:projectsOfAgencyClient'), { agencyId: agency, clientId: client }),
   ).toEqual(['Client site'])
-  expect(await vic.query(fn('k3:projectsOfClient'), { clientId: client })).toEqual(['Client site'])
-  await expect(vic.query(fn('k3:clients'), { agencyId: agency })).rejects.toThrow(/NOT_FOUND/)
-  await expect(bob.query(fn('k3:projectsOfClient'), { clientId: client })).rejects.toThrow(
+  expect(await vic.query(fn('agencies:projectsOfClient'), { clientId: client })).toEqual([
+    'Client site',
+  ])
+  await expect(vic.query(fn('agencies:clients'), { agencyId: agency })).rejects.toThrow(/NOT_FOUND/)
+  await expect(bob.query(fn('agencies:projectsOfClient'), { clientId: client })).rejects.toThrow(
     /NOT_FOUND/,
   )
 })
 
 test('K3: a client is created only under an agency where the role allows it', async () => {
   const { ann, agency, other } = await withAgency()
-  await ann.mutation(fn('k3:createClient'), { agencyId: agency, name: 'New client' })
+  await ann.mutation(fn('agencies:createClient'), { agencyId: agency, name: 'New client' })
   await expect(
-    ann.mutation(fn('k3:createClient'), { agencyId: agency, name: 'Planted', under: other }),
+    ann.mutation(fn('agencies:createClient'), { agencyId: agency, name: 'Planted', under: other }),
   ).rejects.toThrow(/NOT_FOUND/)
 })
 
-async function withWorkspace() {
-  const s = await setup()
-  const ids = await s.t.run(async (ctx) => {
-    const ws = await ctx.db.insert('workspaces', { ownerId: s.users.ann, name: 'Ann personal' })
-    const doc = await ctx.db.insert('docs', { workspaceId: ws, text: 'Ann idea' })
-    return { ws, doc }
-  })
-  return { ...s, ...ids }
-}
-
 // K2: two tenant kinds through one roleOf; a call spanning them was impossible.
 test('K2: a move between a workspace and an organization needs crossTenant, and a role in both', async () => {
-  const { t, ann, vic, doc, a } = await withWorkspace()
-  await expect(ann.mutation(fn('k2:moveToOrg'), { docId: doc, orgId: a })).rejects.toThrow(
+  const { t, ann, vic, a, users } = await setup()
+  const doc = await t.run(async (ctx) => {
+    const ws = await ctx.db.insert('workspaces', { ownerId: users.ann, name: 'Ann personal' })
+    return await ctx.db.insert('docs', { workspaceId: ws, text: 'Ann idea' })
+  })
+  await expect(ann.mutation(fn('workspaces:moveToOrg'), { docId: doc, orgId: a })).rejects.toThrow(
     /different places/,
   )
-  await expect(vic.mutation(fn('k2:moveToOrgAcross'), { docId: doc, orgId: a })).rejects.toThrow(
-    /NOT_FOUND/,
-  )
-  await ann.mutation(fn('k2:moveToOrgAcross'), { docId: doc, orgId: a })
+  await expect(
+    vic.mutation(fn('workspaces:moveToOrgAcross'), { docId: doc, orgId: a }),
+  ).rejects.toThrow(/NOT_FOUND/)
+  await ann.mutation(fn('workspaces:moveToOrgAcross'), { docId: doc, orgId: a })
   expect(await t.run((ctx) => ctx.db.get(doc))).toBeNull()
 })
 
@@ -126,54 +146,22 @@ test('K2: a move between a workspace and an organization needs crossTenant, and 
 test.each(['superuser', 'toString', 'constructor', '__proto__'])(
   'K1: the unknown role %j is denied',
   async (role) => {
-    const s = await setup()
-    await s.t.run(async (ctx) => {
-      const id = await ctx.db.insert('users', { authId: role, name: role })
-      await ctx.db.insert('memberships', { orgId: s.a, userId: id, role })
+    const { t, a, pa } = await setup()
+    await t.run(async (ctx) => {
+      const id = await ctx.db.insert('users', { authId: role })
+      await ctx.db.insert('memberships', { orgId: a, userId: id, role })
     })
     await expect(
-      s.t
-        .withIdentity({ subject: role })
-        .query(fn('projects:page'), { orgId: s.a, paginationOpts: { numItems: 1, cursor: null } }),
+      t.withIdentity({ subject: role }).query(fn('workspaces:project'), { projectId: pa }),
     ).rejects.toThrow(/FORBIDDEN/)
-    expect(can(policy, 'projects.search', role as never)).toBe(false)
   },
 )
-
-// E13: three-part prefixes match; the type accepts them too (stress/types/probes/E13-patterns.ts).
-test('E13: a two-segment prefix matches only its own actions', () => {
-  const billing = { ...policy, roles: { accountant: ['billing.invoices.*'] } } as unknown as Policy
-  expect(can(billing, 'billing.invoices.create', 'accountant')).toBe(true)
-  expect(can(billing, 'billing.plans.read', 'accountant')).toBe(false)
-})
 
 // E10: returning a whole document needed a hand-built validator.
 test('E10: docValidator accepts the document as stored', async () => {
   const { ann, pa } = await setup()
-  expect(await ann.query(fn('projects:one'), { projectId: pa })).toMatchObject({
+  expect(await ann.query(fn('workspaces:project'), { projectId: pa })).toMatchObject({
     _id: pa,
     name: 'A one',
-  })
-})
-
-// E15: library failures carry codes the UI can switch on.
-test('E15: the web client sees coded failures', async () => {
-  const { t, ann, vic, b, pa } = await setup()
-  const codeOf = (promise: Promise<unknown>) =>
-    promise.then(
-      () => 'no error',
-      (error) => (error as { data?: { code?: string } }).data?.code ?? 'uncoded',
-    )
-  const page = { paginationOpts: { numItems: 1, cursor: null } }
-  expect({
-    signedOut: await codeOf(t.query(fn('projects:page'), { orgId: b, ...page })),
-    foreignTenant: await codeOf(ann.query(fn('projects:page'), { orgId: b, ...page })),
-    roleTooLow: await codeOf(vic.mutation(fn('projects:archive'), { projectId: pa })),
-    unknownApproval: await codeOf(ann.mutation(fn('agents:approve'), { approvalId: 'nope' })),
-  }).toEqual({
-    signedOut: 'NOT_SIGNED_IN',
-    foreignTenant: 'NOT_FOUND',
-    roleTooLow: 'FORBIDDEN',
-    unknownApproval: 'APPROVAL_NOT_FOUND',
   })
 })

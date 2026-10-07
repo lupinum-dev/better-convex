@@ -1,9 +1,8 @@
-import { fail, docValidator } from '@lupinum/better-convex-functions'
+import { fail } from '@lupinum/better-convex-functions'
 import { paginationOptsValidator, paginationResultValidator } from 'convex/server'
 import { v } from 'convex/values'
 
 import { mutation, query } from './fns'
-import schema from './schema'
 
 const project = v.object({ id: v.id('projects'), name: v.string() })
 
@@ -47,12 +46,4 @@ export const page = query({
       .paginate(paginationOpts)
     return { ...result, page: result.page.map(({ _id, name }) => ({ id: _id, name })) }
   },
-})
-
-/** E10: a whole document, with the validator derived from the schema. */
-export const one = query({
-  action: 'projects.search',
-  args: { projectId: v.id('projects') },
-  returns: v.union(docValidator(schema, 'projects'), v.null()),
-  handler: async (ctx, { projectId }) => await ctx.db.get(projectId),
 })

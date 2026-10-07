@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { decide, definePolicy, type Asker } from '../src/policy'
+import { can, decide, definePolicy, type Asker } from '../src/policy'
 
 const policy = definePolicy({
   actions: ['organizations.list', 'projects.search', 'projects.create', 'projects.archive'],
@@ -51,4 +51,30 @@ test('tenantless actions skip the role but keep the grant', () => {
       tenantless: true,
     }),
   ).toBe('deny')
+})
+
+// K1: a role named like a prototype key threw a TypeError instead of denying.
+test.each(['superuser', 'toString', 'constructor', '__proto__'])(
+  'the unknown role or scope %j grants nothing',
+  (name) => {
+    expect(can(policy, 'projects.search', name as never)).toBe(false)
+    expect(
+      decide(policy, {
+        asker: { kind: 'agent', scopes: [name] },
+        role: 'owner',
+        action: 'projects.search',
+      }),
+    ).toBe('deny')
+  },
+)
+
+// E13: three-part prefixes match only their own actions; the type accepts them too (types.test.ts).
+test('a two-segment prefix matches only its own actions', () => {
+  const billing = definePolicy({
+    actions: ['billing.invoices.create', 'billing.plans.read'],
+    roles: { accountant: ['billing.invoices.*'] },
+    scopes: {},
+  })
+  expect(can(billing, 'billing.invoices.create', 'accountant')).toBe(true)
+  expect(can(billing, 'billing.plans.read', 'accountant')).toBe(false)
 })

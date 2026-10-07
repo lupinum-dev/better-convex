@@ -266,9 +266,10 @@ test('revoking a connection cancels its open requests, and its tools then fail',
 
   expect(await t.run((ctx) => ctx.db.get(approvalId))).toMatchObject({ status: 'cancelled' })
   expect(await ann.query(fn('agents:pending'), {})).toEqual([])
-  await expect(ann.mutation(fn('agents:approve'), { approvalId })).rejects.toThrow(
-    /APPROVAL_NOT_FOUND/,
-  )
+  // E15: a coded failure the web client can switch on.
+  await expect(ann.mutation(fn('agents:approve'), { approvalId })).rejects.toMatchObject({
+    data: { code: 'APPROVAL_NOT_FOUND' },
+  })
   const { body } = await call('ann:write', 'create_project', { orgId: a, name: 'After revoke' })
   expect(body.result).toMatchObject({
     isError: true,
