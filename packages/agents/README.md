@@ -40,8 +40,8 @@ the standard OAuth challenge, and gives your tools the verified user as a typed 
 
 - Node.js `^22.19.0 || ^24.11.0`
 - Convex `>=1.42.2 <2` and `@lupinum/better-convex-functions`
-- For MCP hosts: `@modelcontextprotocol/server` `2.1.0` (an exact peer dependency that only
-  `/mcp` loads) and an OAuth token verifier. With Better Convex authentication, the auth
+- For MCP hosts: `@modelcontextprotocol/server` `2.2.0` (an exact peer dependency that only
+  `/mcp` loads, and `listMcpCatalog` from `/test` when you call it) and an OAuth token verifier. With Better Convex authentication, the auth
   factory from `@lupinum/better-convex-nuxt/better-auth/server` provides it.
 
 ## Installation

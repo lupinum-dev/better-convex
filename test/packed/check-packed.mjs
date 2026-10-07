@@ -67,15 +67,21 @@ function files(directory) {
     .filter((path) => statSync(path).isFile())
 }
 
-/** Every import outside the package that a built module reaches, through its own relative imports. */
-function packageImports(entry) {
+/**
+ * Every import outside the package that a built module reaches, through its own relative imports.
+ * With `loading: true`, only what loading the module needs: dynamic `import()`s are not followed.
+ */
+function packageImports(entry, { loading = false } = {}) {
   const outside = new Set()
   const seen = new Set()
   const visit = (file) => {
     if (seen.has(file)) return
     seen.add(file)
     const text = readFileSync(file, 'utf8')
-    for (const [, specifier] of text.matchAll(/(?:\bfrom|\bimport\(?)\s*['"]([^'"]+)['"]/g)) {
+    const pattern = loading
+      ? /(?:\bfrom|\bimport)\s*['"]([^'"]+)['"]/g
+      : /(?:\bfrom|\bimport\(?)\s*['"]([^'"]+)['"]/g
+    for (const [, specifier] of text.matchAll(pattern)) {
       if (specifier.startsWith('.')) visit(join(dirname(file), specifier))
       else outside.add(specifier)
     }
@@ -176,6 +182,17 @@ function main() {
     if (id === 'functions') {
       for (const outside of packageImports(join(directory, manifest.exports['./policy'].import)))
         failures.push(`${manifest.name}/policy: its build imports ${outside}`)
+    }
+
+    // The MCP SDK is an optional peer: only ./mcp may need it to load (an in-app agent, or tests
+    // with testAuth, run without it).
+    if (id === 'agents') {
+      for (const [subpath, target] of Object.entries(manifest.exports)) {
+        if (subpath === './mcp' || typeof target !== 'object') continue
+        for (const outside of packageImports(join(directory, target.import), { loading: true }))
+          if (outside.startsWith('@modelcontextprotocol/'))
+            failures.push(`${manifest.name}${subpath.slice(1)}: loading it imports ${outside}`)
+      }
     }
 
     const specifiers = []

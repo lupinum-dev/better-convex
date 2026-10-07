@@ -8,14 +8,14 @@ import {
 } from 'convex/server'
 import { ConvexError } from 'convex/values'
 
-// Import only through the `./mcp` entry, so the build keeps one server owner in `dist/mcp.mjs`.
-import {
-  handleMcpRequest,
-  type HandleMcpRequestOptions,
-  type McpAccessContext,
-  type McpAccessVerifier,
-  type McpDoorAuth,
-  type McpPrincipal,
+// Only through the `./mcp` entry, so the build keeps one server owner in `dist/mcp.mjs`. Types only:
+// `testAuth` and `mcpClient` must load without the optional MCP SDK; `listMcpCatalog` loads it.
+import type {
+  HandleMcpRequestOptions,
+  McpAccessContext,
+  McpAccessVerifier,
+  McpDoorAuth,
+  McpPrincipal,
 } from './mcp.js'
 
 const protocolVersion = '2026-07-28'
@@ -81,6 +81,7 @@ async function listAll<Principal>(
   method: 'tools/list' | 'resources/list',
   key: 'tools' | 'resources',
 ): Promise<unknown[]> {
+  const { handleMcpRequest } = await import('./mcp.js')
   const items: unknown[] = []
   let cursor: string | undefined
   for (let page = 0; page < maximumPages; page += 1) {
