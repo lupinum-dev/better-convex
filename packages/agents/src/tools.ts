@@ -98,7 +98,12 @@ const maxSeen = 500
 /** A result too large to keep for replay. */
 const truncated = v.object({ truncated: v.literal(true), bytes: v.number() })
 const reserved = new Set(['check_approval', 'housekeeping'])
-const retention = { activity: 90, approvals: 90, runs: 30 }
+/**
+ * Days kept, then deleted by housekeeping: the activity log is the audit record (a year), a
+ * decided request is covered by its activity row, and a finished run's messages were working
+ * memory.
+ */
+const retention = { activity: 365, approvals: 90, runs: 30 }
 const day = 86_400_000
 
 /** What a tool returns while a person decides. */

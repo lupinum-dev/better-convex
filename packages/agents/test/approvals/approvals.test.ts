@@ -593,6 +593,20 @@ test('a declined call is found among more than 20 declines', async () => {
   await expect(ask(121)).rejects.toThrow(/APPROVAL_DECLINED/)
 })
 
+// Without retention the activity log grew forever; it is the audit record, so it stays a year.
+test('housekeeping keeps agent activity for a year, then deletes it', async () => {
+  const s = await setup()
+  await s.t.mutation(api.tools.rename_project, { caller, input: { projectId: s.p[0], name: 'n' } })
+  const activity = () => s.t.run((ctx) => ctx.db.query('activity').collect())
+  expect(await activity()).toHaveLength(1)
+  vi.advanceTimersByTime(364 * 86_400_000)
+  await s.t.mutation(api.tools.housekeeping, {})
+  expect(await activity()).toHaveLength(1)
+  vi.advanceTimersByTime(2 * 86_400_000)
+  await s.t.mutation(api.tools.housekeeping, {})
+  expect(await activity()).toEqual([])
+})
+
 // B1: one connection could make 300 writes a minute; same-row bursts surfaced as "the tool failed".
 test('an agent may make 60 writes a minute, then waits', async () => {
   const { t, p } = await setup()
