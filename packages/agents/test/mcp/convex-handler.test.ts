@@ -675,7 +675,7 @@ describe('Convex-native official MCP handler composition', () => {
 
     expect(response.status).toBe(413)
     expect(response.headers.get('cache-control')).toBe('no-store')
-    await expect(response.text()).resolves.toBe('')
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32600 } })
     expect(factoryCalls).toBe(0)
   })
 
@@ -770,7 +770,11 @@ describe('Convex-native official MCP handler composition', () => {
       await responsePromise
       const response = await pending
       expect(response.headers.get('cache-control')).toBe('no-store')
-      await expect(response.text()).resolves.toBe('')
+      await expect(response.json()).resolves.toEqual({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32600, message: 'The MCP server did not answer in time.' },
+      })
       expect(factoryCalls).toBe(1)
     } finally {
       vi.useRealTimers()

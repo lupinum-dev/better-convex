@@ -40,6 +40,62 @@ describe('MCP transport bounds', () => {
     }
   })
 
+  // Cloud smoke, 2026-10-07: Convex's edge answered 520 instead of 413 when the door answered while
+  // the client still uploaded. A refused upload up to 4 MiB is read to its end first; a larger
+  // one is refused at once, so a client cannot keep the action busy.
+  it.each([
+    {
+      row: 'declared, 1 MiB',
+      declared: true,
+      bytes: 1024 * 1024,
+      read: 1024 * 1024,
+      cancelled: false,
+    },
+    {
+      row: 'streamed, 1 MiB',
+      declared: false,
+      bytes: 1024 * 1024,
+      read: 1024 * 1024,
+      cancelled: false,
+    },
+    { row: 'declared, 5 MiB', declared: true, bytes: 5 * 1024 * 1024, read: 0, cancelled: false },
+    {
+      row: 'streamed, 5 MiB',
+      declared: false,
+      bytes: 5 * 1024 * 1024,
+      // 64 KiB to find the overflow, then 4 MiB and one chunk more while it discards.
+      read: 4 * 1024 * 1024 + 3 * 64 * 1024,
+      cancelled: true,
+    },
+  ])('reads a refused upload to its end only up to 4 MiB: $row', async (row) => {
+    const chunk = new Uint8Array(64 * 1024)
+    let read = 0
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (read >= row.bytes) return controller.close()
+          read += chunk.byteLength
+          controller.enqueue(chunk)
+        },
+        cancel() {
+          cancelled = true
+        },
+      },
+      { highWaterMark: 0 },
+    )
+    const request = new Request('https://notes.example.test/mcp', {
+      body,
+      duplex: 'half',
+      headers: row.declared ? { 'content-length': String(row.bytes) } : {},
+      method: 'POST',
+    } as RequestInit & { duplex: 'half' })
+    await expect(
+      prepareBoundedMcpRequest(request, new AbortController().signal),
+    ).rejects.toMatchObject({ status: 413 })
+    expect({ read, cancelled }).toEqual({ read: row.read, cancelled: row.cancelled })
+  })
+
   it.each(['-1', '1.5', 'not-a-number'])(
     'rejects invalid declared request length: %s',
     async (length) => {
@@ -159,12 +215,17 @@ describe('MCP transport bounds', () => {
     expect(cancelled).toBe(true)
   })
 
-  it('returns empty no-store transport failures without retaining causes', async () => {
+  // Cloud smoke, 2026-10-07: Convex's edge replaced an empty 413 with a 520.
+  it('returns short no-store JSON-RPC transport failures without retaining causes', async () => {
     const error = new McpTransportFailure(413)
     const response = mcpTransportFailureResponse(error)
     expect(response.status).toBe(413)
     expect(response.headers.get('cache-control')).toBe('no-store')
-    await expect(response.text()).resolves.toBe('')
+    await expect(response.json()).resolves.toEqual({
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32600, message: 'The request body is larger than 64 KiB.' },
+    })
     expect(JSON.stringify(error)).not.toContain('cause')
   })
 })

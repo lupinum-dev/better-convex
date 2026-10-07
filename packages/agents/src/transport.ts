@@ -1,6 +1,13 @@
 export const maximumMcpRequestBytes = 64 * 1024
 const maximumMcpResponseBytes = 1024 * 1024
 const mcpRequestTimeoutMs = 30_000
+/**
+ * A refused upload up to this size is read to its end before the 413 goes out. Convex's edge
+ * answers 520 instead of the 413 when the action answers while the client still uploads, or with
+ * an empty body (cloud smoke, 2026-10-07). Larger uploads are refused at once: reading them would
+ * let a client keep the action busy.
+ */
+const maximumMcpRefusedUploadBytes = 4 * 1024 * 1024
 
 export class McpTransportFailure extends Error {
   readonly status: 400 | 413 | 502 | 504
@@ -20,7 +27,12 @@ export async function prepareBoundedMcpRequest(
   if (declaredLength !== null) {
     const bytes = Number(declaredLength)
     if (!Number.isSafeInteger(bytes) || bytes < 0) throw new McpTransportFailure(400)
-    if (bytes > maximumMcpRequestBytes) throw new McpTransportFailure(413)
+    if (bytes > maximumMcpRequestBytes) {
+      if (request.body !== null && bytes <= maximumMcpRefusedUploadBytes) {
+        await discard(request.body.getReader(), signal)
+      }
+      throw new McpTransportFailure(413)
+    }
   }
   const headers = allowlistedMcpHeaders(request.headers)
   if (request.body === null) {
@@ -100,11 +112,40 @@ export async function runMcpRequestDeadline(
   }
 }
 
+const transportFailureMessages = {
+  400: 'The request is not valid.',
+  413: `The request body is larger than ${maximumMcpRequestBytes / 1024} KiB.`,
+  502: 'The MCP server gave an answer that cannot be sent.',
+  504: 'The MCP server did not answer in time.',
+} as const
+
+/** A JSON-RPC error with a short body: Convex's edge replaces an empty error response with a 520. */
 export function mcpTransportFailureResponse(error: McpTransportFailure): Response {
-  return new Response(null, {
-    headers: { 'cache-control': 'no-store' },
-    status: error.status,
-  })
+  return Response.json(
+    {
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32600, message: transportFailureMessages[error.status] },
+    },
+    { headers: { 'cache-control': 'no-store' }, status: error.status },
+  )
+}
+
+/** Reads a refused upload to its end, up to `maximumMcpRefusedUploadBytes`, and drops it. */
+async function discard(reader: ReadableStreamDefaultReader<Uint8Array>, signal?: AbortSignal) {
+  const cancel = () => void reader.cancel(signal?.reason).catch(() => undefined)
+  signal?.addEventListener('abort', cancel, { once: true })
+  try {
+    let total = 0
+    while (total <= maximumMcpRefusedUploadBytes && !signal?.aborted) {
+      const { done, value } = await reader.read()
+      if (done) return
+      total += value.byteLength
+    }
+    await reader.cancel().catch(() => undefined)
+  } finally {
+    signal?.removeEventListener('abort', cancel)
+  }
 }
 
 async function readBoundedBody(
@@ -126,7 +167,8 @@ async function readBoundedBody(
       if (done) break
       total += value.byteLength
       if (total > maximumBytes) {
-        await reader.cancel()
+        if (failureStatus === 413) await discard(reader, signal)
+        else await reader.cancel()
         throw new McpTransportFailure(failureStatus)
       }
       chunks.push(value)
