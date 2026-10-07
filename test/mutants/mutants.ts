@@ -40,6 +40,8 @@ export interface Equivalent {
 const F = 'packages/functions/test'
 const A = 'packages/agents/test'
 const fuzz = `${F}/query-fuzz.test.ts > a random query chain hands out exactly the raw rows, or fails on a foreign one`
+const starter = 'starters/mcp-oauth-agent/convex'
+const leaks = `${starter}/leaks.test.ts > no call reaches another organization’s project`
 const inApp = `${A}/approvals/approvals.test.ts > an in-app agent step acts only on a live grant, in the current turn of a running run`
 
 export const mutants: Mutant[] = [
@@ -940,6 +942,84 @@ export const mutants: Mutant[] = [
       `${A}/mcp/convex-handler.test.ts > Convex-native official MCP handler composition > rejects foreign issuers and never accepts a bearer from query or body`,
     ],
     projects: ['agents'],
+  },
+  // The starter's own configuration: each break keeps every package test green and must fail a
+  // starter test (B4 in internal/functions-and-agents/testing-strategy.md).
+  {
+    id: 'starter-projects-unchecked',
+    guards: 'S3',
+    file: 'starters/mcp-oauth-agent/convex/functions.ts',
+    find: "projects: tenant('organizationId'),",
+    replace: "projects: { kind: 'unchecked' as const, reason: 'mutant' },",
+    kills: [
+      `${leaks} > a stranger: rename fails with NOT_FOUND`,
+      `${leaks} > a stranger: archive_project fails with NOT_FOUND`,
+      `${leaks} > a viewer: rename fails with FORBIDDEN`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'starter-roleOf-owner',
+    guards: 'S3',
+    file: 'starters/mcp-oauth-agent/convex/functions.ts',
+    find: "if (tenant.table !== 'organizations') return null",
+    replace: "return 'owner'",
+    kills: [
+      `${leaks} > a stranger: search fails with NOT_FOUND`,
+      `${leaks} > a stranger: archive_project fails with NOT_FOUND`,
+      `${leaks} > a viewer: create fails with FORBIDDEN`,
+      `${starter}/agents.test.ts > a member who approves gets APPROVAL_NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'starter-roleOf-status',
+    guards: 'S3',
+    file: 'starters/mcp-oauth-agent/convex/functions.ts',
+    find: "return membership?.status === 'active' ? membership.role : null",
+    replace: 'return membership?.role ?? null',
+    kills: [
+      `${leaks} > a former member: search fails with NOT_FOUND`,
+      `${leaks} > a former member: archive_project fails with NOT_FOUND`,
+      `${starter}/agents.test.ts > a former admin who approves gets APPROVAL_NOT_FOUND`,
+      `${starter}/authorization.test.ts > MCP starter authorization > denies the next call after the membership is removed`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'starter-archive-approval',
+    guards: 'S10',
+    file: 'starters/mcp-oauth-agent/convex/policy.ts',
+    find: "agents: { 'projects.archive': 'approve' },",
+    replace: 'agents: {},',
+    kills: [
+      `${starter}/agents.test.ts > gives agents these tools, with these scopes and approvals`,
+      `${starter}/authorization.test.ts > MCP starter authorization > runs a tool for a live grant and a current membership; archiving waits for a person`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'starter-approvers-widened',
+    guards: 'S18',
+    file: 'starters/mcp-oauth-agent/convex/policy.ts',
+    find: "approvers: { 'projects.archive': ['owner', 'admin'] },",
+    replace: "approvers: { 'projects.archive': ['owner', 'admin', 'member', 'viewer'] },",
+    kills: [
+      `${starter}/agents.test.ts > a member who approves gets APPROVAL_NOT_FOUND`,
+      `${starter}/agents.test.ts > a viewer who approves gets APPROVAL_NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'starter-read-scope-archive',
+    guards: 'S9',
+    file: 'starters/mcp-oauth-agent/convex/policy.ts',
+    find: "actions: ['organizations.list', 'projects.search'],",
+    replace: "actions: ['organizations.list', 'projects.search', 'projects.archive'],",
+    kills: [
+      `${starter}/agents.test.ts > gives agents these tools, with these scopes and approvals`,
+    ],
+    projects: ['mcp'],
   },
 ]
 
