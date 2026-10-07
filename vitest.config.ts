@@ -33,6 +33,9 @@ const agentsSourceAliases = {
   '@lupinum/better-convex-functions/internal': fileURLToPath(
     new URL('./packages/functions/src/internal.ts', import.meta.url),
   ),
+  '@lupinum/better-convex-functions/policy': fileURLToPath(
+    new URL('./packages/functions/src/policy-entry.ts', import.meta.url),
+  ),
   '@lupinum/better-convex-functions/test': fileURLToPath(
     new URL('./packages/functions/src/test.ts', import.meta.url),
   ),
