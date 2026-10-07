@@ -180,6 +180,36 @@ describe('auth component limits', () => {
     )
   })
 
+  // Release review 2: the session lookup read only the first 100, so after many expired sessions
+  // each helper made its own, and a sign-out on the web left MCP access standing.
+  it('shares one live session after more than 100 expired ones', async () => {
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.example.test')
+    const test = init()
+    await signInAs(test, 'alice', { componentName: 'limits' })
+    const past = Date.now() - 1000
+    for (let i = 0; i < 101; i++) {
+      await test.mutation(adapter.create, {
+        model: 'session',
+        data: {
+          id: `old-${i}`,
+          userId: 'alice',
+          token: `old-${i}-token`,
+          createdAt: past,
+          updatedAt: past,
+          expiresAt: past,
+        },
+      })
+    }
+    await test.mutation(adapter.deleteOne, {
+      model: 'session',
+      where: [{ field: 'id', value: 'alice-session' }],
+    })
+    const web = await signInAs(test, 'alice', { componentName: 'limits' })
+    const mcp = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    expect((await web.query((ctx) => ctx.auth.getUserIdentity()))?.sid).toBe(mcp.sessionId)
+  })
+
   // Release review: after a revoke, grantMcp made the consent again with the same ID, so a
   // principal from before the revoke was admitted again, unlike a real reconnect.
   it('keeps a principal from before a revoke refused after grantMcp connects again', async () => {

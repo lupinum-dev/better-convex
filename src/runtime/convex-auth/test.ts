@@ -171,14 +171,24 @@ async function ensureSession(
   if (!own || own.expiresAt <= now) {
     // After a revocation the helpers sign in again with a fresh ID; the other helper must then
     // reuse that session instead of making its own, so one sign-out ends both (Codex round 4).
-    const { page } = (await test.query(adapter.findMany, {
-      model: 'session',
-      where: [{ field: 'userId', value: subject }],
-      paginationOpts: { cursor: null, numItems: 100 },
-    })) as { page: { id: string; expiresAt: number; createdAt: number }[] }
-    const current = page
-      .filter((session) => session.expiresAt > now)
-      .sort((a, b) => b.createdAt - a.createdAt)[0]
+    // Every page: expired sessions pile up in long tests (release review: 101 of them).
+    let current: { id: string; createdAt: number } | undefined
+    for (let cursor: string | null = null, done = false; !done; ) {
+      const result = (await test.query(adapter.findMany, {
+        model: 'session',
+        where: [{ field: 'userId', value: subject }],
+        paginationOpts: { cursor, numItems: 100 },
+      })) as {
+        page: { id: string; expiresAt: number; createdAt: number }[]
+        continueCursor: string
+        isDone: boolean
+      }
+      for (const session of result.page)
+        if (session.expiresAt > now && (!current || session.createdAt > current.createdAt))
+          current = session
+      cursor = result.continueCursor
+      done = result.isDone
+    }
     if (current) return current.id
     if (existingUser || own) sessionId = `${subject}-session-${crypto.randomUUID()}`
     await test.mutation(adapter.create, {
