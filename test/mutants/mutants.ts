@@ -39,6 +39,7 @@ export interface Equivalent {
 
 const F = 'packages/functions/test'
 const A = 'packages/agents/test'
+const fuzz = `${F}/query-fuzz.test.ts > a random query chain hands out exactly the raw rows, or fails on a foreign one`
 const inApp = `${A}/approvals/approvals.test.ts > an in-app agent step acts only on a live grant, in the current turn of a running run`
 
 export const mutants: Mutant[] = [
@@ -144,6 +145,41 @@ export const mutants: Mutant[] = [
     find: "await assertWritable(table, next, 'write')\n      await assertParent(table, row, next)\n      wrote(id)\n      return (raw.patch",
     replace: 'await assertParent(table, row, next)\n      wrote(id)\n      return (raw.patch',
     kills: [`${F}/rules.test.ts > writes check the row tenant and the role there`],
+  },
+  // T4: the seeded fuzz runs random chains and compares them with the same chain on the raw db.
+  // Only the fuzz sees the unique() drift.
+  {
+    id: 'S3-fuzz-checks-wrong-rows',
+    guards: 'S3',
+    file: 'packages/functions/src/rules.ts',
+    find: 'for (const row of rows) await check(row)',
+    replace: 'for (const row of rows.slice(1)) await check(row)',
+    kills: [
+      fuzz,
+      `${F}/rules.test.ts > reading a query with take checks the rows`,
+      `${F}/rules.test.ts > reading a query with unique checks the rows`,
+      `${F}/rules.test.ts > reading a query with paginate checks the rows`,
+    ],
+  },
+  {
+    id: 'S3-fuzz-unique-drift',
+    guards: 'S3',
+    file: 'packages/functions/src/rules.ts',
+    find: 'if (rows.length > 1)',
+    replace: 'if (rows.length > 2)',
+    kills: [fuzz],
+  },
+  {
+    id: 'S3-fuzz-order-drift',
+    guards: 'S3',
+    file: 'packages/functions/src/rules.ts',
+    find: 'guardQuery(query[name](...args), check)',
+    replace: "guardQuery(name === 'order' ? query : query[name](...args), check)",
+    kills: [
+      fuzz,
+      `${F}/rules.test.ts > reading a query with first checks the rows`,
+      `${F}/rules.test.ts > reading a query with next checks the rows`,
+    ],
   },
   {
     id: 'S4-unknown-method',
