@@ -558,6 +558,17 @@ export const mutants: Mutant[] = [
     projects: ['agents'],
   },
   {
+    id: 'S11-renew-wake',
+    guards: 'S11',
+    file: 'packages/agents/src/tools.ts',
+    find: '(renewed ? renewed.expiresAt : Date.now()) + 1000',
+    replace: '(renewed ? renewed.expiresAt : Date.now()) + 3_600_000',
+    kills: [
+      `${A}/approvals/approvals.test.ts > an in-app run that waits on a request waits on the new one after STALE`,
+    ],
+    projects: ['agents'],
+  },
+  {
     id: 'S11-renew-turn',
     guards: 'S11',
     file: 'packages/agents/src/tools.ts',

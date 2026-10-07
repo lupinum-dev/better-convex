@@ -37,6 +37,7 @@ import {
 import {
   internalMutationGeneric,
   internalQueryGeneric,
+  makeFunctionReference,
   mutationGeneric,
   queryGeneric,
   type FunctionReference,
@@ -777,10 +778,19 @@ export function defineTools(
       if (row.caller.door === 'app') {
         const runId = lib(ctx).normalizeId('agentRuns', row.caller.runId)
         const run = runId && (await lib(ctx).get(runId))
-        if (run?.status === 'waiting' && run.approvalIds?.includes(row._id))
+        if (run?.status === 'waiting' && run.approvalIds?.includes(row._id)) {
           await lib(ctx).patch(run._id, {
             approvalIds: run.approvalIds.map((id) => (id === row._id ? again.approvalId : id)),
           })
+          // Wakes it when the new request expires, as `wait` did for the old one (release review 6).
+          const renewedId = lib(ctx).normalizeId('approvals', again.approvalId)
+          const renewed = renewedId && (await lib(ctx).get(renewedId))
+          await ctx.scheduler.runAt(
+            (renewed ? renewed.expiresAt : Date.now()) + 1000,
+            makeFunctionReference<'action'>(run.step),
+            { runId: run._id, turn: run.turn },
+          )
+        }
       }
       return again.approvalId
     } catch {

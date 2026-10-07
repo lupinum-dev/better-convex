@@ -300,6 +300,16 @@ test('an in-app run that waits on a request waits on the new one after STALE', a
     status: 'waiting',
     approvalIds: [next],
   })
+  // Release review 6: it is woken when the new request expires, not at the next housekeeping.
+  const { expiresAt } = (await s.t.run((ctx) => ctx.db.get(next as never)))! as {
+    expiresAt: number
+  }
+  const wakes = await s.t.run(async (ctx) =>
+    (await ctx.db.system.query('_scheduled_functions').collect())
+      .filter((job) => job.name.startsWith('agent:step'))
+      .map((job) => job.scheduledTime),
+  )
+  expect(wakes).toContain(expiresAt + 1000)
 })
 
 // A row of the plan changed: the person decides again on what is true now, also when the agent

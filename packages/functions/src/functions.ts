@@ -167,21 +167,21 @@ function shown<T extends object>(actor: T): T {
 
 /** File storage whose `delete` reaches only these files: work under an approval deletes the plan's files. */
 function deleting<S extends object>(storage: S, files: Set<string>): S {
-  return new Proxy(storage, {
-    get(target, prop) {
-      if (prop === 'delete')
-        return async (id: string) => {
-          if (!files.has(id))
-            fail(
-              'FORBIDDEN',
-              'This work deletes a file that is not in the plan the person approved.',
-            )
-          return (target as { delete: (id: string) => Promise<void> }).delete(id)
-        }
-      const value = (target as Record<PropertyKey, unknown>)[prop]
-      return typeof value === 'function' ? value.bind(target) : value
+  // A new object, not a view of the writer: nothing on it reaches the raw `delete` (release review 6).
+  const raw = storage as Record<string, unknown>
+  const kept = Object.fromEntries(
+    ['getUrl', 'getMetadata', 'generateUploadUrl', 'get', 'store']
+      .filter((name) => typeof raw[name] === 'function')
+      .map((name) => [name, (raw[name] as (...a: unknown[]) => unknown).bind(storage)]),
+  )
+  return {
+    ...kept,
+    delete: async (id: string) => {
+      if (!files.has(id))
+        fail('FORBIDDEN', 'This work deletes a file that is not in the plan the person approved.')
+      return (raw.delete as (id: string) => Promise<void>).call(storage, id)
     },
-  })
+  } as unknown as S
 }
 
 /** How long work scheduled by an approved request still runs under that approval. */
