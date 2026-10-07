@@ -19,7 +19,7 @@ const caller = {
     grantId: 'g',
     issuer: 'i',
     resource: 'r',
-    expiresAt: 0,
+    expiresAt: 4_102_444_800, // 2100: these tests are not about token expiry
   },
 }
 

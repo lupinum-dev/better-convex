@@ -137,7 +137,7 @@ const testSite = 'https://some.convex.site'
  * is `t.withIdentity({ subject: authId })`. A bearer token `<authId>:<scope>,<scope>` is a
  * connection of that user on the host `host`; everything after the token check is the real
  * door and tools. Like the real component, the connection is checked on every agent call, so
- * `revoke` ends it at the next call.
+ * `revoke` ends it at the next call, and an access token past its `expiresAt` is refused.
  *
  * Create it in the module that calls `defineFunctions`, with the app's data model, and call
  * `reset()` when each test starts, since modules outlive it.
@@ -149,8 +149,9 @@ export function testAuth<DM extends GenericDataModel>() {
       const identity = await ctx.auth.getUserIdentity()
       return identity ? { id: identity.subject } : null
     },
-    requireMcpPrincipal: async (_ctx, principal) => {
-      if (revoked.has(`${principal.userId}:${principal.clientId}`))
+    requireMcpPrincipal: async (_ctx, principal, options) => {
+      const expired = !options?.allowExpiredToken && principal.expiresAt * 1000 <= Date.now()
+      if (expired || revoked.has(`${principal.userId}:${principal.clientId}`))
         throw new ConvexError({ code: 'MCP_ACCESS_DENIED', message: 'MCP access denied' })
       return { user: { id: principal.userId } }
     },

@@ -518,6 +518,27 @@ describe('requireMcpPrincipal', () => {
     })
   })
 
+  it('with allowExpiredToken, accepts an expired token of a live grant and still denies a revoked one', async () => {
+    const { test } = await initGrant()
+    const expired = principal({ expiresAt: Math.floor(Date.now() / 1_000) - 1 })
+    await test.query(async (ctx) => {
+      await expect(
+        auth.requireMcpPrincipal(asCtx(ctx), expired, { allowExpiredToken: true }),
+      ).resolves.toMatchObject({ user: { id: 'alice' } })
+    })
+    await test.mutation(async (ctx) => {
+      await createOAuthConnections(component).revoke(ctx, {
+        clientId: 'oauth-client',
+        userId: 'alice',
+      })
+    })
+    await test.query(async (ctx) => {
+      await expect(
+        denial(auth.requireMcpPrincipal(asCtx(ctx), expired, { allowExpiredToken: true })),
+      ).resolves.toEqual({ code: 'MCP_ACCESS_DENIED', message: 'MCP access denied' })
+    })
+  })
+
   it('denies a revoked connection and a disabled client', async () => {
     const { test } = await initGrant()
     const operator = createOAuthOperator({

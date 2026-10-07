@@ -372,7 +372,11 @@ export interface BetterConvexAuth<
   readonly requireMcpPrincipal: (
     ctx: AuthCtx<DataModel>,
     principal: BetterConvexMcpPrincipal,
-    options?: { readonly scope?: string },
+    options?: {
+      readonly scope?: string
+      /** Skip only the access token's expiry, for work a person approved later; the grant must be live. */
+      readonly allowExpiredToken?: boolean
+    },
   ) => Promise<{
     readonly user: BetterConvexAuthUser
     readonly principal: BetterConvexMcpPrincipal
@@ -1243,10 +1247,11 @@ export function createBetterConvexAuthOwned<
     requireMcpPrincipal: (
       ctx: AuthCtx<DataModel>,
       principal: BetterConvexMcpPrincipal,
-      principalOptions: { readonly scope?: string } = {},
+      principalOptions: { readonly scope?: string; readonly allowExpiredToken?: boolean } = {},
     ) =>
       requireMcpPrincipal(ctx, component, principal, {
         ...(principalOptions.scope === undefined ? {} : { scope: principalOptions.scope }),
+        ...(principalOptions.allowExpiredToken === true ? { allowExpiredToken: true } : {}),
         ...(mcpProfile ? { resource: () => resolveMcpResource(mcpProfile) } : {}),
       }),
     oauthConnections: createOAuthConnections<DataModel>(component),

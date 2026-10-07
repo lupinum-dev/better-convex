@@ -430,6 +430,21 @@ test('work refuses an approval that is not executing right now', async () => {
   expect(await s.t.run((ctx) => ctx.db.get(noteId))).toMatchObject({ text: 'v1' })
 })
 
+// Round 1 review: approving replayed the request's 10-minute access token, so a later approval failed.
+test('a person may approve after the access token that asked has expired', async () => {
+  const s = await setup()
+  const tenMinutes = { ...caller.principal, expiresAt: Math.floor(Date.now() / 1000) + 600 }
+  const asked = await s.t.mutation(api.tools.archive_project, {
+    caller: { door: 'mcp', principal: tenMinutes },
+    input: { projectId: s.p[0] },
+  })
+  vi.advanceTimersByTime(11 * 60_000)
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+    status: 'approved',
+  })
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'archived' })
+})
+
 // V14: the in-app door checked the run, not the grant; a revoked grant must stop a running run's tools.
 test('revoking an in-app agent stops its tools, even while its run runs', async () => {
   const s = await setup()

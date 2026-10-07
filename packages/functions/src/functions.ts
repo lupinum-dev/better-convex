@@ -59,9 +59,14 @@ export type LibraryDataModel = DataModelFromSchemaDefinition<
 /** The parts of the auth component the library uses. */
 export interface Auth<DM extends GenericDataModel> {
   getUser(ctx: GenericQueryCtx<DM>): Promise<{ id: string } | null>
+  /**
+   * `allowExpiredToken`: work a person approved runs after the access token
+   * that asked for it may have expired; the grant must still be live.
+   */
   requireMcpPrincipal(
     ctx: GenericQueryCtx<DM>,
     principal: Extract<AgentCaller, { door: 'mcp' }>['principal'],
+    options?: { allowExpiredToken?: boolean },
   ): Promise<{ user: { id: string } }>
 }
 
@@ -208,8 +213,14 @@ export function defineFunctions<
         caller,
       }
     }
+    // Work a person approved may run up to 30 minutes after the request, past the
+    // access token's 10 minutes; the grant behind it must still be live.
     const { user: authUser } = await auth
-      .requireMcpPrincipal(ctx, caller.principal)
+      .requireMcpPrincipal(
+        ctx,
+        caller.principal,
+        options.approved ? { allowExpiredToken: true } : {},
+      )
       .catch((error: unknown) => {
         // The auth component's answer for a revoked or expired grant: agents meet one code at both doors.
         if (failureOf(error)?.code === 'MCP_ACCESS_DENIED')

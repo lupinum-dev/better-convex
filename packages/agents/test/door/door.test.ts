@@ -222,7 +222,7 @@ test('a tool whose function does not exist fails with a hint in the log', async 
       grantId: 'g',
       issuer: 'i',
       resource: 'r',
-      expiresAt: 0,
+      expiresAt: 4_102_444_800, // 2100: these tests are not about token expiry
     },
   }
   const failure = await t
@@ -292,7 +292,7 @@ test('asking for approval without SITE_URL fails and names the variable', async 
       grantId: 'g',
       issuer: 'i',
       resource: 'r',
-      expiresAt: 0,
+      expiresAt: 4_102_444_800, // 2100: these tests are not about token expiry
     },
   }
   vi.stubEnv('SITE_URL', '')
