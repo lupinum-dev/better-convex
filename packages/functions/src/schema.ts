@@ -48,7 +48,9 @@ export const libraryTables = {
     requestId: v.optional(v.string()),
     /** SHA-256 of the tool and input, so a declined call is found however many declines there are. */
     callHash: v.optional(v.string()),
-    /** Fingerprints of the rows the summary read; approving fails when one changed. */
+    /** What the person approves: the plan as it was when the agent asked (summary, rows, values). */
+    plan: v.optional(v.any()),
+    /** Fingerprints of the plan's rows and the rows the input names; approving fails when one changed. */
     seen: v.optional(v.array(v.object({ id: v.string(), hash: v.string() }))),
     status: v.union(
       v.literal('pending'),
@@ -88,6 +90,12 @@ export const libraryTables = {
   })
     .index('by_tenant', ['tenantId', 'expiresAt'])
     .index('by_approval', ['approvalId']),
+
+  /** A row that approved work created: that work and its follow-ups may change it, besides the plan's rows. */
+  approvalRows: defineTable({ approvalId: v.id('approvals'), rowId: v.string() }).index(
+    'by_approval_row',
+    ['approvalId', 'rowId'],
+  ),
 
   /** A person turned on one of the app's own agents. It acts for them until it expires or they turn it off. */
   agentGrants: defineTable({

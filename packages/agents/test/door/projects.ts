@@ -25,8 +25,9 @@ export const archive = mutation({
   returns: v.object({ id: v.id('projects'), status: v.literal('archived') }),
   tool: { name: 'archive_project', description: 'Archive a project.' },
   // The same summary as convex/projects.ts.
-  approval: async (ctx, { projectId }) =>
-    `Archive the project "${(await ctx.db.get(projectId))?.name ?? 'unknown'}".`,
+  plan: async (ctx, { projectId }) => ({
+    summary: `Archive the project "${(await ctx.db.get(projectId))?.name ?? 'unknown'}".`,
+  }),
   handler: async (ctx, { projectId }) => {
     await ctx.db.patch(projectId, { status: 'archived' })
     return { id: projectId, status: 'archived' as const }

@@ -300,3 +300,15 @@ export function checkInput(
     }
   }
 }
+
+/** A deep copy that throws when changed: what the library hands app code and relies on later. */
+export function frozen<T>(value: T): T {
+  const freeze = (item: unknown): unknown => {
+    if (item && typeof item === 'object' && !Object.isFrozen(item)) {
+      Object.freeze(item)
+      for (const child of Object.values(item)) freeze(child)
+    }
+    return item
+  }
+  return freeze(structuredClone(value)) as T
+}

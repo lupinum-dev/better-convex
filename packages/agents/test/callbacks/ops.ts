@@ -69,9 +69,9 @@ export const probeAsk = mutation({
   args: { orgId, checkedId },
   returns: v.null(),
   tool: { name: 'probe_ask', description: 'Record what the summary and the handler get.' },
-  approval: (ctx) => {
+  plan: (ctx) => {
     seen.set('approval summary', snapshot(ctx))
-    return 'Probe.'
+    return { summary: 'Probe.' }
   },
   handler: async (ctx, input) => {
     seen.set('mutation', snapshot(ctx))

@@ -5,15 +5,23 @@
  * helpers. Not an application API and not under semver: it changes with the
  * agents package, in any release.
  */
-export { internalsOf, type LibraryDataModel, type Operation, type ToolSpec } from './functions'
+export {
+  internalsOf,
+  planOf,
+  type LibraryDataModel,
+  type Operation,
+  type Plan,
+  type ToolSpec,
+} from './functions'
 export { guarded, OPERATION } from './guard'
-export { guardQuery, readOnly } from './rules'
+export { readOnly } from './rules'
 export { actorRecord, agentCallerValidator, failureOf, type AgentCaller } from './actor'
 export { approversFor, scopesFor } from './policy'
 export {
   callKey,
   checkInput,
   fingerprint,
+  frozen,
   idsIn,
   inertMarkdown,
   jsonOf,

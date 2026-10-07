@@ -33,20 +33,21 @@ test('a tool call with a request_id, and its retry', async () => {
 test('a tool call that asks a person', async () => {
   const { t, pa, caller } = await connected()
   const ask = () => t.mutation(fn('agents:archive_project'), { caller, input: { projectId: pa } })
-  // The live grant (6), user, project (for its tenant) and membership; the summary and the
-  // request's fingerprint read the project from the cache. Writes: rate-limit window, request.
-  expect(await countDocuments(ask)).toEqual({ reads: 9, writes: 2 })
+  // The live grant (6), user, project (for its tenant) and membership; the plan reads the project
+  // from the cache, its fingerprint reads it once more from the database. Writes: rate-limit
+  // window, request.
+  expect(await countDocuments(ask)).toEqual({ reads: 10, writes: 2 })
 })
 
 test('approving a request', async () => {
   const { t, ann, pa, caller } = await connected()
   const asked = await t.mutation(fn('agents:archive_project'), { caller, input: { projectId: pa } })
   // The approver's session (2) and user, and the request; the stale check; the agent's live grant (6),
-  // user, project and membership; the patches' own reads. Writes: request executing, project,
-  // activity row, request approved.
+  // user, the request again for the plan's rows, project and membership; the patches' own reads.
+  // Writes: request executing, project, activity row, request approved.
   expect(
     await countDocuments(() =>
       ann.mutation(fn('agents:approve'), { approvalId: asked.approvalId }),
     ),
-  ).toEqual({ reads: 18, writes: 4 })
+  ).toEqual({ reads: 19, writes: 4 })
 })

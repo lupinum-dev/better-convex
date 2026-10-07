@@ -112,8 +112,9 @@ export const archive = mutation({
   args: { projectId: v.id('projects') },
   returns: v.object({ id: v.id('projects'), status: v.literal('archived') }),
   tool: { name: 'archive_project', description: 'Archive a project. The app can restore it.' },
-  approval: async (ctx, { projectId }) =>
-    `Archive the project "${(await ctx.db.get(projectId))?.name ?? 'unknown'}".`,
+  plan: async (ctx, { projectId }) => ({
+    summary: `Archive the project "${(await ctx.db.get(projectId))?.name ?? 'unknown'}".`,
+  }),
   // The library finds the project's organization through the `projects` row rule.
   handler: async (ctx, { projectId }) => {
     const found = await ctx.db.get(projectId)

@@ -62,10 +62,12 @@ export const acknowledge = mutation({
     description:
       'Acknowledge findings of one site: they stay listed until a crawl sees them fixed.',
   },
-  approval: async (ctx, { findingIds }) => {
+  plan: async (ctx, { findingIds }) => {
     const first = findingIds[0] && (await ctx.db.get(findingIds[0]))
     const project = first && (await ctx.db.get(first.projectId))
-    return `Acknowledge ${findingIds.length} finding${findingIds.length === 1 ? '' : 's'} on ${project?.name ?? 'a site'}.`
+    return {
+      summary: `Acknowledge ${findingIds.length} finding${findingIds.length === 1 ? '' : 's'} on ${project?.name ?? 'a site'}.`,
+    }
   },
   handler: async (ctx, { findingIds }) => {
     if (findingIds.length > acknowledgeCap)

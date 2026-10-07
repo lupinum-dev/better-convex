@@ -92,11 +92,13 @@ export const cancel = mutation({
     description: 'Cancel an order you placed, before it ships.',
     args: { orgId: 'Your organization, the buyer.' },
   },
-  approval: async (ctx, { orderId }) => {
+  plan: async (ctx, { orderId }) => {
     const row = await ctx.db.get(orderId)
-    return row
-      ? `Cancel the order of ${row.quantity} × "${row.item}".`
-      : 'Cancel an order that no longer exists.'
+    return {
+      summary: row
+        ? `Cancel the order of ${row.quantity} × "${row.item}".`
+        : 'Cancel an order that no longer exists.',
+    }
   },
   handler: async (ctx, { orderId }) => {
     const row = await ctx.db.get(orderId)

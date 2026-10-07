@@ -38,8 +38,9 @@ export const triggerCheck = mutation({
     description:
       'Start a check of one site. A check costs money, so a person approves it first. Use list_site_checks for the result.',
   },
-  approval: async (ctx, { siteId }) =>
-    `Run a paid check of the site "${(await ctx.db.get(siteId))?.name ?? 'unknown'}".`,
+  plan: async (ctx, { siteId }) => ({
+    summary: `Run a paid check of the site "${(await ctx.db.get(siteId))?.name ?? 'unknown'}".`,
+  }),
   handler: async (ctx, { siteId }) => {
     const site = await ctx.db.get(siteId)
     if (!site) fail('NOT_FOUND', 'No site with this ID.')

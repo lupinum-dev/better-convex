@@ -108,10 +108,10 @@ test.concurrent('the app type-checks and emits declarations', { timeout: 60_000 
   expect(await typeErrors('baseline', [])).toEqual([])
 })
 
-// The summary runs before the request is stored and fingerprints what it reads: a write, a nested
-// call or a scheduled function in it would act before a person approved anything.
+// The plan runs before the request is stored: a write, a nested call or a scheduled function in it
+// would act before a person approved anything.
 test.concurrent(
-  'an approval summary cannot write, call or schedule functions',
+  'a plan cannot write, call or schedule functions',
   { timeout: 60_000 },
   async () => {
     const errors = await typeErrors('summary', [
@@ -122,15 +122,15 @@ test.concurrent(
       ],
       [
         'projects.ts',
-        '  approval: async (ctx, { projectId }) =>\n    `Archive the project "${(await ctx.db.get(projectId))?.name ?? \'unknown\'}".`,',
+        '  plan: async (ctx, { projectId }) => ({\n    summary: `Archive the project "${(await ctx.db.get(projectId))?.name ?? \'unknown\'}".`,\n  }),',
         [
-          '  approval: async (ctx, { projectId }) => {',
+          '  plan: async (ctx, { projectId }) => {',
           "    const create = makeFunctionReference<'mutation'>('projects:create')",
           "    await ctx.db.patch(projectId, { status: 'archived' })",
           '    await ctx.runMutation(create, {})',
           '    await ctx.scheduler.runAfter(0, create, {})',
           "    await ctx.runQuery(makeFunctionReference<'query'>('projects:page'), {})",
-          "    return 'Archive it.'",
+          "    return { summary: 'Archive it.' }",
           '  },',
         ].join('\n'),
       ],

@@ -82,10 +82,10 @@ export const editLive = mutation({
   },
   // Runs before the handler, and live pages of every site are readable: refuse here what the handler
   // could never write, so it does not reach a person as a request.
-  approval: async (ctx, { siteId, pageId }) => {
+  plan: async (ctx, { siteId, pageId }) => {
     const current = await ctx.db.get(pageId)
     if (current?.siteId !== siteId) fail('NOT_FOUND', 'No page with this ID.')
-    return `Change the live page "${current.title}".`
+    return { summary: `Change the live page "${current.title}".`, rows: [pageId] }
   },
   handler: async (ctx, { pageId, title, body }) => {
     const current = (await ctx.db.get(pageId)) ?? fail('NOT_FOUND', 'No page with this ID.')

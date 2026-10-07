@@ -181,6 +181,46 @@ export function readOnly<C extends object>(ctx: C): C {
   } as C
 }
 
+/**
+ * The context a plan reads with: `readOnly`, without `runQuery`, and without `paginate`. A plan
+ * runs in the same function as the handler when a person calls, and Convex allows one paginated
+ * query per function; a plan is a fixed list, so `take` fits it.
+ */
+export function planReader<C extends object>(ctx: C): C {
+  const { runQuery: _query, db, ...rest } = readOnly(ctx) as Record<string, any>
+  if (!db) return rest as C
+  const reader = {
+    get: db.get,
+    normalizeId: db.normalizeId,
+    query: (table: string) => unpaged(db.query(table)),
+    get system() {
+      return db.system
+    },
+  }
+  return { ...rest, db: reader } as C
+}
+
+function unpaged(query: any): any {
+  return new Proxy(query, {
+    get(target, prop) {
+      if (prop === 'paginate')
+        return () => {
+          throw new Error(
+            'A plan cannot paginate: it lists the rows a person approves. Read them with take(n).',
+          )
+        }
+      const value = target[prop]
+      if (typeof value !== 'function') return value
+      return (...args: unknown[]) => {
+        const out = value.apply(target, args)
+        return out && typeof out === 'object' && typeof out.collect === 'function'
+          ? unpaged(out)
+          : out
+      }
+    },
+  })
+}
+
 function readerOf(db: GenericDatabaseReader<any>): GenericDatabaseReader<any> {
   return {
     get: db.get.bind(db),
@@ -206,6 +246,12 @@ export interface Call<User> {
   roleOf: (tenant: TenantRef) => Promise<string | null>
   /** Roles and rows already looked up for this call. */
   known?: { roles: Map<string, string | null>; rows: Map<string, Row | null> }
+  /**
+   * Work under a person's approval: `has` says whether it may change an existing row (a row of
+   * the approved plan, or one that work created), `created` records a row it inserts. Without
+   * it, any row the rules allow.
+   */
+  plan?: { has: (id: string) => Promise<boolean>; created: (id: string) => Promise<void> }
   /**
    * Receives two checks for the library's own use: `forget` drops cached roles
    * and rows after writes made outside this db (a nested mutation), and
@@ -311,7 +357,12 @@ export function tenancy(rules: Record<string, Rule>) {
     ),
   )
 
-  return { tenantTables, tenantFieldsOf, rowTenant, chain, refOf, createdBy }
+  /** The app table an ID belongs to, or `undefined`. */
+  function tableOf(db: GenericDatabaseReader<any>, id: string) {
+    return Object.keys(rules).find((table) => db.normalizeId(table, id) !== null)
+  }
+
+  return { tenantTables, tenantFieldsOf, rowTenant, chain, refOf, createdBy, tableOf }
 }
 
 /**
@@ -565,6 +616,12 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
     const row = await load(id)
     if (!row) fail('NOT_FOUND', `No ${table} with this ID.`)
     await assertWritable(table, row, 'write')
+    // A person approved a list of rows: work under that approval changes no other row.
+    if (call.plan && !(await call.plan.has(id)))
+      fail(
+        'FORBIDDEN',
+        `This work changes a ${table} row that is not in the plan the person approved. List it in the plan's rows.`,
+      )
     return { table, id, row, value: args[args.length - 1] as Row }
   }
 
@@ -587,7 +644,10 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
     async insert(table: string, value: Row) {
       await assertWritable(table, value, 'insert')
       wrote()
-      return raw.insert(table, value as never)
+      const id = await raw.insert(table, value as never)
+      // A row this work made is its own to change, also in its follow-ups.
+      await call.plan?.created(String(id))
+      return id
     },
     async patch(...args: unknown[]) {
       const { table, id, row, value } = await existing(args, args.length === 3)
@@ -625,7 +685,7 @@ const chainable = new Set(['fullTableScan', 'withIndex', 'withSearchIndex', 'ord
  * read. Only the methods named here exist; a new Convex method throws until
  * it is added, so it cannot hand out unchecked rows.
  */
-export function guardQuery(query: any, check: (row: unknown) => Promise<void>): any {
+function guardQuery(query: any, check: (row: unknown) => Promise<void>): any {
   const rowsOf = async <T>(rows: T[]) => {
     for (const row of rows) await check(row)
     return rows

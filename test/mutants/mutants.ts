@@ -232,7 +232,7 @@ export const mutants: Mutant[] = [
     file: 'packages/functions/src/functions.ts',
     find: "ctx: Omit<QueryCtx, 'runQuery'> & { actor: ActorFor<A> },",
     replace: 'ctx: QueryCtx & { actor: ActorFor<A> },',
-    kills: [`${A}/types.test.ts > an approval summary cannot write, call or schedule functions`],
+    kills: [`${A}/types.test.ts > a plan cannot write, call or schedule functions`],
     projects: ['agents'],
   },
   {
@@ -241,7 +241,7 @@ export const mutants: Mutant[] = [
     file: 'packages/functions/src/functions.ts',
     find: "ctx: Omit<QueryCtx, 'runQuery'> & { actor: ActorFor<A> },",
     replace: "ctx: Omit<MutationCtx, 'runQuery'> & { actor: ActorFor<A> },",
-    kills: [`${A}/types.test.ts > an approval summary cannot write, call or schedule functions`],
+    kills: [`${A}/types.test.ts > a plan cannot write, call or schedule functions`],
     projects: ['agents'],
   },
   {
@@ -469,16 +469,7 @@ export const mutants: Mutant[] = [
       `${A}/approvals/approvals.test.ts > work refuses an approval that is not executing right now`,
     ],
   },
-  {
-    id: 'S11-shown-get',
-    guards: 'S11',
-    file: 'packages/agents/src/tools.ts',
-    // Approve compares what the summary was shown, not raw rows (release review 2: access granted later).
-    find: '                show(row)\n',
-    replace: '',
-    kills: [`${A}/approvals/approvals.test.ts > approving checks what the summary could not see`],
-    projects: ['agents'],
-  },
+
   {
     id: 'S11-seen-before-authorize',
     guards: 'S11',
@@ -491,18 +482,71 @@ export const mutants: Mutant[] = [
     projects: ['agents'],
   },
   {
-    id: 'S11-changed-hash',
+    id: 'S11-plan-stored',
     guards: 'S11',
     file: 'packages/agents/src/tools.ts',
-    // Approve runs the summary again (release review: a new match was archived too). Changed rows
-    // fail earlier, in the check before authorizing (S11-seen-before-authorize).
-    find: "if (now.sort().join() !== then.sort().join()) fail('STALE', stale)",
+    // Approve runs the plan as the person saw it (release reviews 1 and 2: it looked again).
+    find: 'frozen(row.plan)',
+    replace: 'frozen(settle(await planOf(op, checked, input)))',
+    kills: [
+      `${A}/approvals/approvals.test.ts > approving runs the plan the person saw: 'a second project matches now'`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S11-plan-fence',
+    guards: 'S11',
+    file: 'packages/functions/src/rules.ts',
+    find: 'if (call.plan && !(await call.plan.has(id)))',
+    replace: 'if (false)',
+    kills: [
+      `${A}/approvals/approvals.test.ts > approved work cannot change a row that is not in the plan`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S11-plan-created',
+    guards: 'S11',
+    file: 'packages/functions/src/rules.ts',
+    find: '      await call.plan?.created(String(id))\n',
     replace: '',
     kills: [
-      `${A}/approvals/approvals.test.ts > approving checks what the summary read, also new matches: 'a second project matches now'`,
-      `${A}/approvals/approvals.test.ts > approving checks what the summary could not see`,
+      `${A}/approvals/approvals.test.ts > the follow-up of approved work may change a row that work created`,
     ],
+    projects: ['agents'],
   },
+  {
+    id: 'S11-ask-again',
+    guards: 'S11',
+    file: 'packages/agents/src/tools.ts',
+    find: "reason.code === 'STALE' ? await askAgain(ctx, row) : undefined",
+    replace: 'undefined',
+    kills: [
+      `${A}/approvals/approvals.test.ts > a request whose row changed is asked again with the current data`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'C2-plan-frozen-input',
+    guards: 'C2',
+    file: 'packages/functions/src/functions.ts',
+    find: 'await op.plan(planReader(ctx), frozen(input))',
+    replace: 'await op.plan(planReader(ctx), input)',
+    kills: [
+      `${A}/approvals/approvals.test.ts > a plan cannot change the input the person approves`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'C2-plan-paginate',
+    guards: 'C2',
+    file: 'packages/functions/src/rules.ts',
+    find: "if (prop === 'paginate')",
+    replace: 'if (false)',
+    kills: [`${A}/approvals/approvals.test.ts > a plan cannot paginate`],
+    projects: ['agents'],
+  },
+
   {
     id: 'S11-record-keys',
     guards: 'S11',
@@ -517,7 +561,7 @@ export const mutants: Mutant[] = [
     id: 'S11-max-seen',
     guards: 'S11',
     file: 'packages/agents/src/tools.ts',
-    find: 'if (shown.size > maxSeen) {',
+    find: 'if (ids.size > maxSeen) {',
     replace: 'if (false) {',
     kills: [
       `${A}/approvals/approvals.test.ts > every row a request covers is checked for changes, up to a stated limit`,
@@ -535,12 +579,10 @@ export const mutants: Mutant[] = [
     id: 'S11-input-rows',
     guards: 'S11',
     file: 'packages/agents/src/tools.ts',
-    find: 'of idsIn(jsonOf(v.object(op.args)), input)) {',
-    replace: 'of [] as { table: string; id: string }[]) {',
+    find: 'of idsIn(jsonOf(v.object(op.args)), input))\n',
+    replace: 'of [] as { table: string; id: string }[])\n',
     kills: [
-      `${A}/approvals/approvals.test.ts > a request on a row of an anyOf table fails as STALE when that row changed`,
-      `${A}/approvals/approvals.test.ts > a request naming rows as record keys fails as STALE when one changed`,
-      `${A}/approvals/approvals.test.ts > a request naming a row the agent cannot read fails as NOT_FOUND and stores nothing`,
+      `${A}/approvals/approvals.test.ts > a request whose input names a row that changed fails as STALE, also with a plan of its own rows`,
     ],
   },
   {
@@ -1077,7 +1119,7 @@ export const mutants: Mutant[] = [
     file: 'packages/functions/src/rules.ts',
     find: 'db: db && readerOf(db),',
     replace: 'db,',
-    // The approval summary gets its own reader in tools.ts (it records what it was shown).
+    // The plan reads through its own reader (planReader), which has only read methods.
     kills: [
       `${callbacks} > roleOf during a mutation receives exactly these keys`,
       `${callbacks} > user lookup during a mutation receives exactly these keys`,
@@ -1096,12 +1138,13 @@ export const mutants: Mutant[] = [
   {
     id: 'C2-summary-run-query',
     guards: 'C2',
-    file: 'packages/agents/src/tools.ts',
-    find: 'const { runQuery: _query, ...rest } = readOnly(ctx)',
-    replace: 'const { ...rest } = readOnly(ctx)',
+    file: 'packages/functions/src/rules.ts',
+    find: 'const { runQuery: _query, db, ...rest } = readOnly(ctx)',
+    replace: 'const { db, ...rest } = readOnly(ctx)',
     kills: [`${callbacks} > approval summary, agent at the MCP door receives exactly these keys`],
     projects: ['agents'],
   },
+
   {
     id: 'C4-agent-rule-decision',
     guards: 'C4',
@@ -1171,7 +1214,10 @@ export const mutants: Mutant[] = [
     file: 'packages/functions/src/functions.ts',
     find: 'who.followUp === row.followUp)',
     replace: 'true)',
-    kills: [sequences],
+    // Forged tokens in the fuzz now also meet the plan's write limit; this test names the refusal.
+    kills: [
+      `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
+    ],
     projects: ['agents'],
   },
   {

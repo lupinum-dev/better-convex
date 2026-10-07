@@ -14,13 +14,14 @@ import {
   checkInput,
   failureOf,
   fingerprint,
+  frozen,
   guarded,
-  guardQuery,
   idsIn,
   inertMarkdown,
   jsonOf,
   internalsOf,
   OPERATION,
+  planOf,
   scopesFor,
   storable,
   toJsonSchema,
@@ -29,6 +30,7 @@ import {
   type AgentCaller,
   type LibraryDataModel,
   type Operation,
+  type Plan,
   type ToolSpec,
   readOnly,
 } from '@lupinum/better-convex-functions/internal'
@@ -74,6 +76,7 @@ interface Internals {
     refOf(db: unknown, value: unknown): TenantRef | undefined
     rowTenant(db: unknown, table: string, row: Record<string, unknown>): TenantRef | undefined
     tenantFieldsOf: Map<string, readonly string[]>
+    tableOf(db: unknown, id: string): string | undefined
   }
   roleOf(ctx: Ctx, user: { _id: string }, tenant: TenantRef): Promise<string | null>
 }
@@ -189,16 +192,6 @@ export async function toolCall(
 }
 
 /**
- * What an approval summary may use: its own reads only. Asking a person must change
- * nothing; a write here would land before anyone decides (Codex review, round 1).
- * No `runQuery` either: a nested query's reads escape the stale check (round 2).
- */
-function summaryCtx<C extends object>(ctx: C) {
-  const { runQuery: _query, ...rest } = readOnly(ctx) as C & { runQuery?: unknown }
-  return rest
-}
-
-/**
  * Collects the operations that have a `tool` field from app modules. Returns
  * one internal function per tool (export them under the tool's name), the
  * catalog the doors publish, the approval functions, the activity feed and
@@ -302,6 +295,7 @@ export function defineTools(
     settle: <T>(value: T) => T,
     op: ToolOp,
     input: Record<string, unknown>,
+    plan: Plan,
     extra: {
       tenant?: TenantRef
       requestId?: string
@@ -309,7 +303,7 @@ export function defineTools(
       decidedBy?: string
     },
   ) {
-    const result = settle(await op.handler(checked, input))
+    const result = settle(await op.handler(checked, input, plan))
     await lib(ctx).insert('activity', {
       actor: actorRecord(checked.actor),
       action: op.action,
@@ -390,59 +384,47 @@ export function defineTools(
           const actor = await agent(ctx, caller, { approved: approval !== undefined })
           const input = inputOf(ctx, op, raw)
           /**
-           * What a person decides on: the summary, and a fingerprint of every row the call names
-           * or the summary was shown. Rows the rules hide are not in it. Taken when the agent asks,
-           * and again when the person approves: a row that changed, went away, newly matches a
-           * query or became visible makes the request STALE (release reviews: a second matching
-           * project; a project the agent was given access to after it asked).
+           * What a person decides on: the plan, and a fingerprint of each row it lists or the
+           * input names. Each must be readable to the agent: a row it may not read is missing, as
+           * in the handler, so the request never reaches a person.
            */
-          const basis = async ({
+          const planned = async ({
             ctx: checked,
             settle,
           }: Awaited<ReturnType<Internals['authorize']>>) => {
-            // Fingerprinted as read: the summary may change the object it was handed (release review 3).
-            const shown = new Map<string, string>()
-            const show = async (row: unknown) => {
-              if (row) shown.set(String((row as { _id: string })._id), await fingerprint(row))
+            const plan = frozen(settle(await planOf(op, checked, input)))
+            const ids = new Map<string, string>()
+            for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input))
+              if (ctx.db.normalizeId(table, id) !== null) ids.set(id, table)
+            for (const id of plan.rows ?? []) {
+              const table = tenants.tableOf(ctx.db, id)
+              if (table === undefined)
+                throw new Error(
+                  `The plan of ${op.action} lists ${id}, which is no ID of an app table.`,
+                )
+              ids.set(id, table)
             }
-            const db = checked.db
-            const watched = {
-              get: async (...a: unknown[]) => {
-                const row = await (db.get as (...a: unknown[]) => Promise<unknown>)(...a)
-                await show(row)
-                return row as Record<string, unknown> | null
-              },
-              query: (table: string) => guardQuery(db.query(table), show),
-              normalizeId: db.normalizeId.bind(db),
-              // A getter: the checked db refuses system tables when they are read.
-              get system() {
-                return db.system
-              },
-            }
-            // Every row the input names, under the row rules: a row the agent may not read is
-            // missing, as in the handler, and never reaches a person as a request.
-            const named: { table: string; id: string; row: Record<string, unknown> }[] = []
-            for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input)) {
-              if (ctx.db.normalizeId(table, id) === null) continue
-              const row = await watched.get(id)
-              if (row === null) fail('NOT_FOUND', `No ${table} with this ID.`)
-              named.push({ table, id, row })
-            }
-            const summary = oneLine(
-              settle(
-                op.approval
-                  ? await op.approval(summaryCtx({ ...checked, db: watched }), input)
-                  : `${op.action} ${JSON.stringify(input)}`,
-              ),
-            )
-            if (shown.size > maxSeen) {
+            if (ids.size > maxSeen) {
               fail(
                 'TOO_LARGE',
                 `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
               )
             }
-            const seen = [...shown].map(([id, hash]) => ({ id, hash }))
-            return { summary, seen, named }
+            const rows: { table: string; id: string; row: Record<string, unknown> }[] = []
+            for (const [id, table] of ids) {
+              const row = (await checked.db.get(id)) as Record<string, unknown> | null
+              if (row === null) fail('NOT_FOUND', `No ${table} with this ID.`)
+              rows.push({ table, id, row })
+            }
+            // Fingerprints of the stored rows, read again: app code may have changed the objects
+            // it was handed (release reviews 3 and 4).
+            const seen = await Promise.all(
+              rows.map(async ({ id }) => ({
+                id,
+                hash: await fingerprint(await ctx.db.get(id as GenericId<string>)),
+              })),
+            )
+            return { plan, seen, rows }
           }
           const requester = actorRecord(actor)
           if (approval) {
@@ -455,24 +437,22 @@ export function defineTools(
             ) {
               fail('APPROVAL_NOT_FOUND', 'This approval does not match the request.')
             }
-            // A row the person saw that changed or went away: STALE, before authorizing reports a
-            // deleted named row as NOT_FOUND (release review 2). The summary runs again below.
+            // The work runs on the plan the person approved, as it was. A row it lists or the
+            // input names that changed or went away makes it STALE, before authorizing could call
+            // a deleted row NOT_FOUND (release review 2).
+            if (row.plan === undefined) fail('STALE', stale)
             for (const { id, hash } of row.seen ?? []) {
               const now = await ctx.db.get(id as GenericId<string>)
               if (now === null || (await fingerprint(now)) !== hash) fail('STALE', stale)
             }
-            // Internal operations this work runs see the approval, so their own `approve` rules pass.
-            const authorized = await authorize(
-              ctx,
-              op,
-              { ...actor, approvalId: approval.id },
-              input,
-            )
-            const { ctx: checked, tenant, settle } = authorized
-            const now = (await basis(authorized)).seen.map(({ id, hash }) => `${id}:${hash}`)
-            const then = (row.seen ?? []).map(({ id, hash }) => `${id}:${hash}`)
-            if (now.sort().join() !== then.sort().join()) fail('STALE', stale)
-            const result = await runForAgent(ctx, checked, settle, op, input, {
+            // Internal operations this work runs see the approval: their own `approve` rules pass,
+            // and they too change only the plan's rows.
+            const {
+              ctx: checked,
+              tenant,
+              settle,
+            } = await authorize(ctx, op, { ...actor, approvalId: approval.id }, input)
+            const result = await runForAgent(ctx, checked, settle, op, input, frozen(row.plan), {
               tenant,
               requestId: row.requestId,
               approvalId: approval.id,
@@ -567,7 +547,8 @@ export function defineTools(
                 `${openApprovals} requests already wait for a person. Wait until they are decided.`,
               )
             }
-            const { summary, seen, named } = await basis(authorized)
+            const { plan, seen, rows } = await planned(authorized)
+            const summary = oneLine(plan.summary)
             const expiresAt = Date.now() + approvalTtl
             const approvalId = await lib(ctx).insert('approvals', {
               action: op.action,
@@ -579,12 +560,13 @@ export function defineTools(
               tenantId: tenant?.id,
               requestId,
               callHash,
+              plan: plan as unknown as Value,
               seen,
               status: 'pending',
               expiresAt,
             })
             if (approversFor(policy, op.action).sharedRows) {
-              for (const tenantId of await partiesOf(ctx, tenant, named, mayWrite)) {
+              for (const tenantId of await partiesOf(ctx, tenant, rows, mayWrite)) {
                 await lib(ctx).insert('approvalParties', { approvalId, tenantId, expiresAt })
               }
             }
@@ -597,7 +579,15 @@ export function defineTools(
           }
           return {
             status: 'done' as const,
-            result: await runForAgent(ctx, checked, settle, op, input, { tenant, requestId }),
+            result: await runForAgent(
+              ctx,
+              checked,
+              settle,
+              op,
+              input,
+              frozen(settle(await planOf(op, checked, input))),
+              { tenant, requestId },
+            ),
           }
         },
       }),
@@ -686,11 +676,11 @@ export function defineTools(
   async function partiesOf(
     ctx: Ctx,
     tenant: TenantRef | undefined,
-    named: { table: string; id: string; row: Record<string, unknown> }[],
+    rows: { table: string; id: string; row: Record<string, unknown> }[],
     mayWrite: (table: string, row: Record<string, unknown>) => Promise<boolean>,
   ) {
     let common: Set<string> | undefined
-    for (const { table, id, row } of named) {
+    for (const { table, id, row } of rows) {
       if (id === tenant?.id || !(await mayWrite(table, row))) continue
       const owners = new Set(
         tenants.tenantFieldsOf.has(table)
@@ -762,6 +752,20 @@ export function defineTools(
       decidedBy,
       result,
     })
+  }
+
+  /** The request's call, asked again as its agent. `undefined` when it now fails or runs at once. */
+  async function askAgain(ctx: MCtx, row: LibraryDataModel['approvals']['document']) {
+    try {
+      const again = await ctx.runMutation(ownRef(row.tool), {
+        caller: row.caller,
+        input: row.input,
+        ...(row.requestId === undefined ? {} : { requestId: row.requestId }),
+      })
+      return again.status === 'needs_approval' ? again.approvalId : undefined
+    } catch {
+      return undefined
+    }
   }
 
   const resume = (ctx: MCtx, caller: AgentCaller) =>
@@ -847,7 +851,12 @@ export function defineTools(
           const { actor: approver, row } = await decidable(ctx, approvalId)
           let outcome:
             | { status: 'approved' }
-            | { status: 'failed'; error: { code: string; message: string } }
+            | {
+                status: 'failed'
+                error: { code: string; message: string }
+                /** After STALE: the same call asked again on the current data, waiting for a person. */
+                next?: GenericId<'approvals'>
+              }
           {
             // The operation runs as the agent in a sub-transaction. It checks the grant again, so
             // revoking the connection also cancels its requests, and the rows the person saw (STALE).
@@ -873,8 +882,18 @@ export function defineTools(
                 error: reason,
                 decidedBy: approver.user._id,
               })
-              await record(ctx, row, 'failed', approver.user._id, reason)
-              outcome = { status: 'failed', error: reason }
+              // Changed since the agent asked: the same call asks again on the current data, so the
+              // person can decide on what is true now, also when the agent is gone. Without a
+              // retry key in the activity row: the agent's retry finds the new request.
+              const next = reason.code === 'STALE' ? await askAgain(ctx, row) : undefined
+              await record(
+                ctx,
+                next ? { ...row, requestId: undefined } : row,
+                'failed',
+                approver.user._id,
+                reason,
+              )
+              outcome = { status: 'failed', error: reason, ...(next ? { next } : {}) }
             }
           }
           await resume(ctx, row.caller)
@@ -992,6 +1011,11 @@ export function defineTools(
               .withIndex('by_approval', (q) => q.eq('approvalId', row._id))
               .collect()
             for (const party of parties) await db.delete(party._id)
+            const made = await db
+              .query('approvalRows')
+              .withIndex('by_approval_row', (q) => q.eq('approvalId', row._id))
+              .collect()
+            for (const created of made) await db.delete(created._id)
             await db.delete(row._id)
           }
           decided += rows.length

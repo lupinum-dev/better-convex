@@ -129,18 +129,20 @@ test('approving fails as STALE when the project changed after the request', asyn
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'active' })
 })
 
-// Release review, 2026-10-07: the stale check covered only the rows read when the agent asked. A
-// project that matched the summary's query later was archived too, though the person never saw
-// it. Approve now reads again what the summary read.
+const archivedNames = (s: Awaited<ReturnType<typeof setup>>) =>
+  s.t.run(async (ctx) =>
+    (await ctx.db.query('projects').collect())
+      .filter((project) => project.status === 'archived')
+      .map((project) => project.name),
+  )
+
+// Release reviews 1 and 2, 2026-10-07: approve evaluated the request again, so a project that
+// matched later, or became visible to the agent later, was archived though the person never saw
+// it. A person now approves a plan, a fixed list, and the work runs on that list.
 test.each([
-  { row: 'nothing changed', added: false, outcome: { status: 'approved' }, archived: 1 },
-  {
-    row: 'a second project matches now',
-    added: true,
-    outcome: { status: 'failed', error: { code: 'STALE' } },
-    archived: 0,
-  },
-])('approving checks what the summary read, also new matches: $row', async (row) => {
+  { row: 'nothing changed', added: false },
+  { row: 'a second project matches now', added: true },
+])('approving runs the plan the person saw: $row', async (row) => {
   const s = await setup()
   const asked = await s.ask('archive_matching', { orgId: s.a, prefix: 'alp' })
   expect(asked.summary).toBe('Archive 1 matching: alpha.')
@@ -149,18 +151,13 @@ test.each([
       ctx.db.insert('projects', { orgId: s.a, name: 'alpine', status: 'active' }),
     )
   }
-  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject(
-    row.outcome,
-  )
-  const archived = await s.t.run(async (ctx) =>
-    (await ctx.db.query('projects').collect()).filter((project) => project.status === 'archived'),
-  )
-  expect(archived.length).toBe(row.archived)
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+    status: 'approved',
+  })
+  expect(await archivedNames(s)).toEqual(['alpha'])
 })
 
-// Release review 2: approving compared only raw rows, so a project the summary could not see,
-// and the person never saw, was archived after the agent got access to it.
-test('approving checks what the summary could not see', async () => {
+test('a project the agent could not see when it asked is left alone', async () => {
   const s = await setup()
   const { membership, unseen, note } = await s.t.run(async (ctx) => {
     const b = await ctx.db.insert('orgs', { name: 'B' })
@@ -179,11 +176,92 @@ test('approving checks what the summary could not see', async () => {
   const asked = await s.ask('archive_listed', { noteId: note })
   expect(asked.summary).toBe('Archive 1 listed: alpha.')
   await s.t.run((ctx) => ctx.db.patch(membership, { role: 'owner' }))
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+    status: 'approved',
+  })
+  expect(await s.t.run((ctx) => ctx.db.get(unseen))).toMatchObject({ status: 'active' })
+})
+
+// A plan may list other rows than the input names; the rows the input names are part of what the
+// person sees all the same.
+test('a request whose input names a row that changed fails as STALE, also with a plan of its own rows', async () => {
+  const s = await setup()
+  const note = await s.t.run((ctx) =>
+    ctx.db.insert('notes', { userId: s.annId, text: JSON.stringify([s.p[0]]) }),
+  )
+  const asked = await s.ask('archive_listed', { noteId: note })
+  await s.t.run((ctx) => ctx.db.patch(note, { text: JSON.stringify([s.p[0], s.p[2]]) }))
   expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject({
     status: 'failed',
     error: { code: 'STALE' },
   })
-  expect(await s.t.run((ctx) => ctx.db.get(unseen))).toMatchObject({ status: 'active' })
+  expect(await archivedNames(s)).toEqual([])
+})
+
+// The plan is what the work may change: a handler that looks again and finds more is refused,
+// and nothing it did is kept.
+test('approved work cannot change a row that is not in the plan', async () => {
+  const s = await setup()
+  const asked = await s.ask('archive_greedy', { orgId: s.a, prefix: 'alp' })
+  await s.t.run((ctx) =>
+    ctx.db.insert('projects', { orgId: s.a, name: 'alpine', status: 'active' }),
+  )
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject({
+    status: 'failed',
+    error: { code: 'FORBIDDEN', message: expect.stringContaining('not in the plan') },
+  })
+  expect(await archivedNames(s)).toEqual([])
+})
+
+// A paid check: approved work creates a row, and its follow-up records the result on it later.
+test('the follow-up of approved work may change a row that work created', async () => {
+  const s = await setup()
+  const asked = await s.ask('start_check', { orgId: s.a })
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+    status: 'approved',
+  })
+  vi.advanceTimersByTime(1)
+  await s.t.finishInProgressScheduledFunctions()
+  expect(
+    await s.t.run(async (ctx) => (await ctx.db.query('notes').collect()).map((note) => note.text)),
+  ).toEqual(['done'])
+})
+
+// A row of the plan changed: the person decides again on what is true now, also when the agent
+// is gone. The agent's retry with its request_id finds the new request.
+test('a request whose row changed is asked again with the current data', async () => {
+  const s = await setup()
+  const asked = await s.ask('archive_project', { projectId: s.p[0], request_id: 'r1' })
+  await s.t.run((ctx) => ctx.db.patch(s.p[0], { name: 'renamed' }))
+  const outcome = await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })
+  expect(outcome).toMatchObject({ status: 'failed', error: { code: 'STALE' } })
+  const next = (outcome as { next: string }).next
+  expect(await s.ann.query(api.tools.get, { approvalId: next })).toMatchObject({
+    summary: 'Archive "renamed".',
+  })
+  expect(await s.ask('archive_project', { projectId: s.p[0], request_id: 'r1' })).toMatchObject({
+    approvalId: next,
+  })
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: next })).toEqual({
+    status: 'approved',
+  })
+  expect(await archivedNames(s)).toEqual(['renamed'])
+})
+
+// Release review 4: a summary changed the input after it wrote the summary, and the changed input
+// was stored and run. The plan gets a frozen copy, so the change fails where it is made.
+test('a plan cannot change the input the person approves', async () => {
+  const s = await setup()
+  await expect(s.tool('rename_checked', { projectId: s.p[0], name: 'reviewed' })).rejects.toThrow(
+    /read.only|frozen|Cannot assign/i,
+  )
+  expect(await s.approvalRows()).toEqual([])
+})
+
+// Release review 4: a summary that paged used up Convex's one paginated query per function.
+test('a plan cannot paginate', async () => {
+  const s = await setup()
+  await expect(s.tool('paged_plan', { orgId: s.a })).rejects.toThrow('A plan cannot paginate')
 })
 
 // Release review 3: the fingerprint was taken after the summary ran, from the object it had

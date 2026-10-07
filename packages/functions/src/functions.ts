@@ -49,9 +49,9 @@ import {
   type PublicActionOf,
   type RoleOf,
 } from './policy'
-import { checkedDb, readOnly, tenancy, type Rule, type TenantRef } from './rules'
+import { checkedDb, planReader, readOnly, tenancy, type Rule, type TenantRef } from './rules'
 import type { libraryTables } from './schema'
-import { jsonOf, storable, type ValidatorJson } from './values'
+import { frozen, idsIn, jsonOf, storable, type ValidatorJson } from './values'
 
 export type LibraryDataModel = DataModelFromSchemaDefinition<
   SchemaDefinition<typeof libraryTables, true>
@@ -88,10 +88,54 @@ export interface Operation {
   args: PropertyValidators
   returns: AnyValidator
   tool?: ToolSpec<string, PropertyValidators>
-  approval?: (ctx: any, args: any) => string | Promise<string>
+  plan?: (ctx: any, args: any) => Plan | Promise<Plan>
   /** The call may name IDs from several tenants; the role must allow the action in each. */
   crossTenant?: boolean
-  handler: (ctx: any, args: any) => unknown
+  /** Mutations get the plan; queries do not. */
+  handler: (ctx: any, args: any, plan?: Plan) => unknown
+}
+
+/**
+ * What a person approves when an agent asks: the sentence they read and the existing rows the
+ * work may change. Add any other value the work needs to do exactly what the person saw (a
+ * price, a new name): the handler gets the plan as it was when the agent asked.
+ */
+export interface Plan {
+  summary: string
+  /** The existing rows the work may change. Without it: the rows the input names. */
+  rows?: string[]
+}
+
+/**
+ * The plan of a call: from the operation's `plan`, or, without one, the action and input as JSON
+ * and the rows the input names. It reads with `planReader` and gets a frozen copy of the input,
+ * so it can change neither (release review 4: a summary changed the input after it was written).
+ */
+export async function planOf(
+  op: Pick<Operation, 'action' | 'args' | 'plan'>,
+  ctx: { db: { normalizeId: (table: string, id: string) => unknown } },
+  input: Record<string, unknown>,
+): Promise<Plan> {
+  const named = () =>
+    idsIn(jsonOf(v.object(op.args)), input)
+      .filter(({ table, id }) => ctx.db.normalizeId(table, id) !== null)
+      .map(({ id }) => id)
+  if (!op.plan) return { summary: `${op.action} ${JSON.stringify(input)}`, rows: named() }
+  const plan = (await op.plan(planReader(ctx), frozen(input))) as unknown
+  if (
+    !plan ||
+    typeof plan !== 'object' ||
+    typeof (plan as Plan).summary !== 'string' ||
+    ((plan as Plan).rows !== undefined &&
+      !(
+        Array.isArray((plan as Plan).rows) &&
+        (plan as Plan).rows!.every((id) => typeof id === 'string')
+      ))
+  ) {
+    throw new Error(`The plan of ${op.action} must return { summary: string, rows?: ID[] }.`)
+  }
+  // Without `rows`, the work changes the rows the input names, as the person sees in it.
+  return (plan as Plan).rows === undefined ? { ...(plan as Plan), rows: named() } : (plan as Plan)
 }
 
 /**
@@ -457,6 +501,29 @@ export function defineFunctions<
       mayWrite: async (_table: string, _row: Record<string, unknown>) => true,
     }
     let tainted: unknown = null
+    // Work under a person's approval changes only the rows of the plan the person approved, and
+    // rows that work created.
+    let plan:
+      | { has: (id: string) => Promise<boolean>; created: (id: string) => Promise<void> }
+      | undefined
+    if (actor.kind === 'agent' && actor.approvalId !== undefined) {
+      const approvalId = lib(ctx).normalizeId('approvals', actor.approvalId)
+      const approval = approvalId && (await lib(ctx).get(approvalId))
+      const listed = new Set((approval?.plan as Plan | undefined)?.rows ?? [])
+      plan = {
+        has: async (id) =>
+          listed.has(id) ||
+          (!!approvalId &&
+            (await lib(ctx)
+              .query('approvalRows')
+              .withIndex('by_approval_row', (q) => q.eq('approvalId', approvalId).eq('rowId', id))
+              .first()) !== null),
+        created: async (id) => {
+          if (approvalId)
+            await lib(ctx as unknown as MCtx).insert('approvalRows', { approvalId, rowId: id })
+        },
+      }
+    }
     const db = checkedDb(ctx.db as MCtx['db'], rules, {
       // Custom rules see the actor as handlers do, without the approval's credentials (class 10).
       actor: shown(actor),
@@ -465,6 +532,7 @@ export function defineFunctions<
       allows: (role, action) => roleAllows(policy, role, action),
       roleOf,
       known: { roles, rows },
+      plan,
       expose: (exposed) => (checks = exposed),
     })
     const nested = nestedCalls(
@@ -737,25 +805,30 @@ export function defineFunctions<
     Args extends PropertyValidators,
     Returns extends AnyValidator,
     const Name extends string,
+    Pl extends Plan = Plan,
   >(
-    spec: Spec<MutationCtx, A, Args, Returns, Name> & {
+    spec: Omit<Spec<MutationCtx, A, Args, Returns, Name>, 'handler'> & {
       /**
-       * One sentence a person reads before approving an agent's request. The
-       * rows it reads are fingerprinted: approving fails when one changed.
-       * It runs before the request is stored, reads only, its own (no writes, nested
-       * calls or scheduling: every row it reads is fingerprinted), under the call's row rules, and
-       * public rows are readable to everyone: fail here for work that could
-       * never run (a row outside the call's tenant), so it never reaches a
-       * person as a request (content slice).
+       * What a person approves when an agent asks: one sentence to read, and the existing rows
+       * the work may change. Runs when the agent asks; the handler then gets this plan as it
+       * was, and changes no other existing row. Approving fails as STALE when a listed row or a
+       * row the input names changed. It reads only, under the call's row rules, without
+       * `paginate`: fail here for work that could never run, so it never reaches a person.
+       * For a person's own call it runs too, right before the handler.
        */
-      approval?: (
+      plan?: (
         ctx: Omit<QueryCtx, 'runQuery'> & { actor: ActorFor<A> },
+        args: Readonly<ObjectType<Args>>,
+      ) => Pl | Promise<Pl>
+      handler: (
+        ctx: MutationCtx & { actor: ActorFor<A> },
         args: ObjectType<Args>,
-      ) => string | Promise<string>
+        plan: Readonly<Pl>,
+      ) => Promise<Infer<Returns>> | Infer<Returns>
     },
   ) {
     assertAction(spec)
-    const op: Operation = { kind: 'mutation', ...spec }
+    const op = { kind: 'mutation', ...spec } as unknown as Operation
     const registered = mutationGeneric({
       args: spec.args,
       returns: spec.returns,
@@ -766,7 +839,8 @@ export function defineFunctions<
           await caller(ctx, spec.action),
           input,
         )
-        return settle(await spec.handler(checked as never, input))
+        const plan = frozen(await planOf(op, checked, input))
+        return settle(await spec.handler(checked as never, input, plan as Pl))
       },
     })
     return operation<RegisteredMutation<'public', ObjectType<Args>, Promise<Infer<Returns>>>>(

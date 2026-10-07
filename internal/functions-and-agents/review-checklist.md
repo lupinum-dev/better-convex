@@ -6,7 +6,7 @@ approvals, tools or the MCP door, and before you review such a change.
 Between 2026-10-06 and 2026-10-07, the walking skeleton's stress test and
 three Codex reviews of it (findings R11–R27 in its `STRESS.md`), a review
 with three lenses of the packages, and three Codex reviews of the branch
-found the problems below; two release reviews on 2026-10-07 added class 13. Almost every P1 and P2 belongs to one of these
+found the problems below; four release reviews on 2026-10-07 led to class 13. Almost every P1 and P2 belongs to one of these
 classes. Codex round 4 added classes 10 and 11. Each class names the questions to ask, the bugs
 that taught it, and the test that now guards it. The full list of
 invariants is in `plan.md` section 6.
@@ -184,24 +184,26 @@ A guard written inside one branch of a decision protects only that branch.
 Ask: does this guard depend on the decision, or on the input? If on the
 input, it belongs before the branch.
 
-## 13. A check on the data instead of on what the person saw
+## 13. Approving an instruction instead of a list
 
-An approval protects what the person was shown. A check that compares the
-stored data can stay equal while the shown result changes.
+An approval protects what the person was shown. When the work evaluates the
+request again at approval time, anything that changed in between can make it
+do more than the person saw.
 
-- Release review, 2026-10-07: approve compared only the rows the summary had
-  read, so a new row that matched the summary's query was archived too.
-- Release review 2: approve compared raw rows, including rows the rules hid
-  from the summary. When the agent got a role there, the hidden row became
-  visible, its raw fingerprint stayed equal, and the approved work archived
-  it. Fixed: the summary reads through a reader that records each row it is
-  shown; approve runs the summary again and compares the two sets. A row
-  that changed or went away fails as `STALE` before anything else runs.
+- Release reviews 1–4, 2026-10-07: approve ran the summary again and compared
+  what it read. Each round found another way around the comparison: a new
+  match, a row that became visible, a summary that changed its row object or
+  its input, a read through `storage`. Each patch was new code that the next
+  round broke.
+- Fixed by design: a person approves a plan, a fixed list of rows plus the
+  values the work needs, stored when the agent asks. Approve runs the handler
+  on the stored plan; the work and its follow-ups may change only those rows
+  and rows they create (`approvalRows`). A listed or named row that changed
+  makes the request STALE, and the same call is asked again on current data.
 
-Ask: what did the person see, and does the check compare exactly that,
-under the rules that apply when the work runs? Tests: "approving checks
-what the summary read, also new matches" and "approving checks what the
-summary could not see" (`packages/agents/test/approvals`).
+Ask: does the person approve data, or code that runs again later? Prefer
+data. Tests: "approving runs the plan the person saw", "approved work
+cannot change a row that is not in the plan" (`packages/agents/test/approvals`).
 
 ## Tools that find these classes
 

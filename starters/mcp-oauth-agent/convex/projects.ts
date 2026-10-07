@@ -133,8 +133,9 @@ export const archive = mutation({
   returns: v.object({ id: v.id('projects'), status: v.literal('archived') }),
   tool: { name: 'archive_project', description: 'Archive a project. The app can restore it.' },
   // What the person reads before approving an agent's request.
-  approval: async (ctx, { projectId }) =>
-    `Archive the project "${(await ctx.db.get(projectId))?.name ?? 'unknown'}".`,
+  plan: async (ctx, { projectId }) => ({
+    summary: `Archive the project "${(await ctx.db.get(projectId))?.name ?? 'unknown'}".`,
+  }),
   handler: async (ctx, { projectId }) => {
     const found = await ctx.db.get(projectId)
     if (found?.status !== 'active') fail('NOT_FOUND', 'This project is not active.')
