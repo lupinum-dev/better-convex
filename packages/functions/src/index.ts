@@ -11,6 +11,7 @@ export {
   type ActionOf,
   type RoleOf,
   type ScopeOf,
+  type PublicActionOf,
   type AgentRule,
   type Approvers,
 } from './policy'
