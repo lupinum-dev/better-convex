@@ -192,20 +192,31 @@ export async function linkDependencies(cwd: string) {
   ]) {
     for (const name of Object.keys(group ?? {})) names.add(name)
   }
-  names.delete('@lupinum/better-convex-nuxt')
+  for (const name of copiedPackages.keys()) names.delete(name)
   for (const name of [...names].sort()) {
     const destination = join(modules, name)
     await mkdir(dirname(destination), { mode: 0o700, recursive: true })
     await symlink(await realpath(join(root, 'node_modules', name)), destination, 'dir')
   }
-  // Install the built package as a copy, the way a consumer receives it.
-  const installed = join(modules, '@lupinum/better-convex-nuxt')
-  await mkdir(installed, { mode: 0o700 })
-  await Promise.all([
-    cp(join(root, 'dist'), join(installed, 'dist'), { recursive: true }),
-    cp(join(root, 'package.json'), join(installed, 'package.json')),
-  ])
+  // Install the built packages as copies, the way a consumer receives them. A
+  // symlink into the workspace would also expose a package's own tsconfig.json,
+  // whose `paths` make Convex's bundler load the agents package's import of the
+  // functions package from source: a second copy, which rejects `fns`.
+  for (const [name, source] of copiedPackages) {
+    const installed = join(modules, name)
+    await mkdir(installed, { mode: 0o700, recursive: true })
+    await Promise.all([
+      cp(join(source, 'dist'), join(installed, 'dist'), { recursive: true }),
+      cp(join(source, 'package.json'), join(installed, 'package.json')),
+    ])
+  }
 }
+
+const copiedPackages = new Map([
+  ['@lupinum/better-convex-nuxt', root],
+  ['@lupinum/better-convex-functions', join(root, 'packages/functions')],
+  ['@lupinum/better-convex-agents', join(root, 'packages/agents')],
+])
 
 /** Start an independently configured Nuxt app against an existing local backend. */
 export async function startNuxtServer(
