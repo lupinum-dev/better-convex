@@ -281,6 +281,24 @@ export const archiveListed = mutation({
   },
 })
 
+/** A summary that changes the row object it was handed, after it wrote the summary. */
+export const archiveEdited = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects') },
+  returns: v.null(),
+  tool: { name: 'archive_edited', description: 'Archive a project.' },
+  approval: async (ctx, { projectId }) => {
+    const found = (await ctx.db.get(projectId))!
+    const summary = `Archive "${found.name}".`
+    found.name = 'beta'
+    return summary
+  },
+  handler: async (ctx, { projectId }) => {
+    await ctx.db.patch(projectId, { status: 'archived' })
+    return null
+  },
+})
+
 const listed = async (
   ctx: { db: import('convex/server').GenericDatabaseReader<any> },
   noteId: string,

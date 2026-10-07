@@ -400,19 +400,19 @@ export function defineTools(
             ctx: checked,
             settle,
           }: Awaited<ReturnType<Internals['authorize']>>) => {
-            const shown = new Map<string, Record<string, unknown>>()
-            const show = (row: unknown) => {
-              if (row)
-                shown.set(String((row as { _id: string })._id), row as Record<string, unknown>)
+            // Fingerprinted as read: the summary may change the object it was handed (release review 3).
+            const shown = new Map<string, string>()
+            const show = async (row: unknown) => {
+              if (row) shown.set(String((row as { _id: string })._id), await fingerprint(row))
             }
             const db = checked.db
             const watched = {
               get: async (...a: unknown[]) => {
                 const row = await (db.get as (...a: unknown[]) => Promise<unknown>)(...a)
-                show(row)
+                await show(row)
                 return row as Record<string, unknown> | null
               },
-              query: (table: string) => guardQuery(db.query(table), async (row) => show(row)),
+              query: (table: string) => guardQuery(db.query(table), show),
               normalizeId: db.normalizeId.bind(db),
               // A getter: the checked db refuses system tables when they are read.
               get system() {
@@ -441,9 +441,7 @@ export function defineTools(
                 `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
               )
             }
-            const seen = await Promise.all(
-              [...shown].map(async ([id, row]) => ({ id, hash: await fingerprint(row) })),
-            )
+            const seen = [...shown].map(([id, hash]) => ({ id, hash }))
             return { summary, seen, named }
           }
           const requester = actorRecord(actor)

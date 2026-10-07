@@ -173,7 +173,7 @@ async function ensureSession(
     // reuse that session instead of making its own, so one sign-out ends both (Codex round 4).
     // Every page: expired sessions pile up in long tests (release review: 101 of them).
     let current: { id: string; createdAt: number } | undefined
-    for (let cursor: string | null = null, done = false; !done; ) {
+    for (let cursor: string | null = null, done = false; !done;) {
       const result = (await test.query(adapter.findMany, {
         model: 'session',
         where: [{ field: 'userId', value: subject }],

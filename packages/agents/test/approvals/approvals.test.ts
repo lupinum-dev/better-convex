@@ -186,6 +186,19 @@ test('approving checks what the summary could not see', async () => {
   expect(await s.t.run((ctx) => ctx.db.get(unseen))).toMatchObject({ status: 'active' })
 })
 
+// Release review 3: the fingerprint was taken after the summary ran, from the object it had
+// changed, so the row renamed to match that object was archived though the person saw "alpha".
+test('a summary that changes the row it read cannot hide a change from the person', async () => {
+  const s = await setup()
+  const asked = await s.ask('archive_edited', { projectId: s.p[0] })
+  expect(asked.summary).toBe('Archive "alpha".')
+  await s.t.run((ctx) => ctx.db.patch(s.p[0], { name: 'beta' }))
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject({
+    status: 'failed',
+    error: { code: 'STALE' },
+  })
+})
+
 // Release review 2: a named row deleted after the agent asked failed as NOT_FOUND, not STALE.
 test('approving a request whose row was deleted fails as STALE', async () => {
   const s = await setup()
