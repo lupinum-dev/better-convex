@@ -42,14 +42,14 @@
   },
   "devDependencies": {
     "@lupinum/better-convex-functions": "workspace:*",
-    "@modelcontextprotocol/server": "2.1.0",
+    "@modelcontextprotocol/server": "2.2.0",
     "convex": "1.42.2",
     "typescript": "~5.9.3",
     "unbuild": "3.6.1"
   },
   "peerDependencies": {
     "@lupinum/better-convex-functions": "workspace:*",
-    "@modelcontextprotocol/server": "2.1.0",
+    "@modelcontextprotocol/server": "2.2.0",
     "convex": ">=1.42.2 <2"
   },
   "peerDependenciesMeta": {

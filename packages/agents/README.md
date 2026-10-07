@@ -47,7 +47,7 @@ the standard OAuth challenge, and gives your tools the verified user as a typed 
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-agents@next @lupinum/better-convex-functions@next @modelcontextprotocol/server@2.1.0
+pnpm add @lupinum/better-convex-agents@next @lupinum/better-convex-functions@next @modelcontextprotocol/server@2.2.0
 ```
 
 The two Lupinum packages are released together with the same version, and each

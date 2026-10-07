@@ -60,7 +60,7 @@ If you already run the release candidate, check only these:
       The `next` dist-tag is the 1.0 release candidate.
 - [ ] With auth, install `better-auth`, `@better-auth/core`, and
       `@better-auth/oauth-provider` at exactly `1.7.6`, even without MCP.
-- [ ] With MCP, install `@modelcontextprotocol/server@2.1.0`; MCP Apps use
+- [ ] With MCP, install `@modelcontextprotocol/server@2.2.0`; MCP Apps use
       `@modelcontextprotocol/ext-apps` `2.x`.
 - [ ] The auth component `account` table is keyed by `(providerId, accountId)`.
       Beta account rows keep their retired `issuer` column (optional, never
@@ -199,7 +199,7 @@ If you already run the release candidate, check only these:
       `renewal: false`; beta tokens without it are rejected and hosts sign in
       again. Disabling an OAuth resource rejects tokens already issued.
 - [ ] Install the MCP SDK yourself; it is an exact peer:
-      `pnpm add @lupinum/better-convex-agents@next @lupinum/better-convex-functions@next @modelcontextprotocol/server@2.1.0`.
+      `pnpm add @lupinum/better-convex-agents@next @lupinum/better-convex-functions@next @modelcontextprotocol/server@2.2.0`.
 - [ ] Internal MCP functions take `principal: mcpPrincipalValidator` and call
       `auth.requireMcpPrincipal(ctx, principal, { scope })`.
 - [ ] Requests without the `MCP-Protocol-Version` header get HTTP `400`.
