@@ -16,17 +16,21 @@ import {
   decodeJwtPart,
   INSPECTOR_CALLBACK,
   isRecord,
+  MCP_PROTOCOL_VERSION as PROTOCOL_VERSION,
   MCP_REMOTE_CALLBACK,
+  postMcp,
   provisionClients,
   redeemCode,
   sleep,
   SCOPE,
   startMcpFixture,
+  toolCall,
+  toolsList,
   type JsonRecord,
   type McpFixture,
+  type McpResponse,
 } from './harness'
 
-const PROTOCOL_VERSION = '2026-07-28'
 // The era most hosts still speak: no `mcp-method` header, one `initialize` per connection.
 const LEGACY_PROTOCOL_VERSION = '2025-11-25'
 // Sorted: the list order follows export names and is not part of the contract.
@@ -41,59 +45,6 @@ const TOOL_NAMES = [
 const READ_TOOL_NAMES = ['check_approval', 'list_organizations', 'search_projects']
 // Better Auth allows three sign-ins per ten-second window; fresh sessions are paced, not unlimited.
 const SIGN_IN_WINDOW_MS = 10_100
-
-interface McpResponse {
-  status: number
-  body: JsonRecord
-  challenge: string | null
-}
-
-async function postMcp(
-  resource: string,
-  accessToken: string,
-  message: JsonRecord,
-): Promise<McpResponse> {
-  const params = isRecord(message.params) ? message.params : {}
-  const response = await fetch(resource, {
-    method: 'POST',
-    body: JSON.stringify({
-      ...message,
-      params: {
-        ...params,
-        _meta: {
-          'io.modelcontextprotocol/clientCapabilities': {},
-          'io.modelcontextprotocol/clientInfo': {
-            name: 'better-convex-integration',
-            version: '1.0.0',
-          },
-          'io.modelcontextprotocol/protocolVersion': PROTOCOL_VERSION,
-        },
-      },
-    }),
-    headers: {
-      accept: 'application/json',
-      authorization: `Bearer ${accessToken}`,
-      'content-type': 'application/json',
-      'mcp-method': String(message.method),
-      ...(typeof params.name === 'string' ? { 'mcp-name': params.name } : {}),
-      'mcp-protocol-version': PROTOCOL_VERSION,
-    },
-  })
-  const body = (await response.json()) as unknown
-  return {
-    status: response.status,
-    body: isRecord(body) ? body : {},
-    challenge: response.headers.get('www-authenticate'),
-  }
-}
-
-const toolCall = (id: string, name: string, args: JsonRecord) => ({
-  id,
-  jsonrpc: '2.0',
-  method: 'tools/call',
-  params: { arguments: args, name },
-})
-const toolsList = (id: string) => ({ id, jsonrpc: '2.0', method: 'tools/list', params: {} })
 
 function structured(response: McpResponse): JsonRecord {
   const result = isRecord(response.body.result) ? response.body.result : {}

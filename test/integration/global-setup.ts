@@ -5,8 +5,8 @@ import { execFileSync } from 'node:child_process'
 import { ensureLocalBackend } from '../helpers/local-backend.mjs'
 import { cleanEnvironment, root } from './harness'
 
-export default async function setup() {
-  await ensureLocalBackend()
+/** Builds the packages the suites install. BCN_INTEGRATION_SKIP_BUILD=1 skips it. */
+export function buildPackages() {
   if (process.env.BCN_INTEGRATION_SKIP_BUILD === '1') return
   for (const args of [
     ['--filter', '@lupinum/better-convex-functions', 'build'],
@@ -17,4 +17,9 @@ export default async function setup() {
   ]) {
     execFileSync('pnpm', args, { cwd: root, env: cleanEnvironment(), stdio: 'inherit' })
   }
+}
+
+export default async function setup() {
+  await ensureLocalBackend()
+  buildPackages()
 }

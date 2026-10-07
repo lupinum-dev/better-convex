@@ -67,6 +67,7 @@ const mutant = mutantPlugin(fileURLToPath(new URL('.', import.meta.url)))
  *
  *   pnpm test              unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions, agents
  *   pnpm test:integration  real local Convex backend suites (test/integration)
+ *   pnpm test:live         the starter on a fresh Convex preview deployment (test/live)
  *   pnpm test:e2e          full-stack Nuxt suites (scripts/run-e2e.mjs, --full adds extended/)
  *
  * Prepare generated root types before an ad hoc project command:
@@ -329,6 +330,21 @@ export default defineConfig({
           fileParallelism: false,
           testTimeout: 600_000,
           hookTimeout: 600_000,
+        },
+      },
+
+      // The cloud smoke: the MCP OAuth starter on a fresh Convex preview deployment
+      // (`pnpm test:live`, `.github/workflows/live.yml`). Outside `pnpm test` and `verify`:
+      // it needs a preview deploy key. BCN_LIVE_LOCAL=1 runs the same journey on the local backend.
+      {
+        test: {
+          name: 'live',
+          include: ['test/live/**/*.live.test.ts'],
+          environment: 'node',
+          globalSetup: ['test/live/global-setup.ts'],
+          fileParallelism: false,
+          testTimeout: 600_000,
+          hookTimeout: 900_000,
         },
       },
 
