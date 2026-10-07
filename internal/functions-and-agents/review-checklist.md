@@ -7,7 +7,7 @@ Between 2026-10-06 and 2026-10-07, the walking skeleton's stress test and
 three Codex reviews of it (findings R11–R27 in its `STRESS.md`), a review
 with three lenses of the packages, and three Codex reviews of the branch
 found the problems below. Almost every P1 and P2 belongs to one of these
-classes. Each class names the questions to ask, the bugs
+classes. Codex round 4 added classes 10 and 11. Each class names the questions to ask, the bugs
 that taught it, and the test that now guards it. The full list of
 invariants is in `plan.md` section 6.
 
@@ -140,6 +140,33 @@ that emits declarations? Tests: `packages/functions/test/types.test.ts`.
   release. Fixed: `scripts/release.mjs` skips them.
 
 Ask: what happens if this runs, or ships, outside the place it was made for?
+
+## 10. Credentials visible to app code
+
+Anything that grants authority must stay inside the library's call wrappers.
+App code stores and sends what it is given.
+
+- Codex round 4: `ctx.actor` carried the approval ID and the follow-up token.
+  An app that stored the actor (an "edited by" field) stored reusable
+  authority. Fixed: handlers get the actor without them (`shown` in
+  `functions.ts`).
+
+Ask: if the app logs, stores or returns this object, what can someone do with
+it? Test: "work an approved request scheduled runs under the approval, for an
+hour" checks what the handler sees.
+
+## 11. Read, change, write under concurrency
+
+Two writes in one transaction that both read a list, add to it and write it
+back lose one addition.
+
+- Codex round 4: two `scheduler.runAfter` calls in `Promise.all` each appended
+  a follow-up token to the approval; one token was lost and its job failed.
+  Fixed: one token per approval, minted once by `approve`; scheduled work
+  only reads it.
+
+Ask: can two calls in the same transaction, or two transactions, interleave
+here? Prefer a value that is written once over a list that grows.
 
 ## How to review a change here
 
