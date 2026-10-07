@@ -136,3 +136,28 @@ export const editNotes = mutation({
     return null
   },
 })
+
+/** Empties a note. Its approvers are only the call's tenant's (no `sharedRows`). */
+export const clearNote = mutation({
+  action: 'notes.clear',
+  args: { noteId: v.id('notes') },
+  returns: v.null(),
+  tool: { name: 'clear_note', description: 'Empty a note. Needs approval.' },
+  handler: async (ctx, { noteId }) => {
+    await ctx.db.patch(noteId, { text: '' })
+    return null
+  },
+})
+
+/** Buys another org's listing for the buyer's org: the listing is only read. */
+export const buy = mutation({
+  action: 'listings.buy',
+  args: { orgId: v.id('orgs'), listingId: v.id('listings') },
+  returns: v.id('projects'),
+  tool: { name: 'buy_listing', description: 'Buy a listing. Needs approval.' },
+  handler: async (ctx, { orgId, listingId }) => {
+    const listing = await ctx.db.get(listingId)
+    if (!listing) fail('NOT_FOUND', 'No listing with this ID.')
+    return await ctx.db.insert('projects', { orgId, name: listing.title, status: 'active' })
+  },
+})

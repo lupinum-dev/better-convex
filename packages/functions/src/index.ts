@@ -12,6 +12,7 @@ export {
   type RoleOf,
   type ScopeOf,
   type AgentRule,
+  type Approvers,
 } from './policy'
 export {
   tenant,

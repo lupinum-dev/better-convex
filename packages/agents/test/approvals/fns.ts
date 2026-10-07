@@ -4,6 +4,7 @@ import {
   definePolicy,
   anyOf,
   owner,
+  publicRead,
   tenant,
 } from '@lupinum/better-convex-functions'
 import type { DataModelFromSchemaDefinition } from 'convex/server'
@@ -20,13 +21,22 @@ export const policy = definePolicy({
     'projects.archive',
     'projects.export',
     'notes.edit',
+    'notes.clear',
+    'listings.buy',
   ],
   roles: { owner: ['*'], viewer: ['projects.list', 'projects.read'] },
   scopes: {
     'projects:read': { label: 'See projects.', actions: ['projects.list', 'projects.read'] },
     'projects:write': {
       label: 'Change projects.',
-      actions: ['projects.rename', 'projects.archive', 'projects.export', 'notes.edit'],
+      actions: [
+        'projects.rename',
+        'projects.archive',
+        'projects.export',
+        'notes.edit',
+        'notes.clear',
+        'listings.buy',
+      ],
     },
   },
   // Small exports run on their own; large ones wait for a person.
@@ -34,8 +44,15 @@ export const policy = definePolicy({
     'notes.edit': 'approve',
     'projects.archive': 'approve',
     'projects.export': ({ size }) => (size > 100 ? 'approve' : 'allow'),
+    'notes.clear': 'approve',
+    'listings.buy': 'approve',
   },
-  approvers: { 'projects.archive': ['owner'], 'notes.edit': ['owner'] },
+  approvers: {
+    'projects.archive': ['owner'],
+    'notes.edit': { roles: ['owner'], sharedRows: true },
+    'notes.clear': ['owner'],
+    'listings.buy': { roles: ['owner'], sharedRows: true },
+  },
 })
 
 // Auth is the one outside service; the fake names a person by the test identity's subject.
@@ -65,6 +82,7 @@ export const fns = defineFunctions({
     memberships: owner('userId'),
     projects: tenant('orgId'),
     notes: anyOf(owner('userId'), tenant('orgId')),
+    listings: anyOf(tenant('orgId'), publicRead()),
   },
 })
 

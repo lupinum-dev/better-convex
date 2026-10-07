@@ -383,7 +383,11 @@ export function defineFunctions<
         actor.kind === 'visitor' ? 'Sign in first.' : `You may not ${op.action} here.`,
       )
     }
-    let forget = () => {}
+    // A system actor's db has no rules: it may change any row.
+    let checks = {
+      forget: () => {},
+      mayWrite: async (_table: string, _row: Record<string, unknown>) => true,
+    }
     let tainted: unknown = null
     const db = checkedDb(ctx.db as MCtx['db'], rules, {
       actor,
@@ -392,12 +396,12 @@ export function defineFunctions<
       allows: (role, action) => roleAllows(policy, role, action),
       roleOf,
       known: { roles, rows },
-      onForget: (fn) => (forget = fn),
+      expose: (exposed) => (checks = exposed),
     })
     const nested = nestedCalls(
       ctx,
       handOver(actor),
-      () => forget(),
+      () => checks.forget(),
       () =>
         (tainted ??= new Error(
           'This call reached a function that is not an internal operation; nothing it did is kept.',
@@ -413,6 +417,8 @@ export function defineFunctions<
       tenant,
       rows,
       settle,
+      /** May this call change the row? For approvals: rows it only reads give their tenant no say. */
+      mayWrite: (table: string, row: Record<string, unknown>) => checks.mayWrite(table, row),
       ctx: { ...ctx, ...nested, db: db as Ctx['db'], actor },
     }
   }

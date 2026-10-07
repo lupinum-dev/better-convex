@@ -150,8 +150,15 @@ export interface Call<User> {
   roleOf: (tenant: TenantRef) => Promise<string | null>
   /** Roles and rows already looked up for this call. */
   known?: { roles: Map<string, string | null>; rows: Map<string, Row | null> }
-  /** Receives a function that forgets cached roles and rows, for writes made outside this db (a nested mutation). */
-  onForget?: (forget: () => void) => void
+  /**
+   * Receives two checks for the library's own use: `forget` drops cached roles
+   * and rows after writes made outside this db (a nested mutation), and
+   * `mayWrite` says whether this call may change a row.
+   */
+  expose?: (checks: {
+    forget: () => void
+    mayWrite: (table: string, row: Row) => Promise<boolean>
+  }) => void
 }
 
 const libraryTableNames = new Set(Object.keys(libraryTables))
@@ -272,10 +279,6 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
     roleCache.clear()
     if (id) rows.delete(id)
   }
-  call.onForget?.(() => {
-    roleCache.clear()
-    rows.clear()
-  })
   const roleIn = (ref: TenantRef) => {
     if (actor.kind === 'visitor') return Promise.resolve(null)
     if (!roleCache.has(ref.id)) roleCache.set(ref.id, call.roleOf(ref))
@@ -376,6 +379,13 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
 
   const judge = (table: string, row: Row, mode: 'read' | 'write' | 'insert') =>
     judgeRule(ruleOf(table), table, row, mode)
+  call.expose?.({
+    forget: () => {
+      roleCache.clear()
+      rows.clear()
+    },
+    mayWrite: async (table, row) => (await judge(table, row, 'write')) === 'ok',
+  })
 
   function tableOf(id: string): string {
     for (const table of [...Object.keys(rules), ...libraryTableNames]) {

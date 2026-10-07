@@ -19,5 +19,7 @@ export default defineSchema({
   }).index('by_org', ['orgId']),
   // Private to the author, or shared with an org.
   notes: defineTable({ userId: v.id('users'), orgId: v.optional(v.id('orgs')), text: v.string() }),
+  // What an org offers; every signed-in user may read it.
+  listings: defineTable({ orgId: v.id('orgs'), title: v.string() }),
   ...libraryTables,
 })

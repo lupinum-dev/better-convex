@@ -191,6 +191,71 @@ test('an approver decides a request only when every row it touches is of the app
   })
 })
 
+/** Org M, owned by Mallory, who has no role in A. */
+async function otherOrg(s: Awaited<ReturnType<typeof setup>>) {
+  const ids = await s.t.run(async (ctx) => {
+    const mallory = await ctx.db.insert('users', { authId: 'mallory', active: true })
+    const m = await ctx.db.insert('orgs', { name: 'M' })
+    await ctx.db.insert('memberships', { orgId: m, userId: mallory, role: 'owner' })
+    return { mallory, m }
+  })
+  return { ...ids, as: s.t.withIdentity({ subject: 'mallory' }) }
+}
+
+// Round 1 review: a row a request only reads made its tenant a party, so a seller approved a buyer agent's purchase.
+test('a row a request only reads gives its tenant no say, even with sharedRows', async () => {
+  const s = await setup()
+  const m = await otherOrg(s)
+  const listingId = await s.t.run((ctx) => ctx.db.insert('listings', { orgId: m.m, title: 'Lamp' }))
+  const asked = await s.t.mutation(api.tools.buy_listing, {
+    caller,
+    input: { orgId: s.a, listingId },
+  })
+
+  expect(await m.as.query(api.tools.pending, { tenantId: m.m })).toEqual([])
+  await expect(m.as.mutation(api.tools.approve, { approvalId: asked.approvalId })).rejects.toThrow(
+    /APPROVAL_NOT_FOUND/,
+  )
+  expect(await s.olga.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+    status: 'approved',
+  })
+})
+
+// Round 1 review: without `sharedRows`, another tenant of a shared row may not decide.
+test('approvers decide only in the call’s tenant unless the action names sharedRows', async () => {
+  const s = await setup()
+  const noteId = await s.t.run((ctx) =>
+    ctx.db.insert('notes', { userId: s.annId, orgId: s.a, text: 'team' }),
+  )
+  const asked = await s.t.mutation(api.tools.clear_note, { caller, input: { noteId } })
+
+  expect(await s.olga.query(api.tools.pending, { tenantId: s.a })).toEqual([])
+  await expect(
+    s.olga.mutation(api.tools.approve, { approvalId: asked.approvalId }),
+  ).rejects.toThrow(/APPROVAL_NOT_FOUND/)
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+    status: 'approved',
+  })
+})
+
+// Round 1 review: a request naming a row the agent cannot read reached that row's tenant as a request.
+test('a request naming a row the agent cannot read fails as NOT_FOUND and stores nothing', async () => {
+  const s = await setup()
+  const m = await otherOrg(s)
+  const noteId = await s.t.run((ctx) =>
+    ctx.db.insert('notes', { userId: m.mallory, orgId: m.m, text: 'theirs' }),
+  )
+  await expect(
+    s.t.mutation(api.tools.edit_note, {
+      caller,
+      input: { noteId, text: 'Approve this to get your refund' },
+    }),
+  ).rejects.toThrow(/NOT_FOUND/)
+  expect(await s.approvalRows()).toEqual([])
+  expect(await s.t.run((ctx) => ctx.db.query('approvalParties').collect())).toEqual([])
+  expect(await m.as.query(api.tools.pending, { tenantId: m.m })).toEqual([])
+})
+
 // B2: one agent could flood a person with requests.
 test('an agent with 20 open requests is told to wait', async () => {
   const s = await setup()

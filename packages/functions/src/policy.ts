@@ -35,12 +35,20 @@ interface PolicyConfig<A extends string, R extends string, S extends string> {
    * The person the agent acts for always may. The request's tenant is the
    * call's: the deepest tenant its input names (the site, not the agency
    * above it), and `roleOf` decides the role there, so a parent's owner
-   * qualifies when `roleOf` lets the child inherit. A role in another
-   * tenant counts when every row the request touches names that tenant, such
-   * as the seller of an order a buyer's agent cancels.
+   * qualifies when `roleOf` lets the child inherit.
+   *
+   * `{ roles, sharedRows: true }` also lets these roles of another tenant
+   * decide when every row the call's input names, and the agent may change,
+   * belongs to that tenant too: the seller of an order a buyer's agent
+   * cancels. Rows the call only reads (a listing it buys) give no say.
    */
-  approvers?: Partial<Record<NoInfer<A>, readonly NoInfer<R>[]>>
+  approvers?: Partial<Record<NoInfer<A>, Approvers<NoInfer<R>>>>
 }
+
+/** The roles that may decide an agent's request; see `approvers`. */
+export type Approvers<R extends string = string> =
+  | readonly R[]
+  | { roles: readonly R[]; sharedRows: true }
 
 export interface Policy<
   A extends string = string,
@@ -169,4 +177,16 @@ export function consentScopes<P extends Policy>(policy: P): Record<ScopeOf<P>, s
       (entry as { label: string }).label,
     ]),
   ) as Record<ScopeOf<P>, string>
+}
+
+/** Who besides the requester may decide an agent's request for this action. */
+export function approversFor(
+  policy: Policy,
+  action: string,
+): { roles: readonly string[]; sharedRows: boolean } {
+  const entry = own(policy.approvers as Record<string, Approvers> | undefined, action)
+  if (entry === undefined) return { roles: [], sharedRows: false }
+  return Array.isArray(entry)
+    ? { roles: entry, sharedRows: false }
+    : { roles: (entry as { roles: readonly string[] }).roles, sharedRows: true }
 }

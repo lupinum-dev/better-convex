@@ -9,6 +9,7 @@ import {
 import {
   actorRecord,
   agentCallerValidator,
+  approversFor,
   callKey,
   checkInput,
   failureOf,
@@ -61,10 +62,15 @@ interface Internals {
     tenant: TenantRef | undefined
     rows: Map<string, Record<string, unknown> | null>
     settle: <T>(value: T) => T
+    mayWrite(table: string, row: Record<string, unknown>): Promise<boolean>
     ctx: any
   }>
   lib(ctx: { db: unknown }): Lib
-  tenants: { refOf(db: unknown, value: unknown): TenantRef | undefined }
+  tenants: {
+    refOf(db: unknown, value: unknown): TenantRef | undefined
+    rowTenant(db: unknown, table: string, row: Record<string, unknown>): TenantRef | undefined
+    tenantFieldsOf: Map<string, readonly string[]>
+  }
   roleOf(ctx: Ctx, user: { _id: string }, tenant: TenantRef): Promise<string | null>
 }
 
@@ -346,6 +352,7 @@ export function defineTools(
             tenant,
             rows,
             settle,
+            mayWrite,
             ctx: checked,
           } = await authorize(ctx, op, actor, input)
           const call = callKey(op.tool.name, input)
@@ -421,10 +428,15 @@ export function defineTools(
             }
             // Fingerprint what the person will base the decision on: the rows the call names and the rows the summary reads.
             const inputRows = new Map(rows)
-            // Rows the input names directly: tenant inference loads only some tables (not `anyOf` ones).
+            // Every row the input names, under the row rules: a row the agent may not read is
+            // missing, as in the handler, and never reaches a person as a request.
+            const named: { table: string; id: string; row: Record<string, unknown> }[] = []
             for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input)) {
-              if (inputRows.has(id) || ctx.db.normalizeId(table, id) === null) continue
-              inputRows.set(id, (await ctx.db.get(id as never)) as Record<string, unknown> | null)
+              if (ctx.db.normalizeId(table, id) === null) continue
+              const row = (await checked.db.get(id)) as Record<string, unknown> | null
+              if (row === null) fail('NOT_FOUND', `No ${table} with this ID.`)
+              inputRows.set(id, row)
+              named.push({ table, id, row })
             }
             rows.clear()
             const summary = oneLine(
@@ -458,8 +470,10 @@ export function defineTools(
               status: 'pending',
               expiresAt,
             })
-            for (const tenantId of partiesOf(ctx, tenant, touched)) {
-              await lib(ctx).insert('approvalParties', { approvalId, tenantId, expiresAt })
+            if (approversFor(policy, op.action).sharedRows) {
+              for (const tenantId of await partiesOf(ctx, tenant, named, mayWrite)) {
+                await lib(ctx).insert('approvalParties', { approvalId, tenantId, expiresAt })
+              }
             }
             return {
               status: 'needs_approval' as const,
@@ -548,31 +562,37 @@ export function defineTools(
   ]
 
   /**
-   * The tenants besides the call's own that every row the request touches
-   * names in one of its fields (its own `_id` for a tenant row): the other
-   * party of a shared row. The call's own tenant row only names where the call
-   * acts, so it does not count. No rows, or rows with nothing in common, give
-   * none.
+   * The other parties of a request (`sharedRows`): the tenants besides the
+   * call's own that every row the input names, and the call may change,
+   * belongs to. A row of a table whose rule requires a tenant belongs to that
+   * one tenant; a row of another table (`anyOf`, `custom`) to every tenant it
+   * names in a field. Rows the call only reads give no say (a buyer's agent
+   * reading a seller's listing), and neither does the call's own tenant row.
+   * No such rows, or rows with nothing in common, give none.
    */
-  function partiesOf(
+  async function partiesOf(
     ctx: Ctx,
     tenant: TenantRef | undefined,
-    touched: [string, Record<string, unknown>][],
+    named: { table: string; id: string; row: Record<string, unknown> }[],
+    mayWrite: (table: string, row: Record<string, unknown>) => Promise<boolean>,
   ) {
     let common: Set<string> | undefined
-    for (const [id, row] of touched) {
-      if (id === tenant?.id) continue
-      const named = new Set(
-        Object.values(row).flatMap((value) => tenants.refOf(ctx.db, value)?.id ?? []),
+    for (const { table, id, row } of named) {
+      if (id === tenant?.id || !(await mayWrite(table, row))) continue
+      const owners = new Set(
+        tenants.tenantFieldsOf.has(table)
+          ? [tenants.rowTenant(ctx.db, table, row)?.id ?? []].flat()
+          : Object.values(row).flatMap((value) => tenants.refOf(ctx.db, value)?.id ?? []),
       )
-      common = new Set([...(common ?? named)].filter((tenantId) => named.has(tenantId)))
+      common = new Set([...(common ?? owners)].filter((tenantId) => owners.has(tenantId)))
     }
     return [...(common ?? [])].filter((tenantId) => tenantId !== tenant?.id)
   }
 
   /**
    * May this person decide this request? The person the agent acts for, or an
-   * approver role in its tenant or in one of its parties (`partiesOf`).
+   * approver role in its tenant, or, with `sharedRows`, in one of its parties
+   * (`partiesOf`).
    */
   async function mayDecide(
     ctx: Ctx,
@@ -580,16 +600,15 @@ export function defineTools(
     row: LibraryDataModel['approvals']['document'],
   ) {
     if (row.requester.userId === actor.user._id) return true
-    const approvers = (policy.approvers as Record<string, readonly string[]> | undefined)?.[
-      row.action
-    ]
-    if (!approvers?.length) return false
+    const approvers = approversFor(policy, row.action)
+    if (approvers.roles.length === 0) return false
     const approverIn = async (tenantId: string) => {
       const tenant = tenants.refOf(ctx.db, tenantId)
       const role = tenant ? await roleOf(ctx, actor.user, tenant) : null
-      return role !== null && approvers.includes(role)
+      return role !== null && approvers.roles.includes(role)
     }
     if (row.tenantId !== undefined && (await approverIn(row.tenantId))) return true
+    if (!approvers.sharedRows) return false
     const parties = await lib(ctx)
       .query('approvalParties')
       .withIndex('by_approval', (q) => q.eq('approvalId', row._id))

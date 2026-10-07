@@ -16,6 +16,8 @@ export const {
   edit_note,
   sneaky_archive,
   edit_notes,
+  clear_note,
+  buy_listing,
   check_approval,
   housekeeping,
 } = tools.functions
