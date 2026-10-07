@@ -6,9 +6,10 @@ import {
   publicRead,
   tenant,
 } from '@lupinum/better-convex-functions'
+import { createBetterConvexAuth } from '@lupinum/better-convex-nuxt/better-auth/server'
 import type { DataModelFromSchemaDefinition } from 'convex/server'
 
-import { testAuth } from '../support'
+import { betterAuthComponent } from '../support'
 import type schema from './schema'
 
 type DataModel = DataModelFromSchemaDefinition<typeof schema>
@@ -55,10 +56,8 @@ export const policy = definePolicy({
   },
 })
 
-// Auth is the one outside service; the fake names a person by the test identity's subject.
-const { auth, revoke, reset } = testAuth<DataModel>()
-/** Ends Ann's MCP connection in the fake auth component; `reset` restores it after each test. */
-export { revoke, reset }
+/** The real Better Auth component, registered in setup: people, sessions and MCP grants. */
+export const auth = createBetterConvexAuth<DataModel>(betterAuthComponent, {})
 
 export const fns = defineFunctions({
   auth,

@@ -1,13 +1,14 @@
 import { defineTools } from '@lupinum/better-convex-agents'
 import { toolFailure } from '@lupinum/better-convex-agents/internal'
 import { createMcpServer } from '@lupinum/better-convex-agents/mcp'
+import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import type { FunctionReference } from 'convex/server'
 import { v } from 'convex/values'
 import { expect, test, vi } from 'vitest'
 
-import { refs } from '../support'
+import { doorAuth, refs } from '../support'
 import { tools } from './agents'
-import { fns, query, testing } from './fns'
+import { fns, query } from './fns'
 import * as projects from './projects'
 import { fn, setup } from './setup'
 import * as shapes from './shapes'
@@ -208,9 +209,7 @@ test('the approval text an MCP host shows carries no live markdown from row data
 test('a tool without its export fails at load with the missing name', () => {
   const tools = defineTools(fns, { projects, shapes }, { functions: refs('agents') })
   const { echo_shapes: _forgotten, ...exported } = tools.functions
-  expect(() =>
-    createMcpServer(testing.auth, { name: 'x', agents: { tools, ...exported } }),
-  ).toThrow(
+  expect(() => createMcpServer(doorAuth, { name: 'x', agents: { tools, ...exported } })).toThrow(
     'Not exported from the agents module: echo_shapes. Add them to `export const { echo_shapes } = tools.functions`.',
   )
 })
@@ -221,23 +220,10 @@ test('a tool whose function does not exist fails with a hint in the log', async 
   const wrong = defineTools(fns, { projects, shapes }, { functions: refs('projects') })
   const app = { tools: wrong, ...wrong.functions }
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-  const handler = createMcpServer(testing.auth, { name: 'x', agents: app })
+  const handler = createMcpServer(doorAuth, { name: 'x', agents: app })
   expect(handler).toBeTruthy()
   const entry = wrong.catalog.find((e) => e.name === 'create_project')!
-  const caller = {
-    door: 'mcp' as const,
-    principal: {
-      kind: 'oauth' as const,
-      userId: 'ann',
-      clientId: 'host',
-      scopes: ['write'],
-      sessionId: 's',
-      grantId: 'g',
-      issuer: 'i',
-      resource: 'r',
-      expiresAt: 4_102_444_800, // 2100: these tests are not about token expiry
-    },
-  }
+  const caller = { door: 'mcp' as const, principal: await grantMcp(t, 'ann', ['write']) }
   const failure = await t
     .mutation(entry.ref as FunctionReference<'mutation', 'internal'>, {
       caller,
@@ -275,7 +261,7 @@ test('revoking a connection cancels its open requests, and its tools then fail',
   const { t, ann, call, a, pa } = await setup()
   const asked = await call('ann:write', 'archive_project', { projectId: pa })
   const { approvalId } = asked.body.result.structuredContent
-  await ann.mutation(fn('connections:revoke'), { clientId: 'host' })
+  await ann.mutation(fn('connections:revoke'), { clientId: 'test-host' })
 
   expect(await t.run((ctx) => ctx.db.get(approvalId))).toMatchObject({ status: 'cancelled' })
   expect(await ann.query(fn('agents:pending'), {})).toEqual([])
@@ -291,23 +277,32 @@ test('revoking a connection cancels its open requests, and its tools then fail',
   expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ status: 'active' })
 })
 
-// F2: without SITE_URL an approval link was relative, which no MCP host can open.
+// F2: without SITE_URL an approval link was relative, which no MCP host can open. An in-app agent
+// asks: an MCP call would fail earlier, since Better Auth needs SITE_URL for its issuer.
 test('asking for approval without SITE_URL fails and names the variable', async () => {
   const { t, pa } = await setup()
-  const caller = {
-    door: 'mcp',
-    principal: {
-      kind: 'oauth',
-      userId: 'ann',
-      clientId: 'host',
+  const runId = await t.run(async (ctx) => {
+    const userId = (await ctx.db.query('users').first())!._id
+    const grantId = await ctx.db.insert('agentGrants', {
+      authId: 'ann',
+      userId,
+      agent: 'helper',
       scopes: ['write'],
-      sessionId: 's',
-      grantId: 'g',
-      issuer: 'i',
-      resource: 'r',
-      expiresAt: 4_102_444_800, // 2100: these tests are not about token expiry
-    },
-  }
+      expiresAt: Date.now() + 86_400_000,
+    })
+    return await ctx.db.insert('agentRuns', {
+      grantId,
+      userId,
+      agent: 'helper',
+      step: 'agent:step',
+      task: 'archive',
+      status: 'running',
+      turn: 1,
+      steps: 1,
+      stepAt: Date.now(),
+    })
+  })
+  const caller = { door: 'app', runId, turn: 1 }
   vi.stubEnv('SITE_URL', '')
   await expect(
     t.mutation(fn('agents:archive_project'), { caller, input: { projectId: pa } }),

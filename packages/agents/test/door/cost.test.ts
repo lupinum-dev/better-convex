@@ -1,4 +1,5 @@
 import { countDocuments } from '@lupinum/better-convex-functions/test'
+import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { expect, test } from 'vitest'
 
 import { fn, setup } from './setup'
@@ -8,51 +9,44 @@ import { fn, setup } from './setup'
 // number is the budget: a change that reads or writes more fails here and has to say why. The
 // budgets of plain operations are in the functions package.
 
-const caller = {
-  door: 'mcp',
-  principal: {
-    kind: 'oauth',
-    userId: 'ann',
-    clientId: 'host',
-    scopes: ['read', 'write'],
-    sessionId: 's',
-    grantId: 'g',
-    issuer: 'i',
-    resource: 'r',
-    expiresAt: 4_102_444_800, // 2100: these tests are not about token expiry
-  },
+/** Ann's MCP connection with both scopes, as the door hands it to a tool function. */
+async function connected() {
+  const s = await setup()
+  return { ...s, caller: { door: 'mcp', principal: await grantMcp(s.t, 'ann', ['read', 'write']) } }
 }
 
 test('a tool call with a request_id, and its retry', async () => {
-  const { t, a } = await setup()
+  const { t, a, caller } = await connected()
   const call = () =>
     t.mutation(fn('agents:create_project'), {
       caller,
       input: { orgId: a, name: 'Once' },
       requestId: 'r1',
     })
-  // User, organization, membership; writes: rate-limit window, project, activity row.
-  expect(await countDocuments(call)).toEqual({ reads: 3, writes: 3 })
+  // The live grant (6: session, user, client, resource, their link, consent), then the app's user,
+  // organization, membership; writes: rate-limit window, project, activity row.
+  expect(await countDocuments(call)).toEqual({ reads: 9, writes: 3 })
   // The retry checks the actor again, counts against the rate limit and replays the stored result.
-  expect(await countDocuments(call)).toEqual({ reads: 6, writes: 1 })
+  expect(await countDocuments(call)).toEqual({ reads: 12, writes: 1 })
 })
 
 test('a tool call that asks a person', async () => {
-  const { t, pa } = await setup()
+  const { t, pa, caller } = await connected()
   const ask = () => t.mutation(fn('agents:archive_project'), { caller, input: { projectId: pa } })
-  // User, project (for its tenant), membership, and the project again for the request's fingerprint
-  // (the summary reads it from the cache). Writes: rate-limit window, request. Nothing else runs.
-  expect(await countDocuments(ask)).toEqual({ reads: 4, writes: 2 })
+  // The live grant (6), user, project (for its tenant), membership, and the project again for the
+  // request's fingerprint (the summary reads it from the cache). Writes: rate-limit window, request.
+  expect(await countDocuments(ask)).toEqual({ reads: 10, writes: 2 })
 })
 
 test('approving a request', async () => {
-  const { t, ann, pa } = await setup()
+  const { t, ann, pa, caller } = await connected()
   const asked = await t.mutation(fn('agents:archive_project'), { caller, input: { projectId: pa } })
-  // The approver and the request; the stale check; the agent's user, project and membership; the patches'
-  // own reads. Writes: request executing, project, activity row, request approved.
+  // The approver's session (2) and user, and the request; the stale check; the agent's live grant (6),
+  // user, project and membership; the patches' own reads. Writes: request executing, project,
+  // activity row, request approved.
   expect(
     await countDocuments(() =>
       ann.mutation(fn('agents:approve'), { approvalId: asked.approvalId }),
     ),
-  ).toEqual({ reads: 10, writes: 4 })
+  ).toEqual({ reads: 18, writes: 4 })
 })

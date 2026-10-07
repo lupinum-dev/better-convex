@@ -15,7 +15,9 @@
       "@lupinum/better-convex-agents": ["./src/index.ts"],
       "@lupinum/better-convex-agents/mcp": ["./src/mcp.ts"],
       "@lupinum/better-convex-agents/internal": ["./src/internal.ts"],
-      "@lupinum/better-convex-agents/test": ["./src/test.ts"]
+      "@lupinum/better-convex-agents/test": ["./src/test.ts"],
+      "@lupinum/better-convex-nuxt/better-auth/server": ["../../src/runtime/convex-auth/index.ts"],
+      "@lupinum/better-convex-nuxt/better-auth/test": ["../../src/runtime/convex-auth/test.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

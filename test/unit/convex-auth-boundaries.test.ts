@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -203,10 +203,11 @@ describe('workspace package dependency direction', () => {
     directory: string,
     name: string,
     dependencies: Record<string, string> = {},
+    exports?: Record<string, string>,
   ) {
     return {
       directory,
-      manifest: { name, dependencies },
+      manifest: { name, dependencies, exports },
       name,
     }
   }
@@ -281,6 +282,40 @@ describe('workspace package dependency direction', () => {
           ],
         ),
       ).toEqual([])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  // The agents tests run the Nuxt package's Better Auth component through an alias; a source
+  // file, or a test that reaches a private path, must still declare the dependency.
+  it('lets a package test import another package’s public entry, and nothing else', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'bcn-workspace-test-import-'))
+    try {
+      const packageA = join(directory, 'packages/a')
+      const packageB = join(directory, 'packages/b')
+      const files = {
+        'src/index.ts': '@fixture/b/test',
+        'test/a.test.ts': '@fixture/b/test',
+        'test/b.test.ts': '@fixture/b/private',
+      }
+      for (const [file, specifier] of Object.entries(files)) {
+        mkdirSync(join(packageA, file, '..'), { recursive: true })
+        writeFileSync(join(packageA, file), `export * from '${specifier}'\n`)
+      }
+      const violations = findWorkspaceDependencyViolations(
+        Object.keys(files).map((file) => join(packageA, file)),
+        [
+          workspacePackage(packageA, '@fixture/a'),
+          workspacePackage(packageB, '@fixture/b', {}, { './test': './dist/test.mjs' }),
+        ],
+      )
+      expect(
+        violations.map(({ file, specifier }) => [relative(packageA, file!), specifier]),
+      ).toEqual([
+        ['src/index.ts', '@fixture/b/test'],
+        ['test/b.test.ts', '@fixture/b/private'],
+      ])
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

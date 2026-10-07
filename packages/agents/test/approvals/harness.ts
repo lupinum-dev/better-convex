@@ -1,8 +1,11 @@
+import { callTool } from '@lupinum/better-convex-agents/test'
+import betterAuth, { grantMcp, signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
 import { anyApi } from 'convex/server'
 import { getConvexSize, jsonToConvex, type Value } from 'convex/values'
 
 import schema from './schema'
+import { tools } from './tools'
 
 // convex-test has no per-document size limit; Convex rejects a write that makes
 // a document larger than 1 MiB, and the write does not happen. This adds that
@@ -73,9 +76,13 @@ function withDocumentLimit() {
 export const modules = import.meta.glob('./**/*.ts')
 export const api = anyApi as any
 
-/** Org A: Ann and Olga own it, Vic views it. Five projects. */
+/** Long enough for every test's clock: sessions and Ann's MCP token outlive the fake time. */
+const week = 7 * 86_400_000
+
+/** Org A: Ann and Olga own it, Vic views it. Five projects. Ann connected a host with both scopes. */
 export async function setup() {
   const t = convexTest(schema, modules)
+  betterAuth.register(t)
   withDocumentLimit()
   const ids = await t.run(async (ctx) => {
     const [ann, olga, vic] = await Promise.all(
@@ -91,23 +98,24 @@ export async function setup() {
     }
     return { annId: ann!, a, p: projects }
   })
-  const as = (authId: string) => t.withIdentity({ subject: authId })
+  const as = (authId: string) => signInAs(t, authId, { expiresInMs: week })
+  const [ann, olga, vic] = [await as('ann'), await as('olga'), await as('vic')]
+  // The recipe for a token that outlives the test's clock: grantMcp reuses Ann's week-long session.
+  const principal = {
+    ...(await grantMcp(t, 'ann', ['projects:read', 'projects:write'])),
+    expiresAt: Math.floor((Date.now() + week) / 1000),
+  }
+  /** Ann's MCP connection, as the door hands it to a tool function. */
+  const caller = { door: 'mcp', principal }
+  /** A tool call as Ann's host makes it through the door. */
+  const tool = (name: string, input: Record<string, unknown>, as = principal) =>
+    callTool(t, tools, as, name, input)
+  /** A tool call that must wait for a person. */
+  const ask = async (name: string, input: Record<string, unknown>, as = principal) => {
+    const asked = await tool(name, input, as)
+    if (asked.status !== 'needs_approval') throw new Error(`${name} ran without asking a person`)
+    return asked
+  }
   const approvalRows = () => t.run((ctx) => ctx.db.query('approvals').collect())
-  return { t, ann: as('ann'), olga: as('olga'), vic: as('vic'), ...ids, approvalRows }
-}
-
-/** Ann's MCP connection with both scopes, as the door hands it to a tool function. */
-export const caller = {
-  door: 'mcp',
-  principal: {
-    kind: 'oauth',
-    userId: 'ann',
-    clientId: 'host',
-    scopes: ['projects:read', 'projects:write'],
-    sessionId: 's',
-    grantId: 'g',
-    issuer: 'i',
-    resource: 'r',
-    expiresAt: 4_102_444_800, // 2100: these tests are not about token expiry
-  },
+  return { t, as, ann, olga, vic, ...ids, caller, principal, tool, ask, approvalRows }
 }

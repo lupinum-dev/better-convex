@@ -187,17 +187,34 @@ export default defineConfig({
       },
 
       // Agents package: tools, approvals, limits, activity and the MCP door against its fixture apps
-      // (packages/agents/test), through convex-test's HTTP router with the real MCP SDK.
+      // (packages/agents/test), through convex-test's HTTP router with the real MCP SDK and the real
+      // Better Auth component; only the door's token check is faked.
       {
         plugins: [mutant],
-        resolve: { alias: agentsSourceAliases },
+        resolve: {
+          alias: {
+            // Test only: the fixtures run the real Better Auth component; packages/agents/src
+            // never imports the Nuxt package (scripts/check-boundaries.mjs).
+            '@lupinum/better-convex-nuxt/better-auth/test': fileURLToPath(
+              new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
+            ),
+            '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
+              new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
+            ),
+            ...agentsSourceAliases,
+          },
+        },
         test: {
           name: 'agents',
           include: ['packages/agents/test/**/*.test.ts'],
           environment: 'node',
           testTimeout: 30_000,
-          // Approval links need it; nothing is called.
-          env: { SITE_URL: 'https://placeholder.example' },
+          // The auth issuer and approval links, and the MCP resource at convex-test's HTTP
+          // origin; nothing is called.
+          env: {
+            SITE_URL: 'https://placeholder.example',
+            CONVEX_SITE_URL: 'https://some.convex.site',
+          },
         },
       },
 

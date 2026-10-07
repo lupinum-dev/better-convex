@@ -1,86 +1,41 @@
 import type { McpDoorAuth, McpPrincipal } from '@lupinum/better-convex-agents/mcp'
-import type { Auth } from '@lupinum/better-convex-functions'
-import {
-  makeFunctionReference,
-  type FunctionReference,
-  type GenericDataModel,
-  type GenericQueryCtx,
-} from 'convex/server'
-import { ConvexError } from 'convex/values'
+import { componentsGeneric, makeFunctionReference, type FunctionReference } from 'convex/server'
 
 // Fixtures of this package's own tests. Apps test with `callTool` from
 // `@lupinum/better-convex-agents/test` and the real auth component from
 // `@lupinum/better-convex-nuxt/better-auth/test`.
 
-// convex-test serves HTTP actions at this origin.
-const testSite = 'https://some.convex.site'
+/**
+ * `components.betterAuth` without codegen: the real Better Auth component that each fixture's
+ * setup registers with `register` from `@lupinum/better-convex-nuxt/better-auth/test`.
+ */
+export const betterAuthComponent = componentsGeneric().betterAuth as never
 
 /**
- * The auth component, faked for convex-test: one object for `defineFunctions({ auth })` and
- * `createMcpServer(auth, ...)`, as the real `auth` from `createBetterConvexAuth` is. A person
- * is `t.withIdentity({ subject: authId })`. A bearer token `<authId>:<scope>,<scope>` is a
- * connection of that user on the host `host`; everything after the token check is the real
- * door and tools. Like the real component, the connection is checked on every agent call, so
- * `revoke` ends it at the next call, and an access token past its `expiresAt` is refused.
- *
- * Create it in the module that calls `defineFunctions`, with the app's data model, and call
- * `reset()` when each test starts, since modules outlive it.
+ * The MCP door's token check, faked for convex-test: a bearer token is the principal that
+ * `grantMcp` returned, encoded by `tokenFor`. Everything after the token check is real: the
+ * door, the tools, and `requireMcpPrincipal` against the Better Auth component, so a revoked
+ * grant fails the next call.
  */
-export function testAuth<DM extends GenericDataModel>() {
-  const revoked = new Set<string>()
-  const auth: Auth<DM> & McpDoorAuth = {
-    getUser: async (ctx: GenericQueryCtx<DM>) => {
-      const identity = await ctx.auth.getUserIdentity()
-      return identity ? { id: identity.subject } : null
-    },
-    requireMcpPrincipal: async (_ctx, principal, options) => {
-      const expired = !options?.allowExpiredToken && principal.expiresAt * 1000 <= Date.now()
-      if (expired || revoked.has(`${principal.userId}:${principal.clientId}`))
-        throw new ConvexError({ code: 'MCP_ACCESS_DENIED', message: 'MCP access denied' })
-      return { user: { id: principal.userId } }
-    },
-    mcpAuthorization: () => ({
-      resource: new URL(`${testSite}/mcp`),
-      authorization: {
-        mode: 'oauth',
-        issuer: testSite,
-        scopesSupported: ['read', 'write'],
-        verifier: {
-          async verifyAccessToken(token, expected) {
-            const [authId = '', scopeList = ''] = token.split(':')
-            const scopes = scopeList ? scopeList.split(',') : []
-            const expiresAt = Math.floor(Date.now() / 1000) + 600
-            const principal: McpPrincipal = {
-              kind: 'oauth',
-              userId: authId,
-              clientId: 'host',
-              scopes,
-              sessionId: 'session',
-              grantId: 'grant',
-              issuer: expected.issuer,
-              resource: expected.resource.href,
-              expiresAt,
-            }
-            const access = {
-              issuer: expected.issuer,
-              subject: authId,
-              clientId: 'host',
-              resource: expected.resource.href,
-              scopes,
-            }
-            return { access, expiresAt, principal }
-          },
+export const doorAuth: McpDoorAuth = {
+  mcpAuthorization: () => ({
+    resource: new URL('/mcp', process.env.CONVEX_SITE_URL),
+    authorization: {
+      mode: 'oauth',
+      issuer: `${process.env.SITE_URL}/api/auth`,
+      verifier: {
+        async verifyAccessToken(token) {
+          const principal = JSON.parse(atob(token)) as McpPrincipal
+          const { issuer, userId: subject, clientId, resource, scopes, expiresAt } = principal
+          return { access: { issuer, subject, clientId, resource, scopes }, expiresAt, principal }
         },
       },
-    }),
-  }
-  return {
-    auth,
-    /** Ends a connection in the fake auth component: its next tool call fails. */
-    revoke: (authId: string, clientId = 'host') => void revoked.add(`${authId}:${clientId}`),
-    reset: () => revoked.clear(),
-  }
+    },
+  }),
 }
+
+/** The bearer token `doorAuth` turns back into `principal`. */
+export const tokenFor = (principal: McpPrincipal) => btoa(JSON.stringify(principal))
 
 /**
  * JSON-RPC over convex-test's HTTP router, as an MCP host sends it today (protocol

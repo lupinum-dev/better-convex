@@ -1,6 +1,7 @@
 import { defineFunctions, definePolicy, owner, tenant } from '@lupinum/better-convex-functions'
+import { createBetterConvexAuth } from '@lupinum/better-convex-nuxt/better-auth/server'
 
-import { testAuth } from '../support'
+import { betterAuthComponent } from '../support'
 import type { DataModel } from './dataModel'
 
 export const policy = definePolicy({
@@ -13,11 +14,11 @@ export const policy = definePolicy({
   agents: { 'projects.archive': 'approve' },
 })
 
-/** The auth component and MCP token check, faked; `reset()` in setup. */
-export const testing = testAuth<DataModel>()
+/** The real Better Auth component, registered in setup: people, sessions and MCP grants. */
+export const auth = createBetterConvexAuth<DataModel>(betterAuthComponent, {})
 
 export const fns = defineFunctions({
-  auth: testing.auth,
+  auth,
   policy,
   user: (ctx, authId) =>
     ctx.db

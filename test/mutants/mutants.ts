@@ -520,8 +520,10 @@ export const mutants: Mutant[] = [
     kills: [
       'test/convex/mcp-oauth.test.ts > requireMcpPrincipal > denies a revoked connection and a disabled client',
       'test/convex/mcp-oauth.test.ts > requireMcpPrincipal > with allowExpiredToken, accepts an expired token of a live grant and still denies a revoked one',
+      `${A}/door/door.test.ts > revoking a connection cancels its open requests, and its tools then fail`,
+      `${A}/approvals/approvals.test.ts > a follow-up of an approved request changes nothing after the person revokes the connection`,
     ],
-    projects: ['convex'],
+    projects: ['convex', 'agents'],
   },
   {
     id: 'S14-token-expiry',
@@ -568,7 +570,7 @@ export const mutants: Mutant[] = [
   {
     id: 'S16-numeric-request-id',
     guards: 'S16',
-    file: 'packages/agents/src/door.ts',
+    file: 'packages/agents/src/tools.ts',
     find: "typeof rawRequestId === 'number' ? String(rawRequestId) : rawRequestId",
     replace: 'rawRequestId',
     kills: [`${A}/door/door.test.ts > a numeric request_id still deduplicates`],
@@ -830,6 +832,18 @@ export const mutants: Mutant[] = [
       `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
     ],
     projects: ['functions'],
+  },
+  // Package tests may import another package's public entry, and only that (check-boundaries).
+  {
+    id: 'boundary-test-import-public-entry',
+    guards: 'boundaries',
+    file: 'scripts/check-boundaries.mjs',
+    find: 'Object.hasOwn(exports, subpath)',
+    replace: 'true',
+    kills: [
+      'test/unit/convex-auth-boundaries.test.ts > workspace package dependency direction > lets a package test import another package’s public entry, and nothing else',
+    ],
+    projects: ['unit'],
   },
   // createBetterConvexTestAuth refuses to run outside a test runner (B1).
   {

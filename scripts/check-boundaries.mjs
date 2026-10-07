@@ -575,6 +575,19 @@ function findWorkspaceDependencyCycles(packages) {
   return cycles
 }
 
+/**
+ * A package's own tests (`<package>/test/`) may import a public entry of another workspace
+ * package through a Vitest alias, as the agents tests use the Nuxt package's `better-auth/test`.
+ * The package never ships its tests, so this is no package edge; a source file still needs the
+ * dependency declared.
+ */
+function isTestImportOfPublicEntry(file, importer, edge, target) {
+  if (!inDir(file, join(importer.directory, 'test'))) return false
+  const subpath = `.${edge.specifier.slice(target.name.length)}`
+  const exports = target.manifest.exports
+  return !!exports && typeof exports === 'object' && Object.hasOwn(exports, subpath)
+}
+
 function findWorkspaceDependencyViolations(files, packages) {
   const packageByName = new Map(
     packages.map((workspacePackage) => [workspacePackage.name, workspacePackage]),
@@ -601,7 +614,10 @@ function findWorkspaceDependencyViolations(files, packages) {
       if (edge.isRelative || edge.specifier === COMPUTED_DYNAMIC_IMPORT) continue
       const targetName = packageNameFromSpecifier(edge.specifier)
       if (targetName === importer.name || !packageByName.has(targetName)) continue
-      if (!declared.has(targetName)) {
+      if (
+        !declared.has(targetName) &&
+        !isTestImportOfPublicEntry(absoluteFile, importer, edge, packageByName.get(targetName))
+      ) {
         violations.push({
           file: absoluteFile,
           kind: 'undeclared-workspace-import',
