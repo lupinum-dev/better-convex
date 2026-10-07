@@ -55,6 +55,19 @@ test.concurrent('a typo in a rule gives one error, at the rule', { timeout: 60_0
   expect(errors[0]).toMatch(/^functions\.ts[\s\S]*Did you mean '"organizationId"'/)
 })
 
+// Round 1 review: tenant() on a field that holds no ID type-checked, then hid every row.
+test.concurrent(
+  'a rule on a field that holds no ID is a type error',
+  { timeout: 60_000 },
+  async () => {
+    const errors = await typeErrors('field', [
+      ['functions.ts', "projects: tenant('organizationId')", "projects: tenant('name')"],
+    ])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatch(/^functions\.ts/)
+  },
+)
+
 // X1: a new table must force a rule decision.
 test.concurrent(
   'a table without a rule is a type error that names it',

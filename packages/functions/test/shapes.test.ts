@@ -142,6 +142,14 @@ test('K3: a client moves only under an agency inside the call, where the role al
   )
 })
 
+// Round 1 review: tenant() on a field of a non-tenant table hid every row, and inserts said NOT_FOUND.
+test('a tenant rule on a field that holds no tenant ID says so at the first row', async () => {
+  const { ann } = await setup()
+  await expect(ann.mutation(fn('misnamed:create'), { text: 'Hi' })).rejects.toThrow(
+    "notes.authorId holds a users ID, but users is not a tenant (no tenant('_id') rule).",
+  )
+})
+
 // K2: two tenant kinds through one roleOf; a call spanning them was impossible.
 test('K2: a move between a workspace and an organization needs crossTenant, and a role in both that allows it', async () => {
   const { t, ann, vic, a, users } = await setup()

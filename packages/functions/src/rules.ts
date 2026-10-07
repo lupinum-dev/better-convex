@@ -1,4 +1,5 @@
 import type { GenericDatabaseReader, GenericDatabaseWriter, GenericDataModel } from 'convex/server'
+import type { GenericId } from 'convex/values'
 
 import { fail, type Actor, type SystemActor, type Visitor } from './actor'
 import { libraryTables } from './schema'
@@ -9,13 +10,18 @@ import { libraryTables } from './schema'
  * so a forgotten filter cannot hand out another person's data.
  */
 export type Rule<Row = any, User = any, DM extends GenericDataModel = GenericDataModel> =
-  | { kind: 'tenant'; field: keyof Row & string; createdBy?: string; parent?: keyof Row & string }
-  | { kind: 'owner'; field: keyof Row & string }
+  | { kind: 'tenant'; field: IdField<Row>; createdBy?: string; parent?: IdField<Row> }
+  | { kind: 'owner'; field: IdField<Row> }
   | { kind: 'publicRead'; where?: (row: Row) => boolean }
   | { kind: 'anyOf'; rules: readonly Rule<Row, User, DM>[] }
   | { kind: 'allOf'; rules: readonly Rule<Row, User, DM>[] }
   | { kind: 'custom'; check: (ctx: RuleCtx<User, DM>, row: Row) => boolean | Promise<boolean> }
   | { kind: 'unchecked'; reason: string }
+
+/** The fields of a row that hold an ID: what `tenant` and `owner` can name. */
+type IdField<Row> = {
+  [K in keyof Row & string]-?: NonNullable<Row[K]> extends GenericId<string> ? K : never
+}[keyof Row & string]
 
 /** A tenant: a row of a table whose rule is `tenant('_id')`. */
 export interface TenantRef {
@@ -304,6 +310,17 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
     return (await chain(load, raw, ref)).some((t) => t.id === call.tenant!.id)
   }
 
+  /** A tenant rule whose field holds an ID of a table that is not a tenant: a mistake in the rules, not a hidden row. */
+  function notATenant(table: string, field: string, value: unknown) {
+    if (typeof value !== 'string') return
+    const other = Object.keys(rules).find((name) => raw.normalizeId(name, value) !== null)
+    if (other === undefined) return
+    throw new Error(
+      `${table}.${field} holds a ${other} ID, but ${other} is not a tenant (no tenant('_id') rule). ` +
+        `Use a field that holds a tenant ID, or make ${other} a tenant with tenant('_id', { parent }).`,
+    )
+  }
+
   /** May this call place a tenant under this parent? Inside the call, with a role there that allows the action. */
   async function underParent(value: unknown): Promise<Verdict> {
     const parent = refOf(raw, value)
@@ -313,11 +330,13 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
     return call.allows(role, call.action) ? 'ok' : 'denied'
   }
 
+  /** `inAnyOf`: another rule may match the row, so a field that names no tenant only fails this one. */
   async function judgeRule(
     rule: Rule,
     table: string,
     row: Row,
     mode: 'read' | 'write' | 'insert',
+    inAnyOf = false,
   ): Promise<Verdict> {
     switch (rule.kind) {
       case 'unchecked':
@@ -347,7 +366,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
       case 'anyOf': {
         const verdicts = []
         for (const member of rule.rules) {
-          const verdict = await judgeRule(member, table, row, mode)
+          const verdict = await judgeRule(member, table, row, mode, true)
           if (verdict === 'ok') return 'ok'
           verdicts.push(verdict)
         }
@@ -357,7 +376,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
         // Every part runs, so a part that hides the row wins over one that refuses it.
         let verdict: Verdict = 'ok'
         for (const member of rule.rules) {
-          const part = await judgeRule(member, table, row, mode)
+          const part = await judgeRule(member, table, row, mode, inAnyOf)
           if (part === 'hidden') return 'hidden'
           if (part === 'denied') verdict = 'denied'
         }
@@ -372,7 +391,10 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
         }
         const value = rule.field === '_id' ? row._id : row[rule.field]
         const ref = rule.field === '_id' ? { table, id: String(value) } : refOf(raw, value)
-        if (!ref) return 'hidden'
+        if (!ref) {
+          if (!inAnyOf) notATenant(table, rule.field, value)
+          return 'hidden'
+        }
         if (!(await insideCall(ref))) return 'hidden'
         const role = await roleIn(ref)
         if (role === null) return 'hidden'
@@ -420,7 +442,12 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
     // A row the actor may read exists for them: say they may not do this, not that it is missing (marketplace slice).
     if (verdict === 'hidden' && mode === 'write' && (await judge(table, row, 'read')) === 'ok')
       verdict = 'denied'
-    if (verdict === 'hidden') fail('NOT_FOUND', `No ${table} with this ID.`)
+    // A new row has no ID yet: what is missing is a place it names.
+    if (verdict === 'hidden')
+      fail(
+        'NOT_FOUND',
+        mode === 'insert' ? 'Nothing with these IDs was found.' : `No ${table} with this ID.`,
+      )
     if (verdict === 'denied') fail('FORBIDDEN', `You may not ${call.action} here.`)
   }
 
