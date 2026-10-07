@@ -1,15 +1,20 @@
 import { execFile } from 'node:child_process'
 import { cpSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { afterAll, expect, test } from 'vitest'
+
+import { activeMutant, applyMutant } from '../../../test/mutants/plugin'
 
 // What a developer sees from the type checker after common mistakes. Each
 // scenario copies the fixture app (test/app), applies a few text edits and runs
 // tsc, so the scenarios cannot drift from the app. Each names the STRESS.md
 // row of the walking skeleton it keeps fixed.
+//
+// tsc reads files, not vitest's modules, so under `pnpm test:mutants` a scenario
+// applies the active row to its own copy of `src` and points the app at it.
 
 const packageRoot = join(import.meta.dirname, '..')
 // A sibling of test/, so the copy's tsconfig paths (`../../src`) still resolve.
@@ -24,6 +29,17 @@ async function typeErrors(id: string, edits: Edit[], tsconfig = 'tsconfig.json')
   const dir = join(scratch, id)
   rmSync(dir, { recursive: true, force: true })
   cpSync(join(import.meta.dirname, 'app'), dir, { recursive: true })
+  const row = activeMutant()
+  if (row?.file.startsWith('packages/functions/src/')) {
+    // Beside the app, not in it: the app's tsconfig includes every file below it.
+    const src = join(scratch, `${id}.src`)
+    rmSync(src, { recursive: true, force: true })
+    cpSync(join(packageRoot, 'src'), src, { recursive: true })
+    const file = join(src, basename(row.file))
+    writeFileSync(file, applyMutant(row, readFileSync(file, 'utf8')))
+    const config = join(dir, 'tsconfig.json')
+    writeFileSync(config, readFileSync(config, 'utf8').replaceAll('../../src/', `../${id}.src/`))
+  }
   for (const [file, find, replace] of edits) {
     const path = join(dir, file)
     const text = readFileSync(path, 'utf8')

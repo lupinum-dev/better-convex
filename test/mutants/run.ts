@@ -1,5 +1,5 @@
 /**
- * Runs the mutation check: `pnpm test:mutants`, or `pnpm test:mutants --only <id>`.
+ * Runs the mutation check: `pnpm test:mutants`, or `pnpm test:mutants --only <id>[,<id>…]`.
  *
  * 1. Baseline: one vitest run over the `kills` files of the selected rows.
  *    Every name in every `kills` list must exist and pass.
@@ -9,10 +9,8 @@
  * 3. A row fails when the plugin did not replace `find` exactly once, when a
  *    `kills` test passes, or when a `kills` test did not run (the mutant broke
  *    the module before the tests ran: fix the row).
- * 4. Every invariant row (`| S<n> |`) in section 6 of
- *    internal/functions-and-agents/plan.md needs a mutant row. A missing one is
- *    a warning; with `BC_MUTANTS_STRICT=1` it fails the run. CI sets it once
- *    every invariant has a row.
+ * 4. A full run fails when an invariant row (`| S<n> |`) in section 6 of
+ *    internal/functions-and-agents/plan.md has no mutant row.
  *
  * Nothing is written to the working tree: the reports go to a temporary
  * directory, so an interrupted run leaves `git status` as it was.
@@ -81,8 +79,9 @@ for (const row of mutants) {
   if (row.kills.length === 0) throw new Error(`Mutant row "${row.id}" names no test in kills.`)
   ids.add(row.id)
 }
-const rows = only ? mutants.filter((row) => row.id === only) : mutants
-if (rows.length === 0) throw new Error(`No mutant row "${only}".`)
+const onlyIds = only?.split(',')
+for (const id of onlyIds ?? []) if (!ids.has(id)) throw new Error(`No mutant row "${id}".`)
+const rows = onlyIds ? mutants.filter((row) => onlyIds.includes(row.id)) : mutants
 
 let failed = 0
 let failedRows = 0
@@ -114,6 +113,8 @@ for (const row of rows) {
   const { statuses } = await runVitest(projectsOf(row), files, {
     BC_MUTANT: row.id,
     BC_MUTANT_REPORT: reportFile,
+    // The baseline built the packages; the integration rows change only the starter copy.
+    BCN_INTEGRATION_SKIP_BUILD: '1',
   })
   const counts = existsSync(reportFile)
     ? readFileSync(reportFile, 'utf8')
@@ -140,13 +141,14 @@ for (const row of rows) {
 const plan = readFileSync(join(root, 'internal/functions-and-agents/plan.md'), 'utf8')
 const section = plan.slice(plan.indexOf('## 6.'), plan.indexOf('## 7.'))
 const guarded = new Set(mutants.map((row) => row.guards))
-const missing = [...section.matchAll(/^\|\s*(S\d+)\s*\|/gm)]
-  .map((match) => match[1]!)
-  .filter((invariant) => !guarded.has(invariant))
-const strict = process.env.BC_MUTANTS_STRICT === '1'
-if (missing.length && !only) {
-  console.log(`${strict ? 'FAIL' : 'warn'} no mutant row for ${missing.join(', ')}`)
-  if (strict) failed++
+const invariants = [...section.matchAll(/^\|\s*(S\d+)\s*\|/gm)].map((match) => match[1]!)
+const missing = invariants.filter((invariant) => !guarded.has(invariant))
+if (!only && invariants.length === 0) {
+  console.log('FAIL found no invariant rows in plan.md section 6')
+  failed++
+} else if (!only && missing.length) {
+  console.log(`FAIL no mutant row for ${missing.join(', ')}`)
+  failed++
 }
 
 rmSync(scratch, { recursive: true, force: true })

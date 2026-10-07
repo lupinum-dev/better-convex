@@ -158,3 +158,53 @@ describe('2026-07-28 HTTP metadata through the Better Convex boundary', () => {
     },
   )
 })
+
+// Most hosts still speak the 2025 era: no `mcp-method` header and one `initialize` per
+// connection. The door once sent these requests to the 2026 transport, which refused them.
+describe('a 2025-era request without the 2026 headers', () => {
+  it('is served statelessly as JSON, initialize and tools/call alike', async () => {
+    const { options, invoked } = await fixture()
+    const legacy = (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+      handleMcpRequest(
+        new Request(resource, {
+          method: 'POST',
+          headers: {
+            accept: 'application/json, text/event-stream',
+            authorization: 'Bearer synthetic-header-token',
+            'content-type': 'application/json',
+            ...headers,
+          },
+          body: JSON.stringify({ jsonrpc: '2.0', ...body }),
+        }),
+        options,
+      )
+
+    const initialized = await legacy({
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-11-25',
+        capabilities: {},
+        clientInfo: { name: 'legacy-host', version: '1.0.0' },
+      },
+    })
+    expect(initialized.status).toBe(200)
+    expect(initialized.headers.get('content-type')).toMatch(/^application\/json/)
+    expect(initialized.headers.has('mcp-session-id')).toBe(false)
+    expect(await initialized.json()).toMatchObject({
+      id: 1,
+      result: { protocolVersion: '2025-11-25' },
+    })
+
+    const called = await legacy(
+      { id: 2, method: 'tools/call', params: { name: toolName, arguments: { region: 'eu' } } },
+      { 'mcp-protocol-version': '2025-11-25' },
+    )
+    expect(called.status).toBe(200)
+    expect(await called.json()).toMatchObject({
+      id: 2,
+      result: { content: [{ type: 'text', text: 'Found the note.' }] },
+    })
+    expect(invoked).toHaveBeenCalledOnce()
+  })
+})

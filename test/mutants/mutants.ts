@@ -10,12 +10,20 @@
  * whose `kills` names that test.
  */
 
-type Project = 'functions' | 'agents' | 'unit' | 'convex' | 'mcp' | 'security'
+/**
+ * `integration` holds the starter's real-backend journey. Only rows in a starter file reach it:
+ * `test/integration/harness.ts` applies the row to the starter copy that `nuxt dev` serves. The
+ * packages run there from their build, which no row changes.
+ */
+type Project = 'functions' | 'agents' | 'unit' | 'convex' | 'mcp' | 'security' | 'integration'
 
 export interface Mutant {
   /** Stable ID, e.g. 'S10-acting-as-status'. */
   id: string
-  /** The invariant or class it guards: 'S1'…'S18', 'C1'…'C11', or 'budget'. */
+  /**
+   * What it guards: an invariant 'S1'…'S18' (plan.md section 6), a bug class 'C1'…'C11'
+   * (review-checklist.md), or a short name such as 'transport' or 'live'.
+   */
   guards: string
   /** Repo-relative file. */
   file: string
@@ -52,6 +60,8 @@ const marketplace = `${consumers}/marketplace/convex`
 const marketplaceLeaks = `${marketplace}/marketplace.test.ts > no call reaches another organization's order or draft`
 const sites = `${consumers}/sites/convex`
 const sitesLeaks = `${sites}/sites.test.ts > no call reaches another organization's site`
+const journey =
+  'test/integration/mcp-auth.integration.test.ts > MCP OAuth starter end to end > lets a person decide an agent request on the link the agent gives'
 
 export const mutants: Mutant[] = [
   {
@@ -73,6 +83,15 @@ export const mutants: Mutant[] = [
     kills: [
       `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
     ],
+  },
+  {
+    id: 'S2-table-without-rule',
+    guards: 'S2',
+    file: 'packages/functions/src/functions.ts',
+    find: '[T in AppTables<DM>]: Rule<',
+    replace: '[T in AppTables<DM>]?: Rule<',
+    kills: [`${F}/types.test.ts > a table without a rule is a type error that names it`],
+    projects: ['functions'],
   },
   {
     id: 'S3-get-readable',
@@ -931,6 +950,17 @@ export const mutants: Mutant[] = [
     ],
     projects: ['unit'],
   },
+  {
+    id: 'boundary-test-import-tests',
+    guards: 'boundaries',
+    file: 'scripts/check-boundaries.mjs',
+    find: "inDir(edge.resolvedAbsPath, join(target.directory, 'test'))",
+    replace: 'true',
+    kills: [
+      'test/unit/convex-auth-boundaries.test.ts > workspace package dependency direction > lets a package test import another package’s tests by path, and nothing else',
+    ],
+    projects: ['unit'],
+  },
   // createBetterConvexTestAuth refuses to run outside a test runner (B1).
   {
     id: 'C9-test-auth-runner',
@@ -952,6 +982,18 @@ export const mutants: Mutant[] = [
     replace: 'if (false) throw new McpTransportFailure(413)',
     kills: [
       `${A}/mcp/transport.test.ts > MCP transport bounds > accepts the exact request limit and rejects declared or streamed overflow`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    // Kept on purpose (open question 2): most hosts still speak the 2025 era.
+    id: 'mcp-legacy-to-modern-transport',
+    guards: 'transport',
+    file: 'packages/agents/src/handler.ts',
+    find: 'if (await isServedLegacyRequest(boundedRequest)) {',
+    replace: 'if (false) {',
+    kills: [
+      `${A}/mcp/header-contract.test.ts > a 2025-era request without the 2026 headers > is served statelessly as JSON, initialize and tools/call alike`,
     ],
     projects: ['agents'],
   },
@@ -1211,6 +1253,56 @@ export const mutants: Mutant[] = [
     replace: 'agents: {},',
     kills: [`${sites}/sites.test.ts > an agent's check waits for approval, then the job runs it`],
     projects: ['mcp'],
+  },
+  // The approval link page every app copies. The journey runs the starter with `nuxt dev` on the
+  // local backend, as `pnpm test:integration` does, so each of these rows takes minutes.
+  {
+    id: 'approval-page-approve-calls-decline',
+    guards: 'approval-page',
+    file: 'starters/mcp-oauth-agent/app/pages/approvals/[id].vue',
+    find: 'const approve = useConvexMutation(api.agents.approve)',
+    replace: 'const approve = useConvexMutation(api.agents.decline)',
+    kills: [journey],
+    projects: ['integration'],
+  },
+  {
+    id: 'approval-page-decline-calls-approve',
+    guards: 'approval-page',
+    file: 'starters/mcp-oauth-agent/app/pages/approvals/[id].vue',
+    find: 'const decline = useConvexMutation(api.agents.decline)',
+    replace: 'const decline = useConvexMutation(api.agents.approve)',
+    kills: [journey],
+    projects: ['integration'],
+  },
+  {
+    id: 'approval-page-sign-in-link-loses-return',
+    guards: 'approval-page',
+    file: 'starters/mcp-oauth-agent/app/pages/approvals/[id].vue',
+    find: 'encodeURIComponent(route.fullPath)',
+    replace: "encodeURIComponent('/')",
+    kills: [journey],
+    projects: ['integration'],
+  },
+  {
+    id: 'starter-sign-in-ignores-return',
+    guards: 'approval-page',
+    file: 'starters/mcp-oauth-agent/app/pages/index.vue',
+    find: 'else if (returnTo.value) await navigateTo(returnTo.value)',
+    replace: 'else if (false) await navigateTo(returnTo.value)',
+    kills: [journey],
+    projects: ['integration'],
+  },
+  // The cloud smoke deploys operator-only test functions; a production key must never reach it.
+  {
+    id: 'live-refuses-production-key',
+    guards: 'live',
+    file: 'test/live/target.ts',
+    find: "if (!deployKey.startsWith('preview:')) {",
+    replace: 'if (false) {',
+    kills: [
+      'test/unit/live-target.test.ts > the live smoke target > refuses the deploy key prod:happy-animal-123|secret, and never prints its secret',
+    ],
+    projects: ['unit'],
   },
 ]
 
