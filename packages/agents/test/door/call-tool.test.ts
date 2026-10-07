@@ -37,3 +37,14 @@ test.each([
     callTool(t, tools, await grantMcp(t, 'ann', ['read']), 'echo_shapes', input),
   ).rejects.toMatchObject(error)
 })
+
+// Fix round 1: callTool handed the JavaScript input to the tool, so a test saw a NaN that no host
+// can send. The door gets JSON, where it is null; a tool reads null in an optional field as left
+// out.
+test('callTool sends the input as JSON, as a host does', async () => {
+  const { t } = await setup()
+  const input = { either: NaN, anything: Infinity, text: 'x' }
+  expect(
+    await callTool(t, tools, await grantMcp(t, 'ann', ['read']), 'echo_shapes', input),
+  ).toEqual({ status: 'done', result: { types: { text: 'string' } } })
+})

@@ -383,6 +383,15 @@ export const mutants: Mutant[] = [
     ],
   },
   {
+    // callTool sends the input through JSON, as a host must, so a test sees what the door sees.
+    id: 'callTool-json',
+    guards: 'callTool',
+    file: 'packages/agents/src/test.ts',
+    find: 'JSON.parse(JSON.stringify(input)) as Record<string, unknown>',
+    replace: 'input',
+    kills: [`${A}/door/call-tool.test.ts > callTool sends the input as JSON, as a host does`],
+  },
+  {
     // STRESS G2: input Convex cannot carry is named as a field, at the door and in callTool.
     id: 'G2-unsendable-input',
     guards: 'G2',
@@ -622,8 +631,9 @@ export const mutants: Mutant[] = [
     id: 'S14-live-grant',
     guards: 'S14',
     file: 'src/runtime/convex-auth/oauth-live-access.ts',
-    find: "    !consent ||\n    !nonEmptyString(consent.id) ||\n    consent.id !== args.grantId ||\n    consent.clientId !== clientId ||\n    consent.userId !== userId ||\n    !consentResources?.includes(identifier) ||\n    !consentScopes ||\n    !containsEvery(consentScopes, scopes)\n  ) {\n    return null\n  }\n  return { user: admission.user, grantId: consent.id }",
-    replace: '    false\n  ) {\n    return null\n  }\n  return { user: admission.user, grantId: args.grantId }',
+    find: '    !consent ||\n    !nonEmptyString(consent.id) ||\n    consent.id !== args.grantId ||\n    consent.clientId !== clientId ||\n    consent.userId !== userId ||\n    !consentResources?.includes(identifier) ||\n    !consentScopes ||\n    !containsEvery(consentScopes, scopes)\n  ) {\n    return null\n  }\n  return { user: admission.user, grantId: consent.id }',
+    replace:
+      '    false\n  ) {\n    return null\n  }\n  return { user: admission.user, grantId: args.grantId }',
     kills: [
       'test/convex/mcp-oauth.test.ts > requireMcpPrincipal > denies a revoked connection and a disabled client',
       'test/convex/mcp-oauth.test.ts > requireMcpPrincipal > with allowExpiredToken, accepts an expired token of a live grant and still denies a revoked one',
