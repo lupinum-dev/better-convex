@@ -25,5 +25,7 @@ export default defineSchema({
     verdict: v.string(),
     edits: v.optional(v.number()),
   }),
+  // A publicRead condition alone.
+  publicChecked: defineTable({ verdict: v.string(), edits: v.optional(v.number()) }),
   ...libraryTables,
 })

@@ -126,7 +126,12 @@ export const probeJob = job({
   },
 })
 
-const table = v.union(v.literal('checked'), v.literal('eitherChecked'), v.literal('bothChecked'))
+const table = v.union(
+  v.literal('checked'),
+  v.literal('eitherChecked'),
+  v.literal('bothChecked'),
+  v.literal('publicChecked'),
+)
 
 /** Reads a row by an unchecked string: `'read'`, or `'hidden'` when the rules hide it. */
 export const readRow = query({

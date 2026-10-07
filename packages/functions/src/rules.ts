@@ -416,7 +416,8 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
       case 'owner':
         return actor.kind !== 'visitor' && row[rule.field] === actor.user._id ? 'ok' : 'hidden'
       case 'publicRead': {
-        const visible = !rule.where || rule.where(row as never)
+        // Only `true` makes a row public; an async condition's Promise is truthy (release review).
+        const visible = !rule.where || rule.where(row as never) === true
         if (!visible) return 'hidden'
         return mode === 'read' ? 'ok' : 'denied'
       }

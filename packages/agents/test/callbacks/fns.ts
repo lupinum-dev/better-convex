@@ -5,6 +5,7 @@ import {
   defineFunctions,
   definePolicy,
   owner,
+  publicRead,
   tenant,
 } from '@lupinum/better-convex-functions'
 import { createBetterConvexAuth } from '@lupinum/better-convex-nuxt/better-auth/server'
@@ -109,6 +110,9 @@ export const fns = defineFunctions({
     checked: verdict('custom rule'),
     eitherChecked: anyOf(owner('ownerId'), verdict('custom rule in anyOf')),
     bothChecked: allOf(tenant('orgId'), verdict('custom rule in allOf')),
+    publicChecked: publicRead<{ verdict: string }>(
+      (row) => (row.verdict === 'true' ? true : stored(row.verdict)) as boolean,
+    ),
   },
 })
 

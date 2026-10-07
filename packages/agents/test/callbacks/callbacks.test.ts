@@ -4,7 +4,7 @@ import { convexTest } from 'convex-test'
 import { anyApi } from 'convex/server'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { seen, type Bad } from './fns'
+import { bad, seen, type Bad } from './fns'
 import schema from './schema'
 import { tools } from './tools'
 
@@ -460,6 +460,26 @@ for (const [point, table] of [
   test.each(rows(ruleRows))(`a ${point} that returns %s`, (_, row) => judged(row))
   test.each(rows(ruleFailedOpen))(`a ${point} that returns %s`, (_, row) => judged(row))
 }
+
+// Release review, 2026-10-07: a publicRead condition that returned a truthy value other than
+// `true` made the row public, also an async condition that resolves to false (its Promise is
+// truthy). publicRead never allows a write.
+test.each([
+  ['true', { read: 'read', write: 'FORBIDDEN' }],
+  ...(Object.keys(bad) as Bad[])
+    .filter((returns) => returns !== 'a thrown Error')
+    .map((returns) => [returns, { read: 'hidden', write: 'NOT_FOUND' }] as const),
+  ['a thrown Error', { read: broke, write: broke }],
+] as const)('a publicRead condition that returns %s', async (returns, expected) => {
+  const s = await setup()
+  const id = await s.t.run((ctx) =>
+    ctx.db.insert('publicChecked', { verdict: returns === 'true' ? 'true' : verdict(returns) }),
+  )
+  expect({
+    read: await outcome(s.ann.query(api.ops.readRow, { table: 'publicChecked', id })),
+    write: await outcome(s.ann.mutation(api.ops.editRow, { table: 'publicChecked', id })),
+  }).toEqual(expected)
+})
 
 /** Stores the bad value `roleOf` returns for this member (fns.ts). */
 const setRole = (s: Setup, member: 'annMember' | 'olgaMember', returns: Bad) =>
