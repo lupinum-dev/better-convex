@@ -183,6 +183,45 @@ export const mutants: Mutant[] = [
       `${F}/rules.test.ts > reading a query with next checks the rows`,
     ],
   },
+  // T5: the agents type tests run tsc on a copy of the sources, with the row applied to the copy.
+  {
+    // V5: the internals stay off the result, or an app's declaration file must name their type.
+    id: 'C8-declarations-internals',
+    guards: 'C8',
+    file: 'packages/agents/src/tools.ts',
+    find: 'return { functions, catalog, approvals, activity, disconnected }',
+    replace:
+      'return { functions, catalog, approvals, activity, disconnected, kit: internalsOf(fns) as Internals }',
+    kills: [`${A}/types.test.ts > the app type-checks and emits declarations`],
+    projects: ['agents'],
+  },
+  {
+    id: 'C2-summary-runs-queries',
+    guards: 'C2',
+    file: 'packages/functions/src/functions.ts',
+    find: "ctx: Omit<QueryCtx, 'runQuery'> & { actor: ActorFor<A> },",
+    replace: 'ctx: QueryCtx & { actor: ActorFor<A> },',
+    kills: [`${A}/types.test.ts > an approval summary cannot write, call or schedule functions`],
+    projects: ['agents'],
+  },
+  {
+    id: 'C2-summary-writes',
+    guards: 'C2',
+    file: 'packages/functions/src/functions.ts',
+    find: "ctx: Omit<QueryCtx, 'runQuery'> & { actor: ActorFor<A> },",
+    replace: "ctx: Omit<MutationCtx, 'runQuery'> & { actor: ActorFor<A> },",
+    kills: [`${A}/types.test.ts > an approval summary cannot write, call or schedule functions`],
+    projects: ['agents'],
+  },
+  {
+    id: 'C8-tool-arg-descriptions',
+    guards: 'C8',
+    file: 'packages/functions/src/functions.ts',
+    find: 'args?: { [K in keyof Args]?: string }',
+    replace: 'args?: Record<string, string>',
+    kills: [`${A}/types.test.ts > a tool's argument description must name an argument`],
+    projects: ['agents'],
+  },
   {
     id: 'S4-unknown-method',
     guards: 'S4',
