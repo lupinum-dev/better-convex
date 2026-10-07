@@ -48,18 +48,24 @@ export const archiveRow = internalMutation({
 /** Approved work that continues later: it schedules the archive (an outside call would sit between). */
 export const archiveLater = mutation({
   action: 'projects.archive',
-  args: { projectId: v.id('projects') },
-  returns: v.null(),
-  tool: { name: 'archive_later', description: 'Archive a project in the background.' },
-  handler: async (ctx, { projectId }) => {
-    await ctx.scheduler.runAfter(
-      0,
-      makeFunctionReference<'mutation'>('ops:archiveRow') as never,
-      {
-        projectId,
-      } as never,
+  args: { projectIds: v.array(v.id('projects')) },
+  returns: v.array(v.string()),
+  tool: { name: 'archive_later', description: 'Archive projects in the background.' },
+  handler: async (ctx, { projectIds }) => {
+    // Scheduled at once, so the follow-up token must not depend on the order of the writes.
+    await Promise.all(
+      projectIds.map((projectId) =>
+        ctx.scheduler.runAfter(
+          0,
+          makeFunctionReference<'mutation'>('ops:archiveRow') as never,
+          {
+            projectId,
+          } as never,
+        ),
+      ),
     )
-    return null
+    // What the handler sees of its actor: no approval credentials.
+    return Object.keys(ctx.actor).sort()
   },
 })
 

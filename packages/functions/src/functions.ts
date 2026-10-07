@@ -100,6 +100,24 @@ export interface Operation {
  */
 export type JobDone = { readonly 'better-convex/job': true }
 
+/**
+ * The actor as a handler sees it: without the approval it runs under. The approval ID and the
+ * follow-up token are credentials that only the library's call wrappers pass on; an app that
+ * stores or sends `ctx.actor` must not carry them (Codex round 4).
+ */
+function shown<T extends object>(actor: T): T {
+  if (!('approvalId' in actor) && !('followUp' in actor)) return actor
+  const {
+    approvalId: _approval,
+    followUp: _followUp,
+    ...rest
+  } = actor as T & {
+    approvalId?: unknown
+    followUp?: unknown
+  }
+  return rest as T
+}
+
 /** How long work scheduled by an approved request still runs under that approval. */
 const followUpWindow = 60 * 60_000
 
@@ -275,7 +293,7 @@ export function defineFunctions<
             row.decidedAt !== undefined &&
             Date.now() < row.decidedAt + followUpWindow &&
             who.followUp !== undefined &&
-            (row.followUps ?? []).includes(who.followUp))
+            who.followUp === row.followUp)
         if (!row || row.requester.key !== actorRecord(actor).key || !standing) {
           fail('APPROVAL_NOT_FOUND', "This work does not run under a person's approval.")
         }
@@ -464,7 +482,7 @@ export function defineFunctions<
       settle,
       /** May this call change the row? For approvals: rows it only reads give their tenant no say. */
       mayWrite: (table: string, row: Record<string, unknown>) => checks.mayWrite(table, row),
-      ctx: { ...ctx, ...nested, db: db as Ctx['db'], actor },
+      ctx: { ...ctx, ...nested, db: db as Ctx['db'], actor: shown(actor) },
     }
   }
 
@@ -489,20 +507,16 @@ export function defineFunctions<
       ) ?? false
     const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting) =>
       isComponent(ref) ? args : { actingAs: as, input: args ?? {} }
-    // Work an approved request schedules while it runs gets a token, recorded on the request:
-    // only that work continues under the approval after `approve` returns.
+    // Work an approved request schedules while it runs carries the request's follow-up token
+    // (minted by `approve`): only that work continues under the approval after `approve` returns.
     const scheduledAs = async (): Promise<ActingAs> => {
       if (acting.kind !== 'agent' || acting.approvalId === undefined || acting.followUp)
         return acting
       if (!c.db) return acting
       const id = lib(c as { db: unknown }).normalizeId('approvals', acting.approvalId)
       const row = id && (await lib(c as { db: unknown }).get(id))
-      if (!row || row.status !== 'executing') return acting
-      const followUp = crypto.randomUUID()
-      await lib(c as { db: unknown }).patch(row._id, {
-        followUps: [...(row.followUps ?? []), followUp],
-      })
-      return { ...acting, followUp }
+      if (!row || row.status !== 'executing' || row.followUp === undefined) return acting
+      return { ...acting, followUp: row.followUp }
     }
     const runner = (name: string) =>
       c[name]
@@ -888,7 +902,10 @@ export function defineFunctions<
                 'This action reached a function that is not an internal operation.',
               )),
           )
-          const result = await spec.handler({ ...ctx, ...nested, actor: who } as never, input)
+          const result = await spec.handler(
+            { ...ctx, ...nested, actor: shown(who) } as never,
+            input,
+          )
           if (reached) {
             console.error(
               'Raw function reached from an internal action; its writes are committed. Make it an internal operation.',

@@ -409,16 +409,22 @@ test('work an approved request scheduled runs under the approval, for an hour', 
   const s = await setup()
   const asked = await s.t.mutation(api.tools.archive_later, {
     caller,
-    input: { projectId: s.p[0] },
+    input: { projectIds: [s.p[0], s.p[2]] },
   })
   expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
     status: 'approved',
   })
   await s.t.finishAllScheduledFunctions(vi.runAllTimers)
-  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'archived' })
+  // Codex round 4: two schedules at once each kept the work running (one token per request).
+  for (const id of [s.p[0], s.p[2]]) {
+    expect(await s.t.run((ctx) => ctx.db.get(id!))).toMatchObject({ status: 'archived' })
+  }
+  const approval = (await s.t.run((ctx) => ctx.db.get('approvals', asked.approvalId)))!
+  // Codex round 4: the handler's ctx.actor carried the token, and an app could store and reuse it.
+  expect(approval.result).not.toContain('approvalId')
+  expect(approval.result).not.toContain('followUp')
   // Codex round 3: other work of the same agent, naming the approval within the hour, is refused;
-  // only the work the request scheduled carries the token recorded on it.
-  const [followUp] = (await s.t.run((ctx) => ctx.db.get(asked.approvalId)))!.followUps!
+  // only the work the request scheduled carries the token.
   for (const actingAs of [
     { kind: 'agent', caller, approvalId: asked.approvalId },
     { kind: 'agent', caller, approvalId: asked.approvalId, followUp: 'made-up' },
@@ -427,7 +433,12 @@ test('work an approved request scheduled runs under the approval, for an hour', 
       s.t.mutation(api.ops.archiveRow, { actingAs, input: { projectId: s.p[1] } }),
     ).rejects.toThrow(/APPROVAL_NOT_FOUND/)
   }
-  const actingAs = { kind: 'agent', caller, approvalId: asked.approvalId, followUp }
+  const actingAs = {
+    kind: 'agent',
+    caller,
+    approvalId: asked.approvalId,
+    followUp: approval.followUp,
+  }
   vi.advanceTimersByTime(61 * 60_000)
   await expect(
     s.t.mutation(api.ops.archiveRow, { actingAs, input: { projectId: s.p[1] } }),

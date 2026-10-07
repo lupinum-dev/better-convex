@@ -62,7 +62,7 @@ export type AgentCaller = Infer<typeof agentCallerValidator>
 export const actingAsValidator = v.union(
   v.object({ kind: v.literal('person'), authId: v.string() }),
   // `approvalId`: the person's approval this work runs under, so its internal operations may run too.
-  // `followUp`: the token that work the approved request scheduled carries (see `followUps`).
+  // `followUp`: the token that work the approved request scheduled carries (see `approvals.followUp`).
   v.object({
     kind: v.literal('agent'),
     caller: agentCallerValidator,

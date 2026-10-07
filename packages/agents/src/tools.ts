@@ -795,7 +795,7 @@ export function defineTools(
             // The operation runs as the agent in a sub-transaction. It checks the
             // grant again, so revoking the connection also cancels its requests.
             // Marks the request as running, so its own work (and only that) runs under this approval.
-            await lib(ctx).patch(row._id, { status: 'executing' })
+            await lib(ctx).patch(row._id, { status: 'executing', followUp: crypto.randomUUID() })
             try {
               const output = await ctx.runMutation(ownRef(row.tool), {
                 caller: row.caller,
