@@ -94,6 +94,9 @@ export interface Operation {
   handler: (ctx: any, args: any) => unknown
 }
 
+/** How long work scheduled by an approved request still runs under that approval. */
+const followUpWindow = 60 * 60_000
+
 /** IDs in one call's input (D1): more would run into Convex's read limit half-way through. */
 const idsPerCall = 1000
 
@@ -255,8 +258,16 @@ export function defineFunctions<
         // Work done under a person's approval: the approval must be this agent's, and still stand.
         const id = lib(ctx).normalizeId('approvals', who.approvalId)
         const row = id && (await lib(ctx).get(id))
-        // Only while `approve` runs this very request: a pending or earlier approval grants nothing.
-        if (!row || row.requester.key !== actorRecord(actor).key || row.status !== 'executing') {
+        // While `approve` runs this very request, and for the work it scheduled (an internal action that
+        // calls out, then records the result) for an hour after: a pending, declined, failed or old
+        // approval grants nothing (R22; docs-only slice). The grant is checked again above, so a
+        // revoked connection stops follow-ups too.
+        const standing =
+          row?.status === 'executing' ||
+          (row?.status === 'approved' &&
+            row.decidedAt !== undefined &&
+            Date.now() < row.decidedAt + followUpWindow)
+        if (!row || row.requester.key !== actorRecord(actor).key || !standing) {
           fail('APPROVAL_NOT_FOUND', "This work does not run under a person's approval.")
         }
         return { ...actor, approvalId: who.approvalId }

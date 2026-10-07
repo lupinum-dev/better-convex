@@ -45,6 +45,24 @@ export const archiveRow = internalMutation({
   },
 })
 
+/** Approved work that continues later: it schedules the archive (an outside call would sit between). */
+export const archiveLater = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects') },
+  returns: v.null(),
+  tool: { name: 'archive_later', description: 'Archive a project in the background.' },
+  handler: async (ctx, { projectId }) => {
+    await ctx.scheduler.runAfter(
+      0,
+      makeFunctionReference<'mutation'>('ops:archiveRow') as never,
+      {
+        projectId,
+      } as never,
+    )
+    return null
+  },
+})
+
 /** A tool whose own action is allowed, reaching for one that needs approval. */
 export const sneakyTidy = mutation({
   action: 'projects.rename',

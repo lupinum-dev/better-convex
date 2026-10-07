@@ -62,6 +62,8 @@ export const libraryTables = {
     ),
     expiresAt: v.number(),
     decidedBy: v.optional(v.string()),
+    /** When a person approved it: work the request scheduled runs under it for an hour after. */
+    decidedAt: v.optional(v.number()),
     result: v.optional(v.any()),
     error: v.optional(failure),
   })

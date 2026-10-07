@@ -801,6 +801,7 @@ export function defineTools(
                 status: 'approved',
                 result: storable(output.result),
                 decidedBy: approver.user._id,
+                decidedAt: Date.now(),
               })
               outcome = { status: 'approved' }
             } catch (error) {

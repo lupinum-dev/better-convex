@@ -404,6 +404,26 @@ test('a request on a row of an anyOf table fails as STALE when that row changed'
   expect(await s.t.run((ctx) => ctx.db.get(noteId))).toMatchObject({ text: 'v2 by a person' })
 })
 
+// Docs-only slice: approved work that scheduled its follow-up failed with APPROVAL_NOT_FOUND.
+test('work an approved request scheduled runs under the approval, for an hour', async () => {
+  const s = await setup()
+  const asked = await s.t.mutation(api.tools.archive_later, {
+    caller,
+    input: { projectId: s.p[0] },
+  })
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+    status: 'approved',
+  })
+  await s.t.finishAllScheduledFunctions(vi.runAllTimers)
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'archived' })
+  const actingAs = { kind: 'agent', caller, approvalId: asked.approvalId }
+  vi.advanceTimersByTime(61 * 60_000)
+  await expect(
+    s.t.mutation(api.ops.archiveRow, { actingAs, input: { projectId: s.p[1] } }),
+  ).rejects.toThrow(/APPROVAL_NOT_FOUND/)
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[1]!))).toMatchObject({ status: 'active' })
+})
+
 // Second review: an internal operation accepted any still-pending approvalId as authority.
 test('work refuses an approval that is not executing right now', async () => {
   const s = await setup()
