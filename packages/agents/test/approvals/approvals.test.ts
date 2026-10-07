@@ -67,6 +67,14 @@ test('re-asking with the same request_id after expiry makes a new request; a ret
     input: { projectId: s.p[0] },
     requestId: 'r1',
   })
+  // V14: while the request waits, the key cannot name a different call either.
+  await expect(
+    s.t.mutation(api.tools.archive_project, {
+      caller,
+      input: { projectId: s.p[1] },
+      requestId: 'r1',
+    }),
+  ).rejects.toThrow(/REQUEST_ID_REUSED/)
   vi.advanceTimersByTime(thirtyOneMinutes)
   const again = await s.t.mutation(api.tools.archive_project, {
     caller,
@@ -208,9 +216,20 @@ test('summaries are one plain line for people, and inert markdown for agents', a
     input: { projectId: s.p[0] },
   })
 
-  expect(asked.summary).not.toContain('\n')
-  expect(asked.summary).not.toMatch(/(?<!\\)\]\(/)
-  expect(asked.summary).not.toContain('https://')
+  // V14: the same call again and check_approval show the agent the same inert text.
+  const again = await s.t.mutation(api.tools.archive_project, {
+    caller,
+    input: { projectId: s.p[0] },
+  })
+  const checked = await s.t.query(api.tools.check_approval, {
+    caller,
+    input: { approvalId: asked.approvalId },
+  })
+  for (const summary of [asked.summary, again.summary, checked.result.summary]) {
+    expect(summary).not.toContain('\n')
+    expect(summary).not.toMatch(/(?<!\\)\]\(/)
+    expect(summary).not.toContain('https://')
+  }
   const [request] = await s.ann.query(api.tools.pending, {})
   expect(request!.summary).toBe('Archive "Old". [Approve here](https://evil.example)".')
 })
@@ -321,7 +340,7 @@ test('a request on a row of an anyOf table fails as STALE when that row changed'
 })
 
 // Second review: an internal operation accepted any still-pending approvalId as authority.
-test('an internal operation refuses an approval that is not executing right now', async () => {
+test('work refuses an approval that is not executing right now', async () => {
   const s = await setup()
   const asked = await s.t.mutation(api.tools.archive_project, {
     caller,
@@ -332,6 +351,53 @@ test('an internal operation refuses an approval that is not executing right now'
     s.t.mutation(api.ops.archiveRow, { actingAs, input: { projectId: s.p[1] } }),
   ).rejects.toThrow(/APPROVAL_NOT_FOUND/)
   expect(await s.t.run((ctx) => ctx.db.get(s.p[1]!))).toMatchObject({ status: 'active' })
+  // V14: the same for a tool function handed a pending request as its approval.
+  const noteId = await s.t.run((ctx) => ctx.db.insert('notes', { userId: s.annId, text: 'v1' }))
+  const input = { noteId, text: 'agent' }
+  const note = await s.t.mutation(api.tools.edit_note, { caller, input })
+  await expect(
+    s.t.mutation(api.tools.edit_note, {
+      caller,
+      input,
+      approval: { id: note.approvalId, decidedBy: 'nobody' },
+    }),
+  ).rejects.toThrow(/APPROVAL_NOT_FOUND/)
+  expect(await s.t.run((ctx) => ctx.db.get(noteId))).toMatchObject({ text: 'v1' })
+})
+
+// V14: the in-app door checked the run, not the grant; a revoked grant must stop a running run's tools.
+test('revoking an in-app agent stops its tools, even while its run runs', async () => {
+  const s = await setup()
+  const { grantId, runId } = await s.t.run(async (ctx) => {
+    const grantId = await ctx.db.insert('agentGrants', {
+      authId: 'ann',
+      userId: s.annId,
+      agent: 'helper',
+      scopes: ['projects:write'],
+      expiresAt: Date.now() + 86_400_000,
+    })
+    const runId = await ctx.db.insert('agentRuns', {
+      grantId,
+      userId: s.annId,
+      agent: 'helper',
+      step: 'agent:step',
+      task: 'rename',
+      status: 'running',
+      turn: 1,
+      steps: 1,
+      stepAt: Date.now(),
+    })
+    return { grantId, runId }
+  })
+  const rename = (name: string) =>
+    s.t.mutation(api.tools.rename_project, {
+      caller: { door: 'app', runId, turn: 1 },
+      input: { projectId: s.p[0], name },
+    })
+  await rename('before')
+  await s.t.run((ctx) => ctx.db.patch(grantId, { revokedAt: Date.now() }))
+  await expect(rename('after')).rejects.toThrow(/AGENT_DISABLED/)
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'before' })
 })
 
 // Second review: the waiting-run backstop stopped after 200 runs until the next hourly cron.
