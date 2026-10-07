@@ -296,5 +296,9 @@ pnpm build
 The committed `package.json` names `@lupinum/better-convex-functions` and
 `@lupinum/better-convex-agents` before their first release; the repository
 checks build the starter against the packed workspace packages.
+`pnpm-lock.yaml` still records the last published tuple, with
+`@lupinum/better-convex-mcp`, because a lockfile can only name packages that
+are on npm. It is regenerated with `pnpm install` once both packages are
+published; until then, install without `--frozen-lockfile`.
 Better Auth owns its Kysely runtime; this starter does not add a standalone
 Kysely dependency.
