@@ -41,7 +41,7 @@ the standard OAuth challenge, and gives your tools the verified user as a typed 
 - Node.js `^22.19.0 || ^24.11.0`
 - Convex `>=1.42.2 <2` and `@lupinum/better-convex-functions`
 - For MCP hosts: `@modelcontextprotocol/server` `2.2.0` (an exact peer dependency that only
-  `/mcp` loads, and `listMcpCatalog` from `/test` when you call it) and an OAuth token verifier. With Better Convex authentication, the auth
+  `/mcp` loads) and an OAuth token verifier. With Better Convex authentication, the auth
   factory from `@lupinum/better-convex-nuxt/better-auth/server` provides it.
 
 ## Installation
@@ -173,7 +173,7 @@ expiry. Then import it with
 | `handleMcpRequest`              | `/mcp`  | Handles one MCP HTTP request. Options: `serverInfo`, `resource`, `authorization`, `configureServer`, and optional `requestState`, `exposeErrorCodes`, and `onToolError`. |
 | `projectMcpToolError`           | `/mcp`  | Turns an exposed `ConvexError` into a tool error result. Returns `undefined` for any other error.                                                                        |
 | `McpUnsupportedCapabilityError` | `/mcp`  | Thrown when the server offers a capability other than tools and resources.                                                                                               |
-| `listMcpCatalog`                | `/test` | Returns the `tools/list` and `resources/list` results that a client sees, for snapshot tests.                                                                            |
+| `listMcpCatalog`                | `/mcp`  | Returns the `tools/list` and `resources/list` results that a client sees, for snapshot tests.                                                                            |
 | `testAuth`, `mcpClient`, `refs` | `/test` | The auth component and MCP token check faked for convex-test (with `revoke`), a JSON-RPC client over its HTTP router, and `internal.<module>` without codegen.           |
 
 `@lupinum/better-convex-agents/internal` exists only for the in-app agent runtime, which lives

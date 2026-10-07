@@ -1,31 +1,14 @@
-import { guarded, unsendable, type AgentCaller } from '@lupinum/better-convex-functions/internal'
+import { guarded, unsendable } from '@lupinum/better-convex-functions/internal'
 import {
   fromJsonSchema,
   type CallToolResult,
   type jsonSchemaValidator,
 } from '@modelcontextprotocol/server'
-import { httpActionGeneric, type FunctionReference, type GenericActionCtx } from 'convex/server'
+import { httpActionGeneric, type FunctionReference } from 'convex/server'
 
-import { handleMcpRequest, type HandleMcpRequestOptions } from './handler'
+import type { McpDoorAuth, McpPrincipal } from './access'
+import { handleMcpRequest } from './handler'
 import { toolFailure, type CatalogEntry } from './tools'
-
-/** The verified OAuth principal a tool function receives. The tool checks it again in Convex. */
-export type McpPrincipal = Extract<AgentCaller, { door: 'mcp' }>['principal']
-
-/**
- * The app's MCP OAuth profile for one request: the resource its tokens are bound to and how to
- * verify them. `auth.mcpAuthorization(ctx)` from `@lupinum/better-convex-nuxt/better-auth/server`
- * returns it.
- */
-export interface McpDoorAuth {
-  mcpAuthorization(ctx: GenericActionCtx<any>): {
-    resource: URL
-    authorization: Extract<
-      HandleMcpRequestOptions<McpPrincipal>['authorization'],
-      { mode: 'oauth' }
-    >
-  }
-}
 
 /** What `createMcpServer` needs from the module that calls `defineTools`. */
 interface ToolsModule {
@@ -92,6 +75,8 @@ function failure(reason: { code: string; message: string }): CallToolResult {
  * its grant's scopes unlock. `handleMcpRequest` checks the bearer token and
  * bounds the request before any tool runs.
  */
+export type { McpDoorAuth, McpPrincipal } from './access'
+
 export function createMcpServer(
   auth: McpDoorAuth,
   options: {

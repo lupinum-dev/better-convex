@@ -97,7 +97,7 @@ const AGENTS_MCP_FILES = [
   'transport.ts',
   'errors.ts',
   'mcp.ts',
-  'test.ts',
+  'catalog.ts',
 ].map((file) => p('packages/agents/src', file))
 const FUNCTIONS_PACKAGE_DIR = p('packages/functions/src')
 const SHARED_AUTH_COOKIE_FILE = p('src/runtime/shared/auth-cookie.ts')

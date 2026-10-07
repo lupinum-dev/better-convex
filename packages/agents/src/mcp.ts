@@ -19,3 +19,5 @@ export type {
 export { projectMcpToolError } from './errors.js'
 export type { McpToolErrorMetadata, McpToolResult, ProjectMcpToolErrorOptions } from './errors.js'
 export { createMcpServer, type McpDoorAuth, type McpPrincipal } from './door.js'
+export { listMcpCatalog, type ListMcpCatalogOptions, type McpCatalog } from './catalog.js'
+export type { McpBearerAuthorization, McpOAuthAuthorization } from './access.js'

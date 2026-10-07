@@ -27,7 +27,13 @@ import {
   normalizeMcpScopes,
   verifyAndNormalizeMcpAccess,
 } from './access.js'
-import type { McpAccessContext, McpAccessVerifier, VerifiedMcpAccess } from './access.js'
+import type {
+  McpAccessContext,
+  McpAccessVerifier,
+  McpBearerAuthorization,
+  McpOAuthAuthorization,
+  VerifiedMcpAccess,
+} from './access.js'
 import { exposedMcpErrorCodes, runToolSafely, type McpToolErrorMetadata } from './errors.js'
 import {
   boundMcpResponse,
@@ -76,25 +82,7 @@ export interface HandleMcpRequestOptions<Principal = undefined> {
   readonly requestState?: (
     context: McpRequestStateContext<Principal>,
   ) => Required<Pick<NonNullable<ServerOptions['requestState']>, 'verify'>>
-  readonly authorization:
-    | {
-        readonly mode: 'oauth'
-        readonly issuer: string
-        readonly verifier: McpAccessVerifier<Principal>
-        readonly resourceName?: string
-        readonly requiredScopes?: readonly string[]
-        readonly scopesSupported?: readonly string[]
-      }
-    | {
-        /**
-         * Preconfigured bearer credentials are provisioned out of band by the application. This
-         * mode deliberately does not publish OAuth discovery metadata.
-         */
-        readonly mode: 'preconfigured-bearer'
-        readonly issuer: string
-        readonly verifier: McpAccessVerifier<Principal>
-        readonly requiredScopes?: readonly string[]
-      }
+  readonly authorization: McpOAuthAuthorization<Principal> | McpBearerAuthorization<Principal>
   /** Register this request's tools and resources. `principal` is the value the verifier resolved
    * for this token; pass it to Convex functions instead of re-deriving it. */
   readonly configureServer: (context: McpConfigureServerContext<Principal>) => void | Promise<void>

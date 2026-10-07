@@ -30,8 +30,7 @@ If you already run the release candidate, check only these:
       `@lupinum/better-convex-functions@next` (a peer), remove
       `@lupinum/better-convex-mcp`, and import `handleMcpRequest`,
       `projectMcpToolError` and the verifier types from
-      `@lupinum/better-convex-agents/mcp`, `listMcpCatalog` from
-      `@lupinum/better-convex-agents/test`. Install
+      `@lupinum/better-convex-agents/mcp`, `listMcpCatalog` too. Install
       `@modelcontextprotocol/server@2.2.0` (rc.1 used `2.1.0`), and for MCP
       Apps `@modelcontextprotocol/client@2.2.0` and
       `@modelcontextprotocol/core@2.2.0`.

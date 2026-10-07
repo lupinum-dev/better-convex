@@ -1,3 +1,6 @@
+import type { AgentCaller } from '@lupinum/better-convex-functions/internal'
+import type { GenericActionCtx } from 'convex/server'
+
 /**
  * Application-facing identity provenance for one freshly verified MCP access token.
  *
@@ -239,5 +242,42 @@ function assertExactObject(
     Object.keys(value).sort().join(',') !== [...fields].sort().join(',')
   ) {
     throw new TypeError('Invalid verified access object')
+  }
+}
+
+/** OAuth: the door publishes discovery metadata and verifies tokens from this issuer. */
+export interface McpOAuthAuthorization<Principal = undefined> {
+  readonly mode: 'oauth'
+  readonly issuer: string
+  readonly verifier: McpAccessVerifier<Principal>
+  readonly resourceName?: string
+  readonly requiredScopes?: readonly string[]
+  readonly scopesSupported?: readonly string[]
+}
+
+/** Bearer credentials provisioned out of band; no OAuth discovery metadata. */
+export interface McpBearerAuthorization<Principal = undefined> {
+  /**
+   * Preconfigured bearer credentials are provisioned out of band by the application. This
+   * mode deliberately does not publish OAuth discovery metadata.
+   */
+  readonly mode: 'preconfigured-bearer'
+  readonly issuer: string
+  readonly verifier: McpAccessVerifier<Principal>
+  readonly requiredScopes?: readonly string[]
+}
+
+/** The verified OAuth principal a tool function receives. The tool checks it again in Convex. */
+export type McpPrincipal = Extract<AgentCaller, { door: 'mcp' }>['principal']
+
+/**
+ * The app's MCP OAuth profile for one request: the resource its tokens are bound to and how to
+ * verify them. `auth.mcpAuthorization(ctx)` from `@lupinum/better-convex-nuxt/better-auth/server`
+ * returns it.
+ */
+export interface McpDoorAuth {
+  mcpAuthorization(ctx: GenericActionCtx<any>): {
+    resource: URL
+    authorization: McpOAuthAuthorization<McpPrincipal>
   }
 }
