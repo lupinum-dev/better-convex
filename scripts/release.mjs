@@ -46,9 +46,11 @@ const ownTag = {
 }
 const tagFor = (pkg) => `${ownTag[pkg.name] ?? 'v'}${pkg.version}`
 
-// Every public package in pnpm-workspace.yaml, including the Nuxt module at the root.
+// Every public package in pnpm-workspace.yaml, including the Nuxt module at the root. A package
+// at 0.0.0 has no version yet: it waits for its first changeset, so other releases go out
+// without it (and without the D34 name check stopping them).
 const packages = JSON.parse(run('pnpm', ['-r', 'ls', '--json', '--depth', '-1']))
-  .filter((pkg) => !pkg.private)
+  .filter((pkg) => !pkg.private && pkg.version !== '0.0.0')
   .sort((a, b) => publishOrder.indexOf(a.name) - publishOrder.indexOf(b.name))
 const unknown = packages.filter((pkg) => !publishOrder.includes(pkg.name))
 if (unknown.length) throw new Error(`Add ${unknown.map((pkg) => pkg.name)} to publishOrder.`)
