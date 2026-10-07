@@ -266,7 +266,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
 ): DB {
   if (call.actor.kind === 'system') return raw
   const actor = call.actor
-  const { chain, refOf } = tenancy(rules)
+  const { chain, refOf, tenantTables } = tenancy(rules)
   const roles = call.known?.roles ?? new Map<string, string | null>()
   const roleCache = new Map<string, Promise<string | null>>(
     [...roles].map(([id, role]) => [id, Promise.resolve(role)]),
@@ -302,6 +302,15 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
   async function insideCall(ref: TenantRef) {
     if (call.tenant === undefined) return true
     return (await chain(load, raw, ref)).some((t) => t.id === call.tenant!.id)
+  }
+
+  /** May this call place a tenant under this parent? Inside the call, with a role there that allows the action. */
+  async function underParent(value: unknown): Promise<Verdict> {
+    const parent = refOf(raw, value)
+    if (!parent || !(await insideCall(parent))) return 'hidden'
+    const role = await roleIn(parent)
+    if (role === null) return 'hidden'
+    return call.allows(role, call.action) ? 'ok' : 'denied'
   }
 
   async function judgeRule(
@@ -359,12 +368,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
           // A new tenant has no ID and no members yet: only the action the rule names may create one,
           // under a parent where the actor's role allows it.
           if (rule.createdBy !== call.action) return 'denied'
-          if (!rule.parent) return 'ok'
-          const parent = refOf(raw, row[rule.parent])
-          if (!parent || !(await insideCall(parent))) return 'hidden'
-          const role = await roleIn(parent)
-          if (role === null) return 'hidden'
-          return call.allows(role, call.action) ? 'ok' : 'denied'
+          return rule.parent ? underParent(row[rule.parent]) : 'ok'
         }
         const value = rule.field === '_id' ? row._id : row[rule.field]
         const ref = rule.field === '_id' ? { table, id: String(value) } : refOf(raw, value)
@@ -430,6 +434,19 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
       : { table, id: args[1] as string }
   }
 
+  /**
+   * A write that moves a tenant under another parent is checked like a new
+   * tenant there: the role in the tenant itself says nothing about the new
+   * parent (agency → client).
+   */
+  async function assertParent(table: string, before: Row, after: Row) {
+    const field = tenantTables.get(table)
+    if (!field || after[field] === before[field]) return
+    const verdict = await underParent(after[field])
+    if (verdict === 'hidden') fail('NOT_FOUND', 'Nothing with these IDs was found.')
+    if (verdict === 'denied') fail('FORBIDDEN', `You may not ${call.action} here.`)
+  }
+
   async function existing(args: unknown[], qualified: boolean) {
     const found = target(args, qualified)
     if (!found) fail('NOT_FOUND', `No ${args[0]} with this ID.`)
@@ -468,12 +485,15 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       for (const [key, field] of Object.entries(value)) if (field === undefined) delete next[key]
       await assertWritable(table, next, 'write')
+      await assertParent(table, row, next)
       wrote(id)
       return (raw.patch as (...a: unknown[]) => Promise<void>)(...args)
     },
     async replace(...args: unknown[]) {
       const { table, id, row, value } = await existing(args, args.length === 3)
-      await assertWritable(table, { ...value, _id: row._id }, 'write')
+      const next = { ...value, _id: row._id }
+      await assertWritable(table, next, 'write')
+      await assertParent(table, row, next)
       wrote(id)
       return (raw.replace as (...a: unknown[]) => Promise<void>)(...args)
     },

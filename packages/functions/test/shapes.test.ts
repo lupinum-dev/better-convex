@@ -130,6 +130,18 @@ test('K3: a client is created only under the agency the call names, where the ro
   await expect(plant()).rejects.toThrow(/NOT_FOUND/)
 })
 
+// Round 1 review: a patch checked only the role in the client, so its owner moved it under a foreign agency.
+test('K3: a client moves only under an agency inside the call, where the role allows it', async () => {
+  const { t, ann, bob, client, agency, other } = await withAgency()
+  await expect(
+    ann.mutation(fn('agencies:moveClient'), { clientId: client, to: other }),
+  ).rejects.toThrow(/NOT_FOUND/)
+  expect(await t.run((ctx) => ctx.db.get(client))).toMatchObject({ agencyId: agency })
+  await expect(bob.query(fn('agencies:projectsOfClient'), { clientId: client })).rejects.toThrow(
+    /NOT_FOUND/,
+  )
+})
+
 // K2: two tenant kinds through one roleOf; a call spanning them was impossible.
 test('K2: a move between a workspace and an organization needs crossTenant, and a role in both that allows it', async () => {
   const { t, ann, vic, a, users } = await setup()
