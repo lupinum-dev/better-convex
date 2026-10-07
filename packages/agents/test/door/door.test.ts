@@ -120,6 +120,18 @@ test.each([
   ).toThrow(message)
 })
 
+// Release review: a query tool could declare request_id, which the dispatch takes out of each
+// call, so every call failed with INVALID_INPUT.
+test('a tool argument named request_id fails at definition, for queries too', () => {
+  expect(() =>
+    defineTools(
+      fns,
+      { m: { x: op('lookup', { request_id: v.string() }) } },
+      { functions: refs('agents') },
+    ),
+  ).toThrow('lookup: the argument name request_id is reserved for retry keys. Rename the argument.')
+})
+
 // E5: names hosts reject passed defineTools.
 test.each(['create project', `t${'x'.repeat(64)}`, 'créer_projet', 'projects.create'])(
   'the tool name %j fails at definition',

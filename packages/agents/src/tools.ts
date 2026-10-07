@@ -237,7 +237,8 @@ export function defineTools(
           `Tool name "${name}": use 1 to 64 letters, digits, "_" or "-". Some hosts reject anything else.`,
         )
       }
-      if (op.kind === 'mutation' && 'request_id' in op.args) {
+      // Every tool: the dispatch takes request_id out of each call (release review).
+      if ('request_id' in op.args) {
         throw new Error(
           `${name}: the argument name request_id is reserved for retry keys. Rename the argument.`,
         )
