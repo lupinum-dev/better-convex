@@ -51,6 +51,7 @@ const fuzz = `${F}/query-fuzz.test.ts > a random query chain hands out exactly t
 const starter = 'starters/mcp-oauth-agent/convex'
 const leaks = `${starter}/leaks.test.ts > no call reaches another organization’s project`
 const inApp = `${A}/approvals/approvals.test.ts > an in-app agent step acts only on a live grant, in the current turn of a running run`
+const sequences = `${A}/approvals/sequence-fuzz.test.ts > random sequences of agent calls, decisions, revokes and clock steps change only what someone may change`
 const consumers = 'test/fixtures/consumers'
 const agency = `${consumers}/agency/convex`
 const agencyLeaks = `${agency}/agency.test.ts > no call reaches another client or agency`
@@ -435,6 +436,7 @@ export const mutants: Mutant[] = [
     replace: 'true ||',
     kills: [
       `${A}/approvals/approvals.test.ts > work refuses an approval that is not executing right now`,
+      sequences,
     ],
   },
   {
@@ -478,6 +480,7 @@ export const mutants: Mutant[] = [
       `${A}/approvals/approvals.test.ts > every row a request covers is checked for changes, up to a stated limit`,
       `${A}/approvals/approvals.test.ts > a request on a row of an anyOf table fails as STALE when that row changed`,
       `${A}/approvals/approvals.test.ts > a request naming rows as record keys fails as STALE when one changed`,
+      sequences,
     ],
   },
   {
@@ -626,6 +629,7 @@ export const mutants: Mutant[] = [
     kills: [
       `${A}/door/door.test.ts > revoking a connection cancels its open requests, and its tools then fail`,
       `${A}/approvals/approvals.test.ts > a follow-up of an approved request changes nothing after the person revokes the connection`,
+      sequences,
     ],
   },
   {
@@ -636,6 +640,7 @@ export const mutants: Mutant[] = [
     replace: '',
     kills: [
       `${A}/approvals/approvals.test.ts > an in-app agent step acts only on a live grant, in the current turn of a running run: 'grant revoked'`,
+      sequences,
     ],
   },
   {
@@ -1006,6 +1011,7 @@ export const mutants: Mutant[] = [
       'const { user: authUser } = options.approved ? { user: { id: caller.principal.userId } } : await auth',
     kills: [
       `${A}/approvals/approvals.test.ts > a follow-up of an approved request changes nothing after the person revokes the connection`,
+      sequences,
     ],
     projects: ['agents'],
   },
@@ -1018,6 +1024,39 @@ export const mutants: Mutant[] = [
     kills: [
       `${A}/approvals/approvals.test.ts > the same follow-up scheduled again after the hour changes nothing`,
       `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
+      sequences,
+    ],
+    projects: ['agents'],
+  },
+  // Guards the sequence fuzz kills: other work naming an approval, and a declined call again.
+  {
+    id: 'C1-follow-up-token',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: 'who.followUp === row.followUp)',
+    replace: 'true)',
+    kills: [sequences],
+    projects: ['agents'],
+  },
+  {
+    id: 'C1-acting-as-requester',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: 'if (!row || row.requester.key !== actorRecord(actor).key || !standing) {',
+    replace: 'if (!row || !standing) {',
+    kills: [sequences],
+    projects: ['agents'],
+  },
+  {
+    id: 'C5-decline-replay',
+    guards: 'C5',
+    file: 'packages/agents/src/tools.ts',
+    find: "if (declined) fail('APPROVAL_DECLINED', 'A person declined this request.')",
+    replace: "if (false) fail('APPROVAL_DECLINED', 'A person declined this request.')",
+    kills: [
+      `${A}/approvals/approvals.test.ts > a retry after a decline is told it was declined`,
+      `${A}/approvals/approvals.test.ts > a declined call is found among more than 20 declines`,
+      sequences,
     ],
     projects: ['agents'],
   },
