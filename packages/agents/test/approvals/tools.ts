@@ -24,6 +24,8 @@ export const {
   archive_listed,
   archive_greedy,
   start_check,
+  cancel_job,
+  delete_file,
   rename_checked,
   paged_plan,
   archive_edited,

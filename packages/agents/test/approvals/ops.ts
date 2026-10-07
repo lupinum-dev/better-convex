@@ -54,8 +54,9 @@ export const startCheck = mutation({
   tool: { name: 'start_check', description: 'Start a check. Needs approval.' },
   plan: async () => ({ summary: 'Start a check.', rows: [] }),
   handler: async (ctx, { orgId }) => {
+    if (ctx.actor.kind !== 'agent') fail('FORBIDDEN', 'Agents start checks.')
     const noteId = await ctx.db.insert('notes', {
-      userId: (ctx.actor as { user: { _id: never } }).user._id,
+      userId: ctx.actor.user._id,
       orgId,
       text: 'queued',
     })
@@ -385,6 +386,35 @@ export const pagedPlan = mutation({
     return { summary: `Archive ${page.length}.`, rows: page.map((project) => project._id) }
   },
   handler: async () => null,
+})
+
+/** Approved work that cancels a scheduled job: only its own jobs, not another row's. */
+export const cancelJob = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects'), jobId: v.string() },
+  returns: v.null(),
+  tool: { name: 'cancel_job', description: 'Cancel a job of a project.' },
+  plan: async () => ({ summary: 'Cancel a job.' }),
+  handler: async (ctx, { jobId }) => {
+    await ctx.scheduler.cancel(jobId as never)
+    return null
+  },
+})
+
+/** Approved work that deletes a stored file: only a file its plan lists. */
+export const deleteFile = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects'), fileId: v.string(), listed: v.boolean() },
+  returns: v.null(),
+  tool: { name: 'delete_file', description: 'Delete a file of a project.' },
+  plan: async (_ctx, { fileId, listed }) => ({
+    summary: 'Delete a file.',
+    ...(listed ? { files: [fileId] } : {}),
+  }),
+  handler: async (ctx, { fileId }) => {
+    await ctx.storage.delete(fileId as never)
+    return null
+  },
 })
 
 const listed = async (

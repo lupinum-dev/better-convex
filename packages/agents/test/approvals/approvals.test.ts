@@ -1,7 +1,8 @@
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
+import { makeFunctionReference } from 'convex/server'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { auth } from './fns'
+import { auth, policy } from './fns'
 import { api, setup } from './harness'
 
 // Approvals through the tool functions that the MCP door and the in-app agent call. Tests that
@@ -225,6 +226,80 @@ test('the follow-up of approved work may change a row that work created', async 
   expect(
     await s.t.run(async (ctx) => (await ctx.db.query('notes').collect()).map((note) => note.text)),
   ).toEqual(['done'])
+})
+
+// Release review 5: the write limit covered the database, not the scheduler or file storage.
+test('approved work cannot cancel a job it did not schedule', async () => {
+  const s = await setup()
+  const jobId = await s.t.run((ctx) =>
+    ctx.scheduler.runAfter(60_000, makeFunctionReference<'mutation'>('ops:rawArchive'), {
+      input: { projectId: s.p[1] },
+    }),
+  )
+  const asked = await s.ask('cancel_job', { projectId: s.p[0], jobId })
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject({
+    status: 'failed',
+    error: { code: 'FORBIDDEN' },
+  })
+  expect(await s.t.run(async (ctx) => (await ctx.db.system.get(jobId))?.state.kind)).toBe('pending')
+})
+
+test.each([
+  { row: 'a file the plan lists', listed: true, outcome: { status: 'approved' }, kept: false },
+  {
+    row: 'a file the plan does not list',
+    listed: false,
+    outcome: { status: 'failed', error: { code: 'FORBIDDEN' } },
+    kept: true,
+  },
+])('approved work deletes only the files its plan lists: $row', async (row) => {
+  const s = await setup()
+  const fileId = await s.t.run((ctx) => ctx.storage.store(new Blob(['report'])))
+  const asked = await s.ask('delete_file', { projectId: s.p[0], fileId, listed: row.listed })
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject(
+    row.outcome,
+  )
+  expect((await s.t.run((ctx) => ctx.storage.getUrl(fileId))) !== null).toBe(row.kept)
+})
+
+// Release review 5: asking again ran the work at once when the agent rule had become 'allow'.
+test('asking again after STALE never runs the work', async () => {
+  const s = await setup()
+  const asked = await s.ask('archive_project', { projectId: s.p[0] })
+  await s.t.run((ctx) => ctx.db.patch(s.p[0], { name: 'renamed' }))
+  const agents = policy.agents as Record<string, unknown>
+  agents['projects.archive'] = 'allow'
+  try {
+    const outcome = await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })
+    expect(outcome).toMatchObject({ status: 'failed', error: { code: 'STALE' } })
+    expect(outcome).not.toHaveProperty('next')
+  } finally {
+    agents['projects.archive'] = 'approve'
+  }
+  expect(await archivedNames(s)).toEqual([])
+})
+
+// Release review 5: an in-app run waits on its request while the person decides; asking again
+// failed there, and the run never learned of a new request.
+test('an in-app run that waits on a request waits on the new one after STALE', async () => {
+  const s = await setup()
+  const runId = await inAppRun(s, 'live', 'running')
+  const asked = await s.t.mutation(api.tools.archive_project, {
+    caller: { door: 'app', runId, turn: 2 },
+    input: { projectId: s.p[0] },
+  })
+  if (asked.status !== 'needs_approval') throw new Error('asked no person')
+  await s.t.run((ctx) =>
+    ctx.db.patch(runId, { status: 'waiting', approvalIds: [asked.approvalId as never] }),
+  )
+  await s.t.run((ctx) => ctx.db.patch(s.p[0], { name: 'renamed' }))
+  const outcome = await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })
+  const next = (outcome as { next?: string }).next
+  expect(next).toBeDefined()
+  expect(await s.t.run((ctx) => ctx.db.get(runId))).toMatchObject({
+    status: 'waiting',
+    approvalIds: [next],
+  })
 })
 
 // A row of the plan changed: the person decides again on what is true now, also when the agent

@@ -104,6 +104,8 @@ export interface Plan {
   summary: string
   /** The existing rows the work may change. Without it: the rows the input names. */
   rows?: string[]
+  /** Stored files the work may delete. Without it: none. */
+  files?: string[]
 }
 
 /**
@@ -126,13 +128,14 @@ export async function planOf(
     !plan ||
     typeof plan !== 'object' ||
     typeof (plan as Plan).summary !== 'string' ||
-    ((plan as Plan).rows !== undefined &&
-      !(
-        Array.isArray((plan as Plan).rows) &&
-        (plan as Plan).rows!.every((id) => typeof id === 'string')
-      ))
+    !['rows', 'files'].every((key) => {
+      const ids = (plan as Record<string, unknown>)[key]
+      return ids === undefined || (Array.isArray(ids) && ids.every((id) => typeof id === 'string'))
+    })
   ) {
-    throw new Error(`The plan of ${op.action} must return { summary: string, rows?: ID[] }.`)
+    throw new Error(
+      `The plan of ${op.action} must return { summary: string, rows?: ID[], files?: ID[] }.`,
+    )
   }
   // Without `rows`, the work changes the rows the input names, as the person sees in it.
   return (plan as Plan).rows === undefined ? { ...(plan as Plan), rows: named() } : (plan as Plan)
@@ -160,6 +163,25 @@ function shown<T extends object>(actor: T): T {
     followUp?: unknown
   }
   return rest as T
+}
+
+/** File storage whose `delete` reaches only these files: work under an approval deletes the plan's files. */
+function deleting<S extends object>(storage: S, files: Set<string>): S {
+  return new Proxy(storage, {
+    get(target, prop) {
+      if (prop === 'delete')
+        return async (id: string) => {
+          if (!files.has(id))
+            fail(
+              'FORBIDDEN',
+              'This work deletes a file that is not in the plan the person approved.',
+            )
+          return (target as { delete: (id: string) => Promise<void> }).delete(id)
+        }
+      const value = (target as Record<PropertyKey, unknown>)[prop]
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
 }
 
 /** How long work scheduled by an approved request still runs under that approval. */
@@ -506,10 +528,12 @@ export function defineFunctions<
     let plan:
       | { has: (id: string) => Promise<boolean>; created: (id: string) => Promise<void> }
       | undefined
+    let files: Set<string> | undefined
     if (actor.kind === 'agent' && actor.approvalId !== undefined) {
       const approvalId = lib(ctx).normalizeId('approvals', actor.approvalId)
       const approval = approvalId && (await lib(ctx).get(approvalId))
       const listed = new Set((approval?.plan as Plan | undefined)?.rows ?? [])
+      files = new Set((approval?.plan as Plan | undefined)?.files ?? [])
       plan = {
         has: async (id) =>
           listed.has(id) ||
@@ -556,7 +580,13 @@ export function defineFunctions<
       settle,
       /** May this call change the row? For approvals: rows it only reads give their tenant no say. */
       mayWrite: (table: string, row: Record<string, unknown>) => checks.mayWrite(table, row),
-      ctx: { ...ctx, ...nested, db: db as Ctx['db'], actor: shown(actor) },
+      ctx: {
+        ...ctx,
+        ...nested,
+        ...(files && 'storage' in ctx && { storage: deleting(ctx.storage as object, files) }),
+        db: db as Ctx['db'],
+        actor: shown(actor),
+      },
     }
   }
 
@@ -591,6 +621,12 @@ export function defineFunctions<
       const row = id && (await lib(c as { db: unknown }).get(id))
       if (!row || row.status !== 'executing' || row.followUp === undefined) return acting
       return { ...acting, followUp: row.followUp }
+    }
+    const approved = acting.kind === 'agent' && acting.approvalId !== undefined
+    const scheduledHere = new Set<string>()
+    const own = <T>(id: T) => {
+      scheduledHere.add(String(id))
+      return id
     }
     const runner = (name: string) =>
       c[name]
@@ -628,10 +664,18 @@ export function defineFunctions<
       ...(c.scheduler && {
         scheduler: {
           runAfter: async (delay: number, ref: unknown, args?: unknown) =>
-            c.scheduler.runAfter(delay, ref, wrapArgs(ref, args, await scheduledAs())),
+            own(await c.scheduler.runAfter(delay, ref, wrapArgs(ref, args, await scheduledAs()))),
           runAt: async (time: number | Date, ref: unknown, args?: unknown) =>
-            c.scheduler.runAt(time, ref, wrapArgs(ref, args, await scheduledAs())),
-          cancel: (id: unknown) => c.scheduler.cancel(id),
+            own(await c.scheduler.runAt(time, ref, wrapArgs(ref, args, await scheduledAs()))),
+          cancel: async (id: unknown) => {
+            // Work under a person's approval cancels only jobs it scheduled itself (release review 5).
+            if (approved && !scheduledHere.has(String(id)))
+              fail(
+                'FORBIDDEN',
+                'This work cancels a job it did not schedule. The person did not approve that.',
+              )
+            return c.scheduler.cancel(id)
+          },
         },
       }),
     }
@@ -982,8 +1026,16 @@ export function defineFunctions<
                 'This action reached a function that is not an internal operation.',
               )),
           )
+          // An action cannot read the approved plan: under an approval, it deletes files through
+          // an internal mutation, which can (release review 5).
+          const approved = who.kind === 'agent' && who.approvalId !== undefined
           const result = await spec.handler(
-            { ...ctx, ...nested, actor: shown(who) } as never,
+            {
+              ...ctx,
+              ...nested,
+              ...(approved && { storage: deleting(ctx.storage, new Set()) }),
+              actor: shown(who),
+            } as never,
             input,
           )
           if (reached) {

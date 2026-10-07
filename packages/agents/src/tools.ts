@@ -361,6 +361,8 @@ export function defineTools(
         args: {
           ...args,
           approval: v.optional(v.object({ id: v.id('approvals'), decidedBy: v.string() })),
+          /** Set by `approve` after STALE: ask a person again, never run the work. */
+          renew: v.optional(v.literal(true)),
         },
         // A replayed result may be the marker `storable` left when the result was too large to keep.
         returns: v.union(
@@ -374,14 +376,18 @@ export function defineTools(
             input: raw,
             requestId,
             approval,
+            renew,
           }: {
             caller: AgentCaller
             input: unknown
             requestId?: string
             approval?: { id: GenericId<'approvals'>; decidedBy: string }
+            renew?: true
           },
         ) => {
-          const actor = await agent(ctx, caller, { approved: approval !== undefined })
+          // A renewal is the person's doing, after the agent's turn: like approved work, it needs
+          // the live grant, not a running turn (release review 5).
+          const actor = await agent(ctx, caller, { approved: approval !== undefined || renew })
           const input = inputOf(ctx, op, raw)
           /**
            * What a person decides on: the plan, and a fingerprint of each row it lists or the
@@ -460,9 +466,12 @@ export function defineTools(
             })
             return { status: 'done' as const, result }
           }
-          await rateLimit(ctx, `writes:${requester.key}`, agentWritesPerMinute)
+          if (!renew) await rateLimit(ctx, `writes:${requester.key}`, agentWritesPerMinute)
           const authorized = await authorize(ctx, op, actor, input)
           const { decision, tenant, settle, mayWrite, ctx: checked } = authorized
+          // A renewal only asks: work that needs no person now runs when the agent calls again,
+          // never from a person's click on another request (release review 5).
+          if (renew && decision !== 'approve') fail('STALE', stale)
           const call = callKey(op.tool.name, input)
           if (requestId !== undefined) {
             // A retry key names one call. It replays that call's outcome, through
@@ -760,9 +769,20 @@ export function defineTools(
       const again = await ctx.runMutation(ownRef(row.tool), {
         caller: row.caller,
         input: row.input,
+        renew: true,
         ...(row.requestId === undefined ? {} : { requestId: row.requestId }),
       })
-      return again.status === 'needs_approval' ? again.approvalId : undefined
+      if (again.status !== 'needs_approval') return undefined
+      // An in-app run that waits on the old request waits on the new one instead.
+      if (row.caller.door === 'app') {
+        const runId = lib(ctx).normalizeId('agentRuns', row.caller.runId)
+        const run = runId && (await lib(ctx).get(runId))
+        if (run?.status === 'waiting' && run.approvalIds?.includes(row._id))
+          await lib(ctx).patch(run._id, {
+            approvalIds: run.approvalIds.map((id) => (id === row._id ? again.approvalId : id)),
+          })
+      }
+      return again.approvalId
     } catch {
       return undefined
     }
