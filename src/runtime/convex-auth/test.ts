@@ -139,7 +139,7 @@ function adapterOf(componentName = 'betterAuth'): Adapter {
  * The person behind {@link signInAs} and {@link grantMcp}: the user `subject`
  * and its session `<subject>-session`. Both helpers reuse what exists, so they
  * work together in any order. When the user exists but that session was
- * deleted (a sign-out), a new session gets a fresh ID.
+ * deleted (a sign-out) or has expired, a new session gets a fresh ID.
  */
 async function ensureSession(
   test: SignInAsTestClient<unknown>,
@@ -166,7 +166,9 @@ async function ensureSession(
       },
     })
   }
-  if (!(await find('session', sessionId))) {
+  // An expired session is not reused: its client would be signed out (release review).
+  const own = (await find('session', sessionId)) as { expiresAt: number } | null
+  if (!own || own.expiresAt <= now) {
     // After a revocation the helpers sign in again with a fresh ID; the other helper must then
     // reuse that session instead of making its own, so one sign-out ends both (Codex round 4).
     const { page } = (await test.query(adapter.findMany, {
@@ -178,7 +180,7 @@ async function ensureSession(
       .filter((session) => session.expiresAt > now)
       .sort((a, b) => b.createdAt - a.createdAt)[0]
     if (current) return current.id
-    if (existingUser) sessionId = `${subject}-session-${crypto.randomUUID()}`
+    if (existingUser || own) sessionId = `${subject}-session-${crypto.randomUUID()}`
     await test.mutation(adapter.create, {
       model: 'session',
       data: {
@@ -320,7 +322,10 @@ export async function grantMcp<Client>(
   }
   const where = { clientId, userId: subject }
   const consent = await findOne('oauthConsent', where)
-  const grantId = (consent?.id as string | undefined) ?? `${subject}-${clientId}-consent`
+  // A consent made again after a revoke gets a fresh ID, so a principal from before the revoke
+  // stays refused, as in a real reconnect (release review).
+  const grantId =
+    (consent?.id as string | undefined) ?? `${subject}-${clientId}-consent-${crypto.randomUUID()}`
   if (!consent) {
     await create('oauthConsent', {
       id: grantId,

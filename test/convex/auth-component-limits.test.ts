@@ -180,6 +180,35 @@ describe('auth component limits', () => {
     )
   })
 
+  // Release review: after a revoke, grantMcp made the consent again with the same ID, so a
+  // principal from before the revoke was admitted again, unlike a real reconnect.
+  it('keeps a principal from before a revoke refused after grantMcp connects again', async () => {
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.example.test')
+    const test = init()
+    const admitted = (principal: Awaited<ReturnType<typeof grantMcp>>) =>
+      test.run(async (ctx) => (await requireMcpPrincipal(ctx, component, principal)).user.id)
+    const before = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    await test.mutation(adapter.deleteMany, {
+      model: 'oauthConsent',
+      where: [{ field: 'userId', value: 'alice' }],
+    })
+    const after = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    await expect(admitted(after)).resolves.toBe('alice')
+    await expect(admitted(before)).rejects.toThrow('MCP access denied')
+  })
+
+  // Release review: signInAs reused its session after it expired, so the client was signed out.
+  it('signs in with a fresh session after the old one expired', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const test = init()
+    const auth = createBetterConvexAuth(component)
+    await signInAs(test, 'alice', { componentName: 'limits', expiresInMs: 60_000 })
+    vi.advanceTimersByTime(61_000)
+    const again = await signInAs(test, 'alice', { componentName: 'limits' })
+    expect((await again.query((ctx) => auth.getUser(ctx)))?.id).toBe('alice')
+  })
+
   // Codex round 3: grantMcp minted a live grant under NODE_ENV=production, outside any test runner.
   it('refuses to sign in or grant outside a test runner', async () => {
     const test = init()
