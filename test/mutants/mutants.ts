@@ -843,11 +843,23 @@ export const mutants: Mutant[] = [
     projects: ['agents'],
   },
   {
+    id: 'C1-follow-up-outlives-run',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: '!options.followUp && (run.status',
+    replace: '(run.status',
+    // Approved work's follow-ups finish when the in-app run ends first (Matthias, 2026-10-07).
+    kills: [
+      `${A}/approvals/approvals.test.ts > a follow-up of an in-app request runs after its run ends, not after the agent is turned off: 'run ended'`,
+    ],
+    projects: ['agents'],
+  },
+  {
     id: 'S9-in-app-ended-run',
     guards: 'C1',
     file: 'packages/functions/src/functions.ts',
-    find: "if (run.status === 'done' || run.status === 'failed')",
-    replace: 'if (false)',
+    find: "(run.status === 'done' || run.status === 'failed')",
+    replace: 'false',
     // The turn check refuses an ended run's step too, with another message. Approved work skips
     // that check, so only this guard stops it.
     kills: [

@@ -590,6 +590,41 @@ test.each(['done', 'failed'] as const)(
   },
 )
 
+// Matthias, 2026-10-07: work an approved request scheduled finishes when the in-app run ends
+// first (the agent answers before a follow-up runs). Turning the agent off still stops it.
+test.each([
+  { row: 'run ended', archived: true },
+  { row: 'agent turned off', archived: false },
+] as const)(
+  'a follow-up of an in-app request runs after its run ends, not after the agent is turned off: $row',
+  async ({ row, archived }) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const s = await setup()
+    const runId = await inAppRun(s, 'live', 'running')
+    const asked = await s.t.mutation(api.tools.archive_later, {
+      caller: { door: 'app', runId, turn: 2 },
+      input: { projectIds: [s.p[0]] },
+    })
+    expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+      status: 'approved',
+    })
+    await s.t.run(async (ctx) => {
+      const run = (await ctx.db.get(runId))!
+      if (row === 'run ended') await ctx.db.patch(runId, { status: 'done' })
+      else await ctx.db.patch(run.grantId, { revokedAt: Date.now() })
+    })
+    vi.advanceTimersByTime(1)
+    await s.t.finishInProgressScheduledFunctions()
+    const turnedOff = { code: 'AGENT_DISABLED', message: 'This agent is turned off.' }
+    expect((await scheduledOutcomes(s, log)).failures).toEqual(
+      archived ? [] : [turnedOff, turnedOff],
+    )
+    expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({
+      status: archived ? 'archived' : 'active',
+    })
+  },
+)
+
 // Second review: the waiting-run backstop stopped after 200 runs until the next hourly cron.
 test('housekeeping goes through every waiting run, in batches', async () => {
   const s = await setup()

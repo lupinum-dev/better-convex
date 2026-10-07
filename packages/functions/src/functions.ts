@@ -219,7 +219,7 @@ export function defineFunctions<
   async function agent(
     ctx: QCtx,
     caller: AgentCaller,
-    options: { approved?: boolean } = {},
+    options: { approved?: boolean; followUp?: boolean } = {},
   ): Promise<Agent> {
     if (caller.door === 'app') {
       // An in-app agent acts on a grant the person gave it, not on their login session,
@@ -230,7 +230,9 @@ export function defineFunctions<
       if (!run || !grant || grant.revokedAt !== undefined || grant.expiresAt <= Date.now()) {
         fail('AGENT_DISABLED', 'This agent is turned off.')
       }
-      if (run.status === 'done' || run.status === 'failed')
+      // Work an approved request scheduled is bound to that approval, not to the run: the run may
+      // end before it runs. Turning the agent off still stops it (the grant check above).
+      if (!options.followUp && (run.status === 'done' || run.status === 'failed'))
         fail('AGENT_DISABLED', 'This run has ended.')
       // A step acts only in its own turn while the run runs. Work a person approved is bound to
       // its request instead (checked by the caller).
@@ -277,7 +279,10 @@ export function defineFunctions<
       case 'visitor':
         return who
       case 'agent': {
-        const actor = await agent(ctx, who.caller, { approved: who.approvalId !== undefined })
+        const actor = await agent(ctx, who.caller, {
+          approved: who.approvalId !== undefined,
+          followUp: who.approvalId !== undefined && who.followUp !== undefined,
+        })
         if (who.approvalId === undefined) return actor
         // Work done under a person's approval: the approval must be this agent's, and still stand.
         const id = lib(ctx).normalizeId('approvals', who.approvalId)
