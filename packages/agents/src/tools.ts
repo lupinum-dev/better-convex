@@ -15,6 +15,7 @@ import {
   failureOf,
   fingerprint,
   guarded,
+  guardQuery,
   idsIn,
   inertMarkdown,
   jsonOf,
@@ -390,45 +391,58 @@ export function defineTools(
           const input = inputOf(ctx, op, raw)
           /**
            * What a person decides on: the summary, and a fingerprint of every row the call names
-           * or the summary reads. Taken when the agent asks, and again when the person approves:
-           * a row that changed, went away or newly matches the summary's query makes the request
-           * STALE (release review: a second matching project was deleted too).
+           * or the summary was shown. Rows the rules hide are not in it. Taken when the agent asks,
+           * and again when the person approves: a row that changed, went away, newly matches a
+           * query or became visible makes the request STALE (release reviews: a second matching
+           * project; a project the agent was given access to after it asked).
            */
           const basis = async ({
             ctx: checked,
-            rows,
             settle,
           }: Awaited<ReturnType<Internals['authorize']>>) => {
-            const inputRows = new Map(rows)
+            const shown = new Map<string, Record<string, unknown>>()
+            const show = (row: unknown) => {
+              if (row)
+                shown.set(String((row as { _id: string })._id), row as Record<string, unknown>)
+            }
+            const db = checked.db
+            const watched = {
+              get: async (...a: unknown[]) => {
+                const row = await (db.get as (...a: unknown[]) => Promise<unknown>)(...a)
+                show(row)
+                return row as Record<string, unknown> | null
+              },
+              query: (table: string) => guardQuery(db.query(table), async (row) => show(row)),
+              normalizeId: db.normalizeId.bind(db),
+              // A getter: the checked db refuses system tables when they are read.
+              get system() {
+                return db.system
+              },
+            }
             // Every row the input names, under the row rules: a row the agent may not read is
             // missing, as in the handler, and never reaches a person as a request.
             const named: { table: string; id: string; row: Record<string, unknown> }[] = []
             for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input)) {
               if (ctx.db.normalizeId(table, id) === null) continue
-              const row = (await checked.db.get(id)) as Record<string, unknown> | null
+              const row = await watched.get(id)
               if (row === null) fail('NOT_FOUND', `No ${table} with this ID.`)
-              inputRows.set(id, row)
               named.push({ table, id, row })
             }
-            rows.clear()
             const summary = oneLine(
               settle(
                 op.approval
-                  ? await op.approval(summaryCtx(checked), input)
+                  ? await op.approval(summaryCtx({ ...checked, db: watched }), input)
                   : `${op.action} ${JSON.stringify(input)}`,
               ),
             )
-            const touched = [...new Map([...inputRows, ...rows])].filter(
-              (entry): entry is [string, Record<string, unknown>] => entry[1] !== null,
-            )
-            if (touched.length > maxSeen) {
+            if (shown.size > maxSeen) {
               fail(
                 'TOO_LARGE',
                 `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
               )
             }
             const seen = await Promise.all(
-              touched.map(async ([id, row]) => ({ id, hash: await fingerprint(row) })),
+              [...shown].map(async ([id, row]) => ({ id, hash: await fingerprint(row) })),
             )
             return { summary, seen, named }
           }
@@ -442,6 +456,12 @@ export function defineTools(
               row.action !== op.action
             ) {
               fail('APPROVAL_NOT_FOUND', 'This approval does not match the request.')
+            }
+            // A row the person saw that changed or went away: STALE, before authorizing reports a
+            // deleted named row as NOT_FOUND (release review 2). The summary runs again below.
+            for (const { id, hash } of row.seen ?? []) {
+              const now = await ctx.db.get(id as GenericId<string>)
+              if (now === null || (await fingerprint(now)) !== hash) fail('STALE', stale)
             }
             // Internal operations this work runs see the approval, so their own `approve` rules pass.
             const authorized = await authorize(

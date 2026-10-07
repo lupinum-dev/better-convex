@@ -2,6 +2,8 @@ import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import type { Plugin } from 'vite'
+// Adds `test` to Vite's config type, for the setup file below.
+import type {} from 'vitest/config'
 
 import { type Mutant, mutants } from './mutants'
 

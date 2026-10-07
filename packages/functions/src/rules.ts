@@ -625,7 +625,7 @@ const chainable = new Set(['fullTableScan', 'withIndex', 'withSearchIndex', 'ord
  * read. Only the methods named here exist; a new Convex method throws until
  * it is added, so it cannot hand out unchecked rows.
  */
-function guardQuery(query: any, check: (row: unknown) => Promise<void>): any {
+export function guardQuery(query: any, check: (row: unknown) => Promise<void>): any {
   const rowsOf = async <T>(rows: T[]) => {
     for (const row of rows) await check(row)
     return rows

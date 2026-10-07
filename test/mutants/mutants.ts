@@ -470,19 +470,37 @@ export const mutants: Mutant[] = [
     ],
   },
   {
+    id: 'S11-shown-get',
+    guards: 'S11',
+    file: 'packages/agents/src/tools.ts',
+    // Approve compares what the summary was shown, not raw rows (release review 2: access granted later).
+    find: '                show(row)\n',
+    replace: '',
+    kills: [`${A}/approvals/approvals.test.ts > approving checks what the summary could not see`],
+    projects: ['agents'],
+  },
+  {
+    id: 'S11-seen-before-authorize',
+    guards: 'S11',
+    file: 'packages/agents/src/tools.ts',
+    find: "if (now === null || (await fingerprint(now)) !== hash) fail('STALE', stale)",
+    replace: '',
+    kills: [
+      `${A}/approvals/approvals.test.ts > approving a request whose row was deleted fails as STALE`,
+    ],
+    projects: ['agents'],
+  },
+  {
     id: 'S11-changed-hash',
     guards: 'S11',
     file: 'packages/agents/src/tools.ts',
-    // Approve reads again what the summary read (release review: a new match was archived too).
+    // Approve runs the summary again (release review: a new match was archived too). Changed rows
+    // fail earlier, in the check before authorizing (S11-seen-before-authorize).
     find: "if (now.sort().join() !== then.sort().join()) fail('STALE', stale)",
     replace: '',
     kills: [
       `${A}/approvals/approvals.test.ts > approving checks what the summary read, also new matches: 'a second project matches now'`,
-      `${A}/approvals/approvals.test.ts > approving fails as STALE when the project changed after the request`,
-      `${A}/approvals/approvals.test.ts > every row a request covers is checked for changes, up to a stated limit`,
-      `${A}/approvals/approvals.test.ts > a request on a row of an anyOf table fails as STALE when that row changed`,
-      `${A}/approvals/approvals.test.ts > a request naming rows as record keys fails as STALE when one changed`,
-      sequences,
+      `${A}/approvals/approvals.test.ts > approving checks what the summary could not see`,
     ],
   },
   {
@@ -499,7 +517,7 @@ export const mutants: Mutant[] = [
     id: 'S11-max-seen',
     guards: 'S11',
     file: 'packages/agents/src/tools.ts',
-    find: 'if (touched.length > maxSeen) {',
+    find: 'if (shown.size > maxSeen) {',
     replace: 'if (false) {',
     kills: [
       `${A}/approvals/approvals.test.ts > every row a request covers is checked for changes, up to a stated limit`,
@@ -1059,8 +1077,8 @@ export const mutants: Mutant[] = [
     file: 'packages/functions/src/rules.ts',
     find: 'db: db && readerOf(db),',
     replace: 'db,',
+    // The approval summary gets its own reader in tools.ts (it records what it was shown).
     kills: [
-      `${callbacks} > approval summary, agent at the MCP door receives exactly these keys`,
       `${callbacks} > roleOf during a mutation receives exactly these keys`,
       `${callbacks} > user lookup during a mutation receives exactly these keys`,
     ],
@@ -1707,22 +1725,6 @@ export const mutants: Mutant[] = [
 ]
 
 export const equivalents: Equivalent[] = [
-  {
-    id: 'S11-input-rows-map',
-    file: 'packages/agents/src/tools.ts',
-    find: 'const inputRows = new Map(rows)',
-    replace: 'const inputRows = new Map<string, Record<string, unknown> | null>()',
-    reason:
-      'The idsIn loop loads every row the input names again, so the copy of the rows authorize read adds none.',
-  },
-  {
-    id: 'S11-rows-clear',
-    file: 'packages/agents/src/tools.ts',
-    find: '            rows.clear()\n',
-    replace: '',
-    reason:
-      'The summary rows are merged with the input rows, which the idsIn loop already holds: no row is lost or added.',
-  },
   {
     id: 'S14-live-grant-id',
     file: 'src/runtime/convex-auth/mcp-principal.ts',

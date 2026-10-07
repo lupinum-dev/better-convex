@@ -158,6 +158,45 @@ test.each([
   expect(archived.length).toBe(row.archived)
 })
 
+// Release review 2: approving compared only raw rows, so a project the summary could not see,
+// and the person never saw, was archived after the agent got access to it.
+test('approving checks what the summary could not see', async () => {
+  const s = await setup()
+  const { membership, unseen, note } = await s.t.run(async (ctx) => {
+    const b = await ctx.db.insert('orgs', { name: 'B' })
+    const membership = await ctx.db.insert('memberships', {
+      orgId: b,
+      userId: s.annId,
+      role: 'viewer',
+    })
+    const unseen = await ctx.db.insert('projects', { orgId: b, name: 'unseen', status: 'active' })
+    const note = await ctx.db.insert('notes', {
+      userId: s.annId,
+      text: JSON.stringify([s.p[0], unseen]),
+    })
+    return { membership, unseen, note }
+  })
+  const asked = await s.ask('archive_listed', { noteId: note })
+  expect(asked.summary).toBe('Archive 1 listed: alpha.')
+  await s.t.run((ctx) => ctx.db.patch(membership, { role: 'owner' }))
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject({
+    status: 'failed',
+    error: { code: 'STALE' },
+  })
+  expect(await s.t.run((ctx) => ctx.db.get(unseen))).toMatchObject({ status: 'active' })
+})
+
+// Release review 2: a named row deleted after the agent asked failed as NOT_FOUND, not STALE.
+test('approving a request whose row was deleted fails as STALE', async () => {
+  const s = await setup()
+  const asked = await s.ask('archive_project', { projectId: s.p[0] })
+  await s.t.run((ctx) => ctx.db.delete(s.p[0]))
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject({
+    status: 'failed',
+    error: { code: 'STALE' },
+  })
+})
+
 // I2: only the requester's person could approve; a co-owner could not help.
 test('a co-owner may decide a request through `approvers`; a viewer may not', async () => {
   const s = await setup()

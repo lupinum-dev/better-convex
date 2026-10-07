@@ -264,6 +264,35 @@ export const archiveMatching = mutation({
   },
 })
 
+/** Archives the projects a note lists by ID. The summary names only those the agent may see. */
+export const archiveListed = mutation({
+  action: 'projects.archive',
+  args: { noteId: v.id('notes') },
+  returns: v.number(),
+  tool: { name: 'archive_listed', description: 'Archive the projects a note lists.' },
+  approval: async (ctx, { noteId }) => {
+    const names = (await listed(ctx, noteId)).map((project) => project.name)
+    return `Archive ${names.length} listed: ${names.join(', ')}.`
+  },
+  handler: async (ctx, { noteId }) => {
+    const found = await listed(ctx, noteId)
+    for (const project of found) await ctx.db.patch(project._id, { status: 'archived' })
+    return found.length
+  },
+})
+
+const listed = async (
+  ctx: { db: import('convex/server').GenericDatabaseReader<any> },
+  noteId: string,
+) => {
+  const note = await ctx.db.get(noteId as never)
+  const ids = JSON.parse((note as { text: string }).text) as string[]
+  return (await Promise.all(ids.map((id) => ctx.db.get(id as never)))).filter(Boolean) as {
+    _id: never
+    name: string
+  }[]
+}
+
 const matching = async (
   ctx: { db: import('convex/server').GenericDatabaseReader<any> },
   orgId: string,

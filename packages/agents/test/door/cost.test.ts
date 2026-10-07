@@ -33,9 +33,9 @@ test('a tool call with a request_id, and its retry', async () => {
 test('a tool call that asks a person', async () => {
   const { t, pa, caller } = await connected()
   const ask = () => t.mutation(fn('agents:archive_project'), { caller, input: { projectId: pa } })
-  // The live grant (6), user, project (for its tenant), membership, and the project again for the
-  // request's fingerprint (the summary reads it from the cache). Writes: rate-limit window, request.
-  expect(await countDocuments(ask)).toEqual({ reads: 10, writes: 2 })
+  // The live grant (6), user, project (for its tenant) and membership; the summary and the
+  // request's fingerprint read the project from the cache. Writes: rate-limit window, request.
+  expect(await countDocuments(ask)).toEqual({ reads: 9, writes: 2 })
 })
 
 test('approving a request', async () => {

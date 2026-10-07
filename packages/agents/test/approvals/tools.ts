@@ -21,6 +21,7 @@ export const {
   clear_note,
   buy_listing,
   archive_matching,
+  archive_listed,
   check_approval,
   housekeeping,
 } = tools.functions
