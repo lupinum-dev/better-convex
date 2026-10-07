@@ -7,8 +7,9 @@
  *    row's projects, with `BC_MUTANT=<id>`. The plugin applies the row in
  *    memory and reports each replacement.
  * 3. A row fails when the plugin did not replace `find` exactly once, when a
- *    `kills` test passes, or when a `kills` test did not run (the mutant broke
- *    the module before the tests ran: fix the row).
+ *    `kills` test passes, when a `kills` test did not run (the mutant broke
+ *    the module before the tests ran: fix the row), or when it failed in its
+ *    `beforeEach` or `afterEach` (the mutant broke the setup, not the guard).
  * 4. A full run fails when an invariant row (`| S<n> |`) in section 6 of
  *    internal/functions-and-agents/plan.md has no mutant row.
  *
@@ -47,22 +48,32 @@ type Report = {
 async function runVitest(projects: string[], files: string[], env: Record<string, string>) {
   const output = join(scratch, 'vitest.json')
   rmSync(output, { force: true })
-  const args = ['run', ...projects.map((name) => `--project=${name}`), '--reporter=json']
+  const hooks = join(scratch, 'hooks.txt')
+  rmSync(hooks, { force: true })
+  const args = [
+    'run',
+    ...projects.map((name) => `--project=${name}`),
+    '--reporter=json',
+    `--reporter=${join(import.meta.dirname, 'hooks-reporter.ts')}`,
+  ]
   child = spawn(vitest, [...args, `--outputFile=${output}`, ...files], {
     cwd: root,
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...env, BC_MUTANT_HOOKS: hooks },
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   let stderr = ''
   child.stderr?.on('data', (chunk) => (stderr += chunk))
   await new Promise((done) => child?.on('close', done))
   const statuses = new Map<string, string>()
+  const failedInHook = new Set(existsSync(hooks) ? readFileSync(hooks, 'utf8').split('\n') : [])
   if (!existsSync(output)) return { statuses, stderr }
   const report = JSON.parse(readFileSync(output, 'utf8')) as Report
   for (const file of report.testResults) {
     const path = file.name.slice(root.length + 1)
-    for (const test of file.assertionResults)
-      statuses.set([path, ...test.ancestorTitles, test.title].join(' > '), test.status)
+    for (const test of file.assertionResults) {
+      const name = [path, ...test.ancestorTitles, test.title].join(' > ')
+      statuses.set(name, failedInHook.has(name) ? 'failed in a hook' : test.status)
+    }
   }
   return { statuses, stderr }
 }
@@ -129,6 +140,8 @@ for (const row of rows) {
   for (const name of row.kills) {
     const status = statuses.get(name)
     if (status === 'passed') problems.push(`survived: "${name}"`)
+    else if (status === 'failed in a hook')
+      problems.push(`failed in a hook, not in the test: "${name}"`)
     else if (status !== 'failed') problems.push(`did not run: "${name}"`)
   }
   if (problems.length) failedRows++

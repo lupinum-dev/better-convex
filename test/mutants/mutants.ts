@@ -473,9 +473,11 @@ export const mutants: Mutant[] = [
     id: 'S11-changed-hash',
     guards: 'S11',
     file: 'packages/agents/src/tools.ts',
-    find: 'if (!now || (await fingerprint(now)) !== before) return true',
-    replace: 'if (!now) return true',
+    // Approve reads again what the summary read (release review: a new match was archived too).
+    find: "if (now.sort().join() !== then.sort().join()) fail('STALE', stale)",
+    replace: '',
     kills: [
+      `${A}/approvals/approvals.test.ts > approving checks what the summary read, also new matches: 'a second project matches now'`,
       `${A}/approvals/approvals.test.ts > approving fails as STALE when the project changed after the request`,
       `${A}/approvals/approvals.test.ts > every row a request covers is checked for changes, up to a stated limit`,
       `${A}/approvals/approvals.test.ts > a request on a row of an anyOf table fails as STALE when that row changed`,
@@ -928,6 +930,52 @@ export const mutants: Mutant[] = [
       `${callbacks} > internal query run under a person’s approval receives exactly these keys`,
     ],
     projects: ['agents'],
+  },
+  // The release-gate review, 2026-10-07.
+  {
+    id: 'C4-public-read-true',
+    guards: 'C4',
+    file: 'packages/functions/src/rules.ts',
+    find: 'rule.where(row as never) === true',
+    replace: 'rule.where(row as never)',
+    kills: [
+      `${callbacks} > a publicRead condition that returns 1`,
+      `${callbacks} > a publicRead condition that returns a Promise of undefined`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S16-request-id-reserved',
+    guards: 'S16',
+    file: 'packages/agents/src/tools.ts',
+    find: "if ('request_id' in op.args) {",
+    replace: 'if (false) {',
+    kills: [
+      `${A}/door/door.test.ts > a tool argument named request_id fails at definition, for queries too`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'C9-session-expiry',
+    guards: 'C9',
+    file: 'src/runtime/convex-auth/test.ts',
+    find: 'if (!own || own.expiresAt <= now) {',
+    replace: 'if (!own) {',
+    kills: [
+      'test/convex/auth-component-limits.test.ts > auth component limits > signs in with a fresh session after the old one expired',
+    ],
+    projects: ['convex'],
+  },
+  {
+    id: 'C9-fresh-consent',
+    guards: 'C9',
+    file: 'src/runtime/convex-auth/test.ts',
+    find: '`${subject}-${clientId}-consent-${crypto.randomUUID()}`',
+    replace: '`${subject}-${clientId}-consent`',
+    kills: [
+      'test/convex/auth-component-limits.test.ts > auth component limits > keeps a principal from before a revoke refused after grantMcp connects again',
+    ],
+    projects: ['convex'],
   },
   // The callback tables, 2026-10-07: four fixes, each with its row.
   {

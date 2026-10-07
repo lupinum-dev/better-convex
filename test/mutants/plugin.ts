@@ -43,6 +43,8 @@ export function mutantPlugin(root: string): Plugin {
     name: 'bc-mutant',
     // Before esbuild, so `find` matches the TypeScript source as written.
     enforce: 'pre',
+    // Marks tests whose beforeEach failed: the runner does not count them as kills.
+    config: () => ({ test: { setupFiles: [resolve(root, 'test/mutants/hook-setup.ts')] } }),
     transform(code, moduleId) {
       if (moduleId.split('?')[0] !== target) return
       return applyMutant(row, code)
