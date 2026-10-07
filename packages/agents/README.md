@@ -50,6 +50,10 @@ the standard OAuth challenge, and gives your tools the verified user as a typed 
 pnpm add @lupinum/better-convex-agents@next @lupinum/better-convex-functions@next @modelcontextprotocol/server@2.1.0
 ```
 
+The two Lupinum packages are released together with the same version, and each
+release of this package needs exactly that version of
+`@lupinum/better-convex-functions`. Upgrade both at once.
+
 ## Quick start
 
 Give an operation a `tool` field, then collect the tools in one module that exports each tool

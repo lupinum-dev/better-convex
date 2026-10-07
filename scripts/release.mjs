@@ -3,7 +3,7 @@
 //   node scripts/release.mjs pack   packs those packages into release/ (run `pnpm build` first)
 // release/ then holds the tarballs, order.txt (publish order: Vue before Nuxt, which pins it)
 // and releases.json. Tags keep the existing scheme: `v<version>` for the fixed Nuxt + Vue
-// group, `functions-v<version>` and `agents-v<version>` for the independently versioned packages
+// group, `functions-v<version>` and `agents-v<version>` for the fixed Functions + Agents group
 // (`mcp-v<version>` for the MCP package before it became the agents package).
 import { spawnSync } from 'node:child_process'
 import {

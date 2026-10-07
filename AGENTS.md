@@ -31,8 +31,9 @@ This repository contains four packages:
   MCP door (`./mcp`: `createMcpServer` and the `handleMcpRequest` transport)
   inside a Convex HTTP action. Only `./mcp` loads the MCP SDK.
 
-Nuxt and Vue always share one version (a Changesets `fixed` group); Functions
-and Agents version on their own. Functions and Agents are an opt-in layer, not part
+Nuxt and Vue always share one version (a Changesets `fixed` group), and so do
+Functions and Agents (a second `fixed` group; Agents pins the exact Functions
+version as its peer, because it uses `./internal`). Functions and Agents are an opt-in layer, not part
 of the toolkit below: Functions wraps every function of an app that installs
 it, checks one policy and one rule per table, and fails a test for every other
 path to the database (D31); Agents builds on it. The toolkit rules apply to the
