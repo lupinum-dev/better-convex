@@ -43,6 +43,15 @@ const fuzz = `${F}/query-fuzz.test.ts > a random query chain hands out exactly t
 const starter = 'starters/mcp-oauth-agent/convex'
 const leaks = `${starter}/leaks.test.ts > no call reaches another organization’s project`
 const inApp = `${A}/approvals/approvals.test.ts > an in-app agent step acts only on a live grant, in the current turn of a running run`
+const consumers = 'test/fixtures/consumers'
+const agency = `${consumers}/agency/convex`
+const agencyLeaks = `${agency}/agency.test.ts > no call reaches another client or agency`
+const content = `${consumers}/content/convex`
+const contentLeaks = `${content}/content.test.ts > no call from site A reaches site B's pages`
+const marketplace = `${consumers}/marketplace/convex`
+const marketplaceLeaks = `${marketplace}/marketplace.test.ts > no call reaches another organization's order or draft`
+const sites = `${consumers}/sites/convex`
+const sitesLeaks = `${sites}/sites.test.ts > no call reaches another organization's site`
 
 export const mutants: Mutant[] = [
   {
@@ -1058,6 +1067,149 @@ export const mutants: Mutant[] = [
     kills: [
       `${starter}/agents.test.ts > gives agents these tools, with these scopes and approvals`,
     ],
+    projects: ['mcp'],
+  },
+  // The consumer apps' own configuration (test/fixtures/consumers, A6 in
+  // internal/functions-and-agents/testing-strategy.md): each break keeps every package test
+  // green and must fail a leak row or the journey of that app.
+  {
+    id: 'consumer-agency-role-any-agency',
+    guards: 'S3',
+    file: `${agency}/functions.ts`,
+    find: ".withIndex('by_agency_user', (q) => q.eq('agencyId', agencyId).eq('userId', userId))\n    .unique()",
+    replace: ".filter((q) => q.eq(q.field('userId'), userId))\n    .first()",
+    kills: [
+      `${agencyLeaks} > sam: clients.list fails with NOT_FOUND`,
+      `${agencyLeaks} > sam: list_projects fails with NOT_FOUND`,
+      `${agencyLeaks} > sam: acknowledge_findings fails with NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-agency-client-any-client',
+    guards: 'S3',
+    file: `${agency}/functions.ts`,
+    find: ".withIndex('by_client_user', (q) => q.eq('clientId', clientId).eq('userId', userId))\n    .unique()",
+    replace: ".filter((q) => q.eq(q.field('userId'), userId))\n    .first()",
+    kills: [
+      `${agencyLeaks} > cara: projects.list fails with NOT_FOUND`,
+      `${agencyLeaks} > cara: get_fix_brief fails with NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-agency-findings-unchecked',
+    guards: 'S3',
+    file: `${agency}/functions.ts`,
+    find: "findings: tenant('projectId'),",
+    replace: "findings: { kind: 'unchecked' as const, reason: 'mutant' },",
+    kills: [
+      `${agencyLeaks} > sam: findings.acknowledge fails with NOT_FOUND`,
+      `${agencyLeaks} > sam: acknowledge_findings fails with NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-agency-approvers',
+    guards: 'S18',
+    file: `${agency}/policy.ts`,
+    find: "approvers: { 'findings.acknowledge': ['owner'] },",
+    replace: 'approvers: {},',
+    kills: [
+      `${agency}/agency.test.ts > a client reads the brief; a staff agent's acknowledge waits for the agency owner`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-content-pages-tenant',
+    guards: 'S3',
+    file: `${content}/functions.ts`,
+    find: "      allOf(\n        tenant('siteId'),",
+    replace: '      allOf(\n        custom(() => true),',
+    kills: [
+      `${contentLeaks} > B's pages under A: pages.read fails with NOT_FOUND`,
+      `${contentLeaks} > B's pages under A: pages.edit fails with NOT_FOUND`,
+      `${contentLeaks} > B's pages under A: read_page fails with NOT_FOUND`,
+      `${contentLeaks} > B's pages under A: edit_page fails with NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-content-approval-site',
+    guards: 'S18',
+    file: `${content}/pages.ts`,
+    find: 'if (current?.siteId !== siteId) fail(',
+    replace: 'if (!current) fail(',
+    kills: [`${contentLeaks} > B's pages under A: edit_live_page fails with NOT_FOUND`],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-content-live-approval',
+    guards: 'S10',
+    file: `${content}/policy.ts`,
+    find: "agents: { 'pages.editLive': 'approve' },",
+    replace: 'agents: {},',
+    kills: [
+      `${content}/content.test.ts > an agent edits a draft at once; its edit of the live page waits for the owner's yes`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-marketplace-party-side',
+    guards: 'S3',
+    file: `${marketplace}/functions.ts`,
+    find: 'writes.includes(ctx.action) && ctx.tenant?.id === order[side]',
+    replace: 'writes.includes(ctx.action)',
+    kills: [
+      `${marketplaceLeaks} > Duo shipping for the buyer: orders.ship fails with FORBIDDEN`,
+      `${marketplaceLeaks} > Duo shipping for the buyer: ship_order fails with FORBIDDEN`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-marketplace-party-allows',
+    guards: 'S3',
+    file: `${marketplace}/functions.ts`,
+    find: " &&\n      ctx.allows({ table: 'orgs', id: order[side] }),",
+    replace: ',',
+    kills: [
+      `${marketplaceLeaks} > Rival's rows under Acme: orders.cancel fails with NOT_FOUND`,
+      `${marketplaceLeaks} > Bazaar's order under Shop: ship_order fails with NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-marketplace-drafts-public',
+    guards: 'S3',
+    file: `${marketplace}/functions.ts`,
+    find: "publicRead((listing: Doc<'listings'>) => listing.active)",
+    replace: 'publicRead(() => true)',
+    kills: [
+      `${marketplaceLeaks} > Rival's rows under Acme: orders.place fails with NOT_FOUND`,
+      `${marketplaceLeaks} > Rival's rows under Acme: place_order fails with NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-sites-unchecked',
+    guards: 'S3',
+    file: `${sites}/functions.ts`,
+    find: "sites: tenant('organizationId'),",
+    replace: "sites: { kind: 'unchecked' as const, reason: 'mutant' },",
+    kills: [
+      `${sitesLeaks} > listChecks at the canary site fails with NOT_FOUND`,
+      `${sitesLeaks} > trigger_site_check at the canary site fails with NOT_FOUND`,
+      `${sitesLeaks} > list_site_checks at the canary site fails with NOT_FOUND`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'consumer-sites-check-approval',
+    guards: 'S10',
+    file: `${sites}/policy.ts`,
+    find: "agents: { 'sites.check': 'approve' },",
+    replace: 'agents: {},',
+    kills: [`${sites}/sites.test.ts > an agent's check waits for approval, then the job runs it`],
     projects: ['mcp'],
   },
 ]
