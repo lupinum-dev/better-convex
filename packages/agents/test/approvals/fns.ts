@@ -35,7 +35,7 @@ export const policy = definePolicy({
     'projects.archive': 'approve',
     'projects.export': ({ size }) => (size > 100 ? 'approve' : 'allow'),
   },
-  approvers: { 'projects.archive': ['owner'] },
+  approvers: { 'projects.archive': ['owner'], 'notes.edit': ['owner'] },
 })
 
 // Auth is the one outside service; the fake names a person by the test identity's subject.

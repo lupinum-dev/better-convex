@@ -155,6 +155,34 @@ test('a co-owner may decide a request through `approvers`; a viewer may not', as
   expect(approval!.decidedBy).not.toBe(approval!.requester.userId)
 })
 
+// V3: approvers of a tenant decide a request only when every row it touches names that tenant.
+test('an approver decides a request only when every row it touches is of the approver’s tenant', async () => {
+  const s = await setup()
+  const [shared, own] = await s.t.run(async (ctx) => [
+    await ctx.db.insert('notes', { userId: s.annId, orgId: s.a, text: 'team' }),
+    await ctx.db.insert('notes', { userId: s.annId, text: 'mine' }),
+  ])
+  const both = await s.t.mutation(api.tools.edit_notes, {
+    caller,
+    input: { texts: { [shared]: 'agent', [own]: 'agent' } },
+  })
+  const team = await s.t.mutation(api.tools.edit_note, {
+    caller,
+    input: { noteId: shared, text: 'agent' },
+  })
+
+  expect(await s.olga.query(api.tools.pending, { tenantId: s.a })).toMatchObject([
+    { id: team.approvalId, mine: false },
+  ])
+  expect(await s.olga.query(api.tools.get, { approvalId: both.approvalId })).toBeNull()
+  await expect(s.olga.mutation(api.tools.approve, { approvalId: both.approvalId })).rejects.toThrow(
+    /APPROVAL_NOT_FOUND/,
+  )
+  expect(await s.olga.mutation(api.tools.approve, { approvalId: team.approvalId })).toEqual({
+    status: 'approved',
+  })
+})
+
 // B2: one agent could flood a person with requests.
 test('an agent with 20 open requests is told to wait', async () => {
   const s = await setup()

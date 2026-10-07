@@ -69,6 +69,19 @@ export const libraryTables = {
     .index('by_tenant_status', ['tenantId', 'status', 'expiresAt'])
     .index('by_status', ['status', 'expiresAt']),
 
+  /**
+   * A tenant besides the call's own that every row a request touches names,
+   * such as the seller of an order a buyer's agent cancels. Its approvers may
+   * decide the request too. Written with the request, deleted with it.
+   */
+  approvalParties: defineTable({
+    approvalId: v.id('approvals'),
+    tenantId: v.string(),
+    expiresAt: v.number(),
+  })
+    .index('by_tenant', ['tenantId', 'expiresAt'])
+    .index('by_approval', ['approvalId']),
+
   /** A person turned on one of the app's own agents. It acts for them until it expires or they turn it off. */
   agentGrants: defineTable({
     authId: v.string(),

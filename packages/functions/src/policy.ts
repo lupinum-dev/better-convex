@@ -35,8 +35,9 @@ interface PolicyConfig<A extends string, R extends string, S extends string> {
    * The person the agent acts for always may. The request's tenant is the
    * call's: the deepest tenant its input names (the site, not the agency
    * above it), and `roleOf` decides the role there, so a parent's owner
-   * qualifies when `roleOf` lets the child inherit. Roles in other tenants,
-   * such as the other party of a shared row, do not count.
+   * qualifies when `roleOf` lets the child inherit. A role in another
+   * tenant counts when every row the request touches names that tenant, such
+   * as the seller of an order a buyer's agent cancels.
    */
   approvers?: Partial<Record<NoInfer<A>, readonly NoInfer<R>[]>>
 }

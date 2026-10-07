@@ -434,15 +434,17 @@ export function defineTools(
                   : `${op.action} ${JSON.stringify(input)}`,
               ),
             )
-            const seen = [...new Map([...inputRows, ...rows])]
-              .filter((entry): entry is [string, Record<string, unknown>] => entry[1] !== null)
-              .map(([id, row]) => ({ id, hash: fingerprint(row) }))
+            const touched = [...new Map([...inputRows, ...rows])].filter(
+              (entry): entry is [string, Record<string, unknown>] => entry[1] !== null,
+            )
+            const seen = touched.map(([id, row]) => ({ id, hash: fingerprint(row) }))
             if (seen.length > maxSeen) {
               fail(
                 'TOO_LARGE',
                 `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
               )
             }
+            const expiresAt = Date.now() + approvalTtl
             const approvalId = await lib(ctx).insert('approvals', {
               action: op.action,
               tool: op.tool.name,
@@ -454,8 +456,11 @@ export function defineTools(
               requestId,
               seen,
               status: 'pending',
-              expiresAt: Date.now() + approvalTtl,
+              expiresAt,
             })
+            for (const tenantId of partiesOf(ctx, tenant, touched)) {
+              await lib(ctx).insert('approvalParties', { approvalId, tenantId, expiresAt })
+            }
             return {
               status: 'needs_approval' as const,
               approvalId,
@@ -542,7 +547,33 @@ export function defineTools(
     },
   ]
 
-  /** May this person decide this request? The person the agent acts for, or an approver role in its tenant. */
+  /**
+   * The tenants besides the call's own that every row the request touches
+   * names in one of its fields (its own `_id` for a tenant row): the other
+   * party of a shared row. The call's own tenant row only names where the call
+   * acts, so it does not count. No rows, or rows with nothing in common, give
+   * none.
+   */
+  function partiesOf(
+    ctx: Ctx,
+    tenant: TenantRef | undefined,
+    touched: [string, Record<string, unknown>][],
+  ) {
+    let common: Set<string> | undefined
+    for (const [id, row] of touched) {
+      if (id === tenant?.id) continue
+      const named = new Set(
+        Object.values(row).flatMap((value) => tenants.refOf(ctx.db, value)?.id ?? []),
+      )
+      common = new Set([...(common ?? named)].filter((tenantId) => named.has(tenantId)))
+    }
+    return [...(common ?? [])].filter((tenantId) => tenantId !== tenant?.id)
+  }
+
+  /**
+   * May this person decide this request? The person the agent acts for, or an
+   * approver role in its tenant or in one of its parties (`partiesOf`).
+   */
   async function mayDecide(
     ctx: Ctx,
     actor: { user: { _id: string } },
@@ -552,10 +583,19 @@ export function defineTools(
     const approvers = (policy.approvers as Record<string, readonly string[]> | undefined)?.[
       row.action
     ]
-    const tenant = row.tenantId === undefined ? undefined : tenants.refOf(ctx.db, row.tenantId)
-    if (!approvers?.length || !tenant) return false
-    const role = await roleOf(ctx, actor.user, tenant)
-    return role !== null && approvers.includes(role)
+    if (!approvers?.length) return false
+    const approverIn = async (tenantId: string) => {
+      const tenant = tenants.refOf(ctx.db, tenantId)
+      const role = tenant ? await roleOf(ctx, actor.user, tenant) : null
+      return role !== null && approvers.includes(role)
+    }
+    if (row.tenantId !== undefined && (await approverIn(row.tenantId))) return true
+    const parties = await lib(ctx)
+      .query('approvalParties')
+      .withIndex('by_approval', (q) => q.eq('approvalId', row._id))
+      .collect()
+    for (const party of parties) if (await approverIn(party.tenantId)) return true
+    return false
   }
 
   async function decidable(ctx: MCtx, approvalId: string) {
@@ -616,9 +656,10 @@ export function defineTools(
   const approvals = {
     /**
      * Open requests from agents that act for the signed-in person, and, with
-     * `tenantId`, the tenant's requests this person may approve as a teammate.
-     * A request belongs to the deepest tenant its call named (a site, not
-     * the agency above it), so a list for a parent asks per child tenant.
+     * `tenantId`, the requests of that tenant, or of a row it shares, that
+     * this person may approve as a teammate. A request belongs to the deepest
+     * tenant its call named (a site, not the agency above it), so a list for a
+     * parent asks per child tenant.
      */
     pending: guarded(
       queryGeneric({
@@ -640,6 +681,14 @@ export function defineTools(
                 q.eq('tenantId', tenantId).eq('status', 'pending').gt('expiresAt', now),
               )
               .take(100)
+            const parties = await lib(ctx)
+              .query('approvalParties')
+              .withIndex('by_tenant', (q) => q.eq('tenantId', tenantId).gt('expiresAt', now))
+              .take(100)
+            for (const party of parties) {
+              const row = await lib(ctx).get(party.approvalId)
+              if (row?.status === 'pending') team.push(row)
+            }
             for (const row of team) {
               if (row.requester.userId !== actor.user._id && (await mayDecide(ctx, actor, row)))
                 out.push(requestView(row, false))
@@ -822,7 +871,14 @@ export function defineTools(
               q.eq('status', status).lt('expiresAt', now - retention.approvals * day),
             )
             .take(batch)
-          for (const row of rows) await db.delete(row._id)
+          for (const row of rows) {
+            const parties = await db
+              .query('approvalParties')
+              .withIndex('by_approval', (q) => q.eq('approvalId', row._id))
+              .collect()
+            for (const party of parties) await db.delete(party._id)
+            await db.delete(row._id)
+          }
           decided += rows.length
         }
         let runs = 0
