@@ -9,12 +9,17 @@ import { libraryTables } from './schema'
  * library checks it on every row a handler reads or writes through `ctx.db`,
  * so a forgotten filter cannot hand out another person's data.
  */
-export type Rule<Row = any, User = any, DM extends GenericDataModel = GenericDataModel> =
-  | { kind: 'tenant'; field: IdField<Row>; createdBy?: string; parent?: IdField<Row> }
+export type Rule<
+  Row = any,
+  User = any,
+  DM extends GenericDataModel = GenericDataModel,
+  Action extends string = string,
+> =
+  | { kind: 'tenant'; field: IdField<Row>; createdBy?: Action; parent?: IdField<Row> }
   | { kind: 'owner'; field: IdField<Row> }
   | { kind: 'publicRead'; where?: (row: Row) => boolean }
-  | { kind: 'anyOf'; rules: readonly Rule<Row, User, DM>[] }
-  | { kind: 'allOf'; rules: readonly Rule<Row, User, DM>[] }
+  | { kind: 'anyOf'; rules: readonly Rule<Row, User, DM, Action>[] }
+  | { kind: 'allOf'; rules: readonly Rule<Row, User, DM, Action>[] }
   | { kind: 'custom'; check: (ctx: RuleCtx<User, DM>, row: Row) => boolean | Promise<boolean> }
   | { kind: 'unchecked'; reason: string }
 
@@ -62,14 +67,19 @@ export interface RuleCtx<User = any, DM extends GenericDataModel = GenericDataMo
  * exist yet, so only the action named in `createdBy` may insert one, and only
  * under a parent where the actor's role allows that action.
  */
-export function tenant<const F extends string>(
+export function tenant<const F extends string>(field: F): { kind: 'tenant'; field: F }
+export function tenant<const F extends string, const C extends string>(
   field: F,
-  options?: { createdBy?: string },
-): { kind: 'tenant'; field: F; createdBy?: string }
+  options: { createdBy: C },
+): { kind: 'tenant'; field: F; createdBy: C }
 export function tenant<const F extends string, const P extends string>(
   field: F,
-  options: { createdBy?: string; parent: P },
-): { kind: 'tenant'; field: F; createdBy?: string; parent: P }
+  options: { parent: P },
+): { kind: 'tenant'; field: F; parent: P }
+export function tenant<const F extends string, const P extends string, const C extends string>(
+  field: F,
+  options: { createdBy: C; parent: P },
+): { kind: 'tenant'; field: F; createdBy: C; parent: P }
 export function tenant(field: string, options: { createdBy?: string; parent?: string } = {}) {
   return { kind: 'tenant' as const, field, ...options }
 }
@@ -252,7 +262,16 @@ export function tenancy(rules: Record<string, Rule>) {
     }
   }
 
-  return { tenantTables, tenantFieldsOf, rowTenant, chain, refOf }
+  /** The action that creates the rows of each tenant table, where its rule names one. */
+  const createdBy = new Map(
+    Object.entries(rules).flatMap(([table, rule]) =>
+      tenantRules(rule).flatMap((r) =>
+        r.field === '_id' && r.createdBy !== undefined ? [[table, r.createdBy] as const] : [],
+      ),
+    ),
+  )
+
+  return { tenantTables, tenantFieldsOf, rowTenant, chain, refOf, createdBy }
 }
 
 /**
@@ -386,7 +405,13 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
         if (rule.field === '_id' && mode === 'insert') {
           // A new tenant has no ID and no members yet: only the action the rule names may create one,
           // under a parent where the actor's role allows it.
-          if (rule.createdBy !== call.action) return 'denied'
+          if (rule.createdBy !== call.action) {
+            denial =
+              rule.createdBy === undefined
+                ? `No action may create ${table} rows: their tenant('_id') rule has no createdBy.`
+                : `Only ${rule.createdBy} may create ${table} rows (createdBy of their tenant rule).`
+            return 'denied'
+          }
           return rule.parent ? underParent(row[rule.parent]) : 'ok'
         }
         const value = rule.field === '_id' ? row._id : row[rule.field]
@@ -437,7 +462,11 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
     rows.set(String(doc._id), doc)
   }
 
+  /** Why a write was refused, when the rule knows better than the role layer. */
+  let denial: string | undefined
+
   async function assertWritable(table: string, row: Row, mode: 'write' | 'insert') {
+    denial = undefined
     let verdict = await judge(table, row, mode)
     // A row the actor may read exists for them: say they may not do this, not that it is missing (marketplace slice).
     if (verdict === 'hidden' && mode === 'write' && (await judge(table, row, 'read')) === 'ok')
@@ -448,7 +477,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
         'NOT_FOUND',
         mode === 'insert' ? 'Nothing with these IDs was found.' : `No ${table} with this ID.`,
       )
-    if (verdict === 'denied') fail('FORBIDDEN', `You may not ${call.action} here.`)
+    if (verdict === 'denied') fail('FORBIDDEN', denial ?? `You may not ${call.action} here.`)
   }
 
   /** `(table, id, ...)` or `(id, ...)`, as Convex accepts both. A table-qualified ID must belong to that table. */

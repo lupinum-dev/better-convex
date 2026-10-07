@@ -152,7 +152,9 @@ export function defineFunctions<
   /** The person's role in a tenant, or `null` without a membership. A child tenant may inherit its parent's roles here. */
   roleOf: (ctx: GenericQueryCtx<DM>, user: User, tenant: TenantOf<DM>) => Promise<RoleOf<P> | null>
   /** One rule per app table: who may read and write its rows. See `rules.ts`. */
-  rules: NoInfer<{ [T in AppTables<DM>]: Rule<DocumentByName<DM, T>, User, DM> }>
+  rules: NoInfer<{
+    [T in AppTables<DM>]: Rule<DocumentByName<DM, T>, User, DM, ActionOf<P>>
+  }>
 }) {
   type QCtx = GenericQueryCtx<DM>
   type MCtx = GenericMutationCtx<DM>
@@ -164,6 +166,12 @@ export function defineFunctions<
   const { auth, policy } = config
   const rules = config.rules as Record<string, Rule>
   const tenants = tenancy(rules)
+  for (const [table, createdBy] of tenants.createdBy) {
+    if (!(policy.actions as readonly string[]).includes(createdBy))
+      throw new Error(
+        `The tenant rule of ${table} names createdBy ${JSON.stringify(createdBy)}, which is not in the policy's actions.`,
+      )
+  }
   // The library's own tables are not in the app's generic data model.
   const lib = (ctx: { db: unknown }) => ctx.db as GenericMutationCtx<LibraryDataModel>['db']
   const isPublic = (action: string) =>

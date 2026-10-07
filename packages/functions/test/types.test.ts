@@ -81,6 +81,19 @@ test.concurrent(
   },
 )
 
+// Round 1 review: a misspelled createdBy type-checked; every create then failed with FORBIDDEN.
+test.concurrent(
+  'a createdBy that is not an action is a type error',
+  { timeout: 60_000 },
+  async () => {
+    const errors = await typeErrors('createdBy', [
+      ['functions.ts', "createdBy: 'clients.create'", "createdBy: 'client.create'"],
+    ])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatch(/^functions\.ts/)
+  },
+)
+
 // X1: a new table must force a rule decision.
 test.concurrent(
   'a table without a rule is a type error that names it',

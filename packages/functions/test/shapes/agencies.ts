@@ -12,7 +12,13 @@ import { auth, notUsed, user } from './common'
 // K3: agency -> client -> project. An agency member works on every client's projects; a
 // client contact sees only their client.
 const policy = definePolicy({
-  actions: ['clients.list', 'clients.create', 'clients.update', 'clientProjects.list'],
+  actions: [
+    'agencies.create',
+    'clients.list',
+    'clients.create',
+    'clients.update',
+    'clientProjects.list',
+  ],
   roles: { owner: ['*'], contact: ['clientProjects.list'] },
   scopes: {},
 })
@@ -112,4 +118,12 @@ export const moveClient = mutation({
     await ctx.db.patch(clientId, { agencyId: ctx.db.normalizeId('agencies', to)! })
     return null
   },
+})
+
+/** Creates an agency: its rule names no createdBy, so no action may. */
+export const createAgency = mutation({
+  action: 'agencies.create',
+  args: { name: v.string() },
+  returns: v.id('agencies'),
+  handler: async (ctx, { name }) => ctx.db.insert('agencies', { name }),
 })

@@ -150,6 +150,14 @@ test('a tenant rule on a field that holds no tenant ID says so at the first row'
   )
 })
 
+// Round 1 review: creating a tenant whose rule has no createdBy failed with a role message.
+test('creating a tenant whose rule names no createdBy says so', async () => {
+  const { ann } = await withAgency()
+  await expect(ann.mutation(fn('agencies:createAgency'), { name: 'New' })).rejects.toThrow(
+    "No action may create agencies rows: their tenant('_id') rule has no createdBy.",
+  )
+})
+
 // K2: two tenant kinds through one roleOf; a call spanning them was impossible.
 test('K2: a move between a workspace and an organization needs crossTenant, and a role in both that allows it', async () => {
   const { t, ann, vic, a, users } = await setup()
