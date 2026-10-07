@@ -11,7 +11,7 @@ per-user model.
 | Method                        | What it counts                                                                                                                                                     | Where                                                                            |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | `countDocuments` budget tests | Documents read and written in `convex-test`, with a fake auth. Exact and repeatable. A patch also counts as a read. Rows that a `.filter()` skips are not counted. | `packages/functions/test/cost.test.ts`, `packages/agents/test/door/cost.test.ts` |
-| Deployment logs               | Real executions on Convex: documents, bytes, nested executions, cache hits. Includes the auth component.                                                           | `usage.py` in this folder, against `little-goldfinch-420` (dev)                  |
+| Deployment logs               | Real executions on Convex: documents, bytes, nested executions, cache hits. Includes the auth component.                                                           | `usage.py` in this folder, run in an app folder linked to the deployment         |
 
 The budget tests catch regressions in CI. The logs answer "what does this cost
 on Convex". Both agree once you add the auth component's reads (below).
