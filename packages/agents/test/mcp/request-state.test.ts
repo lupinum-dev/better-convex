@@ -1,4 +1,9 @@
 import {
+  handleMcpRequest,
+  type McpAccessContext,
+  type HandleMcpRequestOptions,
+} from '@lupinum/better-convex-agents/mcp'
+import {
   createRequestStateCodec,
   inputRequired,
   type ServerContext,
@@ -6,9 +11,6 @@ import {
 } from '@modelcontextprotocol/server'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { z } from 'zod'
-
-import type { McpAccessContext } from '../../packages/agents/src/access'
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
 
 const resource = new URL('https://state.example.test/mcp')
 const issuer = 'https://issuer.example.test/'

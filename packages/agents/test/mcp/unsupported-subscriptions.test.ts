@@ -1,8 +1,7 @@
+import { handleMcpRequest, type HandleMcpRequestOptions } from '@lupinum/better-convex-agents/mcp'
 import { ProtocolError } from '@modelcontextprotocol/server'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
 
 const resource = new URL('https://finite.example.test/mcp')
 const bearer = 'synthetic-finite-bearer'

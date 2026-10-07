@@ -1,9 +1,11 @@
+import {
+  handleMcpRequest,
+  type McpAccessVerifier,
+  type HandleMcpRequestOptions,
+} from '@lupinum/better-convex-agents/mcp'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-
-import type { McpAccessVerifier } from '../../packages/agents/src/access'
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
 
 const resource = new URL('https://principal.example.test/mcp')
 const resourceMetadata = 'https://principal.example.test/.well-known/oauth-protected-resource/mcp'

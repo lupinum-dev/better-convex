@@ -6,7 +6,7 @@ import {
   mcpTransportFailureResponse,
   prepareBoundedMcpRequest,
   runMcpRequestDeadline,
-} from '../../packages/agents/src/transport'
+} from '../../src/transport'
 
 const expectedMaximumRequestBytes = 65_536
 const expectedMaximumResponseBytes = 1_048_576

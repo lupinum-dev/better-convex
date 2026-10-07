@@ -1,7 +1,5 @@
+import { handleMcpRequest, type McpAccessVerifier } from '@lupinum/better-convex-agents/mcp'
 import { describe, expect, it } from 'vitest'
-
-import type { McpAccessVerifier } from '../../packages/agents/src/access'
-import { handleMcpRequest } from '../../packages/agents/src/handler'
 
 const bearer = 'mcp-routing-bearer-sentinel'
 const issuer = 'https://issuer.example.test/'

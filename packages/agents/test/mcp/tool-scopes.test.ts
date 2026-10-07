@@ -1,13 +1,12 @@
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import type { ScopeChallengeHandler } from '@modelcontextprotocol/server'
-import { describe, expect, it, vi } from 'vitest'
-import { z } from 'zod'
-
 import {
   handleMcpRequest,
   type HandleMcpRequestOptions,
   type McpRequestTools,
-} from '../../packages/agents/src/handler'
+} from '@lupinum/better-convex-agents/mcp'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import type { ScopeChallengeHandler } from '@modelcontextprotocol/server'
+import { describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 
 const resource = new URL('https://tool-scopes.example.test/mcp')
 const resourceMetadata = 'https://tool-scopes.example.test/.well-known/oauth-protected-resource/mcp'

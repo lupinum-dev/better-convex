@@ -1,7 +1,8 @@
+import { projectMcpToolError } from '@lupinum/better-convex-agents/mcp'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it } from 'vitest'
 
-import { projectMcpToolError, runToolSafely } from '../../packages/agents/src/errors'
+import { runToolSafely } from '../../src/errors'
 
 describe('MCP tool failure projection', () => {
   it('preserves the official input-required result shape', async () => {

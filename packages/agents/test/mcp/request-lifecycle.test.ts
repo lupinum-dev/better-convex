@@ -1,12 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { z } from 'zod'
-
-import type { McpAccessVerifier } from '../../packages/agents/src/access'
 import {
   handleMcpRequest,
+  type McpAccessVerifier,
   type HandleMcpRequestOptions,
   type McpRequestTools,
-} from '../../packages/agents/src/handler'
+} from '@lupinum/better-convex-agents/mcp'
+import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 
 const resource = new URL('https://lifecycle.example.test/mcp')
 const bearer = 'request-lifecycle-bearer'

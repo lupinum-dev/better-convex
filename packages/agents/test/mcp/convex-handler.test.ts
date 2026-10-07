@@ -1,10 +1,12 @@
+import {
+  handleMcpRequest,
+  type McpAccessVerifier,
+  type HandleMcpRequestOptions,
+} from '@lupinum/better-convex-agents/mcp'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { ResourceTemplate } from '@modelcontextprotocol/server'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-
-import type { McpAccessVerifier } from '../../packages/agents/src/access'
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
 const expectedMaximumMcpRequestBytes = 65_536
 const expectedMcpRequestTimeoutMs = 30_000
 

@@ -1,10 +1,7 @@
+import type { McpAccessVerifier, VerifiedMcpAccess } from '@lupinum/better-convex-agents/mcp'
 import { describe, expect, it } from 'vitest'
 
-import {
-  McpAccessVerificationFailure,
-  verifyAndNormalizeMcpAccess,
-} from '../../packages/agents/src/access'
-import type { McpAccessVerifier, VerifiedMcpAccess } from '../../packages/agents/src/access'
+import { McpAccessVerificationFailure, verifyAndNormalizeMcpAccess } from '../../src/access'
 
 const expectedResource = new URL('https://mcp.example.test/api/mcp')
 const expiration = 4_102_444_800

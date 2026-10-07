@@ -1,9 +1,11 @@
+import {
+  handleMcpRequest,
+  listMcpCatalog,
+  type HandleMcpRequestOptions,
+} from '@lupinum/better-convex-agents/mcp'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
-import { listMcpCatalog } from '../../packages/agents/src/mcp'
 
 const resource = new URL('https://catalog.example.test/mcp')
 const issuer = 'https://issuer.example.test/'
