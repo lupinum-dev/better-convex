@@ -27,6 +27,8 @@ import {
 } from './harness'
 
 const PROTOCOL_VERSION = '2026-07-28'
+// The era most hosts still speak: no `mcp-method` header, one `initialize` per connection.
+const LEGACY_PROTOCOL_VERSION = '2025-11-25'
 // Sorted: the list order follows export names and is not part of the contract.
 const TOOL_NAMES = [
   'archive_project',
@@ -168,6 +170,8 @@ describe('MCP OAuth starter end to end', () => {
   let browser: Browser
   let resource: string
   let clients: Awaited<ReturnType<typeof provisionClients>>
+  /** The live MCP access token of the first authorization test; the journey asks with it. */
+  let agentToken: string
   const contexts: BrowserContext[] = []
 
   /** A fresh browser session through login, consent and PKCE; checks every token binding. */
@@ -334,6 +338,7 @@ describe('MCP OAuth starter end to end', () => {
     expect((result.tools as JsonRecord[]).map((tool) => tool.name).sort()).toEqual(TOOL_NAMES)
 
     const token = primary.accessToken
+    agentToken = token
     const organizationId = clients.organizationId
     const authUserId = decodeJwtPart(token, 1).sub as string
     const list = (id: string, tenant = organizationId) =>
@@ -480,6 +485,83 @@ describe('MCP OAuth starter end to end', () => {
     ).toBe(200)
   })
 
+  it('lets a person decide an agent request on the link the agent gives', async () => {
+    const ask = async (name: string) => {
+      const { organizationId } = clients
+      const project = done(
+        await postMcp(
+          resource,
+          agentToken,
+          toolCall(name, 'create_project', { name, organizationId }),
+        ),
+      )
+      const asked = structured(
+        await postMcp(
+          resource,
+          agentToken,
+          toolCall(name, 'archive_project', { projectId: project.id }),
+        ),
+      )
+      expect(asked.status).toBe('needs_approval')
+      const ids = { approvalId: String(asked.approvalId), projectId: String(project.id) }
+      return {
+        path: `/approvals/${ids.approvalId}`,
+        state: () => fixture.runConvex('evidence:readApprovalState', ids),
+      }
+    }
+    const toApprove = await ask('Journey approve')
+    const toDecline = await ask('Journey decline')
+    const context = await browser.newContext()
+    contexts.push(context)
+    const page = await context.newPage()
+    const shown = (text: string) =>
+      page.getByText(text, { exact: true }).waitFor({ timeout: 15_000 })
+    // A click before hydration submits the plain HTML form and reloads the page.
+    const open = async (path: string) => {
+      await page.goto(`${fixture.origin}${path}`)
+      await page.waitForFunction(() => {
+        const root = document.querySelector('#__nuxt') as {
+          __vue_app__?: { $nuxt?: { isHydrating?: boolean } }
+        } | null
+        return root?.__vue_app__?.$nuxt?.isHydrating === false
+      })
+    }
+
+    // Signed out, the link sends the person to sign in and back to the same request.
+    // The previous test used two of the three sign-ins in the current window.
+    await sleep(SIGN_IN_WINDOW_MS)
+    await open(toApprove.path)
+    await page.getByRole('link', { name: 'Sign in' }).click()
+    await page.waitForURL(
+      (url) => url.pathname === '/' && url.searchParams.get('return') === toApprove.path,
+    )
+    await page.getByLabel('Email').fill(fixture.email)
+    await page.getByLabel('Password').fill(fixture.password)
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await page.waitForURL(`${fixture.origin}${toApprove.path}`)
+    await shown('Archive the project "Journey approve".')
+    await page.getByRole('button', { name: 'Approve' }).click()
+    await shown('Approved. The agent can continue.')
+    expect(await toApprove.state()).toEqual({
+      approval: 'approved',
+      project: { status: 'archived', archived: true },
+    })
+
+    // The app lists the other request; its link page declines it.
+    await open('/')
+    await page
+      .getByRole('region', { name: 'Agent requests' })
+      .getByText('Journey decline')
+      .waitFor()
+    await open(toDecline.path)
+    await page.getByRole('button', { name: 'Decline' }).click()
+    await shown('Declined. The agent is told.')
+    expect(await toDecline.state()).toEqual({
+      approval: 'declined',
+      project: { status: 'active', archived: false },
+    })
+  })
+
   it('revokes live access on sign-out, client, and consent deletion, and lists only granted tools', async () => {
     const terminal = await fixture.runConvex('evidence:provisionTerminalClients')
     const terminalClients = (
@@ -496,7 +578,7 @@ describe('MCP OAuth starter end to end', () => {
     const ids = new Set([clients.inspector, clients.mcpRemote, ...Object.values(terminalClients)])
     expect(ids.size).toBe(7)
 
-    // The previous test used two of the three sign-ins in the current window.
+    // The journey used one of the three sign-ins in the current window.
     await sleep(SIGN_IN_WINDOW_MS)
     const seen = { tokens: new Set<string>(), sessions: new Set<string>(), jtis: new Set<string>() }
     const acquire = async (clientId: string, scope = SCOPE) => {
@@ -722,5 +804,42 @@ describe('MCP OAuth starter end to end', () => {
       -32020,
       'tool-name mismatch',
     )
+
+    // A 2025-era host: each request alone, no `mcp-method` header, no session.
+    const legacy = async (message: JsonRecord, headers: Record<string, string> = {}) => {
+      const response = await fetch(resource, {
+        body: JSON.stringify({ jsonrpc: '2.0', ...message }),
+        headers: {
+          accept: 'application/json, text/event-stream',
+          authorization: `Bearer ${bearer}`,
+          'content-type': 'application/json',
+          ...headers,
+        },
+        method: 'POST',
+      })
+      expect(response.headers.has('mcp-session-id')).toBe(false)
+      return { status: response.status, body: (await response.json()) as JsonRecord }
+    }
+    const initialize = await legacy({
+      id: 'legacy-initialize',
+      method: 'initialize',
+      params: {
+        capabilities: {},
+        clientInfo: { name: 'legacy-host', version: '1.0.0' },
+        protocolVersion: LEGACY_PROTOCOL_VERSION,
+      },
+    })
+    expect(initialize).toMatchObject({
+      status: 200,
+      body: { result: { protocolVersion: LEGACY_PROTOCOL_VERSION } },
+    })
+    const search = toolCall('legacy-call', 'search_projects', {
+      organizationId: clients.organizationId,
+    })
+    const called = await legacy(search, { 'mcp-protocol-version': LEGACY_PROTOCOL_VERSION })
+    expect(called).toMatchObject({
+      status: 200,
+      body: { result: { structuredContent: { status: 'done' } } },
+    })
   }
 })
