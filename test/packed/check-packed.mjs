@@ -43,6 +43,13 @@ export function packWorkspace(destination) {
     const [file] = readdirSync(destination).filter((name) => !before.has(name))
     if (!file) throw new Error(`pnpm pack produced no tarball for ${directory}`)
     tarballs[id] = join(destination, file)
+    // The package build copies a placeholder to dist/agent; only `pnpm build` writes the real
+    // entry page. Each package's prepack refuses the placeholder; this also holds without scripts.
+    const agentDocs = execFileSync('tar', ['-xOzf', tarballs[id], 'package/dist/agent/AGENTS.md'], {
+      encoding: 'utf8',
+    })
+    if (!agentDocs.includes('\n## Start here\n'))
+      throw new Error(`${directory}: the tarball ships the agent docs placeholder. Run pnpm build.`)
   }
   return tarballs
 }

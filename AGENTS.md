@@ -86,7 +86,9 @@ pnpm test:starters     # every starter and the packed Vue/Nuxt/Agents consumers,
 ```
 
 `pnpm build` builds the four packages, the docs site, and each package's
-`dist/agent/` (the rendered docs, exported as `<package>/agent-docs`).
+`dist/agent/` (the rendered docs, exported as `<package>/agent-docs`). A
+package build alone puts back the placeholder, and `pnpm pack` refuses it, so
+run `pnpm build` before you pack.
 `pnpm test:packed` packs the packages like a release, runs publint and
 `@arethetypeswrong/cli`, imports every public entry from the tarballs, and
 fails when a tarball contains env files, keys, or test credentials.

@@ -1,7 +1,7 @@
 // Installs freshly packed local tarballs into temporary copies of every starter and
 // runs its typecheck, tests and production build, then runs the packed Vue, Nuxt and
 // MCP consumer apps in a browser. Nothing is fetched from npm for our own packages.
-// Run after `pnpm build:packages`.
+// Run after `pnpm build`, which also writes the packaged agent docs.
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
   copyFileSync,
