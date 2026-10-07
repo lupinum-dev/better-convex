@@ -78,6 +78,7 @@ const only = process.argv.includes('--only')
 const ids = new Set<string>()
 for (const row of mutants) {
   if (ids.has(row.id)) throw new Error(`Two mutant rows have the id "${row.id}".`)
+  if (row.kills.length === 0) throw new Error(`Mutant row "${row.id}" names no test in kills.`)
   ids.add(row.id)
 }
 const rows = only ? mutants.filter((row) => row.id === only) : mutants
