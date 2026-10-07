@@ -54,7 +54,7 @@ function presentationError(error: unknown): ConvexCallError {
 }
 
 /** The Nuxt `useConvexAuth()` presentation over the test identity. */
-export function createBetterConvexTestAuth(
+export function createTestAuthState(
   control: BetterConvexTestAuthControl,
   initialUser: ConvexUser | null,
   initialError?: ConvexCallError,

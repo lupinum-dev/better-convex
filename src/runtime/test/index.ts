@@ -7,7 +7,7 @@ import {
 import { ConvexCallError } from '../errors'
 import type { ConvexUser } from '../utils/types'
 import {
-  createBetterConvexTestAuth,
+  createTestAuthState,
   DEFAULT_TEST_USER,
   type BetterConvexTestAuth,
   type BetterConvexTestAuthPreset,
@@ -70,7 +70,7 @@ export function setupBetterConvexTest(
       : (preset as Exclude<BetterConvexTestAuthPreset, 'authenticated'>),
     defaultQueryAuth: options.defaultQueryAuth,
   })
-  const auth = createBetterConvexTestAuth(
+  const auth = createTestAuthState(
     runtime.auth,
     user,
     preset === 'error' ? TEST_AUTH_FAILURE() : undefined,
