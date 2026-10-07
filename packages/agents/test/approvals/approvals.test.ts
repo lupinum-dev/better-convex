@@ -79,6 +79,18 @@ test('re-asking with the same request_id after expiry makes a new request; a ret
   )
 })
 
+// Sequence fuzz (seed 439041101, case 201 with BCN_AUTH_FUZZ_CASES=300): a key that names a
+// waiting request was accepted for a different call that runs alone. After the approval the key
+// named two calls that both ran, and a retry of the approved call got REQUEST_ID_REUSED instead
+// of its outcome. Open: `.fails` until tools.ts checks waiting requests for every call with a key.
+test.fails('a request_id that names a waiting request cannot name a call that runs alone', async () => {
+  const s = await setup()
+  await s.ask('archive_project', { projectId: s.p[0], request_id: 'r1' })
+  await expect(
+    s.tool('rename_project', { projectId: s.p[1], name: 'n', request_id: 'r1' }),
+  ).rejects.toThrow(/REQUEST_ID_REUSED/)
+})
+
 // H11: one expired request blocked every later request for that action, for every later run.
 test('an expired request blocks nothing, and housekeeping marks it expired', async () => {
   const s = await setup()
