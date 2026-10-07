@@ -154,3 +154,30 @@ test.concurrent('three-part patterns and input rules type-check', { timeout: 60_
   ])
   expect(errors).toEqual([])
 })
+
+// Docs-only slice: an operation that called a job type-checked, then failed at runtime.
+test.concurrent(
+  'an operation cannot call or schedule a job; a job can schedule a job',
+  { timeout: 60_000 },
+  async () => {
+    const errors = await typeErrors('jobs', [
+      [
+        'projects.ts',
+        'ApiFromModules<{ outside: typeof outside }>',
+        "ApiFromModules<{ outside: typeof outside; projects: typeof import('./projects') }>",
+      ],
+      [
+        'projects.ts',
+        '    const found = await ctx.db.get(projectId)\n',
+        '    const found = await ctx.db.get(projectId)\n    await ctx.runMutation(internal.projects.cleanup, {})\n',
+      ],
+      [
+        'projects.ts',
+        "    await ctx.scheduler.runAfter(0, internal.outside.ping, { url: 'https://monitor.example/ok' })\n",
+        "    await ctx.scheduler.runAfter(0, internal.outside.ping, { url: 'https://monitor.example/ok' })\n    await ctx.scheduler.runAfter(0, internal.projects.cleanup, {})\n",
+      ],
+    ])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatch(/^projects\.ts[\s\S]*A job runs from a cron or another job/)
+  },
+)

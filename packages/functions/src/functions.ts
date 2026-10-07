@@ -94,6 +94,12 @@ export interface Operation {
   handler: (ctx: any, args: any) => unknown
 }
 
+/**
+ * A job's result as types see it (at runtime it is `null`): a mark that lets operation contexts
+ * refuse job references. Nothing reads it.
+ */
+export type JobDone = { readonly 'better-convex/job': true }
+
 /** How long work scheduled by an approved request still runs under that approval. */
 const followUpWindow = 60 * 60_000
 
@@ -566,7 +572,16 @@ export function defineFunctions<
       : FunctionReturnType<F>
   type Rest<F extends FunctionReference<any, any>> =
     {} extends InputOf<F> ? [input?: InputOf<F>] : [input: InputOf<F>]
-  type Runs<Kinds extends 'query' | 'mutation' | 'action'> = {
+  /**
+   * A job reference where the caller is an operation: a type error that says why. Jobs run as
+   * the system, from a cron or another job; an operation that needs one queues a row instead.
+   */
+  type NoJob<F extends FunctionReference<any, any>, Jobs extends boolean> = Jobs extends true
+    ? F
+    : FunctionReturnType<F> extends JobDone
+      ? 'A job runs from a cron or another job, not from an operation. Queue a row for it instead.'
+      : F
+  type Runs<Kinds extends 'query' | 'mutation' | 'action', Jobs extends boolean = false> = {
     runQuery: <F extends FunctionReference<'query', 'internal'>>(
       ref: F,
       ...input: Rest<F>
@@ -574,7 +589,7 @@ export function defineFunctions<
   } & ('mutation' extends Kinds
     ? {
         runMutation: <F extends FunctionReference<'mutation', 'internal'>>(
-          ref: F,
+          ref: NoJob<F, Jobs>,
           ...input: Rest<F>
         ) => Promise<OutputOf<F>>
       }
@@ -587,16 +602,16 @@ export function defineFunctions<
           ) => Promise<OutputOf<F>>
         }
       : {})
-  type Scheduling = {
+  type Scheduling<Jobs extends boolean = false> = {
     scheduler: {
       runAfter: <F extends FunctionReference<any, 'internal'>>(
         delayMs: number,
-        ref: F,
+        ref: NoJob<F, Jobs>,
         ...input: Rest<F>
       ) => Promise<GenericId<'_scheduled_functions'>>
       runAt: <F extends FunctionReference<any, 'internal'>>(
         time: number | Date,
-        ref: F,
+        ref: NoJob<F, Jobs>,
         ...input: Rest<F>
       ) => Promise<GenericId<'_scheduled_functions'>>
       cancel: (id: GenericId<'_scheduled_functions'>) => Promise<void>
@@ -606,6 +621,9 @@ export function defineFunctions<
   type MutationCtx = Omit<MCtx, 'runQuery' | 'runMutation' | 'scheduler'> &
     Runs<'query' | 'mutation'> &
     Scheduling
+  type JobCtx = Omit<MCtx, 'runQuery' | 'runMutation' | 'scheduler'> &
+    Runs<'query' | 'mutation', true> &
+    Scheduling<true>
   type ActionCtx = Omit<ACtx, 'runQuery' | 'runMutation' | 'runAction' | 'scheduler'> &
     Runs<'query' | 'mutation' | 'action'> &
     Scheduling
@@ -874,7 +892,7 @@ export function defineFunctions<
     name: string
     args: Args
     handler: (
-      ctx: MutationCtx & { actor: SystemActor },
+      ctx: JobCtx & { actor: SystemActor },
       args: ObjectType<Args>,
       // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- a job may return nothing
     ) => Promise<Value | void>
@@ -943,7 +961,7 @@ export function defineFunctions<
         },
       }),
       'job',
-    ) as unknown as RegisteredMutation<'internal', ObjectType<Args>, Promise<null>>
+    ) as unknown as RegisteredMutation<'internal', ObjectType<Args>, Promise<JobDone>>
   }
 
   const fns = {
