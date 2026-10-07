@@ -173,11 +173,13 @@ here? Prefer a value that is written once over a list that grows.
 1. Name the invariant the change touches (`plan.md` section 6). If it is
    new, add a row.
 2. Walk the classes above for the changed code.
-3. Write the regression test first, then fix. Then break the guard on purpose
-   and confirm the test fails (a mutation check). Twice in this work a test
-   passed for the wrong reason: a nested query to a function that did not
-   exist failed either way, and a `grantMcp` test ran with stubbed origins.
-   Only the mutation check showed it.
+3. Write the regression test first, then fix. Every fixed finding adds that
+   test and a row in `test/mutants/mutants.ts` whose `kills` names it. Prove
+   the row with `pnpm test:mutants --only <id>`: the test must fail when the
+   guard is broken. Twice in this work a test passed for the wrong reason: a
+   nested query to a function that did not exist failed either way, and a
+   `grantMcp` test ran with stubbed origins. Only the mutation check showed
+   it.
 4. Ask Codex for a review in the background (`codex-run review --base
 origin/main --effort high`) with the fixed findings listed, so it looks for
    new ones. A round that finds only narrower edges of the last round's fixes

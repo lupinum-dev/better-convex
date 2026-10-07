@@ -78,20 +78,24 @@ Use the pinned pnpm version through Corepack.
 ```bash
 pnpm install
 pnpm dev               # source playground on port 4578 (see "Local backend")
-pnpm test              # unit, security, Convex, Nuxt, browser, auth-adapter and fuzz suites
+pnpm test              # unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions, agents
 pnpm format            # apply formatting
 pnpm verify            # lint, typecheck, test, build, packed-package checks, pnpm audit
 pnpm changeset         # describe a user-facing change for the next release
 ```
 
-`pnpm verify` is the local definition of done. CI also runs three slower jobs
+`pnpm verify` is the local definition of done. CI also runs four slower jobs
 as parallel checks; run them locally when your change touches their area:
 
 ```bash
 pnpm test:integration  # real-backend auth, OAuth, MCP suites and the beta-to-1.0 upgrade
 pnpm test:e2e --full   # full-stack playground journeys, including test/e2e/extended
 pnpm test:starters     # every starter, the consumer apps and the packed Vue/Nuxt/Agents consumers, from local tarballs
+pnpm test:mutants      # breaks each security guard in memory; the tests named for it must fail
 ```
+
+`pnpm test:live` (the starter on a Convex preview deployment) runs only by hand,
+once per release. See `test/TESTING.md`.
 
 `pnpm build` builds the four packages, the docs site, and each package's
 `dist/agent/` (the rendered docs, exported as `<package>/agent-docs`). A

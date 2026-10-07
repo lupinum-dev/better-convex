@@ -18,7 +18,8 @@ on Convex". Both agree once you add the auth component's reads (below).
 
 ## Per call, live
 
-Dev deployment `little-goldfinch-420`, skeleton on the packed packages, 1,000
+Dev deployment `little-goldfinch-420` (retired with the skeleton harness; it is
+only where these numbers came from), skeleton on the packed packages, 1,000
 executions over 74 minutes of Codex's live harness. Nested executions are
 added to the call that started them (`usage.py`).
 
@@ -98,9 +99,10 @@ runs 30).
 
 ## Re-measure
 
-1. Deploy the skeleton (or an app) on the packed packages to a dev deployment.
-2. Drive realistic traffic: `pnpm e2e:mcp`, `pnpm e2e:negative` and
-   `scripts/stress/phase4-agent.ts` in `bc-skeleton/labs/skeleton` do.
+1. Deploy an app on the packed packages to a dev or preview deployment, as
+   `pnpm test:live` does (`test/live/fixture.ts`).
+2. Drive realistic traffic, for example `pnpm test:live` or a host session.
+   The skeleton's live scripts that made the numbers above are retired.
 3. Save the logs and run `python3 usage.py logs.jsonl`. Leave the harness's
    own `testQuery` rows out: they are inspection queries, not app traffic.
 4. Compare with the tables above, and update this file with the date.

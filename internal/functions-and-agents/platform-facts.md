@@ -23,9 +23,10 @@ Check a fact again before you build on it with newer versions.
 | A non-admin WebSocket request for a component function is refused before it runs; the socket closes with code 1011 "InternalServerError".                                                                                                                                                        | Source review: `crates/sync/src/worker.rs:581`, `crates/application/src/api.rs:322` at `5c7cb5b`; integration test "admits sessions only through the component transport" |
 | The local backend `precompiled-2026-07-06` left `CONVEX_SITE_URL` unset inside a nested `ctx.runMutation`; `precompiled-2026-09-28` sets it. The newer runtime also has `URL.canParse`.                                                                                                          | Integration tests on both pins                                                                                                                                            |
 
-Not yet verified live: `crypto.randomUUID()` inside a mutation (the follow-up
-token of approved work) is tested in convex-test only. Check it on the next
-deploy.
+`crypto.randomUUID()` inside a mutation (the follow-up token of approved
+work): verified on the local backend by the approve step of the `mcp-auth`
+integration test. The approve step of `pnpm test:live` checks it on the cloud;
+that run has not happened yet.
 
 ## convex-test
 
@@ -49,12 +50,12 @@ deploy.
 
 ## Better Auth and the Nuxt module
 
-| Fact                                                                                                                                                                                                      | Evidence                   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| Signing out deletes the session, and the OAuth grants are bound to it, so sign-out disconnects MCP hosts (D32).                                                                                           | Live, B2 in `e2e:negative` |
-| MCP access tokens live 10 minutes. A person who approves later than that needs `requireMcpPrincipal(…, { allowExpiredToken: true })` for the approved work; grant, session and consent are still checked. | Round 1 review             |
-| A session refresh is `/api/auth/convex/token`: rate limit, session and user read by Better Auth's middleware, again by our endpoint, then the signing keys. The Convex token lives 15 minutes.            | Codex investigation, D36   |
-| rc.1 trusts one site origin, so localhost could not sign in against a deployment whose `SITE_URL` is the production site. Several origins are on `main` (#244).                                           | F8                         |
+| Fact                                                                                                                                                                                                      | Evidence                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Signing out deletes the session, and the OAuth grants are bound to it, so sign-out disconnects MCP hosts (D32).                                                                                           | Live, B2 (retired skeleton harness); now `mcp-auth` integration and `pnpm test:live` |
+| MCP access tokens live 10 minutes. A person who approves later than that needs `requireMcpPrincipal(…, { allowExpiredToken: true })` for the approved work; grant, session and consent are still checked. | Round 1 review                                                                       |
+| A session refresh is `/api/auth/convex/token`: rate limit, session and user read by Better Auth's middleware, again by our endpoint, then the signing keys. The Convex token lives 15 minutes.            | Codex investigation, D36                                                             |
+| rc.1 trusts one site origin, so localhost could not sign in against a deployment whose `SITE_URL` is the production site. Several origins are on `main` (#244).                                           | F8                                                                                   |
 
 ## Vercel
 

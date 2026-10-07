@@ -1,9 +1,64 @@
 # Testing strategy: functions and agents
 
-Status: design, 2026-10-07, on `feat/functions-and-agents` at `8945373c`,
-revised after two reviews (test-surgery, design-apis). Inputs: three analyses
+Design of 2026-10-07, on `feat/functions-and-agents` at `8945373c`, revised
+after two reviews (test-surgery, design-apis). Inputs: three analyses
 (maintainer, app builder, live), the files in this folder, the skeleton and the
-docs-slice. Nothing in this document is built yet.
+docs-slice.
+
+## Status
+
+Built on `feat/functions-and-agents`, 2026-10-07. Items 1–12 of the
+implementation plan are in the code. One thing is open: the first `live` run
+in the cloud. It needs the Lupinum-org Convex project, its preview deploy key
+in the protected `live` environment, and one run of `.github/workflows/live.yml`.
+
+Where it is:
+
+- Mutants: `test/mutants/` (`pnpm test:mutants`, CI job `mutants`). Every
+  invariant S1–S18 has a row; the runner fails when one has none.
+- Cloud smoke: `test/live/` (`pnpm test:live`, vitest project `live`,
+  `.github/workflows/live.yml`). Host checklist, Vercel check and release
+  checklist: `test/TESTING.md`.
+- Consumers: `test/fixtures/consumers/{agency,content,marketplace,sites}`, in
+  `pnpm test:starters` and in the `mcp` project.
+- `callTool`: `packages/agents/src/test.ts`; the shared dispatch is
+  `grantedTools` and `toolCall` in `packages/agents/src/tools.ts`.
+
+What changed from the design, and why:
+
+- `toolCall` takes a fourth argument, `run`. An action's `ctx` and a
+  convex-test instance both fit it, so the query-or-mutation choice exists once.
+- A4 "Split" assumed that only `packages/agents/src` is bound by
+  `check-boundaries`. That was wrong: the rule reads every file of a package.
+  Now a file under `<package>/test/` may import another workspace package's
+  public subpath without declaring it. A dev dependency would make a cycle.
+- T4 uses the existing `projects` table of the rules fixture. Its custom rule
+  allows every read, so only the tenant rule acts on reads.
+- T5 has three scenarios, not four. "A `tools.functions` name without a tool"
+  cannot be a type error now (see the T5 row). `assertToolsExported` catches it
+  when the module loads.
+- Type tests read files, so they apply a mutant to a copy of `src`
+  (`activeMutant` and `applyMutant` in `test/mutants/plugin.ts`). S2 and the C8
+  rows run this way.
+- The approval page rows (`projects: ['integration']`) run the starter with
+  `nuxt dev` on the local backend. The harness applies the row to its starter
+  copy. A row in `packages/*/src` cannot run there: the integration lane uses
+  the build. Each page row takes about 80 seconds, and a full
+  `pnpm test:mutants` (117 rows) took about 13 minutes on a laptop, not 5–6. The
+  CI job now installs Chromium and has 45 minutes.
+- The legacy MCP era (open question 2: keep it) has a test in the `agents`
+  project (`mcp/header-contract.test.ts`), so its mutant row is cheap. The
+  `mcp-auth` integration test keeps its legacy call too.
+- Cost budgets now count Better Auth's live-grant check: a tool call reads 9
+  documents, not 3. The old numbers left out auth.
+- The cloud smoke accepts only a preview deploy key (decision 1). The dev
+  fallback with a purge overlay is not built. It installs the built packages
+  as copies (`dist` and `package.json`), as the integration lane does, not
+  the packed tarballs; `pnpm test:starters` checks the tarballs. The journey
+  passed as a dry run on the local backend (`BCN_LIVE_LOCAL=1`); the cloud
+  path (deploy, `--preview-name` for `env set` and `run`) is not yet proven.
+- `S14-token-expiry` is guarded only in the `convex` project. The door test
+  uses a fake token verifier that does not check expiry.
 
 This document decides two things:
 
