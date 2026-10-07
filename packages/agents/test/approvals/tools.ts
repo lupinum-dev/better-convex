@@ -20,6 +20,7 @@ export const {
   edit_notes,
   clear_note,
   buy_listing,
+  archive_matching,
   check_approval,
   housekeeping,
 } = tools.functions

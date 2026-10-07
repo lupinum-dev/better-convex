@@ -129,6 +129,35 @@ test('approving fails as STALE when the project changed after the request', asyn
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'active' })
 })
 
+// Release review, 2026-10-07: the stale check covered only the rows read when the agent asked. A
+// project that matched the summary's query later was archived too, though the person never saw
+// it. Approve now reads again what the summary read.
+test.each([
+  { row: 'nothing changed', added: false, outcome: { status: 'approved' }, archived: 1 },
+  {
+    row: 'a second project matches now',
+    added: true,
+    outcome: { status: 'failed', error: { code: 'STALE' } },
+    archived: 0,
+  },
+])('approving checks what the summary read, also new matches: $row', async (row) => {
+  const s = await setup()
+  const asked = await s.ask('archive_matching', { orgId: s.a, prefix: 'alp' })
+  expect(asked.summary).toBe('Archive 1 matching: alpha.')
+  if (row.added) {
+    await s.t.run((ctx) =>
+      ctx.db.insert('projects', { orgId: s.a, name: 'alpine', status: 'active' }),
+    )
+  }
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject(
+    row.outcome,
+  )
+  const archived = await s.t.run(async (ctx) =>
+    (await ctx.db.query('projects').collect()).filter((project) => project.status === 'archived'),
+  )
+  expect(archived.length).toBe(row.archived)
+})
+
 // I2: only the requester's person could approve; a co-owner could not help.
 test('a co-owner may decide a request through `approvers`; a viewer may not', async () => {
   const s = await setup()

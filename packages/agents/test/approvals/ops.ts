@@ -246,3 +246,32 @@ export const buy = mutation({
     return await ctx.db.insert('projects', { orgId, name: listing.title, status: 'active' })
   },
 })
+
+/** Archives every active project of an organization whose name starts with `prefix`. */
+export const archiveMatching = mutation({
+  action: 'projects.archive',
+  args: { orgId: v.id('orgs'), prefix: v.string() },
+  returns: v.number(),
+  tool: { name: 'archive_matching', description: 'Archive the projects whose name starts so.' },
+  approval: async (ctx, { orgId, prefix }) => {
+    const names = (await matching(ctx, orgId, prefix)).map((project) => project.name)
+    return `Archive ${names.length} matching: ${names.join(', ')}.`
+  },
+  handler: async (ctx, { orgId, prefix }) => {
+    const found = await matching(ctx, orgId, prefix)
+    for (const project of found) await ctx.db.patch(project._id, { status: 'archived' })
+    return found.length
+  },
+})
+
+const matching = async (
+  ctx: { db: import('convex/server').GenericDatabaseReader<any> },
+  orgId: string,
+  prefix: string,
+) =>
+  (
+    await ctx.db
+      .query('projects')
+      .withIndex('by_org', (q) => q.eq('orgId', orgId))
+      .collect()
+  ).filter((project) => project.status === 'active' && project.name.startsWith(prefix))

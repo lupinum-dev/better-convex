@@ -92,6 +92,8 @@ export interface CatalogEntry {
 }
 
 const approvalTtl = 30 * 60_000
+const stale =
+  'Nothing was done: this changed after the agent asked (it may already be done). The agent can ask again if it is still needed.'
 /** Write tool calls per agent connection per minute (B1). */
 const agentWritesPerMinute = 60
 /** Open approval requests per agent; past it the agent is told to wait (B2). */
@@ -385,6 +387,50 @@ export function defineTools(
         ) => {
           const actor = await agent(ctx, caller, { approved: approval !== undefined })
           const input = inputOf(ctx, op, raw)
+          /**
+           * What a person decides on: the summary, and a fingerprint of every row the call names
+           * or the summary reads. Taken when the agent asks, and again when the person approves:
+           * a row that changed, went away or newly matches the summary's query makes the request
+           * STALE (release review: a second matching project was deleted too).
+           */
+          const basis = async ({
+            ctx: checked,
+            rows,
+            settle,
+          }: Awaited<ReturnType<Internals['authorize']>>) => {
+            const inputRows = new Map(rows)
+            // Every row the input names, under the row rules: a row the agent may not read is
+            // missing, as in the handler, and never reaches a person as a request.
+            const named: { table: string; id: string; row: Record<string, unknown> }[] = []
+            for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input)) {
+              if (ctx.db.normalizeId(table, id) === null) continue
+              const row = (await checked.db.get(id)) as Record<string, unknown> | null
+              if (row === null) fail('NOT_FOUND', `No ${table} with this ID.`)
+              inputRows.set(id, row)
+              named.push({ table, id, row })
+            }
+            rows.clear()
+            const summary = oneLine(
+              settle(
+                op.approval
+                  ? await op.approval(summaryCtx(checked), input)
+                  : `${op.action} ${JSON.stringify(input)}`,
+              ),
+            )
+            const touched = [...new Map([...inputRows, ...rows])].filter(
+              (entry): entry is [string, Record<string, unknown>] => entry[1] !== null,
+            )
+            if (touched.length > maxSeen) {
+              fail(
+                'TOO_LARGE',
+                `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
+              )
+            }
+            const seen = await Promise.all(
+              touched.map(async ([id, row]) => ({ id, hash: await fingerprint(row) })),
+            )
+            return { summary, seen, named }
+          }
           const requester = actorRecord(actor)
           if (approval) {
             // Called by `approve` as a sub-transaction, which marked the request as executing: a failure rolls back only this.
@@ -397,11 +443,16 @@ export function defineTools(
               fail('APPROVAL_NOT_FOUND', 'This approval does not match the request.')
             }
             // Internal operations this work runs see the approval, so their own `approve` rules pass.
-            const {
-              ctx: checked,
-              tenant,
-              settle,
-            } = await authorize(ctx, op, { ...actor, approvalId: approval.id }, input)
+            const authorized = await authorize(
+              ctx,
+              op,
+              { ...actor, approvalId: approval.id },
+              input,
+            )
+            const { ctx: checked, tenant, settle } = authorized
+            const now = (await basis(authorized)).seen.map(({ id, hash }) => `${id}:${hash}`)
+            const then = (row.seen ?? []).map(({ id, hash }) => `${id}:${hash}`)
+            if (now.sort().join() !== then.sort().join()) fail('STALE', stale)
             const result = await runForAgent(ctx, checked, settle, op, input, {
               tenant,
               requestId: row.requestId,
@@ -411,14 +462,8 @@ export function defineTools(
             return { status: 'done' as const, result }
           }
           await rateLimit(ctx, `writes:${requester.key}`, agentWritesPerMinute)
-          const {
-            decision,
-            tenant,
-            rows,
-            settle,
-            mayWrite,
-            ctx: checked,
-          } = await authorize(ctx, op, actor, input)
+          const authorized = await authorize(ctx, op, actor, input)
+          const { decision, tenant, settle, mayWrite, ctx: checked } = authorized
           const call = callKey(op.tool.name, input)
           if (requestId !== undefined) {
             // A retry key names one call. It replays that call's outcome, through
@@ -503,38 +548,7 @@ export function defineTools(
                 `${openApprovals} requests already wait for a person. Wait until they are decided.`,
               )
             }
-            // Fingerprint what the person will base the decision on: the rows the call names and the rows the summary reads.
-            const inputRows = new Map(rows)
-            // Every row the input names, under the row rules: a row the agent may not read is
-            // missing, as in the handler, and never reaches a person as a request.
-            const named: { table: string; id: string; row: Record<string, unknown> }[] = []
-            for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input)) {
-              if (ctx.db.normalizeId(table, id) === null) continue
-              const row = (await checked.db.get(id)) as Record<string, unknown> | null
-              if (row === null) fail('NOT_FOUND', `No ${table} with this ID.`)
-              inputRows.set(id, row)
-              named.push({ table, id, row })
-            }
-            rows.clear()
-            const summary = oneLine(
-              settle(
-                op.approval
-                  ? await op.approval(summaryCtx(checked), input)
-                  : `${op.action} ${JSON.stringify(input)}`,
-              ),
-            )
-            const touched = [...new Map([...inputRows, ...rows])].filter(
-              (entry): entry is [string, Record<string, unknown>] => entry[1] !== null,
-            )
-            if (touched.length > maxSeen) {
-              fail(
-                'TOO_LARGE',
-                `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
-              )
-            }
-            const seen = await Promise.all(
-              touched.map(async ([id, row]) => ({ id, hash: await fingerprint(row) })),
-            )
+            const { summary, seen, named } = await basis(authorized)
             const expiresAt = Date.now() + approvalTtl
             const approvalId = await lib(ctx).insert('approvals', {
               action: op.action,
@@ -709,15 +723,6 @@ export function defineTools(
     return { actor, row }
   }
 
-  /** The rows the person based the decision on changed since: refuse, the agent must ask again. */
-  async function changedSince(ctx: MCtx, row: LibraryDataModel['approvals']['document']) {
-    for (const { id, hash: before } of row.seen ?? []) {
-      const now = await ctx.db.get(id as never)
-      if (!now || (await fingerprint(now)) !== before) return true
-    }
-    return false
-  }
-
   async function record(
     ctx: MCtx,
     row: LibraryDataModel['approvals']['document'],
@@ -824,18 +829,9 @@ export function defineTools(
           let outcome:
             | { status: 'approved' }
             | { status: 'failed'; error: { code: string; message: string } }
-          if (await changedSince(ctx, row)) {
-            const error = {
-              code: 'STALE',
-              message:
-                'Nothing was done: this changed after the agent asked (it may already be done). The agent can ask again if it is still needed.',
-            }
-            await lib(ctx).patch(row._id, { status: 'failed', error, decidedBy: approver.user._id })
-            await record(ctx, row, 'failed', approver.user._id, error)
-            outcome = { status: 'failed', error }
-          } else {
-            // The operation runs as the agent in a sub-transaction. It checks the
-            // grant again, so revoking the connection also cancels its requests.
+          {
+            // The operation runs as the agent in a sub-transaction. It checks the grant again, so
+            // revoking the connection also cancels its requests, and the rows the person saw (STALE).
             // Marks the request as running, so its own work (and only that) runs under this approval.
             await lib(ctx).patch(row._id, { status: 'executing', followUp: crypto.randomUUID() })
             try {
