@@ -2,7 +2,7 @@ import { fail } from '@lupinum/better-convex-functions'
 import { internalMutationGeneric, makeFunctionReference } from 'convex/server'
 import { v } from 'convex/values'
 
-import { internalMutation, internalQuery, mutation } from './fns'
+import { internalAction, internalMutation, internalQuery, mutation } from './fns'
 
 const project = v.object({ id: v.id('projects'), name: v.string() })
 
@@ -48,24 +48,54 @@ export const archiveRow = internalMutation({
 /** Approved work that continues later: it schedules the archive (an outside call would sit between). */
 export const archiveLater = mutation({
   action: 'projects.archive',
-  args: { projectIds: v.array(v.id('projects')) },
+  args: { projectIds: v.array(v.id('projects')), againAfter: v.optional(v.number()) },
   returns: v.array(v.string()),
   tool: { name: 'archive_later', description: 'Archive projects in the background.' },
-  handler: async (ctx, { projectIds }) => {
+  handler: async (ctx, { projectIds, againAfter }) => {
     // Scheduled at once, so the follow-up token must not depend on the order of the writes.
     await Promise.all(
       projectIds.map((projectId) =>
-        ctx.scheduler.runAfter(
-          0,
-          makeFunctionReference<'mutation'>('ops:archiveRow') as never,
-          {
-            projectId,
-          } as never,
-        ),
+        ctx.scheduler.runAfter(0, archiveRowRef, { projectId } as never),
       ),
+    )
+    // The same follow-up once more, later.
+    if (againAfter !== undefined)
+      await ctx.scheduler.runAfter(againAfter, archiveRowRef, { projectId: projectIds[0] } as never)
+    // An internal action, as an outside call would run: it records the actor its handler sees.
+    await ctx.scheduler.runAfter(
+      0,
+      makeFunctionReference<'action'>('ops:recordActor') as never,
+      {
+        projectId: projectIds[0],
+      } as never,
     )
     // What the handler sees of its actor: no approval credentials.
     return Object.keys(ctx.actor).sort()
+  },
+})
+
+/** Renames a project, as an internal operation. */
+export const renameRow = internalMutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string() },
+  handler: async (ctx, { projectId, name }) => {
+    await ctx.db.patch(projectId, { name })
+    return null
+  },
+})
+
+/** Stores the `ctx.actor` its handler sees as the project's name. */
+export const recordActor = internalAction({
+  args: { projectId: v.id('projects') },
+  handler: async (ctx, { projectId }) => {
+    await ctx.runMutation(
+      makeFunctionReference<'mutation'>('ops:renameRow') as never,
+      {
+        projectId,
+        name: JSON.stringify(ctx.actor),
+      } as never,
+    )
+    return null
   },
 })
 

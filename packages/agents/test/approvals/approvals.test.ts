@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
+import { reset, revoke } from './fns'
 import { api, caller, setup } from './harness'
 
 // Approvals through the tool functions that the MCP door and the in-app agent call. Tests that
@@ -10,6 +11,7 @@ beforeEach(() => vi.useFakeTimers())
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
+  reset()
 })
 
 const thirtyOneMinutes = 31 * 60_000
@@ -421,8 +423,10 @@ test('work an approved request scheduled runs under the approval, for an hour', 
   }
   const approval = (await s.t.run((ctx) => ctx.db.get('approvals', asked.approvalId)))!
   // Codex round 4: the handler's ctx.actor carried the token, and an app could store and reuse it.
-  expect(approval.result).not.toContain('approvalId')
-  expect(approval.result).not.toContain('followUp')
+  // The operation and the internal action it scheduled both see the actor without it.
+  expect(approval.result).toEqual(['caller', 'clientId', 'door', 'kind', 'scopes', 'user'])
+  const recorded = (await s.t.run((ctx) => ctx.db.get(s.p[0]!)))!.name
+  expect(JSON.parse(recorded)).toEqual({ kind: 'agent', caller })
   // Codex round 3: other work of the same agent, naming the approval within the hour, is refused;
   // only the work the request scheduled carries the token.
   for (const actingAs of [
@@ -444,6 +448,81 @@ test('work an approved request scheduled runs under the approval, for an hour', 
     s.t.mutation(api.ops.archiveRow, { actingAs, input: { projectId: s.p[1] } }),
   ).rejects.toThrow(/APPROVAL_NOT_FOUND/)
   expect(await s.t.run((ctx) => ctx.db.get(s.p[1]!))).toMatchObject({ status: 'active' })
+})
+
+/**
+ * Each scheduled function: its name, its state, and the coded failure it ended with. convex-test
+ * keeps no error in `_scheduled_functions`; it logs it, so the log is where the code is.
+ */
+async function scheduledOutcomes(
+  s: Awaited<ReturnType<typeof setup>>,
+  log: { mock: { calls: unknown[][] } },
+) {
+  const failures = log.mock.calls
+    .filter(([text]) => String(text).startsWith('Error when running scheduled function'))
+    .map(([, error]) => (error as { data?: unknown }).data)
+  const jobs = await s.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+  return { jobs: jobs.map((job) => [job.name, job.state.kind]), failures }
+}
+
+// T7 (class 1, S14): approved work's follow-up runs in its own transaction, after `approve`.
+// A revoke that lands in between must stop it.
+test('a follow-up of an approved request changes nothing after the person revokes the connection', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const s = await setup()
+  const asked = await s.t.mutation(api.tools.archive_later, {
+    caller,
+    input: { projectIds: [s.p[0], s.p[2]] },
+  })
+  await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })
+  revoke('ann')
+  vi.advanceTimersByTime(1)
+  await s.t.finishInProgressScheduledFunctions()
+  const revoked = {
+    code: 'AGENT_DISABLED',
+    message: 'This connection was revoked or has expired. Reconnect it.',
+  }
+  expect(await scheduledOutcomes(s, log)).toEqual({
+    jobs: [
+      ['ops:archiveRow', 'failed'],
+      ['ops:archiveRow', 'failed'],
+      ['ops:recordActor', 'failed'],
+    ],
+    failures: [revoked, revoked, revoked],
+  })
+  for (const id of [s.p[0], s.p[2]]) {
+    expect(await s.t.run((ctx) => ctx.db.get(id!))).toMatchObject({ status: 'active' })
+  }
+})
+
+// T7 (class 1): the same follow-up, scheduled once now and once after the hour. The second run
+// is past the approval's window and changes nothing, even on a row that is active again.
+test('the same follow-up scheduled again after the hour changes nothing', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const s = await setup()
+  const asked = await s.t.mutation(api.tools.archive_later, {
+    caller,
+    input: { projectIds: [s.p[0]], againAfter: 61 * 60_000 },
+  })
+  await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })
+  vi.advanceTimersByTime(1)
+  await s.t.finishInProgressScheduledFunctions()
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'archived' })
+  // A person makes the project active again.
+  await s.t.run((ctx) => ctx.db.patch(s.p[0]!, { status: 'active' }))
+  vi.advanceTimersByTime(61 * 60_000)
+  await s.t.finishInProgressScheduledFunctions()
+  expect(await scheduledOutcomes(s, log)).toEqual({
+    jobs: [
+      ['ops:archiveRow', 'success'],
+      ['ops:archiveRow', 'failed'],
+      ['ops:recordActor', 'success'],
+    ],
+    failures: [
+      { code: 'APPROVAL_NOT_FOUND', message: "This work does not run under a person's approval." },
+    ],
+  })
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'active' })
 })
 
 // Second review: an internal operation accepted any still-pending approvalId as authority.
@@ -488,39 +567,68 @@ test('a person may approve after the access token that asked has expired', async
 })
 
 // V14: the in-app door checked the run, not the grant; a revoked grant must stop a running run's tools.
-test('revoking an in-app agent stops its tools, even while its run runs', async () => {
-  const s = await setup()
-  const { grantId, runId } = await s.t.run(async (ctx) => {
-    const grantId = await ctx.db.insert('agentGrants', {
-      authId: 'ann',
-      userId: s.annId,
-      agent: 'helper',
-      scopes: ['projects:write'],
-      expiresAt: Date.now() + 86_400_000,
+// Maintainer analysis: a step of an old turn, of an ended run, or on an expired grant still ran.
+const turnedOff = 'This agent is turned off.'
+const ended = 'This run has ended.'
+const notCurrent = 'This step of the run is no longer current.'
+test.each([
+  { row: 'grant revoked', grant: 'revoked', status: 'running', turn: 2, message: turnedOff },
+  { row: 'grant expired', grant: 'expired', status: 'running', turn: 2, message: turnedOff },
+  { row: 'run done', grant: 'live', status: 'done', turn: 2, message: ended },
+  { row: 'run failed', grant: 'live', status: 'failed', turn: 2, message: ended },
+  { row: 'run waiting', grant: 'live', status: 'waiting', turn: 2, message: notCurrent },
+  {
+    row: 'step of turn 1, run in turn 2',
+    grant: 'live',
+    status: 'running',
+    turn: 1,
+    message: notCurrent,
+  },
+  {
+    row: 'current turn of a running run',
+    grant: 'live',
+    status: 'running',
+    turn: 2,
+    message: null,
+  },
+] as const)(
+  'an in-app agent step acts only on a live grant, in the current turn of a running run: $row',
+  async ({ grant, status, turn, message }) => {
+    const s = await setup()
+    const runId = await s.t.run(async (ctx) => {
+      const grantId = await ctx.db.insert('agentGrants', {
+        authId: 'ann',
+        userId: s.annId,
+        agent: 'helper',
+        scopes: ['projects:write'],
+        // A grant that expires now has expired.
+        expiresAt: grant === 'expired' ? Date.now() : Date.now() + 86_400_000,
+        ...(grant === 'revoked' ? { revokedAt: Date.now() } : {}),
+      })
+      return await ctx.db.insert('agentRuns', {
+        grantId,
+        userId: s.annId,
+        agent: 'helper',
+        step: 'agent:step',
+        task: 'rename',
+        status,
+        turn: 2,
+        steps: 1,
+        stepAt: Date.now(),
+      })
     })
-    const runId = await ctx.db.insert('agentRuns', {
-      grantId,
-      userId: s.annId,
-      agent: 'helper',
-      step: 'agent:step',
-      task: 'rename',
-      status: 'running',
-      turn: 1,
-      steps: 1,
-      stepAt: Date.now(),
+    const rename = s.t.mutation(api.tools.rename_project, {
+      caller: { door: 'app', runId, turn },
+      input: { projectId: s.p[0], name: 'renamed' },
     })
-    return { grantId, runId }
-  })
-  const rename = (name: string) =>
-    s.t.mutation(api.tools.rename_project, {
-      caller: { door: 'app', runId, turn: 1 },
-      input: { projectId: s.p[0], name },
-    })
-  await rename('before')
-  await s.t.run((ctx) => ctx.db.patch(grantId, { revokedAt: Date.now() }))
-  await expect(rename('after')).rejects.toThrow(/AGENT_DISABLED/)
-  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'before' })
-})
+    if (message === null) {
+      expect(await rename).toEqual({ status: 'done', result: { id: s.p[0], name: 'renamed' } })
+      return
+    }
+    await expect(rename).rejects.toMatchObject({ data: { code: 'AGENT_DISABLED', message } })
+    expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'alpha' })
+  },
+)
 
 // Second review: the waiting-run backstop stopped after 200 runs until the next hourly cron.
 test('housekeeping goes through every waiting run, in batches', async () => {

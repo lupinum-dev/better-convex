@@ -56,7 +56,9 @@ export const policy = definePolicy({
 })
 
 // Auth is the one outside service; the fake names a person by the test identity's subject.
-const { auth } = testAuth<DataModel>()
+const { auth, revoke, reset } = testAuth<DataModel>()
+/** Ends Ann's MCP connection in the fake auth component; `reset` restores it after each test. */
+export { revoke, reset }
 
 export const fns = defineFunctions({
   auth,
@@ -86,4 +88,4 @@ export const fns = defineFunctions({
   },
 })
 
-export const { mutation, internalMutation, internalQuery } = fns
+export const { mutation, internalMutation, internalQuery, internalAction } = fns
