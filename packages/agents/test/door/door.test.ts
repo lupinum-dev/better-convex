@@ -1,13 +1,13 @@
 import { defineTools } from '@lupinum/better-convex-agents'
 import { toolFailure } from '@lupinum/better-convex-agents/internal'
 import { createMcpServer } from '@lupinum/better-convex-agents/mcp'
-import { refs, testMcpAuth } from '@lupinum/better-convex-agents/test'
+import { refs } from '@lupinum/better-convex-agents/test'
 import type { FunctionReference } from 'convex/server'
 import { v } from 'convex/values'
 import { expect, test, vi } from 'vitest'
 
 import { tools } from './agents'
-import { fns, query } from './fns'
+import { fns, query, testing } from './fns'
 import * as projects from './projects'
 import { fn, setup } from './setup'
 import * as shapes from './shapes'
@@ -196,7 +196,7 @@ test('a tool without its export fails at load with the missing name', () => {
   const tools = defineTools(fns, { projects, shapes }, { functions: refs('agents') })
   const { echo_shapes: _forgotten, ...exported } = tools.functions
   expect(() =>
-    createMcpServer(testMcpAuth(), { name: 'x', agents: { tools, ...exported } }),
+    createMcpServer(testing.auth, { name: 'x', agents: { tools, ...exported } }),
   ).toThrow(
     'Not exported from the agents module: echo_shapes. Add them to `export const { echo_shapes } = tools.functions`.',
   )
@@ -208,7 +208,7 @@ test('a tool whose function does not exist fails with a hint in the log', async 
   const wrong = defineTools(fns, { projects, shapes }, { functions: refs('projects') })
   const app = { tools: wrong, ...wrong.functions }
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-  const handler = createMcpServer(testMcpAuth(), { name: 'x', agents: app })
+  const handler = createMcpServer(testing.auth, { name: 'x', agents: app })
   expect(handler).toBeTruthy()
   const entry = wrong.catalog.find((e) => e.name === 'create_project')!
   const caller = {

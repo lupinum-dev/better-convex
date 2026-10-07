@@ -6,43 +6,7 @@
  * modules. A fixture without codegen needs one anyway, with any file in it
  * (for example `_generated/README.ts` with `export {}`).
  */
-import type { GenericDataModel, GenericQueryCtx } from 'convex/server'
-import { ConvexError } from 'convex/values'
-
-import type { Auth } from './functions'
-
 export { unguardedFunctions } from './guard'
-
-/**
- * The auth component faked for convex-test (asked for by the agency, content
- * and marketplace slices, which each copied it). A person is
- * `t.withIdentity({ subject: authId })`; an agent's connection is accepted
- * until `revoke` ends it, like the real component, which checks the
- * connection on every agent call.
- *
- * Create it in the module that calls `defineFunctions`, with the app's data
- * model, and call `reset()` when each test starts, since modules outlive it.
- */
-export function testAuth<DM extends GenericDataModel>() {
-  const revoked = new Set<string>()
-  const auth: Auth<DM> = {
-    getUser: async (ctx: GenericQueryCtx<DM>) => {
-      const identity = await ctx.auth.getUserIdentity()
-      return identity ? { id: identity.subject } : null
-    },
-    requireMcpPrincipal: async (_ctx, principal) => {
-      if (revoked.has(`${principal.userId}:${principal.clientId}`))
-        throw new ConvexError({ code: 'MCP_ACCESS_DENIED', message: 'MCP access denied' })
-      return { user: { id: principal.userId } }
-    },
-  }
-  return {
-    auth,
-    /** Revokes a connection in the fake auth component. */
-    revoke: (authId: string, clientId = 'host') => void revoked.add(`${authId}:${clientId}`),
-    reset: () => revoked.clear(),
-  }
-}
 
 type Syscall = (op: string, json: string) => Promise<string>
 type Count = { reads: number; writes: number }

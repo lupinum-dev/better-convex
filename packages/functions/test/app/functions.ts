@@ -1,17 +1,14 @@
 import { defineFunctions, owner, tenant } from '@lupinum/better-convex-functions'
-import { testAuth } from '@lupinum/better-convex-functions/test'
 import type { DataModelFromSchemaDefinition } from 'convex/server'
 
+import { people } from './people'
 import { policy } from './policy'
 import type schema from './schema'
 
 type DataModel = DataModelFromSchemaDefinition<typeof schema>
 
-/** The auth component, faked: a person is the test identity's subject. */
-export const testing = testAuth<DataModel>()
-
 export const fns = defineFunctions({
-  auth: testing.auth,
+  auth: people<DataModel>(),
   policy,
   user: async (ctx, authId) => {
     const user = await ctx.db

@@ -1,3 +1,4 @@
+import { testAuth } from '@lupinum/better-convex-agents/test'
 import {
   defineFunctions,
   definePolicy,
@@ -5,7 +6,6 @@ import {
   owner,
   tenant,
 } from '@lupinum/better-convex-functions'
-import { testAuth } from '@lupinum/better-convex-functions/test'
 import type { DataModelFromSchemaDefinition } from 'convex/server'
 
 import type schema from './schema'

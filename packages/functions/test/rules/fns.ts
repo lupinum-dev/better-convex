@@ -9,9 +9,9 @@ import {
   tenant,
   unchecked,
 } from '@lupinum/better-convex-functions'
-import { testAuth } from '@lupinum/better-convex-functions/test'
 import type { DataModelFromSchemaDefinition, DocumentByName } from 'convex/server'
 
+import { people } from '../app/people'
 import type schema from './schema'
 
 type DataModel = DataModelFromSchemaDefinition<typeof schema>
@@ -31,7 +31,7 @@ export const policy = definePolicy({
 })
 
 // Auth is the one outside service; the fake names a person by the test identity's subject.
-const { auth } = testAuth<DataModel>()
+const auth = people<DataModel>()
 
 export const { query, mutation, internalQuery, internalMutation, internalAction, job } =
   defineFunctions({

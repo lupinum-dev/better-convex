@@ -1,3 +1,4 @@
+import { testAuth } from '@lupinum/better-convex-agents/test'
 import {
   defineFunctions,
   definePolicy,
@@ -6,7 +7,6 @@ import {
   tenant,
   unchecked,
 } from '@lupinum/better-convex-functions'
-import { testAuth } from '@lupinum/better-convex-functions/test'
 
 import type { DataModel } from './dataModel'
 
@@ -35,7 +35,7 @@ export const policy = definePolicy({
   agents: { 'projects.archive': 'approve' },
 })
 
-/** Fake auth and MCP token check; `reset()` in setup. */
+/** The auth component and MCP token check, faked; `reset()` in setup. */
 export const testing = testAuth<DataModel>()
 
 export const fns = defineFunctions({

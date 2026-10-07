@@ -1,5 +1,12 @@
+import type { Auth } from '@lupinum/better-convex-functions'
 import type { Resource, Tool } from '@modelcontextprotocol/server'
-import { makeFunctionReference, type FunctionReference } from 'convex/server'
+import {
+  makeFunctionReference,
+  type FunctionReference,
+  type GenericDataModel,
+  type GenericQueryCtx,
+} from 'convex/server'
+import { ConvexError } from 'convex/values'
 
 // Import only through the `./mcp` entry, so the build keeps one server owner in `dist/mcp.mjs`.
 import {
@@ -125,13 +132,28 @@ async function listAll<Principal>(
 const testSite = 'https://some.convex.site'
 
 /**
- * The MCP token check, faked for convex-test, for `createMcpServer(testMcpAuth(), ...)`. A
- * bearer token `<authId>:<scope>,<scope>` is a connection of that user on the host `host`.
- * Everything after token verification is the real door and tools; pair it with `testAuth()`
- * from `@lupinum/better-convex-functions/test`, whose `revoke` ends a connection.
+ * The auth component, faked for convex-test: one object for `defineFunctions({ auth })` and
+ * `createMcpServer(auth, ...)`, as the real `auth` from `createBetterConvexAuth` is. A person
+ * is `t.withIdentity({ subject: authId })`. A bearer token `<authId>:<scope>,<scope>` is a
+ * connection of that user on the host `host`; everything after the token check is the real
+ * door and tools. Like the real component, the connection is checked on every agent call, so
+ * `revoke` ends it at the next call.
+ *
+ * Create it in the module that calls `defineFunctions`, with the app's data model, and call
+ * `reset()` when each test starts, since modules outlive it.
  */
-export function testMcpAuth(): McpDoorAuth {
-  return {
+export function testAuth<DM extends GenericDataModel>() {
+  const revoked = new Set<string>()
+  const auth: Auth<DM> & McpDoorAuth = {
+    getUser: async (ctx: GenericQueryCtx<DM>) => {
+      const identity = await ctx.auth.getUserIdentity()
+      return identity ? { id: identity.subject } : null
+    },
+    requireMcpPrincipal: async (_ctx, principal) => {
+      if (revoked.has(`${principal.userId}:${principal.clientId}`))
+        throw new ConvexError({ code: 'MCP_ACCESS_DENIED', message: 'MCP access denied' })
+      return { user: { id: principal.userId } }
+    },
     mcpAuthorization: () => ({
       resource: new URL(`${testSite}/mcp`),
       authorization: {
@@ -166,6 +188,12 @@ export function testMcpAuth(): McpDoorAuth {
         },
       },
     }),
+  }
+  return {
+    auth,
+    /** Ends a connection in the fake auth component: its next tool call fails. */
+    revoke: (authId: string, clientId = 'host') => void revoked.add(`${authId}:${clientId}`),
+    reset: () => revoked.clear(),
   }
 }
 

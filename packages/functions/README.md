@@ -89,7 +89,7 @@ Spread `libraryTables` into your schema. A table without a rule is a type error.
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `@lupinum/better-convex-functions`            | `defineFunctions`, `definePolicy`, the row rules, `libraryTables`, `trusted`, `fail` and helpers  |
 | `@lupinum/better-convex-functions/policy`     | `definePolicy`, `can`, `consentScopes` and the policy types, without server code, for the browser |
-| `@lupinum/better-convex-functions/test`       | `unguardedFunctions`, `countDocuments` and `testAuth`, for tests                                  |
+| `@lupinum/better-convex-functions/test`       | `unguardedFunctions` and `countDocuments`, for tests                                              |
 | `@lupinum/better-convex-functions/agent-docs` | Markdown file for coding agents; not a JavaScript module                                          |
 
 `@lupinum/better-convex-functions/internal` exists only for `@lupinum/better-convex-agents` and
@@ -103,7 +103,10 @@ release.
 - `unguardedFunctions(modules)` lists every function that bypasses the layer. Assert that the
   list is empty.
 - `countDocuments(call)` counts the documents one call reads and writes, for budget tests.
-- `testAuth()` fakes the auth component.
+
+Test sign-in with the real Better Auth component (`@lupinum/better-convex-nuxt/better-auth/test`).
+For fixtures without it, `testAuth()` from `@lupinum/better-convex-agents/test` fakes the auth
+component and the MCP token check.
 
 ## Documentation
 
