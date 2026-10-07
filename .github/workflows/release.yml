@@ -204,6 +204,18 @@ jobs:
             tag=latest; if [[ "$version" == *-* ]]; then tag=next; fi
             npm publish "$tarball" --dry-run --access public --ignore-scripts --tag "$tag"
           done < release/order.txt
+      # Trusted publishing works only for a name that exists on npm (DECISIONS.md D34): stop here,
+      # before the approval, instead of publishing half of the packages.
+      - run: |
+          missing=""
+          while read -r file; do
+            name="$(tar -xOzf "./release/$file" package/package.json | jq -r .name)"
+            if ! npm view "$name" name > /dev/null 2>&1; then missing="$missing $name"; fi
+          done < release/order.txt
+          if [[ -n "$missing" ]]; then
+            echo "::error::Not on npm yet:$missing. Publish each once by hand and set up trusted publishing (DECISIONS.md D34)."
+            exit 1
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release
