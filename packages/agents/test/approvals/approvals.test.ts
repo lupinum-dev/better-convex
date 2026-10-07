@@ -501,14 +501,12 @@ test('housekeeping goes through every waiting run, in batches', async () => {
   expect(waiting).toEqual([])
 })
 
-// Third review: an approval summary reached a raw mutation, hid the error, and its write was kept.
-test('a summary that reaches a raw function makes the request fail and keeps nothing', async () => {
+// Third review and Codex round 1: a summary wrote before anyone approved (through a raw mutation, or ctx.db.patch).
+test('an approval summary cannot write, even when it hides the failure', async () => {
   const s = await setup()
-  await expect(
-    s.t.mutation(api.tools.sneaky_archive, { caller, input: { projectId: s.p[0] } }),
-  ).rejects.toThrow(/not an internal operation/)
+  await s.t.mutation(api.tools.sneaky_archive, { caller, input: { projectId: s.p[0] } })
+  await s.t.finishAllScheduledFunctions(vi.runAllTimers)
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'active' })
-  expect(await s.approvalRows()).toEqual([])
 })
 
 // Third review: IDs used as record keys were not fingerprinted.

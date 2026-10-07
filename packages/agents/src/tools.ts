@@ -132,6 +132,22 @@ export function toolFailure(error: unknown): { code: string; message: string } {
 }
 
 /**
+ * What an approval summary may use: reads only. Asking a person must change
+ * nothing; a write here would land before anyone decides (Codex review, round 1).
+ */
+function readOnly(ctx: any) {
+  const { db, storage, runMutation: _m, runAction: _a, scheduler: _s, ...rest } = ctx
+  return {
+    ...rest,
+    db: { get: db.get, query: db.query, normalizeId: db.normalizeId },
+    storage: storage && {
+      getUrl: storage.getUrl.bind(storage),
+      getMetadata: storage.getMetadata?.bind(storage),
+    },
+  }
+}
+
+/**
  * Collects the operations that have a `tool` field from app modules. Returns
  * one internal function per tool (export them under the tool's name), the
  * catalog the doors publish, the approval functions, the activity feed and
@@ -454,7 +470,7 @@ export function defineTools(
             const summary = oneLine(
               settle(
                 op.approval
-                  ? await op.approval(checked, input)
+                  ? await op.approval(readOnly(checked), input)
                   : `${op.action} ${JSON.stringify(input)}`,
               ),
             )
