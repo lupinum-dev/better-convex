@@ -25,8 +25,23 @@ Check a fact again before you build on it with newer versions.
 
 `crypto.randomUUID()` inside a mutation (the follow-up token of approved
 work): verified on the local backend by the approve step of the `mcp-auth`
-integration test. The approve step of `pnpm test:live` checks it on the cloud;
-that run has not happened yet.
+integration test, and on the cloud by the approve step of `pnpm test:live`
+(preview deployments of `better-convex-live`, 2026-10-07).
+
+Oversized requests on the Convex cloud edge (cloud smoke, then a Codex
+experiment with 10 requests per case, 2026-10-07):
+
+- An HTTP action that answers 413 with an empty body, or before the client has
+  finished uploading, reaches the client as Cloudflare **520** (3 MiB: 10 of
+  10). Convex's log shows the action's 413.
+- A short JSON body fixes almost every case (3 MiB chunked: 1 in 10 was a 502).
+- Reading the whole upload first gave 413 in 160 of 160, at about 0.3–0.5 s of
+  action time for 3 MiB. The door therefore reads refused uploads up to 4 MiB
+  and answers with a JSON-RPC error body; larger uploads are refused at once.
+- An action read a 25 MiB body in full, although the HTTP actions page names a
+  20 MB request limit.
+
+Evidence: `bc-live/.evidence-live/exp/` (git-ignored, next to this worktree).
 
 ## convex-test
 
