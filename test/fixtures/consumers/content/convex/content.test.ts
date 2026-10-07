@@ -133,7 +133,8 @@ const rows: [Exclude<keyof typeof targets, 'own'>, string, string][] = [
   ['site B', 'edit_live_page', 'NOT_FOUND'],
   ["B's pages under A", 'pages.read', 'NOT_FOUND'],
   ["B's pages under A", 'pages.edit', 'NOT_FOUND'],
-  ["B's pages under A", 'pages.editLive', 'FORBIDDEN'],
+  // The plan runs for a person's call too, and refuses a page of another site as missing.
+  ["B's pages under A", 'pages.editLive', 'NOT_FOUND'],
   ["B's pages under A", 'read_page', 'NOT_FOUND'],
   ["B's pages under A", 'edit_page', 'NOT_FOUND'],
   ["B's pages under A", 'edit_live_page', 'NOT_FOUND'],

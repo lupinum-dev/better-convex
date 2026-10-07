@@ -80,8 +80,8 @@ export const editLive = mutation({
     name: 'edit_live_page',
     description: 'Change the title or body of a published page. Visitors see it at once.',
   },
-  // Runs before the handler, and live pages of every site are readable: refuse here what the handler
-  // could never write, so it does not reach a person as a request.
+  // Runs before the handler, for agents and people alike, and live pages of every site are
+  // readable: refuse here what the handler could never write, so it never reaches a person.
   plan: async (ctx, { siteId, pageId }) => {
     const current = await ctx.db.get(pageId)
     if (current?.siteId !== siteId) fail('NOT_FOUND', 'No page with this ID.')
