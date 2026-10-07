@@ -449,13 +449,15 @@ export function defineTools(
             const touched = [...new Map([...inputRows, ...rows])].filter(
               (entry): entry is [string, Record<string, unknown>] => entry[1] !== null,
             )
-            const seen = touched.map(([id, row]) => ({ id, hash: fingerprint(row) }))
-            if (seen.length > maxSeen) {
+            if (touched.length > maxSeen) {
               fail(
                 'TOO_LARGE',
                 `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
               )
             }
+            const seen = await Promise.all(
+              touched.map(async ([id, row]) => ({ id, hash: await fingerprint(row) })),
+            )
             const expiresAt = Date.now() + approvalTtl
             const approvalId = await lib(ctx).insert('approvals', {
               action: op.action,
@@ -633,7 +635,7 @@ export function defineTools(
   async function changedSince(ctx: MCtx, row: LibraryDataModel['approvals']['document']) {
     for (const { id, hash: before } of row.seen ?? []) {
       const now = await ctx.db.get(id as never)
-      if (!now || fingerprint(now) !== before) return true
+      if (!now || (await fingerprint(now)) !== before) return true
     }
     return false
   }

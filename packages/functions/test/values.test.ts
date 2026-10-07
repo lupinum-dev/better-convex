@@ -3,15 +3,16 @@ import { expect, test } from 'vitest'
 import { fingerprint, inertMarkdown, oneLine } from '../src/values'
 
 // Codex review: bytes hashed as `{}` (a change went unnoticed) and int64 fields threw.
-test('a fingerprint sees bytes and int64 fields', () => {
+test('a fingerprint sees bytes and int64 fields', async () => {
   const row = (bytes: number[], count: bigint) => ({
     _id: 'x',
     data: new Uint8Array(bytes).buffer,
     count,
   })
-  expect(fingerprint(row([1, 2], 5n))).toBe(fingerprint(row([1, 2], 5n)))
-  expect(fingerprint(row([1, 2], 5n))).not.toBe(fingerprint(row([1, 3], 5n)))
-  expect(fingerprint(row([1, 2], 5n))).not.toBe(fingerprint(row([1, 2], 6n)))
+  const first = await fingerprint(row([1, 2], 5n))
+  expect(await fingerprint(row([1, 2], 5n))).toBe(first)
+  expect(await fingerprint(row([1, 3], 5n))).not.toBe(first)
+  expect(await fingerprint(row([1, 2], 6n))).not.toBe(first)
 })
 
 // G10, D7: text a person reads before deciding.

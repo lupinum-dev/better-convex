@@ -62,12 +62,19 @@ function stable(value: unknown): string {
   return JSON.stringify(value) ?? 'undefined'
 }
 
-/** A fingerprint of a stored row: bytes and int64 fields included (as Convex encodes them). */
-export function fingerprint(row: unknown): string {
-  return hash(stable(convexToJson(row as Value)))
+/**
+ * A fingerprint of a stored row: bytes and int64 fields included (as Convex
+ * encodes them). SHA-256, because someone who may write the row between a
+ * request and its approval must not find a changed row with the same
+ * fingerprint.
+ */
+export async function fingerprint(row: unknown): Promise<string> {
+  const bytes = new TextEncoder().encode(stable(convexToJson(row as Value)))
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-/** cyrb53: a short, fast, non-cryptographic string hash. Enough to tell two calls or two row versions apart. */
+/** cyrb53: a short, fast, non-cryptographic string hash. Enough to tell two calls apart; a collision does no harm there. */
 export function hash(text: string): string {
   let h1 = 3735928559 // 0xdeadbeef: the formatter and the linter disagree on hex case
   let h2 = 1103547991 // 0x41c6ce57
