@@ -137,15 +137,24 @@ export function decide<P extends Policy>(
   return agentRule(policy, action, call.input ?? {})
 }
 
-/** The agent rule for an action and input. A rule that throws on odd input asks a person. */
+const decisions: readonly unknown[] = ['allow', 'approve', 'deny']
+
+/**
+ * The agent rule for an action and input. A rule that throws on odd input, or
+ * returns something that is not a decision (`decisions[mode]` for an unknown
+ * mode is `undefined`), asks a person: it never fails open.
+ */
 function agentRule(policy: Policy, action: string, input: Record<string, unknown>): Decision {
   const rule = own(policy.agents as Record<string, AgentRule> | undefined, action) ?? 'allow'
-  if (typeof rule !== 'function') return rule
-  try {
-    return rule(input)
-  } catch {
-    return 'approve'
+  let decision: unknown = rule
+  if (typeof rule === 'function') {
+    try {
+      decision = rule(input)
+    } catch {
+      return 'approve'
+    }
   }
+  return decisions.includes(decision) ? (decision as Decision) : 'approve'
 }
 
 /** May this role do this action? The role layer of `decide`, also used for each row a call touches. */

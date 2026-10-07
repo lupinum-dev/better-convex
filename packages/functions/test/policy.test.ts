@@ -78,3 +78,33 @@ test('a two-segment prefix matches only its own actions', () => {
   expect(can(billing, 'billing.invoices.create', 'accountant')).toBe(true)
   expect(can(billing, 'billing.plans.read', 'accountant')).toBe(false)
 })
+
+// Codex round 2: a rule like `(input) => decisions[input.mode]` returned undefined, and the agent ran without approval.
+test('an agent rule that returns no decision asks a person', () => {
+  const odd = definePolicy({
+    actions: ['projects.archive'],
+    roles: { owner: ['*'] },
+    scopes: { all: { label: 'All', actions: ['*'] } },
+    agents: {
+      'projects.archive': (input) =>
+        (({ soft: 'allow' }) as Record<string, 'allow'>)[String(input.mode)],
+    },
+  })
+  const agent: Asker = { kind: 'agent', scopes: ['all'] }
+  expect(
+    decide(odd, {
+      action: 'projects.archive',
+      asker: agent,
+      role: 'owner',
+      input: { mode: 'hard' },
+    }),
+  ).toBe('approve')
+  expect(
+    decide(odd, {
+      action: 'projects.archive',
+      asker: agent,
+      role: 'owner',
+      input: { mode: 'soft' },
+    }),
+  ).toBe('allow')
+})
