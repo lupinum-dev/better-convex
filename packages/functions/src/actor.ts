@@ -15,6 +15,7 @@ export type Actor<User> =
       scopes: readonly string[]
       caller: AgentCaller
       approvalId?: string
+      followUp?: string
     }
   | {
       kind: 'agent'
@@ -25,6 +26,7 @@ export type Actor<User> =
       scopes: readonly string[]
       caller: AgentCaller
       approvalId?: string
+      followUp?: string
     }
 
 export type Visitor = { kind: 'visitor' }
@@ -60,10 +62,12 @@ export type AgentCaller = Infer<typeof agentCallerValidator>
 export const actingAsValidator = v.union(
   v.object({ kind: v.literal('person'), authId: v.string() }),
   // `approvalId`: the person's approval this work runs under, so its internal operations may run too.
+  // `followUp`: the token that work the approved request scheduled carries (see `followUps`).
   v.object({
     kind: v.literal('agent'),
     caller: agentCallerValidator,
     approvalId: v.optional(v.string()),
+    followUp: v.optional(v.string()),
   }),
   v.object({ kind: v.literal('visitor') }),
   v.object({ kind: v.literal('system'), job: v.string() }),

@@ -264,19 +264,26 @@ export function defineFunctions<
         // Work done under a person's approval: the approval must be this agent's, and still stand.
         const id = lib(ctx).normalizeId('approvals', who.approvalId)
         const row = id && (await lib(ctx).get(id))
-        // While `approve` runs this very request, and for the work it scheduled (an internal action that
-        // calls out, then records the result) for an hour after: a pending, declined, failed or old
-        // approval grants nothing (R22; docs-only slice). The grant is checked again above, so a
-        // revoked connection stops follow-ups too.
+        // While `approve` runs this very request; and, for an hour after, the work it scheduled then
+        // (an internal action that calls out, then records the result), known by the token it
+        // carries. A pending, declined, failed or old approval, or other work of the same agent,
+        // grants nothing (R22; docs-only slice; Codex round 3). The grant is checked again above,
+        // so a revoked connection stops follow-ups too.
         const standing =
           row?.status === 'executing' ||
           (row?.status === 'approved' &&
             row.decidedAt !== undefined &&
-            Date.now() < row.decidedAt + followUpWindow)
+            Date.now() < row.decidedAt + followUpWindow &&
+            who.followUp !== undefined &&
+            (row.followUps ?? []).includes(who.followUp))
         if (!row || row.requester.key !== actorRecord(actor).key || !standing) {
           fail('APPROVAL_NOT_FOUND', "This work does not run under a person's approval.")
         }
-        return { ...actor, approvalId: who.approvalId }
+        return {
+          ...actor,
+          approvalId: who.approvalId,
+          ...(who.followUp === undefined ? {} : { followUp: who.followUp }),
+        }
       }
       case 'person': {
         const user = await config.user(ctx, who.authId)
@@ -294,6 +301,7 @@ export function defineFunctions<
       kind: 'agent',
       caller: actor.caller,
       ...(actor.approvalId === undefined ? {} : { approvalId: actor.approvalId }),
+      ...(actor.followUp === undefined ? {} : { followUp: actor.followUp }),
     }
   }
 
@@ -479,8 +487,23 @@ export function defineFunctions<
       (getFunctionAddress(ref as never) as { reference?: string }).reference?.startsWith(
         '_reference/childComponent/',
       ) ?? false
-    const wrapArgs = (ref: unknown, args: unknown) =>
-      isComponent(ref) ? args : { actingAs: acting, input: args ?? {} }
+    const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting) =>
+      isComponent(ref) ? args : { actingAs: as, input: args ?? {} }
+    // Work an approved request schedules while it runs gets a token, recorded on the request:
+    // only that work continues under the approval after `approve` returns.
+    const scheduledAs = async (): Promise<ActingAs> => {
+      if (acting.kind !== 'agent' || acting.approvalId === undefined || acting.followUp)
+        return acting
+      if (!c.db) return acting
+      const id = lib(c as { db: unknown }).normalizeId('approvals', acting.approvalId)
+      const row = id && (await lib(c as { db: unknown }).get(id))
+      if (!row || row.status !== 'executing') return acting
+      const followUp = crypto.randomUUID()
+      await lib(c as { db: unknown }).patch(row._id, {
+        followUps: [...(row.followUps ?? []), followUp],
+      })
+      return { ...acting, followUp }
+    }
     const runner = (name: string) =>
       c[name]
         ? {
@@ -516,10 +539,10 @@ export function defineFunctions<
       ...runner('runAction'),
       ...(c.scheduler && {
         scheduler: {
-          runAfter: (delay: number, ref: unknown, args?: unknown) =>
-            c.scheduler.runAfter(delay, ref, wrapArgs(ref, args)),
-          runAt: (time: number | Date, ref: unknown, args?: unknown) =>
-            c.scheduler.runAt(time, ref, wrapArgs(ref, args)),
+          runAfter: async (delay: number, ref: unknown, args?: unknown) =>
+            c.scheduler.runAfter(delay, ref, wrapArgs(ref, args, await scheduledAs())),
+          runAt: async (time: number | Date, ref: unknown, args?: unknown) =>
+            c.scheduler.runAt(time, ref, wrapArgs(ref, args, await scheduledAs())),
           cancel: (id: unknown) => c.scheduler.cancel(id),
         },
       }),

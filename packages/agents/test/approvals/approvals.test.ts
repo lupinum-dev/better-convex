@@ -416,7 +416,18 @@ test('work an approved request scheduled runs under the approval, for an hour', 
   })
   await s.t.finishAllScheduledFunctions(vi.runAllTimers)
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'archived' })
-  const actingAs = { kind: 'agent', caller, approvalId: asked.approvalId }
+  // Codex round 3: other work of the same agent, naming the approval within the hour, is refused;
+  // only the work the request scheduled carries the token recorded on it.
+  const [followUp] = (await s.t.run((ctx) => ctx.db.get(asked.approvalId)))!.followUps!
+  for (const actingAs of [
+    { kind: 'agent', caller, approvalId: asked.approvalId },
+    { kind: 'agent', caller, approvalId: asked.approvalId, followUp: 'made-up' },
+  ]) {
+    await expect(
+      s.t.mutation(api.ops.archiveRow, { actingAs, input: { projectId: s.p[1] } }),
+    ).rejects.toThrow(/APPROVAL_NOT_FOUND/)
+  }
+  const actingAs = { kind: 'agent', caller, approvalId: asked.approvalId, followUp }
   vi.advanceTimersByTime(61 * 60_000)
   await expect(
     s.t.mutation(api.ops.archiveRow, { actingAs, input: { projectId: s.p[1] } }),
