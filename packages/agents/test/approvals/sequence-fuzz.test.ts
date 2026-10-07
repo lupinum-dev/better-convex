@@ -420,9 +420,12 @@ test(
           await play(steps)
         } catch (error) {
           const minimal = (await shrink(steps)).map((step) => JSON.stringify(step)).join('\n')
-          throw new Error(`${(error as Error).message}\nShortest failing steps:\n${minimal}`, {
-            cause: error,
-          })
+          throw new Error(
+            `${(error as Error).message}\nReplay with BCN_AUTH_FUZZ_CASES=${cases} too. Shortest failing steps:\n${minimal}`,
+            {
+              cause: error,
+            },
+          )
         }
       },
       'agents packages/agents/test/approvals/sequence-fuzz.test.ts',
