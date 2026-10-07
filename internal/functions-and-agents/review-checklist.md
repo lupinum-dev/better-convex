@@ -6,7 +6,7 @@ approvals, tools or the MCP door, and before you review such a change.
 Between 2026-10-06 and 2026-10-07, the walking skeleton's stress test and
 three Codex reviews of it (findings R11–R27 in its `STRESS.md`), a review
 with three lenses of the packages, and three Codex reviews of the branch
-found the problems below. Almost every P1 and P2 belongs to one of these
+found the problems below; two release reviews on 2026-10-07 added class 13. Almost every P1 and P2 belongs to one of these
 classes. Codex round 4 added classes 10 and 11. Each class names the questions to ask, the bugs
 that taught it, and the test that now guards it. The full list of
 invariants is in `plan.md` section 6.
@@ -72,6 +72,10 @@ not count as "allow".
   is not `allow`, `approve` or `deny` asks a person.
 - Earlier: a rule that throws asks a person; an unknown role grants nothing
   (`toString`, `__proto__`, K1).
+- Callback tables and the release review, 2026-10-07: a custom row rule, a
+  `publicRead` condition and an agent rule of `null` each counted a truthy or
+  empty value as allowed (an async condition returns a Promise, which is
+  truthy). Fixed: only `true` allows; `null` asks a person.
 
 Ask: what happens when this returns `undefined`, throws, or gets a prototype
 key? Tests: "an agent rule that returns no decision asks a person"
@@ -179,6 +183,25 @@ A guard written inside one branch of a decision protects only that branch.
 
 Ask: does this guard depend on the decision, or on the input? If on the
 input, it belongs before the branch.
+
+## 13. A check on the data instead of on what the person saw
+
+An approval protects what the person was shown. A check that compares the
+stored data can stay equal while the shown result changes.
+
+- Release review, 2026-10-07: approve compared only the rows the summary had
+  read, so a new row that matched the summary's query was archived too.
+- Release review 2: approve compared raw rows, including rows the rules hid
+  from the summary. When the agent got a role there, the hidden row became
+  visible, its raw fingerprint stayed equal, and the approved work archived
+  it. Fixed: the summary reads through a reader that records each row it is
+  shown; approve runs the summary again and compares the two sets. A row
+  that changed or went away fails as `STALE` before anything else runs.
+
+Ask: what did the person see, and does the check compare exactly that,
+under the rules that apply when the work runs? Tests: "approving checks
+what the summary read, also new matches" and "approving checks what the
+summary could not see" (`packages/agents/test/approvals`).
 
 ## Tools that find these classes
 

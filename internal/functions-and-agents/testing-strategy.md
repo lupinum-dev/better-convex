@@ -13,6 +13,12 @@ preview deployments of the Lupinum project `better-convex-live` (run by Codex
 from a maintainer machine). Open: the preview deploy key in the protected
 `live` GitHub environment, so `.github/workflows/live.yml` can run it.
 
+Release gate, 2026-10-07: two Codex reviews of the finished branch found
+three P1s (approve missed new matches, then rows that became visible; a
+`publicRead` condition that returned a Promise) and seven P2s, all fixed with
+a regression test and a mutant row. See review-checklist.md, classes 4, 12
+and 13.
+
 Where it is:
 
 - Mutants: `test/mutants/` (`pnpm test:mutants`, CI job `mutants`). Every
