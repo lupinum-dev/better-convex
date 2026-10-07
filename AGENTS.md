@@ -90,7 +90,7 @@ as parallel checks; run them locally when your change touches their area:
 ```bash
 pnpm test:integration  # real-backend auth, OAuth, MCP suites and the beta-to-1.0 upgrade
 pnpm test:e2e --full   # full-stack playground journeys, including test/e2e/extended
-pnpm test:starters     # every starter and the packed Vue/Nuxt/Agents consumers, from local tarballs
+pnpm test:starters     # every starter, the consumer apps and the packed Vue/Nuxt/Agents consumers, from local tarballs
 ```
 
 `pnpm build` builds the four packages, the docs site, and each package's
