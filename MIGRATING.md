@@ -31,7 +31,10 @@ If you already run the release candidate, check only these:
       `@lupinum/better-convex-mcp`, and import `handleMcpRequest`,
       `projectMcpToolError` and the verifier types from
       `@lupinum/better-convex-agents/mcp`, `listMcpCatalog` from
-      `@lupinum/better-convex-agents/test`.
+      `@lupinum/better-convex-agents/test`. Install
+      `@modelcontextprotocol/server@2.2.0` (rc.1 used `2.1.0`), and for MCP
+      Apps `@modelcontextprotocol/client@2.2.0` and
+      `@modelcontextprotocol/core@2.2.0`.
 - [ ] MCP: `defineMcpTool` and `registerMcpTool` are removed. With
       `@lupinum/better-convex-functions`, give the operation a `tool` field and
       collect the tools with `defineTools`; serve them with `createMcpServer`
