@@ -68,6 +68,19 @@ test.concurrent(
   },
 )
 
+// Round 1 review: a job's result went into the feed unchecked; a Date rolled back the job's work.
+test.concurrent(
+  'a job that returns a value Convex cannot store is a type error',
+  { timeout: 60_000 },
+  async () => {
+    const errors = await typeErrors('job', [
+      ['projects.ts', 'return { deleted: old.length }', 'return { at: new Date() }'],
+    ])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatch(/^projects\.ts/)
+  },
+)
+
 // X1: a new table must force a rule decision.
 test.concurrent(
   'a table without a rule is a type error that names it',

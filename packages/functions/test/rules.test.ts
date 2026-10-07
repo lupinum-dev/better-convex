@@ -299,3 +299,13 @@ test('an internal action that reached a raw function fails', async () => {
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
+
+// Round 1 review: a job got the raw ctx, so it could not call an internal operation, and its
+// result went into the activity feed unchecked.
+test('a job reaches internal operations as the system, and the feed keeps a marker for a large result', async () => {
+  const { t, pa } = await setup()
+  await t.mutation(fn('nightly'), { projectId: pa })
+  expect(((await t.run((ctx) => ctx.db.get(pa))) as { archived: boolean }).archived).toBe(true)
+  const [row] = await t.run((ctx) => ctx.db.query('activity').collect())
+  expect(row).toMatchObject({ action: 'job.nightly', result: { truncated: true, bytes: 100_002 } })
+})

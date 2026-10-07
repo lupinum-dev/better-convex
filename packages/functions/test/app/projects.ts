@@ -1,9 +1,23 @@
 import { fail, oneLine } from '@lupinum/better-convex-functions'
-import { paginationOptsValidator, paginationResultValidator } from 'convex/server'
+import {
+  anyApi,
+  paginationOptsValidator,
+  paginationResultValidator,
+  type ApiFromModules,
+  type FilterApi,
+  type FunctionReference,
+} from 'convex/server'
 import { v } from 'convex/values'
 
 import { job, mutation, query } from './functions'
+import type * as outside from './outside'
 import { role } from './schema'
+
+// What codegen's `internal` gives an app; the fixture has no codegen.
+const internal = anyApi as unknown as FilterApi<
+  ApiFromModules<{ outside: typeof outside }>,
+  FunctionReference<any, 'internal'>
+>
 
 const project = v.object({ id: v.id('projects'), name: v.string() })
 
@@ -123,6 +137,7 @@ export const cleanup = job({
       )
       .take(200)
     for (const { _id } of old) await ctx.db.delete(_id)
+    await ctx.scheduler.runAfter(0, internal.outside.ping, { url: 'https://monitor.example/ok' })
     return { deleted: old.length }
   },
 })

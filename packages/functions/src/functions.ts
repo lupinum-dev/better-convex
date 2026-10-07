@@ -25,6 +25,7 @@ import {
   type ObjectType,
   type PropertyValidators,
   type Validator,
+  type Value,
 } from 'convex/values'
 
 import {
@@ -50,7 +51,7 @@ import {
 } from './policy'
 import { checkedDb, tenancy, type Rule, type TenantRef } from './rules'
 import type { libraryTables } from './schema'
-import { jsonOf, type ValidatorJson } from './values'
+import { jsonOf, storable, type ValidatorJson } from './values'
 
 export type LibraryDataModel = DataModelFromSchemaDefinition<
   SchemaDefinition<typeof libraryTables, true>
@@ -840,11 +841,20 @@ export function defineFunctions<
     ) as unknown as FunctionReferenceTarget<'action', ObjectType<Args>, Infer<Returns>>
   }
 
-  /** Internal code run by the system: crons and scheduled work. Recorded as one activity row. */
+  /**
+   * Internal code run by the system: crons and scheduled work. Recorded as one
+   * activity row, with the result (a Convex value; a large one is kept as
+   * `{ truncated, bytes }`). `ctx.runQuery`, `runMutation`, `runAction` and
+   * `scheduler` reach internal operations and internal actions as the system,
+   * as in an operation.
+   */
   function job<Args extends PropertyValidators>(spec: {
     name: string
     args: Args
-    handler: (ctx: MCtx & { actor: SystemActor }, args: ObjectType<Args>) => Promise<unknown>
+    handler: (
+      ctx: MutationCtx & { actor: SystemActor },
+      args: ObjectType<Args>,
+    ) => Promise<Value | void>
   }) {
     // A job runs as the system, by design: crons and the cleanup they schedule.
     return guarded(
@@ -852,12 +862,23 @@ export function defineFunctions<
         args: spec.args,
         handler: async (ctx: MCtx, input: ObjectType<Args>) => {
           const actor: SystemActor = { kind: 'system', job: spec.name }
-          const result = await spec.handler({ ...ctx, actor }, input)
+          let tainted: unknown = null
+          const nested = nestedCalls(
+            ctx,
+            actor,
+            () => {},
+            () =>
+              (tainted ??= new Error(
+                'This job reached a function that is not an internal operation; nothing it did is kept.',
+              )),
+          )
+          const result = await spec.handler({ ...ctx, ...nested, actor } as never, input)
+          if (tainted) throw tainted
           await lib(ctx).insert('activity', {
             actor: { key: `system:${spec.name}`, kind: 'system', door: 'job', job: spec.name },
             action: `job.${spec.name}`,
             status: 'done',
-            result: result as never,
+            result: storable(result as Value | undefined),
           })
           return null
         },

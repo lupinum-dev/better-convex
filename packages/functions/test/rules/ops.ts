@@ -6,7 +6,7 @@ import {
 } from 'convex/server'
 import { v } from 'convex/values'
 
-import { internalAction, internalMutation, internalQuery, mutation, query } from './fns'
+import { internalAction, internalMutation, internalQuery, job, mutation, query } from './fns'
 
 /** A reference to one of this module's internal functions (no codegen in the fixture). */
 const internal = <T extends 'query' | 'mutation' | 'action'>(name: string) =>
@@ -407,5 +407,18 @@ export const scheduleRawAction = mutation({
   handler: async (ctx, { id }) => {
     await ctx.scheduler.runAfter(0, internal<'action'>('ops:rawFromAction'), { id })
     return null
+  },
+})
+
+/** A cron's job: archives through an internal operation, and returns more than the feed keeps. */
+export const nightly = job({
+  name: 'nightly',
+  args: { projectId: v.id('projects') },
+  handler: async (ctx, { projectId }) => {
+    await ctx.runMutation(
+      makeFunctionReference<'mutation'>('ops:archiveFor') as never,
+      { projectId } as never,
+    )
+    return 'x'.repeat(100_000)
   },
 })
