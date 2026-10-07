@@ -12,6 +12,7 @@ rounds. Read the file for your task instead of repeating the research.
 | [usage.py](usage.py)                       | want per-call numbers from a deployment's logs                                                       |
 | [platform-facts.md](platform-facts.md)     | depend on how Convex, convex-test, MCP hosts, Better Auth or Vercel behave                           |
 | [verdicts.md](verdicts.md)                 | consider an alternative design, an optimisation, or replacing the agent runtime                      |
+| [testing-strategy.md](testing-strategy.md) | change tests, CI lanes, the release checklist or the public test helpers                             |
 | [plan.md](plan.md)                         | need the phases, the definition of done, the security invariants (section 6) or the item list V1–V16 |
 
 Where the rest lives:
