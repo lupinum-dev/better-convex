@@ -39,6 +39,7 @@ export interface Equivalent {
 
 const F = 'packages/functions/test'
 const A = 'packages/agents/test'
+const inApp = `${A}/approvals/approvals.test.ts > an in-app agent step acts only on a live grant, in the current turn of a running run`
 
 export const mutants: Mutant[] = [
   {
@@ -662,6 +663,217 @@ export const mutants: Mutant[] = [
     kills: [
       `${A}/approvals/approvals.test.ts > an approver decides a request only when every row it touches is of the approver’s tenant`,
     ],
+  },
+  // In-app agent steps: a live grant, the current turn, a running run (T1).
+  {
+    id: 'S9-in-app-turn',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: "run.status !== 'running' || caller.turn !== run.turn",
+    replace: "run.status !== 'running'",
+    kills: [`${inApp}: 'step of turn 1, run in turn 2'`],
+    projects: ['agents'],
+  },
+  {
+    id: 'S9-in-app-waiting-run',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: "(run.status !== 'running' || caller.turn !== run.turn)",
+    replace: '(caller.turn !== run.turn)',
+    kills: [`${inApp}: 'run waiting'`],
+    projects: ['agents'],
+  },
+  {
+    id: 'S9-in-app-ended-run',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: "if (run.status === 'done' || run.status === 'failed')",
+    replace: 'if (false)',
+    kills: [`${inApp}: 'run done'`, `${inApp}: 'run failed'`],
+    projects: ['agents'],
+  },
+  {
+    id: 'S14-in-app-grant-expiry',
+    guards: 'S14',
+    file: 'packages/functions/src/functions.ts',
+    find: ' || grant.expiresAt <= Date.now()',
+    replace: '',
+    kills: [`${inApp}: 'grant expired'`],
+    projects: ['agents'],
+  },
+  // What handlers see of the actor, and how long approved follow-ups act (T2, T7).
+  {
+    id: 'C10-shown-internal-action',
+    guards: 'C10',
+    file: 'packages/functions/src/functions.ts',
+    find: 'actor: shown(who) }',
+    replace: 'actor: who }',
+    kills: [
+      `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'C10-shown-operation',
+    guards: 'C10',
+    file: 'packages/functions/src/functions.ts',
+    find: 'actor: shown(actor) }',
+    replace: 'actor }',
+    kills: [
+      `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'C1-follow-up-after-revoke',
+    guards: 'S14',
+    file: 'packages/functions/src/functions.ts',
+    find: 'const { user: authUser } = await auth',
+    replace:
+      'const { user: authUser } = options.approved ? { user: { id: caller.principal.userId } } : await auth',
+    kills: [
+      `${A}/approvals/approvals.test.ts > a follow-up of an approved request changes nothing after the person revokes the connection`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'C1-follow-up-window',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: 'Date.now() < row.decidedAt + followUpWindow &&',
+    replace: '',
+    kills: [
+      `${A}/approvals/approvals.test.ts > the same follow-up scheduled again after the hour changes nothing`,
+      `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
+    ],
+    projects: ['agents'],
+  },
+  // unguardedFunctions: the files it scans and the maps it refuses (B2).
+  {
+    id: 'S1-unguarded-skip-dots',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: '(file.match(/\\./g) ?? []).length <= 1',
+    replace: 'true',
+    kills: [
+      `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
+      `${F}/no-bypass.test.ts > only files Convex skips throws`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'S1-unguarded-skip-generated',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: "!segments.includes('_generated') && ",
+    replace: '',
+    kills: [
+      `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'S1-unguarded-empty-map',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: 'if (deployed.length === 0)',
+    replace: 'if (false)',
+    kills: [
+      `${F}/no-bypass.test.ts > an empty map throws`,
+      `${F}/no-bypass.test.ts > only files Convex skips throws`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'S1-unguarded-no-operations',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: 'if (!functions.some(([, fn]) => fn[OPERATION]))',
+    replace: 'if (false)',
+    kills: [`${F}/no-bypass.test.ts > no defineFunctions operation throws`],
+    projects: ['functions'],
+  },
+  {
+    id: 'S1-unguarded-trusted-routes',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: '.filter(([route]) => !trusted(route))',
+    replace: '',
+    kills: [
+      `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'S1-unguarded-trusted-marker',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: '!fn[OPERATION] && !fn[GUARDED]',
+    replace: '!fn[OPERATION]',
+    kills: [
+      `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
+    ],
+    projects: ['functions'],
+  },
+  // createBetterConvexTestAuth refuses to run outside a test runner (B1).
+  {
+    id: 'C9-test-auth-runner',
+    guards: 'C9',
+    file: 'src/runtime/convex-auth/test.ts',
+    find: '): BetterConvexAuth<DataModel, BetterConvexTestAuthInstance> {\n  requireTestRunner()\n',
+    replace: '): BetterConvexAuth<DataModel, BetterConvexTestAuthInstance> {\n',
+    kills: [
+      'test/convex/auth-component-limits.test.ts > auth component limits > refuses to sign in or grant outside a test runner',
+    ],
+    projects: ['convex'],
+  },
+  // The MCP transport bounds and the access verifier boundary.
+  {
+    id: 'S12-transport-declared-length',
+    guards: 'S12',
+    file: 'packages/agents/src/transport.ts',
+    find: 'if (bytes > maximumMcpRequestBytes) throw new McpTransportFailure(413)',
+    replace: 'if (false) throw new McpTransportFailure(413)',
+    kills: [
+      `${A}/mcp/transport.test.ts > MCP transport bounds > accepts the exact request limit and rejects declared or streamed overflow`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S12-transport-streamed-length',
+    guards: 'S12',
+    file: 'packages/agents/src/transport.ts',
+    find: 'if (total > maximumBytes) {',
+    replace: 'if (false) {',
+    kills: [
+      `${A}/mcp/transport.test.ts > MCP transport bounds > accepts the exact request limit and rejects declared or streamed overflow`,
+      `${A}/mcp/transport.test.ts > MCP transport bounds > bounds JSON responses and rejects streaming or non-JSON responses`,
+      `${A}/mcp/convex-handler.test.ts > Convex-native official MCP handler composition > enforces request bounds before protocol parsing or application construction`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S14-access-resource',
+    guards: 'S14',
+    file: 'packages/agents/src/access.ts',
+    find: "if (resource !== expectedResource) throw new TypeError('Unexpected access resource')",
+    replace: "if (false) throw new TypeError('Unexpected access resource')",
+    kills: [
+      `${A}/mcp/access-verifier.test.ts > provider-neutral MCP access verification boundary > rejects a verifier result with another resource`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S14-access-issuer',
+    guards: 'S14',
+    file: 'packages/agents/src/access.ts',
+    find: "if (issuer !== expectedIssuer) throw new TypeError('Unexpected access issuer')",
+    replace: "if (false) throw new TypeError('Unexpected access issuer')",
+    kills: [
+      `${A}/mcp/access-verifier.test.ts > provider-neutral MCP access verification boundary > rejects a verifier result with a rewritten issuer`,
+      `${A}/mcp/convex-handler.test.ts > Convex-native official MCP handler composition > rejects foreign issuers and never accepts a bearer from query or body`,
+    ],
+    projects: ['agents'],
   },
 ]
 
