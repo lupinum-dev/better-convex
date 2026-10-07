@@ -9,7 +9,7 @@ import type { ComponentApi } from '../../src/runtime/convex-auth/component/_gene
 import schema from '../../src/runtime/convex-auth/component/schema'
 import { createBetterConvexAuth } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import { requireMcpPrincipal } from '../../src/runtime/convex-auth/mcp-principal'
-import { grantMcp, signInAs } from '../../src/runtime/convex-auth/test'
+import { createBetterConvexTestAuth, grantMcp, signInAs } from '../../src/runtime/convex-auth/test'
 
 const rootModules = import.meta.glob('../fixtures/jwks-rotation/convex/**/*.ts')
 const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
@@ -185,6 +185,10 @@ describe('auth component limits', () => {
     const test = init()
     vi.stubEnv('VITEST', '')
     vi.stubEnv('NODE_ENV', 'production')
+    // A local dev backend passes the loopback check; the runner check must still refuse it.
+    vi.stubEnv('SITE_URL', 'http://localhost:3000')
+    vi.stubEnv('CONVEX_SITE_URL', 'http://127.0.0.1:3211')
+    expect(() => createBetterConvexTestAuth(component, {})).toThrow('AUTH_TEST_RUNNER_REQUIRED')
     await expect(signInAs(test, 'alice', { componentName: 'limits' })).rejects.toThrow(
       'AUTH_TEST_RUNNER_REQUIRED',
     )

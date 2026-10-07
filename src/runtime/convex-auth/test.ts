@@ -66,8 +66,8 @@ function requireLoopbackOrigin(name: 'CONVEX_SITE_URL' | 'SITE_URL'): void {
 }
 
 /**
- * The session and grant helpers write auth rows without the sign-in or consent flow: they run
- * only under a test runner (Vitest sets `VITEST`, test runners `NODE_ENV=test`), never in a
+ * The test auth unit and the session and grant helpers create authority without the sign-in or
+ * consent flow: they run only under a test runner (Vitest sets `VITEST`, test runners `NODE_ENV=test`), never in a
  * deployment, where neither is set.
  */
 function requireTestRunner(): void {
@@ -83,7 +83,8 @@ function requireLoopbackOrigins(): void {
 
 /**
  * Create the normal Better Convex auth unit with Better Auth's test helpers.
- * This entry refuses non-loopback runtimes and offers no arbitrary plugin seam.
+ * This entry refuses to run outside a test runner or on non-loopback origins, and offers no
+ * arbitrary plugin seam.
  */
 export function createBetterConvexTestAuth<
   DataModel extends GenericDataModel,
@@ -92,6 +93,7 @@ export function createBetterConvexTestAuth<
   component: Api,
   options: CreateBetterConvexAuthOptions<DataModel>,
 ): BetterConvexAuth<DataModel, BetterConvexTestAuthInstance> {
+  requireTestRunner()
   requireLoopbackOrigins()
   return createBetterConvexAuthOwned<DataModel, Api>(
     component,
