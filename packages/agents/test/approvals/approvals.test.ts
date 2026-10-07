@@ -547,6 +547,10 @@ test('a retry after a decline is told it was declined', async () => {
   const asked = await s.t.mutation(api.tools.archive_project, call)
   await s.ann.mutation(api.tools.decline, { approvalId: asked.approvalId })
   await expect(s.t.mutation(api.tools.archive_project, call)).rejects.toThrow(/APPROVAL_DECLINED/)
+  // Round 1 review: the same call without a request_id asked the person again.
+  await expect(
+    s.t.mutation(api.tools.archive_project, { caller, input: { projectId: s.p[0] } }),
+  ).rejects.toThrow(/APPROVAL_DECLINED/)
   expect(await s.approvalRows()).toHaveLength(1)
 })
 

@@ -420,6 +420,18 @@ export function defineTools(
                 summary: inertMarkdown(same.summary),
                 url: approvalUrl(same._id),
               }
+            // A person said no: the same call from this connection waits until that request would have expired.
+            const declined = await lib(ctx)
+              .query('approvals')
+              .withIndex('by_requester_status', (q) =>
+                q
+                  .eq('requester.key', requester.key)
+                  .eq('status', 'declined')
+                  .gt('expiresAt', Date.now()),
+              )
+              .take(openApprovals)
+            if (declined.some((row) => callKey(row.tool, row.input) === call))
+              fail('APPROVAL_DECLINED', 'A person declined this request.')
             if (open.length >= openApprovals) {
               fail(
                 'RATE_LIMITED',
