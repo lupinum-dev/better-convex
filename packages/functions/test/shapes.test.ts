@@ -117,12 +117,17 @@ test('K3: nested tenants: the agency reaches its clients and their projects; a c
   )
 })
 
-test('K3: a client is created only under an agency where the role allows it', async () => {
-  const { ann, agency, other } = await withAgency()
+test('K3: a client is created only under the agency the call names, where the role allows it', async () => {
+  const { t, ann, agency, other, users } = await withAgency()
+  const plant = () =>
+    ann.mutation(fn('agencies:createClient'), { agencyId: agency, name: 'Planted', under: other })
   await ann.mutation(fn('agencies:createClient'), { agencyId: agency, name: 'New client' })
-  await expect(
-    ann.mutation(fn('agencies:createClient'), { agencyId: agency, name: 'Planted', under: other }),
-  ).rejects.toThrow(/NOT_FOUND/)
+  await expect(plant()).rejects.toThrow(/NOT_FOUND/)
+  // An owner of both agencies still cannot plant under the one the call does not name.
+  await t.run((ctx) =>
+    ctx.db.insert('agencyMembers', { agencyId: other, userId: users.ann, role: 'owner' }),
+  )
+  await expect(plant()).rejects.toThrow(/NOT_FOUND/)
 })
 
 // K2: two tenant kinds through one roleOf; a call spanning them was impossible.

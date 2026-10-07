@@ -92,9 +92,13 @@ export const projectsOfAgencyClient = query({
 
 export const createClient = mutation({
   action: 'clients.create',
-  args: { agencyId: v.id('agencies'), name: v.string(), under: v.optional(v.id('agencies')) },
+  args: { agencyId: v.id('agencies'), name: v.string(), under: v.optional(v.string()) },
   returns: v.id('clients'),
-  // `under` lets a test plant a client under another agency than the one the call names.
+  // `under` lets a test plant a client under another agency than the one the call names. A plain
+  // string, so the argument check cannot see it and the insert's parent check must.
   handler: async (ctx, { agencyId, name, under }) =>
-    ctx.db.insert('clients', { agencyId: under ?? agencyId, name }),
+    ctx.db.insert('clients', {
+      agencyId: (under && ctx.db.normalizeId('agencies', under)) || agencyId,
+      name,
+    }),
 })
