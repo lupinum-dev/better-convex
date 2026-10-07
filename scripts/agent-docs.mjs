@@ -135,6 +135,7 @@ const focus = {
       'An operation on an `anyOf` table names its tenant in its own arguments (`organizationId`).',
       'Fail with `fail(code, message)` and an `ErrorCode`. Any other error reaches callers as a generic message.',
       'Call follow-up work with `ctx.runQuery`, `ctx.runMutation` or `ctx.scheduler` from the handler, and build the target with `internalQuery`, `internalMutation` or `internalAction` from `defineFunctions`.',
+      'Start a `job` only from a cron or another job. A call or schedule of a job from an operation or an internal action type-checks but fails when it runs; write a row that the job reads at its next run instead.',
     ],
   },
   '@lupinum/better-convex-agents': {
