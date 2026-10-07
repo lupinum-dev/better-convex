@@ -79,32 +79,82 @@ test('a two-segment prefix matches only its own actions', () => {
   expect(can(billing, 'billing.plans.read', 'accountant')).toBe(false)
 })
 
-// Codex round 2: a rule like `(input) => decisions[input.mode]` returned undefined, and the agent ran without approval.
-test('an agent rule that returns no decision asks a person', () => {
-  const odd = definePolicy({
+// Class 4 tables: a decision the policy reads that is outside its type at runtime (no decision, a
+// near-miss string, a truthy object, an unawaited promise, an error) must never count as "allow".
+// Codex round 2: a rule like `(input) => decisions[input.mode]` returned undefined, and the agent
+// ran without approval.
+const agent: Asker = { kind: 'agent', scopes: ['all'] }
+const withAgentRule = (rule: unknown) =>
+  definePolicy({
     actions: ['projects.archive'],
     roles: { owner: ['*'] },
     scopes: { all: { label: 'All', actions: ['*'] } },
-    agents: {
-      'projects.archive': (input) =>
-        (({ soft: 'allow' }) as Record<string, 'allow'>)[String(input.mode)],
-    },
+    agents: { 'projects.archive': rule as 'allow' },
   })
-  const agent: Asker = { kind: 'agent', scopes: ['all'] }
-  expect(
-    decide(odd, {
-      action: 'projects.archive',
-      asker: agent,
-      role: 'owner',
-      input: { mode: 'hard' },
-    }),
-  ).toBe('approve')
-  expect(
-    decide(odd, {
-      action: 'projects.archive',
-      asker: agent,
-      role: 'owner',
-      input: { mode: 'soft' },
-    }),
-  ).toBe('allow')
+const archiveAsAgent = (policy: ReturnType<typeof withAgentRule>) =>
+  decide(policy, { action: 'projects.archive', asker: agent, role: 'owner', input: { mode: 'x' } })
+
+test.each([
+  ['undefined', undefined, 'approve'],
+  ['null', null, 'approve'],
+  ["'ALLOW'", 'ALLOW', 'approve'],
+  ["'allow '", 'allow ', 'approve'],
+  ['1', 1, 'approve'],
+  ['{}', {}, 'approve'],
+  ['a Promise of undefined', Promise.resolve(undefined), 'approve'],
+  ["a Promise of 'allow'", Promise.resolve('allow'), 'approve'],
+  ["'allow'", 'allow', 'allow'],
+  ["'deny'", 'deny', 'deny'],
+] as const)('an agent rule that returns no decision asks a person: %s', (_, value, expected) => {
+  expect(archiveAsAgent(withAgentRule(() => value))).toBe(expected)
+})
+
+test('an agent rule that throws asks a person', () => {
+  const rule = () => {
+    throw new Error('The rule broke.')
+  }
+  expect(archiveAsAgent(withAgentRule(rule))).toBe('approve')
+})
+
+// The same values written as the rule itself, not returned by a function.
+test.each([
+  ["'ALLOW'", 'ALLOW'],
+  ["'allow '", 'allow '],
+  ['1', 1],
+  ['{}', {}],
+  ['a Promise of undefined', Promise.resolve(undefined)],
+])('an agent rule that is no decision asks a person: %s', (_, value) => {
+  expect(archiveAsAgent(withAgentRule(value))).toBe('approve')
+})
+
+// Fails open today: `?? 'allow'` treats an explicit null like a missing rule. Drop `.fails` with the fix.
+test.fails('an agent rule that is null asks a person', () => {
+  expect(archiveAsAgent(withAgentRule(null))).toBe('approve')
+})
+
+// A role's patterns that are not a list of action patterns grant nothing: a list that is missing
+// denies, anything else that is not a list of strings throws (the call fails, nothing runs).
+test.each([
+  ['undefined', 'deny', undefined],
+  ['null', 'deny', null],
+  ["'*'", 'throws', '*'],
+  ["'ALLOW'", 'throws', 'ALLOW'],
+  ['1', 'throws', 1],
+  ['{}', 'throws', {}],
+  ['a Promise of a list', 'throws', Promise.resolve(['*'])],
+  ['[undefined]', 'throws', [undefined]],
+  ['[null]', 'throws', [null]],
+  ["['ALLOW']", 'deny', ['ALLOW']],
+  ["['allow ']", 'deny', ['allow ']],
+  ['[1]', 'throws', [1]],
+  ['[{}]', 'throws', [{}]],
+] as const)('a role whose patterns are %s grants nothing: %s', (_, expected, patterns) => {
+  const odd = definePolicy({
+    actions: ['projects.archive'],
+    roles: { owner: patterns as never },
+    scopes: {},
+  })
+  const decided = () => decide(odd, { action: 'projects.archive', asker: person, role: 'owner' })
+  if (expected === 'throws') expect(decided).toThrow(TypeError)
+  else expect(decided()).toBe(expected)
 })

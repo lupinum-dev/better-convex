@@ -60,6 +60,8 @@ const marketplace = `${consumers}/marketplace/convex`
 const marketplaceLeaks = `${marketplace}/marketplace.test.ts > no call reaches another organization's order or draft`
 const sites = `${consumers}/sites/convex`
 const sitesLeaks = `${sites}/sites.test.ts > no call reaches another organization's site`
+const callbacks = `${A}/callbacks/callbacks.test.ts`
+const agentRule = `${F}/policy.test.ts > an agent rule that`
 const journey =
   'test/integration/mcp-auth.integration.test.ts > MCP OAuth starter end to end > lets a person decide an agent request on the link the agent gives'
 
@@ -801,6 +803,8 @@ export const mutants: Mutant[] = [
     replace: 'return role !== null',
     kills: [
       `${A}/approvals/approvals.test.ts > a co-owner may decide a request through \`approvers\`; a viewer may not`,
+      `${callbacks} > an approver whose roleOf returns undefined`,
+      `${callbacks} > an approver whose roleOf returns 'ALLOW'`,
     ],
   },
   {
@@ -888,6 +892,7 @@ export const mutants: Mutant[] = [
     replace: 'actor: who }',
     kills: [
       `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
+      `${callbacks} > internal action, follow-up of an approved request receives exactly these keys`,
     ],
     projects: ['agents'],
   },
@@ -899,8 +904,98 @@ export const mutants: Mutant[] = [
     replace: 'actor }',
     kills: [
       `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
+      `${callbacks} > mutation handler, agent acting under a person’s approval receives exactly these keys`,
+      `${callbacks} > internal mutation, follow-up of an approved request receives exactly these keys`,
     ],
     projects: ['agents'],
+  },
+  // shown() itself, and the other callbacks (classes 2, 4, 10): packages/agents/test/callbacks.
+  {
+    id: 'C10-shown-approval-id',
+    guards: 'C10',
+    file: 'packages/functions/src/functions.ts',
+    find: '    approvalId: _approval,\n',
+    replace: '',
+    kills: [
+      `${callbacks} > mutation handler, agent acting under a person’s approval receives exactly these keys`,
+      `${callbacks} > internal query run under a person’s approval receives exactly these keys`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'C10-shown-follow-up',
+    guards: 'C10',
+    file: 'packages/functions/src/functions.ts',
+    find: '    followUp: _followUp,\n',
+    replace: '',
+    kills: [
+      `${callbacks} > internal mutation, follow-up of an approved request receives exactly these keys`,
+      `${callbacks} > internal action, follow-up of an approved request receives exactly these keys`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'C2-summary-db',
+    guards: 'C2',
+    file: 'packages/agents/src/tools.ts',
+    find: 'db: { get: db.get, query: db.query, normalizeId: db.normalizeId },',
+    replace: 'db,',
+    kills: [`${callbacks} > approval summary, agent at the MCP door receives exactly these keys`],
+    projects: ['agents'],
+  },
+  {
+    id: 'C2-summary-scheduler',
+    guards: 'C2',
+    file: 'packages/agents/src/tools.ts',
+    find: 'runAction: _a, scheduler: _s, ...rest',
+    replace: 'runAction: _a, ...rest',
+    kills: [`${callbacks} > approval summary, agent at the MCP door receives exactly these keys`],
+    projects: ['agents'],
+  },
+  {
+    id: 'C2-summary-run-query',
+    guards: 'C2',
+    file: 'packages/agents/src/tools.ts',
+    find: 'const { db, storage, runQuery: _q, ',
+    replace: 'const { db, storage, ',
+    kills: [`${callbacks} > approval summary, agent at the MCP door receives exactly these keys`],
+    projects: ['agents'],
+  },
+  {
+    id: 'C4-agent-rule-decision',
+    guards: 'C4',
+    file: 'packages/functions/src/policy.ts',
+    find: "return decisions.includes(decision) ? (decision as Decision) : 'approve'",
+    replace: "return (decision ?? 'approve') as Decision",
+    kills: [
+      `${agentRule} returns no decision asks a person: 'ALLOW'`,
+      `${agentRule} returns no decision asks a person: 'allow '`,
+      `${agentRule} returns no decision asks a person: 1`,
+      `${agentRule} returns no decision asks a person: {}`,
+      `${agentRule} returns no decision asks a person: a Promise of undefined`,
+      `${agentRule} is no decision asks a person: 'ALLOW'`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'C4-agent-rule-throws',
+    guards: 'C4',
+    file: 'packages/functions/src/policy.ts',
+    find: "    } catch {\n      return 'approve'\n    }",
+    replace: "    } catch {\n      return 'allow'\n    }",
+    kills: [`${agentRule} throws asks a person`],
+    projects: ['functions'],
+  },
+  {
+    // A "lenient" role lookup that accepts one pattern for a list turns `owner: '*'` into a grant.
+    id: 'C4-role-patterns-list',
+    guards: 'C4',
+    file: 'packages/functions/src/policy.ts',
+    find: 'return matches(own(policy.roles as Record<string, readonly string[]>, role) ?? [], action)',
+    replace:
+      'return matches([own(policy.roles as Record<string, readonly string[]>, role) ?? []].flat(), action)',
+    kills: [`${F}/policy.test.ts > a role whose patterns are '*' grants nothing: throws`],
+    projects: ['functions'],
   },
   {
     id: 'C1-follow-up-after-revoke',
@@ -1081,10 +1176,55 @@ export const mutants: Mutant[] = [
     id: 'S12-transport-declared-length',
     guards: 'S12',
     file: 'packages/agents/src/transport.ts',
-    find: 'if (bytes > maximumMcpRequestBytes) throw new McpTransportFailure(413)',
-    replace: 'if (false) throw new McpTransportFailure(413)',
+    find: 'if (bytes > maximumMcpRequestBytes) {',
+    replace: 'if (false) {',
     kills: [
       `${A}/mcp/transport.test.ts > MCP transport bounds > accepts the exact request limit and rejects declared or streamed overflow`,
+    ],
+    projects: ['agents'],
+  },
+  // Cloud smoke, 2026-10-07: Convex's edge answers 520 for a 413 sent while the client uploads.
+  {
+    id: 'S12-refused-upload-declared-drain',
+    guards: 'S12',
+    file: 'packages/agents/src/transport.ts',
+    find: 'await discard(request.body.getReader(), signal)',
+    replace: 'void 0',
+    kills: [
+      `${A}/mcp/transport.test.ts > MCP transport bounds > reads a refused upload to its end only up to 4 MiB: 'declared, 1 MiB'`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S12-refused-upload-streamed-drain',
+    guards: 'S12',
+    file: 'packages/agents/src/transport.ts',
+    find: 'if (failureStatus === 413) await discard(reader, signal)',
+    replace: 'if (false) await discard(reader, signal)',
+    kills: [
+      `${A}/mcp/transport.test.ts > MCP transport bounds > reads a refused upload to its end only up to 4 MiB: 'streamed, 1 MiB'`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S12-refused-upload-cap',
+    guards: 'S12',
+    file: 'packages/agents/src/transport.ts',
+    find: 'while (total <= maximumMcpRefusedUploadBytes && ',
+    replace: 'while (',
+    kills: [
+      `${A}/mcp/transport.test.ts > MCP transport bounds > reads a refused upload to its end only up to 4 MiB: 'streamed, 5 MiB'`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S12-refused-upload-declared-cap',
+    guards: 'S12',
+    file: 'packages/agents/src/transport.ts',
+    find: ' && bytes <= maximumMcpRefusedUploadBytes',
+    replace: '',
+    kills: [
+      `${A}/mcp/transport.test.ts > MCP transport bounds > reads a refused upload to its end only up to 4 MiB: 'declared, 5 MiB'`,
     ],
     projects: ['agents'],
   },
