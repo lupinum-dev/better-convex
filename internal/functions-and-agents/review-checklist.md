@@ -168,6 +168,26 @@ back lose one addition.
 Ask: can two calls in the same transaction, or two transactions, interleave
 here? Prefer a value that is written once over a list that grows.
 
+## 12. A check on one branch that every branch needs
+
+A guard written inside one branch of a decision protects only that branch.
+
+- Sequence fuzz, 2026-10-07: the check that a `request_id` names one call ran
+  only for calls that ask a person. A call that runs at once could reuse the
+  key of a waiting request. Fixed: the check runs before the decision.
+- Class 7 (insert versus update) is the same pattern for writes.
+
+Ask: does this guard depend on the decision, or on the input? If on the
+input, it belongs before the branch.
+
+## Tools that find these classes
+
+`pnpm test:mutants` proves that each guard has a test that fails without it.
+The sequence fuzz (classes 1, 4, 5, 11, 12) and the callback tables (classes
+2, 4, 10) find new instances; see testing-strategy.md, "Three more checks".
+A new callback the library hands to app code gets a row in the callback
+table; a new decision point gets a bad-value table.
+
 ## How to review a change here
 
 1. Name the invariant the change touches (`plan.md` section 6). If it is

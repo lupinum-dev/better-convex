@@ -8,9 +8,10 @@ docs-slice.
 ## Status
 
 Built on `feat/functions-and-agents`, 2026-10-07. Items 1–12 of the
-implementation plan are in the code. One thing is open: the first `live` run
-in the cloud. It needs the Lupinum-org Convex project, its preview deploy key
-in the protected `live` environment, and one run of `.github/workflows/live.yml`.
+implementation plan are in the code. The cloud smoke ran green three times on
+preview deployments of the Lupinum project `better-convex-live` (run by Codex
+from a maintainer machine). Open: the preview deploy key in the protected
+`live` GitHub environment, so `.github/workflows/live.yml` can run it.
 
 Where it is:
 
@@ -54,11 +55,28 @@ What changed from the design, and why:
 - The cloud smoke accepts only a preview deploy key (decision 1). The dev
   fallback with a purge overlay is not built. It installs the built packages
   as copies (`dist` and `package.json`), as the integration lane does, not
-  the packed tarballs; `pnpm test:starters` checks the tarballs. The journey
-  passed as a dry run on the local backend (`BCN_LIVE_LOCAL=1`); the cloud
-  path (deploy, `--preview-name` for `env set` and `run`) is not yet proven.
+  the packed tarballs; `pnpm test:starters` checks the tarballs.
 - `S14-token-expiry` is guarded only in the `convex` project. The door test
   uses a fake token verifier that does not check expiry.
+
+### Three more checks, added after the build
+
+The review rounds before this work found P1s by reading code. To find the next
+ones with tests instead, three checks were added for the bug classes behind
+most of them. Each found real bugs on its first run:
+
+| Check                                                                                                                                                       | File                                                    | Bug classes | Found                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------- |
+| Sequence fuzz: random agent calls, decisions, revokes, run ends and clock steps; after each step a database diff is checked against what someone may change | `packages/agents/test/approvals/sequence-fuzz.test.ts`  | 1, 4, 5, 11 | A `request_id` of a waiting request accepted for another call that runs at once                   |
+| Callback snapshot: the exact keys each app callback gets (handlers, summaries, rules, `roleOf`, `user`, every actor kind)                                   | `packages/agents/test/callbacks/callbacks.test.ts`      | 2, 10       | Custom rules saw the approval's credentials; rules, `roleOf` and `user` got the mutation's writer |
+| Bad return values at every decision point (`undefined`, `null`, `'ALLOW'`, `1`, `{}`, a promise, a throw)                                                   | same file, and `packages/functions/test/policy.test.ts` | 4           | A custom rule that returned a truthy non-boolean passed; an agent rule of `null` allowed          |
+
+The cloud smoke found one more: Convex's edge turned the door's empty 413
+into a 520 (platform-facts.md). Codex then reproduced it and measured the fix.
+
+The sequence fuzz kills its mutants in only about 3–6 % of random cases. The
+48 default cases are enough today; re-prove its rows after a generator change.
+`BCN_AUTH_FUZZ_CASES=500` runs 2,000 cases in about 30 seconds.
 
 This document decides two things:
 
