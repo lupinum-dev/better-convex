@@ -157,6 +157,29 @@ describe('auth component limits', () => {
     await expect(admitted(bob)).rejects.toThrow('MCP access denied')
   })
 
+  // Codex round 4: after a revocation each helper made its own new session, so a sign-out on the
+  // web left MCP access standing.
+  it('shares the new session after a revocation, so one sign-out still ends both', async () => {
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.example.test')
+    const test = init()
+    await signInAs(test, 'alice', { componentName: 'limits' })
+    await test.mutation(adapter.deleteMany, {
+      model: 'session',
+      where: [{ field: 'userId', value: 'alice' }],
+    })
+    const web = await signInAs(test, 'alice', { componentName: 'limits' })
+    const mcp = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    expect((await web.query((ctx) => ctx.auth.getUserIdentity()))?.sid).toBe(mcp.sessionId)
+    await test.mutation(adapter.deleteOne, {
+      model: 'session',
+      where: [{ field: 'id', value: mcp.sessionId }],
+    })
+    await expect(test.run((ctx) => requireMcpPrincipal(ctx, component, mcp))).rejects.toThrow(
+      'MCP access denied',
+    )
+  })
+
   // Codex round 3: grantMcp minted a live grant under NODE_ENV=production, outside any test runner.
   it('refuses to sign in or grant outside a test runner', async () => {
     const test = init()
