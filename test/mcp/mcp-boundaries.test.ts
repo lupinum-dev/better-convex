@@ -43,14 +43,18 @@ describe('delegated MCP static trust boundaries', () => {
   })
 
   it('never puts the raw token or a second MCP secret in function arguments or state', () => {
-    const source = files(join(starter, 'convex'))
-      .filter((path) => path.endsWith('.ts'))
-      .map((path) => `// ${relative(root, path)}\n${readFileSync(path, 'utf8')}`)
-      .join('\n')
+    const paths = files(join(starter, 'convex')).filter((path) => path.endsWith('.ts'))
+    const text = (list: string[]) =>
+      list.map((path) => `// ${relative(root, path)}\n${readFileSync(path, 'utf8')}`).join('\n')
+    const source = text(paths)
     expect(source).not.toContain('MCP_SERVER_SECRET')
     expect(source).not.toMatch(/bearerToken|rawToken|accessToken\s*:/)
     expect(source).not.toMatch(/principal\s*:\s*v\.any/)
-    expect(source).not.toContain('components.betterAuth.adapter')
+    // Deployed code reaches auth rows only through the auth library. Tests, which Convex does not
+    // deploy, may set up and end sessions through the adapter.
+    const deployed = text(paths.filter((path) => !/(?:\.test|\/test\.setup)\.ts$/.test(path)))
+    expect(deployed).toContain('// starters/mcp-oauth-agent/convex/auth.ts')
+    expect(deployed).not.toContain('components.betterAuth.adapter')
   })
 
   it('binds connection management to the signed-in user and keeps provisioning internal', () => {
