@@ -17,8 +17,8 @@ import { tools } from './tools'
 // change against permission facts the test tracks from the steps it made (`may`, `decidable`),
 // with the fixture's policy as literal maps. A failure prints its seed, a replay command and the
 // shortest step list that still fails. Long runs: BCN_AUTH_FUZZ_CASES=500.
-// Long runs still meet one open finding (I3, a request_id that names two calls): see the
-// `.fails` test in approvals.test.ts.
+// It found one bug so far (I3, a request_id that named two calls); its regression test is in
+// approvals.test.ts.
 
 type Agent = 'annMcp' | 'annApp' | 'malMcp'
 type Person = 'ann' | 'olga' | 'vic' | 'mallory'

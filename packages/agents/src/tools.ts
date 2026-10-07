@@ -445,22 +445,22 @@ export function defineTools(
               }
               return { status: 'done' as const, result: earlier.result }
             }
+            // A key that names a request still waiting names that call, also for a call that would
+            // run at once (sequence fuzz, 2026-10-07). This check guards every request with the
+            // key, so they all name one call and the first one tells which.
+            const asked = await lib(ctx)
+              .query('approvals')
+              .withIndex('by_requester_request', (q) =>
+                q.eq('requester.key', requester.key).eq('requestId', requestId),
+              )
+              .first()
+            if (asked && callKey(asked.tool, asked.input) !== call)
+              fail(
+                'REQUEST_ID_REUSED',
+                'This request_id was used for a different call. Send a new one.',
+              )
           }
           if (decision === 'approve') {
-            if (requestId !== undefined) {
-              const sameKey = await lib(ctx)
-                .query('approvals')
-                .withIndex('by_requester_request', (q) =>
-                  q.eq('requester.key', requester.key).eq('requestId', requestId),
-                )
-                .take(20)
-              if (sameKey.some((row) => callKey(row.tool, row.input) !== call)) {
-                fail(
-                  'REQUEST_ID_REUSED',
-                  'This request_id was used for a different call. Send a new one.',
-                )
-              }
-            }
             const open = await lib(ctx)
               .query('approvals')
               .withIndex('by_requester_status', (q) =>
