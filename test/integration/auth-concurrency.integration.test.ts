@@ -58,8 +58,10 @@ const compoundAccountProvider = 'bcn-compound-race'
 // Same value test/helpers/local-convex.ts provisions for the playground deployment.
 const proxyIpSecret = 'better-convex-nuxt-e2e-proxy-ip-secret-32-bytes'
 const authOrigin = 'http://localhost:3050'
-// The WebSocket admission close was reviewed against this backend source commit.
-const admissionGuardSourceCommit = '44f7aa7f7ffc35ac56d8fada8e864aecb03f27f8'
+// The WebSocket admission close was reviewed against this backend source commit
+// (precompiled-2026-09-28: crates/sync/src/worker.rs and crates/application/src/api.rs reject
+// non-root component paths for non-admin identities before execution, unchanged since 44f7aa7).
+const admissionGuardSourceCommit = '5c7cb5bc7db457290f1769f95f1d1340912f7fd7'
 const totalRequests = 200
 const lanes = 20
 const iterations = totalRequests / lanes
@@ -388,10 +390,12 @@ describe('auth adapter on the pinned backend', () => {
     }
   })
 
-  it('runs on a backend without URL.canParse, as the OAuth provider fill expects', async () => {
+  // precompiled-2026-09-28 supplies URL.canParse, so installUrlCanParseCompatibility does nothing
+  // here. It stays for deployments on older runtimes; this check says when the pin changes again.
+  it('runs on a backend with URL.canParse, so the OAuth provider fill stays idle', async () => {
     const capabilities = await client.query(race.runtimeCapabilities, {})
     expect(capabilities, 'AUTH_RUNTIME_URL_CAN_PARSE_CAPABILITY_DRIFT').toEqual({
-      urlCanParse: 'undefined',
+      urlCanParse: 'function',
     })
   })
 

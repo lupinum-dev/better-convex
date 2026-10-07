@@ -1,21 +1,21 @@
 {
   "schemaVersion": 1,
   "convexVersion": "1.42.2",
-  "backendVersion": "precompiled-2026-07-06-44f7aa7",
+  "backendVersion": "precompiled-2026-09-28-5c7cb5b",
   "artifacts": [
     {
       "platform": "darwin",
       "arch": "arm64",
       "filename": "convex-local-backend-aarch64-apple-darwin.zip",
-      "archiveSha256": "764f2f430b3de5b4debe7a613529d2531ccfd125d22b269c8e3664807f318d5d",
-      "sha256": "3d28873cf24019877146367c539104d54a05a9b8ec1b501e503077474c84415d"
+      "archiveSha256": "c1613bb4a3ac884871184020662c865a045cde95ad781fff002a6bd25f2f2890",
+      "sha256": "c6290f5a86bc2f6b31a931833c25106ccc06c0c8c9f0894c35f2d7cecf1fd676"
     },
     {
       "platform": "linux",
       "arch": "x64",
       "filename": "convex-local-backend-x86_64-unknown-linux-gnu.zip",
-      "archiveSha256": "704f08b3b46d6aef371767b3ed59d5dad89b280e102216d59b7891bb5b033d53",
-      "sha256": "162b0e7f1128991ed115b2a9e608bfd0c631198f66c95f3c15303680ec2297a0"
+      "archiveSha256": "5b4adbe9fc2f9985c66eb12b19dadedf2700d8796c839ddba09802196099f241",
+      "sha256": "7ebc6a4696499640c2f2255395990b4f8b901b045388a0ced2ac765b81ebadae"
     }
   ]
 }
