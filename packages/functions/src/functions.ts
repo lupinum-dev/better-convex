@@ -854,6 +854,7 @@ export function defineFunctions<
     handler: (
       ctx: MutationCtx & { actor: SystemActor },
       args: ObjectType<Args>,
+      // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- a job may return nothing
     ) => Promise<Value | void>
   }) {
     // A job runs as the system, by design: crons and the cleanup they schedule.
