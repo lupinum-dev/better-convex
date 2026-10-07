@@ -124,6 +124,7 @@
     "test:integration": "pnpm build:packages && vitest run --project=integration && node test/integration/check-auth-schema.mjs",
     "test:e2e": "pnpm --filter ./packages/vue build && node scripts/run-e2e.mjs",
     "test:starters": "pnpm build && node test/packed/check-starters.mjs",
+    "test:mutants": "nuxt-module-build prepare && node test/mutants/run.ts",
     "docs:dev": "pnpm --dir docs install --frozen-lockfile --ignore-scripts && pnpm --dir docs dev",
     "docs:build": "pnpm --dir docs install --frozen-lockfile --ignore-scripts && pnpm --dir docs build",
     "verify": "pnpm lint && pnpm build:packages && pnpm typecheck:prepared && pnpm test:prepared && pnpm build:prepared && pnpm test:packed && pnpm audit --audit-level=high && pnpm --dir docs audit --audit-level=high && pnpm --dir demo audit --audit-level=high",

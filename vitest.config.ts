@@ -5,6 +5,8 @@ import vue from '@vitejs/plugin-vue'
 import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vitest/config'
 
+import { mutantPlugin } from './test/mutants/plugin'
+
 // Keep package subpaths before the root alias; integration and E2E use the build.
 const vueSourceAliases = {
   '@lupinum/better-convex-vue/internal': fileURLToPath(
@@ -56,6 +58,10 @@ const agentsSourceAliases = {
   ),
 }
 
+// `pnpm test:mutants` (BC_MUTANT=<id>) applies one mutant in memory. Without BC_MUTANT it does
+// nothing. Inline projects do not inherit root plugins, so each project a mutant row names lists it.
+const mutant = mutantPlugin(fileURLToPath(new URL('.', import.meta.url)))
+
 /**
  * Vitest projects
  *
@@ -78,6 +84,7 @@ export default defineConfig({
       // Fast (<1s). Use the prepared `pnpm test` gate, or prepare generated
       // root types before invoking this project directly.
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             ...vueSourceAliases,
@@ -134,6 +141,7 @@ export default defineConfig({
       // client journey runs in the integration project. The starter's own tests
       // run here from source, and in `pnpm test:starters` against the packed packages.
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             ...vueSourceAliases,
@@ -158,6 +166,7 @@ export default defineConfig({
       // Functions package: row rules, policy, no-bypass, budgets and type tests against its
       // fixture apps (packages/functions/test). convex-test runs here as in the skeleton.
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             // The subpath entry must precede the root entry it extends.
@@ -180,6 +189,7 @@ export default defineConfig({
       // Agents package: tools, approvals, limits, activity and the MCP door against its fixture apps
       // (packages/agents/test), through convex-test's HTTP router with the real MCP SDK.
       {
+        plugins: [mutant],
         resolve: { alias: agentsSourceAliases },
         test: {
           name: 'agents',
@@ -193,6 +203,7 @@ export default defineConfig({
 
       // Security regressions, including the OAuth provider and resource-server suites.
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             ...vueSourceAliases,
@@ -213,6 +224,7 @@ export default defineConfig({
       // Uses convex-test with edge-runtime
       // Fast (~5s) - run with `pnpm test`
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             ...vueSourceAliases,
