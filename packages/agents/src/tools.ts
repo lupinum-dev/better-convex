@@ -190,7 +190,6 @@ export async function toolCall(
  * nothing; a write here would land before anyone decides (Codex review, round 1).
  * No `runQuery` either: a nested query's reads escape the stale check (round 2).
  */
-/** An approval summary reads only what the fingerprint sees: no nested queries either. */
 function summaryCtx<C extends object>(ctx: C) {
   const { runQuery: _query, ...rest } = readOnly(ctx) as C & { runQuery?: unknown }
   return rest
