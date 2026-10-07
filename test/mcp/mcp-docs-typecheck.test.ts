@@ -234,6 +234,13 @@ const starterProject: VirtualProject = {
   ),
 }
 
+/** Testing-page blocks that are not starter files: tests of the example app the earlier pages build. */
+const testingSamples: VirtualProject = Object.fromEntries(
+  Object.entries(appFiles(testingPage)).filter(
+    ([path]) => !(path in starterProject) || path === 'convex/test.setup.ts',
+  ),
+)
+
 const samples: Record<string, VirtualProject> = {
   recipe: {
     ...generated,
@@ -276,6 +283,10 @@ const samples: Record<string, VirtualProject> = {
   starter: starterProject,
   'example-app': appProject(...exampleApp),
   'internal-operations': appProject(...exampleApp, functionsPage('4.internal-operations')),
+  testing: {
+    ...appProject(...exampleApp, functionsPage('4.internal-operations')),
+    ...testingSamples,
+  },
   'tools-and-approvals': appProject(...exampleApp, agentsPage('1.tools-and-approvals')),
   'mcp-door': appProject(
     ...exampleApp,
@@ -392,8 +403,12 @@ describe('MCP documentation samples typecheck against the real exports', () => {
 
   it('shows the starter’s tests on the testing page, unchanged', () => {
     const shown = [...testingPage.matchAll(/^```ts \[([^\]]+)\]$/gmu)].map(([, path]) => path!)
-    expect(shown.length).toBeGreaterThan(0)
-    for (const path of shown) expect(block(testingPage, path)).toBe(starterProject[path])
+    const fromStarter = shown.filter((path) => path in starterProject)
+    expect(fromStarter.length).toBeGreaterThan(0)
+    for (const path of fromStarter) expect(block(testingPage, path)).toBe(starterProject[path])
+    // Every other block is a test of the example app, compiled in the `testing` sample.
+    for (const path of shown.filter((path) => !(path in starterProject)))
+      expect(Object.keys(testingSamples)).toContain(path)
   })
 
   it('rejects a tool that does not pass the principal to its Convex function', () => {
