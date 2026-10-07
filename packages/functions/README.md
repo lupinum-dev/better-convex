@@ -124,8 +124,9 @@ release.
 
 `@lupinum/better-convex-functions/test` has helpers for `convex-test`:
 
-- `unguardedFunctions(modules)` lists every function that bypasses the layer. Assert that the
-  list is empty.
+- `await unguardedFunctions(modules)` lists every function that bypasses the layer. Pass the
+  `import.meta.glob` map you give `convexTest` and assert that the list is empty. It throws when
+  the map has no `defineFunctions` operation.
 - `countDocuments(call)` counts the documents one call reads and writes, for budget tests.
 
 Test sign-in with the real Better Auth component (`@lupinum/better-convex-nuxt/better-auth/test`).

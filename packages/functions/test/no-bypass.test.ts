@@ -6,9 +6,13 @@ import { expect, test } from 'vitest'
 const raw = () => queryGeneric({ args: {}, handler: async () => null })
 const rawHttp = () => httpActionGeneric(async () => new Response('leak'))
 
+// The fixture app, as an app's test.setup.ts globs it for convexTest.
+const app = import.meta.glob('./app/**/*.ts')
+const load = (exports: Record<string, unknown>) => async () => exports
+
 // Catches: raw functions in nested modules, raw internal functions an operation could reach,
-// and raw handlers on the router.
-test('raw functions are found in any module, router routes included', () => {
+// raw handlers on the router, and loading files Convex does not deploy.
+test('raw functions are found in any module, router routes included', async () => {
   const http = httpRouter()
   http.route({ path: '/leak', method: 'GET', handler: rawHttp() })
   http.route({ path: '/api/auth/session', method: 'GET', handler: rawHttp() })
@@ -18,17 +22,39 @@ test('raw functions are found in any module, router routes included', () => {
     handler: trusted('Signed URLs only.', rawHttp()),
   })
   const modules = {
-    '../convex/admin/leak.ts': { read: raw(), ok: trusted('Health check.', raw()) },
-    '../convex/admin/internal.ts': { rawRead: internalQueryGeneric({ handler: async () => null }) },
-    '../convex/http.ts': { default: http },
+    ...app,
+    './admin/leak.ts': load({ read: raw(), ok: trusted('Health check.', raw()) }),
+    './admin/internal.ts': load({ rawRead: internalQueryGeneric({ handler: async () => null }) }),
+    './http.ts': load({ default: http }),
+    // Convex skips these files, so the scan does too.
+    './leaks.test.ts': load({ read: raw() }),
+    './test.setup.ts': load({ read: raw() }),
+    './_generated/server.ts': load({ read: raw() }),
   }
-  expect(unguardedFunctions(modules, { trustedRoutes: { '/api/auth/': 'Auth library.' } })).toEqual(
-    [
-      '../convex/admin/leak.ts:read',
-      '../convex/admin/internal.ts:rawRead',
-      '../convex/http.ts:GET /leak',
-    ],
-  )
+  expect(
+    await unguardedFunctions(modules, { trustedRoutes: { '/api/auth/': 'Auth library.' } }),
+  ).toEqual(['./admin/leak.ts:read', './admin/internal.ts:rawRead', './http.ts:GET /leak'])
+})
+
+// Catches a no-bypass test that passes because its glob found nothing to check.
+test.each([
+  [
+    'an empty map',
+    {},
+    'unguardedFunctions found no modules. Pass the import.meta.glob map you give convexTest.',
+  ],
+  [
+    'only files Convex skips',
+    { './leaks.test.ts': load({ read: raw() }) },
+    'unguardedFunctions found no modules. Pass the import.meta.glob map you give convexTest.',
+  ],
+  [
+    'no defineFunctions operation',
+    { './raw.ts': load({ read: raw() }), './other.ts': load({}) },
+    'unguardedFunctions loaded 2 modules but found no defineFunctions operations. Check the glob.',
+  ],
+])('%s throws', async (_name, modules, message) => {
+  await expect(unguardedFunctions(modules)).rejects.toThrow(new Error(message))
 })
 
 // A live deploy refused a union as a function's top-level args; convex-test accepts it.

@@ -26,12 +26,17 @@ export function trusted<F>(reason: string, registered: F): F {
  * and not marked with `trusted`. An internal one matters as much as a public
  * one: an operation's nested call could reach it. Routes under a prefix in
  * `trustedRoutes` (path prefix → reason) are vouched for by the app, for
- * example an auth library's own endpoints. Run it over every module in a test.
+ * example an auth library's own endpoints.
+ *
+ * `modules` is the lazy `import.meta.glob` map that `convexTest` receives. It
+ * loads the keys Convex deploys and skips the ones Convex's bundler skips: a
+ * file name with more than one dot (`*.test.ts`, `test.setup.ts`) and
+ * `_generated/`. It throws when the map checks nothing.
  */
-export function unguardedFunctions(
-  modules: Record<string, Record<string, unknown>>,
+export async function unguardedFunctions(
+  modules: Record<string, () => Promise<unknown>>,
   options: { trustedRoutes?: Record<string, string> } = {},
-): string[] {
+): Promise<string[]> {
   type Fn = {
     isPublic?: boolean
     isInternal?: boolean
@@ -39,25 +44,39 @@ export function unguardedFunctions(
     [OPERATION]?: unknown
     [GUARDED]?: unknown
   }
-  const unguarded = (fn: Fn | null) =>
-    !!fn &&
-    (fn.isPublic === true || fn.isInternal === true || fn.isHttp === true) &&
-    !fn[OPERATION] &&
-    !fn[GUARDED]
+  type Router = { getRoutes: () => readonly (readonly [string, string, Fn])[] }
+  const deployed = Object.entries(modules).filter(([path]) => {
+    const segments = path.split('/')
+    const file = segments.at(-1) ?? ''
+    return !segments.includes('_generated') && (file.match(/\./g) ?? []).length <= 1
+  })
+  if (deployed.length === 0)
+    throw new Error(
+      'unguardedFunctions found no modules. Pass the import.meta.glob map you give convexTest.',
+    )
+  const loaded = await Promise.all(
+    deployed.map(
+      async ([path, load]) => [path, (await load()) as Record<string, unknown>] as const,
+    ),
+  )
   const trusted = (path: string) =>
     Object.keys(options.trustedRoutes ?? {}).some((prefix) => path.startsWith(prefix))
-  return Object.entries(modules).flatMap(([path, exports]) =>
-    Object.entries(exports).flatMap(([name, value]) => {
-      const router = value as {
-        getRoutes?: () => readonly (readonly [string, string, Fn])[]
-      } | null
-      if (typeof router?.getRoutes === 'function') {
+  // Every Convex function in the modules, by "module:export" or "module:METHOD /path".
+  const functions = loaded.flatMap(([path, exports]) =>
+    Object.entries(exports).flatMap(([name, value]): [string, Fn][] => {
+      const router = value as Partial<Router> | null
+      if (typeof router?.getRoutes === 'function')
         return router
           .getRoutes()
-          .filter(([route, , handler]) => unguarded(handler) && !trusted(route))
-          .map(([route, method]) => `${path}:${method} ${route}`)
-      }
-      return unguarded(value as Fn | null) ? [`${path}:${name}`] : []
+          .filter(([route]) => !trusted(route))
+          .map(([route, method, handler]) => [`${path}:${method} ${route}`, handler])
+      const fn = value as Fn | null
+      return fn && (fn.isPublic || fn.isInternal || fn.isHttp) ? [[`${path}:${name}`, fn]] : []
     }),
   )
+  if (!functions.some(([, fn]) => fn[OPERATION]))
+    throw new Error(
+      `unguardedFunctions loaded ${loaded.length} modules but found no defineFunctions operations. Check the glob.`,
+    )
+  return functions.filter(([, fn]) => !fn[OPERATION] && !fn[GUARDED]).map(([id]) => id)
 }
