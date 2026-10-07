@@ -14,16 +14,19 @@ overrides:
   sharp: 0.35.5
   hono: 4.13.7
 
+patchedDependencies:
+  '@lupinum/ginko-content@1.0.0-beta.5': 5d41f95c95b2abedea4988530894b32fad9c670bbf3cf5b2fa7a3d2ae81bb67f
+
 importers:
 
   .:
     dependencies:
       '@lupinum/ginko-content':
         specifier: 1.0.0-beta.5
-        version: 1.0.0-beta.5(@parcel/watcher@2.5.6)(@vue/compiler-sfc@3.5.42)(better-sqlite3@12.11.1)(db0@0.3.4(better-sqlite3@12.11.1))(esbuild@0.28.1)(ioredis@5.11.1(supports-color@10.2.2))(magic-string@1.1.1)(magicast@0.5.4)(nuxt@4.5.2(d920a7c7b0113c82d83a3ac77a7c83e1))(oxc-parser@0.143.0)(rolldown@1.2.4)(rollup@4.62.4)(srvx@0.11.22)(supports-color@10.2.2)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue@3.5.42(typescript@5.9.3))
+        version: 1.0.0-beta.5(patch_hash=5d41f95c95b2abedea4988530894b32fad9c670bbf3cf5b2fa7a3d2ae81bb67f)(@parcel/watcher@2.5.6)(@vue/compiler-sfc@3.5.42)(better-sqlite3@12.11.1)(db0@0.3.4(better-sqlite3@12.11.1))(esbuild@0.28.1)(ioredis@5.11.1(supports-color@10.2.2))(magic-string@1.1.1)(magicast@0.5.4)(nuxt@4.5.2(d920a7c7b0113c82d83a3ac77a7c83e1))(oxc-parser@0.143.0)(rolldown@1.2.4)(rollup@4.62.4)(srvx@0.11.22)(supports-color@10.2.2)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue@3.5.42(typescript@5.9.3))
       '@lupinum/ginko-docs':
         specifier: 0.4.0-rc.4
-        version: 0.4.0-rc.4(018f8c7134cfd6302ed9011b2f8f4c1f)
+        version: 0.4.0-rc.4(09d79dae76ef00029bedba10bfb472a6)
       nuxt:
         specifier: 4.5.2
         version: 4.5.2(d920a7c7b0113c82d83a3ac77a7c83e1)
@@ -7291,7 +7294,7 @@ snapshots:
 
   '@kwsites/promise-deferred@1.1.1': {}
 
-  '@lupinum/ginko-content@1.0.0-beta.5(@parcel/watcher@2.5.6)(@vue/compiler-sfc@3.5.42)(better-sqlite3@12.11.1)(db0@0.3.4(better-sqlite3@12.11.1))(esbuild@0.28.1)(ioredis@5.11.1(supports-color@10.2.2))(magic-string@1.1.1)(magicast@0.5.4)(nuxt@4.5.2(d920a7c7b0113c82d83a3ac77a7c83e1))(oxc-parser@0.143.0)(rolldown@1.2.4)(rollup@4.62.4)(srvx@0.11.22)(supports-color@10.2.2)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue@3.5.42(typescript@5.9.3))':
+  '@lupinum/ginko-content@1.0.0-beta.5(patch_hash=5d41f95c95b2abedea4988530894b32fad9c670bbf3cf5b2fa7a3d2ae81bb67f)(@parcel/watcher@2.5.6)(@vue/compiler-sfc@3.5.42)(better-sqlite3@12.11.1)(db0@0.3.4(better-sqlite3@12.11.1))(esbuild@0.28.1)(ioredis@5.11.1(supports-color@10.2.2))(magic-string@1.1.1)(magicast@0.5.4)(nuxt@4.5.2(d920a7c7b0113c82d83a3ac77a7c83e1))(oxc-parser@0.143.0)(rolldown@1.2.4)(rollup@4.62.4)(srvx@0.11.22)(supports-color@10.2.2)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue@3.5.42(typescript@5.9.3))':
     dependencies:
       '@comark/vue': 0.6.2(shiki@4.4.3)(vue@3.5.42(typescript@5.9.3))
       '@nuxt/kit': 4.5.2(magic-string@1.1.1)(magicast@0.5.4)(oxc-parser@0.143.0)(rolldown@1.2.4)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))
@@ -7370,12 +7373,12 @@ snapshots:
       - webpack
       - xml2js
 
-  '@lupinum/ginko-docs@0.4.0-rc.4(018f8c7134cfd6302ed9011b2f8f4c1f)':
+  '@lupinum/ginko-docs@0.4.0-rc.4(09d79dae76ef00029bedba10bfb472a6)':
     dependencies:
       '@iconify-json/circle-flags': 1.2.10
       '@iconify-json/logos': 1.2.12
       '@iconify-json/lucide': 1.2.123
-      '@lupinum/ginko-content': 1.0.0-beta.5(@parcel/watcher@2.5.6)(@vue/compiler-sfc@3.5.42)(better-sqlite3@12.11.1)(db0@0.3.4(better-sqlite3@12.11.1))(esbuild@0.28.1)(ioredis@5.11.1(supports-color@10.2.2))(magic-string@1.1.1)(magicast@0.5.4)(nuxt@4.5.2(d920a7c7b0113c82d83a3ac77a7c83e1))(oxc-parser@0.143.0)(rolldown@1.2.4)(rollup@4.62.4)(srvx@0.11.22)(supports-color@10.2.2)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue@3.5.42(typescript@5.9.3))
+      '@lupinum/ginko-content': 1.0.0-beta.5(patch_hash=5d41f95c95b2abedea4988530894b32fad9c670bbf3cf5b2fa7a3d2ae81bb67f)(@parcel/watcher@2.5.6)(@vue/compiler-sfc@3.5.42)(better-sqlite3@12.11.1)(db0@0.3.4(better-sqlite3@12.11.1))(esbuild@0.28.1)(ioredis@5.11.1(supports-color@10.2.2))(magic-string@1.1.1)(magicast@0.5.4)(nuxt@4.5.2(d920a7c7b0113c82d83a3ac77a7c83e1))(oxc-parser@0.143.0)(rolldown@1.2.4)(rollup@4.62.4)(srvx@0.11.22)(supports-color@10.2.2)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue@3.5.42(typescript@5.9.3))
       '@nuxt/fonts': 0.14.0(db0@0.3.4(better-sqlite3@12.11.1))(esbuild@0.28.1)(ioredis@5.11.1(supports-color@10.2.2))(magic-string@1.1.1)(magicast@0.5.4)(oxc-parser@0.143.0)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))
       '@nuxt/icon': 2.5.0(magic-string@1.1.1)(magicast@0.5.4)(oxc-parser@0.143.0)(rolldown@1.2.4)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(vue@3.5.42(typescript@5.9.3))
       '@nuxt/image': 2.1.0(@types/node@26.2.0)(magic-string@1.1.1)(magicast@0.5.4)(oxc-parser@0.143.0)(rolldown@1.2.4)(unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.2.4)(rollup@4.62.4)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0)))(unstorage@1.17.5(db0@0.3.4(better-sqlite3@12.11.1))(ioredis@5.11.1(supports-color@10.2.2)))

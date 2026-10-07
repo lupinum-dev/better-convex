@@ -1,0 +1,38 @@
+diff --git a/dist/runtime/server/agent-markdown.js b/dist/runtime/server/agent-markdown.js
+index 80422cc02234a422553f3798ff80b4f0372befb2..c010cb81c1e778160777741f1d81f54242fe4048 100644
+--- a/dist/runtime/server/agent-markdown.js
++++ b/dist/runtime/server/agent-markdown.js
+@@ -124,7 +124,7 @@ export async function queryMarkdownEnabledContent(event, options = {}) {
+   for (const [collection, config] of markdownEnabledCollectionEntries(options.collections)) {
+     const agentOptions = resolveAgentMarkdownOptions(config);
+     if (!agentOptions) continue;
+-    const rows = await many(event, collection, {
++    const query = {
+       select: [
+         "file",
+         "draft",
+@@ -138,9 +138,22 @@ export async function queryMarkdownEnabledContent(event, options = {}) {
+         "robots",
+         "sitemap"
+       ],
+-      ...options.limit ? { limit: options.limit } : {},
+       ...options.locale ? { locale: options.locale, fallback: true } : {}
+-    });
++    };
++    // many() returns at most 100 rows (DEFAULT_PUBLIC_QUERY_LIMIT, also the maximum).
++    // Without paging, a collection with more pages loses an arbitrary few from
++    // llms.txt, llms-full.txt and the prerendered /raw/ pages.
++    let rows;
++    if (options.limit) {
++      rows = await many(event, collection, { ...query, limit: options.limit });
++    } else {
++      rows = [];
++      for (let skip = 0; ; skip += 100) {
++        const page = await many(event, collection, { ...query, limit: 100, skip });
++        rows.push(...page);
++        if (page.length < 100) break;
++      }
++    }
+     for (const queryRow of rows) {
+       const row = requireAgentSourceDocument(queryRow);
+       if (!isPublicPage(parsedContentForAgent(row), config, visibility)) continue;

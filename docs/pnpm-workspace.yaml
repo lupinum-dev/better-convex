@@ -47,3 +47,10 @@ auditConfig:
     - GHSA-858h-whjf-mvg5 # simple-git <=3.36.0
     - GHSA-g4wm-2vf7-vfgr # simple-git <=3.36.0
     - GHSA-v5rq-49vh-5v5c # @simple-git/argv-parser <2.0.1
+
+patchedDependencies:
+  # The agent markdown index (llms.txt, llms-full.txt, /raw/ pages) reads the docs
+  # collection with one many() call, which returns at most 100 rows. With more pages a
+  # random few go missing on each build. The patch pages through the collection. Remove it
+  # when ginko-content pages queryMarkdownEnabledContent (still unpaged in 1.0.0-beta.10).
+  '@lupinum/ginko-content@1.0.0-beta.5': patches/@lupinum__ginko-content@1.0.0-beta.5.patch
