@@ -27,15 +27,16 @@ import {
 } from './harness'
 
 const PROTOCOL_VERSION = '2026-07-28'
+// Sorted: the list order follows export names and is not part of the contract.
 const TOOL_NAMES = [
-  'list_organizations',
-  'search_projects',
-  'create_project',
-  'rename_project',
   'archive_project',
   'check_approval',
+  'create_project',
+  'list_organizations',
+  'rename_project',
+  'search_projects',
 ]
-const READ_TOOL_NAMES = ['list_organizations', 'search_projects', 'check_approval']
+const READ_TOOL_NAMES = ['check_approval', 'list_organizations', 'search_projects']
 // Better Auth allows three sign-ins per ten-second window; fresh sessions are paced, not unlimited.
 const SIGN_IN_WINDOW_MS = 10_100
 
@@ -330,7 +331,7 @@ describe('MCP OAuth starter end to end', () => {
     )
     expect(listed.status).toBe(200)
     const result = isRecord(listed.body.result) ? listed.body.result : {}
-    expect((result.tools as JsonRecord[]).map((tool) => tool.name)).toEqual(TOOL_NAMES)
+    expect((result.tools as JsonRecord[]).map((tool) => tool.name).sort()).toEqual(TOOL_NAMES)
 
     const token = primary.accessToken
     const organizationId = clients.organizationId
@@ -563,7 +564,9 @@ describe('MCP OAuth starter end to end', () => {
     const readOnly = await acquire(terminalClients.conformance!, 'mcp:read')
     const readTools = await postMcp(resource, readOnly.accessToken, toolsList('read-only-tools'))
     const readResult = isRecord(readTools.body.result) ? readTools.body.result : {}
-    expect((readResult.tools as JsonRecord[]).map((tool) => tool.name)).toEqual(READ_TOOL_NAMES)
+    expect((readResult.tools as JsonRecord[]).map((tool) => tool.name).sort()).toEqual(
+      READ_TOOL_NAMES,
+    )
     const write = await postMcp(
       resource,
       readOnly.accessToken,
@@ -651,11 +654,11 @@ describe('MCP OAuth starter end to end', () => {
     expect(listed).toMatchObject({ ttlMs: 0, cacheScope: 'private' })
     const tools = listed.tools as JsonRecord[]
     expect(tools.length).toBeGreaterThan(0)
+    // No `$schema`: MCP defaults tool schemas to JSON Schema 2020-12, and models
+    // copy a `$schema` key from the schema into their tool input.
     for (const tool of tools) {
-      expect(tool.inputSchema).toMatchObject({
-        type: 'object',
-        $schema: 'https://json-schema.org/draft/2020-12/schema',
-      })
+      expect(tool.inputSchema).toMatchObject({ type: 'object' })
+      expect(tool.inputSchema).not.toHaveProperty('$schema')
     }
 
     const toolsRequest = exchanges[1]!.requestBody
