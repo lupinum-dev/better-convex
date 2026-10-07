@@ -23,13 +23,16 @@ This repository contains four packages:
   helpers, server rendering, and optional Better Auth support.
 - `@lupinum/better-convex-vue` (`packages/vue`): the Vue composables and the
   browser client lifecycle that the Nuxt package also uses.
-- `@lupinum/better-convex-functions` (`packages/functions`): operations,
-  policy, row rules and internal operations for Convex functions
-  (`defineFunctions`). It imports only `convex`.
-- `@lupinum/better-convex-agents` (`packages/agents`): tools derived from those
-  operations (`defineTools`), approvals, agent limits and activity, and the
-  MCP door (`./mcp`: `createMcpServer` and the `handleMcpRequest` transport)
-  inside a Convex HTTP action. Only `./mcp` loads the MCP SDK.
+- `@lupinum/better-convex-functions` (`packages/functions`): who may do what to
+  which rows. Operations, policy, row rules and internal operations
+  (`defineFunctions`), for every kind of actor: people, visitors, jobs and
+  agents. So it also owns the data of agent authority: grants, approvals as
+  authority, and the activity log (`libraryTables`). It imports only `convex`.
+- `@lupinum/better-convex-agents` (`packages/agents`): the doors agents come
+  through. Tools derived from the operations (`defineTools`), the approval
+  workflow (request, approve, decline), agent limits, and the MCP door
+  (`./mcp`: `createMcpServer` and the `handleMcpRequest` transport) inside a
+  Convex HTTP action. Only `./mcp` loads the MCP SDK.
 
 Nuxt and Vue always share one version (a Changesets `fixed` group), and so do
 Functions and Agents (a second `fixed` group; Agents pins the exact Functions
