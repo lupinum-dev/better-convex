@@ -812,7 +812,14 @@ export const mutants: Mutant[] = [
     file: 'packages/functions/src/functions.ts',
     find: "if (run.status === 'done' || run.status === 'failed')",
     replace: 'if (false)',
-    kills: [`${inApp}: 'run done'`, `${inApp}: 'run failed'`],
+    // The turn check refuses an ended run's step too, with another message. Approved work skips
+    // that check, so only this guard stops it.
+    kills: [
+      `${inApp}: 'run done'`,
+      `${inApp}: 'run failed'`,
+      `${A}/approvals/approvals.test.ts > approving a request of an in-app run that has ended changes nothing: run done`,
+      `${A}/approvals/approvals.test.ts > approving a request of an in-app run that has ended changes nothing: run failed`,
+    ],
     projects: ['agents'],
   },
   {

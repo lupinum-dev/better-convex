@@ -496,6 +496,36 @@ test('a person may approve after the access token that asked has expired', async
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'archived' })
 })
 
+/** An in-app agent run in turn 2, on a grant with `projects:write`. */
+async function inAppRun(
+  s: Awaited<ReturnType<typeof setup>>,
+  grant: 'live' | 'revoked' | 'expired',
+  status: 'running' | 'waiting' | 'done' | 'failed',
+) {
+  return await s.t.run(async (ctx) => {
+    const grantId = await ctx.db.insert('agentGrants', {
+      authId: 'ann',
+      userId: s.annId,
+      agent: 'helper',
+      scopes: ['projects:write'],
+      // A grant that expires now has expired.
+      expiresAt: grant === 'expired' ? Date.now() : Date.now() + 86_400_000,
+      ...(grant === 'revoked' ? { revokedAt: Date.now() } : {}),
+    })
+    return await ctx.db.insert('agentRuns', {
+      grantId,
+      userId: s.annId,
+      agent: 'helper',
+      step: 'agent:step',
+      task: 'rename',
+      status,
+      turn: 2,
+      steps: 1,
+      stepAt: Date.now(),
+    })
+  })
+}
+
 // V14: the in-app door checked the run, not the grant; a revoked grant must stop a running run's tools.
 // Maintainer analysis: a step of an old turn, of an ended run, or on an expired grant still ran.
 const turnedOff = 'This agent is turned off.'
@@ -525,28 +555,7 @@ test.each([
   'an in-app agent step acts only on a live grant, in the current turn of a running run: $row',
   async ({ grant, status, turn, message }) => {
     const s = await setup()
-    const runId = await s.t.run(async (ctx) => {
-      const grantId = await ctx.db.insert('agentGrants', {
-        authId: 'ann',
-        userId: s.annId,
-        agent: 'helper',
-        scopes: ['projects:write'],
-        // A grant that expires now has expired.
-        expiresAt: grant === 'expired' ? Date.now() : Date.now() + 86_400_000,
-        ...(grant === 'revoked' ? { revokedAt: Date.now() } : {}),
-      })
-      return await ctx.db.insert('agentRuns', {
-        grantId,
-        userId: s.annId,
-        agent: 'helper',
-        step: 'agent:step',
-        task: 'rename',
-        status,
-        turn: 2,
-        steps: 1,
-        stepAt: Date.now(),
-      })
-    })
+    const runId = await inAppRun(s, grant, status)
     const rename = s.t.mutation(api.tools.rename_project, {
       caller: { door: 'app', runId, turn },
       input: { projectId: s.p[0], name: 'renamed' },
@@ -557,6 +566,27 @@ test.each([
     }
     await expect(rename).rejects.toMatchObject({ data: { code: 'AGENT_DISABLED', message } })
     expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'alpha' })
+  },
+)
+
+// Fix round 1: approved work skips the turn check, so only the ended-run check stops it. A person
+// who approves after the run ended (it failed, or someone stopped it) must not start its work.
+test.each(['done', 'failed'] as const)(
+  'approving a request of an in-app run that has ended changes nothing: run %s',
+  async (ended) => {
+    const s = await setup()
+    const runId = await inAppRun(s, 'live', 'running')
+    const asked = await s.t.mutation(api.tools.archive_project, {
+      caller: { door: 'app', runId, turn: 2 },
+      input: { projectId: s.p[0] },
+    })
+    expect(asked).toMatchObject({ status: 'needs_approval' })
+    await s.t.run((ctx) => ctx.db.patch(runId, { status: ended }))
+    expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+      status: 'failed',
+      error: { code: 'AGENT_DISABLED', message: 'This run has ended.' },
+    })
+    expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'active' })
   },
 )
 
