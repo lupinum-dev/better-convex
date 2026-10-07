@@ -216,12 +216,13 @@ framing, and use a no-referrer policy.
 `pnpm test` runs the starter's own tests in `convex-test`, with the real Better
 Auth component:
 
-| File                           | Fails when                                                                   |
-| ------------------------------ | ---------------------------------------------------------------------------- |
-| `convex/no-bypass.test.ts`     | a function skips the policy and the row rules (not built from `./functions`) |
-| `convex/leaks.test.ts`         | an operation returns or changes a project of another organization            |
-| `convex/cost.test.ts`          | a call reads or writes more documents than its budget                        |
-| `convex/authorization.test.ts` | a tool runs after its grant, session, membership or role ended               |
+| File                           | Fails when                                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `convex/no-bypass.test.ts`     | a function skips the policy and the row rules (not built from `./functions`)                                       |
+| `convex/leaks.test.ts`         | a stranger, a former member or a viewer reaches a project of another organization, or a refusal has the wrong code |
+| `convex/agents.test.ts`        | a tool, its scopes or its approval rule changes, or a member or viewer can approve a request                       |
+| `convex/cost.test.ts`          | a call reads or writes more documents than its budget                                                              |
+| `convex/authorization.test.ts` | a tool runs after the app suspends the user or removes the membership                                              |
 
 [Test your app](https://better-convex.lupinum.com/docs/build/functions/testing)
 explains each one.

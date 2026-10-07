@@ -1,20 +1,18 @@
 // The starter's tools against the real Better Auth component: every tool call re-checks the
 // live grant (session, client, consent), the app user and the organization role in Convex.
-// The door that turns a host's request into these calls is tested in @lupinum/better-convex-agents.
+// `callTool` makes each call as the MCP door does; the door's transport is tested in
+// @lupinum/better-convex-agents.
 
+import { callTool } from '@lupinum/better-convex-agents/test'
 import { grantMcp, signInAs } from '@lupinum/better-convex-nuxt/better-auth/test'
-import { anyApi } from 'convex/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { components } from './_generated/api'
+import { api, components } from './_generated/api'
+import { tools } from './agents'
 import { initConvexTest } from './test.setup'
 
 const adapter = components.betterAuth.adapter
-const agents = anyApi.agents
-const connections = anyApi.connections
-
-const siteUrl = 'https://starter-app.example.test'
-const resource = 'https://starter-deployment.example.test/mcp'
+const { agents, connections } = api
 const grantScopes = ['mcp:read', 'mcp:write']
 
 type Test = ReturnType<typeof initConvexTest>
@@ -49,27 +47,20 @@ async function setup() {
     return { membershipId, organizationId, otherOrganizationId, projectId }
   })
   /** One tool call as the MCP door makes it, with the verified principal of a host. */
-  const tool = (name: string, input: Record<string, unknown>, from = principal) => {
-    const call = { caller: { door: 'mcp', principal: from }, input }
-    return name === 'search_projects' || name === 'list_organizations' || name === 'check_approval'
-      ? test.query(agents[name]!, call)
-      : test.mutation(agents[name]!, call)
-  }
+  const tool = (name: string, input: Record<string, unknown>, from = principal) =>
+    callTool(test, tools, from, name, input)
   return { test, principal, session, userId, tool, ...ids }
 }
 
 type Setup = Awaited<ReturnType<typeof setup>>
+/** The request a tool call made for a person to approve. */
+async function approvalOf(call: ReturnType<Setup['tool']>) {
+  const asked = await call
+  if (asked.status !== 'needs_approval') throw new Error('The call did not wait for a person.')
+  return asked
+}
 const code = (error: unknown) => (error as { data?: { code?: string } }).data?.code
 const failure = (promise: Promise<unknown>) => promise.then(() => 'no error', code)
-
-beforeEach(() => {
-  vi.stubEnv('SITE_URL', siteUrl)
-  vi.stubEnv('CONVEX_SITE_URL', new URL(resource).origin)
-})
-
-afterEach(() => {
-  vi.unstubAllEnvs()
-})
 
 describe('MCP starter authorization', () => {
   it('runs a tool for a live grant and a current membership; archiving waits for a person', async () => {
@@ -85,11 +76,8 @@ describe('MCP starter authorization', () => {
       tool('create_project', { organizationId, name: '  Launch  ' }),
     ).resolves.toMatchObject({ result: { name: 'Launch' } })
 
-    const asked = (await tool('archive_project', { projectId })) as { approvalId: string }
-    expect(asked).toMatchObject({
-      status: 'needs_approval',
-      summary: 'Archive the project "Roadmap".',
-    })
+    const asked = await approvalOf(tool('archive_project', { projectId }))
+    expect(asked.summary).toBe('Archive the project "Roadmap".')
     await expect(
       session.mutation(agents.approve, { approvalId: asked.approvalId }),
     ).resolves.toEqual({
@@ -100,33 +88,10 @@ describe('MCP starter authorization', () => {
     })
   })
 
-  // Section 7 of the plan: logging out of the web app also disconnects the person's agents.
+  // The app's own checks run on every tool call: `user` refuses a suspended user, and `roleOf`
+  // a removed membership. The checks of the grant itself (sign-out, disconnect, a disabled
+  // client) are tested in the packages.
   it.each<[string, (context: Setup) => Promise<unknown>, string]>([
-    [
-      'the user disconnects the host',
-      ({ session, principal }) =>
-        session.mutation(connections.revoke, { clientId: principal.clientId }),
-      'AGENT_DISABLED',
-    ],
-    [
-      'the user signs out (the Better Auth session ends)',
-      ({ test, principal }) =>
-        test.mutation(adapter.deleteOne, {
-          model: 'session',
-          where: [{ field: 'id', value: principal.sessionId }],
-        }),
-      'AGENT_DISABLED',
-    ],
-    [
-      'the operator disables the client',
-      ({ test, principal }) =>
-        test.mutation(adapter.updateOne, {
-          model: 'oauthClient',
-          where: [{ field: 'clientId', value: principal.clientId }],
-          update: { disabled: true },
-        }),
-      'AGENT_DISABLED',
-    ],
     [
       'the app suspends the user',
       ({ test, userId }) => test.run((ctx) => ctx.db.patch(userId, { active: false })),
@@ -148,7 +113,7 @@ describe('MCP starter authorization', () => {
 
   it('cancels the open requests of a host the person disconnects', async () => {
     const { tool, session, principal, projectId } = await setup()
-    const asked = (await tool('archive_project', { projectId })) as { approvalId: string }
+    const asked = await approvalOf(tool('archive_project', { projectId }))
     await session.mutation(connections.revoke, { clientId: principal.clientId })
     await expect(session.query(agents.pending, {})).resolves.toEqual([])
     await expect(
@@ -201,27 +166,9 @@ describe('MCP starter authorization', () => {
     }
   })
 
-  it('needs the scope for a tool, and keeps a foreign project out of reach', async () => {
-    const { test, tool, organizationId, otherOrganizationId, projectId } = await setup()
-    await expect(
-      failure(
-        tool(
-          'create_project',
-          { organizationId, name: 'Blocked' },
-          await grantMcp(test, 'alice', ['mcp:read']),
-        ),
-      ),
-    ).resolves.toBe('FORBIDDEN')
-    await expect(failure(tool('search_projects', { organizationId: 'not-an-id' }))).resolves.toBe(
-      'INVALID_INPUT',
-    )
-    await test.run((ctx) => ctx.db.patch(projectId, { organizationId: otherOrganizationId }))
-    await expect(failure(tool('archive_project', { projectId }))).resolves.toBe('NOT_FOUND')
-  })
-
   it('lets an approver decide only with a live session', async () => {
     const { test, tool, session, principal, projectId } = await setup()
-    const asked = (await tool('archive_project', { projectId })) as { approvalId: string }
+    const asked = await approvalOf(tool('archive_project', { projectId }))
     await test.mutation(adapter.deleteOne, {
       model: 'session',
       where: [{ field: 'id', value: principal.sessionId }],
