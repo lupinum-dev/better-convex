@@ -430,9 +430,10 @@ function unguardedFunctions(
 - **What it does:** loads every module Convex would deploy and lists every
   Convex function or HTTP route built with Convex's own builders and not
   marked `trusted`. It skips the keys Convex's bundler skips: a file name with
-  more than one dot (`*.test.ts`, `*.config.ts`, `test.setup.ts`) and
-  `_generated/` (convex 1.42.2, `bundler/index.js`). That is Convex's rule,
-  not a new convention.
+  more than one dot (`*.test.ts`, `*.config.ts`, `test.setup.ts`),
+  `_generated/` at the functions root, and a folder below the root with its
+  own `convex.config.ts` (convex 1.42.2, `bundler/index.js`). That is Convex's
+  rule, not a new convention.
 - **Why the change:** the test now scans exactly what the backend loads, from
   the one module list the app already has in `test.setup.ts`. Today the
   no-bypass test keeps its own `import.meta.glob`, a second copy that already

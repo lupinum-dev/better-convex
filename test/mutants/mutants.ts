@@ -920,7 +920,55 @@ export const mutants: Mutant[] = [
     id: 'S1-unguarded-skip-generated',
     guards: 'S1',
     file: 'packages/functions/src/guard.ts',
-    find: "!segments.includes('_generated') && ",
+    find: '!path.startsWith(`${root}_generated/`) &&',
+    replace: 'true &&',
+    kills: [
+      `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    // Convex skips only `_generated/` at the functions root; a nested one deploys.
+    id: 'S1-unguarded-generated-root-only',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: '!path.startsWith(`${root}_generated/`)',
+    replace: "!path.includes('_generated/')",
+    kills: [
+      `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    // The root is the shortest prefix before `_generated/`, not the first key that has one.
+    id: 'S1-unguarded-root-shortest',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: '.sort((a, b) => a.length - b.length)[0]',
+    replace: '[0]',
+    kills: [
+      `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    // Convex skips a directory with its own convex.config.ts (a local component).
+    id: 'S1-unguarded-skip-components',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: '!components.some((dir) => path.startsWith(dir)) &&',
+    replace: 'true &&',
+    kills: [
+      `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    // The root convex.config.ts is the app, not a component: skipping it would skip every module.
+    id: 'S1-unguarded-root-config',
+    guards: 'S1',
+    file: 'packages/functions/src/guard.ts',
+    find: '.filter((dir) => dir !== root)',
     replace: '',
     kills: [
       `${F}/no-bypass.test.ts > raw functions are found in any module, router routes included`,

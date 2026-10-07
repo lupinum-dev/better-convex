@@ -30,8 +30,11 @@ export function trusted<F>(reason: string, registered: F): F {
  *
  * `modules` is the lazy `import.meta.glob` map that `convexTest` receives. It
  * loads the keys Convex deploys and skips the ones Convex's bundler skips: a
- * file name with more than one dot (`*.test.ts`, `test.setup.ts`) and
- * `_generated/`. It throws when the map checks nothing.
+ * file name with more than one dot (`*.test.ts`, `test.setup.ts`),
+ * `_generated/` at the functions root, and a directory below the root with its
+ * own `convex.config.ts` (a local component). The functions root is the part
+ * of a key before `_generated/`, as convex-test finds it, else `./`. It throws
+ * when the map checks nothing.
  */
 export async function unguardedFunctions(
   modules: Record<string, () => Promise<unknown>>,
@@ -45,10 +48,23 @@ export async function unguardedFunctions(
     [GUARDED]?: unknown
   }
   type Router = { getRoutes: () => readonly (readonly [string, string, Fn])[] }
+  const paths = Object.keys(modules)
+  const root =
+    paths
+      .filter((path) => path.includes('_generated/'))
+      .map((path) => path.slice(0, path.indexOf('_generated/')))
+      .sort((a, b) => a.length - b.length)[0] ?? './'
+  const components = paths
+    .filter((path) => path.startsWith(root) && path.endsWith('/convex.config.ts'))
+    .map((path) => path.slice(0, -'convex.config.ts'.length))
+    .filter((dir) => dir !== root)
   const deployed = Object.entries(modules).filter(([path]) => {
-    const segments = path.split('/')
-    const file = segments.at(-1) ?? ''
-    return !segments.includes('_generated') && (file.match(/\./g) ?? []).length <= 1
+    const file = path.split('/').at(-1) ?? ''
+    return (
+      !path.startsWith(`${root}_generated/`) &&
+      !components.some((dir) => path.startsWith(dir)) &&
+      (file.match(/\./g) ?? []).length <= 1
+    )
   })
   if (deployed.length === 0)
     throw new Error(
