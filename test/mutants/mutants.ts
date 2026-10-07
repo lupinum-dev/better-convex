@@ -967,6 +967,17 @@ export const mutants: Mutant[] = [
     projects: ['convex'],
   },
   {
+    id: 'C9-session-pages',
+    guards: 'C9',
+    file: 'src/runtime/convex-auth/test.ts',
+    find: 'done = result.isDone',
+    replace: 'done = true',
+    kills: [
+      'test/convex/auth-component-limits.test.ts > auth component limits > shares one live session after more than 100 expired ones',
+    ],
+    projects: ['convex'],
+  },
+  {
     id: 'C9-fresh-consent',
     guards: 'C9',
     file: 'src/runtime/convex-auth/test.ts',
