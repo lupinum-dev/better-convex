@@ -293,12 +293,13 @@ pnpm typecheck
 pnpm build
 ```
 
-The committed `package.json` names `@lupinum/better-convex-functions` and
-`@lupinum/better-convex-agents` before their first release; the repository
-checks build the starter against the packed workspace packages.
-`pnpm-lock.yaml` still records the last published tuple, with
-`@lupinum/better-convex-mcp`, because a lockfile can only name packages that
-are on npm. It is regenerated with `pnpm install` once both packages are
-published; until then, install without `--frozen-lockfile`.
+The `0.0.0` versions of `@lupinum/better-convex-functions` and
+`@lupinum/better-convex-agents` in `package.json` are placeholders: neither
+package is on npm yet, so this starter cannot be installed from npm before
+their first release, with or without `--frozen-lockfile`. The repository
+checks (`pnpm test:starters`) install the packed workspace packages in their
+place. `pnpm-lock.yaml` still records the last published tuple, with
+`@lupinum/better-convex-mcp`. After the first release, the pins move to the
+released version and the lockfile is regenerated in the same change.
 Better Auth owns its Kysely runtime; this starter does not add a standalone
 Kysely dependency.
