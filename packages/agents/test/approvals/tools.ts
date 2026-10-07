@@ -8,8 +8,6 @@ import * as ops from './ops'
 export const tools = defineTools(fns, { ops }, { functions: anyApi.tools as never })
 
 export const {
-  list_projects,
-  read_project,
   rename_project,
   archive_project,
   export_project,

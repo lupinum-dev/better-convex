@@ -403,3 +403,16 @@ test('a retry after a decline is told it was declined', async () => {
   await expect(s.t.mutation(api.tools.archive_project, call)).rejects.toThrow(/APPROVAL_DECLINED/)
   expect(await s.approvalRows()).toHaveLength(1)
 })
+
+// B1: one connection could make 300 writes a minute; same-row bursts surfaced as "the tool failed".
+test('an agent may make 60 writes a minute, then waits', async () => {
+  const { t, p } = await setup()
+  const rename = (name: string) =>
+    t.mutation(api.tools.rename_project, { caller, input: { projectId: p[0], name } })
+  for (let i = 0; i < 60; i++) await rename(`n${i}`)
+  await expect(rename('one more')).rejects.toThrow(/RATE_LIMITED/)
+  expect(await t.run((ctx) => ctx.db.get(p[0]!))).toMatchObject({ name: 'n59' })
+  vi.advanceTimersByTime(60_000)
+  await rename('next minute')
+  expect(await t.run((ctx) => ctx.db.get(p[0]!))).toMatchObject({ name: 'next minute' })
+})

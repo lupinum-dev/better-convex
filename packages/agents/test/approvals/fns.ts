@@ -68,4 +68,4 @@ export const fns = defineFunctions({
   },
 })
 
-export const { query, mutation, internalMutation } = fns
+export const { mutation, internalMutation } = fns

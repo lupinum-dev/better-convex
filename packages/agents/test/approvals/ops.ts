@@ -2,38 +2,9 @@ import { fail } from '@lupinum/better-convex-functions'
 import { internalMutationGeneric, makeFunctionReference } from 'convex/server'
 import { v } from 'convex/values'
 
-import { internalMutation, mutation, query } from './fns'
+import { internalMutation, mutation } from './fns'
 
 const project = v.object({ id: v.id('projects'), name: v.string() })
-
-export const list = query({
-  action: 'projects.list',
-  args: { orgId: v.id('orgs') },
-  returns: v.array(project),
-  tool: { name: 'list_projects', description: 'List active projects.' },
-  handler: async (ctx, { orgId }) =>
-    (
-      await ctx.db
-        .query('projects')
-        .withIndex('by_org', (q) => q.eq('orgId', orgId))
-        .collect()
-    )
-      .filter((p) => p.status === 'active')
-      .map((p) => ({ id: p._id, name: p.name })),
-})
-
-/** A read that returns as much text as asked for: a file, a report, a long description. */
-export const read = query({
-  action: 'projects.read',
-  args: { projectId: v.id('projects'), size: v.number() },
-  returns: v.string(),
-  tool: { name: 'read_project', description: 'Read a project document.' },
-  handler: async (ctx, { projectId, size }) => {
-    const found = await ctx.db.get(projectId)
-    if (!found) fail('NOT_FOUND', 'No such project.')
-    return 'x'.repeat(size)
-  },
-})
 
 export const rename = mutation({
   action: 'projects.rename',
