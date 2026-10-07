@@ -142,7 +142,7 @@ export function toJsonSchema(json: ValidatorJson, path = 'input'): Record<string
         throw new Error(`${path} is a bigint literal, which JSON cannot carry.`)
       return { const: json.value }
     case 'id':
-      return { type: 'string', description: `A ${json.tableName} ID.` }
+      return { type: 'string', description: `An ID from the ${json.tableName} table.` }
     case 'array':
       return { type: 'array', items: toJsonSchema(json.value, `${path}[]`) }
     case 'record':
@@ -236,7 +236,7 @@ export function checkInput(
     case 'id':
       return typeof value === 'string' && isId(json.tableName, value)
         ? { ok: true, value }
-        : bad(`a ${json.tableName} ID`)
+        : bad(`an ID from the ${json.tableName} table`)
     case 'array': {
       if (!Array.isArray(value)) return bad('a list')
       const out = []
