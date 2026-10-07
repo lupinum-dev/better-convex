@@ -1,6 +1,6 @@
 # Plan: functions and agents, from the skeleton to the packages
 
-Status: implementation rush running (workflow), verification rounds after · Date: 2026-10-06 · Owner: Claude (Opus builds, Codex reviews and operates)
+Status: built and in verification (2026-10-07); learnings in the README of this folder · Date: 2026-10-06 · Owner: Claude (Opus builds, Codex reviews and operates)
 
 Source of the design: the walking skeleton in `bc-skeleton/labs/skeleton`
 (commit `9a93cc7f`). Its `PLAN.md` holds the design history, its `STRESS.md`

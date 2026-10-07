@@ -34,6 +34,11 @@ This repository contains four packages:
   (`./mcp`: `createMcpServer` and the `handleMcpRequest` transport) inside a
   Convex HTTP action. Only `./mcp` loads the MCP SDK.
 
+Before you change or review the functions or agents packages, read
+`internal/functions-and-agents/` (start with its README): the review
+checklist for the authorization path, measured costs, verified platform
+behaviour, and the experiments behind the design.
+
 Nuxt and Vue always share one version (a Changesets `fixed` group), and so do
 Functions and Agents (a second `fixed` group; Agents pins the exact Functions
 version as its peer, because it uses `./internal`). Functions and Agents are an opt-in layer, not part
