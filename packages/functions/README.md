@@ -44,41 +44,65 @@ pnpm add @lupinum/better-convex-functions@next
 
 ## Quick start
 
-```ts [convex/functions.ts]
-import { defineFunctions, definePolicy, owner, tenant } from '@lupinum/better-convex-functions'
+Write the policy in its own file. It is plain data, and the browser can import it too, so take
+`definePolicy` from the `/policy` entry, which has no server code.
 
-import { auth } from './auth'
+```ts [convex/policy.ts]
+import { definePolicy } from '@lupinum/better-convex-functions/policy'
 
 export const policy = definePolicy({
   actions: ['projects.list', 'projects.archive'],
-  roles: { owner: ['*'], viewer: ['projects.list'] },
-  scopes: { 'projects:read': { label: 'See your projects.', actions: ['projects.list'] } },
+  roles: {
+    owner: ['*'],
+    member: ['projects.list'],
+  },
+  // What a person grants an AI host on the consent page.
+  scopes: {
+    'projects:read': { label: 'See your projects.', actions: ['projects.list'] },
+    'projects:write': {
+      label: 'Archive projects after you approve it.',
+      actions: ['projects.archive'],
+    },
+  },
+  // An agent may ask to archive, but a person decides.
+  agents: { 'projects.archive': 'approve' },
+})
+```
+
+Then give `defineFunctions` the policy, how to find the user and their role, and one row rule
+per table:
+
+```ts [convex/functions.ts]
+import { defineFunctions, owner, tenant } from '@lupinum/better-convex-functions'
+
+import { auth } from './auth'
+import { policy } from './policy'
+
+export const fns = defineFunctions({
+  auth,
+  policy,
+  user: (ctx, authId) =>
+    ctx.db
+      .query('users')
+      .withIndex('by_auth_id', (q) => q.eq('authId', authId))
+      .unique(),
+  roleOf: async (ctx, user, tenant) => {
+    if (tenant.table !== 'organizations') return null
+    const membership = await ctx.db
+      .query('memberships')
+      .withIndex('by_org_user', (q) => q.eq('organizationId', tenant.id).eq('userId', user._id))
+      .unique()
+    return membership?.role ?? null
+  },
+  rules: {
+    users: owner('_id'),
+    organizations: tenant('_id'),
+    memberships: owner('userId'),
+    projects: tenant('organizationId'),
+  },
 })
 
-export const { query, mutation, internalQuery, internalMutation, internalAction, job } =
-  defineFunctions({
-    auth,
-    policy,
-    user: (ctx, authId) =>
-      ctx.db
-        .query('users')
-        .withIndex('by_auth_id', (q) => q.eq('authId', authId))
-        .unique(),
-    roleOf: async (ctx, user, tenant) => {
-      if (tenant.table !== 'organizations') return null
-      const membership = await ctx.db
-        .query('memberships')
-        .withIndex('by_org_user', (q) => q.eq('organizationId', tenant.id).eq('userId', user._id))
-        .unique()
-      return membership?.role ?? null
-    },
-    rules: {
-      users: owner('_id'),
-      organizations: tenant('_id'),
-      memberships: owner('userId'),
-      projects: tenant('organizationId'),
-    },
-  })
+export const { query, mutation, internalQuery, internalMutation, internalAction, job } = fns
 ```
 
 Spread `libraryTables` into your schema. A table without a rule is a type error.

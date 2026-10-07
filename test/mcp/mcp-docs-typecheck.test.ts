@@ -280,6 +280,8 @@ const samples: Record<string, VirtualProject> = {
     'mcp-ui/NotesCard.ts': notesCardScript(),
   },
   'start-here': appProject(startHere),
+  // The functions README quick start: its policy and functions modules in the start page's app.
+  'functions-readme': appProject(startHere, read('packages/functions/README.md')),
   starter: starterProject,
   'example-app': appProject(...exampleApp),
   'internal-operations': appProject(...exampleApp, functionsPage('4.internal-operations')),
