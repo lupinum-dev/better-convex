@@ -314,3 +314,16 @@ test('a job reaches internal operations and other jobs as the system, and the fe
   ])
   vi.useRealTimers()
 })
+
+// Codex round 1: a handler edited the row object it read, and the write rule judged the edited "before" state.
+test.each(['get', 'query'] as const)(
+  'editing a row read by %s does not change what the write rule sees',
+  async (via) => {
+    const { t, ann, a, pa } = await setup()
+    await t.run((ctx) => ctx.db.patch(pa, { archived: true }))
+    await expect(ann.mutation(fn('reviveByEdit'), { id: pa, orgId: a, via })).rejects.toThrow(
+      /FORBIDDEN|may not/,
+    )
+    expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ archived: true, name: 'A secret' })
+  },
+)

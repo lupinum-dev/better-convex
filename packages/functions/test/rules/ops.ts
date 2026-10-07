@@ -70,6 +70,32 @@ export const moveByString = mutation({
   },
 })
 
+/** Edits the row object it read, then writes it back: the rule must still judge the stored row. */
+export const reviveByEdit = mutation({
+  action: 'projects.rename',
+  args: {
+    id: v.id('projects'),
+    orgId: v.id('orgs'),
+    via: v.union(v.literal('get'), v.literal('query')),
+  },
+  returns: v.null(),
+  handler: async (ctx, { id, orgId, via }) => {
+    const project =
+      via === 'get'
+        ? await ctx.db.get(id)
+        : (
+            await ctx.db
+              .query('projects')
+              .withIndex('by_org', (q) => q.eq('orgId', orgId))
+              .collect()
+          ).find((row) => row._id === id)
+    project!.archived = false
+    const { _id, _creationTime, ...value } = project!
+    await ctx.db.replace(id, { ...value, name: 'revived' })
+    return null
+  },
+})
+
 /** Creates a project in an org named by an unchecked string. */
 export const createInOrg = mutation({
   action: 'projects.archive',

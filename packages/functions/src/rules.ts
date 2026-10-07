@@ -275,6 +275,19 @@ export function tenancy(rules: Record<string, Rule>) {
 }
 
 /**
+ * A deep copy of a stored value. The row cache keeps the row as stored and the
+ * handler gets its own object: a handler that edits what it read and writes
+ * it back must not change the "before" state the write rule judges.
+ */
+function copy<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(copy) as T
+  if (value instanceof ArrayBuffer) return value.slice(0) as T
+  if (value !== null && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).map(([key, field]) => [key, copy(field)])) as T
+  return value
+}
+
+/**
  * `ctx.db` with the rules applied. A `get` of a row the call may not see
  * returns `null`, as for a missing row. A query that returns one throws: the
  * query is missing a filter, and failing loudly is safer than a short page.
@@ -459,7 +472,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
           'the tenant or owner field, or the publicRead condition.',
       )
     }
-    rows.set(String(doc._id), doc)
+    rows.set(String(doc._id), copy(doc))
   }
 
   /** Why a write was refused, when the rule knows better than the role layer. */
@@ -523,7 +536,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
     },
     async get(...args: unknown[]) {
       const found = target(args, args.length === 2)
-      return found && readable(found.table, await load(found.id))
+      return found && copy(await readable(found.table, await load(found.id)))
     },
     query(table: string) {
       ruleOf(table)
