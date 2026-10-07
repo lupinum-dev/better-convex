@@ -65,6 +65,17 @@ function requireLoopbackOrigin(name: 'CONVEX_SITE_URL' | 'SITE_URL'): void {
   }
 }
 
+/**
+ * The session and grant helpers write auth rows without the sign-in or consent flow: they run
+ * only under a test runner (Vitest sets `VITEST`, test runners `NODE_ENV=test`), never in a
+ * deployment, where neither is set.
+ */
+function requireTestRunner(): void {
+  if (!process.env.VITEST && process.env.NODE_ENV !== 'test') {
+    throw new Error('AUTH_TEST_RUNNER_REQUIRED')
+  }
+}
+
 function requireLoopbackOrigins(): void {
   requireLoopbackOrigin('SITE_URL')
   requireLoopbackOrigin('CONVEX_SITE_URL')
@@ -183,6 +194,7 @@ export async function signInAs<Client>(
   subject: string,
   options: SignInAsOptions = {},
 ): Promise<Client> {
+  requireTestRunner()
   const lifetime = options.expiresInMs ?? 60 * 60 * 1000
   if (!Number.isSafeInteger(lifetime) || lifetime <= 0) {
     throw new RangeError('AUTH_TEST_SESSION_LIFETIME_INVALID')
@@ -226,6 +238,7 @@ export async function grantMcp<Client>(
   scopes: readonly string[],
   options: GrantMcpOptions = {},
 ): Promise<BetterConvexMcpPrincipal> {
+  requireTestRunner()
   if (
     scopes.length === 0 ||
     scopes.some((scope) => typeof scope !== 'string' || scope.length === 0)

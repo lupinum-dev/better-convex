@@ -156,4 +156,19 @@ describe('auth component limits', () => {
     })
     await expect(admitted(bob)).rejects.toThrow('MCP access denied')
   })
+
+  // Codex round 3: grantMcp minted a live grant under NODE_ENV=production, outside any test runner.
+  it('refuses to sign in or grant outside a test runner', async () => {
+    const test = init()
+    vi.stubEnv('VITEST', '')
+    vi.stubEnv('NODE_ENV', 'production')
+    await expect(signInAs(test, 'alice', { componentName: 'limits' })).rejects.toThrow(
+      'AUTH_TEST_RUNNER_REQUIRED',
+    )
+    await expect(
+      grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' }),
+    ).rejects.toThrow('AUTH_TEST_RUNNER_REQUIRED')
+    vi.unstubAllEnvs()
+    expect(await test.query(adapter.count, { model: 'session' })).toBe(0)
+  })
 })
