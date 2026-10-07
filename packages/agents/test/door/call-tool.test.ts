@@ -48,3 +48,19 @@ test('callTool sends the input as JSON, as a host does', async () => {
     await callTool(t, tools, await grantMcp(t, 'ann', ['read']), 'echo_shapes', input),
   ).toEqual({ status: 'done', result: { types: { text: 'string' } } })
 })
+
+// Fix round 2: callTool returned the output as Convex gave it. The door sends it as JSON, so a
+// host gets null for NaN and FAILED for a bigint; a test must not pass on a result no host gets.
+test('callTool returns the output as JSON, as the door sends it', async () => {
+  const { t } = await setup()
+  const principal = await grantMcp(t, 'ann', ['read'])
+  expect(await callTool(t, tools, principal, 'echo_shapes', { text: 'NaN' })).toEqual({
+    status: 'done',
+    result: { nan: null, infinity: null },
+  })
+  await expect(callTool(t, tools, principal, 'echo_shapes', { text: 'bigint' })).rejects.toThrow(
+    new Error(
+      'callTool: the door cannot send the output of "echo_shapes" as JSON, so a host gets FAILED. Do not know how to serialize a BigInt',
+    ),
+  )
+})

@@ -4,7 +4,8 @@ import { query } from './fns'
 
 /**
  * E8: every validator kind JSON can carry, as one tool. Echoes what arrived. The text "crash"
- * throws a plain Error, as a bug in app code does.
+ * throws a plain Error, as a bug in app code does. "NaN" and "bigint" return a value Convex
+ * carries but JSON does not.
  */
 export const echo = query({
   action: 'shapes.echo',
@@ -28,6 +29,8 @@ export const echo = query({
   },
   handler: async (_ctx, args) => {
     if (args.text === 'crash') throw new Error('The handler crashed.')
+    if (args.text === 'NaN') return { nan: NaN, infinity: Infinity }
+    if (args.text === 'bigint') return { count: 1n }
     return {
       types: Object.fromEntries(Object.entries(args).map(([k, value]) => [k, typeof value])),
     }

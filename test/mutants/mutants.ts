@@ -392,6 +392,17 @@ export const mutants: Mutant[] = [
     kills: [`${A}/door/call-tool.test.ts > callTool sends the input as JSON, as a host does`],
   },
   {
+    // callTool returns the output after the JSON trip the door makes, so a test sees what a host gets.
+    id: 'callTool-json-output',
+    guards: 'callTool',
+    file: 'packages/agents/src/test.ts',
+    find: 'JSON.parse(JSON.stringify(output)) as ToolSuccess',
+    replace: 'output',
+    kills: [
+      `${A}/door/call-tool.test.ts > callTool returns the output as JSON, as the door sends it`,
+    ],
+  },
+  {
     // STRESS G2: input Convex cannot carry is named as a field, at the door and in callTool.
     id: 'G2-unsendable-input',
     guards: 'G2',
