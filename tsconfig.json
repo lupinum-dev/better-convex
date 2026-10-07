@@ -10,6 +10,7 @@
     "packages/functions",
     "packages/agents",
     "test/fixtures/mcp-oauth-agent",
+    "test/fixtures/consumers",
     "test/mcp",
     "test/fixtures/consumer-smoke",
     "test/fixtures/auth-client-typing",

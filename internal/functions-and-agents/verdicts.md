@@ -7,7 +7,8 @@ evidence and the alternatives so nobody has to repeat the experiment.
 ## The design holds on three app shapes
 
 Three slices were built on the library alone, each from a real app's
-feature, each with a leak test (`bc-skeleton/labs/skeleton/slices/`):
+feature, each with a leak test. They now run as packed consumer apps in
+`test/fixtures/consumers/`, with the docs-only slice as `sites`:
 
 | Slice                                     | Shape                       | What it forced into the library                                                                                                     |
 | ----------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |

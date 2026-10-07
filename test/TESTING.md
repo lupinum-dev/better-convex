@@ -20,6 +20,11 @@ test/
 
 `playground/convex/*.test.ts` and `demo/convex/*.test.ts` run in the `convex` project.
 
+`test/fixtures/consumers/` holds four small apps on the functions and agents
+packages: agency, content, marketplace and site checks. Each has one journey and
+one leak table. Their tests run in the `mcp` project from source, and in
+`pnpm test:starters` from the packed tarballs.
+
 The `pnpm test` suites import the Vue package from source; packed checks use the build.
 
 ## Commands
@@ -29,7 +34,7 @@ pnpm test               # unit, security, convex, nuxt, browser, auth-adapter, a
 pnpm test:integration   # real local Convex backend (builds the packages first)
 pnpm test:e2e           # full-stack E2E; `node scripts/run-e2e.mjs --full` adds extended/
 pnpm test:packed        # after `pnpm build`: publint, attw, packed imports, secret scan, consumer typechecks
-pnpm test:starters      # every starter and the packed Vue/Nuxt/MCP consumer apps, from local tarballs
+pnpm test:starters      # every starter, the consumer apps and the packed Vue/Nuxt/MCP consumers, from local tarballs
 ```
 
 Run one project or file after `pnpm exec nuxt-module-build prepare`:

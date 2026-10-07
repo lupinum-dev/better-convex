@@ -138,8 +138,9 @@ export default defineConfig({
       },
 
       // MCP package, starter and documentation-sample contracts. The real
-      // client journey runs in the integration project. The starter's own tests
-      // run here from source, and in `pnpm test:starters` against the packed packages.
+      // client journey runs in the integration project. The tests of the starter and of
+      // the consumer apps (test/fixtures/consumers) run here from source, and in
+      // `pnpm test:starters` against the packed packages.
       {
         plugins: [mutant],
         resolve: {
@@ -156,7 +157,11 @@ export default defineConfig({
         },
         test: {
           name: 'mcp',
-          include: ['test/mcp/**/*.test.ts', 'starters/mcp-oauth-agent/convex/**/*.test.ts'],
+          include: [
+            'test/mcp/**/*.test.ts',
+            'starters/mcp-oauth-agent/convex/**/*.test.ts',
+            'test/fixtures/consumers/*/convex/**/*.test.ts',
+          ],
           environment: 'node',
           fileParallelism: false,
           testTimeout: 30_000,
