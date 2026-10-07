@@ -617,11 +617,13 @@ export const mutants: Mutant[] = [
     ],
   },
   {
+    // A revoke deletes the consent. Without the consent checks the live-grant query admits the
+    // revoked token as before, so the call goes through.
     id: 'S14-live-grant',
     guards: 'S14',
-    file: 'src/runtime/convex-auth/mcp-principal.ts',
-    find: 'if (!grant || grant.grantId !== principal.grantId) throw accessDenied()',
-    replace: 'if (false) throw accessDenied()',
+    file: 'src/runtime/convex-auth/oauth-live-access.ts',
+    find: "    !consent ||\n    !nonEmptyString(consent.id) ||\n    consent.id !== args.grantId ||\n    consent.clientId !== clientId ||\n    consent.userId !== userId ||\n    !consentResources?.includes(identifier) ||\n    !consentScopes ||\n    !containsEvery(consentScopes, scopes)\n  ) {\n    return null\n  }\n  return { user: admission.user, grantId: consent.id }",
+    replace: '    false\n  ) {\n    return null\n  }\n  return { user: admission.user, grantId: args.grantId }',
     kills: [
       'test/convex/mcp-oauth.test.ts > requireMcpPrincipal > denies a revoked connection and a disabled client',
       'test/convex/mcp-oauth.test.ts > requireMcpPrincipal > with allowExpiredToken, accepts an expired token of a live grant and still denies a revoked one',
@@ -629,6 +631,19 @@ export const mutants: Mutant[] = [
       `${A}/approvals/approvals.test.ts > a follow-up of an approved request changes nothing after the person revokes the connection`,
     ],
     projects: ['convex', 'agents'],
+  },
+  {
+    // The live-grant query returns null for a revoked grant. This check turns it into
+    // MCP_ACCESS_DENIED; without it the next line reads `grant.user` and throws a TypeError.
+    id: 'S14-live-grant-denied',
+    guards: 'S14',
+    file: 'src/runtime/convex-auth/mcp-principal.ts',
+    find: 'if (!grant || grant.grantId !== principal.grantId) throw accessDenied()',
+    replace: 'if (false) throw accessDenied()',
+    kills: [
+      'test/convex/mcp-oauth.test.ts > requireMcpPrincipal > denies a revoked connection and a disabled client',
+    ],
+    projects: ['convex'],
   },
   {
     id: 'S14-token-expiry',
