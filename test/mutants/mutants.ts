@@ -1021,8 +1021,8 @@ export const mutants: Mutant[] = [
     id: 'C10-shown-internal-action',
     guards: 'C10',
     file: 'packages/functions/src/functions.ts',
-    find: 'actor: shown(who) }',
-    replace: 'actor: who }',
+    find: '              actor: shown(who),',
+    replace: '              actor: who,',
     kills: [
       `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
       `${callbacks} > internal action, follow-up of an approved request receives exactly these keys`,
@@ -1033,8 +1033,8 @@ export const mutants: Mutant[] = [
     id: 'C10-shown-operation',
     guards: 'C10',
     file: 'packages/functions/src/functions.ts',
-    find: 'actor: shown(actor) }',
-    replace: 'actor }',
+    find: '        actor: shown(actor),\n      },',
+    replace: '        actor,\n      },',
     kills: [
       `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
       `${callbacks} > mutation handler, agent acting under a person’s approval receives exactly these keys`,
