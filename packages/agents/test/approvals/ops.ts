@@ -2,7 +2,7 @@ import { fail } from '@lupinum/better-convex-functions'
 import { internalMutationGeneric, makeFunctionReference } from 'convex/server'
 import { v } from 'convex/values'
 
-import { internalMutation, mutation } from './fns'
+import { internalMutation, internalQuery, mutation } from './fns'
 
 const project = v.object({ id: v.id('projects'), name: v.string() })
 
@@ -128,6 +128,30 @@ export const sneakySummary = mutation({
         .then(attempt)
         .catch(() => null)
     return 'Archive a project.'
+  },
+  handler: async () => null,
+})
+
+/** A project's name, for the nested-query summary. */
+export const projectName = internalQuery({
+  action: 'projects.read',
+  args: { projectId: v.id('projects') },
+  returns: v.string(),
+  handler: async (ctx, { projectId }) => (await ctx.db.get(projectId))!.name,
+})
+
+/** An approval summary that reads through a nested query, whose reads the stale check cannot see. */
+export const queryingSummary = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects') },
+  returns: v.null(),
+  tool: { name: 'querying_archive', description: 'Archive with a summary that runs a query.' },
+  approval: async (ctx, { projectId }) => {
+    const name: string = await (ctx as any).runQuery(
+      makeFunctionReference<'query'>('ops:projectName'),
+      { projectId },
+    )
+    return `Archive ${name}.`
   },
   handler: async () => null,
 })

@@ -104,7 +104,7 @@ try {
   const entries = {
     'dist/index.mjs': 'defineTools',
     'dist/mcp.mjs':
-      'McpUnsupportedCapabilityError,createMcpServer,handleMcpRequest,projectMcpToolError',
+      'McpUnsupportedCapabilityError,createMcpServer,handleMcpRequest,listMcpCatalog,projectMcpToolError',
   }
   for (const [entry, allowed] of Object.entries(entries)) {
     const imported = await import(pathToFileURL(join(installedRoot, entry)).href)

@@ -132,11 +132,12 @@ export function toolFailure(error: unknown): { code: string; message: string } {
 }
 
 /**
- * What an approval summary may use: reads only. Asking a person must change
+ * What an approval summary may use: its own reads only. Asking a person must change
  * nothing; a write here would land before anyone decides (Codex review, round 1).
+ * No `runQuery` either: a nested query's reads escape the stale check (round 2).
  */
 function readOnly(ctx: any) {
-  const { db, storage, runMutation: _m, runAction: _a, scheduler: _s, ...rest } = ctx
+  const { db, storage, runQuery: _q, runMutation: _m, runAction: _a, scheduler: _s, ...rest } = ctx
   return {
     ...rest,
     db: { get: db.get, query: db.query, normalizeId: db.normalizeId },
@@ -437,17 +438,18 @@ export function defineTools(
                 url: approvalUrl(same._id),
               }
             // A person said no: the same call from this connection waits until that request would have expired.
+            const callHash = await fingerprint(call)
             const declined = await lib(ctx)
               .query('approvals')
-              .withIndex('by_requester_status', (q) =>
+              .withIndex('by_requester_call', (q) =>
                 q
                   .eq('requester.key', requester.key)
+                  .eq('callHash', callHash)
                   .eq('status', 'declined')
                   .gt('expiresAt', Date.now()),
               )
-              .take(openApprovals)
-            if (declined.some((row) => callKey(row.tool, row.input) === call))
-              fail('APPROVAL_DECLINED', 'A person declined this request.')
+              .first()
+            if (declined) fail('APPROVAL_DECLINED', 'A person declined this request.')
             if (open.length >= openApprovals) {
               fail(
                 'RATE_LIMITED',
@@ -496,6 +498,7 @@ export function defineTools(
               caller,
               tenantId: tenant?.id,
               requestId,
+              callHash,
               seen,
               status: 'pending',
               expiresAt,

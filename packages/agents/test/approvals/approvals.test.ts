@@ -509,6 +509,15 @@ test('an approval summary cannot write, even when it hides the failure', async (
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'active' })
 })
 
+// Codex round 2: rows a summary read through ctx.runQuery escaped the stale check.
+test('an approval summary cannot run a nested query, so no request skips the stale check', async () => {
+  const s = await setup()
+  await expect(
+    s.t.mutation(api.tools.querying_archive, { caller, input: { projectId: s.p[0] } }),
+  ).rejects.toThrow()
+  expect(await s.approvalRows()).toEqual([])
+})
+
 // Third review: IDs used as record keys were not fingerprinted.
 test('a request naming rows as record keys fails as STALE when one changed', async () => {
   const s = await setup()
@@ -550,6 +559,18 @@ test('a retry after a decline is told it was declined', async () => {
     s.t.mutation(api.tools.archive_project, { caller, input: { projectId: s.p[0] } }),
   ).rejects.toThrow(/APPROVAL_DECLINED/)
   expect(await s.approvalRows()).toHaveLength(1)
+})
+
+// Codex round 2: only the 20 oldest declines were checked, so the 21st call could ask again.
+test('a declined call is found among more than 20 declines', async () => {
+  const s = await setup()
+  const ask = (size: number) =>
+    s.t.mutation(api.tools.export_project, { caller, input: { projectId: s.p[0], size } })
+  for (let size = 101; size <= 121; size++) {
+    const asked = await ask(size)
+    await s.ann.mutation(api.tools.decline, { approvalId: asked.approvalId })
+  }
+  await expect(ask(121)).rejects.toThrow(/APPROVAL_DECLINED/)
 })
 
 // B1: one connection could make 300 writes a minute; same-row bursts surfaced as "the tool failed".

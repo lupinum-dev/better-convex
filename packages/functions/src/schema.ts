@@ -46,6 +46,8 @@ export const libraryTables = {
     tenantId: v.optional(v.string()),
     /** The agent's retry key, so a retry after the decision replays the outcome. */
     requestId: v.optional(v.string()),
+    /** SHA-256 of the tool and input, so a declined call is found however many declines there are. */
+    callHash: v.optional(v.string()),
     /** Fingerprints of the rows the summary read; approving fails when one changed. */
     seen: v.optional(v.array(v.object({ id: v.string(), hash: v.string() }))),
     status: v.union(
@@ -66,6 +68,7 @@ export const libraryTables = {
     .index('by_user_status', ['requester.userId', 'status', 'expiresAt'])
     .index('by_requester_status', ['requester.key', 'status', 'expiresAt'])
     .index('by_requester_request', ['requester.key', 'requestId'])
+    .index('by_requester_call', ['requester.key', 'callHash', 'status', 'expiresAt'])
     .index('by_tenant_status', ['tenantId', 'status', 'expiresAt'])
     .index('by_status', ['status', 'expiresAt']),
 

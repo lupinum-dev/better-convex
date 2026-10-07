@@ -670,14 +670,14 @@ export function defineFunctions<
       /**
        * One sentence a person reads before approving an agent's request. The
        * rows it reads are fingerprinted: approving fails when one changed.
-       * It runs before the request is stored, reads only (no writes, mutations,
-       * actions or scheduling), under the call's row rules, and
+       * It runs before the request is stored, reads only, its own (no writes, nested
+       * calls or scheduling: every row it reads is fingerprinted), under the call's row rules, and
        * public rows are readable to everyone: fail here for work that could
        * never run (a row outside the call's tenant), so it never reaches a
        * person as a request (content slice).
        */
       approval?: (
-        ctx: QueryCtx & { actor: ActorFor<A> },
+        ctx: Omit<QueryCtx, 'runQuery'> & { actor: ActorFor<A> },
         args: ObjectType<Args>,
       ) => string | Promise<string>
     },
