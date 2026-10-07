@@ -349,11 +349,6 @@ export interface BetterConvexAuth<
     ctx: WritableAuthCtx<DataModel>,
   ) => Promise<{ readonly auth: AuthInstance; readonly headers: Headers }>
   /**
-   * The configured MCP OAuth profile. Every accessor throws
-   * `AUTH_OAUTH_MCP_PROFILE_REQUIRED` without `oauth.mcp`.
-   */
-  readonly mcp: BetterConvexMcp
-  /**
    * The access verifier for `handleMcpRequest`: keys from the component, the
    * strict token checks, and one live grant query per token. With `oauth.mcp`,
    * scopes and the resource default to the profile.
@@ -397,21 +392,6 @@ export interface BetterConvexMcpAuthorization {
     readonly resourceName?: string
     readonly scopesSupported: readonly string[]
   }
-}
-
-/** Accessors for the configured `oauth.mcp` profile. */
-export interface BetterConvexMcp {
-  /** This deployment's Better Auth issuer, `${SITE_URL}/api/auth`. */
-  readonly issuer: () => string
-  /** The MCP resource URL, which is also the token audience. */
-  readonly resource: () => URL
-  /** The MCP scopes with their consent descriptions (without `offline_access`). */
-  readonly scopes: () => Readonly<Record<string, string>>
-  /**
-   * Every scope a token may carry: the MCP scopes, plus `offline_access` when
-   * renewal is on. Advertise it as the protected resource's `scopesSupported`.
-   */
-  readonly scopesSupported: () => readonly string[]
 }
 
 /** The stable Better Auth capabilities used at the Convex transport boundary. */
@@ -1211,15 +1191,6 @@ export function createBetterConvexAuthOwned<
     if (!mcpProfile) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
     return mcpProfile
   }
-  const mcp: BetterConvexMcp = Object.freeze({
-    issuer: () => {
-      requireMcp()
-      return canonicalAuthIssuer()
-    },
-    resource: () => resolveMcpResource(requireMcp()),
-    scopes: () => requireMcp().scopes,
-    scopesSupported: () => Object.freeze([...(requireMcp().provider.scopes ?? [])]),
-  })
 
   const createMcpAccessVerifier = (
     ctx: AuthCtx<DataModel>,
@@ -1254,18 +1225,18 @@ export function createBetterConvexAuthOwned<
     getUser: authComponent.getUser,
     requireUser: authComponent.requireUser,
     getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
-    mcp,
     createMcpAccessVerifier,
     mcpAuthorization(ctx: AuthCtx<DataModel>): BetterConvexMcpAuthorization {
+      const profile = requireMcp()
       return {
-        resource: mcp.resource(),
+        resource: resolveMcpResource(profile),
         authorization: {
           mode: 'oauth',
-          issuer: mcp.issuer(),
+          issuer: canonicalAuthIssuer(),
           verifier: createMcpAccessVerifier(ctx),
           ...(options.appName === undefined ? {} : { resourceName: options.appName }),
           // Hosts that read this list request `offline_access` and receive renewal.
-          scopesSupported: mcp.scopesSupported(),
+          scopesSupported: Object.freeze([...(profile.provider.scopes ?? [])]),
         },
       }
     },

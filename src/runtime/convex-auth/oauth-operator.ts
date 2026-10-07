@@ -19,7 +19,8 @@ export interface BetterConvexPublicOAuthClientInput {
   readonly name: string
   readonly profile: string
   readonly redirectUris: readonly [string, ...string[]]
-  readonly resource: {
+  /** The protected resource. Defaults to the `oauth.mcp` resource, named `appName`. */
+  readonly resource?: {
     readonly identifier: string
     readonly name: string
     readonly ownership: 'application'
@@ -220,6 +221,16 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
     ctx: AuthCtx<DataModel>,
   ) => PinnedOAuthProviderProfile | Promise<PinnedOAuthProviderProfile | undefined> | undefined
 }): BetterConvexOAuthOperator<DataModel> {
+  const appName = () => input.appName?.trim() || 'MCP'
+  /** The `oauth.mcp` resource: the one place a client's default resource comes from. */
+  const mcpResource = () => {
+    if (!input.mcp) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
+    return {
+      identifier: resolveMcpResource(input.mcp).href,
+      name: appName(),
+      ownership: 'application' as const,
+    }
+  }
   const operator: BetterConvexOAuthOperator<DataModel> = Object.freeze({
     async createPublicClient(
       ctx: AuthCtx<DataModel>,
@@ -234,11 +245,12 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
         throw new Error('AUTH_OAUTH_CLIENT_REDIRECT_URI_INVALID')
       }
       const scopes = requireValues(clientInput.scopes, 'SCOPE')
-      const resourceIdentifier = requireResourceUrl(clientInput.resource.identifier)
-      if (clientInput.resource.ownership !== 'application') {
+      const resourceInput = clientInput.resource ?? mcpResource()
+      const resourceIdentifier = requireResourceUrl(resourceInput.identifier)
+      if (resourceInput.ownership !== 'application') {
         throw new Error('AUTH_OAUTH_CLIENT_RESOURCE_OWNERSHIP_INVALID')
       }
-      const resourceName = requireString(clientInput.resource.name, 'RESOURCE_NAME')
+      const resourceName = requireString(resourceInput.name, 'RESOURCE_NAME')
       let oauthProfile: PinnedOAuthProviderProfile | undefined
       try {
         oauthProfile = await input.resolveProfile(ctx)
@@ -379,16 +391,10 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
       const redirectUri = resolveMcpHostRedirectUri(clientInput.host, clientInput.redirectUri)
       const admitted = mcp.provider.scopes ?? []
       const scopes = clientInput.scopes ?? (admitted as [string, ...string[]])
-      const appName = input.appName?.trim() || 'MCP'
       return await operator.createPublicClient(ctx, {
-        name: clientInput.name ?? `${appName} for ${HOST_CLIENT_NAMES[clientInput.host]}`,
+        name: clientInput.name ?? `${appName()} for ${HOST_CLIENT_NAMES[clientInput.host]}`,
         profile: `bcn-mcp-${clientInput.host}`,
         redirectUris: [redirectUri],
-        resource: {
-          identifier: resolveMcpResource(mcp).href,
-          name: appName,
-          ownership: 'application',
-        },
         scopes,
       })
     },

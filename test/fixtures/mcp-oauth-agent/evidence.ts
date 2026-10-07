@@ -6,7 +6,7 @@ import { v } from 'convex/values'
 
 import { components } from './_generated/api'
 import { internalMutation, internalQuery, type MutationCtx } from './_generated/server'
-import { APP_NAME, auth } from './auth'
+import { auth } from './auth'
 
 const INSPECTOR_CALLBACK = 'http://localhost:6274/oauth/callback'
 const MCP_REMOTE_CALLBACK = 'http://127.0.0.1:3334/oauth/callback'
@@ -39,8 +39,8 @@ async function betterAuthAdapter(ctx: MutationCtx): Promise<BetterAuthAdapter> {
   return ((await instance.$context) as unknown as { adapter: BetterAuthAdapter }).adapter
 }
 
-function resource(): string {
-  return auth.mcp.resource().href
+function resource(ctx: MutationCtx): string {
+  return auth.mcpAuthorization(ctx).resource.href
 }
 
 async function createPublicClient(ctx: MutationCtx, name: string, callback: string) {
@@ -48,7 +48,6 @@ async function createPublicClient(ctx: MutationCtx, name: string, callback: stri
     name,
     profile: `bcn-evidence-${name.toLowerCase().replaceAll(/[^a-z]+/gu, '-')}`,
     redirectUris: [callback],
-    resource: { identifier: resource(), name: APP_NAME, ownership: 'application' },
     scopes: SCOPES,
   })
   return clientId
@@ -89,7 +88,7 @@ export const provision = internalMutation({
       status: 'active',
       userId: user._id,
     })
-    return { clients: { inspector, mcpRemote }, organizationId, resource: resource() }
+    return { clients: { inspector, mcpRemote }, organizationId, resource: resource(ctx) }
   },
 })
 
@@ -101,7 +100,7 @@ export const provisionTerminalClients = internalMutation({
     for (const [key, name] of Object.entries(TERMINAL_CLIENTS)) {
       clients[key] = await createPublicClient(ctx, name, INSPECTOR_CALLBACK)
     }
-    return { clients, resource: resource() }
+    return { clients, resource: resource(ctx) }
   },
 })
 
@@ -155,9 +154,9 @@ export const provisionConfidential = internalMutation({
     })
     await adapter.create({
       model: 'oauthClientResource',
-      data: { clientId, createdAt: new Date(), resourceId: resource() },
+      data: { clientId, createdAt: new Date(), resourceId: resource(ctx) },
     })
-    return { client: { id: clientId, secret }, resource: resource() }
+    return { client: { id: clientId, secret }, resource: resource(ctx) }
   },
 })
 
@@ -229,7 +228,7 @@ export const setResourceDisabled = internalMutation({
     const updated = await adapter.update({
       model: 'oauthResource',
       update: { disabled, updatedAt: new Date() },
-      where: [{ field: 'identifier', value: resource() }],
+      where: [{ field: 'identifier', value: resource(ctx) }],
     })
     if (!updated) throw new Error('MCP_EVIDENCE_RESOURCE_NOT_FOUND')
   },
@@ -242,14 +241,14 @@ export const setClientResourceLinked = internalMutation({
     if (linked) {
       await adapter.create({
         model: 'oauthClientResource',
-        data: { clientId, createdAt: new Date(), resourceId: resource() },
+        data: { clientId, createdAt: new Date(), resourceId: resource(ctx) },
       })
     } else {
       await adapter.deleteMany({
         model: 'oauthClientResource',
         where: [
           { field: 'clientId', value: clientId },
-          { field: 'resourceId', value: resource() },
+          { field: 'resourceId', value: resource(ctx) },
         ],
       })
     }

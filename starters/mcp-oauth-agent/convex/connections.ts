@@ -3,7 +3,7 @@ import { v } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import { tools } from './agents'
-import { APP_NAME, auth } from './auth'
+import { auth } from './auth'
 import { policy } from './policy'
 
 // Connections live in the auth component, outside the row rules, so these functions use
@@ -71,11 +71,6 @@ export const createInspectorClient = trusted(
         name: 'MCP Inspector',
         profile: 'mcp-inspector',
         redirectUris: ['http://localhost:6274/oauth/callback'],
-        resource: {
-          identifier: auth.mcp.resource().href,
-          name: APP_NAME,
-          ownership: 'application',
-        },
         scopes: ['offline_access', ...Object.keys(policy.scopes)],
       }),
   }),

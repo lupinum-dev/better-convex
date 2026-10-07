@@ -664,17 +664,12 @@ describe('OAuth connections', () => {
 describe('factory MCP wiring', () => {
   it('binds the profile scopes and resource to the verifier and principal checks', async () => {
     const { test, key } = await initGrant()
-    expect(auth.mcp.issuer()).toBe(issuer)
-    expect(auth.mcp.resource().href).toBe(resource)
-    expect(auth.mcp.scopes()).toEqual({
-      'mcp:read': 'Read projects',
-      'mcp:write': 'Change projects',
-    })
     const token = await signAccessToken(key)
     await test.query(async (ctx) => {
-      const verified = await auth
-        .createMcpAccessVerifier(asCtx(ctx))
-        .verifyAccessToken(token, expected())
+      const door = auth.mcpAuthorization(asCtx(ctx))
+      expect(door.resource.href).toBe(resource)
+      expect(door.authorization.issuer).toBe(issuer)
+      const verified = await door.authorization.verifier.verifyAccessToken(token, expected())
       await expect(
         auth.requireMcpPrincipal(asCtx(ctx), verified.principal, { scope: 'mcp:write' }),
       ).resolves.toMatchObject({ user: { id: 'alice' } })

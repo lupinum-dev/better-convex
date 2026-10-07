@@ -40,6 +40,11 @@ If you already run the release candidate, check only these:
       `annotations`, `scopes` becomes `scopeChallenge: tools.requireScopes(...)`.
 - [ ] MCP: `runMcpTool(operation, { name })` is removed. Use
       `tools.runTool(name, operation)` inside `configureServer`.
+- [ ] MCP: `auth.mcp` is removed. Spread `auth.mcpAuthorization(ctx)` into the
+      `handleMcpRequest` options instead of passing `auth.mcp.resource()`,
+      `auth.mcp.issuer()` and `auth.mcp.scopesSupported()`. Leave `resource`
+      out of `auth.oauthOperator.createPublicClient`: the client is then bound
+      to the MCP resource.
 
 ## Packages and data
 
