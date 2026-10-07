@@ -176,6 +176,11 @@ expiry. Then import it with
 | `listMcpCatalog`                   | `/test` | Returns the `tools/list` and `resources/list` results that a client sees, for snapshot tests.                                                                            |
 | `testMcpAuth`, `mcpClient`, `refs` | `/test` | The MCP token check faked for convex-test, a JSON-RPC client over its HTTP router, and `internal.<module>` without codegen.                                              |
 
+`@lupinum/better-convex-agents/internal` exists only for the in-app agent runtime, which lives
+outside this package for now: `toolFailure` and the run state helpers (`cancelRequests`,
+`finish`, `nextTurn`, `shownStatus`, `stallAfter`, `wait`, `wake`). It is not public API, is not
+covered by semver, and can change in any release.
+
 `configureServer` receives one object with the verified `access`, the verifier's `principal`, the request's `server`, and `tools`. `tools.runTool(name, operation)` runs an operation with this request's error handling. `tools.requireScopes(...scopes)` returns the scope challenge for a tool or resource.
 
 Errors: a `ConvexError` whose `data.code` is in `exposeErrorCodes` becomes a structured tool error with its `data.message` and `data.retryable`. `UNAUTHENTICATED`, `MCP_ACCESS_DENIED`, and `MCP_INSUFFICIENT_SCOPE` use static generic messages unless their codes are in `exposeErrorCodes`. Every other error becomes one generic failure, so internal details do not reach the model. Tools from `defineTools` show the model the library's error codes and messages.
