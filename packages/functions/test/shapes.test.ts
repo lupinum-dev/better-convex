@@ -131,7 +131,7 @@ test('K3: a client is created only under the agency the call names, where the ro
 })
 
 // K2: two tenant kinds through one roleOf; a call spanning them was impossible.
-test('K2: a move between a workspace and an organization needs crossTenant, and a role in both', async () => {
+test('K2: a move between a workspace and an organization needs crossTenant, and a role in both that allows it', async () => {
   const { t, ann, vic, a, users } = await setup()
   const doc = await t.run(async (ctx) => {
     const ws = await ctx.db.insert('workspaces', { ownerId: users.ann, name: 'Ann personal' })
@@ -145,6 +145,15 @@ test('K2: a move between a workspace and an organization needs crossTenant, and 
   ).rejects.toThrow(/NOT_FOUND/)
   await ann.mutation(fn('workspaces:moveToOrgAcross'), { docId: doc, orgId: a })
   expect(await t.run((ctx) => ctx.db.get(doc))).toBeNull()
+  // V14: a role in both is not enough; it must allow the action in both, even where no row changes.
+  const vicDoc = await t.run(async (ctx) => {
+    const ws = await ctx.db.insert('workspaces', { ownerId: users.vic, name: 'Vic personal' })
+    return await ctx.db.insert('docs', { workspaceId: ws, text: 'Vic idea' })
+  })
+  await expect(
+    vic.mutation(fn('workspaces:noteOrgAcross'), { docId: vicDoc, orgId: a }),
+  ).rejects.toThrow(/FORBIDDEN/)
+  expect(await t.run((ctx) => ctx.db.get(vicDoc))).toMatchObject({ text: 'Vic idea' })
 })
 
 // K1: a role named like a prototype key threw a TypeError instead of denying.

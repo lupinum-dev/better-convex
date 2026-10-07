@@ -47,6 +47,8 @@ test('writes check the row tenant and the role there', async () => {
   await expect(ann.mutation(fn('archiveByString'), { id: pb })).rejects.toThrow(/NOT_FOUND/)
   await expect(vic.mutation(fn('archiveByString'), { id: pa })).rejects.toThrow(/FORBIDDEN/)
   await expect(ann.mutation(fn('createInOrg'), { orgId: b })).rejects.toThrow(/NOT_FOUND/)
+  // V14: the row after a patch is checked too, so a row cannot be moved into a foreign tenant.
+  await expect(ann.mutation(fn('moveByString'), { id: pa, orgId: b })).rejects.toThrow(/NOT_FOUND/)
   await ann.mutation(fn('archiveByString'), { id: pa })
   const rows = await t.run((ctx) => ctx.db.query('projects').collect())
   expect(rows.map((p) => [p.name, p.archived])).toEqual([
@@ -137,21 +139,15 @@ test('a table-qualified get only finds rows of that table', async () => {
   expect(await ann.query(fn('wrongTable'), { id: pb })).toBeNull()
 })
 
-// A7, S3: every way of reading a query checks the rows it hands out (next() once skipped the check).
-test.each(['take', 'first', 'paginate', 'search', 'forAwait', 'next'])(
+// A7, S3: every way of reading a query checks the rows it hands out (next() once skipped the check;
+// unique() handed out a single foreign row, and Convex's own unique() error lists foreign IDs).
+test.each(['take', 'first', 'unique', 'paginate', 'search', 'forAwait', 'next'])(
   'reading a query with %s checks the rows',
   async (how) => {
     const { ann } = await setup()
     await expect(ann.query(fn('readVia'), { how })).rejects.toThrow(/may not read/)
   },
 )
-
-// Catches: unique() errors listing foreign IDs.
-test('unique() checks rows before it reports duplicates', async () => {
-  const { bob, pa } = await setup()
-  const message = await bob.query(fn('uniqueMessage'), {})
-  expect(message).not.toContain(pa)
-})
 
 // Catches: any operation creating a new tenant.
 test('only the named action creates a tenant', async () => {
@@ -190,6 +186,8 @@ test('a visitor reads published pages; drafts and edits need a member', async ()
   await expect(t.query(fn('allPages'), { orgId: a })).rejects.toThrow(/may not read/)
   expect(await ann.query(fn('allPages'), { orgId: a })).toEqual(['Home', 'Draft'])
   expect(await bob.query(fn('publishedPages'), { orgId: a })).toEqual(['Home'])
+  // V14: an internal operation the public action reaches still needs a member.
+  await expect(t.query(fn('peekVia'), {})).rejects.toThrow(/NOT_SIGNED_IN/)
   const home = await t.run(async (ctx) => (await ctx.db.query('pages').first())!._id)
   await expect(t.mutation(fn('editPage'), { pageId: home, title: 'Hacked' })).rejects.toThrow(
     /NOT_SIGNED_IN/,

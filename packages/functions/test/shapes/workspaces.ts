@@ -67,3 +67,13 @@ export const moveToOrg = mutation(move)
 
 /** The same, declared: the role must allow the action in each place. */
 export const moveToOrgAcross = mutation({ ...move, crossTenant: true })
+
+/** Names the org but changes only the doc: no row rule sees the org, so only the role check does. */
+export const noteOrgAcross = mutation({
+  ...move,
+  crossTenant: true,
+  handler: async (ctx: any, { docId, orgId }: { docId: string; orgId: string }) => {
+    await ctx.db.patch(docId, { text: `Moved to ${orgId}` })
+    return null
+  },
+})

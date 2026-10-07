@@ -59,6 +59,17 @@ export const archiveByString = mutation({
   },
 })
 
+/** Moves a project to an org named by an unchecked string. */
+export const moveByString = mutation({
+  action: 'projects.rename',
+  args: { id: v.id('projects'), orgId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { id, orgId }) => {
+    await ctx.db.patch(id, { orgId: ctx.db.normalizeId('orgs', orgId)! })
+    return null
+  },
+})
+
 /** Creates a project in an org named by an unchecked string. */
 export const createInOrg = mutation({
   action: 'projects.archive',
@@ -140,8 +151,8 @@ export const readVia = query({
   action: 'projects.read',
   args: {
     how: v.union(
-      ...(['take', 'first', 'paginate', 'search', 'forAwait', 'next'] as const).map((how) =>
-        v.literal(how),
+      ...(['take', 'first', 'unique', 'paginate', 'search', 'forAwait', 'next'] as const).map(
+        (how) => v.literal(how),
       ),
     ),
   },
@@ -150,6 +161,7 @@ export const readVia = query({
     const all = ctx.db.query('projects').order('desc')
     if (how === 'take') return (await all.take(10)).length
     if (how === 'first') return (await all.first())?.name
+    if (how === 'unique') return (await all.unique())?.name
     if (how === 'paginate') return (await all.paginate({ numItems: 10, cursor: null })).page.length
     if (how === 'search')
       return (
@@ -163,21 +175,6 @@ export const readVia = query({
     let n = 0
     for await (const _ of all) n++
     return n
-  },
-})
-
-/** unique() over several rows; returns the error message. */
-export const uniqueMessage = query({
-  action: 'projects.read',
-  args: {},
-  returns: v.string(),
-  handler: async (ctx) => {
-    try {
-      await ctx.db.query('projects').unique()
-      return 'no error'
-    } catch (error) {
-      return (error as Error).message
-    }
   },
 })
 
@@ -226,6 +223,22 @@ export const publishedPages = query({
         .filter((q) => q.eq(q.field('published'), true))
         .collect()
     ).map((page) => page.title),
+})
+
+/** A public action that reaches an internal operation whose action is not public. */
+export const peekVia = query({
+  action: 'pages.read',
+  args: {},
+  returns: v.any(),
+  handler: async (ctx) => ctx.runQuery(internal<'query'>('ops:noteCount') as never),
+})
+
+/** Counts the notes, a table without a rule: only the policy keeps visitors out. */
+export const noteCount = internalQuery({
+  action: 'projects.read',
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => (await ctx.db.query('notes').collect()).length,
 })
 
 /** Every page of an org, drafts included: drafts are for members. */
