@@ -321,6 +321,40 @@ describe('workspace package dependency direction', () => {
     }
   })
 
+  // Package tests share the repository's test harness (test/mutants, test/auth-fuzz) by path.
+  it('lets a package test import another package’s tests by path, and nothing else', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'bcn-workspace-test-path-'))
+    try {
+      const packageA = join(directory, 'packages/a')
+      const packageB = join(directory, 'packages/b')
+      const files = {
+        'src/index.ts': '../../b/test/harness.js',
+        'test/a.test.ts': '../../b/test/harness.js',
+        'test/b.test.ts': '../../b/src/index.js',
+      }
+      for (const [file, specifier] of Object.entries(files)) {
+        mkdirSync(join(packageA, file, '..'), { recursive: true })
+        writeFileSync(join(packageA, file), `export * from '${specifier}'\n`)
+      }
+      for (const file of ['test/harness.ts', 'src/index.ts']) {
+        mkdirSync(join(packageB, file, '..'), { recursive: true })
+        writeFileSync(join(packageB, file), 'export const value = true\n')
+      }
+      const violations = findWorkspaceDependencyViolations(
+        Object.keys(files).map((file) => join(packageA, file)),
+        [workspacePackage(packageA, '@fixture/a'), workspacePackage(packageB, '@fixture/b')],
+      )
+      expect(
+        violations.map(({ file, specifier }) => [relative(packageA, file!), specifier]),
+      ).toEqual([
+        ['src/index.ts', '../../b/test/harness.js'],
+        ['test/b.test.ts', '../../b/src/index.js'],
+      ])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('rejects cycles in the declared workspace package graph', () => {
     const directory = resolve('/tmp/bcn-workspace-cycle')
     const packages = [

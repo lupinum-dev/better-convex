@@ -588,6 +588,17 @@ function isTestImportOfPublicEntry(file, importer, edge, target) {
   return !!exports && typeof exports === 'object' && Object.hasOwn(exports, subpath)
 }
 
+/**
+ * A package's tests may import another package's tests by path, such as the shared harness in the
+ * repository's `test/` (the mutant transform, the seeded fuzz corpus). Tests ship in no package.
+ */
+function isTestImportOfTests(file, importer, edge, target) {
+  return (
+    inDir(file, join(importer.directory, 'test')) &&
+    inDir(edge.resolvedAbsPath, join(target.directory, 'test'))
+  )
+}
+
 function findWorkspaceDependencyViolations(files, packages) {
   const packageByName = new Map(
     packages.map((workspacePackage) => [workspacePackage.name, workspacePackage]),
@@ -601,7 +612,11 @@ function findWorkspaceDependencyViolations(files, packages) {
     for (const edge of buildEdges(absoluteFile)) {
       if (edge.isRelative && edge.resolvedAbsPath !== null) {
         const target = owningPackage(edge.resolvedAbsPath, packages)
-        if (target && target !== importer) {
+        if (
+          target &&
+          target !== importer &&
+          !isTestImportOfTests(absoluteFile, importer, edge, target)
+        ) {
           violations.push({
             file: absoluteFile,
             kind: 'relative-cross-package',
