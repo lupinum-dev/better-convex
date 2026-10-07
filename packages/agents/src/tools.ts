@@ -29,6 +29,7 @@ import {
   type LibraryDataModel,
   type Operation,
   type ToolSpec,
+  readOnly,
 } from '@lupinum/better-convex-functions/internal'
 import {
   internalMutationGeneric,
@@ -189,16 +190,10 @@ export async function toolCall(
  * nothing; a write here would land before anyone decides (Codex review, round 1).
  * No `runQuery` either: a nested query's reads escape the stale check (round 2).
  */
-function readOnly(ctx: any) {
-  const { db, storage, runQuery: _q, runMutation: _m, runAction: _a, scheduler: _s, ...rest } = ctx
-  return {
-    ...rest,
-    db: { get: db.get, query: db.query, normalizeId: db.normalizeId },
-    storage: storage && {
-      getUrl: storage.getUrl.bind(storage),
-      getMetadata: storage.getMetadata?.bind(storage),
-    },
-  }
+/** An approval summary reads only what the fingerprint sees: no nested queries either. */
+function summaryCtx<C extends object>(ctx: C) {
+  const { runQuery: _query, ...rest } = readOnly(ctx) as C & { runQuery?: unknown }
+  return rest
 }
 
 /**
@@ -525,7 +520,7 @@ export function defineTools(
             const summary = oneLine(
               settle(
                 op.approval
-                  ? await op.approval(readOnly(checked), input)
+                  ? await op.approval(summaryCtx(checked), input)
                   : `${op.action} ${JSON.stringify(input)}`,
               ),
             )
@@ -690,7 +685,7 @@ export function defineTools(
     if (approvers.roles.length === 0) return false
     const approverIn = async (tenantId: string) => {
       const tenant = tenants.refOf(ctx.db, tenantId)
-      const role = tenant ? await roleOf(ctx, actor.user, tenant) : null
+      const role = tenant ? await roleOf(readOnly(ctx), actor.user, tenant) : null
       return role !== null && approvers.roles.includes(role)
     }
     if (row.tenantId !== undefined && (await approverIn(row.tenantId))) return true
@@ -900,7 +895,7 @@ export function defineTools(
         let rows
         if (tenantId !== undefined) {
           const tenant = tenants.refOf(ctx.db, tenantId)
-          if (!tenant || (await roleOf(ctx, actor.user, tenant)) === null)
+          if (!tenant || (await roleOf(readOnly(ctx), actor.user, tenant)) === null)
             fail('NOT_FOUND', 'Nothing with these IDs was found.')
           rows = await lib(ctx)
             .query('activity')

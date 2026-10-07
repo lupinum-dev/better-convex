@@ -127,8 +127,8 @@ test.each([
   expect(archiveAsAgent(withAgentRule(value))).toBe('approve')
 })
 
-// Fails open today: `?? 'allow'` treats an explicit null like a missing rule. Drop `.fails` with the fix.
-test.fails('an agent rule that is null asks a person', () => {
+// Callback table, 2026-10-07: `?? 'allow'` treated an explicit null like a missing rule.
+test('an agent rule that is null asks a person', () => {
   expect(archiveAsAgent(withAgentRule(null))).toBe('approve')
 })
 

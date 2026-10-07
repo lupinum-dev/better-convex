@@ -139,7 +139,7 @@ const systemDb = [
   'system',
   'table',
 ]
-const readDb = ['get', 'normalizeId', 'query']
+const readDb = ['get', 'normalizeId', 'query', 'system']
 const ruleCtx = ['action', 'actor', 'allows', 'db', 'mode', 'roleIn', 'tenant']
 
 const person = ['authId', 'door', 'kind', 'user']
@@ -317,11 +317,11 @@ const holds: Row[] = [
   },
 ]
 
-// Found by this table. Each row states what the callback should get; `test.fails` keeps the
-// suite green while the library still hands out more. Drop `.fails` with the fix.
-const overPowered: Row[] = [
+// Found by this table (2026-10-07) and fixed: custom rules got the actor with the approval's
+// credentials (class 10), and rules, roleOf and the user lookup got the mutation's writer (class 2).
+const fixed: Row[] = [
   {
-    // Class 10: the rule gets the actor before `shown`, with the approval ID.
+    // Class 10: the rule got the actor before `shown`, with the approval ID.
     row: 'custom row rule, actor of an agent acting under a person’s approval',
     run: (s) => approved(s, { checkedId: s.checkedId }),
     point: 'custom rule',
@@ -329,7 +329,7 @@ const overPowered: Row[] = [
     expected: mcpAgent.actor,
   },
   {
-    // Class 10: the rule gets the actor before `shown`, with the approval ID and follow-up token.
+    // Class 10: the rule got the actor before `shown`, with the approval ID and follow-up token.
     row: 'custom row rule, actor of a follow-up of an approved request',
     run: (s) => followUps(s, { checkedId: s.checkedId }),
     point: 'custom rule',
@@ -337,14 +337,14 @@ const overPowered: Row[] = [
     expected: mcpAgent.actor,
   },
   {
-    // Class 2: `ctx.db` of a rule is the raw writer (insert, patch, replace, delete), not a reader.
+    // Class 2: `ctx.db` of a rule was the raw writer (insert, patch, replace, delete).
     row: 'custom row rule, person at the web door',
     run: (s) => s.ann.mutation(api.ops.editRow, { table: 'checked', id: s.checkedId }),
     point: 'custom rule',
     expected: { ctx: ruleCtx, db: readDb, actor: person },
   },
   {
-    // Class 2: a part of anyOf gets the same raw writer.
+    // Class 2: a part of anyOf got the same raw writer.
     row: 'custom row rule in anyOf',
     run: async (s) => {
       const id = await s.t.run((ctx) =>
@@ -356,7 +356,7 @@ const overPowered: Row[] = [
     expected: { ctx: ruleCtx, db: readDb, actor: person },
   },
   {
-    // Class 2: a part of allOf gets the same raw writer.
+    // Class 2: a part of allOf got the same raw writer.
     row: 'custom row rule in allOf',
     run: async (s) => {
       const id = await s.t.run((ctx) =>
@@ -368,13 +368,13 @@ const overPowered: Row[] = [
     expected: { ctx: ruleCtx, db: readDb, actor: person },
   },
   {
-    // Class 2: roleOf decides a role, typed with a query context; at runtime it gets the whole
-    // mutation context: the raw db writer, the scheduler and runMutation without the wrappers.
+    // Class 2: roleOf is typed with a query context but got the whole mutation context: the raw
+    // writer, the scheduler and runMutation. It keeps runQuery, which can only read.
     row: 'roleOf during a mutation',
     run: (s) => s.ann.mutation(api.ops.probeMutation, { orgId: s.orgId }),
     point: 'roleOf',
     expected: {
-      ctx: ['auth', 'db', 'meta', 'storage'],
+      ctx: ['auth', 'db', 'meta', 'runQuery', 'storage'],
       db: readDb,
       user: ['_creationTime', '_id', 'active', 'authId'],
       tenant: ['id', 'table'],
@@ -385,7 +385,7 @@ const overPowered: Row[] = [
     row: 'user lookup during a mutation',
     run: (s) => s.ann.mutation(api.ops.probeMutation, { orgId: s.orgId }),
     point: 'user',
-    expected: { ctx: ['auth', 'db', 'meta', 'storage'], db: readDb },
+    expected: { ctx: ['auth', 'db', 'meta', 'runQuery', 'storage'], db: readDb },
   },
 ]
 
@@ -397,7 +397,7 @@ const receives = async ({ run, point, part, expected }: Row) => {
 }
 const named = (rows: Row[]) => rows.map((row) => [row.row, row] as const)
 test.each(named(holds))('%s receives exactly these keys', (_, row) => receives(row))
-test.fails.each(named(overPowered))('%s receives exactly these keys', (_, row) => receives(row))
+test.each(named(fixed))('%s receives exactly these keys', (_, row) => receives(row))
 
 // --- Table 2: bad return values at each decision point -----------------------------------------
 //
@@ -427,8 +427,8 @@ const ruleRows: RuleRow[] = [
   refused('a Promise of undefined'),
   { returns: 'a thrown Error', read: broke, write: broke },
 ]
-/** Truthy values outside `boolean`: the rule counts them as a pass today. */
-const ruleFailsOpen: RuleRow[] = [
+/** Truthy values outside `boolean`: a rule counted them as a pass until 2026-10-07. */
+const ruleFailedOpen: RuleRow[] = [
   refused("'ALLOW'"),
   refused("'allow '"),
   refused('1'),
@@ -458,8 +458,7 @@ for (const [point, table] of [
   }
   const rows = (list: RuleRow[]) => list.map((row) => [row.returns, row] as const)
   test.each(rows(ruleRows))(`a ${point} that returns %s`, (_, row) => judged(row))
-  // Fail open today: the row is read and changed. Drop `.fails` with the fix.
-  test.fails.each(rows(ruleFailsOpen))(`a ${point} that returns %s`, (_, row) => judged(row))
+  test.each(rows(ruleFailedOpen))(`a ${point} that returns %s`, (_, row) => judged(row))
 }
 
 /** Stores the bad value `roleOf` returns for this member (fns.ts). */

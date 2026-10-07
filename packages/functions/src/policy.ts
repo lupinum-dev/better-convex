@@ -145,7 +145,9 @@ const decisions: readonly unknown[] = ['allow', 'approve', 'deny']
  * mode is `undefined`), asks a person: it never fails open.
  */
 function agentRule(policy: Policy, action: string, input: Record<string, unknown>): Decision {
-  const rule = own(policy.agents as Record<string, AgentRule> | undefined, action) ?? 'allow'
+  // No rule allows; an explicit null is not a decision and asks a person like any other.
+  const stated = own(policy.agents as Record<string, AgentRule> | undefined, action)
+  const rule = stated === undefined ? 'allow' : stated
   let decision: unknown = rule
   if (typeof rule === 'function') {
     try {

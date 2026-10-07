@@ -153,6 +153,46 @@ export function unchecked(reason: string) {
   return { kind: 'unchecked' as const, reason }
 }
 
+/**
+ * The reading part of a context, for callbacks that only decide or describe: `roleOf`, the user
+ * lookup, custom row rules and approval summaries. Their types said read-only, but at runtime they
+ * got the mutation's writer, scheduler and storage (callback table, 2026-10-07).
+ */
+export function readOnly<C extends object>(ctx: C): C {
+  const {
+    db,
+    storage,
+    runMutation: _mutation,
+    runAction: _action,
+    scheduler: _scheduler,
+    ...rest
+  } = ctx as Record<string, any>
+  return {
+    ...rest,
+    db: db && readerOf(db),
+    ...(storage
+      ? {
+          storage: {
+            getUrl: storage.getUrl.bind(storage),
+            getMetadata: storage.getMetadata?.bind(storage),
+          },
+        }
+      : {}),
+  } as C
+}
+
+function readerOf(db: GenericDatabaseReader<any>): GenericDatabaseReader<any> {
+  return {
+    get: db.get.bind(db),
+    query: db.query.bind(db),
+    normalizeId: db.normalizeId.bind(db),
+    // A getter: the checked db refuses system tables when they are read, not when copied.
+    get system() {
+      return db.system
+    },
+  } as GenericDatabaseReader<any>
+}
+
 type Verdict = 'ok' | 'hidden' | 'denied'
 type Row = Record<string, unknown>
 
@@ -386,14 +426,15 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
           action: call.action,
           mode: mode === 'read' ? 'read' : 'write',
           tenant: call.tenant,
-          db: raw,
+          db: readerOf(raw),
           roleIn,
           allows: async (ref) => {
             const role = await roleIn(ref)
             return role !== null && call.allows(role, call.action)
           },
         }
-        return (await rule.check(ctx, row)) ? 'ok' : 'hidden'
+        // Only `true` lets the row through: 'ALLOW', 1 or {} from a rule is a bug, not a yes.
+        return (await rule.check(ctx, row)) === true ? 'ok' : 'hidden'
       }
       case 'anyOf': {
         const verdicts = []

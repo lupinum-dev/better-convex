@@ -49,7 +49,7 @@ import {
   type PublicActionOf,
   type RoleOf,
 } from './policy'
-import { checkedDb, tenancy, type Rule, type TenantRef } from './rules'
+import { checkedDb, readOnly, tenancy, type Rule, type TenantRef } from './rules'
 import type { libraryTables } from './schema'
 import { jsonOf, storable, type ValidatorJson } from './values'
 
@@ -207,7 +207,7 @@ export function defineFunctions<
   async function signedIn(ctx: QCtx): Promise<Person | null> {
     const authUser = await auth.getUser(ctx)
     if (!authUser) return null
-    const user = await config.user(ctx, authUser.id)
+    const user = await config.user(readOnly(ctx), authUser.id)
     if (!user) fail('ACCOUNT_DISABLED', 'This account cannot use the app right now.')
     return { kind: 'person', door: 'web', user, authId: authUser.id }
   }
@@ -239,7 +239,7 @@ export function defineFunctions<
       if (!options.approved && (run.status !== 'running' || caller.turn !== run.turn)) {
         fail('AGENT_DISABLED', 'This step of the run is no longer current.')
       }
-      const user = await config.user(ctx, grant.authId)
+      const user = await config.user(readOnly(ctx), grant.authId)
       if (!user) fail('ACCOUNT_DISABLED', 'This account cannot use the app right now.')
       return {
         kind: 'agent',
@@ -265,7 +265,7 @@ export function defineFunctions<
           fail('AGENT_DISABLED', 'This connection was revoked or has expired. Reconnect it.')
         throw error
       })
-    const user = await config.user(ctx, authUser.id)
+    const user = await config.user(readOnly(ctx), authUser.id)
     if (!user) fail('ACCOUNT_DISABLED', 'This account cannot use the app right now.')
     const { clientId, scopes } = caller.principal
     return { kind: 'agent', door: 'mcp', user, clientId, scopes, caller }
@@ -309,7 +309,7 @@ export function defineFunctions<
         }
       }
       case 'person': {
-        const user = await config.user(ctx, who.authId)
+        const user = await config.user(readOnly(ctx), who.authId)
         if (!user) fail('ACCOUNT_DISABLED', 'This account cannot use the app right now.')
         return { kind: 'person', door: 'web', user, authId: who.authId }
       }
@@ -408,7 +408,7 @@ export function defineFunctions<
     }
     const roleOf = (ref: TenantRef) =>
       actor.kind === 'person' || actor.kind === 'agent'
-        ? config.roleOf(ctx, actor.user, ref as TenantOf<DM>)
+        ? config.roleOf(readOnly(ctx), actor.user, ref as TenantOf<DM>)
         : Promise.resolve(null)
 
     const named = await tenantsOf(ctx, op, input, rows)
@@ -458,7 +458,8 @@ export function defineFunctions<
     }
     let tainted: unknown = null
     const db = checkedDb(ctx.db as MCtx['db'], rules, {
-      actor,
+      // Custom rules see the actor as handlers do, without the approval's credentials (class 10).
+      actor: shown(actor),
       action: op.action,
       tenant,
       allows: (role, action) => roleAllows(policy, role, action),
