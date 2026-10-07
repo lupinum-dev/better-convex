@@ -40,6 +40,12 @@ If you already run the release candidate, check only these:
       `annotations`, `scopes` becomes `scopeChallenge: tools.requireScopes(...)`.
 - [ ] MCP: `runMcpTool(operation, { name })` is removed. Use
       `tools.runTool(name, operation)` inside `configureServer`.
+- [ ] MCP without `defineFunctions` (your own `handleMcpRequest` and
+      `server.registerTool` calls, as in ginko-cms): install
+      `@lupinum/better-convex-functions@next` anyway, at the same version as
+      the agents package; it is a required peer. Then replace each
+      `runMcpTool(operation, { name })` with `tools.runTool(name, operation)`,
+      where `tools` comes from the `configureServer` argument.
 - [ ] MCP: `auth.mcp` is removed. Spread `auth.mcpAuthorization(ctx)` into the
       `handleMcpRequest` options instead of passing `auth.mcp.resource()`,
       `auth.mcp.issuer()` and `auth.mcp.scopesSupported()`. Leave `resource`
