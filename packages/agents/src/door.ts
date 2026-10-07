@@ -136,11 +136,10 @@ export function createMcpServer(
               {
                 description: entry.description + note,
                 inputSchema: fromJsonSchema<Record<string, unknown>>(schema as never, passThrough),
-                annotations: {
-                  readOnlyHint: !write,
-                  destructiveHint: entry.approval !== 'never',
-                  openWorldHint: false,
-                },
+                // Any write may overwrite or delete; an approval rule says nothing about that.
+                annotations: write
+                  ? { readOnlyHint: false, destructiveHint: true, openWorldHint: false }
+                  : { readOnlyHint: true, openWorldHint: false },
               },
               async (args: Record<string, unknown>) => {
                 const { request_id: rawRequestId, ...input } = args ?? {}

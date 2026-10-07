@@ -36,6 +36,19 @@ test('the door lists the tools of a read and write grant', async () => {
     'echo_shapes',
     'list_projects',
   ])
+  // Round 1 review: a write without an approve rule was published as non-destructive.
+  const annotations = Object.fromEntries(
+    listed.body.result.tools.map((t: { name: string; annotations: unknown }) => [
+      t.name,
+      t.annotations,
+    ]),
+  )
+  expect(annotations.create_project).toEqual({
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: false,
+  })
+  expect(annotations.list_projects).toEqual({ readOnlyHint: true, openWorldHint: false })
 })
 
 // G1: a read-only grant saw every tool, including writes it can never call.
