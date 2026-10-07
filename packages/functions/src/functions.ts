@@ -853,8 +853,10 @@ export function defineFunctions<
    * Internal code run by the system: crons and scheduled work. Recorded as one
    * activity row, with the result (a Convex value; a large one is kept as
    * `{ truncated, bytes }`). `ctx.runQuery`, `runMutation`, `runAction` and
-   * `scheduler` reach internal operations and internal actions as the system,
-   * as in an operation.
+   * `scheduler` reach internal operations, internal actions and other jobs
+   * as the system, as in an operation. A cron passes a job its arguments as
+   * they are; another job passes them with the system as the actor. An
+   * operation cannot start a job.
    */
   function job<Args extends PropertyValidators>(spec: {
     name: string
@@ -865,11 +867,46 @@ export function defineFunctions<
       // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- a job may return nothing
     ) => Promise<Value | void>
   }) {
+    for (const reserved of ['actingAs', 'input']) {
+      if (reserved in spec.args)
+        throw new Error(`Job ${spec.name}: the argument name ${reserved} is reserved. Rename it.`)
+    }
+    const required = Object.keys(spec.args).filter(
+      (key) => spec.args[key]!.isOptional === 'required',
+    )
+    // The arguments as a cron passes them (each checked below when required), or wrapped by ctx.run*.
+    const args = {
+      ...Object.fromEntries(
+        Object.entries(spec.args).map(([key, validator]) => [
+          key,
+          validator.isOptional === 'optional' ? validator : v.optional(validator as AnyValidator),
+        ]),
+      ),
+      actingAs: v.optional(actingAsValidator),
+      input: v.optional(v.object(spec.args)),
+    }
     // A job runs as the system, by design: crons and the cleanup they schedule.
     return guarded(
       internalMutationGeneric({
-        args: spec.args,
-        handler: async (ctx: MCtx, input: ObjectType<Args>) => {
+        args,
+        handler: async (
+          ctx: MCtx,
+          {
+            actingAs: who,
+            input: wrapped,
+            ...plain
+          }: { actingAs?: ActingAs; input?: ObjectType<Args> } & Record<string, unknown>,
+        ) => {
+          if (who !== undefined && who.kind !== 'system')
+            throw new Error(
+              `Job ${spec.name} runs from a cron or another job, not from an operation.`,
+            )
+          if (wrapped === undefined) {
+            const missing = required.filter((key) => plain[key] === undefined)
+            if (missing.length > 0)
+              throw new Error(`Job ${spec.name}: missing argument ${missing.join(', ')}.`)
+          }
+          const input = (wrapped ?? plain) as ObjectType<Args>
           const actor: SystemActor = { kind: 'system', job: spec.name }
           let tainted: unknown = null
           const nested = nestedCalls(
@@ -889,11 +926,12 @@ export function defineFunctions<
             status: 'done',
             result: storable(result as Value | undefined),
           })
-          return null
+          // Called through ctx.run*, answer in the envelope that tells an internal operation from a raw function.
+          return who ? { operation: operationMark, result: null } : null
         },
       }),
       'job',
-    )
+    ) as unknown as RegisteredMutation<'internal', ObjectType<Args>, Promise<null>>
   }
 
   const fns = {

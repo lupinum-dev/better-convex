@@ -419,6 +419,20 @@ export const nightly = job({
       makeFunctionReference<'mutation'>('ops:archiveFor') as never,
       { projectId } as never,
     )
+    // Continues in another job, as a cleanup in batches does.
+    await ctx.scheduler.runAfter(
+      0,
+      makeFunctionReference<'mutation'>('ops:nightlyReport') as never,
+      {
+        archived: 1,
+      } as never,
+    )
     return 'x'.repeat(100_000)
   },
+})
+
+export const nightlyReport = job({
+  name: 'nightlyReport',
+  args: { archived: v.number() },
+  handler: async (_ctx, { archived }) => ({ archived }),
 })
