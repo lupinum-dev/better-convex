@@ -78,6 +78,26 @@ describe('createBetterConvexAuth', () => {
     )
   })
 
+  // Catches: account deletion opened up to every Better Auth deleteUser option.
+  it.each([
+    ['afterDelete', { enabled: true, afterDelete: () => {} }, 'deleteUser.afterDelete'],
+    [
+      'sendDeleteAccountVerification',
+      { enabled: true, sendDeleteAccountVerification: () => {} },
+      'deleteUser.sendDeleteAccountVerification',
+    ],
+    [
+      'deleteTokenExpiresIn',
+      { enabled: true, deleteTokenExpiresIn: 10 },
+      'deleteUser.deleteTokenExpiresIn',
+    ],
+    ['no enabled flag', { beforeDelete: () => {} }, 'deleteUser.enabled'],
+    ['enabled as a string', { enabled: 'yes' }, 'deleteUser.enabled'],
+    ['beforeDelete as a string', { enabled: true, beforeDelete: 'no' }, 'deleteUser.beforeDelete'],
+  ])('rejects deleteUser with %s outside the reviewed shape', (_name, deleteUser, path) => {
+    expect(() => createBetterConvexAuth(component(), { deleteUser } as never)).toThrow(path)
+  })
+
   it.each([
     [{ expiresIn: 1 }, 'session.expiresIn'],
     [{ expiresIn: 60 * 60 - 1 }, 'session.expiresIn'],
