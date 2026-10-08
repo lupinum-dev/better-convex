@@ -24,6 +24,7 @@ export {
   frozen,
   idsIn,
   inertMarkdown,
+  isIdOf,
   jsonOf,
   storable,
   toJsonSchema,

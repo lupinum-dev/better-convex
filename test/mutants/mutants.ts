@@ -2036,6 +2036,57 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  // A storage ID in a union is checked with the system-table lookup, which does not throw.
+  {
+    id: 'P-r2-small-system-id',
+    guards: 'r2-small',
+    file: 'packages/functions/src/values.ts',
+    find: "const normalize = table.startsWith('_') ? db.system : db",
+    replace: 'const normalize = db',
+    kills: [
+      `${F}/rules.test.ts > a union that holds a storage ID works with an ID and with null`,
+      `${A}/door/door.test.ts > a tool with a nullable storage ID argument accepts an ID and null`,
+    ],
+    projects: ['functions', 'agents'],
+  },
+  // A bigint or non-finite float literal member matches its own value.
+  {
+    id: 'P-r2-small-literal',
+    guards: 'r2-small',
+    file: 'packages/functions/src/values.ts',
+    find: 'return sameLiteral(value, json.value)',
+    replace: 'return value === json.value',
+    kills: [
+      `${F}/values.test.ts > literal 1n matches 1n`,
+      `${F}/values.test.ts > literal Infinity matches Infinity`,
+    ],
+    projects: ['functions'],
+  },
+  // The response size counts the text escaped a second time, with a small envelope allowance.
+  {
+    id: 'P-r2-small-response-size',
+    guards: 'r2-small',
+    file: 'packages/agents/src/door.ts',
+    find: 'new TextEncoder().encode(JSON.stringify(result)).byteLength + 256',
+    replace: '2 * new TextEncoder().encode(text).byteLength + 16 * 1024',
+    kills: [
+      `${A}/door/door.test.ts > a result of quote-heavy text gets a marker or arrives whole, never HTTP 502`,
+      `${A}/door/door.test.ts > a result of 520,000 characters of text gets a marker or arrives whole, never HTTP 502`,
+    ],
+    projects: ['agents'],
+  },
+  // A cursor refused as a Convex system error is named like a plain error.
+  {
+    id: 'P-r2-small-cursor-system-error',
+    guards: 'r2-small',
+    file: 'packages/agents/src/tools.ts',
+    find: 'hasCursor && isCursorFailure(error)',
+    replace: 'hasCursor && (error as { data?: unknown } | null)?.data === undefined',
+    kills: [
+      `${A}/door/door.test.ts > an invalid cursor reported as a ConvexError system error is named`,
+    ],
+    projects: ['agents'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [

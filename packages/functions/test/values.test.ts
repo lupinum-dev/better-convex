@@ -1,6 +1,7 @@
+import { v } from 'convex/values'
 import { expect, test } from 'vitest'
 
-import { fingerprint, inertMarkdown, oneLine } from '../src/values'
+import { fingerprint, inertMarkdown, jsonOf, matches, oneLine } from '../src/values'
 
 // Codex review: bytes hashed as `{}` (a change went unnoticed) and int64 fields threw.
 test('a fingerprint sees bytes and int64 fields', async () => {
@@ -29,4 +30,18 @@ test('inert markdown shows links and HTML as text', () => {
   expect(inertMarkdown('[a](https://b) <img src=x>')).toBe(
     '\\[a\\]\\(https:\\/\\/b\\) \\<img src=x\\>',
   )
+})
+
+// Catches: a literal compared with its encoded JSON, so bigint and non-finite float members never matched.
+test.each([
+  ['literal 1n matches 1n', v.literal(1n), 1n, true],
+  ['literal 1n does not match 2n', v.literal(1n), 2n, false],
+  ['literal Infinity matches Infinity', v.literal(Infinity), Infinity, true],
+  ['literal Infinity does not match -Infinity', v.literal(Infinity), -Infinity, false],
+  ['literal NaN matches NaN', v.literal(Number.NaN), Number.NaN, true],
+  ['literal "a" matches "a"', v.literal('a'), 'a', true],
+  ['literal 3 matches 3', v.literal(3), 3, true],
+  ['literal true does not match "true"', v.literal(true), 'true', false],
+])('%s', (_name, validator, value, expected) => {
+  expect(matches(jsonOf(validator), value, () => true)).toBe(expected)
 })

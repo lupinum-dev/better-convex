@@ -18,6 +18,7 @@ import {
   guarded,
   idsIn,
   inertMarkdown,
+  isIdOf,
   jsonOf,
   internalsOf,
   OPERATION,
@@ -264,10 +265,8 @@ export function defineTools(
 
   /** Checks a model's input against the operation's validators: one clear message, `null` for optional fields allowed. */
   function inputOf(ctx: Ctx, op: Pick<Operation, 'args'>, raw: unknown): Record<string, unknown> {
-    const checked = checkInput(
-      jsonOf(v.object(op.args)),
-      raw ?? {},
-      (table, value) => ctx.db.normalizeId(table, value) !== null,
+    const checked = checkInput(jsonOf(v.object(op.args)), raw ?? {}, (table, value) =>
+      isIdOf(ctx.db, table, value),
     )
     if (!checked.ok) fail('INVALID_INPUT', checked.message)
     return checked.value as Record<string, unknown>
@@ -352,8 +351,9 @@ export function defineTools(
               paged && (input.paginationOpts as { cursor: string | null }).cursor !== null
             const result = await Promise.resolve(op.handler(checked, input)).catch(
               (error: unknown) => {
-                // A cursor the model made up fails inside Convex without a `ConvexError`; say which field is wrong.
-                if (hasCursor && (error as { data?: unknown } | null)?.data === undefined)
+                // A cursor the model made up fails inside Convex, as a plain error or as a system
+                // `ConvexError` (`paginationError: 'InvalidCursor'`); say which field is wrong.
+                if (hasCursor && isCursorFailure(error))
                   fail(
                     'INVALID_INPUT',
                     'cursor: pass the `next` value from the last result exactly, or leave it out for the first page.',
@@ -414,7 +414,8 @@ export function defineTools(
             const plan = frozen(settle(await planOf(op, checked, input)))
             const ids = new Map<string, string>()
             for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input))
-              if (ctx.db.normalizeId(table, id) !== null) ids.set(id, table)
+              if (!table.startsWith('_') && ctx.db.normalizeId(table, id) !== null)
+                ids.set(id, table)
             for (const id of plan.rows ?? []) {
               const table = tenants.tableOf(ctx.db, id)
               if (table === undefined)
@@ -1280,4 +1281,16 @@ function describe(
     if (property && description) property.description = description
   }
   return schema
+}
+
+/** Convex's own refusal of a cursor, not an error the app threw on purpose (those carry app `data`). */
+function isCursorFailure(error: unknown): boolean {
+  const data = (error as { data?: unknown } | null)?.data
+  return (
+    data === undefined ||
+    (typeof data === 'object' &&
+      data !== null &&
+      (data as { isConvexSystemError?: unknown }).isConvexSystemError === true &&
+      (data as { paginationError?: unknown }).paginationError === 'InvalidCursor')
+  )
 }
