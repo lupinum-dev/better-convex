@@ -69,6 +69,44 @@ describe('account safeguards', () => {
     expect(left.project).toMatchObject({ name: 'Roadmap' })
   })
 
+  // Catches: deleting an account leaves behind an organization nobody uses, or deletes a shared one.
+  it('deletes the organizations only the person used, in batches, and keeps shared ones', async () => {
+    const { test, ann, cat, acme, bob } = await setup()
+    // Cat's organization is bigger than one step (50 rows): 120 projects, then it must still go.
+    const solo = await test.run(async (ctx) => {
+      const memberships = await ctx.db
+        .query('memberships')
+        .withIndex('by_user', (q) => q.eq('userId', cat))
+        .collect()
+      for (let i = 0; i < 120; i++)
+        await ctx.db.insert('projects', {
+          organizationId: memberships[0]!.organizationId,
+          name: `P${i}`,
+          status: 'active',
+          createdBy: cat,
+        })
+      return memberships[0]!.organizationId
+    })
+    // An organization that has another active member by the time the step runs is left alone.
+    await test.mutation(internal.accountDeletion.eraseOrganizations, {
+      organizationIds: [acme],
+      userId: ann,
+    })
+    await test.mutation(internal.auth.onDelete, { model: 'user', doc: { id: 'cat' } })
+    await test.mutation(internal.auth.onDelete, { model: 'user', doc: { id: 'ann' } })
+    await test.finishAllScheduledFunctions(vi.runAllTimers)
+    const left = await test.run(async (ctx) => ({
+      organizations: (await ctx.db.query('organizations').collect()).map((row) => row._id),
+      projects: (await ctx.db.query('projects').collect()).map((row) => row.organizationId),
+      memberships: (await ctx.db.query('memberships').collect()).map((row) => row.userId),
+    }))
+    // Cat's organization is gone with its projects; Acme (Ann and Bob) stays with its project.
+    expect(left.organizations).toEqual([acme])
+    expect(left.projects).toEqual([acme])
+    expect(left.memberships).toEqual([bob])
+    expect(left.organizations).not.toContain(solo)
+  })
+
   // Catches: a missing write limit on the action that creates data.
   it('limits project creation to 30 a minute per person', async () => {
     const { session, acme } = await setup()

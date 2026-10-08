@@ -252,6 +252,15 @@ a disconnected connection each block the next tool call, and that a read-only
 token sees and calls only read tools. It also checks the stateless MCP
 protocol envelope and its error cases with the official SDK.
 
+## Account deletion, limits and audit
+
+- People can delete their own account (`deleteUser` in `convex/auth.ts`). It is refused while the person is the last owner of an organization that has other members.
+- `onDelete` starts `eraseStep` (`convex/erasure.ts`): it removes the person's memberships and profile in batches. Projects and other team data stay with the team.
+- Organizations where the person was the only member are deleted with their projects and memberships (`eraseOrganizations` in `convex/accountDeletion.ts`). Organizations with other members are not touched.
+- `projects.create` is limited to 30 a minute per person (`convex/policy.ts`).
+- Archiving a project writes an `auditLog` row with the actor and the project.
+- `convex/crons.ts` runs the agent housekeeping hourly: it expires old requests and deletes activity past retention.
+
 ## Production adaptation
 
 - Provision one client per host with `connections:createHostClient`. Do not

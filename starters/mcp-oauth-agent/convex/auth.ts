@@ -1,13 +1,13 @@
-import { consentScopes, trusted } from '@lupinum/better-convex-functions'
+import { consentScopes, eraseUser, trusted } from '@lupinum/better-convex-functions'
 import {
   createBetterConvexAuth,
   type AuthFunctions,
 } from '@lupinum/better-convex-nuxt/better-auth/server'
-import { getFunctionName } from 'convex/server'
 import { ConvexError } from 'convex/values'
 
 import { components, internal } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
+import { organizationsOnlyUsedBy } from './accountDeletion'
 import { policy } from './policy'
 
 const authFunctions: AuthFunctions = internal.auth
@@ -79,9 +79,14 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
           .unique()
         if (!user) return
         // Erase what the app holds about the person (`erasure` in ./functions.ts), in batches.
-        // This is `fns.eraseUser`; ./functions.ts imports this file, so it cannot be imported here.
-        const step = internal.erasure.eraseStep
-        await ctx.scheduler.runAfter(0, step, { userId: user._id, self: getFunctionName(step) })
+        await eraseUser(ctx, user._id, internal.erasure.eraseStep)
+        // Organizations where the person was the only member go with them, in batches.
+        const alone = await organizationsOnlyUsedBy(ctx.db, user._id)
+        if (alone.length > 0)
+          await ctx.scheduler.runAfter(0, internal.accountDeletion.eraseOrganizations, {
+            organizationIds: alone,
+            userId: user._id,
+          })
         await ctx.db.delete(user._id)
       },
     },
