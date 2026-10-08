@@ -26,11 +26,13 @@ export const fns = defineFunctions({
     users: owner('_id'),
     drafts: unchecked('Test table.'),
     comments: unchecked('Test table.'),
+    tasks: unchecked('Test table.'),
     projects: unchecked('Test table.'),
   },
   erasure: {
     drafts: { delete: 'authorId' },
     comments: { anonymize: 'authorId' },
+    tasks: [{ delete: 'authorId' }, { anonymize: 'assigneeId' }],
     projects: { keep: 'Team data stays with the team.' },
   },
 })

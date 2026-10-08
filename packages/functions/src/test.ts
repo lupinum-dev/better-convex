@@ -9,7 +9,7 @@
 import type { SchemaDefinition } from 'convex/server'
 
 import { erasureOf } from './functions'
-import { OPERATION, HOUSEKEEPING, scanModules, unguardedFunctions } from './guard'
+import { OPERATION, HOUSEKEEPING, ERASURE_STEP, scanModules, unguardedFunctions } from './guard'
 import { limitOf, type Policy } from './policy'
 import { libraryTables } from './schema'
 
@@ -104,8 +104,9 @@ function tally(count: Count, op: string, out: string) {
  * It checks four things and nothing else:
  * 1. a function built with Convex's own builders (see `unguardedFunctions`;
  *    `trustedRoutes` is passed on);
- * 2. a table that holds a user ID (`v.id('users')`, nested or optional) and is
- *    not in `erasure`, so deleting an account would leave the data behind;
+ * 2. a user ID (`v.id('users')`, nested, optional or a record key) in a table
+ *    whose `erasure` entries do not cover its field, or no module exporting
+ *    `fns.erasure.eraseStep`, so deleting an account would leave the data behind;
  * 3. the agents housekeeping function with no cron that calls it;
  * 4. a public mutation of a public action with no entry in `limits`.
  *
@@ -130,12 +131,13 @@ export async function launchProblems(options: {
     )
   }
 
-  // 2. Tables that hold a user ID must be in the erasure map.
+  // 2. Every user ID a table holds must be covered by its erasure entries.
   const erasure = erasureOf(fns)
   const holders = Object.entries(schema.tables as Record<string, { validator: unknown }>)
     .filter(([table]) => table !== 'users' && !Object.hasOwn(libraryTables, table))
     .map(([table, { validator }]) => [table, userIdFields(validator, '')] as const)
     .filter(([, fields]) => fields.length > 0)
+  const scan = await scanModules(modules, { trustedRoutes }, 'launchProblems')
   if (!erasure) {
     if (holders.length > 0)
       problems.push(
@@ -143,18 +145,33 @@ export async function launchProblems(options: {
       )
   } else {
     for (const [table, fields] of holders) {
-      if (!Object.hasOwn(erasure, table))
+      const entries: Record<string, unknown>[] = [
+        Object.hasOwn(erasure, table) ? erasure[table]! : [],
+      ].flat() as never
+      if (entries.some((entry) => 'keep' in entry)) continue
+      const covered = new Set(entries.flatMap((entry) => [entry.delete, entry.anonymize]))
+      for (const field of fields) {
+        const top = field.split(/[.[]/)[0]!
+        if (covered.has(top)) continue
         problems.push(
-          `The table ${table} holds a user ID in ${fields[0]} but is not in erasure. Add ${table}: { delete: '${fields[0]}' }, { anonymize: '${fields[0]}' } or { keep: 'why the rows stay' } to the erasure of defineFunctions.`,
+          `The table ${table} holds a user ID in ${field} but erasure does not cover it. Add { delete: '${top}' }, { anonymize: '${top}' } or { keep: 'why the rows stay' } to the ${table} entry of erasure in defineFunctions (an array holds one entry per field).`,
         )
+      }
     }
+    if (
+      !scan.exports.some(
+        ({ value }) => (value as { [ERASURE_STEP]?: unknown } | null)?.[ERASURE_STEP],
+      )
+    )
+      problems.push(
+        'Account deletion is set up but no module exports fns.erasure.eraseStep: add `export const { eraseStep } = fns.erasure` in convex/erasure.ts.',
+      )
   }
 
   // 3. The agents housekeeping function needs a cron.
   const registered = (crons as { crons?: Record<string, { name?: unknown }> } | null)?.crons
   if (!registered || typeof registered !== 'object')
     throw new Error('launchProblems needs crons: pass the default export of convex/crons.ts.')
-  const scan = await scanModules(modules, { trustedRoutes }, 'launchProblems')
   const called = new Set(Object.values(registered).map((job) => job.name))
   for (const { path, name, functionName, value } of scan.exports) {
     if (!(value as { [HOUSEKEEPING]?: unknown } | null)?.[HOUSEKEEPING]) continue
@@ -186,6 +203,7 @@ function userIdFields(validator: unknown, path: string): string[] {
     tableName?: string
     fields?: Record<string, unknown>
     element?: unknown
+    key?: unknown
     value?: unknown
     members?: unknown[]
   } | null
@@ -199,7 +217,11 @@ function userIdFields(validator: unknown, path: string): string[] {
     case 'array':
       return userIdFields(node.element, `${path}[]`)
     case 'record':
-      return userIdFields(node.value, `${path}[]`)
+      // A user ID as the key lives in the record's own field; one as the value, in its entries.
+      return [
+        ...userIdFields(node.key, path || '(the whole document)'),
+        ...userIdFields(node.value, `${path}[]`),
+      ]
     case 'union':
       return (node.members ?? []).flatMap((member) => userIdFields(member, path))
     default:
