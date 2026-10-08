@@ -107,6 +107,37 @@ describe('createUserProjectionTriggers', () => {
     expect(remove).toHaveBeenCalledWith('user-1')
   })
 
+  // Catches: account deletion leaving the person's app data behind, or erasing after the row is gone.
+  it('runs the erase hook for each projection row before deleting it, and only when configured', async () => {
+    const { ctx, remove } = projectionDb(
+      [{ _id: 'user-1', authId: 'auth-1' }],
+      [{ _id: 'user-1', authId: 'auth-1' }],
+    )
+    const options = { table: 'userProfiles', index: 'by_auth_id', createDoc: createAuthIdDoc }
+    const erase = vi.fn(async (_args: { existing: TestProjectionUser }) => {})
+    await createUserProjectionTriggers<TestAuthUser, TestProjectionUser>({
+      ...options,
+      erase,
+    }).user.onDelete(ctx, { id: 'auth-1' })
+    expect(erase).toHaveBeenCalledOnce()
+    expect(erase).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: { id: 'auth-1' },
+        existing: { _id: 'user-1', authId: 'auth-1' },
+      }),
+    )
+    expect(remove).toHaveBeenCalledWith('user-1')
+    expect(erase.mock.invocationCallOrder[0]!).toBeLessThan(remove.mock.invocationCallOrder[0]!)
+
+    erase.mockClear()
+    await createUserProjectionTriggers<TestAuthUser, TestProjectionUser>(options).user.onDelete(
+      ctx,
+      { id: 'auth-1' },
+    )
+    expect(erase).not.toHaveBeenCalled()
+    expect(remove).toHaveBeenCalledTimes(2)
+  })
+
   it('rebuilds user projections from Better Auth users', async () => {
     const { ctx, insert, patch, query, withIndex } = projectionDb(
       [],

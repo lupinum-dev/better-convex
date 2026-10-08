@@ -228,6 +228,14 @@ export type BetterConvexAuthEmail =
       }
       readonly inviter: BetterConvexAuthEmailUser
     }
+  | {
+      /** Sent instead of deleting at once, when the `email` option is set and `deleteUser` is enabled. */
+      readonly type: 'delete-account'
+      readonly to: string
+      readonly url: string
+      readonly token: string
+      readonly user: BetterConvexAuthEmailUser
+    }
 
 export type BetterConvexAuthEmailType = BetterConvexAuthEmail['type']
 
@@ -249,8 +257,31 @@ type SessionClaimsDefinition = NonNullable<
   Parameters<typeof convexAuth>[0]['sessionJwt']['definePayload']
 >
 
+/**
+ * Let signed-in people delete their own account. Off unless `enabled` is true.
+ *
+ * Without the `email` option, a person needs a fresh session (or their
+ * password) to delete. With it, the library emails a `delete-account` link
+ * and deletes when the person opens it. The app's data is erased by the user
+ * projection (`erase` in `createUserProjectionTriggers`), which runs when the
+ * auth user is deleted.
+ */
+export interface BetterConvexDeleteUserOptions<DataModel extends GenericDataModel> {
+  readonly enabled: boolean
+  /**
+   * Runs before the account is deleted. Throw to refuse, for example when the
+   * person is the last owner of a team. A `ConvexError` or `APIError` message
+   * reaches the person; any other error is logged and shown as a generic refusal.
+   */
+  readonly beforeDelete?: (
+    ctx: AuthCtx<DataModel>,
+    user: BetterConvexAuthEmailUser,
+  ) => void | Promise<void>
+}
+
 export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataModel> {
   readonly appName?: string
+  readonly deleteUser?: BetterConvexDeleteUserOptions<DataModel>
   /** Experimental: not covered by semver. Requires a local auth component with anonymous(). */
   readonly experimental?: {
     readonly anonymous?: true | ReviewedAnonymousOptions
@@ -442,6 +473,7 @@ const REVIEWED_TOP_LEVEL_OPTIONS = new Set([
   'authFunctions',
   'beforeUserCreate',
   'defineSessionClaims',
+  'deleteUser',
   'email',
   'emailAndPassword',
   'emailOTP',
@@ -639,6 +671,20 @@ function rejectUnsupportedOptions(options: object): void {
         throw configError('requires "experimental.anonymous.emailDomainName" to be an email domain')
     }
   }
+  if (record.deleteUser !== undefined) {
+    assertOnlyKeys(record.deleteUser, ['enabled', 'beforeDelete'], 'deleteUser')
+    if (!isPlainRecord(record.deleteUser))
+      throw configError('expected "deleteUser" to be an object')
+    if (typeof record.deleteUser.enabled !== 'boolean') {
+      throw configError('expected "deleteUser.enabled" to be a boolean')
+    }
+    if (
+      record.deleteUser.beforeDelete !== undefined &&
+      typeof record.deleteUser.beforeDelete !== 'function'
+    ) {
+      throw configError('expected "deleteUser.beforeDelete" to be a function')
+    }
+  }
   if (record.email !== undefined && typeof record.email !== 'function') {
     throw configError('expected "email" to be a function')
   }
@@ -760,6 +806,34 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
   }
 }
 
+/** What a person may read when `beforeDelete` refuses: a message the app wrote, never an internal error. */
+function refusalMessage(error: unknown): string | undefined {
+  if (error instanceof APIError) return error.message || undefined
+  const data = (error as { data?: unknown } | null)?.data
+  if (typeof data === 'string') return data
+  if (isPlainRecord(data) && typeof data.message === 'string') return data.message
+  return undefined
+}
+
+function createBeforeDeleteHook<DataModel extends GenericDataModel>(
+  ctx: AuthCtx<DataModel>,
+  callback: NonNullable<BetterConvexDeleteUserOptions<DataModel>['beforeDelete']>,
+) {
+  return async (user: User & Record<string, unknown>): Promise<void> => {
+    try {
+      await callback(ctx, emailUser(user))
+    } catch (error) {
+      const message = refusalMessage(error)
+      if (message === undefined) {
+        console.error('[better-convex] AUTH_USER_DELETE_HOOK_THREW', {
+          cause: sanitizeAuthCause(error),
+        })
+      }
+      throw new APIError('FORBIDDEN', { message: message ?? 'AUTH_USER_DELETE_REFUSED' })
+    }
+  }
+}
+
 function emailUser(user: { id: string; email: string; name: string }): BetterConvexAuthEmailUser {
   return Object.freeze({ id: user.id, email: user.email, name: user.name })
 }
@@ -774,6 +848,8 @@ function emailCredentials(message: BetterConvexAuthEmail): string[] {
       return [message.otp]
     case 'organization-invitation':
       return [message.invitationId]
+    case 'delete-account':
+      return [message.url, message.token]
   }
 }
 
@@ -834,7 +910,9 @@ function assertOwnedInvariants(options: BetterAuthOptions, socialProviderNames: 
     typeof options.session.updateAge !== 'number' ||
     options.session.updateAge < SESSION_POLICY_BOUNDS.updateAge.min ||
     options.session.updateAge > options.session.expiresIn ||
-    !cookieCacheWithinBounds(options.session.cookieCache)
+    !cookieCacheWithinBounds(options.session.cookieCache) ||
+    // freshAge 0 would let a stale session delete the account.
+    (options.user?.deleteUser?.enabled === true && options.session.freshAge === 0)
   ) {
     throw new Error('AUTH_OWNED_INVARIANT_VIOLATED')
   }
@@ -1162,6 +1240,29 @@ export function createBetterConvexAuthOwned<
         session: { ...sessionPolicy },
         socialProviders,
         trustedOrigins: [baseURL],
+        // Off by default: Better Auth answers /delete-user with 404 unless enabled.
+        user: options.deleteUser?.enabled
+          ? {
+              deleteUser: {
+                enabled: true,
+                ...(options.deleteUser.beforeDelete
+                  ? { beforeDelete: createBeforeDeleteHook(ctx, options.deleteUser.beforeDelete) }
+                  : {}),
+                ...(deliver
+                  ? {
+                      sendDeleteAccountVerification: async ({ user, url, token }) =>
+                        deliver({
+                          type: 'delete-account',
+                          to: user.email,
+                          url,
+                          token,
+                          user: emailUser(user),
+                        }),
+                    }
+                  : {}),
+              },
+            }
+          : undefined,
         verification: { storeIdentifier: 'hashed' },
       } satisfies BetterAuthOptions
       const socialProviderNames = new Set(Object.keys(socialProviders ?? {}))

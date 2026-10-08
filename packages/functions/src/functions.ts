@@ -39,6 +39,7 @@ import {
   type SystemActor,
   type Visitor,
 } from './actor'
+import { defineErasure, type ErasureEntry, type ErasureMap } from './erasure'
 import { guarded, OPERATION } from './guard'
 import { rateLimited, takeToken } from './limits'
 import {
@@ -209,6 +210,17 @@ export function internalsOf(fns: object): unknown {
   return kits.get(fns)
 }
 
+/** The erasure map of an app: one entry per app table, naming a field of that table. */
+export type ErasureOf<DM extends GenericDataModel> = {
+  [T in AppTables<DM>]?: ErasureEntry<Extract<keyof DocumentByName<DM, T>, string>>
+}
+
+type EraseUser<User extends { _id: string }> = (
+  ctx: { scheduler: { runAfter: (delay: number, ref: never, args: never) => Promise<unknown> } },
+  userId: User['_id'],
+  step: FunctionReference<'mutation', 'internal', any>,
+) => Promise<void>
+
 /** Each app table with its typed ID: what `roleOf` receives. */
 export type TenantOf<DM extends GenericDataModel> = {
   [T in Exclude<TableNamesInDataModel<DM>, keyof typeof libraryTables>]: {
@@ -241,6 +253,7 @@ export function defineFunctions<
   User extends { _id: string } = DocumentByName<DM, Extract<'users', AppTables<DM>>> & {
     _id: GenericId<Extract<'users', AppTables<DM>>>
   },
+  Erasure extends ErasureOf<DM> | undefined = undefined,
 >(config: {
   auth: Auth<DM>
   policy: P
@@ -252,6 +265,17 @@ export function defineFunctions<
   rules: NoInfer<{
     [T in AppTables<DM>]: Rule<DocumentByName<DM, T>, User, DM, ActionOf<P>>
   }>
+  /**
+   * What happens to each app table when a person is erased: `{ delete: 'authorId' }`
+   * deletes their rows, `{ anonymize: 'authorId' }` removes the field (it must be
+   * optional in the schema), `{ keep: 'Why the rows stay.' }` leaves the table.
+   * The field holds the app user's ID and needs an index that starts with it.
+   * Library tables are always erased. Needs `schema`. Without `erasure`, no
+   * erasure code exists. See `fns.eraseUser`.
+   */
+  erasure?: Erasure
+  /** The app schema (`import schema from './schema'`). Required with `erasure`, which checks its map against it. */
+  schema?: SchemaDefinition<any, boolean>
 }) {
   type QCtx = GenericQueryCtx<DM>
   type MCtx = GenericMutationCtx<DM>
@@ -1244,7 +1268,31 @@ export function defineFunctions<
     job,
   }
   kits.set(fns, { auth, person, agent, authorize, lib, tenants, roleOf: config.roleOf })
-  return fns
+  type Result = typeof fns &
+    (Erasure extends undefined
+      ? unknown
+      : {
+          erasure: {
+            eraseStep: RegisteredMutation<
+              'internal',
+              { userId: string; self: string },
+              Promise<null>
+            >
+          }
+          eraseUser: EraseUser<User>
+        })
+  if (config.erasure === undefined) return fns as Result
+  const { eraseStep, eraseUser } = defineErasure(config.schema, config.erasure as ErasureMap)
+  /**
+   * Account deletion. `fns.erasure.eraseStep` is the internal mutation the app exports
+   * (`export const { eraseStep } = fns.erasure`); `fns.eraseUser(ctx, appUserId, internal.x.eraseStep)`
+   * starts the erasure of one person from the user projection's delete hook.
+   */
+  return {
+    ...fns,
+    erasure: { eraseStep },
+    eraseUser: eraseUser as EraseUser<User>,
+  } as unknown as Result
 }
 
 /** The registered type of an internal operation, so `internal.x.y` is a ref `ctx.run` accepts with typed input. */

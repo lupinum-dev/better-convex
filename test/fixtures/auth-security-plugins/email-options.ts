@@ -8,6 +8,7 @@ function deliver(message: BetterConvexAuthEmail): string {
   switch (message.type) {
     case 'verify-email':
     case 'reset-password':
+    case 'delete-account':
       return `${message.to} ${message.url} ${message.token} ${message.user.id}`
     case 'email-otp':
       return `${message.to} ${message.otp} ${message.purpose}`
