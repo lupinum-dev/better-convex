@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as authConcurrency from "../authConcurrency.js";
+import type * as e2eSessions from "../e2eSessions.js";
 import type * as files from "../files.js";
 import type * as http from "../http.js";
 import type * as lib_permissions from "../lib/permissions.js";
@@ -28,6 +29,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authConcurrency: typeof authConcurrency;
+  e2eSessions: typeof e2eSessions;
   files: typeof files;
   http: typeof http;
   "lib/permissions": typeof lib_permissions;
