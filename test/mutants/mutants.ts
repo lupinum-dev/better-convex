@@ -1824,13 +1824,13 @@ export const mutants: Mutant[] = [
   {
     id: 'P-housekeeping-bounded-cleanup',
     guards: 'housekeeping',
-    file: 'packages/agents/src/tools.ts',
-    find: 'const sweep = { rows: 100, bytes: 4 * 1024 * 1024 }',
+    file: 'packages/agents/src/budget.ts',
+    find: 'export const sweep = { rows: 100, bytes: 4 * 1024 * 1024 }',
     replace: 'const sweep = { rows: 1_000_000, bytes: 2 ** 40 }',
     kills: [
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run first, then deletes 'a long finished conversation'`,
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run first, then deletes 'many decided requests with large plans'`,
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run first, then deletes 'a request that created 17,000 rows'`,
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a long finished conversation'`,
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'many decided requests with large plans'`,
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a request that created 17,000 rows'`,
     ],
     projects: ['agents'],
   },
@@ -1839,9 +1839,9 @@ export const mutants: Mutant[] = [
     id: 'P-housekeeping-run-requests',
     guards: 'housekeeping',
     file: 'packages/agents/src/runs.ts',
-    find: "for (const row of open) await db.patch(row._id, { status: 'cancelled' })",
+    find: 'return await cancelOpen(db, run._id, budget)',
     replace:
-      "await cancelRequests(db, 'app:' + run.userId + ':' + run.agent, (row) => row.caller.door === 'app' && row.caller.runId === run._id)",
+      "await cancelRequests(db, 'app:' + run.userId + ':' + run.agent, (row) => row.caller.door === 'app' && row.caller.runId === run._id); return true",
     kills: [
       `${A}/approvals/approvals.test.ts > a finished run cancels its own open request behind other runs' requests`,
     ],
@@ -2084,6 +2084,55 @@ export const mutants: Mutant[] = [
     replace: 'hasCursor && (error as { data?: unknown } | null)?.data === undefined',
     kills: [
       `${A}/door/door.test.ts > an invalid cursor reported as a ConvexError system error is named`,
+    ],
+    projects: ['agents'],
+  },
+  // Housekeeping's first transaction ends stalled runs within its read budget, cancelling their requests included.
+  {
+    id: 'P-r2-housekeeping-repair-budget',
+    guards: 'housekeeping',
+    file: 'packages/agents/src/tools.ts',
+    find: "if (!(await finish(db, run, { status: 'failed', error }, budget))) left.push(run._id)",
+    replace: "if (!(await finish(db, run, { status: 'failed', error }))) left.push(run._id)",
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through '20 stalled runs, 900 KB requests'`,
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a stalled run, 20 900 KB requests'`,
+    ],
+    projects: ['agents'],
+  },
+  // Expiring requests stops when the budget is spent and continues in a new transaction.
+  {
+    id: 'P-r2-housekeeping-expire-budget',
+    guards: 'housekeeping',
+    file: 'packages/agents/src/tools.ts',
+    find: 'while (more && !budget.spent) {',
+    replace: 'while (more) {',
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through '20 waiting runs, expired 900 KB'`,
+    ],
+    projects: ['agents'],
+  },
+  // Waking a waiting run reads its requests within the budget.
+  {
+    id: 'P-r2-housekeeping-wake-budget',
+    guards: 'housekeeping',
+    file: 'packages/agents/src/tools.ts',
+    find: 'if (!(await wake(db, scheduler, runs[0]!, budget, known))) break',
+    replace: 'if (!(await wake(db, scheduler, runs[0]!))) break',
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a waiting run, 20 decided 900 KB'`,
+    ],
+    projects: ['agents'],
+  },
+  // A run with more requests than one budget holds still goes on: the requests found decided carry over.
+  {
+    id: 'P-r2-housekeeping-wake-progress',
+    guards: 'housekeeping',
+    file: 'packages/agents/src/tools.ts',
+    find: 'await next({ runs, decided: [...known], cutoff, ...after })',
+    replace: 'await next({ runs, decided: [], cutoff, ...after })',
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a waiting run, 20 decided 900 KB'`,
     ],
     projects: ['agents'],
   },

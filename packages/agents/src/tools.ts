@@ -48,7 +48,8 @@ import {
 import { getConvexSize, v, type GenericId, type Value } from 'convex/values'
 
 import type { McpPrincipal } from './access'
-import { cancelRequests, finish, shownStatus, stallAfter, wake } from './runs'
+import { readBudget, sweep, within, type Budget } from './budget'
+import { cancelOpen, cancelRequests, finish, shownStatus, stallAfter, wake } from './runs'
 
 type Ctx = GenericQueryCtx<any>
 type MCtx = GenericMutationCtx<any>
@@ -1030,63 +1031,84 @@ export function defineTools(
   )
 
   /**
-   * Expires old requests (and wakes the runs that waited on them), ends
-   * stalled runs, and deletes what is past retention. Run it from a cron:
+   * Ends stalled runs, expires old requests (and wakes the runs that waited
+   * on them), and deletes what is past retention. Run it from a cron:
    * `crons.hourly('library housekeeping', { minuteUTC: 7 }, internal.agents.housekeeping)`.
-   * Continues in a new transaction while there is more to do. Deleting comes
-   * last, in transactions of its own that each read a bounded amount, so no
-   * amount of old data keeps a stalled run from ending.
+   * Each step is its own transaction that reads within one budget and
+   * schedules the next, so no amount of data rolls back an earlier step:
+   * ending stalled runs commits first, then expiring, waking and deleting
+   * follow.
    */
   const housekeeping = guarded(
     internalMutationGeneric({
-      // `waiting`: where the scan of waiting runs continues, so blocked runs are not scanned again in one sweep.
-      // `cutoff` stays fixed for one sweep: a Convex cursor is only valid for the same query.
-      // `cleanup`: runs and requests are seen to; this transaction deletes what is past retention.
+      // No arguments: end stalled runs (the cron's call).
+      // `cancel`: ended runs whose open requests are still to be cancelled.
+      // `expire`: expire requests past their time.
+      // `waiting`: where the scan of waiting runs continues (`null`: from the start).
+      // `cutoff` stays fixed for one scan: a Convex cursor is only valid for the same query.
+      // `runs`: waiting runs of the last page not yet seen to (then `waiting` is the next page's
+      // cursor, or absent on the last page); `decided`: the first run's requests found decided.
+      // `cleanup`: delete what is past retention.
       args: {
+        cancel: v.optional(v.array(v.string())),
+        expire: v.optional(v.boolean()),
         waiting: v.optional(v.union(v.string(), v.null())),
         cutoff: v.optional(v.number()),
+        runs: v.optional(v.array(v.string())),
+        decided: v.optional(v.array(v.string())),
         cleanup: v.optional(v.boolean()),
       },
-      handler: async (
-        ctx: MCtx,
-        args: { waiting?: string | null; cutoff?: number; cleanup?: boolean },
-      ) => {
+      handler: async (ctx: MCtx, args: HousekeepingStep) => {
         const db = lib(ctx)
         const now = Date.now()
-        const next = (more: { waiting?: string; cutoff?: number; cleanup?: true }) =>
+        const budget = readBudget()
+        const next = (more: HousekeepingStep) =>
           ctx.scheduler.runAfter(0, ownRef('housekeeping'), more)
         if (args.cleanup) {
           if (!(await deleteRetained(db, now))) await next({ cleanup: true })
-          return null
+        } else if (args.cancel) {
+          const left: string[] = []
+          for (const runId of args.cancel) {
+            const id = db.normalizeId('agentRuns', runId)
+            if (id && !(await cancelOpen(db, id, budget))) left.push(runId)
+          }
+          await next(left.length ? { cancel: left } : {})
+        } else if (args.expire) {
+          // A request holds its plan, up to a document's size: one at a time, within the budget.
+          let more = true
+          while (more && !budget.spent) {
+            const row = await db
+              .query('approvals')
+              .withIndex('by_status', (q) => q.eq('status', 'pending').lt('expiresAt', now))
+              .first()
+            more = row !== null
+            if (!row) break
+            budget.count(row)
+            await db.patch(row._id, { status: 'expired' })
+            // A wake the budget cuts short is left to the scan of waiting runs.
+            if (row.caller.door === 'app') await wake(db, ctx.scheduler, row.caller.runId, budget)
+          }
+          await next(more ? { expire: true } : { waiting: null, cutoff: now - 60_000 })
+        } else if (args.waiting !== undefined || args.runs) {
+          await wakeWaiting(db, ctx.scheduler, args, budget, now, next)
+        } else {
+          // Ending a stalled run reads the run and its open requests, within the budget.
+          const stalled = await within(
+            db
+              .query('agentRuns')
+              .withIndex('by_status', (q) =>
+                q.eq('status', 'running').lt('stepAt', now - stallAfter),
+              ),
+            budget,
+          )
+          const left: string[] = []
+          for (const run of stalled.rows) {
+            const error = shownStatus(run).error!
+            if (!(await finish(db, run, { status: 'failed', error }, budget))) left.push(run._id)
+          }
+          if (left.length) await next({ cancel: left })
+          else await next(stalled.more ? {} : { expire: true })
         }
-        const batch = 200
-        const stalled = await db
-          .query('agentRuns')
-          .withIndex('by_status', (q) => q.eq('status', 'running').lt('stepAt', now - stallAfter))
-          .take(sweep.rows)
-        for (const run of stalled)
-          await finish(db, run, { status: 'failed', error: shownStatus(run).error! })
-        // A request holds its plan, up to a document's size: read them within a budget.
-        const expired = await within(
-          db
-            .query('approvals')
-            .withIndex('by_status', (q) => q.eq('status', 'pending').lt('expiresAt', now)),
-          readBudget(),
-        )
-        for (const row of expired.rows) {
-          await db.patch(row._id, { status: 'expired' })
-          if (row.caller.door === 'app') await wake(db, ctx.scheduler, row.caller.runId)
-        }
-        // Backstop: a waiting run whose requests are all decided goes on, even if its wake-up was lost.
-        const cutoff = args.waiting ? (args.cutoff ?? now - 60_000) : now - 60_000
-        const waiting = await db
-          .query('agentRuns')
-          .withIndex('by_status', (q) => q.eq('status', 'waiting').lt('stepAt', cutoff))
-          .paginate({ numItems: batch, cursor: args.waiting ?? null })
-        for (const run of waiting.page) await wake(db, ctx.scheduler, run._id)
-        if (!waiting.isDone) await next({ waiting: waiting.continueCursor, cutoff })
-        else if (stalled.length === sweep.rows || expired.more) await next({})
-        else await next({ cleanup: true })
         return null
       },
     }),
@@ -1150,39 +1172,55 @@ function toCursor(result: PageOf) {
   return { items: result.page, next: result.isDone ? null : result.continueCursor }
 }
 
-/**
- * What one housekeeping transaction reads at most, about: far inside Convex's
- * limits (16 MiB and 32,000 documents), even when every row is near the
- * 1 MiB document limit.
- */
-const sweep = { rows: 100, bytes: 4 * 1024 * 1024 }
-
-function readBudget() {
-  let rows = sweep.rows
-  let bytes = sweep.bytes
-  return {
-    count(row: Record<string, unknown>) {
-      rows -= 1
-      bytes -= getConvexSize(row as Value)
-    },
-    get spent() {
-      return rows <= 0 || bytes <= 0
-    },
-  }
-}
-type Budget = ReturnType<typeof readBudget>
 type LibId = GenericId<keyof LibraryDataModel & string>
 
-/** Reads `query` until it ends or the budget is spent. `more`: rows may remain. */
-async function within<T extends Record<string, unknown>>(query: AsyncIterable<T>, budget: Budget) {
-  const rows: T[] = []
-  if (budget.spent) return { rows, more: true }
-  for await (const row of query) {
-    rows.push(row)
-    budget.count(row)
-    if (budget.spent) return { rows, more: true }
+type HousekeepingStep = {
+  cancel?: string[]
+  expire?: boolean
+  waiting?: string | null
+  cutoff?: number
+  runs?: string[]
+  decided?: string[]
+  cleanup?: boolean
+}
+
+/**
+ * One step of the scan of waiting runs: a run whose requests are all decided
+ * goes on, even if its wake-up was lost. A run's requests are read one by one
+ * within the budget, and the ones found decided are passed on, so a run with
+ * more requests than one budget holds (an agent has at most 20, each up to
+ * 1 MiB) finishes over several steps, and every step makes progress.
+ */
+async function wakeWaiting(
+  db: Lib,
+  scheduler: MCtx['scheduler'],
+  args: HousekeepingStep,
+  budget: Budget,
+  now: number,
+  next: (more: HousekeepingStep) => Promise<unknown>,
+) {
+  const cutoff = args.cutoff ?? now - 60_000
+  let runs = args.runs ?? []
+  let cursor = args.waiting
+  let known = new Set(args.decided)
+  // Convex allows one paginated query per transaction.
+  if (!runs.length && cursor !== undefined) {
+    const page = await db
+      .query('agentRuns')
+      .withIndex('by_status', (q) => q.eq('status', 'waiting').lt('stepAt', cutoff))
+      .paginate({ numItems: sweep.rows / 2, cursor })
+    for (const run of page.page) budget.count(run)
+    runs = page.page.map((run) => run._id)
+    cursor = page.isDone ? undefined : page.continueCursor
   }
-  return { rows, more: false }
+  while (runs.length && !budget.spent) {
+    if (!(await wake(db, scheduler, runs[0]!, budget, known))) break
+    runs = runs.slice(1)
+    known = new Set()
+  }
+  const after = cursor ? { waiting: cursor } : {}
+  if (runs.length) await next({ runs, decided: [...known], cutoff, ...after })
+  else await next(cursor ? { waiting: cursor, cutoff } : { cleanup: true })
 }
 
 /**
