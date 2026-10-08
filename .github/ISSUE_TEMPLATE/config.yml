@@ -1,8 +1,8 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: Support and questions
-    url: https://discord.gg/RPH6SeA36N
-    about: Ask for help in the Lupinum OSS Discord.
   - name: Security report
     url: https://github.com/lupinum-dev/better-convex/security/advisories/new
-    about: Report a vulnerability privately.
+    about: Report a vulnerability privately, not in a public issue.
+  - name: Ask a question
+    url: https://discord.lupinum.com
+    about: Get help from the community in the Lupinum OSS Discord.

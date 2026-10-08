@@ -15,6 +15,12 @@
     "coverage",
     "*.min.js",
     "pnpm-lock.yaml",
-    "**/_generated"
+    "**/_generated",
+    "**/CHANGELOG.md",
+    ".github/renovate.json",
+    "scripts/agent-docs.mjs",
+    "scripts/audit-deps.mjs",
+    "scripts/lint-changesets.mjs",
+    "scripts/release.mjs"
   ]
 }

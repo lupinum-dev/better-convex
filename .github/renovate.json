@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "minimumReleaseAge": "1 day",
+  "internalChecksFilter": "strict",
+  "rangeStrategy": "replace",
+  "schedule": ["before 6am on Monday"],
+  "timezone": "Europe/Vienna",
+  "packageRules": [
+    { "groupName": "Nuxt ecosystem", "matchPackageNames": ["nuxt", "@nuxt/**", "@nuxtjs/**", "vue", "vue-router"] },
+    { "groupName": "Convex ecosystem", "matchPackageNames": ["convex", "convex-*", "@convex-dev/**"] },
+    { "description": "Stay on h3 v1 while Nuxt/Nitro remains on the 1.x line.", "matchPackageNames": ["h3"], "allowedVersions": "<2.0.0" }
+  ]
+}
