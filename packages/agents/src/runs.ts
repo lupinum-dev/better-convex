@@ -14,8 +14,12 @@ type Db = GenericMutationCtx<LibraryDataModel>['db']
 type Scheduler = GenericMutationCtx<LibraryDataModel>['scheduler']
 type Run = LibraryDataModel['agentRuns']['document']
 
-/** A running run whose step has not saved for this long has stalled: Convex ends actions after 10 minutes. */
-export const stallAfter = 15 * 60_000
+/**
+ * A running run whose step has not saved for this long has stalled. Convex
+ * ends an action after 10 minutes in the Node runtime and 30 minutes in its
+ * own runtime; a step may still be working before that.
+ */
+export const stallAfter = 35 * 60_000
 
 /** True when every request is decided or expired. */
 async function allDecided(db: Db, approvalIds: readonly string[]) {
@@ -91,11 +95,15 @@ export async function finish(
     | { status: 'failed'; error: { code: string; message: string } },
 ) {
   await db.patch(run._id, { ...outcome, approvalIds: undefined, stepAt: Date.now() })
-  await cancelRequests(
-    db,
-    `app:${run.userId}:${run.agent}`,
-    (row) => row.caller.door === 'app' && row.caller.runId === run._id,
-  )
+  // An agent has at most 20 open requests, so one read finds all of this run's.
+  // A pending request past its time is already expired; housekeeping marks it.
+  const open = await db
+    .query('approvals')
+    .withIndex('by_run_status', (q) =>
+      q.eq('caller.runId', run._id).eq('status', 'pending').gt('expiresAt', Date.now()),
+    )
+    .take(100)
+  for (const row of open) await db.patch(row._id, { status: 'cancelled' })
 }
 
 /** Cancels the open requests of one agent (its actor key), optionally only some. */

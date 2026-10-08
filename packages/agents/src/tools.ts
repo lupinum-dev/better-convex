@@ -44,7 +44,7 @@ import {
   type GenericMutationCtx,
   type GenericQueryCtx,
 } from 'convex/server'
-import { v, type GenericId, type Value } from 'convex/values'
+import { getConvexSize, v, type GenericId, type Value } from 'convex/values'
 
 import type { McpPrincipal } from './access'
 import { cancelRequests, finish, shownStatus, stallAfter, wake } from './runs'
@@ -989,23 +989,47 @@ export function defineTools(
    * Expires old requests (and wakes the runs that waited on them), ends
    * stalled runs, and deletes what is past retention. Run it from a cron:
    * `crons.hourly('library housekeeping', { minuteUTC: 7 }, internal.agents.housekeeping)`.
-   * Continues in a new transaction while there is more to do.
+   * Continues in a new transaction while there is more to do. Deleting comes
+   * last, in transactions of its own that each read a bounded amount, so no
+   * amount of old data keeps a stalled run from ending.
    */
   const housekeeping = guarded(
     internalMutationGeneric({
       // `waiting`: where the scan of waiting runs continues, so blocked runs are not scanned again in one sweep.
       // `cutoff` stays fixed for one sweep: a Convex cursor is only valid for the same query.
-      args: { waiting: v.optional(v.union(v.string(), v.null())), cutoff: v.optional(v.number()) },
-      handler: async (ctx: MCtx, args: { waiting?: string | null; cutoff?: number }) => {
+      // `cleanup`: runs and requests are seen to; this transaction deletes what is past retention.
+      args: {
+        waiting: v.optional(v.union(v.string(), v.null())),
+        cutoff: v.optional(v.number()),
+        cleanup: v.optional(v.boolean()),
+      },
+      handler: async (
+        ctx: MCtx,
+        args: { waiting?: string | null; cutoff?: number; cleanup?: boolean },
+      ) => {
         const db = lib(ctx)
         const now = Date.now()
+        const next = (more: { waiting?: string; cutoff?: number; cleanup?: true }) =>
+          ctx.scheduler.runAfter(0, ownRef('housekeeping'), more)
+        if (args.cleanup) {
+          if (!(await deleteRetained(db, now))) await next({ cleanup: true })
+          return null
+        }
         const batch = 200
-        let more = false
-        const expired = await db
-          .query('approvals')
-          .withIndex('by_status', (q) => q.eq('status', 'pending').lt('expiresAt', now))
-          .take(batch)
-        for (const row of expired) {
+        const stalled = await db
+          .query('agentRuns')
+          .withIndex('by_status', (q) => q.eq('status', 'running').lt('stepAt', now - stallAfter))
+          .take(sweep.rows)
+        for (const run of stalled)
+          await finish(db, run, { status: 'failed', error: shownStatus(run).error! })
+        // A request holds its plan, up to a document's size: read them within a budget.
+        const expired = await within(
+          db
+            .query('approvals')
+            .withIndex('by_status', (q) => q.eq('status', 'pending').lt('expiresAt', now)),
+          readBudget(),
+        )
+        for (const row of expired.rows) {
           await db.patch(row._id, { status: 'expired' })
           if (row.caller.door === 'app') await wake(db, ctx.scheduler, row.caller.runId)
         }
@@ -1016,76 +1040,9 @@ export function defineTools(
           .withIndex('by_status', (q) => q.eq('status', 'waiting').lt('stepAt', cutoff))
           .paginate({ numItems: batch, cursor: args.waiting ?? null })
         for (const run of waiting.page) await wake(db, ctx.scheduler, run._id)
-        const stalled = await db
-          .query('agentRuns')
-          .withIndex('by_status', (q) => q.eq('status', 'running').lt('stepAt', now - stallAfter))
-          .take(batch)
-        for (const run of stalled)
-          await finish(db, run, { status: 'failed', error: shownStatus(run).error! })
-        const oldActivity = await db.query('activity').order('asc').take(batch)
-        const doomedActivity = oldActivity.filter(
-          (row) => row._creationTime < now - retention.activity * day,
-        )
-        for (const row of doomedActivity) await db.delete(row._id)
-        let decided = 0
-        for (const status of ['approved', 'declined', 'failed', 'expired', 'cancelled'] as const) {
-          const rows = await db
-            .query('approvals')
-            .withIndex('by_status', (q) =>
-              q.eq('status', status).lt('expiresAt', now - retention.approvals * day),
-            )
-            .take(batch)
-          for (const row of rows) {
-            const parties = await db
-              .query('approvalParties')
-              .withIndex('by_approval', (q) => q.eq('approvalId', row._id))
-              .collect()
-            for (const party of parties) await db.delete(party._id)
-            const made = await db
-              .query('approvalRows')
-              .withIndex('by_approval_row', (q) => q.eq('approvalId', row._id))
-              .collect()
-            for (const created of made) await db.delete(created._id)
-            await db.delete(row._id)
-          }
-          decided += rows.length
-        }
-        let runs = 0
-        for (const status of ['done', 'failed'] as const) {
-          const rows = await db
-            .query('agentRuns')
-            .withIndex('by_status', (q) =>
-              q.eq('status', status).lt('stepAt', now - retention.runs * day),
-            )
-            .take(20)
-          for (const run of rows) {
-            const messages = await db
-              .query('agentMessages')
-              .withIndex('by_run', (q) => q.eq('runId', run._id))
-              .take(batch)
-            for (const message of messages) await db.delete(message._id)
-            if (messages.length < batch) await db.delete(run._id)
-            else more = true
-          }
-          runs += rows.length
-        }
-        const windows = await db.query('rateLimits').order('asc').take(batch)
-        const oldWindows = windows.filter((row) => row.window < Math.floor(now / 60_000) - 60)
-        for (const row of oldWindows) await db.delete(row._id)
-        more ||=
-          expired.length === batch ||
-          stalled.length === batch ||
-          doomedActivity.length === batch ||
-          oldWindows.length === batch ||
-          decided >= batch ||
-          runs >= 20
-        if (more || !waiting.isDone) {
-          await ctx.scheduler.runAfter(
-            0,
-            ownRef('housekeeping'),
-            waiting.isDone ? {} : { waiting: waiting.continueCursor, cutoff },
-          )
-        }
+        if (!waiting.isDone) await next({ waiting: waiting.continueCursor, cutoff })
+        else if (stalled.length === sweep.rows || expired.more) await next({})
+        else await next({ cleanup: true })
         return null
       },
     }),
@@ -1147,6 +1104,115 @@ function fromCursor({ cursor, limit, ...rest }: Record<string, unknown>) {
 
 function toCursor(result: PageOf) {
   return { items: result.page, next: result.isDone ? null : result.continueCursor }
+}
+
+/**
+ * What one housekeeping transaction reads at most, about: far inside Convex's
+ * limits (16 MiB and 32,000 documents), even when every row is near the
+ * 1 MiB document limit.
+ */
+const sweep = { rows: 100, bytes: 4 * 1024 * 1024 }
+
+function readBudget() {
+  let rows = sweep.rows
+  let bytes = sweep.bytes
+  return {
+    count(row: Record<string, unknown>) {
+      rows -= 1
+      bytes -= getConvexSize(row as Value)
+    },
+    get spent() {
+      return rows <= 0 || bytes <= 0
+    },
+  }
+}
+type Budget = ReturnType<typeof readBudget>
+type LibId = GenericId<keyof LibraryDataModel & string>
+
+/** Reads `query` until it ends or the budget is spent. `more`: rows may remain. */
+async function within<T extends Record<string, unknown>>(query: AsyncIterable<T>, budget: Budget) {
+  const rows: T[] = []
+  if (budget.spent) return { rows, more: true }
+  for await (const row of query) {
+    rows.push(row)
+    budget.count(row)
+    if (budget.spent) return { rows, more: true }
+  }
+  return { rows, more: false }
+}
+
+/**
+ * Deletes one bounded batch of what is past retention. A request's parties
+ * and created rows, and a run's messages, go before the row itself, so a row
+ * whose children did not fit stays for the next batch. True when nothing is
+ * left.
+ */
+async function deleteRetained(db: Lib, now: number) {
+  const budget = readBudget()
+  /** Deletes what `query` holds; false when the budget ran out first. */
+  const deleteAll = async (query: AsyncIterable<{ _id: LibId }>) => {
+    const { rows, more } = await within(query, budget)
+    for (const row of rows) await db.delete(row._id)
+    return !more
+  }
+  /** Deletes the rows `oldest` finds, one by one, each after its children. */
+  const deleteParents = async <T extends { _id: LibId }>(
+    oldest: () => Promise<T | null>,
+    children: (row: T) => Promise<boolean>,
+  ) => {
+    while (!budget.spent) {
+      const row = await oldest()
+      if (!row) return true
+      budget.count(row)
+      if (!(await children(row))) return false
+      await db.delete(row._id)
+    }
+    return false
+  }
+  const activity = db
+    .query('activity')
+    .withIndex('by_creation_time', (q) => q.lt('_creationTime', now - retention.activity * day))
+  if (!(await deleteAll(activity))) return false
+  for (const status of ['approved', 'declined', 'failed', 'expired', 'cancelled'] as const) {
+    const done = await deleteParents(
+      () =>
+        db
+          .query('approvals')
+          .withIndex('by_status', (q) =>
+            q.eq('status', status).lt('expiresAt', now - retention.approvals * day),
+          )
+          .first(),
+      async (row) =>
+        (await deleteAll(
+          db.query('approvalParties').withIndex('by_approval', (q) => q.eq('approvalId', row._id)),
+        )) &&
+        (await deleteAll(
+          db.query('approvalRows').withIndex('by_approval_row', (q) => q.eq('approvalId', row._id)),
+        )),
+    )
+    if (!done) return false
+  }
+  for (const status of ['done', 'failed'] as const) {
+    const done = await deleteParents(
+      () =>
+        db
+          .query('agentRuns')
+          .withIndex('by_status', (q) =>
+            q.eq('status', status).lt('stepAt', now - retention.runs * day),
+          )
+          .first(),
+      (run) =>
+        deleteAll(db.query('agentMessages').withIndex('by_run', (q) => q.eq('runId', run._id))),
+    )
+    if (!done) return false
+  }
+  // A counter is created in its own minute, so creation order is window order. An hour is kept.
+  const windows = db
+    .query('rateLimits')
+    .withIndex('by_creation_time', (q) =>
+      q.lt('_creationTime', (Math.floor(now / 60_000) - 60) * 60_000),
+    )
+  return await deleteAll(windows)
 }
 
 /**

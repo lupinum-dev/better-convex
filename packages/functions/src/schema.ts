@@ -76,7 +76,8 @@ export const libraryTables = {
     .index('by_requester_request', ['requester.key', 'requestId'])
     .index('by_requester_call', ['requester.key', 'callHash', 'status', 'expiresAt'])
     .index('by_tenant_status', ['tenantId', 'status', 'expiresAt'])
-    .index('by_status', ['status', 'expiresAt']),
+    .index('by_status', ['status', 'expiresAt'])
+    .index('by_run_status', ['caller.runId', 'status', 'expiresAt']),
 
   /**
    * A tenant besides the call's own that every row a request touches names,
