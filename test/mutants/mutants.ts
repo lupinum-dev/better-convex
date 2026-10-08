@@ -1844,6 +1844,18 @@ export const mutants: Mutant[] = [
     ],
     projects: ['security'],
   },
+  // The renewal cookie of a server token exchange reaches the browser.
+  {
+    id: 'P-session-ssr-renewal-cookie',
+    guards: 'session',
+    file: 'src/runtime/server/utils/auth-snapshot.ts',
+    find: 'renewsRequestSession: true,',
+    replace: 'renewsRequestSession: false,',
+    kills: [
+      'test/security/convex-auth-internal-session.test.ts > server session renewal > carries the renewal cookie of a server token exchange to the browser',
+    ],
+    projects: ['security'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [

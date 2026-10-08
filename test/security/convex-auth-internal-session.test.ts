@@ -1,12 +1,17 @@
+import { IncomingMessage, ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
+
 import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from 'better-auth'
 import { memoryAdapter, type MemoryDB } from 'better-auth/adapters/memory'
 import { createAuthMiddleware } from 'better-auth/api'
 import { setSessionCookie } from 'better-auth/cookies'
 import { jwt } from 'better-auth/plugins'
-import { describe, expect, it, vi } from 'vitest'
+import { createEvent } from 'h3'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
+import { getConvexUser } from '../../src/runtime/server/utils/convex-user'
 import {
   createComponentRateLimitStorage,
   readComponentRateLimits,
@@ -409,5 +414,66 @@ describe('internal Better Auth session bridge', () => {
       code: 'UNAUTHORIZED',
       message: 'AUTH_SESSION_INVALID',
     })
+  })
+})
+
+describe('server session renewal', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('carries the renewal cookie of a server token exchange to the browser', async () => {
+    const memory = database(sessionLifetimeMs)
+    const auth = createAuth(memory)
+    const sessionCookieName = (await auth.$context).authCookies.sessionToken.name
+    const iat = Math.floor(Date.now() / 1_000)
+    const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url')
+    vi.spyOn((await auth.$context).getPlugin('jwt')!.endpoints, 'signJWT').mockResolvedValue({
+      token: `${encode({ alg: 'none' })}.${encode({ sub: 'user-1', iat, exp: iat + 900 })}.sig`,
+    })
+    // A first renewal hands the browser the signed cookie Better Auth issues.
+    memory.session![0]!.expiresAt = new Date(Date.now() + 60_000)
+    const primed = await auth.handler(request(true, '/convex/token'))
+    const browserCookie = primed.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith(`${sessionCookieName}=`))
+      ?.split(';', 1)[0]
+    if (!browserCookie) throw new Error('Expected a signed session cookie')
+    // The session crosses Better Auth's update age again before the next page load.
+    memory.session![0]!.expiresAt = new Date(Date.now() + 60_000)
+
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'server-session-renewal-proxy-secret-32-bytes')
+    vi.stubGlobal('fetch', async (url: string | URL, init?: RequestInit) =>
+      auth.handler(
+        new Request(`${origin}${new URL(url).pathname}`, { headers: init?.headers, method: 'GET' }),
+      ),
+    )
+    const incoming = new IncomingMessage(new Socket())
+    incoming.headers = { cookie: browserCookie, 'cf-connecting-ip': '198.51.100.7' }
+    const event = createEvent(incoming, new ServerResponse(incoming))
+    event.context.nitro = {
+      runtimeConfig: {
+        public: {
+          convex: {
+            url: 'https://deployment.convex.cloud',
+            siteUrl: convexSiteUrl,
+            auth: { origin, trustedClientIpHeader: 'cf-connecting-ip' },
+          },
+        },
+      },
+    }
+
+    await expect(getConvexUser(event)).resolves.toMatchObject({ id: 'user-1' })
+
+    const renewal = event.node.res.getHeader('set-cookie')
+    const renewed = (Array.isArray(renewal) ? renewal : [String(renewal)]).find((cookie) =>
+      cookie.startsWith(`${sessionCookieName}=`),
+    )
+    expect(renewed).toMatch(/Max-Age=604800/u)
+    expect(renewed?.split(';', 1)[0]).toBe(browserCookie)
+    expect(memory.session![0]!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * 86_400_000)
+    expect(event.node.res.getHeader('cache-control')).toBe('private, no-store')
+    expect(event.node.res.getHeader('vary')).toBe('Cookie')
   })
 })
