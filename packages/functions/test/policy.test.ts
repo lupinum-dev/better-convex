@@ -158,3 +158,57 @@ test.each([
   if (expected === 'throws') expect(decided).toThrow(TypeError)
   else expect(decided()).toBe(expected)
 })
+
+// Catches: a policy written in JavaScript, past the types, that names an action the policy does not
+// list, or gives an empty list, and grants something because of it. Each row is one such policy;
+// the first rows are the controls that must be allowed.
+const listed = ['a.read', 'a.write']
+const decideFor = (extra: object, asker: Asker, role: 'owner' | null = 'owner') =>
+  decide(
+    definePolicy({ actions: listed, roles: { owner: ['a.read'] }, scopes: {}, ...extra } as never),
+    { action: 'a.read', asker, role } as never,
+  )
+const scoped = (scope: string): Asker => ({ kind: 'agent', scopes: [scope] })
+
+test.each([
+  ['control: the role names the action', {}, person, 'allow'],
+  [
+    'control: the scope names the action',
+    { scopes: { s: { label: 'S', actions: ['a.*'] } } },
+    scoped('s'),
+    'allow',
+  ],
+  ['control: public names the action', { public: ['a.read'] }, { kind: 'visitor' }, 'allow'],
+  ['a role pattern for an unlisted action', { roles: { owner: ['a.nope'] } }, person, 'deny'],
+  ['a role with an empty list', { roles: { owner: [] } }, person, 'deny'],
+  ['a role with an empty pattern', { roles: { owner: [''] } }, person, 'deny'],
+  [
+    'a scope pattern for an unlisted action',
+    { scopes: { s: { label: 'S', actions: ['a.nope'] } } },
+    scoped('s'),
+    'deny',
+  ],
+  ['a scope with no actions', { scopes: { s: { label: 'S', actions: [] } } }, scoped('s'), 'deny'],
+  [
+    'a scope with an empty pattern',
+    { scopes: { s: { label: 'S', actions: [''] } } },
+    scoped('s'),
+    'deny',
+  ],
+  [
+    'an agent with no scopes',
+    { scopes: { s: { label: 'S', actions: ['a.*'] } } },
+    { kind: 'agent', scopes: [] },
+    'deny',
+  ],
+  ['a public list with an unlisted action', { public: ['a.nope'] }, { kind: 'visitor' }, 'deny'],
+  ['an empty public list', { public: [] }, { kind: 'visitor' }, 'deny'],
+  [
+    'an agent rule for an unlisted action',
+    { agents: { 'a.nope': 'deny' } },
+    { kind: 'agent', scopes: 'all' },
+    'allow',
+  ],
+] as const)('a policy with %s decides as stated', (_name, extra, asker, expected) => {
+  expect(decideFor(extra, asker as Asker)).toBe(expected)
+})

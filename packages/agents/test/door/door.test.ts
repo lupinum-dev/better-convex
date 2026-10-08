@@ -82,7 +82,7 @@ test('a numeric request_id still deduplicates', async () => {
 })
 
 // D1: a request_id that was neither string nor number was dropped, so a retry ran again.
-test.each([[{ a: 1 }], [true], [['x']]])(
+test.each([[{ a: 1 }], [true], [['x']], [null]])(
   'request_id %j is refused, not dropped',
   async (request_id) => {
     const { t, call, a } = await setup()
@@ -116,6 +116,47 @@ test('a tool whose action is in no scope fails at definition', () => {
   expect(() => defineTools(fns, { m: { x: unscoped } }, { functions: refs('agents') })).toThrow(
     'Tool orphan: its action projects.unscoped is in no scope.',
   )
+})
+
+// Keep: next to the refused request_id values, a string one runs and deduplicates.
+test('a string request_id runs once and its retry replays', async () => {
+  const { t, call, a } = await setup()
+  const args = { orgId: a, name: 'Once', request_id: 'abc' }
+  await call('ann:write', 'create_project', args)
+  const again = await call('ann:write', 'create_project', args)
+  expect(again.body.result.structuredContent.status).toBe('done')
+  const names = (await t.run((ctx) => ctx.db.query('projects').collect())).map((p) => p.name)
+  expect(names.filter((name) => name === 'Once')).toHaveLength(1)
+})
+
+// Catches: a tool whose action is missing, misspelled or in no scope reaching a host. The first row
+// is the control: a scoped action defines fine and is listed.
+test.each([
+  ['control: a scoped action', 'projects.search', null],
+  ['a missing action', undefined, /Operation action undefined is not in the policy's actions/],
+  [
+    'a misspelled action',
+    'projects.serach',
+    /Operation action "projects\.serach" is not in the policy's actions/,
+  ],
+  [
+    'an action in no scope',
+    'projects.unscoped',
+    'Tool probe: its action projects.unscoped is in no scope.',
+  ],
+])('a tool with %s fails closed at definition', (_name, action, message) => {
+  const define = () => {
+    const probe = query({
+      action: action as never,
+      args: {},
+      returns: v.null(),
+      tool: { name: 'probe', description: 'x' },
+      handler: async () => null,
+    })
+    return defineTools(fns, { m: { probe } }, { functions: refs('agents') })
+  }
+  if (message === null) expect(define().catalog.map((entry) => entry.name)).toContain('probe')
+  else expect(define).toThrow(message)
 })
 
 // C4: a committed write with a large result got HTTP 502; only the replay was cut short.
