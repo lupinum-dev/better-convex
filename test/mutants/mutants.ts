@@ -1986,6 +1986,44 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  // A sliding renewal of the presented session still gets a Convex token.
+  {
+    id: 'P-session-renewed-session-token',
+    guards: 'session',
+    file: 'src/runtime/convex-auth/plugin.ts',
+    find: 'if (!authenticated) unauthorized()',
+    replace: 'if (!authenticated || ctx.context.newSession) unauthorized()',
+    kills: [
+      'test/security/convex-auth-internal-session.test.ts > internal Better Auth session bridge > signs a token while Better Auth renews the presented session',
+    ],
+    projects: ['security'],
+  },
+  // The renewal cookie of a server token exchange reaches the browser.
+  {
+    id: 'P-session-ssr-renewal-cookie',
+    guards: 'session',
+    file: 'src/runtime/server/utils/auth-snapshot.ts',
+    find: 'renewsRequestSession: true,',
+    replace: 'renewsRequestSession: false,',
+    kills: [
+      'test/security/convex-auth-internal-session.test.ts > server session renewal > carries the renewal cookie of a server token exchange to the browser',
+    ],
+    projects: ['security'],
+  },
+  // An unusable refreshed token signs the browser out instead of reusing the old one.
+  {
+    id: 'P-session-unusable-token-definitive',
+    guards: 'session',
+    file: 'src/runtime/auth/token-fetcher.ts',
+    find: "authError: 'Convex authentication token is expired or missing a valid expiry',\n            definitive: true,",
+    replace:
+      "authError: 'Convex authentication token is expired or missing a valid expiry',\n            definitive: false,",
+    kills: [
+      'test/unit/better-auth-browser-adapter.test.ts > Better Auth browser adapter > drops the cached token when every refresh returns an unusable (malformed) token',
+      'test/unit/better-auth-browser-adapter.test.ts > Better Auth browser adapter > drops the cached token when every refresh returns an unusable (expired) token',
+    ],
+    projects: ['unit'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [
