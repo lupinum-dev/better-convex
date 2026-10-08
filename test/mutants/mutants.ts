@@ -1893,6 +1893,18 @@ export const mutants: Mutant[] = [
     kills: [`${F}/rules.test.ts > only the union member the value is names a tenant`],
     projects: ['functions'],
   },
+  {
+    id: 'P-rules-error-code-list',
+    guards: 'C4',
+    file: 'packages/functions/src/actor.ts',
+    find: '!isErrorCode(data.code)',
+    replace: "typeof data.code !== 'string'",
+    kills: [
+      `${A}/door/door.test.ts > a tool error with data {"code":"UPSTREAM_INTERNAL","message":"private-api-key"} reaches the agent as {"code":"FAILED","message":"The tool failed. Try again later."}`,
+      `${A}/door/door.test.ts > a tool error with data {"code":"toString","message":"x"} reaches the agent as {"code":"FAILED","message":"The tool failed. Try again later."}`,
+    ],
+    projects: ['agents'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [

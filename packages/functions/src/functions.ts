@@ -32,7 +32,6 @@ import {
   actingAsValidator,
   actorRecord,
   fail,
-  failureOf,
   type ActingAs,
   type Actor,
   type AgentCaller,
@@ -327,7 +326,7 @@ export function defineFunctions<
       )
       .catch((error: unknown) => {
         // The auth component's answer for a revoked or expired grant: agents meet one code at both doors.
-        if (failureOf(error)?.code === 'MCP_ACCESS_DENIED')
+        if ((error as { data?: { code?: unknown } } | null)?.data?.code === 'MCP_ACCESS_DENIED')
           fail('AGENT_DISABLED', 'This connection was revoked or has expired. Reconnect it.')
         throw error
       })

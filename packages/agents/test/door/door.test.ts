@@ -3,7 +3,7 @@ import { toolFailure } from '@lupinum/better-convex-agents/internal'
 import { createMcpServer } from '@lupinum/better-convex-agents/mcp'
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import type { FunctionReference } from 'convex/server'
-import { v } from 'convex/values'
+import { ConvexError, v } from 'convex/values'
 import { expect, test, vi } from 'vitest'
 
 import { doorAuth, refs } from '../support'
@@ -320,6 +320,26 @@ test('asking for approval without SITE_URL fails and names the variable', async 
     t.mutation(fn('agents:archive_project'), { caller, input: { projectId: pa } }),
   ).rejects.toThrow(/Set the SITE_URL environment variable/)
   vi.unstubAllEnvs()
+})
+
+// Catches: a dependency's ConvexError with its own code and private text reaching the model.
+test.each([
+  [
+    { code: 'FORBIDDEN', message: 'You may not.' },
+    { code: 'FORBIDDEN', message: 'You may not.' },
+  ],
+  [
+    { code: 'UPSTREAM_INTERNAL', message: 'private-api-key' },
+    { code: 'FAILED', message: 'The tool failed. Try again later.' },
+  ],
+  [
+    { code: 'toString', message: 'x' },
+    { code: 'FAILED', message: 'The tool failed. Try again later.' },
+  ],
+])('a tool error with data %j reaches the agent as %j', (data, expected) => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  expect(toolFailure(new ConvexError(data))).toEqual(expected)
+  error.mockRestore()
 })
 
 // E6: a wrapper that dropped `action` (or cast a typo past the types) failed only at the first call;

@@ -340,8 +340,8 @@ export function defineTools(
               paged && (input.paginationOpts as { cursor: string | null }).cursor !== null
             const result = await Promise.resolve(op.handler(checked, input)).catch(
               (error: unknown) => {
-                // A cursor the model made up fails inside Convex without a code; say which field is wrong.
-                if (hasCursor && !failureOf(error))
+                // A cursor the model made up fails inside Convex without a `ConvexError`; say which field is wrong.
+                if (hasCursor && (error as { data?: unknown } | null)?.data === undefined)
                   fail(
                     'INVALID_INPUT',
                     'cursor: pass the `next` value from the last result exactly, or leave it out for the first page.',

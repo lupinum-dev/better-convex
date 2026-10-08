@@ -104,42 +104,46 @@ export function actorRecord(actor: Actor<{ _id: string }> | SystemActor): ActorR
 /**
  * Every code a caller can receive, from the library or from the app's own
  * `fail`. The web client, MCP hosts and in-app agents receive
- * `{ code, message }`; switch on `code`.
+ * `{ code, message }`; switch on `code`. A runtime list, so a door can tell
+ * these codes from any other `ConvexError`.
  */
-export type ErrorCode =
+export const errorCodes = [
   /** No session: sign in. */
-  | 'NOT_SIGNED_IN'
+  'NOT_SIGNED_IN',
   /** Signed in, but this account may not use the app (suspended, no profile). */
-  | 'ACCOUNT_DISABLED'
+  'ACCOUNT_DISABLED',
   /** The actor exists but may not do this. */
-  | 'FORBIDDEN'
+  'FORBIDDEN',
   /** The row does not exist, or the actor may not know it does. */
-  | 'NOT_FOUND'
+  'NOT_FOUND',
   /** The input is wrong, or names a row whose state does not allow this (a cancelled order); the message names the field. */
-  | 'INVALID_INPUT'
+  'INVALID_INPUT',
   /** The agent's grant ended: turned off, revoked or expired. */
-  | 'AGENT_DISABLED'
-  | 'APPROVAL_NOT_FOUND'
-  | 'APPROVAL_EXPIRED'
-  | 'APPROVAL_DECLINED'
+  'AGENT_DISABLED',
+  'APPROVAL_NOT_FOUND',
+  'APPROVAL_EXPIRED',
+  'APPROVAL_DECLINED',
   /** The rows a request was about changed after the person saw it. */
-  | 'STALE'
-  | 'REQUEST_ID_REUSED'
+  'STALE',
+  'REQUEST_ID_REUSED',
   /** A limit was reached; the message says which and when to retry. */
-  | 'RATE_LIMITED'
+  'RATE_LIMITED',
   /** Too much at once: too many IDs, too large a request. */
-  | 'TOO_LARGE'
+  'TOO_LARGE',
   /** Another write to the same rows won; try again. */
-  | 'CONFLICT'
+  'CONFLICT',
   /** An unexpected error; the detail is in the log, not in the message. */
-  | 'FAILED'
+  'FAILED',
   /** An in-app agent run stopped answering. */
-  | 'STALLED'
+  'STALLED',
   /** The model service: busy or out of quota, refused the request or key, did not answer, took too long. */
-  | 'MODEL_BUSY'
-  | 'MODEL_REFUSED'
-  | 'MODEL_FAILED'
-  | 'MODEL_TIMEOUT'
+  'MODEL_BUSY',
+  'MODEL_REFUSED',
+  'MODEL_FAILED',
+  'MODEL_TIMEOUT',
+] as const
+
+export type ErrorCode = (typeof errorCodes)[number]
 
 /**
  * A failure the caller may see. Anything else stays internal: callers see a
@@ -150,12 +154,15 @@ export function fail(code: ErrorCode, message: string): never {
   throw new ConvexError({ code, message })
 }
 
-/** The coded failure inside an error, or `null` for an internal one. */
-export function failureOf(error: unknown): { code: string; message: string } | null {
-  const data = (error as { data?: unknown } | null)?.data
-  if (data && typeof data === 'object' && typeof (data as { code?: unknown }).code === 'string') {
-    const { code, message } = data as { code: string; message?: unknown }
-    return { code, message: typeof message === 'string' ? message : code }
-  }
-  return null
+/**
+ * The coded failure inside an error, or `null` for an internal one. Only an `ErrorCode` counts:
+ * a `ConvexError` from a dependency or a component may carry any code and private text.
+ */
+export function failureOf(error: unknown): { code: ErrorCode; message: string } | null {
+  const data = (error as { data?: { code?: unknown; message?: unknown } } | null)?.data
+  if (!data || typeof data !== 'object' || !isErrorCode(data.code)) return null
+  return { code: data.code, message: typeof data.message === 'string' ? data.message : data.code }
 }
+
+const isErrorCode = (code: unknown): code is ErrorCode =>
+  (errorCodes as readonly unknown[]).includes(code)
