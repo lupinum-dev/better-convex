@@ -318,3 +318,37 @@ test('an audited internal mutation under an unaudited call writes its own row', 
     },
   ])
 })
+
+// Catches: a limit or audit entry written past the types that is accepted and then never enforced.
+// Each row also defines a valid limit and audit, so a setup that refuses everything fails too.
+test.each([
+  [
+    'max is NaN',
+    { limits: { 'a.write': { max: Number.NaN, every: 'minute' } } },
+    /max.*at least 1/,
+  ],
+  [
+    'max is Infinity',
+    { limits: { 'a.write': { max: Infinity, every: 'minute' } } },
+    /max.*at least 1/,
+  ],
+  ['max is a string', { limits: { 'a.write': { max: '5', every: 'minute' } } }, /max.*at least 1/],
+  ['every is missing', { limits: { 'a.write': { max: 1 } } }, /every/],
+  ['every is a prototype key', { limits: { 'a.write': { max: 1, every: 'toString' } } }, /every/],
+  ['an audit pattern is empty', { audit: [''] }, /"".*matches no action/],
+  [
+    'an audit pattern is a prefix of nothing',
+    { audit: ['a.write.*'] },
+    /"a\.write\.\*".*matches no action/,
+  ],
+] as const)('a limit or audit entry fails at definition: %s', (_name, extra, message) => {
+  const base = { actions: ['a.read', 'a.write'], roles: {}, scopes: {} }
+  expect(() => definePolicy({ ...base, ...extra } as never)).toThrow(message)
+  expect(() =>
+    definePolicy({
+      ...base,
+      audit: ['a.*'],
+      limits: { 'a.write': { max: 1, every: 'day', per: undefined } },
+    } as never),
+  ).not.toThrow()
+})

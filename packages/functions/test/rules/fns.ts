@@ -79,6 +79,9 @@ export const { query, mutation, internalQuery, internalMutation, internalAction,
           return true
         }),
       ),
+      // A rule of a kind that does not exist, alone and as one part of allOf.
+      oddLone: { kind: 'tennant' } as never,
+      oddPart: allOf(tenant('orgId'), { kind: 'tennant' } as never),
       pages: anyOf(
         publicRead((page: { published: boolean }) => page.published),
         tenant('orgId'),

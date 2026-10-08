@@ -323,6 +323,35 @@ test.each([
   expect(() => define(erasure)).toThrow(message)
 })
 
+// Catches: an erasure entry written past the types (empty, a wrong value, a wrong kind) that is
+// accepted and then erases nothing. Each row throws at definition; the control defines fine.
+test.each([
+  ['control: delete with an index', { notes: { delete: 'authorId' } }, null],
+  ['control: keep with a reason', { notes: { keep: 'Notes are public.' } }, null],
+  ['an empty entry', { notes: {} }, /use exactly one of delete, anonymize or keep/],
+  ['an empty entry in a list', { notes: [{}] }, /use exactly one of delete, anonymize or keep/],
+  [
+    'an unknown kind',
+    { notes: { remove: 'authorId' } },
+    /use exactly one of delete, anonymize or keep/,
+  ],
+  [
+    'delete and anonymize together',
+    { notes: { delete: 'authorId', anonymize: 'editorId' } },
+    /use exactly one/,
+  ],
+  ['a keep reason that is not text', { notes: { keep: 5 } }, /keep needs a reason/],
+  ['an empty field name', { notes: { delete: '' } }, /the table has no field ""/],
+  ['a field name that is not text', { notes: { delete: 5 } }, /the table has no field "5"/],
+  ['an entry that is undefined', { notes: undefined }, TypeError],
+  ['an entry that is null', { notes: null }, TypeError],
+  ['an entry that is a string', { notes: 'delete' }, TypeError],
+  ['a list holding null', { notes: [null] }, TypeError],
+] as const)('erasure entry fails closed: %s', (_name, erasure, expected) => {
+  if (expected === null) expect(() => define(erasure)).not.toThrow()
+  else expect(() => define(erasure)).toThrow(expected)
+})
+
 test('erasure needs the schema', () => {
   expect(() => define({ notes: { keep: 'why' } }, null)).toThrow(/Erasure needs the app schema/)
 })

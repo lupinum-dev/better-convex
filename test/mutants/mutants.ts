@@ -2940,6 +2940,17 @@ export const mutants: Mutant[] = [
     projects: ['functions'],
   },
   {
+    id: 'T-3-unknown-rule-hidden',
+    guards: 'a rule of an unknown kind grants nothing',
+    file: 'packages/functions/src/rules.ts',
+    find: "anyOf.\n        return 'hidden'",
+    replace: "anyOf.\n        return 'ok'",
+    kills: [
+      `${F}/rules.test.ts > a rule of an unknown kind refuses the row, alone and inside allOf`,
+    ],
+    projects: ['functions'],
+  },
+  {
     id: 'S-F2-runs-progress',
     guards: 'a long run cannot use the whole budget before its messages',
     file: 'packages/functions/src/erasure.ts',
