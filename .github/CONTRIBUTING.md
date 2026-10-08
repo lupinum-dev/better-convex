@@ -8,11 +8,11 @@
   changes.
 - Run `pnpm verify` before you ask for review. When you change authentication,
   OAuth, MCP, or the starters, also run the matching slower suite listed in
-  [AGENTS.md](AGENTS.md) (`pnpm test:integration`, `pnpm test:e2e --full`,
+  [AGENTS.md](../AGENTS.md) (`pnpm test:integration`, `pnpm test:e2e --full`,
   `pnpm test:starters`).
 - Add a changeset with `pnpm changeset` when users will notice the change.
-  The style rules are in [AGENTS.md](AGENTS.md).
-- Follow [docs/WRITING.md](./docs/WRITING.md) for documentation.
+  The style rules are in [AGENTS.md](../AGENTS.md).
+- Follow [docs/WRITING.md](../docs/WRITING.md) for documentation.
 - Do not include credentials, tokens, private deployment URLs, or production
   data.
 - Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).

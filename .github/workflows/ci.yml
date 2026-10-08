@@ -35,19 +35,17 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - if: matrix.task != 'audit'
         run: pnpm install --frozen-lockfile
       - if: matrix.task == 'test'
         run: pnpm exec playwright install --with-deps chromium
       - if: matrix.task != 'audit'
         run: pnpm ${{ matrix.task }}
-      # High and critical only, for the package, the docs site and the demo, which each have a lockfile.
+      # Blocks on high and critical advisories in the production dependencies of published packages.
       - if: matrix.task == 'audit'
         run: |
-          pnpm audit --audit-level=high
-          pnpm --dir docs audit --audit-level=high
-          pnpm --dir demo audit --audit-level=high
+          node scripts/audit-deps.mjs
 
   # Builds the packages and the docs (the agent docs ship inside the packages), then
   # checks the packed tarballs: publint, attw, every public entry imports, no secrets,
@@ -63,7 +61,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test:packed
@@ -81,7 +79,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:integration
@@ -98,7 +96,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e --full
@@ -119,7 +117,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:starters
@@ -142,7 +140,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:mutants --shard ${{ matrix.shard }}

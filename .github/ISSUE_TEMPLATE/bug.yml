@@ -1,0 +1,21 @@
+name: Bug report
+description: Something does not work.
+labels: [bug]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Paste error messages as text.
+    validations:
+      required: true
+  - type: input
+    id: reproduction
+    attributes:
+      label: Reproduction link (optional)
+      description: A StackBlitz or repository that shows the problem helps us fix it fastest.
+  - type: input
+    id: version
+    attributes:
+      label: Version (optional)
+      description: Package and framework versions, for example `1.2.0, Nuxt 4.4`.

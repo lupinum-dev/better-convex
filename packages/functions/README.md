@@ -112,6 +112,55 @@ export const { query, mutation, internalQuery, internalMutation, internalAction,
 
 Spread `libraryTables` into your schema. A table without a rule is a type error.
 
+<!-- BEGIN:consumer-onboarding -->
+
+## Agent setup
+
+`@lupinum/better-convex-functions` ships its documentation inside the package for coding
+agents such as Claude Code, Codex and Cursor. The pages match the installed
+version, so an agent does not follow the website for a different version.
+
+To set it up, give your coding agent this task:
+
+```text
+Set up @lupinum/better-convex-functions for coding agents as described under "Agent setup" in its README.
+```
+
+### Steps for the agent
+
+1. Find `node_modules/@lupinum/better-convex-functions/dist/agent/AGENTS.md`. Look in the
+   directory of the project that depends on `@lupinum/better-convex-functions` first, then
+   in its parent directories up to the repository root (workspaces can hoist
+   packages). Read it; it lists the documentation pages.
+2. Add the section below to the project's agent instructions: `AGENTS.md`, or
+   `CLAUDE.md` if the project has only that file. If it has neither, create
+   `AGENTS.md`. Write the path relative to the repository root, through
+   `node_modules/@lupinum/better-convex-functions` (for example
+   `apps/web/node_modules/@lupinum/better-convex-functions/...` in a workspace). Never write
+   a resolved path such as `node_modules/.pnpm/...`: it contains the version and
+   breaks after an upgrade. If a section for `@lupinum/better-convex-functions` already
+   exists, leave it as it is.
+
+   Use the path you found in place of the sample path:
+
+   ```md
+   ## @lupinum/better-convex-functions
+
+   Before you change code that uses @lupinum/better-convex-functions, read
+   `node_modules/@lupinum/better-convex-functions/dist/agent/AGENTS.md` and the pages it
+   lists. They document the installed version. Prefer them over what you
+   remember about this package and over the website.
+   ```
+
+3. Do not copy the documentation into the project and do not install a skill.
+   The section points into the installed package, so it stays correct after
+   every upgrade or downgrade.
+
+If the file does not exist, the installed version has no packaged
+documentation. Read the package README and its TypeScript types instead.
+
+<!-- END:consumer-onboarding -->
+
 ## Entry points
 
 | Import                                        | Contents                                                                                          |

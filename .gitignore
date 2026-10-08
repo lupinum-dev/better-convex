@@ -12,7 +12,8 @@ node_modules
 .cache
 # Local Convex backend state (pnpm dev, e2e helpers)
 .convex
-.claude
+.claude/*
+!.claude/CLAUDE.md
 # Yarn
 **/.yarn/cache
 **/.yarn/*state*

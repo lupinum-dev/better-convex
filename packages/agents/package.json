@@ -37,7 +37,6 @@
     "./agent-docs": "./dist/agent/AGENTS.md"
   },
   "scripts": {
-    "prepack": "node ../../scripts/agent-docs.mjs --check",
     "build": "unbuild",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

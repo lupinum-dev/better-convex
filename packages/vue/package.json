@@ -45,7 +45,6 @@
     "./agent-docs": "./dist/agent/AGENTS.md"
   },
   "scripts": {
-    "prepack": "node ../../scripts/agent-docs.mjs --check",
     "build": "unbuild",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },

@@ -48,7 +48,7 @@ a pattern appears in three real applications before you promote it to a
 library helper". `defineFunctions` wraps every function and holds the rule map,
 so it is closer to a framework than anything in the repository today.
 
-Proposal (record as a `DECISIONS.md` entry in phase B):
+Proposal (record as a `internals/decisions.md` entry in phase B):
 
 - The Nuxt and Vue packages stay a toolkit, unchanged.
 - `-functions` is an **opt-in layer**: an app that does not install it is not
@@ -160,7 +160,7 @@ Steps:
    `packages/functions/test/app` instead of the skeleton's `convex/`.
 4. Add the budget tests from A2 (D6).
 5. Changesets: `-functions` as its own package (not in the Nuxt/Vue `fixed` group).
-6. `DECISIONS.md` entry for section 3; `AGENTS.md` repository scope updated.
+6. `internals/decisions.md` entry for section 3; `AGENTS.md` repository scope updated.
 
 Done when:
 

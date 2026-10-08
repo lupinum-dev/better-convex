@@ -4,20 +4,6 @@
 import { cpSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 
-// `--check`, run by each package's `prepack`: refuse to pack the source placeholder that the
-// package build copies to dist/agent/AGENTS.md. A package build after this script, such as
-// `pnpm build:packages` alone, puts the placeholder back.
-if (process.argv[2] === '--check') {
-  const entry = join('dist', 'agent', 'AGENTS.md')
-  if (!existsSync(entry) || !readFileSync(entry, 'utf8').includes('\n## Start here\n')) {
-    console.error(
-      `${entry} is not the built agent documentation. Run \`pnpm build\` from the repository root, then pack again.`,
-    )
-    process.exit(1)
-  }
-  process.exit(0)
-}
-
 const source = 'docs/.output/public/raw'
 const content = 'docs/content/docs'
 if (!existsSync(source)) throw new Error(`${source} is missing. Run pnpm docs:build first.`)

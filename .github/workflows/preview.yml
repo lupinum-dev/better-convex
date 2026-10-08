@@ -16,7 +16,7 @@ jobs:
   preview:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm exec pkg-pr-new publish --pnpm --comment=update . ./packages/vue ./packages/functions ./packages/agents
