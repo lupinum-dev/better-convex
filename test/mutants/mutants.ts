@@ -2939,6 +2939,84 @@ export const mutants: Mutant[] = [
     kills: [`${F}/erasure.test.ts > without erasure there is no erasure code`],
     projects: ['functions'],
   },
+  {
+    id: 'S-F2-runs-progress',
+    guards: 'a long run cannot use the whole budget before its messages',
+    file: 'packages/functions/src/erasure.ts',
+    find: 'budget.count(run)',
+    replace: 'while (!budget.spent) budget.count(run)',
+    kills: [
+      `${F}/erasure.test.ts > a person with many runs and messages is erased in a bounded number of steps`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'S-F2-array-entries',
+    guards: 'every entry of a table is erased',
+    file: 'packages/functions/src/erasure.ts',
+    find: 'const entries = Array.isArray(value) ? (value as object[]) : [value as object]',
+    replace:
+      'const entries = (Array.isArray(value) ? (value as object[]) : [value as object]).slice(0, 1)',
+    kills: [`${F}/erasure.test.ts > an array of entries erases every field of a table`],
+    projects: ['functions'],
+  },
+  {
+    id: 'S-F2-keep-alone',
+    guards: 'keep cannot be combined with other entries',
+    file: 'packages/functions/src/erasure.ts',
+    find: 'entries.length > 1 && entries.some',
+    replace: 'false && entries.some',
+    kills: [
+      `${F}/erasure.test.ts > erasure definition error: {"notes":[{"delete":"authorId"},{"keep":"why"}]}`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'S-F2-launch-fields',
+    guards: 'every user ID field of a table needs an entry',
+    file: 'packages/functions/src/test.ts',
+    find: 'if (covered.has(top)) continue',
+    replace: 'if (covered.size > 0) continue',
+    kills: [
+      `${F}/launch.test.ts > check 2: a table is checked field by field, and keep covers all of it`,
+    ],
+  },
+  {
+    id: 'S-F2-launch-keep',
+    guards: 'keep covers the whole table in the launch check',
+    file: 'packages/functions/src/test.ts',
+    find: "if (entries.some((entry) => 'keep' in entry)) continue",
+    replace: 'if (false) continue',
+    kills: [
+      `${F}/launch.test.ts > check 2: a table is checked field by field, and keep covers all of it`,
+    ],
+  },
+  {
+    id: 'S-F2-launch-record-key',
+    guards: 'a user ID as a record key counts',
+    file: 'packages/functions/src/test.ts',
+    find: "...userIdFields(node.key, path || '(the whole document)'),",
+    replace: '',
+    kills: [`${F}/launch.test.ts > check 2: a user ID as a record key counts`],
+  },
+  {
+    id: 'S-F2-launch-step-export',
+    guards: 'launch check wants the erasure step exported',
+    file: 'packages/functions/src/test.ts',
+    find: '!scan.exports.some(',
+    replace: 'false && !scan.exports.some(',
+    kills: [
+      `${F}/launch.test.ts > check 2: erasure without an exported eraseStep is named, with the fix`,
+    ],
+  },
+  {
+    id: 'S-F2-step-marker',
+    guards: 'the erasure step carries the marker the launch check looks for',
+    file: 'packages/functions/src/guard.ts',
+    find: 'ERASURE_STEP, { value: true, enumerable: false }',
+    replace: 'ERASURE_STEP, { value: false, enumerable: false }',
+    kills: [`${F}/launch.test.ts > a fully set up app has no launch problems`],
+  },
   // Slice C: `launchProblems` and the starter's safeguards.
   {
     id: 'S-C-raw-functions',
@@ -2954,8 +3032,8 @@ export const mutants: Mutant[] = [
     id: 'S-C-erasure-table-missing',
     guards: 'saas-c',
     file: 'packages/functions/src/test.ts',
-    find: 'if (!Object.hasOwn(erasure, table))',
-    replace: 'if (false)',
+    find: 'if (covered.has(top)) continue',
+    replace: 'if (true) continue',
     kills: [
       `${F}/launch.test.ts > check 2: tables with a user ID that are not in erasure are named with their field`,
     ],
@@ -2990,8 +3068,8 @@ export const mutants: Mutant[] = [
     id: 'S-C-erasure-record',
     guards: 'saas-c',
     file: 'packages/functions/src/test.ts',
-    find: 'return userIdFields(node.value, `${path}[]`)',
-    replace: 'return []',
+    find: '...userIdFields(node.value, `${path}[]`),',
+    replace: '',
     kills: [
       `${F}/launch.test.ts > check 2: tables with a user ID that are not in erasure are named with their field`,
     ],

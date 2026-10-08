@@ -65,6 +65,54 @@ test('erasure deletes, anonymizes and keeps across batches, and leaves other peo
   expect(after.steps).toBeGreaterThan(3)
 })
 
+// Catches: a table with two user ID fields erasing only one of them.
+test('an array of entries erases every field of a table', async () => {
+  const { t, ann, bob } = await setup()
+  await t.run(async (ctx) => {
+    await ctx.db.insert('tasks', { authorId: ann, assigneeId: bob })
+    await ctx.db.insert('tasks', { authorId: bob, assigneeId: ann })
+    await ctx.db.insert('tasks', { authorId: bob, assigneeId: bob })
+  })
+  await erase(t, ann)
+  const tasks = await t.run((ctx) => ctx.db.query('tasks').collect())
+  expect(tasks.map((row) => [row.authorId, row.assigneeId])).toEqual([
+    [bob, undefined],
+    [bob, bob],
+  ])
+})
+
+// Catches: a person with many runs never finishing, because the run query used up the budget
+// and no messages were deleted.
+test('a person with many runs and messages is erased in a bounded number of steps', async () => {
+  const { t, ann, bob } = await setup()
+  await t.run(async (ctx) => {
+    const grant = await ctx.db.insert('agentGrants', {
+      authId: 'bob',
+      userId: bob,
+      agent: 'helper',
+      scopes: [],
+      expiresAt: 1,
+    })
+    for (let i = 0; i < 120; i++) {
+      const id = await ctx.db.insert('agentRuns', { ...run(ann), grantId: grant })
+      for (let order = 0; order < 4; order++)
+        await ctx.db.insert('agentMessages', { runId: id, order, json: '{}' })
+    }
+    const bobRun = await ctx.db.insert('agentRuns', { ...run(bob), grantId: grant })
+    await ctx.db.insert('agentMessages', { runId: bobRun, order: 0, json: '{}' })
+  })
+  await erase(t, ann)
+  const after = await t.run(async (ctx) => ({
+    runs: await ctx.db.query('agentRuns').collect(),
+    messages: await ctx.db.query('agentMessages').collect(),
+    steps: (await ctx.db.system.query('_scheduled_functions').collect()).length,
+  }))
+  expect(after.runs.map((row) => row.userId)).toEqual([bob])
+  expect(after.messages).toHaveLength(1)
+  // 600 rows to read at 100 a step is six steps; the bound leaves room for the end of each step.
+  expect(after.steps).toBeLessThan(12)
+})
+
 // Catches: a second run (a retry, or a person erased twice) failing or touching more rows.
 test('running a step twice is safe', async () => {
   const { t, ann, bob } = await setup()
@@ -255,6 +303,19 @@ test.each([
   ],
   [{ notes: { keep: ' ' } }, /Erasure for "notes": keep needs a reason/],
   [{ notes: { delete: 'authorId', keep: 'both' } }, /use exactly one of delete, anonymize or keep/],
+  [
+    { notes: [{ delete: 'authorId' }, { keep: 'why' }] },
+    /keep covers the whole table and cannot be combined with other entries/,
+  ],
+  [
+    { notes: [{ delete: 'authorId' }, { delete: 'editorId' }] },
+    /Erasure for "notes": add an index whose first field is "editorId"/,
+  ],
+  [
+    { notes: [{ delete: 'authorId' }, { anonymize: 'authorId' }] },
+    /anonymize removes "authorId", so the schema must say v.optional/,
+  ],
+  [{ notes: [] }, /the list of entries is empty/],
   [{ notes: { delete: 'missing' } }, /the table has no field "missing"/],
   [{ posts: { delete: 'authorId' } }, /Erasure for "posts": the schema has no such table/],
   [{ activity: { delete: 'actor' } }, /Erasure for "activity": the library erases its own tables/],

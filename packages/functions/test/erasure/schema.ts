@@ -11,6 +11,9 @@ export default defineSchema({
     'by_author',
     ['authorId'],
   ),
+  tasks: defineTable({ authorId: v.id('users'), assigneeId: v.optional(v.id('users')) })
+    .index('by_author', ['authorId'])
+    .index('by_assignee', ['assigneeId']),
   projects: defineTable({ ownerId: v.id('users'), name: v.string() }),
   ...libraryTables,
 })

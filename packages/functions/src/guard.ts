@@ -7,12 +7,21 @@ export const OPERATION = Symbol.for('better-convex.operation')
 /** Marks the agents package's housekeeping function, so `launchProblems` can look for the cron that calls it. */
 export const HOUSEKEEPING = Symbol.for('better-convex.housekeeping')
 
+/** Marks the erasure step, so `launchProblems` can see that the app exports it. */
+export const ERASURE_STEP = Symbol.for('better-convex.erasure-step')
+
 /** Marks a public function that checks its caller itself: the library's own, or one the app vouches for. */
 const GUARDED = Symbol.for('better-convex.guarded')
 
 /** Marks a registered function as the library's housekeeping job: a cron must call it. Not enumerable, so it stays out of the function's JSON. */
 export function markHousekeeping<F>(registered: F): F {
   Object.defineProperty(registered as object, HOUSEKEEPING, { value: true, enumerable: false })
+  return registered
+}
+
+/** Marks a registered function as the erasure step: the app must export it. Not enumerable, so it stays out of the function's JSON. */
+export function markErasureStep<F>(registered: F): F {
+  Object.defineProperty(registered as object, ERASURE_STEP, { value: true, enumerable: false })
   return registered
 }
 
@@ -63,6 +72,7 @@ export type ScannedFn = {
   [OPERATION]?: Operation
   [GUARDED]?: unknown
   [HOUSEKEEPING]?: unknown
+  [ERASURE_STEP]?: unknown
 }
 
 /**

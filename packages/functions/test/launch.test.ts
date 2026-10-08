@@ -42,6 +42,13 @@ const schema = defineSchema({
       v.object({ kind: v.literal('person'), by: v.record(v.string(), v.id('users')) }),
     ),
   ),
+  shares: defineTable({
+    owner: v.id('users'),
+    reviewer: v.optional(v.id('users')),
+  })
+    .index('by_owner', ['owner'])
+    .index('by_reviewer', ['reviewer']),
+  scores: defineTable({ byPerson: v.record(v.id('users'), v.number()) }),
   tags: defineTable({ label: v.string(), team: v.string() }),
   ...libraryTables,
 })
@@ -51,6 +58,8 @@ const fullErasure = {
   notes: { delete: 'authorId' },
   teams: { keep: 'Teams belong to their members.' },
   invites: { keep: 'Invitations expire on their own.' },
+  shares: [{ delete: 'owner' }, { anonymize: 'reviewer' }],
+  scores: { keep: 'Scores are shown without names.' },
 } as const
 
 function build({
@@ -60,6 +69,7 @@ function build({
   housekeeping = false,
   cron = false,
   query = false,
+  step = true,
 }: {
   erasure?: Record<string, unknown> | null
   limit?: boolean
@@ -67,6 +77,7 @@ function build({
   housekeeping?: boolean
   cron?: boolean
   query?: boolean
+  step?: boolean
 } = {}) {
   const policy = definePolicy({
     actions: ['notes.add', 'contact.send', 'contact.read'],
@@ -90,6 +101,8 @@ function build({
       notes: unchecked('Test table.'),
       teams: unchecked('Test table.'),
       invites: unchecked('Test table.'),
+      shares: unchecked('Test table.'),
+      scores: unchecked('Test table.'),
       tags: unchecked('Test table.'),
     },
     ...(erasure && { erasure: erasure as never }),
@@ -112,12 +125,14 @@ function build({
   }
   const job = () =>
     markHousekeeping(guarded(internalMutationGeneric({ args: {}, handler: async () => null })))
-  const modules = {
+  const modules: Record<string, () => Promise<unknown>> = {
     './_generated/README.ts': load({}),
     './contact.ts': load(contact),
     ...(raw && {
       './admin.ts': load({ read: queryGeneric({ args: {}, handler: async () => null }) }),
     }),
+    ...(step &&
+      erasure && { './erasure.ts': load({ eraseStep: (fns as any).erasure?.eraseStep }) }),
     ...(housekeeping && { './agents.ts': load({ housekeeping: job() }) }),
   }
   const crons = cronJobs()
@@ -154,11 +169,43 @@ test('check 1: a function built with Convex builders is named, with the fix', as
 
 // Catches: deleting an account that leaves user IDs behind (nested, optional, in a union or a record).
 test('check 2: tables with a user ID that are not in erasure are named with their field', async () => {
-  expect(await problems({ erasure: { notes: { delete: 'authorId' } } })).toEqual([
+  expect(await problems({ erasure: { notes: fullErasure.notes } })).toEqual([
     expect.stringContaining(
-      "The table teams holds a user ID in members[].person but is not in erasure. Add teams: { delete: 'members[].person' }",
+      "The table teams holds a user ID in members[].person but erasure does not cover it. Add { delete: 'members' }",
     ),
-    expect.stringContaining('The table invites holds a user ID in by[] but is not in erasure.'),
+    expect.stringContaining(
+      'The table invites holds a user ID in by[] but erasure does not cover it.',
+    ),
+    expect.stringContaining('The table shares holds a user ID in owner but'),
+    expect.stringContaining('The table shares holds a user ID in reviewer but'),
+    expect.stringContaining('The table scores holds a user ID in byPerson but'),
+  ])
+})
+
+// Catches: an entry for one field hiding a second user ID field of the same table.
+test('check 2: a table is checked field by field, and keep covers all of it', async () => {
+  expect(await problems({ erasure: { ...fullErasure, shares: { delete: 'owner' } } })).toEqual([
+    expect.stringMatching(
+      /^The table shares holds a user ID in reviewer but erasure does not cover it\. Add \{ delete: 'reviewer' \}.*an array holds one entry per field/,
+    ),
+  ])
+  expect(
+    await problems({ erasure: { ...fullErasure, shares: { keep: 'Shares are public.' } } }),
+  ).toEqual([])
+})
+
+// Catches: a user ID used as the key of a record staying behind unnoticed.
+test('check 2: a user ID as a record key counts', async () => {
+  const { scores: _scores, ...without } = fullErasure
+  expect(await problems({ erasure: without })).toEqual([
+    expect.stringContaining('The table scores holds a user ID in byPerson but'),
+  ])
+})
+
+// Catches: an erasure map that is never run, because no module exports the step.
+test('check 2: erasure without an exported eraseStep is named, with the fix', async () => {
+  expect(await problems({ step: false })).toEqual([
+    'Account deletion is set up but no module exports fns.erasure.eraseStep: add `export const { eraseStep } = fns.erasure` in convex/erasure.ts.',
   ])
 })
 
@@ -166,7 +213,7 @@ test('check 2: tables with a user ID that are not in erasure are named with thei
 test('check 2: no erasure at all says account deletion is not set up', async () => {
   expect(await problems({ erasure: null })).toEqual([
     expect.stringMatching(
-      /^Account deletion is not set up: add `erasure`.*notes, teams, invites\./,
+      /^Account deletion is not set up: add `erasure`.*notes, teams, invites, shares, scores\./,
     ),
   ])
 })

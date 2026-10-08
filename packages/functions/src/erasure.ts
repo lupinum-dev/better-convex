@@ -9,20 +9,27 @@ import {
 import { v } from 'convex/values'
 
 import { readBudget, within, type Budget } from './budget'
-import { guarded } from './guard'
+import { guarded, markErasureStep } from './guard'
 import { libraryTables } from './schema'
 
 /**
- * What happens to a table when a person is erased. Each entry names the field
- * that holds the person's app user ID (or says why the rows stay).
+ * What happens to one field of a table when a person is erased. The entry names
+ * the field that holds the person's app user ID.
  */
-export type ErasureEntry<Field extends string = string> =
+export type FieldErasure<Field extends string = string> =
   /** Delete the person's rows. */
   | { readonly delete: Field }
   /** Keep the rows, remove the field. It must be `v.optional(...)` in the schema. */
   | { readonly anonymize: Field }
-  /** Leave the table alone, and say why. */
+
+/**
+ * What happens to a table: one entry, or an array with one entry per field that
+ * holds a user ID. `keep` leaves the whole table alone, says why, and stands alone.
+ */
+export type ErasureEntry<Field extends string = string> =
+  | FieldErasure<Field>
   | { readonly keep: string }
+  | readonly FieldErasure<Field>[]
 
 export type ErasureMap = Record<string, ErasureEntry>
 
@@ -46,55 +53,70 @@ function definitionError(table: string, message: string): never {
   throw new Error(`Erasure for "${table}": ${message}`)
 }
 
-/** Checks the map against the schema and returns one job per table that is erased. */
+/** Checks the map against the schema and returns one job per entry that is erased. */
 function planApp(schema: AnySchema, map: ErasureMap): Job[] {
   const jobs: Job[] = []
-  for (const [table, entry] of Object.entries(map)) {
+  for (const [table, value] of Object.entries(map)) {
     if (libraryTableNames.has(table))
       definitionError(table, 'the library erases its own tables; remove this entry.')
     const definition = schema.tables[table] as TableDefinition | undefined
     if (!definition) definitionError(table, 'the schema has no such table.')
-    const kinds = entryKinds.filter((kind) => kind in (entry as object))
-    if (kinds.length !== 1) definitionError(table, 'use exactly one of delete, anonymize or keep.')
-    if ('keep' in entry) {
-      if (typeof entry.keep !== 'string' || entry.keep.trim() === '')
-        definitionError(table, 'keep needs a reason: a sentence that says why the rows stay.')
-      continue
-    }
-    const kind = 'delete' in entry ? 'delete' : 'anonymize'
-    const field = 'delete' in entry ? entry.delete : entry.anonymize
-    const validator = definition.validator as unknown as {
-      kind: string
-      fields?: Record<string, { isOptional: string }>
-    }
-    if (validator.kind !== 'object' || !validator.fields)
-      definitionError(table, 'only a table defined with an object can be erased.')
-    const fieldValidator = validator.fields[field]
-    if (!fieldValidator) definitionError(table, `the table has no field "${field}".`)
-    if (kind === 'anonymize' && fieldValidator.isOptional !== 'optional')
+    const entries = Array.isArray(value) ? (value as object[]) : [value as object]
+    if (entries.length === 0) definitionError(table, 'the list of entries is empty.')
+    if (entries.length > 1 && entries.some((entry) => 'keep' in entry))
       definitionError(
         table,
-        `anonymize removes "${field}", so the schema must say v.optional(...) for it. Use delete to remove the rows instead.`,
+        'keep covers the whole table and cannot be combined with other entries.',
       )
-    const index = definition[' indexes']().find(({ fields }) => fields[0] === field)
-    if (!index)
-      definitionError(
-        table,
-        `add an index whose first field is "${field}", for example .index('by_${field}', ['${field}']).`,
-      )
-    jobs.push(async (db, userId, budget) => {
-      const { rows, more } = await within(
-        db.query(table).withIndex(index.indexDescriptor, (q) => q.eq(field, userId)),
-        budget,
-      )
-      for (const row of rows) {
-        if (kind === 'delete') await db.delete(row._id)
-        else await db.patch(row._id, { [field]: undefined })
+    for (const entry of entries as Exclude<FieldErasure | { keep: string }, never>[]) {
+      const kinds = entryKinds.filter((kind) => kind in entry)
+      if (kinds.length !== 1)
+        definitionError(table, 'use exactly one of delete, anonymize or keep.')
+      if ('keep' in entry) {
+        if (typeof entry.keep !== 'string' || entry.keep.trim() === '')
+          definitionError(table, 'keep needs a reason: a sentence that says why the rows stay.')
+        continue
       }
-      return more
-    })
+      jobs.push(planField(table, definition, entry))
+    }
   }
   return jobs
+}
+
+/** The job for one delete or anonymize entry, after the same checks against the schema. */
+function planField(table: string, definition: TableDefinition, entry: FieldErasure): Job {
+  const kind = 'delete' in entry ? 'delete' : 'anonymize'
+  const field = 'delete' in entry ? entry.delete : entry.anonymize
+  const validator = definition.validator as unknown as {
+    kind: string
+    fields?: Record<string, { isOptional: string }>
+  }
+  if (validator.kind !== 'object' || !validator.fields)
+    definitionError(table, 'only a table defined with an object can be erased.')
+  const fieldValidator = validator.fields[field]
+  if (!fieldValidator) definitionError(table, `the table has no field "${field}".`)
+  if (kind === 'anonymize' && fieldValidator.isOptional !== 'optional')
+    definitionError(
+      table,
+      `anonymize removes "${field}", so the schema must say v.optional(...) for it. Use delete to remove the rows instead.`,
+    )
+  const index = definition[' indexes']().find(({ fields }) => fields[0] === field)
+  if (!index)
+    definitionError(
+      table,
+      `add an index whose first field is "${field}", for example .index('by_${field}', ['${field}']).`,
+    )
+  return async (db, userId, budget) => {
+    const { rows, more } = await within(
+      db.query(table).withIndex(index.indexDescriptor, (q) => q.eq(field, userId)),
+      budget,
+    )
+    for (const row of rows) {
+      if (kind === 'delete') await db.delete(row._id)
+      else await db.patch(row._id, { [field]: undefined })
+    }
+    return more
+  }
 }
 
 /** The actor of a row without the person: the key names them too. */
@@ -149,22 +171,21 @@ function planLibrary(schema: AnySchema): Job[] {
     })
   if (has('agentRuns'))
     jobs.push(async (db, userId, budget) => {
-      const { rows, more } = await within(
-        db.query('agentRuns').withIndex('by_user_agent', (q) => q.eq('userId', userId)),
-        budget,
-      )
-      let left = more
-      for (const run of rows) {
+      // One run at a time, so a long run cannot use the whole budget before its messages are read:
+      // each step deletes messages within what is left, and the run with its last message.
+      const runs = db.query('agentRuns').withIndex('by_user_agent', (q) => q.eq('userId', userId))
+      for await (const run of runs) {
+        if (budget.spent) return true
+        budget.count(run)
         const messages = await within(
           db.query('agentMessages').withIndex('by_run', (q) => q.eq('runId', run._id)),
           budget,
         )
         for (const message of messages.rows) await db.delete(message._id)
-        // The run goes with its last message, so a cut-short step finds it again.
-        if (messages.more) left = true
-        else await db.delete(run._id)
+        if (messages.more) return true
+        await db.delete(run._id)
       }
-      return left
+      return false
     })
   for (const table of ['activity', 'auditLog'] as const)
     if (has(table))
@@ -209,26 +230,31 @@ export function defineErasure(schema: AnySchema | undefined, map: ErasureMap) {
     )
   const jobs = [...planLibrary(schema), ...planApp(schema, map)]
 
-  const eraseStep = guarded(
-    internalMutationGeneric({
-      args: { userId: v.string(), self: v.string() },
-      handler: async (ctx, { userId, self }) => {
-        const db = ctx.db as unknown as Db
-        const budget = readBudget()
-        let more = false
-        for (const job of jobs) {
-          if (budget.spent) {
-            more = true
-            break
+  const eraseStep = markErasureStep(
+    guarded(
+      internalMutationGeneric({
+        args: { userId: v.string(), self: v.string() },
+        handler: async (ctx, { userId, self }) => {
+          const db = ctx.db as unknown as Db
+          const budget = readBudget()
+          let more = false
+          for (const job of jobs) {
+            if (budget.spent) {
+              more = true
+              break
+            }
+            if (await job(db, userId, budget)) more = true
           }
-          if (await job(db, userId, budget)) more = true
-        }
-        // Rows that are gone are not found again, so the next step starts at the top.
-        if (more)
-          await ctx.scheduler.runAfter(0, makeFunctionReference<'mutation'>(self), { userId, self })
-        return null
-      },
-    }),
+          // Rows that are gone are not found again, so the next step starts at the top.
+          if (more)
+            await ctx.scheduler.runAfter(0, makeFunctionReference<'mutation'>(self), {
+              userId,
+              self,
+            })
+          return null
+        },
+      }),
+    ),
   )
 
   return { eraseStep }
