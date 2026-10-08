@@ -1826,7 +1826,7 @@ export const mutants: Mutant[] = [
     guards: 'housekeeping',
     file: 'packages/agents/src/budget.ts',
     find: 'export const sweep = { rows: 100, bytes: 4 * 1024 * 1024 }',
-    replace: 'const sweep = { rows: 1_000_000, bytes: 2 ** 40 }',
+    replace: 'export const sweep = { rows: 1_000_000, bytes: 2 ** 40 }',
     kills: [
       `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through 'a long finished conversation'`,
       `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through 'many decided requests with large plans'`,
