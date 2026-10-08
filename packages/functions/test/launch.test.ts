@@ -242,3 +242,102 @@ test('check 4: a public mutation without a limit is named, with the limit to add
     ),
   ])
 })
+
+// Catches: a launch check that passes for the wrong reason. Every row changes the valid app in one
+// place and must name exactly that problem, in these words; undoing the change must empty the list,
+// so a check that always complains, or never does, fails the table.
+const valid = { housekeeping: true, cron: true, query: true } as const
+const { notes, teams, invites, shares, scores } = fullErasure
+test.each([
+  [
+    'a raw function',
+    { raw: true },
+    [
+      "./admin.ts:read is built with Convex's own builders, so it skips the policy and the row rules. Build it with fns.query, fns.mutation or fns.internalMutation, or mark it trusted('why', fn).",
+    ],
+  ],
+  [
+    'a user ID field with no erasure entry',
+    { erasure: { teams, invites, shares, scores } },
+    [
+      "The table notes holds a user ID in authorId but erasure does not cover it. Add { delete: 'authorId' }, { anonymize: 'authorId' } or { keep: 'why the rows stay' } to the notes entry of erasure in defineFunctions (an array holds one entry per field).",
+    ],
+  ],
+  [
+    'a second user ID field of a table',
+    { erasure: { notes, teams, invites, shares: { delete: 'owner' }, scores } },
+    [
+      "The table shares holds a user ID in reviewer but erasure does not cover it. Add { delete: 'reviewer' }, { anonymize: 'reviewer' } or { keep: 'why the rows stay' } to the shares entry of erasure in defineFunctions (an array holds one entry per field).",
+    ],
+  ],
+  [
+    'a user ID as a record key',
+    { erasure: { notes, teams, invites, shares } },
+    [
+      "The table scores holds a user ID in byPerson but erasure does not cover it. Add { delete: 'byPerson' }, { anonymize: 'byPerson' } or { keep: 'why the rows stay' } to the scores entry of erasure in defineFunctions (an array holds one entry per field).",
+    ],
+  ],
+  [
+    'a user ID in a nested array field',
+    { erasure: { notes, invites, shares, scores } },
+    [
+      "The table teams holds a user ID in members[].person but erasure does not cover it. Add { delete: 'members' }, { anonymize: 'members' } or { keep: 'why the rows stay' } to the teams entry of erasure in defineFunctions (an array holds one entry per field).",
+    ],
+  ],
+  [
+    'no eraseStep export',
+    { step: false },
+    [
+      'Account deletion is set up but no module exports fns.erasure.eraseStep: add `export const { eraseStep } = fns.erasure` in convex/erasure.ts.',
+    ],
+  ],
+  [
+    'no erasure at all',
+    { erasure: null },
+    [
+      'Account deletion is not set up: add `erasure` and `schema` to defineFunctions, with an entry for notes, teams, invites, shares, scores. Each table holds a user ID, so it would stay behind when a person deletes their account.',
+    ],
+  ],
+  [
+    'housekeeping that no cron calls',
+    { cron: false },
+    [
+      "./agents.ts exports housekeeping, which expires agent requests and deletes old activity, but no cron calls it. Add crons.hourly('agent housekeeping', { minuteUTC: 7 }, internal.agents.housekeeping, {}) to convex/crons.ts.",
+    ],
+  ],
+  [
+    'a public mutation without a limit',
+    { limit: false },
+    [
+      "./contact.ts:send is a public mutation (action contact.send) with no limit, so one visitor can fill your database. Add limits: { 'contact.send': { max: 60, every: 'minute', per: 'everyone' } } to definePolicy.",
+    ],
+  ],
+] as const)(
+  'launch variant: %s is named, and undoing it clears the list',
+  async (_name, change, expected) => {
+    expect(await problems(valid)).toEqual([])
+    expect(await problems({ ...valid, ...change } as never)).toEqual(expected)
+    expect(await problems(valid)).toEqual([])
+  },
+)
+
+// Catches: a module map that does not match what Convex deploys (rel-h). A raw function in a nested
+// `_generated` folder is deployed, so it is named; the one in the root `_generated` folder is not.
+test.each([
+  [
+    'a nested _generated folder',
+    './legacy/_generated/leak.ts',
+    [
+      "./legacy/_generated/leak.ts:read is built with Convex's own builders, so it skips the policy and the row rules. Build it with fns.query, fns.mutation or fns.internalMutation, or mark it trusted('why', fn).",
+    ],
+  ],
+  ['the root _generated folder', './_generated/leak.ts', []],
+  ['a test file', './leak.test.ts', []],
+] as const)('launch variant: a raw function in %s', async (_name, path, expected) => {
+  const app = build(valid)
+  expect(await launchProblems(app)).toEqual([])
+  app.modules[path] = load({ read: queryGeneric({ args: {}, handler: async () => null }) })
+  expect(await launchProblems(app)).toEqual(expected)
+  Reflect.deleteProperty(app.modules, path)
+  expect(await launchProblems(app)).toEqual([])
+})
