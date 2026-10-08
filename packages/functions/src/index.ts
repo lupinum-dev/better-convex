@@ -2,7 +2,14 @@
  * The public surface of `@lupinum/better-convex-functions`. Everything else in
  * `src/` is the library's own; test helpers are in `./test`.
  */
-export { defineFunctions, type Auth, type JobDone, type Plan, type TenantOf } from './functions'
+export {
+  auditTrail,
+  defineFunctions,
+  type Auth,
+  type JobDone,
+  type Plan,
+  type TenantOf,
+} from './functions'
 export {
   definePolicy,
   can,
@@ -14,6 +21,7 @@ export {
   type PublicActionOf,
   type AgentRule,
   type Approvers,
+  type Limit,
 } from './policy'
 export {
   tenant,

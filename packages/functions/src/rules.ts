@@ -259,6 +259,8 @@ export interface Call<User> {
    * it, any row the rules allow.
    */
   plan?: { has: (id: string) => Promise<boolean>; created: (id: string) => Promise<void> }
+  /** Called with the id of every row this db inserts, patches, replaces or deletes, for the audit log. */
+  written?: (id: string) => void
   /**
    * Receives two checks for the library's own use: `forget` drops cached roles
    * and rows after writes made outside this db (a nested mutation), and
@@ -653,6 +655,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
       await assertWritable(table, value, 'insert')
       wrote()
       const id = await raw.insert(table, value as never)
+      call.written?.(String(id))
       // A row this work made is its own to change, also in its follow-ups.
       await call.plan?.created(String(id))
       return id
@@ -666,6 +669,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
       await assertWritable(table, next, 'write')
       await assertParent(table, row, next)
       wrote(id)
+      call.written?.(id)
       return (raw.patch as (...a: unknown[]) => Promise<void>)(...args)
     },
     async replace(...args: unknown[]) {
@@ -674,11 +678,13 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
       await assertWritable(table, next, 'write')
       await assertParent(table, row, next)
       wrote(id)
+      call.written?.(id)
       return (raw.replace as (...a: unknown[]) => Promise<void>)(...args)
     },
     async delete(...args: unknown[]) {
       const { id } = await existing(args, args.length === 2)
       wrote(id)
+      call.written?.(id)
       return (raw.delete as (...a: unknown[]) => Promise<void>)(...args)
     },
   }

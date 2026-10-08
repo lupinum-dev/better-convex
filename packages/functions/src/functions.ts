@@ -3,6 +3,7 @@ import {
   internalActionGeneric,
   internalMutationGeneric,
   internalQueryGeneric,
+  makeFunctionReference,
   mutationGeneric,
   queryGeneric,
   type DataModelFromSchemaDefinition,
@@ -13,6 +14,7 @@ import {
   type GenericDataModel,
   type GenericMutationCtx,
   type GenericQueryCtx,
+  type PaginationOptions,
   type RegisteredMutation,
   type RegisteredQuery,
   type SchemaDefinition,
@@ -39,8 +41,11 @@ import {
   type Visitor,
 } from './actor'
 import { guarded, OPERATION } from './guard'
+import { rateLimited, takeToken } from './limits'
 import {
   decide,
+  isAudited,
+  limitOf,
   roleAllows,
   type ActionOf,
   type Decision,
@@ -248,6 +253,13 @@ export function defineFunctions<
   rules: NoInfer<{
     [T in AppTables<DM>]: Rule<DocumentByName<DM, T>, User, DM, ActionOf<P>>
   }>
+  /**
+   * Where the app exports `takeActionToken` from this kit (`'limits:takeActionToken'`).
+   * An `internalAction` with a limited `action` takes its token through it, because an
+   * action has no database of its own. Convex loads one module per function, so the path
+   * has to be spelled out.
+   */
+  limiter?: string
 }) {
   type QCtx = GenericQueryCtx<DM>
   type MCtx = GenericMutationCtx<DM>
@@ -267,6 +279,32 @@ export function defineFunctions<
   }
   // The library's own tables are not in the app's generic data model.
   const lib = (ctx: { db: unknown }) => ctx.db as GenericMutationCtx<LibraryDataModel>['db']
+  /** Takes the call's token, or fails with RATE_LIMITED. `tenant` is undefined where the caller cannot know it (actions). */
+  async function spend(
+    ctx: { db: unknown },
+    actor: Actor<User> | Visitor,
+    action: string,
+    tenant: TenantRef | undefined,
+    limit: NonNullable<ReturnType<typeof limitOf>>,
+  ) {
+    // A visitor has no user and no membership: everyone shares one bucket.
+    let scope = 'everyone'
+    if (actor.kind !== 'visitor' && limit.per !== 'everyone') {
+      scope =
+        limit.per === 'tenant' && tenant ? `tenant:${tenant.id}` : `user:${actorRecord(actor).key}`
+    }
+    const wait = await takeToken(lib(ctx), `limit:${action}:${scope}`, limit)
+    if (wait !== null) rateLimited(wait)
+  }
+
+  /** The action of a read-only operation may not carry a limit: queries cannot write a bucket. */
+  function assertUnlimited(spec: { action: string }, what: string) {
+    if (limitOf(policy, spec.action))
+      throw new Error(
+        `${spec.action} has a limit in the policy, but ${what} cannot write: limits apply to mutations and actions. Use an action name without a limit.`,
+      )
+  }
+
   const isPublic = (action: string) =>
     (policy.public as readonly string[] | undefined)?.includes(action) ?? false
 
@@ -464,7 +502,7 @@ export function defineFunctions<
    */
   async function authorize<Ctx extends QCtx>(
     ctx: Ctx,
-    op: Pick<Operation, 'action' | 'args' | 'crossTenant'>,
+    op: Pick<Operation, 'action' | 'args' | 'crossTenant'> & { kind?: Operation['kind'] },
     actor: Actor<User> | Visitor | SystemActor,
     input: Record<string, unknown>,
   ) {
@@ -520,6 +558,15 @@ export function defineFunctions<
         actor.kind === 'visitor' ? 'Sign in first.' : `You may not ${op.action} here.`,
       )
     }
+    // A call the policy allows takes its token; the decision came first, so a denied call costs nothing.
+    // An agent's request that waits for a person takes it when the person's approval runs it.
+    const limit = op.kind === 'mutation' ? limitOf(policy, op.action) : undefined
+    if (
+      limit &&
+      actor.kind !== 'system' &&
+      (decision === 'allow' || (actor.kind === 'agent' && actor.approvalId !== undefined))
+    )
+      await spend(ctx, actor, op.action, tenant, limit)
     // A system actor's db has no rules: it may change any row.
     let checks = {
       forget: () => {},
@@ -551,6 +598,7 @@ export function defineFunctions<
         },
       }
     }
+    const written = new Set<string>()
     const db = checkedDb(ctx.db as MCtx['db'], rules, {
       // Custom rules see the actor as handlers do, without the approval's credentials (class 10).
       actor: shown(actor),
@@ -560,6 +608,7 @@ export function defineFunctions<
       roleOf,
       known: { roles, rows },
       plan,
+      written: (id) => written.add(id),
       expose: (exposed) => (checks = exposed),
     })
     const nested = nestedCalls(
@@ -576,10 +625,12 @@ export function defineFunctions<
       if (tainted) throw tainted
       return value
     }
+    rawDbs.set(db, ctx.db as object)
     return {
       decision,
       tenant,
       rows,
+      written,
       settle,
       /** May this call change the row? For approvals: rows it only reads give their tenant no say. */
       mayWrite: (table: string, row: Record<string, unknown>) => checks.mayWrite(table, row),
@@ -820,6 +871,7 @@ export function defineFunctions<
     const Name extends string,
   >(spec: Spec<QueryCtx, A, Args, Returns, Name>) {
     assertAction(spec)
+    assertUnlimited(spec, 'a query')
     const rule = policy.agents?.[spec.action]
     if (rule === 'approve' || typeof rule === 'function') {
       throw new Error(
@@ -880,14 +932,22 @@ export function defineFunctions<
       args: spec.args,
       returns: spec.returns,
       handler: async (ctx: MCtx, input: ObjectType<Args>) => {
-        const { ctx: checked, settle } = await authorize(
-          ctx,
-          op,
-          await caller(ctx, spec.action),
-          input,
-        )
+        const who = await caller(ctx, spec.action)
+        const { ctx: checked, settle, tenant, written } = await authorize(ctx, op, who, input)
         const plan = frozen(await planOf(op, checked, input))
-        return settle(await spec.handler(checked as never, input, plan as Pl))
+        const result = settle(await spec.handler(checked as never, input, plan as Pl))
+        // Same transaction as the handler: a call that fails writes no audit row. A visitor has no actor to record.
+        if (who.kind !== 'visitor' && isAudited(policy, spec.action)) {
+          const ids = [...written]
+          await lib(ctx).insert('auditLog', {
+            actor: actorRecord(who),
+            action: spec.action,
+            ...(tenant && { tenantId: tenant.id }),
+            rows: ids.slice(0, auditRows),
+            more: Math.max(0, ids.length - auditRows),
+          })
+        }
+        return result
       },
     })
     return operation<RegisteredMutation<'public', ObjectType<Args>, Promise<Infer<Returns>>>>(
@@ -948,6 +1008,7 @@ export function defineFunctions<
     Returns extends AnyValidator,
   >(spec: InternalSpec<QueryCtx, A, Args, Returns>) {
     assertAction(spec)
+    assertUnlimited(spec, 'an internal query')
     return guarded(
       internalQueryGeneric({
         args: internalArgs(spec.args),
@@ -1002,6 +1063,12 @@ export function defineFunctions<
    * not yet checked again: that happens in each `ctx.run`.
    */
   function internalAction<Args extends PropertyValidators, Returns extends AnyValidator>(spec: {
+    /**
+     * The policy action this work counts as. When the policy limits it, the action takes a
+     * token before its handler (through `takeActionToken`; see `limiter`). A limit `per: 'tenant'`
+     * counts per user here: an action reads no rows, so it does not know its tenant.
+     */
+    action?: ActionOf<P>
     args: Args
     returns?: Returns
     handler: (
@@ -1009,6 +1076,13 @@ export function defineFunctions<
       args: ObjectType<Args>,
     ) => Promise<Infer<Returns>>
   }) {
+    if (spec.action !== undefined) {
+      assertAction(spec)
+      if (limitOf(policy, spec.action) && !config.limiter)
+        throw new Error(
+          `${spec.action} has a limit, so its action needs defineFunctions({ limiter: 'module:takeActionToken' }) and that export from the kit.`,
+        )
+    }
     return guarded(
       internalActionGeneric({
         args: internalArgs(spec.args),
@@ -1034,6 +1108,14 @@ export function defineFunctions<
           // An action cannot read the approved plan: under an approval, it deletes files through
           // an internal mutation, which can (release review 5).
           const approved = who.kind === 'agent' && who.approvalId !== undefined
+          if (spec.action !== undefined && limitOf(policy, spec.action)) {
+            await nested.runMutation(
+              makeFunctionReference<'mutation'>(config.limiter!) as never,
+              {
+                action: spec.action,
+              } as never,
+            )
+          }
           const result = await spec.handler(
             {
               ...ctx,
@@ -1141,9 +1223,31 @@ export function defineFunctions<
     ) as unknown as RegisteredMutation<'internal', ObjectType<Args>, Promise<JobDone>>
   }
 
+  /**
+   * Takes an action's token for an `internalAction`. The app exports it from the module that
+   * `limiter` names: `export const { takeActionToken } = fns`.
+   */
+  const takeActionToken = guarded(
+    internalMutationGeneric({
+      args: internalArgs({ action: v.string() }),
+      returns: v.object({ operation: v.literal(operationMark), result: v.null() }),
+      handler: async (
+        ctx: MCtx,
+        { actingAs: who, input }: { actingAs: ActingAs; input: { action: string } },
+      ) => {
+        const limit = limitOf(policy, input.action)
+        if (!limit) throw new Error(`${input.action} has no limit in the policy.`)
+        const actor = await actingAs(ctx, who)
+        if (actor.kind !== 'system') await spend(ctx, actor, input.action, undefined, limit)
+        return { operation: operationMark, result: null }
+      },
+    }),
+  ) as unknown as FunctionReferenceTarget<'mutation', { action: string }, null>
+
   const fns = {
     /** The policy every operation here checks. */
     policy,
+    takeActionToken,
     query,
     mutation,
     internalQuery,
@@ -1174,6 +1278,29 @@ type FunctionReferenceTarget<
         { actingAs: ActingAs; input: Input },
         Promise<Envelope<Output>>
       >
+
+/** At most this many ids go into one audit row; the rest are counted in `more`. */
+const auditRows = 50
+
+/** The unchecked db behind a call's `ctx.db`, so `auditTrail` can read the library's table. */
+const rawDbs = new WeakMap<object, object>()
+
+/**
+ * The audit log of a tenant, newest first, one page at a time. Call it from an
+ * operation of your own, whose action decides who may read the log: the
+ * library does not.
+ */
+export async function auditTrail(
+  ctx: { db: unknown },
+  options: { tenantId: string; paginationOpts: PaginationOptions },
+) {
+  const db = (rawDbs.get(ctx.db as object) ?? ctx.db) as GenericQueryCtx<LibraryDataModel>['db']
+  return await db
+    .query('auditLog')
+    .withIndex('by_tenant', (q) => q.eq('tenantId', options.tenantId))
+    .order('desc')
+    .paginate(options.paginationOpts)
+}
 
 /** Marks an internal operation's result, so a call can tell it from a raw function's. */
 const operationMark = 'better-convex/operation' as const

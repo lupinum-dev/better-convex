@@ -25,6 +25,7 @@ import {
   planOf,
   scopesFor,
   storable,
+  takeToken,
   toJsonSchema,
   toolNamePattern,
   unsendable,
@@ -299,22 +300,15 @@ export function defineTools(
     return checked.value as Record<string, unknown>
   }
 
-  /** Fixed one-minute windows; a refused call does not count (its transaction rolls back). */
+  /** The shared token bucket; a refused call does not count (its transaction rolls back). */
   async function rateLimit(ctx: MCtx, key: string, perMinute: number) {
-    const window = Math.floor(Date.now() / 60_000)
-    const row = await lib(ctx)
-      .query('rateLimits')
-      .withIndex('by_key', (q) => q.eq('key', key).eq('window', window))
-      .unique()
-    if ((row?.count ?? 0) >= perMinute) {
-      const wait = Math.ceil(((window + 1) * 60_000 - Date.now()) / 1000)
+    const wait = await takeToken(lib(ctx), key, { max: perMinute, every: 'minute' })
+    if (wait !== null) {
       fail(
         'RATE_LIMITED',
         `This connection made ${perMinute} changes in the last minute. Try again in ${wait} seconds.`,
       )
     }
-    if (row) await lib(ctx).patch(row._id, { count: row.count + 1 })
-    else await lib(ctx).insert('rateLimits', { key, window, count: 1 })
   }
 
   function approvalUrl(approvalId: string) {
@@ -1362,13 +1356,9 @@ async function deleteRetained(db: Lib, now: number) {
     )
     if (!done) return false
   }
-  // A counter is created in its own minute, so creation order is window order. An hour is kept.
-  const windows = db
-    .query('rateLimits')
-    .withIndex('by_creation_time', (q) =>
-      q.lt('_creationTime', (Math.floor(now / 60_000) - 60) * 60_000),
-    )
-  return await deleteAll(windows)
+  // A bucket idle for a day is full again, so deleting it changes nothing for its key.
+  const idle = db.query('rateLimits').withIndex('by_at', (q) => q.lt('at', now - day))
+  return await deleteAll(idle)
 }
 
 /**

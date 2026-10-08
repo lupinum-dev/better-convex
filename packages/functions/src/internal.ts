@@ -14,6 +14,7 @@ export {
   type ToolSpec,
 } from './functions'
 export { guarded, OPERATION } from './guard'
+export { rateLimited, takeToken } from './limits'
 export { readOnly } from './rules'
 export { actorRecord, agentCallerValidator, failureOf, type AgentCaller } from './actor'
 export { approversFor, scopesFor } from './policy'
