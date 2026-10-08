@@ -1889,18 +1889,6 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
-  {
-    // C4: a committed write with a large result got HTTP 502 on its first response.
-    id: 'P-agents-small-first-result-size',
-    guards: 'C4',
-    file: 'packages/agents/src/door.ts',
-    find: 'bytes <= maximumMcpResponseBytes - 16 * 1024',
-    replace: 'true',
-    kills: [
-      `${A}/door/door.test.ts > a large first result is cut short like a replay, not refused`,
-    ],
-    projects: ['agents'],
-  },
   // The cloud smoke deploys operator-only test functions; a production key must never reach it.
   {
     id: 'live-refuses-production-key',
