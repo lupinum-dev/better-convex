@@ -260,6 +260,7 @@ protocol envelope and its error cases with the official SDK.
 - `projects.create` is limited to 30 a minute per person (`convex/policy.ts`).
 - Archiving a project writes an `auditLog` row with the actor and the project.
 - `convex/crons.ts` runs the agent housekeeping hourly: it expires old requests and deletes activity past retention.
+- `convex/launch.test.ts` fails when a later change forgets one of these: a raw function, a table with a user ID missing from `erasure`, unscheduled housekeeping, or a public write without a limit.
 
 ## Production adaptation
 
