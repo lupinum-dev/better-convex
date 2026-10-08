@@ -5,10 +5,18 @@ import {
   unchecked,
 } from '@lupinum/better-convex-functions'
 import { convexTest } from 'convex-test'
-import { defineSchema, defineTable, makeFunctionReference } from 'convex/server'
+import {
+  defineSchema,
+  defineTable,
+  makeFunctionReference,
+  type DataModelFromSchemaDefinition,
+  type GenericMutationCtx,
+} from 'convex/server'
 import { v } from 'convex/values'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
+import { drain } from '../../../test/helpers/drain'
+import { sweep } from '../src/budget'
 import { people } from './app/people'
 import schema from './erasure/schema'
 
@@ -18,6 +26,7 @@ const eraseStep = makeFunctionReference<'mutation', any, any>('fns:eraseStep')
 
 // Real limits: a step reads 100 rows (packages/functions/src/budget.ts), so 250 rows need three.
 const many = 250
+type MutationCtx = GenericMutationCtx<DataModelFromSchemaDefinition<typeof schema>>
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -32,9 +41,10 @@ async function setup() {
   return { t, ...ids }
 }
 
-async function erase(t: Awaited<ReturnType<typeof setup>>['t'], userId: string) {
+/** Starts the erasure and runs its steps to the end; `maxSteps` is the literal bound for the data. Returns the steps run. */
+async function erase(t: Awaited<ReturnType<typeof setup>>['t'], userId: string, maxSteps = 12) {
   await t.run((ctx) => eraseUser(ctx, userId as never, step))
-  await t.finishAllScheduledFunctions(vi.runAllTimers)
+  return (await drain(t, { maxSteps })).steps
 }
 
 // Catches: erasure that stops after one batch, touches another person's rows, or ignores the map.
@@ -49,20 +59,18 @@ test('erasure deletes, anonymizes and keeps across batches, and leaves other peo
     await ctx.db.insert('comments', { authorId: bob, body: 'b' })
     await ctx.db.insert('projects', { ownerId: ann, name: 'Team' })
   })
-  await erase(t, ann)
+  // 500 rows to read at 100 a step is five steps and one more to see nothing is left.
+  await erase(t, ann, 6)
   const after = await t.run(async (ctx) => ({
     drafts: await ctx.db.query('drafts').collect(),
     comments: await ctx.db.query('comments').collect(),
     projects: await ctx.db.query('projects').collect(),
-    steps: (await ctx.db.system.query('_scheduled_functions').collect()).length,
   }))
   expect(after.drafts.map((row) => [row.authorId, row.text])).toEqual([[bob, 'b']])
   expect(after.comments).toHaveLength(many + 1)
   expect(after.comments.filter((row) => row.authorId === undefined)).toHaveLength(many)
   expect(after.comments.filter((row) => row.authorId === bob)).toHaveLength(1)
   expect(after.projects.map((row) => [row.ownerId, row.name])).toEqual([[ann, 'Team']])
-  // Three batches for the drafts, three for the comments, one more to see nothing is left.
-  expect(after.steps).toBeGreaterThan(3)
 })
 
 // Catches: a table with two user ID fields erasing only one of them.
@@ -101,16 +109,14 @@ test('a person with many runs and messages is erased in a bounded number of step
     const bobRun = await ctx.db.insert('agentRuns', { ...run(bob), grantId: grant })
     await ctx.db.insert('agentMessages', { runId: bobRun, order: 0, json: '{}' })
   })
-  await erase(t, ann)
+  // 600 rows to read at 100 a step is six steps; one more sees nothing is left.
+  await erase(t, ann, 8)
   const after = await t.run(async (ctx) => ({
     runs: await ctx.db.query('agentRuns').collect(),
     messages: await ctx.db.query('agentMessages').collect(),
-    steps: (await ctx.db.system.query('_scheduled_functions').collect()).length,
   }))
   expect(after.runs.map((row) => row.userId)).toEqual([bob])
   expect(after.messages).toHaveLength(1)
-  // 600 rows to read at 100 a step is six steps; the bound leaves room for the end of each step.
-  expect(after.steps).toBeLessThan(12)
 })
 
 // Catches: a second run (a retry, or a person erased twice) failing or touching more rows.
@@ -121,9 +127,9 @@ test('running a step twice is safe', async () => {
     await ctx.db.insert('drafts', { authorId: bob, text: 'b' })
   })
   await t.mutation(eraseStep, { userId: ann, self: 'fns:eraseStep' })
-  await t.finishAllScheduledFunctions(vi.runAllTimers)
+  await drain(t, { maxSteps: 2 })
   await t.mutation(eraseStep, { userId: ann, self: 'fns:eraseStep' })
-  await t.finishAllScheduledFunctions(vi.runAllTimers)
+  await drain(t, { maxSteps: 2 })
   const drafts = await t.run((ctx) => ctx.db.query('drafts').collect())
   expect(drafts.map((row) => row.text)).toEqual(['b'])
 })
@@ -250,6 +256,111 @@ test('library tables: own rows go or lose the ID, other people keep theirs', asy
     `person:${bob}|limit:projects.create`,
     'tenant:org1|limit:reports.generate',
   ])
+})
+
+// Catches (saas:1, saas:4, rf:3): every table over the batch size at once, other people's rows
+// indexed first, and a few documents near the 1 MiB limit. A table that used up the whole step's
+// read budget, a scan that stopped at one batch, or a step that repeated without progress shows
+// as a missing deletion, a touched foreign row, or too many steps.
+test('a person with more rows than a batch in every table is erased, others untouched', async () => {
+  const { t, ann, bob } = await setup()
+  const mine = 2 * sweep.rows + 1 // 201: two full batches and one row
+  const theirs = 150
+  const nearMiB = 'x'.repeat(900_000)
+  // Bob's rows go in first, so they come before Ann's in every index and in creation order.
+  // `large` rows carry a document near 1 MiB: Ann's 21 of them are more than the 16 MiB a step may read.
+  const fill = async (owner: string, count: number, large = 0) => {
+    const grant = await t.run((ctx) =>
+      ctx.db.insert('agentGrants', {
+        authId: owner,
+        userId: owner as never,
+        agent: 'helper',
+        scopes: [],
+        expiresAt: 1,
+      }),
+    )
+    const insertSet = async (ctx: MutationCtx, i: number) => {
+      const big = i < large
+      await ctx.db.insert('drafts', { authorId: owner as never, text: big ? nearMiB : `t${i}` })
+      await ctx.db.insert('comments', { authorId: owner as never, body: `c${i}` })
+      // Ann as author with Bob assigned; Ann assigned on Bob's task.
+      await ctx.db.insert('tasks', {
+        authorId: owner as never,
+        assigneeId: (owner === ann ? bob : ann) as never,
+      })
+      await ctx.db.insert('activity', {
+        actor: person(owner),
+        action: 'drafts.read',
+        status: 'done',
+      })
+      await ctx.db.insert('approvals', {
+        ...approval(person(owner), 'pending'),
+        ...(big ? { plan: { summary: 's', contents: nearMiB } } : {}),
+      })
+      await ctx.db.insert('agentGrants', {
+        authId: owner,
+        userId: owner as never,
+        agent: `helper${i}`,
+        scopes: [],
+        expiresAt: 1,
+      })
+      await ctx.db.insert('rateLimits', { key: `person:${owner}|limit:l${i}`, tokens: 1, at: 1 })
+      const runId = await ctx.db.insert('agentRuns', { ...run(owner), grantId: grant })
+      await ctx.db.insert('agentMessages', { runId, order: 0, json: big ? nearMiB : '{}' })
+      await ctx.db.insert('agentMessages', { runId, order: 1, json: '{}' })
+    }
+    // Large documents one transaction each: a transaction may write 16 MiB.
+    for (let i = 0; i < large; i++) await t.run((ctx) => insertSet(ctx, i))
+    await t.run(async (ctx) => {
+      for (let i = large; i < count; i++) await insertSet(ctx, i)
+    })
+  }
+  await fill(bob, theirs, 1)
+  await fill(ann, mine, 7)
+  // Ann's reads: 7 tables x 201 rows, tasks twice (author, assignee), 402 messages and 1 more grant:
+  // about 2,200 rows at 100 a step is 22 steps. The bound leaves two for the end of each job.
+  await erase(t, ann, 24)
+
+  // One table per transaction: the leftovers of a failed erasure must not trip the read limit.
+  const all = <T extends keyof DataModelFromSchemaDefinition<typeof schema>>(table: T) =>
+    t.run((ctx) => ctx.db.query(table).collect())
+  const after = {
+    drafts: await all('drafts'),
+    comments: await all('comments'),
+    tasks: await all('tasks'),
+    activity: await all('activity'),
+    approvals: await all('approvals'),
+    grants: await all('agentGrants'),
+    limits: await all('rateLimits'),
+    runs: await all('agentRuns'),
+    messages: await all('agentMessages'),
+  }
+  // Gone or anonymized: nothing of Ann's is left in any table that could hold her ID.
+  const hasAnn = (rows: object[]) => rows.filter((row) => JSON.stringify(row).includes(ann))
+  for (const [name, rows] of Object.entries(after)) {
+    if (name === 'messages') continue
+    expect([name, hasAnn(rows).length]).toEqual([name, 0])
+  }
+  // Bob's rows are all there, untouched.
+  expect(after.drafts.filter((row) => row.authorId === bob)).toHaveLength(theirs)
+  expect(after.drafts).toHaveLength(theirs)
+  expect(after.comments.filter((row) => row.authorId === bob)).toHaveLength(theirs)
+  expect(after.comments.filter((row) => row.authorId === undefined)).toHaveLength(mine)
+  // Bob's tasks lose the assignee Ann; Ann's tasks (authored by her) are deleted.
+  expect(after.tasks).toHaveLength(theirs)
+  expect(
+    after.tasks.filter((row) => row.authorId === bob && row.assigneeId === undefined),
+  ).toHaveLength(theirs)
+  expect(after.activity.filter((row) => row.actor.userId === bob)).toHaveLength(theirs)
+  expect(after.activity).toHaveLength(theirs + mine)
+  expect(
+    after.approvals.filter((row) => row.requester.userId === bob && row.status === 'pending'),
+  ).toHaveLength(theirs)
+  expect(after.approvals.filter((row) => row.status === 'cancelled')).toHaveLength(mine)
+  expect(after.grants).toHaveLength(theirs + 1)
+  expect(after.limits).toHaveLength(theirs)
+  expect(after.runs).toHaveLength(theirs)
+  expect(after.messages).toHaveLength(theirs * 2)
 })
 
 // Catches: an app that never configured erasure getting erasure code.
