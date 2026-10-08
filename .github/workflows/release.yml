@@ -3,8 +3,8 @@ name: release
 # Merging changesets into main opens or updates the "Version packages" PR.
 # Merging that PR publishes: pack (no credentials) -> publish (protected `npm`
 # environment, maintainer approval, OIDC) -> tag and GitHub release.
-# A version that is not on npm yet is offered whenever nothing is pending, so the
-# unpublished 1.0.0-rc.0 publishes on the first run with no pending changesets (DECISIONS.md).
+# A manual run follows the same rules: it can re-offer a release that is already
+# versioned on main, never one whose changesets are still pending.
 on:
   push:
     branches: [main]
@@ -13,8 +13,8 @@ on:
 permissions: {}
 
 jobs:
-  # Runs dependency code (the Changesets CLI and changelog-github) with a read-only token.
-  # It only produces version.patch; it cannot push, open or merge anything (DECISIONS.md).
+  # Runs dependency code (the Changesets CLI and its changelog plugin) with a read-only token.
+  # It can only produce a patch; version-pr checks that patch and pushes it.
   version-prepare:
     name: Prepare version
     if: github.ref == 'refs/heads/main'
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: read # changelog-github reads pull request and author info
+      pull-requests: read # @changesets/changelog-github reads pull request and author names
     outputs:
       pending: ${{ steps.version.outputs.pending }}
       publish: ${{ steps.check.outputs.publish }}
@@ -34,17 +34,17 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
       # Only a changeset that bumps a public version is pending. Empty ones alone produce no
       # patch, so they never open a Version packages PR and never block a release.
-      # `changeset version` exits 1 when there is no changeset at all, so it runs only when one exists.
+      # Leaving prerelease also needs versioning, even after its changesets were consumed.
       - id: version
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OUT: ${{ runner.temp }}/version
         run: |
-          if [[ -n "$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md)" ]]; then
+          if [[ "$(node scripts/release.mjs version-needed)" == true ]]; then
             pnpm exec changeset version
           fi
           mkdir -p "$OUT"
@@ -73,9 +73,10 @@ jobs:
       # Offers a release only when nothing is pending: no changeset that bumps a version and no
       # open Version packages PR. A manual run follows the same rule; it can re-offer a rejected
       # or failed publish of an already-versioned release, but never packs main while changesets
-      # are pending.
+      # are pending. A skipped `pr` step leaves `open` empty, and '' == '0' is true in expressions,
+      # so the pending check must come first.
       - id: check
-        if: steps.pr.outputs.open == '0'
+        if: steps.version.outputs.pending == 'false' && steps.pr.outputs.open == '0'
         run: node scripts/release.mjs check
 
   # Turns version.patch into the Version packages PR. Checks out main but installs and runs
@@ -104,8 +105,8 @@ jobs:
         with:
           name: version
           path: ${{ runner.temp }}/version
-      # The patch may change only package.json versions (and the ranges of the repository's own
-      # packages), CHANGELOG.md files, changeset .md files (pre mode moves them to .changeset/pre/)
+      # The patch may change only package.json versions (and the version ranges of the repository's
+      # own packages; an alias, URL or path fails), CHANGELOG.md files, changeset .md files (pre mode moves them to .changeset/pre/)
       # and .changeset/pre.json, and may not create or delete a package.json. Anything else (a
       # script, a dependency, `files`, .changeset/config.json, a symlink, an executable) fails.
       - run: |
@@ -118,7 +119,7 @@ jobs:
           own="$(git ls-tree -r --name-only HEAD | grep -E "$manifests" |
             while read -r file; do git show "HEAD:$file"; done | jq -s '[.[].name | strings]')"
           # shellcheck disable=SC2016 # a jq program: $own and $name are jq variables
-          normalize='del(.version) | reduce ($own[]) as $name (.; reduce ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies") as $field (.; if .[$field][$name]? then .[$field][$name] = "own" else . end))'
+          normalize='del(.version) | reduce ($own[]) as $name (.; reduce ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies") as $field (.; if ((.[$field][$name]? | type) == "string" and (.[$field][$name] | test("^(workspace:)?[\\^~]?[0-9][0-9A-Za-z.+-]*$"))) then .[$field][$name] = "own" else . end))'
           manifest=""
           for file in $(git diff --cached --name-only --no-renames | grep -E "$manifests" || true); do
             diff <(git show "HEAD:$file" | jq -S --argjson own "$own" "$normalize") \
@@ -136,7 +137,8 @@ jobs:
           # A newer push to main has its own run; do not overwrite its Version packages PR.
           if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" != "$GITHUB_SHA" ]]; then
             echo "main moved past $GITHUB_SHA; the newer run updates the PR."
-            echo pushed=false >> "$GITHUB_OUTPUT"; exit 0
+            echo pushed=false >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           git -c user.name='github-actions[bot]' \
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
@@ -174,48 +176,85 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref changeset-release/main
 
-  # Builds the Vue, Functions, Agents and Nuxt packages plus the docs they ship, and packs every
-  # package whose version is not on npm yet. No secrets.
   pack:
     needs: version-prepare
     if: needs.version-prepare.outputs.publish == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          fetch-depth: 0 # the release summary compares with the last release tag
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
+      # Shown on the run page where the maintainer approves the publish: what changed in the release
+      # machinery since the version npm has now. Without a second reviewer this is the check before
+      # approval, so it runs no repository code: the files it checks must not choose the comparison.
+      - name: Release files changed since the last release
+        run: |
+          baselines=""
+          for manifest in $(git ls-files package.json ':(glob)packages/*/package.json'); do
+            jq -e '.private != true' "$manifest" > /dev/null || continue
+            name="$(jq -r .name "$manifest")"
+            version="$(jq -r .version "$manifest")"
+            if ! tags="$(npm view "$name" dist-tags --json 2> "$RUNNER_TEMP/npm-view.err")"; then
+              grep -q E404 "$RUNNER_TEMP/npm-view.err" && continue # not on npm yet
+              echo "::warning title=Release files not compared::Cannot read the dist-tags of $name. Compare the release files with the last release by hand."
+              exit 0
+            fi
+            tag=latest; if [[ "$version" == *-* ]]; then tag=next; fi
+            published="$(jq -r --arg tag "$tag" '.[$tag] // .latest // empty' <<< "$tags")"
+            [[ -z "$published" ]] && continue
+            found=""
+            for candidate in "v$published" "$name@$published"; do
+              if git rev-parse --verify --quiet "refs/tags/$candidate" > /dev/null; then found="$candidate"; break; fi
+            done
+            if [[ -z "$found" ]]; then
+              echo "::warning title=Release files not compared::$name@$published is on npm, but neither v$published nor $name@$published is a tag. Compare the release files with that release by hand."
+              exit 0
+            fi
+            baselines+="$found"$'\n'
+          done
+          baselines="$(sort -u <<< "$baselines" | sed '/^$/d')"
+          if [[ -z "$baselines" ]]; then
+            echo "## Release files: first release, nothing to compare" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          while IFS= read -r last; do
+            changed="$(git diff --name-only "$last" HEAD -- .github/workflows .github/actions scripts/release.mjs .changeset/config.json)"
+            if [[ -z "$changed" ]]; then
+              echo "## Release files unchanged since $last" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            echo "::warning title=Release files changed since $last::Review them before you approve the npm deployment."
+            {
+              echo "## Release files changed since $last"
+              echo
+              echo "Review these changes before you approve the npm deployment:"
+              echo
+              # shellcheck disable=SC2016 # the backticks are Markdown
+              sed 's/^/- `/; s/$/`/' <<< "$changed"
+              echo
+              echo "[Compare $last with this commit]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$last...$GITHUB_SHA)"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$baselines"
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: node scripts/release.mjs pack
-      # Rehearse the publish command, with the same dist-tag, on the exact tarballs, so a broken
-      # publish fails before the maintainer is asked to approve. Needs no credentials.
+      # Rehearse the publish command on the exact tarballs, with the dist-tag publish will use,
+      # so a broken publish fails before the maintainer is asked to approve. No credentials.
       - run: |
-          while read -r file; do
-            tarball="./release/$file"
+          for tarball in ./release/*.tgz; do
             version="$(tar -xOzf "$tarball" package/package.json | jq -r .version)"
             tag=latest; if [[ "$version" == *-* ]]; then tag=next; fi
             npm publish "$tarball" --dry-run --access public --ignore-scripts --tag "$tag"
-          done < release/order.txt
-      # Trusted publishing works only for a name that exists on npm (DECISIONS.md D34): stop here,
-      # before the approval, instead of publishing half of the packages.
-      - run: |
-          missing=""
-          while read -r file; do
-            name="$(tar -xOzf "./release/$file" package/package.json | jq -r .name)"
-            if ! npm view "$name" name > /dev/null 2>&1; then missing="$missing $name"; fi
-          done < release/order.txt
-          if [[ -n "$missing" ]]; then
-            echo "::error::Not on npm yet:$missing. Publish each once by hand and set up trusted publishing (DECISIONS.md D34)."
-            exit 1
-          fi
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release
@@ -226,9 +265,10 @@ jobs:
   publish:
     needs: pack
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 75
     environment: npm
     permissions:
+      checks: read # require a green `ci` on the released commit
       id-token: write # npm trusted publishing and provenance
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -239,18 +279,69 @@ jobs:
         with:
           name: release
           path: release
-      # order.txt lists Vue before Nuxt, which depends on that exact Vue version.
+      # Publish only a commit whose `ci` passed. Approval can come before `ci` on the merge commit
+      # has finished, so wait for it, up to an hour.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 120); do
+            result="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?check_name=ci&filter=latest" \
+              --jq '[.check_runs[] | select(.app.slug == "github-actions")][0] // empty | "\(.status) \(.conclusion)"')"
+            [[ "$result" == completed* ]] && break
+            echo "ci on $GITHUB_SHA is '${result:-missing}'; waiting."; sleep 30
+          done
+          if [[ "$result" != "completed success" ]]; then
+            echo "::error::ci on $GITHUB_SHA is '${result:-missing}'. Re-run this job when ci is green."; exit 1
+          fi
       # Skips versions already on npm, so "Re-run failed jobs" is safe after a partial publish.
-      # Versions with a `-` (prereleases) go to `next`, all others to `latest`.
+      # Versions with a `-` (prereleases) go to `next`, all others to `latest`. A version lower than
+      # the one its dist-tag points at fails: that is a stale run approved after a newer release.
       - run: |
-          while read -r file; do
-            tarball="./release/$file"
+          for tarball in ./release/*.tgz; do
             version="$(tar -xOzf "$tarball" package/package.json | jq -r .version)"
-            spec="$(tar -xOzf "$tarball" package/package.json | jq -r .name)@$version"
-            if npm view "$spec" version > /dev/null 2>&1; then echo "$spec is already on npm"; continue; fi
+            name="$(tar -xOzf "$tarball" package/package.json | jq -r .name)"
+            # E404 means not published yet; any other failed lookup stops the publish.
+            if published="$(npm view "$name@$version" version 2> "$RUNNER_TEMP/npm-view.err")"; then
+              if [[ -n "$published" ]]; then echo "$name@$version is already on npm"; continue; fi
+            elif ! grep -q E404 "$RUNNER_TEMP/npm-view.err"; then
+              cat "$RUNNER_TEMP/npm-view.err" >&2
+              echo "::error::Cannot check whether $name@$version is on npm; re-run when the registry answers."; exit 1
+            fi
             tag=latest; if [[ "$version" == *-* ]]; then tag=next; fi
+            # No tag yet (an empty answer, or E404 for a package that does not exist) is fine;
+            # any other failed lookup stops the publish.
+            if ! current="$(npm view "$name" "dist-tags.$tag" 2> "$RUNNER_TEMP/npm-view.err")"; then
+              if ! grep -q E404 "$RUNNER_TEMP/npm-view.err"; then
+                cat "$RUNNER_TEMP/npm-view.err" >&2
+                echo "::error::Cannot read the $tag dist-tag of $name; re-run when the registry answers."; exit 1
+              fi
+              current=""
+            fi
+            if [[ -n "$current" ]] && ! node -e "$SEMVER_GT" "$version" "$current"; then
+              echo "::error::$name@$version is older than $tag ($current). Do not approve stale runs; release from current main."; exit 1
+            fi
             npm publish "$tarball" --provenance --access public --ignore-scripts --tag "$tag"
-          done < release/order.txt
+          done
+        env:
+          # Exits 0 when argv[1] has higher semver precedence than argv[2]. Node built-ins only.
+          SEMVER_GT: |
+            const parse = v => { const i = v.indexOf('-'); return { core: (i < 0 ? v : v.slice(0, i)).split('.').map(Number), pre: i < 0 ? [] : v.slice(i + 1).split('.') } }
+            const compare = (x, y) => {
+              const a = parse(x), b = parse(y)
+              for (let i = 0; i < 3; i++) if (a.core[i] !== b.core[i]) return a.core[i] - b.core[i]
+              if (!a.pre.length || !b.pre.length) return b.pre.length - a.pre.length
+              for (let i = 0; i < Math.max(a.pre.length, b.pre.length); i++) {
+                const p = a.pre[i], q = b.pre[i]
+                if (p === undefined) return -1
+                if (q === undefined) return 1
+                const pn = /^\d+$/.test(p), qn = /^\d+$/.test(q)
+                if (pn && qn && Number(p) !== Number(q)) return Number(p) - Number(q)
+                if (pn !== qn) return pn ? -1 : 1
+                if (p !== q) return p < q ? -1 : 1
+              }
+              return 0
+            }
+            process.exit(compare(process.argv[1], process.argv[2]) > 0 ? 0 : 1)
 
   github-release:
     needs: publish
@@ -263,9 +354,8 @@ jobs:
         with:
           name: release
           path: release
-      # One release per entry in releases.json (`v<version>` for Nuxt + Vue, `functions-v<version>`
-      # for Functions, `agents-v<version>` for Agents); existing releases are skipped, so re-runs
-      # are safe. Tags point only at the released commit: an existing tag that points elsewhere
+      # One release per entry in releases.json; existing releases are skipped, so re-runs are
+      # safe. Tags point only at the released commit: an existing tag that points elsewhere
       # fails the job.
       - env:
           GH_TOKEN: ${{ github.token }}

@@ -1,25 +1,15 @@
 // Used by .github/workflows/release.yml. Never publishes anything itself.
-//   node scripts/release.mjs check  prints publish=true when a public package version is not on npm yet
-//   node scripts/release.mjs pack   packs those packages into release/ (run `pnpm build` first)
-// release/ then holds the tarballs, order.txt (publish order: Vue before Nuxt, which pins it)
-// and releases.json. Tags keep the existing scheme: `v<version>` for the fixed Nuxt + Vue
-// group, `functions-v<version>` and `agents-v<version>` for the fixed Functions + Agents group
-// (`mcp-v<version>` for the MCP package before it became the agents package).
+//   node scripts/release.mjs check  prints publish=true when a public workspace package version is not on npm yet
+//   node scripts/release.mjs pack   packs those packages into release/ with releases.json (run `pnpm build` first)
+//   node scripts/release.mjs version-needed  prints true when `changeset version` has work: a pending changeset or a prerelease exit
+// Tags: `v<version>` when there is one public package or all of them are in one Changesets `fixed`
+// group; otherwise one `<name>@<version>` tag and GitHub release per package.
 import { spawnSync } from 'node:child_process'
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const command = process.argv[2]
-if (!['check', 'pack'].includes(command))
-  throw new Error('Usage: node scripts/release.mjs check|pack')
+if (!['check', 'pack', 'version-needed'].includes(command)) throw new Error('Usage: node scripts/release.mjs check|pack|version-needed')
 
 function run(program, args, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', ...options })
@@ -34,28 +24,23 @@ function isOnNpm({ name, version }) {
   throw new Error(`npm view ${name} failed:\n${result.stderr}`)
 }
 
-const publishOrder = [
-  '@lupinum/better-convex-vue',
-  '@lupinum/better-convex-nuxt',
-  '@lupinum/better-convex-functions',
-  '@lupinum/better-convex-agents',
-]
-const ownTag = {
-  '@lupinum/better-convex-agents': 'agents-v',
-  '@lupinum/better-convex-functions': 'functions-v',
+if (command === 'version-needed') {
+  const pending = readdirSync('.changeset', { withFileTypes: true }).some(file => file.isFile() && file.name.endsWith('.md') && file.name !== 'README.md')
+  const pre = existsSync('.changeset/pre.json') ? JSON.parse(readFileSync('.changeset/pre.json', 'utf8')) : null
+  console.log(pending || pre?.mode === 'exit')
+  process.exit(0)
 }
-const tagFor = (pkg) => `${ownTag[pkg.name] ?? 'v'}${pkg.version}`
 
-// Every public package in pnpm-workspace.yaml, including the Nuxt module at the root. A package
-// at 0.0.0 has no version yet: it waits for its first changeset, so other releases go out
-// without it (and without the D34 name check stopping them).
-const packages = JSON.parse(run('pnpm', ['-r', 'ls', '--json', '--depth', '-1']))
-  .filter((pkg) => !pkg.private && pkg.version !== '0.0.0')
-  .sort((a, b) => publishOrder.indexOf(a.name) - publishOrder.indexOf(b.name))
-const unknown = packages.filter((pkg) => !publishOrder.includes(pkg.name))
-if (unknown.length) throw new Error(`Add ${unknown.map((pkg) => pkg.name)} to publishOrder.`)
-const unpublished = packages.filter((pkg) => !isOnNpm(pkg))
+// Every package in pnpm-workspace.yaml (and the root), wherever it lives.
+const packages = JSON.parse(run('pnpm', ['-r', 'ls', '--json', '--depth', '-1'])).filter(pkg => !pkg.private)
+const names = packages.map(pkg => pkg.name)
+const { fixed = [] } = JSON.parse(readFileSync('.changeset/config.json', 'utf8'))
+// Changesets allows globs in `fixed`, such as "@scope/*".
+const matches = (pattern, name) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*')}$`).test(name)
+const shared = names.length === 1 || fixed.some(group => names.every(name => group.some(pattern => matches(pattern, name))))
+const tag = (pkg, version) => shared ? `v${version}` : `${pkg.name}@${version}`
 
+const unpublished = packages.filter(pkg => !isOnNpm(pkg))
 if (command === 'check') {
   const line = `publish=${unpublished.length > 0}\n`
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, line)
@@ -67,31 +52,41 @@ const destination = resolve('release')
 rmSync(destination, { recursive: true, force: true })
 mkdirSync(destination)
 
-const tarballs = []
-const byTag = new Map()
-for (const pkg of unpublished) {
-  const before = new Set(readdirSync(destination))
-  run('pnpm', ['pack', '--pack-destination', destination], { cwd: pkg.path })
-  tarballs.push(...readdirSync(destination).filter((file) => !before.has(file)))
-  // Changesets writes `## <version>` sections; hand-written 1.0.0-rc.0 notes use `## v<version>`.
+// Dependencies first: a package that pins a sibling's exact version is not installable
+// until that sibling is on npm. The number prefix makes `release/*.tgz` publish in this order.
+const dependsOn = (pkg) => {
+  const manifest = JSON.parse(readFileSync(join(pkg.path, 'package.json'), 'utf8'))
+  return Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies, ...manifest.optionalDependencies })
+}
+const ordered = []
+const visit = (pkg, path = []) => {
+  if (ordered.includes(pkg)) return
+  // No publish order is safe in a cycle: whichever goes first pins a version that is not on npm yet.
+  if (path.includes(pkg)) throw new Error(`Dependency cycle: ${[...path, pkg].map(p => p.name).join(' -> ')}`)
+  for (const name of dependsOn(pkg)) {
+    const sibling = unpublished.find(other => other.name === name)
+    if (sibling) visit(sibling, [...path, pkg])
+  }
+  ordered.push(pkg)
+}
+unpublished.forEach(pkg => visit(pkg))
+
+const notes = ordered.map((pkg, index) => {
+  const scratch = join(destination, `pack-${index}`)
+  run('pnpm', ['pack', '--pack-destination', scratch], { cwd: pkg.path })
+  for (const file of readdirSync(scratch)) renameSync(join(scratch, file), join(destination, `${String(index + 1).padStart(Math.max(2, String(ordered.length).length), '0')}-${file}`))
+  rmSync(scratch, { recursive: true })
+  // Changesets writes `## <version>` sections into each package's CHANGELOG.md.
   const changelogPath = join(pkg.path, 'CHANGELOG.md')
   const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, 'utf8') : ''
-  const heading = new RegExp(
-    `^(?:mcp-|functions-|agents-)?v?${pkg.version.replaceAll('.', '\\.')}\\s*\\n`,
-  )
-  const section = changelog.split(/^## /m).find((part) => heading.test(part))
-  const body = section ? section.replace(heading, '').trim() : `Release ${pkg.version}.`
-  const tag = tagFor(pkg)
-  byTag.set(tag, [...(byTag.get(tag) ?? []), { ...pkg, body }])
-}
+  const section = changelog.split(/^## /m).find(part => part.startsWith(`${pkg.version}\n`))
+  return { ...pkg, body: section ? section.slice(pkg.version.length).trim() : `Release ${pkg.version}.` }
+})
 
-const releases = [...byTag].map(([tag, entries]) => ({
-  tag,
-  prerelease: entries[0].version.includes('-'),
-  notes: entries
-    .map((e) => (entries.length > 1 ? `## ${e.name}\n\n${e.body}` : e.body))
-    .join('\n\n'),
-}))
-writeFileSync(join(destination, 'order.txt'), `${tarballs.join('\n')}\n`)
+const entry = (tag, version, text) => ({ tag, notes: text, prerelease: version.includes('-') })
+const { version } = packages[0]
+const releases = shared
+  ? [entry(tag(packages[0], version), version, notes.map(n => (notes.length > 1 ? `## ${n.name}\n\n${n.body}` : n.body)).join('\n\n'))]
+  : notes.map(n => entry(tag(n, n.version), n.version, n.body))
 writeFileSync(join(destination, 'releases.json'), `${JSON.stringify(releases, null, 2)}\n`)
-console.log(releases.map((r) => r.tag).join('\n'))
+console.log(releases.map(r => r.tag).join('\n'))
