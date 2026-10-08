@@ -35,6 +35,7 @@ test('the door lists the tools of a read and write grant', async () => {
     'check_approval',
     'create_project',
     'echo_shapes',
+    'large_report',
     'list_projects',
   ])
   // Round 1 review: a write without an approve rule was published as non-destructive.
@@ -71,6 +72,58 @@ test('a numeric request_id still deduplicates', async () => {
   expect(again.body.result.structuredContent.status).toBe('done')
   const names = (await t.run((ctx) => ctx.db.query('projects').collect())).map((p) => p.name)
   expect(names.filter((name) => name === 'Once')).toHaveLength(1)
+})
+
+// D1: a request_id that was neither string nor number was dropped, so a retry ran again.
+test.each([[{ a: 1 }], [true], [['x']]])(
+  'request_id %j is refused, not dropped',
+  async (request_id) => {
+    const { t, call, a } = await setup()
+    const { body } = await call('ann:write', 'create_project', {
+      orgId: a,
+      name: 'Once',
+      request_id,
+    })
+    expect(body.result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'request_id must be a string or number. Fix it, or leave it out.',
+        },
+      },
+    })
+    expect(await t.run((ctx) => ctx.db.query('projects').collect())).toHaveLength(1)
+  },
+)
+
+// D2: an app tool in no scope was listed for every grant (its calls were refused).
+test('a tool whose action is in no scope fails at definition', () => {
+  const unscoped = query({
+    action: 'projects.unscoped',
+    args: {},
+    returns: v.null(),
+    tool: { name: 'orphan', description: 'x' },
+    handler: async () => null,
+  })
+  expect(() => defineTools(fns, { m: { x: unscoped } }, { functions: refs('agents') })).toThrow(
+    'Tool orphan: its action projects.unscoped is in no scope.',
+  )
+})
+
+// C4: a committed write with a large result got HTTP 502; only the replay was cut short.
+test('a large first result is cut short like a replay, not refused', async () => {
+  const { t, call, a } = await setup()
+  const args = { orgId: a, size: 600_000, request_id: 'big' }
+  const first = await call('ann:write', 'large_report', args)
+  expect(first.status).toBe(200)
+  expect(first.body.result.structuredContent).toEqual({
+    status: 'done',
+    result: { truncated: true, bytes: expect.any(Number) },
+  })
+  const replay = await call('ann:write', 'large_report', args)
+  expect(replay.body.result.structuredContent).toEqual(first.body.result.structuredContent)
+  expect(await t.run((ctx) => ctx.db.query('projects').collect())).toHaveLength(2)
 })
 
 // G2, H9: wrong input answered "Value does not match validator." with no field, or a generic failure.

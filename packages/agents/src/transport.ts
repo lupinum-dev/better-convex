@@ -1,5 +1,5 @@
 export const maximumMcpRequestBytes = 64 * 1024
-const maximumMcpResponseBytes = 1024 * 1024
+export const maximumMcpResponseBytes = 1024 * 1024
 const mcpRequestTimeoutMs = 30_000
 /**
  * A refused upload up to this size is read to its end before the 413 goes out. Convex's edge

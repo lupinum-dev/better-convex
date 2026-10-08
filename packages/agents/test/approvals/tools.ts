@@ -18,6 +18,7 @@ export const {
   archive_later,
   querying_archive,
   edit_notes,
+  bundle_notes,
   clear_note,
   buy_listing,
   archive_matching,

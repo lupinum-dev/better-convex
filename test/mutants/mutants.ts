@@ -1820,6 +1820,50 @@ export const mutants: Mutant[] = [
     kills: [journey],
     projects: ['integration'],
   },
+  {
+    // D1: a request_id of another type was dropped, so a retry ran the write again.
+    id: 'P-agents-small-request-id-type',
+    guards: 'D1',
+    file: 'packages/agents/src/tools.ts',
+    find: "fail('INVALID_INPUT', 'request_id must be a string or number. Fix it, or leave it out.')",
+    replace: 'void 0',
+    kills: [`${A}/door/door.test.ts > request_id {"a":1} is refused, not dropped`],
+    projects: ['agents'],
+  },
+  {
+    // D2: an app tool in no scope was listed for every grant.
+    id: 'P-agents-small-unscoped-tool',
+    guards: 'D2',
+    file: 'packages/agents/src/tools.ts',
+    find: 'if (scopes.length === 0) {',
+    replace: 'if (false) {',
+    kills: [`${A}/door/door.test.ts > a tool whose action is in no scope fails at definition`],
+    projects: ['agents'],
+  },
+  {
+    // C3: a plan that copies large rows made the stored request exceed Convex's document limit.
+    id: 'P-agents-small-approval-size',
+    guards: 'C3',
+    file: 'packages/agents/src/tools.ts',
+    find: 'if (getConvexSize(approval as unknown as Value) > maxApprovalBytes) {',
+    replace: 'if (false) {',
+    kills: [
+      `${A}/approvals/approvals.test.ts > a plan too large to store fails as TOO_LARGE and stores nothing`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    // C4: a committed write with a large result got HTTP 502 on its first response.
+    id: 'P-agents-small-first-result-size',
+    guards: 'C4',
+    file: 'packages/agents/src/door.ts',
+    find: 'bytes <= maximumMcpResponseBytes - 16 * 1024',
+    replace: 'true',
+    kills: [
+      `${A}/door/door.test.ts > a large first result is cut short like a replay, not refused`,
+    ],
+    projects: ['agents'],
+  },
   // The cloud smoke deploys operator-only test functions; a production key must never reach it.
   {
     id: 'live-refuses-production-key',

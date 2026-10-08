@@ -5,7 +5,13 @@ import { betterAuthComponent } from '../support'
 import type { DataModel } from './dataModel'
 
 export const policy = definePolicy({
-  actions: ['projects.search', 'projects.create', 'projects.archive', 'shapes.echo'],
+  actions: [
+    'projects.search',
+    'projects.create',
+    'projects.archive',
+    'shapes.echo',
+    'projects.unscoped',
+  ],
   roles: { owner: ['*'] },
   scopes: {
     read: { label: 'Read', actions: ['projects.search', 'shapes.echo'] },
