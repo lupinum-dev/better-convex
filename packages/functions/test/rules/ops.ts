@@ -112,11 +112,12 @@ export const createInOrg = mutation({
 })
 
 /** Reads every membership: other people's included. */
-export const allMemberships = query({
+// Every user row: `users: owner('_id')`, so another person's row fails the query.
+export const allUsers = query({
   action: 'projects.read',
   args: {},
   returns: v.number(),
-  handler: async (ctx) => (await ctx.db.query('memberships').collect()).length,
+  handler: async (ctx) => (await ctx.db.query('users').collect()).length,
 })
 
 /** A raw internal query, as an app might write one. */

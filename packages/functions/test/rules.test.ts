@@ -62,7 +62,7 @@ test('writes check the row tenant and the role there', async () => {
 // Catches: the owner rule letting one person read another's rows.
 test('owner rows of other people fail the query', async () => {
   const { ann } = await setup()
-  await expect(ann.query(fn('allMemberships'), {})).rejects.toThrow(/may not read/)
+  await expect(ann.query(fn('allUsers'), {})).rejects.toThrow(/may not read/)
 })
 
 // Catches: an operation reaching rows through the app's own functions, which run without rules.
