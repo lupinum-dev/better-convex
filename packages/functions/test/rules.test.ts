@@ -395,3 +395,14 @@ test('only the union member the value is names a tenant', async () => {
     /NOT_FOUND/,
   )
 })
+
+// Catches: `normalizeId` on a system table throws, so a nullable storage ID argument failed on every call.
+test('a union that holds a storage ID works with an ID and with null', async () => {
+  const { t, ann, pa } = await setup()
+  const file = await t.run((ctx) => ctx.storage.store(new Blob(['x'])))
+  expect(await ann.query(fn('withFile'), { file: null })).toBe('ok')
+  expect(await ann.query(fn('withFile'), { file })).toBe('ok')
+  expect(
+    await ann.query(fn('withFileInMember'), { value: { kind: 'file', projectId: pa, file } }),
+  ).toBe('A secret')
+})

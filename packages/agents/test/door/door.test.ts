@@ -32,11 +32,15 @@ test('the door lists the tools of a read and write grant', async () => {
   expect(listed.status, listed.raw).toBe(200)
   expect(listed.body.result.tools.map((t: { name: string }) => t.name).sort()).toEqual([
     'archive_project',
+    'attach_file',
     'check_approval',
     'create_project',
     'echo_shapes',
     'large_report',
+    'list_broken',
     'list_projects',
+    'quoted_report',
+    'rows_report',
   ])
   // Round 1 review: a write without an approve rule was published as non-destructive.
   const annotations = Object.fromEntries(
@@ -60,6 +64,7 @@ test('a read-only grant lists only read tools', async () => {
   expect(listed.body.result.tools.map((t: { name: string }) => t.name).sort()).toEqual([
     'check_approval',
     'echo_shapes',
+    'list_broken',
     'list_projects',
   ])
 })
@@ -124,6 +129,49 @@ test('a large first result is cut short like a replay, not refused', async () =>
   const replay = await call('ann:write', 'large_report', args)
   expect(replay.body.result.structuredContent).toEqual(first.body.result.structuredContent)
   expect(await t.run((ctx) => ctx.db.query('projects').collect())).toHaveLength(2)
+})
+
+// Review: the size check missed that the text is escaped a second time in the JSON-RPC response (HTTP 502 after commit),
+// and its reserve cut results that fit before.
+test.each([
+  ['quote-heavy text', 'quoted_report', { size: 200_000 }, 'cut'],
+  ['5,700 ordinary rows', 'rows_report', { count: 5_700 }, 'cut'],
+  ['5,000 ordinary rows', 'rows_report', { count: 5_000 }, 'whole'],
+  ['520,000 characters of text', 'large_report', { size: 520_000 }, 'whole'],
+])(
+  'a result of %s gets a marker or arrives whole, never HTTP 502',
+  async (_name, tool, args, outcome) => {
+    const { t, call, a } = await setup()
+    const first = await call('ann:write', tool, { orgId: a, ...args, request_id: 'size' })
+    expect(first.status).toBe(200)
+    const { result } = first.body.result.structuredContent
+    if (outcome === 'cut') expect(result).toEqual({ truncated: true, bytes: expect.any(Number) })
+    else expect(result).not.toHaveProperty('truncated')
+    expect(await t.run((ctx) => ctx.db.query('projects').collect())).toHaveLength(2)
+  },
+)
+
+// Review: an argument like `v.union(v.id('_storage'), v.null())` failed on every call (`normalizeId` throws for system tables).
+test('a tool with a nullable storage ID argument accepts an ID and null', async () => {
+  const { t, call, a } = await setup()
+  const file = await t.run((ctx) => ctx.storage.store(new Blob(['x'])))
+  for (const [input, result] of [
+    [{ file: null }, 'none'],
+    [{ file }, 'file'],
+  ] as const) {
+    const { body } = await call('ann:write', 'attach_file', { orgId: a, ...input })
+    expect(body.result.structuredContent).toEqual({ status: 'done', result })
+  }
+})
+
+// Review: Convex reports an invalid cursor as a `ConvexError` system error, which the hint no longer named.
+test('an invalid cursor reported as a ConvexError system error is named', async () => {
+  const { call, a } = await setup()
+  const { body } = await call('ann:read', 'list_broken', { orgId: a, cursor: 'page-2' })
+  expect(body.result.structuredContent.error).toMatchObject({
+    code: 'INVALID_INPUT',
+    message: expect.stringMatching(/^cursor:/),
+  })
 })
 
 // G2, H9: wrong input answered "Value does not match validator." with no field, or a generic failure.

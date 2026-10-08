@@ -67,12 +67,21 @@ function resultText(output: Record<string, unknown>) {
  */
 function bounded(output: ToolSuccess): { output: ToolSuccess; text: string } {
   const text = resultText(output)
-  const bytes = 2 * new TextEncoder().encode(text).byteLength
-  if (output.status !== 'done' || bytes <= maximumMcpResponseBytes - 16 * 1024)
+  if (output.status !== 'done' || responseBytes(text, output) <= maximumMcpResponseBytes)
     return { output, text }
   // `bytes` is the result's own size, as in a replay.
   const marker: ToolSuccess = { status: 'done', result: storable(output.result, 0) }
   return { output: marker, text: resultText(marker) }
+}
+
+/**
+ * The size of the JSON-RPC response for this result, with the text escaped inside the JSON again.
+ * The allowance covers what is not known here: `{"jsonrpc":"2.0","id":,"result":}` is 37 bytes,
+ * and a client id is a number or a short string, so 256 bytes leaves room for an id of 200.
+ */
+function responseBytes(text: string, output: ToolSuccess): number {
+  const result = { content: [{ type: 'text', text }], structuredContent: output }
+  return new TextEncoder().encode(JSON.stringify(result)).byteLength + 256
 }
 
 function failure(reason: { code: string; message: string }): CallToolResult {
