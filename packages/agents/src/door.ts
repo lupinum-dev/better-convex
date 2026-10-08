@@ -1,8 +1,10 @@
 import { guarded, storable } from '@lupinum/better-convex-functions/internal'
 import {
   fromJsonSchema,
+  SERVER_INFO_META_KEY,
   type CallToolResult,
   type jsonSchemaValidator,
+  type RequestId,
 } from '@modelcontextprotocol/server'
 import { httpActionGeneric } from 'convex/server'
 
@@ -61,13 +63,21 @@ function resultText(output: Record<string, unknown>) {
   return JSON.stringify(output)
 }
 
+/** What the transport needs besides the result to know the response size. */
+interface Envelope {
+  id: RequestId
+  /** The 2026 era adds `resultType` and the server's identity to the result. */
+  modern: boolean
+  serverInfo: { name: string; version: string }
+}
+
 /**
  * A result the transport would refuse (HTTP 502) after the write committed. The text and
  * `structuredContent` both carry it, so both count; the client gets the marker a replay gets.
  */
-function bounded(output: ToolSuccess): { output: ToolSuccess; text: string } {
+function bounded(output: ToolSuccess, envelope: Envelope): { output: ToolSuccess; text: string } {
   const text = resultText(output)
-  if (output.status !== 'done' || responseBytes(text, output) <= maximumMcpResponseBytes)
+  if (output.status !== 'done' || responseBytes(text, output, envelope) <= maximumMcpResponseBytes)
     return { output, text }
   // `bytes` is the result's own size, as in a replay.
   const marker: ToolSuccess = { status: 'done', result: storable(output.result, 0) }
@@ -75,13 +85,21 @@ function bounded(output: ToolSuccess): { output: ToolSuccess; text: string } {
 }
 
 /**
- * The size of the JSON-RPC response for this result, with the text escaped inside the JSON again.
- * The allowance covers what is not known here: `{"jsonrpc":"2.0","id":,"result":}` is 37 bytes,
- * and a client id is a number or a short string, so 256 bytes leaves room for an id of 200.
+ * The exact size of the JSON-RPC response the transport sends for this result: the text is
+ * escaped inside the JSON again, and the request id and the era's additions count as sent.
+ * No margin: the response is this message and nothing else.
  */
-function responseBytes(text: string, output: ToolSuccess): number {
-  const result = { content: [{ type: 'text', text }], structuredContent: output }
-  return new TextEncoder().encode(JSON.stringify(result)).byteLength + 256
+function responseBytes(text: string, output: ToolSuccess, envelope: Envelope): number {
+  const result = {
+    content: [{ type: 'text', text }],
+    structuredContent: output,
+    ...(envelope.modern && {
+      resultType: 'complete',
+      _meta: { [SERVER_INFO_META_KEY]: envelope.serverInfo },
+    }),
+  }
+  const message = { jsonrpc: '2.0', id: envelope.id, result }
+  return new TextEncoder().encode(JSON.stringify(message)).byteLength
 }
 
 function failure(reason: { code: string; message: string }): CallToolResult {
@@ -114,11 +132,12 @@ export function createMcpServer(
   },
 ) {
   const tools = assertToolsExported(options.agents)
+  const serverInfo = { name: options.name, version: '0.0.0' }
   return guarded(
     httpActionGeneric(async (ctx, request) => {
       const { resource, authorization } = auth.mcpAuthorization(ctx)
       return handleMcpRequest<McpPrincipal>(request, {
-        serverInfo: { name: options.name, version: '0.0.0' },
+        serverInfo,
         resource,
         authorization,
         configureServer: ({ principal, server }) => {
@@ -144,9 +163,13 @@ export function createMcpServer(
                   ? { readOnlyHint: false, destructiveHint: true, openWorldHint: false }
                   : { readOnlyHint: true, openWorldHint: false },
               },
-              async (args: Record<string, unknown>) => {
+              async (args: Record<string, unknown>, mcp) => {
                 try {
-                  const { output, text } = bounded(await toolCall(entry, args, principal, ctx))
+                  const { output, text } = bounded(await toolCall(entry, args, principal, ctx), {
+                    id: mcp.mcpReq.id,
+                    modern: mcp.mcpReq.envelope !== undefined,
+                    serverInfo,
+                  })
                   return { content: [{ type: 'text', text }], structuredContent: output }
                 } catch (error) {
                   return failure(toolFailure(error))
