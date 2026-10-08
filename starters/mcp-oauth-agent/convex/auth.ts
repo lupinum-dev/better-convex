@@ -3,6 +3,8 @@ import {
   createBetterConvexAuth,
   type AuthFunctions,
 } from '@lupinum/better-convex-nuxt/better-auth/server'
+import { getFunctionName } from 'convex/server'
+import { ConvexError } from 'convex/values'
 
 import { components, internal } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
@@ -31,6 +33,20 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   // The MCP OAuth profile: operator-provisioned PKCE clients, a consent page,
   // 10-minute access tokens bound to `${CONVEX_SITE_URL}/mcp`, and renewal that
   // ends with the Better Auth session that granted consent.
+  // People can delete their own account. The app erases its data in `onDelete` below.
+  deleteUser: {
+    enabled: true,
+    beforeDelete: async (ctx, user) => {
+      const refuse = await ctx.runQuery(internal.accountDeletion.leavesATeamWithoutOwner, {
+        authId: user.id,
+      })
+      if (refuse)
+        throw new ConvexError({
+          message:
+            'Make another member an owner of your organization before you delete your account.',
+        })
+    },
+  },
   oauth: { mcp: { scopes: consentScopes(policy), hosts: ['chatgpt', 'claude'] } },
   triggers: {
     user: {
@@ -61,8 +77,12 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
           .query('users')
           .withIndex('by_auth_id', (q) => q.eq('authId', authId))
           .unique()
-        // Keep the row: memberships, projects, and approvals still reference it.
-        if (user) await ctx.db.patch(user._id, { active: false })
+        if (!user) return
+        // Erase what the app holds about the person (`erasure` in ./functions.ts), in batches.
+        // This is `fns.eraseUser`; ./functions.ts imports this file, so it cannot be imported here.
+        const step = internal.erasure.eraseStep
+        await ctx.scheduler.runAfter(0, step, { userId: user._id, self: getFunctionName(step) })
+        await ctx.db.delete(user._id)
       },
     },
   },

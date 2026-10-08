@@ -3,6 +3,7 @@ import { custom, defineFunctions, owner, tenant } from '@lupinum/better-convex-f
 import type { Doc } from './_generated/dataModel'
 import { auth } from './auth'
 import { policy } from './policy'
+import schema from './schema'
 
 export const fns = defineFunctions({
   auth,
@@ -33,6 +34,12 @@ export const fns = defineFunctions({
       ctx.allows({ table: 'organizations', id: membership.organizationId }),
     ),
     projects: tenant('organizationId'),
+  },
+  // What happens to each table that holds a user id when a person deletes their account.
+  schema,
+  erasure: {
+    memberships: { delete: 'userId' },
+    projects: { keep: 'Projects belong to the organization; createdBy is not shown anywhere.' },
   },
 })
 
