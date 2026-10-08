@@ -13,7 +13,7 @@ export {
   type Plan,
   type ToolSpec,
 } from './functions'
-export { guarded, OPERATION } from './guard'
+export { guarded, markHousekeeping, OPERATION } from './guard'
 export { rateLimited, takeToken } from './limits'
 export { readOnly } from './rules'
 export { actorRecord, agentCallerValidator, failureOf, type AgentCaller } from './actor'

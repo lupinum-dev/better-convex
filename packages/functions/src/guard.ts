@@ -1,9 +1,20 @@
 /** Markers on registered functions, and the check that no public function bypasses the library. */
 
+import type { Operation } from './functions'
+
 export const OPERATION = Symbol.for('better-convex.operation')
+
+/** Marks the agents package's housekeeping function, so `launchProblems` can look for the cron that calls it. */
+export const HOUSEKEEPING = Symbol.for('better-convex.housekeeping')
 
 /** Marks a public function that checks its caller itself: the library's own, or one the app vouches for. */
 const GUARDED = Symbol.for('better-convex.guarded')
+
+/** Marks a registered function as the library's housekeeping job: a cron must call it. Not enumerable, so it stays out of the function's JSON. */
+export function markHousekeeping<F>(registered: F): F {
+  Object.defineProperty(registered as object, HOUSEKEEPING, { value: true, enumerable: false })
+  return registered
+}
 
 export function guarded<F>(registered: F, reason = 'library'): F {
   Object.assign(registered as object, { [GUARDED]: reason })
@@ -40,14 +51,32 @@ export async function unguardedFunctions(
   modules: Record<string, () => Promise<unknown>>,
   options: { trustedRoutes?: Record<string, string> } = {},
 ): Promise<string[]> {
-  type Fn = {
-    isPublic?: boolean
-    isInternal?: boolean
-    isHttp?: boolean
-    [OPERATION]?: unknown
-    [GUARDED]?: unknown
-  }
-  type Router = { getRoutes: () => readonly (readonly [string, string, Fn])[] }
+  const { functions } = await scanModules(modules, options, 'unguardedFunctions')
+  return functions.filter(([, fn]) => !fn[OPERATION] && !fn[GUARDED]).map(([id]) => id)
+}
+
+/** A Convex function as the scans see it: the flags Convex sets and the markers this package adds. */
+export type ScannedFn = {
+  isPublic?: boolean
+  isInternal?: boolean
+  isHttp?: boolean
+  [OPERATION]?: Operation
+  [GUARDED]?: unknown
+  [HOUSEKEEPING]?: unknown
+}
+
+/**
+ * Loads the modules Convex deploys (see `unguardedFunctions`) and lists their
+ * functions by "module/path.ts:export", or "module/path.ts:METHOD /route" for
+ * HTTP routes. `exports` has every export with its Convex function name
+ * ("module/path:export"). Throws when the map is empty or holds no operations.
+ */
+export async function scanModules(
+  modules: Record<string, () => Promise<unknown>>,
+  options: { trustedRoutes?: Record<string, string> },
+  caller: string,
+) {
+  type Router = { getRoutes: () => readonly (readonly [string, string, ScannedFn])[] }
   const paths = Object.keys(modules)
   const root =
     paths
@@ -68,7 +97,7 @@ export async function unguardedFunctions(
   })
   if (deployed.length === 0)
     throw new Error(
-      'unguardedFunctions found no modules. Pass the import.meta.glob map you give convexTest.',
+      `${caller} found no modules. Pass the import.meta.glob map you give convexTest.`,
     )
   const loaded = await Promise.all(
     deployed.map(
@@ -79,20 +108,29 @@ export async function unguardedFunctions(
     Object.keys(options.trustedRoutes ?? {}).some((prefix) => path.startsWith(prefix))
   // Every Convex function in the modules, by "module:export" or "module:METHOD /path".
   const functions = loaded.flatMap(([path, exports]) =>
-    Object.entries(exports).flatMap(([name, value]): [string, Fn][] => {
+    Object.entries(exports).flatMap(([name, value]): [string, ScannedFn][] => {
       const router = value as Partial<Router> | null
       if (typeof router?.getRoutes === 'function')
         return router
           .getRoutes()
           .filter(([route]) => !trusted(route))
           .map(([route, method, handler]) => [`${path}:${method} ${route}`, handler])
-      const fn = value as Fn | null
+      const fn = value as ScannedFn | null
       return fn && (fn.isPublic || fn.isInternal || fn.isHttp) ? [[`${path}:${name}`, fn]] : []
     }),
   )
   if (!functions.some(([, fn]) => fn[OPERATION]))
     throw new Error(
-      `unguardedFunctions loaded ${loaded.length} modules but found no defineFunctions operations. Check the glob.`,
+      `${caller} loaded ${loaded.length} modules but found no defineFunctions operations. Check the glob.`,
     )
-  return functions.filter(([, fn]) => !fn[OPERATION] && !fn[GUARDED]).map(([id]) => id)
+  const exports = loaded.flatMap(([path, found]) =>
+    Object.entries(found).map(([name, value]) => ({
+      path,
+      name,
+      /** How Convex names it, for `crons`: the path below the functions root, no extension. */
+      functionName: `${path.slice(root.length).replace(/\.[cm]?[jt]s$/, '')}:${name}`,
+      value,
+    })),
+  )
+  return { functions, exports }
 }

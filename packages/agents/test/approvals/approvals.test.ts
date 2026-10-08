@@ -1,11 +1,12 @@
 import { finish, shownStatus, stallAfter, wait } from '@lupinum/better-convex-agents/internal'
+import { launchProblems } from '@lupinum/better-convex-functions/test'
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
-import { makeFunctionReference } from 'convex/server'
+import { cronJobs, makeFunctionReference } from 'convex/server'
 import type { GenericId } from 'convex/values'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { auth, policy } from './fns'
+import { auth, fns, policy } from './fns'
 import { api, modules, setup } from './harness'
 import schema from './schema'
 import { tools } from './tools'
@@ -1557,4 +1558,23 @@ test('housekeeping wakes every waiting run, however large their tasks', async ()
       .first(),
   )
   expect(waiting).toBeNull()
+})
+
+// Catches: housekeeping built by this package that `launchProblems` cannot recognise, so an app
+// that forgot the cron launches with requests that never expire.
+test('launchProblems finds the housekeeping function this package builds', async () => {
+  const housekeeping = (crons: ReturnType<typeof cronJobs>) =>
+    launchProblems({ modules, schema, crons, fns }).then((found) =>
+      found.filter((problem) => problem.includes('no cron calls it')),
+    )
+  expect(await housekeeping(cronJobs())).toEqual([
+    expect.stringContaining('./tools.ts exports housekeeping'),
+  ])
+  const scheduled = cronJobs()
+  scheduled.hourly(
+    'agent housekeeping',
+    { minuteUTC: 7 },
+    makeFunctionReference<'mutation', any, any>('tools:housekeeping') as never,
+  )
+  expect(await housekeeping(scheduled)).toEqual([])
 })

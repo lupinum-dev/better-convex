@@ -175,7 +175,10 @@ export default defineConfig({
         plugins: [mutant],
         resolve: {
           alias: {
-            // The subpath entry must precede the root entry it extends.
+            // The subpath entries must precede the root entry they extend.
+            '@lupinum/better-convex-functions/internal': fileURLToPath(
+              new URL('./packages/functions/src/internal.ts', import.meta.url),
+            ),
             '@lupinum/better-convex-functions/test': fileURLToPath(
               new URL('./packages/functions/src/test.ts', import.meta.url),
             ),

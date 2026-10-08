@@ -1286,16 +1286,24 @@ export function defineFunctions<
         })
   if (config.erasure === undefined) return fns as Result
   const { eraseStep, eraseUser } = defineErasure(config.schema, config.erasure as ErasureMap)
+  erasureMaps.set(fns, config.erasure as ErasureMap)
   /**
    * Account deletion. `fns.erasure.eraseStep` is the internal mutation the app exports
    * (`export const { eraseStep } = fns.erasure`); `fns.eraseUser(ctx, appUserId, internal.x.eraseStep)`
    * starts the erasure of one person from the user projection's delete hook.
    */
-  return {
-    ...fns,
+  return Object.assign(fns, {
     erasure: { eraseStep },
     eraseUser: eraseUser as EraseUser<User>,
-  } as unknown as Result
+  }) as unknown as Result
+}
+
+/** The erasure map each `defineFunctions` result was built with, for `launchProblems`. */
+const erasureMaps = new WeakMap<object, ErasureMap>()
+
+/** The `erasure` map `defineFunctions` got, or `undefined` without one. */
+export function erasureOf(fns: object): ErasureMap | undefined {
+  return erasureMaps.get(fns)
 }
 
 /** The registered type of an internal operation, so `internal.x.y` is a ref `ctx.run` accepts with typed input. */

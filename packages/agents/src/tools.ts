@@ -16,6 +16,7 @@ import {
   fingerprint,
   frozen,
   guarded,
+  markHousekeeping,
   idsIn,
   inertMarkdown,
   isIdOf,
@@ -1099,90 +1100,92 @@ export function defineTools(
    * ending stalled runs commits first, then expiring, waking and deleting
    * follow.
    */
-  const housekeeping = guarded(
-    internalMutationGeneric({
-      // No arguments: end stalled runs (the cron's call).
-      // `cancel`: stalled runs whose open requests are still to be cancelled, before they end.
-      // `expire`: expire requests past their time.
-      // `waiting`: where the scan of waiting runs continues (`null`: from the start).
-      // `cutoff` stays fixed for one scan: a Convex cursor is only valid for the same query.
-      // `runs`: waiting runs of the last page not yet seen to (then `waiting` is the next page's
-      // cursor, or absent on the last page); `decided`: the first run's requests found decided.
-      // `cleanup`: delete what is past retention.
-      args: {
-        cancel: v.optional(v.array(v.string())),
-        expire: v.optional(v.boolean()),
-        waiting: v.optional(v.union(v.string(), v.null())),
-        cutoff: v.optional(v.number()),
-        runs: v.optional(v.array(v.string())),
-        decided: v.optional(v.array(v.string())),
-        cleanup: v.optional(v.boolean()),
-      },
-      handler: async (ctx: MCtx, args: HousekeepingStep) => {
-        const db = lib(ctx)
-        const now = Date.now()
-        const budget = readBudget()
-        const next = (more: HousekeepingStep) =>
-          ctx.scheduler.runAfter(0, ownRef('housekeeping'), more)
-        if (args.cleanup) {
-          if (!(await deleteRetained(db, now))) await next({ cleanup: true })
-        } else if (args.cancel) {
-          const left: string[] = []
-          for (const runId of args.cancel) {
-            const id = db.normalizeId('agentRuns', runId)
-            if (!id) continue
-            if (budget.spent) {
-              left.push(runId)
-              continue
+  const housekeeping = markHousekeeping(
+    guarded(
+      internalMutationGeneric({
+        // No arguments: end stalled runs (the cron's call).
+        // `cancel`: stalled runs whose open requests are still to be cancelled, before they end.
+        // `expire`: expire requests past their time.
+        // `waiting`: where the scan of waiting runs continues (`null`: from the start).
+        // `cutoff` stays fixed for one scan: a Convex cursor is only valid for the same query.
+        // `runs`: waiting runs of the last page not yet seen to (then `waiting` is the next page's
+        // cursor, or absent on the last page); `decided`: the first run's requests found decided.
+        // `cleanup`: delete what is past retention.
+        args: {
+          cancel: v.optional(v.array(v.string())),
+          expire: v.optional(v.boolean()),
+          waiting: v.optional(v.union(v.string(), v.null())),
+          cutoff: v.optional(v.number()),
+          runs: v.optional(v.array(v.string())),
+          decided: v.optional(v.array(v.string())),
+          cleanup: v.optional(v.boolean()),
+        },
+        handler: async (ctx: MCtx, args: HousekeepingStep) => {
+          const db = lib(ctx)
+          const now = Date.now()
+          const budget = readBudget()
+          const next = (more: HousekeepingStep) =>
+            ctx.scheduler.runAfter(0, ownRef('housekeeping'), more)
+          if (args.cleanup) {
+            if (!(await deleteRetained(db, now))) await next({ cleanup: true })
+          } else if (args.cancel) {
+            const left: string[] = []
+            for (const runId of args.cancel) {
+              const id = db.normalizeId('agentRuns', runId)
+              if (!id) continue
+              if (budget.spent) {
+                left.push(runId)
+                continue
+              }
+              const run = await db.get(id)
+              if (run) budget.count(run)
+              if (run && !(await endStalled(db, run, budget))) left.push(runId)
             }
-            const run = await db.get(id)
-            if (run) budget.count(run)
-            if (run && !(await endStalled(db, run, budget))) left.push(runId)
-          }
-          await next(left.length ? { cancel: left } : {})
-        } else if (args.expire) {
-          // A request holds its plan, up to a document's size: one at a time, within the budget.
-          // Each run wakes at most once: its other requests past their time count as decided.
-          const woken = new Set<string>()
-          let more = true
-          while (more && !budget.spent) {
-            const row = await db
-              .query('approvals')
-              .withIndex('by_status', (q) => q.eq('status', 'pending').lt('expiresAt', now))
-              .first()
-            more = row !== null
-            if (!row) break
-            budget.count(row)
-            await db.patch(row._id, { status: 'expired' })
-            // A wake the budget cuts short is left to the scan of waiting runs.
-            if (row.caller.door === 'app' && !woken.has(row.caller.runId)) {
-              woken.add(row.caller.runId)
-              await wake(db, ctx.scheduler, row.caller.runId, budget)
+            await next(left.length ? { cancel: left } : {})
+          } else if (args.expire) {
+            // A request holds its plan, up to a document's size: one at a time, within the budget.
+            // Each run wakes at most once: its other requests past their time count as decided.
+            const woken = new Set<string>()
+            let more = true
+            while (more && !budget.spent) {
+              const row = await db
+                .query('approvals')
+                .withIndex('by_status', (q) => q.eq('status', 'pending').lt('expiresAt', now))
+                .first()
+              more = row !== null
+              if (!row) break
+              budget.count(row)
+              await db.patch(row._id, { status: 'expired' })
+              // A wake the budget cuts short is left to the scan of waiting runs.
+              if (row.caller.door === 'app' && !woken.has(row.caller.runId)) {
+                woken.add(row.caller.runId)
+                await wake(db, ctx.scheduler, row.caller.runId, budget)
+              }
             }
+            await next(more ? { expire: true } : { waiting: null, cutoff: now - 60_000 })
+          } else if (args.waiting !== undefined || args.runs) {
+            await wakeWaiting(db, ctx.scheduler, args, budget, now, next)
+          } else {
+            // Ending a stalled run reads the run and its open requests, within the budget; a run
+            // whose requests did not all fit ends in a `cancel` step.
+            const stalled = await within(
+              db
+                .query('agentRuns')
+                .withIndex('by_status', (q) =>
+                  q.eq('status', 'running').lt('stepAt', now - stallAfter),
+                ),
+              budget,
+            )
+            const left: string[] = []
+            for (const run of stalled.rows)
+              if (!(await endStalled(db, run, budget))) left.push(run._id)
+            if (left.length) await next({ cancel: left })
+            else await next(stalled.more ? {} : { expire: true })
           }
-          await next(more ? { expire: true } : { waiting: null, cutoff: now - 60_000 })
-        } else if (args.waiting !== undefined || args.runs) {
-          await wakeWaiting(db, ctx.scheduler, args, budget, now, next)
-        } else {
-          // Ending a stalled run reads the run and its open requests, within the budget; a run
-          // whose requests did not all fit ends in a `cancel` step.
-          const stalled = await within(
-            db
-              .query('agentRuns')
-              .withIndex('by_status', (q) =>
-                q.eq('status', 'running').lt('stepAt', now - stallAfter),
-              ),
-            budget,
-          )
-          const left: string[] = []
-          for (const run of stalled.rows)
-            if (!(await endStalled(db, run, budget))) left.push(run._id)
-          if (left.length) await next({ cancel: left })
-          else await next(stalled.more ? {} : { expire: true })
-        }
-        return null
-      },
-    }),
+          return null
+        },
+      }),
+    ),
   )
 
   const functions = { ...toolFunctions, check_approval, housekeeping } as Record<
