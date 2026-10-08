@@ -1,4 +1,4 @@
-import { shownStatus } from '@lupinum/better-convex-agents/internal'
+import { finish, shownStatus } from '@lupinum/better-convex-agents/internal'
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
@@ -1013,6 +1013,49 @@ async function limitedRun(status: 'running' | 'done', stepAt = Date.now()) {
   })
   return { t, runId }
 }
+
+const helper = {
+  kind: 'agent' as const,
+  door: 'app' as const,
+  key: 'app:user:helper',
+  userId: 'user',
+  agent: 'helper',
+}
+const request = (fields: Record<string, unknown>) => ({
+  ...{ action: 'notes.edit', tool: 'edit_note', input: {}, summary: 'Edit a note' },
+  ...{ requester: helper, status: 'approved', expiresAt: Date.now() },
+  ...fields,
+})
+
+// r3 review: finishing scanned the agent's first 500 open requests, so another run's backlog hid this run's own.
+test("a finished run cancels its own open request behind other runs' requests", async () => {
+  const { t, runId } = await limitedRun('running')
+  await t.run(async (ctx) => {
+    for (let n = 0; n < 500; n++)
+      await ctx.db.insert(
+        'approvals',
+        request({
+          caller: { door: 'app', runId: 'another-run', turn: 1 },
+          status: 'pending',
+          expiresAt: Date.now() - 1,
+        }) as never,
+      )
+  })
+  const own = await t.run((ctx) =>
+    ctx.db.insert(
+      'approvals',
+      request({
+        caller: { door: 'app', runId, turn: 1 },
+        status: 'pending',
+        expiresAt: Date.now() + 60_000,
+      }) as never,
+    ),
+  )
+  await t.run(async (ctx) => {
+    await finish(ctx.db, (await ctx.db.get(runId))!, { status: 'done', answer: 'Finished' })
+  })
+  expect(await t.run((ctx) => ctx.db.get(own))).toMatchObject({ status: 'cancelled' })
+})
 
 // r3 review: a step was called stalled after 15 minutes, while Convex lets an action run for 30.
 test('a step that works for 31 minutes has not stalled', async () => {

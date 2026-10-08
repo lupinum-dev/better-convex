@@ -1830,6 +1830,29 @@ export const mutants: Mutant[] = [
     kills: [`${A}/approvals/approvals.test.ts > a step that works for 31 minutes has not stalled`],
     projects: ['agents'],
   },
+  // A finished run cancels its own requests, not the first 500 of its agent.
+  {
+    id: 'P-housekeeping-run-requests',
+    guards: 'housekeeping',
+    file: 'packages/agents/src/runs.ts',
+    find: "for (const row of open) await db.patch(row._id, { status: 'cancelled' })",
+    replace:
+      "await cancelRequests(db, 'app:' + run.userId + ':' + run.agent, (row) => row.caller.door === 'app' && row.caller.runId === run._id)",
+    kills: [
+      `${A}/approvals/approvals.test.ts > a finished run cancels its own open request behind other runs' requests`,
+    ],
+    projects: ['agents'],
+  },
+  // A step may run 30 minutes in Convex's runtime before it counts as stalled.
+  {
+    id: 'P-housekeeping-stall-threshold',
+    guards: 'housekeeping',
+    file: 'packages/agents/src/runs.ts',
+    find: 'export const stallAfter = 35 * 60_000',
+    replace: 'export const stallAfter = 15 * 60_000',
+    kills: [`${A}/approvals/approvals.test.ts > a step that works for 31 minutes has not stalled`],
+    projects: ['agents'],
+  },
   // The cloud smoke deploys operator-only test functions; a production key must never reach it.
   {
     id: 'live-refuses-production-key',

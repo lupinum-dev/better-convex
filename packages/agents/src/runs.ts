@@ -95,11 +95,15 @@ export async function finish(
     | { status: 'failed'; error: { code: string; message: string } },
 ) {
   await db.patch(run._id, { ...outcome, approvalIds: undefined, stepAt: Date.now() })
-  await cancelRequests(
-    db,
-    `app:${run.userId}:${run.agent}`,
-    (row) => row.caller.door === 'app' && row.caller.runId === run._id,
-  )
+  // An agent has at most 20 open requests, so one read finds all of this run's.
+  // A pending request past its time is already expired; housekeeping marks it.
+  const open = await db
+    .query('approvals')
+    .withIndex('by_run_status', (q) =>
+      q.eq('caller.runId', run._id).eq('status', 'pending').gt('expiresAt', Date.now()),
+    )
+    .take(100)
+  for (const row of open) await db.patch(row._id, { status: 'cancelled' })
 }
 
 /** Cancels the open requests of one agent (its actor key), optionally only some. */
