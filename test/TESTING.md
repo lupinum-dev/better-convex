@@ -175,13 +175,34 @@ both checks. See `test/convex/auth-site-origins.test.ts`.
 5. Avoid fixed sleeps in `test/nuxt` and `test/browser`.
 6. Assert behavior, not source text. A static source check is fine only when it
    cheaply guards a security boundary in code users copy (starters, samples).
+7. A guarantee of an operation (deny, row rules, limit, audit, error masking)
+   is tested on every entry path where its contract applies: public call,
+   internal call from an action, scheduled, `ctx.runMutation`, MCP door, in-app
+   agent, `runTool`, approved run. The tables are in
+   `packages/functions/test/doors.test.ts` and `packages/agents/test/doors.test.ts`.
+   A new guarantee gets a table; a new path gets a row in every table. Every
+   table has one cell that succeeds, so a setup that refuses everything fails.
+8. A batched job or a scan is tested with more data than its limits: more rows
+   than one batch in every table, several tables sharing one step's read
+   budget, other people's rows before the relevant ones, and a few documents
+   near 1 MiB. Run it to the end with `drain(t, { maxSteps })` from
+   `test/helpers/drain.ts`; it fails when the work needs more steps than the
+   literal bound (a loop that makes no progress) or a scheduled step failed.
+   Byte limits are tested on the real backend (`mcp-sizes`).
+9. A check that reports problems (`launchProblems`, definition errors) has one
+   valid fixture and variants one change away from it. Each variant asserts
+   its exact problem, and undoing the change clears it. Invalid input never
+   grants anything: bad-value tables assert the exact promised outcome (a
+   throw, a refusal or a request for approval).
 
 ## Regression workflow
 
 1. Reproduce with a failing test in the right tier.
-2. Fix the bug.
-3. Keep the test.
-4. For a security guard, add a row to `test/mutants/mutants.ts` whose `kills`
+2. Write a passing test for the valid case next to the bug: what the old code
+   got right must keep working.
+3. Fix the bug.
+4. Keep both tests.
+5. For a security guard, add a row to `test/mutants/mutants.ts` whose `kills`
    names the test, and prove it with `pnpm test:mutants --only <id>`.
 
 ## Mutation check

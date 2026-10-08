@@ -86,7 +86,7 @@ key? Tests: "an agent rule that returns no decision asks a person"
 `erasure entry fails closed` tables, "a rule of an unknown kind refuses the
 row, alone and inside allOf".
 
-## 5. A bounded scan that makes a security decision
+## 5. A bounded scan or batch
 
 `take(n)` in a check means "the first n match", not "all match".
 
@@ -96,8 +96,16 @@ row, alone and inside allOf".
 - R23, R27: housekeeping must page through every waiting run, with one fixed
   cutoff per sweep (Convex rejects a cursor from a different query).
 
-Ask: is this check correct when there are more rows than the limit? Test: "a
-declined call is found among more than 20 declines".
+- SaaS review, 2026-10-08: the starter's last-owner check read 100
+  memberships; erasure read 100 runs, used up the step's budget and never
+  reached their messages, so every step repeated the same reads.
+
+Ask: is this check correct when there are more rows than the limit, and does
+every step make progress when several tables share its budget? Tests: "a
+declined call is found among more than 20 declines", "a person with more rows
+than a batch in every table is erased, others untouched", "housekeeping deletes
+every table past retention in a bounded number of steps and keeps the rest"
+(both run to the end with `drain`).
 
 ## 6. A generalisation that grants too much
 
