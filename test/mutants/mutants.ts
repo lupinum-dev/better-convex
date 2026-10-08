@@ -1856,6 +1856,20 @@ export const mutants: Mutant[] = [
     ],
     projects: ['security'],
   },
+  // An unusable refreshed token signs the browser out instead of reusing the old one.
+  {
+    id: 'P-session-unusable-token-definitive',
+    guards: 'session',
+    file: 'src/runtime/auth/token-fetcher.ts',
+    find: "authError: 'Convex authentication token is expired or missing a valid expiry',\n            definitive: true,",
+    replace:
+      "authError: 'Convex authentication token is expired or missing a valid expiry',\n            definitive: false,",
+    kills: [
+      'test/unit/better-auth-browser-adapter.test.ts > Better Auth browser adapter > drops the cached token when every refresh returns an unusable (malformed) token',
+      'test/unit/better-auth-browser-adapter.test.ts > Better Auth browser adapter > drops the cached token when every refresh returns an unusable (expired) token',
+    ],
+    projects: ['unit'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [

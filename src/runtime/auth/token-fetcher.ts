@@ -65,11 +65,11 @@ export function decodeFetchedIdentity(token: string): FetchedIdentity | null {
  * The outcome of one total token fetch. `identity: null` with `authError: null`
  * is a clean anonymous result when the exchange succeeds with no token. A
  * definitive 401/403 means presented credentials were rejected and is reported
- * as an authentication error. `authError` is also set when a token decodes
- * without a stable user id, or a transient transport failure exhausts the retry
- * loop. `definitive` distinguishes such a transient (non-definitive) failure —
- * over which a usable identity is retained — from the definitive verdicts
- * above. Never rejects.
+ * as an authentication error. `authError` is also set when a token has no
+ * usable lifetime or decodes without a stable user id, or a transient transport
+ * failure exhausts the retry loop. `definitive` distinguishes such a transient
+ * (non-definitive) failure — over which a usable identity is retained — from
+ * the definitive verdicts above. Never rejects.
  */
 export interface FetchOutcome {
   identity: FetchedIdentity | null
@@ -165,8 +165,13 @@ export async function fetchConvexToken(
           return { identity: null, authError: null, definitive: true }
         }
         if (usableTokenLifetimeMs(token) === null) {
-          lastError = 'Convex authentication token is expired or missing a valid expiry'
-          continue
+          // The server answered; a token without a usable lifetime is its verdict,
+          // not an outage, so no earlier token may stand in for it.
+          return {
+            identity: null,
+            authError: 'Convex authentication token is expired or missing a valid expiry',
+            definitive: true,
+          }
         }
         const identity = decodeFetchedIdentity(token)
         if (!identity) {
