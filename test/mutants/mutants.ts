@@ -1828,9 +1828,9 @@ export const mutants: Mutant[] = [
     find: 'export const sweep = { rows: 100, bytes: 4 * 1024 * 1024 }',
     replace: 'const sweep = { rows: 1_000_000, bytes: 2 ** 40 }',
     kills: [
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a long finished conversation'`,
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'many decided requests with large plans'`,
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a request that created 17,000 rows'`,
+      `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through 'a long finished conversation'`,
+      `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through 'many decided requests with large plans'`,
+      `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through 'a request that created 17,000 rows'`,
     ],
     projects: ['agents'],
   },
@@ -1839,9 +1839,9 @@ export const mutants: Mutant[] = [
     id: 'P-housekeeping-run-requests',
     guards: 'housekeeping',
     file: 'packages/agents/src/runs.ts',
-    find: 'return await cancelOpen(db, run._id, budget)',
+    find: 'if (!(await cancelOpen(db, run._id, budget))) return false',
     replace:
-      "await cancelRequests(db, 'app:' + run.userId + ':' + run.agent, (row) => row.caller.door === 'app' && row.caller.runId === run._id); return true",
+      "await cancelRequests(db, 'app:' + run.userId + ':' + run.agent, (row) => row.caller.door === 'app' && row.caller.runId === run._id)",
     kills: [
       `${A}/approvals/approvals.test.ts > a finished run cancels its own open request behind other runs' requests`,
     ],
@@ -2092,11 +2092,11 @@ export const mutants: Mutant[] = [
     id: 'P-r2-housekeeping-repair-budget',
     guards: 'housekeeping',
     file: 'packages/agents/src/tools.ts',
-    find: "if (!(await finish(db, run, { status: 'failed', error }, budget))) left.push(run._id)",
-    replace: "if (!(await finish(db, run, { status: 'failed', error }))) left.push(run._id)",
+    find: "return await finish(db, run, { status: 'failed', error: shown.error! }, budget)",
+    replace: "return await finish(db, run, { status: 'failed', error: shown.error! })",
     kills: [
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through '20 stalled runs, 900 KB requests'`,
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a stalled run, 20 900 KB requests'`,
+      `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through '20 stalled runs, 900 KB requests'`,
+      `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through 'a stalled run, 20 900 KB requests'`,
     ],
     projects: ['agents'],
   },
@@ -2108,7 +2108,7 @@ export const mutants: Mutant[] = [
     find: 'while (more && !budget.spent) {',
     replace: 'while (more) {',
     kills: [
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through '20 waiting runs, expired 900 KB'`,
+      `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through '20 waiting runs, expired 900 KB'`,
     ],
     projects: ['agents'],
   },
@@ -2120,7 +2120,7 @@ export const mutants: Mutant[] = [
     find: 'if (!(await wake(db, scheduler, runs[0]!, budget, known))) break',
     replace: 'if (!(await wake(db, scheduler, runs[0]!))) break',
     kills: [
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a waiting run, 20 decided 900 KB'`,
+      `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through 'a waiting run, 20 decided 900 KB'`,
     ],
     projects: ['agents'],
   },
@@ -2132,7 +2132,60 @@ export const mutants: Mutant[] = [
     find: 'await next({ runs, decided: [...known], cutoff, ...after })',
     replace: 'await next({ runs, decided: [], cutoff, ...after })',
     kills: [
-      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run in its first call, then works through 'a waiting run, 20 decided 900 KB'`,
+      `${A}/approvals/approvals.test.ts > housekeeping commits from its first call, then works through 'a waiting run, 20 decided 900 KB'`,
+    ],
+    projects: ['agents'],
+  },
+  // Release polish round 3, r3-lifecycle group (2026-10-08).
+  // An agent's 20 open requests, at the largest size stored, fit one transaction's reads.
+  {
+    id: 'P-r3-lifecycle-approval-size',
+    guards: 'r3-lifecycle',
+    file: 'packages/agents/src/tools.ts',
+    find: 'const maxApprovalBytes = 256 * 1024',
+    replace: 'const maxApprovalBytes = 1024 * 1024 - 8 * 1024',
+    kills: [
+      `${A}/approvals/approvals.test.ts > a run's 20 requests of the largest size stay within Convex's read limit: wait`,
+      `${A}/approvals/approvals.test.ts > a run's 20 requests of the largest size stay within Convex's read limit: decide`,
+      `${A}/approvals/approvals.test.ts > a run's 20 requests of the largest size stay within Convex's read limit: finish`,
+    ],
+    projects: ['agents'],
+  },
+  // A run waits only on its own open requests, so waking it reads at most 20.
+  {
+    id: 'P-r3-lifecycle-wait-open',
+    guards: 'r3-lifecycle',
+    file: 'packages/agents/src/runs.ts',
+    find: 'const open = (await openOf(db, run._id).take(100)).filter((row) => asked.has(row._id))',
+    replace:
+      "const open = (await Promise.all(approvalIds.map((id) => db.get(id)))).filter((row) => row !== null && row.status === 'pending' && row.expiresAt > Date.now()) as never[]",
+    kills: [
+      `${A}/approvals/approvals.test.ts > a run waits only on its own requests that are still open`,
+    ],
+    projects: ['agents'],
+  },
+  // A run ends only after its open requests are cancelled, so no request of an ended run stays open.
+  {
+    id: 'P-r3-lifecycle-cancel-first',
+    guards: 'r3-lifecycle',
+    file: 'packages/agents/src/runs.ts',
+    find: 'if (!(await cancelOpen(db, run._id, budget))) return false',
+    replace:
+      'await db.patch(run._id, { ...outcome, approvalIds: undefined, stepAt: Date.now() }); if (!(await cancelOpen(db, run._id, budget))) return false',
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping cancels a stalled run's requests before it ends the run`,
+    ],
+    projects: ['agents'],
+  },
+  // Disconnecting reads only the open requests, which the cap of 20 bounds; housekeeping expires the rest.
+  {
+    id: 'P-r3-lifecycle-disconnect-open',
+    guards: 'r3-lifecycle',
+    file: 'packages/agents/src/runs.ts',
+    find: "q.eq('requester.key', requesterKey).eq('status', 'pending').gt('expiresAt', Date.now()),",
+    replace: "q.eq('requester.key', requesterKey).eq('status', 'pending'),",
+    kills: [
+      `${A}/approvals/approvals.test.ts > disconnecting cancels the open requests, however many expired ones wait for housekeeping`,
     ],
     projects: ['agents'],
   },
