@@ -15,7 +15,7 @@ test('callTool refuses a tool the grant does not unlock, and names the tools it 
     callTool(t, tools, await grantMcp(t, 'ann', ['read']), 'archive_project', { projectId: pa }),
   ).rejects.toThrow(
     new Error(
-      'callTool: no tool "archive_project" for this principal. Its scopes unlock: echo_shapes, list_projects.',
+      'callTool: no tool "archive_project" for this principal. Its scopes unlock: echo_shapes, list_broken, list_projects.',
     ),
   )
   await expect(
