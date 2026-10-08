@@ -135,20 +135,21 @@ describe('MCP OAuth profile', () => {
     const renewable = createBetterConvexAuth({ adapter: {} } as never, {
       oauth: { mcp: { scopes } },
     })
-    expect(renewable.mcp.scopesSupported()).toEqual(['mcp:read', 'mcp:write', 'offline_access'])
-    expect(Object.isFrozen(renewable.mcp.scopesSupported())).toBe(true)
+    const supported = (auth: typeof renewable) =>
+      auth.mcpAuthorization({ runQuery: vi.fn() } as never).authorization.scopesSupported
+    expect(supported(renewable)).toEqual(['mcp:read', 'mcp:write', 'offline_access'])
+    expect(Object.isFrozen(supported(renewable))).toBe(true)
     const accessOnly = createBetterConvexAuth({ adapter: {} } as never, {
       oauth: { mcp: { scopes, renewal: false } },
     })
-    expect(accessOnly.mcp.scopesSupported()).toEqual(['mcp:read', 'mcp:write'])
+    expect(supported(accessOnly)).toEqual(['mcp:read', 'mcp:write'])
   })
 
-  it('reports a missing profile from every MCP accessor', () => {
+  it('reports a missing profile from every MCP entry', () => {
     const auth = createBetterConvexAuth({ adapter: {} } as never)
-    expect(() => auth.mcp.resource()).toThrow('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
-    expect(() => auth.mcp.issuer()).toThrow('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
-    expect(() => auth.mcp.scopes()).toThrow('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
-    expect(() => auth.mcp.scopesSupported()).toThrow('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
+    expect(() => auth.mcpAuthorization({ runQuery: vi.fn() } as never)).toThrow(
+      'AUTH_OAUTH_MCP_PROFILE_REQUIRED',
+    )
     expect(() => auth.createMcpAccessVerifier({ runQuery: vi.fn() } as never)).toThrow(
       'AUTH_OAUTH_MCP_PROFILE_REQUIRED',
     )
@@ -235,7 +236,7 @@ describe('MCP host redirect presets', () => {
     ).rejects.toThrow('AUTH_OAUTH_CLIENT_SCOPE_NOT_ADMITTED')
   })
 
-  it('requires the MCP profile for host clients', async () => {
+  it('requires the MCP profile for host clients and for a client without its own resource', async () => {
     const operator = createOAuthOperator({
       component: {} as never,
       createAuth: async () => ({ $context: Promise.resolve({}) }),
@@ -244,5 +245,13 @@ describe('MCP host redirect presets', () => {
     await expect(operator.createHostClient({} as never, { host: 'claude' })).rejects.toThrow(
       'AUTH_OAUTH_MCP_PROFILE_REQUIRED',
     )
+    await expect(
+      operator.createPublicClient({} as never, {
+        name: 'Inspector',
+        profile: 'inspector',
+        redirectUris: ['http://localhost:6274/oauth/callback'],
+        scopes: ['mcp:read'],
+      }),
+    ).rejects.toThrow('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
   })
 })

@@ -13,8 +13,12 @@
     "types": ["node", "vitest/globals"],
     "baseUrl": "../..",
     "paths": {
-      "@lupinum/better-convex-mcp": ["packages/mcp/src/index.ts"],
-      "@lupinum/better-convex-mcp/test": ["packages/mcp/src/test.ts"],
+      "@lupinum/better-convex-functions": ["packages/functions/src/index.ts"],
+      "@lupinum/better-convex-functions/internal": ["packages/functions/src/internal.ts"],
+      "@lupinum/better-convex-functions/test": ["packages/functions/src/test.ts"],
+      "@lupinum/better-convex-agents": ["packages/agents/src/index.ts"],
+      "@lupinum/better-convex-agents/mcp": ["packages/agents/src/mcp.ts"],
+      "@lupinum/better-convex-agents/test": ["packages/agents/src/test.ts"],
       "@lupinum/better-convex-nuxt/better-auth/server": ["src/runtime/convex-auth/index.ts"]
     }
   },

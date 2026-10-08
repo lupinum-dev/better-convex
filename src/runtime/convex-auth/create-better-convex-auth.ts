@@ -228,6 +228,14 @@ export type BetterConvexAuthEmail =
       }
       readonly inviter: BetterConvexAuthEmailUser
     }
+  | {
+      /** Sent instead of deleting at once, when the `email` option is set and `deleteUser` is enabled. */
+      readonly type: 'delete-account'
+      readonly to: string
+      readonly url: string
+      readonly token: string
+      readonly user: BetterConvexAuthEmailUser
+    }
 
 export type BetterConvexAuthEmailType = BetterConvexAuthEmail['type']
 
@@ -249,8 +257,31 @@ type SessionClaimsDefinition = NonNullable<
   Parameters<typeof convexAuth>[0]['sessionJwt']['definePayload']
 >
 
+/**
+ * Let signed-in people delete their own account. Off unless `enabled` is true.
+ *
+ * Without the `email` option, a person needs a fresh session (or their
+ * password) to delete. With it, the library emails a `delete-account` link
+ * and deletes when the person opens it. The app's data is erased by the user
+ * projection (`erase` in `createUserProjectionTriggers`), which runs when the
+ * auth user is deleted.
+ */
+export interface BetterConvexDeleteUserOptions<DataModel extends GenericDataModel> {
+  readonly enabled: boolean
+  /**
+   * Runs before the account is deleted. Throw to refuse, for example when the
+   * person is the last owner of a team. A `ConvexError` or `APIError` message
+   * reaches the person; any other error is logged and shown as a generic refusal.
+   */
+  readonly beforeDelete?: (
+    ctx: AuthCtx<DataModel>,
+    user: BetterConvexAuthEmailUser,
+  ) => void | Promise<void>
+}
+
 export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataModel> {
   readonly appName?: string
+  readonly deleteUser?: BetterConvexDeleteUserOptions<DataModel>
   /** Experimental: not covered by semver. Requires a local auth component with anonymous(). */
   readonly experimental?: {
     readonly anonymous?: true | ReviewedAnonymousOptions
@@ -349,11 +380,6 @@ export interface BetterConvexAuth<
     ctx: WritableAuthCtx<DataModel>,
   ) => Promise<{ readonly auth: AuthInstance; readonly headers: Headers }>
   /**
-   * The configured MCP OAuth profile. Every accessor throws
-   * `AUTH_OAUTH_MCP_PROFILE_REQUIRED` without `oauth.mcp`.
-   */
-  readonly mcp: BetterConvexMcp
-  /**
    * The access verifier for `handleMcpRequest`: keys from the component, the
    * strict token checks, and one live grant query per token. With `oauth.mcp`,
    * scopes and the resource default to the profile.
@@ -363,6 +389,13 @@ export interface BetterConvexAuth<
     options?: Partial<BetterAuthMcpAccessVerifierOptions>,
   ) => BetterConvexMcpAccessVerifier
   /**
+   * The MCP door's OAuth settings for one request, from the `oauth.mcp` profile: the resource,
+   * the issuer, the profile's scopes and this verifier. Pass `auth` to `createMcpServer` from
+   * `@lupinum/better-convex-agents/mcp`, or spread the result into the `handleMcpRequest`
+   * options. Throws `AUTH_OAUTH_MCP_PROFILE_REQUIRED` without `oauth.mcp`.
+   */
+  readonly mcpAuthorization: (ctx: AuthCtx<DataModel>) => BetterConvexMcpAuthorization
+  /**
    * Re-validate an MCP principal in the calling function's transaction (one
    * component query) and check `scope`. Throws `ConvexError` with code
    * `MCP_ACCESS_DENIED` or `MCP_INSUFFICIENT_SCOPE`.
@@ -370,7 +403,11 @@ export interface BetterConvexAuth<
   readonly requireMcpPrincipal: (
     ctx: AuthCtx<DataModel>,
     principal: BetterConvexMcpPrincipal,
-    options?: { readonly scope?: string },
+    options?: {
+      readonly scope?: string
+      /** Skip only the access token's expiry, for work a person approved later; the grant must be live. */
+      readonly allowExpiredToken?: boolean
+    },
   ) => Promise<{
     readonly user: BetterConvexAuthUser
     readonly principal: BetterConvexMcpPrincipal
@@ -379,19 +416,17 @@ export interface BetterConvexAuth<
   readonly oauthConnections: BetterConvexOAuthConnections<DataModel>
 }
 
-/** Accessors for the configured `oauth.mcp` profile. */
-export interface BetterConvexMcp {
-  /** This deployment's Better Auth issuer, `${SITE_URL}/api/auth`. */
-  readonly issuer: () => string
-  /** The MCP resource URL, which is also the token audience. */
-  readonly resource: () => URL
-  /** The MCP scopes with their consent descriptions (without `offline_access`). */
-  readonly scopes: () => Readonly<Record<string, string>>
-  /**
-   * Every scope a token may carry: the MCP scopes, plus `offline_access` when
-   * renewal is on. Advertise it as the protected resource's `scopesSupported`.
-   */
-  readonly scopesSupported: () => readonly string[]
+/** What `auth.mcpAuthorization(ctx)` returns: the `resource` and `authorization` options of the MCP door. */
+export interface BetterConvexMcpAuthorization {
+  readonly resource: URL
+  readonly authorization: {
+    readonly mode: 'oauth'
+    readonly issuer: string
+    readonly verifier: BetterConvexMcpAccessVerifier
+    /** The protected resource's name in its metadata: `appName`. */
+    readonly resourceName?: string
+    readonly scopesSupported: readonly string[]
+  }
 }
 
 /** The stable Better Auth capabilities used at the Convex transport boundary. */
@@ -438,6 +473,7 @@ const REVIEWED_TOP_LEVEL_OPTIONS = new Set([
   'authFunctions',
   'beforeUserCreate',
   'defineSessionClaims',
+  'deleteUser',
   'email',
   'emailAndPassword',
   'emailOTP',
@@ -635,6 +671,20 @@ function rejectUnsupportedOptions(options: object): void {
         throw configError('requires "experimental.anonymous.emailDomainName" to be an email domain')
     }
   }
+  if (record.deleteUser !== undefined) {
+    assertOnlyKeys(record.deleteUser, ['enabled', 'beforeDelete'], 'deleteUser')
+    if (!isPlainRecord(record.deleteUser))
+      throw configError('expected "deleteUser" to be an object')
+    if (typeof record.deleteUser.enabled !== 'boolean') {
+      throw configError('expected "deleteUser.enabled" to be a boolean')
+    }
+    if (
+      record.deleteUser.beforeDelete !== undefined &&
+      typeof record.deleteUser.beforeDelete !== 'function'
+    ) {
+      throw configError('expected "deleteUser.beforeDelete" to be a function')
+    }
+  }
   if (record.email !== undefined && typeof record.email !== 'function') {
     throw configError('expected "email" to be a function')
   }
@@ -756,6 +806,34 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
   }
 }
 
+/** What a person may read when `beforeDelete` refuses: a message the app wrote, never an internal error. */
+function refusalMessage(error: unknown): string | undefined {
+  if (error instanceof APIError) return error.message || undefined
+  const data = (error as { data?: unknown } | null)?.data
+  if (typeof data === 'string') return data
+  if (isPlainRecord(data) && typeof data.message === 'string') return data.message
+  return undefined
+}
+
+function createBeforeDeleteHook<DataModel extends GenericDataModel>(
+  ctx: AuthCtx<DataModel>,
+  callback: NonNullable<BetterConvexDeleteUserOptions<DataModel>['beforeDelete']>,
+) {
+  return async (user: User & Record<string, unknown>): Promise<void> => {
+    try {
+      await callback(ctx, emailUser(user))
+    } catch (error) {
+      const message = refusalMessage(error)
+      if (message === undefined) {
+        console.error('[better-convex] AUTH_USER_DELETE_HOOK_THREW', {
+          cause: sanitizeAuthCause(error),
+        })
+      }
+      throw new APIError('FORBIDDEN', { message: message ?? 'AUTH_USER_DELETE_REFUSED' })
+    }
+  }
+}
+
 function emailUser(user: { id: string; email: string; name: string }): BetterConvexAuthEmailUser {
   return Object.freeze({ id: user.id, email: user.email, name: user.name })
 }
@@ -770,6 +848,8 @@ function emailCredentials(message: BetterConvexAuthEmail): string[] {
       return [message.otp]
     case 'organization-invitation':
       return [message.invitationId]
+    case 'delete-account':
+      return [message.url, message.token]
   }
 }
 
@@ -830,7 +910,9 @@ function assertOwnedInvariants(options: BetterAuthOptions, socialProviderNames: 
     typeof options.session.updateAge !== 'number' ||
     options.session.updateAge < SESSION_POLICY_BOUNDS.updateAge.min ||
     options.session.updateAge > options.session.expiresIn ||
-    !cookieCacheWithinBounds(options.session.cookieCache)
+    !cookieCacheWithinBounds(options.session.cookieCache) ||
+    // freshAge 0 would let a stale session delete the account.
+    (options.user?.deleteUser?.enabled === true && options.session.freshAge === 0)
   ) {
     throw new Error('AUTH_OWNED_INVARIANT_VIOLATED')
   }
@@ -1158,6 +1240,29 @@ export function createBetterConvexAuthOwned<
         session: { ...sessionPolicy },
         socialProviders,
         trustedOrigins: [baseURL],
+        // Off by default: Better Auth answers /delete-user with 404 unless enabled.
+        user: options.deleteUser?.enabled
+          ? {
+              deleteUser: {
+                enabled: true,
+                ...(options.deleteUser.beforeDelete
+                  ? { beforeDelete: createBeforeDeleteHook(ctx, options.deleteUser.beforeDelete) }
+                  : {}),
+                ...(deliver
+                  ? {
+                      sendDeleteAccountVerification: async ({ user, url, token }) =>
+                        deliver({
+                          type: 'delete-account',
+                          to: user.email,
+                          url,
+                          token,
+                          user: emailUser(user),
+                        }),
+                    }
+                  : {}),
+              },
+            }
+          : undefined,
         verification: { storeIdentifier: 'hashed' },
       } satisfies BetterAuthOptions
       const socialProviderNames = new Set(Object.keys(socialProviders ?? {}))
@@ -1191,15 +1296,21 @@ export function createBetterConvexAuthOwned<
     if (!mcpProfile) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
     return mcpProfile
   }
-  const mcp: BetterConvexMcp = Object.freeze({
-    issuer: () => {
-      requireMcp()
-      return canonicalAuthIssuer()
-    },
-    resource: () => resolveMcpResource(requireMcp()),
-    scopes: () => requireMcp().scopes,
-    scopesSupported: () => Object.freeze([...(requireMcp().provider.scopes ?? [])]),
-  })
+
+  const createMcpAccessVerifier = (
+    ctx: AuthCtx<DataModel>,
+    verifierOptions: Partial<BetterAuthMcpAccessVerifierOptions> = {},
+  ) => {
+    const allowedScopes = verifierOptions.allowedScopes ?? mcpProfile?.provider.scopes
+    if (!allowedScopes) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
+    const resource =
+      verifierOptions.resource ?? (mcpProfile ? resolveMcpResource(mcpProfile) : undefined)
+    return createBetterAuthMcpAccessVerifier(ctx, component, {
+      ...verifierOptions,
+      allowedScopes,
+      ...(resource === undefined ? {} : { resource }),
+    })
+  }
 
   return Object.freeze({
     createAuth,
@@ -1219,28 +1330,29 @@ export function createBetterConvexAuthOwned<
     getUser: authComponent.getUser,
     requireUser: authComponent.requireUser,
     getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
-    mcp,
-    createMcpAccessVerifier: (
-      ctx: AuthCtx<DataModel>,
-      verifierOptions: Partial<BetterAuthMcpAccessVerifierOptions> = {},
-    ) => {
-      const allowedScopes = verifierOptions.allowedScopes ?? mcpProfile?.provider.scopes
-      if (!allowedScopes) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
-      const resource =
-        verifierOptions.resource ?? (mcpProfile ? resolveMcpResource(mcpProfile) : undefined)
-      return createBetterAuthMcpAccessVerifier(ctx, component, {
-        ...verifierOptions,
-        allowedScopes,
-        ...(resource === undefined ? {} : { resource }),
-      })
+    createMcpAccessVerifier,
+    mcpAuthorization(ctx: AuthCtx<DataModel>): BetterConvexMcpAuthorization {
+      const profile = requireMcp()
+      return {
+        resource: resolveMcpResource(profile),
+        authorization: {
+          mode: 'oauth',
+          issuer: canonicalAuthIssuer(),
+          verifier: createMcpAccessVerifier(ctx),
+          ...(options.appName === undefined ? {} : { resourceName: options.appName }),
+          // Hosts that read this list request `offline_access` and receive renewal.
+          scopesSupported: Object.freeze([...(profile.provider.scopes ?? [])]),
+        },
+      }
     },
     requireMcpPrincipal: (
       ctx: AuthCtx<DataModel>,
       principal: BetterConvexMcpPrincipal,
-      principalOptions: { readonly scope?: string } = {},
+      principalOptions: { readonly scope?: string; readonly allowExpiredToken?: boolean } = {},
     ) =>
       requireMcpPrincipal(ctx, component, principal, {
         ...(principalOptions.scope === undefined ? {} : { scope: principalOptions.scope }),
+        ...(principalOptions.allowExpiredToken === true ? { allowExpiredToken: true } : {}),
         ...(mcpProfile ? { resource: () => resolveMcpResource(mcpProfile) } : {}),
       }),
     oauthConnections: createOAuthConnections<DataModel>(component),

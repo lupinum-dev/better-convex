@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { MCP_SCOPES } from '../../../convex/scopes'
+import { consentScopes } from '@lupinum/better-convex-functions/policy'
+import { policy } from '~~/convex/policy'
+
+const MCP_SCOPES = consentScopes(policy)
 
 defineOptions({ name: 'McpConsentPage' })
 

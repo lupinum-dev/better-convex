@@ -8,7 +8,8 @@ export type {
   BetterConvexAuthEmailType,
   BetterConvexAuthEmailUser,
   BetterConvexAuthInstance,
-  BetterConvexMcp,
+  BetterConvexDeleteUserOptions,
+  BetterConvexMcpAuthorization,
   BetterConvexOrganizationAuthInstance,
   BetterConvexSessionPolicy,
   BetterConvexTeamOrganizationAuthInstance,
@@ -33,6 +34,8 @@ export type {
 } from './adapter/account-key-collisions'
 
 export type { AuthCtx, WritableAuthCtx } from './context'
+// Named by the result of `jwksOperatorFunctions()`, so an app with `declaration: true` can export it.
+export type { SigningKeyRotationMetadata } from './jwks-rotation'
 export type {
   BetterConvexHttpSession,
   BetterConvexSessionHttpHandler,

@@ -88,7 +88,18 @@ const ERRORS_DIR = p('packages/vue/src/errors.ts')
 const AUTH_CLIENT_DIR = p('src/runtime/auth-client')
 const CONVEX_AUTH_DIR = p('src/runtime/convex-auth')
 const CLIENT_LIFECYCLE_DIR = p('packages/vue/src')
-const MCP_PACKAGE_DIR = p('packages/mcp/src')
+const AGENTS_PACKAGE_DIR = p('packages/agents/src')
+/** The agents package's MCP door and transport: the only modules that may load the MCP SDK. */
+const AGENTS_MCP_FILES = [
+  'door.ts',
+  'handler.ts',
+  'access.ts',
+  'transport.ts',
+  'errors.ts',
+  'mcp.ts',
+  'catalog.ts',
+].map((file) => p('packages/agents/src', file))
+const FUNCTIONS_PACKAGE_DIR = p('packages/functions/src')
 const SHARED_AUTH_COOKIE_FILE = p('src/runtime/shared/auth-cookie.ts')
 const SHARED_AUTH_ORIGIN_FILE = p('src/runtime/shared/auth-origin.ts')
 const SHARED_BOUNDED_STREAM_FILE = p('src/runtime/shared/bounded-stream.ts')
@@ -111,7 +122,8 @@ const isModuleBuild = (absPath) => isAnyFile(absPath, MODULE_BUILD_FILES)
 const isRuntimeEntry = (absPath) => inDir(absPath, RUNTIME_ROOT)
 const isConvexAuth = (absPath) => inDir(absPath, CONVEX_AUTH_DIR)
 const isClientLifecycle = (absPath) => inDir(absPath, CLIENT_LIFECYCLE_DIR)
-const isMcpPackage = (absPath) => inDir(absPath, MCP_PACKAGE_DIR)
+const isAgentsPackage = (absPath) => inDir(absPath, AGENTS_PACKAGE_DIR)
+const isFunctionsPackage = (absPath) => inDir(absPath, FUNCTIONS_PACKAGE_DIR)
 const isSharedAuthCookie = (absPath) => absPath === SHARED_AUTH_COOKIE_FILE
 const isSharedAuthOrigin = (absPath) => absPath === SHARED_AUTH_ORIGIN_FILE
 const isSharedBoundedStream = (absPath) => absPath === SHARED_BOUNDED_STREAM_FILE
@@ -184,10 +196,20 @@ function isAllowedVueEntryBareSpecifier(_absPath, specifier) {
   return isAllowedClientLifecycleBareSpecifier(specifier)
 }
 
-function isAllowedMcpBareSpecifier(specifier) {
+function isMcpSdkSpecifier(specifier) {
   return (
     specifier === '@modelcontextprotocol/server' ||
     specifier.startsWith('@modelcontextprotocol/server/')
+  )
+}
+
+function isAllowedAgentsBareSpecifier(absPath, specifier) {
+  if (isMcpSdkSpecifier(specifier)) return AGENTS_MCP_FILES.includes(absPath)
+  return (
+    specifier === 'convex/server' ||
+    specifier === 'convex/values' ||
+    specifier === '@lupinum/better-convex-functions' ||
+    specifier === '@lupinum/better-convex-functions/internal'
   )
 }
 
@@ -214,14 +236,27 @@ function isAllowedMcpBareSpecifier(specifier) {
 /** @type {Rule[]} */
 const RULES = [
   {
-    name: 'mcp-package-official-sdk-only',
+    name: 'functions-package-convex-only',
     description:
-      'packages/mcp/src/** may import only its own package and the exact official MCP server SDK; Nuxt, Nitro, H3, Better Auth, Vue, Node built-ins, aliases, and sibling workspace packages are forbidden.',
-    from: isMcpPackage,
+      'packages/functions/src/** may import only its own package and the Convex server and value entries; it runs inside Convex functions of any app, with any frontend.',
+    from: isFunctionsPackage,
     disallow: (edge) => {
-      if (!edge.isRelative) return !isAllowedMcpBareSpecifier(edge.specifier)
+      if (!edge.isRelative)
+        return edge.specifier !== 'convex/server' && edge.specifier !== 'convex/values'
       if (edge.resolvedAbsPath === null) return false
-      return !isMcpPackage(edge.resolvedAbsPath)
+      return !isFunctionsPackage(edge.resolvedAbsPath)
+    },
+    typeOnlyExempt: false,
+  },
+  {
+    name: 'agents-package-functions-convex-and-sdk-only',
+    description:
+      'packages/agents/src/** may import only its own package, the functions package, the Convex server and value entries, and (in the MCP door and transport modules only) the exact official MCP server SDK; Nuxt, Nitro, H3, Better Auth, Vue, Node built-ins and aliases are forbidden. The root entry must work without the MCP SDK.',
+    from: isAgentsPackage,
+    disallow: (edge) => {
+      if (!edge.isRelative) return !isAllowedAgentsBareSpecifier(edge.fromAbsPath, edge.specifier)
+      if (edge.resolvedAbsPath === null) return false
+      return !isAgentsPackage(edge.resolvedAbsPath)
     },
     typeOnlyExempt: false,
   },
@@ -540,6 +575,30 @@ function findWorkspaceDependencyCycles(packages) {
   return cycles
 }
 
+/**
+ * A package's own tests (`<package>/test/`) may import a public entry of another workspace
+ * package through a Vitest alias, as the agents tests use the Nuxt package's `better-auth/test`.
+ * The package never ships its tests, so this is no package edge; a source file still needs the
+ * dependency declared.
+ */
+function isTestImportOfPublicEntry(file, importer, edge, target) {
+  if (!inDir(file, join(importer.directory, 'test'))) return false
+  const subpath = `.${edge.specifier.slice(target.name.length)}`
+  const exports = target.manifest.exports
+  return !!exports && typeof exports === 'object' && Object.hasOwn(exports, subpath)
+}
+
+/**
+ * A package's tests may import another package's tests by path, such as the shared harness in the
+ * repository's `test/` (the mutant transform, the seeded fuzz corpus). Tests ship in no package.
+ */
+function isTestImportOfTests(file, importer, edge, target) {
+  return (
+    inDir(file, join(importer.directory, 'test')) &&
+    inDir(edge.resolvedAbsPath, join(target.directory, 'test'))
+  )
+}
+
 function findWorkspaceDependencyViolations(files, packages) {
   const packageByName = new Map(
     packages.map((workspacePackage) => [workspacePackage.name, workspacePackage]),
@@ -553,7 +612,11 @@ function findWorkspaceDependencyViolations(files, packages) {
     for (const edge of buildEdges(absoluteFile)) {
       if (edge.isRelative && edge.resolvedAbsPath !== null) {
         const target = owningPackage(edge.resolvedAbsPath, packages)
-        if (target && target !== importer) {
+        if (
+          target &&
+          target !== importer &&
+          !isTestImportOfTests(absoluteFile, importer, edge, target)
+        ) {
           violations.push({
             file: absoluteFile,
             kind: 'relative-cross-package',
@@ -566,7 +629,10 @@ function findWorkspaceDependencyViolations(files, packages) {
       if (edge.isRelative || edge.specifier === COMPUTED_DYNAMIC_IMPORT) continue
       const targetName = packageNameFromSpecifier(edge.specifier)
       if (targetName === importer.name || !packageByName.has(targetName)) continue
-      if (!declared.has(targetName)) {
+      if (
+        !declared.has(targetName) &&
+        !isTestImportOfPublicEntry(absoluteFile, importer, edge, packageByName.get(targetName))
+      ) {
         violations.push({
           file: absoluteFile,
           kind: 'undeclared-workspace-import',

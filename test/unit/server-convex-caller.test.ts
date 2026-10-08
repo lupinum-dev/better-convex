@@ -223,6 +223,7 @@ describe('serverConvex caller-scoped invariants', () => {
       credential: { type: 'cookie', value: AUTH_COOKIE },
       trustedClientIpHeader: 'cf-connecting-ip',
       timeoutMs: 5_000,
+      renewsRequestSession: true,
     })
   })
 

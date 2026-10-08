@@ -6,6 +6,7 @@ import { ConvexError } from 'convex/values'
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { handleMcpRequest } from '../../packages/agents/src/handler'
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
 import authSchema from '../../src/runtime/convex-auth/component/schema'
 import type { AuthCtx } from '../../src/runtime/convex-auth/context'
@@ -517,6 +518,27 @@ describe('requireMcpPrincipal', () => {
     })
   })
 
+  it('with allowExpiredToken, accepts an expired token of a live grant and still denies a revoked one', async () => {
+    const { test } = await initGrant()
+    const expired = principal({ expiresAt: Math.floor(Date.now() / 1_000) - 1 })
+    await test.query(async (ctx) => {
+      await expect(
+        auth.requireMcpPrincipal(asCtx(ctx), expired, { allowExpiredToken: true }),
+      ).resolves.toMatchObject({ user: { id: 'alice' } })
+    })
+    await test.mutation(async (ctx) => {
+      await createOAuthConnections(component).revoke(ctx, {
+        clientId: 'oauth-client',
+        userId: 'alice',
+      })
+    })
+    await test.query(async (ctx) => {
+      await expect(
+        denial(auth.requireMcpPrincipal(asCtx(ctx), expired, { allowExpiredToken: true })),
+      ).resolves.toEqual({ code: 'MCP_ACCESS_DENIED', message: 'MCP access denied' })
+    })
+  })
+
   it('denies a revoked connection and a disabled client', async () => {
     const { test } = await initGrant()
     const operator = createOAuthOperator({
@@ -663,20 +685,50 @@ describe('OAuth connections', () => {
 describe('factory MCP wiring', () => {
   it('binds the profile scopes and resource to the verifier and principal checks', async () => {
     const { test, key } = await initGrant()
-    expect(auth.mcp.issuer()).toBe(issuer)
-    expect(auth.mcp.resource().href).toBe(resource)
-    expect(auth.mcp.scopes()).toEqual({
-      'mcp:read': 'Read projects',
-      'mcp:write': 'Change projects',
-    })
     const token = await signAccessToken(key)
     await test.query(async (ctx) => {
-      const verified = await auth
-        .createMcpAccessVerifier(asCtx(ctx))
-        .verifyAccessToken(token, expected())
+      const door = auth.mcpAuthorization(asCtx(ctx))
+      expect(door.resource.href).toBe(resource)
+      expect(door.authorization.issuer).toBe(issuer)
+      const verified = await door.authorization.verifier.verifyAccessToken(token, expected())
       await expect(
         auth.requireMcpPrincipal(asCtx(ctx), verified.principal, { scope: 'mcp:write' }),
       ).resolves.toMatchObject({ user: { id: 'alice' } })
     })
+  })
+  // Plan section 7: logging out of the web app also disconnects the person's MCP hosts.
+  it('wires the MCP door in one call, and signing out disconnects the host', async () => {
+    const { test, key } = await initGrant()
+    const token = await signAccessToken(key)
+    const toolsList = () =>
+      test.query(async (ctx) => {
+        const response = await handleMcpRequest(
+          new Request(resource, {
+            method: 'POST',
+            headers: {
+              accept: 'application/json, text/event-stream',
+              authorization: `Bearer ${token}`,
+              'content-type': 'application/json',
+              'mcp-protocol-version': '2025-06-18',
+            },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+          }),
+          {
+            serverInfo: { name: 'Example', version: '1.0.0' },
+            ...auth.mcpAuthorization(asCtx(ctx)),
+            configureServer: ({ server }) => {
+              server.registerTool('ping', { description: 'Answers.' }, () => ({ content: [] }))
+            },
+          },
+        )
+        return response.status
+      })
+    expect(await toolsList()).toBe(200)
+    // Signing out deletes the Better Auth session that granted consent.
+    await test.mutation(adapter.deleteOne, {
+      model: 'session',
+      where: [{ field: 'id', value: 'alice-session' }],
+    })
+    expect(await toolsList()).toBe(401)
   })
 })

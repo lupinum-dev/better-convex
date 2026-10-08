@@ -5,6 +5,8 @@ import vue from '@vitejs/plugin-vue'
 import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vitest/config'
 
+import { mutantPlugin } from './test/mutants/plugin'
+
 // Keep package subpaths before the root alias; integration and E2E use the build.
 const vueSourceAliases = {
   '@lupinum/better-convex-vue/internal': fileURLToPath(
@@ -27,11 +29,45 @@ const vueSourceAliases = {
   ),
 }
 
+// The agents package and the functions package it builds on, from source. Subpath entries must
+// precede the root entry they extend.
+const agentsSourceAliases = {
+  '@lupinum/better-convex-functions/internal': fileURLToPath(
+    new URL('./packages/functions/src/internal.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-functions/policy': fileURLToPath(
+    new URL('./packages/functions/src/policy-entry.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-functions/test': fileURLToPath(
+    new URL('./packages/functions/src/test.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-functions': fileURLToPath(
+    new URL('./packages/functions/src/index.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-agents/internal': fileURLToPath(
+    new URL('./packages/agents/src/internal.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-agents/mcp': fileURLToPath(
+    new URL('./packages/agents/src/mcp.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-agents/test': fileURLToPath(
+    new URL('./packages/agents/src/test.ts', import.meta.url),
+  ),
+  '@lupinum/better-convex-agents': fileURLToPath(
+    new URL('./packages/agents/src/index.ts', import.meta.url),
+  ),
+}
+
+// `pnpm test:mutants` (BC_MUTANT=<id>) applies one mutant in memory. Without BC_MUTANT it does
+// nothing. Inline projects do not inherit root plugins, so each project a mutant row names lists it.
+const mutant = mutantPlugin(fileURLToPath(new URL('.', import.meta.url)))
+
 /**
  * Vitest projects
  *
- *   pnpm test              unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp
+ *   pnpm test              unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions, agents
  *   pnpm test:integration  real local Convex backend suites (test/integration)
+ *   pnpm test:live         the starter on a fresh Convex preview deployment (test/live)
  *   pnpm test:e2e          full-stack Nuxt suites (scripts/run-e2e.mjs, --full adds extended/)
  *
  * Prepare generated root types before an ad hoc project command:
@@ -49,9 +85,11 @@ export default defineConfig({
       // Fast (<1s). Use the prepared `pnpm test` gate, or prepare generated
       // root types before invoking this project directly.
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             ...vueSourceAliases,
+            ...agentsSourceAliases,
             '#app': fileURLToPath(new URL('./test/unit/shims/app.ts', import.meta.url)),
           },
         },
@@ -101,37 +139,101 @@ export default defineConfig({
       },
 
       // MCP package, starter and documentation-sample contracts. The real
-      // client journey runs in the integration project.
+      // client journey runs in the integration project. The tests of the starter and of
+      // the consumer apps (test/fixtures/consumers) run here from source, and in
+      // `pnpm test:starters` against the packed packages.
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             ...vueSourceAliases,
             '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
               new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
             ),
-            // The subpath entry must precede the root entry it extends.
-            '@lupinum/better-convex-mcp/test': fileURLToPath(
-              new URL('./packages/mcp/src/test.ts', import.meta.url),
+            '@lupinum/better-convex-nuxt/better-auth/test': fileURLToPath(
+              new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
             ),
-            '@lupinum/better-convex-mcp': fileURLToPath(
-              new URL('./packages/mcp/src/index.ts', import.meta.url),
-            ),
+            ...agentsSourceAliases,
           },
         },
         test: {
           name: 'mcp',
-          include: ['test/mcp/**/*.test.ts'],
+          include: [
+            'test/mcp/**/*.test.ts',
+            'starters/mcp-oauth-agent/convex/**/*.test.ts',
+            'test/fixtures/consumers/*/convex/**/*.test.ts',
+          ],
           environment: 'node',
           fileParallelism: false,
           testTimeout: 30_000,
         },
       },
 
+      // Functions package: row rules, policy, no-bypass, budgets and type tests against its
+      // fixture apps (packages/functions/test). convex-test runs here as in the skeleton.
+      {
+        plugins: [mutant],
+        resolve: {
+          alias: {
+            // The subpath entries must precede the root entry they extend.
+            '@lupinum/better-convex-functions/internal': fileURLToPath(
+              new URL('./packages/functions/src/internal.ts', import.meta.url),
+            ),
+            '@lupinum/better-convex-functions/test': fileURLToPath(
+              new URL('./packages/functions/src/test.ts', import.meta.url),
+            ),
+            '@lupinum/better-convex-functions': fileURLToPath(
+              new URL('./packages/functions/src/index.ts', import.meta.url),
+            ),
+          },
+        },
+        test: {
+          name: 'functions',
+          include: ['packages/functions/test/**/*.test.ts'],
+          environment: 'node',
+          testTimeout: 30_000,
+        },
+      },
+
+      // Agents package: tools, approvals, limits, activity and the MCP door against its fixture apps
+      // (packages/agents/test), through convex-test's HTTP router with the real MCP SDK and the real
+      // Better Auth component; only the door's token check is faked.
+      {
+        plugins: [mutant],
+        resolve: {
+          alias: {
+            // Test only: the fixtures run the real Better Auth component; packages/agents/src
+            // never imports the Nuxt package (scripts/check-boundaries.mjs).
+            '@lupinum/better-convex-nuxt/better-auth/test': fileURLToPath(
+              new URL('./src/runtime/convex-auth/test.ts', import.meta.url),
+            ),
+            '@lupinum/better-convex-nuxt/better-auth/server': fileURLToPath(
+              new URL('./src/runtime/convex-auth/index.ts', import.meta.url),
+            ),
+            ...agentsSourceAliases,
+          },
+        },
+        test: {
+          name: 'agents',
+          include: ['packages/agents/test/**/*.test.ts'],
+          environment: 'node',
+          testTimeout: 30_000,
+          // The auth issuer and approval links, and the MCP resource at convex-test's HTTP
+          // origin; nothing is called.
+          env: {
+            SITE_URL: 'https://placeholder.example',
+            CONVEX_SITE_URL: 'https://some.convex.site',
+          },
+        },
+      },
+
       // Security regressions, including the OAuth provider and resource-server suites.
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             ...vueSourceAliases,
+            ...agentsSourceAliases,
             '#app': fileURLToPath(new URL('./test/unit/shims/app.ts', import.meta.url)),
           },
         },
@@ -148,6 +250,7 @@ export default defineConfig({
       // Uses convex-test with edge-runtime
       // Fast (~5s) - run with `pnpm test`
       {
+        plugins: [mutant],
         resolve: {
           alias: {
             ...vueSourceAliases,
@@ -230,6 +333,21 @@ export default defineConfig({
           fileParallelism: false,
           testTimeout: 600_000,
           hookTimeout: 600_000,
+        },
+      },
+
+      // The cloud smoke: the MCP OAuth starter on a fresh Convex preview deployment
+      // (`pnpm test:live`, `.github/workflows/live.yml`). Outside `pnpm test` and `verify`:
+      // it needs a preview deploy key. BCN_LIVE_LOCAL=1 runs the same journey on the local backend.
+      {
+        test: {
+          name: 'live',
+          include: ['test/live/**/*.live.test.ts'],
+          environment: 'node',
+          globalSetup: ['test/live/global-setup.ts'],
+          fileParallelism: false,
+          testTimeout: 600_000,
+          hookTimeout: 900_000,
         },
       },
 

@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -203,10 +203,11 @@ describe('workspace package dependency direction', () => {
     directory: string,
     name: string,
     dependencies: Record<string, string> = {},
+    exports?: Record<string, string>,
   ) {
     return {
       directory,
-      manifest: { name, dependencies },
+      manifest: { name, dependencies, exports },
       name,
     }
   }
@@ -214,7 +215,8 @@ describe('workspace package dependency direction', () => {
   it('discovers the root and current workspace package ownership', () => {
     const packages = discoverWorkspacePackages()
     expect(packages.map((item) => item.name).sort()).toEqual([
-      '@lupinum/better-convex-mcp',
+      '@lupinum/better-convex-agents',
+      '@lupinum/better-convex-functions',
       '@lupinum/better-convex-nuxt',
       '@lupinum/better-convex-vue',
       'better-convex-nuxt-playground',
@@ -280,6 +282,74 @@ describe('workspace package dependency direction', () => {
           ],
         ),
       ).toEqual([])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  // The agents tests run the Nuxt package's Better Auth component through an alias; a source
+  // file, or a test that reaches a private path, must still declare the dependency.
+  it('lets a package test import another package’s public entry, and nothing else', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'bcn-workspace-test-import-'))
+    try {
+      const packageA = join(directory, 'packages/a')
+      const packageB = join(directory, 'packages/b')
+      const files = {
+        'src/index.ts': '@fixture/b/test',
+        'test/a.test.ts': '@fixture/b/test',
+        'test/b.test.ts': '@fixture/b/private',
+      }
+      for (const [file, specifier] of Object.entries(files)) {
+        mkdirSync(join(packageA, file, '..'), { recursive: true })
+        writeFileSync(join(packageA, file), `export * from '${specifier}'\n`)
+      }
+      const violations = findWorkspaceDependencyViolations(
+        Object.keys(files).map((file) => join(packageA, file)),
+        [
+          workspacePackage(packageA, '@fixture/a'),
+          workspacePackage(packageB, '@fixture/b', {}, { './test': './dist/test.mjs' }),
+        ],
+      )
+      expect(
+        violations.map(({ file, specifier }) => [relative(packageA, file!), specifier]),
+      ).toEqual([
+        ['src/index.ts', '@fixture/b/test'],
+        ['test/b.test.ts', '@fixture/b/private'],
+      ])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  // Package tests share the repository's test harness (test/mutants, test/auth-fuzz) by path.
+  it('lets a package test import another package’s tests by path, and nothing else', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'bcn-workspace-test-path-'))
+    try {
+      const packageA = join(directory, 'packages/a')
+      const packageB = join(directory, 'packages/b')
+      const files = {
+        'src/index.ts': '../../b/test/harness.js',
+        'test/a.test.ts': '../../b/test/harness.js',
+        'test/b.test.ts': '../../b/src/index.js',
+      }
+      for (const [file, specifier] of Object.entries(files)) {
+        mkdirSync(join(packageA, file, '..'), { recursive: true })
+        writeFileSync(join(packageA, file), `export * from '${specifier}'\n`)
+      }
+      for (const file of ['test/harness.ts', 'src/index.ts']) {
+        mkdirSync(join(packageB, file, '..'), { recursive: true })
+        writeFileSync(join(packageB, file), 'export const value = true\n')
+      }
+      const violations = findWorkspaceDependencyViolations(
+        Object.keys(files).map((file) => join(packageA, file)),
+        [workspacePackage(packageA, '@fixture/a'), workspacePackage(packageB, '@fixture/b')],
+      )
+      expect(
+        violations.map(({ file, specifier }) => [relative(packageA, file!), specifier]),
+      ).toEqual([
+        ['src/index.ts', '../../b/test/harness.js'],
+        ['test/b.test.ts', '../../b/src/index.js'],
+      ])
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

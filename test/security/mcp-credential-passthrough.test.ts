@@ -2,9 +2,8 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/mcp/src/handler'
-import type { McpAccessVerifier } from '../../packages/mcp/src/index'
-import { runMcpTool } from '../../packages/mcp/src/tools'
+import type { McpAccessVerifier } from '../../packages/agents/src/access'
+import { handleMcpRequest, type HandleMcpRequestOptions } from '../../packages/agents/src/handler'
 
 const resource = new URL('https://absence.example.test/mcp')
 const bearer = 'unique-raw-bearer-4f74c5c8'
@@ -62,7 +61,7 @@ describe('MCP credential passthrough absence', () => {
       serverInfo: { name: 'absence-proof', version: '0.1.0' },
       resource,
       authorization: { mode: 'oauth', issuer: oauthMetadata.issuer, verifier },
-      configureServer({ access, server }) {
+      configureServer({ access, server, tools }) {
         server.registerTool(
           'search_notes',
           {
@@ -89,7 +88,7 @@ describe('MCP credential passthrough absence', () => {
           (_input, extra) => {
             if (extra.http?.req) callbackHeaders.push(new Headers(extra.http.req.headers))
             callbackAuth.push(extra.http?.authInfo)
-            return runMcpTool(() => {
+            return tools.runTool('fail_safely', () => {
               throw new Error(`${bearer}:${providerReference}`)
             })
           },

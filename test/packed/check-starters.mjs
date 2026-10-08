@@ -1,8 +1,9 @@
-// Installs freshly packed local tarballs into temporary copies of every starter and
-// runs its typecheck, tests and production build, then runs the packed Vue, Nuxt and
-// MCP consumer apps in a browser. Nothing is fetched from npm for our own packages.
-// Run after `pnpm build:packages`.
-import { execFileSync } from 'node:child_process'
+// Installs freshly packed local tarballs into temporary copies of every starter and every
+// consumer app (test/fixtures/consumers), and runs its typecheck, declaration emit and tests.
+// Starters also run their production build; consumer apps have no Nuxt app to build. Then it
+// runs the packed Vue, Nuxt and MCP consumer apps in a browser. Nothing is fetched from npm
+// for our own packages. Run after `pnpm build`, which also writes the packaged agent docs.
+import { execFileSync, spawnSync } from 'node:child_process'
 import {
   copyFileSync,
   cpSync,
@@ -48,14 +49,20 @@ try {
     ]),
   )
   const exactPeers = Object.fromEntries(
-    [packed.nuxt, packed.mcp]
+    [packed.nuxt, packed.agents]
       .flatMap((manifest) => Object.entries(manifest.peerDependencies ?? {}))
       .filter(([, version]) => /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(version)),
   )
 
-  for (const name of readdirSync(join(root, 'starters'))) {
-    const source = join(root, 'starters', name)
-    if (!existsSync(join(source, 'package.json'))) continue
+  const apps = ['starters', 'test/fixtures/consumers'].flatMap((folder) =>
+    readdirSync(join(root, folder))
+      .map((name) => `${folder}/${name}`)
+      .filter((path) => existsSync(join(root, path, 'package.json'))),
+  )
+  for (const path of apps) {
+    const source = join(root, path)
+    const starter = path.startsWith('starters/')
+    const name = path.replaceAll('/', '-')
     const app = join(scratch, name)
     cpSync(source, app, {
       recursive: true,
@@ -80,15 +87,43 @@ try {
       "minimumReleaseAge: 1440\noverrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n",
     )
 
-    console.log(`\n=== starters/${name} with ${packed.nuxt.name}@${packed.nuxt.version} ===`)
+    console.log(`\n=== ${path} with ${packed.nuxt.name}@${packed.nuxt.version} ===`)
     run(
       'pnpm',
       ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
       app,
     )
     run('pnpm', ['run', 'typecheck'], app)
+    // An app with `declaration: true` (or project references) must be able to emit its Convex
+    // code: every type an exported function has must be nameable from a public entry (V5).
+    writeFileSync(
+      join(app, 'convex/tsconfig.declaration.json'),
+      JSON.stringify({
+        extends: './tsconfig.json',
+        compilerOptions: {
+          noEmit: false,
+          declaration: true,
+          emitDeclarationOnly: true,
+          outDir: join(scratch, `${name}-declarations`),
+        },
+        // Tests run under Vitest, with its types.
+        exclude: ['**/*.test.ts', '**/test.*.ts'],
+      }),
+    )
+    const emitted = spawnSync('pnpm', ['exec', 'tsc', '-p', 'convex/tsconfig.declaration.json'], {
+      cwd: app,
+      env,
+      encoding: 'utf8',
+    })
+    // In a starter, only types from our packages count: its own Better Auth plugins have
+    // unrelated ones. A consumer app has none, so every error counts.
+    const errors = emitted.stdout
+      .split('\n')
+      .filter((line) => /error TS/.test(line) && (!starter || /@lupinum\//.test(line)))
+    if (errors.length > 0 || (!starter && emitted.status !== 0))
+      throw new Error(`${path} cannot emit declarations:\n${errors.join('\n') || emitted.stdout}`)
     if (manifest.scripts?.test) run('pnpm', ['run', 'test'], app)
-    run('pnpm', ['run', 'build'], app, { NODE_ENV: 'production' })
+    if (starter) run('pnpm', ['run', 'build'], app, { NODE_ENV: 'production' })
   }
 
   const consumers = [
@@ -102,7 +137,13 @@ try {
       '--vue-tarball',
       tarballs.vue,
     ],
-    ['check-mcp-package-consumer.mjs', '--tarball', tarballs.mcp],
+    [
+      'check-agents-package-consumer.mjs',
+      '--tarball',
+      tarballs.agents,
+      '--functions-tarball',
+      tarballs.functions,
+    ],
   ]
   for (const [script, ...args] of consumers) {
     console.log(`\n=== ${script} ===`)

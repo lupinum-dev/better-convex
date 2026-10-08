@@ -84,6 +84,16 @@ export default createConfigForNuxt({
         ],
       },
     },
+    // The functions and agents packages type Convex's generic builders, references and databases, whose
+    // type parameters need `any` (`FunctionReference<any, 'internal'>`); `{}` is the identity of
+    // the conditional intersections that build each context type.
+    {
+      files: ['packages/functions/**/*.ts', 'packages/agents/**/*.ts'],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+        '@typescript-eslint/no-empty-object-type': 'off',
+      },
+    },
     // Allow self-closing void elements (matches oxcformat behavior)
     {
       files: ['**/*.vue'],

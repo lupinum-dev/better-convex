@@ -192,6 +192,13 @@ function requestProxy(
     headers?: Record<string, string>
     method?: string
     slowChunks?: Buffer[]
+    /**
+     * Writes these chunks, then waits for the response without ending the request.
+     * A server that refuses a body closes the connection without reading the rest,
+     * and the client's next write fails with EPIPE before it reads the response.
+     * So, as RFC 9112 asks of clients, send only what the server must read to decide.
+     */
+    chunksBeforeResponse?: Buffer[]
   } = {},
 ): Promise<WireResponse> {
   const target = new URL(url('/'))
@@ -208,6 +215,7 @@ function requestProxy(
         const chunks: Buffer[] = []
         response.on('data', (chunk: Buffer) => chunks.push(chunk))
         response.on('end', () => {
+          if (options.chunksBeforeResponse) request.destroy()
           resolve({
             body: Buffer.concat(chunks),
             headers: response.headers,
@@ -227,6 +235,12 @@ function requestProxy(
         }
         request.end()
       })()
+      return
+    }
+
+    if (options.chunksBeforeResponse) {
+      request.flushHeaders()
+      for (const chunk of options.chunksBeforeResponse) request.write(chunk)
       return
     }
 
@@ -604,18 +618,18 @@ describe('auth proxy direct Node/Nitro raw-wire hardening matrix', async () => {
 
   it('rejects declared and chunked limit-plus-one bodies before upstream delivery', async () => {
     const start = capturedRequests.length
-    const overLimit = Buffer.alloc(BODY_LIMIT + 1, 7)
-
+    // No body byte: the declared length alone must be refused.
     const declared = await requestProxy('/api/auth/_capture?case=declared-over', {
-      body: overLimit,
-      headers: { 'content-length': String(overLimit.byteLength) },
+      chunksBeforeResponse: [],
+      headers: { 'content-length': String(BODY_LIMIT + 1) },
       method: 'POST',
     })
     expect(declared.status).toBe(413)
     expect(declared.headers['cache-control']).toBe('private, no-store')
 
+    // Exactly the limit, then one more byte in a second chunk; no terminating chunk.
     const chunked = await requestProxy('/api/auth/_capture?case=chunked-over', {
-      body: overLimit,
+      chunksBeforeResponse: [Buffer.alloc(BODY_LIMIT, 7), Buffer.alloc(1, 7)],
       method: 'POST',
     })
     expect(chunked.status, chunked.body.toString()).toBe(413)

@@ -68,9 +68,9 @@ Better Auth establishes identity. Convex functions still enforce every
 authorization rule from canonical backend state.
 
 Delegated MCP traffic enters the deployment-owned Convex HTTP Action directly.
-The official-SDK-backed `@lupinum/better-convex-mcp` handler is the only bearer verifier;
-the Nuxt package owns no MCP relay or protocol parser. Explicit application tool
-registrations map to named internal operations. Each effect recomputes access
+The official-SDK-backed handler in `@lupinum/better-convex-agents/mcp` is the only bearer verifier;
+the Nuxt package owns no MCP relay or protocol parser. Each tool maps to one named internal
+function: an operation's tool from `defineTools`, or an explicit application registration. Each effect recomputes access
 from current provider and application state; token scopes are only a ceiling.
 
 ## Query lifecycle

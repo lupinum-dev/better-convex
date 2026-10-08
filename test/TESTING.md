@@ -12,6 +12,8 @@ test/
 ├── nuxt/          Composables in the Nuxt runtime (happy-dom)
 ├── browser/       Component rendering in Chromium
 ├── integration/   Real local Convex backend suites (+ check-auth-schema.mjs)
+├── live/          Cloud smoke: the starter on a fresh Convex preview deployment
+├── mutants/       The mutation check: table, transform and runner
 ├── packed/        Packed-tarball tests: exports, secrets, starters, Vue/Nuxt/MCP consumer apps
 ├── e2e/           Full-stack Nuxt suites; extended/ runs with --full
 ├── helpers/       Shared harnesses, including the pinned backend (local-backend.mjs)
@@ -19,18 +21,32 @@ test/
 ```
 
 `playground/convex/*.test.ts` and `demo/convex/*.test.ts` run in the `convex` project.
+`packages/functions/test` and `packages/agents/test` are the `functions` and
+`agents` projects. The starter's tests (`starters/mcp-oauth-agent/convex`) run
+in the `mcp` project, and in `pnpm test:starters` from the packed tarballs.
+
+`test/fixtures/consumers/` holds four small apps on the functions and agents
+packages: agency, content, marketplace and site checks. Each has one journey and
+one leak table. Their tests run in the `mcp` project from source, and in
+`pnpm test:starters` from the packed tarballs.
 
 The `pnpm test` suites import the Vue package from source; packed checks use the build.
 
 ## Commands
 
 ```bash
-pnpm test               # unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp
+pnpm test               # unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions, agents
 pnpm test:integration   # real local Convex backend (builds the packages first)
 pnpm test:e2e           # full-stack E2E; `node scripts/run-e2e.mjs --full` adds extended/
 pnpm test:packed        # after `pnpm build`: publint, attw, packed imports, secret scan, consumer typechecks
-pnpm test:starters      # every starter and the packed Vue/Nuxt/MCP consumer apps, from local tarballs
+pnpm test:starters      # every starter, the consumer apps and the packed Vue/Nuxt/MCP consumers, from local tarballs
+pnpm test:mutants       # each security guard broken in memory; `--only <id>[,<id>]` for some rows, `--shard 1/3` for a part
+pnpm test:live          # by hand: the starter on a Convex preview deployment (see "Cloud smoke")
 ```
+
+`pnpm test:live` is outside `pnpm test` and `pnpm verify`. A plain
+`vitest run` without `--project` also runs `live`, which fails without its
+environment.
 
 Run one project or file after `pnpm exec nuxt-module-build prepare`:
 
@@ -68,6 +84,12 @@ functions from `test/fixtures/mcp-oauth-agent/evidence.ts`.
 - `oauth-code`: a concurrent double redemption has one winner; replay,
   wrong PKCE, another client, a wrong Basic secret and a post-consume signing
   fault burn the code without persisting a token; no credential in browser storage.
+- `mcp-sizes`: the door's 1 MiB response limit (found by search, for each kind of
+  escaped character and a very long JSON-RPC id: whole just under, the marker just
+  over, never HTTP 502), a write that retries after an oversized result, an
+  approval document of exactly 256 KiB (and one byte more), the stored result limit
+  and the 20 open requests. The limits are read from the product source; the starter
+  copy gets three test-only tools.
 - `oauth-transport-quota`: authorize/token/revoke quotas shared across the Nuxt
   proxy and direct Convex HTTP per signed client IP; forged IP pairs; disabled
   OAuth routes; hardened login and consent pages.
@@ -93,7 +115,7 @@ pinned version, then configure it and run with auto-start off:
 
 ```bash
 cd playground
-pnpm exec convex dev --local-backend-version precompiled-2026-07-06-44f7aa7
+pnpm exec convex dev --local-backend-version <backendVersion in test/helpers/local-backend.json>
 # in another terminal
 pnpm exec better-convex convex env set SITE_URL http://localhost:3050
 printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
@@ -153,9 +175,122 @@ both checks. See `test/convex/auth-site-origins.test.ts`.
 5. Avoid fixed sleeps in `test/nuxt` and `test/browser`.
 6. Assert behavior, not source text. A static source check is fine only when it
    cheaply guards a security boundary in code users copy (starters, samples).
+7. A guarantee of an operation (deny, row rules, limit, audit, error masking)
+   is tested on every entry path where its contract applies: public call,
+   internal call from an action, scheduled, `ctx.runMutation`, MCP door, in-app
+   agent, `runTool`, approved run. The tables are in
+   `packages/functions/test/doors.test.ts` and `packages/agents/test/doors.test.ts`.
+   A new guarantee gets a table; a new path gets a row in every table. Every
+   table has one cell that succeeds, so a setup that refuses everything fails.
+8. A batched job or a scan is tested with more data than its limits: more rows
+   than one batch in every table, several tables sharing one step's read
+   budget, other people's rows before the relevant ones, and a few documents
+   near 1 MiB. Run it to the end with `drain(t, { maxSteps })` from
+   `test/helpers/drain.ts`; it fails when the work needs more steps than the
+   literal bound (a loop that makes no progress) or a scheduled step failed.
+   Byte limits are tested on the real backend (`mcp-sizes`).
+9. A check that reports problems (`launchProblems`, definition errors) has one
+   valid fixture and variants one change away from it. Each variant asserts
+   its exact problem, and undoing the change clears it. Invalid input never
+   grants anything: bad-value tables assert the exact promised outcome (a
+   throw, a refusal or a request for approval).
 
 ## Regression workflow
 
 1. Reproduce with a failing test in the right tier.
-2. Fix the bug.
-3. Keep the test.
+2. Write a passing test for the valid case next to the bug: what the old code
+   got right must keep working.
+3. Fix the bug.
+4. Keep both tests.
+5. For a security guard, add a row to `test/mutants/mutants.ts` whose `kills`
+   names the test, and prove it with `pnpm test:mutants --only <id>`.
+
+## Mutation check
+
+`test/mutants/mutants.ts` has one row per security guard: the file, a one-line
+break (`find` and `replace`), and the tests that must fail (`kills`) in the
+named vitest `projects`. `pnpm test:mutants` runs a baseline, then each row
+with `BC_MUTANT=<id>`. The Vite transform in `test/mutants/plugin.ts` applies
+the row in memory as the file loads; nothing is written to the working tree.
+The type tests and the integration harness apply the row to their own copies.
+
+A row fails when `find` does not match exactly once, when a `kills` test
+passes, or when a `kills` test does not run. A full run also fails when an
+invariant in `internal/functions-and-agents/plan.md` section 6 has no row. A
+break that no test can see goes into `equivalents`, with the reason. Never edit
+a source file on disk to try a mutant.
+
+The four `integration` rows (the approval link page) start the starter with
+`nuxt dev` on the local backend, so each one takes about 80 seconds.
+
+## Cloud smoke
+
+`pnpm test:live` runs one journey on the MCP OAuth starter in the cloud: sign
+up, PKCE consent, `tools/list`, `create_project` twice with one `request_id`
+(one row), `archive_project` approved with the person's own session, a body of
+64 KiB + 1 byte and one of 3 MiB (413, never 5xx), and sign-out (then 401). It
+checks what the local backend cannot: the cloud runtime, the edge in front of
+`.convex.site`, and that the built packages deploy.
+
+The run copies the starter with the built packages and the operator-only
+functions of `test/fixtures/mcp-oauth-agent/evidence.ts`, runs
+`convex deploy --preview-create <name>`, sets `SITE_URL`, `BETTER_AUTH_SECRETS`
+and `BCN_AUTH_PROXY_IP_SECRET` (random for each run), and starts the starter's
+Nuxt server on this machine against the deployment. Convex deletes old preview
+deployments on its own.
+
+| Variable                | Value                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| `CONVEX_DEPLOY_KEY`     | A preview deploy key of the dedicated live project. Other kinds (`prod:`, `dev:`, …) are refused.      |
+| `BCN_LIVE_PREVIEW_NAME` | Optional: the name of the preview deployment. Default: `bcn-live-local-<random>`.                      |
+| `BCN_LIVE_LOCAL=1`      | Without a deploy key: the same journey on the pinned local backend. It checks the test, not the cloud. |
+
+```bash
+CONVEX_DEPLOY_KEY=… BCN_LIVE_PREVIEW_NAME=bcn-live-mine pnpm test:live
+BCN_LIVE_LOCAL=1 pnpm test:live
+```
+
+Load the key into the shell from a password manager; do not type it on a
+shared machine. In CI, `.github/workflows/live.yml` runs the smoke by hand
+(`workflow_dispatch`) in the protected `live` environment, with the secret
+`CONVEX_PREVIEW_DEPLOY_KEY` and the name `bcn-live-<run id>`.
+
+## Manual host checklist
+
+Only when a release changes the MCP door (`packages/agents/src`), OAuth
+discovery or the auth proxy. About 10 minutes. Write pass or fail in the
+release PR.
+
+1. Deploy the starter to a preview deployment as the cloud smoke does, and
+   start its Nuxt server.
+2. Connect Claude Code to `<CONVEX_SITE_URL>/mcp`. Sign in and consent.
+3. List the tools: the six starter tools are there.
+4. Call one read tool (`search_projects`) and one write tool (`create_project`).
+5. Call `archive_project`, open the link that the tool returns, and approve in
+   the browser. Then let the host call `check_approval`: it says `approved`.
+
+## Vercel check
+
+Only when a release changes the auth proxy, site origins or client-IP code.
+About 15 minutes.
+
+1. Deploy the starter to a Vercel preview against a Convex preview deployment.
+2. Make one MCP call through the proxy: sign in, consent, `search_projects`.
+3. Send sign-in requests with a forged `x-real-ip`. The rate-limit bucket must
+   not change: Vercel sets that header, a client cannot choose it.
+
+## Release checklist
+
+On the release SHA: the head of the Version packages PR, which is what merges
+and publishes.
+
+1. CI `ci` is green on that SHA, mutants included.
+2. The `live` workflow is green on that SHA: run it on the branch
+   `changeset-release/main`. About 2 minutes of attention.
+3. Only if the MCP door, OAuth discovery or proxy files changed since the last
+   release: the manual host checklist. About 10 minutes.
+4. Only if auth-proxy, site-origin or client-IP code changed: the Vercel
+   check. About 15 minutes.
+
+Walk `internal/functions-and-agents/review-checklist.md` in PR review, where a
+finding can still change the PR, not at release.

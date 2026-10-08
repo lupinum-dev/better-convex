@@ -7,10 +7,20 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes, randomInt } from 'node:crypto'
 import { once } from 'node:events'
-import { copyFile, cp, mkdir, mkdtemp, readFile, realpath, rm, symlink } from 'node:fs/promises'
+import {
+  copyFile,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import type { BrowserContext, Page } from 'playwright'
@@ -20,6 +30,7 @@ import {
   startLocalConvexBackend,
   type LocalConvexBackend,
 } from '../helpers/local-convex'
+import { activeMutant, applyMutant } from '../mutants/plugin'
 
 export { cleanLocalConvexEnvironment as cleanEnvironment } from '../helpers/local-convex'
 
@@ -192,20 +203,31 @@ export async function linkDependencies(cwd: string) {
   ]) {
     for (const name of Object.keys(group ?? {})) names.add(name)
   }
-  names.delete('@lupinum/better-convex-nuxt')
+  for (const name of copiedPackages.keys()) names.delete(name)
   for (const name of [...names].sort()) {
     const destination = join(modules, name)
     await mkdir(dirname(destination), { mode: 0o700, recursive: true })
     await symlink(await realpath(join(root, 'node_modules', name)), destination, 'dir')
   }
-  // Install the built package as a copy, the way a consumer receives it.
-  const installed = join(modules, '@lupinum/better-convex-nuxt')
-  await mkdir(installed, { mode: 0o700 })
-  await Promise.all([
-    cp(join(root, 'dist'), join(installed, 'dist'), { recursive: true }),
-    cp(join(root, 'package.json'), join(installed, 'package.json')),
-  ])
+  // Install the built packages as copies, the way a consumer receives them. A
+  // symlink into the workspace would also expose a package's own tsconfig.json,
+  // whose `paths` make Convex's bundler load the agents package's import of the
+  // functions package from source: a second copy, which rejects `fns`.
+  for (const [name, source] of copiedPackages) {
+    const installed = join(modules, name)
+    await mkdir(installed, { mode: 0o700, recursive: true })
+    await Promise.all([
+      cp(join(source, 'dist'), join(installed, 'dist'), { recursive: true }),
+      cp(join(source, 'package.json'), join(installed, 'package.json')),
+    ])
+  }
 }
+
+const copiedPackages = new Map([
+  ['@lupinum/better-convex-nuxt', root],
+  ['@lupinum/better-convex-functions', join(root, 'packages/functions')],
+  ['@lupinum/better-convex-agents', join(root, 'packages/agents')],
+])
 
 /** Start an independently configured Nuxt app against an existing local backend. */
 export async function startNuxtServer(
@@ -248,6 +270,43 @@ export async function startNuxtServer(
   }
 }
 
+/**
+ * Copies the MCP OAuth starter to `cwd` with the built packages and the operator-only test
+ * functions (`convex/evidence.ts`, never part of the starter).
+ */
+export async function prepareStarterCopy(cwd: string) {
+  const skipped = new Set(['.convex', '.env.local', '.nuxt', '.output', 'node_modules'])
+  await cp(starter, cwd, {
+    filter: (source) => source === starter || !skipped.has(basename(source)),
+    recursive: true,
+  })
+  // `pnpm test:mutants`: a row in a starter file applies to this copy, which `nuxt dev` serves.
+  const row = activeMutant()
+  if (row?.file.startsWith('starters/mcp-oauth-agent/')) {
+    const file = join(cwd, relative('starters/mcp-oauth-agent', row.file))
+    await writeFile(file, applyMutant(row, await readFile(file, 'utf8')))
+  }
+  await linkDependencies(cwd)
+  await copyFile(evidenceFunctions, join(cwd, 'convex/evidence.ts'))
+}
+
+/** Signs up the fixture user through the app's auth route. */
+export async function signUpFixtureUser(
+  origin: string,
+  email: string,
+  password: string,
+  headers: Record<string, string> = {},
+) {
+  const signUp = await fetch(`${origin}/api/auth/sign-up/email`, {
+    body: JSON.stringify({ email, name: 'MCP Gate', password }),
+    headers: { 'content-type': 'application/json', origin, ...headers },
+    method: 'POST',
+    redirect: 'manual',
+  })
+  await signUp.body?.cancel().catch(() => {})
+  if (signUp.status !== 200) throw new Error(`Fixture user creation failed with ${signUp.status}`)
+}
+
 export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<McpFixture> {
   const tempRoot = await mkdtemp(join(tmpdir(), 'bcn-mcp-fixture-'))
   const cwd = join(tempRoot, 'app')
@@ -270,14 +329,7 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
   }
 
   try {
-    const skipped = new Set(['.convex', '.env.local', '.nuxt', '.output', 'node_modules'])
-    await cp(starter, cwd, {
-      filter: (source) => source === starter || !skipped.has(basename(source)),
-      recursive: true,
-    })
-    await linkDependencies(cwd)
-    // Operator-only test functions stay out of the starter; install them into this copy.
-    await copyFile(evidenceFunctions, join(cwd, 'convex/evidence.ts'))
+    await prepareStarterCopy(cwd)
     const clientIp = (await import(
       pathToFileURL(
         join(cwd, 'node_modules/@lupinum/better-convex-nuxt/dist/runtime/shared/client-ip.js'),
@@ -360,18 +412,7 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
       return fetch(origin, { redirect: 'manual' }).then((response) => response.status === 200)
     }, 'the Nuxt MCP starter')
 
-    const signUp = await fetch(`${origin}/api/auth/sign-up/email`, {
-      body: JSON.stringify({ email, name: 'MCP Gate', password }),
-      headers: {
-        'content-type': 'application/json',
-        origin,
-        ...(trusted ? { [trusted]: '127.0.0.1' } : {}),
-      },
-      method: 'POST',
-      redirect: 'manual',
-    })
-    await signUp.body?.cancel().catch(() => {})
-    if (signUp.status !== 200) throw new Error(`Fixture user creation failed with ${signUp.status}`)
+    await signUpFixtureUser(origin, email, password, trusted ? { [trusted]: '127.0.0.1' } : {})
 
     const runConvex = async (functionName: string, args: JsonRecord = {}) => {
       const output = await runCli(['run', functionName, JSON.stringify(args)])
@@ -436,7 +477,7 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
 }
 
 /** Operator-provisioned OAuth clients for the fixture user (never over HTTP). */
-export async function provisionClients(fixture: McpFixture) {
+export async function provisionClients(fixture: Pick<McpFixture, 'email' | 'runConvex'>) {
   const profile = await fixture.runConvex('evidence:provision', { email: fixture.email })
   if (!isRecord(profile) || !isRecord(profile.clients)) throw new Error('Invalid OAuth profile')
   return {
@@ -454,6 +495,68 @@ export async function signIn(context: BrowserContext, fixture: McpFixture): Prom
   })
   if (!response.ok()) throw new Error(`Fixture sign-in failed with ${response.status()}`)
 }
+
+// ---------- MCP over HTTP ----------
+
+export const MCP_PROTOCOL_VERSION = '2026-07-28'
+
+export interface McpResponse {
+  status: number
+  body: JsonRecord
+  challenge: string | null
+  /** The size of the response body in bytes, as sent. */
+  bytes: number
+}
+
+/** One 2026-era MCP request, as a host sends it. */
+export async function postMcp(
+  resource: string,
+  accessToken: string,
+  message: JsonRecord,
+): Promise<McpResponse> {
+  const params = isRecord(message.params) ? message.params : {}
+  const response = await fetch(resource, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...message,
+      params: {
+        ...params,
+        _meta: {
+          'io.modelcontextprotocol/clientCapabilities': {},
+          'io.modelcontextprotocol/clientInfo': {
+            name: 'better-convex-integration',
+            version: '1.0.0',
+          },
+          'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
+        },
+      },
+    }),
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+      'mcp-method': String(message.method),
+      ...(typeof params.name === 'string' ? { 'mcp-name': params.name } : {}),
+      'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+    },
+  })
+  const text = await response.text()
+  const body = JSON.parse(text) as unknown
+  return {
+    status: response.status,
+    body: isRecord(body) ? body : {},
+    challenge: response.headers.get('www-authenticate'),
+    bytes: Buffer.byteLength(text),
+  }
+}
+
+export const toolCall = (id: string, name: string, args: JsonRecord) => ({
+  id,
+  jsonrpc: '2.0',
+  method: 'tools/call',
+  params: { arguments: args, name },
+})
+export const toolsList = (id: string) => ({ id, jsonrpc: '2.0', method: 'tools/list', params: {} })
 
 // ---------- OAuth ----------
 

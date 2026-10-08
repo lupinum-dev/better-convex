@@ -1,0 +1,37 @@
+name: live
+
+# The cloud smoke (test/live): the MCP OAuth starter on a fresh Convex preview deployment of the
+# dedicated live project. Run it by hand on the release SHA, the head of the Version packages PR
+# (test/TESTING.md, release checklist). The `live` environment is protected and holds the preview
+# deploy key; no other workflow can read it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: live
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:live
+        env:
+          # A preview deploy key. test/live/target.ts refuses any other kind.
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
+          BCN_LIVE_PREVIEW_NAME: bcn-live-${{ github.run_id }}

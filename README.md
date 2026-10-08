@@ -31,7 +31,7 @@ Better Convex is a set of composables and helpers, not a framework. It does not 
 
 ## When to use it
 
-Use `@lupinum/better-convex-nuxt` in a Nuxt 4 application. Use `@lupinum/better-convex-vue` in a Vue application without Nuxt, for example a Vite single-page application. Use `@lupinum/better-convex-mcp` to serve an MCP endpoint from a Convex HTTP action.
+Use `@lupinum/better-convex-nuxt` in a Nuxt 4 application. Use `@lupinum/better-convex-vue` in a Vue application without Nuxt, for example a Vite single-page application. Use `@lupinum/better-convex-agents` to let MCP hosts and agents call your Convex functions.
 
 Better Convex does not decide who may read or change data. Check the user, ownership, membership, and roles in every Convex function. Route middleware and hidden buttons do not protect data.
 
@@ -161,13 +161,14 @@ Follow the [add authentication](https://better-convex.lupinum.com/docs/get-start
 
 ## Packages
 
-| Package                       | Use it for                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------ |
-| `@lupinum/better-convex-nuxt` | Nuxt: server rendering, Nitro calls, file uploads, DevTools, and Better Auth.  |
-| `@lupinum/better-convex-vue`  | Vue without Nuxt: queries, mutations, actions, forms, uploads, and errors.     |
-| `@lupinum/better-convex-mcp`  | An MCP endpoint in a Convex HTTP action, for hosts such as ChatGPT and Claude. |
+| Package                            | Use it for                                                                    |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| `@lupinum/better-convex-nuxt`      | Nuxt: server rendering, Nitro calls, file uploads, DevTools, and Better Auth. |
+| `@lupinum/better-convex-vue`       | Vue without Nuxt: queries, mutations, actions, forms, uploads, and errors.    |
+| `@lupinum/better-convex-functions` | Optional: one policy and one row rule per table for every Convex function.    |
+| `@lupinum/better-convex-agents`    | Tools, approvals and an MCP endpoint for hosts such as ChatGPT and Claude.    |
 
-The MCP package is separate. Installing the Nuxt or Vue package does not start an MCP server.
+The agents package is separate. Installing the Nuxt or Vue package does not start an MCP server.
 
 <!-- BEGIN:consumer-onboarding -->
 

@@ -1,7 +1,15 @@
-import type { H3Event } from 'h3'
+import { appendResponseHeader, type H3Event } from 'h3'
 
 import { ConvexCallError } from '../../errors'
-import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
+import { getSessionCookieFlagViolation } from '../../shared/auth-cookie'
+import {
+  deduplicateSetCookies,
+  filterBetterAuthCookies,
+  getBetterAuthSessionToken,
+  getSetCookieName,
+  hasSetCookieDomainAttribute,
+  isBetterAuthSetCookie,
+} from '../../utils/shared-helpers'
 import { normalizeConvexSiteUrl } from '../../utils/site-url'
 import { readEventConvexConfig } from './event-context'
 import { fetchWithTimeout, MAX_SERVER_AUTH_RESPONSE_BODY_BYTES, readBoundedJson } from './http'
@@ -12,6 +20,7 @@ import {
   ServerConvexValidationError,
 } from './server-convex-options'
 import { buildSignedClientIpHeaders, buildSignedPublicOriginHeaders } from './signed-client-ip'
+import { applyConvexAuthSsrHeaders } from './ssr-auth-headers'
 
 /** Better Auth HTTP endpoint that mints a Convex JWT from a session cookie. */
 const TOKEN_EXCHANGE_PATH = '/api/auth/convex/token'
@@ -40,6 +49,11 @@ interface RequestBoundTokenExchangeInput {
   credential: ConvexCredential
   trustedClientIpHeader: string
   timeoutMs?: number
+  /**
+   * The credential is the cookie this event's own request presented, so a
+   * session renewal the exchange triggers belongs on this event's response.
+   */
+  renewsRequestSession?: boolean
 }
 
 /** Extract a non-empty string `token` field from a parsed exchange body. */
@@ -100,11 +114,13 @@ export function exchangeConvexToken(
       })
       const auth = readEventConvexConfig(input.event).auth
       const originHeaders = auth ? await buildSignedPublicOriginHeaders(auth.origin) : {}
-      return await runTokenExchange(input, {
-        ...clientIpHeaders,
-        ...originHeaders,
-        Cookie: cookieHeader,
-      })
+      return await runTokenExchange(
+        input,
+        { ...clientIpHeaders, ...originHeaders, Cookie: cookieHeader },
+        input.renewsRequestSession
+          ? (setCookies) => forwardSessionRenewal(input.event, setCookies)
+          : undefined,
+      )
     } catch {
       return tokenExchangeTransportFailure()
     }
@@ -123,9 +139,32 @@ function tokenExchangeTransportFailure(): ConvexTokenExchangeResult {
   }
 }
 
+/**
+ * Carry the Better Auth cookies of an exchange response to the browser. The
+ * token route extends a session past its update age and renews the session
+ * cookie; without this the browser cookie keeps its old expiry and lapses while
+ * the stored session lives on. Only supported host-only Better Auth cookies with
+ * the required flags pass, and a response carrying them is private to its
+ * cookie holder. Prerendering has no request cookie, and Nitro's route cache
+ * drops it unless a rule varies on Cookie, so neither runs an exchange; a cache
+ * that varies on Cookie replays the renewal only to the same cookie holder.
+ */
+function forwardSessionRenewal(event: H3Event, setCookies: readonly string[]): void {
+  const cookies = deduplicateSetCookies(setCookies).filter(
+    (cookie) =>
+      isBetterAuthSetCookie(cookie) &&
+      !hasSetCookieDomainAttribute(cookie) &&
+      getSessionCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '') === null,
+  )
+  if (cookies.length === 0 || event.node.res.headersSent) return
+  for (const cookie of cookies) appendResponseHeader(event, 'set-cookie', cookie)
+  applyConvexAuthSsrHeaders(event, { hasBetterAuthCookie: true, rendersUser: false })
+}
+
 async function runTokenExchange(
   input: { siteUrl: string; timeoutMs?: number },
   headers: Record<string, string>,
+  onSetCookies?: (setCookies: readonly string[]) => void,
 ): Promise<ConvexTokenExchangeResult> {
   try {
     const response = await fetchWithTimeout(
@@ -137,6 +176,7 @@ async function runTokenExchange(
         timeoutMs: input.timeoutMs ?? DEFAULT_TOKEN_EXCHANGE_TIMEOUT_MS,
       },
     )
+    onSetCookies?.(response.headers.getSetCookie())
     if (!response.ok) {
       await response.body?.cancel().catch(() => {})
       const rejected = response.status === 401 || response.status === 403

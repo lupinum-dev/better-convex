@@ -228,7 +228,12 @@ function resolveSchemaTarball(isolatedRoot, parent) {
   const artifacts = path.join(parent, 'artifacts')
   mkdirSync(artifacts, { recursive: true })
   // pnpm pack turns the `workspace:*` Vue dependency into its exact version, as a release does.
-  output('pnpm', ['pack', '--pack-destination', artifacts], isolatedRoot)
+  // This gate builds no docs, so it skips the prepack check for the packaged agent docs.
+  output(
+    'pnpm',
+    ['pack', '--config.ignore-scripts=true', '--pack-destination', artifacts],
+    isolatedRoot,
+  )
   const packed = readdirSync(artifacts).filter((name) => name.endsWith('.tgz'))
   if (packed.length !== 1) fail('schema gate pack was not singular')
   const tarball = path.join(artifacts, packed[0])

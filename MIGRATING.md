@@ -25,15 +25,44 @@ If you already run the release candidate, check only these:
       `oauthProvider`). Remove `BETTER_AUTH_TRUSTED_ORIGINS`.
 - [ ] Component tests: a mutation that passes `optimisticUpdate` now fails.
 - [ ] Local auth component: regenerate the schema and export `pruneRateLimits`.
+- [ ] MCP: `@lupinum/better-convex-mcp` is now `@lupinum/better-convex-agents`.
+      Install `@lupinum/better-convex-agents@next` and
+      `@lupinum/better-convex-functions@next` (a peer), remove
+      `@lupinum/better-convex-mcp`, and import `handleMcpRequest`,
+      `projectMcpToolError` and the verifier types from
+      `@lupinum/better-convex-agents/mcp`, `listMcpCatalog` too. Install
+      `@modelcontextprotocol/server@2.2.0` (rc.1 used `2.1.0`), and for MCP
+      Apps `@modelcontextprotocol/client@2.2.0` and
+      `@modelcontextprotocol/core@2.2.0`.
+- [ ] MCP: `defineMcpTool` and `registerMcpTool` are removed. With
+      `@lupinum/better-convex-functions`, give the operation a `tool` field and
+      collect the tools with `defineTools`; serve them with `createMcpServer`
+      from `@lupinum/better-convex-agents/mcp`. Without it, register the tool
+      with `server.registerTool(name, config, callback)`: `risk` becomes
+      `annotations`, `scopes` becomes `scopeChallenge: tools.requireScopes(...)`.
+- [ ] MCP: `runMcpTool(operation, { name })` is removed. Use
+      `tools.runTool(name, operation)` inside `configureServer`.
+- [ ] MCP without `defineFunctions` (your own `handleMcpRequest` and
+      `server.registerTool` calls, as in ginko-cms): install
+      `@lupinum/better-convex-functions@next` anyway, at the same version as
+      the agents package; it is a required peer. Then replace each
+      `runMcpTool(operation, { name })` with `tools.runTool(name, operation)`,
+      where `tools` comes from the `configureServer` argument.
+- [ ] MCP: `auth.mcp` is removed. Spread `auth.mcpAuthorization(ctx)` into the
+      `handleMcpRequest` options instead of passing `auth.mcp.resource()`,
+      `auth.mcp.issuer()` and `auth.mcp.scopesSupported()`. Leave `resource`
+      out of `auth.oauthOperator.createPublicClient`: the client is then bound
+      to the MCP resource.
 
 ## Packages and data
 
 - [ ] Install `@lupinum/better-convex-nuxt@next` (or
-      `@lupinum/better-convex-vue@next`) and, with MCP, `@lupinum/better-convex-mcp@next`.
+      `@lupinum/better-convex-vue@next`) and, with MCP, `@lupinum/better-convex-agents@next`
+      and `@lupinum/better-convex-functions@next` (they replace `@lupinum/better-convex-mcp`).
       The `next` dist-tag is the 1.0 release candidate.
 - [ ] With auth, install `better-auth`, `@better-auth/core`, and
       `@better-auth/oauth-provider` at exactly `1.7.6`, even without MCP.
-- [ ] With MCP, install `@modelcontextprotocol/server@2.1.0`; MCP Apps use
+- [ ] With MCP, install `@modelcontextprotocol/server@2.2.0`; MCP Apps use
       `@modelcontextprotocol/ext-apps` `2.x`.
 - [ ] The auth component `account` table is keyed by `(providerId, accountId)`.
       Beta account rows keep their retired `issuer` column (optional, never
@@ -172,7 +201,7 @@ If you already run the release candidate, check only these:
       `renewal: false`; beta tokens without it are rejected and hosts sign in
       again. Disabling an OAuth resource rejects tokens already issued.
 - [ ] Install the MCP SDK yourself; it is an exact peer:
-      `pnpm add @lupinum/better-convex-mcp@next @modelcontextprotocol/server@2.1.0`.
+      `pnpm add @lupinum/better-convex-agents@next @lupinum/better-convex-functions@next @modelcontextprotocol/server@2.2.0`.
 - [ ] Internal MCP functions take `principal: mcpPrincipalValidator` and call
       `auth.requireMcpPrincipal(ctx, principal, { scope })`.
 - [ ] Requests without the `MCP-Protocol-Version` header get HTTP `400`.

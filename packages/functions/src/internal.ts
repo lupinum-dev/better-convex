@@ -1,0 +1,34 @@
+/**
+ * What `@lupinum/better-convex-agents` and the in-app agent runtime need from
+ * this package, and nothing else: the internals `defineFunctions` hands to
+ * `defineTools`, the operation and guard markers, and the actor and value
+ * helpers. Not an application API and not under semver: it changes with the
+ * agents package, in any release.
+ */
+export {
+  internalsOf,
+  planOf,
+  type LibraryDataModel,
+  type Operation,
+  type Plan,
+  type ToolSpec,
+} from './functions'
+export { guarded, markHousekeeping, OPERATION } from './guard'
+export { rateLimited, takeToken } from './limits'
+export { readOnly } from './rules'
+export { actorRecord, agentCallerValidator, failureOf, type AgentCaller } from './actor'
+export { approversFor, scopesFor } from './policy'
+export {
+  callKey,
+  checkInput,
+  fingerprint,
+  frozen,
+  idsIn,
+  inertMarkdown,
+  isIdOf,
+  jsonOf,
+  storable,
+  toJsonSchema,
+  toolNamePattern,
+  unsendable,
+} from './values'

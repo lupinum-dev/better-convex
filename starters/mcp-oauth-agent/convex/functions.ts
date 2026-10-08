@@ -1,0 +1,46 @@
+import { custom, defineFunctions, owner, tenant } from '@lupinum/better-convex-functions'
+
+import type { Doc } from './_generated/dataModel'
+import { auth } from './auth'
+import { policy } from './policy'
+import schema from './schema'
+
+export const fns = defineFunctions({
+  auth,
+  policy,
+  // A suspended user is no actor at all: every function refuses them.
+  user: async (ctx, authId) => {
+    const user = await ctx.db
+      .query('users')
+      .withIndex('by_auth_id', (q) => q.eq('authId', authId))
+      .unique()
+    return user?.active ? user : null
+  },
+  roleOf: async (ctx, user, tenant) => {
+    if (tenant.table !== 'organizations') return null
+    const membership = await ctx.db
+      .query('memberships')
+      .withIndex('by_org_user', (q) => q.eq('organizationId', tenant.id).eq('userId', user._id))
+      .unique()
+    return membership?.status === 'active' ? membership.role : null
+  },
+  // Every row a handler reads or writes is checked against these rules.
+  rules: {
+    users: owner('_id'),
+    organizations: tenant('_id'),
+    // Every membership of an organization where your role allows the action. Not owner('userId'):
+    // that would let a member change their own role or add themselves to another organization.
+    memberships: custom<Doc<'memberships'>>((ctx, membership) =>
+      ctx.allows({ table: 'organizations', id: membership.organizationId }),
+    ),
+    projects: tenant('organizationId'),
+  },
+  // What happens to each table that holds a user id when a person deletes their account.
+  schema,
+  erasure: {
+    memberships: { delete: 'userId' },
+    projects: { keep: 'Projects belong to the organization; createdBy is not shown anywhere.' },
+  },
+})
+
+export const { query, mutation } = fns

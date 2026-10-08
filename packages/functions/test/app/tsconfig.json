@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2024",
+    "types": [],
+    "paths": {
+      "@lupinum/better-convex-functions": ["../../src/index.ts"],
+      "@lupinum/better-convex-functions/test": ["../../src/test.ts"]
+    }
+  },
+  "include": ["./**/*"]
+}

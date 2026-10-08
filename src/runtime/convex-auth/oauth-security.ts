@@ -138,10 +138,11 @@ interface UrlCanParseTarget {
 }
 
 /**
- * Supply the one modern URL primitive absent from the manifest-pinned Convex
- * isolate but called by @better-auth/oauth-provider@1.7.1 while parsing
- * RFC 8707 resources. Delete this helper and both call sites as soon as a
- * reviewed dependency tuple supplies the primitive or removes those calls.
+ * Supply the one modern URL primitive that older Convex runtimes lack but
+ * @better-auth/oauth-provider@1.7.1 calls while parsing RFC 8707 resources.
+ * The pinned local backend (precompiled-2026-09-28) has it, so this does
+ * nothing there. Delete this helper and both call sites once every supported
+ * Convex runtime supplies the primitive or the dependency stops calling it.
  */
 export function installUrlCanParseCompatibility(
   target: UrlCanParseTarget = URL as unknown as UrlCanParseTarget,

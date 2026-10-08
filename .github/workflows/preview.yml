@@ -28,4 +28,4 @@ jobs:
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm exec pkg-pr-new publish --pnpm --comment=update . ./packages/vue ./packages/mcp
+      - run: pnpm exec pkg-pr-new publish --pnpm --comment=update . ./packages/vue ./packages/functions ./packages/agents

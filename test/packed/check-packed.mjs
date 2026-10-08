@@ -1,4 +1,4 @@
-// Packs the three published packages exactly as `pnpm pack` does for a release, then:
+// Packs the published packages exactly as `pnpm pack` does for a release, then:
 // - runs publint and @arethetypeswrong/cli (ESM-only profile) on each tarball;
 // - imports every public entry through the packed `exports` map, with the packed Vue
 //   package resolving before the workspace copy (dependencies resolve from the repo);
@@ -18,13 +18,18 @@ import {
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const root = resolve(import.meta.dirname, '../..')
-export const packageDirectories = { vue: 'packages/vue', nuxt: '.', mcp: 'packages/mcp' }
+export const packageDirectories = {
+  vue: 'packages/vue',
+  nuxt: '.',
+  functions: 'packages/functions',
+  agents: 'packages/agents',
+}
 
-/** Packs every published package into `destination` and returns `{ vue, nuxt, mcp }` tarball paths. */
+/** Packs every published package into `destination` and returns its tarball path by id. */
 export function packWorkspace(destination) {
   rmSync(destination, { recursive: true, force: true })
   mkdirSync(destination, { recursive: true })
@@ -38,6 +43,13 @@ export function packWorkspace(destination) {
     const [file] = readdirSync(destination).filter((name) => !before.has(name))
     if (!file) throw new Error(`pnpm pack produced no tarball for ${directory}`)
     tarballs[id] = join(destination, file)
+    // The package build copies a placeholder to dist/agent; only `pnpm build` writes the real
+    // entry page. Each package's prepack refuses the placeholder; this also holds without scripts.
+    const agentDocs = execFileSync('tar', ['-xOzf', tarballs[id], 'package/dist/agent/AGENTS.md'], {
+      encoding: 'utf8',
+    })
+    if (!agentDocs.includes('\n## Start here\n'))
+      throw new Error(`${directory}: the tarball ships the agent docs placeholder. Run pnpm build.`)
   }
   return tarballs
 }
@@ -60,6 +72,29 @@ function files(directory) {
   return readdirSync(directory, { recursive: true })
     .map((name) => join(directory, name))
     .filter((path) => statSync(path).isFile())
+}
+
+/**
+ * Every import outside the package that a built module reaches, through its own relative imports.
+ * With `loading: true`, only what loading the module needs: dynamic `import()`s are not followed.
+ */
+function packageImports(entry, { loading = false } = {}) {
+  const outside = new Set()
+  const seen = new Set()
+  const visit = (file) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    const text = readFileSync(file, 'utf8')
+    const pattern = loading
+      ? /(?:\bfrom|\bimport)\s*['"]([^'"]+)['"]/g
+      : /(?:\bfrom|\bimport\(?)\s*['"]([^'"]+)['"]/g
+    for (const [, specifier] of text.matchAll(pattern)) {
+      if (specifier.startsWith('.')) visit(join(dirname(file), specifier))
+      else outside.add(specifier)
+    }
+  }
+  visit(entry)
+  return [...outside]
 }
 
 function checkOptionalAuthCli(tarball) {
@@ -149,6 +184,24 @@ function main() {
         failures.push(`${manifest.name}: ${name} bundles Vue package source`)
     }
 
+    // V8: the browser imports `can` and the policy from ./policy, so nothing it loads may reach
+    // Convex's server code (or any other package).
+    if (id === 'functions') {
+      for (const outside of packageImports(join(directory, manifest.exports['./policy'].import)))
+        failures.push(`${manifest.name}/policy: its build imports ${outside}`)
+    }
+
+    // The MCP SDK is an optional peer: only ./mcp may need it to load (an in-app agent, or tests
+    // with callTool, run without it).
+    if (id === 'agents') {
+      for (const [subpath, target] of Object.entries(manifest.exports)) {
+        if (subpath === './mcp' || typeof target !== 'object') continue
+        for (const outside of packageImports(join(directory, target.import), { loading: true }))
+          if (outside.startsWith('@modelcontextprotocol/'))
+            failures.push(`${manifest.name}${subpath.slice(1)}: loading it imports ${outside}`)
+      }
+    }
+
     const specifiers = []
     for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
       const targets = typeof target === 'string' ? [target] : Object.values(target)
@@ -171,6 +224,10 @@ function main() {
       specifiers.map((specifier) => `await import(${JSON.stringify(specifier)})\n`).join('') +
         (id === 'vue' || id === 'nuxt'
           ? `const { default: assert } = await import('node:assert/strict')\nconst stable = await import(${JSON.stringify(manifest.name)})\nconst experimental = await import(${JSON.stringify(`${manifest.name}/experimental`)})\nassert.equal(typeof experimental.useConvexOperation, 'function')\nassert.equal('useConvexOperation' in stable, false)\n`
+          : '') +
+        // Only callTool: a fixture that creates authority (the old testAuth) must not return to ./test.
+        (id === 'agents'
+          ? `const { default: assert } = await import('node:assert/strict')\nassert.deepEqual(Object.keys(await import(${JSON.stringify(`${manifest.name}/test`)})).sort(), ['callTool'])\n`
           : ''),
     )
     try {

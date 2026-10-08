@@ -17,19 +17,40 @@ dependencies, security incidents) live there, not here.
 
 ## Repository scope
 
-This repository contains three packages:
+This repository contains four packages:
 
 - `@lupinum/better-convex-nuxt` (repository root): the Nuxt module, Nitro
   helpers, server rendering, and optional Better Auth support.
 - `@lupinum/better-convex-vue` (`packages/vue`): the Vue composables and the
   browser client lifecycle that the Nuxt package also uses.
-- `@lupinum/better-convex-mcp` (`packages/mcp`): MCP request handling inside a
-  Convex HTTP action.
+- `@lupinum/better-convex-functions` (`packages/functions`): who may do what to
+  which rows. Operations, policy, row rules and internal operations
+  (`defineFunctions`), for every kind of actor: people, visitors, jobs and
+  agents. So it also owns the data of agent authority: grants, approvals as
+  authority, and the activity log (`libraryTables`). It imports only `convex`.
+- `@lupinum/better-convex-agents` (`packages/agents`): the doors agents come
+  through. Tools derived from the operations (`defineTools`), the approval
+  workflow (request, approve, decline), agent limits, and the MCP door
+  (`./mcp`: `createMcpServer` and the `handleMcpRequest` transport) inside a
+  Convex HTTP action. Only `./mcp` loads the MCP SDK.
 
-Nuxt and Vue always share one version (a Changesets `fixed` group); MCP
-versions on its own. Convex functions decide what a user may read or change.
-Do not move that decision into Vue, Nuxt middleware, MCP transport, or cached
-client state.
+Before you change or review the functions or agents packages, read
+`internal/functions-and-agents/` (start with its README): the review
+checklist for the authorization path, measured costs, verified platform
+behaviour, and the experiments behind the design.
+
+Nuxt and Vue always share one version (a Changesets `fixed` group), and so do
+Functions and Agents (a second `fixed` group; Agents pins the exact Functions
+version as its peer, because it uses `./internal`). Functions and Agents are an opt-in layer, not part
+of the toolkit below: Functions wraps every function of an app that installs
+it, checks one policy and one rule per table, and fails a test for every other
+path to the database (D31); Agents builds on it. The toolkit rules apply to the
+Nuxt and Vue packages; inside `packages/functions` and `packages/agents`, keep
+the layer small, and add an option only for a failing test or a real
+application that needs it.
+
+Convex functions decide what a user may read or change. Do not move that
+decision into Vue, Nuxt middleware, MCP transport, or cached client state.
 
 ## A toolkit, not a framework
 
@@ -57,23 +78,29 @@ Use the pinned pnpm version through Corepack.
 ```bash
 pnpm install
 pnpm dev               # source playground on port 4578 (see "Local backend")
-pnpm test              # unit, security, Convex, Nuxt, browser, auth-adapter and fuzz suites
+pnpm test              # unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions, agents
 pnpm format            # apply formatting
 pnpm verify            # lint, typecheck, test, build, packed-package checks, pnpm audit
 pnpm changeset         # describe a user-facing change for the next release
 ```
 
-`pnpm verify` is the local definition of done. CI also runs three slower jobs
+`pnpm verify` is the local definition of done. CI also runs four slower jobs
 as parallel checks; run them locally when your change touches their area:
 
 ```bash
 pnpm test:integration  # real-backend auth, OAuth, MCP suites and the beta-to-1.0 upgrade
 pnpm test:e2e --full   # full-stack playground journeys, including test/e2e/extended
-pnpm test:starters     # every starter and the packed Vue/Nuxt/MCP consumers, from local tarballs
+pnpm test:starters     # every starter, the consumer apps and the packed Vue/Nuxt/Agents consumers, from local tarballs
+pnpm test:mutants      # breaks each security guard in memory; the tests named for it must fail
 ```
 
-`pnpm build` builds the three packages, the docs site, and each package's
-`dist/agent/` (the rendered docs, exported as `<package>/agent-docs`).
+`pnpm test:live` (the starter on a Convex preview deployment) runs only by hand,
+once per release. See `test/TESTING.md`.
+
+`pnpm build` builds the four packages, the docs site, and each package's
+`dist/agent/` (the rendered docs, exported as `<package>/agent-docs`). A
+package build alone puts back the placeholder, and `pnpm pack` refuses it, so
+run `pnpm build` before you pack.
 `pnpm test:packed` packs the packages like a release, runs publint and
 `@arethetypeswrong/cli`, imports every public entry from the tarballs, and
 fails when a tarball contains env files, keys, or test credentials.
@@ -129,7 +156,7 @@ proxy, sessions, tokens, keys, secrets, or authorization.
   contract.
 - Keep server-only code out of browser bundles. `scripts/check-boundaries.mjs`
   (part of `pnpm lint`) enforces the import layering: framework-free errors,
-  no Nuxt in the Vue package, only the MCP SDK in the MCP package, no Node or
+  no Nuxt in the Vue package, only functions, Convex and (in `./mcp`) the MCP SDK in the agents package, no Node or
   Nuxt code in the Convex auth component, no server code in browser runtime.
 - Never let a caller choose an origin, issuer, upstream URL, function, or
   principal.

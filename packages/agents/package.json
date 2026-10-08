@@ -1,0 +1,64 @@
+{
+  "name": "@lupinum/better-convex-agents",
+  "version": "0.0.0",
+  "description": "Tools, approvals and the MCP door for Convex functions built with @lupinum/better-convex-functions",
+  "homepage": "https://better-convex.lupinum.com",
+  "bugs": {
+    "url": "https://github.com/lupinum-dev/better-convex/issues"
+  },
+  "license": "MIT",
+  "author": "Lupinum OG <info@lupinum.com> (https://lupinum.com)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lupinum-dev/better-convex"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.mts",
+      "import": "./dist/mcp.mjs"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.mts",
+      "import": "./dist/internal.mjs"
+    },
+    "./test": {
+      "types": "./dist/test.d.mts",
+      "import": "./dist/test.mjs"
+    },
+    "./agent-docs": "./dist/agent/AGENTS.md"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/agent-docs.mjs --check",
+    "build": "unbuild",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@lupinum/better-convex-functions": "workspace:*",
+    "@modelcontextprotocol/server": "2.2.0",
+    "convex": "1.42.2",
+    "typescript": "~5.9.3",
+    "unbuild": "3.6.1"
+  },
+  "peerDependencies": {
+    "@lupinum/better-convex-functions": "workspace:*",
+    "@modelcontextprotocol/server": "2.2.0",
+    "convex": ">=1.42.2 <2"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/server": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": "^22.19.0 || ^24.11.0"
+  }
+}

@@ -4,8 +4,8 @@
 
 Security fixes go into the latest release line of each package: the newest
 published version of `@lupinum/better-convex-nuxt` and
-`@lupinum/better-convex-vue` (they share one version) and of
-`@lupinum/better-convex-mcp`. Older versions do not receive fixes; upgrade to
+`@lupinum/better-convex-vue` (they share one version), of
+`@lupinum/better-convex-functions`, and of `@lupinum/better-convex-agents`. Older versions do not receive fixes; upgrade to
 the latest release.
 
 Each `package.json` declares the dependency and peer version ranges that a
@@ -70,7 +70,7 @@ An MCP request follows one path:
 
 ```text
 MCP host
-  -> Convex /mcp HTTP action (@lupinum/better-convex-mcp)
+  -> Convex /mcp HTTP action (@lupinum/better-convex-agents/mcp)
   -> token verifier (auth.createMcpAccessVerifier or your own)
   -> tool registered in configureServer, with the verified principal
   -> internal Convex function that calls auth.requireMcpPrincipal

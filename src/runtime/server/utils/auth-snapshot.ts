@@ -119,6 +119,7 @@ export async function resolveServerAuthSnapshot(
       credential: { type: 'cookie', value: authCookieHeader },
       trustedClientIpHeader,
       timeoutMs: 5_000,
+      renewsRequestSession: true,
     })
     const tokenExchangeStatus = exchange.status
     const unusableHydrationToken = Boolean(exchange.token && !isJwtUsable(exchange.token))

@@ -74,6 +74,15 @@ export interface CreateUserProjectionTriggersOptions<
     | null
     | undefined
     | Promise<Record<string, unknown> | null | undefined>
+  /**
+   * Erase what the app holds about the person, before their projection row is
+   * deleted. Runs once per row, in the same transaction, only when the auth
+   * user is deleted. With `@lupinum/better-convex-functions`, call
+   * `eraseUser(ctx, existing._id, internal.erasure.eraseStep)` (imported from
+   * `@lupinum/better-convex-functions`): it deletes
+   * nothing itself but schedules the batches. Without this option no erasure runs.
+   */
+  erase?: (args: { ctx: TCtx; user: TAuthUser; existing: TExistingUser }) => void | Promise<void>
 }
 
 type ConvexQueryChain<TExistingUser> = {
@@ -230,6 +239,7 @@ export function createUserProjectionTriggers<
       onDelete: async (ctx: TCtx, user: TAuthUser) => {
         const existing = await findAllProjections<TExistingUser>(ctx, lookup, user.id)
         for (const row of existing) {
+          await options.erase?.({ ctx, user, existing: row })
           await ctx.db.delete(row._id)
         }
       },

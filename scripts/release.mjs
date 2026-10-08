@@ -3,7 +3,8 @@
 //   node scripts/release.mjs pack   packs those packages into release/ (run `pnpm build` first)
 // release/ then holds the tarballs, order.txt (publish order: Vue before Nuxt, which pins it)
 // and releases.json. Tags keep the existing scheme: `v<version>` for the fixed Nuxt + Vue
-// group and `mcp-v<version>` for the independently versioned MCP package.
+// group, `functions-v<version>` and `agents-v<version>` for the fixed Functions + Agents group
+// (`mcp-v<version>` for the MCP package before it became the agents package).
 import { spawnSync } from 'node:child_process'
 import {
   appendFileSync,
@@ -36,14 +37,20 @@ function isOnNpm({ name, version }) {
 const publishOrder = [
   '@lupinum/better-convex-vue',
   '@lupinum/better-convex-nuxt',
-  '@lupinum/better-convex-mcp',
+  '@lupinum/better-convex-functions',
+  '@lupinum/better-convex-agents',
 ]
-const tagFor = (pkg) =>
-  pkg.name === '@lupinum/better-convex-mcp' ? `mcp-v${pkg.version}` : `v${pkg.version}`
+const ownTag = {
+  '@lupinum/better-convex-agents': 'agents-v',
+  '@lupinum/better-convex-functions': 'functions-v',
+}
+const tagFor = (pkg) => `${ownTag[pkg.name] ?? 'v'}${pkg.version}`
 
-// Every public package in pnpm-workspace.yaml, including the Nuxt module at the root.
+// Every public package in pnpm-workspace.yaml, including the Nuxt module at the root. A package
+// at 0.0.0 has no version yet: it waits for its first changeset, so other releases go out
+// without it (and without the D34 name check stopping them).
 const packages = JSON.parse(run('pnpm', ['-r', 'ls', '--json', '--depth', '-1']))
-  .filter((pkg) => !pkg.private)
+  .filter((pkg) => !pkg.private && pkg.version !== '0.0.0')
   .sort((a, b) => publishOrder.indexOf(a.name) - publishOrder.indexOf(b.name))
 const unknown = packages.filter((pkg) => !publishOrder.includes(pkg.name))
 if (unknown.length) throw new Error(`Add ${unknown.map((pkg) => pkg.name)} to publishOrder.`)
@@ -69,7 +76,9 @@ for (const pkg of unpublished) {
   // Changesets writes `## <version>` sections; hand-written 1.0.0-rc.0 notes use `## v<version>`.
   const changelogPath = join(pkg.path, 'CHANGELOG.md')
   const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, 'utf8') : ''
-  const heading = new RegExp(`^(?:mcp-)?v?${pkg.version.replaceAll('.', '\\.')}\\s*\\n`)
+  const heading = new RegExp(
+    `^(?:mcp-|functions-|agents-)?v?${pkg.version.replaceAll('.', '\\.')}\\s*\\n`,
+  )
   const section = changelog.split(/^## /m).find((part) => heading.test(part))
   const body = section ? section.replace(heading, '').trim() : `Release ${pkg.version}.`
   const tag = tagFor(pkg)

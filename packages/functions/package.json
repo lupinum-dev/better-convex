@@ -1,0 +1,55 @@
+{
+  "name": "@lupinum/better-convex-functions",
+  "version": "0.0.0",
+  "description": "Operations, policy and row rules for Convex functions: who may do what, to which rows",
+  "homepage": "https://better-convex.lupinum.com",
+  "bugs": {
+    "url": "https://github.com/lupinum-dev/better-convex/issues"
+  },
+  "license": "MIT",
+  "author": "Lupinum OG <info@lupinum.com> (https://lupinum.com)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lupinum-dev/better-convex"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./policy": {
+      "types": "./dist/policy.d.mts",
+      "import": "./dist/policy.mjs"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.mts",
+      "import": "./dist/internal.mjs"
+    },
+    "./test": {
+      "types": "./dist/test.d.mts",
+      "import": "./dist/test.mjs"
+    },
+    "./agent-docs": "./dist/agent/AGENTS.md"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/agent-docs.mjs --check",
+    "build": "unbuild",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "convex": "1.42.2",
+    "typescript": "~5.9.3",
+    "unbuild": "3.6.1"
+  },
+  "peerDependencies": {
+    "convex": ">=1.42.2 <2"
+  },
+  "engines": {
+    "node": "^22.19.0 || ^24.11.0"
+  }
+}

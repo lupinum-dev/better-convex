@@ -88,6 +88,8 @@ export async function runSeededAuthCorpus(
   corpus: string,
   casesPerSeed: number,
   runCase: (random: SeededRandom, caseIndex: number, seed: number) => unknown | Promise<unknown>,
+  /** The vitest project that holds the corpus, for the replay command. */
+  project = 'auth-fuzz',
 ): Promise<void> {
   if (!/^[a-z0-9-]+$/u.test(corpus)) throw new TypeError('Invalid auth fuzz corpus name')
   if (!Number.isSafeInteger(casesPerSeed) || casesPerSeed <= 0 || casesPerSeed > 1_000) {
@@ -100,7 +102,7 @@ export async function runSeededAuthCorpus(
       try {
         await runCase(random, caseIndex, seed)
       } catch (cause) {
-        const replay = `BCN_AUTH_FUZZ_SEED=${seed} pnpm exec vitest run --project=auth-fuzz`
+        const replay = `BCN_AUTH_FUZZ_SEED=${seed} pnpm exec vitest run --project=${project}`
         const failureFile = saveFailure({ caseIndex, corpus, replay, seed })
         throw new Error(
           `Auth fuzz failure: corpus=${corpus} seed=${seed} case=${caseIndex}. Replay with \`${replay}\`. Seed artifact: ${failureFile}`,

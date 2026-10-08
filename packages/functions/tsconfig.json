@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@lupinum/better-convex-functions": ["./src/index.ts"],
+      "@lupinum/better-convex-functions/internal": ["./src/internal.ts"],
+      "@lupinum/better-convex-functions/policy": ["./src/policy-entry.ts"],
+      "@lupinum/better-convex-functions/test": ["./src/test.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

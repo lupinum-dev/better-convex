@@ -2,7 +2,10 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "changelog": ["@changesets/changelog-github", { "repo": "lupinum-dev/better-convex" }],
   "commit": false,
-  "fixed": [["@lupinum/better-convex-nuxt", "@lupinum/better-convex-vue"]],
+  "fixed": [
+    ["@lupinum/better-convex-nuxt", "@lupinum/better-convex-vue"],
+    ["@lupinum/better-convex-functions", "@lupinum/better-convex-agents"]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",

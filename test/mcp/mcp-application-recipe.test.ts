@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 
-import { handleMcpRequest, registerMcpTool } from '@lupinum/better-convex-mcp'
+import { handleMcpRequest } from '@lupinum/better-convex-agents/mcp'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { ConvexError, v } from 'convex/values'
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript'
@@ -16,7 +16,7 @@ import {
 import { resolveMcpProfile } from '../../src/runtime/convex-auth/mcp-profile'
 import { validateOAuthProviderProfile } from '../../src/runtime/convex-auth/oauth-security'
 
-const recipe = readFileSync('docs/content/docs/3.build/7.agents/2.mcp-application.md', 'utf8')
+const recipe = readFileSync('docs/content/docs/3.build/7.agents/5.mcp-application.md', 'utf8')
 const addresses = {
   issuer: 'https://notes.example/api/auth',
   resource: 'https://notes.convex.site/mcp',
@@ -102,27 +102,31 @@ describe('MCP application recipe', () => {
         },
       })),
     }
-    const auth = {
-      mcp: {
-        issuer: () => addresses.issuer,
-        resource: () => new URL(addresses.resource),
-        scopes: () => ({ 'notes:read': 'Read your notes.' }),
-        scopesSupported: () => ['notes:read', 'offline_access'],
+    const verifier = {
+      async verifyAccessToken(token: string) {
+        if (token !== 'private-bearer') throw new Error('invalid')
+        return {
+          access: {
+            issuer: principal.issuer,
+            subject: principal.userId,
+            clientId: principal.clientId,
+            resource: principal.resource,
+            scopes: principal.scopes,
+          },
+          principal,
+          expiresAt: principal.expiresAt,
+        }
       },
-      createMcpAccessVerifier: () => ({
-        async verifyAccessToken(token: string) {
-          if (token !== 'private-bearer') throw new Error('invalid')
-          return {
-            access: {
-              issuer: principal.issuer,
-              subject: principal.userId,
-              clientId: principal.clientId,
-              resource: principal.resource,
-              scopes: principal.scopes,
-            },
-            principal,
-            expiresAt: principal.expiresAt,
-          }
+    }
+    const auth = {
+      // The shape `createBetterConvexAuth` returns for the recipe's `oauth.mcp` profile.
+      mcpAuthorization: () => ({
+        resource: new URL(addresses.resource),
+        authorization: {
+          mode: 'oauth' as const,
+          issuer: addresses.issuer,
+          verifier,
+          scopesSupported: ['notes:read', 'offline_access'],
         },
       }),
       async requireMcpPrincipal(
@@ -156,7 +160,6 @@ describe('MCP application recipe', () => {
       auth,
       z,
       handleMcpRequest,
-      registerMcpTool,
       console: { error: diagnostics },
       httpAction: (handler: unknown) => handler,
       internal: { notes: { listNotes: 'internal-list-notes' } },
@@ -181,7 +184,7 @@ describe('MCP application recipe', () => {
       expect(tools).toHaveLength(1)
       expect(tools[0]).toMatchObject({
         name: 'list_notes',
-        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
         outputSchema: {},
         _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['notes:read'] }] },
       })

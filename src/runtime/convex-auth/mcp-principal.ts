@@ -67,12 +67,20 @@ function publicUser(user: Record<string, unknown>): BetterConvexAuthUser {
  * `ConvexError({ code: 'MCP_ACCESS_DENIED' })` for an expired, revoked,
  * disabled, or foreign grant and `ConvexError({ code: 'MCP_INSUFFICIENT_SCOPE' })`
  * when the grant lacks `scope`.
+ *
+ * `allowExpiredToken` skips only the access token's own expiry, for work a
+ * person approved after the token that asked for it expired: the session,
+ * client, resource and consent must still be live.
  */
 export async function requireMcpPrincipal<DataModel extends GenericDataModel>(
   ctx: AuthCtx<DataModel>,
   component: AuthAdapterComponentApi,
   principal: BetterConvexMcpPrincipal,
-  options: { readonly scope?: string; readonly resource?: () => URL } = {},
+  options: {
+    readonly scope?: string
+    readonly allowExpiredToken?: boolean
+    readonly resource?: () => URL
+  } = {},
 ): Promise<{ readonly user: BetterConvexAuthUser; readonly principal: BetterConvexMcpPrincipal }> {
   if (
     !principal ||
@@ -86,7 +94,7 @@ export async function requireMcpPrincipal<DataModel extends GenericDataModel>(
     !nonEmptyString(principal.resource) ||
     !Array.isArray(principal.scopes) ||
     !Number.isSafeInteger(principal.expiresAt) ||
-    principal.expiresAt * 1_000 <= Date.now()
+    (options.allowExpiredToken !== true && principal.expiresAt * 1_000 <= Date.now())
   ) {
     throw accessDenied()
   }

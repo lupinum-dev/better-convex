@@ -362,6 +362,32 @@ describe('Better Auth browser adapter', () => {
     vi.restoreAllMocks()
   })
 
+  it.each([
+    ['malformed', 'not-a-jwt'],
+    ['expired', jwt('alice', -60)],
+  ])(
+    'drops the cached token when every refresh returns an unusable (%s) token',
+    async (_label, unusable) => {
+      const token = jwt('alice', 900)
+      const fixture = source(signedIn(), [
+        { data: { token }, error: null },
+        ...Array.from({ length: 8 }, () => ({ data: { token: unusable }, error: null })),
+      ])
+      const anonymous = vi.fn()
+      const adapter = createBetterAuthBrowserAdapter(fixture.client, {
+        authenticated: () => {},
+        anonymous,
+      })
+      await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+
+      await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBeNull()
+      // Definitive: no retry spends the exchange budget on an answer that cannot change.
+      expect(fixture.token).toHaveBeenCalledTimes(2)
+      expect(anonymous).toHaveBeenCalledWith(expect.any(String))
+      adapter.dispose()
+    },
+  )
+
   it('fails malformed/error session state closed and disposes observation once', () => {
     const fixture = source(
       {
