@@ -113,6 +113,27 @@ const maxSeen = 500
  * request that passed this check always fits.
  */
 const maxApprovalBytes = 1024 * 1024 - 8 * 1024
+/** An app's failure message is kept this long (characters) on the request and in the activity. */
+const maxErrorMessageChars = 2_000
+
+/**
+ * The failure as stored: the message cut with an ellipsis to the ceiling and to the bytes the
+ * decided request still has room for, so storing it cannot exceed the document limit.
+ */
+function boundedFailure(
+  reason: { code: string; message: string },
+  roomBytes: number,
+): { code: string; message: string } {
+  let message = reason.message
+  const cut = (chars: number) => `${reason.message.slice(0, Math.max(0, chars - 1))}…`
+  if (message.length > maxErrorMessageChars) message = cut(maxErrorMessageChars)
+  // A character takes at most 3 bytes, so cutting over/3 characters never cuts too much.
+  while (message.length > 1 && getConvexSize(message) > roomBytes) {
+    message = cut(message.length - Math.ceil((getConvexSize(message) - roomBytes) / 3))
+  }
+  return { code: reason.code, message: getConvexSize(message) > roomBytes ? '' : message }
+}
+
 /** A result too large to keep for replay. */
 const truncated = v.object({ truncated: v.literal(true), bytes: v.number() })
 const reserved = new Set(['check_approval', 'housekeeping'])
@@ -951,7 +972,18 @@ export function defineTools(
               })
               outcome = { status: 'approved' }
             } else {
-              const reason = toolFailure(ran.error)
+              const failure = toolFailure(ran.error)
+              // Same room as the success branch: what the decided request leaves.
+              const room =
+                maxApprovalBytes -
+                getConvexSize({
+                  ...row,
+                  status: 'failed',
+                  decidedBy: approver.user._id,
+                  followUp,
+                  error: { code: failure.code, message: '' },
+                } as unknown as Value)
+              const reason = boundedFailure(failure, room)
               await lib(ctx).patch(row._id, {
                 status: 'failed',
                 error: reason,

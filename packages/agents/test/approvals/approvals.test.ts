@@ -159,6 +159,40 @@ test('a request that nearly fills the size limit stores a marker for a result th
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'exported' })
 })
 
+// Review: the failure branch stored the app's message as it was. A message longer than the room the
+// request left made the "failed" patch exceed 1 MiB; the whole approval then threw and the person got an error.
+test.each([
+  [
+    'a request that leaves little room and a 40,000-character message',
+    1_038_000,
+    40_000,
+    500,
+    1_999,
+  ],
+  ['a small request and a 200,000-character message', 10, 200_000, 1_900, 2_000],
+])('a failure with %s is stored with a bounded message', async (_name, pad, chars, min, max) => {
+  const s = await setup()
+  const asked = await s.ask('archive_loud', {
+    projectId: s.p[0],
+    pad: 'p'.repeat(pad),
+    messageChars: chars,
+  })
+
+  const outcome = await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })
+  expect(outcome).toMatchObject({ status: 'failed', error: { code: 'NOT_FOUND' } })
+  const [approval] = await s.approvalRows()
+  expect(approval).toMatchObject({ status: 'failed', error: { code: 'NOT_FOUND' } })
+  const stored = approval!.error!.message
+  expect(stored.length).toBeGreaterThanOrEqual(min)
+  expect(stored.length).toBeLessThanOrEqual(max)
+  expect(stored.endsWith('…')).toBe(true)
+  expect(outcome.error.message).toBe(stored)
+  const [entry] = await s.t.run((ctx) => ctx.db.query('activity').collect())
+  expect(entry).toMatchObject({ status: 'failed', result: { code: 'NOT_FOUND', message: stored } })
+  // The operation's writes rolled back with its failure.
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ status: 'active' })
+})
+
 // A12: approving ran the stored input against whatever the row had become.
 test('approving fails as STALE when the project changed after the request', async () => {
   const s = await setup()

@@ -11,6 +11,7 @@ export const {
   rename_project,
   archive_project,
   export_project,
+  archive_loud,
   tidy_project,
   archive_projects,
   edit_note,

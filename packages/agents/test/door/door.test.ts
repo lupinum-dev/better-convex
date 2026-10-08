@@ -2,11 +2,13 @@ import { defineTools } from '@lupinum/better-convex-agents'
 import { toolFailure } from '@lupinum/better-convex-agents/internal'
 import { createMcpServer } from '@lupinum/better-convex-agents/mcp'
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import type { FunctionReference } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
 import { expect, test, vi } from 'vitest'
 
-import { doorAuth, refs } from '../support'
+import { maximumMcpResponseBytes } from '../../src/transport'
+import { doorAuth, refs, tokenFor } from '../support'
 import { tools } from './agents'
 import { fns, query } from './fns'
 import * as projects from './projects'
@@ -150,6 +152,82 @@ test.each([
     expect(await t.run((ctx) => ctx.db.query('projects').collect())).toHaveLength(2)
   },
 )
+
+// Review: the size check reserved a fixed 256 bytes for the JSON-RPC envelope, so a long string id got
+// HTTP 502 after commit and a short id cut a result that fit. The check counts the response as sent,
+// in both protocol eras; the largest result that fits is sent whole, one character more gets the marker.
+test.each([
+  ['2025, numeric id', '2025', 1],
+  ['2025, string id of 1,000 characters', '2025', 'i'.repeat(1_000)],
+  ['2026', '2026', 1],
+])('the largest result that fits is sent whole (%s)', async (_name, era, id) => {
+  const { t, a } = await setup()
+  const token = tokenFor(await grantMcp(t, 'ann', ['write']))
+  let n = 0
+  const send = async (size: number) => {
+    const args = { orgId: a, size, request_id: `r${n++}` }
+    let raw = ''
+    let status = 0
+    if (era === '2025') {
+      const response = await t.fetch('/mcp', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2025-06-18',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          method: 'tools/call',
+          params: { name: 'large_report', arguments: args },
+        }),
+      })
+      raw = await response.text()
+      status = response.status
+    } else {
+      const client = new Client(
+        { name: 'size-client', version: '1.0.0' },
+        { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+      )
+      const transport = new StreamableHTTPClientTransport(
+        new URL('https://door.example.test/mcp'),
+        {
+          requestInit: { headers: { authorization: `Bearer ${token}` } },
+          fetch: async (input, init) => {
+            const request = new Request(input, init)
+            const response = await t.fetch(new URL(request.url).pathname, {
+              method: request.method,
+              headers: request.headers,
+              body: request.method === 'POST' ? await request.text() : undefined,
+            })
+            if (request.headers.get('mcp-method') === 'tools/call') {
+              raw = await response.clone().text()
+              status = response.status
+            }
+            return response
+          },
+        },
+      )
+      await client.connect(transport)
+      await client.callTool({ name: 'large_report', arguments: args })
+      await client.close()
+    }
+    return { status, raw, whole: !raw.includes('"truncated":true') }
+  }
+  // The text and `structuredContent` both carry the result, so each 'y' costs two bytes.
+  const probe = await send(400_000)
+  expect(probe).toMatchObject({ status: 200, whole: true })
+  const edge =
+    400_000 +
+    Math.floor((maximumMcpResponseBytes - new TextEncoder().encode(probe.raw).byteLength) / 2)
+  const fits = await send(edge)
+  expect(fits.whole).toBe(true)
+  expect(maximumMcpResponseBytes - new TextEncoder().encode(fits.raw).byteLength).toBeLessThan(2)
+  const over = await send(edge + 1)
+  expect(over).toMatchObject({ status: 200, whole: false })
+})
 
 // Review: an argument like `v.union(v.id('_storage'), v.null())` failed on every call (`normalizeId` throws for system tables).
 test('a tool with a nullable storage ID argument accepts an ID and null', async () => {
