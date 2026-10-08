@@ -175,8 +175,9 @@ export const mutants: Mutant[] = [
     id: 'S3-patch-after',
     guards: 'S3',
     file: 'packages/functions/src/rules.ts',
-    find: "await assertWritable(table, next, 'write')\n      await assertParent(table, row, next)\n      wrote(id)\n      return (raw.patch",
-    replace: 'await assertParent(table, row, next)\n      wrote(id)\n      return (raw.patch',
+    find: "await assertWritable(table, next, 'write')\n      await assertParent(table, row, next)\n      wrote(id)\n      call.written?.(id)\n      return (raw.patch",
+    replace:
+      'await assertParent(table, row, next)\n      wrote(id)\n      call.written?.(id)\n      return (raw.patch',
     kills: [`${F}/rules.test.ts > writes check the row tenant and the role there`],
   },
   // T4: the seeded fuzz runs random chains and compares them with the same chain on the raw db.
@@ -346,7 +347,7 @@ export const mutants: Mutant[] = [
     id: 'S7-wrap-args',
     guards: 'S7',
     file: 'packages/functions/src/functions.ts',
-    find: 'isComponent(ref) ? args : { actingAs: as, input: args ?? {} }',
+    find: 'isComponent(ref) ? args : { actingAs: as, input: args ?? {}, ...(nested && { nested: true }) }',
     replace: 'args',
     kills: [
       `${F}/rules.test.ts > operations cannot call or schedule the app's raw functions`,
@@ -653,7 +654,7 @@ export const mutants: Mutant[] = [
     id: 'S12-writes-per-minute',
     guards: 'S12',
     file: 'packages/agents/src/tools.ts',
-    find: 'if ((row?.count ?? 0) >= perMinute) {',
+    find: 'if (wait !== null) {',
     replace: 'if (false) {',
     kills: [`${A}/approvals/approvals.test.ts > an agent may make 60 writes a minute, then waits`],
   },
