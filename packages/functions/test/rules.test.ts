@@ -437,7 +437,7 @@ test.each([
 
 // Catches: a rule of a kind the engine does not know (a typo, or JavaScript past the types) granting
 // access. The engine returns no verdict for it, and a write that is neither hidden nor denied goes through.
-test.fails('a rule of an unknown kind refuses the row — BUG: judgeRule has no default case, so writes pass and allOf ignores the part', async () => {
+test('a rule of an unknown kind refuses the row, alone and inside allOf', async () => {
   const { t, ann, a } = await setup()
   const [lone, part] = await t.run(async (ctx) => [
     await ctx.db.insert('oddLone', { orgId: a, name: 'x' }),

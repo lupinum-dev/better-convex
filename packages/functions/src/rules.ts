@@ -541,6 +541,10 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
         if (role === null) return 'hidden'
         return call.allows(role, call.action) ? 'ok' : 'denied'
       }
+      default:
+        // A rule of a kind this library does not know (a typo from JavaScript, a newer rule shape)
+        // grants nothing: it hides the row, alone and inside allOf or anyOf.
+        return 'hidden'
     }
   }
 
