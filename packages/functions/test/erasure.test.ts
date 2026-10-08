@@ -386,7 +386,14 @@ const base = defineSchema({
     editorId: v.id('users'),
     body: v.optional(v.string()),
   }).index('by_author', ['authorId']),
-  teams: defineTable({ members: v.array(v.id('users')) }).index('by_members', ['members']),
+  teams: defineTable({
+    members: v.array(v.id('users')),
+    lead: v.union(v.id('users'), v.null()),
+    crew: v.optional(v.union(v.array(v.id('users')), v.null())),
+  })
+    .index('by_members', ['members'])
+    .index('by_lead', ['lead'])
+    .index('by_crew', ['crew']),
 })
 const define = (erasure: object, schema: object | null = base) =>
   defineFunctions({
@@ -431,10 +438,16 @@ test.each([
   [{ notes: { delete: 'missing' } }, /the table has no field "missing"/],
   // An ID inside a list never equals the person's ID: the entry would erase nothing.
   [{ teams: { delete: 'members' } }, /"members" is an array, and erasure only finds a field/],
+  [{ teams: { anonymize: 'crew' } }, /"crew" is an array, and erasure only finds a field/],
   [{ posts: { delete: 'authorId' } }, /Erasure for "posts": the schema has no such table/],
   [{ activity: { delete: 'actor' } }, /Erasure for "activity": the library erases its own tables/],
 ])('erasure definition error: %j', (erasure, message) => {
   expect(() => define(erasure)).toThrow(message)
+})
+
+// Catches: the container check refusing a plain ID that may be null, which erasure can find.
+test('a field that holds the user ID or null can be erased', () => {
+  expect(() => define({ teams: { delete: 'lead' } })).not.toThrow()
 })
 
 // Catches: an erasure entry written past the types (empty, a wrong value, a wrong kind) that is

@@ -83,6 +83,14 @@ function planApp(schema: AnySchema, map: ErasureMap): Job[] {
   return jobs
 }
 
+/** The container kind a field can hold, also inside a union (`v.union(v.array(...), v.null())`). */
+function containerIn(validator: unknown): string | undefined {
+  const node = validator as { kind?: string; members?: unknown[] }
+  if (node.kind === 'array' || node.kind === 'object' || node.kind === 'record') return node.kind
+  if (node.kind === 'union') return node.members?.map(containerIn).find(Boolean)
+  return undefined
+}
+
 /** The job for one delete or anonymize entry, after the same checks against the schema. */
 function planField(table: string, definition: TableDefinition, entry: FieldErasure): Job {
   const kind = 'delete' in entry ? 'delete' : 'anonymize'
@@ -97,8 +105,8 @@ function planField(table: string, definition: TableDefinition, entry: FieldErasu
   if (!fieldValidator) definitionError(table, `the table has no field "${field}".`)
   // Erasure finds rows whose field equals the person's ID through an index; an ID inside a list,
   // object or record is never equal to it, so such an entry would erase nothing.
-  const shape = (fieldValidator as unknown as { kind: string }).kind
-  if (shape === 'array' || shape === 'object' || shape === 'record')
+  const shape = containerIn(fieldValidator)
+  if (shape)
     definitionError(
       table,
       `"${field}" is a${shape === 'array' ? 'n' : ''} ${shape}, and erasure only finds a field that holds the user ID itself. Store the ID in its own indexed field, or use keep with a reason.`,

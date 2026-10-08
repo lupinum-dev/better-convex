@@ -2583,9 +2583,18 @@ export const mutants: Mutant[] = [
     guards:
       'an erasure entry on a list, object or record field fails at definition instead of erasing nothing',
     file: 'packages/functions/src/erasure.ts',
-    find: "if (shape === 'array' || shape === 'object' || shape === 'record')",
-    replace: 'if (false)',
+    find: "if (node.kind === 'array' || node.kind === 'object' || node.kind === 'record') return node.kind",
+    replace: '',
     kills: [`${F}/erasure.test.ts > erasure definition error: {"teams":{"delete":"members"}}`],
+    projects: ['functions'],
+  },
+  {
+    id: 'T-astra-erasure-union-container',
+    guards: 'a container inside a union field fails at definition too',
+    file: 'packages/functions/src/erasure.ts',
+    find: "if (node.kind === 'union') return node.members?.map(containerIn).find(Boolean)",
+    replace: '',
+    kills: [`${F}/erasure.test.ts > erasure definition error: {"teams":{"anonymize":"crew"}}`],
     projects: ['functions'],
   },
   {
