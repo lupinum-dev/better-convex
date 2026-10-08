@@ -2866,6 +2866,175 @@ export const mutants: Mutant[] = [
     kills: [`${F}/erasure.test.ts > without erasure there is no erasure code`],
     projects: ['functions'],
   },
+  // Slice C: `launchProblems` and the starter's safeguards.
+  {
+    id: 'S-C-raw-functions',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: 'for (const id of await unguardedFunctions(modules, { trustedRoutes })) {',
+    replace: 'for (const id of [] as string[]) {',
+    kills: [
+      `${F}/launch.test.ts > check 1: a function built with Convex builders is named, with the fix`,
+    ],
+  },
+  {
+    id: 'S-C-erasure-table-missing',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: 'if (!Object.hasOwn(erasure, table))',
+    replace: 'if (false)',
+    kills: [
+      `${F}/launch.test.ts > check 2: tables with a user ID that are not in erasure are named with their field`,
+    ],
+  },
+  {
+    id: 'S-C-erasure-none',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: 'if (holders.length > 0)',
+    replace: 'if (false)',
+    kills: [`${F}/launch.test.ts > check 2: no erasure at all says account deletion is not set up`],
+  },
+  {
+    id: 'S-C-erasure-users-exempt',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: "table !== 'users' && !Object.hasOwn(libraryTables, table)",
+    replace: '!Object.hasOwn(libraryTables, table)',
+    kills: [`${F}/launch.test.ts > check 2: the users table and the library tables need no entry`],
+  },
+  {
+    id: 'S-C-erasure-array',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: 'return userIdFields(node.element, `${path}[]`)',
+    replace: 'return []',
+    kills: [
+      `${F}/launch.test.ts > check 2: tables with a user ID that are not in erasure are named with their field`,
+    ],
+  },
+  {
+    id: 'S-C-erasure-record',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: 'return userIdFields(node.value, `${path}[]`)',
+    replace: 'return []',
+    kills: [
+      `${F}/launch.test.ts > check 2: tables with a user ID that are not in erasure are named with their field`,
+    ],
+  },
+  {
+    id: 'S-C-erasure-union',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: '(node.members ?? []).flatMap((member) => userIdFields(member, path))',
+    replace: '[]',
+    kills: [
+      `${F}/launch.test.ts > check 2: tables with a user ID that are not in erasure are named with their field`,
+    ],
+  },
+  {
+    id: 'S-C-housekeeping-cron',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: 'if (!called.has(functionName))',
+    replace: 'if (false)',
+    kills: [`${F}/launch.test.ts > check 3: the agents housekeeping function needs a cron`],
+  },
+  {
+    id: 'S-C-housekeeping-detected',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: 'if (!(value as { [HOUSEKEEPING]?: unknown } | null)?.[HOUSEKEEPING]) continue',
+    replace: 'continue',
+    kills: [`${F}/launch.test.ts > check 3: the agents housekeeping function needs a cron`],
+  },
+  {
+    id: 'S-C-housekeeping-marked',
+    guards: 'saas-c',
+    file: 'packages/agents/src/tools.ts',
+    find: 'const housekeeping = markHousekeeping(',
+    replace: 'const housekeeping = ((registered: unknown) => registered)(',
+    kills: [
+      `${A}/approvals/approvals.test.ts > launchProblems finds the housekeeping function this package builds`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S-C-public-limit',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: '|| limitOf(fns.policy, op.action) ',
+    replace: '',
+    kills: [`${F}/launch.test.ts > a fully set up app has no launch problems`],
+  },
+  {
+    id: 'S-C-public-mutations-only',
+    guards: 'saas-c',
+    file: 'packages/functions/src/test.ts',
+    find: "op.kind !== 'mutation' || ",
+    replace: '',
+    kills: [
+      `${F}/launch.test.ts > a fully set up app has no launch problems`,
+      `${F}/launch.test.ts > check 4: a public mutation without a limit is named, with the limit to add`,
+    ],
+  },
+  {
+    id: 'S-C-starter-erasure',
+    guards: 'saas-c',
+    file: 'starters/mcp-oauth-agent/convex/functions.ts',
+    find: "memberships: { delete: 'userId' },",
+    replace: '',
+    kills: [
+      `${starter}/launch.test.ts > the app has no launch problems`,
+      `${starter}/account.test.ts > account safeguards > erases the memberships and the profile of a deleted account, and keeps the team data`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'S-C-starter-erase-wired',
+    guards: 'saas-c',
+    file: 'starters/mcp-oauth-agent/convex/auth.ts',
+    find: 'await ctx.scheduler.runAfter(0, step, { userId: user._id, self: getFunctionName(step) })',
+    replace: '',
+    kills: [
+      `${starter}/account.test.ts > account safeguards > erases the memberships and the profile of a deleted account, and keeps the team data`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'S-C-starter-last-owner',
+    guards: 'saas-c',
+    file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
+    find: "if (others.length > 0 && !others.some((m) => m.role === 'owner')) return true",
+    replace: '',
+    kills: [
+      `${starter}/account.test.ts > account safeguards > refuses to delete the last owner of an organization that has other members`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'S-C-starter-limit',
+    guards: 'saas-c',
+    file: 'starters/mcp-oauth-agent/convex/policy.ts',
+    find: "limits: { 'projects.create': { max: 30, every: 'minute' } },",
+    replace: '',
+    kills: [
+      `${starter}/account.test.ts > account safeguards > limits project creation to 30 a minute per person`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'S-C-starter-audit',
+    guards: 'saas-c',
+    file: 'starters/mcp-oauth-agent/convex/policy.ts',
+    find: "audit: ['projects.archive'],",
+    replace: '',
+    kills: [
+      `${starter}/account.test.ts > account safeguards > records who archived a project in the audit log`,
+    ],
+    projects: ['mcp'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [
@@ -2892,5 +3061,13 @@ export const equivalents: Equivalent[] = [
     replace: 'false',
     reason:
       'The factory never sets session.freshAge and rejects every other session option, so the final options cannot hold freshAge 0: the invariant is defence in depth against a later change.',
+  },
+  {
+    id: 'S-C-erasure-library-exempt',
+    file: 'packages/functions/src/test.ts',
+    find: "table !== 'users' && !Object.hasOwn(libraryTables, table)",
+    replace: "table !== 'users'",
+    reason:
+      "No library table holds v.id('users') (they store the user ID as a string), so the exemption cannot change a result today: it keeps the check right if a library table ever gains such a field.",
   },
 ]
