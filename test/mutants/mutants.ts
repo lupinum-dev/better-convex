@@ -2260,6 +2260,261 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  {
+    id: 'S-A-take-token',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: 'await spend(ctx, actor, op.action, tenant, limit)',
+    replace: 'void 0',
+    kills: [
+      `${F}/limits-audit.test.ts > a call over the limit fails with RATE_LIMITED and the seconds to wait`,
+    ],
+  },
+  {
+    id: 'S-A-bucket-empty',
+    guards: 'saas-a',
+    file: 'packages/functions/src/limits.ts',
+    find: 'if (refilled < 1) return',
+    replace: 'if (false) return',
+    kills: [
+      `${F}/limits-audit.test.ts > a call over the limit fails with RATE_LIMITED and the seconds to wait`,
+    ],
+  },
+  {
+    id: 'S-A-refill',
+    guards: 'saas-a',
+    file: 'packages/functions/src/limits.ts',
+    find: 'row.tokens + (Math.max(0, now - row.at) / period) * limit.max',
+    replace: 'row.tokens',
+    kills: [`${F}/limits-audit.test.ts > tokens refill over time`],
+  },
+  {
+    id: 'S-A-key-user',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: '`user:${actorRecord(actor).key}`',
+    replace: '`user`',
+    kills: [`${F}/limits-audit.test.ts > user, tenant and everyone limits keep separate buckets`],
+  },
+  {
+    id: 'S-A-key-tenant',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: "limit.per === 'tenant' && tenant",
+    replace: 'false',
+    kills: [`${F}/limits-audit.test.ts > user, tenant and everyone limits keep separate buckets`],
+  },
+  {
+    id: 'S-A-visitor-everyone',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: "actor.kind !== 'visitor' && limit.per !== 'everyone'",
+    replace: "limit.per !== 'everyone'",
+    kills: [`${F}/limits-audit.test.ts > a visitor on a public action uses the everyone bucket`],
+  },
+  {
+    id: 'S-A-mutations-only',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: "op.kind === 'mutation' ? limitOf",
+    replace: "op.kind === 'none' ? limitOf",
+    kills: [
+      `${F}/limits-audit.test.ts > a call over the limit fails with RATE_LIMITED and the seconds to wait`,
+    ],
+  },
+  {
+    id: 'S-A-action-limited',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: 'if (spec.action !== undefined && limitOf(policy, spec.action)) {',
+    replace: 'if (false) {',
+    kills: [`${F}/limits-audit.test.ts > an action is limited, and the system is not`],
+  },
+  {
+    id: 'S-A-system-unlimited',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: "if (actor.kind !== 'system') await spend(ctx, actor, input.action, undefined, limit)",
+    replace: 'await spend(ctx, actor, input.action, undefined, limit)',
+    kills: [`${F}/limits-audit.test.ts > an action is limited, and the system is not`],
+  },
+  {
+    id: 'S-A-query-limit-error',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: 'if (limitOf(policy, spec.action))\n      throw new Error(\n        `${spec.action} has a limit in the policy, but ${what}',
+    replace:
+      'if (false)\n      throw new Error(\n        `${spec.action} has a limit in the policy, but ${what}',
+    kills: [
+      `${F}/limits-audit.test.ts > a query cannot use a limited action; an action needs the limiter path`,
+    ],
+  },
+  {
+    id: 'S-A-limiter-required',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: 'if (limitOf(policy, spec.action) && !config.limiter)',
+    replace: 'if (false)',
+    kills: [
+      `${F}/limits-audit.test.ts > a query cannot use a limited action; an action needs the limiter path`,
+    ],
+  },
+  {
+    id: 'S-A-def-unknown-action',
+    guards: 'saas-a',
+    file: 'packages/functions/src/policy.ts',
+    find: 'if (!actions.includes(action))',
+    replace: 'if (false)',
+    kills: [
+      `${F}/limits-audit.test.ts > wrong limit or audit definitions fail when the policy is defined`,
+    ],
+  },
+  {
+    id: 'S-A-def-max',
+    guards: 'saas-a',
+    file: 'packages/functions/src/policy.ts',
+    find: '!Number.isInteger(limit.max) || limit.max < 1',
+    replace: 'false',
+    kills: [
+      `${F}/limits-audit.test.ts > wrong limit or audit definitions fail when the policy is defined`,
+    ],
+  },
+  {
+    id: 'S-A-def-every',
+    guards: 'saas-a',
+    file: 'packages/functions/src/policy.ts',
+    find: '!Object.hasOwn(everyMs, limit.every)',
+    replace: 'false',
+    kills: [
+      `${F}/limits-audit.test.ts > wrong limit or audit definitions fail when the policy is defined`,
+    ],
+  },
+  {
+    id: 'S-A-def-per',
+    guards: 'saas-a',
+    file: 'packages/functions/src/policy.ts',
+    find: "limit.per !== undefined && !['user', 'tenant', 'everyone'].includes(limit.per)",
+    replace: 'false',
+    kills: [
+      `${F}/limits-audit.test.ts > wrong limit or audit definitions fail when the policy is defined`,
+    ],
+  },
+  {
+    id: 'S-A-def-audit-pattern',
+    guards: 'saas-a',
+    file: 'packages/functions/src/policy.ts',
+    find: '!actions.some((action) => matches([pattern], action))',
+    replace: 'false',
+    kills: [
+      `${F}/limits-audit.test.ts > wrong limit or audit definitions fail when the policy is defined`,
+    ],
+  },
+  {
+    id: 'S-A-audit-written',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: "if (who.kind !== 'visitor' && isAudited(policy, spec.action)) {",
+    replace: 'if (false) {',
+    kills: [
+      `${F}/limits-audit.test.ts > an audited mutation writes one row with actor, action, tenant and written ids`,
+    ],
+  },
+  {
+    id: 'S-A-audit-only-listed',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: "if (who.kind !== 'visitor' && isAudited(policy, spec.action)) {",
+    replace: "if (who.kind !== 'visitor') {",
+    kills: [`${F}/limits-audit.test.ts > unaudited writes and failed calls leave no audit row`],
+  },
+  {
+    id: 'S-A-audit-cap',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: 'rows: ids.slice(0, auditRows),',
+    replace: 'rows: ids,',
+    kills: [`${F}/limits-audit.test.ts > an audit row holds at most 50 ids and counts the rest`],
+  },
+  {
+    id: 'S-A-written-insert',
+    guards: 'saas-a',
+    file: 'packages/functions/src/rules.ts',
+    find: 'call.written?.(String(id))',
+    replace: '',
+    kills: [
+      `${F}/limits-audit.test.ts > the audit row lists every id the call inserted, replaced, patched or deleted`,
+    ],
+  },
+  {
+    id: 'S-A-written-patch',
+    guards: 'saas-a',
+    file: 'packages/functions/src/rules.ts',
+    find: 'call.written?.(id)\n      return (raw.patch as',
+    replace: 'return (raw.patch as',
+    kills: [
+      `${F}/limits-audit.test.ts > the audit row lists every id the call inserted, replaced, patched or deleted`,
+    ],
+  },
+  {
+    id: 'S-A-written-replace',
+    guards: 'saas-a',
+    file: 'packages/functions/src/rules.ts',
+    find: 'call.written?.(id)\n      return (raw.replace as',
+    replace: 'return (raw.replace as',
+    kills: [
+      `${F}/limits-audit.test.ts > the audit row lists every id the call inserted, replaced, patched or deleted`,
+    ],
+  },
+  {
+    id: 'S-A-written-delete',
+    guards: 'saas-a',
+    file: 'packages/functions/src/rules.ts',
+    find: 'call.written?.(id)\n      return (raw.delete as',
+    replace: 'return (raw.delete as',
+    kills: [
+      `${F}/limits-audit.test.ts > the audit row lists every id the call inserted, replaced, patched or deleted`,
+    ],
+  },
+  {
+    id: 'S-A-trail-order',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: ".order('desc')",
+    replace: '',
+    kills: [
+      `${F}/limits-audit.test.ts > auditTrail returns a tenant newest first, a page at a time`,
+    ],
+  },
+  {
+    id: 'S-A-trail-tenant',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: ".withIndex('by_tenant', (q) => q.eq('tenantId', options.tenantId))",
+    replace: ".withIndex('by_tenant')",
+    kills: [
+      `${F}/limits-audit.test.ts > auditTrail returns a tenant newest first, a page at a time`,
+    ],
+  },
+  {
+    id: 'S-A-agents-bucket-period',
+    guards: 'saas-a',
+    file: 'packages/agents/src/tools.ts',
+    find: "{ max: perMinute, every: 'minute' }",
+    replace: "{ max: perMinute, every: 'hour' }",
+    kills: [`${A}/approvals/approvals.test.ts > an agent may make 60 writes a minute, then waits`],
+    projects: ['agents'],
+  },
+  {
+    id: 'S-A-agents-idle-buckets',
+    guards: 'saas-a',
+    file: 'packages/agents/src/tools.ts',
+    find: "q.lt('at', now - day)",
+    replace: "q.lt('at', 0)",
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping deletes rate-limit buckets idle for more than a day`,
+    ],
+    projects: ['agents'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [
@@ -2270,5 +2525,13 @@ export const equivalents: Equivalent[] = [
     replace: 'if (!grant) throw accessDenied()',
     reason:
       'queryOAuthLiveGrant returns null unless the consent ID equals principal.grantId, and returns that ID: the second check is defence in depth.',
+  },
+  {
+    id: 'S-A-denied-takes-token',
+    file: 'packages/functions/src/functions.ts',
+    find: "(decision === 'allow' || (actor.kind === 'agent' && actor.approvalId !== undefined))",
+    replace: "(decision !== 'deny')",
+    reason:
+      'A denied call fails after the token is taken, and Convex rolls the whole mutation back: the bucket is unchanged either way. The test pins the visible result (no bucket row).',
   },
 ]
