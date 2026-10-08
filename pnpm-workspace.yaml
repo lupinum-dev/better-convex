@@ -8,9 +8,7 @@ packages:
 # Dependency quarantine: never install versions younger than 24 hours.
 minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
-# Our own scope skips it: only our protected release workflows publish it.
-minimumReleaseAgeExclude:
-  - '@lupinum/*'
+minimumReleaseAgeIgnoreMissingTime: false
 
 linkWorkspacePackages: true
 shamefullyHoist: true

@@ -18,7 +18,6 @@
     "**/_generated",
     "**/CHANGELOG.md",
     ".github/renovate.json",
-    "scripts/agent-docs.mjs",
     "scripts/audit-deps.mjs",
     "scripts/lint-changesets.mjs",
     "scripts/release.mjs"

@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:live

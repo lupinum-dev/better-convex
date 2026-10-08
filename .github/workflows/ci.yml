@@ -35,7 +35,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - if: matrix.task != 'audit'
         run: pnpm install --frozen-lockfile
       - if: matrix.task == 'test'
@@ -61,7 +61,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test:packed
@@ -79,7 +79,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:integration
@@ -96,7 +96,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e --full
@@ -117,7 +117,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:starters
@@ -140,7 +140,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - run: npm install --global corepack@0.34.5 && corepack enable
+      - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:mutants --shard ${{ matrix.shard }}

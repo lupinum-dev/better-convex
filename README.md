@@ -167,6 +167,18 @@ Set up @lupinum/better-convex-nuxt for coding agents as described under "Agent s
 If the file does not exist, the installed version has no packaged
 documentation. Read the package README and its TypeScript types instead.
 
+### Add Better Convex to an application
+
+Give your coding agent this task:
+
+```text
+Add Better Convex to this application. Install @lupinum/better-convex-nuxt@next
+(or @lupinum/better-convex-vue@next for Vue without Nuxt). Set it up for coding
+agents as described under "Agent setup" in the package README. Then read
+node_modules/<package>/dist/agent/AGENTS.md and follow its "Start here" table.
+Finish with the "Check your setup" steps of the Installation page.
+```
+
 <!-- END:consumer-onboarding -->
 
 ## Server calls and mutations
@@ -228,7 +240,7 @@ The [API reference](https://better-convex.lupinum.com/docs/reference/api-surface
 
 ## Contributing and development
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. Run the full check before you submit a change:
+Read [CONTRIBUTING.md](.github/CONTRIBUTING.md) before you open a pull request. Run the full check before you submit a change:
 
 ```bash
 corepack enable
@@ -242,7 +254,7 @@ pnpm verify
 
 Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for bugs and focused proposals. Join the [Lupinum OSS Discord](https://discord.lupinum.com) for project discussion.
 
-Report a vulnerability privately as described in [SECURITY.md](SECURITY.md). Do not report a vulnerability in a public issue.
+Report a vulnerability privately as described in [SECURITY.md](.github/SECURITY.md). Do not report a vulnerability in a public issue.
 
 ## License
 

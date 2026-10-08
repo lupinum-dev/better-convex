@@ -18,7 +18,7 @@ export default {
     nav: { links: 'auto', socialIcons: true },
     social: {
       github: 'https://github.com/lupinum-dev/better-convex',
-      discord: 'https://discord.gg/RPH6SeA36N',
+      discord: 'https://discord.lupinum.com',
     },
     feedback: { enabled: true },
     analytics: { plausible: { scriptId: '03E34LSIgT0kGko07f39A' } },
