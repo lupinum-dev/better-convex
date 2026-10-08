@@ -2560,17 +2560,29 @@ export const mutants: Mutant[] = [
     id: 'S-F1-spent-skip',
     guards: 'saas-f1',
     file: 'packages/functions/src/functions.ts',
-    find: '      !spent.includes(op.action)\n',
-    replace: '      true\n',
+    find: 'if (bucket && limit && !spent.includes(bucket))',
+    replace: 'if (bucket && limit)',
     kills: [
       `${F}/limits-audit.test.ts > a limited public mutation that runs the same limited internal action takes one token`,
     ],
   },
   {
+    id: 'T-astra-spent-bucket',
+    guards:
+      'a nested call skips only the bucket the chain already paid, not every bucket of the action',
+    file: 'packages/functions/src/functions.ts',
+    find: 'if (bucket && limit && !spent.includes(bucket))',
+    replace: 'if (bucket && limit && !spent.some((key) => key.endsWith(`|limit:${op.action}`)))',
+    kills: [
+      `${F}/limits-audit.test.ts > a nested call for a tenant takes a token from that tenant`,
+    ],
+    projects: ['functions'],
+  },
+  {
     id: 'S-F1-spent-pass',
     guards: 'saas-f1',
     file: 'packages/functions/src/functions.ts',
-    find: 'spent: limit ? [...spent, op.action] : spent,',
+    find: 'spent: bucket ? [...spent, bucket] : spent,',
     replace: 'spent: [],',
     kills: [
       `${F}/limits-audit.test.ts > a limited public mutation that runs the same limited internal action takes one token`,

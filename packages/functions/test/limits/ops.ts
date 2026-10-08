@@ -208,6 +208,28 @@ export const taskOuter = mutation({
   },
 })
 
+/** Limited per tenant, internal: the report of one org, reached from another org's report. */
+export const reportInternal = internalMutation({
+  action: 'reports.generate',
+  args: { orgId: v.id('orgs') },
+  returns: v.null(),
+  handler: async () => null,
+})
+
+/**
+ * A report with no tenant (its token comes from the person's bucket) that runs the report of one
+ * org: the nested call has another bucket and must pay into it.
+ */
+export const reportFor = mutation({
+  action: 'reports.generate',
+  args: { orgId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { orgId }) => {
+    await ctx.runMutation(ref('ops:reportInternal'), { orgId } as never)
+    return null
+  },
+})
+
 /** Unaudited public mutation that runs the audited `bump`: `bump` writes its own row. */
 export const runBump = mutation({
   action: 'notes.add',

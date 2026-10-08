@@ -21,11 +21,12 @@ async function setup() {
   const t = convexTest({ schema, modules, transactionLimits: true })
   const ids = await t.run(async (ctx) => {
     const user = (authId: string) => ctx.db.insert('users', { authId })
-    const [ann, cat, vic, bob] = [
+    const [ann, cat, vic, bob, dan] = [
       await user('ann'),
       await user('cat'),
       await user('vic'),
       await user('bob'),
+      await user('dan'),
     ]
     const a = await ctx.db.insert('orgs', { name: 'A' })
     const b = await ctx.db.insert('orgs', { name: 'B' })
@@ -35,6 +36,7 @@ async function setup() {
     await member(a, cat, 'owner')
     await member(a, vic, 'viewer')
     await member(b, bob, 'owner')
+    await member(b, dan, 'owner')
     const pa = await ctx.db.insert('projects', { orgId: a, name: 'A one', archived: false })
     const pb = await ctx.db.insert('projects', { orgId: b, name: 'B one', archived: false })
     return { a, b, pa, pb, ann }
@@ -49,6 +51,7 @@ async function setup() {
     cat: as('cat'),
     vic: as('vic'),
     bob: as('bob'),
+    dan: as('dan'),
     buckets,
     audit,
     userId: ids.ann,
@@ -302,6 +305,15 @@ test('a limited public mutation that runs the same limited internal action takes
   await expect(ann.mutation(fn('taskOuter'), { projectId: pa, name: 'twice' })).rejects.toThrow(
     /RATE_LIMITED/,
   )
+})
+
+// Catches: a nested call skipping its tenant's limit because the outer call paid the same action
+// into another bucket (the chain must remember buckets, not actions).
+test('a nested call for a tenant takes a token from that tenant', async () => {
+  const { bob, dan, b } = await setup()
+  await bob.mutation(fn('report'), { orgId: b })
+  await bob.mutation(fn('report'), { orgId: b })
+  await expect(dan.mutation(fn('reportFor'), { orgId: b })).rejects.toThrow(/RATE_LIMITED/)
 })
 
 // Catches: an audited internal mutation under an unaudited outer call leaving no row at all.

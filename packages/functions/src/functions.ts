@@ -290,8 +290,8 @@ export function defineFunctions<
   // The library's own tables are not in the app's generic data model.
   const lib = (ctx: { db: unknown }) => ctx.db as GenericMutationCtx<LibraryDataModel>['db']
   /** Takes the call's token, or fails with RATE_LIMITED. `tenant` is undefined where the caller cannot know it (actions). */
-  async function spend(
-    ctx: { db: unknown },
+  /** The bucket a call takes its token from. */
+  function bucketOf(
     actor: Actor<User> | Visitor,
     action: string,
     tenant: TenantRef | undefined,
@@ -299,13 +299,17 @@ export function defineFunctions<
   ) {
     // A visitor has no user and no membership: everyone shares one bucket. A person's bucket
     // starts with their actor key, so erasure deletes a person's buckets by key prefix.
-    let key = `everyone|limit:${action}`
-    if (actor.kind !== 'visitor' && limit.per !== 'everyone') {
-      key =
-        limit.per === 'tenant' && tenant
-          ? `tenant:${tenant.id}|limit:${action}`
-          : `${actorRecord(actor).key}|limit:${action}`
-    }
+    if (actor.kind === 'visitor' || limit.per === 'everyone') return `everyone|limit:${action}`
+    return limit.per === 'tenant' && tenant
+      ? `tenant:${tenant.id}|limit:${action}`
+      : `${actorRecord(actor).key}|limit:${action}`
+  }
+
+  async function spend(
+    ctx: { db: unknown },
+    key: string,
+    limit: NonNullable<ReturnType<typeof limitOf>>,
+  ) {
     const wait = await takeToken(lib(ctx), key, limit)
     if (wait !== null) rateLimited(wait)
   }
@@ -519,7 +523,7 @@ export function defineFunctions<
       kind?: Operation['kind']
       /** An internal mutation: it writes, so it is limited and audited like a public one. */
       writes?: boolean
-      /** Actions an outer operation in this call chain already took a token for. */
+      /** Buckets an outer operation in this call chain already took a token from. */
       spent?: readonly string[]
       /** Run by an outer operation's `ctx.runMutation` whose audit row takes this call's ids. */
       nested?: boolean
@@ -581,18 +585,19 @@ export function defineFunctions<
     }
     // A call the policy allows takes its token; the decision came first, so a denied call costs nothing.
     // Public or internal, every mutation takes one, unless an outer operation in this call chain
-    // already took one for the same action. Work under a person's approval takes none: the person
+    // already took one from the same bucket. Work under a person's approval takes none: the person
     // is the gate, and the agent's request already spent its write budget.
     const limit = op.kind === 'mutation' || op.writes ? limitOf(policy, op.action) : undefined
     const spent = op.spent ?? []
-    if (
+    const bucket =
       limit &&
       actor.kind !== 'system' &&
       decision === 'allow' &&
-      !(actor.kind === 'agent' && actor.approvalId !== undefined) &&
-      !spent.includes(op.action)
-    )
-      await spend(ctx, actor, op.action, tenant, limit)
+      !(actor.kind === 'agent' && actor.approvalId !== undefined)
+        ? bucketOf(actor, op.action, tenant, limit)
+        : undefined
+    // The same bucket, not only the same action: a nested call for another tenant pays its own.
+    if (bucket && limit && !spent.includes(bucket)) await spend(ctx, bucket, limit)
     // A system actor's db has no rules: it may change any row.
     let checks = {
       forget: () => {},
@@ -655,7 +660,7 @@ export function defineFunctions<
         // Operations this call runs in its own transaction add their ids to the audit row of the
         // outermost audited call. Under an unaudited call they write their own row.
         collect: audits || op.nested ? (ids) => ids.forEach((id) => written.add(id)) : undefined,
-        spent: limit ? [...spent, op.action] : spent,
+        spent: bucket ? [...spent, bucket] : spent,
       },
     )
     /**
@@ -714,7 +719,7 @@ export function defineFunctions<
     reachedRaw: () => void = () => {},
     chain?: {
       collect?: (ids: string[]) => void
-      /** Actions this call chain already took a token for. */
+      /** Buckets this call chain already took a token from. */
       spent: readonly string[]
     },
   ) {
@@ -1036,7 +1041,7 @@ export function defineFunctions<
     input: v.object(args),
     /** Set by `ctx.runMutation` of an operation: the caller writes the audit row and takes this call's ids. */
     nested: v.optional(v.boolean()),
-    /** Set by `ctx.runMutation`: the actions an outer operation already took a token for. */
+    /** Set by `ctx.runMutation`: the buckets an outer operation already took a token from. */
     spent: v.optional(v.array(v.string())),
   })
 
