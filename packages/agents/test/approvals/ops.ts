@@ -173,6 +173,19 @@ export const exportProject = mutation({
   },
 })
 
+/** Needs approval, writes, then fails with a message of the size the test asks for. */
+export const archiveLoud = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects'), messageChars: v.number(), pad: v.optional(v.string()) },
+  returns: v.null(),
+  tool: { name: 'archive_loud', description: 'Archive, then fail loudly. Needs approval.' },
+  plan: async () => ({ summary: 'Archive loudly.' }),
+  handler: async (ctx, { projectId, messageChars }) => {
+    await ctx.db.patch(projectId, { status: 'archived' })
+    fail('NOT_FOUND', 'm'.repeat(messageChars))
+  },
+})
+
 /** Needs approval, and has no summary of its own: the request still covers the note. */
 export const editNote = mutation({
   action: 'notes.edit',

@@ -2136,6 +2136,52 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  // The size check counts the request id as sent, not a fixed allowance.
+  {
+    id: 'P-r3-door-id-bytes',
+    guards: 'door response size',
+    file: 'packages/agents/src/door.ts',
+    find: "const message = { jsonrpc: '2.0', id: envelope.id, result }",
+    replace: "const message = { jsonrpc: '2.0', id: 1, result }",
+    kills: [
+      `${A}/door/door.test.ts > the largest result that fits is sent whole (2025, string id of 1,000 characters)`,
+    ],
+    projects: ['agents'],
+  },
+  // The 2026 era adds `resultType` and the server identity; the check counts them.
+  {
+    id: 'P-r3-door-modern-bytes',
+    guards: 'door response size',
+    file: 'packages/agents/src/door.ts',
+    find: '...(envelope.modern && {',
+    replace: '...(false && {',
+    kills: [`${A}/door/door.test.ts > the largest result that fits is sent whole (2026)`],
+    projects: ['agents'],
+  },
+  // A failure message is cut to a fixed ceiling.
+  {
+    id: 'P-r3-approve-error-ceiling',
+    guards: 'approve failure size',
+    file: 'packages/agents/src/tools.ts',
+    find: 'if (message.length > maxErrorMessageChars) message = cut(maxErrorMessageChars)',
+    replace: 'if (false) message = cut(maxErrorMessageChars)',
+    kills: [
+      `${A}/approvals/approvals.test.ts > a failure with a small request and a 200,000-character message is stored with a bounded message`,
+    ],
+    projects: ['agents'],
+  },
+  // ...and to the room the decided request leaves.
+  {
+    id: 'P-r3-approve-error-room',
+    guards: 'approve failure size',
+    file: 'packages/agents/src/tools.ts',
+    find: 'while (message.length > 1 && getConvexSize(message) > roomBytes) {',
+    replace: 'while (false) {',
+    kills: [
+      `${A}/approvals/approvals.test.ts > a failure with a request that leaves little room and a 40,000-character message is stored with a bounded message`,
+    ],
+    projects: ['agents'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [
