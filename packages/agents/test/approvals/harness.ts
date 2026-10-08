@@ -81,7 +81,7 @@ const week = 7 * 86_400_000
 
 /** Org A: Ann and Olga own it, Vic views it. Five projects. Ann connected a host with both scopes. */
 export async function setup() {
-  const t = convexTest(schema, modules)
+  const t = convexTest({ schema, modules, transactionLimits: true })
   betterAuth.register(t)
   withDocumentLimit()
   const ids = await t.run(async (ctx) => {

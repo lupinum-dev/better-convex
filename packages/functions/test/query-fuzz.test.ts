@@ -20,7 +20,7 @@ const projectName = makeFunctionReference<'query'>('ops:projectName')
 
 /** Three orgs with one member each, and twelve projects spread over them at random. */
 async function setup(random: SeededRandom) {
-  const t = convexTest(schema, modules)
+  const t = convexTest({ schema, modules, transactionLimits: true })
   const { orgs, projects } = await t.run(async (ctx) => {
     const orgs: Record<string, string> = {}
     for (const [authId, role] of [

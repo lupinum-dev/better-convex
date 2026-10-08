@@ -10,7 +10,7 @@ export const fn = (path: string) => makeFunctionReference<any>(path)
 
 /** Ann owns org A, with one project. Bob is in no organization. */
 export async function setup() {
-  const t = convexTest(schema, modules)
+  const t = convexTest({ schema, modules, transactionLimits: true })
   betterAuth.register(t)
   const ids = await t.run(async (ctx) => {
     const ann = await ctx.db.insert('users', { authId: 'ann', name: 'ann' })

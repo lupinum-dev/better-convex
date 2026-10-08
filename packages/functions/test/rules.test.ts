@@ -11,7 +11,7 @@ const fn = (name: string) => makeFunctionReference<any>(`ops:${name}`)
 
 /** Two orgs. Ann owns A, Vic only views A, Bob owns B. */
 async function setup() {
-  const t = convexTest(schema, modules)
+  const t = convexTest({ schema, modules, transactionLimits: true })
   const ids = await t.run(async (ctx) => {
     const [ann, vic, bob] = await Promise.all(
       ['ann', 'vic', 'bob'].map((authId) => ctx.db.insert('users', { authId })),

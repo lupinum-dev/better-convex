@@ -14,7 +14,7 @@ const fn = (path: string) => makeFunctionReference<any>(path)
 
 /** Ann owns organization A, with one project. */
 async function setup() {
-  const t = convexTest(schema, modules)
+  const t = convexTest({ schema, modules, transactionLimits: true })
   const ids = await t.run(async (ctx) => {
     const ann = await ctx.db.insert('users', { authId: 'ann', name: 'Ann', active: true })
     const a = await ctx.db.insert('organizations', { name: 'A' })

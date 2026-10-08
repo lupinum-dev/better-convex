@@ -26,7 +26,7 @@ afterEach(() => {
 
 /** Org A: Ann and Olga own it. Ann connected a host with every scope. */
 async function setup() {
-  const t = convexTest(schema, modules)
+  const t = convexTest({ schema, modules, transactionLimits: true })
   betterAuth.register(t)
   const ids = await t.run(async (ctx) => {
     const [ann, olga] = await Promise.all(
