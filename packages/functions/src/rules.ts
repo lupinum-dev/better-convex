@@ -3,6 +3,7 @@ import type { GenericId } from 'convex/values'
 
 import { fail, type Actor, type SystemActor, type Visitor } from './actor'
 import { libraryTables } from './schema'
+import { frozen } from './values'
 
 /**
  * Row rules: who may read and write each row. Every app table has one, and the
@@ -117,8 +118,8 @@ export function publicRead(where?: (row: Record<string, unknown>) => boolean) {
  * call is tenantless: no role layer, approvals without a tenant, and agent
  * work in no tenant's activity feed.
  */
-export function anyOf<const R extends readonly unknown[]>(...rules: R) {
-  return { kind: 'anyOf' as const, rules }
+export function anyOf<const R extends readonly [unknown, ...unknown[]]>(...rules: R) {
+  return { kind: 'anyOf' as const, rules: atLeastOne('anyOf', rules) }
 }
 
 /**
@@ -132,7 +133,13 @@ export function anyOf<const R extends readonly unknown[]>(...rules: R) {
  * an ID of the table names the call's tenant as for a plain `tenant` rule.
  */
 export function allOf<const R extends readonly [unknown, ...unknown[]]>(...rules: R) {
-  return { kind: 'allOf' as const, rules }
+  return { kind: 'allOf' as const, rules: atLeastOne('allOf', rules) }
+}
+
+/** The types ask for one rule, but a spread JavaScript list can be empty: an empty `allOf` would pass every row. */
+function atLeastOne<R extends readonly unknown[]>(name: string, rules: R): R {
+  if (rules.length === 0) throw new Error(`${name}() needs at least one rule.`)
+  return rules
 }
 
 /**
@@ -468,7 +475,7 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
         return actor.kind !== 'visitor' && row[rule.field] === actor.user._id ? 'ok' : 'hidden'
       case 'publicRead': {
         // Only `true` makes a row public; an async condition's Promise is truthy (release review).
-        const visible = !rule.where || rule.where(row as never) === true
+        const visible = !rule.where || rule.where(frozen(row) as never) === true
         if (!visible) return 'hidden'
         return mode === 'read' ? 'ok' : 'denied'
       }
@@ -486,7 +493,8 @@ export function checkedDb<DB extends GenericDatabaseWriter<any>>(
           },
         }
         // Only `true` lets the row through: 'ALLOW', 1 or {} from a rule is a bug, not a yes.
-        return (await rule.check(ctx, row)) === true ? 'ok' : 'hidden'
+        // A copy: `row` is the cached stored row that later write checks compare against.
+        return (await rule.check(ctx, frozen(row))) === true ? 'ok' : 'hidden'
       }
       case 'anyOf': {
         const verdicts = []

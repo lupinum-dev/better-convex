@@ -506,3 +506,28 @@ export const join = mutation({
     return null
   },
 })
+
+/** Reads a lock (its rule unlocks the row it was handed), then renames it. */
+export const readThenRename = mutation({
+  action: 'projects.rename',
+  args: { id: v.id('locks') },
+  returns: v.null(),
+  handler: async (ctx, { id }) => {
+    await ctx.db.get(id)
+    await ctx.db.patch(id, { name: 'renamed while locked' })
+    return null
+  },
+})
+
+/** One member is a row ID, the other free text that may look like one. */
+export const tagged = query({
+  action: 'projects.read',
+  args: {
+    value: v.union(
+      v.object({ kind: v.literal('row'), id: v.id('projects') }),
+      v.object({ kind: v.literal('text'), id: v.string() }),
+    ),
+  },
+  returns: v.string(),
+  handler: async (_ctx, { value }) => value.kind,
+})

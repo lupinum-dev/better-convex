@@ -1,7 +1,9 @@
+import { allOf, anyOf } from '@lupinum/better-convex-functions'
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
 import { expect, test, vi } from 'vitest'
 
+import { internalMutation, internalQuery } from './rules/fns'
 import schema from './rules/schema'
 
 const modules = import.meta.glob(['./rules/*.ts', './rules/_generated/*.ts'])
@@ -350,4 +352,46 @@ test('a member can list their own memberships but not raise their role or join a
     await ctx.db.insert('memberships', { orgId: b, userId: vicId, role: 'owner' })
   })
   expect(await vic.query(fn('myOrgs'), {})).toEqual(['viewer', 'owner'])
+})
+
+// Catches: a JavaScript rule list spread into allOf() with no rules, which passed every row.
+test.each([
+  ['allOf', allOf],
+  ['anyOf', anyOf],
+] as const)('%s() without rules fails at definition', (name, combine) => {
+  expect(() => (combine as (...rules: unknown[]) => unknown)()).toThrow(
+    `${name}() needs at least one rule.`,
+  )
+})
+
+// Catches: a wrapper that drops `action` from an internal operation, which then skipped its agent rule.
+test.each([
+  ['internalQuery', undefined],
+  ['internalQuery', 'projects.reed'],
+  ['internalMutation', undefined],
+  ['internalMutation', 'projects.archve'],
+] as const)('%s with action %j fails at definition', (name, action) => {
+  const build = { internalQuery, internalMutation }[name] as (spec: object) => unknown
+  expect(() => build({ action, args: {}, handler: async () => null })).toThrow(
+    /not in the policy's actions/,
+  )
+})
+
+// Catches: a custom rule that changes the cached row it was handed, so a later write check passes.
+test('a rule cannot change the stored row that later checks read', async () => {
+  const { t, ann, a } = await setup()
+  const id = await t.run((ctx) => ctx.db.insert('locks', { orgId: a, name: 'kept', locked: true }))
+  await expect(ann.mutation(fn('readThenRename'), { id })).rejects.toThrow(
+    /read only property 'locked'/,
+  )
+  expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ name: 'kept', locked: true })
+})
+
+// Catches: an ID-shaped string in a union member that is plain text, read as a foreign tenant.
+test('only the union member the value is names a tenant', async () => {
+  const { ann, pb } = await setup()
+  expect(await ann.query(fn('tagged'), { value: { kind: 'text', id: pb } })).toBe('text')
+  await expect(ann.query(fn('tagged'), { value: { kind: 'row', id: pb } })).rejects.toThrow(
+    /NOT_FOUND/,
+  )
 })

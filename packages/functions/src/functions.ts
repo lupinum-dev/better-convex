@@ -51,7 +51,7 @@ import {
 } from './policy'
 import { checkedDb, planReader, readOnly, tenancy, type Rule, type TenantRef } from './rules'
 import type { libraryTables } from './schema'
-import { frozen, idsIn, jsonOf, storable, type ValidatorJson } from './values'
+import { frozen, idsIn, jsonOf, matches, storable, type ValidatorJson } from './values'
 
 export type LibraryDataModel = DataModelFromSchemaDefinition<
   SchemaDefinition<typeof libraryTables, true>
@@ -406,6 +406,8 @@ export function defineFunctions<
     rows: Map<string, Record<string, unknown> | null>,
   ) {
     const found = new Map<string, TenantRef>()
+    const isId = (table: string, value: string) =>
+      ctx.db.normalizeId(table as never, value) !== null
     let ids = 0
     async function visit(json: ValidatorJson, value: unknown, inUnion: boolean): Promise<void> {
       if (value === undefined || value === null) return
@@ -444,7 +446,9 @@ export function defineFunctions<
           }
           return
         case 'union':
-          for (const member of json.value) await visit(member, value, true)
+          // Only the members the value is: an ID-shaped string in another member's text field names no tenant.
+          for (const member of json.value)
+            if (matches(member, value, isId)) await visit(member, value, true)
           return
       }
     }
@@ -944,6 +948,7 @@ export function defineFunctions<
     Args extends PropertyValidators,
     Returns extends AnyValidator,
   >(spec: InternalSpec<QueryCtx, A, Args, Returns>) {
+    assertAction(spec)
     return guarded(
       internalQueryGeneric({
         args: internalArgs(spec.args),
@@ -969,6 +974,7 @@ export function defineFunctions<
     Args extends PropertyValidators,
     Returns extends AnyValidator,
   >(spec: InternalSpec<MutationCtx, A, Args, Returns>) {
+    assertAction(spec)
     return guarded(
       internalMutationGeneric({
         args: internalArgs(spec.args),

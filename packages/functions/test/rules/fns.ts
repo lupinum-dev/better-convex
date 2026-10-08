@@ -70,6 +70,15 @@ export const { query, mutation, internalQuery, internalMutation, internalAction,
         ),
       ),
       notes: unchecked('Test table for the escape hatch.'),
+      // A careless rule: it unlocks the row it was handed while reading.
+      locks: allOf(
+        tenant('orgId'),
+        custom<DocumentByName<DataModel, 'locks'>>((ctx, lock) => {
+          if (ctx.mode === 'write') return !lock.locked
+          lock.locked = false
+          return true
+        }),
+      ),
       pages: anyOf(
         publicRead((page: { published: boolean }) => page.published),
         tenant('orgId'),

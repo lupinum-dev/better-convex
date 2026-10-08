@@ -46,6 +46,64 @@ export function idsIn(json: ValidatorJson, value: unknown): { table: string; id:
   }
 }
 
+/**
+ * Does a value Convex already accepted fit this validator? For a union, it tells which members
+ * the value is: only their fields carry meaning. `isId(table, value)` checks an ID's table.
+ */
+export function matches(
+  json: ValidatorJson,
+  value: unknown,
+  isId: (table: string, value: string) => boolean,
+): boolean {
+  switch (json.type) {
+    case 'any':
+      return true
+    case 'null':
+      return value === null
+    case 'number':
+    case 'bigint':
+    case 'boolean':
+    case 'string':
+      return typeof value === json.type
+    case 'bytes':
+      return value instanceof ArrayBuffer
+    case 'literal':
+      return value === json.value
+    case 'id':
+      return typeof value === 'string' && isId(json.tableName, value)
+    case 'array':
+      return Array.isArray(value) && value.every((item) => matches(json.value, item, isId))
+    case 'record':
+      return (
+        isPlainObject(value) &&
+        Object.entries(value).every(
+          ([key, item]) =>
+            matches(json.keys, key, isId) && matches(json.values.fieldType, item, isId),
+        )
+      )
+    case 'object':
+      return (
+        isPlainObject(value) &&
+        Object.keys(value).every((key) => Object.hasOwn(json.value, key)) &&
+        Object.entries(json.value).every(([key, field]) => {
+          const item = value[key]
+          return item === undefined ? field.optional : matches(field.fieldType, item, isId)
+        })
+      )
+    case 'union':
+      return json.value.some((member) => matches(member, value, isId))
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof ArrayBuffer)
+  )
+}
+
 /** Identifies one call (tool and input, key order ignored), so a reused retry key is detected. */
 export function callKey(tool: string, input: unknown): string {
   return `${tool}:${hash(stable(input))}`
