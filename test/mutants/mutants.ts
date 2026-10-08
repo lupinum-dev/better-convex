@@ -2259,6 +2259,18 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  // The approval list reads within one budget, so many large requests cannot fail it.
+  {
+    id: 'P-r3-approval-list-budget',
+    guards: 'r3-lifecycle',
+    file: 'packages/agents/src/tools.ts',
+    find: 'const listBudget = readBudget()',
+    replace: 'const listBudget = { count() {}, spent: false }',
+    kills: [
+      `${A}/approvals/approvals.test.ts > the approval list stays within the read limit when many large requests wait`,
+    ],
+    projects: ['agents'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [

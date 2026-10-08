@@ -163,13 +163,7 @@ test('a request that nearly fills the size limit stores a marker for a result th
 // Review: the failure branch stored the app's message as it was. A message longer than the room the
 // request left made the "failed" patch exceed 1 MiB; the whole approval then threw and the person got an error.
 test.each([
-  [
-    'a request that leaves little room and a 40,000-character message',
-    1_038_000,
-    40_000,
-    500,
-    1_999,
-  ],
+  ['a request that leaves little room and a 40,000-character message', 259_760, 40_000, 500, 1_999],
   ['a small request and a 200,000-character message', 10, 200_000, 1_900, 2_000],
 ])('a failure with %s is stored with a bounded message', async (_name, pad, chars, min, max) => {
   const s = await setup()
@@ -1381,6 +1375,31 @@ test.each(['wait', 'decide', 'finish'] as const)(
     expect(await run()).toMatchObject({ status: 'running', turn: 3 })
   },
 )
+
+// Polish round 3: the approval list read up to 300 requests whole; at the largest request size
+// that is far over Convex's 16 MiB read limit, so the list itself failed.
+test('the approval list stays within the read limit when many large requests wait', async () => {
+  const s = await setup()
+  const runId = await inAppRun(s, 'live', 'running')
+  const caller = { door: 'app', runId, turn: 2 }
+  const note = 'n'.repeat(await largestNote(s, caller))
+  const { approvalId } = await s.t.mutation(api.tools.export_project, {
+    caller,
+    input: { projectId: s.p[0], size: 101, note },
+  })
+  // 70 copies of the largest request: more than any one agent may hold, as several agents could.
+  for (let batch = 0; batch < 23; batch++) {
+    await s.t.run(async (ctx) => {
+      const { _id, _creationTime, ...row } = (await ctx.db.get(
+        approvalId as GenericId<'approvals'>,
+      ))!
+      for (let n = 0; n < 3; n++) await ctx.db.insert('approvals', row)
+    })
+  }
+  const shown = await s.ann.query(api.tools.pending, {})
+  expect(shown.length).toBeGreaterThan(0)
+  expect(shown.length).toBeLessThan(70)
+})
 
 // Polish round 3: a run waited on every ID its turn passed, also ones decided or of another run,
 // so what waking it read was not bounded by its agent's 20 open requests.

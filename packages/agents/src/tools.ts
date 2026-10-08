@@ -879,26 +879,40 @@ export function defineTools(
         handler: async (ctx: Ctx, { tenantId }: { tenantId?: string }) => {
           const actor = await person(ctx)
           const now = Date.now()
-          const mine = await lib(ctx)
-            .query('approvals')
-            .withIndex('by_user_status', (q) =>
-              q.eq('requester.userId', actor.user._id).eq('status', 'pending').gt('expiresAt', now),
-            )
-            .take(100)
+          // One read budget for the whole list: a person with many large open requests sees the
+          // first ones instead of a query over Convex's read limit.
+          const listBudget = readBudget()
+          const { rows: mine } = await within(
+            lib(ctx)
+              .query('approvals')
+              .withIndex('by_user_status', (q) =>
+                q
+                  .eq('requester.userId', actor.user._id)
+                  .eq('status', 'pending')
+                  .gt('expiresAt', now),
+              ),
+            listBudget,
+          )
           const out = mine.map((row) => requestView(row, true))
           if (tenantId !== undefined) {
-            const team = await lib(ctx)
-              .query('approvals')
-              .withIndex('by_tenant_status', (q) =>
-                q.eq('tenantId', tenantId).eq('status', 'pending').gt('expiresAt', now),
-              )
-              .take(100)
-            const parties = await lib(ctx)
-              .query('approvalParties')
-              .withIndex('by_tenant', (q) => q.eq('tenantId', tenantId).gt('expiresAt', now))
-              .take(100)
+            const { rows: team } = await within(
+              lib(ctx)
+                .query('approvals')
+                .withIndex('by_tenant_status', (q) =>
+                  q.eq('tenantId', tenantId).eq('status', 'pending').gt('expiresAt', now),
+                ),
+              listBudget,
+            )
+            const { rows: parties } = await within(
+              lib(ctx)
+                .query('approvalParties')
+                .withIndex('by_tenant', (q) => q.eq('tenantId', tenantId).gt('expiresAt', now)),
+              listBudget,
+            )
             for (const party of parties) {
+              if (listBudget.spent) break
               const row = await lib(ctx).get(party.approvalId)
+              if (row) listBudget.count(row)
               if (row?.status === 'pending') team.push(row)
             }
             for (const row of team) {
