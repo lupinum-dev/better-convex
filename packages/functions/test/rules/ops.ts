@@ -462,3 +462,72 @@ export const nightlyReport = job({
   args: { archived: v.number() },
   handler: async (_ctx, { archived }) => ({ archived }),
 })
+
+/** The org switcher: the caller's own memberships, in every org. */
+export const myOrgs = query({
+  action: 'members.list',
+  args: {},
+  returns: v.array(v.string()),
+  handler: async (ctx) => {
+    const userId = ctx.actor.user._id
+    const mine = await ctx.db
+      .query('memberships')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .collect()
+    return mine.map((membership) => membership.role)
+  },
+})
+
+/** Ordinary membership CRUD: sets a role. */
+export const setRole = mutation({
+  action: 'members.edit',
+  args: {
+    membershipId: v.id('memberships'),
+    role: v.union(v.literal('owner'), v.literal('viewer')),
+  },
+  returns: v.null(),
+  handler: async (ctx, { membershipId, role }) => {
+    await ctx.db.patch(membershipId, { role })
+    return null
+  },
+})
+
+/** Ordinary membership CRUD: adds the caller to an org named by a plain string. */
+export const join = mutation({
+  action: 'members.edit',
+  args: { orgId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { orgId }) => {
+    await ctx.db.insert('memberships', {
+      orgId: ctx.db.normalizeId('orgs', orgId)!,
+      userId: ctx.actor.user._id,
+      role: 'owner',
+    })
+    return null
+  },
+})
+
+/** Reads a lock (its rule unlocks the row it was handed), then renames it. */
+export const readThenRename = mutation({
+  action: 'projects.rename',
+  args: { id: v.id('locks') },
+  returns: v.null(),
+  handler: async (ctx, { id }) => {
+    await ctx.db.get(id)
+    await ctx.db.patch(id, { name: 'renamed while locked' })
+    return null
+  },
+})
+
+/** One member is a row ID, the other free text that may look like one. */
+export const tagged = query({
+  action: 'projects.read',
+  args: {
+    value: v.union(
+      v.object({ kind: v.literal('row'), id: v.id('projects') }),
+      v.object({ kind: v.literal('text'), id: v.string() }),
+    ),
+  },
+  returns: v.string(),
+  handler: async (_ctx, { value }) => value.kind,
+})

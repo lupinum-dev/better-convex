@@ -24,8 +24,10 @@ export const policy = definePolicy({
     'notes.read',
     'pages.read',
     'pages.edit',
+    'members.list',
+    'members.edit',
   ],
-  roles: { owner: ['*'], viewer: ['projects.read', 'pages.read'] },
+  roles: { owner: ['*'], viewer: ['projects.read', 'pages.read', 'members.list'] },
   scopes: { all: { label: 'Everything', actions: ['*'] } },
   public: ['pages.read'],
 })
@@ -55,7 +57,10 @@ export const { query, mutation, internalQuery, internalMutation, internalAction,
     rules: {
       users: owner('_id'),
       orgs: tenant('_id'),
-      memberships: owner('userId'),
+      // The documented rule (row-rules.md): every membership of an org where the role allows the action.
+      memberships: custom<DocumentByName<DataModel, 'memberships'>>((ctx, membership) =>
+        ctx.allows({ table: 'orgs', id: membership.orgId }),
+      ),
       // An archived project is read-only: a state condition in the rule, not in each handler.
       projects: allOf(
         tenant('orgId'),
@@ -65,6 +70,15 @@ export const { query, mutation, internalQuery, internalMutation, internalAction,
         ),
       ),
       notes: unchecked('Test table for the escape hatch.'),
+      // A careless rule: it unlocks the row it was handed while reading.
+      locks: allOf(
+        tenant('orgId'),
+        custom<DocumentByName<DataModel, 'locks'>>((ctx, lock) => {
+          if (ctx.mode === 'write') return !lock.locked
+          lock.locked = false
+          return true
+        }),
+      ),
       pages: anyOf(
         publicRead((page: { published: boolean }) => page.published),
         tenant('orgId'),
