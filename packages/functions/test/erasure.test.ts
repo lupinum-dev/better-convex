@@ -59,8 +59,9 @@ test('erasure deletes, anonymizes and keeps across batches, and leaves other peo
     await ctx.db.insert('comments', { authorId: bob, body: 'b' })
     await ctx.db.insert('projects', { ownerId: ann, name: 'Team' })
   })
-  // 500 rows to read at 100 a step is five steps and one more to see nothing is left.
-  await erase(t, ann, 6)
+  // 500 rows to read at 100 a step is five steps and one more to see nothing is left. Fewer steps
+  // means a step read more than its budget allows.
+  expect(await erase(t, ann, 6)).toBe(6)
   const after = await t.run(async (ctx) => ({
     drafts: await ctx.db.query('drafts').collect(),
     comments: await ctx.db.query('comments').collect(),
