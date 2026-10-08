@@ -228,7 +228,7 @@ function resolveSchemaTarball(isolatedRoot, parent) {
   const artifacts = path.join(parent, 'artifacts')
   mkdirSync(artifacts, { recursive: true })
   // pnpm pack turns the `workspace:*` Vue dependency into its exact version, as a release does.
-  // This gate builds no docs, so it skips the prepack check for the packaged agent docs.
+  // This gate builds no docs, so it packs the agent docs placeholder (test/packed checks that).
   output(
     'pnpm',
     ['pack', '--config.ignore-scripts=true', '--pack-destination', artifacts],

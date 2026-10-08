@@ -80,7 +80,7 @@ pnpm install
 pnpm dev               # source playground on port 4578 (see "Local backend")
 pnpm test              # unit, security, convex, nuxt, browser, auth-adapter, auth-fuzz, mcp, functions, agents
 pnpm format            # apply formatting
-pnpm verify            # lint, typecheck, test, build, packed-package checks, pnpm audit
+pnpm verify            # lint, typecheck, test, build, packed-package checks, dependency audit
 pnpm changeset         # describe a user-facing change for the next release
 ```
 
