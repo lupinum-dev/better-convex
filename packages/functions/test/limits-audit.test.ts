@@ -167,7 +167,7 @@ test('a query cannot use a limited action', () => {
   })
   const read = { action: 'x.read', args: {}, returns: {} as never, handler: async () => null }
   expect(() => kit.query(read as never)).toThrow(
-    'x.read is limited, but no mutation uses it. Limit the mutation the action calls.',
+    'x.read is limited, but no mutation uses it. Put the limit on the action of a mutation.',
   )
   expect(() => kit.internalQuery(read as never)).toThrow(/no mutation uses it/)
 })

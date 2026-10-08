@@ -2838,8 +2838,8 @@ export const mutants: Mutant[] = [
     id: 'S-B-erase-library-messages',
     guards: 'a run goes only with its last message',
     file: 'packages/functions/src/erasure.ts',
-    find: 'if (messages.more) left = true',
-    replace: 'if (false) left = true',
+    find: 'if (messages.more) return true',
+    replace: 'if (false) return true',
     kills: [
       `${F}/erasure.test.ts > library tables: own rows go or lose the ID, other people keep theirs`,
     ],

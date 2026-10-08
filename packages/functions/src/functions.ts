@@ -314,7 +314,7 @@ export function defineFunctions<
   function assertUnlimited(spec: { action: string }) {
     if (limitOf(policy, spec.action))
       throw new Error(
-        `${spec.action} is limited, but no mutation uses it. Limit the mutation the action calls.`,
+        `${spec.action} is limited, but no mutation uses it. Put the limit on the action of a mutation.`,
       )
   }
 

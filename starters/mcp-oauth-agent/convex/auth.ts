@@ -47,7 +47,7 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
       if (refusal === 'too-many-teams')
         throw new ConvexError({
           message:
-            'You own too many organizations to delete your account in one step. Hand some over or delete them first.',
+            'You own more than 100 organizations. Hand some over or delete them, then delete your account.',
         })
     },
   },
