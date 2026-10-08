@@ -1,4 +1,4 @@
-import { finish, shownStatus } from '@lupinum/better-convex-agents/internal'
+import { finish, shownStatus, stallAfter } from '@lupinum/better-convex-agents/internal'
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
@@ -974,11 +974,16 @@ test('housekeeping keeps agent activity for a year, then deletes it', async () =
   await s.tool('rename_project', { projectId: s.p[0], name: 'n' })
   const activity = () => s.t.run((ctx) => ctx.db.query('activity').collect())
   expect(await activity()).toHaveLength(1)
+  // Deleting runs in housekeeping's later steps.
+  const housekeeping = async () => {
+    await s.t.mutation(api.tools.housekeeping, {})
+    await s.t.finishAllScheduledFunctions(vi.runAllTimers)
+  }
   vi.advanceTimersByTime(364 * 86_400_000)
-  await s.t.mutation(api.tools.housekeeping, {})
+  await housekeeping()
   expect(await activity()).toHaveLength(1)
   vi.advanceTimersByTime(2 * 86_400_000)
-  await s.t.mutation(api.tools.housekeeping, {})
+  await housekeeping()
   expect(await activity()).toEqual([])
 })
 
@@ -1025,6 +1030,86 @@ const request = (fields: Record<string, unknown>) => ({
   ...{ action: 'notes.edit', tool: 'edit_note', input: {}, summary: 'Edit a note' },
   ...{ requester: helper, status: 'approved', expiresAt: Date.now() },
   ...fields,
+})
+
+/** Runs every scheduled housekeeping step; deleting a large backlog takes many. */
+async function drain(t: ReturnType<typeof convexTest>) {
+  for (let step = 0; step < 500; step++) {
+    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+    if (!jobs.some((job) => job.state.kind === 'pending')) return
+    vi.runAllTimers()
+    await t.finishInProgressScheduledFunctions()
+  }
+  throw new Error('housekeeping did not finish')
+}
+
+// r3 review: old data past Convex's read limits failed every housekeeping run, and its rollback kept stalled runs running.
+test.each([
+  {
+    old: 'a long finished conversation',
+    seed: async (t: ReturnType<typeof convexTest>, runId: string) => {
+      for (let batch = 0; batch < 4; batch++)
+        await t.run(async (ctx) => {
+          for (let n = 0; n < 50; n++)
+            await ctx.db.insert('agentMessages', {
+              runId: runId as never,
+              order: batch * 50 + n,
+              json: JSON.stringify({ role: 'tool', content: 'x'.repeat(100_000) }),
+            })
+        })
+    },
+  },
+  {
+    old: 'many decided requests with large plans',
+    seed: async (t: ReturnType<typeof convexTest>, runId: string) => {
+      for (let batch = 0; batch < 4; batch++)
+        await t.run(async (ctx) => {
+          for (let n = 0; n < 50; n++)
+            await ctx.db.insert(
+              'approvals',
+              request({
+                caller: { door: 'app', runId, turn: 1 },
+                plan: { summary: 'Edit a note', contents: 'x'.repeat(90_000) },
+              }) as never,
+            )
+        })
+    },
+  },
+  {
+    old: 'a request that created 17,000 rows',
+    seed: async (t: ReturnType<typeof convexTest>, runId: string) => {
+      const approvalId = await t.run((ctx) =>
+        ctx.db.insert('approvals', request({ caller: { door: 'app', runId, turn: 1 } }) as never),
+      )
+      for (let batch = 0; batch < 17; batch++)
+        await t.run(async (ctx) => {
+          for (let n = 0; n < 1000; n++)
+            await ctx.db.insert('approvalRows', { approvalId, rowId: `created-${batch}-${n}` })
+        })
+    },
+  },
+])('housekeeping ends a stalled run first, then deletes $old', async ({ seed }) => {
+  const { t, runId: old } = await limitedRun('done')
+  await seed(t, old)
+  vi.advanceTimersByTime(91 * 86_400_000)
+  const stuck = await t.run(async (ctx) => {
+    const { _id, _creationTime, ...run } = (await ctx.db.get(old))!
+    const stepAt = Date.now() - stallAfter - 1
+    return await ctx.db.insert('agentRuns', { ...run, task: 'Stuck', status: 'running', stepAt })
+  })
+  await t.mutation(api.tools.housekeeping, {})
+  expect(await t.run((ctx) => ctx.db.get(stuck))).toMatchObject({
+    status: 'failed',
+    error: { code: 'STALLED' },
+  })
+  await drain(t)
+  const left = await t.run(async (ctx) => ({
+    runs: (await ctx.db.query('agentRuns').collect()).map((run) => run.task),
+    messages: (await ctx.db.query('agentMessages').take(1)).length,
+    approvals: (await ctx.db.query('approvals').take(1)).length,
+    approvalRows: (await ctx.db.query('approvalRows').take(1)).length,
+  }))
+  expect(left).toEqual({ runs: ['Stuck'], messages: 0, approvals: 0, approvalRows: 0 })
 })
 
 // r3 review: finishing scanned the agent's first 500 open requests, so another run's backlog hid this run's own.

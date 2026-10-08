@@ -1820,14 +1820,18 @@ export const mutants: Mutant[] = [
     kills: [journey],
     projects: ['integration'],
   },
-  // A step may run 30 minutes in Convex's runtime before it counts as stalled.
+  // Housekeeping reads a bounded amount per transaction, so old data cannot fail it forever.
   {
-    id: 'P-housekeeping-stall-threshold',
+    id: 'P-housekeeping-bounded-cleanup',
     guards: 'housekeeping',
-    file: 'packages/agents/src/runs.ts',
-    find: 'export const stallAfter = 35 * 60_000',
-    replace: 'export const stallAfter = 15 * 60_000',
-    kills: [`${A}/approvals/approvals.test.ts > a step that works for 31 minutes has not stalled`],
+    file: 'packages/agents/src/tools.ts',
+    find: 'const sweep = { rows: 100, bytes: 4 * 1024 * 1024 }',
+    replace: 'const sweep = { rows: 1_000_000, bytes: 2 ** 40 }',
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run first, then deletes 'a long finished conversation'`,
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run first, then deletes 'many decided requests with large plans'`,
+      `${A}/approvals/approvals.test.ts > housekeeping ends a stalled run first, then deletes 'a request that created 17,000 rows'`,
+    ],
     projects: ['agents'],
   },
   // A finished run cancels its own requests, not the first 500 of its agent.
