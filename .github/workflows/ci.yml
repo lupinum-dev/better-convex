@@ -130,6 +130,10 @@ jobs:
   mutants:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/3, 2/3, 3/3]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -141,7 +145,7 @@ jobs:
       - run: npm install --global corepack@0.34.5 && corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:mutants
+      - run: pnpm test:mutants --shard ${{ matrix.shard }}
 
   # The one required status check for the main branch ruleset.
   ci:

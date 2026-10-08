@@ -1,5 +1,6 @@
 /**
- * Runs the mutation check: `pnpm test:mutants`, or `pnpm test:mutants --only <id>[,<id>…]`.
+ * Runs the mutation check: `pnpm test:mutants`, `pnpm test:mutants --only <id>[,<id>…]`, or one
+ * part of the rows with `--shard <i>/<n>` (CI runs the parts in parallel).
  *
  * 1. Baseline: one vitest run over the `kills` files of the selected rows.
  *    Every name in every `kills` list must exist and pass.
@@ -92,7 +93,15 @@ for (const row of mutants) {
 }
 const onlyIds = only?.split(',')
 for (const id of onlyIds ?? []) if (!ids.has(id)) throw new Error(`No mutant row "${id}".`)
-const rows = onlyIds ? mutants.filter((row) => onlyIds.includes(row.id)) : mutants
+const shard = process.argv.includes('--shard')
+  ? process.argv[process.argv.indexOf('--shard') + 1]!.split('/').map(Number)
+  : undefined
+if (shard && !(shard[0]! >= 1 && shard[0]! <= shard[1]! && Number.isInteger(shard[1])))
+  throw new Error('--shard takes <i>/<n>, for example 1/3.')
+// Every n-th row from i, so the slow integration rows spread over the parts.
+const rows = (onlyIds ? mutants.filter((row) => onlyIds.includes(row.id)) : mutants).filter(
+  (_, index) => !shard || index % shard[1]! === shard[0]! - 1,
+)
 
 let failed = 0
 let failedRows = 0

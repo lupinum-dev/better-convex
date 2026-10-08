@@ -40,7 +40,7 @@ pnpm test:integration   # real local Convex backend (builds the packages first)
 pnpm test:e2e           # full-stack E2E; `node scripts/run-e2e.mjs --full` adds extended/
 pnpm test:packed        # after `pnpm build`: publint, attw, packed imports, secret scan, consumer typechecks
 pnpm test:starters      # every starter, the consumer apps and the packed Vue/Nuxt/MCP consumers, from local tarballs
-pnpm test:mutants       # each security guard broken in memory; `--only <id>[,<id>]` for some rows
+pnpm test:mutants       # each security guard broken in memory; `--only <id>[,<id>]` for some rows, `--shard 1/3` for a part
 pnpm test:live          # by hand: the starter on a Convex preview deployment (see "Cloud smoke")
 ```
 
