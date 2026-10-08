@@ -10,6 +10,7 @@ export const tools = defineTools(fns, { projects, shapes }, { functions: refs('a
 export const {
   create_project,
   archive_project,
+  large_report,
   list_projects,
   echo_shapes,
   check_approval,

@@ -556,6 +556,23 @@ test('every row a request covers is checked for changes, up to a stated limit', 
   await expect(s.tool('archive_projects', { projectIds: ids })).rejects.toThrow(/TOO_LARGE/)
 })
 
+// C3: a plan that copies large rows made the stored request exceed 1 MiB; the agent saw FAILED.
+test('a plan too large to store fails as TOO_LARGE and stores nothing', async () => {
+  const s = await setup()
+  const noteIds = await s.t.run(async (ctx) => {
+    const ids = []
+    for (let n = 0; n < 5; n++)
+      ids.push(
+        await ctx.db.insert('notes', { userId: s.annId, orgId: s.a, text: 'x'.repeat(250_000) }),
+      )
+    return ids
+  })
+  await expect(s.tool('bundle_notes', { noteIds })).rejects.toThrow(
+    /TOO_LARGE.*Make the plan smaller, or split the work/,
+  )
+  expect(await s.approvalRows()).toEqual([])
+})
+
 // Codex review: a retry after a large approved result failed on the result validator.
 test('a retry after a large approved result replays the marker', async () => {
   const s = await setup()

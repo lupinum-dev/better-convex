@@ -254,6 +254,20 @@ export const editNotes = mutation({
   },
 })
 
+/** Its plan copies the note texts, so a few large notes make the stored request too big. */
+export const bundleNotes = mutation({
+  action: 'notes.edit',
+  args: { noteIds: v.array(v.id('notes')) },
+  returns: v.null(),
+  tool: { name: 'bundle_notes', description: 'Use the selected notes. Needs approval.' },
+  plan: async (ctx, { noteIds }) => ({
+    summary: 'Use the selected notes.',
+    rows: noteIds,
+    contents: await Promise.all(noteIds.map(async (id) => (await ctx.db.get(id))!.text)),
+  }),
+  handler: async () => null,
+})
+
 /** Empties a note. Its approvers are only the call's tenant's (no `sharedRows`). */
 export const clearNote = mutation({
   action: 'notes.clear',

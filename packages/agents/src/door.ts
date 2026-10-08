@@ -1,4 +1,4 @@
-import { guarded } from '@lupinum/better-convex-functions/internal'
+import { guarded, storable } from '@lupinum/better-convex-functions/internal'
 import {
   fromJsonSchema,
   type CallToolResult,
@@ -8,7 +8,8 @@ import { httpActionGeneric } from 'convex/server'
 
 import type { McpDoorAuth, McpPrincipal } from './access'
 import { handleMcpRequest } from './handler'
-import { grantedTools, toolCall, toolFailure, type CatalogEntry } from './tools'
+import { grantedTools, toolCall, toolFailure, type CatalogEntry, type ToolSuccess } from './tools'
+import { maximumMcpResponseBytes } from './transport'
 
 /** What `createMcpServer` needs from the module that calls `defineTools`. */
 interface ToolsModule {
@@ -58,6 +59,20 @@ function resultText(output: Record<string, unknown>) {
     )
   }
   return JSON.stringify(output)
+}
+
+/**
+ * A result the transport would refuse (HTTP 502) after the write committed. The text and
+ * `structuredContent` both carry it, so both count; the client gets the marker a replay gets.
+ */
+function bounded(output: ToolSuccess): { output: ToolSuccess; text: string } {
+  const text = resultText(output)
+  const bytes = 2 * new TextEncoder().encode(text).byteLength
+  if (output.status !== 'done' || bytes <= maximumMcpResponseBytes - 16 * 1024)
+    return { output, text }
+  // `bytes` is the result's own size, as in a replay.
+  const marker: ToolSuccess = { status: 'done', result: storable(output.result, 0) }
+  return { output: marker, text: resultText(marker) }
 }
 
 function failure(reason: { code: string; message: string }): CallToolResult {
@@ -122,11 +137,8 @@ export function createMcpServer(
               },
               async (args: Record<string, unknown>) => {
                 try {
-                  const output = await toolCall(entry, args, principal, ctx)
-                  return {
-                    content: [{ type: 'text', text: resultText(output) }],
-                    structuredContent: output,
-                  }
+                  const { output, text } = bounded(await toolCall(entry, args, principal, ctx))
+                  return { content: [{ type: 'text', text }], structuredContent: output }
                 } catch (error) {
                   return failure(toolFailure(error))
                 }

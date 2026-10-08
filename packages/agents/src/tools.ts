@@ -105,6 +105,8 @@ const agentWritesPerMinute = 60
 const openApprovals = 20
 /** Rows one request may cover; each is fingerprinted for the stale check. */
 const maxSeen = 500
+/** What one stored approval may weigh: Convex's 1 MiB document limit, less room for system fields. */
+const maxApprovalBytes = 1024 * 1024 - 8 * 1024
 /** A result too large to keep for replay. */
 const truncated = v.object({ truncated: v.literal(true), bytes: v.number() })
 const reserved = new Set(['check_approval', 'housekeeping'])
@@ -178,6 +180,12 @@ export async function toolCall(
   run: ToolRunner,
 ): Promise<ToolSuccess> {
   const { request_id: rawRequestId, ...input } = args ?? {}
+  if (
+    rawRequestId !== undefined &&
+    typeof rawRequestId !== 'string' &&
+    typeof rawRequestId !== 'number'
+  )
+    fail('INVALID_INPUT', 'request_id must be a string or number. Fix it, or leave it out.')
   // Models send numbers for "IDs" they make up; the same number must still deduplicate.
   const requestId = typeof rawRequestId === 'number' ? String(rawRequestId) : rawRequestId
   const invalid = unsendable(input)
@@ -560,7 +568,7 @@ export function defineTools(
             const { plan, seen, rows } = await planned(authorized)
             const summary = oneLine(plan.summary)
             const expiresAt = Date.now() + approvalTtl
-            const approvalId = await lib(ctx).insert('approvals', {
+            const approval = {
               action: op.action,
               tool: op.tool.name,
               input: input as Value,
@@ -572,9 +580,17 @@ export function defineTools(
               callHash,
               plan: plan as unknown as Value,
               seen,
-              status: 'pending',
+              status: 'pending' as const,
               expiresAt,
-            })
+            }
+            // Convex refuses a document over 1 MiB with an opaque error; say what to change.
+            if (getConvexSize(approval as unknown as Value) > maxApprovalBytes) {
+              fail(
+                'TOO_LARGE',
+                `The plan of ${op.action} is too large to store for approval. Make the plan smaller, or split the work into several calls.`,
+              )
+            }
+            const approvalId = await lib(ctx).insert('approvals', approval)
             if (approversFor(policy, op.action).sharedRows) {
               for (const tenantId of await partiesOf(ctx, tenant, rows, mayWrite)) {
                 await lib(ctx).insert('approvalParties', { approvalId, tenantId, expiresAt })
@@ -641,6 +657,13 @@ export function defineTools(
   /** The tool list a door publishes. Input schemas come from the same Convex validators. */
   const catalog: CatalogEntry[] = [
     ...[...operations.values()].map((op) => {
+      const scopes = scopesFor(policy, op.action)
+      // An empty list marks a built-in tool, so an app tool without scopes would show in every catalog.
+      if (scopes.length === 0) {
+        throw new Error(
+          `Tool ${op.tool.name}: its action ${op.action} is in no scope. Give it at least one scope in definePolicy.`,
+        )
+      }
       const rule = (policy.agents as Record<string, unknown> | undefined)?.[op.action]
       return {
         name: op.tool.name,
@@ -657,7 +680,7 @@ export function defineTools(
             : rule === 'approve'
               ? ('always' as const)
               : ('never' as const),
-        scopes: scopesFor(policy, op.action),
+        scopes,
       }
     }),
     {

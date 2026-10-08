@@ -34,6 +34,18 @@ export const archive = mutation({
   },
 })
 
+/** C4: a write whose result is too large for one response. */
+export const report = mutation({
+  action: 'projects.create',
+  args: { orgId: v.id('orgs'), size: v.number() },
+  returns: v.string(),
+  tool: { name: 'large_report', description: 'Write a report and return it.' },
+  handler: async (ctx, { orgId, size }) => {
+    await ctx.db.insert('projects', { orgId, name: 'report', status: 'active' })
+    return 'y'.repeat(size)
+  },
+})
+
 /** E9: a paginated operation, as a web query and as a tool. */
 export const page = query({
   action: 'projects.search',
