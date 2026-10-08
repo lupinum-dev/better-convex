@@ -1,6 +1,6 @@
 import { fail } from '@lupinum/better-convex-functions'
 import { internalMutationGeneric, makeFunctionReference } from 'convex/server'
-import { v } from 'convex/values'
+import { ConvexError, v } from 'convex/values'
 
 import { internalAction, internalMutation, internalQuery, mutation } from './fns'
 
@@ -492,3 +492,59 @@ const matching = async (
       .withIndex('by_org', (q) => q.eq('orgId', orgId))
       .collect()
   ).filter((project) => project.status === 'active' && project.name.startsWith(prefix))
+
+// The doors table (../doors.test.ts). `projects.touch` is audited and limited to 2 a minute;
+// `leak_*` write, then fail the way a dependency fails, with a secret in the message.
+
+/** Audited and limited: reachable by an agent without a person. */
+export const touch = mutation({
+  action: 'projects.touch',
+  args: {
+    projectId: v.id('projects'),
+    name: v.string(),
+    /** A row the input does not name, written by the handler: only the row rules stop it. */
+    elsewhere: v.optional(v.string()),
+    /** Write nothing: only the policy stands between the call and success. */
+    quiet: v.optional(v.boolean()),
+  },
+  returns: project,
+  tool: { name: 'touch_project', description: 'Rename a project. Limited.' },
+  handler: async (ctx, { projectId, name, elsewhere, quiet }) => {
+    if (quiet) return { id: projectId, name }
+    await ctx.db.patch(projectId, { name })
+    if (elsewhere) await ctx.db.patch(elsewhere as typeof projectId, { name })
+    return { id: projectId, name }
+  },
+})
+
+const secret = 'canary-secret-from-upstream'
+const upstreamFailure = (kind: string): never => {
+  if (kind === 'code') throw new ConvexError({ code: 'UPSTREAM_SECRET', message: secret })
+  if (kind === 'text') throw new ConvexError(secret)
+  throw new Error(secret)
+}
+
+/** Fails like a dependency, after writing. */
+export const leak = mutation({
+  action: 'projects.leak',
+  args: { projectId: v.id('projects'), kind: v.string() },
+  returns: v.null(),
+  tool: { name: 'leak_project', description: 'Write, then fail with a secret.' },
+  handler: async (ctx, { projectId, kind }) => {
+    await ctx.db.patch(projectId, { name: 'leaked' })
+    return upstreamFailure(kind)
+  },
+})
+
+/** The same failure, for an action a person must approve. */
+export const leakApproved = mutation({
+  action: 'projects.leakApproved',
+  args: { projectId: v.id('projects'), kind: v.string() },
+  returns: v.null(),
+  tool: { name: 'leak_approved', description: 'Write, then fail with a secret. Needs approval.' },
+  plan: async () => ({ summary: 'Leak.' }),
+  handler: async (ctx, { projectId, kind }) => {
+    await ctx.db.patch(projectId, { name: 'leaked' })
+    return upstreamFailure(kind)
+  },
+})

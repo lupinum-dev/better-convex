@@ -24,13 +24,18 @@ export const policy = definePolicy({
     'notes.edit',
     'notes.clear',
     'listings.buy',
+    'projects.touch',
+    'projects.leak',
+    'projects.leakApproved',
   ],
   roles: { owner: ['*'], viewer: ['projects.list', 'projects.read'] },
-  audit: ['projects.rename'],
+  audit: ['projects.rename', 'projects.touch', 'projects.archive'],
   // One archive and one export a minute for everyone; a person's approval does not take them.
   limits: {
     'projects.archive': { max: 1, every: 'minute', per: 'everyone' },
     'projects.export': { max: 1, every: 'minute', per: 'everyone' },
+    // Per connection: the doors table (../doors.test.ts) runs every agent door into it.
+    'projects.touch': { max: 2, every: 'minute' },
   },
   scopes: {
     'projects:read': { label: 'See projects.', actions: ['projects.list', 'projects.read'] },
@@ -43,6 +48,9 @@ export const policy = definePolicy({
         'notes.edit',
         'notes.clear',
         'listings.buy',
+        'projects.touch',
+        'projects.leak',
+        'projects.leakApproved',
       ],
     },
   },
@@ -53,12 +61,14 @@ export const policy = definePolicy({
     'projects.export': ({ size }) => (size > 100 ? 'approve' : 'allow'),
     'notes.clear': 'approve',
     'listings.buy': 'approve',
+    'projects.leakApproved': 'approve',
   },
   approvers: {
     'projects.archive': ['owner'],
     'notes.edit': { roles: ['owner'], sharedRows: true },
     'notes.clear': ['owner'],
     'listings.buy': { roles: ['owner'], sharedRows: true },
+    'projects.leakApproved': ['owner'],
   },
 })
 
