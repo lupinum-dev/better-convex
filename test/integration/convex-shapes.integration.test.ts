@@ -115,13 +115,13 @@ describe('the library against the real Convex backend', () => {
 
     const tooLarge = await tool('mutation', 'shapes:archive_sized', {
       projectId: world.projectId,
-      size: 1_060_000,
+      size: 300_000,
     })
     expect(tooLarge).toMatchObject({ failure: { code: 'TOO_LARGE' } })
-    // The library's limit is 1 MiB less 8 KiB, and a plan well under it is stored by the real backend.
+    // The library's limit is 256 KiB, and a plan under it is stored by the real backend.
     const stored = await tool('mutation', 'shapes:archive_sized', {
       projectId: world.projectId,
-      size: 1_030_000,
+      size: 200_000,
     })
     expect(stored).toMatchObject({ output: { status: 'needs_approval' } })
   })
