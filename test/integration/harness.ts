@@ -504,6 +504,8 @@ export interface McpResponse {
   status: number
   body: JsonRecord
   challenge: string | null
+  /** The size of the response body in bytes, as sent. */
+  bytes: number
 }
 
 /** One 2026-era MCP request, as a host sends it. */
@@ -538,11 +540,13 @@ export async function postMcp(
       'mcp-protocol-version': MCP_PROTOCOL_VERSION,
     },
   })
-  const body = (await response.json()) as unknown
+  const text = await response.text()
+  const body = JSON.parse(text) as unknown
   return {
     status: response.status,
     body: isRecord(body) ? body : {},
     challenge: response.headers.get('www-authenticate'),
+    bytes: Buffer.byteLength(text),
   }
 }
 
