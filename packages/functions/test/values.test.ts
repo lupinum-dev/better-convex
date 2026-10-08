@@ -45,3 +45,17 @@ test.each([
 ])('%s', (_name, validator, value, expected) => {
   expect(matches(jsonOf(validator), value, () => true)).toBe(expected)
 })
+
+// Keep (union members told apart by a bigint literal): the member the value is still matches, and a
+// value of another tag does not, so the ID in it is read as the right kind of ID.
+test.each([
+  ['the member with the same bigint tag', { kind: 1n, id: 'x' }, true],
+  ['no member with this bigint tag', { kind: 3n, id: 'x' }, false],
+  ['the other member, a number tag', { kind: 2, id: 'x' }, true],
+])('a union with bigint and number tags matches %s', (_name, value, expected) => {
+  const union = v.union(
+    v.object({ kind: v.literal(1n), id: v.string() }),
+    v.object({ kind: v.literal(2), id: v.string() }),
+  )
+  expect(matches(jsonOf(union), value, () => true)).toBe(expected)
+})

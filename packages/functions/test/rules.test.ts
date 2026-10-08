@@ -1,8 +1,15 @@
-import { allOf, anyOf } from '@lupinum/better-convex-functions'
+import {
+  allOf,
+  anyOf,
+  defineFunctions,
+  definePolicy,
+  tenant,
+} from '@lupinum/better-convex-functions'
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
 import { expect, test, vi } from 'vitest'
 
+import { people } from './app/people'
 import { internalMutation, internalQuery } from './rules/fns'
 import schema from './rules/schema'
 
@@ -385,6 +392,62 @@ test('a rule cannot change the stored row that later checks read', async () => {
     /read only property 'locked'/,
   )
   expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ name: 'kept', locked: true })
+})
+
+// Keep: a rule that only reads its row (the copy it gets is frozen) still lets a valid write through.
+test('a rule that is handed a frozen row still allows the writes it should', async () => {
+  const { t, ann, a, pa } = await setup()
+  const [open, shut] = await t.run(async (ctx) => [
+    await ctx.db.insert('locks', { orgId: a, name: 'open', locked: false }),
+    await ctx.db.insert('locks', { orgId: a, name: 'shut', locked: true }),
+  ])
+  await ann.mutation(fn('renameLock'), { id: open! })
+  await expect(ann.mutation(fn('renameLock'), { id: shut! })).rejects.toThrow(
+    /read only property 'locked'/,
+  )
+  expect(await ann.mutation(fn('getThenRename'), { id: pa })).toBe('A secret')
+  expect(
+    (await t.run((ctx) => Promise.all([ctx.db.get(open!), ctx.db.get(shut!), ctx.db.get(pa)]))).map(
+      (row) => row!.name,
+    ),
+  ).toEqual(['renamed', 'shut', 'renamed'])
+})
+
+// Catches: a rule list with an undefined part, written past the types, that quietly checks less.
+test.each([
+  ['allOf', allOf],
+  ['anyOf', anyOf],
+] as const)(
+  '%s() with an undefined part fails when the functions are defined',
+  (_name, combine) => {
+    const define = (rule: unknown) => () =>
+      defineFunctions({
+        auth: people(),
+        policy: definePolicy({ actions: ['x.read'], roles: {}, scopes: {} }),
+        user: async () => null,
+        roleOf: async () => null,
+        rules: { things: rule } as never,
+      })
+    const make = combine as (...rules: unknown[]) => unknown
+    expect(define(make(tenant('orgId')))).not.toThrow()
+    expect(define(make(undefined, tenant('orgId')))).toThrow(TypeError)
+    expect(define(make(tenant('orgId'), undefined))).toThrow(TypeError)
+  },
+)
+
+// Catches: a rule of a kind the engine does not know (a typo, or JavaScript past the types) granting
+// access. The engine returns no verdict for it, and a write that is neither hidden nor denied goes through.
+test.fails('a rule of an unknown kind refuses the row — BUG: judgeRule has no default case, so writes pass and allOf ignores the part', async () => {
+  const { t, ann, a } = await setup()
+  const [lone, part] = await t.run(async (ctx) => [
+    await ctx.db.insert('oddLone', { orgId: a, name: 'x' }),
+    await ctx.db.insert('oddPart', { orgId: a, name: 'x' }),
+  ])
+  await expect(ann.mutation(fn('patchOdd'), { table: 'oddLone', id: lone! })).rejects.toThrow()
+  await expect(ann.mutation(fn('patchOdd'), { table: 'oddPart', id: part! })).rejects.toThrow()
+  expect(
+    await ann.query(fn('getOdd'), { table: 'oddPart', id: part! }).catch(() => null),
+  ).toBeNull()
 })
 
 // Catches: an ID-shaped string in a union member that is plain text, read as a foreign tenant.

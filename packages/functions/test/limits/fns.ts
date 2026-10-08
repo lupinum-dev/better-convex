@@ -65,6 +65,8 @@ export const { query, mutation, internalQuery, internalMutation, job } = defineF
     projects: tenant('orgId'),
     notes: unchecked('Rows a call writes without a tenant.'),
     locks: unchecked('Unused here.'),
+    oddLone: unchecked('Unused here.'),
+    oddPart: unchecked('Unused here.'),
     pages: unchecked('Unused here.'),
   },
 })

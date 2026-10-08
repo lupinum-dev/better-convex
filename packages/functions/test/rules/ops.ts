@@ -554,3 +554,52 @@ export const withFileInMember = query({
   handler: async (ctx, { value }) =>
     value.kind === 'file' ? ((await ctx.db.get(value.projectId))?.name ?? 'hidden') : 'none',
 })
+
+/** Writes a row of a table whose rule has a kind that does not exist. */
+export const patchOdd = mutation({
+  action: 'projects.rename',
+  args: {
+    table: v.union(v.literal('oddLone'), v.literal('oddPart')),
+    id: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { table, id }) => {
+    await ctx.db.patch(ctx.db.normalizeId(table, id)!, { name: 'changed' })
+    return null
+  },
+})
+
+/** Reads a row of a table whose rule has a kind that does not exist. */
+export const getOdd = query({
+  action: 'projects.read',
+  args: {
+    table: v.union(v.literal('oddLone'), v.literal('oddPart')),
+    id: v.string(),
+  },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, { table, id }) =>
+    (await ctx.db.get(ctx.db.normalizeId(table, id)!))?.name ?? null,
+})
+
+/** Renames a lock with no read first, so only the write check of its rule runs. */
+export const renameLock = mutation({
+  action: 'projects.rename',
+  args: { id: v.id('locks') },
+  returns: v.null(),
+  handler: async (ctx, { id }) => {
+    await ctx.db.patch(id, { name: 'renamed' })
+    return null
+  },
+})
+
+/** Reads a project (its rule looks at the row), then renames it. */
+export const getThenRename = mutation({
+  action: 'projects.rename',
+  args: { id: v.id('projects') },
+  returns: v.string(),
+  handler: async (ctx, { id }) => {
+    const project = await ctx.db.get(id)
+    await ctx.db.patch(id, { name: 'renamed' })
+    return project!.name
+  },
+})

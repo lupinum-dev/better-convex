@@ -19,6 +19,9 @@ export default defineSchema({
     .searchIndex('search_name', { searchField: 'name' }),
   notes: defineTable({ userId: v.id('users'), text: v.string() }),
   locks: defineTable({ orgId: v.id('orgs'), name: v.string(), locked: v.boolean() }),
+  // Two tables whose rule JavaScript got wrong (a typo in the rule kind).
+  oddLone: defineTable({ orgId: v.id('orgs'), name: v.string() }),
+  oddPart: defineTable({ orgId: v.id('orgs'), name: v.string() }),
   // Public when published; members of the org edit them.
   pages: defineTable({ orgId: v.id('orgs'), title: v.string(), published: v.boolean() }).index(
     'by_org',
