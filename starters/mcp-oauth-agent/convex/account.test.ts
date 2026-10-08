@@ -44,13 +44,80 @@ describe('account safeguards', () => {
   it('refuses to delete the last owner of an organization that has other members', async () => {
     const { test, bobAtAcme } = await setup()
     const refuses = (authId: string) =>
-      test.query(internal.accountDeletion.leavesATeamWithoutOwner, { authId })
-    await expect(refuses('ann')).resolves.toBe(true)
+      test.query(internal.accountDeletion.refusalForDeletion, { authId })
+    await expect(refuses('ann')).resolves.toBe('last-owner')
     // Bob is no owner, and Cat is alone in her organization: nobody is left without an owner.
-    await expect(refuses('bob')).resolves.toBe(false)
-    await expect(refuses('cat')).resolves.toBe(false)
+    await expect(refuses('bob')).resolves.toBeNull()
+    await expect(refuses('cat')).resolves.toBeNull()
     await test.run((ctx) => ctx.db.patch(bobAtAcme, { role: 'owner' }))
-    await expect(refuses('ann')).resolves.toBe(false)
+    await expect(refuses('ann')).resolves.toBeNull()
+  })
+
+  // Catches: a refusal check that reads only the first rows of a long membership history and
+  // lets the last owner of a team delete their account.
+  it('still refuses the last owner after 150 removed and 150 other memberships', async () => {
+    const { test } = await setup()
+    await test.run(async (ctx) => {
+      const eve = await ctx.db.insert('users', {
+        authId: 'eve',
+        email: 'eve@example.com',
+        name: 'eve',
+        active: true,
+      })
+      const bob = await ctx.db.insert('users', {
+        authId: 'eve-team-mate',
+        email: 'mate@example.com',
+        name: 'mate',
+        active: true,
+      })
+      const join = async (
+        userId: typeof eve,
+        role: 'owner' | 'member',
+        status: 'active' | 'removed',
+      ) => {
+        const organizationId = await ctx.db.insert('organizations', { name: 'Team' })
+        await ctx.db.insert('memberships', { organizationId, userId, role, status })
+        return organizationId
+      }
+      for (let i = 0; i < 150; i++) await join(eve, 'owner', 'removed')
+      for (let i = 0; i < 150; i++) await join(eve, 'member', 'active')
+      // The one team she owns comes last: a list of her first 100 rows never reaches it.
+      const team = await join(eve, 'owner', 'active')
+      await ctx.db.insert('memberships', {
+        organizationId: team,
+        userId: bob,
+        role: 'member',
+        status: 'active',
+      })
+    })
+    await expect(
+      test.query(internal.accountDeletion.refusalForDeletion, { authId: 'eve' }),
+    ).resolves.toBe('last-owner')
+  })
+
+  // Catches: allowing a deletion that was too large to check.
+  it('refuses when the person owns more organizations than one check can read', async () => {
+    const { test } = await setup()
+    await test.run(async (ctx) => {
+      const dan = await ctx.db.insert('users', {
+        authId: 'dan',
+        email: 'dan@example.com',
+        name: 'dan',
+        active: true,
+      })
+      for (let i = 0; i < 101; i++) {
+        const org = await ctx.db.insert('organizations', { name: `Own${i}` })
+        await ctx.db.insert('memberships', {
+          organizationId: org,
+          userId: dan,
+          role: 'owner',
+          status: 'active',
+        })
+      }
+    })
+    await expect(
+      test.query(internal.accountDeletion.refusalForDeletion, { authId: 'dan' }),
+    ).resolves.toBe('too-many-teams')
   })
 
   // Catches: an account deletion that leaves the person's memberships and profile behind.
@@ -105,6 +172,74 @@ describe('account safeguards', () => {
     expect(left.projects).toEqual([acme])
     expect(left.memberships).toEqual([bob])
     expect(left.organizations).not.toContain(solo)
+  })
+
+  // Catches: cleaning up only the first 100 organizations of a person.
+  it('erases all 150 organizations the person was alone in', async () => {
+    const { test, ann } = await setup()
+    await test.run(async (ctx) => {
+      for (let i = 0; i < 150; i++) {
+        const org = await ctx.db.insert('organizations', { name: `Solo${i}` })
+        await ctx.db.insert('memberships', {
+          organizationId: org,
+          userId: ann,
+          role: 'owner',
+          status: 'active',
+        })
+      }
+    })
+    await test.mutation(internal.auth.onDelete, { model: 'user', doc: { id: 'ann' } })
+    await test.finishAllScheduledFunctions(vi.runAllTimers)
+    const names = await test.run(async (ctx) =>
+      (await ctx.db.query('organizations').collect()).map((org) => org.name),
+    )
+    // Acme has Bob; Cat's Solo is hers.
+    expect([...names].sort()).toEqual(['Acme', 'Solo'])
+  })
+
+  // Catches: deleting another person's removed membership and their projects with the organization.
+  it('keeps an organization where someone else has a removed membership', async () => {
+    const { test, ann } = await setup()
+    const { org, dan, danProject } = await test.run(async (ctx) => {
+      const dan = await ctx.db.insert('users', {
+        authId: 'dan',
+        email: 'dan@example.com',
+        name: 'dan',
+        active: true,
+      })
+      const org = await ctx.db.insert('organizations', { name: 'Shared' })
+      await ctx.db.insert('memberships', {
+        organizationId: org,
+        userId: ann,
+        role: 'owner',
+        status: 'active',
+      })
+      await ctx.db.insert('memberships', {
+        organizationId: org,
+        userId: dan,
+        role: 'member',
+        status: 'removed',
+      })
+      const danProject = await ctx.db.insert('projects', {
+        organizationId: org,
+        name: 'Dans',
+        status: 'active',
+        createdBy: dan,
+      })
+      return { org, dan, danProject }
+    })
+    await test.mutation(internal.auth.onDelete, { model: 'user', doc: { id: 'ann' } })
+    await test.finishAllScheduledFunctions(vi.runAllTimers)
+    const left = await test.run(async (ctx) => ({
+      org: await ctx.db.get(org),
+      project: await ctx.db.get(danProject),
+      memberships: (await ctx.db.query('memberships').collect())
+        .filter((row) => row.organizationId === org)
+        .map((row) => row.userId),
+    }))
+    expect(left.org).toMatchObject({ name: 'Shared' })
+    expect(left.project).toMatchObject({ name: 'Dans' })
+    expect(left.memberships).toEqual([dan])
   })
 
   // Catches: a missing write limit on the action that creates data.

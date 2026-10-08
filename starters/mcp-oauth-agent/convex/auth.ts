@@ -1,4 +1,4 @@
-import { consentScopes, eraseUser, trusted } from '@lupinum/better-convex-functions'
+import { consentScopes, trusted } from '@lupinum/better-convex-functions'
 import {
   createBetterConvexAuth,
   type AuthFunctions,
@@ -7,7 +7,6 @@ import { ConvexError } from 'convex/values'
 
 import { components, internal } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
-import { organizationsOnlyUsedBy } from './accountDeletion'
 import { policy } from './policy'
 
 const authFunctions: AuthFunctions = internal.auth
@@ -37,13 +36,18 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   deleteUser: {
     enabled: true,
     beforeDelete: async (ctx, user) => {
-      const refuse = await ctx.runQuery(internal.accountDeletion.leavesATeamWithoutOwner, {
+      const refusal = await ctx.runQuery(internal.accountDeletion.refusalForDeletion, {
         authId: user.id,
       })
-      if (refuse)
+      if (refusal === 'last-owner')
         throw new ConvexError({
           message:
             'Make another member an owner of your organization before you delete your account.',
+        })
+      if (refusal === 'too-many-teams')
+        throw new ConvexError({
+          message:
+            'You own too many organizations to delete your account in one step. Hand some over or delete them first.',
         })
     },
   },
@@ -78,15 +82,12 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
           .withIndex('by_auth_id', (q) => q.eq('authId', authId))
           .unique()
         if (!user) return
-        // Erase what the app holds about the person (`erasure` in ./functions.ts), in batches.
-        await eraseUser(ctx, user._id, internal.erasure.eraseStep)
-        // Organizations where the person was the only member go with them, in batches.
-        const alone = await organizationsOnlyUsedBy(ctx.db, user._id)
-        if (alone.length > 0)
-          await ctx.scheduler.runAfter(0, internal.accountDeletion.eraseOrganizations, {
-            organizationIds: alone,
-            userId: user._id,
-          })
+        // Organizations only this person used go first, then what the app holds about the person
+        // (`erasure` in ./functions.ts), all in batches. See `scanOrganizations`.
+        await ctx.scheduler.runAfter(0, internal.accountDeletion.scanOrganizations, {
+          userId: user._id,
+          cursor: null,
+        })
         await ctx.db.delete(user._id)
       },
     },

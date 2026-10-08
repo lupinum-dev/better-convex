@@ -3145,9 +3145,9 @@ export const mutants: Mutant[] = [
   {
     id: 'S-C-starter-erase-wired',
     guards: 'saas-c',
-    file: 'starters/mcp-oauth-agent/convex/auth.ts',
-    find: 'await eraseUser(ctx, user._id, internal.erasure.eraseStep)',
-    replace: '',
+    file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
+    find: 'if (page.isDone) await eraseUser(ctx, userId, internal.erasure.eraseStep)',
+    replace: 'if (page.isDone) void 0',
     kills: [
       `${starter}/account.test.ts > account safeguards > erases the memberships and the profile of a deleted account, and keeps the team data`,
     ],
@@ -3177,8 +3177,12 @@ export const mutants: Mutant[] = [
     id: 'S-E-solo-wired',
     guards: 'saas-e',
     file: 'starters/mcp-oauth-agent/convex/auth.ts',
-    find: 'if (alone.length > 0)',
-    replace: 'if (false)',
+    find: `        await ctx.scheduler.runAfter(0, internal.accountDeletion.scanOrganizations, {
+          userId: user._id,
+          cursor: null,
+        })
+`,
+    replace: '',
     kills: [
       `${starter}/account.test.ts > account safeguards > deletes the organizations only the person used, in batches, and keeps shared ones`,
     ],
@@ -3188,8 +3192,8 @@ export const mutants: Mutant[] = [
     id: 'S-E-solo-shared',
     guards: 'saas-e',
     file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
-    find: "member.userId !== userId && member.status === 'active'",
-    replace: "member.userId === userId && member.status === 'active'",
+    find: 'if (member.userId !== userId) return true',
+    replace: 'if (member.userId === userId) return true',
     kills: [
       `${starter}/account.test.ts > account safeguards > deletes the organizations only the person used, in batches, and keeps shared ones`,
     ],
@@ -3210,7 +3214,7 @@ export const mutants: Mutant[] = [
     id: 'S-E-solo-recheck',
     guards: 'saas-e',
     file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
-    find: 'if (await hasOtherActiveMember(ctx.db, organizationId, userId)) continue',
+    find: 'if (await hasOtherMember(ctx.db, organizationId, userId)) continue',
     replace: '',
     kills: [
       `${starter}/account.test.ts > account safeguards > deletes the organizations only the person used, in batches, and keeps shared ones`,
@@ -3221,10 +3225,54 @@ export const mutants: Mutant[] = [
     id: 'S-C-starter-last-owner',
     guards: 'saas-c',
     file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
-    find: "if (others.length > 0 && !others.some((m) => m.role === 'owner')) return true",
+    find: "if (others.length > 0) return 'last-owner' as const",
     replace: '',
     kills: [
       `${starter}/account.test.ts > account safeguards > refuses to delete the last owner of an organization that has other members`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'S-F3-owner-index',
+    guards: 'saas-f3',
+    file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
+    find: ".eq('status', 'active').eq('role', 'owner'),\n        )\n        .take(OWNED_TEAMS_CHECKED + 1)",
+    replace: ".eq('status', 'active'))\n        .take(100)",
+    kills: [
+      `${starter}/account.test.ts > account safeguards > still refuses the last owner after 150 removed and 150 other memberships`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'S-F3-too-many-teams',
+    guards: 'saas-f3',
+    file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
+    find: "if (owned.length > OWNED_TEAMS_CHECKED) return 'too-many-teams' as const",
+    replace: '',
+    kills: [
+      `${starter}/account.test.ts > account safeguards > refuses when the person owns more organizations than one check can read`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'S-F3-scan-all-pages',
+    guards: 'saas-f3',
+    file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
+    find: 'if (page.isDone) await eraseUser',
+    replace: 'if (true) await eraseUser',
+    kills: [
+      `${starter}/account.test.ts > account safeguards > erases all 150 organizations the person was alone in`,
+    ],
+    projects: ['mcp'],
+  },
+  {
+    id: 'S-F3-removed-row-counts',
+    guards: 'saas-f3',
+    file: 'starters/mcp-oauth-agent/convex/accountDeletion.ts',
+    find: 'if (member.userId !== userId) return true',
+    replace: "if (member.userId !== userId && member.status === 'active') return true",
+    kills: [
+      `${starter}/account.test.ts > account safeguards > keeps an organization where someone else has a removed membership`,
     ],
     projects: ['mcp'],
   },
