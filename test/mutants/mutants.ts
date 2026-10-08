@@ -2305,7 +2305,7 @@ export const mutants: Mutant[] = [
     id: 'S-A-take-token',
     guards: 'saas-a',
     file: 'packages/functions/src/functions.ts',
-    find: 'await spend(ctx, actor, op.action, tenant, limit)',
+    find: 'await spend(ctx, bucket, limit)',
     replace: 'void 0',
     kills: [
       `${F}/limits-audit.test.ts > a call over the limit fails with RATE_LIMITED and the seconds to wait`,
@@ -2349,8 +2349,8 @@ export const mutants: Mutant[] = [
     id: 'S-A-visitor-everyone',
     guards: 'saas-a',
     file: 'packages/functions/src/functions.ts',
-    find: "actor.kind !== 'visitor' && limit.per !== 'everyone'",
-    replace: "limit.per !== 'everyone'",
+    find: "if (actor.kind === 'visitor' || limit.per === 'everyone')",
+    replace: "if (limit.per === 'everyone')",
     kills: [`${F}/limits-audit.test.ts > a visitor on a public action uses the everyone bucket`],
   },
   {
@@ -2579,6 +2579,16 @@ export const mutants: Mutant[] = [
     projects: ['functions'],
   },
   {
+    id: 'T-astra-erasure-container',
+    guards:
+      'an erasure entry on a list, object or record field fails at definition instead of erasing nothing',
+    file: 'packages/functions/src/erasure.ts',
+    find: "if (shape === 'array' || shape === 'object' || shape === 'record')",
+    replace: 'if (false)',
+    kills: [`${F}/erasure.test.ts > erasure definition error: {"teams":{"delete":"members"}}`],
+    projects: ['functions'],
+  },
+  {
     id: 'S-F1-spent-pass',
     guards: 'saas-f1',
     file: 'packages/functions/src/functions.ts',
@@ -2592,8 +2602,8 @@ export const mutants: Mutant[] = [
     id: 'S-F1-approved-free',
     guards: 'saas-f1',
     file: 'packages/functions/src/functions.ts',
-    find: "decision === 'allow' &&\n      !(actor.kind === 'agent' && actor.approvalId !== undefined) &&",
-    replace: "decision === 'allow' &&",
+    find: "decision === 'allow' &&\n      !(actor.kind === 'agent' && actor.approvalId !== undefined)\n",
+    replace: "decision === 'allow'\n",
     kills: [
       `${A}/approvals/approvals.test.ts > an approved run takes no token, so an empty bucket does not fail it`,
     ],
@@ -3038,7 +3048,7 @@ export const mutants: Mutant[] = [
     id: 'S-F2-launch-fields',
     guards: 'every user ID field of a table needs an entry',
     file: 'packages/functions/src/test.ts',
-    find: 'if (covered.has(top)) continue',
+    find: 'if (field === top && covered.has(top)) continue',
     replace: 'if (covered.size > 0) continue',
     kills: [
       `${F}/launch.test.ts > check 2: a table is checked field by field, and keep covers all of it`,
@@ -3058,7 +3068,7 @@ export const mutants: Mutant[] = [
     id: 'S-F2-launch-record-key',
     guards: 'a user ID as a record key counts',
     file: 'packages/functions/src/test.ts',
-    find: "...userIdFields(node.key, path || '(the whole document)'),",
+    find: '...userIdFields(node.key, `${path}{}`),',
     replace: '',
     kills: [`${F}/launch.test.ts > check 2: a user ID as a record key counts`],
   },
@@ -3095,7 +3105,7 @@ export const mutants: Mutant[] = [
     id: 'S-C-erasure-table-missing',
     guards: 'saas-c',
     file: 'packages/functions/src/test.ts',
-    find: 'if (covered.has(top)) continue',
+    find: 'if (field === top && covered.has(top)) continue',
     replace: 'if (true) continue',
     kills: [
       `${F}/launch.test.ts > check 2: tables with a user ID that are not in erasure are named with their field`,
@@ -3131,8 +3141,8 @@ export const mutants: Mutant[] = [
     id: 'S-C-erasure-record',
     guards: 'saas-c',
     file: 'packages/functions/src/test.ts',
-    find: '...userIdFields(node.value, `${path}[]`),',
-    replace: '',
+    find: ', ...userIdFields(node.value, `${path}[]`)]',
+    replace: ']',
     kills: [
       `${F}/launch.test.ts > check 2: tables with a user ID that are not in erasure are named with their field`,
     ],

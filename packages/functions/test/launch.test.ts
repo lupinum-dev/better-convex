@@ -170,15 +170,15 @@ test('check 1: a function built with Convex builders is named, with the fix', as
 // Catches: deleting an account that leaves user IDs behind (nested, optional, in a union or a record).
 test('check 2: tables with a user ID that are not in erasure are named with their field', async () => {
   expect(await problems({ erasure: { notes: fullErasure.notes } })).toEqual([
+    "The table teams holds a user ID inside members[].person, which erasure cannot reach. Store the ID in its own indexed field, or add { keep: 'why the rows stay' } to the teams entry of erasure in defineFunctions.",
     expect.stringContaining(
-      "The table teams holds a user ID in members[].person but erasure does not cover it. Add { delete: 'members' }",
-    ),
-    expect.stringContaining(
-      'The table invites holds a user ID in by[] but erasure does not cover it.',
+      'The table invites holds a user ID inside by[], which erasure cannot reach',
     ),
     expect.stringContaining('The table shares holds a user ID in owner but'),
     expect.stringContaining('The table shares holds a user ID in reviewer but'),
-    expect.stringContaining('The table scores holds a user ID in byPerson but'),
+    expect.stringContaining(
+      'The table scores holds a user ID inside byPerson{}, which erasure cannot reach',
+    ),
   ])
 })
 
@@ -198,7 +198,9 @@ test('check 2: a table is checked field by field, and keep covers all of it', as
 test('check 2: a user ID as a record key counts', async () => {
   const { scores: _scores, ...without } = fullErasure
   expect(await problems({ erasure: without })).toEqual([
-    expect.stringContaining('The table scores holds a user ID in byPerson but'),
+    expect.stringContaining(
+      'The table scores holds a user ID inside byPerson{}, which erasure cannot reach',
+    ),
   ])
 })
 
@@ -274,14 +276,14 @@ test.each([
     'a user ID as a record key',
     { erasure: { notes, teams, invites, shares } },
     [
-      "The table scores holds a user ID in byPerson but erasure does not cover it. Add { delete: 'byPerson' }, { anonymize: 'byPerson' } or { keep: 'why the rows stay' } to the scores entry of erasure in defineFunctions (an array holds one entry per field).",
+      "The table scores holds a user ID inside byPerson{}, which erasure cannot reach. Store the ID in its own indexed field, or add { keep: 'why the rows stay' } to the scores entry of erasure in defineFunctions.",
     ],
   ],
   [
     'a user ID in a nested array field',
     { erasure: { notes, invites, shares, scores } },
     [
-      "The table teams holds a user ID in members[].person but erasure does not cover it. Add { delete: 'members' }, { anonymize: 'members' } or { keep: 'why the rows stay' } to the teams entry of erasure in defineFunctions (an array holds one entry per field).",
+      "The table teams holds a user ID inside members[].person, which erasure cannot reach. Store the ID in its own indexed field, or add { keep: 'why the rows stay' } to the teams entry of erasure in defineFunctions.",
     ],
   ],
   [

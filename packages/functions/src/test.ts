@@ -151,10 +151,14 @@ export async function launchProblems(options: {
       if (entries.some((entry) => 'keep' in entry)) continue
       const covered = new Set(entries.flatMap((entry) => [entry.delete, entry.anonymize]))
       for (const field of fields) {
-        const top = field.split(/[.[]/)[0]!
-        if (covered.has(top)) continue
+        const top = field.split(/[.[{]/)[0]!
+        // Only a field that holds the ID itself can be erased; delete or anonymize on the field
+        // that holds a list, object or record of IDs finds no row.
+        if (field === top && covered.has(top)) continue
         problems.push(
-          `The table ${table} holds a user ID in ${field} but erasure does not cover it. Add { delete: '${top}' }, { anonymize: '${top}' } or { keep: 'why the rows stay' } to the ${table} entry of erasure in defineFunctions (an array holds one entry per field).`,
+          field === top
+            ? `The table ${table} holds a user ID in ${field} but erasure does not cover it. Add { delete: '${field}' }, { anonymize: '${field}' } or { keep: 'why the rows stay' } to the ${table} entry of erasure in defineFunctions (an array holds one entry per field).`
+            : `The table ${table} holds a user ID inside ${field}, which erasure cannot reach. Store the ID in its own indexed field, or add { keep: 'why the rows stay' } to the ${table} entry of erasure in defineFunctions.`,
         )
       }
     }
@@ -217,11 +221,8 @@ function userIdFields(validator: unknown, path: string): string[] {
     case 'array':
       return userIdFields(node.element, `${path}[]`)
     case 'record':
-      // A user ID as the key lives in the record's own field; one as the value, in its entries.
-      return [
-        ...userIdFields(node.key, path || '(the whole document)'),
-        ...userIdFields(node.value, `${path}[]`),
-      ]
+      // `{}` marks a user ID as a key of the record, `[]` one as a value.
+      return [...userIdFields(node.key, `${path}{}`), ...userIdFields(node.value, `${path}[]`)]
     case 'union':
       return (node.members ?? []).flatMap((member) => userIdFields(member, path))
     default:

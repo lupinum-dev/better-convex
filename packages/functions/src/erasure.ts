@@ -95,6 +95,14 @@ function planField(table: string, definition: TableDefinition, entry: FieldErasu
     definitionError(table, 'only a table defined with an object can be erased.')
   const fieldValidator = validator.fields[field]
   if (!fieldValidator) definitionError(table, `the table has no field "${field}".`)
+  // Erasure finds rows whose field equals the person's ID through an index; an ID inside a list,
+  // object or record is never equal to it, so such an entry would erase nothing.
+  const shape = (fieldValidator as unknown as { kind: string }).kind
+  if (shape === 'array' || shape === 'object' || shape === 'record')
+    definitionError(
+      table,
+      `"${field}" is a${shape === 'array' ? 'n' : ''} ${shape}, and erasure only finds a field that holds the user ID itself. Store the ID in its own indexed field, or use keep with a reason.`,
+    )
   if (kind === 'anonymize' && fieldValidator.isOptional !== 'optional')
     definitionError(
       table,

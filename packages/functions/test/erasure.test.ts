@@ -386,6 +386,7 @@ const base = defineSchema({
     editorId: v.id('users'),
     body: v.optional(v.string()),
   }).index('by_author', ['authorId']),
+  teams: defineTable({ members: v.array(v.id('users')) }).index('by_members', ['members']),
 })
 const define = (erasure: object, schema: object | null = base) =>
   defineFunctions({
@@ -428,6 +429,8 @@ test.each([
   ],
   [{ notes: [] }, /the list of entries is empty/],
   [{ notes: { delete: 'missing' } }, /the table has no field "missing"/],
+  // An ID inside a list never equals the person's ID: the entry would erase nothing.
+  [{ teams: { delete: 'members' } }, /"members" is an array, and erasure only finds a field/],
   [{ posts: { delete: 'authorId' } }, /Erasure for "posts": the schema has no such table/],
   [{ activity: { delete: 'actor' } }, /Erasure for "activity": the library erases its own tables/],
 ])('erasure definition error: %j', (erasure, message) => {
