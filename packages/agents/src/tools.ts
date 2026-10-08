@@ -25,6 +25,7 @@ import {
   planOf,
   scopesFor,
   storable,
+  takeToken,
   toJsonSchema,
   toolNamePattern,
   unsendable,
@@ -71,6 +72,8 @@ interface Internals {
     tenant: TenantRef | undefined
     rows: Map<string, Record<string, unknown> | null>
     settle: <T>(value: T) => T
+    /** Writes the audit row of this call, when the policy audits its action. */
+    record(): Promise<void>
     mayWrite(table: string, row: Record<string, unknown>): Promise<boolean>
     ctx: any
   }>
@@ -299,22 +302,15 @@ export function defineTools(
     return checked.value as Record<string, unknown>
   }
 
-  /** Fixed one-minute windows; a refused call does not count (its transaction rolls back). */
+  /** The shared token bucket; a refused call does not count (its transaction rolls back). */
   async function rateLimit(ctx: MCtx, key: string, perMinute: number) {
-    const window = Math.floor(Date.now() / 60_000)
-    const row = await lib(ctx)
-      .query('rateLimits')
-      .withIndex('by_key', (q) => q.eq('key', key).eq('window', window))
-      .unique()
-    if ((row?.count ?? 0) >= perMinute) {
-      const wait = Math.ceil(((window + 1) * 60_000 - Date.now()) / 1000)
+    const wait = await takeToken(lib(ctx), key, { max: perMinute, every: 'minute' })
+    if (wait !== null) {
       fail(
         'RATE_LIMITED',
         `This connection made ${perMinute} changes in the last minute. Try again in ${wait} seconds.`,
       )
     }
-    if (row) await lib(ctx).patch(row._id, { count: row.count + 1 })
-    else await lib(ctx).insert('rateLimits', { key, window, count: 1 })
   }
 
   function approvalUrl(approvalId: string) {
@@ -341,8 +337,10 @@ export function defineTools(
       approvalId?: GenericId<'approvals'>
       decidedBy?: string
     },
+    record: () => Promise<void>,
   ) {
     const result = settle(await op.handler(checked, input, plan))
+    await record()
     await lib(ctx).insert('activity', {
       actor: actorRecord(checked.actor),
       action: op.action,
@@ -498,18 +496,28 @@ export function defineTools(
               ctx: checked,
               tenant,
               settle,
+              record,
             } = await authorize(ctx, op, { ...actor, approvalId: approval.id }, input)
-            const result = await runForAgent(ctx, checked, settle, op, input, frozen(row.plan), {
-              tenant,
-              requestId: row.requestId,
-              approvalId: approval.id,
-              decidedBy: approval.decidedBy,
-            })
+            const result = await runForAgent(
+              ctx,
+              checked,
+              settle,
+              op,
+              input,
+              frozen(row.plan),
+              {
+                tenant,
+                requestId: row.requestId,
+                approvalId: approval.id,
+                decidedBy: approval.decidedBy,
+              },
+              record,
+            )
             return { status: 'done' as const, result }
           }
           if (!renew) await rateLimit(ctx, `writes:${requester.key}`, agentWritesPerMinute)
           const authorized = await authorize(ctx, op, actor, input)
-          const { decision, tenant, settle, mayWrite, ctx: checked } = authorized
+          const { decision, tenant, settle, mayWrite, record, ctx: checked } = authorized
           // A renewal only asks: work that needs no person now runs when the agent calls again,
           // never from a person's click on another request (release review 5).
           if (renew && decision !== 'approve') fail('STALE', stale)
@@ -645,6 +653,7 @@ export function defineTools(
               input,
               frozen(settle(await planOf(op, checked, input))),
               { tenant, requestId },
+              record,
             ),
           }
         },
@@ -1362,13 +1371,9 @@ async function deleteRetained(db: Lib, now: number) {
     )
     if (!done) return false
   }
-  // A counter is created in its own minute, so creation order is window order. An hour is kept.
-  const windows = db
-    .query('rateLimits')
-    .withIndex('by_creation_time', (q) =>
-      q.lt('_creationTime', (Math.floor(now / 60_000) - 60) * 60_000),
-    )
-  return await deleteAll(windows)
+  // A bucket idle for a day is full again, so deleting it changes nothing for its key.
+  const idle = db.query('rateLimits').withIndex('by_at', (q) => q.lt('at', now - day))
+  return await deleteAll(idle)
 }
 
 /**

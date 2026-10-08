@@ -1071,6 +1071,39 @@ test('housekeeping keeps agent activity for a year, then deletes it', async () =
   expect(await activity()).toEqual([])
 })
 
+// Rate-limit buckets of keys nobody uses again would pile up; a bucket idle for a day is full again, so it goes.
+test('housekeeping deletes rate-limit buckets idle for more than a day', async () => {
+  const s = await setup()
+  await s.tool('rename_project', { projectId: s.p[0], name: 'n' })
+  const buckets = () => s.t.run((ctx) => ctx.db.query('rateLimits').collect())
+  const housekeeping = async () => {
+    await s.t.mutation(api.tools.housekeeping, {})
+    await drain(s.t)
+  }
+  expect(await buckets()).toHaveLength(1)
+  vi.advanceTimersByTime(23 * 3_600_000)
+  await housekeeping()
+  expect(await buckets()).toHaveLength(1)
+  vi.advanceTimersByTime(2 * 3_600_000)
+  await housekeeping()
+  expect(await buckets()).toEqual([])
+})
+
+// The audit log follows the action, whichever door it came in by: an agent's write is recorded with the agent as actor.
+test('an agent write of an audited action appears in the audit log with the agent as actor', async () => {
+  const s = await setup()
+  await s.tool('rename_project', { projectId: s.p[0], name: 'audited' })
+  const rows = await s.t.run((ctx) => ctx.db.query('auditLog').collect())
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({
+    action: 'projects.rename',
+    actor: { kind: 'agent', door: 'mcp' },
+    rows: [s.p[0]],
+    more: 0,
+  })
+  expect(rows[0]!.actor.clientId).toEqual(expect.any(String))
+})
+
 // B1: one connection could make 300 writes a minute; same-row bursts surfaced as "the tool failed".
 test('an agent may make 60 writes a minute, then waits', async () => {
   const s = await setup()
@@ -1081,7 +1114,8 @@ test('an agent may make 60 writes a minute, then waits', async () => {
   expect(await t.run((ctx) => ctx.db.get(p[0]!))).toMatchObject({ name: 'n59' })
   vi.advanceTimersByTime(60_000)
   await rename('next minute')
-  expect(await t.run((ctx) => ctx.db.get(p[0]!))).toMatchObject({ name: 'next minute' })
+  await rename('and again')
+  expect(await t.run((ctx) => ctx.db.get(p[0]!))).toMatchObject({ name: 'and again' })
 })
 
 /** A database with Convex's per-transaction read and write limits, and one agent run in it. */

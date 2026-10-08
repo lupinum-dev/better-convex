@@ -26,6 +26,7 @@ export const policy = definePolicy({
     'listings.buy',
   ],
   roles: { owner: ['*'], viewer: ['projects.list', 'projects.read'] },
+  audit: ['projects.rename'],
   scopes: {
     'projects:read': { label: 'See projects.', actions: ['projects.list', 'projects.read'] },
     'projects:write': {

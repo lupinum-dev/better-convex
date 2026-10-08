@@ -13,6 +13,7 @@ import {
   type GenericDataModel,
   type GenericMutationCtx,
   type GenericQueryCtx,
+  type PaginationOptions,
   type RegisteredMutation,
   type RegisteredQuery,
   type SchemaDefinition,
@@ -39,8 +40,11 @@ import {
   type Visitor,
 } from './actor'
 import { guarded, OPERATION } from './guard'
+import { rateLimited, takeToken } from './limits'
 import {
   decide,
+  isAudited,
+  limitOf,
   roleAllows,
   type ActionOf,
   type Decision,
@@ -267,6 +271,32 @@ export function defineFunctions<
   }
   // The library's own tables are not in the app's generic data model.
   const lib = (ctx: { db: unknown }) => ctx.db as GenericMutationCtx<LibraryDataModel>['db']
+  /** Takes the call's token, or fails with RATE_LIMITED. `tenant` is undefined where the caller cannot know it (actions). */
+  async function spend(
+    ctx: { db: unknown },
+    actor: Actor<User> | Visitor,
+    action: string,
+    tenant: TenantRef | undefined,
+    limit: NonNullable<ReturnType<typeof limitOf>>,
+  ) {
+    // A visitor has no user and no membership: everyone shares one bucket.
+    let scope = 'everyone'
+    if (actor.kind !== 'visitor' && limit.per !== 'everyone') {
+      scope =
+        limit.per === 'tenant' && tenant ? `tenant:${tenant.id}` : `user:${actorRecord(actor).key}`
+    }
+    const wait = await takeToken(lib(ctx), `limit:${action}:${scope}`, limit)
+    if (wait !== null) rateLimited(wait)
+  }
+
+  /** A query cannot write a bucket: its action may not carry a limit. */
+  function assertUnlimited(spec: { action: string }) {
+    if (limitOf(policy, spec.action))
+      throw new Error(
+        `${spec.action} is limited, but no mutation uses it. Limit the mutation the action calls.`,
+      )
+  }
+
   const isPublic = (action: string) =>
     (policy.public as readonly string[] | undefined)?.includes(action) ?? false
 
@@ -464,7 +494,11 @@ export function defineFunctions<
    */
   async function authorize<Ctx extends QCtx>(
     ctx: Ctx,
-    op: Pick<Operation, 'action' | 'args' | 'crossTenant'>,
+    op: Pick<Operation, 'action' | 'args' | 'crossTenant'> & {
+      kind?: Operation['kind']
+      /** An internal mutation: it writes, so it is audited, but it is not limited (its caller was). */
+      writes?: boolean
+    },
     actor: Actor<User> | Visitor | SystemActor,
     input: Record<string, unknown>,
   ) {
@@ -520,6 +554,15 @@ export function defineFunctions<
         actor.kind === 'visitor' ? 'Sign in first.' : `You may not ${op.action} here.`,
       )
     }
+    // A call the policy allows takes its token; the decision came first, so a denied call costs nothing.
+    // An agent's request that waits for a person takes it when the person's approval runs it.
+    const limit = op.kind === 'mutation' ? limitOf(policy, op.action) : undefined
+    if (
+      limit &&
+      actor.kind !== 'system' &&
+      (decision === 'allow' || (actor.kind === 'agent' && actor.approvalId !== undefined))
+    )
+      await spend(ctx, actor, op.action, tenant, limit)
     // A system actor's db has no rules: it may change any row.
     let checks = {
       forget: () => {},
@@ -551,6 +594,7 @@ export function defineFunctions<
         },
       }
     }
+    const written = new Set<string>()
     const db = checkedDb(ctx.db as MCtx['db'], rules, {
       // Custom rules see the actor as handlers do, without the approval's credentials (class 10).
       actor: shown(actor),
@@ -560,6 +604,7 @@ export function defineFunctions<
       roleOf,
       known: { roles, rows },
       plan,
+      written: (id) => written.add(id),
       expose: (exposed) => (checks = exposed),
     })
     const nested = nestedCalls(
@@ -570,16 +615,39 @@ export function defineFunctions<
         (tainted ??= new Error(
           'This call reached a function that is not an internal operation; nothing it did is kept.',
         )),
+      // Operations this call runs in its own transaction add their ids to this call's audit row.
+      (ids) => ids.forEach((id) => written.add(id)),
     )
+    /**
+     * The audit row of this call, for the outermost operation: an audited action by a person or an
+     * agent, whichever door it came in by. Call it after the handler succeeded; a failed call
+     * rolls back with everything else. Jobs and visitors have no row.
+     */
+    const record = async () => {
+      if (!(op.kind === 'mutation' || op.writes)) return
+      if (actor.kind === 'system' || actor.kind === 'visitor' || !isAudited(policy, op.action))
+        return
+      const ids = [...written]
+      await lib(ctx).insert('auditLog', {
+        actor: actorRecord(actor),
+        action: op.action,
+        ...(tenant && { tenantId: tenant.id }),
+        rows: ids.slice(0, auditRows),
+        more: Math.max(0, ids.length - auditRows),
+      })
+    }
     /** The handler's result, unless the call reached a raw function: then the whole transaction fails. */
     const settle = <T>(value: T): T => {
       if (tainted) throw tainted
       return value
     }
+    rawDbs.set(db, ctx.db as object)
     return {
       decision,
       tenant,
       rows,
+      written,
+      record,
       settle,
       /** May this call change the row? For approvals: rows it only reads give their tenant no say. */
       mayWrite: (table: string, row: Record<string, unknown>) => checks.mayWrite(table, row),
@@ -606,14 +674,15 @@ export function defineFunctions<
     acting: ActingAs,
     afterWrite: () => void = () => {},
     reachedRaw: () => void = () => {},
+    collect?: (ids: string[]) => void,
   ) {
     const c = ctx as Record<string, any>
     const isComponent = (ref: unknown) =>
       (getFunctionAddress(ref as never) as { reference?: string }).reference?.startsWith(
         '_reference/childComponent/',
       ) ?? false
-    const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting) =>
-      isComponent(ref) ? args : { actingAs: as, input: args ?? {} }
+    const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting, nested = false) =>
+      isComponent(ref) ? args : { actingAs: as, input: args ?? {}, ...(nested && { nested: true }) }
     // Work an approved request schedules while it runs carries the request's follow-up token
     // (minted by `approve`): only that work continues under the approval after `approve` returns.
     const scheduledAs = async (): Promise<ActingAs> => {
@@ -637,7 +706,10 @@ export function defineFunctions<
             [name]: async (ref: unknown, args?: unknown) => {
               let out: unknown
               try {
-                out = await c[name](ref, wrapArgs(ref, args))
+                out = await c[name](
+                  ref,
+                  wrapArgs(ref, args, acting, name === 'runMutation' && collect !== undefined),
+                )
               } catch (error) {
                 throw notAnOperation(ref, error)
               } finally {
@@ -656,7 +728,9 @@ export function defineFunctions<
                 reachedRaw()
                 throw notAnOperation(ref, null)
               }
-              return (out as { result: unknown }).result
+              const { result, written } = out as { result: unknown; written?: string[] }
+              if (written) collect?.(written)
+              return result
             },
           }
         : {}
@@ -820,6 +894,7 @@ export function defineFunctions<
     const Name extends string,
   >(spec: Spec<QueryCtx, A, Args, Returns, Name>) {
     assertAction(spec)
+    assertUnlimited(spec)
     const rule = policy.agents?.[spec.action]
     if (rule === 'approve' || typeof rule === 'function') {
       throw new Error(
@@ -880,14 +955,13 @@ export function defineFunctions<
       args: spec.args,
       returns: spec.returns,
       handler: async (ctx: MCtx, input: ObjectType<Args>) => {
-        const { ctx: checked, settle } = await authorize(
-          ctx,
-          op,
-          await caller(ctx, spec.action),
-          input,
-        )
+        const who = await caller(ctx, spec.action)
+        const { ctx: checked, settle, record } = await authorize(ctx, op, who, input)
         const plan = frozen(await planOf(op, checked, input))
-        return settle(await spec.handler(checked as never, input, plan as Pl))
+        const result = settle(await spec.handler(checked as never, input, plan as Pl))
+        // Same transaction as the handler: a call that fails writes no audit row.
+        await record()
+        return result
       },
     })
     return operation<RegisteredMutation<'public', ObjectType<Args>, Promise<Infer<Returns>>>>(
@@ -913,6 +987,8 @@ export function defineFunctions<
   const internalArgs = (args: PropertyValidators) => ({
     actingAs: actingAsValidator,
     input: v.object(args),
+    /** Set by `ctx.runMutation` of an operation: the caller writes the audit row and takes this call's ids. */
+    nested: v.optional(v.boolean()),
   })
 
   /**
@@ -925,9 +1001,10 @@ export function defineFunctions<
     spec: Pick<Operation, 'action' | 'args'>,
     who: ActingAs,
     input: Record<string, unknown>,
+    writes = false,
   ) {
     const actor = await actingAs(ctx, who)
-    const authorized = await authorize(ctx, spec, actor, input)
+    const authorized = await authorize(ctx, { ...spec, writes }, actor, input)
     if (
       authorized.decision === 'approve' &&
       !(actor.kind === 'agent' && actor.approvalId !== undefined)
@@ -948,6 +1025,7 @@ export function defineFunctions<
     Returns extends AnyValidator,
   >(spec: InternalSpec<QueryCtx, A, Args, Returns>) {
     assertAction(spec)
+    assertUnlimited(spec)
     return guarded(
       internalQueryGeneric({
         args: internalArgs(spec.args),
@@ -978,17 +1056,31 @@ export function defineFunctions<
       internalMutationGeneric({
         args: internalArgs(spec.args),
         ...(spec.returns && {
-          returns: v.object({ operation: v.literal(operationMark), result: spec.returns }),
+          returns: v.object({
+            operation: v.literal(operationMark),
+            result: spec.returns,
+            written: v.optional(v.array(v.string())),
+          }),
         }),
         handler: async (
           ctx: MCtx,
-          { actingAs: who, input }: { actingAs: ActingAs; input: ObjectType<Args> },
+          {
+            actingAs: who,
+            input,
+            nested,
+          }: { actingAs: ActingAs; input: ObjectType<Args>; nested?: boolean },
         ) => {
-          const { ctx: checked, settle } = await authorizeInternal(ctx, spec, who, input)
-          return {
-            operation: operationMark,
-            result: settle(await spec.handler(checked as never, input)),
-          }
+          const {
+            ctx: checked,
+            settle,
+            record,
+            written,
+          } = await authorizeInternal(ctx, spec, who, input, true)
+          const result = settle(await spec.handler(checked as never, input))
+          // Called from another operation's transaction: that call writes the one audit row, with these ids.
+          if (nested) return { operation: operationMark, result, written: [...written] }
+          await record()
+          return { operation: operationMark, result }
         },
       }),
     ) as unknown as FunctionReferenceTarget<'mutation', ObjectType<Args>, Infer<Returns>>
@@ -1174,6 +1266,29 @@ type FunctionReferenceTarget<
         { actingAs: ActingAs; input: Input },
         Promise<Envelope<Output>>
       >
+
+/** At most this many ids go into one audit row; the rest are counted in `more`. */
+const auditRows = 50
+
+/** The unchecked db behind a call's `ctx.db`, so `auditTrail` can read the library's table. */
+const rawDbs = new WeakMap<object, object>()
+
+/**
+ * The audit log of a tenant, newest first, one page at a time. Call it from an
+ * operation of your own, whose action decides who may read the log: the
+ * library does not.
+ */
+export async function auditTrail(
+  ctx: { db: unknown },
+  options: { tenantId: string; paginationOpts: PaginationOptions },
+) {
+  const db = (rawDbs.get(ctx.db as object) ?? ctx.db) as GenericQueryCtx<LibraryDataModel>['db']
+  return await db
+    .query('auditLog')
+    .withIndex('by_tenant', (q) => q.eq('tenantId', options.tenantId))
+    .order('desc')
+    .paginate(options.paginationOpts)
+}
 
 /** Marks an internal operation's result, so a call can tell it from a raw function's. */
 const operationMark = 'better-convex/operation' as const

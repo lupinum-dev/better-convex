@@ -21,6 +21,32 @@ export type AgentRule =
   | 'deny'
   | ((input: Record<string, any>) => 'allow' | 'approve' | 'deny')
 
+/** How often an action may run: `max` calls per `every`, refilled continuously. */
+export interface Limit {
+  /** Whole calls the bucket holds, and refills per `every`. At least 1. */
+  max: number
+  every: 'second' | 'minute' | 'hour' | 'day'
+  /**
+   * Whose calls share the bucket. `'user'` (default): the actor's user, or the agent's user and client.
+   * `'tenant'`: the call's tenant (a call without a tenant uses `'user'`). `'everyone'`: one bucket for the action.
+   * A visitor, who has no user, uses `'everyone'` for any of these.
+   */
+  per?: 'user' | 'tenant' | 'everyone'
+}
+
+export const everyMs = { second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000 } as const
+
+/** The limit of an action, or `undefined` when it has none. */
+export function limitOf(policy: Policy, action: string): Required<Limit> | undefined {
+  const limit = own(policy.limits as Record<string, Limit> | undefined, action)
+  return limit && { ...limit, per: limit.per ?? 'user' }
+}
+
+/** Is a call to this action recorded in the audit log? */
+export function isAudited(policy: Policy, action: string): boolean {
+  return matches((policy.audit as readonly string[] | undefined) ?? [], action)
+}
+
 interface PolicyConfig<A extends string, R extends string, S extends string> {
   /** Every action the app has. Only this list defines the action names; typos elsewhere are type errors. */
   actions: readonly A[]
@@ -43,6 +69,19 @@ interface PolicyConfig<A extends string, R extends string, S extends string> {
    * cancels. Rows the call only reads (a listing it buys) give no say.
    */
   approvers?: Partial<Record<NoInfer<A>, Approvers<NoInfer<R>>>>
+  /**
+   * How often each action may run. A call over the limit fails with
+   * `RATE_LIMITED`. A call the policy denies never takes a token, and a call
+   * that fails gives its token back. Only mutations and actions are limited,
+   * and jobs (the system) never are.
+   */
+  limits?: Partial<Record<NoInfer<A>, Limit>>
+  /**
+   * Actions recorded in the audit log, with the same patterns as `roles`. Each
+   * successful call of a mutation writes one `auditLog` row: who, which
+   * action, which tenant and which row ids it changed.
+   */
+  audit?: readonly Pattern<NoInfer<A>>[]
 }
 
 /** The roles that may decide an agent's request; see `approvers`. */
@@ -77,6 +116,27 @@ export function definePolicy<
     public?: readonly Pub[]
   },
 ): Policy<A, R, S, Pub> {
+  const actions = config.actions as readonly string[]
+  for (const [action, limit] of Object.entries(config.limits ?? {}) as [string, Limit][]) {
+    if (!actions.includes(action))
+      throw new Error(
+        `limits names ${JSON.stringify(action)}, which is not in the policy's actions.`,
+      )
+    if (!Number.isInteger(limit.max) || limit.max < 1)
+      throw new Error(`The limit of ${action} needs max to be a whole number of at least 1.`)
+    if (!Object.hasOwn(everyMs, limit.every))
+      throw new Error(
+        `The limit of ${action} needs every to be 'second', 'minute', 'hour' or 'day'.`,
+      )
+    if (limit.per !== undefined && !['user', 'tenant', 'everyone'].includes(limit.per))
+      throw new Error(`The limit of ${action} needs per to be 'user', 'tenant' or 'everyone'.`)
+  }
+  for (const pattern of (config.audit ?? []) as readonly string[]) {
+    if (!actions.some((action) => matches([pattern], action)))
+      throw new Error(
+        `audit lists ${JSON.stringify(pattern)}, which matches no action of the policy.`,
+      )
+  }
   return { ...config, __policy: true }
 }
 

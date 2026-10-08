@@ -146,12 +146,33 @@ export const libraryTables = {
     json: v.string(),
   }).index('by_run', ['runId', 'order']),
 
-  /** Fixed-window counters for the agent write limit. */
+  /**
+   * Token buckets for rate limits: one row per limited key. `tokens` is the
+   * level at time `at` (ms); it refills continuously up to the key's `max`.
+   */
   rateLimits: defineTable({
     key: v.string(),
-    window: v.number(),
-    count: v.number(),
-  }).index('by_key', ['key', 'window']),
+    tokens: v.number(),
+    at: v.number(),
+  })
+    .index('by_key', ['key'])
+    .index('by_at', ['at']),
+
+  /**
+   * Who did what, for the actions the policy lists in `audit`. Written with
+   * the call, kept until the app deletes it. Holds ids only, never values.
+   */
+  auditLog: defineTable({
+    actor: actorRecordValidator,
+    action: v.string(),
+    tenantId: v.optional(v.string()),
+    /** Ids the call inserted, changed or deleted: the first 50. */
+    rows: v.array(v.string()),
+    /** How many more ids there were beyond `rows`. */
+    more: v.number(),
+  })
+    .index('by_tenant', ['tenantId'])
+    .index('by_user', ['actor.userId']),
 }
 
 /**
