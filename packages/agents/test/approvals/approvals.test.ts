@@ -1372,6 +1372,36 @@ test('a run waits only on its own requests that are still open', async () => {
   })
 })
 
+// r3 review: an expired request woke its run once per request, each reading the run again.
+test("housekeeping expires a run's requests and wakes the run once, in one step", async () => {
+  const { t, runId } = await limitedRun('done')
+  const waiting = await t.run(async (ctx) => {
+    const { _id, _creationTime, ...base } = (await ctx.db.get(runId))!
+    return await ctx.db.insert('agentRuns', {
+      ...base,
+      task: 'x'.repeat(1_000_000),
+      status: 'waiting',
+    })
+  })
+  const ids = await t.run(async (ctx) => {
+    const ids = []
+    for (let n = 0; n < 20; n++)
+      ids.push(
+        await ctx.db.insert(
+          'approvals',
+          request({ caller: { door: 'app', runId: waiting, turn: 1 }, status: 'pending' }) as never,
+        ),
+      )
+    return ids
+  })
+  await t.run((ctx) => ctx.db.patch(waiting, { approvalIds: ids }))
+  vi.advanceTimersByTime(60_000)
+  await t.mutation(api.tools.housekeeping, {})
+  const steps = await drain(t)
+  expect(steps.filter((step) => step.expire)).toEqual([{ expire: true }])
+  expect(await t.run((ctx) => ctx.db.get(waiting))).toMatchObject({ status: 'running', turn: 2 })
+})
+
 // r3 review: a stalled run was marked failed before housekeeping had cancelled all its requests,
 // so a person could still decide one of an ended run.
 test("housekeeping cancels a stalled run's requests before it ends the run", async () => {

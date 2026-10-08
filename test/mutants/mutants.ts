@@ -2176,6 +2176,18 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  // Expiring a run's requests wakes the run once per step, not once per request.
+  {
+    id: 'P-r3-lifecycle-expire-once',
+    guards: 'r3-lifecycle',
+    file: 'packages/agents/src/tools.ts',
+    find: "if (row.caller.door === 'app' && !woken.has(row.caller.runId)) {",
+    replace: "if (row.caller.door === 'app') {",
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping expires a run's requests and wakes the run once, in one step`,
+    ],
+    projects: ['agents'],
+  },
   // A run ends only after its open requests are cancelled, so no request of an ended run stays open.
   {
     id: 'P-r3-lifecycle-cancel-first',

@@ -1087,6 +1087,8 @@ export function defineTools(
           await next(left.length ? { cancel: left } : {})
         } else if (args.expire) {
           // A request holds its plan, up to a document's size: one at a time, within the budget.
+          // Each run wakes at most once: its other requests past their time count as decided.
+          const woken = new Set<string>()
           let more = true
           while (more && !budget.spent) {
             const row = await db
@@ -1098,7 +1100,10 @@ export function defineTools(
             budget.count(row)
             await db.patch(row._id, { status: 'expired' })
             // A wake the budget cuts short is left to the scan of waiting runs.
-            if (row.caller.door === 'app') await wake(db, ctx.scheduler, row.caller.runId, budget)
+            if (row.caller.door === 'app' && !woken.has(row.caller.runId)) {
+              woken.add(row.caller.runId)
+              await wake(db, ctx.scheduler, row.caller.runId, budget)
+            }
           }
           await next(more ? { expire: true } : { waiting: null, cutoff: now - 60_000 })
         } else if (args.waiting !== undefined || args.runs) {
