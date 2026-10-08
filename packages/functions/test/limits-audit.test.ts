@@ -133,18 +133,6 @@ test('a call that fails does not count', async () => {
   for (const name of ['1', '2', '3']) await ann.mutation(fn('rename'), { projectId: pa, name })
 })
 
-// Catches: actions escaping their limit because only mutations are checked; and jobs being limited.
-test('an action is limited, and the system is not', async () => {
-  const { t } = await setup()
-  const call = (actingAs: object) => t.action(fn('sync'), { actingAs, input: {} } as never)
-  const person = { kind: 'person', authId: 'ann' }
-  await call(person)
-  await expect(call(person)).rejects.toThrow(/RATE_LIMITED/)
-  await call({ kind: 'person', authId: 'bob' })
-  await call({ kind: 'system', job: 'cron' })
-  await call({ kind: 'system', job: 'cron' })
-})
-
 // Catches: a wrong definition passing silently until production traffic.
 test('wrong limit or audit definitions fail when the policy is defined', () => {
   const base = { actions: ['a.read', 'a.write'], roles: {}, scopes: {} } as const
@@ -162,31 +150,26 @@ test('wrong limit or audit definitions fail when the policy is defined', () => {
   expect(define({ audit: ['a.*'], limits: { 'a.write': { max: 1, every: 'day' } } })).not.toThrow()
 })
 
-// Catches: a limit on an action a query uses, which could never be enforced (queries cannot write).
-test('a query cannot use a limited action; an action needs the limiter path', () => {
+// Catches: a limit on an action only a query uses, which could never be enforced (queries cannot write).
+test('a query cannot use a limited action', () => {
   const limited = definePolicy({
-    actions: ['x.read', 'x.run'],
+    actions: ['x.read'],
     roles: {},
     scopes: {},
-    limits: { 'x.read': { max: 1, every: 'minute' }, 'x.run': { max: 1, every: 'minute' } },
+    limits: { 'x.read': { max: 1, every: 'minute' } },
   })
-  const kit = (limiter?: string) =>
-    defineFunctions({
-      auth: people(),
-      policy: limited,
-      user: async () => null,
-      roleOf: async () => null,
-      rules: {} as never,
-      ...(limiter && { limiter }),
-    })
+  const kit = defineFunctions({
+    auth: people(),
+    policy: limited,
+    user: async () => null,
+    roleOf: async () => null,
+    rules: {} as never,
+  })
   const read = { action: 'x.read', args: {}, returns: {} as never, handler: async () => null }
-  expect(() => kit().query(read as never)).toThrow(/x\.read has a limit.*a query cannot write/s)
-  expect(() =>
-    kit().internalAction({ action: 'x.run', args: {}, handler: async () => null } as never),
-  ).toThrow(/needs defineFunctions\(\{ limiter/)
-  expect(() =>
-    kit('a:b').internalAction({ action: 'x.run', args: {}, handler: async () => null } as never),
-  ).not.toThrow()
+  expect(() => kit.query(read as never)).toThrow(
+    'x.read is limited, but no mutation uses it. Limit the mutation the action calls.',
+  )
+  expect(() => kit.internalQuery(read as never)).toThrow(/no mutation uses it/)
 })
 
 // Catches: the audit log missing who/what/where, or recording values instead of ids.
@@ -266,4 +249,25 @@ test('auditTrail returns a tenant newest first, a page at a time', async () => {
   const all = await audit()
   expect(all).toHaveLength(4)
   expect(first.page.every((row: { tenantId: string }) => row.tenantId === a)).toBe(true)
+})
+
+// Catches: an audited action leaving no trace when it is reached through an internal operation, or twice (one row per layer).
+test('a public mutation that runs an internal operation writes one row with both calls ids', async () => {
+  const { t, ann, a, pa, audit } = await setup()
+  const second = await t.run((ctx) =>
+    ctx.db.insert('projects', { orgId: a, name: 'second', archived: false }),
+  )
+  await ann.mutation(fn('archiveNested'), { first: pa, second })
+  const rows = await audit()
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ action: 'projects.nest', more: 0 })
+  expect([...rows[0]!.rows].sort()).toEqual([pa, second].sort())
+})
+
+// Catches: the system being audited as a person, or a job's nested operation writing a row of its own.
+test('a system job writes no audit row', async () => {
+  const { t, pa, audit } = await setup()
+  await t.mutation(fn('sweep'), { projectId: pa })
+  expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name: 'bumped' })
+  expect(await audit()).toEqual([])
 })

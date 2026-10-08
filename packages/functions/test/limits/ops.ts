@@ -1,10 +1,8 @@
 import { auditTrail } from '@lupinum/better-convex-functions'
-import { paginationOptsValidator } from 'convex/server'
+import { makeFunctionReference, paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
 
-import { internalAction, mutation, query, takeActionToken } from './fns'
-
-export { takeActionToken }
+import { internalMutation, job, mutation, query } from './fns'
 
 /** Limited: 3 a minute per user. */
 export const rename = mutation({
@@ -52,11 +50,46 @@ export const feedback = mutation({
   handler: async () => null,
 })
 
-/** An action with a limit of 1 a minute. */
-export const sync = internalAction({
-  action: 'sync.run',
-  args: {},
-  handler: async () => null,
+/** Audited internal mutation: renames a project as whoever its caller passes. */
+export const bump = internalMutation({
+  action: 'projects.touch',
+  args: { projectId: v.id('projects') },
+  returns: v.null(),
+  handler: async (ctx, { projectId }) => {
+    await ctx.db.patch(projectId, { name: 'bumped' })
+    return null
+  },
+})
+
+/** Audited public mutation that runs `bump` in its own transaction: one audit row for both. */
+export const archiveNested = mutation({
+  action: 'projects.nest',
+  args: { first: v.id('projects'), second: v.id('projects') },
+  returns: v.null(),
+  handler: async (ctx, { first, second }) => {
+    await ctx.db.patch(first, { archived: true })
+    await ctx.runMutation(
+      makeFunctionReference<'mutation'>('ops:bump') as never,
+      {
+        projectId: second,
+      } as never,
+    )
+    return null
+  },
+})
+
+/** A job that runs `bump` as the system. */
+export const sweep = job({
+  name: 'sweep',
+  args: { projectId: v.id('projects') },
+  handler: async (ctx, { projectId }) => {
+    await ctx.runMutation(
+      makeFunctionReference<'mutation'>('ops:bump') as never,
+      {
+        projectId,
+      } as never,
+    )
+  },
 })
 
 /** Audited: archives every project of an org. */

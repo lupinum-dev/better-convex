@@ -72,6 +72,8 @@ interface Internals {
     tenant: TenantRef | undefined
     rows: Map<string, Record<string, unknown> | null>
     settle: <T>(value: T) => T
+    /** Writes the audit row of this call, when the policy audits its action. */
+    record(): Promise<void>
     mayWrite(table: string, row: Record<string, unknown>): Promise<boolean>
     ctx: any
   }>
@@ -335,8 +337,10 @@ export function defineTools(
       approvalId?: GenericId<'approvals'>
       decidedBy?: string
     },
+    record: () => Promise<void>,
   ) {
     const result = settle(await op.handler(checked, input, plan))
+    await record()
     await lib(ctx).insert('activity', {
       actor: actorRecord(checked.actor),
       action: op.action,
@@ -492,18 +496,28 @@ export function defineTools(
               ctx: checked,
               tenant,
               settle,
+              record,
             } = await authorize(ctx, op, { ...actor, approvalId: approval.id }, input)
-            const result = await runForAgent(ctx, checked, settle, op, input, frozen(row.plan), {
-              tenant,
-              requestId: row.requestId,
-              approvalId: approval.id,
-              decidedBy: approval.decidedBy,
-            })
+            const result = await runForAgent(
+              ctx,
+              checked,
+              settle,
+              op,
+              input,
+              frozen(row.plan),
+              {
+                tenant,
+                requestId: row.requestId,
+                approvalId: approval.id,
+                decidedBy: approval.decidedBy,
+              },
+              record,
+            )
             return { status: 'done' as const, result }
           }
           if (!renew) await rateLimit(ctx, `writes:${requester.key}`, agentWritesPerMinute)
           const authorized = await authorize(ctx, op, actor, input)
-          const { decision, tenant, settle, mayWrite, ctx: checked } = authorized
+          const { decision, tenant, settle, mayWrite, record, ctx: checked } = authorized
           // A renewal only asks: work that needs no person now runs when the agent calls again,
           // never from a person's click on another request (release review 5).
           if (renew && decision !== 'approve') fail('STALE', stale)
@@ -639,6 +653,7 @@ export function defineTools(
               input,
               frozen(settle(await planOf(op, checked, input))),
               { tenant, requestId },
+              record,
             ),
           }
         },

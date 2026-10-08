@@ -3,7 +3,6 @@ import {
   internalActionGeneric,
   internalMutationGeneric,
   internalQueryGeneric,
-  makeFunctionReference,
   mutationGeneric,
   queryGeneric,
   type DataModelFromSchemaDefinition,
@@ -253,13 +252,6 @@ export function defineFunctions<
   rules: NoInfer<{
     [T in AppTables<DM>]: Rule<DocumentByName<DM, T>, User, DM, ActionOf<P>>
   }>
-  /**
-   * Where the app exports `takeActionToken` from this kit (`'limits:takeActionToken'`).
-   * An `internalAction` with a limited `action` takes its token through it, because an
-   * action has no database of its own. Convex loads one module per function, so the path
-   * has to be spelled out.
-   */
-  limiter?: string
 }) {
   type QCtx = GenericQueryCtx<DM>
   type MCtx = GenericMutationCtx<DM>
@@ -297,11 +289,11 @@ export function defineFunctions<
     if (wait !== null) rateLimited(wait)
   }
 
-  /** The action of a read-only operation may not carry a limit: queries cannot write a bucket. */
-  function assertUnlimited(spec: { action: string }, what: string) {
+  /** A query cannot write a bucket: its action may not carry a limit. */
+  function assertUnlimited(spec: { action: string }) {
     if (limitOf(policy, spec.action))
       throw new Error(
-        `${spec.action} has a limit in the policy, but ${what} cannot write: limits apply to mutations and actions. Use an action name without a limit.`,
+        `${spec.action} is limited, but no mutation uses it. Limit the mutation the action calls.`,
       )
   }
 
@@ -502,7 +494,11 @@ export function defineFunctions<
    */
   async function authorize<Ctx extends QCtx>(
     ctx: Ctx,
-    op: Pick<Operation, 'action' | 'args' | 'crossTenant'> & { kind?: Operation['kind'] },
+    op: Pick<Operation, 'action' | 'args' | 'crossTenant'> & {
+      kind?: Operation['kind']
+      /** An internal mutation: it writes, so it is audited, but it is not limited (its caller was). */
+      writes?: boolean
+    },
     actor: Actor<User> | Visitor | SystemActor,
     input: Record<string, unknown>,
   ) {
@@ -619,7 +615,27 @@ export function defineFunctions<
         (tainted ??= new Error(
           'This call reached a function that is not an internal operation; nothing it did is kept.',
         )),
+      // Operations this call runs in its own transaction add their ids to this call's audit row.
+      (ids) => ids.forEach((id) => written.add(id)),
     )
+    /**
+     * The audit row of this call, for the outermost operation: an audited action by a person or an
+     * agent, whichever door it came in by. Call it after the handler succeeded; a failed call
+     * rolls back with everything else. Jobs and visitors have no row.
+     */
+    const record = async () => {
+      if (!(op.kind === 'mutation' || op.writes)) return
+      if (actor.kind === 'system' || actor.kind === 'visitor' || !isAudited(policy, op.action))
+        return
+      const ids = [...written]
+      await lib(ctx).insert('auditLog', {
+        actor: actorRecord(actor),
+        action: op.action,
+        ...(tenant && { tenantId: tenant.id }),
+        rows: ids.slice(0, auditRows),
+        more: Math.max(0, ids.length - auditRows),
+      })
+    }
     /** The handler's result, unless the call reached a raw function: then the whole transaction fails. */
     const settle = <T>(value: T): T => {
       if (tainted) throw tainted
@@ -631,6 +647,7 @@ export function defineFunctions<
       tenant,
       rows,
       written,
+      record,
       settle,
       /** May this call change the row? For approvals: rows it only reads give their tenant no say. */
       mayWrite: (table: string, row: Record<string, unknown>) => checks.mayWrite(table, row),
@@ -657,14 +674,15 @@ export function defineFunctions<
     acting: ActingAs,
     afterWrite: () => void = () => {},
     reachedRaw: () => void = () => {},
+    collect?: (ids: string[]) => void,
   ) {
     const c = ctx as Record<string, any>
     const isComponent = (ref: unknown) =>
       (getFunctionAddress(ref as never) as { reference?: string }).reference?.startsWith(
         '_reference/childComponent/',
       ) ?? false
-    const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting) =>
-      isComponent(ref) ? args : { actingAs: as, input: args ?? {} }
+    const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting, nested = false) =>
+      isComponent(ref) ? args : { actingAs: as, input: args ?? {}, ...(nested && { nested: true }) }
     // Work an approved request schedules while it runs carries the request's follow-up token
     // (minted by `approve`): only that work continues under the approval after `approve` returns.
     const scheduledAs = async (): Promise<ActingAs> => {
@@ -688,7 +706,10 @@ export function defineFunctions<
             [name]: async (ref: unknown, args?: unknown) => {
               let out: unknown
               try {
-                out = await c[name](ref, wrapArgs(ref, args))
+                out = await c[name](
+                  ref,
+                  wrapArgs(ref, args, acting, name === 'runMutation' && collect !== undefined),
+                )
               } catch (error) {
                 throw notAnOperation(ref, error)
               } finally {
@@ -707,7 +728,9 @@ export function defineFunctions<
                 reachedRaw()
                 throw notAnOperation(ref, null)
               }
-              return (out as { result: unknown }).result
+              const { result, written } = out as { result: unknown; written?: string[] }
+              if (written) collect?.(written)
+              return result
             },
           }
         : {}
@@ -871,7 +894,7 @@ export function defineFunctions<
     const Name extends string,
   >(spec: Spec<QueryCtx, A, Args, Returns, Name>) {
     assertAction(spec)
-    assertUnlimited(spec, 'a query')
+    assertUnlimited(spec)
     const rule = policy.agents?.[spec.action]
     if (rule === 'approve' || typeof rule === 'function') {
       throw new Error(
@@ -933,20 +956,11 @@ export function defineFunctions<
       returns: spec.returns,
       handler: async (ctx: MCtx, input: ObjectType<Args>) => {
         const who = await caller(ctx, spec.action)
-        const { ctx: checked, settle, tenant, written } = await authorize(ctx, op, who, input)
+        const { ctx: checked, settle, record } = await authorize(ctx, op, who, input)
         const plan = frozen(await planOf(op, checked, input))
         const result = settle(await spec.handler(checked as never, input, plan as Pl))
-        // Same transaction as the handler: a call that fails writes no audit row. A visitor has no actor to record.
-        if (who.kind !== 'visitor' && isAudited(policy, spec.action)) {
-          const ids = [...written]
-          await lib(ctx).insert('auditLog', {
-            actor: actorRecord(who),
-            action: spec.action,
-            ...(tenant && { tenantId: tenant.id }),
-            rows: ids.slice(0, auditRows),
-            more: Math.max(0, ids.length - auditRows),
-          })
-        }
+        // Same transaction as the handler: a call that fails writes no audit row.
+        await record()
         return result
       },
     })
@@ -973,6 +987,8 @@ export function defineFunctions<
   const internalArgs = (args: PropertyValidators) => ({
     actingAs: actingAsValidator,
     input: v.object(args),
+    /** Set by `ctx.runMutation` of an operation: the caller writes the audit row and takes this call's ids. */
+    nested: v.optional(v.boolean()),
   })
 
   /**
@@ -985,9 +1001,10 @@ export function defineFunctions<
     spec: Pick<Operation, 'action' | 'args'>,
     who: ActingAs,
     input: Record<string, unknown>,
+    writes = false,
   ) {
     const actor = await actingAs(ctx, who)
-    const authorized = await authorize(ctx, spec, actor, input)
+    const authorized = await authorize(ctx, { ...spec, writes }, actor, input)
     if (
       authorized.decision === 'approve' &&
       !(actor.kind === 'agent' && actor.approvalId !== undefined)
@@ -1008,7 +1025,7 @@ export function defineFunctions<
     Returns extends AnyValidator,
   >(spec: InternalSpec<QueryCtx, A, Args, Returns>) {
     assertAction(spec)
-    assertUnlimited(spec, 'an internal query')
+    assertUnlimited(spec)
     return guarded(
       internalQueryGeneric({
         args: internalArgs(spec.args),
@@ -1039,17 +1056,31 @@ export function defineFunctions<
       internalMutationGeneric({
         args: internalArgs(spec.args),
         ...(spec.returns && {
-          returns: v.object({ operation: v.literal(operationMark), result: spec.returns }),
+          returns: v.object({
+            operation: v.literal(operationMark),
+            result: spec.returns,
+            written: v.optional(v.array(v.string())),
+          }),
         }),
         handler: async (
           ctx: MCtx,
-          { actingAs: who, input }: { actingAs: ActingAs; input: ObjectType<Args> },
+          {
+            actingAs: who,
+            input,
+            nested,
+          }: { actingAs: ActingAs; input: ObjectType<Args>; nested?: boolean },
         ) => {
-          const { ctx: checked, settle } = await authorizeInternal(ctx, spec, who, input)
-          return {
-            operation: operationMark,
-            result: settle(await spec.handler(checked as never, input)),
-          }
+          const {
+            ctx: checked,
+            settle,
+            record,
+            written,
+          } = await authorizeInternal(ctx, spec, who, input, true)
+          const result = settle(await spec.handler(checked as never, input))
+          // Called from another operation's transaction: that call writes the one audit row, with these ids.
+          if (nested) return { operation: operationMark, result, written: [...written] }
+          await record()
+          return { operation: operationMark, result }
         },
       }),
     ) as unknown as FunctionReferenceTarget<'mutation', ObjectType<Args>, Infer<Returns>>
@@ -1063,12 +1094,6 @@ export function defineFunctions<
    * not yet checked again: that happens in each `ctx.run`.
    */
   function internalAction<Args extends PropertyValidators, Returns extends AnyValidator>(spec: {
-    /**
-     * The policy action this work counts as. When the policy limits it, the action takes a
-     * token before its handler (through `takeActionToken`; see `limiter`). A limit `per: 'tenant'`
-     * counts per user here: an action reads no rows, so it does not know its tenant.
-     */
-    action?: ActionOf<P>
     args: Args
     returns?: Returns
     handler: (
@@ -1076,13 +1101,6 @@ export function defineFunctions<
       args: ObjectType<Args>,
     ) => Promise<Infer<Returns>>
   }) {
-    if (spec.action !== undefined) {
-      assertAction(spec)
-      if (limitOf(policy, spec.action) && !config.limiter)
-        throw new Error(
-          `${spec.action} has a limit, so its action needs defineFunctions({ limiter: 'module:takeActionToken' }) and that export from the kit.`,
-        )
-    }
     return guarded(
       internalActionGeneric({
         args: internalArgs(spec.args),
@@ -1108,14 +1126,6 @@ export function defineFunctions<
           // An action cannot read the approved plan: under an approval, it deletes files through
           // an internal mutation, which can (release review 5).
           const approved = who.kind === 'agent' && who.approvalId !== undefined
-          if (spec.action !== undefined && limitOf(policy, spec.action)) {
-            await nested.runMutation(
-              makeFunctionReference<'mutation'>(config.limiter!) as never,
-              {
-                action: spec.action,
-              } as never,
-            )
-          }
           const result = await spec.handler(
             {
               ...ctx,
@@ -1223,31 +1233,9 @@ export function defineFunctions<
     ) as unknown as RegisteredMutation<'internal', ObjectType<Args>, Promise<JobDone>>
   }
 
-  /**
-   * Takes an action's token for an `internalAction`. The app exports it from the module that
-   * `limiter` names: `export const { takeActionToken } = fns`.
-   */
-  const takeActionToken = guarded(
-    internalMutationGeneric({
-      args: internalArgs({ action: v.string() }),
-      returns: v.object({ operation: v.literal(operationMark), result: v.null() }),
-      handler: async (
-        ctx: MCtx,
-        { actingAs: who, input }: { actingAs: ActingAs; input: { action: string } },
-      ) => {
-        const limit = limitOf(policy, input.action)
-        if (!limit) throw new Error(`${input.action} has no limit in the policy.`)
-        const actor = await actingAs(ctx, who)
-        if (actor.kind !== 'system') await spend(ctx, actor, input.action, undefined, limit)
-        return { operation: operationMark, result: null }
-      },
-    }),
-  ) as unknown as FunctionReferenceTarget<'mutation', { action: string }, null>
-
   const fns = {
     /** The policy every operation here checks. */
     policy,
-    takeActionToken,
     query,
     mutation,
     internalQuery,

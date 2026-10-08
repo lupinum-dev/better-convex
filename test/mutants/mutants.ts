@@ -2323,41 +2323,12 @@ export const mutants: Mutant[] = [
     ],
   },
   {
-    id: 'S-A-action-limited',
-    guards: 'saas-a',
-    file: 'packages/functions/src/functions.ts',
-    find: 'if (spec.action !== undefined && limitOf(policy, spec.action)) {',
-    replace: 'if (false) {',
-    kills: [`${F}/limits-audit.test.ts > an action is limited, and the system is not`],
-  },
-  {
-    id: 'S-A-system-unlimited',
-    guards: 'saas-a',
-    file: 'packages/functions/src/functions.ts',
-    find: "if (actor.kind !== 'system') await spend(ctx, actor, input.action, undefined, limit)",
-    replace: 'await spend(ctx, actor, input.action, undefined, limit)',
-    kills: [`${F}/limits-audit.test.ts > an action is limited, and the system is not`],
-  },
-  {
     id: 'S-A-query-limit-error',
     guards: 'saas-a',
     file: 'packages/functions/src/functions.ts',
-    find: 'if (limitOf(policy, spec.action))\n      throw new Error(\n        `${spec.action} has a limit in the policy, but ${what}',
-    replace:
-      'if (false)\n      throw new Error(\n        `${spec.action} has a limit in the policy, but ${what}',
-    kills: [
-      `${F}/limits-audit.test.ts > a query cannot use a limited action; an action needs the limiter path`,
-    ],
-  },
-  {
-    id: 'S-A-limiter-required',
-    guards: 'saas-a',
-    file: 'packages/functions/src/functions.ts',
-    find: 'if (limitOf(policy, spec.action) && !config.limiter)',
-    replace: 'if (false)',
-    kills: [
-      `${F}/limits-audit.test.ts > a query cannot use a limited action; an action needs the limiter path`,
-    ],
+    find: 'if (limitOf(policy, spec.action))\n      throw new Error(\n        `${spec.action} is limited',
+    replace: 'if (false)\n      throw new Error(\n        `${spec.action} is limited',
+    kills: [`${F}/limits-audit.test.ts > a query cannot use a limited action`],
   },
   {
     id: 'S-A-def-unknown-action',
@@ -2413,8 +2384,8 @@ export const mutants: Mutant[] = [
     id: 'S-A-audit-written',
     guards: 'saas-a',
     file: 'packages/functions/src/functions.ts',
-    find: "if (who.kind !== 'visitor' && isAudited(policy, spec.action)) {",
-    replace: 'if (false) {',
+    find: "if (actor.kind === 'system' || actor.kind === 'visitor' || !isAudited(policy, op.action))",
+    replace: 'if (true)',
     kills: [
       `${F}/limits-audit.test.ts > an audited mutation writes one row with actor, action, tenant and written ids`,
     ],
@@ -2423,8 +2394,8 @@ export const mutants: Mutant[] = [
     id: 'S-A-audit-only-listed',
     guards: 'saas-a',
     file: 'packages/functions/src/functions.ts',
-    find: "if (who.kind !== 'visitor' && isAudited(policy, spec.action)) {",
-    replace: "if (who.kind !== 'visitor') {",
+    find: "if (actor.kind === 'system' || actor.kind === 'visitor' || !isAudited(policy, op.action))",
+    replace: "if (actor.kind === 'system' || actor.kind === 'visitor')",
     kills: [`${F}/limits-audit.test.ts > unaudited writes and failed calls leave no audit row`],
   },
   {
@@ -2512,6 +2483,45 @@ export const mutants: Mutant[] = [
     replace: "q.lt('at', 0)",
     kills: [
       `${A}/approvals/approvals.test.ts > housekeeping deletes rate-limit buckets idle for more than a day`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S-A-audit-no-system',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: "actor.kind === 'system' || actor.kind === 'visitor' || !isAudited(policy, op.action)",
+    replace: "actor.kind === 'visitor' || !isAudited(policy, op.action)",
+    kills: [`${F}/limits-audit.test.ts > a system job writes no audit row`],
+  },
+  {
+    id: 'S-A-audit-nested-collect',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: '(ids) => ids.forEach((id) => written.add(id)),',
+    replace: '() => {},',
+    kills: [
+      `${F}/limits-audit.test.ts > a public mutation that runs an internal operation writes one row with both calls ids`,
+    ],
+  },
+  {
+    id: 'S-A-audit-nested-no-row',
+    guards: 'saas-a',
+    file: 'packages/functions/src/functions.ts',
+    find: 'if (nested) return { operation: operationMark, result, written: [...written] }',
+    replace: 'if (false) return { operation: operationMark, result, written: [...written] }',
+    kills: [
+      `${F}/limits-audit.test.ts > a public mutation that runs an internal operation writes one row with both calls ids`,
+    ],
+  },
+  {
+    id: 'S-A-audit-agent-door',
+    guards: 'saas-a',
+    file: 'packages/agents/src/tools.ts',
+    find: 'await record()\n',
+    replace: '',
+    kills: [
+      `${A}/approvals/approvals.test.ts > an agent write of an audited action appears in the audit log with the agent as actor`,
     ],
     projects: ['agents'],
   },

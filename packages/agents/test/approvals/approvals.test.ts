@@ -1089,6 +1089,21 @@ test('housekeeping deletes rate-limit buckets idle for more than a day', async (
   expect(await buckets()).toEqual([])
 })
 
+// The audit log follows the action, whichever door it came in by: an agent's write is recorded with the agent as actor.
+test('an agent write of an audited action appears in the audit log with the agent as actor', async () => {
+  const s = await setup()
+  await s.tool('rename_project', { projectId: s.p[0], name: 'audited' })
+  const rows = await s.t.run((ctx) => ctx.db.query('auditLog').collect())
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({
+    action: 'projects.rename',
+    actor: { kind: 'agent', door: 'mcp' },
+    rows: [s.p[0]],
+    more: 0,
+  })
+  expect(rows[0]!.actor.clientId).toEqual(expect.any(String))
+})
+
 // B1: one connection could make 300 writes a minute; same-row bursts surfaced as "the tool failed".
 test('an agent may make 60 writes a minute, then waits', async () => {
   const s = await setup()
