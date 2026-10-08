@@ -1,6 +1,6 @@
 packages:
   # The Nuxt module is the root package. Listing it lets Changesets version it
-  # together with the Vue package (see DECISIONS.md).
+  # together with the Vue package (see internals/decisions.md).
   - '.'
   - playground
   - packages/*

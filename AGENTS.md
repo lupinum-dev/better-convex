@@ -134,20 +134,20 @@ starts one with synthetic auth secrets. Remove `playground/.convex` and
   detail may follow. A breaking change adds a line that starts with
   `Migration:` and says what users must do.
 - The repository is in Changesets prerelease mode (`rc`) until 1.0.0; see
-  DECISIONS.md before you run `changeset pre exit`.
+  internals/decisions.md before you run `changeset pre exit`.
 - Do not bypass the 24-hour dependency quarantine (`minimumReleaseAge`). Do not
   add dependencies to `allowBuilds` without a reason.
 - Pin GitHub Actions to full commit SHAs. Give each job only the permissions it needs.
 - Keep tooling lean. Add a script, check or workflow only when it guards
   behavior users rely on or closes a real attack path. Process is not security.
-- Record lasting choices in [DECISIONS.md](DECISIONS.md).
+- Record lasting choices in [internals/decisions.md](internals/decisions.md).
 - Do not commit `dist/`, `.nuxt/`, `.output/`, credentials, or deployment URLs.
 - Use a short descriptive branch name, such as `fix/auth-proxy-limit`, without
   a tool prefix such as `codex/` or `claude/`.
 
 ## Security
 
-Read `SECURITY.md` before you change authentication, OAuth, MCP, the auth
+Read `.github/SECURITY.md` before you change authentication, OAuth, MCP, the auth
 proxy, sessions, tokens, keys, secrets, or authorization.
 
 - Never weaken a security check or a negative security test to make an
@@ -181,7 +181,7 @@ changes; the build fails when the table names a missing page or a page link
 cannot be resolved.
 
 The argument and data rules that the composables keep are D29 and D22 in
-[DECISIONS.md](DECISIONS.md). Do not change them in passing. When a public contract changes, update the docs,
+[internals/decisions.md](internals/decisions.md). Do not change them in passing. When a public contract changes, update the docs,
 examples, types, tests, and package exports in the same change. Do not rewrite
 legal text, code, API identifiers, quotations, or changelog history to match
 the writing guide.

@@ -1,7 +1,7 @@
 # Experiments and verdicts
 
 What we tried, what we chose, and what would make us look again. Decisions
-with lasting effect are also in `DECISIONS.md` (D31–D36); this file keeps the
+with lasting effect are also in `internals/decisions.md` (D31–D36); this file keeps the
 evidence and the alternatives so nobody has to repeat the experiment.
 
 ## The design holds on three app shapes

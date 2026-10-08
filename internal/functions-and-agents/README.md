@@ -25,6 +25,6 @@ Where the rest lives:
 - Live evidence (screenshots, logs, harness output) is in the skeleton's
   `evidence/` folder, which git ignores. Folders `10-packages` and
   `11-vercel` are the runs on the packed packages.
-- Decisions with lasting effect: `DECISIONS.md` D31–D36.
+- Decisions with lasting effect: `internals/decisions.md` D31–D36.
 - What app developers should know: the docs under
   `docs/content/docs/3.build/8.functions` and `3.build/7.agents`.

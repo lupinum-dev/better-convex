@@ -82,7 +82,7 @@ async function handleSignUp() {
 
     // Signup intentionally creates no session, avoiding the pinned default's
     // immediate duplicate status/token disclosure. Continue through sign-in;
-    // the broader enumeration limitation remains documented in SECURITY.md.
+    // the broader enumeration limitation remains documented in .github/SECURITY.md.
     await navigateTo('/auth/signin')
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'An unexpected error occurred'
