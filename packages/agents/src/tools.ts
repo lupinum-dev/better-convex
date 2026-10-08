@@ -105,7 +105,11 @@ const agentWritesPerMinute = 60
 const openApprovals = 20
 /** Rows one request may cover; each is fingerprinted for the stale check. */
 const maxSeen = 500
-/** What one stored approval may weigh: Convex's 1 MiB document limit, less room for system fields. */
+/**
+ * What one stored approval may weigh: Convex's 1 MiB document limit, less a reserve for the system
+ * fields and the decision (who, when, and the result or its truncation marker), so deciding a
+ * request that passed this check always fits.
+ */
 const maxApprovalBytes = 1024 * 1024 - 8 * 1024
 /** A result too large to keep for replay. */
 const truncated = v.object({ truncated: v.literal(true), bytes: v.number() })
@@ -914,22 +918,38 @@ export function defineTools(
             // The operation runs as the agent in a sub-transaction. It checks the grant again, so
             // revoking the connection also cancels its requests, and the rows the person saw (STALE).
             // Marks the request as running, so its own work (and only that) runs under this approval.
-            await lib(ctx).patch(row._id, { status: 'executing', followUp: crypto.randomUUID() })
-            try {
-              const output = await ctx.runMutation(ownRef(row.tool), {
+            const followUp = crypto.randomUUID()
+            await lib(ctx).patch(row._id, { status: 'executing', followUp })
+            // Only the operation's own failure is caught: its writes rolled back with it. Anything
+            // that fails after it fails this whole mutation, so a committed write is never "failed".
+            const ran = await ctx
+              .runMutation(ownRef(row.tool), {
                 caller: row.caller,
                 input: row.input,
                 approval: { id: row._id, decidedBy: approver.user._id },
               })
-              await lib(ctx).patch(row._id, {
-                status: 'approved',
-                result: storable(output.result),
+              .then(
+                (output) => ({ ok: true as const, output }),
+                (error: unknown) => ({ ok: false as const, error }),
+              )
+            if (ran.ok) {
+              const decided = {
+                status: 'approved' as const,
                 decidedBy: approver.user._id,
                 decidedAt: Date.now(),
+              }
+              // The result gets the room the decided request leaves, so storing it cannot exceed
+              // the document limit; the reserve in maxApprovalBytes always fits the marker.
+              const room =
+                maxApprovalBytes -
+                getConvexSize({ ...row, ...decided, followUp } as unknown as Value)
+              await lib(ctx).patch(row._id, {
+                ...decided,
+                result: storable(ran.output.result, Math.min(64 * 1024, room)),
               })
               outcome = { status: 'approved' }
-            } catch (error) {
-              const reason = toolFailure(error)
+            } else {
+              const reason = toolFailure(ran.error)
               await lib(ctx).patch(row._id, {
                 status: 'failed',
                 error: reason,

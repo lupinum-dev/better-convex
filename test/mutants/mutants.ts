@@ -2024,6 +2024,18 @@ export const mutants: Mutant[] = [
     ],
     projects: ['unit'],
   },
+  // A request that nearly fills 1 MiB still stores its approved result, as a marker if needed.
+  {
+    id: 'P-r2-approval-result-room',
+    guards: 'r2-approval',
+    file: 'packages/agents/src/tools.ts',
+    find: 'storable(ran.output.result, Math.min(64 * 1024, room))',
+    replace: 'storable(ran.output.result)',
+    kills: [
+      `${A}/approvals/approvals.test.ts > a request that nearly fills the size limit stores a marker for a result that no longer fits`,
+    ],
+    projects: ['agents'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [

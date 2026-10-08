@@ -121,6 +121,23 @@ test('an approved request with a large result is approved, the result marked too
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'exported' })
 })
 
+// A request that nearly fills 1 MiB passed the size check; its result then did not fit, and the
+// request said "failed" although the write committed.
+test('a request that nearly fills the size limit stores a marker for a result that no longer fits', async () => {
+  const s = await setup()
+  const input = { projectId: s.p[0], size: 40_000, note: 'n'.repeat(1_020_000) }
+  const asked = await s.ask('export_project', input)
+
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
+    status: 'approved',
+  })
+  expect(await s.tool('check_approval', { approvalId: asked.approvalId })).toMatchObject({
+    status: 'done',
+    result: { status: 'approved', result: { truncated: true, bytes: 40_002 } },
+  })
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'exported' })
+})
+
 // A12: approving ran the stored input against whatever the row had become.
 test('approving fails as STALE when the project changed after the request', async () => {
   const s = await setup()
