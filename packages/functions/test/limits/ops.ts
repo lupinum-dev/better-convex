@@ -2,7 +2,7 @@ import { auditTrail } from '@lupinum/better-convex-functions'
 import { makeFunctionReference, paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
 
-import { internalMutation, job, mutation, query } from './fns'
+import { internalAction, internalMutation, job, mutation, query } from './fns'
 
 /** Limited: 3 a minute per user. */
 export const rename = mutation({
@@ -216,5 +216,117 @@ export const runBump = mutation({
   handler: async (ctx, args) => {
     await ctx.runMutation(ref('ops:bump'), args as never)
     return null
+  },
+})
+
+// The doors table (../doors.test.ts): `projects.guard` is owner-only, limited (2 a minute) and
+// audited. Every entry path below ends in the same internal mutation, `guardInternal`.
+const guardArgs = {
+  projectId: v.id('projects'),
+  name: v.string(),
+  /** A row of another place, written by the handler: the row rules must refuse it. */
+  elsewhere: v.optional(v.string()),
+  /** Skip the project write: then no row rule stands behind the policy. */
+  quiet: v.optional(v.boolean()),
+}
+
+/** Door 1: the public mutation. */
+export const guard = mutation({
+  action: 'projects.guard',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, { projectId, name, elsewhere, quiet }) => {
+    if (!quiet) await ctx.db.patch(projectId, { name })
+    // A write the row rules do not guard: only the policy stops it.
+    const project = await ctx.db.get(projectId)
+    await ctx.db.insert('locks', { orgId: project!.orgId, name, locked: true })
+    if (elsewhere) await ctx.db.patch(elsewhere as typeof projectId, { name })
+    return null
+  },
+})
+
+/** The internal mutation every other door reaches. */
+export const guardInternal = internalMutation({
+  action: 'projects.guard',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, { projectId, name, elsewhere, quiet }) => {
+    if (!quiet) await ctx.db.patch(projectId, { name })
+    // A write the row rules do not guard: only the policy stops it.
+    const project = await ctx.db.get(projectId)
+    await ctx.db.insert('locks', { orgId: project!.orgId, name, locked: true })
+    if (elsewhere) await ctx.db.patch(elsewhere as typeof projectId, { name })
+    return null
+  },
+})
+
+/** Door 2: an internal action runs the internal mutation. */
+export const guardViaAction = internalAction({
+  args: guardArgs,
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:guardInternal'), args as never)
+  },
+})
+
+/** A viewer may call the outer operations below: only `projects.guard` is out of their reach. */
+export const scheduleGuard = mutation({
+  action: 'projects.read',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, ref('ops:guardInternal'), args as never)
+    return null
+  },
+})
+
+export const scheduleGuardViaAction = mutation({
+  action: 'projects.read',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, ref('ops:guardViaAction'), args as never)
+    return null
+  },
+})
+
+/** Door 4: nested under an unaudited, unlimited outer call. */
+export const guardUnderPlain = mutation({
+  action: 'projects.read',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:guardInternal'), args as never)
+    return null
+  },
+})
+
+/** Door 5: nested under an audited, unlimited outer call. */
+export const guardUnderAudited = mutation({
+  action: 'projects.peek',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:guardInternal'), args as never)
+    return null
+  },
+})
+
+/** Door 6: nested under an outer call of the same limited, audited action. */
+export const guardUnderSame = mutation({
+  action: 'projects.guard',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:guardInternal'), args as never)
+    return null
+  },
+})
+
+/** A job that runs the internal mutation as the system. */
+export const guardJob = job({
+  name: 'guardJob',
+  args: guardArgs,
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:guardInternal'), args as never)
   },
 })

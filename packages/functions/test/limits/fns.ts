@@ -25,10 +25,12 @@ export const policy = definePolicy({
     'notes.add',
     'projects.nest',
     'tasks.run',
+    'projects.guard',
+    'projects.peek',
   ],
   roles: {
     owner: ['*'],
-    viewer: ['projects.read'],
+    viewer: ['projects.read', 'projects.peek'],
   },
   scopes: { all: { label: 'Everything', actions: ['*'] } },
   public: ['contact.send', 'feedback.send'],
@@ -38,33 +40,42 @@ export const policy = definePolicy({
     'contact.send': { max: 2, every: 'minute', per: 'everyone' },
     'feedback.send': { max: 1, every: 'minute' },
     'tasks.run': { max: 1, every: 'minute' },
+    'projects.guard': { max: 2, every: 'minute' },
   },
-  audit: ['projects.archive', 'projects.touch', 'projects.nest'],
+  audit: [
+    'projects.archive',
+    'projects.touch',
+    'projects.nest',
+    'projects.guard',
+    'projects.peek',
+    'feedback.send',
+  ],
 })
 
-export const { query, mutation, internalQuery, internalMutation, job } = defineFunctions({
-  auth: people<DataModel>(),
-  policy,
-  user: async (ctx, authId) =>
-    ctx.db
-      .query('users')
-      .withIndex('by_auth_id', (q) => q.eq('authId', authId))
-      .unique(),
-  roleOf: async (ctx, user, tenant) => {
-    if (tenant.table !== 'orgs') return null
-    const membership = await ctx.db
-      .query('memberships')
-      .withIndex('by_org_user', (q) => q.eq('orgId', tenant.id).eq('userId', user._id))
-      .unique()
-    return membership?.role ?? null
-  },
-  rules: {
-    users: owner('_id'),
-    orgs: tenant('_id'),
-    memberships: unchecked('Not touched by these tests.'),
-    projects: tenant('orgId'),
-    notes: unchecked('Rows a call writes without a tenant.'),
-    locks: unchecked('Unused here.'),
-    pages: unchecked('Unused here.'),
-  },
-})
+export const { query, mutation, internalQuery, internalMutation, internalAction, job } =
+  defineFunctions({
+    auth: people<DataModel>(),
+    policy,
+    user: async (ctx, authId) =>
+      ctx.db
+        .query('users')
+        .withIndex('by_auth_id', (q) => q.eq('authId', authId))
+        .unique(),
+    roleOf: async (ctx, user, tenant) => {
+      if (tenant.table !== 'orgs') return null
+      const membership = await ctx.db
+        .query('memberships')
+        .withIndex('by_org_user', (q) => q.eq('orgId', tenant.id).eq('userId', user._id))
+        .unique()
+      return membership?.role ?? null
+    },
+    rules: {
+      users: owner('_id'),
+      orgs: tenant('_id'),
+      memberships: unchecked('Not touched by these tests.'),
+      projects: tenant('orgId'),
+      notes: unchecked('Rows a call writes without a tenant.'),
+      locks: unchecked('Unused here.'),
+      pages: unchecked('Unused here.'),
+    },
+  })
