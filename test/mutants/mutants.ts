@@ -739,8 +739,9 @@ export const mutants: Mutant[] = [
     id: 'S14-cancel-requests',
     guards: 'S14',
     file: 'packages/agents/src/runs.ts',
-    find: '    if (which(row))',
-    replace: '    if (false)',
+    find: "  for (const row of open) if (which(row)) await db.patch(row._id, { status: 'cancelled' })",
+    replace:
+      "  for (const row of open) if (false) await db.patch(row._id, { status: 'cancelled' })",
     kills: [
       `${A}/door/door.test.ts > revoking a connection cancels its open requests, and its tools then fail`,
     ],
@@ -2055,8 +2056,8 @@ export const mutants: Mutant[] = [
     id: 'P-r2-small-response-size',
     guards: 'r2-small',
     file: 'packages/agents/src/door.ts',
-    find: 'new TextEncoder().encode(JSON.stringify(result)).byteLength + 256',
-    replace: '2 * new TextEncoder().encode(text).byteLength + 16 * 1024',
+    find: 'return new TextEncoder().encode(JSON.stringify(message)).byteLength',
+    replace: 'return 2 * new TextEncoder().encode(text).byteLength + 16 * 1024',
     kills: [
       `${A}/door/door.test.ts > a result of quote-heavy text gets a marker or arrives whole, never HTTP 502`,
       `${A}/door/door.test.ts > a result of 520,000 characters of text gets a marker or arrives whole, never HTTP 502`,
