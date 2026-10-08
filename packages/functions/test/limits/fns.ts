@@ -24,6 +24,7 @@ export const policy = definePolicy({
     'audit.read',
     'notes.add',
     'projects.nest',
+    'tasks.run',
   ],
   roles: {
     owner: ['*'],
@@ -36,6 +37,7 @@ export const policy = definePolicy({
     'reports.generate': { max: 2, every: 'hour', per: 'tenant' },
     'contact.send': { max: 2, every: 'minute', per: 'everyone' },
     'feedback.send': { max: 1, every: 'minute' },
+    'tasks.run': { max: 1, every: 'minute' },
   },
   audit: ['projects.archive', 'projects.touch', 'projects.nest'],
 })

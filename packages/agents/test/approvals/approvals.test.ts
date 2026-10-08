@@ -1578,3 +1578,31 @@ test('launchProblems finds the housekeeping function this package builds', async
   )
   expect(await housekeeping(scheduled)).toEqual([])
 })
+
+// Catches: an approved request on a limited action failing for good with RATE_LIMITED when the bucket is empty at approval time.
+test('an approved run takes no token, so an empty bucket does not fail it', async () => {
+  const s = await setup()
+  const empty = (action: string) =>
+    s.t.run((ctx) =>
+      ctx.db.insert('rateLimits', { key: `everyone|limit:${action}`, tokens: 0, at: Date.now() }),
+    )
+  await empty('projects.archive')
+  await empty('projects.export')
+  const asked = await s.ask('archive_project', { projectId: s.p[0] })
+  expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toMatchObject({
+    status: 'approved',
+  })
+  // The work it reaches runs under the same approval: a small export needs no token either.
+  const exporting = await s.ask('archive_exporting', { projectId: s.p[1] })
+  expect(
+    await s.ann.mutation(api.tools.approve, { approvalId: exporting.approvalId }),
+  ).toMatchObject({ status: 'approved' })
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[1]!))).toMatchObject({ name: 'exported' })
+  expect(await archivedNames(s)).toEqual(['alpha'])
+  // Neither the requests nor the approved runs took a token.
+  const buckets = await s.t.run((ctx) => ctx.db.query('rateLimits').collect())
+  for (const action of ['archive', 'export'])
+    expect(buckets.find((row) => row.key.endsWith(`limit:projects.${action}`))).toMatchObject({
+      tokens: 0,
+    })
+})

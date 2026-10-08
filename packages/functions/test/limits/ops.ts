@@ -161,3 +161,60 @@ export const reshape = mutation({
     return created
   },
 })
+
+const ref = (name: string) => makeFunctionReference<'mutation'>(name) as never
+
+/** Limited internal mutation: 1 a minute per user, whoever reaches it. */
+export const task = internalMutation({
+  action: 'tasks.run',
+  args: { projectId: v.id('projects'), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { projectId, name }) => {
+    await ctx.db.patch(projectId, { name })
+    return null
+  },
+})
+
+/** Unlimited, unaudited public mutation that runs the limited `task` in its own transaction. */
+export const runTask = mutation({
+  action: 'notes.add',
+  args: { projectId: v.id('projects'), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:task'), args as never)
+    return null
+  },
+})
+
+/** Unlimited public mutation that schedules the limited `task`. */
+export const scheduleTask = mutation({
+  action: 'notes.add',
+  args: { projectId: v.id('projects'), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, ref('ops:task'), args as never)
+    return null
+  },
+})
+
+/** The same limited action as `task`, public: it runs `task`, which must not take a second token. */
+export const taskOuter = mutation({
+  action: 'tasks.run',
+  args: { projectId: v.id('projects'), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:task'), args as never)
+    return null
+  },
+})
+
+/** Unaudited public mutation that runs the audited `bump`: `bump` writes its own row. */
+export const runBump = mutation({
+  action: 'notes.add',
+  args: { projectId: v.id('projects') },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:bump'), args as never)
+    return null
+  },
+})

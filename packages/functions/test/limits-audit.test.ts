@@ -271,3 +271,50 @@ test('a system job writes no audit row', async () => {
   expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name: 'bumped' })
   expect(await audit()).toEqual([])
 })
+
+// Catches: a limited action that escapes its limit when an unlimited public mutation reaches it through an internal mutation.
+test('an unlimited public mutation that runs a limited internal action is limited', async () => {
+  const { t, ann, pa } = await setup()
+  await ann.mutation(fn('runTask'), { projectId: pa, name: 'one' })
+  await expect(ann.mutation(fn('runTask'), { projectId: pa, name: 'two' })).rejects.toThrow(
+    /RATE_LIMITED/,
+  )
+  expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name: 'one' })
+})
+
+// Catches: scheduled work on a limited action running without a token (the schedule is a second door).
+test('a scheduled internal mutation on a limited action is limited', async () => {
+  const { t, ann, pa, buckets } = await setup()
+  await ann.mutation(fn('scheduleTask'), { projectId: pa, name: 'first' })
+  await ann.mutation(fn('scheduleTask'), { projectId: pa, name: 'second' })
+  await t.finishAllScheduledFunctions(vi.runAllTimers)
+  expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name: 'first' })
+  expect((await buckets()).map((row) => row.key)).toEqual([
+    expect.stringMatching(/\|limit:tasks\.run$/),
+  ])
+})
+
+// Catches: a nested call of the same action taking a second token, so max 1 could never be used.
+test('a limited public mutation that runs the same limited internal action takes one token', async () => {
+  const { t, ann, pa } = await setup()
+  await ann.mutation(fn('taskOuter'), { projectId: pa, name: 'once' })
+  expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name: 'once' })
+  await expect(ann.mutation(fn('taskOuter'), { projectId: pa, name: 'twice' })).rejects.toThrow(
+    /RATE_LIMITED/,
+  )
+})
+
+// Catches: an audited internal mutation under an unaudited outer call leaving no row at all.
+test('an audited internal mutation under an unaudited call writes its own row', async () => {
+  const { ann, pa, a, audit, userId } = await setup()
+  await ann.mutation(fn('runBump'), { projectId: pa })
+  expect(await audit()).toMatchObject([
+    {
+      action: 'projects.touch',
+      actor: { kind: 'person', userId },
+      tenantId: a,
+      rows: [pa],
+      more: 0,
+    },
+  ])
+})

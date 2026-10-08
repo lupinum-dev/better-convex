@@ -46,6 +46,31 @@ export const archiveRow = internalMutation({
   },
 })
 
+/** The export itself, as an internal operation. An agent runs a small one without asking. */
+export const exportRow = internalMutation({
+  action: 'projects.export',
+  args: { projectId: v.id('projects'), size: v.number() },
+  handler: async (ctx, { projectId }) => {
+    await ctx.db.patch(projectId, { name: 'exported' })
+    return null
+  },
+})
+
+/** Needs approval; its work reaches a small export, which an agent may run alone but a limit guards. */
+export const archiveExporting = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects') },
+  returns: v.null(),
+  tool: { name: 'archive_exporting', description: 'Archive after an export. Needs approval.' },
+  plan: async () => ({ summary: 'Export, then archive.' }),
+  handler: async (ctx, { projectId }) => {
+    await ctx.runMutation(exportRowRef, { projectId, size: 1 } as never)
+    return null
+  },
+})
+
+const exportRowRef = makeFunctionReference<'mutation'>('ops:exportRow') as never
+
 /** Approved work that creates a row and records a result on it later, as a paid check does. */
 export const startCheck = mutation({
   action: 'notes.edit',

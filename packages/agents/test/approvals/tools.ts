@@ -10,6 +10,7 @@ export const tools = defineTools(fns, { ops }, { functions: anyApi.tools as neve
 export const {
   rename_project,
   archive_project,
+  archive_exporting,
   export_project,
   archive_loud,
   tidy_project,

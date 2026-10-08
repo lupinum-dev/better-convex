@@ -27,6 +27,11 @@ export const policy = definePolicy({
   ],
   roles: { owner: ['*'], viewer: ['projects.list', 'projects.read'] },
   audit: ['projects.rename'],
+  // One archive and one export a minute for everyone; a person's approval does not take them.
+  limits: {
+    'projects.archive': { max: 1, every: 'minute', per: 'everyone' },
+    'projects.export': { max: 1, every: 'minute', per: 'everyone' },
+  },
   scopes: {
     'projects:read': { label: 'See projects.', actions: ['projects.list', 'projects.read'] },
     'projects:write': {

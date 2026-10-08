@@ -517,8 +517,12 @@ export function defineFunctions<
     ctx: Ctx,
     op: Pick<Operation, 'action' | 'args' | 'crossTenant'> & {
       kind?: Operation['kind']
-      /** An internal mutation: it writes, so it is audited, but it is not limited (its caller was). */
+      /** An internal mutation: it writes, so it is limited and audited like a public one. */
       writes?: boolean
+      /** Actions an outer operation in this call chain already took a token for. */
+      spent?: readonly string[]
+      /** Run by an outer operation's `ctx.runMutation` whose audit row takes this call's ids. */
+      nested?: boolean
     },
     actor: Actor<User> | Visitor | SystemActor,
     input: Record<string, unknown>,
@@ -576,12 +580,17 @@ export function defineFunctions<
       )
     }
     // A call the policy allows takes its token; the decision came first, so a denied call costs nothing.
-    // An agent's request that waits for a person takes it when the person's approval runs it.
-    const limit = op.kind === 'mutation' ? limitOf(policy, op.action) : undefined
+    // Public or internal, every mutation takes one, unless an outer operation in this call chain
+    // already took one for the same action. Work under a person's approval takes none: the person
+    // is the gate, and the agent's request already spent its write budget.
+    const limit = op.kind === 'mutation' || op.writes ? limitOf(policy, op.action) : undefined
+    const spent = op.spent ?? []
     if (
       limit &&
       actor.kind !== 'system' &&
-      (decision === 'allow' || (actor.kind === 'agent' && actor.approvalId !== undefined))
+      decision === 'allow' &&
+      !(actor.kind === 'agent' && actor.approvalId !== undefined) &&
+      !spent.includes(op.action)
     )
       await spend(ctx, actor, op.action, tenant, limit)
     // A system actor's db has no rules: it may change any row.
@@ -628,6 +637,12 @@ export function defineFunctions<
       written: (id) => written.add(id),
       expose: (exposed) => (checks = exposed),
     })
+    /** Does this call write an audit row of its own? */
+    const audits =
+      (op.kind === 'mutation' || op.writes === true) &&
+      actor.kind !== 'system' &&
+      actor.kind !== 'visitor' &&
+      isAudited(policy, op.action)
     const nested = nestedCalls(
       ctx,
       handOver(actor),
@@ -636,8 +651,12 @@ export function defineFunctions<
         (tainted ??= new Error(
           'This call reached a function that is not an internal operation; nothing it did is kept.',
         )),
-      // Operations this call runs in its own transaction add their ids to this call's audit row.
-      (ids) => ids.forEach((id) => written.add(id)),
+      {
+        // Operations this call runs in its own transaction add their ids to the audit row of the
+        // outermost audited call. Under an unaudited call they write their own row.
+        collect: audits || op.nested ? (ids) => ids.forEach((id) => written.add(id)) : undefined,
+        spent: limit ? [...spent, op.action] : spent,
+      },
     )
     /**
      * The audit row of this call, for the outermost operation: an audited action by a person or an
@@ -645,9 +664,7 @@ export function defineFunctions<
      * rolls back with everything else. Jobs and visitors have no row.
      */
     const record = async () => {
-      if (!(op.kind === 'mutation' || op.writes)) return
-      if (actor.kind === 'system' || actor.kind === 'visitor' || !isAudited(policy, op.action))
-        return
+      if (!audits) return
       const ids = [...written]
       await lib(ctx).insert('auditLog', {
         actor: actorRecord(actor),
@@ -695,15 +712,27 @@ export function defineFunctions<
     acting: ActingAs,
     afterWrite: () => void = () => {},
     reachedRaw: () => void = () => {},
-    collect?: (ids: string[]) => void,
+    chain?: {
+      collect?: (ids: string[]) => void
+      /** Actions this call chain already took a token for. */
+      spent: readonly string[]
+    },
   ) {
+    const collect = chain?.collect
     const c = ctx as Record<string, any>
     const isComponent = (ref: unknown) =>
       (getFunctionAddress(ref as never) as { reference?: string }).reference?.startsWith(
         '_reference/childComponent/',
       ) ?? false
-    const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting, nested = false) =>
-      isComponent(ref) ? args : { actingAs: as, input: args ?? {}, ...(nested && { nested: true }) }
+    const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting, mutation = false) =>
+      isComponent(ref)
+        ? args
+        : {
+            actingAs: as,
+            input: args ?? {},
+            ...(mutation && collect && { nested: true }),
+            ...(mutation && chain && chain.spent.length > 0 && { spent: [...chain.spent] }),
+          }
     // Work an approved request schedules while it runs carries the request's follow-up token
     // (minted by `approve`): only that work continues under the approval after `approve` returns.
     const scheduledAs = async (): Promise<ActingAs> => {
@@ -727,10 +756,7 @@ export function defineFunctions<
             [name]: async (ref: unknown, args?: unknown) => {
               let out: unknown
               try {
-                out = await c[name](
-                  ref,
-                  wrapArgs(ref, args, acting, name === 'runMutation' && collect !== undefined),
-                )
+                out = await c[name](ref, wrapArgs(ref, args, acting, name === 'runMutation'))
               } catch (error) {
                 throw notAnOperation(ref, error)
               } finally {
@@ -1010,6 +1036,8 @@ export function defineFunctions<
     input: v.object(args),
     /** Set by `ctx.runMutation` of an operation: the caller writes the audit row and takes this call's ids. */
     nested: v.optional(v.boolean()),
+    /** Set by `ctx.runMutation`: the actions an outer operation already took a token for. */
+    spent: v.optional(v.array(v.string())),
   })
 
   /**
@@ -1023,9 +1051,10 @@ export function defineFunctions<
     who: ActingAs,
     input: Record<string, unknown>,
     writes = false,
+    chain: { nested?: boolean; spent?: readonly string[] } = {},
   ) {
     const actor = await actingAs(ctx, who)
-    const authorized = await authorize(ctx, { ...spec, writes }, actor, input)
+    const authorized = await authorize(ctx, { ...spec, writes, ...chain }, actor, input)
     if (
       authorized.decision === 'approve' &&
       !(actor.kind === 'agent' && actor.approvalId !== undefined)
@@ -1089,14 +1118,20 @@ export function defineFunctions<
             actingAs: who,
             input,
             nested,
-          }: { actingAs: ActingAs; input: ObjectType<Args>; nested?: boolean },
+            spent,
+          }: {
+            actingAs: ActingAs
+            input: ObjectType<Args>
+            nested?: boolean
+            spent?: string[]
+          },
         ) => {
           const {
             ctx: checked,
             settle,
             record,
             written,
-          } = await authorizeInternal(ctx, spec, who, input, true)
+          } = await authorizeInternal(ctx, spec, who, input, true, { nested, spent })
           const result = settle(await spec.handler(checked as never, input))
           // Called from another operation's transaction: that call writes the one audit row, with these ids.
           if (nested) return { operation: operationMark, result, written: [...written] }
