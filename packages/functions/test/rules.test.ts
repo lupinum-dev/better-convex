@@ -17,11 +17,11 @@ async function setup() {
     const a = await ctx.db.insert('orgs', { name: 'A' })
     const b = await ctx.db.insert('orgs', { name: 'B' })
     const annA = await ctx.db.insert('memberships', { orgId: a, userId: ann!, role: 'owner' })
-    await ctx.db.insert('memberships', { orgId: a, userId: vic!, role: 'viewer' })
+    const vicA = await ctx.db.insert('memberships', { orgId: a, userId: vic!, role: 'viewer' })
     await ctx.db.insert('memberships', { orgId: b, userId: bob!, role: 'owner' })
     const pa = await ctx.db.insert('projects', { orgId: a, name: 'A secret', archived: false })
     const pb = await ctx.db.insert('projects', { orgId: b, name: 'B secret', archived: false })
-    return { a, b, pa, pb, annA }
+    return { a, b, pa, pb, annA, vicA }
   })
   const as = (authId: string) => t.withIdentity({ subject: authId })
   return { t, ...ids, ann: as('ann'), vic: as('vic'), bob: as('bob') }
@@ -327,3 +327,27 @@ test.each(['get', 'query'] as const)(
     expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ archived: true, name: 'A secret' })
   },
 )
+
+// Catches: the documented membership rule letting a viewer promote themselves or join another org.
+test('a member can list their own memberships but not raise their role or join another org', async () => {
+  const { t, vic, a, b, vicA } = await setup()
+  expect(await vic.query(fn('myOrgs'), {})).toEqual(['viewer'])
+  await expect(vic.mutation(fn('setRole'), { membershipId: vicA, role: 'owner' })).rejects.toThrow(
+    /NOT_FOUND/,
+  )
+  await expect(vic.mutation(fn('join'), { orgId: b })).rejects.toThrow(/NOT_FOUND/)
+  const roles = await t.run(async (ctx) =>
+    (await ctx.db.query('memberships').collect()).map((m) => [m.orgId === a, m.role]),
+  )
+  expect(roles).toEqual([
+    [true, 'owner'],
+    [true, 'viewer'],
+    [false, 'owner'],
+  ])
+  // The org switcher lists them in every org.
+  await t.run(async (ctx) => {
+    const vicId = (await ctx.db.get(vicA))!.userId
+    await ctx.db.insert('memberships', { orgId: b, userId: vicId, role: 'owner' })
+  })
+  expect(await vic.query(fn('myOrgs'), {})).toEqual(['viewer', 'owner'])
+})

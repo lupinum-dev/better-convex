@@ -43,7 +43,10 @@ export const fns = defineFunctions({
   rules: {
     users: owner('_id'),
     orgs: tenant('_id'),
-    memberships: owner('userId'),
+    // Not owner('userId'): a member could change their own role.
+    memberships: custom<Doc<'memberships'>>((ctx, membership) =>
+      ctx.allows({ table: 'orgs', id: membership.orgId }),
+    ),
     // Sellers see their drafts; every signed-in buyer sees what is on sale.
     listings: anyOf(
       tenant('sellerOrgId'),

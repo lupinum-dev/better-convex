@@ -1,5 +1,6 @@
-import { defineFunctions, owner, tenant } from '@lupinum/better-convex-functions'
+import { custom, defineFunctions, owner, tenant } from '@lupinum/better-convex-functions'
 
+import type { Doc } from './_generated/dataModel'
 import { auth } from './auth'
 import { policy } from './policy'
 
@@ -23,7 +24,11 @@ export const fns = defineFunctions({
   rules: {
     users: owner('_id'),
     organizations: tenant('_id'),
-    memberships: owner('userId'),
+    // Every membership of an organization where your role allows the action. Not owner('userId'):
+    // that would let a member change their own role or add themselves to another organization.
+    memberships: custom<Doc<'memberships'>>((ctx, membership) =>
+      ctx.allows({ table: 'organizations', id: membership.organizationId }),
+    ),
     sites: tenant('organizationId'),
     siteChecks: tenant('organizationId'),
   },
