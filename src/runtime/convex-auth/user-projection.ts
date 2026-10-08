@@ -78,7 +78,8 @@ export interface CreateUserProjectionTriggersOptions<
    * Erase what the app holds about the person, before their projection row is
    * deleted. Runs once per row, in the same transaction, only when the auth
    * user is deleted. With `@lupinum/better-convex-functions`, call
-   * `fns.eraseUser(ctx, existing._id, internal.erasure.eraseStep)`: it deletes
+   * `eraseUser(ctx, existing._id, internal.erasure.eraseStep)` (imported from
+   * `@lupinum/better-convex-functions`): it deletes
    * nothing itself but schedules the batches. Without this option no erasure runs.
    */
   erase?: (args: { ctx: TCtx; user: TAuthUser; existing: TExistingUser }) => void | Promise<void>
