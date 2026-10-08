@@ -1,6 +1,6 @@
 {
   "name": "@lupinum/better-convex-functions",
-  "version": "0.0.0",
+  "version": "0.1.0-rc.0",
   "description": "Operations, policy and row rules for Convex functions: who may do what, to which rows",
   "homepage": "https://better-convex.lupinum.com",
   "bugs": {
