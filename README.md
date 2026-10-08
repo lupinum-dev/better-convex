@@ -10,6 +10,7 @@
   <a href="https://www.npmjs.com/package/@lupinum/better-convex-nuxt"><img src="https://img.shields.io/npm/v/@lupinum/better-convex-nuxt?label=npm" alt="npm version"></a>
   <a href="https://github.com/lupinum-dev/better-convex/actions/workflows/ci.yml"><img src="https://github.com/lupinum-dev/better-convex/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+  <a href="https://discord.lupinum.com"><img src="https://img.shields.io/badge/Discord-join%20the%20chat-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 > [!WARNING]
@@ -119,6 +120,55 @@ The server renders the list. After the page loads, the list stays live: add a ro
 
 A query without arguments may omit the arguments object. Pass `'skip'` instead of arguments to pause a query. Follow the [first realtime page](https://better-convex.lupinum.com/docs/get-started/first-realtime-page) guide for the full walkthrough.
 
+<!-- BEGIN:consumer-onboarding -->
+
+## Agent setup
+
+`@lupinum/better-convex-nuxt` ships its documentation inside the package for coding
+agents such as Claude Code, Codex and Cursor. The pages match the installed
+version, so an agent does not follow the website for a different version.
+
+To set it up, give your coding agent this task:
+
+```text
+Set up @lupinum/better-convex-nuxt for coding agents as described under "Agent setup" in its README.
+```
+
+### Steps for the agent
+
+1. Find `node_modules/@lupinum/better-convex-nuxt/dist/agent/AGENTS.md`. Look in the
+   directory of the project that depends on `@lupinum/better-convex-nuxt` first, then
+   in its parent directories up to the repository root (workspaces can hoist
+   packages). Read it; it lists the documentation pages.
+2. Add the section below to the project's agent instructions: `AGENTS.md`, or
+   `CLAUDE.md` if the project has only that file. If it has neither, create
+   `AGENTS.md`. Write the path relative to the repository root, through
+   `node_modules/@lupinum/better-convex-nuxt` (for example
+   `apps/web/node_modules/@lupinum/better-convex-nuxt/...` in a workspace). Never write
+   a resolved path such as `node_modules/.pnpm/...`: it contains the version and
+   breaks after an upgrade. If a section for `@lupinum/better-convex-nuxt` already
+   exists, leave it as it is.
+
+   Use the path you found in place of the sample path:
+
+   ```md
+   ## @lupinum/better-convex-nuxt
+
+   Before you change code that uses @lupinum/better-convex-nuxt, read
+   `node_modules/@lupinum/better-convex-nuxt/dist/agent/AGENTS.md` and the pages it
+   lists. They document the installed version. Prefer them over what you
+   remember about this package and over the website.
+   ```
+
+3. Do not copy the documentation into the project and do not install a skill.
+   The section points into the installed package, so it stays correct after
+   every upgrade or downgrade.
+
+If the file does not exist, the installed version has no packaged
+documentation. Read the package README and its TypeScript types instead.
+
+<!-- END:consumer-onboarding -->
+
 ## Server calls and mutations
 
 Call a mutation from a component. Destructure the function and its state:
@@ -170,44 +220,6 @@ Follow the [add authentication](https://better-convex.lupinum.com/docs/get-start
 
 The agents package is separate. Installing the Nuxt or Vue package does not start an MCP server.
 
-<!-- BEGIN:consumer-onboarding -->
-
-## Use a coding agent
-
-A coding agent is a development tool that can inspect and change your project.
-Every Better Convex package contains documentation for coding agents that
-matches the installed version: `dist/agent/AGENTS.md`, also exported as
-`<package>/agent-docs`. It starts with a task index and the rules that agents
-most often get wrong.
-
-Add this pointer to your project's `AGENTS.md` (or `CLAUDE.md`). Name the
-package that you installed:
-
-```md [AGENTS.md]
-## Better Convex
-
-Before you change Convex functions or Better Convex code, read
-`node_modules/@lupinum/better-convex-nuxt/dist/agent/AGENTS.md` and follow its
-"Start here" table. It matches the installed version. Prefer it over the
-website and over knowledge of earlier versions.
-```
-
-To add Better Convex to an application, give your agent this prompt:
-
-```text
-Add Better Convex to this application. Install @lupinum/better-convex-nuxt@next
-(or @lupinum/better-convex-vue@next for Vue without Nuxt). Then read
-node_modules/<package>/dist/agent/AGENTS.md and follow its "Start here" table.
-Add the Better Convex pointer from the package README to AGENTS.md. Finish
-with the "Check your setup" steps of the Installation page.
-```
-
-The pointer names the installed package, so an upgrade or a rollback selects
-the matching documentation. Installing a package never changes your project
-instructions.
-
-<!-- END:consumer-onboarding -->
-
 ## Documentation
 
 Read the [Better Convex documentation](https://better-convex.lupinum.com). Start with [choose your path](https://better-convex.lupinum.com/docs/get-started/choose-your-path). Read the [mental model](https://better-convex.lupinum.com/docs/concepts/mental-model) and the [limitations](https://better-convex.lupinum.com/docs/overview/limitations) before you plan a larger application.
@@ -228,7 +240,7 @@ pnpm verify
 
 ## Support and security
 
-Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for bugs and focused proposals. Join the [Lupinum OSS Discord](https://discord.gg/RPH6SeA36N) for project discussion.
+Open a [GitHub issue](https://github.com/lupinum-dev/better-convex/issues) for bugs and focused proposals. Join the [Lupinum OSS Discord](https://discord.lupinum.com) for project discussion.
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md). Do not report a vulnerability in a public issue.
 
