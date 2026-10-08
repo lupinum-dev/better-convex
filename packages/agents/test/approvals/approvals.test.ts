@@ -1,4 +1,4 @@
-import { finish, shownStatus, stallAfter } from '@lupinum/better-convex-agents/internal'
+import { finish, shownStatus, stallAfter, wait } from '@lupinum/better-convex-agents/internal'
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { auth, policy } from './fns'
 import { api, modules, setup } from './harness'
 import schema from './schema'
+import { tools } from './tools'
 
 // Approvals through the tool functions that the MCP door and the in-app agent call. Tests that
 // need a running agent (resume after a decision) stay with the runtime. Each test names the
@@ -131,7 +132,7 @@ test('an expired request blocks nothing, and housekeeping marks it expired', asy
 // I5: a large result made the approval row too big; the write committed and the request said "failed".
 test('an approved request with a large result is approved, the result marked too large to keep', async () => {
   const s = await setup()
-  const input = { projectId: s.p[0], size: 700_000, note: 'n'.repeat(400_000) }
+  const input = { projectId: s.p[0], size: 700_000, note: 'n'.repeat(200_000) }
   const asked = await s.ask('export_project', input)
 
   expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
@@ -142,11 +143,11 @@ test('an approved request with a large result is approved, the result marked too
   expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'exported' })
 })
 
-// A request that nearly fills 1 MiB passed the size check; its result then did not fit, and the
-// request said "failed" although the write committed.
+// A request that nearly filled its size limit passed the size check; its result then did not fit,
+// and the request said "failed" although the write committed.
 test('a request that nearly fills the size limit stores a marker for a result that no longer fits', async () => {
   const s = await setup()
-  const input = { projectId: s.p[0], size: 40_000, note: 'n'.repeat(1_020_000) }
+  const input = { projectId: s.p[0], size: 40_000, note: 'n'.repeat(260_000) }
   const asked = await s.ask('export_project', input)
 
   expect(await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })).toEqual({
@@ -640,7 +641,7 @@ test('a plan too large to store fails as TOO_LARGE and stores nothing', async ()
     return ids
   })
   await expect(s.tool('bundle_notes', { noteIds })).rejects.toThrow(
-    /TOO_LARGE.*Make the plan smaller, or split the work/,
+    /TOO_LARGE.*at most 256 KiB\. Make the plan smaller, or split the work/,
   )
   expect(await s.approvalRows()).toEqual([])
 })
@@ -1158,6 +1159,7 @@ const runsWithRequests =
       if (status === 'waiting') await t.run((ctx) => ctx.db.patch(id, { approvalIds }))
     }
   }
+type Seed = (t: ReturnType<typeof convexTest>, runId: string) => Promise<void>
 const later = { status: 'pending', expiresAt: Date.now() + 100 * 86_400_000 }
 const deleted = { runs: { failed: 1 }, pending: false, messages: 0, approvals: 0, approvalRows: 0 }
 
@@ -1213,11 +1215,13 @@ test.each([
   {
     old: '20 stalled runs, 900 KB requests',
     seed: runsWithRequests(20, 'running', { bytes: 900_000, ...later }),
+    first: 'running',
     left: { ...deleted, runs: { failed: 21 }, approvals: 1 },
   },
   {
     old: 'a stalled run, 20 900 KB requests',
     seed: runsWithRequests(1, 'running', { bytes: 900_000, requests: 20, ...later }),
+    first: 'running',
     left: { ...deleted, runs: { failed: 2 }, approvals: 1 },
   },
   {
@@ -1240,9 +1244,9 @@ test.each([
     seed: runsWithRequests(120, 'waiting', { bytes: 150_000, ...later }),
     left: { ...deleted, runs: { failed: 1, waiting: 120 }, pending: true, approvals: 1 },
   },
-])(
-  'housekeeping ends a stalled run in its first call, then works through $old',
-  async ({ seed, left }) => {
+] as { old: string; seed: Seed; first?: 'running'; left: unknown }[])(
+  'housekeeping commits from its first call, then works through $old',
+  async ({ seed, first, left }) => {
     const { t, runId: old } = await limitedRun('done')
     await seed(t, old)
     vi.advanceTimersByTime(91 * 86_400_000)
@@ -1252,11 +1256,14 @@ test.each([
       return await ctx.db.insert('agentRuns', { ...run, task: 'Stuck', status: 'running', stepAt })
     })
     await t.mutation(api.tools.housekeeping, {})
+    // The stalled run ends in the first call, unless the requests of stalled runs before it fill
+    // the budget: a run ends only once its requests are cancelled.
+    expect(await t.run((ctx) => ctx.db.get(stuck))).toMatchObject({ status: first ?? 'failed' })
+    await drain(t)
     expect(await t.run((ctx) => ctx.db.get(stuck))).toMatchObject({
       status: 'failed',
       error: { code: 'STALLED' },
     })
-    await drain(t)
     const after = await t.run(async (ctx) => {
       const runs: Record<string, number> = {}
       for (const run of await ctx.db.query('agentRuns').collect())
@@ -1286,7 +1293,7 @@ test("a finished run cancels its own open request behind other runs' requests", 
         request({
           caller: { door: 'app', runId: 'another-run', turn: 1 },
           status: 'pending',
-          expiresAt: Date.now() - 1,
+          expiresAt: Date.now() + 60_000,
         }) as never,
       )
   })
@@ -1313,4 +1320,188 @@ test('a step that works for 31 minutes has not stalled', async () => {
   await t.mutation(api.tools.housekeeping, {})
   const run = (await t.run((ctx) => ctx.db.get(runId)))!
   expect([run.status, shownStatus(run).status]).toEqual(['running', 'running'])
+})
+
+/** The longest note an export request may carry: the next character makes it TOO_LARGE. */
+async function largestNote(s: Awaited<ReturnType<typeof setup>>, caller: Record<string, unknown>) {
+  let [fits, refused] = [0, 2 * 1024 * 1024]
+  while (refused - fits > 1) {
+    const length = Math.floor((fits + refused) / 2)
+    const asked = await s.t
+      .mutation(api.tools.export_project, {
+        caller,
+        input: { projectId: s.p[0], size: 101, note: 'n'.repeat(length) },
+      })
+      .catch((error: Error) => {
+        expect(error.message).toMatch(/TOO_LARGE/)
+        return null
+      })
+    if (asked) await s.t.run((ctx) => ctx.db.delete(asked.approvalId))
+    if (asked) fits = length
+    else refused = length
+  }
+  return fits
+}
+
+// r3 review 3: an agent's 20 open requests at the largest stored size passed Convex's 16 MiB read
+// limit when its run waited, woke on a decision, or ended; a decision then rolled back.
+test.each(['wait', 'decide', 'finish'] as const)(
+  "a run's 20 requests of the largest size stay within Convex's read limit: %s",
+  async (step) => {
+    const s = await setup()
+    const runId = await inAppRun(s, 'live', 'running')
+    const caller = { door: 'app', runId, turn: 2 }
+    const note = 'n'.repeat(await largestNote(s, caller))
+    const ids: GenericId<'approvals'>[] = []
+    for (let n = 0; n < 20; n++) {
+      const asked = await s.t.mutation(api.tools.export_project, {
+        caller,
+        input: { projectId: s.p[0], size: 101 + n, note },
+      })
+      ids.push(asked.approvalId)
+    }
+    const run = async () => (await s.t.run((ctx) => ctx.db.get(runId)))!
+    if (step === 'finish') {
+      await s.t.run(async (ctx) => {
+        await finish(ctx.db, (await ctx.db.get(runId))!, { status: 'done', answer: 'Done' })
+      })
+      expect((await s.approvalRows()).map((row) => row.status)).toEqual(Array(20).fill('cancelled'))
+      return
+    }
+    await s.t.run(async (ctx) => {
+      await wait(ctx.db, ctx.scheduler, (await ctx.db.get(runId))!, ids)
+    })
+    expect(await run()).toMatchObject({ status: 'waiting', approvalIds: ids })
+    if (step === 'wait') return
+    // The project changes on an approval, so the other requests would be STALE: decline them.
+    expect(await s.ann.mutation(api.tools.approve, { approvalId: ids[0] })).toEqual({
+      status: 'approved',
+    })
+    for (const approvalId of ids.slice(1)) await s.ann.mutation(api.tools.decline, { approvalId })
+    expect(await run()).toMatchObject({ status: 'running', turn: 3 })
+  },
+)
+
+// Polish round 3: a run waited on every ID its turn passed, also ones decided or of another run,
+// so what waking it read was not bounded by its agent's 20 open requests.
+test('a run waits only on its own requests that are still open', async () => {
+  const s = await setup()
+  const runId = await inAppRun(s, 'live', 'running')
+  const ask = (size: number) =>
+    s.t.mutation(api.tools.export_project, {
+      caller: { door: 'app', runId, turn: 2 },
+      input: { projectId: s.p[0], size },
+    })
+  const declined = await ask(101)
+  const open = await ask(102)
+  await s.ann.mutation(api.tools.decline, { approvalId: declined.approvalId })
+  const other = await s.ask('export_project', { projectId: s.p[0], size: 103 })
+  await s.t.run(async (ctx) => {
+    const ids = [declined, open, other].map((asked) => asked.approvalId)
+    await wait(ctx.db, ctx.scheduler, (await ctx.db.get(runId))!, ids)
+  })
+  expect(await s.t.run((ctx) => ctx.db.get(runId))).toMatchObject({
+    status: 'waiting',
+    approvalIds: [open.approvalId],
+  })
+})
+
+// r3 review: an expired request woke its run once per request, each reading the run again.
+test("housekeeping expires a run's requests and wakes the run once, in one step", async () => {
+  const { t, runId } = await limitedRun('done')
+  const waiting = await t.run(async (ctx) => {
+    const { _id, _creationTime, ...base } = (await ctx.db.get(runId))!
+    return await ctx.db.insert('agentRuns', {
+      ...base,
+      task: 'x'.repeat(1_000_000),
+      status: 'waiting',
+    })
+  })
+  const ids = await t.run(async (ctx) => {
+    const ids = []
+    for (let n = 0; n < 20; n++)
+      ids.push(
+        await ctx.db.insert(
+          'approvals',
+          request({ caller: { door: 'app', runId: waiting, turn: 1 }, status: 'pending' }) as never,
+        ),
+      )
+    return ids
+  })
+  await t.run((ctx) => ctx.db.patch(waiting, { approvalIds: ids }))
+  vi.advanceTimersByTime(60_000)
+  await t.mutation(api.tools.housekeeping, {})
+  const steps = await drain(t)
+  expect(steps.filter((step) => step.expire)).toEqual([{ expire: true }])
+  expect(await t.run((ctx) => ctx.db.get(waiting))).toMatchObject({ status: 'running', turn: 2 })
+})
+
+// r3 review: a stalled run was marked failed before housekeeping had cancelled all its requests,
+// so a person could still decide one of an ended run.
+test("housekeeping cancels a stalled run's requests before it ends the run", async () => {
+  const { t, runId } = await limitedRun('running')
+  await t.run(async (ctx) => {
+    for (let n = 0; n < 20; n++)
+      await ctx.db.insert(
+        'approvals',
+        request({
+          caller: { door: 'app', runId, turn: 1 },
+          plan: { summary: 'Edit a note', contents: 'x'.repeat(250_000) },
+          ...later,
+        }) as never,
+      )
+  })
+  vi.advanceTimersByTime(stallAfter + 1)
+  const state = () =>
+    t.run(async (ctx) => ({
+      status: (await ctx.db.get(runId))!.status,
+      open: (await ctx.db.query('approvals').collect()).filter((row) => row.status === 'pending')
+        .length,
+    }))
+  await t.mutation(api.tools.housekeeping, {})
+  expect((await state()).status).toBe('running')
+  await drain(t)
+  expect(await state()).toEqual({ status: 'failed', open: 0 })
+})
+
+// r3 review: disconnecting read every pending request of the connection, also the expired ones that
+// wait for housekeeping, which the 20 open requests do not bound.
+test('disconnecting cancels the open requests, however many expired ones wait for housekeeping', async () => {
+  const s = await setup()
+  const key = `mcp:${s.annId}:test-host`
+  const requester = { ...helper, door: 'mcp', key, userId: s.annId }
+  const fields = {
+    requester,
+    caller: s.caller,
+    plan: { summary: 'Edit', contents: 'x'.repeat(250_000) },
+  }
+  for (let n = 0; n < 40; n++)
+    await s.t.run((ctx) =>
+      ctx.db.insert('approvals', request({ ...fields, status: 'pending' }) as never),
+    )
+  const open = await s.t.run((ctx) =>
+    ctx.db.insert('approvals', request({ ...fields, ...later }) as never),
+  )
+  await s.t.run((ctx) => tools.disconnected(ctx as never, s.annId, 'test-host'))
+  expect(await s.t.run((ctx) => ctx.db.get(open))).toMatchObject({ status: 'cancelled' })
+})
+
+// r3 review 2: the scan of waiting runs read a page of 50 runs before it counted their bytes.
+test('housekeeping wakes every waiting run, however large their tasks', async () => {
+  const { t, runId } = await limitedRun('done')
+  const { _id, _creationTime, ...base } = (await t.run((ctx) => ctx.db.get(runId)))!
+  for (let n = 0; n < 50; n++)
+    await t.run((ctx) =>
+      ctx.db.insert('agentRuns', { ...base, task: 'x'.repeat(1_000_000), status: 'waiting' }),
+    )
+  vi.advanceTimersByTime(2 * 60_000)
+  await t.mutation(api.tools.housekeeping, {})
+  await drain(t)
+  const waiting = await t.run((ctx) =>
+    ctx.db
+      .query('agentRuns')
+      .withIndex('by_status', (q) => q.eq('status', 'waiting'))
+      .first(),
+  )
+  expect(waiting).toBeNull()
 })

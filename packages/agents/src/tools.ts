@@ -108,11 +108,16 @@ const openApprovals = 20
 /** Rows one request may cover; each is fingerprinted for the stale check. */
 const maxSeen = 500
 /**
- * What one stored approval may weigh: Convex's 1 MiB document limit, less a reserve for the system
- * fields and the decision (who, when, and the result or its truncation marker), so deciding a
- * request that passed this check always fits.
+ * What one stored approval may weigh, with its decided result (or the marker in its place). It
+ * bounds what a run's lifecycle reads in one transaction, worst case: the run's agent has at most
+ * `openApprovals` open requests, and a patch reads its document again, so `finish`,
+ * `cancelRequests` (and `disconnected`), `wait`, and `wake` (on a decision or at expiry) each read at
+ * most 20 × 2 × 256 KiB = 10 MiB of requests, plus the run and its last message (at most 1 MiB
+ * each): 12 MiB of Convex's 16 MiB per transaction. A decision adds the request itself and its
+ * operation's own reads; housekeeping reads within its budget. A quarter of Convex's 1 MiB
+ * document limit also leaves room for the decision.
  */
-const maxApprovalBytes = 1024 * 1024 - 8 * 1024
+const maxApprovalBytes = 256 * 1024
 /** An app's failure message is kept this long (characters) on the request and in the activity. */
 const maxErrorMessageChars = 2_000
 
@@ -614,7 +619,7 @@ export function defineTools(
             if (getConvexSize(approval as unknown as Value) > maxApprovalBytes) {
               fail(
                 'TOO_LARGE',
-                `The plan of ${op.action} is too large to store for approval. Make the plan smaller, or split the work into several calls.`,
+                `The plan of ${op.action} is too large to store for approval: a request may hold at most 256 KiB. Make the plan smaller, or split the work into several calls.`,
               )
             }
             const approvalId = await lib(ctx).insert('approvals', approval)
@@ -1074,7 +1079,7 @@ export function defineTools(
   const housekeeping = guarded(
     internalMutationGeneric({
       // No arguments: end stalled runs (the cron's call).
-      // `cancel`: ended runs whose open requests are still to be cancelled.
+      // `cancel`: stalled runs whose open requests are still to be cancelled, before they end.
       // `expire`: expire requests past their time.
       // `waiting`: where the scan of waiting runs continues (`null`: from the start).
       // `cutoff` stays fixed for one scan: a Convex cursor is only valid for the same query.
@@ -1102,11 +1107,20 @@ export function defineTools(
           const left: string[] = []
           for (const runId of args.cancel) {
             const id = db.normalizeId('agentRuns', runId)
-            if (id && !(await cancelOpen(db, id, budget))) left.push(runId)
+            if (!id) continue
+            if (budget.spent) {
+              left.push(runId)
+              continue
+            }
+            const run = await db.get(id)
+            if (run) budget.count(run)
+            if (run && !(await endStalled(db, run, budget))) left.push(runId)
           }
           await next(left.length ? { cancel: left } : {})
         } else if (args.expire) {
           // A request holds its plan, up to a document's size: one at a time, within the budget.
+          // Each run wakes at most once: its other requests past their time count as decided.
+          const woken = new Set<string>()
           let more = true
           while (more && !budget.spent) {
             const row = await db
@@ -1118,13 +1132,17 @@ export function defineTools(
             budget.count(row)
             await db.patch(row._id, { status: 'expired' })
             // A wake the budget cuts short is left to the scan of waiting runs.
-            if (row.caller.door === 'app') await wake(db, ctx.scheduler, row.caller.runId, budget)
+            if (row.caller.door === 'app' && !woken.has(row.caller.runId)) {
+              woken.add(row.caller.runId)
+              await wake(db, ctx.scheduler, row.caller.runId, budget)
+            }
           }
           await next(more ? { expire: true } : { waiting: null, cutoff: now - 60_000 })
         } else if (args.waiting !== undefined || args.runs) {
           await wakeWaiting(db, ctx.scheduler, args, budget, now, next)
         } else {
-          // Ending a stalled run reads the run and its open requests, within the budget.
+          // Ending a stalled run reads the run and its open requests, within the budget; a run
+          // whose requests did not all fit ends in a `cancel` step.
           const stalled = await within(
             db
               .query('agentRuns')
@@ -1134,10 +1152,8 @@ export function defineTools(
             budget,
           )
           const left: string[] = []
-          for (const run of stalled.rows) {
-            const error = shownStatus(run).error!
-            if (!(await finish(db, run, { status: 'failed', error }, budget))) left.push(run._id)
-          }
+          for (const run of stalled.rows)
+            if (!(await endStalled(db, run, budget))) left.push(run._id)
           if (left.length) await next({ cancel: left })
           else await next(stalled.more ? {} : { expire: true })
         }
@@ -1221,7 +1237,7 @@ type HousekeepingStep = {
  * goes on, even if its wake-up was lost. A run's requests are read one by one
  * within the budget, and the ones found decided are passed on, so a run with
  * more requests than one budget holds (an agent has at most 20, each up to
- * 1 MiB) finishes over several steps, and every step makes progress.
+ * 256 KiB) finishes over several steps, and every step makes progress.
  */
 async function wakeWaiting(
   db: Lib,
@@ -1240,7 +1256,8 @@ async function wakeWaiting(
     const page = await db
       .query('agentRuns')
       .withIndex('by_status', (q) => q.eq('status', 'waiting').lt('stepAt', cutoff))
-      .paginate({ numItems: sweep.rows / 2, cursor })
+      // A run holds its task, up to a document's size: the page stops at half the budget's bytes.
+      .paginate({ numItems: sweep.rows / 2, cursor, maximumBytesRead: sweep.bytes / 2 })
     for (const run of page.page) budget.count(run)
     runs = page.page.map((run) => run._id)
     cursor = page.isDone ? undefined : page.continueCursor
@@ -1253,6 +1270,17 @@ async function wakeWaiting(
   const after = cursor ? { waiting: cursor } : {}
   if (runs.length) await next({ runs, decided: [...known], cutoff, ...after })
   else await next(cursor ? { waiting: cursor, cutoff } : { cleanup: true })
+}
+
+/**
+ * Ends a stalled run, its open requests cancelled first (see `finish`); of a run already ended,
+ * cancels them only. False when the budget ran out first.
+ */
+async function endStalled(db: Lib, run: LibraryDataModel['agentRuns']['document'], budget: Budget) {
+  if (run.status === 'done' || run.status === 'failed') return await cancelOpen(db, run._id, budget)
+  const shown = shownStatus(run)
+  if (shown.status !== 'failed') return true
+  return await finish(db, run, { status: 'failed', error: shown.error! }, budget)
 }
 
 /**

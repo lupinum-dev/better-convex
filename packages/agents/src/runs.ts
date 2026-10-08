@@ -97,17 +97,23 @@ export async function resume(
   await nextTurn(db, scheduler, run)
 }
 
-/** Puts a run on hold until its requests are decided, and wakes it when the last one expires. */
+/**
+ * Puts a run on hold until its requests are decided, and wakes it when the last one expires. It
+ * waits only on the ones of this run still open, which the run's agent has at most 20 of, so what
+ * `wake` reads later is bounded however many IDs the turn passes.
+ */
 export async function wait(
   db: Db,
   scheduler: Scheduler,
   run: Run,
   approvalIds: GenericId<'approvals'>[],
 ) {
-  if (await allDecided(db, approvalIds)) return resume(db, scheduler, run, approvalIds)
-  await db.patch(run._id, { status: 'waiting', approvalIds, stepAt: Date.now() })
-  let last = 0
-  for (const id of approvalIds) last = Math.max(last, (await db.get(id))?.expiresAt ?? 0)
+  const asked = new Set<string>(approvalIds)
+  const open = (await openOf(db, run._id).take(100)).filter((row) => asked.has(row._id))
+  if (!open.length) return resume(db, scheduler, run, approvalIds)
+  const waitingOn = open.map((row) => row._id)
+  await db.patch(run._id, { status: 'waiting', approvalIds: waitingOn, stepAt: Date.now() })
+  const last = Math.max(...open.map((row) => row.expiresAt))
   // The wake-up runs the step, which sees a waiting run and asks `wake`; a decision before then wakes it first.
   await scheduler.runAt(last + 1000, makeFunctionReference<'action'>(run.step), {
     runId: run._id,
@@ -118,8 +124,9 @@ export async function wait(
 
 /**
  * Ends a run, and cancels every request it still has open: nobody is left to
- * act on the decision. With a `budget`, false when it ran out before every
- * request was cancelled; `cancelOpen` does the rest.
+ * act on the decision. The requests go first, so no request of an ended run
+ * stays open. With a `budget`, false when it ran out before every request was
+ * cancelled; the run is then not ended yet, and a later call goes on.
  */
 export async function finish(
   db: Db,
@@ -129,18 +136,22 @@ export async function finish(
     | { status: 'failed'; error: { code: string; message: string } },
   budget?: Budget,
 ) {
+  if (!(await cancelOpen(db, run._id, budget))) return false
   await db.patch(run._id, { ...outcome, approvalIds: undefined, stepAt: Date.now() })
-  return await cancelOpen(db, run._id, budget)
+  return true
 }
 
-/** Cancels the open requests of an ended run; with a `budget`, false when some remain. */
-export async function cancelOpen(db: Db, runId: GenericId<'agentRuns'>, budget?: Budget) {
-  // A pending request past its time is already expired; housekeeping marks it.
-  const open = db
+/** A run's open requests. A pending request past its time is already expired; housekeeping marks it. */
+const openOf = (db: Db, runId: GenericId<'agentRuns'>) =>
+  db
     .query('approvals')
     .withIndex('by_run_status', (q) =>
       q.eq('caller.runId', runId).eq('status', 'pending').gt('expiresAt', Date.now()),
     )
+
+/** Cancels the open requests of a run; with a `budget`, false when some remain. */
+export async function cancelOpen(db: Db, runId: GenericId<'agentRuns'>, budget?: Budget) {
+  const open = openOf(db, runId)
   // An agent has at most 20 open requests, so one read finds all of this run's.
   const { rows, more } = budget
     ? await within(open, budget)
@@ -149,7 +160,11 @@ export async function cancelOpen(db: Db, runId: GenericId<'agentRuns'>, budget?:
   return !more
 }
 
-/** Cancels the open requests of one agent (its actor key), optionally only some. */
+/**
+ * Cancels the open requests of one agent (its actor key), optionally only some. A pending request
+ * past its time is left for housekeeping to mark expired: those are not limited to 20, and readers
+ * already see them as expired.
+ */
 export async function cancelRequests(
   db: Db,
   requesterKey: string,
@@ -158,13 +173,10 @@ export async function cancelRequests(
   const open = await db
     .query('approvals')
     .withIndex('by_requester_status', (q) =>
-      q.eq('requester.key', requesterKey).eq('status', 'pending'),
+      q.eq('requester.key', requesterKey).eq('status', 'pending').gt('expiresAt', Date.now()),
     )
-    .take(500)
-  const now = Date.now()
-  for (const row of open)
-    if (which(row))
-      await db.patch(row._id, { status: row.expiresAt <= now ? 'expired' : 'cancelled' })
+    .take(100)
+  for (const row of open) if (which(row)) await db.patch(row._id, { status: 'cancelled' })
 }
 
 /** What a person sees: a run that stopped answering counts as failed. */
