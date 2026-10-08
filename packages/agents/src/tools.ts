@@ -1219,7 +1219,8 @@ async function wakeWaiting(
     const page = await db
       .query('agentRuns')
       .withIndex('by_status', (q) => q.eq('status', 'waiting').lt('stepAt', cutoff))
-      .paginate({ numItems: sweep.rows / 2, cursor })
+      // A run holds its task, up to a document's size: the page stops at half the budget's bytes.
+      .paginate({ numItems: sweep.rows / 2, cursor, maximumBytesRead: sweep.bytes / 2 })
     for (const run of page.page) budget.count(run)
     runs = page.page.map((run) => run._id)
     cursor = page.isDone ? undefined : page.continueCursor

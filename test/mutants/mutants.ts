@@ -2164,6 +2164,18 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  // The scan of waiting runs reads a page within bytes, not only within a count of runs.
+  {
+    id: 'P-r3-lifecycle-scan-bytes',
+    guards: 'r3-lifecycle',
+    file: 'packages/agents/src/tools.ts',
+    find: '.paginate({ numItems: sweep.rows / 2, cursor, maximumBytesRead: sweep.bytes / 2 })',
+    replace: '.paginate({ numItems: sweep.rows / 2, cursor })',
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping wakes every waiting run, however large their tasks`,
+    ],
+    projects: ['agents'],
+  },
   // A run ends only after its open requests are cancelled, so no request of an ended run stays open.
   {
     id: 'P-r3-lifecycle-cancel-first',

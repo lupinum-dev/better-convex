@@ -1421,3 +1421,23 @@ test('disconnecting cancels the open requests, however many expired ones wait fo
   await s.t.run((ctx) => tools.disconnected(ctx as never, s.annId, 'test-host'))
   expect(await s.t.run((ctx) => ctx.db.get(open))).toMatchObject({ status: 'cancelled' })
 })
+
+// r3 review 2: the scan of waiting runs read a page of 50 runs before it counted their bytes.
+test('housekeeping wakes every waiting run, however large their tasks', async () => {
+  const { t, runId } = await limitedRun('done')
+  const { _id, _creationTime, ...base } = (await t.run((ctx) => ctx.db.get(runId)))!
+  for (let n = 0; n < 50; n++)
+    await t.run((ctx) =>
+      ctx.db.insert('agentRuns', { ...base, task: 'x'.repeat(1_000_000), status: 'waiting' }),
+    )
+  vi.advanceTimersByTime(2 * 60_000)
+  await t.mutation(api.tools.housekeeping, {})
+  await drain(t)
+  const waiting = await t.run((ctx) =>
+    ctx.db
+      .query('agentRuns')
+      .withIndex('by_status', (q) => q.eq('status', 'waiting'))
+      .first(),
+  )
+  expect(waiting).toBeNull()
+})
