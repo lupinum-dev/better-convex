@@ -1820,6 +1820,16 @@ export const mutants: Mutant[] = [
     kills: [journey],
     projects: ['integration'],
   },
+  // A step may run 30 minutes in Convex's runtime before it counts as stalled.
+  {
+    id: 'P-housekeeping-stall-threshold',
+    guards: 'housekeeping',
+    file: 'packages/agents/src/runs.ts',
+    find: 'export const stallAfter = 35 * 60_000',
+    replace: 'export const stallAfter = 15 * 60_000',
+    kills: [`${A}/approvals/approvals.test.ts > a step that works for 31 minutes has not stalled`],
+    projects: ['agents'],
+  },
   // The cloud smoke deploys operator-only test functions; a production key must never reach it.
   {
     id: 'live-refuses-production-key',

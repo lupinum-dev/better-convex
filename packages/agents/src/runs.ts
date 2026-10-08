@@ -14,8 +14,12 @@ type Db = GenericMutationCtx<LibraryDataModel>['db']
 type Scheduler = GenericMutationCtx<LibraryDataModel>['scheduler']
 type Run = LibraryDataModel['agentRuns']['document']
 
-/** A running run whose step has not saved for this long has stalled: Convex ends actions after 10 minutes. */
-export const stallAfter = 15 * 60_000
+/**
+ * A running run whose step has not saved for this long has stalled. Convex
+ * ends an action after 10 minutes in the Node runtime and 30 minutes in its
+ * own runtime; a step may still be working before that.
+ */
+export const stallAfter = 35 * 60_000
 
 /** True when every request is decided or expired. */
 async function allDecided(db: Db, approvalIds: readonly string[]) {

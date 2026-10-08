@@ -1,9 +1,12 @@
+import { shownStatus } from '@lupinum/better-convex-agents/internal'
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
+import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { auth, policy } from './fns'
-import { api, setup } from './harness'
+import { api, modules, setup } from './harness'
+import schema from './schema'
 
 // Approvals through the tool functions that the MCP door and the in-app agent call. Tests that
 // need a running agent (resume after a decision) stay with the runtime. Each test names the
@@ -990,4 +993,32 @@ test('an agent may make 60 writes a minute, then waits', async () => {
   vi.advanceTimersByTime(60_000)
   await rename('next minute')
   expect(await t.run((ctx) => ctx.db.get(p[0]!))).toMatchObject({ name: 'next minute' })
+})
+
+/** A database with Convex's per-transaction read and write limits, and one agent run in it. */
+async function limitedRun(status: 'running' | 'done', stepAt = Date.now()) {
+  const t = convexTest({ schema, modules, transactionLimits: true })
+  const runId = await t.run(async (ctx) => {
+    const grantId = await ctx.db.insert('agentGrants', {
+      authId: 'ann',
+      userId: 'user',
+      agent: 'helper',
+      scopes: [],
+      expiresAt: Date.now() + 400 * 86_400_000,
+    })
+    return await ctx.db.insert('agentRuns', {
+      ...{ grantId, userId: 'user', agent: 'helper', step: 'agent:step', task: 'Do a task' },
+      ...{ status, turn: 1, steps: 1, stepAt },
+    })
+  })
+  return { t, runId }
+}
+
+// r3 review: a step was called stalled after 15 minutes, while Convex lets an action run for 30.
+test('a step that works for 31 minutes has not stalled', async () => {
+  const { t, runId } = await limitedRun('running')
+  vi.advanceTimersByTime(31 * 60_000)
+  await t.mutation(api.tools.housekeeping, {})
+  const run = (await t.run((ctx) => ctx.db.get(runId)))!
+  expect([run.status, shownStatus(run).status]).toEqual(['running', 'running'])
 })
