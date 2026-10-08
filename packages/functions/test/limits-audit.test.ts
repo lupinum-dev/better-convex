@@ -107,8 +107,8 @@ test('a visitor on a public action uses the everyone bucket', async () => {
   // A signed-in person has a bucket of their own for the same action.
   await ann.mutation(fn('feedback'), {})
   expect((await buckets()).map((row) => row.key).sort()).toEqual([
-    `limit:feedback.send:everyone`,
-    expect.stringMatching(/^limit:feedback\.send:user:person:/),
+    `everyone|limit:feedback.send`,
+    expect.stringMatching(/^person:[^|]+\|limit:feedback\.send$/),
   ])
 })
 

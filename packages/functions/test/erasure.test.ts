@@ -138,9 +138,16 @@ test('library tables: own rows go or lose the ID, other people keep theirs', asy
     for (let i = 0; i < many; i++)
       await ctx.db.insert('agentMessages', { runId: annRun, order: i, json: '{}' })
     await ctx.db.insert('agentMessages', { runId: bobRun, order: 0, json: '{}' })
-    await ctx.db.insert('rateLimits', { key: `writes:person:${ann}`, window: 1, count: 1 })
-    await ctx.db.insert('rateLimits', { key: `writes:mcp:${ann}:client`, window: 1, count: 1 })
-    await ctx.db.insert('rateLimits', { key: `writes:person:${bob}`, window: 1, count: 1 })
+    // A person's limit bucket and an agent's bucket go; a tenant bucket and other people's stay.
+    for (const key of [
+      `person:${ann}|limit:projects.create`,
+      `mcp:${ann}:client|writes`,
+      `app:${ann}:helper|writes`,
+      `tenant:org1|limit:reports.generate`,
+      `person:${bob}|limit:projects.create`,
+      `everyone|limit:contact.send`,
+    ])
+      await ctx.db.insert('rateLimits', { key, tokens: 1, at: 1 })
   })
   await erase(t, ann)
   const after = await t.run(async (ctx) => ({
@@ -162,7 +169,11 @@ test('library tables: own rows go or lose the ID, other people keep theirs', asy
   expect(after.grants.map((row) => row.userId)).toEqual([bob])
   expect(after.runs.map((row) => row.userId)).toEqual([bob])
   expect(after.messages).toHaveLength(1)
-  expect(after.limits.map((row) => row.key)).toEqual([`writes:person:${bob}`])
+  expect(after.limits.map((row) => row.key).sort()).toEqual([
+    'everyone|limit:contact.send',
+    `person:${bob}|limit:projects.create`,
+    'tenant:org1|limit:reports.generate',
+  ])
 })
 
 // Catches: an app that never configured erasure getting erasure code.

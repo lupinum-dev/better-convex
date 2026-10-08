@@ -515,7 +515,7 @@ export function defineTools(
             )
             return { status: 'done' as const, result }
           }
-          if (!renew) await rateLimit(ctx, `writes:${requester.key}`, agentWritesPerMinute)
+          if (!renew) await rateLimit(ctx, `${requester.key}|writes`, agentWritesPerMinute)
           const authorized = await authorize(ctx, op, actor, input)
           const { decision, tenant, settle, mayWrite, record, ctx: checked } = authorized
           // A renewal only asks: work that needs no person now runs when the agent calls again,

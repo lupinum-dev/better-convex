@@ -2292,8 +2292,8 @@ export const mutants: Mutant[] = [
     id: 'S-A-key-user',
     guards: 'saas-a',
     file: 'packages/functions/src/functions.ts',
-    find: '`user:${actorRecord(actor).key}`',
-    replace: '`user`',
+    find: '`${actorRecord(actor).key}|limit:${action}`',
+    replace: '`user|limit:${action}`',
     kills: [`${F}/limits-audit.test.ts > user, tenant and everyone limits keep separate buckets`],
   },
   {
@@ -2775,8 +2775,8 @@ export const mutants: Mutant[] = [
     id: 'S-B-erase-library-limits',
     guards: 'rate limit counters of the person are deleted',
     file: 'packages/functions/src/erasure.ts',
-    find: '`person:${userId}`, `mcp:${userId}:`, `app:${userId}:`',
-    replace: '`person:${userId}`, `app:${userId}:`',
+    find: '`person:${userId}|`, `mcp:${userId}:`, `app:${userId}:`',
+    replace: '`person:${userId}|`, `app:${userId}:`',
     kills: [
       `${F}/erasure.test.ts > library tables: own rows go or lose the ID, other people keep theirs`,
     ],

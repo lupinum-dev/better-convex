@@ -168,15 +168,14 @@ function planLibrary(schema: AnySchema): Job[] {
   if (has('rateLimits'))
     jobs.push(async (db, userId, budget) => {
       let left = false
-      // A limit key ends in the actor's key (`person:<id>`, `mcp:<id>:<client>`, `app:<id>:<agent>`).
-      for (const prefix of [`person:${userId}`, `mcp:${userId}:`, `app:${userId}:`]) {
+      // A person's limit key starts with their actor key (`person:<id>|…`, `mcp:<id>:<client>|…`,
+      // `app:<id>:<agent>|…`); tenant and everyone buckets start with neither.
+      for (const prefix of [`person:${userId}|`, `mcp:${userId}:`, `app:${userId}:`]) {
         if (budget.spent) return true
         const { rows, more } = await within(
           db
             .query('rateLimits')
-            .withIndex('by_key', (q) =>
-              q.gte('key', `writes:${prefix}`).lt('key', `writes:${prefix}￿`),
-            ),
+            .withIndex('by_key', (q) => q.gte('key', prefix).lt('key', `${prefix}￿`)),
           budget,
         )
         for (const row of rows) await db.delete(row._id)

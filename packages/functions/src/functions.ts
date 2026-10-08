@@ -303,13 +303,16 @@ export function defineFunctions<
     tenant: TenantRef | undefined,
     limit: NonNullable<ReturnType<typeof limitOf>>,
   ) {
-    // A visitor has no user and no membership: everyone shares one bucket.
-    let scope = 'everyone'
+    // A visitor has no user and no membership: everyone shares one bucket. A person's bucket
+    // starts with their actor key, so erasure deletes a person's buckets by key prefix.
+    let key = `everyone|limit:${action}`
     if (actor.kind !== 'visitor' && limit.per !== 'everyone') {
-      scope =
-        limit.per === 'tenant' && tenant ? `tenant:${tenant.id}` : `user:${actorRecord(actor).key}`
+      key =
+        limit.per === 'tenant' && tenant
+          ? `tenant:${tenant.id}|limit:${action}`
+          : `${actorRecord(actor).key}|limit:${action}`
     }
-    const wait = await takeToken(lib(ctx), `limit:${action}:${scope}`, limit)
+    const wait = await takeToken(lib(ctx), key, limit)
     if (wait !== null) rateLimited(wait)
   }
 
