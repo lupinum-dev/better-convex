@@ -103,6 +103,16 @@ function withoutPerson(actor: { key: string; userId?: string }) {
   return { ...rest, key: 'erased' }
 }
 
+/** The caller of an approval without the person's user, session and grant IDs, or the run that was theirs. */
+function withoutPersonCaller(caller: { door: string; [key: string]: any }) {
+  if (caller.door === 'mcp')
+    return {
+      ...caller,
+      principal: { ...caller.principal, userId: 'erased', sessionId: 'erased', grantId: 'erased' },
+    }
+  return { ...caller, runId: 'erased' }
+}
+
 /**
  * The library's own tables, erased without app config. Only tables the app's
  * schema has. A person's rows go, except rows that hold other people's work:
@@ -131,6 +141,7 @@ function planLibrary(schema: AnySchema): Job[] {
         // A request nobody can decide any more is cancelled; a decided one keeps its row.
         await db.patch(row._id, {
           requester: withoutPerson(row.requester),
+          caller: withoutPersonCaller(row.caller),
           ...(row.status === 'pending' ? { status: 'cancelled' } : {}),
         })
       }
@@ -220,18 +231,23 @@ export function defineErasure(schema: AnySchema | undefined, map: ErasureMap) {
     }),
   )
 
-  /**
-   * Starts the erasure of one person: schedules `eraseStep`, which works in
-   * batches and schedules itself until done. Call it where the person's app
-   * user row is deleted, with the app user's ID.
-   */
-  async function eraseUser(
-    ctx: { scheduler: { runAfter: (delay: number, ref: never, args: never) => Promise<unknown> } },
-    userId: string,
-    step: FunctionReference<'mutation', 'internal', any>,
-  ) {
-    await ctx.scheduler.runAfter(0, step as never, { userId, self: getFunctionName(step) } as never)
-  }
+  return { eraseStep }
+}
 
-  return { eraseStep, eraseUser }
+/**
+ * Starts the erasure of one person: schedules `eraseStep`, which works in
+ * batches and schedules itself until done. Call it where the person's app
+ * user row is deleted, with the app user's ID. It imports nothing from the
+ * app, so `convex/auth.ts` can call it without a cycle through `functions.ts`.
+ */
+export async function eraseUser(
+  ctx: { scheduler: { runAfter: (delay: number, ref: never, args: never) => Promise<unknown> } },
+  appUserId: string,
+  step: FunctionReference<'mutation', 'internal', any>,
+) {
+  await ctx.scheduler.runAfter(
+    0,
+    step as never,
+    { userId: appUserId, self: getFunctionName(step) } as never,
+  )
 }

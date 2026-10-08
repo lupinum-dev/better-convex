@@ -215,12 +215,6 @@ export type ErasureOf<DM extends GenericDataModel> = {
   [T in AppTables<DM>]?: ErasureEntry<Extract<keyof DocumentByName<DM, T>, string>>
 }
 
-type EraseUser<User extends { _id: string }> = (
-  ctx: { scheduler: { runAfter: (delay: number, ref: never, args: never) => Promise<unknown> } },
-  userId: User['_id'],
-  step: FunctionReference<'mutation', 'internal', any>,
-) => Promise<void>
-
 /** Each app table with its typed ID: what `roleOf` receives. */
 export type TenantOf<DM extends GenericDataModel> = {
   [T in Exclude<TableNamesInDataModel<DM>, keyof typeof libraryTables>]: {
@@ -271,7 +265,7 @@ export function defineFunctions<
    * optional in the schema), `{ keep: 'Why the rows stay.' }` leaves the table.
    * The field holds the app user's ID and needs an index that starts with it.
    * Library tables are always erased. Needs `schema`. Without `erasure`, no
-   * erasure code exists. See `fns.eraseUser`.
+   * erasure code exists. See `eraseUser`.
    */
   erasure?: Erasure
   /** The app schema (`import schema from './schema'`). Required with `erasure`, which checks its map against it. */
@@ -1282,19 +1276,17 @@ export function defineFunctions<
               Promise<null>
             >
           }
-          eraseUser: EraseUser<User>
         })
   if (config.erasure === undefined) return fns as Result
-  const { eraseStep, eraseUser } = defineErasure(config.schema, config.erasure as ErasureMap)
+  const { eraseStep } = defineErasure(config.schema, config.erasure as ErasureMap)
   erasureMaps.set(fns, config.erasure as ErasureMap)
   /**
    * Account deletion. `fns.erasure.eraseStep` is the internal mutation the app exports
-   * (`export const { eraseStep } = fns.erasure`); `fns.eraseUser(ctx, appUserId, internal.x.eraseStep)`
+   * (`export const { eraseStep } = fns.erasure`); `eraseUser(ctx, appUserId, internal.x.eraseStep)`
    * starts the erasure of one person from the user projection's delete hook.
    */
   return Object.assign(fns, {
     erasure: { eraseStep },
-    eraseUser: eraseUser as EraseUser<User>,
   }) as unknown as Result
 }
 

@@ -1,11 +1,15 @@
-import { defineFunctions, definePolicy, unchecked } from '@lupinum/better-convex-functions'
+import {
+  defineFunctions,
+  definePolicy,
+  eraseUser,
+  unchecked,
+} from '@lupinum/better-convex-functions'
 import { convexTest } from 'convex-test'
 import { defineSchema, defineTable, makeFunctionReference } from 'convex/server'
 import { v } from 'convex/values'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { people } from './app/people'
-import { fns } from './erasure/fns'
 import schema from './erasure/schema'
 
 const modules = import.meta.glob(['./erasure/*.ts', './erasure/_generated/*.ts'])
@@ -29,7 +33,7 @@ async function setup() {
 }
 
 async function erase(t: Awaited<ReturnType<typeof setup>>['t'], userId: string) {
-  await t.run((ctx) => fns.eraseUser(ctx, userId as never, step))
+  await t.run((ctx) => eraseUser(ctx, userId as never, step))
   await t.finishAllScheduledFunctions(vi.runAllTimers)
 }
 
@@ -119,6 +123,24 @@ test('library tables: own rows go or lose the ID, other people keep theirs', asy
     // Decided by someone else: the row stays, only the requester loses the ID.
     await ctx.db.insert('approvals', { ...approval(person(ann), 'approved'), decidedBy: bob })
     await ctx.db.insert('approvals', { ...approval(person(bob), 'pending') })
+    // An agent's request carries the person's user, session and grant IDs in `caller`.
+    await ctx.db.insert('approvals', {
+      ...approval(person(ann), 'approved'),
+      caller: {
+        door: 'mcp',
+        principal: {
+          kind: 'oauth',
+          userId: ann,
+          clientId: 'client',
+          scopes: [],
+          sessionId: 'session-ann',
+          grantId: 'grant-ann',
+          issuer: 'https://issuer.test',
+          resource: 'https://issuer.test/mcp',
+          expiresAt: 1,
+        },
+      },
+    })
     const annGrant = await ctx.db.insert('agentGrants', {
       authId: 'ann',
       userId: ann,
@@ -164,7 +186,13 @@ test('library tables: own rows go or lose the ID, other people keep theirs', asy
     [undefined, 'cancelled', undefined],
     [undefined, 'approved', bob],
     [bob, 'pending', undefined],
+    [undefined, 'approved', undefined],
   ])
+  // The person's request keeps no ID of theirs in `caller`; the other person's request keeps its caller.
+  expect(JSON.stringify(after.approvals.map((row) => row.caller))).not.toMatch(
+    /ann|grant-|session-/,
+  )
+  expect(after.approvals[2]?.caller).toEqual({ door: 'app', runId: 'r' })
   expect(JSON.stringify(after.approvals.map((row) => row.requester))).not.toContain(ann)
   expect(after.grants.map((row) => row.userId)).toEqual([bob])
   expect(after.runs.map((row) => row.userId)).toEqual([bob])
@@ -190,7 +218,6 @@ test('without erasure there is no erasure code', () => {
     rules: {},
   })
   expect('erasure' in plain).toBe(false)
-  expect('eraseUser' in plain).toBe(false)
 })
 
 const base = defineSchema({

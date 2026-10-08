@@ -37,5 +37,6 @@ export {
 } from './rules'
 export { libraryTables, docValidator } from './schema'
 export { trusted } from './guard'
+export { eraseUser } from './erasure'
 export { fail, type ErrorCode, type Actor, type Visitor, type SystemActor } from './actor'
 export { oneLine } from './values'
