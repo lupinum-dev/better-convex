@@ -531,3 +531,25 @@ export const tagged = query({
   returns: v.string(),
   handler: async (_ctx, { value }) => value.kind,
 })
+
+/** A nullable file argument, the common `v.union(v.id('_storage'), v.null())`. */
+export const withFile = query({
+  action: 'projects.read',
+  args: { file: v.union(v.id('_storage'), v.null()) },
+  returns: v.string(),
+  handler: async () => 'ok',
+})
+
+/** A storage ID in a union member beside a tenant ID. */
+export const withFileInMember = query({
+  action: 'projects.read',
+  args: {
+    value: v.union(
+      v.object({ kind: v.literal('file'), projectId: v.id('projects'), file: v.id('_storage') }),
+      v.object({ kind: v.literal('none') }),
+    ),
+  },
+  returns: v.string(),
+  handler: async (ctx, { value }) =>
+    value.kind === 'file' ? ((await ctx.db.get(value.projectId))?.name ?? 'hidden') : 'none',
+})

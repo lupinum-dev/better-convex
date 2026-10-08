@@ -50,7 +50,7 @@ import {
 } from './policy'
 import { checkedDb, planReader, readOnly, tenancy, type Rule, type TenantRef } from './rules'
 import type { libraryTables } from './schema'
-import { frozen, idsIn, jsonOf, matches, storable, type ValidatorJson } from './values'
+import { frozen, idsIn, isIdOf, jsonOf, matches, storable, type ValidatorJson } from './values'
 
 export type LibraryDataModel = DataModelFromSchemaDefinition<
   SchemaDefinition<typeof libraryTables, true>
@@ -117,9 +117,10 @@ export async function planOf(
   ctx: { db: { normalizeId: (table: string, id: string) => unknown } },
   input: Record<string, unknown>,
 ): Promise<Plan> {
+  // Plan rows are app rows: a system ID (`_storage`) is no row, and the checked `db` has no `system`.
   const named = () =>
     idsIn(jsonOf(v.object(op.args)), input)
-      .filter(({ table, id }) => ctx.db.normalizeId(table, id) !== null)
+      .filter(({ table, id }) => !table.startsWith('_') && ctx.db.normalizeId(table, id) !== null)
       .map(({ id }) => id)
   if (!op.plan) return { summary: `${op.action} ${JSON.stringify(input)}`, rows: named() }
   const plan = (await op.plan(planReader(ctx), frozen(input))) as unknown
@@ -405,8 +406,7 @@ export function defineFunctions<
     rows: Map<string, Record<string, unknown> | null>,
   ) {
     const found = new Map<string, TenantRef>()
-    const isId = (table: string, value: string) =>
-      ctx.db.normalizeId(table as never, value) !== null
+    const isId = (table: string, value: string) => isIdOf(ctx.db, table, value)
     let ids = 0
     async function visit(json: ValidatorJson, value: unknown, inUnion: boolean): Promise<void> {
       if (value === undefined || value === null) return

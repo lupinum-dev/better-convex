@@ -46,6 +46,19 @@ export function idsIn(json: ValidatorJson, value: unknown): { table: string; id:
   }
 }
 
+/** Does `value` belong to `table`? System tables (`_storage`) have their own `normalizeId`, and the plain one throws for them. */
+export function isIdOf(
+  db: {
+    normalizeId: (table: never, id: string) => unknown
+    system: { normalizeId: (table: never, id: string) => unknown }
+  },
+  table: string,
+  value: string,
+): boolean {
+  const normalize = table.startsWith('_') ? db.system : db
+  return normalize.normalizeId(table as never, value) !== null
+}
+
 /**
  * Does a value Convex already accepted fit this validator? For a union, it tells which members
  * the value is: only their fields carry meaning. `isId(table, value)` checks an ID's table.
@@ -68,7 +81,8 @@ export function matches(
     case 'bytes':
       return value instanceof ArrayBuffer
     case 'literal':
-      return value === json.value
+      // `json.value` is encoded (`{ $integer }`, `{ $float }`), so encode the value too.
+      return sameLiteral(value, json.value)
     case 'id':
       return typeof value === 'string' && isId(json.tableName, value)
     case 'array':
@@ -92,6 +106,14 @@ export function matches(
       )
     case 'union':
       return json.value.some((member) => matches(member, value, isId))
+  }
+}
+
+function sameLiteral(value: unknown, literal: unknown): boolean {
+  try {
+    return stable(convexToJson(value as Value)) === stable(literal)
+  } catch {
+    return false
   }
 }
 
