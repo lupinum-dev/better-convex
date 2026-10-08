@@ -7,7 +7,7 @@ Between 2026-10-06 and 2026-10-07, the walking skeleton's stress test and
 three Codex reviews of it (findings R11–R27 in its `STRESS.md`), a review
 with three lenses of the packages, and three Codex reviews of the branch
 found the problems below; four release reviews on 2026-10-07 led to class 13. Almost every P1 and P2 belongs to one of these
-classes. Codex round 4 added classes 10 and 11. Each class names the questions to ask, the bugs
+classes. Codex round 4 added classes 10 and 11; the release and SaaS reviews of 2026-10-08 added classes 14 to 16. Each class names the questions to ask, the bugs
 that taught it, and the test that now guards it. The full list of
 invariants is in `plan.md` section 6.
 
@@ -76,10 +76,15 @@ not count as "allow".
   `publicRead` condition and an agent rule of `null` each counted a truthy or
   empty value as allowed (an async condition returns a Promise, which is
   truthy). Fixed: only `true` allows; `null` asks a person.
+- Fail-closed tables, 2026-10-08: a row rule of an unknown kind (a typo from
+  JavaScript) returned no verdict, so writes passed and `allOf` ignored the
+  part. Fixed: an unknown kind hides the row.
 
 Ask: what happens when this returns `undefined`, throws, or gets a prototype
 key? Tests: "an agent rule that returns no decision asks a person"
-(`policy.test.ts`), K1 in `shapes.test.ts`.
+(`policy.test.ts`), K1 in `shapes.test.ts`, the `policy fail-closed` and
+`erasure entry fails closed` tables, "a rule of an unknown kind refuses the
+row, alone and inside allOf".
 
 ## 5. A bounded scan that makes a security decision
 
@@ -205,13 +210,63 @@ Ask: does the person approve data, or code that runs again later? Prefer
 data. Tests: "approving runs the plan the person saw", "approved work
 cannot change a row that is not in the plan" (`packages/agents/test/approvals`).
 
+## 14. A guarantee on one door that every door needs
+
+The same operation is reached by a public call, an internal call from an
+action, a scheduled call, `ctx.runMutation` from another operation, the MCP
+door, an in-app agent, `runTool` and an approved run. A guarantee built where
+one of them enters is missing on the others.
+
+- r1:1: the error projection was on `runToolSafely` only; the MCP door and
+  derived tools returned upstream error text to the host.
+- r2:3: public builders checked the action, internal ones did not.
+- SaaS review, 2026-10-08: limits applied to public mutations only, and an
+  audited mutation nested under an unaudited one wrote no audit row.
+
+Ask: which doors reach this code, and what does the contract promise on each?
+Test: the tables in `packages/functions/test/doors.test.ts` and
+`packages/agents/test/doors.test.ts`. A new guarantee gets a table; a new door
+gets a row in every table.
+
+## 15. A fix that is right for the repro and wrong next to it
+
+A fix is tested with the case that broke. The case beside it, which the old
+code got right, is not tested and breaks.
+
+- Review of the fixes, 2026-10-08: the union fix broke storage-ID unions and
+  bigint literals; the response-size fix sent 502 after the commit and
+  dropped results that fit; the read-rule fix froze a row the write check
+  still needed.
+
+Ask: what did the old code get right next to the bug? Write that case as a
+passing test before the fix (the `Keep:` line of a fix brief), and keep it
+next to the regression test.
+
+## 16. A check that passes for the wrong reason
+
+A check that reports "fine" must have looked at everything it promises to
+look at.
+
+- SaaS review, 2026-10-08: `launchProblems` asked whether a table was in the
+  erasure map, not whether each user-ID field was covered; it missed record
+  keys and a missing `eraseStep` export.
+- Earlier: a mutant that removed `export` made tests fail for the wrong
+  reason; a `grantMcp` test ran with stubbed origins.
+
+Ask: does the check read every field, export or path it names, and does
+fixing the problem clear it? Test: the `launch variant` table in
+`packages/functions/test/launch.test.ts` (each variant one change from a
+valid app, and undone again).
+
 ## Tools that find these classes
 
 `pnpm test:mutants` proves that each guard has a test that fails without it.
 The sequence fuzz (classes 1, 4, 5, 11, 12) and the callback tables (classes
 2, 4, 10) find new instances; see testing-strategy.md, "Three more checks".
 A new callback the library hands to app code gets a row in the callback
-table; a new decision point gets a bad-value table.
+table; a new decision point gets a bad-value table. The door tables (class 14),
+the launch variant table (class 16) and the volume fixtures (class 5) are
+described in `test/TESTING.md`, "Design rules".
 
 ## How to review a change here
 
@@ -219,7 +274,9 @@ table; a new decision point gets a bad-value table.
    new, add a row.
 2. Walk the classes above for the changed code.
 3. Write the regression test first, then fix. Every fixed finding adds that
-   test and a row in `test/mutants/mutants.ts` whose `kills` names it. Prove
+   test, and a test of the valid case next to it (class 15). A fix that adds or
+   changes a guard also adds a row in `test/mutants/mutants.ts` whose `kills`
+   names it. Prove
    the row with `pnpm test:mutants --only <id>`: the test must fail when the
    guard is broken. Twice in this work a test passed for the wrong reason: a
    nested query to a function that did not exist failed either way, and a
