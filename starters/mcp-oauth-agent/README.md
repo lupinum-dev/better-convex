@@ -254,9 +254,9 @@ protocol envelope and its error cases with the official SDK.
 
 ## Account deletion, limits and audit
 
-- People can delete their own account (`deleteUser` in `convex/auth.ts`). It is refused while the person is the last owner of an organization that has other members.
-- `onDelete` starts `eraseStep` (`convex/erasure.ts`): it removes the person's memberships and profile in batches. Projects and other team data stay with the team.
-- Organizations where the person was the only member are deleted with their projects and memberships (`eraseOrganizations` in `convex/accountDeletion.ts`). Organizations with other members are not touched.
+- People can delete their own account (`deleteUser` in `convex/auth.ts`). It is refused while the person is the last owner of an organization that has other members. It is also refused when the person owns more than 100 organizations, more than one check can read.
+- `onDelete` starts `scanOrganizations` (`convex/accountDeletion.ts`). It pages through the person's memberships and hands every organization that nobody else ever belonged to (no other membership row, active or removed) to `eraseOrganizations`, which deletes it with its projects and memberships in batches. An organization with any other person's membership row is not touched.
+- When the scan is done, it starts `eraseStep` (`convex/erasure.ts`): it removes the person's own memberships and profile in batches. Projects and other team data stay with the team.
 - `projects.create` is limited to 30 a minute per person (`convex/policy.ts`).
 - Archiving a project writes an `auditLog` row with the actor and the project.
 - `convex/crons.ts` runs the agent housekeeping hourly: it expires old requests and deletes activity past retention.

@@ -30,7 +30,10 @@ export default defineSchema({
     status: v.union(v.literal('active'), v.literal('removed')),
   })
     .index('by_org_user', ['organizationId', 'userId'])
-    .index('by_user', ['userId', 'status']),
+    // Both end in `role` so the account deletion can list a person's active owner memberships,
+    // and an organization's active owners, without reading removed rows.
+    .index('by_user', ['userId', 'status', 'role'])
+    .index('by_org_status', ['organizationId', 'status', 'role']),
 
   projects: defineTable({
     organizationId: v.id('organizations'),
