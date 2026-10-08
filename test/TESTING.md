@@ -84,6 +84,12 @@ functions from `test/fixtures/mcp-oauth-agent/evidence.ts`.
 - `oauth-code`: a concurrent double redemption has one winner; replay,
   wrong PKCE, another client, a wrong Basic secret and a post-consume signing
   fault burn the code without persisting a token; no credential in browser storage.
+- `mcp-sizes`: the door's 1 MiB response limit (found by search, for each kind of
+  escaped character and a very long JSON-RPC id: whole just under, the marker just
+  over, never HTTP 502), a write that retries after an oversized result, an
+  approval document of exactly 256 KiB (and one byte more), the stored result limit
+  and the 20 open requests. The limits are read from the product source; the starter
+  copy gets three test-only tools.
 - `oauth-transport-quota`: authorize/token/revoke quotas shared across the Nuxt
   proxy and direct Convex HTTP per signed client IP; forged IP pairs; disabled
   OAuth routes; hardened login and consent pages.

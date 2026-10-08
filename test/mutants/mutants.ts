@@ -1836,6 +1836,46 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  // Erasure reads a bounded amount per step: a person with more rows than a batch in every
+  // table is erased over several steps, not in one transaction that Convex's limits roll back.
+  {
+    id: 'T-t2-erasure-bounded-step',
+    guards: 'erasure',
+    file: 'packages/functions/src/budget.ts',
+    find: 'export const sweep = { rows: 100, bytes: 4 * 1024 * 1024 }',
+    replace: 'export const sweep = { rows: 1_000_000, bytes: 2 ** 40 }',
+    kills: [
+      `${F}/erasure.test.ts > a person with more rows than a batch in every table is erased, others untouched`,
+    ],
+    projects: ['functions'],
+  },
+  // A run's messages get their own share of the step's budget: when the runs used all of it,
+  // nothing was deleted and the step repeated forever.
+  {
+    id: 'T-t2-erasure-run-messages-progress',
+    guards: 'erasure',
+    file: 'packages/functions/src/erasure.ts',
+    find: "db.query('agentMessages').withIndex('by_run', (q) => q.eq('runId', run._id)),\n          budget,",
+    replace:
+      "db.query('agentMessages').withIndex('by_run', (q) => q.eq('runId', run._id)),\n          { spent: true, count() {} } as never,",
+    kills: [
+      `${F}/erasure.test.ts > a person with more rows than a batch in every table is erased, others untouched`,
+      `${F}/erasure.test.ts > a person with many runs and messages is erased in a bounded number of steps`,
+    ],
+    projects: ['functions'],
+  },
+  // Retention cleanup that always schedules itself again never finishes.
+  {
+    id: 'T-t2-housekeeping-cleanup-progress',
+    guards: 'housekeeping',
+    file: 'packages/agents/src/tools.ts',
+    find: 'if (!(await deleteRetained(db, now))) await next({ cleanup: true })',
+    replace: 'await deleteRetained(db, now); await next({ cleanup: true })',
+    kills: [
+      `${A}/approvals/approvals.test.ts > housekeeping deletes every table past retention in a bounded number of steps and keeps the rest`,
+    ],
+    projects: ['agents'],
+  },
   // A finished run cancels its own requests, not the first 500 of its agent.
   {
     id: 'P-housekeeping-run-requests',
