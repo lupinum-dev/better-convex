@@ -1,5 +1,7 @@
-import { betterAuth, type BetterAuthOptions } from 'better-auth'
+import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from 'better-auth'
 import { memoryAdapter, type MemoryDB } from 'better-auth/adapters/memory'
+import { createAuthMiddleware } from 'better-auth/api'
+import { setSessionCookie } from 'better-auth/cookies'
 import { jwt } from 'better-auth/plugins'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -48,7 +50,11 @@ function database(expiresInMs = 60_000): MemoryDB {
   }
 }
 
-function createAuth(memoryDatabase = database(), session?: BetterAuthOptions['session']) {
+function createAuth(
+  memoryDatabase = database(),
+  session?: BetterAuthOptions['session'],
+  extraPlugins: BetterAuthPlugin[] = [],
+) {
   const issuer = `${origin}/api/auth`
   return betterAuth({
     advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
@@ -84,6 +90,7 @@ function createAuth(memoryDatabase = database(), session?: BetterAuthOptions['se
           issuer: convexSiteUrl,
         },
       }),
+      ...extraPlugins,
     ],
     rateLimit: {
       customStorage: createComponentRateLimitStorage(memoryDatabase),
@@ -129,6 +136,58 @@ describe('internal Better Auth session bridge', () => {
       },
       payload: { sid: 'session-1', sub: 'user-1', token_use: 'convex-session' },
     })
+  })
+
+  it('signs a token while Better Auth renews the presented session', async () => {
+    // Inside the default one-day update window: this exchange extends the stored session.
+    const memory = database(60_000)
+    const auth = createAuth(memory)
+    const sessionCookieName = (await auth.$context).authCookies.sessionToken.name
+    const sign = await spyOnSigner(auth)
+
+    const response = await auth.handler(request(true, '/convex/token'))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ token: 'signed-convex-jwt' })
+    expect(sign.mock.calls[0]?.[0]?.body).toMatchObject({
+      payload: { sid: 'session-1', sub: 'user-1' },
+    })
+    const renewal = response.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith(`${sessionCookieName}=`))
+    expect(renewal).toMatch(/Max-Age=604800/u)
+    expect(memory.session![0]!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * 86_400_000)
+  })
+
+  it.each([
+    { label: 'beside the presented session', adopt: false },
+    { label: 'as the request session', adopt: true },
+  ])('refuses a session another hook established in this request $label', async ({ adopt }) => {
+    const memory = database(sessionLifetimeMs)
+    const establishSession: BetterAuthPlugin = {
+      id: 'test-establish-session',
+      hooks: {
+        before: [
+          {
+            matcher: (context) => context.path === '/convex/token',
+            handler: createAuthMiddleware(async (context) => {
+              const user = memory.user![0] as Parameters<typeof setSessionCookie>[1]['user']
+              const established = await context.context.internalAdapter.createSession(user.id)
+              await setSessionCookie(context, { session: established, user })
+              if (adopt) context.context.session = { session: established, user }
+            }),
+          },
+        ],
+      },
+    }
+    const auth = createAuth(memory, undefined, [establishSession])
+    const sign = await spyOnSigner(auth)
+
+    const response = await auth.handler(request(true, '/convex/token'))
+
+    expect(memory.session).toHaveLength(2)
+    expect(response.status).toBe(401)
+    expect(sign).not.toHaveBeenCalled()
   })
 
   it.each<{ label: string; mutate: (memory: MemoryDB) => void; allowed: boolean }>([

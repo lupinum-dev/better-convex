@@ -916,7 +916,26 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
         async (ctx) => {
           ctx.setHeader('Cache-Control', 'private, no-store')
           const authenticated = ctx.context.session
-          if (!authenticated || ctx.context.newSession) unauthorized()
+          if (!authenticated) unauthorized()
+          // Only a session the request presented may receive a token. Better Auth
+          // reports a sliding renewal of that session as `newSession` too; it keeps
+          // the presented token. A session another hook established during this
+          // request has a token the request never carried.
+          const established = ctx.context.newSession
+          if (established) {
+            const presentedToken = await ctx.getSignedCookie(
+              ctx.context.authCookies.sessionToken.name,
+              ctx.context.secret,
+            )
+            if (
+              !presentedToken ||
+              established.session.id !== authenticated.session.id ||
+              established.session.token !== presentedToken ||
+              authenticated.session.token !== presentedToken
+            ) {
+              unauthorized()
+            }
+          }
 
           const persistedSession = await ctx.context.adapter.findOne<Session>({
             model: 'session',

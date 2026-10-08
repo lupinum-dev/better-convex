@@ -1832,6 +1832,18 @@ export const mutants: Mutant[] = [
     ],
     projects: ['unit'],
   },
+  // A sliding renewal of the presented session still gets a Convex token.
+  {
+    id: 'P-session-renewed-session-token',
+    guards: 'session',
+    file: 'src/runtime/convex-auth/plugin.ts',
+    find: 'if (!authenticated) unauthorized()',
+    replace: 'if (!authenticated || ctx.context.newSession) unauthorized()',
+    kills: [
+      'test/security/convex-auth-internal-session.test.ts > internal Better Auth session bridge > signs a token while Better Auth renews the presented session',
+    ],
+    projects: ['security'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [
