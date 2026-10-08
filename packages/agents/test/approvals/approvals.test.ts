@@ -2,6 +2,7 @@ import { finish, shownStatus, stallAfter } from '@lupinum/better-convex-agents/i
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
+import type { GenericId } from 'convex/values'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { auth, policy } from './fns'
@@ -55,6 +56,25 @@ async function waitingRuns(
   })
 }
 
+/**
+ * Calls each step that housekeeping scheduled, as the scheduler would, until none is left; returns
+ * their arguments. Steps a woken run schedules stay pending.
+ */
+async function drain(t: ReturnType<typeof convexTest>) {
+  const ran = new Set<string>()
+  const steps: Record<string, unknown>[] = []
+  for (let call = 0; call < 500; call++) {
+    const job = (await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())).find(
+      (job) => job.name === 'tools:housekeeping' && !ran.has(job._id),
+    )
+    if (!job) return steps
+    ran.add(job._id)
+    steps.push(job.args[0])
+    await t.mutation(api.tools.housekeeping, job.args[0])
+  }
+  throw new Error('housekeeping did not finish')
+}
+
 // C8 (other half): the same call twice must not ask the person twice.
 test('the same call twice makes one request', async () => {
   const s = await setup()
@@ -104,6 +124,7 @@ test('an expired request blocks nothing, and housekeeping marks it expired', asy
   expect((await s.approvalRows()).map((row) => row.input.projectId)).toEqual([s.p[0], s.p[1]])
 
   await s.t.mutation(api.tools.housekeeping, {})
+  await drain(s.t)
   expect((await s.approvalRows()).map((row) => row.status)).toEqual(['expired', 'pending'])
 })
 
@@ -601,6 +622,7 @@ test('housekeeping resumes a waiting run whose requests are all decided', async 
   )
   vi.advanceTimersByTime(2 * 60_000)
   await s.t.mutation(api.tools.housekeeping, {})
+  await drain(s.t)
   expect(await s.t.run((ctx) => ctx.db.get(runId!))).toMatchObject({ status: 'running', turn: 2 })
 })
 
@@ -907,12 +929,11 @@ test('housekeeping goes through every waiting run, in batches', async () => {
   await waitingRuns(s, [], 201)
   vi.advanceTimersByTime(2 * 60_000)
   await s.t.mutation(api.tools.housekeeping, {})
-  // Third review: the continuation keeps the first transaction's cutoff, or Convex rejects its cursor.
-  const [next] = (
-    await s.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
-  ).filter((job) => job.name === 'tools:housekeeping')
-  expect(next!.args[0]).toMatchObject({ waiting: expect.any(String), cutoff: Date.now() - 60_000 })
-  await s.t.mutation(api.tools.housekeeping, next!.args[0])
+  const steps = await drain(s.t)
+  // Third review: every continuation keeps the scan's first cutoff, or Convex rejects its cursor.
+  const scan = steps.filter((step) => typeof step.waiting === 'string')
+  expect(scan.length).toBeGreaterThan(1)
+  expect(new Set(scan.map((step) => step.cutoff))).toEqual(new Set([Date.now() - 60_000]))
   const waiting = await s.t.run((ctx) =>
     ctx.db
       .query('agentRuns')
@@ -1049,18 +1070,48 @@ const request = (fields: Record<string, unknown>) => ({
   ...fields,
 })
 
-/** Runs every scheduled housekeeping step; deleting a large backlog takes many. */
-async function drain(t: ReturnType<typeof convexTest>) {
-  for (let step = 0; step < 500; step++) {
-    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
-    if (!jobs.some((job) => job.state.kind === 'pending')) return
-    vi.runAllTimers()
-    await t.finishInProgressScheduledFunctions()
+/** Seeds `count` runs, each with `requests` requests holding plans of `bytes`, beside `runId`. */
+const runsWithRequests =
+  (
+    count: number,
+    status: 'running' | 'waiting',
+    {
+      bytes,
+      requests = 1,
+      ...fields
+    }: { bytes: number; requests?: number } & Record<string, unknown>,
+  ) =>
+  async (t: ReturnType<typeof convexTest>, runId: string) => {
+    const base = await t.run(async (ctx) => {
+      const { _id, _creationTime, ...run } = (await ctx.db.get(runId as GenericId<'agentRuns'>))!
+      return run
+    })
+    for (let n = 0; n < count; n++) {
+      const id = await t.run((ctx) =>
+        ctx.db.insert('agentRuns', { ...base, task: `R${n}`, status }),
+      )
+      const approvalIds: GenericId<'approvals'>[] = []
+      for (let r = 0; r < requests; r++)
+        approvalIds.push(
+          await t.run((ctx) =>
+            ctx.db.insert(
+              'approvals',
+              request({
+                caller: { door: 'app', runId: id, turn: 1 },
+                plan: { summary: 'Edit a note', contents: 'x'.repeat(bytes) },
+                ...fields,
+              }) as never,
+            ),
+          ),
+        )
+      if (status === 'waiting') await t.run((ctx) => ctx.db.patch(id, { approvalIds }))
+    }
   }
-  throw new Error('housekeeping did not finish')
-}
+const later = { status: 'pending', expiresAt: Date.now() + 100 * 86_400_000 }
+const deleted = { runs: { failed: 1 }, pending: false, messages: 0, approvals: 0, approvalRows: 0 }
 
 // r3 review: old data past Convex's read limits failed every housekeeping run, and its rollback kept stalled runs running.
+// Polish round 2: so did large plans on the runs it ended, expired or woke, in its first transaction.
 test.each([
   {
     old: 'a long finished conversation',
@@ -1075,6 +1126,7 @@ test.each([
             })
         })
     },
+    left: deleted,
   },
   {
     old: 'many decided requests with large plans',
@@ -1091,6 +1143,7 @@ test.each([
             )
         })
     },
+    left: deleted,
   },
   {
     old: 'a request that created 17,000 rows',
@@ -1104,30 +1157,73 @@ test.each([
             await ctx.db.insert('approvalRows', { approvalId, rowId: `created-${batch}-${n}` })
         })
     },
+    left: deleted,
   },
-])('housekeeping ends a stalled run first, then deletes $old', async ({ seed }) => {
-  const { t, runId: old } = await limitedRun('done')
-  await seed(t, old)
-  vi.advanceTimersByTime(91 * 86_400_000)
-  const stuck = await t.run(async (ctx) => {
-    const { _id, _creationTime, ...run } = (await ctx.db.get(old))!
-    const stepAt = Date.now() - stallAfter - 1
-    return await ctx.db.insert('agentRuns', { ...run, task: 'Stuck', status: 'running', stepAt })
-  })
-  await t.mutation(api.tools.housekeeping, {})
-  expect(await t.run((ctx) => ctx.db.get(stuck))).toMatchObject({
-    status: 'failed',
-    error: { code: 'STALLED' },
-  })
-  await drain(t)
-  const left = await t.run(async (ctx) => ({
-    runs: (await ctx.db.query('agentRuns').collect()).map((run) => run.task),
-    messages: (await ctx.db.query('agentMessages').take(1)).length,
-    approvals: (await ctx.db.query('approvals').take(1)).length,
-    approvalRows: (await ctx.db.query('approvalRows').take(1)).length,
-  }))
-  expect(left).toEqual({ runs: ['Stuck'], messages: 0, approvals: 0, approvalRows: 0 })
-})
+  {
+    old: '20 stalled runs, 900 KB requests',
+    seed: runsWithRequests(20, 'running', { bytes: 900_000, ...later }),
+    left: { ...deleted, runs: { failed: 21 }, approvals: 1 },
+  },
+  {
+    old: 'a stalled run, 20 900 KB requests',
+    seed: runsWithRequests(1, 'running', { bytes: 900_000, requests: 20, ...later }),
+    left: { ...deleted, runs: { failed: 2 }, approvals: 1 },
+  },
+  {
+    old: '20 waiting runs, expired 900 KB',
+    seed: runsWithRequests(20, 'waiting', { bytes: 900_000, status: 'pending' }),
+    left: { ...deleted, runs: { failed: 1, running: 20 }, messages: 1 },
+  },
+  {
+    old: 'a waiting run, 20 decided 900 KB',
+    seed: runsWithRequests(1, 'waiting', { bytes: 900_000, requests: 20 }),
+    left: { ...deleted, runs: { failed: 1, running: 1 }, messages: 1 },
+  },
+  {
+    old: '200 waiting runs, 90 KB requests',
+    seed: runsWithRequests(200, 'waiting', { bytes: 90_000, ...later }),
+    left: { ...deleted, runs: { failed: 1, waiting: 200 }, pending: true, approvals: 1 },
+  },
+  {
+    old: '120 waiting runs, 150 KB requests',
+    seed: runsWithRequests(120, 'waiting', { bytes: 150_000, ...later }),
+    left: { ...deleted, runs: { failed: 1, waiting: 120 }, pending: true, approvals: 1 },
+  },
+])(
+  'housekeeping ends a stalled run in its first call, then works through $old',
+  async ({ seed, left }) => {
+    const { t, runId: old } = await limitedRun('done')
+    await seed(t, old)
+    vi.advanceTimersByTime(91 * 86_400_000)
+    const stuck = await t.run(async (ctx) => {
+      const { _id, _creationTime, ...run } = (await ctx.db.get(old))!
+      const stepAt = Date.now() - stallAfter - 1
+      return await ctx.db.insert('agentRuns', { ...run, task: 'Stuck', status: 'running', stepAt })
+    })
+    await t.mutation(api.tools.housekeeping, {})
+    expect(await t.run((ctx) => ctx.db.get(stuck))).toMatchObject({
+      status: 'failed',
+      error: { code: 'STALLED' },
+    })
+    await drain(t)
+    const after = await t.run(async (ctx) => {
+      const runs: Record<string, number> = {}
+      for (const run of await ctx.db.query('agentRuns').collect())
+        runs[run.status] = (runs[run.status] ?? 0) + 1
+      const pending = ctx.db
+        .query('approvals')
+        .withIndex('by_status', (q) => q.eq('status', 'pending'))
+      return {
+        runs,
+        pending: (await pending.first()) !== null,
+        messages: (await ctx.db.query('agentMessages').take(1)).length,
+        approvals: (await ctx.db.query('approvals').take(1)).length,
+        approvalRows: (await ctx.db.query('approvalRows').take(1)).length,
+      }
+    })
+    expect(after).toEqual(left)
+  },
+)
 
 // r3 review: finishing scanned the agent's first 500 open requests, so another run's backlog hid this run's own.
 test("a finished run cancels its own open request behind other runs' requests", async () => {

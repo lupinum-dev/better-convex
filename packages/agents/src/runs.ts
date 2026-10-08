@@ -2,6 +2,8 @@ import type { LibraryDataModel } from '@lupinum/better-convex-functions/internal
 import { makeFunctionReference, type GenericMutationCtx } from 'convex/server'
 import type { GenericId } from 'convex/values'
 
+import { within, type Budget } from './budget'
+
 /**
  * Where an in-app agent run stands, shared by the agent, the approval
  * functions and housekeeping. A run moves
@@ -21,11 +23,24 @@ type Run = LibraryDataModel['agentRuns']['document']
  */
 export const stallAfter = 35 * 60_000
 
-/** True when every request is decided or expired. */
-async function allDecided(db: Db, approvalIds: readonly string[]) {
+/**
+ * True when every request is decided or expired; undefined when `budget` ran
+ * out first. A decided request stays decided, so `known` collects the ones
+ * found, and a later try reads only the rest.
+ */
+async function allDecided(
+  db: Db,
+  approvalIds: readonly string[],
+  budget?: Budget,
+  known?: Set<string>,
+) {
   for (const id of approvalIds) {
+    if (known?.has(id)) continue
+    if (budget?.spent) return undefined
     const row = await db.get(id as GenericId<'approvals'>)
+    if (row) budget?.count(row)
     if (row?.status === 'pending' && row.expiresAt > Date.now()) return false
+    known?.add(id)
   }
   return true
 }
@@ -37,13 +52,26 @@ export async function nextTurn(db: Db, scheduler: Scheduler, run: Run) {
   await scheduler.runAfter(0, makeFunctionReference<'action'>(run.step), { runId: run._id, turn })
 }
 
-/** A waiting run continues once its last request is decided or expired. Called on every decision and at expiry. */
-export async function wake(db: Db, scheduler: Scheduler, runId: string) {
+/**
+ * A waiting run continues once its last request is decided or expired. Called
+ * on every decision and at expiry. With a `budget`, false when it ran out
+ * before the run was seen to; see `allDecided` for `known`.
+ */
+export async function wake(
+  db: Db,
+  scheduler: Scheduler,
+  runId: string,
+  budget?: Budget,
+  known?: Set<string>,
+) {
   const id = db.normalizeId('agentRuns', runId)
   const run = id && (await db.get(id))
-  if (run?.status !== 'waiting') return
-  if (!(await allDecided(db, run.approvalIds ?? []))) return
-  await resume(db, scheduler, run, run.approvalIds ?? [])
+  if (run) budget?.count(run)
+  if (run?.status !== 'waiting') return true
+  const decided = await allDecided(db, run.approvalIds ?? [], budget, known)
+  if (decided === undefined) return false
+  if (decided) await resume(db, scheduler, run, run.approvalIds ?? [], budget)
+  return true
 }
 
 /** Tells the model which requests were decided, then schedules the next turn. */
@@ -52,12 +80,14 @@ export async function resume(
   scheduler: Scheduler,
   run: Run,
   approvalIds: readonly string[],
+  budget?: Budget,
 ) {
   const last = await db
     .query('agentMessages')
     .withIndex('by_run', (q) => q.eq('runId', run._id))
     .order('desc')
     .first()
+  if (last) budget?.count(last)
   const note = `Requests ${approvalIds.join(', ')} were decided. Check each with check_approval, then continue.`
   await db.insert('agentMessages', {
     runId: run._id,
@@ -86,24 +116,37 @@ export async function wait(
   })
 }
 
-/** Ends a run, and cancels every request it still has open: nobody is left to act on the decision. */
+/**
+ * Ends a run, and cancels every request it still has open: nobody is left to
+ * act on the decision. With a `budget`, false when it ran out before every
+ * request was cancelled; `cancelOpen` does the rest.
+ */
 export async function finish(
   db: Db,
   run: Run,
   outcome:
     | { status: 'done'; answer: string }
     | { status: 'failed'; error: { code: string; message: string } },
+  budget?: Budget,
 ) {
   await db.patch(run._id, { ...outcome, approvalIds: undefined, stepAt: Date.now() })
-  // An agent has at most 20 open requests, so one read finds all of this run's.
+  return await cancelOpen(db, run._id, budget)
+}
+
+/** Cancels the open requests of an ended run; with a `budget`, false when some remain. */
+export async function cancelOpen(db: Db, runId: GenericId<'agentRuns'>, budget?: Budget) {
   // A pending request past its time is already expired; housekeeping marks it.
-  const open = await db
+  const open = db
     .query('approvals')
     .withIndex('by_run_status', (q) =>
-      q.eq('caller.runId', run._id).eq('status', 'pending').gt('expiresAt', Date.now()),
+      q.eq('caller.runId', runId).eq('status', 'pending').gt('expiresAt', Date.now()),
     )
-    .take(100)
-  for (const row of open) await db.patch(row._id, { status: 'cancelled' })
+  // An agent has at most 20 open requests, so one read finds all of this run's.
+  const { rows, more } = budget
+    ? await within(open, budget)
+    : { rows: await open.take(100), more: false }
+  for (const row of rows) await db.patch(row._id, { status: 'cancelled' })
+  return !more
 }
 
 /** Cancels the open requests of one agent (its actor key), optionally only some. */
