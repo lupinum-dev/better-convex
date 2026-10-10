@@ -1,5 +1,13 @@
 # @lupinum/better-convex-agents
 
+## 0.1.0-rc.1
+
+### Patch Changes
+
+- [#251](https://github.com/lupinum-dev/better-convex/pull/251) [`aac1eae`](https://github.com/lupinum-dev/better-convex/commit/aac1eaecf94b3ba05b3b4907567ae974a72300a0) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the README: it now has an Agent setup section that points your coding agent at the documentation inside the installed package.
+- Updated dependencies [[`aac1eae`](https://github.com/lupinum-dev/better-convex/commit/aac1eaecf94b3ba05b3b4907567ae974a72300a0)]:
+  - @lupinum/better-convex-functions@0.1.0-rc.1
+
 ## 0.1.0-rc.0
 
 ### Minor Changes
