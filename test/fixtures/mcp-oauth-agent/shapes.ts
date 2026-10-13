@@ -19,7 +19,8 @@ export const setup = internalMutation({
   handler: async (ctx, { email }) => {
     const user = await ctx.db
       .query('users')
-      .withIndex('by_email', (q) => q.eq('email', email))
+      // The starter has no email index; a test fixture may scan its few users.
+      .filter((q) => q.eq(q.field('email'), email))
       .unique()
     if (!user?.active) throw new Error('SHAPES_USER_NOT_FOUND')
     const organizationId = await ctx.db.insert('organizations', { name: 'Shapes' })

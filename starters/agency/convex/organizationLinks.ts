@@ -11,11 +11,12 @@ export const revoke = mutation({
     clientOrganizationId: v.id('organizations'),
   },
   handler: async (ctx, args) => {
+    // Authenticate first, so an anonymous caller cannot learn which organization ids exist.
+    const user = await requireCurrentUser(ctx)
     await Promise.all([
       requireOrganizationKind(ctx, args.agencyOrganizationId, 'agency'),
       requireOrganizationKind(ctx, args.clientOrganizationId, 'client'),
     ])
-    const user = await requireCurrentUser(ctx)
     const memberships = await Promise.all(
       [args.agencyOrganizationId, args.clientOrganizationId].map(async (organizationId) => {
         return await ctx.db
@@ -70,8 +71,8 @@ export const listClients = query({
     agencyOrganizationId: v.id('organizations'),
   },
   handler: async (ctx, args) => {
-    await requireOrganizationKind(ctx, args.agencyOrganizationId, 'agency')
     await requireOrgMember(ctx, args.agencyOrganizationId)
+    await requireOrganizationKind(ctx, args.agencyOrganizationId, 'agency')
     const links = await ctx.db
       .query('organizationLinks')
       .withIndex('by_agency_status', (q) =>

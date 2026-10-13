@@ -58,6 +58,8 @@ export async function requireDelegatedClientAccess(
   },
   minimumAgencyRole: Role = 'member',
 ) {
+  // Authenticate first, so an anonymous caller cannot learn which organization ids exist.
+  await requireCurrentUser(ctx)
   await Promise.all([
     requireOrganizationKind(ctx, args.agencyOrganizationId, 'agency'),
     requireOrganizationKind(ctx, args.clientOrganizationId, 'client'),

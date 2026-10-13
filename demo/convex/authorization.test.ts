@@ -160,9 +160,9 @@ describe('demo backend authorization', () => {
     await asOwner.mutation(api.feed.add, { content: 'owner feed', type: 'message' })
     await asOwner.mutation(api.messages.add, { content: 'owner message' })
 
-    // tasks.list, feed, and messages are an authenticated shared-demo surface,
+    // tasks.listShared, feed, and messages are an authenticated shared-demo surface,
     // so cross-user denial is intentionally N/A. listMine remains private.
-    expect(await asOther.query(api.tasks.list, {})).toHaveLength(1)
+    expect(await asOther.query(api.tasks.listShared, {})).toHaveLength(1)
     expect(await asOther.query(api.feed.list, {})).toHaveLength(1)
     expect(
       (
@@ -213,7 +213,7 @@ describe('demo backend authorization', () => {
       })
     })
 
-    expect(await t.query(api.tasks.list, {})).toEqual([])
+    expect(await t.query(api.tasks.listShared, {})).toEqual([])
     expect(await t.query(api.feed.list, {})).toEqual([])
     expect(await t.query(api.feed.listFiltered, {})).toEqual([])
     expect(

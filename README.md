@@ -92,6 +92,8 @@ export const list = query({
 })
 ```
 
+This query is public on purpose. Anyone can call it. Add authentication and an owner check before you store real data.
+
 Show it on a page:
 
 ```vue [app/pages/index.vue]

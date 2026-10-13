@@ -173,7 +173,7 @@ const activityLabel = {
           v-model="form.password"
           type="password"
           required
-          minlength="8"
+          minlength="15"
           autocomplete="current-password"
       /></label>
       <p v-if="authError" role="alert">{{ authError }}</p>

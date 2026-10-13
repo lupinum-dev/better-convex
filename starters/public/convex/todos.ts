@@ -2,6 +2,9 @@ import { ConvexError, v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 
+// Public on purpose: anyone can read, create, toggle, and delete any todo.
+// Do not copy this for user data. Store an owner on each row and check it in every function.
+
 const todoValidator = v.object({
   _id: v.id('todos'),
   _creationTime: v.number(),

@@ -67,7 +67,8 @@ application ceremony that proves authorization from both tenant sides.
    `SITE_URL` is the Nuxt origin. If you run Nuxt on another port, change it
    here and in the next step.
 
-4. Set the auth origin and both independent secrets in Convex:
+4. Set the auth origin and both independent secrets in Convex. Set `SITE_URL`
+   in Convex before you sign up: the confirmation mail needs it.
 
    ```bash
    export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"

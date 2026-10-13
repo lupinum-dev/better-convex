@@ -36,9 +36,9 @@ The canonical B2B SaaS baseline built on the Better Auth Organization plugin
 with static roles (`owner`/`admin`/`member`/`viewer`) and teams.
 
 - **Owns:** product tables (`projects`, `auditEvents`, a rebuildable `users`
-  projection) keyed by Better Auth string IDs. Backend authorization delegates
-  to `auth.api.hasPermission` and reads roles from the Better Auth `member` row
-  (`convex/lib/authz.ts`).
+  projection) keyed by Better Auth string IDs. Backend authorization reads
+  the role from the Better Auth `member` row and checks it against the shared static role table
+  (`convex/lib/authz.ts`). Only `cancelInvitation` calls `auth.api.hasPermission`.
 - **Does not own:** organizations, members, roles, invitations, or teams — all
   live in the Better Auth component. There is no app-owned `organizations` table
   and no `role` column on `users`. Enforced by
