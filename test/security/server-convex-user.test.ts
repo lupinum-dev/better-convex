@@ -125,6 +125,20 @@ describe('getConvexUser and requireConvexUser', () => {
     expect(responseHeaders(anonymous)).toEqual({ Vary: 'Cookie' })
   })
 
+  it('leave the response alone once its headers are sent (SSE, streaming)', async () => {
+    exchangeResponds(200, { token: USER_JWT })
+    const event = createEvent(SESSION_COOKIE)
+    const res = event.node.res as unknown as Record<string, unknown>
+    res.headersSent = true
+    // Node throws ERR_HTTP_HEADERS_SENT when a header is set after the flush.
+    res.setHeader = () => {
+      throw Object.assign(new Error('headers sent'), { code: 'ERR_HTTP_HEADERS_SENT' })
+    }
+
+    await expect(getConvexUser(event)).resolves.toMatchObject({ id: 'user-1' })
+    expect(responseHeaders(event)).toEqual({})
+  })
+
   it('exchange the session at most once per request and forward only Better Auth cookies', async () => {
     exchangeResponds(200, { token: USER_JWT })
     const event = createEvent(`${PRIVATE_COOKIE}; ${SESSION_COOKIE}`)
