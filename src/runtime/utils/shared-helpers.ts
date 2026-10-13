@@ -78,7 +78,11 @@ function parseUniqueCookieHeader(
     if (cookies.has(pair.name)) duplicated.add(pair.name)
     cookies.set(pair.name, pair)
   }
-  for (const name of duplicated) cookies.delete(name)
+  for (const name of duplicated) {
+    cookies.delete(name)
+    // Name only: the values are attacker-controlled.
+    console.warn(`[better-convex] AUTH_COOKIE_DUPLICATE_DROPPED name=${name}`)
+  }
   return cookies
 }
 

@@ -3,7 +3,7 @@ import {
   getSessionCookie as getPinnedSessionCookie,
   parseCookies as parsePinnedCookies,
 } from 'better-auth/cookies'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { getSessionCookieFlagViolation } from '../../src/runtime/shared/auth-cookie'
 import {
@@ -99,10 +99,16 @@ describe('configuration and cookie security regressions', () => {
   it('drops an auth cookie name that appears twice instead of guessing which one wins', () => {
     // A sibling subdomain can plant a second cookie of the same name (cookie
     // tossing). Parsers disagree on the winner, so neither value is trusted.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const cookie =
       'better-auth.session_token=planted; better-auth.session_token=real; better-auth.state=first; better-auth.state=second; better-auth.two_factor=once'
     expect(getBetterAuthSessionToken(cookie)).toBeNull()
     expect(filterBetterAuthCookies(cookie)).toBe('better-auth.two_factor=once')
+    expect(warn).toHaveBeenCalledWith(
+      '[better-convex] AUTH_COOKIE_DUPLICATE_DROPPED name=better-auth.session_token',
+    )
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('planted')
+    warn.mockRestore()
 
     // A duplicated secure cookie must not fall back to the unprefixed one.
     expect(

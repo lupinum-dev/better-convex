@@ -867,8 +867,11 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
   it('rejects a weak BCN_AUTH_PROXY_IP_SECRET whatever NODE_ENV says', async () => {
     // Vitest runs with NODE_ENV=test: the check must not depend on production.
     expect(process.env.NODE_ENV).not.toBe('production')
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'too-short-secret')
     await expect(createAuth(database()).$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    expect(error).toHaveBeenCalledWith('[better-convex] AUTH_OAUTH_PROXY_SECRET_INVALID')
+    error.mockRestore()
 
     vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'a-strong-enough-secret-of-32-bytes!')
     await expect(createAuth(database()).$context).resolves.toBeDefined()
@@ -877,7 +880,10 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
   it('requires BCN_AUTH_PROXY_IP_SECRET unless SITE_URL is loopback', async () => {
     vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', '')
     vi.stubEnv('SITE_URL', 'https://app.example.com')
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     await expect(createAuth(database()).$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    expect(error).toHaveBeenCalledWith('[better-convex] AUTH_OAUTH_PROXY_SECRET_MISSING')
+    error.mockRestore()
 
     vi.stubEnv('SITE_URL', 'http://localhost:3000')
     await expect(createAuth(database()).$context).resolves.toBeDefined()

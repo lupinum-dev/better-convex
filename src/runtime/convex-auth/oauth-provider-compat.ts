@@ -1,6 +1,7 @@
 import type { BetterAuthPlugin } from 'better-auth'
 import { APIError } from 'better-auth/api'
 
+import { requireProxyIpSecret } from '../shared/client-ip'
 import {
   OAuthSecurityError,
   assertSafeStoredOAuthClient,
@@ -118,8 +119,14 @@ export function validatePinnedOAuthProviderRuntime(
   // one. Convex does not reliably set NODE_ENV, so it decides nothing here.
   const proxySecret = process.env.BCN_AUTH_PROXY_IP_SECRET
   if (proxySecret) {
-    if (proxySecret.length < 32) invalidConfiguration()
+    try {
+      requireProxyIpSecret(proxySecret)
+    } catch {
+      console.error('[better-convex] AUTH_OAUTH_PROXY_SECRET_INVALID')
+      invalidConfiguration()
+    }
   } else if (!isLoopbackSiteUrl(process.env.SITE_URL)) {
+    console.error('[better-convex] AUTH_OAUTH_PROXY_SECRET_MISSING')
     invalidConfiguration()
   }
   return providerOptions
