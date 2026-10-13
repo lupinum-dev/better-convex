@@ -1,0 +1,704 @@
+/// <reference types="vite/client" />
+import { convexTest } from 'convex-test'
+import { componentsGeneric, defineSchema, httpRouter } from 'convex/server'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
+import authSchema from '../../src/runtime/convex-auth/component/schema'
+import type {
+  BetterConvexAuthEmail,
+  CreateBetterConvexAuthOptions,
+} from '../../src/runtime/convex-auth/create-better-convex-auth'
+import organizationSchema from '../fixtures/better-auth-local-component/convex/betterAuth/schema'
+import twoFactorSchema from '../fixtures/better-auth-two-factor/convex/betterAuth/schema'
+
+const restoreHostEnvironment = await vi.hoisted(async () => {
+  const { env } = await import('node:process')
+  const previous = { NODE_ENV: env.NODE_ENV, TEST: env.TEST }
+  env.NODE_ENV = 'production'
+  env.TEST = 'false'
+  return () => {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) Reflect.deleteProperty(env, name)
+      else env[name] = value
+    }
+  }
+})
+const { createBetterConvexAuth } =
+  await import('../../src/runtime/convex-auth/create-better-convex-auth')
+afterAll(restoreHostEnvironment)
+
+const rootModules = import.meta.glob('../fixtures/jwks-rotation/convex/**/*.ts')
+const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
+const twoFactorModules = import.meta.glob(
+  '../fixtures/better-auth-two-factor/convex/betterAuth/**/*.ts',
+)
+const organizationModules = import.meta.glob(
+  '../fixtures/better-auth-local-component/convex/betterAuth/**/*.ts',
+)
+const components = componentsGeneric() as unknown as {
+  sessionAuth: ComponentApi<'sessionAuth'>
+}
+
+const VICTIM = 'victim@example.test'
+const ATTACKER_PW = 'attacker-chosen-password-1'
+const VICTIM_PW = 'victim-chosen-password-22'
+
+type Opts = Omit<CreateBetterConvexAuthOptions<never>, 'email'> & {
+  _twoFactorSchema?: boolean
+  _organizationSchema?: boolean
+  _noEmailHook?: boolean
+}
+
+let ipCounter = 0
+function freshIp() {
+  ipCounter += 1
+  return `198.51.${Math.floor(ipCounter / 250)}.${(ipCounter % 250) + 1}`
+}
+
+function setup(options: Opts) {
+  const { _twoFactorSchema, _organizationSchema, _noEmailHook, ...authOptions } = options
+  const test = convexTest(defineSchema({}), rootModules)
+  test.registerComponent(
+    'sessionAuth',
+    _twoFactorSchema ? twoFactorSchema : _organizationSchema ? organizationSchema : authSchema,
+    _twoFactorSchema ? twoFactorModules : _organizationSchema ? organizationModules : authModules,
+  )
+  const mails: BetterConvexAuthEmail[] = []
+  const auth = createBetterConvexAuth(components.sessionAuth, {
+    ...(_noEmailHook
+      ? {}
+      : {
+          email: async (_ctx: unknown, message: BetterConvexAuthEmail) => {
+            mails.push(message)
+          },
+        }),
+    ...(authOptions as object),
+  } as never)
+  const http = httpRouter()
+  auth.registerRoutes(http)
+
+  function client(fixedIp?: string) {
+    let cookie = ''
+    async function call(
+      method: 'GET' | 'POST',
+      path: string,
+      body?: Record<string, unknown>,
+      ip = fixedIp ?? freshIp(),
+    ) {
+      const response = await test.action(async (ctx) => {
+        const url = new URL(`https://deployment.convex.site/api/auth${path}`)
+        const route = http.lookup(url.pathname, method)
+        if (!route) throw new Error(`no route ${method} ${path}`)
+        const handler = route[0] as unknown as {
+          _handler: (ctx: unknown, request: Request) => Promise<Response>
+        }
+        const res = await handler._handler(
+          { ...ctx, meta: { getRequestMetadata: async () => ({ ip }) } },
+          new Request(url, {
+            method,
+            headers: {
+              'content-type': 'application/json',
+              Origin: process.env.SITE_URL ?? 'https://app.example.test',
+              cookie,
+            },
+            ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
+            redirect: 'manual',
+          }),
+        )
+        const text = await res.text()
+        let parsed: unknown = text
+        try {
+          parsed = JSON.parse(text)
+        } catch {
+          // not JSON: keep the text
+        }
+        return {
+          status: res.status,
+          body: parsed,
+          cookies: res.headers.getSetCookie(),
+          location: res.headers.get('location') ?? '',
+        }
+      })
+      for (const raw of response.cookies) {
+        const [pair] = raw.split(';')
+        const [name, ...rest] = pair!.split('=')
+        const value = rest.join('=')
+        const jar = new Map(
+          cookie
+            .split('; ')
+            .filter(Boolean)
+            .map((p) => [p.split('=')[0]!, p] as const),
+        )
+        if (value === '' || /max-age=0/i.test(raw)) jar.delete(name!)
+        else jar.set(name!, pair!)
+        cookie = [...jar.values()].join('; ')
+      }
+      return response
+    }
+    return {
+      post: (path: string, body: Record<string, unknown>, ip?: string) =>
+        call('POST', path, body, ip),
+      get: (path: string, ip?: string) => call('GET', path, undefined, ip),
+      hasSession: async () => {
+        const res = await call('GET', '/get-session')
+        return Boolean(
+          res.body && typeof res.body === 'object' && (res.body as { user?: unknown }).user,
+        )
+      },
+      convexToken: async () => {
+        const res = await call('GET', '/convex/token')
+        return res.status === 200 && Boolean((res.body as { token?: unknown } | null)?.token)
+      },
+    }
+  }
+  const lastMail = (type: BetterConvexAuthEmail['type'], to?: string) =>
+    [...mails].reverse().find((m) => m.type === type && (!to || m.to === to))
+  const users = () =>
+    test.query(components.sessionAuth.adapter.findMany, {
+      model: 'user',
+      paginationOpts: { cursor: null, numItems: 50 },
+    })
+  const accounts = () =>
+    test.query(components.sessionAuth.adapter.findMany, {
+      model: 'account',
+      paginationOpts: { cursor: null, numItems: 50 },
+    })
+  return { test, auth, client, mails, lastMail, users, accounts }
+}
+
+function useAuthEnvironment() {
+  beforeEach(() => {
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.convex.site')
+    vi.stubEnv('BETTER_AUTH_SECRETS', `0:${'test-secret'.repeat(4)}`)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+  })
+}
+
+const realFetch = globalThis.fetch
+/** Answer the GitHub token exchange; every other request goes out unchanged. */
+function stubGithubToken() {
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input)
+    if (url.startsWith('https://github.com/login/oauth/access_token')) {
+      return Response.json({ access_token: 'gho_test', token_type: 'bearer', scope: 'user:email' })
+    }
+    return realFetch(input as RequestInfo, init)
+  })
+}
+
+/** A github provider that reports `VICTIM` with the given verification state. */
+const github = (emailVerified: boolean) => ({
+  github: {
+    clientId: 'id',
+    clientSecret: 'secret',
+    getUserInfo: async () => ({
+      user: { id: 'gh-1', name: 'Gh', email: VICTIM, image: undefined, emailVerified },
+      data: { id: 'gh-1' },
+    }),
+  },
+})
+
+/** Run a real social sign-in: start, then the provider's callback. */
+async function socialSignIn(
+  client: ReturnType<ReturnType<typeof setup>['client']>,
+  errorCallbackURL = 'https://app.example.test/',
+) {
+  const start = await client.post('/sign-in/social', {
+    provider: 'github',
+    callbackURL: 'https://app.example.test/',
+    errorCallbackURL,
+  })
+  const state = new URL((start.body as { url: string }).url).searchParams.get('state')
+  return await client.get(`/callback/github?code=abc&state=${state}`)
+}
+
+describe('safe auth defaults', () => {
+  useAuthEnvironment()
+
+  it('keeps password sign-in off unless the app names emailAndPassword', async () => {
+    const s = setup({ emailOTP: {} })
+    const attacker = s.client()
+    const up = await attacker.post('/sign-up/email', {
+      name: 'x',
+      email: VICTIM,
+      password: ATTACKER_PW,
+    })
+    expect(up.status).toBeGreaterThanOrEqual(400)
+    expect((await s.users()).page).toHaveLength(0)
+    const inn = await attacker.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(inn.status).toBeGreaterThanOrEqual(400)
+    expect(await attacker.hasSession()).toBe(false)
+  })
+
+  it('requires a verified address for password sign-in when emailAndPassword is an object', async () => {
+    const s = setup({ emailAndPassword: {} })
+    await s.client().post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    const blocked = await s.client().post('/sign-in/email', {
+      email: VICTIM,
+      password: ATTACKER_PW,
+    })
+    expect(blocked.status).toBe(403)
+    expect(s.lastMail('verify-email', VICTIM)).toBeDefined()
+  })
+
+  it('lets an app choose to sign in before verification with an explicit false', async () => {
+    const s = setup({ emailAndPassword: { requireEmailVerification: false } })
+    await s.client().post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    const ok = await s.client().post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(ok.status).toBe(200)
+  })
+
+  it('ends every earlier session when a password is reset, unless the app opts out', async () => {
+    const run = async (revoke: boolean | undefined) => {
+      const s = setup({
+        emailAndPassword: {
+          passwordReset: true,
+          requireEmailVerification: false,
+          ...(revoke === undefined ? {} : { revokeSessionsOnPasswordReset: revoke }),
+        },
+      })
+      const squatter = s.client()
+      await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+      await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+      await s.client().post('/request-password-reset', { email: VICTIM })
+      const mail = s.lastMail('reset-password', VICTIM) as { token: string }
+      const done = await s
+        .client()
+        .post('/reset-password', { token: mail.token, newPassword: VICTIM_PW })
+      expect(done.status).toBe(200)
+      return await squatter.hasSession()
+    }
+    expect(await run(undefined)).toBe(false)
+    expect(await run(false)).toBe(true)
+  })
+
+  it('ends other sessions when a signed-in person changes the password', async () => {
+    const s = setup({ emailAndPassword: { requireEmailVerification: false } })
+    const other = s.client()
+    await other.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await other.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const me = s.client()
+    await me.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const changed = await me.post('/change-password', {
+      currentPassword: ATTACKER_PW,
+      newPassword: VICTIM_PW,
+    })
+    expect(changed.status).toBe(200)
+    expect(await me.hasSession()).toBe(true)
+    expect(await other.hasSession()).toBe(false)
+  })
+
+  it('stores email codes hashed', async () => {
+    const s = setup({ emailOTP: {} })
+    await s.client().post('/email-otp/send-verification-otp', { email: VICTIM, type: 'sign-in' })
+    const otp = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
+    const rows = await s.test.query(components.sessionAuth.adapter.findMany, {
+      model: 'verification',
+      paginationOpts: { cursor: null, numItems: 20 },
+    })
+    expect(rows.page.length).toBeGreaterThan(0)
+    for (const row of rows.page) expect(String((row as { value: string }).value)).not.toContain(otp)
+  })
+
+  it('refuses an unverified user who accepts an organization invitation, then lets them in once verified', async () => {
+    const s = setup({
+      _organizationSchema: true,
+      organization: {},
+      emailOTP: {},
+      emailAndPassword: { requireEmailVerification: false },
+    })
+    const owner = s.client()
+    await owner.post('/sign-up/email', {
+      name: 'Owner',
+      email: 'owner@example.test',
+      password: VICTIM_PW,
+    })
+    await owner.post('/sign-in/email', { email: 'owner@example.test', password: VICTIM_PW })
+    const organization = (await owner.post('/organization/create', { name: 'Org', slug: 'org' }))
+      .body as { id: string }
+    await owner.post('/organization/invite-member', {
+      email: VICTIM,
+      role: 'member',
+      organizationId: organization.id,
+    })
+    const invitation = s.lastMail('organization-invitation', VICTIM) as { invitationId: string }
+
+    const invitee = s.client()
+    await invitee.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await invitee.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const refused = await invitee.post('/organization/accept-invitation', {
+      invitationId: invitation.invitationId,
+    })
+    expect(refused.status).toBe(403)
+
+    await invitee.post('/email-otp/send-verification-otp', {
+      email: VICTIM,
+      type: 'email-verification',
+    })
+    const otp = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
+    await invitee.post('/email-otp/verify-email', { email: VICTIM, otp })
+    await invitee.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const accepted = await invitee.post('/organization/accept-invitation', {
+      invitationId: invitation.invitationId,
+    })
+    expect(accepted.status).toBe(200)
+  })
+
+  it('rejects emailOTP.changeEmail and unknown emailOTP keys at construction', () => {
+    expect(() =>
+      createBetterConvexAuth(components.sessionAuth, {
+        email: async () => {},
+        emailOTP: { changeEmail: { enabled: true } },
+      } as never),
+    ).toThrow(/changeEmail/)
+    expect(() =>
+      createBetterConvexAuth(components.sessionAuth, {
+        email: async () => {},
+        emailOTP: { surprise: true },
+      } as never),
+    ).toThrow(/surprise/)
+  })
+})
+
+describe('auth email without an email hook', () => {
+  useAuthEnvironment()
+
+  it('writes codes to the log on a loopback SITE_URL and the code signs in', async () => {
+    vi.stubEnv('SITE_URL', 'http://localhost:3000')
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const s = setup({ _noEmailHook: true, emailOTP: {} })
+    const client = s.client()
+    await client.post('/email-otp/send-verification-otp', { email: VICTIM, type: 'sign-in' })
+    const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes(VICTIM))
+    const otp = /code (\d+)/.exec(line ?? '')?.[1]
+    expect(otp).toBeDefined()
+    const res = await client.post('/sign-in/email-otp', { email: VICTIM, otp })
+    expect(res.status).toBe(200)
+  })
+
+  it('refuses to start a non-loopback deployment that must send mail without a hook', () => {
+    const build = (options: object) => () =>
+      createBetterConvexAuth(components.sessionAuth, options as never)
+    expect(build({ emailOTP: {} })).toThrow(/"email" option/)
+    expect(build({ emailAndPassword: {} })).toThrow(/"email" option/)
+    expect(
+      build({ emailAndPassword: { requireEmailVerification: false, passwordReset: true } }),
+    ).toThrow(/"email" option/)
+    expect(build({ organization: {} })).toThrow(/"email" option/)
+    // No mail needed: no error.
+    expect(build({})).not.toThrow()
+    expect(build({ emailAndPassword: { requireEmailVerification: false } })).not.toThrow()
+  })
+
+  it('does not treat a lookalike host as local', () => {
+    for (const siteUrl of ['https://localhost.evil.test', 'https://app.example.test']) {
+      vi.stubEnv('SITE_URL', siteUrl)
+      expect(() =>
+        createBetterConvexAuth(components.sessionAuth, { emailOTP: {} } as never),
+      ).toThrow(/"email" option/)
+    }
+  })
+
+  it('does not treat NODE_ENV=development as local when SITE_URL is public', () => {
+    vi.stubEnv('NODE_ENV', 'development')
+    expect(() => createBetterConvexAuth(components.sessionAuth, { emailOTP: {} } as never)).toThrow(
+      /"email" option/,
+    )
+  })
+
+  it('counts only canonical loopback spellings as local', () => {
+    const build = () => createBetterConvexAuth(components.sessionAuth, { emailOTP: {} } as never)
+    for (const siteUrl of [
+      'http://127.1',
+      'http://0x7f000001',
+      'http://LOCALHOST:3000',
+      'http://localhost:3000/app',
+      'http://user@localhost:3000',
+      'http://app.localhost:3000',
+    ]) {
+      vi.stubEnv('SITE_URL', siteUrl)
+      expect(build, siteUrl).toThrow(/"email" option/)
+    }
+    for (const siteUrl of ['http://localhost:3000', 'http://127.0.0.1:4567', 'http://[::1]:3000']) {
+      vi.stubEnv('SITE_URL', siteUrl)
+      expect(build, siteUrl).not.toThrow()
+    }
+  })
+
+  it('does not use the dev outbox when siteOrigins lists other origins', () => {
+    vi.stubEnv('SITE_URL', 'http://localhost:3000')
+    expect(() =>
+      createBetterConvexAuth(components.sessionAuth, {
+        emailOTP: {},
+        siteOrigins: ['https://app.example.test'],
+      } as never),
+    ).toThrow(/"email" option/)
+  })
+  it('loads with SITE_URL unset, then fails sending mail with an error that names the fix', async () => {
+    vi.stubEnv('SITE_URL', '')
+    // The first `convex dev` push happens before SITE_URL is set: it must succeed.
+    const s = setup({ _noEmailHook: true, emailAndPassword: {}, emailOTP: {} })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const logged = () =>
+      error.mock.calls
+        .flat()
+        .map((arg) => (arg instanceof Error ? arg.message : JSON.stringify(arg)))
+        .join('\n')
+    // Without SITE_URL no request can run at all, and the log names SITE_URL.
+    await expect(s.test.action(async (ctx) => await s.auth.createAuth(ctx))).rejects.toThrow(
+      /AUTH_CONFIG_INVALID/,
+    )
+    expect(logged()).toMatch(/SITE_URL is required/)
+    // SITE_URL set later, still no email hook: the send fails and says what to add.
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    await s.client().post('/sign-up/email', { name: 'x', email: VICTIM, password: VICTIM_PW })
+    expect(logged()).toMatch(/"email" hook/)
+    expect(logged()).toMatch(/SITE_URL is not a loopback origin/)
+  })
+})
+
+describe('email verification ends earlier sessions', () => {
+  useAuthEnvironment()
+
+  it('ends a squatter session when the owner verifies with an email code', async () => {
+    const s = setup({
+      emailOTP: {},
+      emailAndPassword: { requireEmailVerification: false },
+    })
+    const squatter = s.client()
+    await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(await squatter.hasSession()).toBe(true)
+
+    const owner = s.client()
+    await owner.post('/email-otp/send-verification-otp', {
+      email: VICTIM,
+      type: 'email-verification',
+    })
+    const otp = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
+    const verified = await owner.post('/email-otp/verify-email', { email: VICTIM, otp })
+    expect(verified.status).toBe(200)
+    expect((await s.users()).page[0]).toMatchObject({ emailVerified: true })
+    expect(await squatter.hasSession()).toBe(false)
+  })
+
+  it('ends a squatter session when the owner opens the verification link, and keeps the auto sign-in', async () => {
+    const s = setup({
+      emailAndPassword: { requireEmailVerification: false },
+      emailVerification: { autoSignInAfterVerification: true },
+    })
+    const squatter = s.client()
+    await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(await squatter.hasSession()).toBe(true)
+    await squatter.post('/send-verification-email', { email: VICTIM })
+
+    const mail = s.lastMail('verify-email', VICTIM) as { url: string }
+    const url = new URL(mail.url)
+    const owner = s.client()
+    const click = await owner.get(`${url.pathname.replace('/api/auth', '')}${url.search}`)
+    expect([200, 302]).toContain(click.status)
+    expect((await s.users()).page[0]).toMatchObject({ emailVerified: true })
+    expect(await squatter.hasSession()).toBe(false)
+    expect(await owner.hasSession()).toBe(true)
+  })
+
+  it('keeps the sign-in OTP mitigation: a squatter password is gone after an OTP sign-in', async () => {
+    const s = setup({ emailOTP: {}, emailAndPassword: { requireEmailVerification: false } })
+    const squatter = s.client()
+    await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const owner = s.client()
+    await owner.post('/email-otp/send-verification-otp', { email: VICTIM, type: 'sign-in' })
+    const otp = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
+    expect((await owner.post('/sign-in/email-otp', { email: VICTIM, otp })).status).toBe(200)
+    expect(await owner.hasSession()).toBe(true)
+    expect(await squatter.hasSession()).toBe(false)
+    const retry = await s.client().post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(retry.status).not.toBe(200)
+  })
+})
+
+describe('social provider options', () => {
+  useAuthEnvironment()
+
+  it('rejects overrideUserInfoOnSignIn in a static socialProviders object', () => {
+    expect(() =>
+      createBetterConvexAuth(components.sessionAuth, {
+        socialProviders: {
+          github: { clientId: 'a', clientSecret: 'b', overrideUserInfoOnSignIn: true },
+        },
+      } as never),
+    ).toThrow(/overrideUserInfoOnSignIn/)
+  })
+
+  it('rejects overrideUserInfoOnSignIn in the function form when the auth is built', async () => {
+    const s = setup({
+      socialProviders: () => ({
+        github: { clientId: 'a', clientSecret: 'b', overrideUserInfoOnSignIn: true },
+      }),
+    } as never)
+    await expect(s.test.action(async (ctx) => await s.auth.createAuth(ctx))).rejects.toThrow(
+      /overrideUserInfoOnSignIn|AUTH_CONFIG/,
+    )
+  })
+})
+
+describe('email code password reset', () => {
+  useAuthEnvironment()
+  const resetPaths = ['/email-otp/request-password-reset', '/email-otp/reset-password']
+
+  it('is closed unless emailAndPassword.passwordReset is true', async () => {
+    const s = setup({ emailOTP: {}, emailAndPassword: {} })
+    for (const path of [...resetPaths, '/forget-password/email-otp']) {
+      const res = await s.client().post(path, { email: VICTIM, otp: '123456', password: VICTIM_PW })
+      expect(res.status, path).toBe(404)
+    }
+    expect(s.lastMail('email-otp', VICTIM)).toBeUndefined()
+  })
+
+  it('works when the app names passwordReset', async () => {
+    const s = setup({ emailOTP: {}, emailAndPassword: { passwordReset: true } })
+    const res = await s.client().post('/email-otp/request-password-reset', { email: VICTIM })
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('two-factor combinations', () => {
+  useAuthEnvironment()
+
+  it('rejects twoFactor together with emailOTP or socialProviders, because they skip the challenge', () => {
+    const build = (options: object) => () =>
+      createBetterConvexAuth(components.sessionAuth, {
+        email: async () => {},
+        ...options,
+      } as never)
+    expect(build({ twoFactor: {}, emailOTP: {} })).toThrow(/twoFactor.*emailOTP/)
+    expect(
+      build({ twoFactor: {}, socialProviders: { github: { clientId: 'a', clientSecret: 'b' } } }),
+    ).toThrow(/twoFactor.*socialProviders/)
+    expect(build({ twoFactor: {}, socialProviders: () => ({}) })).toThrow(/socialProviders/)
+    expect(build({ twoFactor: {}, emailAndPassword: {} })).not.toThrow()
+    expect(build({ emailOTP: {}, socialProviders: {}, twoFactor: false })).not.toThrow()
+  })
+
+  it('rejects twoFactor with auto sign-in after verification when verification is not required', () => {
+    const build = (options: object) => () =>
+      createBetterConvexAuth(components.sessionAuth, {
+        email: async () => {},
+        twoFactor: {},
+        ...options,
+      } as never)
+    expect(
+      build({
+        emailAndPassword: { requireEmailVerification: false },
+        emailVerification: { autoSignInAfterVerification: true },
+      }),
+    ).toThrow(/autoSignInAfterVerification/)
+    expect(
+      build({
+        emailAndPassword: {},
+        emailVerification: { autoSignInAfterVerification: true },
+      }),
+    ).not.toThrow()
+    expect(build({ emailAndPassword: { requireEmailVerification: false } })).not.toThrow()
+  })
+})
+
+describe('users with an unverified email', () => {
+  useAuthEnvironment()
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('refuses an unverified user from a social callback and creates no row', async () => {
+    stubGithubToken()
+    const s = setup({ emailAndPassword: {}, socialProviders: github(false) } as never)
+    const client = s.client()
+    await socialSignIn(client)
+    expect((await s.users()).page).toHaveLength(0)
+    expect(await client.hasSession()).toBe(false)
+  })
+
+  it('sends the browser back to the app with an error code when the social email is unverified', async () => {
+    stubGithubToken()
+    const s = setup({ emailAndPassword: {}, socialProviders: github(false) } as never)
+    const res = await socialSignIn(s.client(), 'https://app.example.test/signin-failed')
+    expect(res.status).toBe(302)
+    expect(res.location).toContain('https://app.example.test/signin-failed')
+    expect(res.location).toContain('error=AUTH_USER_CREATE_UNVERIFIED_EMAIL')
+  })
+
+  it('signs in a social user whose email the provider verified', async () => {
+    stubGithubToken()
+    const s = setup({ emailAndPassword: {}, socialProviders: github(true) } as never)
+    const client = s.client()
+    await socialSignIn(client)
+    expect((await s.users()).page).toHaveLength(1)
+    expect(await client.hasSession()).toBe(true)
+  })
+
+  it('still lets password sign-up create an unverified user and send the verification mail', async () => {
+    const s = setup({ emailAndPassword: {} })
+    const res = await s
+      .client()
+      .post('/sign-up/email', { name: 'x', email: VICTIM, password: VICTIM_PW })
+    expect(res.status).toBe(200)
+    expect((await s.users()).page[0]).toMatchObject({ emailVerified: false })
+    expect(s.lastMail('verify-email', VICTIM)).toBeDefined()
+  })
+
+  it('does not reach beforeUserCreate for a refused unverified social user', async () => {
+    stubGithubToken()
+    const seen: string[] = []
+    const s = setup({
+      emailAndPassword: {},
+      socialProviders: github(false),
+      beforeUserCreate: async ({ user }: { user: { email: string } }) => {
+        seen.push(user.email)
+        return { allowed: true }
+      },
+    } as never)
+    await socialSignIn(s.client())
+    expect(seen).toEqual([])
+  })
+})
+
+describe('beforeUserCreate email', () => {
+  useAuthEnvironment()
+
+  async function otpSignIn(s: ReturnType<typeof setup>, email: string) {
+    const client = s.client()
+    await client.post('/email-otp/send-verification-otp', { email, type: 'sign-in' })
+    const otp = (s.lastMail('email-otp', email) as { otp: string }).otp
+    return await client.post('/sign-in/email-otp', { email, otp })
+  }
+
+  it('refuses a replacement email that is not the proven address', async () => {
+    const s = setup({
+      emailOTP: {},
+      beforeUserCreate: async ({ user }: { user: { email: string } }) => ({
+        allowed: true,
+        user: { email: user.email.replace('alias+', '') },
+      }),
+    } as never)
+    const res = await otpSignIn(s, 'alias+victim2@example.test')
+    expect(res.status).not.toBe(200)
+    expect((await s.users()).page).toHaveLength(0)
+  })
+
+  it('stores a mixed-case replacement in lower case so the next sign-in finds the user', async () => {
+    const s = setup({
+      emailOTP: {},
+      beforeUserCreate: async () => ({ allowed: true, user: { email: 'Mixed@Example.test' } }),
+    } as never)
+    expect((await otpSignIn(s, 'mixed@example.test')).status).toBe(200)
+    expect((await otpSignIn(s, 'mixed@example.test')).status).toBe(200)
+    expect((await s.users()).page.map((user) => (user as { email: string }).email)).toEqual([
+      'mixed@example.test',
+    ])
+  })
+})

@@ -40,7 +40,10 @@ const components = componentsGeneric() as unknown as {
 }
 const password = 'synthetic-password-for-email-tests'
 
-function setup(capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization') {
+function setup(
+  capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization',
+  { withEmailHook = true } = {},
+) {
   const test = convexTest(defineSchema({}), rootModules)
   if (capability === 'twoFactor') {
     test.registerComponent('sessionAuth', twoFactorSchema, twoFactorModules)
@@ -51,8 +54,8 @@ function setup(capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization') 
   }
   const email = vi.fn<BetterConvexAuthEmailSender>(async () => {})
   const auth = createBetterConvexAuth(components.sessionAuth, {
-    email,
-    emailAndPassword: { passwordReset: true },
+    ...(withEmailHook ? { email } : {}),
+    emailAndPassword: { passwordReset: withEmailHook, requireEmailVerification: false },
     emailVerification: { expiresIn: 300, sendOnSignUp: false },
     ...(capability === 'emailOTP' ? { emailOTP: { expiresIn: 300 } } : {}),
     ...(capability === 'twoFactor'
@@ -63,7 +66,7 @@ function setup(capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization') 
   const http = httpRouter()
   auth.registerRoutes(http)
   let cookie = ''
-  async function request(path: string, body: Record<string, unknown>) {
+  async function request(path: string, body: Record<string, unknown>, expectedStatus = 200) {
     const response = await test.action(async (ctx) => {
       const route = http.lookup(`/api/auth${path}`, 'POST')
       if (!route) throw new Error('Auth route was not registered')
@@ -87,7 +90,7 @@ function setup(capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization') 
     })
     if (response.cookies.length)
       cookie = response.cookies.map((value) => value.split(';')[0]).join('; ')
-    expect(response).toMatchObject({ status: 200 })
+    expect(response).toMatchObject({ status: expectedStatus })
     return response.body
   }
   async function signUp() {
@@ -333,6 +336,13 @@ describe('typed email delivery with real Better Auth', () => {
     })
     if (message.type !== 'two-factor-otp') throw new Error('Expected two-factor message')
     expect(Object.isFrozen(message.user)).toBe(true)
+  })
+
+  it('offers no email code second factor when mail cannot be sent', async () => {
+    const { request, signUp } = setup('twoFactor', { withEmailHook: false })
+    await signUp()
+    await request('/sign-in/email', { email: 'person@example.test', password })
+    await request('/two-factor/enable', { password, method: 'otp' }, 400)
   })
 
   it('delivers an organization invitation with the organization and inviter', async () => {

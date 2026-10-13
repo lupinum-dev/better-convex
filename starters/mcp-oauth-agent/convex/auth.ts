@@ -51,6 +51,13 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
         })
     },
   },
+  // No public sign-up: only people the operator created can sign in. The operator opens sign-up
+  // for a moment with ALLOW_SIGN_UP=true (see the README). There is no mail provider here, so
+  // sign-in does not wait for a verified address; do not decide access by email.
+  emailAndPassword: {
+    disableSignUp: process.env.ALLOW_SIGN_UP !== 'true',
+    requireEmailVerification: false,
+  },
   oauth: { mcp: { scopes: consentScopes(policy), hosts: ['chatgpt', 'claude'] } },
   triggers: {
     user: {

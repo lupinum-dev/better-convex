@@ -11,8 +11,11 @@ export type ConvexAuthRouteDefault = 'public' | 'protected'
 
 /** Build-time authentication options. An object opts the application into auth. */
 export interface ConvexAuthOptions {
-  /** Exact public Nuxt application origin used by the same-origin auth proxy. */
-  origin: string
+  /**
+   * Exact public Nuxt application origin used by the same-origin auth proxy.
+   * Usually `process.env.SITE_URL`; the build fails with a clear error when it is missing.
+   */
+  origin: string | undefined
   /** Optional build-time Better Auth client definition. Never copied to runtime config. */
   client?: string
   /** Trusted ingress-owned header containing exactly one client IP address. */
@@ -115,8 +118,10 @@ export function normalizeConvexAuthConfig(
   }
 
   const options = input as Partial<ConvexAuthOptions>
-  if (typeof options.origin !== 'string') {
-    throw new TypeError('auth.origin must be a non-empty string URL origin')
+  if (typeof options.origin !== 'string' || options.origin === '') {
+    throw new TypeError(
+      'auth.origin is missing. Set SITE_URL (for example SITE_URL=http://localhost:3000 in .env.local) or pass the public origin.',
+    )
   }
   const origin = normalizeAuthOrigin(options.origin, 'auth.origin')
   const trustedClientIpHeader = normalizeTrustedClientIpHeader(options.trustedClientIpHeader)

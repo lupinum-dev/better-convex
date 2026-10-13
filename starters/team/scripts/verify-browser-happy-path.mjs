@@ -229,31 +229,16 @@ async function waitForEnabled(locator, label, timeoutMs = 10_000) {
 
 async function submitSignUpForm(page, args) {
   const form = page.locator('form.auth-form')
-  const submit = form.getByRole('button', { name: 'Create account' })
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await form.waitFor({ state: 'visible', timeout: 20_000 })
-    await form.getByPlaceholder('Your name').fill(args.name)
-    await form.getByPlaceholder('you@example.com').fill(args.email)
-    await form.getByPlaceholder('Min 15 characters').fill(args.password)
-
-    try {
-      await waitForEnabled(submit, 'Create account button', 5_000)
-      await submit.click()
-      return
-    } catch (error) {
-      if (attempt === 2) throw error
-      await delay(500)
-    }
-  }
-}
-
-async function submitSignInForm(page, args) {
-  const form = page.locator('form.auth-form')
-  await page.getByRole('button', { name: 'Sign in' }).click()
-  await form.getByPlaceholder('Your name').waitFor({ state: 'detached', timeout: 10_000 })
+  await form.waitFor({ state: 'visible', timeout: 20_000 })
+  await form.getByPlaceholder('Your name').fill(args.name)
   await form.getByPlaceholder('you@example.com').fill(args.email)
-  await form.getByPlaceholder('Min 15 characters').fill(args.password)
+  const send = form.getByRole('button', { name: 'Send code' })
+  await waitForEnabled(send, 'Send code button')
+  await send.click()
+
+  const code = await waitForDevServerSignInCode(args.email)
+  await form.getByPlaceholder('Six-digit code').fill(code)
   const submit = form.getByRole('button', { name: 'Sign in' })
   await waitForEnabled(submit, 'Sign in button')
   await submit.click()
@@ -333,20 +318,20 @@ async function waitForDevServerInvitationLink(email, timeoutMs = 20_000) {
   throw new Error(`Invitation link for ${email} was not logged within ${timeoutMs}ms`)
 }
 
-async function waitForDevServerVerificationLink(email, timeoutMs = 20_000) {
+async function waitForDevServerSignInCode(email, timeoutMs = 20_000) {
   const started = Date.now()
   const escapedEmail = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const pattern = new RegExp(
-    `Verification link ${escapedEmail}:\\s+(https?:\\/\\/[^\\s']+\\/api\\/auth\\/verify-email\\?[^\\s']+)`,
-  )
+  const pattern = new RegExp(`Sign-in code ${escapedEmail}:\\s+(\\d{6})`)
 
   while (Date.now() - started < timeoutMs) {
-    const match = getDevServerOutput().match(pattern)
-    if (match?.[1]) return match[1]
+    // The newest code wins: the same address signs in more than once.
+    const matches = [...getDevServerOutput().matchAll(new RegExp(pattern, 'g'))]
+    const latest = matches.at(-1)
+    if (latest?.[1]) return latest[1]
     await delay(100)
   }
 
-  throw new Error(`Verification link for ${email} was not logged within ${timeoutMs}ms`)
+  throw new Error(`Sign-in code for ${email} was not logged within ${timeoutMs}ms`)
 }
 
 function isAllowedAuthToken401Console(message, allowAuthToken401) {
@@ -425,14 +410,7 @@ async function completeInvitation(browser, args, failures) {
     await submitSignUpForm(inviteePage, {
       name: args.name,
       email: args.email,
-      password: args.password,
     })
-    await inviteePage
-      .getByRole('heading', { name: 'Verify your email first' })
-      .waitFor({ timeout: 30_000 })
-
-    const verificationUrl = await waitForDevServerVerificationLink(args.email)
-    await inviteePage.goto(verificationUrl, { waitUntil: 'domcontentloaded' })
     await inviteePage
       .getByRole('heading', { name: 'Join an organization' })
       .waitFor({ timeout: 30_000 })
@@ -598,7 +576,6 @@ async function runBrowserHappyPath() {
   const stamp = Date.now()
   const name = `Browser User ${stamp}`
   const email = `starter-browser-${stamp}@example.com`
-  const password = `Starter-${stamp}!`
   const organizationName = `Browser Org ${stamp}`
   const renamedOrganizationName = `Browser Org Renamed ${stamp}`
   const teamName = `Product Team ${stamp}`
@@ -608,15 +585,13 @@ async function runBrowserHappyPath() {
   const inviteEmail = `invite-${stamp}@example.com`
   const acceptedInviteEmail = `accepted-${stamp}@example.com`
   const acceptedInviteName = `Accepted Invite ${stamp}`
-  const acceptedInvitePassword = `Accepted-${stamp}!`
   const rejectedInviteEmail = `rejected-${stamp}@example.com`
   const rejectedInviteName = `Rejected Invite ${stamp}`
-  const rejectedInvitePassword = `Rejected-${stamp}!`
 
   try {
     await page.goto(rootUrl, { waitUntil: 'domcontentloaded' })
     await page.getByRole('heading', { name: 'Organizations' }).waitFor({ timeout: 20_000 })
-    await submitSignUpForm(page, { name, email, password })
+    await submitSignUpForm(page, { name, email })
 
     await page.getByPlaceholder('Organization name').waitFor({ state: 'visible', timeout: 30_000 })
     await submitNamedForm(page, 'Organization name', organizationName)
@@ -664,7 +639,6 @@ async function runBrowserHappyPath() {
         invitationUrl: acceptedInvitationUrl,
         name: acceptedInviteName,
         email: acceptedInviteEmail,
-        password: acceptedInvitePassword,
         teamName: renamedTeamName,
       },
       failures,
@@ -681,7 +655,6 @@ async function runBrowserHappyPath() {
         invitationUrl: rejectedInvitationUrl,
         name: rejectedInviteName,
         email: rejectedInviteEmail,
-        password: rejectedInvitePassword,
         teamName: renamedTeamName,
       },
       failures,
@@ -743,7 +716,7 @@ async function runBrowserHappyPath() {
     await waitForSignedOutPanel(page, failures)
     console.log('[browser] owner signed out')
     console.log('[browser] signing in owner')
-    await submitSignInForm(page, { email, password })
+    await submitSignUpForm(page, { name, email })
     await page.getByRole('link', { name: new RegExp(renamedOrganizationName) }).waitFor({
       state: 'visible',
       timeout: 30_000,

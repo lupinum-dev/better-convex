@@ -67,7 +67,10 @@ describe('site origins with real Better Auth', () => {
   ) {
     const test = convexTest(rootSchema, rootModules)
     test.registerComponent('sessionAuth', authSchema, authModules)
-    const authApi = createBetterConvexAuth(components.sessionAuth, options)
+    const authApi = createBetterConvexAuth(components.sessionAuth, {
+      emailAndPassword: { requireEmailVerification: false },
+      ...options,
+    })
     const http = httpRouter()
     authApi.registerRoutes(http)
     return (headers: Record<string, string> = {}, body?: { email: string; password: string }) =>

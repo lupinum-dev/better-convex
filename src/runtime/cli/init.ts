@@ -36,7 +36,14 @@ export default { providers: [getConvexAuthProvider()] } satisfies AuthConfig
 import { components } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
 
-export const auth = createBetterConvexAuth<DataModel>(components.betterAuth)
+export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
+  // Password sign-in with verified addresses. Verification links appear in the Convex dev log
+  // while SITE_URL is http://localhost; add an \`email\` hook that sends the mail before you deploy.
+  // No other sign-in method is on until you name it:
+  //   emailOTP: {},                 email codes
+  //   socialProviders: { ... },     social sign-in
+  emailAndPassword: {},
+})
 export const createAuth = auth.createAuth
 export const { ensureSigningKey, pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()
 export const { onCreate, onUpdate, onDelete } = auth.triggerFunctions()

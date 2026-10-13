@@ -1,3 +1,5 @@
+import type { InferAPI } from 'better-auth'
+import type { emailOTP } from 'better-auth/plugins'
 import type { UserIdentity } from 'convex/server'
 
 import { components } from './_generated/api'
@@ -97,44 +99,31 @@ export async function signUpBetterAuthUser(
 ) {
   return await t.run(async (ctx) => {
     const auth = await createAuth(ctx)
+    // The factory types only Better Auth's core API; this starter turns on email codes.
+    const api = auth.api as typeof auth.api & InferAPI<ReturnType<typeof emailOTP>['endpoints']>
     const email = `${args.label}@example.com`
-    const password = 'Password123456!'
-    const verificationPrefix = `[team-starter] Verification link ${email}: `
-    let verificationUrl: string | null = null
+    const codePrefix = `[team-starter] Sign-in code ${email}: `
+    let code = null as string | null
     const originalConsoleInfo = console.info
     console.info = (...values: unknown[]) => {
       const message = values.map(String).join(' ')
-      if (message.startsWith(verificationPrefix)) {
-        verificationUrl = message.slice(verificationPrefix.length)
+      if (message.startsWith(codePrefix)) {
+        code = message.slice(codePrefix.length)
       }
     }
 
-    let signedUp: Awaited<ReturnType<typeof auth.api.signUpEmail>>
     try {
-      signedUp = await auth.api.signUpEmail({
-        body: {
-          email,
-          password,
-          name: args.label,
-        },
-      })
+      await api.sendVerificationOTP({ body: { email, type: 'sign-in' } })
     } finally {
       console.info = originalConsoleInfo
     }
 
-    if (!verificationUrl) {
-      throw new Error('Better Auth signup did not emit a local verification link')
+    if (!code) {
+      throw new Error('Better Auth did not emit a local sign-in code')
     }
-    const verificationToken = new URL(verificationUrl).searchParams.get('token')
-    if (!verificationToken) {
-      throw new Error('Better Auth verification link did not contain a token')
-    }
-    await auth.api.verifyEmail({
-      query: { token: verificationToken },
-    })
 
-    const signedIn = await auth.api.signInEmail({
-      body: { email, password },
+    const signedIn = await api.signInEmailOTP({
+      body: { email, otp: code, name: args.label },
     })
     const session = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'session',
@@ -145,7 +134,7 @@ export async function signUpBetterAuthUser(
     }
 
     return {
-      authUserId: signedUp.user.id,
+      authUserId: signedIn.user.id,
       sessionId: session.id,
       token: signedIn.token,
     }

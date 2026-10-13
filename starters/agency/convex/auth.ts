@@ -82,6 +82,10 @@ async function syncAgencyUserActor(
 export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
   organization: false,
+  // Password sign-in with a verified address. Without an `email` hook, the verification link
+  // goes to the dev outbox (the `convex dev` log) while SITE_URL is localhost. Add an `email`
+  // hook before you deploy: a non-local deployment refuses to start without one.
+  emailAndPassword: {},
   triggers: {
     user: {
       onCreate: async (ctx, user) => {

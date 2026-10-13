@@ -62,12 +62,18 @@ async function submitAuth() {
         })
 
     if (result.error) {
+      if (!signingUp && result.error.status === 403) {
+        throw new Error(
+          'Confirm your email address first: open the link we sent when you created the account.',
+        )
+      }
       throw new Error(signingUp ? 'Sign up could not be completed' : 'Invalid email or password')
     }
     password.value = ''
     if (signingUp) {
       authMode.value = 'signIn'
-      authNotice.value = 'Account request complete. Sign in with your credentials.'
+      authNotice.value =
+        'Check your email and open the confirmation link, then sign in. Locally, the link is in the terminal that runs convex dev.'
     }
   } catch (error) {
     operationError.value = error instanceof Error ? error.message : 'Authentication failed'

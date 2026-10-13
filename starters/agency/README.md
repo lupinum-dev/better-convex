@@ -67,7 +67,8 @@ application ceremony that proves authorization from both tenant sides.
    `SITE_URL` is the Nuxt origin. If you run Nuxt on another port, change it
    here and in the next step.
 
-4. Set the auth origin and both independent secrets in Convex:
+4. Set the auth origin and both independent secrets in Convex. Set `SITE_URL`
+   in Convex before you sign up: the confirmation mail needs it.
 
    ```bash
    export BCN_AUTH_PROXY_IP_SECRET="$(openssl rand -base64 32)"
@@ -101,7 +102,7 @@ application ceremony that proves authorization from both tenant sides.
    pnpm dev
    ```
 
-7. Open <http://localhost:3000/agency>. Create an account, then sign in.
+7. Open <http://localhost:3000/agency>. Create an account. The confirmation link appears in the terminal that runs `convex dev` (the dev outbox). Open it, then sign in. Before you deploy, add an `email` hook to `convex/auth.ts`; a non-local deployment refuses to start without one.
 
 8. Under **New organization**, create one organization of kind **Agency** and
    one of kind **Client**. Each creation shows the new organization ID. The

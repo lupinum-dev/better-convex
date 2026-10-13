@@ -61,6 +61,9 @@ const userProjection = createUserProjectionTriggers<BetterAuthUserProjectionSour
 // Better Auth owns identity; this table is a rebuildable display projection.
 export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
+  // The playground signs in with a password and has no mail provider, so it does not wait for a
+  // verified address. Do not copy this where access depends on the email.
+  emailAndPassword: { requireEmailVerification: false },
   triggers: {
     user: {
       onCreate: async (ctx, user) =>

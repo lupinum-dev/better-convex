@@ -221,6 +221,8 @@ The command shows every file it will write and asks before it writes. It asks ag
 
 The browser talks to Better Auth through `/api/auth` on your own origin. Nuxt forwards these requests to Convex. `useConvexAuth()` returns the auth `status`, the `user`, and the Better Auth `client`. In Convex functions, `auth.requireUser(ctx)` returns the signed-in user or throws.
 
+No sign-in method is on until you name it in `createBetterConvexAuth`: pass `emailAndPassword: {}` for passwords (verified addresses required), `emailOTP: {}` for email codes, or `socialProviders`. Apps that decide access by email should use email codes.
+
 Follow the [add authentication](https://better-convex.lupinum.com/docs/get-started/add-authentication) guide before you enable auth.
 
 ## Packages

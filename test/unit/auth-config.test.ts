@@ -13,6 +13,8 @@ describe('auth config normalization', () => {
   it('requires one explicit canonical application origin to enable auth', () => {
     expect(() => normalizeConvexAuthConfig({})).toThrow('auth.origin')
     expect(() => normalizeConvexAuthConfig({ origin: '' })).toThrow('auth.origin')
+    // `origin: process.env.SITE_URL` with SITE_URL unset names the variable to set.
+    expect(() => normalizeConvexAuthConfig({ origin: undefined })).toThrow('Set SITE_URL')
     expect(() => normalizeConvexAuthConfig({ origin: 'https://app.example.test/path' })).toThrow()
 
     const auth = normalizeConvexAuthConfig({

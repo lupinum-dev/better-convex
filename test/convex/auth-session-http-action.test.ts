@@ -55,7 +55,9 @@ afterEach(() => {
 async function setup() {
   const test = convexTest(defineSchema({}), rootModules)
   test.registerComponent('sessionAuth', authSchema, authModules)
-  const auth = createBetterConvexAuth(components.sessionAuth)
+  const auth = createBetterConvexAuth(components.sessionAuth, {
+    emailAndPassword: { requireEmailVerification: false },
+  })
   const handler = vi.fn<Parameters<typeof auth.sessionHttpAction>[0]>(async () =>
     Response.json({ ok: true }),
   )
