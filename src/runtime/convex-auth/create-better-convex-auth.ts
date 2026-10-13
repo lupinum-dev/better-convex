@@ -1226,16 +1226,22 @@ export function createBetterConvexAuthOwned<
           ? null
           : twoFactor({
               ...options.twoFactor,
-              otpOptions: {
-                ...options.twoFactor.otpOptions,
-                sendOTP: async ({ user, otp }) =>
-                  deliver({
-                    type: 'two-factor-otp',
-                    to: user.email,
-                    otp,
-                    user: emailUser(user),
+              // Offer email codes as a second factor only when mail can go out;
+              // otherwise Better Auth would list a method that always fails.
+              ...(deliver === missingEmailHook
+                ? {}
+                : {
+                    otpOptions: {
+                      ...options.twoFactor.otpOptions,
+                      sendOTP: async ({ user, otp }) =>
+                        deliver({
+                          type: 'two-factor-otp',
+                          to: user.email,
+                          otp,
+                          user: emailUser(user),
+                        }),
+                    },
                   }),
-              },
             }),
         emailOtpOptions === false || emailOtpOptions === undefined
           ? null

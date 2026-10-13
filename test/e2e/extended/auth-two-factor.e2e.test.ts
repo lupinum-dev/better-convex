@@ -324,7 +324,8 @@ async function startMfaSignIn(
   expect(challenge.status).toBe(200)
   expect(requireObject(challenge.body, 'first factor')).toMatchObject({
     twoFactorRedirect: true,
-    twoFactorMethods: ['totp'],
+    // The local backend has no email hook, so codes go to the dev outbox.
+    twoFactorMethods: ['totp', 'otp'],
   })
   expect(requireObject(challenge.body, 'first factor')).not.toHaveProperty('token')
   expect(jar.hasSuffix('two_factor')).toBe(true)
