@@ -143,7 +143,7 @@ function createAuth(ctx: GenericActionCtx<GenericDataModel>) {
       token: { max: 20, window: 60 },
     },
     refreshTokenExpiresIn: 604800,
-    refreshTokenReuseInterval: 0,
+    refreshTokenReuseInterval: 10,
     resourcePrivileges: async () => true,
     scopes,
     storeClientSecret: 'hashed' as const,
@@ -401,7 +401,7 @@ describe('Better Auth runtime contract of the canonical Convex adapter', () => {
 })
 
 describe('official provider renewal through the canonical Convex adapter', () => {
-  it('rotates and renews after access expiry', async () => {
+  it('rotates, replays a lost response briefly, and renews after access expiry', async () => {
     const { test, request } = await init()
     const first = await request()
     expect(first, JSON.stringify(first)).toMatchObject({ status: 200 })
@@ -414,6 +414,10 @@ describe('official provider renewal through the canonical Convex adapter', () =>
       aud: resource,
       scope: scopes.join(' '),
     })
+    const retry = await request()
+    expect(retry.status).toBe(200)
+    expect(retry.body.refresh_token).toBe(first.body.refresh_token)
+    expect(retry.body.access_token).toBe(first.body.access_token)
     const rows = await test.query(component.adapter.findMany, {
       model: 'oauthRefreshToken',
       paginationOpts: { cursor: null, numItems: 10 },
@@ -424,16 +428,6 @@ describe('official provider renewal through the canonical Convex adapter', () =>
     const renewed = await request(first.body.refresh_token)
     expect(renewed.status).toBe(200)
     expect(renewed.body.refresh_token).not.toBe(first.body.refresh_token)
-  })
-  it('rejects an immediate replay of a rotated token and revokes the descendant plus live consent', async () => {
-    // refreshTokenReuseInterval is 0: a holder of a just-rotated token gets no
-    // grace window in which the replay still returns a valid pair.
-    const { test, request } = await init()
-    const first = await request()
-    expect(first, JSON.stringify(first)).toMatchObject({ status: 200 })
-    expect((await request()).status).toBe(400)
-    expect((await request(first.body.refresh_token)).status).toBe(400)
-    expect(await test.query(component.adapter.count, { model: 'oauthConsent' })).toBe(0)
   })
   it('rejects token reuse outside grace and revokes the descendant plus live consent', async () => {
     const { test, request } = await init()

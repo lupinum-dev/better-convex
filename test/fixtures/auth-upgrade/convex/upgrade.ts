@@ -406,7 +406,7 @@ function createAuth(ctx: ActionCtx) {
       token: { max: 20, window: 60 },
     },
     refreshTokenExpiresIn: 604800,
-    refreshTokenReuseInterval: 0,
+    refreshTokenReuseInterval: 10,
     resourcePrivileges: async () => true,
     scopes,
     storeClientSecret: 'hashed' as const,
