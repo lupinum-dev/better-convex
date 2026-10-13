@@ -64,21 +64,39 @@ function parseCookiePairs(cookieHeader: string | null | undefined): ParsedCookie
   return parsed
 }
 
-function parseCookieHeader(cookieHeader: string | null | undefined): Map<string, ParsedCookiePair> {
-  return new Map(parseCookiePairs(cookieHeader).map((pair) => [pair.name, pair]))
+/**
+ * Cookies by exact name, without any name that appears twice. A browser sends
+ * two cookies of one name when a sibling subdomain planted one (cookie tossing);
+ * which one wins differs per parser, so neither is trusted.
+ */
+function parseUniqueCookieHeader(
+  cookieHeader: string | null | undefined,
+): Map<string, ParsedCookiePair> {
+  const cookies = new Map<string, ParsedCookiePair>()
+  const duplicated = new Set<string>()
+  for (const pair of parseCookiePairs(cookieHeader)) {
+    if (cookies.has(pair.name)) duplicated.add(pair.name)
+    cookies.set(pair.name, pair)
+  }
+  for (const name of duplicated) cookies.delete(name)
+  return cookies
 }
 
 export function getBetterAuthSessionToken(cookieHeader: string | null | undefined): string | null {
-  const cookies = parseCookieHeader(cookieHeader)
-  if (cookies.has(BETTER_AUTH_SECURE_SESSION_COOKIE_NAME)) {
+  const cookies = parseUniqueCookieHeader(cookieHeader)
+  // A duplicated secure cookie must not fall back to the weaker unprefixed one.
+  if (
+    parseCookiePairs(cookieHeader).some((p) => p.name === BETTER_AUTH_SECURE_SESSION_COOKIE_NAME)
+  ) {
     return cookies.get(BETTER_AUTH_SECURE_SESSION_COOKIE_NAME)?.value ?? null
   }
   return cookies.get(BETTER_AUTH_SESSION_COOKIE_NAME)?.value ?? null
 }
 
 export function filterBetterAuthCookies(cookieHeader: string | null | undefined): string | null {
+  const unique = parseUniqueCookieHeader(cookieHeader)
   const authCookies = parseCookiePairs(cookieHeader)
-    .filter((pair) => isBetterAuthCookieName(pair.name))
+    .filter((pair) => isBetterAuthCookieName(pair.name) && unique.has(pair.name))
     .map((pair) => pair.wire)
 
   return authCookies.length > 0 ? authCookies.join('; ') : null

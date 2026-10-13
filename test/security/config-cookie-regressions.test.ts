@@ -96,15 +96,20 @@ describe('configuration and cookie security regressions', () => {
     expect(getPinnedSessionCookie(new Headers({ cookie }))).toBe(expected)
   })
 
-  it('matches pinned duplicate/path ordering while preserving duplicate wire pairs', () => {
-    // Browsers send longer-path cookies before shorter-path cookies. The
-    // supported Better Auth tuple uses the last duplicate, so custom cookie
-    // paths are unsupported.
+  it('drops an auth cookie name that appears twice instead of guessing which one wins', () => {
+    // A sibling subdomain can plant a second cookie of the same name (cookie
+    // tossing). Parsers disagree on the winner, so neither value is trusted.
     const cookie =
-      'better-auth.session_token=longer-path; better-auth.session_token=root-path; better-auth.state=first; better-auth.state=second'
-    expect(getBetterAuthSessionToken(cookie)).toBe('root-path')
-    expect(getPinnedSessionCookie(new Headers({ cookie }))).toBe('root-path')
-    expect(filterBetterAuthCookies(cookie)).toBe(cookie)
+      'better-auth.session_token=planted; better-auth.session_token=real; better-auth.state=first; better-auth.state=second; better-auth.two_factor=once'
+    expect(getBetterAuthSessionToken(cookie)).toBeNull()
+    expect(filterBetterAuthCookies(cookie)).toBe('better-auth.two_factor=once')
+
+    // A duplicated secure cookie must not fall back to the unprefixed one.
+    expect(
+      getBetterAuthSessionToken(
+        '__Secure-better-auth.session_token=a; __Secure-better-auth.session_token=b; better-auth.session_token=weak',
+      ),
+    ).toBeNull()
   })
 
   it('forwards the default Better Auth plugin/state/MFA namespace and nothing else', () => {
@@ -206,13 +211,20 @@ describe('configuration and cookie security regressions', () => {
       }
       const header = chunks.join(';')
       const pinned = parsePinnedCookies(header)
-      const expected = pinned.has(BETTER_AUTH_SECURE_SESSION_COOKIE_NAME)
-        ? (pinned.get(BETTER_AUTH_SECURE_SESSION_COOKIE_NAME) ?? null)
-        : (pinned.get(BETTER_AUTH_SESSION_COOKIE_NAME) ?? null)
+      // A name that appears twice is dropped, not resolved by last-wins.
+      const counts = new Map<string, number>()
+      for (const chunk of chunks) {
+        const [name] = parsePinnedCookies(chunk).keys()
+        if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+      }
+      const sessionName = counts.has(BETTER_AUTH_SECURE_SESSION_COOKIE_NAME)
+        ? BETTER_AUTH_SECURE_SESSION_COOKIE_NAME
+        : BETTER_AUTH_SESSION_COOKIE_NAME
+      const expected = counts.get(sessionName) === 1 ? (pinned.get(sessionName) ?? null) : null
 
       const expectedForwarded = chunks.filter((chunk) => {
         const [name] = parsePinnedCookies(chunk).keys()
-        if (!name) return false
+        if (!name || counts.get(name) !== 1) return false
         const unprefixed = name.startsWith('__Secure-') ? name.slice('__Secure-'.length) : name
         return unprefixed.startsWith('better-auth.') && unprefixed.length > 'better-auth.'.length
       })
