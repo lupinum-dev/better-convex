@@ -26,6 +26,7 @@ overrides:
   esbuild: 0.28.1
   sharp: 0.35.5
   hono: 4.13.7
+  ip-address: 10.7.4
 
 auditConfig:
   # No patched release exists for these two advisories (first_patched_version is

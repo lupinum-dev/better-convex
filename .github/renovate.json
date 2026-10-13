@@ -6,6 +6,7 @@
   "rangeStrategy": "replace",
   "schedule": ["before 6am on Monday"],
   "timezone": "Europe/Vienna",
+  "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on Monday"] },
   "packageRules": [
     { "groupName": "Nuxt ecosystem", "matchPackageNames": ["nuxt", "@nuxt/**", "@nuxtjs/**", "vue", "vue-router"] },
     { "groupName": "Convex ecosystem", "matchPackageNames": ["convex", "convex-*", "@convex-dev/**"] },
