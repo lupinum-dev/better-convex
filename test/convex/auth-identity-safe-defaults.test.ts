@@ -108,7 +108,12 @@ function setup(options: Opts) {
         } catch {
           // not JSON: keep the text
         }
-        return { status: res.status, body: parsed, cookies: res.headers.getSetCookie() }
+        return {
+          status: res.status,
+          body: parsed,
+          cookies: res.headers.getSetCookie(),
+          location: res.headers.get('location') ?? '',
+        }
       })
       for (const raw of response.cookies) {
         const [pair] = raw.split(';')
@@ -167,6 +172,44 @@ function useAuthEnvironment() {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
   })
+}
+
+const realFetch = globalThis.fetch
+/** Answer the GitHub token exchange; every other request goes out unchanged. */
+function stubGithubToken() {
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input)
+    if (url.startsWith('https://github.com/login/oauth/access_token')) {
+      return Response.json({ access_token: 'gho_test', token_type: 'bearer', scope: 'user:email' })
+    }
+    return realFetch(input as RequestInfo, init)
+  })
+}
+
+/** A github provider that reports `VICTIM` with the given verification state. */
+const github = (emailVerified: boolean) => ({
+  github: {
+    clientId: 'id',
+    clientSecret: 'secret',
+    getUserInfo: async () => ({
+      user: { id: 'gh-1', name: 'Gh', email: VICTIM, image: undefined, emailVerified },
+      data: { id: 'gh-1' },
+    }),
+  },
+})
+
+/** Run a real social sign-in: start, then the provider's callback. */
+async function socialSignIn(
+  client: ReturnType<ReturnType<typeof setup>['client']>,
+  errorCallbackURL = 'https://app.example.test/',
+) {
+  const start = await client.post('/sign-in/social', {
+    provider: 'github',
+    callbackURL: 'https://app.example.test/',
+    errorCallbackURL,
+  })
+  const state = new URL((start.body as { url: string }).url).searchParams.get('state')
+  return await client.get(`/callback/github?code=abc&state=${state}`)
 }
 
 describe('safe auth defaults', () => {
@@ -434,51 +477,48 @@ describe('two-factor combinations', () => {
 
 describe('users with an unverified email', () => {
   useAuthEnvironment()
+  afterEach(() => vi.unstubAllGlobals())
 
-  /** Run Better Auth's user-create hook as a request on `path` would. */
-  function createHook(options: object) {
-    const s = setup(options as never)
-    return (user: object, path: string) =>
-      s.test.action(async (ctx) => {
-        const instance = await s.auth.createAuth(ctx)
-        const context = (await instance.$context) as {
-          options: {
-            databaseHooks: {
-              user: {
-                create: { before: (user: object, context: { path: string }) => Promise<unknown> }
-              }
-            }
-          }
-        }
-        try {
-          await context.options.databaseHooks.user.create.before(user, { path })
-          return 'allowed'
-        } catch (error) {
-          return (error as Error).message
-        }
-      })
-  }
+  it('refuses an unverified user from a social callback and creates no row', async () => {
+    stubGithubToken()
+    const s = setup({ emailAndPassword: {}, socialProviders: github(false) } as never)
+    const client = s.client()
+    await socialSignIn(client)
+    expect((await s.users()).page).toHaveLength(0)
+    expect(await client.hasSession()).toBe(false)
+  })
 
-  it('refuses an unverified user from a social callback, but allows password sign-up', async () => {
-    const before = createHook({ emailAndPassword: {} })
-    const unverified = { email: VICTIM, emailVerified: false, name: 'x' }
-    expect(await before(unverified, '/callback/:id')).toBe('AUTH_USER_CREATE_UNVERIFIED_EMAIL')
-    expect(await before(unverified, '/sign-up/email')).toBe('allowed')
-    expect(await before({ ...unverified, emailVerified: true }, '/callback/:id')).toBe('allowed')
+  it('signs in a social user whose email the provider verified', async () => {
+    stubGithubToken()
+    const s = setup({ emailAndPassword: {}, socialProviders: github(true) } as never)
+    const client = s.client()
+    await socialSignIn(client)
+    expect((await s.users()).page).toHaveLength(1)
+    expect(await client.hasSession()).toBe(true)
+  })
+
+  it('still lets password sign-up create an unverified user and send the verification mail', async () => {
+    const s = setup({ emailAndPassword: {} })
+    const res = await s
+      .client()
+      .post('/sign-up/email', { name: 'x', email: VICTIM, password: VICTIM_PW })
+    expect(res.status).toBe(200)
+    expect((await s.users()).page[0]).toMatchObject({ emailVerified: false })
+    expect(s.lastMail('verify-email', VICTIM)).toBeDefined()
   })
 
   it('does not reach beforeUserCreate for a refused unverified social user', async () => {
+    stubGithubToken()
     const seen: string[] = []
-    const before = createHook({
+    const s = setup({
       emailAndPassword: {},
+      socialProviders: github(false),
       beforeUserCreate: async ({ user }: { user: { email: string } }) => {
         seen.push(user.email)
         return { allowed: true }
       },
-    })
-    expect(await before({ email: VICTIM, emailVerified: false, name: 'x' }, '/callback/:id')).toBe(
-      'AUTH_USER_CREATE_UNVERIFIED_EMAIL',
-    )
+    } as never)
+    await socialSignIn(s.client())
     expect(seen).toEqual([])
   })
 })
