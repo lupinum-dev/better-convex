@@ -2,10 +2,11 @@
 import type { FunctionReference } from 'convex/server'
 import { makeFunctionReference } from 'convex/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, type App } from 'vue'
+import { createApp, defineComponent, effectScope, h, type App } from 'vue'
 
 import {
   createBetterConvex,
+  preloadConvexQuery,
   useConvexAction,
   useConvexConnectionState,
   useConvexFileUpload,
@@ -206,6 +207,22 @@ describe('setupBetterConvexTest (Vue)', () => {
     await expect(state.mutate({ title: 'Anonymous' })).resolves.toBe('n1')
     expect(create.calls[0]?.identity).toBe('anonymous')
     expect(() => convex.auth.signIn()).toThrow(/auth: false/)
+    await convex.dispose()
+  })
+
+  it('starts a page query with the preloaded result instead of pending', async () => {
+    const convex = setupBetterConvexTest()
+    convex.query(listNotes).resolve([{ id: 'a', title: 'A' }])
+    const app = createApp({}).use(convex.plugin)
+    await app.runWithContext(() => preloadConvexQuery(listNotes, { owner: 'alice' }))
+
+    const scope = effectScope()
+    const page = app.runWithContext(() =>
+      scope.run(() => useConvexQuery(listNotes, { owner: 'alice' })),
+    )!
+    expect(page.pending.value).toBe(false)
+    expect(page.data.value).toEqual([{ id: 'a', title: 'A' }])
+    scope.stop()
     await convex.dispose()
   })
 
