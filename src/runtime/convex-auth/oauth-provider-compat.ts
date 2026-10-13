@@ -2,6 +2,7 @@ import type { BetterAuthPlugin } from 'better-auth'
 import { APIError } from 'better-auth/api'
 
 import { requireProxyIpSecret } from '../shared/client-ip'
+import { isLoopbackSiteUrl } from './dev-outbox'
 import {
   OAuthSecurityError,
   assertSafeStoredOAuthClient,
@@ -11,7 +12,6 @@ import {
   type OAuthClientRecord,
   type PinnedOAuthProviderProfile,
 } from './oauth-security'
-import { isExactLoopbackHost } from './origin'
 
 export const DISABLED_PINNED_PROVIDER_PATHS = new Set([
   '/admin/oauth2/create-client',
@@ -281,14 +281,5 @@ export function assertSafePinnedResourceProvisioning(
     )
   } catch {
     invalidResourceProfile()
-  }
-}
-
-function isLoopbackSiteUrl(siteUrl: string | undefined): boolean {
-  if (!siteUrl) return false
-  try {
-    return isExactLoopbackHost(new URL(siteUrl).hostname)
-  } catch {
-    return false
   }
 }
