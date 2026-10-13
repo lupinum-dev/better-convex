@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { normalizeLocalCallbackURL } from '~~/shared/inputSchemas'
-
 import { api } from '#convex/api'
 
 const route = useRoute()
@@ -22,33 +20,6 @@ const {
 const actionPending = ref<'accept' | 'reject' | null>(null)
 const actionError = ref<string | null>(null)
 const actionMessage = ref<string | null>(null)
-const verificationPending = ref(false)
-const verificationError = ref<string | null>(null)
-const verificationMessage = ref<string | null>(null)
-
-async function resendVerificationEmail() {
-  if (!user.value?.email) return
-
-  verificationPending.value = true
-  verificationError.value = null
-  verificationMessage.value = null
-  try {
-    await $fetch('/api/auth/send-verification-email', {
-      method: 'POST',
-      body: {
-        email: user.value.email,
-        callbackURL: normalizeLocalCallbackURL(route.fullPath),
-      },
-    })
-    verificationMessage.value = 'Verification email sent.'
-  } catch (error) {
-    verificationError.value =
-      error instanceof Error ? error.message : 'Verification email was not sent'
-  } finally {
-    verificationPending.value = false
-  }
-}
-
 async function accept() {
   actionPending.value = 'accept'
   actionError.value = null
@@ -100,19 +71,6 @@ async function reject() {
       v-else-if="status === 'anonymous'"
       message="Sign in or create an account with the invited email address to continue."
     />
-
-    <section v-else-if="!user?.emailVerified" class="activity">
-      <h2>Verify your email first</h2>
-      <p>Signed in as {{ user?.email }}</p>
-      <p>
-        Invitation acceptance requires a verified email address that matches the invited address.
-      </p>
-      <p v-if="verificationMessage" class="empty">{{ verificationMessage }}</p>
-      <p v-if="verificationError" class="empty">{{ verificationError }}</p>
-      <button class="button" :disabled="verificationPending" @click="resendVerificationEmail">
-        {{ verificationPending ? 'Sending...' : 'Resend verification email' }}
-      </button>
-    </section>
 
     <section v-else-if="invitationPending" class="empty">Loading invitation...</section>
 

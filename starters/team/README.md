@@ -18,7 +18,7 @@ This starter is intentionally focused. It teaches one production-shaped path:
 
 ## Includes
 
-- Email/password auth.
+- Email-code sign-in (no password). Access follows the invitation email, so a code proves the address; a password sign-up could be started by someone else for it. Locally the code is logged by the dev server.
 - Better Auth Organization with static roles.
 - Organization invitations with Better Auth-managed acceptance and verified-email gating.
 - Better Auth teams and default team flow.
@@ -58,12 +58,11 @@ starter does not mirror those management actions into app tables.
 - Invitation acceptance requires a logged-in session whose email matches the
   invited address.
 - Invitation acceptance also requires that the invited email address is verified.
-- Verification emails are sent automatically on sign-up and again on sign-in for
-  unverified users.
+- A signed-in person proved the address with an email code, so every account here is verified.
 - The app does not expose Better Auth invitation ids in organization management
   queries. Only the emailed invitation link carries the action-capable id.
-- Verification and invitation delivery must be configured outside local
-  development. The local fallback only logs links for localhost/test workflows.
+- Code and invitation delivery must be configured outside local
+  development. The local fallback only logs codes and links for localhost/test workflows.
 
 ## Not Included
 

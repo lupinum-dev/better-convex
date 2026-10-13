@@ -1,9 +1,5 @@
 <script setup lang="ts">
-import {
-  normalizeLocalCallbackURL,
-  signInInputSchema,
-  signUpInputSchema,
-} from '~~/shared/inputSchemas'
+import { sendCodeInputSchema, signInWithCodeInputSchema } from '~~/shared/inputSchemas'
 
 const { message } = defineProps<{
   message: string
@@ -11,39 +7,26 @@ const { message } = defineProps<{
 
 const { client } = useConvexAuth()
 const busy = ref(false)
-const route = useRoute()
 
-const mode = ref<'signIn' | 'signUp'>('signUp')
+// Access here follows the invitation email, so people prove the address with a code
+// (see `emailOTP` in convex/auth.ts). There is no password to register for someone else.
+const codeSent = ref(false)
 const name = ref('')
 const email = ref('')
-const password = ref('')
+const otp = ref('')
 const error = ref<string | null>(null)
 const info = ref<string | null>(null)
-const signInFailure =
-  'Sign in could not be completed. Check your credentials and verify your email if required.'
-const callbackURL = computed(() => normalizeLocalCallbackURL(route.fullPath))
 
-const canSubmit = computed(() => {
-  const schema = mode.value === 'signIn' ? signInInputSchema : signUpInputSchema
-  return schema.safeParse({
-    name: name.value,
-    email: email.value,
-    password: password.value,
-    callbackURL: callbackURL.value,
-  }).success
-})
-
-const submitLabel = computed(() => {
-  if (busy.value) return mode.value === 'signIn' ? 'Signing in...' : 'Creating account...'
-  return mode.value === 'signIn' ? 'Sign in' : 'Create account'
-})
-const passwordAutocomplete = computed(() =>
-  mode.value === 'signIn' ? 'current-password' : 'new-password',
+const canSubmit = computed(() =>
+  codeSent.value
+    ? signInWithCodeInputSchema.safeParse({ name: name.value, email: email.value, otp: otp.value })
+        .success
+    : sendCodeInputSchema.safeParse({ email: email.value }).success,
 )
 
-watch(mode, () => {
-  error.value = null
-  info.value = null
+const submitLabel = computed(() => {
+  if (busy.value) return codeSent.value ? 'Signing in...' : 'Sending code...'
+  return codeSent.value ? 'Sign in' : 'Send code'
 })
 
 async function submitAuth() {
@@ -54,59 +37,53 @@ async function submitAuth() {
 
   busy.value = true
   try {
-    if (mode.value === 'signUp') {
-      const parsed = signUpInputSchema.safeParse({
-        name: name.value,
-        email: email.value,
-        password: password.value,
-        callbackURL: callbackURL.value,
-      })
+    if (!codeSent.value) {
+      const parsed = sendCodeInputSchema.safeParse({ email: email.value })
       if (!parsed.success) {
-        error.value = parsed.error.issues[0]?.message ?? 'Sign up failed'
+        error.value = parsed.error.issues[0]?.message ?? 'Could not send the code'
         return
       }
-
-      const { error: signUpError } = await client.signUp.email({
-        ...parsed.data,
+      const result = await client.emailOtp.sendVerificationOtp({
+        email: parsed.data.email,
+        type: 'sign-in',
       })
-
-      if (signUpError) {
-        error.value = 'Sign up could not be completed'
+      if (result.error) {
+        error.value = 'The code could not be sent'
         return
       }
-
-      password.value = ''
-      info.value = 'If the address can be registered, check your email for a verification link.'
+      codeSent.value = true
+      info.value = 'Check your email for a six-digit code.'
       return
     }
 
-    const parsed = signInInputSchema.safeParse({
+    const parsed = signInWithCodeInputSchema.safeParse({
+      name: name.value,
       email: email.value,
-      password: password.value,
-      callbackURL: callbackURL.value,
+      otp: otp.value,
     })
     if (!parsed.success) {
       error.value = parsed.error.issues[0]?.message ?? 'Sign in failed'
       return
     }
 
-    const result = await client.signIn.email({
-      ...parsed.data,
-    })
-
+    const result = await client.signIn.emailOtp(parsed.data)
     if (result.error) {
-      error.value = signInFailure
+      error.value = 'Sign in could not be completed. Check the code and try again.'
       return
     }
-
-    password.value = ''
-    info.value =
-      'Signed in. If your email is not verified yet, check your inbox for a verification link.'
+    otp.value = ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Authentication failed'
   } finally {
     busy.value = false
   }
+}
+
+function changeEmail() {
+  codeSent.value = false
+  otp.value = ''
+  error.value = null
+  info.value = null
 }
 </script>
 
@@ -115,17 +92,8 @@ async function submitAuth() {
     <strong>Signed out</strong>
     <span>{{ message }}</span>
 
-    <div class="mode-toggle" aria-label="Authentication mode">
-      <button type="button" :class="{ active: mode === 'signUp' }" @click="mode = 'signUp'">
-        Sign up
-      </button>
-      <button type="button" :class="{ active: mode === 'signIn' }" @click="mode = 'signIn'">
-        Sign in
-      </button>
-    </div>
-
     <form class="auth-form" @submit.prevent="submitAuth">
-      <label v-if="mode === 'signUp'">
+      <label>
         Name
         <input v-model="name" autocomplete="name" placeholder="Your name" required />
       </label>
@@ -135,21 +103,21 @@ async function submitAuth() {
         <input
           v-model="email"
           autocomplete="email"
+          :disabled="codeSent"
           placeholder="you@example.com"
           required
           type="email"
         />
       </label>
 
-      <label>
-        Password
+      <label v-if="codeSent">
+        Code
         <input
-          v-model="password"
-          :autocomplete="passwordAutocomplete"
-          minlength="15"
-          placeholder="Min 15 characters"
+          v-model="otp"
+          autocomplete="one-time-code"
+          inputmode="numeric"
+          placeholder="Six-digit code"
           required
-          type="password"
         />
       </label>
 
@@ -158,6 +126,9 @@ async function submitAuth() {
 
       <button type="submit" :disabled="busy || !canSubmit">
         {{ submitLabel }}
+      </button>
+      <button v-if="codeSent" type="button" class="link" @click="changeEmail">
+        Use another email
       </button>
     </form>
   </section>
@@ -179,17 +150,6 @@ async function submitAuth() {
   color: #18181b;
 }
 
-.mode-toggle {
-  display: flex;
-  width: fit-content;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid #d6dae1;
-  border-radius: 8px;
-  background: #f7f8fb;
-}
-
-.mode-toggle button,
 .auth-form button {
   height: 36px;
   border: 1px solid transparent;
@@ -197,13 +157,6 @@ async function submitAuth() {
   font: inherit;
 }
 
-.mode-toggle button {
-  padding: 0 12px;
-  background: transparent;
-  color: #475569;
-}
-
-.mode-toggle button.active,
 .auth-form button {
   background: #18181b;
   color: white;
@@ -234,6 +187,12 @@ async function submitAuth() {
 .auth-form button {
   width: fit-content;
   padding: 0 14px;
+}
+
+.auth-form button.link {
+  background: transparent;
+  color: #475569;
+  text-decoration: underline;
 }
 
 .auth-form button:disabled {
