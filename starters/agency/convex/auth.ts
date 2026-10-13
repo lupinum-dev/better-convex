@@ -82,6 +82,10 @@ async function syncAgencyUserActor(
 export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   authFunctions,
   organization: false,
+  // Password sign-in. This starter has no mail provider, so people sign in before they verify an
+  // address. Access here does not depend on the email: do not decide access by it. Add an `email`
+  // hook and drop `requireEmailVerification: false` to require a verified address.
+  emailAndPassword: { requireEmailVerification: false },
   triggers: {
     user: {
       onCreate: async (ctx, user) => {

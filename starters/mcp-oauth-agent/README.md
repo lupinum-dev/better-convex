@@ -156,11 +156,12 @@ Use a fresh deployment. This starter has no migration path from older schemas.
    contains the exact recorded `newKid` before you create a user or open
    ingress.
 
-5. Create the first local Better Auth user. The starter has no public sign-up
-   page. This explicit local call keeps account creation separate from the
-   OAuth login page:
+5. Create the first local Better Auth user. The starter has no public sign-up:
+   `convex/auth.ts` sets `disableSignUp` unless the deployment variable
+   `ALLOW_SIGN_UP` is `true`. Open it for this one call, then remove it:
 
    ```bash
+   pnpm exec better-convex convex env set ALLOW_SIGN_UP true
    BCN_LOCAL_ADMIN_PASSWORD="$(openssl rand -base64 24)"
    curl --fail-with-body \
      -H 'Content-Type: application/json' \
@@ -169,6 +170,7 @@ Use a fresh deployment. This starter has no migration path from older schemas.
      http://localhost:3000/api/auth/sign-up/email <<JSON
    {"name":"Local Owner","email":"owner@example.com","password":"${BCN_LOCAL_ADMIN_PASSWORD}"}
    JSON
+   pnpm exec better-convex convex env remove ALLOW_SIGN_UP
    ```
 
    Keep that generated password only in the calling shell or a test secret
@@ -272,7 +274,7 @@ protocol envelope and its error cases with the official SDK.
 - Decide which agent actions wait for a person (`agents` in the policy) and
   who may approve them (`approvers`).
 - Set `SITE_URL` on the deployment: approval links point to it.
-- Govern or disable public account creation.
+- Keep public account creation off (`disableSignUp`), or govern it. Decide how people get accounts.
 - Terminate TLS at a trusted ingress, configure deployment-level abuse
   controls, keep Better Auth's database-backed rate limiter enabled, and never
   log cookies, codes, tokens, signed continuation queries, or authorization

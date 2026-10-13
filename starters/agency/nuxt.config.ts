@@ -8,7 +8,8 @@ export default {
   },
   convex: {
     auth: {
-      origin: process.env.SITE_URL ?? 'http://localhost:3000',
+      // Required. The public origin of this site; .env.example sets it for local work.
+      origin: process.env.SITE_URL,
       trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
     },
   },
