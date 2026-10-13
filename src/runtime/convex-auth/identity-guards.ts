@@ -1,4 +1,4 @@
-import type { BetterAuthPlugin } from 'better-auth'
+import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import { createAuthMiddleware } from 'better-auth/api'
 
 /**
@@ -21,6 +21,33 @@ export function createIdentityGuardsPlugin(): BetterAuthPlugin {
           })),
         },
       ],
+    },
+  }
+}
+
+type UserHooks = NonNullable<NonNullable<BetterAuthOptions['databaseHooks']>['user']>
+
+/**
+ * Proving an address ends every session that existed before the proof. A
+ * squatter who registered the address with a password and signed in holds such
+ * a session; the owner's later verification must not leave it alive. A session
+ * that the verification itself creates (auto sign-in) is made after the update,
+ * so it survives. The password stays: it may belong to the honest owner.
+ */
+export function createRevokeSessionsOnVerificationHooks(): Pick<UserHooks, 'update'> {
+  // One verifying update per request: `before` marks the request, `after` revokes.
+  const verifying = new WeakSet<object>()
+  return {
+    update: {
+      before: async (data, context) => {
+        if (context && (data as { emailVerified?: unknown }).emailVerified === true) {
+          verifying.add(context)
+        }
+      },
+      after: async (user, context) => {
+        if (!user || !context || !verifying.delete(context)) return
+        await context.context.internalAdapter.deleteUserSessions(user.id)
+      },
     },
   }
 }

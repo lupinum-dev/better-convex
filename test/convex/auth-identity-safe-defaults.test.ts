@@ -325,3 +325,65 @@ describe('auth email without an email hook', () => {
     }
   })
 })
+
+describe('email verification ends earlier sessions', () => {
+  useAuthEnvironment()
+
+  it('ends a squatter session when the owner verifies with an email code', async () => {
+    const s = setup({
+      emailOTP: {},
+      emailAndPassword: { requireEmailVerification: false },
+    })
+    const squatter = s.client()
+    await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(await squatter.hasSession()).toBe(true)
+
+    const owner = s.client()
+    await owner.post('/email-otp/send-verification-otp', {
+      email: VICTIM,
+      type: 'email-verification',
+    })
+    const otp = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
+    const verified = await owner.post('/email-otp/verify-email', { email: VICTIM, otp })
+    expect(verified.status).toBe(200)
+    expect((await s.users()).page[0]).toMatchObject({ emailVerified: true })
+    expect(await squatter.hasSession()).toBe(false)
+  })
+
+  it('ends a squatter session when the owner opens the verification link, and keeps the auto sign-in', async () => {
+    const s = setup({
+      emailAndPassword: { requireEmailVerification: false },
+      emailVerification: { autoSignInAfterVerification: true },
+    })
+    const squatter = s.client()
+    await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(await squatter.hasSession()).toBe(true)
+    await squatter.post('/send-verification-email', { email: VICTIM })
+
+    const mail = s.lastMail('verify-email', VICTIM) as { url: string }
+    const url = new URL(mail.url)
+    const owner = s.client()
+    const click = await owner.get(`${url.pathname.replace('/api/auth', '')}${url.search}`)
+    expect([200, 302]).toContain(click.status)
+    expect((await s.users()).page[0]).toMatchObject({ emailVerified: true })
+    expect(await squatter.hasSession()).toBe(false)
+    expect(await owner.hasSession()).toBe(true)
+  })
+
+  it('keeps the sign-in OTP mitigation: a squatter password is gone after an OTP sign-in', async () => {
+    const s = setup({ emailOTP: {}, emailAndPassword: { requireEmailVerification: false } })
+    const squatter = s.client()
+    await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const owner = s.client()
+    await owner.post('/email-otp/send-verification-otp', { email: VICTIM, type: 'sign-in' })
+    const otp = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
+    expect((await owner.post('/sign-in/email-otp', { email: VICTIM, otp })).status).toBe(200)
+    expect(await owner.hasSession()).toBe(true)
+    expect(await squatter.hasSession()).toBe(false)
+    const retry = await s.client().post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(retry.status).not.toBe(200)
+  })
+})

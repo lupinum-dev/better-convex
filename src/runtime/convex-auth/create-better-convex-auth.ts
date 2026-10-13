@@ -26,7 +26,10 @@ import {
   sanitizeAuthCause,
   type AuthConfigSubCode,
 } from './diagnostics'
-import { createIdentityGuardsPlugin } from './identity-guards'
+import {
+  createIdentityGuardsPlugin,
+  createRevokeSessionsOnVerificationHooks,
+} from './identity-guards'
 import { requireMcpPrincipal, type BetterConvexMcpPrincipal } from './mcp-principal'
 import {
   canonicalAuthIssuer,
@@ -1227,15 +1230,18 @@ export function createBetterConvexAuthOwned<
         basePath: '/api/auth',
         baseURL,
         database: authComponent.adapter(ctx),
-        databaseHooks: options.beforeUserCreate
-          ? {
-              user: {
-                create: {
-                  before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
-                },
-              },
-            }
-          : undefined,
+        databaseHooks: {
+          user: {
+            ...(options.beforeUserCreate
+              ? {
+                  create: {
+                    before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
+                  },
+                }
+              : {}),
+            ...createRevokeSessionsOnVerificationHooks(),
+          },
+        },
         disabledPaths: [
           '/token',
           '/get-access-token',
