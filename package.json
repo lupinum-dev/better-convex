@@ -144,8 +144,8 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
-    "@better-auth/core": "1.7.6",
-    "@better-auth/oauth-provider": "1.7.6",
+    "@better-auth/core": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.7",
     "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "3.0.3",
     "@edge-runtime/vm": "^5.0.0",
@@ -164,7 +164,7 @@
     "@vitest/browser-playwright": "^4.1.11",
     "@vitest/coverage-v8": "^4.1.11",
     "arktype": "2.2.3",
-    "better-auth": "1.7.6",
+    "better-auth": "1.7.7",
     "convex": "1.42.2",
     "convex-test": "^0.0.54",
     "eslint": "^10.7.0",
@@ -183,9 +183,9 @@
     "zod": "4.6.5"
   },
   "peerDependencies": {
-    "@better-auth/core": "1.7.6",
-    "@better-auth/oauth-provider": "1.7.6",
-    "better-auth": "1.7.6",
+    "@better-auth/core": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.7",
+    "better-auth": "1.7.7",
     "convex": ">=1.42.2 <2",
     "nuxt": ">=4.5.2 <5"
   },
