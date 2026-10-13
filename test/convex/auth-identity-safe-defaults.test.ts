@@ -387,3 +387,22 @@ describe('email verification ends earlier sessions', () => {
     expect(retry.status).not.toBe(200)
   })
 })
+
+describe('two-factor combinations', () => {
+  useAuthEnvironment()
+
+  it('rejects twoFactor together with emailOTP or socialProviders, because they skip the challenge', () => {
+    const build = (options: object) => () =>
+      createBetterConvexAuth(components.sessionAuth, {
+        email: async () => {},
+        ...options,
+      } as never)
+    expect(build({ twoFactor: {}, emailOTP: {} })).toThrow(/twoFactor.*emailOTP/)
+    expect(
+      build({ twoFactor: {}, socialProviders: { github: { clientId: 'a', clientSecret: 'b' } } }),
+    ).toThrow(/twoFactor.*socialProviders/)
+    expect(build({ twoFactor: {}, socialProviders: () => ({}) })).toThrow(/socialProviders/)
+    expect(build({ twoFactor: {}, emailAndPassword: {} })).not.toThrow()
+    expect(build({ emailOTP: {}, socialProviders: {}, twoFactor: false })).not.toThrow()
+  })
+})

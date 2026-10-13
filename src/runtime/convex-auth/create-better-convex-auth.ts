@@ -766,6 +766,17 @@ function rejectUnsupportedOptions(options: object): void {
     }
   }
   assertEmailHookPresent(record)
+  if (record.twoFactor !== undefined && record.twoFactor !== false) {
+    // Two-factor challenges only password sign-in. These doors mint a session with no challenge.
+    const social = record.socialProviders
+    const hasSocial =
+      typeof social === 'function' || (isPlainRecord(social) && Object.keys(social).length > 0)
+    if ((record.emailOTP !== undefined && record.emailOTP !== false) || hasSocial) {
+      throw configError(
+        'does not support "twoFactor" together with "emailOTP" or "socialProviders"; those sign-ins skip the second factor, so remove one of them',
+      )
+    }
+  }
   assertTrustedProviderShape(record.account as BetterConvexAccountPolicy | undefined)
   // A lazy provider factory is re-validated for every auth construction.
   if (typeof record.socialProviders !== 'function') {
