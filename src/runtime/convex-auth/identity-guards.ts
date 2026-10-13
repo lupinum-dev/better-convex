@@ -1,5 +1,5 @@
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
-import { createAuthMiddleware } from 'better-auth/api'
+import { APIError, createAuthMiddleware } from 'better-auth/api'
 
 /**
  * Identity guards that close account-takeover paths Better Auth leaves open
@@ -50,4 +50,20 @@ export function createRevokeSessionsOnVerificationHooks(): Pick<UserHooks, 'upda
       },
     },
   }
+}
+
+/**
+ * A user may start with an unverified email only through password sign-up
+ * (`/sign-up/email`, which then needs verification before sign-in) or as an
+ * anonymous guest. Any other path that carries an unverified address, such as
+ * a social provider that lets an account holder choose its email claim, would
+ * hand a session to someone who never proved the address.
+ */
+export function assertVerifiedUnlessPasswordSignUp(
+  user: { emailVerified?: unknown; isAnonymous?: unknown },
+  context: { path?: string } | null,
+): void {
+  if (!context || user.emailVerified === true || user.isAnonymous === true) return
+  if (context.path === '/sign-up/email') return
+  throw new APIError('FORBIDDEN', { message: 'AUTH_USER_CREATE_UNVERIFIED_EMAIL' })
 }

@@ -1,3 +1,4 @@
+import type { GenericEndpointContext } from '@better-auth/core'
 import { oauthProvider as createOAuthProvider } from '@better-auth/oauth-provider'
 import type { Auth, BetterAuthOptions, BetterAuthPlugin, InferAPI, User } from 'better-auth'
 import { APIError, betterAuth } from 'better-auth'
@@ -27,6 +28,7 @@ import {
   type AuthConfigSubCode,
 } from './diagnostics'
 import {
+  assertVerifiedUnlessPasswordSignUp,
   createIdentityGuardsPlugin,
   createRevokeSessionsOnVerificationHooks,
 } from './identity-guards'
@@ -1140,6 +1142,9 @@ export function createBetterConvexAuthOwned<
       const { passwordReset = false, ...passwordOptions } = emailAndPassword || {}
       const emailOtpOptions = options.emailOTP
 
+      const beforeUserCreate = options.beforeUserCreate
+        ? createBeforeUserCreateHook(ctx, options.beforeUserCreate)
+        : undefined
       const guestOptions = options.experimental?.anonymous
       const featurePlugins = [
         guestOptions === undefined ? null : anonymous(guestOptions === true ? {} : guestOptions),
@@ -1243,13 +1248,15 @@ export function createBetterConvexAuthOwned<
         database: authComponent.adapter(ctx),
         databaseHooks: {
           user: {
-            ...(options.beforeUserCreate
-              ? {
-                  create: {
-                    before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
-                  },
-                }
-              : {}),
+            create: {
+              before: async (
+                user: User & Record<string, unknown>,
+                context: GenericEndpointContext | null,
+              ) => {
+                assertVerifiedUnlessPasswordSignUp(user, context)
+                return await beforeUserCreate?.(user)
+              },
+            },
             ...createRevokeSessionsOnVerificationHooks(),
           },
         },

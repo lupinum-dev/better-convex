@@ -406,3 +406,54 @@ describe('two-factor combinations', () => {
     expect(build({ emailOTP: {}, socialProviders: {}, twoFactor: false })).not.toThrow()
   })
 })
+
+describe('users with an unverified email', () => {
+  useAuthEnvironment()
+
+  /** Run Better Auth's user-create hook as a request on `path` would. */
+  function createHook(options: object) {
+    const s = setup(options as never)
+    return (user: object, path: string) =>
+      s.test.action(async (ctx) => {
+        const instance = await s.auth.createAuth(ctx)
+        const context = (await instance.$context) as {
+          options: {
+            databaseHooks: {
+              user: {
+                create: { before: (user: object, context: { path: string }) => Promise<unknown> }
+              }
+            }
+          }
+        }
+        try {
+          await context.options.databaseHooks.user.create.before(user, { path })
+          return 'allowed'
+        } catch (error) {
+          return (error as Error).message
+        }
+      })
+  }
+
+  it('refuses an unverified user from a social callback, but allows password sign-up', async () => {
+    const before = createHook({ emailAndPassword: {} })
+    const unverified = { email: VICTIM, emailVerified: false, name: 'x' }
+    expect(await before(unverified, '/callback/:id')).toBe('AUTH_USER_CREATE_UNVERIFIED_EMAIL')
+    expect(await before(unverified, '/sign-up/email')).toBe('allowed')
+    expect(await before({ ...unverified, emailVerified: true }, '/callback/:id')).toBe('allowed')
+  })
+
+  it('does not reach beforeUserCreate for a refused unverified social user', async () => {
+    const seen: string[] = []
+    const before = createHook({
+      emailAndPassword: {},
+      beforeUserCreate: async ({ user }: { user: { email: string } }) => {
+        seen.push(user.email)
+        return { allowed: true }
+      },
+    })
+    expect(await before({ email: VICTIM, emailVerified: false, name: 'x' }, '/callback/:id')).toBe(
+      'AUTH_USER_CREATE_UNVERIFIED_EMAIL',
+    )
+    expect(seen).toEqual([])
+  })
+})
