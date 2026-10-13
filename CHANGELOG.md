@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.0-rc.3
+
+### Minor Changes
+
+- [#255](https://github.com/lupinum-dev/better-convex/pull/255) [`43237a6`](https://github.com/lupinum-dev/better-convex/commit/43237a6443d3abc81ade8ef6093f6e39e70ae12f) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the auth factory to safe defaults: password sign-in is off unless you pass `emailAndPassword`, and identity gaps are closed
+  
+  Password sign-in needs verified addresses and a password reset ends every earlier session. A password change always ends the other sessions (no opt-out), and verifying an address ends earlier sessions.
+  Users with an unverified email are created only by password sign-up (and anonymous guests): unverified social users are refused. `beforeUserCreate` can no longer swap the email (letter case only, stored lower case).
+  `twoFactor` is rejected with `emailOTP` or `socialProviders`, and `socialProviders.*.overrideUserInfoOnSignIn` is rejected. Email codes are stored hashed, `emailOTP.changeEmail` is rejected, email-code password reset needs `emailAndPassword.passwordReset`, and organization invitations need a verified email.
+  Without an `email` hook, a loopback `SITE_URL` logs mail to the Convex log (dev outbox); with another `SITE_URL` set, `createBetterConvexAuth` fails when mail is needed. With `SITE_URL` unset it loads, and sending mail fails with an error that names the `email` hook.
+  `convex.auth.origin` accepts `process.env.SITE_URL` as is. `init` writes `emailAndPassword: {}`; docs and starters drop the localhost fallback.
+  Migration: pass `emailAndPassword: {}` to keep password sign-in (add `requireEmailVerification: false` to keep sign-in before verification), add an `email` hook before deploying, remove `overrideUserInfoOnSignIn`, drop `twoFactor` from apps with `emailOTP` or social sign-in, and use email codes where access depends on the email.
+
+### Patch Changes
+
+- [#258](https://github.com/lupinum-dev/better-convex/pull/258) [`996bede`](https://github.com/lupinum-dev/better-convex/commit/996bede786ceff83782bbe016760b887b0810b18) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the Better Auth peers to 1.7.7 (critical Magic Link account-takeover fix)
+  
+  Migration: install `better-auth`, `@better-auth/core` and `@better-auth/oauth-provider` at exactly `1.7.7`.
+
+- [#256](https://github.com/lupinum-dev/better-convex/pull/256) [`ae71c68`](https://github.com/lupinum-dev/better-convex/commit/ae71c68c86d5a82d6f4c94d35af46362cfc0f25d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the auth transport defaults: server helpers set cache headers themselves, duplicate auth cookies are dropped, and the client IP header and OAuth admin routes are no longer exposed.
+  
+  - `serverConvex(event)` and `getConvexUser(event)` add `Vary: Cookie` and `Cache-Control: private, no-store` when they read the session cookie.
+  - `convex.auth.trustedClientIpHeader` moves from the public to the server-only runtime config (`runtimeConfig.convex.trustedClientIpHeader`).
+  - A production build with a loopback `convex.auth.origin` now logs a warning.
+  - With the OAuth provider, `BCN_AUTH_PROXY_IP_SECRET` must be at least 32 characters whenever it is set, and it is required unless `SITE_URL` is a loopback origin. `NODE_ENV` no longer decides this.
+  - `/oauth2/end-session/confirm` and the `/admin/oauth2` provisioning routes are now listed as disabled over HTTP. The provider only calls them from server code and never routed them, so this is defence in depth, not a behavior change.
+  
+  Migration: read the trusted client IP header from `useRuntimeConfig().convex` on the server if you read it from `public.convex.auth`, and set a `BCN_AUTH_PROXY_IP_SECRET` of at least 32 characters on every non-loopback deployment that uses the OAuth provider.
+
+- [#257](https://github.com/lupinum-dev/better-convex/pull/257) [`f10f4b2`](https://github.com/lupinum-dev/better-convex/commit/f10f4b2861266df2a65173e4167773f51686c4a9) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the dependencies to convex-helpers 0.1.120, ohash 2.0.12 and the MCP SDK 2.3.1
+- Updated dependencies [[`996bede`](https://github.com/lupinum-dev/better-convex/commit/996bede786ceff83782bbe016760b887b0810b18), [`ae71c68`](https://github.com/lupinum-dev/better-convex/commit/ae71c68c86d5a82d6f4c94d35af46362cfc0f25d), [`43237a6`](https://github.com/lupinum-dev/better-convex/commit/43237a6443d3abc81ade8ef6093f6e39e70ae12f), [`f10f4b2`](https://github.com/lupinum-dev/better-convex/commit/f10f4b2861266df2a65173e4167773f51686c4a9)]:
+  - @lupinum/better-convex-vue@1.0.0-rc.3
+
 ## 1.0.0-rc.2
 
 ### Minor Changes

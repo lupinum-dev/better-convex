@@ -1,5 +1,13 @@
 # @lupinum/better-convex-agents
 
+## 0.1.0-rc.2
+
+### Patch Changes
+
+- [#257](https://github.com/lupinum-dev/better-convex/pull/257) [`f10f4b2`](https://github.com/lupinum-dev/better-convex/commit/f10f4b2861266df2a65173e4167773f51686c4a9) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the dependencies to convex-helpers 0.1.120, ohash 2.0.12 and the MCP SDK 2.3.1
+- Updated dependencies []:
+  - @lupinum/better-convex-functions@0.1.0-rc.2
+
 ## 0.1.0-rc.1
 
 ### Patch Changes
