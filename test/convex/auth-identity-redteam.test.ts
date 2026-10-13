@@ -13,8 +13,8 @@ import type {
   BetterConvexAuthEmail,
   CreateBetterConvexAuthOptions,
 } from '../../src/runtime/convex-auth/create-better-convex-auth'
-import twoFactorSchema from '../fixtures/better-auth-two-factor/convex/betterAuth/schema'
 import anonymousSchema from '../fixtures/better-auth-anonymous/convex/betterAuth/schema'
+import twoFactorSchema from '../fixtures/better-auth-two-factor/convex/betterAuth/schema'
 
 const restoreHostEnvironment = await vi.hoisted(async () => {
   const { env } = await import('node:process')
@@ -28,9 +28,8 @@ const restoreHostEnvironment = await vi.hoisted(async () => {
     }
   }
 })
-const { createBetterConvexAuth } = await import(
-  '../../src/runtime/convex-auth/create-better-convex-auth'
-)
+const { createBetterConvexAuth } =
+  await import('../../src/runtime/convex-auth/create-better-convex-auth')
 afterAll(restoreHostEnvironment)
 
 const rootModules = import.meta.glob('../fixtures/jwks-rotation/convex/**/*.ts')
@@ -252,16 +251,20 @@ describe('redteam: unverified user via non sign-up paths (D-e / I-03)', () => {
     }
     // A genuine anonymous guest (isAnonymous) is allowed even unverified.
     expect(
-      await before({ email: 'anon@x', emailVerified: false, isAnonymous: true }, '/sign-in/anonymous'),
+      await before(
+        { email: 'anon@x', emailVerified: false, isAnonymous: true },
+        '/sign-in/anonymous',
+      ),
     ).toBe('allowed')
   })
 
-  it('NOTE: a null endpoint context bypasses the guard (server-side create with no request)', async () => {
+  it('HELD: a create without an endpoint context is refused unless the address is verified', async () => {
     const before = createHook(setup({ emailAndPassword: {} }))
-    // Documented behaviour of the guard: `if (!context ...) return`. No HTTP
-    // mint path reaches create.before with a null context, but a server-side
-    // internalAdapter.createUser would. Recorded, not a reachable HTTP break.
-    expect(await before({ email: VICTIM, emailVerified: false, name: 'x' }, null)).toBe('allowed')
+    // Server-side `internalAdapter.createUser` has no request, so no path to trust.
+    expect(await before({ email: VICTIM, emailVerified: false, name: 'x' }, null)).toBe(
+      'AUTH_USER_CREATE_UNVERIFIED_EMAIL',
+    )
+    expect(await before({ email: VICTIM, emailVerified: true, name: 'x' }, null)).toBe('allowed')
   })
 })
 
@@ -277,7 +280,10 @@ describe('redteam: anonymous guest reaching an unverified email', () => {
     // unverified social email in as a guest.
     const before = createHook(setup({ emailAndPassword: {} }))
     expect(
-      await before({ email: VICTIM, emailVerified: false, isAnonymous: true }, '/sign-in/anonymous'),
+      await before(
+        { email: VICTIM, emailVerified: false, isAnonymous: true },
+        '/sign-in/anonymous',
+      ),
     ).toBe('allowed')
     expect(
       await before({ email: VICTIM, emailVerified: false, isAnonymous: 'true' }, '/callback/:id'),
@@ -306,7 +312,10 @@ describe('redteam: keep a session alive across verification (cookie cache / toke
     expect((await s.sessions()).page.length).toBe(1)
 
     const owner = s.client()
-    await owner.post('/email-otp/send-verification-otp', { email: VICTIM, type: 'email-verification' })
+    await owner.post('/email-otp/send-verification-otp', {
+      email: VICTIM,
+      type: 'email-verification',
+    })
     const otp = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
     expect((await owner.post('/email-otp/verify-email', { email: VICTIM, otp })).status).toBe(200)
 
@@ -533,8 +542,8 @@ describe('redteam: organization invitation requires a verified email', () => {
   it('NOTE: an app can still override the invitation gate to false (visible, un-whitelisted)', async () => {
     // Recorded for the maintainer: organization options are pass-through, so a
     // spread override is possible, unlike emailOTP keys which are whitelisted.
-    expect(await orgInvitationFlag({ organization: { requireEmailVerificationOnInvitation: false } })).toBe(
-      false,
-    )
+    expect(
+      await orgInvitationFlag({ organization: { requireEmailVerificationOnInvitation: false } }),
+    ).toBe(false)
   })
 })

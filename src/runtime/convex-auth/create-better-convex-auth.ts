@@ -30,7 +30,7 @@ import {
 import {
   assertVerifiedUnlessPasswordSignUp,
   createIdentityGuardsPlugin,
-  createRevokeSessionsOnVerificationHooks,
+  createRevokeSessionsOnVerification,
 } from './identity-guards'
 import { requireMcpPrincipal, type BetterConvexMcpPrincipal } from './mcp-principal'
 import {
@@ -1251,6 +1251,7 @@ export function createBetterConvexAuthOwned<
         maximumConfiguredPluginRateLimitWindow,
       )
 
+      const sessionRevocation = createRevokeSessionsOnVerification()
       const authOptions = {
         appName: options.appName,
         account: {
@@ -1266,7 +1267,7 @@ export function createBetterConvexAuthOwned<
         advanced: { ipAddress: { ipAddressHeaders: ['x-bcn-verified-client-ip'] } },
         basePath: '/api/auth',
         baseURL,
-        database: authComponent.adapter(ctx),
+        database: sessionRevocation.wrapDatabase(authComponent.adapter(ctx)),
         databaseHooks: {
           user: {
             create: {
@@ -1278,7 +1279,7 @@ export function createBetterConvexAuthOwned<
                 return await beforeUserCreate?.(user)
               },
             },
-            ...createRevokeSessionsOnVerificationHooks(),
+            ...sessionRevocation.hooks,
           },
         },
         disabledPaths: [
