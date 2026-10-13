@@ -7,7 +7,12 @@ import {
 
 export * from './runtime-config-normalize'
 
-/** Read and normalize the current Nuxt application's public Convex config. */
+/**
+ * Read and normalize the current Nuxt application's Convex config: the public
+ * part everywhere, plus the server-only part (trusted client IP header) where
+ * Nuxt provides it.
+ */
 export function getConvexRuntimeConfig(): NormalizedConvexRuntimeConfig {
-  return normalizeConvexRuntimeConfig(useRuntimeConfig().public.convex)
+  const config = useRuntimeConfig()
+  return normalizeConvexRuntimeConfig(config.public.convex, config.convex)
 }

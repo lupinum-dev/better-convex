@@ -67,20 +67,20 @@ interface TestNuxt {
     buildDir: string
     dev: boolean
     alias: Record<string, string>
-    runtimeConfig: { public: Record<string, unknown> }
+    runtimeConfig: { public: Record<string, unknown>; convex?: Record<string, unknown> }
   }
   hook: (name: string, callback: (payload: never) => unknown) => void
   prepareTypes: () => { references: Array<{ path?: string }> }
 }
 
-function createNuxt(): TestNuxt {
+function createNuxt(dev = false): TestNuxt {
   const prepareTypeHooks: Array<(payload: never) => unknown> = []
   return {
     options: {
       rootDir: '/app',
       srcDir: '/app',
       buildDir: '/app/.nuxt',
-      dev: false,
+      dev,
       alias: {},
       runtimeConfig: { public: {} },
     },
@@ -98,8 +98,9 @@ function createNuxt(): TestNuxt {
 async function setup(
   options: ModuleOptions,
   publicRuntimeConfig: Record<string, unknown> = {},
+  dev = false,
 ): Promise<TestNuxt> {
-  const nuxt = createNuxt()
+  const nuxt = createNuxt(dev)
   Object.assign(nuxt.options.runtimeConfig.public, publicRuntimeConfig)
   const definition = convexModule as unknown as {
     setup: (options: ModuleOptions, nuxt: TestNuxt) => Promise<void>
@@ -152,6 +153,71 @@ describe('module type templates', () => {
       '@lupinum/better-convex-nuxt/convex-api-missing.ts',
       '@lupinum/better-convex-nuxt/client-activation.mjs',
     ])
+  })
+})
+
+describe('module trusted client IP header', () => {
+  it('keeps the header out of the public runtime config and in the server-only one', async () => {
+    const nuxt = await setup({
+      auth: { origin: 'https://app.example.test', trustedClientIpHeader: 'CF-Connecting-IP' },
+    })
+
+    expect(JSON.stringify(nuxt.options.runtimeConfig.public)).not.toMatch(
+      /cf-connecting-ip|trustedClientIpHeader/iu,
+    )
+    expect(nuxt.options.runtimeConfig.convex).toEqual({ trustedClientIpHeader: 'cf-connecting-ip' })
+
+    // Server code recombines both halves; the browser never sees the header.
+    const server = normalizeConvexRuntimeConfig(
+      publicConvex(nuxt),
+      nuxt.options.runtimeConfig.convex,
+    )
+    if (server.auth === false) throw new Error('expected auth enabled')
+    expect(server.auth.trustedClientIpHeader).toBe('cf-connecting-ip')
+    const browser = normalizeConvexRuntimeConfig(publicConvex(nuxt))
+    if (browser.auth === false) throw new Error('expected auth enabled')
+    expect(browser.auth.trustedClientIpHeader).toBe('')
+  })
+
+  it('does not let a public runtime override supply the header', async () => {
+    const nuxt = await setup({
+      auth: { origin: 'https://app.example.test', trustedClientIpHeader: 'cf-connecting-ip' },
+    })
+    const tampered = {
+      ...publicConvex(nuxt),
+      auth: { ...(publicConvex(nuxt).auth as object), trustedClientIpHeader: 'x-forged-ip' },
+    }
+    const config = normalizeConvexRuntimeConfig(tampered, nuxt.options.runtimeConfig.convex)
+    if (config.auth === false) throw new Error('expected auth enabled')
+    expect(config.auth.trustedClientIpHeader).toBe('cf-connecting-ip')
+  })
+
+  it('fails closed on the server when a non-loopback origin has no header', async () => {
+    expect(() =>
+      normalizeConvexRuntimeConfig({ auth: { origin: 'https://app.example.test' } }, {}),
+    ).toThrow('trustedClientIpHeader is required')
+  })
+})
+
+describe('module loopback production origin', () => {
+  const loopbackWarning = () =>
+    kit.warn.mock.calls.some(([message]) => String(message).includes('loopback auth origin'))
+
+  it.each([
+    ['production build', false, true],
+    ['dev server', true, false],
+  ])('warns about a loopback auth origin in a %s: %s', async (_, dev, warns) => {
+    kit.warn.mockClear()
+    await setup({ auth: { origin: 'http://localhost:3000' } }, {}, dev)
+    expect(loopbackWarning()).toBe(warns)
+  })
+
+  it('stays quiet for a public production origin', async () => {
+    kit.warn.mockClear()
+    await setup({
+      auth: { origin: 'https://app.example.test', trustedClientIpHeader: 'cf-connecting-ip' },
+    })
+    expect(loopbackWarning()).toBe(false)
   })
 })
 

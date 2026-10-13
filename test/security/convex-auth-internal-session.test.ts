@@ -454,11 +454,12 @@ describe('server session renewal', () => {
     const event = createEvent(incoming, new ServerResponse(incoming))
     event.context.nitro = {
       runtimeConfig: {
+        convex: { trustedClientIpHeader: 'cf-connecting-ip' },
         public: {
           convex: {
             url: 'https://deployment.convex.cloud',
             siteUrl: convexSiteUrl,
-            auth: { origin, trustedClientIpHeader: 'cf-connecting-ip' },
+            auth: { origin },
           },
         },
       },
