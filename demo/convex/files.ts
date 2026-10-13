@@ -56,6 +56,9 @@ export const save = mutation({
       throw new Error('Not authenticated')
     }
 
+    // A storage ID from the client is only a claim: the first registration wins, and the real size
+    // and type come from storage. Storage IDs are not guessable. If a copied app stores private
+    // files before it registers them, also record a pending upload for each user.
     const existing = await ctx.db
       .query('files')
       .withIndex('by_storage', (q) => q.eq('storageId', args.storageId))
@@ -115,7 +118,7 @@ export const getUrl = query({
 })
 
 /**
- * List all uploaded files with uploader info
+ * List the caller's own uploaded files with uploader info
  */
 export const list = query({
   args: {},

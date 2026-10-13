@@ -56,7 +56,9 @@ export const listFiltered = query({
 })
 
 /**
- * Add a new feed item
+ * Add a new feed item.
+ * Demo only: any signed-in user can add unlimited rows. A real feature needs a rate limit, for
+ * example with `@convex-dev/rate-limiter`.
  */
 export const add = mutation({
   args: {

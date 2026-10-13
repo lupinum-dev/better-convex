@@ -1,5 +1,5 @@
 import { trusted } from '@lupinum/better-convex-functions'
-import { v } from 'convex/values'
+import { ConvexError, v } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import { tools } from './agents'
@@ -61,17 +61,33 @@ export const createHostClient = trusted(
 /**
  * Creates a client for MCP Inspector on this computer. Use it in development only.
  * Inspector requests `offline_access` by default, so the client allows renewal.
+ * It refuses to run unless `SITE_URL` of the deployment is a local address, so it cannot
+ * register a localhost redirect on a production deployment by mistake.
  */
 export const createInspectorClient = trusted(
   operator,
   internalMutation({
     args: {},
-    handler: async (ctx) =>
-      await auth.oauthOperator.createPublicClient(ctx, {
+    handler: async (ctx) => {
+      const siteUrl = process.env.SITE_URL
+      let hostname: string | undefined
+      try {
+        hostname = siteUrl ? new URL(siteUrl).hostname : undefined
+      } catch {
+        // A malformed SITE_URL gets the same guidance below.
+      }
+      if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+        throw new ConvexError(
+          'createInspectorClient is for development only. Set SITE_URL to a localhost URL on this deployment first.',
+        )
+      }
+
+      return await auth.oauthOperator.createPublicClient(ctx, {
         name: 'MCP Inspector',
         profile: 'mcp-inspector',
         redirectUris: ['http://localhost:6274/oauth/callback'],
         scopes: ['offline_access', ...Object.keys(policy.scopes)],
-      }),
+      })
+    },
   }),
 )

@@ -186,6 +186,8 @@ Use a fresh deployment. This starter has no migration path from older schemas.
 
    Record the returned `clientId`. The client accepts only the callback
    `http://localhost:6274/oauth/callback`.
+   The function stops unless the deployment's `SITE_URL` is a `localhost` or `127.0.0.1` URL.
+   Do not run it on a production deployment.
 
 2. Start MCP Inspector with `pnpm dlx @modelcontextprotocol/inspector`. Select
    the Streamable HTTP transport and enter your `CONVEX_SITE_URL` followed by

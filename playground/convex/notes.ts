@@ -4,7 +4,9 @@ import { v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 
-// Public notes - no auth required (for demo purposes)
+// Public notes - no auth required (for demo purposes).
+// DEMO ONLY, DO NOT COPY: anyone can add and delete any note, and the table has no owner.
+// For real data, store `ownerId` and check it with `auth.requireUser`, as `tasks.ts` does.
 
 function publicNote(note: Doc<'notes'>) {
   return {
@@ -94,7 +96,7 @@ export const search = query({
   },
 })
 
-// Add a new note (public for demo)
+// Add a new note (public for demo: no auth, no owner, no row limit)
 export const add = mutation({
   args: {
     title: v.string(),
@@ -118,7 +120,7 @@ export const add = mutation({
   },
 })
 
-// Delete a note
+// Delete a note. DEMO ONLY: anyone can delete any note. A real feature checks the owner first.
 export const remove = mutation({
   args: { id: v.id('notes') },
   handler: async (ctx, args) => {

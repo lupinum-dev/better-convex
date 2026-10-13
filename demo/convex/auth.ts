@@ -122,7 +122,8 @@ export const { rotateSigningKey } = betterConvexAuth.jwksOperatorFunctions()
 // GET PERMISSION CONTEXT
 // ============================================
 // Fetched once at app startup.
-// Returns everything the frontend needs to check permissions.
+// Returns everything the frontend needs to show or hide controls.
+// The server does not enforce `permissions.config.ts`: this is a UI hint, not authorization.
 
 export const getPermissionContext = query({
   handler: async (ctx) => {

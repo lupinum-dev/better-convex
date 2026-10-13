@@ -17,9 +17,7 @@ export default defineSchema({
     name: v.string(),
     // App-owned suspension. A suspended user keeps their login but no function lets them act.
     active: v.boolean(),
-  })
-    .index('by_auth_id', ['authId'])
-    .index('by_email', ['email']),
+  }).index('by_auth_id', ['authId']),
 
   organizations: defineTable({ name: v.string() }),
 
