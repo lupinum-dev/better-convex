@@ -388,6 +388,31 @@ describe('email verification ends earlier sessions', () => {
   })
 })
 
+describe('social provider options', () => {
+  useAuthEnvironment()
+
+  it('rejects overrideUserInfoOnSignIn in a static socialProviders object', () => {
+    expect(() =>
+      createBetterConvexAuth(components.sessionAuth, {
+        socialProviders: {
+          github: { clientId: 'a', clientSecret: 'b', overrideUserInfoOnSignIn: true },
+        },
+      } as never),
+    ).toThrow(/overrideUserInfoOnSignIn/)
+  })
+
+  it('rejects overrideUserInfoOnSignIn in the function form when the auth is built', async () => {
+    const s = setup({
+      socialProviders: () => ({
+        github: { clientId: 'a', clientSecret: 'b', overrideUserInfoOnSignIn: true },
+      }),
+    } as never)
+    await expect(s.test.action(async (ctx) => await s.auth.createAuth(ctx))).rejects.toThrow(
+      /overrideUserInfoOnSignIn|AUTH_CONFIG/,
+    )
+  })
+})
+
 describe('two-factor combinations', () => {
   useAuthEnvironment()
 

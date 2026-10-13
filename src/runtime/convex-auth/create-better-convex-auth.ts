@@ -651,6 +651,22 @@ function resolveTrustedProviders(
   return [...trusted]
 }
 
+/**
+ * Better Auth's `overrideUserInfoOnSignIn` rewrites a stored user from the
+ * provider profile on every social sign-in. That would let a provider rebind
+ * a user to an unverified email, and it re-sends `emailVerified: true` on each
+ * sign-in, which ends the person's other sessions. It is not supported.
+ */
+function assertNoOverrideUserInfo(socialProviders: SocialProviders | undefined): void {
+  for (const [name, provider] of Object.entries(socialProviders ?? {})) {
+    if (isPlainRecord(provider) && provider.overrideUserInfoOnSignIn) {
+      throw configError(
+        `does not support "socialProviders.${name}.overrideUserInfoOnSignIn"; it would let the provider change the stored email of a signed-in user without proof`,
+      )
+    }
+  }
+}
+
 function rejectUnsupportedOptions(options: object): void {
   for (const key of OWNED_TOP_LEVEL_OPTIONS) {
     if (Object.hasOwn(options, key)) {
@@ -783,6 +799,7 @@ function rejectUnsupportedOptions(options: object): void {
   assertTrustedProviderShape(record.account as BetterConvexAccountPolicy | undefined)
   // A lazy provider factory is re-validated for every auth construction.
   if (typeof record.socialProviders !== 'function') {
+    assertNoOverrideUserInfo(record.socialProviders as SocialProviders | undefined)
     resolveTrustedProviders(
       record.account as BetterConvexAccountPolicy | undefined,
       record.socialProviders as SocialProviders,
@@ -1137,6 +1154,7 @@ export function createBetterConvexAuthOwned<
         typeof options.socialProviders === 'function'
           ? options.socialProviders()
           : options.socialProviders
+      assertNoOverrideUserInfo(socialProviders)
       const trustedProviders = resolveTrustedProviders(options.account, socialProviders)
       // The app's hook; else the dev outbox on a loopback SITE_URL; else no mail (checked at construction).
       const appDeliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
