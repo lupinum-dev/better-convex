@@ -25,8 +25,8 @@ export default defineNuxtConfig({
     url: process.env.NUXT_PUBLIC_CONVEX_URL ?? process.env.CONVEX_URL,
     siteUrl: process.env.NUXT_PUBLIC_CONVEX_SITE_URL ?? process.env.CONVEX_SITE_URL,
     auth: {
-      // Required. The public origin of this site; .env.example sets it for local work.
-      origin: process.env.SITE_URL,
+      // Development playground only, never deployed. A real app sets SITE_URL and has no fallback.
+      origin: process.env.SITE_URL ?? 'http://localhost:3000',
       trustedClientIpHeader: process.env.BCN_AUTH_TRUSTED_CLIENT_IP_HEADER,
     },
   },
