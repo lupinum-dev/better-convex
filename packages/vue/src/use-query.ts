@@ -102,7 +102,8 @@ export function useConvexQuery<Query extends FunctionReference<'query'>>(
     ConvexQueryArgs<FunctionArgs<Query>>
   >
   const state = useConvexQueryInternal({ query, args: createConvexArgsState(args), options })
-  // Skipped, deferred and auth-blocked queries are not pending, so they resolve at once.
+  // Skipped, deferred, signed-out and failed queries are not pending, so they
+  // resolve at once; a query that waits for authentication is pending.
   const settlement = createSettlementWaiters()
   onScopeDispose(settlement.dispose)
   return createAwaitableState(

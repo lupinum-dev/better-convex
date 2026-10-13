@@ -720,6 +720,31 @@ describe('better-convex-vue package runtime', () => {
     stop()
   })
 
+  it.each([
+    ['fails', { error: normalizeConvexError(new Error('auth down')) }],
+    ['settles signed out', { identityKey: 'anonymous' }],
+  ] as const)(
+    'resolves an awaited required query and list when waiting auth %s',
+    async (_case, settled) => {
+      const host = attachedRuntime('alice')
+      host.emit({ settled: false })
+      const { state, stop } = mount(host, () => ({
+        query: useConvexQuery(queryRef('notes:private'), {}, { auth: 'required' }),
+        list: useConvexPaginatedQuery(
+          paginatedRef('notes:privatePage'),
+          {},
+          { auth: 'required', initialNumItems: 1 },
+        ),
+      }))
+      expect(state.list.pending.value).toBe(true)
+
+      host.emit({ settled: true, ...settled } as Partial<ClientIdentitySnapshot>)
+      await expect(Promise.all([state.query, state.list])).resolves.toHaveLength(2)
+      expect(host.subscriptions).toHaveLength(0)
+      stop()
+    },
+  )
+
   it('resolves execute only after pending auth settles and the first value arrives', async () => {
     const host = attachedRuntime('alice')
     host.emit({ settled: false })
