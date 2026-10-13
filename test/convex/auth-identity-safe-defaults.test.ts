@@ -94,7 +94,7 @@ function setup(options: Opts) {
             method,
             headers: {
               'content-type': 'application/json',
-              Origin: 'https://app.example.test',
+              Origin: process.env.SITE_URL ?? 'https://app.example.test',
               cookie,
             },
             ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
@@ -105,7 +105,9 @@ function setup(options: Opts) {
         let parsed: unknown = text
         try {
           parsed = JSON.parse(text)
-        } catch {}
+        } catch {
+          // not JSON: keep the text
+        }
         return { status: res.status, body: parsed, cookies: res.headers.getSetCookie() }
       })
       for (const raw of response.cookies) {
@@ -130,11 +132,13 @@ function setup(options: Opts) {
       get: (path: string, ip?: string) => call('GET', path, undefined, ip),
       hasSession: async () => {
         const res = await call('GET', '/get-session')
-        return Boolean(res.body && typeof res.body === 'object' && (res.body as any).user)
+        return Boolean(
+          res.body && typeof res.body === 'object' && (res.body as { user?: unknown }).user,
+        )
       },
       convexToken: async () => {
         const res = await call('GET', '/convex/token')
-        return res.status === 200 && Boolean((res.body as any)?.token)
+        return res.status === 200 && Boolean((res.body as { token?: unknown } | null)?.token)
       },
     }
   }
@@ -279,5 +283,45 @@ describe('safe auth defaults', () => {
         emailOTP: { surprise: true },
       } as never),
     ).toThrow(/surprise/)
+  })
+})
+
+describe('auth email without an email hook', () => {
+  useAuthEnvironment()
+
+  it('writes codes to the log on a loopback SITE_URL and the code signs in', async () => {
+    vi.stubEnv('SITE_URL', 'http://localhost:3000')
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const s = setup({ _noEmailHook: true, emailOTP: {} })
+    const client = s.client()
+    await client.post('/email-otp/send-verification-otp', { email: VICTIM, type: 'sign-in' })
+    const line = log.mock.calls.map((call) => String(call[0])).find((text) => text.includes(VICTIM))
+    const otp = /code (\d+)/.exec(line ?? '')?.[1]
+    expect(otp).toBeDefined()
+    const res = await client.post('/sign-in/email-otp', { email: VICTIM, otp })
+    expect(res.status).toBe(200)
+  })
+
+  it('refuses to start a non-loopback deployment that must send mail without a hook', () => {
+    const build = (options: object) => () =>
+      createBetterConvexAuth(components.sessionAuth, options as never)
+    expect(build({ emailOTP: {} })).toThrow(/"email" option/)
+    expect(build({ emailAndPassword: {} })).toThrow(/"email" option/)
+    expect(
+      build({ emailAndPassword: { requireEmailVerification: false, passwordReset: true } }),
+    ).toThrow(/"email" option/)
+    expect(build({ organization: {} })).toThrow(/"email" option/)
+    // No mail needed: no error.
+    expect(build({})).not.toThrow()
+    expect(build({ emailAndPassword: { requireEmailVerification: false } })).not.toThrow()
+  })
+
+  it('does not treat NODE_ENV or a lookalike host as local', () => {
+    for (const siteUrl of ['https://localhost.evil.test', 'https://app.example.test']) {
+      vi.stubEnv('SITE_URL', siteUrl)
+      expect(() =>
+        createBetterConvexAuth(components.sessionAuth, { emailOTP: {} } as never),
+      ).toThrow(/"email" option/)
+    }
   })
 })

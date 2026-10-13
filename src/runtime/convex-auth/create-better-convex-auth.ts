@@ -18,6 +18,7 @@ import type { GenericDataModel, HttpRouter, PublicHttpAction } from 'convex/serv
 import { createAuthJwtPlugin } from './auth-jwt'
 import { isWritableAuthCtx, type AuthCtx, type WritableAuthCtx } from './context'
 import { createAuthComponent, type BetterConvexSessionHttpHandler } from './create-auth-component'
+import { devOutbox, isLoopbackSiteUrl } from './dev-outbox'
 import {
   AUTH_EMAIL_DELIVERY_FAILED,
   authConfigFailure,
@@ -730,11 +731,6 @@ function rejectUnsupportedOptions(options: object): void {
   if (passwordReset !== undefined && typeof passwordReset !== 'boolean') {
     throw configError('expected "emailAndPassword.passwordReset" to be a boolean')
   }
-  if (passwordReset === true && record.email === undefined) {
-    throw configError(
-      'requires the "email" option when "emailAndPassword.passwordReset" is enabled',
-    )
-  }
   rejectEmailCallback(record.emailVerification, 'sendVerificationEmail', 'emailVerification')
   assertOnlyKeys(record.emailVerification, reviewedEmailVerificationOptionKeys, 'emailVerification')
   rejectEmailCallback(record.emailOTP, 'sendVerificationOTP', 'emailOTP')
@@ -756,9 +752,6 @@ function rejectUnsupportedOptions(options: object): void {
   )
   if (record.emailOTP !== undefined && record.emailOTP !== false) {
     if (!isPlainRecord(record.emailOTP)) throw configError('expected "emailOTP" to be an object')
-    if (record.email === undefined) {
-      throw configError('requires the "email" option when "emailOTP" is enabled')
-    }
   }
   if (record.oauth !== undefined) {
     assertOnlyKeys(record.oauth, ['mcp'], 'oauth')
@@ -769,12 +762,33 @@ function rejectUnsupportedOptions(options: object): void {
       throw configError('accepts either "oauth.mcp" or "oauthProvider", not both')
     }
   }
+  assertEmailHookPresent(record)
   assertTrustedProviderShape(record.account as BetterConvexAccountPolicy | undefined)
   // A lazy provider factory is re-validated for every auth construction.
   if (typeof record.socialProviders !== 'function') {
     resolveTrustedProviders(
       record.account as BetterConvexAccountPolicy | undefined,
       record.socialProviders as SocialProviders,
+    )
+  }
+}
+
+/**
+ * A deployment that sends auth mail needs the `email` hook. Without it, the
+ * code or link would never reach the person. On a loopback `SITE_URL` the dev
+ * outbox logs the mail instead, so local work needs no provider.
+ */
+function assertEmailHookPresent(record: Record<string, unknown>): void {
+  if (record.email !== undefined || isLoopbackSiteUrl(process.env.SITE_URL)) return
+  const password = isPlainRecord(record.emailAndPassword) ? record.emailAndPassword : undefined
+  const sends =
+    (record.emailOTP !== undefined && record.emailOTP !== false) ||
+    (password !== undefined &&
+      (password.requireEmailVerification !== false || password.passwordReset === true)) ||
+    (record.organization !== undefined && record.organization !== false)
+  if (sends) {
+    throw configError(
+      'sends email (email codes, password verification or reset, or organization invitations) but has no "email" option; add the "email" hook, or use a loopback SITE_URL for local development',
     )
   }
 }
@@ -1045,6 +1059,8 @@ export function createBetterConvexAuthOwned<
   assertExtraPluginsAllowed: () => void = () => {},
 ): BetterConvexAuth<DataModel> {
   rejectUnsupportedOptions(options)
+  // Read once, when the app module loads: a loopback SITE_URL is local development.
+  const localDevelopment = isLoopbackSiteUrl(process.env.SITE_URL)
   const sessionPolicy = resolveSessionPolicy(options.session)
   const defineSessionClaims: SessionClaimsDefinition = async (input) => {
     const claims = await options.defineSessionClaims?.(input)
@@ -1103,7 +1119,9 @@ export function createBetterConvexAuthOwned<
           ? options.socialProviders()
           : options.socialProviders
       const trustedProviders = resolveTrustedProviders(options.account, socialProviders)
-      const deliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
+      // The app's hook; else the dev outbox on a loopback SITE_URL; else no mail (checked at construction).
+      const appDeliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
+      const deliver = appDeliver ?? (localDevelopment ? devOutbox : undefined)
       const emailAndPassword = options.emailAndPassword
       const { passwordReset = false, ...passwordOptions } = emailAndPassword || {}
       const emailOtpOptions = options.emailOTP
@@ -1296,10 +1314,10 @@ export function createBetterConvexAuthOwned<
                 ...(options.deleteUser.beforeDelete
                   ? { beforeDelete: createBeforeDeleteHook(ctx, options.deleteUser.beforeDelete) }
                   : {}),
-                ...(deliver
+                ...(appDeliver
                   ? {
                       sendDeleteAccountVerification: async ({ user, url, token }) =>
-                        deliver({
+                        appDeliver({
                           type: 'delete-account',
                           to: user.email,
                           url,
