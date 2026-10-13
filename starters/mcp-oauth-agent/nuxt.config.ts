@@ -19,6 +19,14 @@ export default defineNuxtConfig({
       },
     },
   },
+  vite: {
+    optimizeDeps: {
+      // Vite's first scan misses these imports of the auth client and of
+      // ~~/convex/policy. Finding them on the first page load re-bundles every
+      // dependency and reloads the page mid-sign-in.
+      include: ['@better-auth/oauth-provider/client', '@lupinum/better-convex-functions/policy'],
+    },
+  },
   convex: {
     url: process.env.NUXT_PUBLIC_CONVEX_URL,
     siteUrl: process.env.NUXT_PUBLIC_CONVEX_SITE_URL,
