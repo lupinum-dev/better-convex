@@ -20,7 +20,7 @@ overrides:
   # Remove when clean resolution selects source-map-js >=1.2.2 without this pin.
   source-map-js: 1.2.2
   # Remove these audit pins when normal resolution retains the patched versions.
-  'ajv@8>fast-uri': 3.1.7
+  'ajv@8>fast-uri': 3.1.8
   'express@5>qs': 6.16.0
   'body-parser@2>qs': 6.16.0
   esbuild: 0.28.1
@@ -54,3 +54,6 @@ patchedDependencies:
   # random few go missing on each build. The patch pages through the collection. Remove it
   # when ginko-content pages queryMarkdownEnabledContent (still unpaged in 1.0.0-beta.10).
   '@lupinum/ginko-content@1.0.0-beta.5': patches/@lupinum__ginko-content@1.0.0-beta.5.patch
+minimumReleaseAgeExclude:
+  # Renovate security update: fast-uri@3.1.8
+  - fast-uri@3.1.8
