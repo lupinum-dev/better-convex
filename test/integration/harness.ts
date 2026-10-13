@@ -381,6 +381,8 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
     await setEnv('SITE_URL', origin)
     await setEnv('BETTER_AUTH_SECRETS', betterAuthSecrets)
     await setEnv('BCN_AUTH_PROXY_IP_SECRET', proxyIpSecret)
+    // The starter closes sign-up; the fixture user is created like the README does it.
+    await setEnv('ALLOW_SIGN_UP', 'true')
     await backend.waitForFunctions()
     await runCli(['run', 'auth:rotateSigningKey', '{}'])
 
