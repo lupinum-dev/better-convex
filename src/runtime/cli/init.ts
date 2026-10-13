@@ -37,12 +37,12 @@ import { components } from './_generated/api'
 import type { DataModel } from './_generated/dataModel'
 
 export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
-  // No sign-in method is on until you name one. Pick what your app uses:
+  // Password sign-in with verified addresses. Verification links appear in the Convex dev log
+  // while SITE_URL is http://localhost; add an \`email\` hook that sends the mail before you deploy.
+  // No other sign-in method is on until you name it:
   //   emailOTP: {},                 email codes
-  //   emailAndPassword: {},         password sign-in with verified addresses
   //   socialProviders: { ... },     social sign-in
-  // Email codes and verification need an \`email\` hook that sends the mail. While SITE_URL is
-  // http://localhost, the codes and links are written to the Convex log instead.
+  emailAndPassword: {},
 })
 export const createAuth = auth.createAuth
 export const { ensureSigningKey, pruneSigningKeys, rotateSigningKey } = auth.jwksOperatorFunctions()

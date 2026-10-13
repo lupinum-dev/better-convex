@@ -88,7 +88,11 @@ describe.sequential('better-convex init', () => {
 
     await expect(runInitCommand(['--typed-client'], harness.dependencies)).resolves.toBe(0)
 
-    expect(await read('convex/auth.ts')).toContain('createBetterConvexAuth')
+    const generatedAuth = await read('convex/auth.ts')
+    expect(generatedAuth).toContain('createBetterConvexAuth')
+    // Password sign-in is the one method init names, with verification on by default.
+    expect(generatedAuth).toMatch(/^ {2}emailAndPassword: \{\},$/m)
+    expect(generatedAuth).not.toContain('requireEmailVerification')
     expect(await read('app/convex-auth.ts')).toContain('defineConvexAuthClient')
     expect(await read('convex/betterAuth/schema.ts')).toBe('generated schema\n')
     expect(harness.environment.get('SITE_URL')).toBe('http://localhost:4173')
