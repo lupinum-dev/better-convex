@@ -833,10 +833,13 @@ function usesDevOutbox(record: { siteOrigins?: unknown }): boolean {
 /**
  * A deployment that sends auth mail needs the `email` hook. Without it, the
  * code or link would never reach the person. On a loopback `SITE_URL` the dev
- * outbox logs the mail instead, so local work needs no provider.
+ * outbox logs the mail instead, so local work needs no provider. The check
+ * runs only once `SITE_URL` is set; with it unset, sending fails at request
+ * time with {@link missingEmailHook}.
  */
 function assertEmailHookPresent(record: Record<string, unknown>): void {
-  if (record.email !== undefined || usesDevOutbox(record)) return
+  // An unset SITE_URL is allowed here: the first `convex dev` push happens before it is set.
+  if (record.email !== undefined || !process.env.SITE_URL || usesDevOutbox(record)) return
   const password = isPlainRecord(record.emailAndPassword) ? record.emailAndPassword : undefined
   const sends =
     (record.emailOTP !== undefined && record.emailOTP !== false) ||
@@ -964,6 +967,13 @@ function emailCredentials(message: BetterConvexAuthEmail): string[] {
     case 'delete-account':
       return [message.url, message.token]
   }
+}
+
+/** Delivery when there is no `email` hook and `SITE_URL` is not a loopback origin. */
+async function missingEmailHook(message: BetterConvexAuthEmail): Promise<never> {
+  throw new Error(
+    `[better-convex] cannot send the "${message.type}" auth email: no "email" hook is set and SITE_URL is not a loopback origin. Add the "email" hook to createBetterConvexAuth, and set SITE_URL to the https origin of your site.`,
+  )
 }
 
 function createEmailDelivery<DataModel extends GenericDataModel>(
@@ -1179,9 +1189,9 @@ export function createBetterConvexAuthOwned<
           : options.socialProviders
       assertNoOverrideUserInfo(socialProviders)
       const trustedProviders = resolveTrustedProviders(options.account, socialProviders)
-      // The app's hook; else the dev outbox on a loopback SITE_URL; else no mail (checked at construction).
+      // The app's hook; else the dev outbox on a loopback SITE_URL; else a delivery that fails with a clear error.
       const appDeliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
-      const deliver = appDeliver ?? (localDevelopment ? devOutbox : undefined)
+      const deliver = appDeliver ?? (localDevelopment ? devOutbox : missingEmailHook)
       const emailAndPassword = options.emailAndPassword
       const { passwordReset = false, ...passwordOptions } = emailAndPassword || {}
       const emailOtpOptions = options.emailOTP
@@ -1198,44 +1208,36 @@ export function createBetterConvexAuthOwned<
               // An unverified account (for example a squatter) must not accept an invitation.
               requireEmailVerificationOnInvitation: true,
               ...options.organization,
-              ...(deliver
-                ? {
-                    sendInvitationEmail: async (data) =>
-                      deliver({
-                        type: 'organization-invitation',
-                        to: data.email,
-                        invitationId: data.id,
-                        role: data.role,
-                        organization: Object.freeze({
-                          id: data.organization.id,
-                          name: data.organization.name,
-                          slug: data.organization.slug,
-                        }),
-                        inviter: emailUser(data.inviter.user),
-                      }),
-                  }
-                : {}),
+              sendInvitationEmail: async (data) =>
+                deliver({
+                  type: 'organization-invitation',
+                  to: data.email,
+                  invitationId: data.id,
+                  role: data.role,
+                  organization: Object.freeze({
+                    id: data.organization.id,
+                    name: data.organization.name,
+                    slug: data.organization.slug,
+                  }),
+                  inviter: emailUser(data.inviter.user),
+                }),
             }),
         options.twoFactor === false || options.twoFactor === undefined
           ? null
           : twoFactor({
               ...options.twoFactor,
-              ...(deliver
-                ? {
-                    otpOptions: {
-                      ...options.twoFactor.otpOptions,
-                      sendOTP: async ({ user, otp }) =>
-                        deliver({
-                          type: 'two-factor-otp',
-                          to: user.email,
-                          otp,
-                          user: emailUser(user),
-                        }),
-                    },
-                  }
-                : {}),
+              otpOptions: {
+                ...options.twoFactor.otpOptions,
+                sendOTP: async ({ user, otp }) =>
+                  deliver({
+                    type: 'two-factor-otp',
+                    to: user.email,
+                    otp,
+                    user: emailUser(user),
+                  }),
+              },
             }),
-        emailOtpOptions === false || emailOtpOptions === undefined || !deliver
+        emailOtpOptions === false || emailOtpOptions === undefined
           ? null
           : emailOTP({
               storeOTP: 'hashed',
@@ -1338,7 +1340,7 @@ export function createBetterConvexAuthOwned<
                 requireEmailVerification: passwordOptions.requireEmailVerification ?? true,
                 revokeSessionsOnPasswordReset:
                   passwordOptions.revokeSessionsOnPasswordReset ?? true,
-                ...(deliver && passwordReset
+                ...(passwordReset
                   ? {
                       sendResetPassword: async ({ user, url, token }) =>
                         deliver({
@@ -1354,24 +1356,17 @@ export function createBetterConvexAuthOwned<
                 enabled: true,
                 minPasswordLength: 15,
               },
-        emailVerification:
-          options.emailVerification === undefined && !deliver
-            ? undefined
-            : {
-                ...options.emailVerification,
-                ...(deliver
-                  ? {
-                      sendVerificationEmail: async ({ user, url, token }) =>
-                        deliver({
-                          type: 'verify-email',
-                          to: user.email,
-                          url,
-                          token,
-                          user: emailUser(user),
-                        }),
-                    }
-                  : {}),
-              },
+        emailVerification: {
+          ...options.emailVerification,
+          sendVerificationEmail: async ({ user, url, token }) =>
+            deliver({
+              type: 'verify-email',
+              to: user.email,
+              url,
+              token,
+              user: emailUser(user),
+            }),
+        },
         plugins,
         rateLimit: {
           customStorage: rateLimitStorage,

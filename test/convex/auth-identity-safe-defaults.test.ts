@@ -403,6 +403,27 @@ describe('auth email without an email hook', () => {
       } as never),
     ).toThrow(/"email" option/)
   })
+  it('loads with SITE_URL unset, then fails sending mail with an error that names the fix', async () => {
+    vi.stubEnv('SITE_URL', '')
+    // The first `convex dev` push happens before SITE_URL is set: it must succeed.
+    const s = setup({ _noEmailHook: true, emailAndPassword: {}, emailOTP: {} })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const logged = () =>
+      error.mock.calls
+        .flat()
+        .map((arg) => (arg instanceof Error ? arg.message : JSON.stringify(arg)))
+        .join('\n')
+    // Without SITE_URL no request can run at all, and the log names SITE_URL.
+    await expect(s.test.action(async (ctx) => await s.auth.createAuth(ctx))).rejects.toThrow(
+      /AUTH_CONFIG_INVALID/,
+    )
+    expect(logged()).toMatch(/SITE_URL is required/)
+    // SITE_URL set later, still no email hook: the send fails and says what to add.
+    vi.stubEnv('SITE_URL', 'https://app.example.test')
+    await s.client().post('/sign-up/email', { name: 'x', email: VICTIM, password: VICTIM_PW })
+    expect(logged()).toMatch(/"email" hook/)
+    expect(logged()).toMatch(/SITE_URL is not a loopback origin/)
+  })
 })
 
 describe('email verification ends earlier sessions', () => {
