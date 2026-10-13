@@ -107,7 +107,8 @@ describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
     expect(
       Object.keys(ALLOWED_OAUTH_PROVIDER_ROUTES).filter((key) => !registered.has(key)),
     ).toEqual([])
-    // Operator provisioning and the end-session confirmation have no HTTP flow.
+    // The provider calls these only from server code and never routed them over
+    // HTTP; listing them as disabled is defence in depth, not a behavior change.
     for (const path of [
       '/oauth2/end-session/confirm',
       '/admin/oauth2/create-client',
