@@ -508,33 +508,6 @@ describe('email verification ends earlier sessions', () => {
     expect(await owner.hasSession()).toBe(true)
   })
 
-  it('does not end other sessions when an already verified address is verified again', async () => {
-    const s = setup({ emailOTP: {}, emailAndPassword: { requireEmailVerification: false } })
-    await s.client().post('/sign-up/email', { name: 'x', email: VICTIM, password: VICTIM_PW })
-    const owner = s.client()
-    await owner.post('/email-otp/send-verification-otp', {
-      email: VICTIM,
-      type: 'email-verification',
-    })
-    const first = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
-    expect(
-      (await owner.post('/email-otp/verify-email', { email: VICTIM, otp: first })).status,
-    ).toBe(200)
-    // A second device signs in, then the same address is verified once more.
-    const phone = s.client()
-    await phone.post('/sign-in/email', { email: VICTIM, password: VICTIM_PW })
-    expect(await phone.hasSession()).toBe(true)
-    const mailsBefore = s.mails.length
-    await owner.post('/email-otp/send-verification-otp', {
-      email: VICTIM,
-      type: 'email-verification',
-    })
-    expect(s.mails.length).toBeGreaterThanOrEqual(mailsBefore)
-    const second = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
-    await owner.post('/email-otp/verify-email', { email: VICTIM, otp: second })
-    expect(await phone.hasSession()).toBe(true)
-  })
-
   it('keeps the sign-in OTP mitigation: a squatter password is gone after an OTP sign-in', async () => {
     const s = setup({ emailOTP: {}, emailAndPassword: { requireEmailVerification: false } })
     const squatter = s.client()

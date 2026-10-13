@@ -1,4 +1,3 @@
-import type { GenericEndpointContext } from '@better-auth/core'
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import { APIError, createAuthMiddleware } from 'better-auth/api'
 
@@ -28,13 +27,6 @@ export function createIdentityGuardsPlugin(): BetterAuthPlugin {
 
 type UserHooks = NonNullable<NonNullable<BetterAuthOptions['databaseHooks']>['user']>
 
-type UserRecord = { id: string; emailVerified?: boolean | null }
-type AdapterCall = { model: string; where: unknown; update?: Record<string, unknown> }
-type UserAdapter = {
-  findOne: (call: AdapterCall) => Promise<UserRecord | null>
-  update: (call: AdapterCall) => Promise<UserRecord | null>
-}
-
 /**
  * Proving an address ends every session that existed before the proof. A
  * squatter who registered the address with a password and signed in holds such
@@ -42,44 +34,26 @@ type UserAdapter = {
  * that the verification itself creates (auto sign-in) is made after the update,
  * so it survives. The password stays: it may belong to the honest owner.
  *
- * Only a change from unverified to verified counts. Better Auth's hook gets
- * the new values but not the stored row, so `wrapDatabase` reads the row before
- * a user update that sets `emailVerified: true` and records the users it moves
- * across that line. A repeated verification (or a provider that re-sends
- * `emailVerified: true`) therefore ends no session.
+ * The hook sees the new values, not the stored row, so verifying an address
+ * that is already verified also ends sessions. That errs toward signing out;
+ * reading the row first would need a wrapper around the auth adapter.
  */
-export function createRevokeSessionsOnVerification() {
-  const proven = new Set<string>()
+export function createRevokeSessionsOnVerificationHooks(): Pick<UserHooks, 'update'> {
+  // One verifying update per request: `before` marks the request, `after` revokes.
+  const verifying = new WeakSet<object>()
   return {
-    hooks: {
-      update: {
-        after: async (user: UserRecord | null, context: GenericEndpointContext | null) => {
-          // Take the mark first, so it cannot outlive this update.
-          const moved = user ? proven.delete(user.id) : false
-          if (!user || !moved || !context) return
-          await context.context.internalAdapter.deleteUserSessions(user.id)
-        },
+    update: {
+      before: async (data, context) => {
+        if (context && (data as { emailVerified?: unknown }).emailVerified === true) {
+          verifying.add(context)
+        }
       },
-    } satisfies Pick<UserHooks, 'update'>,
-    wrapDatabase<Options, Adapter extends object>(
-      factory: (options: Options) => Adapter,
-    ): (options: Options) => Adapter {
-      return (options) => {
-        const adapter = factory(options)
-        const users = adapter as unknown as UserAdapter
-        return {
-          ...adapter,
-          update: async (call: AdapterCall) => {
-            if (call.model !== 'user' || call.update?.emailVerified !== true) {
-              return await users.update(call)
-            }
-            const before = await users.findOne({ model: 'user', where: call.where })
-            const updated = await users.update(call)
-            if (before && before.emailVerified !== true && updated) proven.add(updated.id)
-            return updated
-          },
-        } as Adapter
-      }
+      after: async (user, context) => {
+        // Take the mark first, so it cannot outlive this update.
+        const marked = context ? verifying.delete(context) : false
+        if (!user || !context || !marked) return
+        await context.context.internalAdapter.deleteUserSessions(user.id)
+      },
     },
   }
 }
