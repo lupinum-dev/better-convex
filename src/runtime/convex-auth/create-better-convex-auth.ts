@@ -73,6 +73,7 @@ type BetterConvexUserCreateDecision =
   | {
       readonly allowed: true
       readonly user?: {
+        /** Only the same address in other letter case; it is stored in lower case. */
         readonly email?: string
         readonly id?: string
       }
@@ -861,7 +862,9 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
       !patch ||
       typeof patch !== 'object' ||
       (patch.id !== undefined && !requiredIdentityValue(patch.id)) ||
-      (patch.email !== undefined && !requiredIdentityValue(patch.email))
+      (patch.email !== undefined && !requiredIdentityValue(patch.email)) ||
+      // The address was proven (or typed) by the person; a hook may not swap in another one.
+      (patch.email !== undefined && patch.email.toLowerCase() !== user.email.toLowerCase())
     ) {
       rejectUserCreation({ subCode: 'AUTH_USER_CREATE_INVALID_IDENTITY' })
     }
@@ -870,7 +873,7 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
       data: {
         ...user,
         ...(patch.id === undefined ? {} : { id: patch.id }),
-        ...(patch.email === undefined ? {} : { email: patch.email }),
+        ...(patch.email === undefined ? {} : { email: patch.email.toLowerCase() }),
       },
     }
   }

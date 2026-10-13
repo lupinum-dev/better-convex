@@ -457,3 +457,39 @@ describe('users with an unverified email', () => {
     expect(seen).toEqual([])
   })
 })
+
+describe('beforeUserCreate email', () => {
+  useAuthEnvironment()
+
+  async function otpSignIn(s: ReturnType<typeof setup>, email: string) {
+    const client = s.client()
+    await client.post('/email-otp/send-verification-otp', { email, type: 'sign-in' })
+    const otp = (s.lastMail('email-otp', email) as { otp: string }).otp
+    return await client.post('/sign-in/email-otp', { email, otp })
+  }
+
+  it('refuses a replacement email that is not the proven address', async () => {
+    const s = setup({
+      emailOTP: {},
+      beforeUserCreate: async ({ user }: { user: { email: string } }) => ({
+        allowed: true,
+        user: { email: user.email.replace('alias+', '') },
+      }),
+    } as never)
+    const res = await otpSignIn(s, 'alias+victim2@example.test')
+    expect(res.status).not.toBe(200)
+    expect((await s.users()).page).toHaveLength(0)
+  })
+
+  it('stores a mixed-case replacement in lower case so the next sign-in finds the user', async () => {
+    const s = setup({
+      emailOTP: {},
+      beforeUserCreate: async () => ({ allowed: true, user: { email: 'Mixed@Example.test' } }),
+    } as never)
+    expect((await otpSignIn(s, 'mixed@example.test')).status).toBe(200)
+    expect((await otpSignIn(s, 'mixed@example.test')).status).toBe(200)
+    expect((await s.users()).page.map((user) => (user as { email: string }).email)).toEqual([
+      'mixed@example.test',
+    ])
+  })
+})

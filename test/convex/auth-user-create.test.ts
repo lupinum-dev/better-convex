@@ -90,14 +90,14 @@ describe('user creation policy with real Better Auth', () => {
     const beforeUserCreate = vi.fn<Parameters<typeof setup>[0]>(async () => {
       return {
         allowed: true,
-        user: { email: 'canonical@example.test', id: 'existing-user-id' },
+        user: { email: 'OWNER@Example.test', id: 'existing-user-id' },
       }
     })
     const { signUp, users } = setup(beforeUserCreate)
     const response = await signUp()
     expect(response.status).toBe(200)
     expect(response.body.user).toMatchObject({
-      email: 'canonical@example.test',
+      email: 'owner@example.test',
       id: 'existing-user-id',
       name: 'Owner',
       emailVerified: false,
@@ -115,7 +115,7 @@ describe('user creation policy with real Better Auth', () => {
     const stored = await users()
     expect(stored.page).toHaveLength(1)
     expect(stored.page[0]).toMatchObject({
-      email: 'canonical@example.test',
+      email: 'owner@example.test',
       id: 'existing-user-id',
       name: 'Owner',
       emailVerified: false,
@@ -132,6 +132,11 @@ describe('user creation policy with real Better Auth', () => {
         throw new Error('private hook error text')
       },
       log: { subCode: 'AUTH_USER_CREATE_HOOK_THREW', cause: 'Error: private hook error text' },
+    },
+    {
+      name: 'a different email than the one signed up',
+      callback: async () => ({ allowed: true as const, user: { email: 'other@example.test' } }),
+      log: { subCode: 'AUTH_USER_CREATE_INVALID_IDENTITY' },
     },
     {
       name: 'invalid identity replacement',
