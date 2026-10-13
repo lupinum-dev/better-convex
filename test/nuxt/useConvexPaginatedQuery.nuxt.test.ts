@@ -456,7 +456,7 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
-  it('returns a native Promise with immediate state that settles on the first live page, without a one-shot query', async () => {
+  it('returns immediate awaitable state that settles on the first live page, without a one-shot query', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:native-promise')
     const { result, wrapper } = await captureInNuxt(
@@ -464,12 +464,9 @@ describe('useConvexPaginatedQuery controller', () => {
       { owner: makeMockOwner(primary) },
     )
 
-    expect(result).toBeInstanceOf(Promise)
+    expect(result).not.toBeInstanceOf(Promise)
     expect(result.data.value).toBeUndefined()
     expect(result.status.value).toBe('pending')
-    for (const key of ['then', 'catch', 'finally']) {
-      expect(Object.prototype.propertyIsEnumerable.call(result, key)).toBe(true)
-    }
     let settled = false
     const completion = result.then((value) => {
       settled = true

@@ -111,13 +111,10 @@ export type {
 // The Nuxt query options extend the Vue ones with the SSR policy (`server`,
 // `lazy`), so they are exported under their own `UseNuxt*` names.
 export type {
-  NuxtConvexPaginatedQuery,
+  ConvexPaginatedQuery,
   UseNuxtConvexPaginatedQueryOptions,
 } from './runtime/composables/useConvexPaginatedQuery'
-export type {
-  NuxtConvexQuery,
-  UseNuxtConvexQueryOptions,
-} from './runtime/composables/useConvexQuery'
+export type { ConvexQuery, UseNuxtConvexQueryOptions } from './runtime/composables/useConvexQuery'
 
 const logger = useLogger('@lupinum/better-convex-nuxt')
 

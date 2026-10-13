@@ -1,11 +1,13 @@
 import type {
   ConvexAuthMode,
+  ConvexQuery,
   ConvexQueryBlockedBy,
   UseConvexQueryOptions,
   UseConvexQueryParameters,
   UseConvexQueryState,
 } from '@lupinum/better-convex-vue'
 import {
+  createAwaitableState,
   createConvexArgsState,
   createSettlementWaiters,
   useConvexQueryInternal,
@@ -29,7 +31,6 @@ import {
 } from '../utils/query-foundation'
 import { convexQueryAsyncDataKey, resolveConvexQueryGate } from '../utils/query-ssr'
 import type { ConvexCallStatus } from '../utils/types'
-import { createNuxtAwaitableState } from './nuxt-awaitable-state'
 import { resolveQueryLifecycleOptions } from './query-lifecycle-options'
 
 export type { ConvexAuthMode, ConvexCallStatus, ConvexQueryBlockedBy }
@@ -50,7 +51,7 @@ export type UseNuxtConvexQueryOptions = UseNuxtConvexQueryBaseOptions &
 
 export type { UseConvexQueryOptions, UseConvexQueryParameters, UseConvexQueryState }
 
-export type NuxtConvexQuery<Data> = UseConvexQueryState<Data> & Promise<UseConvexQueryState<Data>>
+export type { ConvexQuery }
 
 interface BuildConvexQueryResult<DataT> {
   resultData: UseConvexQueryState<DataT>
@@ -236,11 +237,11 @@ export function createConvexQueryState<
 export function useConvexQuery<Query extends FunctionReference<'query'>>(
   query: Query,
   ...parameters: UseConvexQueryParameters<Query, UseNuxtConvexQueryOptions>
-): NuxtConvexQuery<FunctionReturnType<Query>> {
+): ConvexQuery<FunctionReturnType<Query>> {
   const [providedArgs, options] = parameters
   const args = (parameters.length === 0 ? {} : providedArgs) as MaybeRefOrGetter<
     ConvexQueryArgs<FunctionArgs<Query>>
   >
   const result = createConvexQueryState(query, args, options)
-  return createNuxtAwaitableState(result.resultData, result.resolvePromise)
+  return createAwaitableState(result.resultData, result.resolvePromise)
 }
