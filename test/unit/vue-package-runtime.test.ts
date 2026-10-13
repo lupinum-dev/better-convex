@@ -263,26 +263,54 @@ describe('better-convex-vue package runtime', () => {
 
   it('preloads from a router guard context and holds the subscription for the page', async () => {
     vi.useFakeTimers()
-    const host = attachedRuntime('alice')
-    const app = createApp({})
-    app.use(createBetterConvex({ attachment: host.attachment }))
-    let settled = false
-    // Vue Router runs guards inside app.runWithContext(), with no component.
-    const preload = app
-      .runWithContext(() => preloadConvexQuery(queryRef<{ id: string }>('notes:get'), { id: 'a' }))
-      .then(() => (settled = true))
+    try {
+      const host = attachedRuntime('alice')
+      const app = createApp({})
+      app.use(createBetterConvex({ attachment: host.attachment }))
+      let settled = false
+      // Vue Router runs guards inside app.runWithContext(), with no component.
+      const preload = app
+        .runWithContext(() =>
+          preloadConvexQuery(queryRef<{ id: string }>('notes:get'), { id: 'a' }),
+        )
+        .then(() => (settled = true))
 
-    expect(host.active()).toHaveLength(1)
-    await Promise.resolve()
-    expect(settled).toBe(false)
-    host.subscriptions[0]!.emit({ id: 'a' })
-    await preload
+      expect(host.active()).toHaveLength(1)
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      host.subscriptions[0]!.emit({ id: 'a' })
+      await preload
 
-    vi.advanceTimersByTime(PRELOAD_HOLD_MS - 1)
-    expect(host.subscriptions[0]!.active).toBe(true)
-    vi.advanceTimersByTime(1)
-    expect(host.subscriptions[0]!.active).toBe(false)
-    vi.useRealTimers()
+      vi.advanceTimersByTime(PRELOAD_HOLD_MS - 1)
+      expect(host.subscriptions[0]!.active).toBe(true)
+      vi.advanceTimersByTime(1)
+      expect(host.subscriptions[0]!.active).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops waiting for a preload that gets no result, and names a missing app context', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = attachedRuntime('alice')
+      const app = createApp({})
+      app.use(createBetterConvex({ attachment: host.attachment }))
+      const preload = app.runWithContext(() => preloadConvexQuery(queryRef('notes:offline'), {}))
+
+      await vi.advanceTimersByTimeAsync(PRELOAD_HOLD_MS)
+      await expect(preload).resolves.toBeUndefined()
+      expect(host.subscriptions[0]!.active).toBe(true)
+      await vi.advanceTimersByTimeAsync(PRELOAD_HOLD_MS)
+      expect(host.subscriptions[0]!.active).toBe(false)
+
+      // After a guard's first await, Vue Router no longer provides the app context.
+      await expect(preloadConvexQuery(queryRef('notes:late'), {})).rejects.toThrow(
+        'before the first await of a router guard',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reactively enters and leaves the explicit query skip state', () => {
