@@ -9,9 +9,10 @@ import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 
 /**
- * List all tasks, sorted by creation time (newest first)
+ * List the latest tasks of ALL signed-in users, newest first.
+ * Shared on purpose for this demo. For private data, copy `listMine` instead.
  */
-export const list = query({
+export const listShared = query({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity()
