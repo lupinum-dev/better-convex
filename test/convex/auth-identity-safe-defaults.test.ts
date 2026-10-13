@@ -9,6 +9,7 @@ import type {
   BetterConvexAuthEmail,
   CreateBetterConvexAuthOptions,
 } from '../../src/runtime/convex-auth/create-better-convex-auth'
+import organizationSchema from '../fixtures/better-auth-local-component/convex/betterAuth/schema'
 import twoFactorSchema from '../fixtures/better-auth-two-factor/convex/betterAuth/schema'
 
 const restoreHostEnvironment = await vi.hoisted(async () => {
@@ -32,6 +33,9 @@ const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**
 const twoFactorModules = import.meta.glob(
   '../fixtures/better-auth-two-factor/convex/betterAuth/**/*.ts',
 )
+const organizationModules = import.meta.glob(
+  '../fixtures/better-auth-local-component/convex/betterAuth/**/*.ts',
+)
 const components = componentsGeneric() as unknown as {
   sessionAuth: ComponentApi<'sessionAuth'>
 }
@@ -42,6 +46,7 @@ const VICTIM_PW = 'victim-chosen-password-22'
 
 type Opts = Omit<CreateBetterConvexAuthOptions<never>, 'email'> & {
   _twoFactorSchema?: boolean
+  _organizationSchema?: boolean
   _noEmailHook?: boolean
 }
 
@@ -52,12 +57,12 @@ function freshIp() {
 }
 
 function setup(options: Opts) {
-  const { _twoFactorSchema, _noEmailHook, ...authOptions } = options
+  const { _twoFactorSchema, _organizationSchema, _noEmailHook, ...authOptions } = options
   const test = convexTest(defineSchema({}), rootModules)
   test.registerComponent(
     'sessionAuth',
-    _twoFactorSchema ? twoFactorSchema : authSchema,
-    _twoFactorSchema ? twoFactorModules : authModules,
+    _twoFactorSchema ? twoFactorSchema : _organizationSchema ? organizationSchema : authSchema,
+    _twoFactorSchema ? twoFactorModules : _organizationSchema ? organizationModules : authModules,
   )
   const mails: BetterConvexAuthEmail[] = []
   const auth = createBetterConvexAuth(components.sessionAuth, {
@@ -300,17 +305,48 @@ describe('safe auth defaults', () => {
     for (const row of rows.page) expect(String((row as { value: string }).value)).not.toContain(otp)
   })
 
-  it('requires a verified email to accept an organization invitation by default', async () => {
-    const s = setup({ organization: {} })
-    const flag = await s.test.action(async (ctx) => {
-      const instance = await s.auth.createAuth(ctx)
-      const context = (await instance.$context) as {
-        options: { plugins: { id: string; options?: Record<string, unknown> }[] }
-      }
-      return context.options.plugins.find((plugin) => plugin.id === 'organization')?.options
-        ?.requireEmailVerificationOnInvitation
+  it('refuses an unverified user who accepts an organization invitation, then lets them in once verified', async () => {
+    const s = setup({
+      _organizationSchema: true,
+      organization: {},
+      emailOTP: {},
+      emailAndPassword: { requireEmailVerification: false },
     })
-    expect(flag).toBe(true)
+    const owner = s.client()
+    await owner.post('/sign-up/email', {
+      name: 'Owner',
+      email: 'owner@example.test',
+      password: VICTIM_PW,
+    })
+    await owner.post('/sign-in/email', { email: 'owner@example.test', password: VICTIM_PW })
+    const organization = (await owner.post('/organization/create', { name: 'Org', slug: 'org' }))
+      .body as { id: string }
+    await owner.post('/organization/invite-member', {
+      email: VICTIM,
+      role: 'member',
+      organizationId: organization.id,
+    })
+    const invitation = s.lastMail('organization-invitation', VICTIM) as { invitationId: string }
+
+    const invitee = s.client()
+    await invitee.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await invitee.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const refused = await invitee.post('/organization/accept-invitation', {
+      invitationId: invitation.invitationId,
+    })
+    expect(refused.status).toBe(403)
+
+    await invitee.post('/email-otp/send-verification-otp', {
+      email: VICTIM,
+      type: 'email-verification',
+    })
+    const otp = (s.lastMail('email-otp', VICTIM) as { otp: string }).otp
+    await invitee.post('/email-otp/verify-email', { email: VICTIM, otp })
+    await invitee.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const accepted = await invitee.post('/organization/accept-invitation', {
+      invitationId: invitation.invitationId,
+    })
+    expect(accepted.status).toBe(200)
   })
 
   it('rejects emailOTP.changeEmail and unknown emailOTP keys at construction', () => {
@@ -359,7 +395,7 @@ describe('auth email without an email hook', () => {
     expect(build({ emailAndPassword: { requireEmailVerification: false } })).not.toThrow()
   })
 
-  it('does not treat NODE_ENV or a lookalike host as local', () => {
+  it('does not treat a lookalike host as local', () => {
     for (const siteUrl of ['https://localhost.evil.test', 'https://app.example.test']) {
       vi.stubEnv('SITE_URL', siteUrl)
       expect(() =>
