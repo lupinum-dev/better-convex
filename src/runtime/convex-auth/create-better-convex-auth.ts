@@ -796,6 +796,21 @@ function rejectUnsupportedOptions(options: object): void {
       )
     }
   }
+  if (record.twoFactor !== undefined && record.twoFactor !== false) {
+    const password = isPlainRecord(record.emailAndPassword) ? record.emailAndPassword : undefined
+    const verification = isPlainRecord(record.emailVerification)
+      ? record.emailVerification
+      : undefined
+    // The verification link signs the person in with no second factor.
+    if (
+      password?.requireEmailVerification === false &&
+      verification?.autoSignInAfterVerification === true
+    ) {
+      throw configError(
+        'does not support "twoFactor" together with "emailVerification.autoSignInAfterVerification" while "emailAndPassword.requireEmailVerification" is false; the verification link would sign in without the second factor',
+      )
+    }
+  }
   assertTrustedProviderShape(record.account as BetterConvexAccountPolicy | undefined)
   // A lazy provider factory is re-validated for every auth construction.
   if (typeof record.socialProviders !== 'function') {
@@ -808,12 +823,20 @@ function rejectUnsupportedOptions(options: object): void {
 }
 
 /**
+ * The dev outbox is for one local origin only. With `siteOrigins`, the app
+ * serves other origins too, so a loopback `SITE_URL` no longer means local.
+ */
+function usesDevOutbox(record: { siteOrigins?: unknown }): boolean {
+  return record.siteOrigins === undefined && isLoopbackSiteUrl(process.env.SITE_URL)
+}
+
+/**
  * A deployment that sends auth mail needs the `email` hook. Without it, the
  * code or link would never reach the person. On a loopback `SITE_URL` the dev
  * outbox logs the mail instead, so local work needs no provider.
  */
 function assertEmailHookPresent(record: Record<string, unknown>): void {
-  if (record.email !== undefined || isLoopbackSiteUrl(process.env.SITE_URL)) return
+  if (record.email !== undefined || usesDevOutbox(record)) return
   const password = isPlainRecord(record.emailAndPassword) ? record.emailAndPassword : undefined
   const sends =
     (record.emailOTP !== undefined && record.emailOTP !== false) ||
@@ -1096,7 +1119,7 @@ export function createBetterConvexAuthOwned<
 ): BetterConvexAuth<DataModel> {
   rejectUnsupportedOptions(options)
   // Read once, when the app module loads: a loopback SITE_URL is local development.
-  const localDevelopment = isLoopbackSiteUrl(process.env.SITE_URL)
+  const localDevelopment = usesDevOutbox(options)
   const sessionPolicy = resolveSessionPolicy(options.session)
   const defineSessionClaims: SessionClaimsDefinition = async (input) => {
     const claims = await options.defineSessionClaims?.(input)
@@ -1297,6 +1320,14 @@ export function createBetterConvexAuthOwned<
           '/oauth2/update-client',
           '/oauth2/client/rotate-secret',
           '/oauth2/delete-client',
+          // Email-code password reset is part of "passwordReset", off unless named.
+          ...(passwordReset
+            ? []
+            : [
+                '/email-otp/request-password-reset',
+                '/email-otp/reset-password',
+                '/forget-password/email-otp',
+              ]),
         ],
         emailAndPassword:
           emailAndPassword === false || emailAndPassword === undefined

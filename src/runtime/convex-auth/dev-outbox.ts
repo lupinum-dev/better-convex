@@ -1,15 +1,16 @@
 import type { BetterConvexAuthEmail } from './create-better-convex-auth'
-import { isExactLoopbackHost } from './origin'
+import { isExactLoopbackHost, normalizeAuthOrigin } from './origin'
 
 /**
- * True when `SITE_URL` is an exact loopback origin (`localhost`, `127.0.0.1`,
- * `[::1]`). This is the only signal for "local development": `NODE_ENV` is not
+ * True when `SITE_URL` is an exact, canonical loopback origin (`localhost`,
+ * `127.0.0.1`, `[::1]`). This is the only signal for "local development": `NODE_ENV` is not
  * set on a Convex deployment, so it never decides anything here.
  */
 export function isLoopbackSiteUrl(siteUrl: string | undefined): boolean {
   if (!siteUrl) return false
   try {
-    return isExactLoopbackHost(new URL(siteUrl).hostname)
+    // Only the canonical spellings count; `127.1` or `LOCALHOST` are not local.
+    return isExactLoopbackHost(new URL(normalizeAuthOrigin(siteUrl, 'SITE_URL')).hostname)
   } catch {
     return false
   }

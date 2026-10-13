@@ -367,6 +367,42 @@ describe('auth email without an email hook', () => {
       ).toThrow(/"email" option/)
     }
   })
+
+  it('does not treat NODE_ENV=development as local when SITE_URL is public', () => {
+    vi.stubEnv('NODE_ENV', 'development')
+    expect(() => createBetterConvexAuth(components.sessionAuth, { emailOTP: {} } as never)).toThrow(
+      /"email" option/,
+    )
+  })
+
+  it('counts only canonical loopback spellings as local', () => {
+    const build = () => createBetterConvexAuth(components.sessionAuth, { emailOTP: {} } as never)
+    for (const siteUrl of [
+      'http://127.1',
+      'http://0x7f000001',
+      'http://LOCALHOST:3000',
+      'http://localhost:3000/app',
+      'http://user@localhost:3000',
+      'http://app.localhost:3000',
+    ]) {
+      vi.stubEnv('SITE_URL', siteUrl)
+      expect(build, siteUrl).toThrow(/"email" option/)
+    }
+    for (const siteUrl of ['http://localhost:3000', 'http://127.0.0.1:4567', 'http://[::1]:3000']) {
+      vi.stubEnv('SITE_URL', siteUrl)
+      expect(build, siteUrl).not.toThrow()
+    }
+  })
+
+  it('does not use the dev outbox when siteOrigins lists other origins', () => {
+    vi.stubEnv('SITE_URL', 'http://localhost:3000')
+    expect(() =>
+      createBetterConvexAuth(components.sessionAuth, {
+        emailOTP: {},
+        siteOrigins: ['https://app.example.test'],
+      } as never),
+    ).toThrow(/"email" option/)
+  })
 })
 
 describe('email verification ends earlier sessions', () => {
@@ -483,6 +519,26 @@ describe('social provider options', () => {
   })
 })
 
+describe('email code password reset', () => {
+  useAuthEnvironment()
+  const resetPaths = ['/email-otp/request-password-reset', '/email-otp/reset-password']
+
+  it('is closed unless emailAndPassword.passwordReset is true', async () => {
+    const s = setup({ emailOTP: {}, emailAndPassword: {} })
+    for (const path of [...resetPaths, '/forget-password/email-otp']) {
+      const res = await s.client().post(path, { email: VICTIM, otp: '123456', password: VICTIM_PW })
+      expect(res.status, path).toBe(404)
+    }
+    expect(s.lastMail('email-otp', VICTIM)).toBeUndefined()
+  })
+
+  it('works when the app names passwordReset', async () => {
+    const s = setup({ emailOTP: {}, emailAndPassword: { passwordReset: true } })
+    const res = await s.client().post('/email-otp/request-password-reset', { email: VICTIM })
+    expect(res.status).toBe(200)
+  })
+})
+
 describe('two-factor combinations', () => {
   useAuthEnvironment()
 
@@ -499,6 +555,28 @@ describe('two-factor combinations', () => {
     expect(build({ twoFactor: {}, socialProviders: () => ({}) })).toThrow(/socialProviders/)
     expect(build({ twoFactor: {}, emailAndPassword: {} })).not.toThrow()
     expect(build({ emailOTP: {}, socialProviders: {}, twoFactor: false })).not.toThrow()
+  })
+
+  it('rejects twoFactor with auto sign-in after verification when verification is not required', () => {
+    const build = (options: object) => () =>
+      createBetterConvexAuth(components.sessionAuth, {
+        email: async () => {},
+        twoFactor: {},
+        ...options,
+      } as never)
+    expect(
+      build({
+        emailAndPassword: { requireEmailVerification: false },
+        emailVerification: { autoSignInAfterVerification: true },
+      }),
+    ).toThrow(/autoSignInAfterVerification/)
+    expect(
+      build({
+        emailAndPassword: {},
+        emailVerification: { autoSignInAfterVerification: true },
+      }),
+    ).not.toThrow()
+    expect(build({ emailAndPassword: { requireEmailVerification: false } })).not.toThrow()
   })
 })
 
