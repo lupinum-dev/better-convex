@@ -294,9 +294,10 @@ export default defineNuxtModule<ModuleOptions>({
     const normalizedAuthConfig = normalizeConvexAuthConfig(options.auth)
     const isAuthEnabled = isConvexAuthEnabled(normalizedAuthConfig)
     if (isConvexAuthEnabled(normalizedAuthConfig)) {
+      // `nuxi prepare` and `nuxt typecheck` build nothing that serves visitors.
       const loopbackWarning = loopbackProductionOriginWarning(
         normalizedAuthConfig,
-        nuxt.options.dev,
+        nuxt.options.dev || nuxt.options._prepare,
       )
       if (loopbackWarning) logger.warn(loopbackWarning)
     }
