@@ -6,7 +6,7 @@
  *
  * UI hints only. The Convex functions in this demo do NOT read this table and do not enforce it.
  * Hiding a button is not authorization. A real application must check the role in every Convex
- * function, for example with `authorize()` in `playground/convex/lib/permissions.ts`.
+ * function, from the membership stored in the database.
  */
 
 export const ROLES = ['admin', 'member', 'viewer'] as const

@@ -96,8 +96,9 @@ const {
       </p>
       <p class="hint">
         Route middleware only redirects. It is not authorization. Anyone can still call the Convex
-        functions directly. Check the admin role in every Convex function, for example with
-        <code>authorize()</code>.
+        functions directly. Check the admin role in every Convex function, from the membership
+        stored in the database. The playground's <code>authorize()</code> checks only sign-in and
+        ownership; it does not read a role.
       </p>
     </div>
   </div>
