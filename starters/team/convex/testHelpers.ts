@@ -1,3 +1,5 @@
+import type { InferAPI } from 'better-auth'
+import type { emailOTP } from 'better-auth/plugins'
 import type { UserIdentity } from 'convex/server'
 
 import { components } from './_generated/api'
@@ -97,6 +99,8 @@ export async function signUpBetterAuthUser(
 ) {
   return await t.run(async (ctx) => {
     const auth = await createAuth(ctx)
+    // The factory types only Better Auth's core API; this starter turns on email codes.
+    const api = auth.api as typeof auth.api & InferAPI<ReturnType<typeof emailOTP>['endpoints']>
     const email = `${args.label}@example.com`
     const codePrefix = `[team-starter] Sign-in code ${email}: `
     let code = null as string | null
@@ -109,7 +113,7 @@ export async function signUpBetterAuthUser(
     }
 
     try {
-      await auth.api.sendVerificationOTP({ body: { email, type: 'sign-in' } })
+      await api.sendVerificationOTP({ body: { email, type: 'sign-in' } })
     } finally {
       console.info = originalConsoleInfo
     }
@@ -118,7 +122,7 @@ export async function signUpBetterAuthUser(
       throw new Error('Better Auth did not emit a local sign-in code')
     }
 
-    const signedIn = await auth.api.signInEmailOTP({
+    const signedIn = await api.signInEmailOTP({
       body: { email, otp: code, name: args.label },
     })
     const session = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
