@@ -39,7 +39,7 @@ function setup(options: Options) {
   const test = convexTest(defineSchema({}), rootModules)
   test.registerComponent('sessionAuth', authSchema, authModules)
   const auth = createBetterConvexAuth(components.sessionAuth, {
-    emailAndPassword: {},
+    emailAndPassword: { requireEmailVerification: false },
     ...options,
   })
   const http = httpRouter()

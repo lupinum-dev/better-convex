@@ -52,7 +52,7 @@ function setup(capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization') 
   const email = vi.fn<BetterConvexAuthEmailSender>(async () => {})
   const auth = createBetterConvexAuth(components.sessionAuth, {
     email,
-    emailAndPassword: { passwordReset: true },
+    emailAndPassword: { passwordReset: true, requireEmailVerification: false },
     emailVerification: { expiresIn: 300, sendOnSignUp: false },
     ...(capability === 'emailOTP' ? { emailOTP: { expiresIn: 300 } } : {}),
     ...(capability === 'twoFactor'

@@ -49,6 +49,7 @@ describe('user creation policy with real Better Auth', () => {
     const test = convexTest(defineSchema({}), rootModules)
     test.registerComponent('sessionAuth', authSchema, authModules)
     const authApi = createBetterConvexAuth(components.sessionAuth, {
+      emailAndPassword: { requireEmailVerification: false },
       beforeUserCreate,
     })
     const http = httpRouter()

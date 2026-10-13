@@ -25,6 +25,7 @@ import {
   sanitizeAuthCause,
   type AuthConfigSubCode,
 } from './diagnostics'
+import { createIdentityGuardsPlugin } from './identity-guards'
 import { requireMcpPrincipal, type BetterConvexMcpPrincipal } from './mcp-principal'
 import {
   canonicalAuthIssuer,
@@ -117,8 +118,30 @@ type ReviewedAnonymousOptions = Pick<
   | 'generateRandomEmail'
 >
 
-type ReviewedEmailOTPOptions = Omit<EmailOTPOptions, 'sendVerificationOTP'> & {
+const reviewedEmailOtpOptionKeys = [
+  'allowedAttempts',
+  'disableSignUp',
+  'expiresIn',
+  'generateOTP',
+  'otpLength',
+  'overrideDefaultEmailVerification',
+  'rateLimit',
+  'resendStrategy',
+  'sendVerificationOnSignUp',
+  'storeOTP',
+] as const
+
+/**
+ * `changeEmail` is not offered: it marks the new address verified without the
+ * `beforeUserCreate` gate and leaves other sessions alive. `storeOTP` defaults
+ * to `'hashed'`, so a read of the component tables does not reveal a live code.
+ */
+type ReviewedEmailOTPOptions = Pick<
+  EmailOTPOptions,
+  (typeof reviewedEmailOtpOptionKeys)[number]
+> & {
   readonly sendVerificationOTP?: never
+  readonly changeEmail?: never
 }
 
 type ReviewedTwoFactorOptions = Omit<TwoFactorOptions, 'otpOptions'> & {
@@ -295,6 +318,13 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
   readonly triggers?: AuthComponentTriggers<DataModel>
   /** The one delivery hook for every auth email. See {@link BetterConvexAuthEmail}. */
   readonly email?: BetterConvexAuthEmailSender<DataModel>
+  /**
+   * Email and password sign-in. Off unless you pass an object: leaving it out
+   * (or `false`) keeps it off, so an app that signs in by email code or social
+   * login has no password door. When on, `requireEmailVerification` defaults to
+   * `true` (set `false` to allow sign-in before the address is proven) and
+   * `revokeSessionsOnPasswordReset` defaults to `true`.
+   */
   readonly emailAndPassword?: false | ReviewedEmailAndPasswordOptions
   readonly emailVerification?: ReviewedEmailVerificationOptions
   readonly emailOTP?: false | ReviewedEmailOTPOptions
@@ -708,6 +738,16 @@ function rejectUnsupportedOptions(options: object): void {
   rejectEmailCallback(record.emailVerification, 'sendVerificationEmail', 'emailVerification')
   assertOnlyKeys(record.emailVerification, reviewedEmailVerificationOptionKeys, 'emailVerification')
   rejectEmailCallback(record.emailOTP, 'sendVerificationOTP', 'emailOTP')
+  if (isPlainRecord(record.emailOTP) && Object.hasOwn(record.emailOTP, 'changeEmail')) {
+    throw configError(
+      'does not support "emailOTP.changeEmail"; it would verify a new address without your "beforeUserCreate" gate',
+    )
+  }
+  assertOnlyKeys(
+    record.emailOTP,
+    [...reviewedEmailOtpOptionKeys, 'sendVerificationOTP'],
+    'emailOTP',
+  )
   rejectEmailCallback(record.organization, 'sendInvitationEmail', 'organization')
   rejectEmailCallback(
     isPlainRecord(record.twoFactor) ? record.twoFactor.otpOptions : undefined,
@@ -1074,6 +1114,8 @@ export function createBetterConvexAuthOwned<
         options.organization === false || options.organization === undefined
           ? null
           : organization({
+              // An unverified account (for example a squatter) must not accept an invitation.
+              requireEmailVerificationOnInvitation: true,
               ...options.organization,
               ...(deliver
                 ? {
@@ -1115,6 +1157,7 @@ export function createBetterConvexAuthOwned<
         emailOtpOptions === false || emailOtpOptions === undefined || !deliver
           ? null
           : emailOTP({
+              storeOTP: 'hashed',
               ...emailOtpOptions,
               sendVerificationOTP: async ({ email, otp, type }) =>
                 deliver({ type: 'email-otp', to: email, otp, purpose: type }),
@@ -1134,6 +1177,7 @@ export function createBetterConvexAuthOwned<
       })
       const plugins: BetterAuthPlugin[] = [
         ...featurePlugins,
+        createIdentityGuardsPlugin(),
         ...extraPlugins,
         jwtPlugin,
         convexPlugin,
@@ -1191,10 +1235,14 @@ export function createBetterConvexAuthOwned<
           '/oauth2/delete-client',
         ],
         emailAndPassword:
-          emailAndPassword === false
+          emailAndPassword === false || emailAndPassword === undefined
             ? { enabled: false }
             : {
+                // Off unless named. Verified addresses only, and a reset ends older sessions.
                 ...passwordOptions,
+                requireEmailVerification: passwordOptions.requireEmailVerification ?? true,
+                revokeSessionsOnPasswordReset:
+                  passwordOptions.revokeSessionsOnPasswordReset ?? true,
                 ...(deliver && passwordReset
                   ? {
                       sendResetPassword: async ({ user, url, token }) =>

@@ -58,7 +58,10 @@ function setup(
 ) {
   const test = convexTest(root, { './_generated/api.ts': async () => ({}) })
   test.registerComponent('guests', schema, modules)
-  const auth = createBetterConvexAuth(component, options)
+  const auth = createBetterConvexAuth(component, {
+    emailAndPassword: { requireEmailVerification: false },
+    ...options,
+  })
   let cookie = ''
   const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const incoming = new Request(input, init)

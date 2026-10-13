@@ -44,7 +44,9 @@ afterEach(() => {
 function setup() {
   const test = convexTest(defineSchema({}), rootModules)
   test.registerComponent('sessionAuth', authSchema, authModules)
-  const auth = createBetterConvexAuth(component)
+  const auth = createBetterConvexAuth(component, {
+    emailAndPassword: { requireEmailVerification: false },
+  })
   const http = httpRouter()
   auth.registerRoutes(http)
   return { test, auth, http }
