@@ -284,7 +284,7 @@ export function validateOAuthProviderProfile(options: PinnedOAuthProviderProfile
   if (hasOAuthRenewal(options)) {
     if (
       options.refreshTokenExpiresIn !== 604800 ||
-      options.refreshTokenReuseInterval !== 10 ||
+      options.refreshTokenReuseInterval !== 0 ||
       !options.scopes?.includes('offline_access')
     )
       invalidConfig()

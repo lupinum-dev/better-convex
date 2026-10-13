@@ -899,7 +899,7 @@ describe('explicit renewable OAuth profile', () => {
       grantTypes: ['authorization_code', 'refresh_token'],
       scopes: ['mcp:read', 'offline_access'],
       refreshTokenExpiresIn: 604800,
-      refreshTokenReuseInterval: 10,
+      refreshTokenReuseInterval: 0,
     })
   it('accepts only the bounded opt-in, while the original profile remains valid', () => {
     expect(() => validateOAuthProviderProfile(renewable())).not.toThrow()
@@ -908,6 +908,7 @@ describe('explicit renewable OAuth profile', () => {
   it.each([
     { accessTokenExpiresIn: 601 },
     { refreshTokenExpiresIn: 604801 },
+    { refreshTokenReuseInterval: 10 },
     { refreshTokenReuseInterval: 60 },
     { scopes: ['mcp:read'] },
     { grantTypes: ['authorization_code'] },

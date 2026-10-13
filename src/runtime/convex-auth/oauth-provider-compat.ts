@@ -11,7 +11,10 @@ import {
   type PinnedOAuthProviderProfile,
 } from './oauth-security'
 
-const DISABLED_PINNED_PROVIDER_PATHS = new Set([
+export const DISABLED_PINNED_PROVIDER_PATHS = new Set([
+  '/admin/oauth2/create-client',
+  '/admin/oauth2/resources',
+  '/admin/oauth2/update-client',
   '/get-access-token',
   '/refresh-token',
   '/.well-known/openid-configuration',
@@ -19,6 +22,7 @@ const DISABLED_PINNED_PROVIDER_PATHS = new Set([
   '/oauth2/create-client',
   '/oauth2/delete-client',
   '/oauth2/end-session',
+  '/oauth2/end-session/confirm',
   '/oauth2/get-client',
   '/oauth2/get-clients',
   '/oauth2/introspect',
@@ -109,11 +113,12 @@ export function validatePinnedOAuthProviderRuntime(
     invalidConfiguration()
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    const proxySecret = process.env.BCN_AUTH_PROXY_IP_SECRET
-    if (typeof proxySecret !== 'string' || proxySecret.length < 32) {
-      invalidConfiguration()
-    }
+  // Whenever a secret is present it must be strong, whatever NODE_ENV says.
+  // Without one, signed client IPs and origins are refused by the component and
+  // only the loopback development fallback works.
+  const proxySecret = process.env.BCN_AUTH_PROXY_IP_SECRET
+  if (typeof proxySecret === 'string' && proxySecret.length > 0 && proxySecret.length < 32) {
+    invalidConfiguration()
   }
   return providerOptions
 }

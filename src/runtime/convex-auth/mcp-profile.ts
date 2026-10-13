@@ -205,7 +205,7 @@ export function resolveMcpProfile(value: unknown): ResolvedMcpProfile {
       revoke: { max: 30, window: 60 },
       token: { max: 20, window: 60 },
     },
-    ...(renewal ? { refreshTokenExpiresIn: 604800, refreshTokenReuseInterval: 10 } : {}),
+    ...(renewal ? { refreshTokenExpiresIn: 604800, refreshTokenReuseInterval: 0 } : {}),
     resourcePrivileges: denyClientManagement,
     scopes: [...Object.keys(scopes), ...(renewal ? [OFFLINE_ACCESS] : [])],
     storeClientSecret: 'hashed',

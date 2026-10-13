@@ -41,7 +41,7 @@ describe('MCP OAuth profile', () => {
       grantTypes: ['authorization_code', 'refresh_token'],
       loginPage: '/login',
       refreshTokenExpiresIn: 604800,
-      refreshTokenReuseInterval: 10,
+      refreshTokenReuseInterval: 0,
       scopes: ['mcp:read', 'mcp:write', 'offline_access'],
       storeClientSecret: 'hashed',
       storeTokens: 'hashed',
