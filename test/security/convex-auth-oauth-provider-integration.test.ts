@@ -295,6 +295,7 @@ function authorizationError(response: Response): URL {
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
@@ -871,7 +872,6 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'too-short-secret')
     await expect(createAuth(database()).$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
     expect(error).toHaveBeenCalledWith('[better-convex] AUTH_OAUTH_PROXY_SECRET_INVALID')
-    error.mockRestore()
 
     vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'a-strong-enough-secret-of-32-bytes!')
     await expect(createAuth(database()).$context).resolves.toBeDefined()
@@ -883,7 +883,6 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     await expect(createAuth(database()).$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
     expect(error).toHaveBeenCalledWith('[better-convex] AUTH_OAUTH_PROXY_SECRET_MISSING')
-    error.mockRestore()
 
     vi.stubEnv('SITE_URL', 'http://localhost:3000')
     await expect(createAuth(database()).$context).resolves.toBeDefined()
