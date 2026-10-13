@@ -14,5 +14,8 @@ export * from './runtime-config-normalize'
  */
 export function getConvexRuntimeConfig(): NormalizedConvexRuntimeConfig {
   const config = useRuntimeConfig()
-  return normalizeConvexRuntimeConfig(config.public.convex, config.convex)
+  return normalizeConvexRuntimeConfig(
+    config.public.convex,
+    import.meta.server ? config.convex : undefined,
+  )
 }
