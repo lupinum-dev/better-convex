@@ -10,6 +10,7 @@ import {
   type OAuthClientRecord,
   type PinnedOAuthProviderProfile,
 } from './oauth-security'
+import { isExactLoopbackHost } from './origin'
 
 export const DISABLED_PINNED_PROVIDER_PATHS = new Set([
   '/admin/oauth2/create-client',
@@ -113,11 +114,12 @@ export function validatePinnedOAuthProviderRuntime(
     invalidConfiguration()
   }
 
-  // Whenever a secret is present it must be strong, whatever NODE_ENV says.
-  // Without one, signed client IPs and origins are refused by the component and
-  // only the loopback development fallback works.
+  // A present secret must be strong, and only a loopback SITE_URL may run without
+  // one. Convex does not reliably set NODE_ENV, so it decides nothing here.
   const proxySecret = process.env.BCN_AUTH_PROXY_IP_SECRET
-  if (typeof proxySecret === 'string' && proxySecret.length > 0 && proxySecret.length < 32) {
+  if (proxySecret) {
+    if (proxySecret.length < 32) invalidConfiguration()
+  } else if (!isLoopbackSiteUrl(process.env.SITE_URL)) {
     invalidConfiguration()
   }
   return providerOptions
@@ -272,5 +274,14 @@ export function assertSafePinnedResourceProvisioning(
     )
   } catch {
     invalidResourceProfile()
+  }
+}
+
+function isLoopbackSiteUrl(siteUrl: string | undefined): boolean {
+  if (!siteUrl) return false
+  try {
+    return isExactLoopbackHost(new URL(siteUrl).hostname)
+  } catch {
+    return false
   }
 }

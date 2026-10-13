@@ -874,6 +874,15 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     await expect(createAuth(database()).$context).resolves.toBeDefined()
   })
 
+  it('requires BCN_AUTH_PROXY_IP_SECRET unless SITE_URL is loopback', async () => {
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', '')
+    vi.stubEnv('SITE_URL', 'https://app.example.com')
+    await expect(createAuth(database()).$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
+
+    vi.stubEnv('SITE_URL', 'http://localhost:3000')
+    await expect(createAuth(database()).$context).resolves.toBeDefined()
+  })
+
   it('rejects a provider instance created before convexAuth can harden the shared callbacks', async () => {
     const auth = createAuth(database(), undefined, { providerBeforeConvexAuth: true })
     await expect(auth.$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
