@@ -1,5 +1,9 @@
 # @lupinum/better-convex-functions
 
+## 0.1.0-rc.2
+
+No changes in this release.
+
 ## 0.1.0-rc.1
 
 ### Patch Changes
