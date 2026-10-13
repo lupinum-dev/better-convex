@@ -11,13 +11,13 @@
     "@lupinum/better-convex-vue": "file:./better-convex-vue.tgz",
     "convex": "1.42.2",
     "nuxt": "4.5.2",
-    "vue": "3.5.40"
+    "vue": "3.5.43"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
     "better-auth": "1.7.7",
     "typescript": "5.9.3",
-    "vue-tsc": "3.3.7"
+    "vue-tsc": "3.3.13"
   },
   "engines": {
     "node": "^22.19.0 || ^24.11.0"
