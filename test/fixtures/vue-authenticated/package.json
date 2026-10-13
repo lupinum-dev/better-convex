@@ -9,12 +9,12 @@
   "dependencies": {
     "@lupinum/better-convex-vue": "file:./better-convex-vue.tgz",
     "convex": "1.42.2",
-    "vue": "3.5.40"
+    "vue": "3.5.43"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
     "typescript": "5.9.3",
-    "vite": "8.1.5"
+    "vite": "8.3.4"
   },
   "engines": {
     "node": "^22.19.0 || ^24.11.0"
