@@ -94,7 +94,7 @@ function changeEmail() {
 
     <form class="auth-form" @submit.prevent="submitAuth">
       <label>
-        Name
+        Name (new accounts)
         <input v-model="name" autocomplete="name" placeholder="Your name" required />
       </label>
 

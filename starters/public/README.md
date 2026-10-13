@@ -9,6 +9,13 @@ Small Nuxt + Convex starter for public apps.
 - create, toggle, and remove mutations;
 - invariant tests for validation and list ordering.
 
+## Public on purpose
+
+Every function in this starter is public. Anyone can read, create, toggle, and delete any todo, and
+there is no limit on the number of rows. Do not store data that belongs to a person. Before you copy
+this code into a real feature, add sign-in, store an owner on each row, and check the owner in each
+Convex function. Start from the `team` starter for that.
+
 ## Non-goals
 
 - no auth or auth dependencies;

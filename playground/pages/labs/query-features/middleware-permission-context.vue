@@ -94,6 +94,11 @@ const {
         The playground middleware demo uses a non-null context check so new users can verify it
         works without setting up roles first.
       </p>
+      <p class="hint">
+        Route middleware only redirects. It is not authorization. Anyone can still call the Convex
+        functions directly. Check the admin role in every Convex function, for example with
+        <code>authorize()</code>.
+      </p>
     </div>
   </div>
 </template>

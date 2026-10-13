@@ -16,9 +16,7 @@ export default defineSchema({
     role: v.optional(legacyUserRole),
     createdAt: v.number(),
     updatedAt: v.number(),
-  })
-    .index('by_auth_id', ['authId'])
-    .index('by_email', ['email']),
+  }).index('by_auth_id', ['authId']),
 
   // ============================================
   // FEED ITEMS - Real-time demo

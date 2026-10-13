@@ -43,7 +43,9 @@ export const listPaginated = query({
 })
 
 /**
- * Add a new message
+ * Add a new message.
+ * Demo only: any signed-in user can add unlimited rows, and the cron purge removes only 100 rows
+ * per run. A real feature needs a rate limit, for example with `@convex-dev/rate-limiter`.
  */
 export const add = mutation({
   args: {
@@ -77,7 +79,8 @@ export const add = mutation({
 })
 
 /**
- * Seed messages for demo
+ * Seed messages for demo.
+ * Demo only: no rate limit. Do not copy this to a real application without one.
  */
 export const seed = mutation({
   args: {

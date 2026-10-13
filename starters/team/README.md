@@ -18,7 +18,7 @@ This starter is intentionally focused. It teaches one production-shaped path:
 
 ## Includes
 
-- Email-code sign-in (no password). Access follows the invitation email, so a code proves the address; a password sign-up could be started by someone else for it. Locally the code is logged by the dev server.
+- Email-code sign-in (no password). Access follows the invitation email, so a code proves the address; a password sign-up could be started by someone else for it. Locally the sign-in code appears in the `pnpm convex:dev` terminal.
 - Better Auth Organization with static roles.
 - Organization invitations with Better Auth-managed acceptance and verified-email gating.
 - Better Auth teams and default team flow.
@@ -199,7 +199,7 @@ pnpm exec better-convex convex env set RESEND_FROM_EMAIL invites@example.com
 Load `RESEND_API_KEY` from your secret manager without printing it or placing it
 in shell history.
 
-Without Resend configured, localhost/test runs log verification and invitation
+Without Resend configured, localhost/test runs log sign-in codes and invitation
 links for manual testing. Non-local deployments fail fast instead of pretending
 email was sent.
 
