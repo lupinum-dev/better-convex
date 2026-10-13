@@ -49,7 +49,7 @@ export function readBetterAuthSessionSignal(client: object): BetterAuthSessionSi
  * change; the list only saves reconciliation work for reads and may be
  * incomplete without affecting correctness.
  *
- * Audited against Better Auth 1.7.6: none of these handlers or their plugin
+ * Audited against Better Auth 1.7.7: none of these handlers or their plugin
  * hooks write the session record or cookies. The only writes they share come
  * from Better Auth's session middleware: the sliding expiry refresh keeps the
  * same session token and Convex claims, and an already-expired session's
