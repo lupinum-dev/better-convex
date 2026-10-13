@@ -60,18 +60,47 @@ export function normalizeConvexKeepAlive(input: unknown): { ms: number; max: num
 
 // One normalization per runtime config object. Nuxt and Nitro hand out the same
 // object for an app or request, so repeated reads during a render reuse it.
-const normalized = new WeakMap<object, NormalizedConvexRuntimeConfig>()
+const normalized = new WeakMap<
+  object,
+  { server: object | null; config: NormalizedConvexRuntimeConfig }
+>()
 
-export function normalizeConvexRuntimeConfig(input: unknown): NormalizedConvexRuntimeConfig {
+/**
+ * `input` is the public Convex runtime config. `serverInput` is the
+ * server-only `runtimeConfig.convex` object; only server code passes it. The
+ * trusted client IP header is read from there and never from the public config,
+ * so the page payload does not name the header an attacker would have to forge.
+ * Without `serverInput` (the browser), the header is empty and not required.
+ */
+export function normalizeConvexRuntimeConfig(
+  input: unknown,
+  serverInput?: unknown,
+): NormalizedConvexRuntimeConfig {
   const raw = asRecord(input)
+  const server = asRecord(serverInput)
   const cached = raw && normalized.get(raw)
-  if (cached) return cached
-  const result = normalizeUncached(raw)
-  if (raw) normalized.set(raw, result)
+  if (cached && cached.server === server) return cached.config
+  const result = normalizeUncached(raw, server)
+  if (raw) normalized.set(raw, { server, config: result })
   return result
 }
 
-function normalizeUncached(raw: Record<string, unknown> | null): NormalizedConvexRuntimeConfig {
+function normalizeAuth(
+  rawAuth: unknown,
+  server: Record<string, unknown> | null,
+): NormalizedConvexAuthConfig {
+  const auth = asRecord(rawAuth)
+  if (!auth) return normalizeConvexAuthConfig(rawAuth)
+  return normalizeConvexAuthConfig(
+    { ...auth, trustedClientIpHeader: server?.trustedClientIpHeader },
+    { requireTrustedClientIpHeader: server !== null },
+  )
+}
+
+function normalizeUncached(
+  raw: Record<string, unknown> | null,
+  server: Record<string, unknown> | null,
+): NormalizedConvexRuntimeConfig {
   // URL/siteUrl are resolved from runtimeConfig only. module.ts reads env at build
   // time; Nuxt's native `NUXT_PUBLIC_*` runtime override supplies deploy-time
   // values. Re-reading process.env here would be server-only and silently diverge.
@@ -90,7 +119,7 @@ function normalizeUncached(raw: Record<string, unknown> | null): NormalizedConve
   return {
     url,
     siteUrl: resolvedSiteUrl || undefined,
-    auth: normalizeConvexAuthConfig(raw?.auth),
+    auth: normalizeAuth(raw?.auth, server),
     logging:
       raw?.logging === false || typeof raw?.logging === 'string'
         ? (raw.logging as LogLevel | false)

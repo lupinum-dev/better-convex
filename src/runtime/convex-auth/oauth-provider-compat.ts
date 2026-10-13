@@ -1,6 +1,8 @@
 import type { BetterAuthPlugin } from 'better-auth'
 import { APIError } from 'better-auth/api'
 
+import { requireProxyIpSecret } from '../shared/client-ip'
+import { isLoopbackSiteUrl } from './dev-outbox'
 import {
   OAuthSecurityError,
   assertSafeStoredOAuthClient,
@@ -11,7 +13,10 @@ import {
   type PinnedOAuthProviderProfile,
 } from './oauth-security'
 
-const DISABLED_PINNED_PROVIDER_PATHS = new Set([
+export const DISABLED_PINNED_PROVIDER_PATHS = new Set([
+  '/admin/oauth2/create-client',
+  '/admin/oauth2/resources',
+  '/admin/oauth2/update-client',
   '/get-access-token',
   '/refresh-token',
   '/.well-known/openid-configuration',
@@ -19,6 +24,7 @@ const DISABLED_PINNED_PROVIDER_PATHS = new Set([
   '/oauth2/create-client',
   '/oauth2/delete-client',
   '/oauth2/end-session',
+  '/oauth2/end-session/confirm',
   '/oauth2/get-client',
   '/oauth2/get-clients',
   '/oauth2/introspect',
@@ -109,11 +115,19 @@ export function validatePinnedOAuthProviderRuntime(
     invalidConfiguration()
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    const proxySecret = process.env.BCN_AUTH_PROXY_IP_SECRET
-    if (typeof proxySecret !== 'string' || proxySecret.length < 32) {
+  // A present secret must be strong, and only a loopback SITE_URL may run without
+  // one. Convex does not reliably set NODE_ENV, so it decides nothing here.
+  const proxySecret = process.env.BCN_AUTH_PROXY_IP_SECRET
+  if (proxySecret) {
+    try {
+      requireProxyIpSecret(proxySecret)
+    } catch {
+      console.error('[better-convex] AUTH_OAUTH_PROXY_SECRET_INVALID')
       invalidConfiguration()
     }
+  } else if (!isLoopbackSiteUrl(process.env.SITE_URL)) {
+    console.error('[better-convex] AUTH_OAUTH_PROXY_SECRET_MISSING')
+    invalidConfiguration()
   }
   return providerOptions
 }

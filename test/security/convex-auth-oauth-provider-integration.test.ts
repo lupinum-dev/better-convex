@@ -2,7 +2,7 @@ import { oauthProvider, type OAuthOptions } from '@better-auth/oauth-provider'
 import { betterAuth } from 'better-auth'
 import { memoryAdapter, type MemoryDB } from 'better-auth/adapters/memory'
 import { jwt } from 'better-auth/plugins'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveMcpProfile } from '../../src/runtime/convex-auth/mcp-profile'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
@@ -35,6 +35,10 @@ const disabledPaths = [
   '/oauth2/introspect',
   '/oauth2/userinfo',
   '/oauth2/end-session',
+  '/oauth2/end-session/confirm',
+  '/admin/oauth2/create-client',
+  '/admin/oauth2/update-client',
+  '/admin/oauth2/resources',
   '/oauth2/create-client',
   '/oauth2/get-client',
   '/oauth2/get-clients',
@@ -288,6 +292,11 @@ function authorizationError(response: Response): URL {
   expect(location).toBeTruthy()
   return new URL(location!, origin)
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
 
 describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
   it('initializes the MCP profile graph with public PKCE discovery', async () => {
@@ -840,6 +849,10 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     '/api/auth/oauth2/introspect',
     '/api/auth/oauth2/userinfo',
     '/api/auth/oauth2/end-session',
+    '/api/auth/oauth2/end-session/confirm',
+    '/api/auth/admin/oauth2/create-client',
+    '/api/auth/admin/oauth2/update-client',
+    '/api/auth/admin/oauth2/resources',
   ])('keeps disabled protocol surface raw-404: %s', async (path) => {
     const auth = createAuth(database())
     const response = await auth.handler(
@@ -850,6 +863,29 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
       }),
     )
     expect(response.status).toBe(404)
+  })
+
+  it('rejects a weak BCN_AUTH_PROXY_IP_SECRET whatever NODE_ENV says', async () => {
+    // Vitest runs with NODE_ENV=test: the check must not depend on production.
+    expect(process.env.NODE_ENV).not.toBe('production')
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'too-short-secret')
+    await expect(createAuth(database()).$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    expect(error).toHaveBeenCalledWith('[better-convex] AUTH_OAUTH_PROXY_SECRET_INVALID')
+
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'a-strong-enough-secret-of-32-bytes!')
+    await expect(createAuth(database()).$context).resolves.toBeDefined()
+  })
+
+  it('requires BCN_AUTH_PROXY_IP_SECRET unless SITE_URL is loopback', async () => {
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', '')
+    vi.stubEnv('SITE_URL', 'https://app.example.com')
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await expect(createAuth(database()).$context).rejects.toThrow('AUTH_OAUTH_CONFIG_INVALID')
+    expect(error).toHaveBeenCalledWith('[better-convex] AUTH_OAUTH_PROXY_SECRET_MISSING')
+
+    vi.stubEnv('SITE_URL', 'http://localhost:3000')
+    await expect(createAuth(database()).$context).resolves.toBeDefined()
   })
 
   it('rejects a provider instance created before convexAuth can harden the shared callbacks', async () => {

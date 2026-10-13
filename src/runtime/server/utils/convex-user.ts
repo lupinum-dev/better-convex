@@ -1,10 +1,12 @@
 import type { H3Event } from 'h3'
 
 import { ConvexCallError } from '../../errors'
+import { filterBetterAuthCookies } from '../../utils/shared-helpers'
 import type { ConvexUser } from '../../utils/types'
 import { readEventConvexConfig, readEventCookieHeader } from './event-context'
 import { toConvexH3Error } from './h3-error'
 import { resolveRequestAuthSnapshot } from './request-auth'
+import { applyConvexAuthSsrHeaders } from './ssr-auth-headers'
 
 /**
  * Read the signed-in user for this request, or `null` when it is anonymous.
@@ -35,10 +37,17 @@ export async function getConvexUser(event: H3Event): Promise<ConvexUser | null> 
     )
   }
 
+  const cookieHeader = readEventCookieHeader(event)
+  // The identity depends on the request cookie, so the response must not be
+  // shared between visitors by a cache.
+  applyConvexAuthSsrHeaders(event, {
+    hasBetterAuthCookie: filterBetterAuthCookies(cookieHeader) !== null,
+    rendersUser: false,
+  })
   const snapshot = await resolveRequestAuthSnapshot(event, {
     siteUrl: config.siteUrl,
     trustedClientIpHeader: config.auth.trustedClientIpHeader,
-    cookieHeader: readEventCookieHeader(event),
+    cookieHeader,
   })
   if (snapshot.authError !== null) {
     throw toConvexH3Error(

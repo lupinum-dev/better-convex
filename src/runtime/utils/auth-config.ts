@@ -111,6 +111,11 @@ function normalizeLocalPath(input: unknown, fallback: string, name: string): str
  */
 export function normalizeConvexAuthConfig(
   input: false | ConvexAuthOptions | undefined | unknown,
+  /**
+   * The browser has no server-only runtime config, so it cannot enforce the
+   * trusted client IP header requirement. Build and server code always do.
+   */
+  { requireTrustedClientIpHeader = true }: { requireTrustedClientIpHeader?: boolean } = {},
 ): NormalizedConvexAuthConfig {
   if (input === undefined || input === false) return false
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -125,7 +130,11 @@ export function normalizeConvexAuthConfig(
   }
   const origin = normalizeAuthOrigin(options.origin, 'auth.origin')
   const trustedClientIpHeader = normalizeTrustedClientIpHeader(options.trustedClientIpHeader)
-  if (!trustedClientIpHeader && !isExactLoopbackHost(new URL(origin).hostname)) {
+  if (
+    requireTrustedClientIpHeader &&
+    !trustedClientIpHeader &&
+    !isExactLoopbackHost(new URL(origin).hostname)
+  ) {
     throw new TypeError(
       'auth.trustedClientIpHeader is required outside exact loopback development origins',
     )
@@ -161,6 +170,27 @@ export function normalizeConvexAuthConfig(
     routes,
     ssr: options.ssr ?? true,
   })
+}
+
+/** The public (browser-visible) auth policy: everything except server-only fields. */
+export function omitTrustedClientIpHeader(
+  config: Exclude<NormalizedConvexAuthConfig, false>,
+): Omit<Exclude<NormalizedConvexAuthConfig, false>, 'trustedClientIpHeader'> {
+  const { trustedClientIpHeader: _serverOnly, ...publicConfig } = config
+  return publicConfig
+}
+
+/**
+ * A production build with a loopback `auth.origin` (typically `SITE_URL` unset)
+ * skips the trusted client IP requirement, so every user would share one
+ * rate-limit bucket. Returns the warning text, or null when nothing is wrong.
+ */
+export function loopbackProductionOriginWarning(
+  config: Exclude<NormalizedConvexAuthConfig, false>,
+  dev: boolean,
+): string | null {
+  if (dev || !isExactLoopbackHost(new URL(config.origin).hostname)) return null
+  return `This production build has the loopback auth origin ${config.origin}, so sign-in and per-user rate limits will not work for real visitors. Set \`convex.auth.origin\` (for example from SITE_URL) to your public https origin and set \`convex.auth.trustedClientIpHeader\`.`
 }
 
 export function isConvexAuthEnabled(

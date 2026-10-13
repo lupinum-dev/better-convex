@@ -17,6 +17,7 @@ import {
   type NormalizedServerConvexOptions,
   type ServerConvexOptions,
 } from './server-convex-options'
+import { applyConvexAuthSsrHeaders } from './ssr-auth-headers'
 import { exchangeConvexToken, type ConvexTokenExchangeResult } from './token-exchange'
 
 export type { ServerConvexOptions }
@@ -119,6 +120,13 @@ async function resolveServerToken(
   const cookieHeader = readEventCookieHeader(event)
   const sessionToken = getBetterAuthSessionToken(cookieHeader)
   const authCookieHeader = filterBetterAuthCookies(cookieHeader)
+  // The response now depends on the request cookie: keep shared caches from
+  // storing one visitor's answer for another. A route that never reads the
+  // cookie (`auth: 'none'`, explicit token) stays cacheable.
+  applyConvexAuthSsrHeaders(event, {
+    hasBetterAuthCookie: authCookieHeader !== null,
+    rendersUser: false,
+  })
 
   if (!authCookieHeader || !sessionToken) {
     if (required) throw authenticationRequiredError()
