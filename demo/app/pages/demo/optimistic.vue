@@ -7,7 +7,7 @@ definePageMeta({
 })
 
 // Shared task list query
-const { data: tasks, status } = await useConvexQuery(api.tasks.list, {})
+const { data: tasks, status } = await useConvexQuery(api.tasks.listShared, {})
 
 // ============================================
 // STANDARD MUTATIONS (left panel)
@@ -32,7 +32,7 @@ const optimisticInput = ref('')
 
 const { mutate: optimisticAdd, status: optimisticAddStatus } = useConvexMutation(api.tasks.add, {
   optimisticUpdate: (localStore, args) => {
-    const current = localStore.getQuery(api.tasks.list, {})
+    const current = localStore.getQuery(api.tasks.listShared, {})
     const now = Date.now()
     const optimisticTask = {
       _id: `temp-${now}` as Id<'demoTasks'>,
@@ -42,15 +42,15 @@ const { mutate: optimisticAdd, status: optimisticAddStatus } = useConvexMutation
       userId: 'pending',
       createdAt: now,
     }
-    localStore.setQuery(api.tasks.list, {}, [optimisticTask, ...(current ?? [])])
+    localStore.setQuery(api.tasks.listShared, {}, [optimisticTask, ...(current ?? [])])
   },
 })
 
 const { mutate: optimisticToggle } = useConvexMutation(api.tasks.toggle, {
   optimisticUpdate: (localStore, args) => {
-    const current = localStore.getQuery(api.tasks.list, {})
+    const current = localStore.getQuery(api.tasks.listShared, {})
     localStore.setQuery(
-      api.tasks.list,
+      api.tasks.listShared,
       {},
       current?.map((task) =>
         task._id === args.id ? { ...task, completed: !task.completed } : task,
@@ -61,9 +61,9 @@ const { mutate: optimisticToggle } = useConvexMutation(api.tasks.toggle, {
 
 const { mutate: optimisticDelete } = useConvexMutation(api.tasks.remove, {
   optimisticUpdate: (localStore, args) => {
-    const current = localStore.getQuery(api.tasks.list, {})
+    const current = localStore.getQuery(api.tasks.listShared, {})
     localStore.setQuery(
-      api.tasks.list,
+      api.tasks.listShared,
       {},
       current?.filter((task) => task._id !== args.id),
     )
@@ -231,7 +231,7 @@ function isOptimistic(taskId: string) {
         class="text-xs bg-elevated p-4 rounded-lg overflow-x-auto"
       ><code>const { mutate: addTask } = useConvexMutation(api.tasks.add, {
   optimisticUpdate: (localStore, args) => {
-    const current = localStore.getQuery(api.tasks.list, {})
+    const current = localStore.getQuery(api.tasks.listShared, {})
     const now = Date.now()
     const optimisticTask = {
       _id: `temp-${now}`,
@@ -241,7 +241,7 @@ function isOptimistic(taskId: string) {
       userId: 'pending',
       createdAt: now,
     }
-    localStore.setQuery(api.tasks.list, {}, [optimisticTask, ...(current ?? [])])
+    localStore.setQuery(api.tasks.listShared, {}, [optimisticTask, ...(current ?? [])])
   },
 })</code></pre>
     </UCard>
