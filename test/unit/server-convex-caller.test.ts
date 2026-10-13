@@ -84,9 +84,18 @@ function createEvent(
   headers: Record<string, string> = {},
   signal?: AbortSignal,
 ): H3Event {
+  const responseHeaders = new Map<string, string>()
   return {
     context: { nitro: { runtimeConfig: mocks.useRuntimeConfigMock() } },
-    node: { req: { headers: { ...headers, ...(cookie ? { cookie } : {}) } } },
+    node: {
+      req: { headers: { ...headers, ...(cookie ? { cookie } : {}) } },
+      res: {
+        getHeader: (name: string) => responseHeaders.get(name),
+        getHeaders: () => Object.fromEntries(responseHeaders),
+        removeHeader: (name: string) => responseHeaders.delete(name),
+        setHeader: (name: string, value: string) => responseHeaders.set(name, value),
+      },
+    },
     ...(signal ? { web: { request: new Request('https://app.example.com', { signal }) } } : {}),
   } as unknown as H3Event
 }
@@ -207,10 +216,10 @@ describe('serverConvex caller-scoped invariants', () => {
   })
 
   it('passes the request and normalized trusted client IP header to the exchange', async () => {
-    setConfig({
-      url: CONVEX_URL,
-      siteUrl: SITE_URL,
-      auth: { ...AUTH_CONFIG, trustedClientIpHeader: 'CF-Connecting-IP' },
+    // The header is server-only runtime config, never part of the public config.
+    mocks.useRuntimeConfigMock.mockReturnValue({
+      public: { convex: { url: CONVEX_URL, siteUrl: SITE_URL, auth: AUTH_CONFIG } },
+      convex: { trustedClientIpHeader: 'CF-Connecting-IP' },
     })
     mocks.exchangeMock.mockResolvedValue({ token: USER_JWT, status: 200, error: null })
 
@@ -456,6 +465,39 @@ describe('serverConvex boundary error sanitization', () => {
       await expect(invoke(serverConvex(createEvent(), { auth: 'none' }))).rejects.toBe(transport)
     },
   )
+})
+
+describe('serverConvex response cache headers', () => {
+  const responseHeaders = (event: H3Event) =>
+    (event.node.res as unknown as { getHeaders: () => Record<string, string> }).getHeaders()
+
+  it('marks a response that read the session cookie as Vary: Cookie and private, no-store', async () => {
+    mocks.exchangeMock.mockResolvedValue({ token: USER_JWT, status: 200, error: null })
+    const event = createEvent(AUTH_COOKIE)
+
+    await serverConvex(event).getToken()
+
+    expect(responseHeaders(event)).toEqual({ Vary: 'Cookie', 'Cache-Control': 'private, no-store' })
+  })
+
+  it('still varies by cookie, without private, when the request carries no auth cookie', async () => {
+    const event = createEvent()
+
+    await expect(serverConvex(event, { auth: 'optional' }).getToken()).resolves.toBeNull()
+
+    expect(responseHeaders(event)).toEqual({ Vary: 'Cookie' })
+  })
+
+  it.each([
+    ['auth: none', { auth: 'none' as const }],
+    ['an explicit token', { authToken: 'explicit.jwt' }],
+  ])('leaves the response cacheable when the cookie is never read (%s)', async (_, options) => {
+    const event = createEvent(AUTH_COOKIE)
+
+    await serverConvex(event, options).getToken()
+
+    expect(responseHeaders(event)).toEqual({})
+  })
 })
 
 describe('SSR auth response headers (Vary/Cache-Control)', () => {

@@ -34,6 +34,8 @@ import {
 import {
   normalizeConvexAuthConfig,
   isConvexAuthEnabled,
+  loopbackProductionOriginWarning,
+  omitTrustedClientIpHeader,
   type ConvexAuthOptions,
 } from './runtime/utils/auth-config'
 import {
@@ -291,6 +293,14 @@ export default defineNuxtModule<ModuleOptions>({
     // plugin/handler/middleware registration decision (architecture invariant).
     const normalizedAuthConfig = normalizeConvexAuthConfig(options.auth)
     const isAuthEnabled = isConvexAuthEnabled(normalizedAuthConfig)
+    if (isConvexAuthEnabled(normalizedAuthConfig)) {
+      // `nuxi prepare` and `nuxt typecheck` build nothing that serves visitors.
+      const loopbackWarning = loopbackProductionOriginWarning(
+        normalizedAuthConfig,
+        nuxt.options.dev || nuxt.options._prepare,
+      )
+      if (loopbackWarning) logger.warn(loopbackWarning)
+    }
 
     if (isAuthEnabled && !resolvedSiteUrl) {
       logger.warn(
@@ -322,10 +332,20 @@ export default defineNuxtModule<ModuleOptions>({
         // Nuxt serializes an unset key as "", so write keepAlive only when it is set.
         experimental: keepAlive ? { keepAlive } : {},
       }),
-      // Auth is build policy, not a deploy-time/public runtime override.
-      auth: normalizedAuthConfig,
+      // Auth is build policy, not a deploy-time/public runtime override. The
+      // trusted client IP header is server-only: the browser never needs it and
+      // the page payload must not tell an attacker which header to forge.
+      auth: isConvexAuthEnabled(normalizedAuthConfig)
+        ? omitTrustedClientIpHeader(normalizedAuthConfig)
+        : normalizedAuthConfig,
     }
     nuxt.options.runtimeConfig.public.convex = convexConfig as never
+    if (isConvexAuthEnabled(normalizedAuthConfig)) {
+      nuxt.options.runtimeConfig.convex = {
+        ...(nuxt.options.runtimeConfig.convex as Record<string, unknown> | undefined),
+        trustedClientIpHeader: normalizedAuthConfig.trustedClientIpHeader,
+      } as never
+    }
     // A deploy can still supply NUXT_PUBLIC_CONVEX_URL at runtime, so warn, not fail.
     if (!convexConfig.url) logger.warn(MISSING_CONVEX_URL_MESSAGE)
     registerConvexAliases({ nuxt, resolver, convexApiAlias })

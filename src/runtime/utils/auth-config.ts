@@ -11,8 +11,11 @@ export type ConvexAuthRouteDefault = 'public' | 'protected'
 
 /** Build-time authentication options. An object opts the application into auth. */
 export interface ConvexAuthOptions {
-  /** Exact public Nuxt application origin used by the same-origin auth proxy. */
-  origin: string
+  /**
+   * Exact public Nuxt application origin used by the same-origin auth proxy.
+   * Usually `process.env.SITE_URL`; the build fails with a clear error when it is missing.
+   */
+  origin: string | undefined
   /** Optional build-time Better Auth client definition. Never copied to runtime config. */
   client?: string
   /** Trusted ingress-owned header containing exactly one client IP address. */
@@ -108,6 +111,11 @@ function normalizeLocalPath(input: unknown, fallback: string, name: string): str
  */
 export function normalizeConvexAuthConfig(
   input: false | ConvexAuthOptions | undefined | unknown,
+  /**
+   * The browser has no server-only runtime config, so it cannot enforce the
+   * trusted client IP header requirement. Build and server code always do.
+   */
+  { requireTrustedClientIpHeader = true }: { requireTrustedClientIpHeader?: boolean } = {},
 ): NormalizedConvexAuthConfig {
   if (input === undefined || input === false) return false
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -115,12 +123,18 @@ export function normalizeConvexAuthConfig(
   }
 
   const options = input as Partial<ConvexAuthOptions>
-  if (typeof options.origin !== 'string') {
-    throw new TypeError('auth.origin must be a non-empty string URL origin')
+  if (typeof options.origin !== 'string' || options.origin === '') {
+    throw new TypeError(
+      'auth.origin is missing. Set SITE_URL (for example SITE_URL=http://localhost:3000 in .env.local) or pass the public origin.',
+    )
   }
   const origin = normalizeAuthOrigin(options.origin, 'auth.origin')
   const trustedClientIpHeader = normalizeTrustedClientIpHeader(options.trustedClientIpHeader)
-  if (!trustedClientIpHeader && !isExactLoopbackHost(new URL(origin).hostname)) {
+  if (
+    requireTrustedClientIpHeader &&
+    !trustedClientIpHeader &&
+    !isExactLoopbackHost(new URL(origin).hostname)
+  ) {
     throw new TypeError(
       'auth.trustedClientIpHeader is required outside exact loopback development origins',
     )
@@ -156,6 +170,27 @@ export function normalizeConvexAuthConfig(
     routes,
     ssr: options.ssr ?? true,
   })
+}
+
+/** The public (browser-visible) auth policy: everything except server-only fields. */
+export function omitTrustedClientIpHeader(
+  config: Exclude<NormalizedConvexAuthConfig, false>,
+): Omit<Exclude<NormalizedConvexAuthConfig, false>, 'trustedClientIpHeader'> {
+  const { trustedClientIpHeader: _serverOnly, ...publicConfig } = config
+  return publicConfig
+}
+
+/**
+ * A production build with a loopback `auth.origin` (typically `SITE_URL` unset)
+ * skips the trusted client IP requirement, so every user would share one
+ * rate-limit bucket. Returns the warning text, or null when nothing is wrong.
+ */
+export function loopbackProductionOriginWarning(
+  config: Exclude<NormalizedConvexAuthConfig, false>,
+  dev: boolean,
+): string | null {
+  if (dev || !isExactLoopbackHost(new URL(config.origin).hostname)) return null
+  return `This production build has the loopback auth origin ${config.origin}, so sign-in and per-user rate limits will not work for real visitors. Set \`convex.auth.origin\` (for example from SITE_URL) to your public https origin and set \`convex.auth.trustedClientIpHeader\`.`
 }
 
 export function isConvexAuthEnabled(

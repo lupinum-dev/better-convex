@@ -51,7 +51,7 @@ explains the trust boundaries in detail. In short:
   and lives at most 10 minutes. Each boundary rejects the other token type.
 - **Live session checks.** `auth.getUser(ctx)` and `auth.requireUser(ctx)`
   check that the session still exists and belongs to the user's current
-  security generation. A password reset ends all earlier sessions.
+  security generation. A password reset ends all earlier sessions (`revokeSessionsOnPasswordReset` defaults to `true`; a password change ends the others, and verifying an address ends earlier sessions).
   `ctx.auth.getUserIdentity()` alone does not check revocation.
 - **Rate limits.** Better Auth rate limits are stored in the Convex component.
   When a deployment names a trusted client-IP header, Nuxt signs the IP
@@ -59,8 +59,12 @@ explains the trust boundaries in detail. In short:
   rate-limit bucket. Any process-local defense in depth is only an extra
   layer. Deployments still need a
   trusted-ingress per-account and per-IP limiter for distributed abuse.
-- **Passwords.** Better Auth hashes and checks passwords. The maintained
-  examples require 15 characters and turn off sign-in after sign-up.
+- **Passwords.** Password sign-in is off unless the app passes
+  `emailAndPassword`. Better Auth hashes and checks passwords. The factory
+  requires 15 characters, turns off sign-in after sign-up, and requires a
+  verified address unless the app opts out. Known gap: a password started by a
+  stranger for someone else's address survives that owner's verification; apps
+  that decide access by email use email codes.
   Deployments still own a breached/common-password blocklist, account
   recovery, and abuse controls.
 

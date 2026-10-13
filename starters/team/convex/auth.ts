@@ -52,20 +52,20 @@ async function deliverInvitationEmail(
   })
 }
 
-async function deliverVerificationEmail(
+async function deliverCodeEmail(
   siteUrl: string,
-  message: Extract<BetterConvexAuthEmail, { type: 'verify-email' }>,
+  message: Extract<BetterConvexAuthEmail, { type: 'email-otp' }>,
 ) {
-  const escapedUrl = escapeEmailHtml(message.url)
+  const escapedCode = escapeEmailHtml(message.otp)
   await sendStarterEmail({
     recipient: message.to,
     siteUrl,
-    fallbackLabel: 'Verification link',
-    fallbackUrl: message.url,
+    fallbackLabel: 'Sign-in code',
+    fallbackUrl: message.otp,
     content: {
-      subject: 'Verify your email address',
-      text: `Click the link to verify your email: ${message.url}`,
-      html: `<p><a href="${escapedUrl}">Verify your email address</a></p>`,
+      subject: `Your sign-in code is ${message.otp}`,
+      text: `Your sign-in code is ${message.otp}. It expires in five minutes. If you did not ask for it, ignore this email.`,
+      html: `<p>Your sign-in code is <strong>${escapedCode}</strong>. It expires in five minutes. If you did not ask for it, ignore this email.</p>`,
     },
   })
 }
@@ -130,23 +130,20 @@ export const auth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   email: async (_ctx, message) => {
     const siteUrl = requireAuthOrigin('SITE_URL')
     switch (message.type) {
-      case 'verify-email':
-        return await deliverVerificationEmail(siteUrl, message)
+      case 'email-otp':
+        return await deliverCodeEmail(siteUrl, message)
       case 'organization-invitation':
         return await deliverInvitationEmail(siteUrl, message)
       default:
-        // Password reset and one-time codes are not enabled, so no other type
+        // Password sign-in and password reset are not enabled, so no other type
         // is emitted. Better Auth only logs a rejected send; it never fails
         // the request, so an unexpected type must not be relied on to block it.
         throw new Error(`The team starter does not send ${message.type} email`)
     }
   },
-  emailAndPassword: { requireEmailVerification: true },
-  emailVerification: {
-    autoSignInAfterVerification: true,
-    sendOnSignIn: true,
-    sendOnSignUp: true,
-  },
+  // Access here follows the invitation email, so people prove the address with an email code.
+  // A password sign-up could be started by someone else for the same address.
+  emailOTP: {},
   organization: createTeamOrganizationOptions(),
 })
 

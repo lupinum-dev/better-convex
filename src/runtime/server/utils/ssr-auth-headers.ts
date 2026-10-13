@@ -71,6 +71,8 @@ export function applyConvexAuthSsrHeaders(
   event: H3Event,
   options: { hasBetterAuthCookie: boolean; rendersUser: boolean },
 ): void {
+  // Headers are already on the wire (SSE, streaming): setting one would throw.
+  if (event.node.res.headersSent) return
   setResponseHeader(event, 'Vary', mergeVaryCookie(getResponseHeader(event, 'Vary')))
   if (options.hasBetterAuthCookie || options.rendersUser) {
     removeSharedCacheOverrides(event)

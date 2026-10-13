@@ -32,10 +32,23 @@ const USER_JWT = makeJwt({
 })
 
 function createEvent(cookie?: string, convex: Record<string, unknown> = AUTH_CONVEX): H3Event {
+  const responseHeaders = new Map<string, string>()
   return {
     context: { nitro: { runtimeConfig: { public: { convex } } } },
     headers: new Headers(cookie ? { cookie } : {}),
+    node: {
+      res: {
+        getHeader: (name: string) => responseHeaders.get(name),
+        getHeaders: () => Object.fromEntries(responseHeaders),
+        removeHeader: (name: string) => responseHeaders.delete(name),
+        setHeader: (name: string, value: string) => responseHeaders.set(name, value),
+      },
+    },
   } as unknown as H3Event
+}
+
+function responseHeaders(event: H3Event): Record<string, string> {
+  return (event.node.res as unknown as { getHeaders: () => Record<string, string> }).getHeaders()
 }
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -95,6 +108,35 @@ describe('getConvexUser and requireConvexUser', () => {
       status: 401,
     })
     expectNoCredentials(error)
+  })
+
+  it('mark the response Vary: Cookie and private, no-store once the session cookie is read', async () => {
+    exchangeResponds(200, { token: USER_JWT })
+    const signedIn = createEvent(SESSION_COOKIE)
+    await getConvexUser(signedIn)
+    expect(responseHeaders(signedIn)).toEqual({
+      Vary: 'Cookie',
+      'Cache-Control': 'private, no-store',
+    })
+
+    // No auth cookie: the answer is anonymous, but still depends on the cookie header.
+    const anonymous = createEvent(PRIVATE_COOKIE)
+    await getConvexUser(anonymous)
+    expect(responseHeaders(anonymous)).toEqual({ Vary: 'Cookie' })
+  })
+
+  it('leave the response alone once its headers are sent (SSE, streaming)', async () => {
+    exchangeResponds(200, { token: USER_JWT })
+    const event = createEvent(SESSION_COOKIE)
+    const res = event.node.res as unknown as Record<string, unknown>
+    res.headersSent = true
+    // Node throws ERR_HTTP_HEADERS_SENT when a header is set after the flush.
+    res.setHeader = () => {
+      throw Object.assign(new Error('headers sent'), { code: 'ERR_HTTP_HEADERS_SENT' })
+    }
+
+    await expect(getConvexUser(event)).resolves.toMatchObject({ id: 'user-1' })
+    expect(responseHeaders(event)).toEqual({})
   })
 
   it('exchange the session at most once per request and forward only Better Auth cookies', async () => {

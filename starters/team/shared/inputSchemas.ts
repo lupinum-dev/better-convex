@@ -27,9 +27,12 @@ const emailSchema = z
   .email('A valid email is required')
   .transform((value) => value.toLowerCase())
 
-const passwordSchema = z.string().min(15, 'Password must be at least 15 characters')
-
 const personNameSchema = z.string().trim().min(1, 'Name is required').max(120, 'Name is too long')
+
+const codeSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, 'The code has six digits')
 
 const callbackBase = 'https://better-convex-nuxt.invalid'
 
@@ -67,8 +70,6 @@ export function normalizeLocalCallbackURL(value: string): string {
     return '/'
   }
 }
-
-const callbackURLSchema = z.string().transform(normalizeLocalCallbackURL)
 
 const optionalIdSchema = z
   .string()
@@ -136,15 +137,12 @@ export const teamMembershipInputSchema = z.object({
   userId: z.string().trim().min(1, 'User is required'),
 })
 
-export const signInInputSchema = z.object({
+export const sendCodeInputSchema = z.object({
   email: emailSchema,
-  password: passwordSchema,
-  callbackURL: callbackURLSchema,
 })
 
-export const signUpInputSchema = z.object({
+export const signInWithCodeInputSchema = z.object({
   name: personNameSchema,
   email: emailSchema,
-  password: passwordSchema,
-  callbackURL: callbackURLSchema,
+  otp: codeSchema,
 })

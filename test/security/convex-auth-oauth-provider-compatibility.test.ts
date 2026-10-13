@@ -1,6 +1,7 @@
 import { oauthProvider, type OAuthOptions, type Scope } from '@better-auth/oauth-provider'
 import { describe, expect, it } from 'vitest'
 
+import { DISABLED_PINNED_PROVIDER_PATHS } from '../../src/runtime/convex-auth/oauth-provider-compat'
 import { convexAuth } from '../../src/runtime/convex-auth/plugin'
 
 const issuer = 'https://deployment.convex.site'
@@ -53,7 +54,71 @@ function createConvexPlugin(oauthProviderProfile: OAuthOptions<Scope[]>) {
     })
 }
 
+// Every route @better-auth/oauth-provider registers must be disabled over HTTP
+// or listed here with the reason it stays reachable. A new upstream route fails
+// this test until someone decides.
+const ALLOWED_OAUTH_PROVIDER_ROUTES: Record<string, string> = {
+  'GET /.well-known/oauth-authorization-server': 'authorization server discovery',
+  'GET /oauth2/authorize': 'authorization flow',
+  'POST /oauth2/authorize': 'authorization flow',
+  'POST /oauth2/consent': 'consent page submits the decision',
+  'POST /oauth2/continue': 'login page continues the flow',
+  'POST /oauth2/token': 'token endpoint',
+  'POST /oauth2/revoke': 'token revocation',
+  'GET /oauth2/public-client': 'consent page client display',
+  'POST /oauth2/public-client-prelogin': 'login page client display',
+  'GET /oauth2/get-consent': "user's own consent management",
+  'GET /oauth2/get-consents': "user's own consent management",
+  'POST /oauth2/update-consent': "user's own consent management",
+  'POST /oauth2/delete-consent': "user's own consent management",
+  // disabledPaths matches the exact request path, so parametric routes cannot be
+  // listed there. They stay guarded by the deny callbacks and the before hooks.
+  'GET /admin/oauth2/resources/:identifier': 'parametric: callbacks deny, hooks guard',
+  'PATCH /admin/oauth2/resources/:identifier': 'parametric: callbacks deny, hooks guard',
+  'DELETE /admin/oauth2/resources/:identifier': 'parametric: callbacks deny, hooks guard',
+  'POST /admin/oauth2/resources/:identifier/clients/:client_id':
+    'parametric: callbacks deny, hooks guard',
+  'DELETE /admin/oauth2/resources/:identifier/clients/:client_id':
+    'parametric: callbacks deny, hooks guard',
+}
+
 describe('pinned Better Auth OAuth Provider compatibility firewall', () => {
+  it('disables, or deliberately allows, every route the pinned provider registers', () => {
+    const routes = Object.values(
+      oauthProvider(profile()).endpoints as unknown as Record<
+        string,
+        { path: string; options: { method: string | string[] } }
+      >,
+    ).flatMap((endpoint) =>
+      [endpoint.options.method].flat().map((method) => ({ method, path: endpoint.path })),
+    )
+    expect(routes.length).toBeGreaterThan(30)
+
+    const undecided = routes
+      .filter(
+        ({ method, path }) =>
+          !DISABLED_PINNED_PROVIDER_PATHS.has(path) &&
+          !(`${method} ${path}` in ALLOWED_OAUTH_PROVIDER_ROUTES),
+      )
+      .map(({ method, path }) => `${method} ${path}`)
+    expect(undecided).toEqual([])
+
+    const registered = new Set(routes.map(({ method, path }) => `${method} ${path}`))
+    expect(
+      Object.keys(ALLOWED_OAUTH_PROVIDER_ROUTES).filter((key) => !registered.has(key)),
+    ).toEqual([])
+    // The provider calls these only from server code and never routed them over
+    // HTTP; listing them as disabled is defence in depth, not a behavior change.
+    for (const path of [
+      '/oauth2/end-session/confirm',
+      '/admin/oauth2/create-client',
+      '/admin/oauth2/update-client',
+      '/admin/oauth2/resources',
+    ]) {
+      expect(DISABLED_PINNED_PROVIDER_PATHS.has(path)).toBe(true)
+    }
+  })
+
   it.each(['clientPrivileges', 'resourcePrivileges', 'customAccessTokenClaims'] as const)(
     'rejects a missing %s callback that the pinned upstream constructor accepts',
     (field) => {

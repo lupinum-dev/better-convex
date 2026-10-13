@@ -20,9 +20,7 @@ export default defineSchema({
     // Timestamps
     createdAt: v.number(),
     updatedAt: v.number(),
-  })
-    .index('by_auth_id', ['authId'])
-    .index('by_email', ['email']),
+  }).index('by_auth_id', ['authId']),
 
   // ============================================
   // POSTS (permission system demo)

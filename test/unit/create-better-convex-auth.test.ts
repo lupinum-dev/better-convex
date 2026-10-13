@@ -215,15 +215,11 @@ describe('createBetterConvexAuth', () => {
       { email, [key]: () => ({}) },
       `expected "${key}" to be an object`,
     ]),
-    [
-      'email OTP without the email hook',
-      { emailOTP: {} },
-      'requires the "email" option when "emailOTP" is enabled',
-    ],
+    ['email OTP without the email hook', { emailOTP: {} }, 'but has no "email" option'],
     [
       'password reset without the email hook',
       { emailAndPassword: { passwordReset: true } },
-      'requires the "email" option',
+      'but has no "email" option',
     ],
     [
       'a non-boolean password reset',

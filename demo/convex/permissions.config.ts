@@ -3,6 +3,10 @@
  *
  * Simplified permission system for demo purposes. The demo returns a fixed
  * member context and does not model authoritative roles or organizations.
+ *
+ * UI hints only. The Convex functions in this demo do NOT read this table and do not enforce it.
+ * Hiding a button is not authorization. A real application must check the role in every Convex
+ * function, from the membership stored in the database.
  */
 
 export const ROLES = ['admin', 'member', 'viewer'] as const

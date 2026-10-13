@@ -92,6 +92,8 @@ export const list = query({
 })
 ```
 
+This query is public on purpose. Anyone can call it. Add authentication and an owner check before you store real data.
+
 Show it on a page:
 
 ```vue [app/pages/index.vue]
@@ -218,6 +220,8 @@ pnpm exec better-convex init --typed-client
 The command shows every file it will write and asks before it writes. It asks again before it sets development secrets or creates the first signing key. It writes the proxy secret to `.env.local` and sets the same value in Convex. `--typed-client` also writes `app/convex-auth.ts`, the file for Better Auth client plugins. The command does not configure production.
 
 The browser talks to Better Auth through `/api/auth` on your own origin. Nuxt forwards these requests to Convex. `useConvexAuth()` returns the auth `status`, the `user`, and the Better Auth `client`. In Convex functions, `auth.requireUser(ctx)` returns the signed-in user or throws.
+
+No sign-in method is on until you name it in `createBetterConvexAuth`: pass `emailAndPassword: {}` for passwords (verified addresses required), `emailOTP: {}` for email codes, or `socialProviders`. Apps that decide access by email should use email codes.
 
 Follow the [add authentication](https://better-convex.lupinum.com/docs/get-started/add-authentication) guide before you enable auth.
 

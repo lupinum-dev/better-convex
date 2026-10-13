@@ -12,9 +12,10 @@ import {
  */
 export function readEventConvexConfig(event: H3Event): NormalizedConvexRuntimeConfig {
   const context = event.context as
-    | { nitro?: { runtimeConfig?: { public?: { convex?: unknown } } } }
+    | { nitro?: { runtimeConfig?: { convex?: unknown; public?: { convex?: unknown } } } }
     | undefined
-  return normalizeConvexRuntimeConfig(context?.nitro?.runtimeConfig?.public?.convex)
+  const runtimeConfig = context?.nitro?.runtimeConfig
+  return normalizeConvexRuntimeConfig(runtimeConfig?.public?.convex, runtimeConfig?.convex)
 }
 
 /** The incoming `Cookie` header, from either the web or the Node request. */

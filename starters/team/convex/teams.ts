@@ -17,12 +17,13 @@ export const getCapabilities = query({
     teamId: v.string(),
   },
   handler: async (ctx, args) => {
+    // Authenticate first, so an anonymous caller cannot learn which team ids exist.
+    const actor = await requireAuthenticatedUser(ctx)
     const team = await getBetterAuthTeam(ctx, { teamId: args.teamId })
     if (!team?.organizationId) {
       throw new ConvexError('Team not found')
     }
 
-    const actor = await requireAuthenticatedUser(ctx)
     const { member } = await requireOrgMembership(ctx, {
       organizationId: team.organizationId,
     })
@@ -102,12 +103,13 @@ export const addMember = mutation({
   },
   handler: async (ctx, args) => {
     const input = parseWithConvexError(teamMembershipInputSchema, args)
+    // Authenticate first, so an anonymous caller cannot learn which team ids exist.
+    const { auth, headers } = await requireAuthenticatedSession(ctx)
     const team = await getBetterAuthTeam(ctx, { teamId: args.teamId })
     if (!team?.organizationId) {
       throw new ConvexError('Team not found')
     }
 
-    const { auth, headers } = await requireAuthenticatedSession(ctx)
     const result = await auth.api.addTeamMember({
       headers,
       body: {
@@ -128,12 +130,13 @@ export const removeMember = mutation({
   },
   handler: async (ctx, args) => {
     const input = parseWithConvexError(teamMembershipInputSchema, args)
+    // Authenticate first, so an anonymous caller cannot learn which team ids exist.
+    const { auth, headers } = await requireAuthenticatedSession(ctx)
     const team = await getBetterAuthTeam(ctx, { teamId: args.teamId })
     if (!team?.organizationId) {
       throw new ConvexError('Team not found')
     }
 
-    const { auth, headers } = await requireAuthenticatedSession(ctx)
     await auth.api.removeTeamMember({
       headers,
       body: {

@@ -223,6 +223,7 @@ export default defineConfig({
           env: {
             SITE_URL: 'https://placeholder.example',
             CONVEX_SITE_URL: 'https://some.convex.site',
+            BCN_AUTH_PROXY_IP_SECRET: 'test-only-proxy-secret-0123456789abcdef',
           },
         },
       },
@@ -239,6 +240,8 @@ export default defineConfig({
         },
         test: {
           name: 'security',
+          // Outside a loopback SITE_URL the OAuth provider requires the proxy secret.
+          env: { BCN_AUTH_PROXY_IP_SECRET: 'test-only-proxy-secret-0123456789abcdef' },
           include: ['test/security/**/*.test.ts'],
           environment: 'node',
           fileParallelism: false,
@@ -264,6 +267,8 @@ export default defineConfig({
         },
         test: {
           name: 'convex',
+          // Outside a loopback SITE_URL the OAuth provider requires the proxy secret.
+          env: { BCN_AUTH_PROXY_IP_SECRET: 'test-only-proxy-secret-0123456789abcdef' },
           exclude: ['playground/convex/auth-adapter-invariants.test.ts'],
           include: [
             'playground/convex/**/*.test.ts',

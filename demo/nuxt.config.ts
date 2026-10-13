@@ -1,5 +1,8 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-const siteUrl = (process.env.SITE_URL || 'http://localhost:3000/').replace(/\/$/, '') + '/'
+// SITE_URL is required: the public origin of this site (.env.example sets it for local work).
+const siteOrigin = process.env.SITE_URL
+if (!siteOrigin) throw new Error('SITE_URL is required')
+const siteUrl = siteOrigin.replace(/\/$/, '') + '/'
 const ogImageUrl = `${siteUrl}og-image.png`
 
 export default defineNuxtConfig({

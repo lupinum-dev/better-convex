@@ -120,22 +120,12 @@ async function archiveProject(projectId: Id<'projects'>) {
   archiving.value = undefined
 }
 
-const form = reactive({ email: '', password: '', name: '' })
+const form = reactive({ email: '', password: '' })
 const authError = ref('')
-async function signIn(mode: 'in' | 'up') {
+async function signIn() {
   authError.value = ''
-  // Sign-up does not start a session here, so a new account signs in right after.
-  const created =
-    mode === 'up'
-      ? await client.signUp.email({
-          email: form.email,
-          password: form.password,
-          name: form.name || form.email,
-        })
-      : null
-  const result = created?.error
-    ? created
-    : await client.signIn.email({ email: form.email, password: form.password })
+  // Accounts are created by the operator; the starter has no public sign-up.
+  const result = await client.signIn.email({ email: form.email, password: form.password })
   if (result.error) authError.value = result.error.message ?? 'That did not work.'
   else if (returnTo.value) await navigateTo(returnTo.value)
 }
@@ -173,7 +163,7 @@ const activityLabel = {
   <main>
     <p v-if="status === 'pending'">Checking session…</p>
 
-    <form v-else-if="!signedIn" class="card" @submit.prevent="signIn('in')">
+    <form v-else-if="!signedIn" class="card" @submit.prevent="signIn">
       <h1>Projects</h1>
       <p v-if="returnTo" class="muted">Sign in to continue to your agent's request.</p>
       <label>Email <input v-model="form.email" type="email" required autocomplete="email" /></label>
@@ -183,14 +173,12 @@ const activityLabel = {
           v-model="form.password"
           type="password"
           required
-          minlength="8"
+          minlength="15"
           autocomplete="current-password"
       /></label>
-      <label>Name (new accounts) <input v-model="form.name" autocomplete="name" /></label>
       <p v-if="authError" role="alert">{{ authError }}</p>
       <div class="row">
         <button type="submit">Sign in</button>
-        <button type="button" class="secondary" @click="signIn('up')">Create account</button>
       </div>
     </form>
 

@@ -7,6 +7,8 @@ import { createTwoFactorOptions } from './betterAuth/schemaPlugins'
 export const betterConvexAuth = createBetterConvexAuth<DataModel>(components.betterAuth, {
   // This fixture deliberately enables Better Auth's signed session cache. The
   // token tests alter canonical state and prove BCN re-reads it.
+  // The test signs in right after sign-up; it has no mail provider.
+  emailAndPassword: { requireEmailVerification: false },
   session: { cookieCache: { enabled: true, maxAge: 5 * 60, strategy: 'compact' } },
   twoFactor: createTwoFactorOptions(),
 })

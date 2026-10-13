@@ -18,7 +18,6 @@ describe('runtime config normalization', () => {
     const config = normalizeConvexRuntimeConfig({
       auth: {
         origin: 'https://app.example.test/',
-        trustedClientIpHeader: 'cf-connecting-ip',
       },
     })
     if (config.auth === false) throw new Error('expected auth enabled')

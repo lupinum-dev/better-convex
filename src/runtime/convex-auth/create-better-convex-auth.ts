@@ -1,3 +1,4 @@
+import type { GenericEndpointContext } from '@better-auth/core'
 import { oauthProvider as createOAuthProvider } from '@better-auth/oauth-provider'
 import type { Auth, BetterAuthOptions, BetterAuthPlugin, InferAPI, User } from 'better-auth'
 import { APIError, betterAuth } from 'better-auth'
@@ -18,6 +19,7 @@ import type { GenericDataModel, HttpRouter, PublicHttpAction } from 'convex/serv
 import { createAuthJwtPlugin } from './auth-jwt'
 import { isWritableAuthCtx, type AuthCtx, type WritableAuthCtx } from './context'
 import { createAuthComponent, type BetterConvexSessionHttpHandler } from './create-auth-component'
+import { devOutbox, isLoopbackSiteUrl } from './dev-outbox'
 import {
   AUTH_EMAIL_DELIVERY_FAILED,
   authConfigFailure,
@@ -25,6 +27,11 @@ import {
   sanitizeAuthCause,
   type AuthConfigSubCode,
 } from './diagnostics'
+import {
+  assertVerifiedUnlessPasswordSignUp,
+  createIdentityGuardsPlugin,
+  createRevokeSessionsOnVerificationHooks,
+} from './identity-guards'
 import { requireMcpPrincipal, type BetterConvexMcpPrincipal } from './mcp-principal'
 import {
   canonicalAuthIssuer,
@@ -66,6 +73,7 @@ type BetterConvexUserCreateDecision =
   | {
       readonly allowed: true
       readonly user?: {
+        /** Only the same address in other letter case; it is stored in lower case. */
         readonly email?: string
         readonly id?: string
       }
@@ -117,8 +125,30 @@ type ReviewedAnonymousOptions = Pick<
   | 'generateRandomEmail'
 >
 
-type ReviewedEmailOTPOptions = Omit<EmailOTPOptions, 'sendVerificationOTP'> & {
+const reviewedEmailOtpOptionKeys = [
+  'allowedAttempts',
+  'disableSignUp',
+  'expiresIn',
+  'generateOTP',
+  'otpLength',
+  'overrideDefaultEmailVerification',
+  'rateLimit',
+  'resendStrategy',
+  'sendVerificationOnSignUp',
+  'storeOTP',
+] as const
+
+/**
+ * `changeEmail` is not offered: it marks the new address verified without the
+ * `beforeUserCreate` gate and leaves other sessions alive. `storeOTP` defaults
+ * to `'hashed'`, so a read of the component tables does not reveal a live code.
+ */
+type ReviewedEmailOTPOptions = Pick<
+  EmailOTPOptions,
+  (typeof reviewedEmailOtpOptionKeys)[number]
+> & {
   readonly sendVerificationOTP?: never
+  readonly changeEmail?: never
 }
 
 type ReviewedTwoFactorOptions = Omit<TwoFactorOptions, 'otpOptions'> & {
@@ -295,6 +325,13 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
   readonly triggers?: AuthComponentTriggers<DataModel>
   /** The one delivery hook for every auth email. See {@link BetterConvexAuthEmail}. */
   readonly email?: BetterConvexAuthEmailSender<DataModel>
+  /**
+   * Email and password sign-in. Off unless you pass an object: leaving it out
+   * (or `false`) keeps it off, so an app that signs in by email code or social
+   * login has no password door. When on, `requireEmailVerification` defaults to
+   * `true` (set `false` to allow sign-in before the address is proven) and
+   * `revokeSessionsOnPasswordReset` defaults to `true`.
+   */
   readonly emailAndPassword?: false | ReviewedEmailAndPasswordOptions
   readonly emailVerification?: ReviewedEmailVerificationOptions
   readonly emailOTP?: false | ReviewedEmailOTPOptions
@@ -614,6 +651,22 @@ function resolveTrustedProviders(
   return [...trusted]
 }
 
+/**
+ * Better Auth's `overrideUserInfoOnSignIn` rewrites a stored user from the
+ * provider profile on every social sign-in. That would let a provider rebind
+ * a user to an unverified email, and it re-sends `emailVerified: true` on each
+ * sign-in, which ends the person's other sessions. It is not supported.
+ */
+function assertNoOverrideUserInfo(socialProviders: SocialProviders | undefined): void {
+  for (const [name, provider] of Object.entries(socialProviders ?? {})) {
+    if (isPlainRecord(provider) && provider.overrideUserInfoOnSignIn) {
+      throw configError(
+        `does not support "socialProviders.${name}.overrideUserInfoOnSignIn"; it would let the provider change the stored email of a signed-in user without proof`,
+      )
+    }
+  }
+}
+
 function rejectUnsupportedOptions(options: object): void {
   for (const key of OWNED_TOP_LEVEL_OPTIONS) {
     if (Object.hasOwn(options, key)) {
@@ -700,14 +753,19 @@ function rejectUnsupportedOptions(options: object): void {
   if (passwordReset !== undefined && typeof passwordReset !== 'boolean') {
     throw configError('expected "emailAndPassword.passwordReset" to be a boolean')
   }
-  if (passwordReset === true && record.email === undefined) {
-    throw configError(
-      'requires the "email" option when "emailAndPassword.passwordReset" is enabled',
-    )
-  }
   rejectEmailCallback(record.emailVerification, 'sendVerificationEmail', 'emailVerification')
   assertOnlyKeys(record.emailVerification, reviewedEmailVerificationOptionKeys, 'emailVerification')
   rejectEmailCallback(record.emailOTP, 'sendVerificationOTP', 'emailOTP')
+  if (isPlainRecord(record.emailOTP) && Object.hasOwn(record.emailOTP, 'changeEmail')) {
+    throw configError(
+      'does not support "emailOTP.changeEmail"; it would verify a new address without your "beforeUserCreate" gate',
+    )
+  }
+  assertOnlyKeys(
+    record.emailOTP,
+    [...reviewedEmailOtpOptionKeys, 'sendVerificationOTP'],
+    'emailOTP',
+  )
   rejectEmailCallback(record.organization, 'sendInvitationEmail', 'organization')
   rejectEmailCallback(
     isPlainRecord(record.twoFactor) ? record.twoFactor.otpOptions : undefined,
@@ -716,9 +774,6 @@ function rejectUnsupportedOptions(options: object): void {
   )
   if (record.emailOTP !== undefined && record.emailOTP !== false) {
     if (!isPlainRecord(record.emailOTP)) throw configError('expected "emailOTP" to be an object')
-    if (record.email === undefined) {
-      throw configError('requires the "email" option when "emailOTP" is enabled')
-    }
   }
   if (record.oauth !== undefined) {
     assertOnlyKeys(record.oauth, ['mcp'], 'oauth')
@@ -729,12 +784,71 @@ function rejectUnsupportedOptions(options: object): void {
       throw configError('accepts either "oauth.mcp" or "oauthProvider", not both')
     }
   }
+  assertEmailHookPresent(record)
+  if (record.twoFactor !== undefined && record.twoFactor !== false) {
+    // Two-factor challenges only password sign-in. These doors mint a session with no challenge.
+    const social = record.socialProviders
+    const hasSocial =
+      typeof social === 'function' || (isPlainRecord(social) && Object.keys(social).length > 0)
+    if ((record.emailOTP !== undefined && record.emailOTP !== false) || hasSocial) {
+      throw configError(
+        'does not support "twoFactor" together with "emailOTP" or "socialProviders"; those sign-ins skip the second factor, so remove one of them',
+      )
+    }
+  }
+  if (record.twoFactor !== undefined && record.twoFactor !== false) {
+    const password = isPlainRecord(record.emailAndPassword) ? record.emailAndPassword : undefined
+    const verification = isPlainRecord(record.emailVerification)
+      ? record.emailVerification
+      : undefined
+    // The verification link signs the person in with no second factor.
+    if (
+      password?.requireEmailVerification === false &&
+      verification?.autoSignInAfterVerification === true
+    ) {
+      throw configError(
+        'does not support "twoFactor" together with "emailVerification.autoSignInAfterVerification" while "emailAndPassword.requireEmailVerification" is false; the verification link would sign in without the second factor',
+      )
+    }
+  }
   assertTrustedProviderShape(record.account as BetterConvexAccountPolicy | undefined)
   // A lazy provider factory is re-validated for every auth construction.
   if (typeof record.socialProviders !== 'function') {
+    assertNoOverrideUserInfo(record.socialProviders as SocialProviders | undefined)
     resolveTrustedProviders(
       record.account as BetterConvexAccountPolicy | undefined,
       record.socialProviders as SocialProviders,
+    )
+  }
+}
+
+/**
+ * The dev outbox is for one local origin only. With `siteOrigins`, the app
+ * serves other origins too, so a loopback `SITE_URL` no longer means local.
+ */
+function usesDevOutbox(record: { siteOrigins?: unknown }): boolean {
+  return record.siteOrigins === undefined && isLoopbackSiteUrl(process.env.SITE_URL)
+}
+
+/**
+ * A deployment that sends auth mail needs the `email` hook. Without it, the
+ * code or link would never reach the person. On a loopback `SITE_URL` the dev
+ * outbox logs the mail instead, so local work needs no provider. The check
+ * runs only once `SITE_URL` is set; with it unset, sending fails at request
+ * time with {@link missingEmailHook}.
+ */
+function assertEmailHookPresent(record: Record<string, unknown>): void {
+  // An unset SITE_URL is allowed here: the first `convex dev` push happens before it is set.
+  if (record.email !== undefined || !process.env.SITE_URL || usesDevOutbox(record)) return
+  const password = isPlainRecord(record.emailAndPassword) ? record.emailAndPassword : undefined
+  const sends =
+    (record.emailOTP !== undefined && record.emailOTP !== false) ||
+    (password !== undefined &&
+      (password.requireEmailVerification !== false || password.passwordReset === true)) ||
+    (record.organization !== undefined && record.organization !== false)
+  if (sends) {
+    throw configError(
+      'sends email (email codes, password verification or reset, or organization invitations) but has no "email" option; add the "email" hook, or use a loopback SITE_URL for local development',
     )
   }
 }
@@ -791,7 +905,9 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
       !patch ||
       typeof patch !== 'object' ||
       (patch.id !== undefined && !requiredIdentityValue(patch.id)) ||
-      (patch.email !== undefined && !requiredIdentityValue(patch.email))
+      (patch.email !== undefined && !requiredIdentityValue(patch.email)) ||
+      // The address was proven (or typed) by the person; a hook may not swap in another one.
+      (patch.email !== undefined && patch.email.toLowerCase() !== user.email.toLowerCase())
     ) {
       rejectUserCreation({ subCode: 'AUTH_USER_CREATE_INVALID_IDENTITY' })
     }
@@ -800,7 +916,7 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
       data: {
         ...user,
         ...(patch.id === undefined ? {} : { id: patch.id }),
-        ...(patch.email === undefined ? {} : { email: patch.email }),
+        ...(patch.email === undefined ? {} : { email: patch.email.toLowerCase() }),
       },
     }
   }
@@ -851,6 +967,13 @@ function emailCredentials(message: BetterConvexAuthEmail): string[] {
     case 'delete-account':
       return [message.url, message.token]
   }
+}
+
+/** Delivery when there is no `email` hook and `SITE_URL` is not a loopback origin. */
+async function missingEmailHook(message: BetterConvexAuthEmail): Promise<never> {
+  throw new Error(
+    `[better-convex] cannot send the "${message.type}" auth email: no "email" hook is set and SITE_URL is not a loopback origin. Add the "email" hook to createBetterConvexAuth, and set SITE_URL to the https origin of your site.`,
+  )
 }
 
 function createEmailDelivery<DataModel extends GenericDataModel>(
@@ -1005,6 +1128,8 @@ export function createBetterConvexAuthOwned<
   assertExtraPluginsAllowed: () => void = () => {},
 ): BetterConvexAuth<DataModel> {
   rejectUnsupportedOptions(options)
+  // Read once, when the app module loads: a loopback SITE_URL is local development.
+  const localDevelopment = usesDevOutbox(options)
   const sessionPolicy = resolveSessionPolicy(options.session)
   const defineSessionClaims: SessionClaimsDefinition = async (input) => {
     const claims = await options.defineSessionClaims?.(input)
@@ -1062,43 +1187,50 @@ export function createBetterConvexAuthOwned<
         typeof options.socialProviders === 'function'
           ? options.socialProviders()
           : options.socialProviders
+      assertNoOverrideUserInfo(socialProviders)
       const trustedProviders = resolveTrustedProviders(options.account, socialProviders)
-      const deliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
+      // The app's hook; else the dev outbox on a loopback SITE_URL; else a delivery that fails with a clear error.
+      const appDeliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
+      const deliver = appDeliver ?? (localDevelopment ? devOutbox : missingEmailHook)
       const emailAndPassword = options.emailAndPassword
       const { passwordReset = false, ...passwordOptions } = emailAndPassword || {}
       const emailOtpOptions = options.emailOTP
 
+      const beforeUserCreate = options.beforeUserCreate
+        ? createBeforeUserCreateHook(ctx, options.beforeUserCreate)
+        : undefined
       const guestOptions = options.experimental?.anonymous
       const featurePlugins = [
         guestOptions === undefined ? null : anonymous(guestOptions === true ? {} : guestOptions),
         options.organization === false || options.organization === undefined
           ? null
           : organization({
+              // An unverified account (for example a squatter) must not accept an invitation.
+              requireEmailVerificationOnInvitation: true,
               ...options.organization,
-              ...(deliver
-                ? {
-                    sendInvitationEmail: async (data) =>
-                      deliver({
-                        type: 'organization-invitation',
-                        to: data.email,
-                        invitationId: data.id,
-                        role: data.role,
-                        organization: Object.freeze({
-                          id: data.organization.id,
-                          name: data.organization.name,
-                          slug: data.organization.slug,
-                        }),
-                        inviter: emailUser(data.inviter.user),
-                      }),
-                  }
-                : {}),
+              sendInvitationEmail: async (data) =>
+                deliver({
+                  type: 'organization-invitation',
+                  to: data.email,
+                  invitationId: data.id,
+                  role: data.role,
+                  organization: Object.freeze({
+                    id: data.organization.id,
+                    name: data.organization.name,
+                    slug: data.organization.slug,
+                  }),
+                  inviter: emailUser(data.inviter.user),
+                }),
             }),
         options.twoFactor === false || options.twoFactor === undefined
           ? null
           : twoFactor({
               ...options.twoFactor,
-              ...(deliver
-                ? {
+              // Offer email codes as a second factor only when mail can go out;
+              // otherwise Better Auth would list a method that always fails.
+              ...(deliver === missingEmailHook
+                ? {}
+                : {
                     otpOptions: {
                       ...options.twoFactor.otpOptions,
                       sendOTP: async ({ user, otp }) =>
@@ -1109,12 +1241,12 @@ export function createBetterConvexAuthOwned<
                           user: emailUser(user),
                         }),
                     },
-                  }
-                : {}),
+                  }),
             }),
-        emailOtpOptions === false || emailOtpOptions === undefined || !deliver
+        emailOtpOptions === false || emailOtpOptions === undefined
           ? null
           : emailOTP({
+              storeOTP: 'hashed',
               ...emailOtpOptions,
               sendVerificationOTP: async ({ email, otp, type }) =>
                 deliver({ type: 'email-otp', to: email, otp, purpose: type }),
@@ -1134,6 +1266,7 @@ export function createBetterConvexAuthOwned<
       })
       const plugins: BetterAuthPlugin[] = [
         ...featurePlugins,
+        createIdentityGuardsPlugin(),
         ...extraPlugins,
         jwtPlugin,
         convexPlugin,
@@ -1165,15 +1298,20 @@ export function createBetterConvexAuthOwned<
         basePath: '/api/auth',
         baseURL,
         database: authComponent.adapter(ctx),
-        databaseHooks: options.beforeUserCreate
-          ? {
-              user: {
-                create: {
-                  before: createBeforeUserCreateHook(ctx, options.beforeUserCreate),
-                },
+        databaseHooks: {
+          user: {
+            create: {
+              before: async (
+                user: User & Record<string, unknown>,
+                context: GenericEndpointContext | null,
+              ) => {
+                assertVerifiedUnlessPasswordSignUp(user, context)
+                return await beforeUserCreate?.(user)
               },
-            }
-          : undefined,
+            },
+            ...createRevokeSessionsOnVerificationHooks(),
+          },
+        },
         disabledPaths: [
           '/token',
           '/get-access-token',
@@ -1183,19 +1321,35 @@ export function createBetterConvexAuthOwned<
           '/oauth2/introspect',
           '/oauth2/userinfo',
           '/oauth2/end-session',
+          '/oauth2/end-session/confirm',
+          '/admin/oauth2/create-client',
+          '/admin/oauth2/update-client',
+          '/admin/oauth2/resources',
           '/oauth2/create-client',
           '/oauth2/get-client',
           '/oauth2/get-clients',
           '/oauth2/update-client',
           '/oauth2/client/rotate-secret',
           '/oauth2/delete-client',
+          // Email-code password reset is part of "passwordReset", off unless named.
+          ...(passwordReset
+            ? []
+            : [
+                '/email-otp/request-password-reset',
+                '/email-otp/reset-password',
+                '/forget-password/email-otp',
+              ]),
         ],
         emailAndPassword:
-          emailAndPassword === false
+          emailAndPassword === false || emailAndPassword === undefined
             ? { enabled: false }
             : {
+                // Off unless named. Verified addresses only, and a reset ends older sessions.
                 ...passwordOptions,
-                ...(deliver && passwordReset
+                requireEmailVerification: passwordOptions.requireEmailVerification ?? true,
+                revokeSessionsOnPasswordReset:
+                  passwordOptions.revokeSessionsOnPasswordReset ?? true,
+                ...(passwordReset
                   ? {
                       sendResetPassword: async ({ user, url, token }) =>
                         deliver({
@@ -1211,24 +1365,17 @@ export function createBetterConvexAuthOwned<
                 enabled: true,
                 minPasswordLength: 15,
               },
-        emailVerification:
-          options.emailVerification === undefined && !deliver
-            ? undefined
-            : {
-                ...options.emailVerification,
-                ...(deliver
-                  ? {
-                      sendVerificationEmail: async ({ user, url, token }) =>
-                        deliver({
-                          type: 'verify-email',
-                          to: user.email,
-                          url,
-                          token,
-                          user: emailUser(user),
-                        }),
-                    }
-                  : {}),
-              },
+        emailVerification: {
+          ...options.emailVerification,
+          sendVerificationEmail: async ({ user, url, token }) =>
+            deliver({
+              type: 'verify-email',
+              to: user.email,
+              url,
+              token,
+              user: emailUser(user),
+            }),
+        },
         plugins,
         rateLimit: {
           customStorage: rateLimitStorage,
@@ -1248,10 +1395,10 @@ export function createBetterConvexAuthOwned<
                 ...(options.deleteUser.beforeDelete
                   ? { beforeDelete: createBeforeDeleteHook(ctx, options.deleteUser.beforeDelete) }
                   : {}),
-                ...(deliver
+                ...(appDeliver
                   ? {
                       sendDeleteAccountVerification: async ({ user, url, token }) =>
-                        deliver({
+                        appDeliver({
                           type: 'delete-account',
                           to: user.email,
                           url,
