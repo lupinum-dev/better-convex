@@ -70,7 +70,12 @@ export const createInspectorClient = trusted(
     args: {},
     handler: async (ctx) => {
       const siteUrl = process.env.SITE_URL
-      const hostname = siteUrl ? new URL(siteUrl).hostname : undefined
+      let hostname: string | undefined
+      try {
+        hostname = siteUrl ? new URL(siteUrl).hostname : undefined
+      } catch {
+        // A malformed SITE_URL gets the same guidance below.
+      }
       if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
         throw new ConvexError(
           'createInspectorClient is for development only. Set SITE_URL to a localhost URL on this deployment first.',
