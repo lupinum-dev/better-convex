@@ -1,5 +1,3 @@
-import type { H3Event } from 'h3'
-
 import {
   CLIENT_IP_HEADER,
   CLIENT_IP_SIGNATURE_HEADER,
@@ -10,12 +8,13 @@ import {
   signClientIp,
   signPublicOrigin,
 } from '../../shared/client-ip'
+import type { ConvexServerEvent } from './event'
 
 export interface SignedClientIpHeadersOptions {
   trustedClientIpHeader?: string | null
 }
 
-function readRequestHeader(event: H3Event, name: string): string | null {
+function readRequestHeader(event: ConvexServerEvent, name: string): string | null {
   const directHeaders = (event as { headers?: { get?: (key: string) => string | null } }).headers
   const direct = directHeaders?.get?.(name)
   if (direct !== null && direct !== undefined) return direct
@@ -32,7 +31,7 @@ function readRequestHeader(event: H3Event, name: string): string | null {
 
 /** Build the complete authenticated client-IP pair for one Nuxt-to-Convex hop. */
 export async function buildSignedClientIpHeaders(
-  event: H3Event,
+  event: ConvexServerEvent,
   options: SignedClientIpHeadersOptions,
 ): Promise<Record<string, string>> {
   const trustedHeader = options.trustedClientIpHeader
