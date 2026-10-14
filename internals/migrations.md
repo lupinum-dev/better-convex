@@ -7,7 +7,9 @@ code and its entry together when the removal condition is met.
 
 - **Code:** the raw h3 v1 branch of each accessor in
   `src/runtime/server/utils/event.ts` (`H3V1Event`, `rawH3V1`, the Node
-  response-header wrapper, the h3 1.x URL rebuild).
+  response-header wrapper, the h3 1.x URL rebuild), and the `~portable` check
+  in `eventAbortSignal` (a Nuxt 4.6 `nuxt/server` event has a `Request` whose
+  signal never aborts).
 - **Why:** on Nuxt 4, server routes that use h3's auto-imported
   `defineEventHandler`, and the server-rendering event (`useRequestEvent()`),
   are raw h3 v1 events: `event.req` is the Node `IncomingMessage`, and response

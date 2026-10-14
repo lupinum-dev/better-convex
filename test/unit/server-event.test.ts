@@ -101,9 +101,10 @@ const shapes: Shape[] = [
         nodeRes: res,
       }
     },
-    // Nuxt 4.6 builds its Request without a signal, so it never aborts.
-    signalBeforeDisconnect: false,
-    signalAfterDisconnect: false,
+    // Nuxt 4.6 builds its Request without a signal, so that signal never
+    // aborts; returning it would hide that callers must listen on Node.
+    signalBeforeDisconnect: undefined,
+    signalAfterDisconnect: undefined,
     webRequestUrl: URL_STRING,
   },
   {

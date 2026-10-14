@@ -20,9 +20,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
  */
 export interface ConvexServerEvent {
   readonly context: object
-  readonly req?: object
-  readonly res?: object
-  readonly node?: object
+  readonly req?: object | undefined
+  readonly res?: object | undefined
+  readonly node?: object | undefined
 }
 
 /** The response headers of an event, as {@link eventResponseHeaders} returns them. */
@@ -111,7 +111,7 @@ export function eventRequestUrl(event: ConvexServerEvent): URL {
   const v1 = rawH3V1(event)
   const req = v1.node.req
   const host = req.headers.host || 'localhost'
-  const encrypted = 'encrypted' in req.socket && req.socket.encrypted === true
+  const encrypted = (req.socket as { encrypted?: boolean } | null | undefined)?.encrypted === true
   const protocol = req.headers['x-forwarded-proto'] === 'https' || encrypted ? 'https' : 'http'
   const path = (req.originalUrl || v1.path).replace(/^[/\\]+/g, '/')
   return new URL(path, `${protocol}://${host}`)
@@ -123,12 +123,17 @@ export function eventRequestMethod(event: ConvexServerEvent): string {
 }
 
 /**
- * The signal that aborts when the client disconnects, when the runtime
- * provides one. A raw h3 v1 event on Node has none (`undefined`); code that
- * must notice a disconnect there listens on {@link eventNodeRequest}.
+ * The signal that aborts when the client disconnects, or `undefined` when the
+ * runtime gives none: a raw h3 v1 event on Node, and a Nuxt 4.6 `nuxt/server`
+ * handler event (Nuxt 4.6 builds that `Request` without a signal, so its
+ * signal would never abort). Code that must notice a disconnect then listens on
+ * {@link eventNodeRequest} / {@link eventNodeResponse}.
  */
 export function eventAbortSignal(event: ConvexServerEvent): AbortSignal | undefined {
-  return isWebShaped(event) ? event.req.signal : rawH3V1(event).web?.request?.signal
+  if (!isWebShaped(event)) return rawH3V1(event).web?.request?.signal
+  // TEMPORARY (Nuxt 4.6, internals/migrations.md): the portable event marks itself `~portable`.
+  if ((event as { readonly '~portable'?: unknown })['~portable'] === true) return undefined
+  return event.req.signal
 }
 
 /** The web `Request`, or `undefined` on a raw h3 v1 event. */
