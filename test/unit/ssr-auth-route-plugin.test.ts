@@ -10,11 +10,13 @@ vi.mock('nuxt/server', async (importOriginal) => ({
 }))
 
 describe('ssr-auth-route Nitro plugin', () => {
-  // Catches a plugin that does not hook every request, or records the rule
-  // somewhere the SSR plugin does not read: a cached `ssrAuth: false` route
-  // would then resolve the session and render one visitor's identity into
-  // HTML a shared cache serves to everyone.
-  it('marks the request context of a route whose rule turns SSR auth off', () => {
+  // Catches a plugin that does not hook every request, records the rule
+  // somewhere the SSR plugin does not read, or reads it in the hook: Nuxt 5
+  // runs the hook before Nitro routes the request (`context.routeRules` is set
+  // later), and with `app.baseURL: '/app/'` the fallback lookup misses
+  // `/blog/**`. A cached `ssrAuth: false` route would then resolve the session
+  // and render one visitor's identity into HTML a shared cache serves to everyone.
+  it('reads the route rule of the routed request when rendering', () => {
     const hooks: Array<(event: { context: Record<string, unknown> }) => void> = []
     ssrAuthRoute({
       hooks: {
@@ -24,13 +26,17 @@ describe('ssr-auth-route Nitro plugin', () => {
         },
       },
     })
-    const event = { context: {} }
-    getRouteRulesMock.mockReturnValue({ convex: { ssrAuth: false } })
+    const event: { context: Record<string, unknown> } = { context: {} }
+    // Nuxt 5 `nuxt/server` getRouteRules: the routed rules, else a lookup
+    // that misses under a base URL.
+    getRouteRulesMock.mockImplementation((routed: typeof event) => routed.context.routeRules ?? {})
 
     for (const hook of hooks) hook(event)
+    // Nitro's `~findRoute` runs after the request hook.
+    event.context.routeRules = { isr: 60, convex: { ssrAuth: false } }
 
     expect(hooks).toHaveLength(1)
-    expect(getRouteRulesMock).toHaveBeenCalledWith(event)
     expect(isSsrAuthEnabled(event.context, true)).toBe(false)
+    expect(getRouteRulesMock).toHaveBeenCalledWith(event)
   })
 })

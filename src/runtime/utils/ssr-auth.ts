@@ -9,13 +9,17 @@ export interface ConvexRouteRules {
 
 const SSR_AUTH_CONTEXT_KEY = 'betterConvexSsrAuth'
 
-/** Record the matched route rule on the request (Nitro plugin, before rendering). */
+/**
+ * Record how to read the request's route rules (Nitro plugin, `request` hook).
+ * The rules are read when rendering, not in the hook: Nuxt 5 runs that hook
+ * before Nitro routes the request, and its fallback lookup there misses every
+ * rule but `/**` when `app.baseURL` is not `/`.
+ */
 export function recordSsrAuthRouteRule(
   context: Record<string, unknown>,
-  routeRules: object | undefined,
+  readRouteRules: () => object | undefined,
 ): void {
-  const convex = (routeRules as { convex?: ConvexRouteRules } | undefined)?.convex
-  if (typeof convex?.ssrAuth === 'boolean') context[SSR_AUTH_CONTEXT_KEY] = convex.ssrAuth
+  context[SSR_AUTH_CONTEXT_KEY] = readRouteRules
 }
 
 /**
@@ -26,6 +30,9 @@ export function isSsrAuthEnabled(
   context: Record<string, unknown> | undefined,
   buildDefault: boolean,
 ): boolean {
-  const routeRule = context?.[SSR_AUTH_CONTEXT_KEY]
-  return typeof routeRule === 'boolean' ? routeRule : buildDefault
+  const readRouteRules = context?.[SSR_AUTH_CONTEXT_KEY]
+  if (typeof readRouteRules !== 'function') return buildDefault
+  const routeRules: unknown = readRouteRules()
+  const convex = (routeRules as { convex?: ConvexRouteRules } | undefined)?.convex
+  return typeof convex?.ssrAuth === 'boolean' ? convex.ssrAuth : buildDefault
 }

@@ -44,20 +44,20 @@ describe('SSR auth route rule', () => {
 
   it('lets a matched convex.ssrAuth rule override the default in both directions', () => {
     const off: Record<string, unknown> = {}
-    recordSsrAuthRouteRule(off, { convex: { ssrAuth: false } })
+    recordSsrAuthRouteRule(off, () => ({ convex: { ssrAuth: false } }))
     expect(isSsrAuthEnabled(off, true)).toBe(false)
 
     const on: Record<string, unknown> = {}
-    recordSsrAuthRouteRule(on, { convex: { ssrAuth: true } })
+    recordSsrAuthRouteRule(on, () => ({ convex: { ssrAuth: true } }))
     expect(isSsrAuthEnabled(on, false)).toBe(true)
   })
 
   it('ignores rules without a boolean ssrAuth', () => {
-    const context: Record<string, unknown> = {}
-    recordSsrAuthRouteRule(context, { convex: { ssrAuth: 'no' } })
-    recordSsrAuthRouteRule(context, { isr: 60 } as never)
-    recordSsrAuthRouteRule(context, undefined)
-    expect(isSsrAuthEnabled(context, true)).toBe(true)
+    for (const routeRules of [{ convex: { ssrAuth: 'no' } }, { isr: 60 }, undefined]) {
+      const context: Record<string, unknown> = {}
+      recordSsrAuthRouteRule(context, () => routeRules)
+      expect(isSsrAuthEnabled(context, true)).toBe(true)
+    }
   })
 
   // Catches an augmentation of a module Nuxt 5 no longer reads (`nitropack`): `routeRules`
