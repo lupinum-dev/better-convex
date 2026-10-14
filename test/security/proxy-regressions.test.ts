@@ -1,11 +1,11 @@
 import { Socket } from 'node:net'
-import { join } from 'node:path'
 import { inspect } from 'node:util'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ConvexServerEvent } from '../../src/runtime/server/utils/event'
 import { rawProxyEvent } from '../helpers/auth-proxy-event'
+import { inDevelopment } from '../helpers/dev-mode'
 
 const mocks = vi.hoisted(() => ({
   config: vi.fn(),
@@ -75,27 +75,6 @@ async function loadHandler(name: keyof typeof handlers = 'proxy') {
   const handler = (await handlers[name]()).default
   return (input: ConvexServerEvent | { event: ConvexServerEvent }) =>
     handler('event' in input ? input.event : input)
-}
-
-/**
- * `import.meta.dev` is a build-time constant that Vitest leaves undefined.
- * Turn it on for the proxy module only, for the duration of `run`.
- */
-async function inDevelopment<T>(run: () => Promise<T>): Promise<T> {
-  const proxyModule = join('server', 'api', 'auth', '[...].ts')
-  Object.defineProperty(Object.prototype, 'dev', {
-    configurable: true,
-    get(this: { filename?: unknown }) {
-      return typeof this.filename === 'string' && this.filename.endsWith(proxyModule)
-        ? true
-        : undefined
-    },
-  })
-  try {
-    return await run()
-  } finally {
-    Reflect.deleteProperty(Object.prototype, 'dev')
-  }
 }
 
 describe('auth proxy security regressions', () => {

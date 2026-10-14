@@ -62,6 +62,11 @@ const agentsSourceAliases = {
 // nothing. Inline projects do not inherit root plugins, so each project a mutant row names lists it.
 const mutant = mutantPlugin(fileURLToPath(new URL('.', import.meta.url)))
 
+// `import.meta.dev` is a Nuxt build-time constant that Vitest leaves undefined. The unit and
+// security projects replace it with a switch that `inDevelopment()` (test/helpers/dev-mode.ts)
+// turns on for one test; everywhere else it is `false`, the production branch.
+const devModeSwitch = { 'import.meta.dev': 'globalThis.__BCN_TEST_DEV__ === true' }
+
 /**
  * Vitest projects
  *
@@ -86,6 +91,7 @@ export default defineConfig({
       // root types before invoking this project directly.
       {
         plugins: [mutant],
+        define: devModeSwitch,
         resolve: {
           alias: {
             ...vueSourceAliases,
@@ -231,6 +237,7 @@ export default defineConfig({
       // Security regressions, including the OAuth provider and resource-server suites.
       {
         plugins: [mutant],
+        define: devModeSwitch,
         resolve: {
           alias: {
             ...vueSourceAliases,
