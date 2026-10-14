@@ -823,6 +823,7 @@ describe('auth proxy security regressions', () => {
       data: { code: 'BCN_AUTH_PROXY_REQUEST_ENCODING_UNSUPPORTED' },
     })
     expect(encodedPost.res.shouldKeepAlive).toBe(false)
+    expect(encodedPost.res.getHeader('connection')).toBe('close')
     expect(fetchMock).not.toHaveBeenCalled()
     expect(framedGet.res.getHeader('cache-control')).toBe('private, no-store')
     expect(encodedPost.res.getHeader('cache-control')).toBe('private, no-store')
@@ -1043,6 +1044,7 @@ describe('auth proxy security regressions', () => {
     expect(uploadCancel).toHaveBeenCalledOnce()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(upload.res.shouldKeepAlive).toBe(false)
+    expect(upload.res.getHeader('connection')).toBe('close')
     expect(upload.req.listenerCount('aborted')).toBe(0)
     expect(upload.res.listenerCount('close')).toBe(0)
 

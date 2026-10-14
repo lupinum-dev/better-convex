@@ -31,6 +31,11 @@ export function rawProxyEvent({
   complete = true,
 }: RawProxyRequest = {}): { event: H3Event; req: IncomingMessage; res: ServerResponse } {
   const req = new IncomingMessage(new Socket())
+  // An HTTP/1.1 request, so the response starts with keep-alive on and a test
+  // can see the proxy turn it off.
+  req.httpVersionMajor = 1
+  req.httpVersionMinor = 1
+  req.httpVersion = '1.1'
   req.method = method
   req.url = path
   req.headers = { host: 'app.example.test', ...headers }
