@@ -215,6 +215,8 @@ describe('Nuxt 4.6 and Nuxt 5 server boundaries', () => {
 
     for (const specifier of [
       'nuxt/server',
+      // The module's alias for src/runtime/server/index.ts, which imports nuxt/server.
+      '#convex/server',
       'nitro',
       'nitro/runtime',
       'h3',

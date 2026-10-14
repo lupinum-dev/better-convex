@@ -494,12 +494,14 @@ const RULES = [
   {
     name: 'ssr-chain-no-server-framework-imports',
     description:
-      'No file reachable from src/runtime/plugin.server.ts may import nuxt/server, nitro, h3 or nitropack (type-only included): Nuxt import protection fails the app build. Pass server values in from the caller.',
+      'No file reachable from src/runtime/plugin.server.ts may import nuxt/server, #convex/server (the module alias for src/runtime/server/index.ts), nitro, h3 or nitropack (type-only included): Nuxt import protection fails the app build. Pass server values in from the caller.',
     from: isSsrChainFile,
     disallow: (edge) =>
       !edge.isRelative &&
       (edge.specifier === 'nuxt/server' ||
         edge.specifier.startsWith('nuxt/server/') ||
+        edge.specifier === '#convex/server' ||
+        edge.specifier.startsWith('#convex/server/') ||
         isNitroSpecifier(edge.specifier) ||
         isH3Specifier(edge.specifier) ||
         isNitropackSpecifier(edge.specifier)),
