@@ -1,10 +1,11 @@
 /**
  * Build-time check for route rules that cache pages which resolve the session during SSR.
  *
- * On Nuxt 5 a route rule's `headers`, a cache it turns on (`cache`, `swr`, `isr`) or later
+ * On Nuxt 5 a route rule's `headers`, a cache it turns on (`cache`, `swr`, `isr`) or server
  * middleware wins over the `Vary: Cookie` / `Cache-Control: private, no-store` headers that
- * SSR auth sets on signed-in pages. The module only warns; it enforces nothing at runtime
- * (decision 3 in internals/decisions.md, D41).
+ * SSR auth sets on signed-in pages. The module only warns, and only about route rules; it
+ * enforces nothing at runtime (D41 in internals/decisions.md). The cacheable-public-pages docs
+ * quote `authCachedRoutesWarning`: change both together.
  */
 
 const CACHE_HEADER_NAMES = new Set([
