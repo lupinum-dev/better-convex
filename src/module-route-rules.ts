@@ -52,14 +52,15 @@ function covers(pattern: string, other: string): boolean {
 }
 
 /**
- * Patterns whose rule can cover SSR pages, keeps SSR auth on and sets a cache or a cache
- * header. A pattern's `convex.ssrAuth` is its own, else that of the most specific other
- * pattern that covers all its paths (Nitro merges matching rules, the more specific winning),
- * else the build-wide `auth.ssr` default. `sources` are `nuxt.options.routeRules` and
- * `nuxt.options.nitro.routeRules`, in that order. For one pattern the last source that lists
- * it wins completely: `@nuxt/schema` resolves `nitro.routeRules` as
- * `{ ...routeRules, ...nitro.routeRules }`, so a Nitro entry replaces the Nuxt entry and the
- * runtime (`getRouteRules`) never sees the replaced one.
+ * Patterns whose rule can cover SSR pages, sets a cache or a cache header, and keeps SSR auth
+ * on for some of its paths: its own, or those of a narrower pattern it covers that turns SSR
+ * auth back on (Nitro merges matching rules, so the cache reaches those paths too). A
+ * pattern's `convex.ssrAuth` is its own, else that of the most specific other pattern that
+ * covers all its paths (the more specific rule wins the merge), else the build-wide `auth.ssr`
+ * default. `sources` are `nuxt.options.routeRules` and `nuxt.options.nitro.routeRules`, in that
+ * order. For one pattern the last source that lists it wins completely: `@nuxt/schema`
+ * resolves `nitro.routeRules` as `{ ...routeRules, ...nitro.routeRules }`, so a Nitro entry
+ * replaces the Nuxt entry and the runtime (`getRouteRules`) never sees the replaced one.
  */
 export function findAuthCachedRoutePatterns(
   sources: readonly RouteRuleSource[],
@@ -82,10 +83,16 @@ export function findAuthCachedRoutePatterns(
     }
     return inherited?.ssrAuth
   }
-  return [...rules].flatMap(([pattern, rule]) => {
-    if (NON_PAGE_PATTERN.test(pattern) || !setsCache(rule)) return []
-    const ssrAuth = ruleSsrAuth(rule) ?? inheritedSsrAuth(pattern) ?? ssrAuthDefault
-    return ssrAuth ? [pattern] : []
+  const keepsSsrAuth = ([pattern, rule]: readonly [string, Record<string, unknown>]): boolean =>
+    ruleSsrAuth(rule) ?? inheritedSsrAuth(pattern) ?? ssrAuthDefault
+  const pageRules = [...rules].filter(([pattern]) => !NON_PAGE_PATTERN.test(pattern))
+  return pageRules.flatMap((entry) => {
+    const [pattern, rule] = entry
+    if (!setsCache(rule)) return []
+    const authOnSomewhere =
+      keepsSsrAuth(entry) ||
+      pageRules.some((narrower) => covers(pattern, narrower[0]) && keepsSsrAuth(narrower))
+    return authOnSomewhere ? [pattern] : []
   })
 }
 

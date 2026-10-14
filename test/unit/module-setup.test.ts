@@ -479,6 +479,28 @@ describe('module cached auth route warning', () => {
       ['/admin/**'],
     ],
     [
+      'a narrower pattern turns SSR auth back on under a cached pattern',
+      {
+        '/**': { convex: { ssrAuth: false } },
+        '/blog/**': { swr: 60 },
+        '/blog/members/**': { convex: { ssrAuth: true } },
+        '/api/**': { convex: { ssrAuth: true } },
+      },
+      undefined,
+      true,
+      ['/blog/**'],
+    ],
+    [
+      'a cached pattern with SSR auth off covers a page that turns it on',
+      {
+        '/docs/**': { isr: 60, convex: { ssrAuth: false } },
+        '/docs/me': { convex: { ssrAuth: true } },
+      },
+      undefined,
+      false,
+      ['/docs/**'],
+    ],
+    [
       'not covered by a rule with SSR auth off',
       { '/blog/**': { convex: { ssrAuth: false } }, '/blogs': { swr: 60 }, '/docs': { isr: 60 } },
       undefined,
