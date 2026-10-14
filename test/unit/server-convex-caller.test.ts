@@ -411,6 +411,13 @@ describe('serverConvex auth-mode resolution', () => {
       kind: 'authentication',
     })
     expect(mocks.queryMock).not.toHaveBeenCalled()
+    // Catches a wrong or empty signed public origin on the explicit-credential exchange.
+    expect(mocks.exchangeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publicOrigin: AUTH_CONFIG.origin,
+        credential: { type: 'cookie', value: AUTH_COOKIE },
+      }),
+    )
   })
 })
 
