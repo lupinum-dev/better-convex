@@ -39,24 +39,51 @@ function ruleSsrAuth(rule: Record<string, unknown>): boolean | undefined {
 }
 
 /**
- * Patterns whose rule can cover SSR pages, keeps SSR auth on (its own `convex.ssrAuth`, else
- * the build-wide `auth.ssr` default) and sets a cache or a cache header. `sources` are
- * `nuxt.options.routeRules` and `nuxt.options.nitro.routeRules`, in that order. For one pattern
- * the last source that lists it wins completely: `@nuxt/schema` resolves
- * `nitro.routeRules` as `{ ...routeRules, ...nitro.routeRules }`, so a Nitro entry replaces the
- * Nuxt entry and the runtime (`getRouteRules`) never sees the replaced one. Only a warning, so
- * rules of overlapping patterns are not combined.
+ * Whether every path that `other` matches also matches `pattern`. Only a `/**` pattern covers
+ * other patterns (`/**` covers all, `/blog/**` covers `/blog`, `/blog/x` and `/blog/x/**`); an
+ * exact pattern covers only itself, and other wildcards are treated as covering nothing.
+ */
+function covers(pattern: string, other: string): boolean {
+  if (!pattern.endsWith('/**')) return false
+  const base = pattern.slice(0, -3)
+  return other === base || other.startsWith(`${base}/`)
+}
+
+/**
+ * Patterns whose rule can cover SSR pages, keeps SSR auth on and sets a cache or a cache
+ * header. A pattern's `convex.ssrAuth` is its own, else that of the most specific other
+ * pattern that covers all its paths (Nitro merges matching rules, the more specific winning),
+ * else the build-wide `auth.ssr` default. `sources` are `nuxt.options.routeRules` and
+ * `nuxt.options.nitro.routeRules`, in that order. For one pattern the last source that lists
+ * it wins completely: `@nuxt/schema` resolves `nitro.routeRules` as
+ * `{ ...routeRules, ...nitro.routeRules }`, so a Nitro entry replaces the Nuxt entry and the
+ * runtime (`getRouteRules`) never sees the replaced one.
  */
 export function findAuthCachedRoutePatterns(
   sources: readonly RouteRuleSource[],
   ssrAuthDefault: boolean,
 ): string[] {
-  const patterns = new Set(sources.flatMap((source) => (source ? Object.keys(source) : [])))
-  return [...patterns].filter((pattern) => {
-    if (NON_PAGE_PATTERN.test(pattern)) return false
-    const rule = sources.map((source) => source?.[pattern]).findLast(isRecord)
-    if (!rule) return false
-    return (ruleSsrAuth(rule) ?? ssrAuthDefault) && setsCache(rule)
+  const patterns = [...new Set(sources.flatMap((source) => (source ? Object.keys(source) : [])))]
+  const rules = new Map(
+    patterns.flatMap((pattern) => {
+      const rule = sources.map((source) => source?.[pattern]).findLast(isRecord)
+      return rule ? [[pattern, rule] as const] : []
+    }),
+  )
+  const inheritedSsrAuth = (pattern: string): boolean | undefined => {
+    let inherited: { length: number; ssrAuth: boolean } | undefined
+    for (const [other, rule] of rules) {
+      const ssrAuth = ruleSsrAuth(rule)
+      if (other === pattern || ssrAuth === undefined || !covers(other, pattern)) continue
+      if (!inherited || other.length > inherited.length)
+        inherited = { length: other.length, ssrAuth }
+    }
+    return inherited?.ssrAuth
+  }
+  return [...rules].flatMap(([pattern, rule]) => {
+    if (NON_PAGE_PATTERN.test(pattern) || !setsCache(rule)) return []
+    const ssrAuth = ruleSsrAuth(rule) ?? inheritedSsrAuth(pattern) ?? ssrAuthDefault
+    return ssrAuth ? [pattern] : []
   })
 }
 

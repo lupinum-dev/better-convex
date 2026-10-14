@@ -377,8 +377,9 @@ describe('module server registrations', () => {
 })
 
 describe('module cached auth route warning', () => {
-  // Catches a cache rule on a signed-in SSR page going unreported (on Nuxt 5 it overrides the
-  // private/Vary headers), and false alarms for API, asset and anonymous routes.
+  // Catches a cache rule on a signed-in SSR page going unreported (it overrides the private/Vary
+  // headers), and false alarms for API, asset and anonymous routes, including routes that a
+  // broader `convex: { ssrAuth: false }` pattern covers.
   it.each([
     [
       'swr, cache and isr on pages',
@@ -452,6 +453,37 @@ describe('module cached auth route warning', () => {
       { '/k/**': { convex: { ssrAuth: false } } },
       true,
       [],
+    ],
+    [
+      'covered by /** with SSR auth off',
+      { '/**': { convex: { ssrAuth: false } }, '/blog/**': { swr: 60 }, '/about': { isr: 60 } },
+      undefined,
+      true,
+      [],
+    ],
+    [
+      'covered by /blog/** with SSR auth off',
+      { '/blog/**': { convex: { ssrAuth: false } }, '/blog/x': { swr: 60 } },
+      undefined,
+      true,
+      [],
+    ],
+    [
+      'own SSR auth on under /** with SSR auth off',
+      {
+        '/**': { convex: { ssrAuth: false } },
+        '/admin/**': { swr: 60, convex: { ssrAuth: true } },
+      },
+      undefined,
+      true,
+      ['/admin/**'],
+    ],
+    [
+      'not covered by a rule with SSR auth off',
+      { '/blog/**': { convex: { ssrAuth: false } }, '/blogs': { swr: 60 }, '/docs': { isr: 60 } },
+      undefined,
+      true,
+      ['/blogs', '/docs'],
     ],
   ] as const)('%s', (_, routeRules, nitroRouteRules, ssrDefault, expected) => {
     expect(findAuthCachedRoutePatterns([routeRules, nitroRouteRules], ssrDefault)).toEqual(expected)
