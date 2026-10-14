@@ -29,7 +29,8 @@ import { basename, join } from 'node:path'
  * - the stray `dist/runtime/server/tsconfig.json`, copied verbatim from
  *   `src/runtime/server/tsconfig.json`, which `extends` a repo-relative
  *   `../../../.nuxt/tsconfig.server.json` that does not exist for a
- *   published consumer.
+ *   published consumer, and `dist/runtime/server/env.d.ts`, the ambient
+ *   Node and `import.meta.dev` types only that tsconfig reads.
  * - the inferred declaration for the internal component schema. Supported
  *   package entries do not import it, and component source keeps the exact
  *   schema type used by its generated data model.
@@ -111,10 +112,10 @@ export default {
       // emits declarations beside them. The browser never loads those files.
       await removeDeclarationDebris(devtoolsStaticDir)
 
-      // Drop the stray tsconfig that extends a repo-only path.
-      const serverTsconfig = join(runtimeDir, 'server/tsconfig.json')
-      if (existsSync(serverTsconfig)) {
-        await rm(serverTsconfig, { force: true })
+      // Drop the stray tsconfig that extends a repo-only path, and the ambient
+      // types only that tsconfig reads (no published declaration references them).
+      for (const repoOnly of ['server/tsconfig.json', 'server/env.d.ts']) {
+        await rm(join(runtimeDir, repoOnly), { force: true })
       }
 
       // Only component.d.ts is a public package entry. The other Convex
