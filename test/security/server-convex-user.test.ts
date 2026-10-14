@@ -1,6 +1,7 @@
 import { inspect } from 'node:util'
 
-import { H3Error, type H3Event } from 'h3'
+import type { H3Event } from 'h3'
+import { isNuxtError, type NuxtError } from 'nuxt/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getConvexUser, requireConvexUser } from '../../src/runtime/server/utils/convex-user'
@@ -57,18 +58,18 @@ function exchangeResponds(status: number, body: unknown = {}) {
   fetchMock.mockImplementation(async () => new Response(JSON.stringify(body), { status }))
 }
 
-async function rejection(promise: Promise<unknown>): Promise<H3Error> {
+async function rejection(promise: Promise<unknown>): Promise<NuxtError> {
   try {
     await promise
   } catch (error) {
-    expect(error).toBeInstanceOf(H3Error)
-    return error as H3Error
+    expect(isNuxtError(error)).toBe(true)
+    return error as NuxtError
   }
   throw new Error('expected the helper to reject')
 }
 
 /** Every rendering of a thrown error must stay free of request credentials. */
-function expectNoCredentials(error: H3Error): void {
+function expectNoCredentials(error: NuxtError): void {
   for (const rendered of [
     JSON.stringify(error),
     JSON.stringify(error.data),
@@ -100,7 +101,7 @@ describe('getConvexUser and requireConvexUser', () => {
     const error = await rejection(requireConvexUser(event))
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(error.statusCode).toBe(401)
+    expect(error.status).toBe(401)
     expect(error.data).toMatchObject({
       name: 'ConvexCallError',
       kind: 'authentication',
@@ -223,7 +224,7 @@ describe('getConvexUser and requireConvexUser', () => {
     const error = await rejection(requireConvexUser(event))
 
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(error.statusCode).toBe(401)
+    expect(error.status).toBe(401)
     expect(error.data).toMatchObject({ kind: 'authentication', code: 'UNAUTHENTICATED' })
     expectNoCredentials(error)
   })
@@ -235,7 +236,7 @@ describe('getConvexUser and requireConvexUser', () => {
     const error = await rejection(requireConvexUser(event))
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(error.statusCode).toBe(401)
+    expect(error.status).toBe(401)
     expect(error.data).toMatchObject({ code: 'UNAUTHENTICATED' })
   })
 
@@ -259,7 +260,7 @@ describe('getConvexUser and requireConvexUser', () => {
 
     expect(fetchMock).toHaveBeenCalledOnce()
     for (const error of [optional, required]) {
-      expect(error.statusCode).toBe(502)
+      expect(error.status).toBe(502)
       expect(error.data).toMatchObject({
         name: 'ConvexCallError',
         kind: 'transport',
@@ -275,7 +276,7 @@ describe('getConvexUser and requireConvexUser', () => {
     const error = await rejection(getConvexUser(event))
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(error.statusCode).toBe(500)
+    expect(error.status).toBe(500)
     expect(error.data).toMatchObject({ kind: 'unknown', code: 'SITE_URL_MISSING' })
     expectNoCredentials(error)
   })
