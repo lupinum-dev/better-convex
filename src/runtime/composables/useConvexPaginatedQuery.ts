@@ -1,4 +1,5 @@
 import type {
+  ConvexPaginatedQuery,
   PaginatedQueryArgs,
   PaginatedQueryItem,
   PaginatedQueryReference,
@@ -6,6 +7,7 @@ import type {
   UseConvexPaginatedQueryState,
 } from '@lupinum/better-convex-vue'
 import {
+  createAwaitableState,
   createConvexArgsState,
   useConvexPaginatedQueryInternal,
   type ConvexArgsInput,
@@ -25,7 +27,6 @@ import {
 } from '../utils/query-foundation'
 import { projectConvexSsrPagination } from '../utils/query-ssr'
 import { isIncompletePaginationPage } from '../utils/ssr-pagination-state'
-import { createNuxtAwaitableState } from './nuxt-awaitable-state'
 import { resolveQueryLifecycleOptions } from './query-lifecycle-options'
 
 export type {
@@ -48,8 +49,7 @@ export type UseNuxtConvexPaginatedQueryOptions = UseNuxtConvexPaginatedQueryBase
     | { readonly immediate: false; readonly lazy?: false }
   )
 
-export type NuxtConvexPaginatedQuery<Item> = UseConvexPaginatedQueryState<Item> &
-  Promise<UseConvexPaginatedQueryState<Item>>
+export type { ConvexPaginatedQuery }
 
 interface BuildConvexPaginatedQueryResult<Item> {
   resultData: UseConvexPaginatedQueryState<Item>
@@ -248,7 +248,7 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   query: Query,
   args: MaybeRefOrGetter<ConvexArgsInput<PaginatedQueryArgs<Query>> | 'skip'>,
   options: UseNuxtConvexPaginatedQueryOptions,
-): NuxtConvexPaginatedQuery<PaginatedQueryItem<Query>> {
+): ConvexPaginatedQuery<PaginatedQueryItem<Query>> {
   const result = createConvexPaginatedQueryState(query, args, options)
-  return createNuxtAwaitableState(result.resultData, result.resolvePromise)
+  return createAwaitableState(result.resultData, result.resolvePromise)
 }

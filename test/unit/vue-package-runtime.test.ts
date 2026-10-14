@@ -235,6 +235,31 @@ describe('better-convex-vue package runtime', () => {
     stop()
   })
 
+  it('awaits the first query result and first page, and never waits for an idle query', async () => {
+    const host = attachedRuntime('alice')
+    const { state, stop } = mount(host, () => ({
+      query: useConvexQuery(queryRef('notes:list'), {}),
+      list: useConvexPaginatedQuery(paginatedRef('notes:page'), {}, { initialNumItems: 1 }),
+      skipped: useConvexQuery(queryRef('notes:skipped'), 'skip'),
+      deferred: useConvexQuery(queryRef('notes:deferred'), {}, { immediate: false }),
+    }))
+    const settled: string[] = []
+    void Promise.resolve(state.query).then(() => settled.push('query'))
+    void Promise.resolve(state.list).then(() => settled.push('list'))
+
+    await expect(Promise.all([state.skipped, state.deferred])).resolves.toHaveLength(2)
+    expect(settled).toEqual([])
+
+    host.subscriptions[0]!.emit(['first'])
+    host.subscriptions[1]!.emit({ page: [{ id: 'a' }], isDone: true, continueCursor: 'end' })
+    const [query, list] = await Promise.all([state.query, state.list])
+    expect(settled).toEqual(['query', 'list'])
+    expect(query.data.value).toEqual(['first'])
+    expect(list.data.value).toEqual([{ id: 'a' }])
+    expect(query).not.toHaveProperty('then')
+    stop()
+  })
+
   it('reactively enters and leaves the explicit query skip state', () => {
     const host = attachedRuntime('alice')
     const args = ref<{ owner: string } | 'skip'>('skip')
@@ -688,11 +713,37 @@ describe('better-convex-vue package runtime', () => {
       'pending',
       'restart',
       'status',
+      'then',
     ])
     expect(query.data.value).toBeUndefined()
     expect(query.status.value).toBe('pending')
     stop()
   })
+
+  it.each([
+    ['fails', { error: normalizeConvexError(new Error('auth down')) }],
+    ['settles signed out', { identityKey: 'anonymous' }],
+  ] as const)(
+    'resolves an awaited required query and list when waiting auth %s',
+    async (_case, settled) => {
+      const host = attachedRuntime('alice')
+      host.emit({ settled: false })
+      const { state, stop } = mount(host, () => ({
+        query: useConvexQuery(queryRef('notes:private'), {}, { auth: 'required' }),
+        list: useConvexPaginatedQuery(
+          paginatedRef('notes:privatePage'),
+          {},
+          { auth: 'required', initialNumItems: 1 },
+        ),
+      }))
+      expect(state.list.pending.value).toBe(true)
+
+      host.emit({ settled: true, ...settled } as Partial<ClientIdentitySnapshot>)
+      await expect(Promise.all([state.query, state.list])).resolves.toHaveLength(2)
+      expect(host.subscriptions).toHaveLength(0)
+      stop()
+    },
+  )
 
   it('resolves execute only after pending auth settles and the first value arrives', async () => {
     const host = attachedRuntime('alice')

@@ -31,6 +31,7 @@ export type { ConvexFormSubmitResult, UseConvexFormReturn } from './use-form'
 export { useConvexQuery } from './use-query'
 export type {
   ConvexAuthMode,
+  ConvexQuery,
   ConvexQueryArgs,
   ConvexQueryBlockedBy,
   UseConvexQueryOptions,
@@ -39,6 +40,7 @@ export type {
 } from './use-query'
 export { useConvexPaginatedQuery } from './use-paginated-query'
 export type {
+  ConvexPaginatedQuery,
   PaginatedQueryArgs,
   PaginatedQueryItem,
   PaginatedQueryReference,

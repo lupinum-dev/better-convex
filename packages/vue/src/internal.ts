@@ -32,6 +32,7 @@ export {
 } from './internal/query-execution'
 export { deriveQueryStatus } from './internal/query-status'
 export { createSettlementWaiters } from './internal/settlement'
+export { createAwaitableState } from './internal/awaitable-state'
 // Type plumbing the Nuxt wrappers share with Vue; not public API.
 export type { OptimisticUpdateCandidate, SynchronousOptimisticUpdate } from './use-callable'
 export type { UploadOptionsParameter } from './use-file-upload'

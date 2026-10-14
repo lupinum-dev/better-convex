@@ -504,8 +504,11 @@ export function createPaginationController<Item>(
     if (
       boundary.nextBoundaryKey === boundary.previousBoundaryKey &&
       boundary.nextLive === boundary.previousLive
-    )
+    ) {
+      // An auth gate can leave 'wait' for an idle or failed state without ever going live.
+      settleFirstPageIfTerminal()
       return
+    }
     if (
       boundary.nextBoundaryKey === boundary.previousBoundaryKey &&
       boundary.nextLive &&
