@@ -349,6 +349,11 @@ export default defineNuxtModule<ModuleOptions>({
     // A deploy can still supply NUXT_PUBLIC_CONVEX_URL at runtime, so warn, not fail.
     if (!convexConfig.url) logger.warn(MISSING_CONVEX_URL_MESSAGE)
     registerConvexAliases({ nuxt, resolver, convexApiAlias })
+    // Nuxt 4.6.0/4.6.1 (nuxt/nuxt#36309 with nitropack 2.13.4) inline `convex/browser` into the
+    // server build with a broken import path, so SSR pages that load Convex answer 500. Remove
+    // this when the lowest supported Nuxt bundles `convex` correctly without it.
+    if (!nuxt.options.build.transpile.includes('convex'))
+      nuxt.options.build.transpile.push('convex')
     addServerPlugin(resolver.resolve('./runtime/server/plugins/runtime-config'))
 
     // Exactly one browser-runtime entry exists. The auth-disabled entry has no

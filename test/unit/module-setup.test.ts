@@ -67,6 +67,7 @@ interface TestNuxt {
     buildDir: string
     dev: boolean
     alias: Record<string, string>
+    build: { transpile: string[] }
     runtimeConfig: { public: Record<string, unknown>; convex?: Record<string, unknown> }
   }
   hook: (name: string, callback: (payload: never) => unknown) => void
@@ -82,6 +83,7 @@ function createNuxt(dev = false): TestNuxt {
       buildDir: '/app/.nuxt',
       dev,
       alias: {},
+      build: { transpile: [] },
       runtimeConfig: { public: {} },
     },
     hook(name, callback) {
