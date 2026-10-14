@@ -1,10 +1,10 @@
 import { inspect } from 'node:util'
 
-import type { H3Event } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveServerAuthSnapshot } from '../../src/runtime/server/utils/auth-snapshot'
 import { CLIENT_IP_HEADER, CLIENT_IP_SIGNATURE_HEADER } from '../../src/runtime/shared/client-ip'
+import { webServerEvent } from '../helpers/server-event'
 
 const { fetchWithTimeoutMock, decodeUserFromJwtMock, isJwtUsableMock } = vi.hoisted(() => ({
   fetchWithTimeoutMock: vi.fn(),
@@ -27,9 +27,7 @@ function createResponse(status: number, body: unknown): Response {
 }
 
 const baseOptions = {
-  event: {
-    headers: new Headers({ 'cf-connecting-ip': '198.51.100.10' }),
-  } as unknown as H3Event,
+  event: webServerEvent({ 'cf-connecting-ip': '198.51.100.10' }) as never,
   siteUrl: 'https://demo.convex.site',
   requestId: 'request-1',
   trackWaterfall: true,
@@ -95,7 +93,7 @@ describe('resolveServerAuthSnapshot', () => {
   it('fails closed before exchange when the configured client IP header is missing', async () => {
     const snapshot = await resolveServerAuthSnapshot({
       ...baseOptions,
-      event: { headers: new Headers() } as unknown as H3Event,
+      event: webServerEvent() as never,
       cookieHeader: 'better-auth.session_token=session-bound',
     })
 

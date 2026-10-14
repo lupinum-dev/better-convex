@@ -11,6 +11,7 @@ import {
   signClientIp,
   verifySignedClientIp,
 } from '../../src/runtime/shared/client-ip'
+import { webServerEvent } from '../helpers/server-event'
 
 const PROXY_IP_SECRET = 'proxy-ip-route-secret-with-32-bytes'
 
@@ -150,14 +151,12 @@ describe('authenticated proxy client-IP handoff', () => {
 
   it('hands a trusted ingress IP from Nitro through Convex to Better Auth end to end', async () => {
     const forwardHeaders = await buildAuthProxyForwardHeaders(
-      {
-        headers: new Headers({
-          'cf-connecting-ip': '2001:0DB8:0000:0000:0000:0000:0000:0001',
-          [CLIENT_IP_HEADER]: '192.0.2.250',
-          [CLIENT_IP_SIGNATURE_HEADER]: 'forged-by-caller',
-          [VERIFIED_CLIENT_IP_HEADER]: '192.0.2.251',
-        }),
-      } as never,
+      webServerEvent({
+        'cf-connecting-ip': '2001:0DB8:0000:0000:0000:0000:0000:0001',
+        [CLIENT_IP_HEADER]: '192.0.2.250',
+        [CLIENT_IP_SIGNATURE_HEADER]: 'forged-by-caller',
+        [VERIFIED_CLIENT_IP_HEADER]: '192.0.2.251',
+      }),
       {
         publicOrigin: 'https://app.example.test',
         trustedClientIpHeader: 'cf-connecting-ip',

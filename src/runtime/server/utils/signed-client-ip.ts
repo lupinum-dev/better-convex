@@ -8,25 +8,10 @@ import {
   signClientIp,
   signPublicOrigin,
 } from '../../shared/client-ip'
-import type { ConvexServerEvent } from './event'
+import { eventRequestHeaders, type ConvexServerEvent } from './event'
 
 export interface SignedClientIpHeadersOptions {
   trustedClientIpHeader?: string | null
-}
-
-function readRequestHeader(event: ConvexServerEvent, name: string): string | null {
-  const directHeaders = (event as { headers?: { get?: (key: string) => string | null } }).headers
-  const direct = directHeaders?.get?.(name)
-  if (direct !== null && direct !== undefined) return direct
-
-  const nodeHeaders = (
-    event as {
-      node?: { req?: { headers?: Record<string, string | string[] | undefined> } }
-    }
-  ).node?.req?.headers
-  const value = nodeHeaders?.[name.toLowerCase()]
-  if (Array.isArray(value)) return value.join(',')
-  return typeof value === 'string' ? value : null
 }
 
 /** Build the complete authenticated client-IP pair for one Nuxt-to-Convex hop. */
@@ -37,7 +22,7 @@ export async function buildSignedClientIpHeaders(
   const trustedHeader = options.trustedClientIpHeader
   if (!trustedHeader) return {}
 
-  const clientIp = normalizeClientIp(readRequestHeader(event, trustedHeader))
+  const clientIp = normalizeClientIp(eventRequestHeaders(event).get(trustedHeader))
   if (!clientIp) {
     throw new TypeError('Trusted client IP header must contain exactly one valid IP address')
   }

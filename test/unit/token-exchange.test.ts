@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConvexCallError } from '../../src/runtime/errors'
 import { ServerConvexValidationError } from '../../src/runtime/server/utils/server-convex-options'
 import { exchangeConvexToken as exchangeRequestToken } from '../../src/runtime/server/utils/token-exchange'
+import { webServerEvent } from '../helpers/server-event'
 
 // ---------------------------------------------------------------------------
 // Loopback HTTP harness. We drive the real request-bound exchange through
@@ -88,7 +89,7 @@ function exchangeConvexToken(
   vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
   return exchangeRequestToken({
     ...input,
-    event: { headers: new Headers({ 'cf-connecting-ip': '203.0.113.20' }) } as never,
+    event: webServerEvent({ 'cf-connecting-ip': '203.0.113.20' }) as never,
     trustedClientIpHeader: 'cf-connecting-ip',
   })
 }
