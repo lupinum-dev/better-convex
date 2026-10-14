@@ -76,6 +76,27 @@ if (existsSync(p('src/runtime/plugin.auth.client.ts'))) {
  */
 const SSR_ENTRY_FILES = [p('src/runtime/plugin.server.ts')]
 
+/** Server files outside `src/runtime/server/**` that Nitro loads (dev-only devtools route). */
+const DEVTOOLS_NITRO_FILES = [
+  p('src/runtime/devtools/server.ts'),
+  p('src/runtime/devtools/auth-proxy-registry.ts'),
+]
+
+/**
+ * Files Nitro loads directly: the auth proxy routes, the `./server` helpers entry, the Nitro
+ * plugins and the devtools route. Everything they reach runs in the Nitro build, never in the app.
+ */
+const NITRO_ENTRY_FILES = [
+  p('src/runtime/server/api/auth/[...].ts'),
+  p('src/runtime/server/api/auth/jwks.ts'),
+  p('src/runtime/server/api/auth/authorization-server-metadata.ts'),
+  p('src/runtime/server/index.ts'),
+  ...readdirSync(p('src/runtime/server/plugins'))
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => p('src/runtime/server/plugins', name)),
+  p('src/runtime/devtools/server.ts'),
+]
+
 /** `src/module*.ts` — module/build code, never a runtime dependency. */
 const MODULE_BUILD_FILES = readdirSync(p('src'))
   .filter((name) => /^module.*\.ts$/.test(name) && statSync(p('src', name)).isFile())
@@ -116,6 +137,8 @@ function isAnyFile(absPath, files) {
 }
 
 const isServerRuntime = (absPath) => inDir(absPath, SERVER_RUNTIME_DIR)
+const isNitroRuntime = (absPath) =>
+  isServerRuntime(absPath) || isAnyFile(absPath, DEVTOOLS_NITRO_FILES)
 const isBrowserRuntime = (absPath) =>
   inAnyDir(absPath, BROWSER_RUNTIME_DIRS) || isAnyFile(absPath, BROWSER_RUNTIME_FILES)
 const isModuleBuild = (absPath) => isAnyFile(absPath, MODULE_BUILD_FILES)
@@ -136,10 +159,9 @@ const isConvexAuthSharedLeaf = (absPath) =>
 
 /**
  * Bare-specifier families that only make sense in a browser/Nuxt-app context.
- * `#imports` is deliberately excluded: it is a per-context virtual module
- * (app auto-imports in the browser/SSR-app tsconfig, Nitro auto-imports in
- * `src/runtime/server/tsconfig.json`), so the same specifier text resolves
- * to different, legitimate things depending on which program compiles it.
+ * `#imports` is not listed: it is a per-context virtual module that app code
+ * (composables) may use. Server code may not import it at all
+ * (`nitro-runtime-no-legacy-server-imports`).
  */
 const BROWSER_ONLY_BARE_SPECIFIERS = [
   /^vue$/,
@@ -177,9 +199,67 @@ function isForbiddenConvexAuthBareSpecifier(specifier) {
     specifier.startsWith('@nuxt/') ||
     specifier === 'nitropack' ||
     specifier.startsWith('nitropack/') ||
+    specifier === 'nitro' ||
+    specifier.startsWith('nitro/') ||
+    specifier.startsWith('nuxt/') ||
     specifier === 'h3'
   )
 }
+
+const isH3Specifier = (specifier) => specifier === 'h3' || specifier.startsWith('h3/')
+const isNitropackSpecifier = (specifier) =>
+  specifier === 'nitropack' || specifier.startsWith('nitropack/')
+const isNitroSpecifier = (specifier) =>
+  specifier === 'nitro' || specifier.startsWith('nitro/') || specifier.startsWith('#internal/nitro')
+
+/**
+ * Specifiers that Nuxt 5 treats as Nitro v2 code (its compatibility layer's legacy list, plus
+ * Nitro 3's own entries). Our server code reaches the server only through `nuxt/server`, so it
+ * runs unchanged on Nitro v2 (Nuxt 4.6) and Nitro 3 (Nuxt 5).
+ */
+function isLegacyServerSpecifier(specifier) {
+  return (
+    isH3Specifier(specifier) ||
+    isNitropackSpecifier(specifier) ||
+    isNitroSpecifier(specifier) ||
+    specifier === '#imports'
+  )
+}
+
+/**
+ * Files reachable from `entries` over relative value edges (static and dynamic imports,
+ * re-exports), entries included. Type-only edges are not followed: they put no code into the
+ * bundle. `edgesOf` defaults to the real AST edges; tests pass a fake graph.
+ */
+function collectReachableFiles(entries, edgesOf = buildEdges) {
+  const reachable = new Set()
+  const pending = [...entries]
+  while (pending.length > 0) {
+    const file = pending.pop()
+    if (reachable.has(file)) continue
+    reachable.add(file)
+    for (const edge of edgesOf(file)) {
+      if (edge.isRelative && !edge.isTypeOnly && edge.resolvedAbsPath !== null) {
+        pending.push(edge.resolvedAbsPath)
+      }
+    }
+  }
+  return reachable
+}
+
+/** Membership test for the files reachable from `entries`, computed once on first use. */
+function reachableFrom(entries) {
+  let reachable
+  return (absPath) => {
+    reachable ??= collectReachableFiles(entries.filter((entry) => existsSync(entry)))
+    return reachable.has(absPath)
+  }
+}
+
+/** The SSR render chain: app code, where Nuxt's import protection rejects server imports. */
+const isSsrChainFile = reachableFrom(SSR_ENTRY_FILES)
+/** The Nitro chain: code that runs in the Nitro build, where `#app` does not exist. */
+const isNitroChainFile = reachableFrom(NITRO_ENTRY_FILES)
 
 function isAllowedClientLifecycleBareSpecifier(specifier) {
   return (
@@ -395,9 +475,48 @@ const RULES = [
         BROWSER_ONLY_BARE_SPECIFIERS.some((re) => re.test(edge.specifier)) ||
         edge.specifier.startsWith('node:') ||
         edge.specifier === 'nitropack' ||
-        edge.specifier.startsWith('nitropack/')
+        edge.specifier.startsWith('nitropack/') ||
+        edge.specifier === 'nitro' ||
+        edge.specifier.startsWith('nitro/') ||
+        edge.specifier === 'nuxt' ||
+        edge.specifier.startsWith('nuxt/')
       )
     },
+  },
+  {
+    name: 'nitro-runtime-no-legacy-server-imports',
+    description:
+      'src/runtime/server/** and the devtools server files import server APIs only from nuxt/server; h3, nitropack, nitro and #imports (type-only included) would put them in the Nitro v2 compatibility layer that Nuxt 5 skips for this module.',
+    from: isNitroRuntime,
+    disallow: (edge) => !edge.isRelative && isLegacyServerSpecifier(edge.specifier),
+    typeOnlyExempt: false,
+  },
+  {
+    name: 'ssr-chain-no-server-framework-imports',
+    description:
+      'No file reachable from src/runtime/plugin.server.ts may import nuxt/server, nitro, h3 or nitropack (type-only included): Nuxt import protection fails the app build. Pass server values in from the caller.',
+    from: isSsrChainFile,
+    disallow: (edge) =>
+      !edge.isRelative &&
+      (edge.specifier === 'nuxt/server' ||
+        edge.specifier.startsWith('nuxt/server/') ||
+        isNitroSpecifier(edge.specifier) ||
+        isH3Specifier(edge.specifier) ||
+        isNitropackSpecifier(edge.specifier)),
+    typeOnlyExempt: false,
+  },
+  {
+    name: 'nitro-chain-no-app-imports',
+    description:
+      'No file reachable from the Nitro entries (auth proxy routes, src/runtime/server/index.ts, Nitro plugins, devtools server) may import #app, #imports, h3 or nitropack (type-only included): Nitro code reads config through nuxt/server or from its caller.',
+    from: isNitroChainFile,
+    disallow: (edge) =>
+      !edge.isRelative &&
+      (/^#app\b/u.test(edge.specifier) ||
+        edge.specifier === '#imports' ||
+        isH3Specifier(edge.specifier) ||
+        isNitropackSpecifier(edge.specifier)),
+    typeOnlyExempt: false,
   },
 ]
 
@@ -819,7 +938,13 @@ function buildEdges(absoluteFile) {
 
 /** Path-group constants documented as existing today; catches config rot if a file moves. */
 function assertKnownPathsExist() {
-  const knownFiles = [...BROWSER_RUNTIME_FILES, ...SSR_ENTRY_FILES, ...MODULE_BUILD_FILES]
+  const knownFiles = [
+    ...BROWSER_RUNTIME_FILES,
+    ...SSR_ENTRY_FILES,
+    ...MODULE_BUILD_FILES,
+    ...DEVTOOLS_NITRO_FILES,
+    ...NITRO_ENTRY_FILES,
+  ]
   const knownDirs = [SERVER_RUNTIME_DIR, ...BROWSER_RUNTIME_DIRS, RUNTIME_ROOT]
   for (const file of knownFiles) {
     if (!existsSync(file)) {
@@ -921,6 +1046,7 @@ function main() {
 
 export {
   buildEdges,
+  collectReachableFiles,
   discoverWorkspacePackages,
   findWorkspaceDependencyCycles,
   findWorkspaceDependencyViolations,
