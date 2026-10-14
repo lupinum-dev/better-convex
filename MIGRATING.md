@@ -53,6 +53,21 @@ If you already run the release candidate, check only these:
       `auth.mcp.issuer()` and `auth.mcp.scopesSupported()`. Leave `resource`
       out of `auth.oauthOperator.createPublicClient`: the client is then bound
       to the MCP resource.
+- [ ] Update Nuxt to 4.6 or newer (`^4.6.0 || ^5.0.0-0`) and Node.js to
+      `^22.22.3 || ^24.15.0 || >=26`. Nuxt 5 is tested on its nightly while it
+      is a pre-release.
+- [ ] Server routes: import `defineEventHandler`, `createError`, `readBody`,
+      `readValidatedBody`, `getRequestHeader` and `useRuntimeConfig` from
+      `nuxt/server`. Call `useRuntimeConfig()` without an event, and replace
+      `setHeader(event, name, value)` with `event.res.headers.set(name, value)`.
+- [ ] Read `error.status` (not `statusCode`) on `toConvexH3Error` results and
+      check them with `isNuxtError` from `nuxt/server`.
+- [ ] Type the event of your own server helpers as `ConvexServerEvent` (from
+      `@lupinum/better-convex-nuxt/server`) or let TypeScript infer it, instead
+      of `H3Event`.
+- [ ] Nuxt 4 with per-request runtime config (Cloudflare module workers): set
+      the Convex config at build or boot time. The server helpers read the
+      server's runtime config.
 
 ## Packages and data
 
