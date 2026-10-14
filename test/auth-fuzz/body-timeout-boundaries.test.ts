@@ -28,12 +28,17 @@ function chunkedStream(input: Uint8Array, random: SeededRandom): ReadableStream<
   })
 }
 
+/** A web-shaped event without Node objects: the body comes from the web Request. */
 function eventFrom(stream: ReadableStream<Uint8Array>) {
   return {
-    method: 'POST',
-    node: { req: { socket: undefined } },
-    web: { request: { body: stream } },
-  } as never
+    req: new Request('https://app.example.test/api/auth/test', {
+      method: 'POST',
+      body: stream,
+      duplex: 'half',
+    } as RequestInit),
+    res: { headers: new Headers() },
+    context: {},
+  }
 }
 
 describe('seeded auth proxy size and timeout boundaries', () => {
@@ -43,8 +48,8 @@ describe('seeded auth proxy size and timeout boundaries', () => {
 
       expect(getRequestBodySizeError(String(limit), limit)).toBeNull()
       expect(getResponseBodySizeError(String(limit), limit)).toBeNull()
-      expect(getRequestBodySizeError(String(limit + 1), limit)).toMatchObject({ statusCode: 413 })
-      expect(getResponseBodySizeError(String(limit + 1), limit)).toMatchObject({ statusCode: 502 })
+      expect(getRequestBodySizeError(String(limit + 1), limit)).toMatchObject({ status: 413 })
+      expect(getResponseBodySizeError(String(limit + 1), limit)).toMatchObject({ status: 502 })
 
       await expect(
         readRequestBodyWithLimit(eventFrom(chunkedStream(bytes(limit), random)), limit),
@@ -54,14 +59,14 @@ describe('seeded auth proxy size and timeout boundaries', () => {
       ).rejects.toMatchObject({
         code: 'BCN_AUTH_PROXY_REQUEST_BODY_TOO_LARGE',
         maxBytes: limit,
-        statusCode: 413,
+        status: 413,
       })
       await expect(
         readResponseBodyWithLimit(new Response(chunkedStream(bytes(limit + 1), random)), limit),
       ).rejects.toMatchObject({
         code: 'BCN_AUTH_PROXY_UPSTREAM_BODY_TOO_LARGE',
         maxBytes: limit,
-        statusCode: 502,
+        status: 502,
       })
     })
   })
