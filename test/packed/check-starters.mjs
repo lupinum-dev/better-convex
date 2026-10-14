@@ -3,6 +3,10 @@
 // Starters also run their production build; consumer apps have no Nuxt app to build. Then it
 // runs the packed Vue, Nuxt and MCP consumer apps in a browser. Nothing is fetched from npm
 // for our own packages. Run after `pnpm build`, which also writes the packaged agent docs.
+//
+// `--nuxt5` installs the public starter and the lifecycle consumer on the Nuxt 5 nightly
+// (test/packed/nuxt5.json) and only type-checks and builds them. The tarballs are still built on
+// Nuxt 4, like a release.
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
   copyFileSync,
@@ -18,7 +22,9 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { packWorkspace } from './check-packed.mjs'
+import { toNuxt5Manifest, toNuxt5Workspace } from './nuxt5-lane.mjs'
 
+const nuxt5 = process.argv.slice(2).includes('--nuxt5')
 const root = resolve(import.meta.dirname, '../..')
 const scratch = mkdtempSync(join(tmpdir(), 'better-convex-starters-'))
 const skip = new Set(['node_modules', '.nuxt', '.output', '.data', '.convex', 'dist', '.env.local'])
@@ -54,11 +60,13 @@ try {
       .filter(([, version]) => /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(version)),
   )
 
-  const apps = ['starters', 'test/fixtures/consumers'].flatMap((folder) =>
-    readdirSync(join(root, folder))
-      .map((name) => `${folder}/${name}`)
-      .filter((path) => existsSync(join(root, path, 'package.json'))),
-  )
+  const apps = nuxt5
+    ? ['starters/public']
+    : ['starters', 'test/fixtures/consumers'].flatMap((folder) =>
+        readdirSync(join(root, folder))
+          .map((name) => `${folder}/${name}`)
+          .filter((path) => existsSync(join(root, path, 'package.json'))),
+      )
   for (const path of apps) {
     const source = join(root, path)
     const starter = path.startsWith('starters/')
@@ -80,20 +88,29 @@ try {
         }
       }
     }
+    if (nuxt5) toNuxt5Manifest(manifest)
     writeFileSync(join(app, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
     copyFileSync(tarballs.vue, join(app, 'vue.tgz'))
+    const workspace =
+      "minimumReleaseAge: 1440\noverrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n"
     writeFileSync(
       join(app, 'pnpm-workspace.yaml'),
-      "minimumReleaseAge: 1440\noverrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n",
+      nuxt5 ? toNuxt5Workspace(workspace, ['nuxt']) : workspace,
     )
 
-    console.log(`\n=== ${path} with ${packed.nuxt.name}@${packed.nuxt.version} ===`)
+    console.log(
+      `\n=== ${path} with ${packed.nuxt.name}@${packed.nuxt.version}${nuxt5 ? ' on Nuxt 5' : ''} ===`,
+    )
     run(
       'pnpm',
       ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
       app,
     )
     run('pnpm', ['run', 'typecheck'], app)
+    if (nuxt5) {
+      run('pnpm', ['run', 'build'], app, { NODE_ENV: 'production' })
+      continue
+    }
     // An app with `declaration: true` (or project references) must be able to emit its Convex
     // code: every type an exported function has must be nameable from a public entry (V5).
     writeFileSync(
@@ -126,25 +143,28 @@ try {
     if (starter) run('pnpm', ['run', 'build'], app, { NODE_ENV: 'production' })
   }
 
-  const consumers = [
-    ['check-vue-anonymous-consumer.mjs', '--tarball', tarballs.vue],
-    ['check-vue-auth-consumer.mjs', '--tarball', tarballs.vue],
-    ['check-vue-embedded-consumer.mjs', '--tarball', tarballs.vue],
-    [
-      'check-nuxt-lifecycle-consumer.mjs',
-      '--nuxt-tarball',
-      tarballs.nuxt,
-      '--vue-tarball',
-      tarballs.vue,
-    ],
-    [
-      'check-agents-package-consumer.mjs',
-      '--tarball',
-      tarballs.agents,
-      '--functions-tarball',
-      tarballs.functions,
-    ],
+  const lifecycle = [
+    'check-nuxt-lifecycle-consumer.mjs',
+    '--nuxt-tarball',
+    tarballs.nuxt,
+    '--vue-tarball',
+    tarballs.vue,
   ]
+  const consumers = nuxt5
+    ? [[...lifecycle, '--nuxt5']]
+    : [
+        ['check-vue-anonymous-consumer.mjs', '--tarball', tarballs.vue],
+        ['check-vue-auth-consumer.mjs', '--tarball', tarballs.vue],
+        ['check-vue-embedded-consumer.mjs', '--tarball', tarballs.vue],
+        lifecycle,
+        [
+          'check-agents-package-consumer.mjs',
+          '--tarball',
+          tarballs.agents,
+          '--functions-tarball',
+          tarballs.functions,
+        ],
+      ]
   for (const [script, ...args] of consumers) {
     console.log(`\n=== ${script} ===`)
     execFileSync(process.execPath, [join(root, 'test/packed', script), ...args], {
