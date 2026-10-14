@@ -6,10 +6,11 @@ import {
 } from '@lupinum/better-convex-vue/internal'
 import { computed, onScopeDispose, shallowRef, watch, type ComputedRef } from 'vue'
 
-import { onNuxtReady, useAsyncData, useNuxtApp, useRequestEvent, useState } from '#imports'
+import { onNuxtReady, useAsyncData, useNuxtApp, useRequestEvent, useState } from '#app'
 
 import { identityKeyOf } from '../auth/auth-identity'
 import { ConvexCallError, normalizeConvexError } from '../errors'
+import { eventAbortSignal, eventRequestHeaders } from '../server/utils/event'
 import { readServerConvexToken, useConvexIdentityState } from './auth-identity-state'
 import { useConvexAuthPendingState } from './auth-pending-state'
 import type { ConvexAuthMode } from './auth-status'
@@ -118,12 +119,17 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
       try {
         const token = fetchAuthToken({
           auth,
-          cookieHeader: event?.headers.get('cookie') ?? '',
+          cookieHeader: event ? (eventRequestHeaders(event).get('cookie') ?? '') : '',
           cachedToken: { value: readServerConvexToken(nuxtApp) },
         })
         if (auth !== 'none' && decision.identity !== 'anonymous' && !token) return null
         return {
-          value: await input.fetch(convexUrl, token, event?.web?.request?.signal, bounds),
+          value: await input.fetch(
+            convexUrl,
+            token,
+            event ? eventAbortSignal(event) : undefined,
+            bounds,
+          ),
         }
       } catch (error) {
         return {

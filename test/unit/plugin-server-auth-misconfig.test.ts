@@ -34,10 +34,6 @@ vi.mock('#app', () => ({
   useState: useStateMock,
 }))
 
-vi.mock('#imports', () => ({
-  useState: useStateMock,
-}))
-
 vi.mock('../../src/runtime/utils/runtime-config', () => ({
   getConvexRuntimeConfig: getConvexRuntimeConfigMock,
 }))

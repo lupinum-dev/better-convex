@@ -6,7 +6,7 @@ import {
   toPublicConvexRuntimeConfig,
 } from '../../src/runtime/utils/runtime-config'
 
-vi.mock('#imports', () => ({
+vi.mock('#app', () => ({
   useRuntimeConfig: vi.fn(() => ({ public: { convex: {} } })),
 }))
 

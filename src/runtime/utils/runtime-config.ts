@@ -1,4 +1,4 @@
-import { useRuntimeConfig } from '#imports'
+import { useRuntimeConfig } from '#app'
 
 import {
   normalizeConvexRuntimeConfig,
