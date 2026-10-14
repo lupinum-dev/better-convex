@@ -64,12 +64,19 @@ export function mergeVaryCookie(existing: string | number | string[] | undefined
  *   renders a signed-in user, additionally gets `Cache-Control: private, no-store`.
  *   Invalid/revoked sessions remain request-specific even when no token is
  *   produced, and a per-user page is never cacheable without a cookie signal.
- *   Shared-cache override headers already present on the response are removed;
- *   an operator/CDN rule that rewrites headers after this point remains external.
+ *   Shared-cache override headers already present on this event's response are
+ *   removed; an operator/CDN rule that rewrites headers after this point remains
+ *   external.
  *
- * On Nuxt 5 a route rule `headers` entry, or middleware that runs later, wins
- * over these headers; the module warns at build time about route rules that
- * set cache headers on pages with SSR auth.
+ * Nuxt 5 renders a page on its own event, which shares only `context` with the
+ * routed request event. Nitro then merges every header written on the routed
+ * event (a route rule `headers` entry, server middleware) over the rendered
+ * response. Those headers win: a `Vary` or `Cache-Control` set there replaces
+ * the value set here, and a shared-cache override set there (for example
+ * `CDN-Cache-Control`) is not removed. The module warns at build time only
+ * about route rules that set cache headers on pages with SSR auth; middleware
+ * is not checked. On Nuxt 4 both share one Node response, so this function
+ * sees and corrects those headers.
  */
 export function applyConvexAuthSsrHeaders(
   event: ConvexServerEvent,
