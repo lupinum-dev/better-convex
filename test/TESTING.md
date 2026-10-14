@@ -126,6 +126,37 @@ cd .. && CONVEX_E2E_AUTO_START=false pnpm test:e2e
 Generate the two secrets in the shell; never pass them as arguments or print
 them. `CONVEX_SITE_URL` is a Convex built-in; do not set it with `convex env set`.
 
+## Nuxt 5 lane
+
+The `nuxt5` CI job runs the Nuxt checks on the Nuxt 5 nightly pinned in
+`test/packed/nuxt5.json`. Move that pin by hand, and only to a nightly that is
+at least 24 hours old (the quarantine applies; Renovate does not track it).
+
+The lane rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`
+in place, so run it only in a throwaway worktree. The script refuses a checkout
+with other changes. Locally, from a clean checkout of your branch:
+
+```bash
+git worktree add --detach ../better-convex-nuxt5-lane HEAD && cd ../better-convex-nuxt5-lane
+pnpm install --frozen-lockfile && pnpm build && node test/packed/check-starters.mjs --nuxt5 && node test/packed/nuxt5-lane.mjs
+cd - && git worktree remove --force ../better-convex-nuxt5-lane
+```
+
+- `check-starters.mjs --nuxt5` packs the packages on Nuxt 4, like a release.
+  Then it installs the packed lifecycle consumer and the public starter on the
+  nightly, and type-checks and builds them.
+- `nuxt5-lane.mjs` changes the root `nuxt`, `@nuxt/kit` and `@nuxt/schema` to
+  the nightly aliases and adds overrides. It also allows the
+  `@nuxt/schema` 5 peer that `@nuxt/cli` does not declare yet (only in the
+  lane; the committed files keep strict peers). Then it installs and runs
+  `typecheck:prepared` and the `nuxt` project. It builds the playground and
+  fails on `NUXT_B8013` (module disabled), `NUXT_B9003` or `NUXT_B9005`
+  (Nitro v2 code). At the end it runs `check-auth-disabled-build-graph.mjs`
+  and the default `test:e2e` set.
+
+The packed apps install with the repository's pnpm 11: pnpm 10 cannot match the
+nightlies' aliased peers.
+
 ## Real-stack journeys
 
 `test/e2e/extended/auth-session-matrix.e2e.test.ts` runs the journeys users
