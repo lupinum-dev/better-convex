@@ -268,6 +268,9 @@ protocol envelope and its error cases with the official SDK.
 
 ## Production adaptation
 
+- Deploy on Vercel with the included `vercel.json` and `scripts/vercel-build.sh`.
+  Each production build deploys the Convex functions before it builds Nuxt. See
+  [Deploy to Vercel](https://better-convex.lupinum.com/docs/operations/deploy-to-vercel).
 - Provision one client per host with `connections:createHostClient`. Do not
   accept callbacks, scopes, or resource identifiers from browser input.
 - Replace the example project model with your own data: one row rule per

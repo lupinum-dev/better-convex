@@ -9,7 +9,7 @@
     "convex:codegen": "nuxi prepare --dotenv .env.local && better-convex convex codegen",
     "convex:dev": "nuxi prepare --dotenv .env.local && better-convex convex dev",
     "test": "vitest run",
-    "typecheck": "nuxt typecheck --dotenv .env.local",
+    "typecheck": "nuxt typecheck --dotenv .env.local && tsc -p convex --noEmit",
     "verify": "pnpm test && pnpm convex:codegen && pnpm typecheck && pnpm build"
   },
   "dependencies": {
