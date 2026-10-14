@@ -187,7 +187,7 @@
     "@better-auth/oauth-provider": "1.7.7",
     "better-auth": "1.7.7",
     "convex": ">=1.42.2 <2",
-    "nuxt": ">=4.5.2 <5"
+    "nuxt": "^4.6.0 || ^5.0.0-0"
   },
   "peerDependenciesMeta": {
     "@better-auth/core": {
@@ -201,7 +201,7 @@
     }
   },
   "engines": {
-    "node": "^22.19.0 || ^24.11.0"
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },
   "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
 }

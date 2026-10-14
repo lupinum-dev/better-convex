@@ -257,7 +257,10 @@ export default defineNuxtModule<ModuleOptions>({
     name: '@lupinum/better-convex-nuxt',
     configKey: 'convex',
     compatibility: {
-      nuxt: '>=4.5.2 <5',
+      nuxt: '^4.6.0 || ^5.0.0-0',
+      // Our runtime is written against `nuxt/server` and web Request/Response, so Nuxt 5 must not
+      // run it through its Nitro v2 compatibility layer. Nuxt 4.6 types this field and ignores it.
+      server: 'nuxt',
     },
   },
   defaults: {
