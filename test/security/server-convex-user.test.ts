@@ -1,8 +1,5 @@
-import { IncomingMessage, ServerResponse } from 'node:http'
-import { Socket } from 'node:net'
 import { inspect } from 'node:util'
 
-import { createEvent as createH3V1Event } from 'h3'
 import { isNuxtError, type NuxtError } from 'nuxt/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,6 +12,7 @@ import {
 import { resolveRequestAuthSnapshot } from '../../src/runtime/server/utils/request-auth'
 import { serverConvex } from '../../src/runtime/server/utils/server-convex-caller'
 import { signPublicOrigin } from '../../src/runtime/shared/client-ip'
+import { rawH3V1Event } from '../helpers/server-event'
 
 // The `./server` helpers read the server's runtime config (`nuxt/server`
 // `useRuntimeConfig()`); each test selects the public Convex config here.
@@ -48,12 +46,11 @@ const USER_JWT = makeJwt({
   exp: Math.floor(Date.now() / 1000) + 3600,
 })
 
-function nodeRequestResponse(cookie: string | undefined) {
-  const req = new IncomingMessage(new Socket())
-  req.method = 'GET'
-  req.url = '/api/me'
-  req.headers = { host: 'localhost:3000', ...(cookie ? { cookie } : {}) }
-  return { req, res: new ServerResponse(req) }
+function rawEvent(cookie: string | undefined) {
+  return rawH3V1Event({
+    path: '/api/me',
+    headers: { host: 'localhost:3000', ...(cookie ? { cookie } : {}) },
+  })
 }
 
 // Every helper runs on both event shapes a supported Nuxt passes: the raw h3
@@ -64,19 +61,18 @@ const shapes = [
   {
     name: 'raw h3 v1 event',
     create(cookie: string | undefined): ConvexServerEvent {
-      const { req, res } = nodeRequestResponse(cookie)
-      return createH3V1Event(req, res)
+      return rawEvent(cookie).event
     },
   },
   {
     name: 'web-shaped event',
     create(cookie: string | undefined): ConvexServerEvent {
       // Nuxt 5 on Node: srvx keeps the Node pair on `req.runtime.node`.
-      const node = nodeRequestResponse(cookie)
+      const { req, res } = rawEvent(cookie)
       return {
         req: Object.assign(
           new Request('http://localhost:3000/api/me', { headers: cookie ? { cookie } : {} }),
-          { runtime: { node } },
+          { runtime: { node: { req, res } } },
         ),
         res: { headers: new Headers() },
         context: {},
@@ -350,8 +346,7 @@ describe('one auth snapshot per request', () => {
   it('exchange once for a raw h3 v1 event and a web-shaped event that share one context', async () => {
     exchangeResponds(200, { token: USER_JWT })
     runtime.publicConvex = AUTH_CONVEX
-    const { req, res } = nodeRequestResponse(SESSION_COOKIE)
-    const raw = createH3V1Event(req, res)
+    const { event: raw, req, res } = rawEvent(SESSION_COOKIE)
     const web: ConvexServerEvent = {
       req: Object.assign(
         new Request('http://localhost:3000/api/me', { headers: { cookie: SESSION_COOKIE } }),

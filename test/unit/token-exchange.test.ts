@@ -1,7 +1,6 @@
-import http, { IncomingMessage, ServerResponse } from 'node:http'
-import { Socket, type AddressInfo } from 'node:net'
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 
-import { createEvent as createH3V1Event } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ConvexCallError } from '../../src/runtime/errors'
@@ -13,7 +12,7 @@ import {
 import { ServerConvexValidationError } from '../../src/runtime/server/utils/server-convex-options'
 import { exchangeConvexToken as exchangeRequestToken } from '../../src/runtime/server/utils/token-exchange'
 import { signPublicOrigin } from '../../src/runtime/shared/client-ip'
-import { webServerEvent } from '../helpers/server-event'
+import { rawH3V1Event, webServerEvent } from '../helpers/server-event'
 
 // ---------------------------------------------------------------------------
 // Loopback HTTP harness. We drive the real request-bound exchange through
@@ -148,10 +147,11 @@ describe('exchangeConvexToken — session renewal', () => {
   const RENEWED_COOKIE =
     'better-auth.session_token=renewed; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800'
 
-  function nodePair() {
-    const req = new IncomingMessage(new Socket())
-    req.headers = { host: 'app.example.test', 'cf-connecting-ip': '203.0.113.20' }
-    return { req, res: new ServerResponse(req) }
+  function rawEvent() {
+    return rawH3V1Event({
+      path: '/',
+      headers: { host: 'app.example.test', 'cf-connecting-ip': '203.0.113.20' },
+    })
   }
 
   // Catches a renewal that replaces the page's own Set-Cookie (set instead of
@@ -162,8 +162,7 @@ describe('exchangeConvexToken — session renewal', () => {
     {
       shape: 'raw h3 v1 event',
       create: (): ConvexServerEvent => {
-        const { req, res } = nodePair()
-        return createH3V1Event(req, res)
+        return rawEvent().event
       },
       unsentStore: (): string[] => [],
     },
@@ -175,7 +174,7 @@ describe('exchangeConvexToken — session renewal', () => {
           new Request('https://app.example.test/', {
             headers: { 'cf-connecting-ip': '203.0.113.20' },
           }),
-          { runtime: { node: nodePair() } },
+          { runtime: { node: (({ req, res }) => ({ req, res }))(rawEvent()) } },
         ),
         res: { headers: new Headers() },
         context: {},

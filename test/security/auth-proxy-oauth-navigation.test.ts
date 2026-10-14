@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { rawProxyEvent } from '../helpers/auth-proxy-event'
+import { rawH3V1Event } from '../helpers/server-event'
 
 const mocks = vi.hoisted(() => ({ config: vi.fn() }))
 
@@ -9,7 +9,7 @@ vi.mock('../../src/runtime/server/utils/server-config', () => ({
 }))
 
 function event(method = 'GET', headers: Record<string, string> = {}, path = '/oauth2/authorize') {
-  return rawProxyEvent({
+  return rawH3V1Event({
     method,
     path: `/api/auth${path}`,
     headers: {

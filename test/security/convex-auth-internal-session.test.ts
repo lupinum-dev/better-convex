@@ -1,12 +1,8 @@
-import { IncomingMessage, ServerResponse } from 'node:http'
-import { Socket } from 'node:net'
-
 import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from 'better-auth'
 import { memoryAdapter, type MemoryDB } from 'better-auth/adapters/memory'
 import { createAuthMiddleware } from 'better-auth/api'
 import { setSessionCookie } from 'better-auth/cookies'
 import { jwt } from 'better-auth/plugins'
-import { createEvent } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { INTERNAL_SESSION_HEADER } from '../../src/runtime/convex-auth/internal-session'
@@ -16,6 +12,7 @@ import {
   createComponentRateLimitStorage,
   readComponentRateLimits,
 } from '../helpers/component-rate-limit'
+import { rawH3V1Event } from '../helpers/server-event'
 
 // The server's runtime config, as `getConvexUser` reads it through `nuxt/server`.
 // Literals: the factory runs before this module's constants exist.
@@ -466,9 +463,9 @@ describe('server session renewal', () => {
         new Request(`${origin}${new URL(url).pathname}`, { headers: init?.headers, method: 'GET' }),
       ),
     )
-    const incoming = new IncomingMessage(new Socket())
-    incoming.headers = { cookie: browserCookie, 'cf-connecting-ip': '198.51.100.7' }
-    const event = createEvent(incoming, new ServerResponse(incoming))
+    const { event } = rawH3V1Event({
+      headers: { cookie: browserCookie, 'cf-connecting-ip': '198.51.100.7' },
+    })
 
     await expect(getConvexUser(event)).resolves.toMatchObject({ id: 'user-1' })
 

@@ -23,10 +23,9 @@ code and its entry together when the removal condition is met.
   helpers, SSR plugin, `query-foundation.ts`), the public `ConvexServerEvent`
   type, and these tests and notes:
   - the raw-event rows of `test/unit/server-event.test.ts` (they use h3 1.x
-    `createEvent` and Nuxt 4.6's `toPortableEvent`), `rawProxyEvent` in
-    `test/helpers/auth-proxy-event.ts` and its callers, and the other unit and
-    security tests that build raw v1 events with h3 1.x `createEvent`; they
-    are why `h3` stays a devDependency;
+    `createEvent` and Nuxt 4.6's `toPortableEvent`) and `rawH3V1Event` in
+    `test/helpers/server-event.ts` with its callers; they are why `h3` stays a
+    devDependency;
   - the Nuxt 4.6 `cause` allowance in `test/unit/server-h3-error.test.ts`
     (h3 v1 `createError` stores the sanitized input as `cause`) and the
     `statusMessage` fallback in `test/e2e/server-utils-smoke.e2e.test.ts`;

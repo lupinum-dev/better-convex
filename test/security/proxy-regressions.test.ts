@@ -5,8 +5,8 @@ import { inspect } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ConvexServerEvent } from '../../src/runtime/server/utils/event'
-import { rawProxyEvent } from '../helpers/auth-proxy-event'
 import { inDevelopment } from '../helpers/dev-mode'
+import { rawH3V1Event } from '../helpers/server-event'
 
 const mocks = vi.hoisted(() => ({
   config: vi.fn(),
@@ -36,7 +36,7 @@ function event(
   headers: Record<string, string> = {},
   path = '/api/auth/get-session',
 ) {
-  const raw = rawProxyEvent({
+  const raw = rawH3V1Event({
     method,
     path,
     headers: { ...DEFAULT_HEADERS, ...headers },
@@ -503,7 +503,7 @@ describe('auth proxy security regressions', () => {
     await expect(
       handler(event('GET', undefined, { origin: 'https://evil.example' })),
     ).rejects.toMatchObject({ status: 403 })
-    const hostileReferer = rawProxyEvent({
+    const hostileReferer = rawH3V1Event({
       method: 'POST',
       headers: {
         'cf-connecting-ip': DEFAULT_HEADERS['cf-connecting-ip'],
@@ -800,7 +800,7 @@ describe('auth proxy security regressions', () => {
     const fetchMock = stubFetch(vi.fn())
     const handler = await loadHandler()
 
-    const framedGet = rawProxyEvent({
+    const framedGet = rawH3V1Event({
       headers: { ...DEFAULT_HEADERS, 'content-length': '1' },
       open: true,
       complete: false,
@@ -882,7 +882,7 @@ describe('auth proxy security regressions', () => {
   it('preserves missing-origin GET callback semantics', async () => {
     const fetchMock = stubFetch(vi.fn(async () => new Response('', { status: 302 })))
     const handler = await loadHandler()
-    const callback = rawProxyEvent({
+    const callback = rawH3V1Event({
       path: '/api/auth/callback/github?code=opaque&state=opaque',
       headers: {
         'cf-connecting-ip': DEFAULT_HEADERS['cf-connecting-ip'],
@@ -1020,7 +1020,7 @@ describe('auth proxy security regressions', () => {
 
   it('propagates browser disconnects during upload and fetch with deterministic cleanup', async () => {
     const uploadCancel = vi.fn()
-    const upload = rawProxyEvent({
+    const upload = rawH3V1Event({
       method: 'POST',
       headers: DEFAULT_HEADERS,
       open: true,
@@ -1227,7 +1227,7 @@ describe('auth proxy security regressions', () => {
         path: '/api/auth/sign-in/email',
         headers: { 'content-type': 'application/json', 'content-length': String(body.byteLength) },
       }
-      const node = rawProxyEvent({
+      const node = rawH3V1Event({
         ...request,
         headers: { ...DEFAULT_HEADERS, ...request.headers },
         body,
