@@ -1,10 +1,13 @@
+import { IncomingMessage, ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
 import { inspect } from 'node:util'
 
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
-import type { H3Event } from 'h3'
+import { createEvent as createH3V1Event } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConvexCallError } from '../../src/runtime/errors'
+import { eventResponseHeaders, type ConvexServerEvent } from '../../src/runtime/server/utils/event'
 import {
   applyConvexAuthSsrHeaders,
   mergeVaryCookie,
@@ -55,7 +58,8 @@ vi.mock('../../src/runtime/server/utils/token-exchange', () => ({
   exchangeConvexToken: mocks.exchangeMock,
 }))
 
-vi.mock('#imports', () => ({
+vi.mock('nuxt/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('nuxt/server')>()),
   useRuntimeConfig: mocks.useRuntimeConfigMock,
 }))
 
@@ -83,21 +87,21 @@ function createEvent(
   cookie?: string,
   headers: Record<string, string> = {},
   signal?: AbortSignal,
-): H3Event {
-  const responseHeaders = new Map<string, string>()
+): ConvexServerEvent {
   return {
-    context: { nitro: { runtimeConfig: mocks.useRuntimeConfigMock() } },
-    node: {
-      req: { headers: { ...headers, ...(cookie ? { cookie } : {}) } },
-      res: {
-        getHeader: (name: string) => responseHeaders.get(name),
-        getHeaders: () => Object.fromEntries(responseHeaders),
-        removeHeader: (name: string) => responseHeaders.delete(name),
-        setHeader: (name: string, value: string) => responseHeaders.set(name, value),
-      },
-    },
-    ...(signal ? { web: { request: new Request('https://app.example.com', { signal }) } } : {}),
-  } as unknown as H3Event
+    req: new Request('https://app.example.com', {
+      headers: { ...headers, ...(cookie ? { cookie } : {}) },
+      ...(signal ? { signal } : {}),
+    }),
+    res: { headers: new Headers() },
+    context: {},
+  }
+}
+
+/** The response headers as lower-case name -> value. */
+function responseHeaders(event: ConvexServerEvent): Record<string, string | null> {
+  const headers = eventResponseHeaders(event)
+  return Object.fromEntries([...new Set(headers.keys())].map((name) => [name, headers.get(name)]))
 }
 
 const AUTH_COOKIE = 'better-auth.session_token=session123'
@@ -229,6 +233,7 @@ describe('serverConvex caller-scoped invariants', () => {
     expect(mocks.exchangeMock).toHaveBeenCalledWith({
       event,
       siteUrl: SITE_URL,
+      publicOrigin: 'http://localhost:3000',
       credential: { type: 'cookie', value: AUTH_COOKIE },
       trustedClientIpHeader: 'cf-connecting-ip',
       timeoutMs: 5_000,
@@ -468,16 +473,13 @@ describe('serverConvex boundary error sanitization', () => {
 })
 
 describe('serverConvex response cache headers', () => {
-  const responseHeaders = (event: H3Event) =>
-    (event.node.res as unknown as { getHeaders: () => Record<string, string> }).getHeaders()
-
   it('marks a response that read the session cookie as Vary: Cookie and private, no-store', async () => {
     mocks.exchangeMock.mockResolvedValue({ token: USER_JWT, status: 200, error: null })
     const event = createEvent(AUTH_COOKIE)
 
     await serverConvex(event).getToken()
 
-    expect(responseHeaders(event)).toEqual({ Vary: 'Cookie', 'Cache-Control': 'private, no-store' })
+    expect(responseHeaders(event)).toEqual({ vary: 'Cookie', 'cache-control': 'private, no-store' })
   })
 
   it('still varies by cookie, without private, when the request carries no auth cookie', async () => {
@@ -485,7 +487,7 @@ describe('serverConvex response cache headers', () => {
 
     await expect(serverConvex(event, { auth: 'optional' }).getToken()).resolves.toBeNull()
 
-    expect(responseHeaders(event)).toEqual({ Vary: 'Cookie' })
+    expect(responseHeaders(event)).toEqual({ vary: 'Cookie' })
   })
 
   it.each([
@@ -500,26 +502,7 @@ describe('serverConvex response cache headers', () => {
   })
 })
 
-describe('SSR auth response headers (Vary/Cache-Control)', () => {
-  function applyHeaders(
-    initial: Array<[string, string]>,
-    options: Parameters<typeof applyConvexAuthSsrHeaders>[1],
-  ) {
-    const headers = new Map(initial)
-    const event = {
-      node: {
-        res: {
-          getHeader: (name: string) => headers.get(name),
-          getHeaders: () => Object.fromEntries(headers),
-          removeHeader: (name: string) => headers.delete(name),
-          setHeader: (name: string, value: string) => headers.set(name, value),
-        },
-      },
-    } as unknown as H3Event
-    applyConvexAuthSsrHeaders(event, options)
-    return Object.fromEntries(headers)
-  }
-
+describe('mergeVaryCookie', () => {
   it('merges Cookie into Vary while preserving existing values', () => {
     expect(mergeVaryCookie(undefined)).toBe('Cookie')
     expect(mergeVaryCookie('Accept-Encoding')).toBe('Accept-Encoding, Cookie')
@@ -529,12 +512,43 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
     expect(mergeVaryCookie('*')).toBe('*')
     expect(mergeVaryCookie('Accept-Encoding, *')).toBe('*')
   })
+})
+
+// Both event shapes: the raw h3 v1 event keeps its headers on the Node
+// response, the web-shaped event (Nuxt 5, Nuxt 4.6 `nuxt/server`) on a live
+// web `Headers`, where deleting while iterating would skip entries.
+describe.each([
+  {
+    shape: 'raw h3 v1 event',
+    create: (): ConvexServerEvent => {
+      const req = new IncomingMessage(new Socket())
+      return createH3V1Event(req, new ServerResponse(req))
+    },
+  },
+  {
+    shape: 'web-shaped event',
+    create: (): ConvexServerEvent => ({
+      req: new Request('https://app.example.com'),
+      res: { headers: new Headers() },
+      context: {},
+    }),
+  },
+])('SSR auth response headers (Vary/Cache-Control) on a $shape', ({ create }) => {
+  function applyHeaders(
+    initial: Array<[string, string]>,
+    options: Parameters<typeof applyConvexAuthSsrHeaders>[1],
+  ) {
+    const event = create()
+    for (const [name, value] of initial) eventResponseHeaders(event).set(name, value)
+    applyConvexAuthSsrHeaders(event, options)
+    return responseHeaders(event)
+  }
 
   it.each([
-    [true, true, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
-    [true, false, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
-    [false, true, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
-    [false, false, { Vary: 'Accept-Encoding, Cookie' }],
+    [true, true, { vary: 'Accept-Encoding, Cookie', 'cache-control': 'private, no-store' }],
+    [true, false, { vary: 'Accept-Encoding, Cookie', 'cache-control': 'private, no-store' }],
+    [false, true, { vary: 'Accept-Encoding, Cookie', 'cache-control': 'private, no-store' }],
+    [false, false, { vary: 'Accept-Encoding, Cookie' }],
   ])(
     'cookie=%s rendersUser=%s appends Vary: Cookie and is private only with an auth signal',
     (hasBetterAuthCookie, rendersUser, expected) => {
@@ -560,9 +574,9 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
         { hasBetterAuthCookie: true, rendersUser: false },
       ),
     ).toEqual({
-      'Content-Language': 'en',
-      Vary: 'Cookie',
-      'Cache-Control': 'private, no-store',
+      'content-language': 'en',
+      vary: 'Cookie',
+      'cache-control': 'private, no-store',
     })
   })
 })

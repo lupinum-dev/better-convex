@@ -1,11 +1,10 @@
-import type { H3Event } from 'h3'
-
 import { ConvexCallError } from '../../errors'
 import { filterBetterAuthCookies } from '../../utils/shared-helpers'
 import type { ConvexUser } from '../../utils/types'
-import { readEventConvexConfig, readEventCookieHeader } from './event-context'
+import { eventRequestHeaders, type ConvexServerEvent } from './event'
 import { toConvexH3Error } from './h3-error'
 import { resolveRequestAuthSnapshot } from './request-auth'
+import { readServerConvexConfig } from './server-config'
 import { applyConvexAuthSsrHeaders } from './ssr-auth-headers'
 
 /**
@@ -20,12 +19,12 @@ import { applyConvexAuthSsrHeaders } from './ssr-auth-headers'
  * data inside Convex functions, for example with
  * `serverConvex(event, { auth: 'required' })`.
  *
- * Rejects with an H3 error (see {@link toConvexH3Error}) when the identity
+ * Rejects with an HTTP error (`NuxtError`, see {@link toConvexH3Error}) when the identity
  * cannot be resolved: 502 when the auth backend fails, 500 when auth is
  * enabled without a Convex site URL.
  */
-export async function getConvexUser(event: H3Event): Promise<ConvexUser | null> {
-  const config = readEventConvexConfig(event)
+export async function getConvexUser(event: ConvexServerEvent): Promise<ConvexUser | null> {
+  const config = readServerConvexConfig()
   if (config.auth === false) return null
   if (!config.siteUrl) {
     throw toConvexH3Error(
@@ -37,7 +36,7 @@ export async function getConvexUser(event: H3Event): Promise<ConvexUser | null> 
     )
   }
 
-  const cookieHeader = readEventCookieHeader(event)
+  const cookieHeader = eventRequestHeaders(event).get('cookie')
   // The identity depends on the request cookie, so the response must not be
   // shared between visitors by a cache.
   applyConvexAuthSsrHeaders(event, {
@@ -46,6 +45,7 @@ export async function getConvexUser(event: H3Event): Promise<ConvexUser | null> 
   })
   const snapshot = await resolveRequestAuthSnapshot(event, {
     siteUrl: config.siteUrl,
+    publicOrigin: config.auth.origin,
     trustedClientIpHeader: config.auth.trustedClientIpHeader,
     cookieHeader,
   })
@@ -62,14 +62,15 @@ export async function getConvexUser(event: H3Event): Promise<ConvexUser | null> 
 }
 
 /**
- * Read the signed-in user for this request, or throw an H3 401 error.
+ * Read the signed-in user for this request, or throw an HTTP 401 error
+ * (`NuxtError`).
  *
  * The response body's `data` is a serialized `ConvexCallError` with kind
  * `authentication` and code `UNAUTHENTICATED`. Missing, invalid, and revoked
  * sessions are all 401, and a build without auth always throws it. Identity
  * resolution failures reject as {@link getConvexUser} does.
  */
-export async function requireConvexUser(event: H3Event): Promise<ConvexUser> {
+export async function requireConvexUser(event: ConvexServerEvent): Promise<ConvexUser> {
   const user = await getConvexUser(event)
   if (user) return user
   throw toConvexH3Error(

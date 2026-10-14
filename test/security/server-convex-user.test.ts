@@ -1,12 +1,27 @@
+import { IncomingMessage, ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
 import { inspect } from 'node:util'
 
-import type { H3Event } from 'h3'
+import { createEvent as createH3V1Event } from 'h3'
 import { isNuxtError, type NuxtError } from 'nuxt/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getConvexUser, requireConvexUser } from '../../src/runtime/server/utils/convex-user'
+import {
+  eventNodeResponse,
+  eventResponseHeaders,
+  type ConvexServerEvent,
+} from '../../src/runtime/server/utils/event'
 import { resolveRequestAuthSnapshot } from '../../src/runtime/server/utils/request-auth'
 import { serverConvex } from '../../src/runtime/server/utils/server-convex-caller'
+
+// The `./server` helpers read the server's runtime config (`nuxt/server`
+// `useRuntimeConfig()`); each test selects the public Convex config here.
+const runtime = vi.hoisted(() => ({ publicConvex: undefined as unknown }))
+vi.mock('nuxt/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('nuxt/server')>()),
+  useRuntimeConfig: () => ({ app: {}, public: { convex: runtime.publicConvex }, convex: {} }),
+}))
 
 const SESSION_COOKIE = 'better-auth.session_token=server-user-session-secret'
 const PRIVATE_COOKIE = 'private_app_cookie=private-app-secret'
@@ -32,24 +47,45 @@ const USER_JWT = makeJwt({
   exp: Math.floor(Date.now() / 1000) + 3600,
 })
 
-function createEvent(cookie?: string, convex: Record<string, unknown> = AUTH_CONVEX): H3Event {
-  const responseHeaders = new Map<string, string>()
-  return {
-    context: { nitro: { runtimeConfig: { public: { convex } } } },
-    headers: new Headers(cookie ? { cookie } : {}),
-    node: {
-      res: {
-        getHeader: (name: string) => responseHeaders.get(name),
-        getHeaders: () => Object.fromEntries(responseHeaders),
-        removeHeader: (name: string) => responseHeaders.delete(name),
-        setHeader: (name: string, value: string) => responseHeaders.set(name, value),
-      },
-    },
-  } as unknown as H3Event
+function nodeRequestResponse(cookie: string | undefined) {
+  const req = new IncomingMessage(new Socket())
+  req.method = 'GET'
+  req.url = '/api/me'
+  req.headers = { host: 'localhost:3000', ...(cookie ? { cookie } : {}) }
+  return { req, res: new ServerResponse(req) }
 }
 
-function responseHeaders(event: H3Event): Record<string, string> {
-  return (event.node.res as unknown as { getHeaders: () => Record<string, string> }).getHeaders()
+// Every helper runs on both event shapes a supported Nuxt passes: the raw h3
+// v1 event (Nuxt 4 routes and SSR; headers live on the Node response) and the
+// web-shaped event (Nuxt 5, Nuxt 4.6 `nuxt/server` handlers; headers live on
+// `event.res.headers`, the Node pair stays on `event.node`).
+const shapes = [
+  {
+    name: 'raw h3 v1 event',
+    create(cookie: string | undefined): ConvexServerEvent {
+      const { req, res } = nodeRequestResponse(cookie)
+      return createH3V1Event(req, res)
+    },
+  },
+  {
+    name: 'web-shaped event',
+    create(cookie: string | undefined): ConvexServerEvent {
+      const node = nodeRequestResponse(cookie)
+      return {
+        req: new Request('http://localhost:3000/api/me', {
+          headers: cookie ? { cookie } : {},
+        }),
+        res: { headers: new Headers() },
+        node,
+        context: {},
+      }
+    },
+  },
+]
+
+function responseHeaders(event: ConvexServerEvent): Record<string, string | null> {
+  const headers = eventResponseHeaders(event)
+  return Object.fromEntries([...new Set(headers.keys())].map((name) => [name, headers.get(name)]))
 }
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -93,7 +129,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('getConvexUser and requireConvexUser', () => {
+describe.each(shapes)('getConvexUser and requireConvexUser ($name)', (shape) => {
+  function createEvent(cookie?: string, convex: unknown = AUTH_CONVEX): ConvexServerEvent {
+    runtime.publicConvex = convex
+    return shape.create(cookie)
+  }
+
   it('resolve an anonymous request without a token exchange', async () => {
     const event = createEvent(PRIVATE_COOKIE)
 
@@ -116,25 +157,21 @@ describe('getConvexUser and requireConvexUser', () => {
     const signedIn = createEvent(SESSION_COOKIE)
     await getConvexUser(signedIn)
     expect(responseHeaders(signedIn)).toEqual({
-      Vary: 'Cookie',
-      'Cache-Control': 'private, no-store',
+      vary: 'Cookie',
+      'cache-control': 'private, no-store',
     })
 
     // No auth cookie: the answer is anonymous, but still depends on the cookie header.
     const anonymous = createEvent(PRIVATE_COOKIE)
     await getConvexUser(anonymous)
-    expect(responseHeaders(anonymous)).toEqual({ Vary: 'Cookie' })
+    expect(responseHeaders(anonymous)).toEqual({ vary: 'Cookie' })
   })
 
   it('leave the response alone once its headers are sent (SSE, streaming)', async () => {
     exchangeResponds(200, { token: USER_JWT })
     const event = createEvent(SESSION_COOKIE)
-    const res = event.node.res as unknown as Record<string, unknown>
-    res.headersSent = true
-    // Node throws ERR_HTTP_HEADERS_SENT when a header is set after the flush.
-    res.setHeader = () => {
-      throw Object.assign(new Error('headers sent'), { code: 'ERR_HTTP_HEADERS_SENT' })
-    }
+    // After the flush Node throws ERR_HTTP_HEADERS_SENT on any header write.
+    eventNodeResponse(event)!.writeHead(200)
 
     await expect(getConvexUser(event)).resolves.toMatchObject({ id: 'user-1' })
     expect(responseHeaders(event)).toEqual({})
@@ -204,6 +241,7 @@ describe('getConvexUser and requireConvexUser', () => {
 
     await resolveRequestAuthSnapshot(event, {
       siteUrl: SITE_URL,
+      publicOrigin: 'http://localhost:3000',
       trustedClientIpHeader: '',
       cookieHeader: SESSION_COOKIE,
     })
@@ -279,5 +317,28 @@ describe('getConvexUser and requireConvexUser', () => {
     expect(error.status).toBe(500)
     expect(error.data).toMatchObject({ kind: 'unknown', code: 'SITE_URL_MISSING' })
     expectNoCredentials(error)
+  })
+})
+
+describe('one auth snapshot per request', () => {
+  // Catches a snapshot keyed by the event object: Nuxt 4.6 hands SSR the raw
+  // h3 v1 event and `nuxt/server` handlers a portable Proxy over it, and Nuxt 5
+  // gives SSR a new event; only `context` is shared. Keyed by event, one page
+  // request would exchange (and renew) the session twice.
+  it('exchange once for a raw h3 v1 event and a web-shaped event that share one context', async () => {
+    exchangeResponds(200, { token: USER_JWT })
+    runtime.publicConvex = AUTH_CONVEX
+    const { req, res } = nodeRequestResponse(SESSION_COOKIE)
+    const raw = createH3V1Event(req, res)
+    const web: ConvexServerEvent = {
+      req: new Request('http://localhost:3000/api/me', { headers: { cookie: SESSION_COOKIE } }),
+      res: { headers: new Headers() },
+      node: { req, res },
+      context: raw.context,
+    }
+
+    await expect(getConvexUser(raw)).resolves.toMatchObject({ id: 'user-1' })
+    await expect(serverConvex(web, { auth: 'required' }).getToken()).resolves.toBe(USER_JWT)
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 })

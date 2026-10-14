@@ -1,11 +1,18 @@
-import http from 'node:http'
-import type { AddressInfo } from 'node:net'
+import http, { IncomingMessage, ServerResponse } from 'node:http'
+import { Socket, type AddressInfo } from 'node:net'
 
+import { createEvent as createH3V1Event } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ConvexCallError } from '../../src/runtime/errors'
+import {
+  eventNodeResponse,
+  eventResponseHeaders,
+  type ConvexServerEvent,
+} from '../../src/runtime/server/utils/event'
 import { ServerConvexValidationError } from '../../src/runtime/server/utils/server-convex-options'
 import { exchangeConvexToken as exchangeRequestToken } from '../../src/runtime/server/utils/token-exchange'
+import { signPublicOrigin } from '../../src/runtime/shared/client-ip'
 import { webServerEvent } from '../helpers/server-event'
 
 // ---------------------------------------------------------------------------
@@ -20,6 +27,8 @@ interface RecordedRequest {
   authorization: string | undefined
   clientIp: string | undefined
   clientIpSignature: string | undefined
+  publicOrigin: string | undefined
+  publicOriginSignature: string | undefined
 }
 
 interface Harness {
@@ -46,6 +55,14 @@ async function harness(handler: Handler): Promise<Harness> {
       clientIpSignature:
         typeof req.headers['x-bcn-client-ip-signature'] === 'string'
           ? req.headers['x-bcn-client-ip-signature']
+          : undefined,
+      publicOrigin:
+        typeof req.headers['x-bcn-public-origin'] === 'string'
+          ? req.headers['x-bcn-public-origin']
+          : undefined,
+      publicOriginSignature:
+        typeof req.headers['x-bcn-public-origin-signature'] === 'string'
+          ? req.headers['x-bcn-public-origin-signature']
           : undefined,
     })
     handler(req, res)
@@ -82,14 +99,19 @@ const COOKIE =
   'private_app_cookie=DO_NOT_FORWARD; better-auth.session_token=SUPERSECRET_SESSION_abc123'
 const FORWARDED_COOKIE = 'better-auth.session_token=SUPERSECRET_SESSION_abc123'
 const PROXY_IP_SECRET = 'token-exchange-proxy-secret-with-32-bytes'
+const PUBLIC_ORIGIN = 'https://app.example.test'
 
 function exchangeConvexToken(
-  input: Omit<Parameters<typeof exchangeRequestToken>[0], 'event' | 'trustedClientIpHeader'>,
+  input: Omit<
+    Parameters<typeof exchangeRequestToken>[0],
+    'event' | 'trustedClientIpHeader' | 'publicOrigin'
+  >,
 ) {
   vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
   return exchangeRequestToken({
     ...input,
-    event: webServerEvent({ 'cf-connecting-ip': '203.0.113.20' }) as never,
+    event: webServerEvent({ 'cf-connecting-ip': '203.0.113.20' }),
+    publicOrigin: PUBLIC_ORIGIN,
     trustedClientIpHeader: 'cf-connecting-ip',
   })
 }
@@ -111,7 +133,83 @@ describe('exchangeConvexToken — success', () => {
     expect(server.requests[0]!.authorization).toBeUndefined()
     expect(server.requests[0]!.clientIp).toBe('203.0.113.20')
     expect(server.requests[0]!.clientIpSignature).toMatch(/^[\w-]{43}$/u)
+    // Catches an exchange that drops the caller's public origin (Convex then
+    // answers for its SITE_URL) or sends it unsigned, now that the origin
+    // comes from the caller instead of the event's runtime config.
+    expect(server.requests[0]!.publicOrigin).toBe(PUBLIC_ORIGIN)
+    expect(server.requests[0]!.publicOriginSignature).toBe(
+      await signPublicOrigin(PUBLIC_ORIGIN, PROXY_IP_SECRET),
+    )
   })
+})
+
+describe('exchangeConvexToken — session renewal', () => {
+  const PAGE_COOKIE = 'theme=dark; Path=/'
+  const RENEWED_COOKIE =
+    'better-auth.session_token=renewed; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800'
+
+  function nodePair() {
+    const req = new IncomingMessage(new Socket())
+    req.headers = { host: 'app.example.test', 'cf-connecting-ip': '203.0.113.20' }
+    return { req, res: new ServerResponse(req) }
+  }
+
+  // Catches a renewal that replaces the page's own Set-Cookie (set instead of
+  // append), or that writes into a header store the runtime does not send:
+  // on a web-shaped event the response is built from `event.res.headers`, and
+  // Node `writeHead` replaces same-named headers set on `event.node.res`.
+  it.each([
+    {
+      shape: 'raw h3 v1 event',
+      create: (): ConvexServerEvent => {
+        const { req, res } = nodePair()
+        return createH3V1Event(req, res)
+      },
+      unsentStore: (): string[] => [],
+    },
+    {
+      shape: 'web-shaped event',
+      create: (): ConvexServerEvent => ({
+        req: new Request('https://app.example.test/', {
+          headers: { 'cf-connecting-ip': '203.0.113.20' },
+        }),
+        res: { headers: new Headers() },
+        node: nodePair(),
+        context: {},
+      }),
+      unsentStore: (event: ConvexServerEvent): string[] =>
+        [eventNodeResponse(event)!.getHeader('set-cookie') ?? []].flat().map(String),
+    },
+  ])(
+    'appends the renewed session cookie next to a page cookie ($shape)',
+    async ({ create, unsentStore }) => {
+      const server = await harness((_req, res) => {
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'set-cookie': [RENEWED_COOKIE, 'tracking=1; Path=/'],
+        })
+        res.end(JSON.stringify({ token: 'jwt.renewed' }))
+      })
+      const event = create()
+      eventResponseHeaders(event).append('set-cookie', PAGE_COOKIE)
+      vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
+
+      const result = await exchangeRequestToken({
+        event,
+        siteUrl: server.siteUrl,
+        publicOrigin: PUBLIC_ORIGIN,
+        credential: { type: 'cookie', value: COOKIE },
+        trustedClientIpHeader: 'cf-connecting-ip',
+        renewsRequestSession: true,
+      })
+
+      expect(result.token).toBe('jwt.renewed')
+      const headers = eventResponseHeaders(event)
+      expect(headers.getSetCookie()).toEqual([PAGE_COOKIE, RENEWED_COOKIE])
+      expect(headers.get('cache-control')).toBe('private, no-store')
+      expect(unsentStore(event)).toEqual([])
+    },
+  )
 })
 
 describe('exchangeConvexToken — HTTP failure classification', () => {

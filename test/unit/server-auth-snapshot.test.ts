@@ -27,8 +27,9 @@ function createResponse(status: number, body: unknown): Response {
 }
 
 const baseOptions = {
-  event: webServerEvent({ 'cf-connecting-ip': '198.51.100.10' }) as never,
+  event: webServerEvent({ 'cf-connecting-ip': '198.51.100.10' }),
   siteUrl: 'https://demo.convex.site',
+  publicOrigin: 'https://app.example.test',
   requestId: 'request-1',
   trackWaterfall: true,
   trustedClientIpHeader: 'cf-connecting-ip',
@@ -93,7 +94,7 @@ describe('resolveServerAuthSnapshot', () => {
   it('fails closed before exchange when the configured client IP header is missing', async () => {
     const snapshot = await resolveServerAuthSnapshot({
       ...baseOptions,
-      event: webServerEvent() as never,
+      event: webServerEvent(),
       cookieHeader: 'better-auth.session_token=session-bound',
     })
 

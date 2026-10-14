@@ -17,6 +17,7 @@ import { defineNuxtPlugin, useNuxtApp, useState, useRuntimeConfig, useRequestEve
 
 import { ANONYMOUS_IDENTITY, toAuthenticatedIdentity } from './auth/auth-identity'
 import type { AuthWaterfall } from './devtools/types'
+import { eventRequestHeaders, eventRequestMethod } from './server/utils/event'
 import { resolveRequestAuthSnapshot } from './server/utils/request-auth'
 import { applyConvexAuthSsrHeaders } from './server/utils/ssr-auth-headers'
 import { buildMissingSiteUrlMessage } from './utils/auth-errors'
@@ -59,10 +60,10 @@ export default defineNuxtPlugin(async () => {
     logger.auth({ phase: 'init', outcome: 'miss', details: { code: 'AUTH_SSR_DISABLED' } })
     return
   }
-  const requestMethod = event.method || 'GET'
+  const requestMethod = eventRequestMethod(event)
   const requestId = crypto.randomUUID()
   const traceEnabled = logLevel === 'debug'
-  const cookieHeader = event.headers.get('cookie')
+  const cookieHeader = eventRequestHeaders(event).get('cookie')
   const hasSupportedBetterAuthCookie = filterBetterAuthCookies(cookieHeader) !== null
 
   const siteUrl = convexConfig.siteUrl
@@ -108,6 +109,7 @@ export default defineNuxtPlugin(async () => {
   const snapshotStartedAt = Date.now()
   const snapshot = await resolveRequestAuthSnapshot(event, {
     siteUrl,
+    publicOrigin: authConfig.origin,
     cookieHeader,
     requestId,
     trackWaterfall: import.meta.dev,

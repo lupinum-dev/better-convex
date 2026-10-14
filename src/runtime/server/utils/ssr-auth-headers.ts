@@ -1,10 +1,9 @@
 import {
-  getResponseHeader,
-  getResponseHeaders,
-  removeResponseHeader,
-  setResponseHeader,
-  type H3Event,
-} from 'h3'
+  eventHeadersSent,
+  eventResponseHeaders,
+  type ConvexServerEvent,
+  type EventResponseHeaders,
+} from './event'
 
 const SHARED_CACHE_CONTROL_HEADERS = new Set([
   'cdn-cache-control',
@@ -13,11 +12,12 @@ const SHARED_CACHE_CONTROL_HEADERS = new Set([
   'x-accel-expires',
 ])
 
-function removeSharedCacheOverrides(event: H3Event): void {
-  for (const name of Object.keys(getResponseHeaders(event))) {
+function removeSharedCacheOverrides(headers: EventResponseHeaders): void {
+  // A copy of the names: deleting while iterating a live `Headers` skips entries.
+  for (const name of new Set(headers.keys())) {
     const lower = name.toLowerCase()
     if (SHARED_CACHE_CONTROL_HEADERS.has(lower) || lower.endsWith('-cdn-cache-control')) {
-      removeResponseHeader(event, name)
+      headers.delete(name)
     }
   }
 }
@@ -66,16 +66,21 @@ export function mergeVaryCookie(existing: string | number | string[] | undefined
  *   produced, and a per-user page is never cacheable without a cookie signal.
  *   Shared-cache override headers already present on the response are removed;
  *   an operator/CDN rule that rewrites headers after this point remains external.
+ *
+ * On Nuxt 5 a route rule `headers` entry, or middleware that runs later, wins
+ * over these headers; the module warns at build time about route rules that
+ * set cache headers on pages with SSR auth.
  */
 export function applyConvexAuthSsrHeaders(
-  event: H3Event,
+  event: ConvexServerEvent,
   options: { hasBetterAuthCookie: boolean; rendersUser: boolean },
 ): void {
   // Headers are already on the wire (SSE, streaming): setting one would throw.
-  if (event.node.res.headersSent) return
-  setResponseHeader(event, 'Vary', mergeVaryCookie(getResponseHeader(event, 'Vary')))
+  if (eventHeadersSent(event)) return
+  const headers = eventResponseHeaders(event)
+  headers.set('Vary', mergeVaryCookie(headers.get('Vary')))
   if (options.hasBetterAuthCookie || options.rendersUser) {
-    removeSharedCacheOverrides(event)
-    setResponseHeader(event, 'Cache-Control', 'private, no-store')
+    removeSharedCacheOverrides(headers)
+    headers.set('Cache-Control', 'private, no-store')
   }
 }

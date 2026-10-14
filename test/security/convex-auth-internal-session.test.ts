@@ -17,6 +17,23 @@ import {
   readComponentRateLimits,
 } from '../helpers/component-rate-limit'
 
+// The server's runtime config, as `getConvexUser` reads it through `nuxt/server`.
+// Literals: the factory runs before this module's constants exist.
+vi.mock('nuxt/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('nuxt/server')>()),
+  useRuntimeConfig: () => ({
+    app: {},
+    convex: { trustedClientIpHeader: 'cf-connecting-ip' },
+    public: {
+      convex: {
+        url: 'https://deployment.convex.cloud',
+        siteUrl: 'https://deployment.convex.site',
+        auth: { origin: 'https://app.example.test' },
+      },
+    },
+  }),
+}))
+
 const origin = 'https://app.example.test'
 const convexSiteUrl = 'https://deployment.convex.site'
 const secret = 'internal-session-test-secret-with-at-least-32-randomish-characters'
@@ -452,18 +469,6 @@ describe('server session renewal', () => {
     const incoming = new IncomingMessage(new Socket())
     incoming.headers = { cookie: browserCookie, 'cf-connecting-ip': '198.51.100.7' }
     const event = createEvent(incoming, new ServerResponse(incoming))
-    event.context.nitro = {
-      runtimeConfig: {
-        convex: { trustedClientIpHeader: 'cf-connecting-ip' },
-        public: {
-          convex: {
-            url: 'https://deployment.convex.cloud',
-            siteUrl: convexSiteUrl,
-            auth: { origin },
-          },
-        },
-      },
-    }
 
     await expect(getConvexUser(event)).resolves.toMatchObject({ id: 'user-1' })
 

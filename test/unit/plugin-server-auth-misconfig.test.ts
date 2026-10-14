@@ -54,6 +54,20 @@ vi.mock('../../src/runtime/utils/convex-shared', () => ({
 
 const nuxtApp = {} as NuxtApp
 
+/** A web-shaped SSR request event (Nuxt 5; Nuxt 4 passes the raw h3 v1 event). */
+function ssrEvent(requestHeaders: Record<string, string>) {
+  return {
+    req: new Request('http://localhost:3000/dashboard', { headers: requestHeaders }),
+    res: { headers: new Headers() },
+    context: {},
+  }
+}
+
+/** The response headers the plugin wrote on the current request event. */
+function responseHeaders(): Headers {
+  return (useRequestEventMock() as ReturnType<typeof ssrEvent>).res.headers
+}
+
 function createResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -77,8 +91,6 @@ function answerTokenExchange(status: number, body: unknown) {
 
 describe('plugin.server token exchange failure policy', () => {
   const stateStore = new Map<string, { value: unknown }>()
-  const setHeaderMock = vi.fn()
-
   beforeEach(() => {
     vi.clearAllMocks()
     useNuxtAppMock.mockReturnValue(nuxtApp)
@@ -92,22 +104,7 @@ describe('plugin.server token exchange failure policy', () => {
       },
     })
 
-    useRequestEventMock.mockReturnValue({
-      path: '/dashboard',
-      method: 'GET',
-      node: {
-        req: { url: '/dashboard' },
-        res: {
-          getHeader: vi.fn().mockReturnValue(undefined),
-          getHeaders: vi.fn().mockReturnValue({}),
-          removeHeader: vi.fn(),
-          setHeader: setHeaderMock,
-        },
-      },
-      headers: new Headers({
-        cookie: 'better-auth.session_token=abc',
-      }),
-    })
+    useRequestEventMock.mockReturnValue(ssrEvent({ cookie: 'better-auth.session_token=abc' }))
 
     useStateMock.mockImplementation((key: string, init?: (() => unknown) | unknown) => {
       if (!stateStore.has(key)) {
@@ -153,14 +150,12 @@ describe('plugin.server token exchange failure policy', () => {
         trustedClientIpHeader: 'cf-connecting-ip',
       },
     })
-    const event = useRequestEventMock()
-    useRequestEventMock.mockReturnValue({
-      ...event,
-      headers: new Headers({
+    useRequestEventMock.mockReturnValue(
+      ssrEvent({
         cookie: 'better-auth.session_token=abc',
         ...(value ? { 'cf-connecting-ip': value } : {}),
       }),
-    })
+    )
 
     await runServerPlugin()
 
@@ -176,17 +171,16 @@ describe('plugin.server token exchange failure policy', () => {
     ['a missing siteUrl', { siteUrl: undefined }],
   ])('isolates a non-session Better Auth cookie response on %s', async (_case, config) => {
     getConvexRuntimeConfigMock.mockReturnValue({ ...getConvexRuntimeConfigMock(), ...config })
-    useRequestEventMock.mockReturnValue({
-      ...useRequestEventMock(),
-      headers: new Headers({ cookie: 'better-auth.oauth_state=opaque-state' }),
-    })
+    useRequestEventMock.mockReturnValue(
+      ssrEvent({ cookie: 'better-auth.oauth_state=opaque-state' }),
+    )
 
     await runServerPlugin()
 
     expect(fetchWithTimeoutMock).not.toHaveBeenCalled()
     expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
-    expect(setHeaderMock).toHaveBeenCalledWith('Vary', 'Cookie')
-    expect(setHeaderMock).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
+    expect(responseHeaders().get('vary')).toBe('Cookie')
+    expect(responseHeaders().get('cache-control')).toBe('private, no-store')
   })
 
   it('keeps 401 token exchange as graceful unauthenticated (no throw)', async () => {
@@ -197,8 +191,8 @@ describe('plugin.server token exchange failure policy', () => {
     expect(stateStore.get('convex:authError')?.value).toBeNull()
     expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
     // Invalid/revoked auth cookies still make the response request-specific.
-    expect(setHeaderMock).toHaveBeenCalledWith('Vary', 'Cookie')
-    expect(setHeaderMock).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
+    expect(responseHeaders().get('vary')).toBe('Cookie')
+    expect(responseHeaders().get('cache-control')).toBe('private, no-store')
   })
 
   it('keeps the exchanged token out of the hydrated state and sets Cache-Control: private, no-store', async () => {
@@ -220,7 +214,7 @@ describe('plugin.server token exchange failure policy', () => {
     // useState is serialized into the page payload; SSR queries read the token here.
     expect(JSON.stringify([...stateStore.values()])).not.toContain('jwt-1')
     expect(readServerConvexToken(nuxtApp)).toBe('jwt-1')
-    expect(setHeaderMock).toHaveBeenCalledWith('Cache-Control', 'private, no-store')
+    expect(responseHeaders().get('cache-control')).toBe('private, no-store')
   })
 
   it('emits correlated server traces without logging the incoming cookie or exchanged JWT', async () => {
@@ -228,10 +222,9 @@ describe('plugin.server token exchange failure policy', () => {
     const cookieSentinel = 'BCN_SSR_COOKIE_SENTINEL'
     const jwtSentinel = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzZW50aW5lbCJ9.signature'
     useRuntimeConfigMock.mockReturnValue({ public: { convex: { logging: 'debug' } } })
-    useRequestEventMock.mockReturnValue({
-      ...useRequestEventMock(),
-      headers: new Headers({ cookie: `better-auth.session_token=${cookieSentinel}` }),
-    })
+    useRequestEventMock.mockReturnValue(
+      ssrEvent({ cookie: `better-auth.session_token=${cookieSentinel}` }),
+    )
     fetchWithTimeoutMock.mockResolvedValueOnce(createResponse(200, { token: jwtSentinel }))
 
     await runServerPlugin()

@@ -1,8 +1,6 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest'
 
-vi.mock('#imports', () => ({
-  useRuntimeConfig: () => ({ public: { convex: {} } }),
-}))
+import type { ConvexServerEvent } from '../../src/runtime/server/index'
 
 describe('server entrypoint exports', () => {
   let serverApi: typeof import('../../src/runtime/server/index')
@@ -19,6 +17,12 @@ describe('server entrypoint exports', () => {
       'serverConvex',
       'toConvexH3Error',
     ])
+  })
+
+  // Catches dropping the public event type, or a helper that stops taking it:
+  // callers type their parameters with it (`pnpm typecheck` fails).
+  it('exports the event type the helpers accept', () => {
+    expectTypeOf(serverApi.getConvexUser).parameter(0).toEqualTypeOf<ConvexServerEvent>()
   })
 
   it('exports the validation error class callers can match with instanceof', () => {
