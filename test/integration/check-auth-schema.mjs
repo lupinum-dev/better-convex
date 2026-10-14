@@ -288,6 +288,9 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
       manifest.dependencies[name],
     ]),
   )
+  // The demo pins the Nuxt that the last published module supports. The packed module is the
+  // next release, so install the Nuxt it is developed against (the root manifest).
+  manifest.dependencies.nuxt = repositoryManifest.devDependencies.nuxt
   // The packed module declares exact Better Auth peers; install those versions.
   const packedManifest = JSON.parse(
     output('tar', ['-xOzf', localTarball, 'package/package.json'], packaged),
