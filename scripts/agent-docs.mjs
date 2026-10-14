@@ -87,6 +87,7 @@ const startHere = [
     'Handle errors',
     ['/docs/build/application-behavior/error-handling', '/docs/reference/error-types'],
   ],
+  ['Deploy to production', ['/docs/operations/deployment', '/docs/operations/deploy-to-vercel']],
   [
     'Check a setup or find a problem',
     ['/docs/get-started/installation', '/docs/operations/troubleshooting'],
