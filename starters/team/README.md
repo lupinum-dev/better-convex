@@ -108,7 +108,8 @@ projection, auth-domain Convex contracts, project lifecycle audit writes, role
 permissions, invitation lifecycle, team membership, rate-limit enforcement, and
 soft-delete query behavior.
 
-`pnpm typecheck` runs Nuxt type checking. Without local Convex environment
+`pnpm typecheck` runs Nuxt type checking and type-checks `convex/` with
+`tsc -p convex --noEmit`. Without local Convex environment
 values, the module can warn that no Convex site URL was resolved; that warning is
 expected until the app is configured.
 

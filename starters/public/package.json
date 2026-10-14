@@ -10,7 +10,7 @@
     "convex:dev": "better-convex convex dev",
     "convex:codegen": "better-convex convex codegen",
     "test": "vitest run",
-    "typecheck": "nuxt typecheck --dotenv .env.local"
+    "typecheck": "nuxt typecheck --dotenv .env.local && tsc -p convex --noEmit"
   },
   "dependencies": {
     "@lupinum/better-convex-nuxt": "1.0.0-rc.1",

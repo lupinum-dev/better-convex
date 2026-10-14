@@ -11,7 +11,7 @@
     "convex:codegen": "better-convex convex codegen",
     "convex:local:once": "better-convex convex dev --anonymous --once --typecheck try --typecheck-components",
     "test": "nuxi prepare --dotenv .env.local && vitest run",
-    "typecheck": "nuxt typecheck --dotenv .env.local",
+    "typecheck": "nuxt typecheck --dotenv .env.local && tsc -p convex --noEmit",
     "verify": "pnpm test && pnpm convex:codegen && pnpm typecheck && pnpm build",
     "verify:release": "pnpm verify && pnpm convex:local:once",
     "verify:browser": "node scripts/verify-browser-happy-path.mjs",
