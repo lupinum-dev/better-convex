@@ -9,7 +9,7 @@ import {
   isBetterAuthSetCookie,
 } from '../../utils/shared-helpers'
 import { normalizeConvexSiteUrl } from '../../utils/site-url'
-import { eventHeadersSent, eventResponseHeaders, type ConvexServerEvent } from './event'
+import { eventHeadersSent, eventResponseHeaderTargets, type ConvexServerEvent } from './event'
 import { fetchWithTimeout, MAX_SERVER_AUTH_RESPONSE_BODY_BYTES, readBoundedJson } from './http'
 import type { ConvexCredential } from './server-convex-options'
 import {
@@ -159,8 +159,9 @@ function forwardSessionRenewal(event: ConvexServerEvent, setCookies: readonly st
       getSessionCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '') === null,
   )
   if (cookies.length === 0 || eventHeadersSent(event)) return
-  const headers = eventResponseHeaders(event)
-  for (const cookie of cookies) headers.append('set-cookie', cookie)
+  for (const headers of eventResponseHeaderTargets(event)) {
+    for (const cookie of cookies) headers.append('set-cookie', cookie)
+  }
   applyConvexAuthSsrHeaders(event, { hasBetterAuthCookie: true, rendersUser: false })
 }
 

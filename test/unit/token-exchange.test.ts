@@ -213,6 +213,42 @@ describe('exchangeConvexToken — session renewal', () => {
       expect(unsentStore(event)).toEqual([])
     },
   )
+
+  // Catches a renewal lost on a Nuxt 5 error response: h3 2.x merges
+  // `event.res.errHeaders`, not `event.res.headers`, into a returned Response
+  // of status 400 or more (a handler's own 403 after getConvexUser, an SSR 404
+  // after a middleware ran the exchange). The browser cookie would then lapse
+  // while the stored session lives on, and the response would be cacheable.
+  it('stages the renewal for an error-status response on an h3 2.x event', async () => {
+    const server = await harness((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': RENEWED_COOKIE })
+      res.end(JSON.stringify({ token: 'jwt.renewed' }))
+    })
+    const res = { headers: new Headers(), errHeaders: new Headers() }
+    const event: ConvexServerEvent = {
+      req: new Request('https://app.example.test/', {
+        headers: { 'cf-connecting-ip': '203.0.113.20' },
+      }),
+      res,
+      context: {},
+    }
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', PROXY_IP_SECRET)
+
+    await exchangeRequestToken({
+      event,
+      siteUrl: server.siteUrl,
+      publicOrigin: PUBLIC_ORIGIN,
+      credential: { type: 'cookie', value: COOKIE },
+      trustedClientIpHeader: 'cf-connecting-ip',
+      renewsRequestSession: true,
+    })
+
+    for (const store of [res.headers, res.errHeaders]) {
+      expect(store.getSetCookie()).toEqual([RENEWED_COOKIE])
+      expect(store.get('cache-control')).toBe('private, no-store')
+      expect(store.get('vary')).toBe('Cookie')
+    }
+  })
 })
 
 describe('exchangeConvexToken — HTTP failure classification', () => {

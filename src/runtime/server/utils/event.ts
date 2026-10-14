@@ -40,7 +40,11 @@ export interface EventResponseHeaders {
 /** What the accessors read of a web-shaped event. */
 interface WebShapedEvent {
   readonly req: Request
-  readonly res: { readonly headers: EventResponseHeaders }
+  readonly res: {
+    readonly headers: EventResponseHeaders
+    /** h3 2.x only: the headers it merges into an error-status response. */
+    readonly errHeaders?: EventResponseHeaders
+  }
 }
 
 /** What the accessors read of a raw h3 v1 event (h3 1.x `H3Event`). */
@@ -176,6 +180,20 @@ export function eventWebRequest(event: ConvexServerEvent): Request | undefined {
  */
 export function eventResponseHeaders(event: ConvexServerEvent): EventResponseHeaders {
   return isWebShaped(event) ? event.res.headers : nodeResponseHeaders(rawH3V1(event).node.res)
+}
+
+/**
+ * Every store a header must go to so the runtime sends it with any response
+ * status. h3 2.x (Nuxt 5) merges `event.res.headers` into a response below 400
+ * and `event.res.errHeaders` into a returned Response of status 400 or more
+ * (a handler's own 403, an SSR error page), never both, so a header written to
+ * each is sent exactly once. Elsewhere this is {@link eventResponseHeaders}
+ * alone.
+ */
+export function eventResponseHeaderTargets(event: ConvexServerEvent): EventResponseHeaders[] {
+  const headers = eventResponseHeaders(event)
+  const errHeaders = isWebShaped(event) ? event.res.errHeaders : undefined
+  return errHeaders ? [headers, errHeaders] : [headers]
 }
 
 function nodeResponseHeaders(res: ServerResponse): EventResponseHeaders {

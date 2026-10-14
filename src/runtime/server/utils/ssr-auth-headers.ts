@@ -1,6 +1,6 @@
 import {
   eventHeadersSent,
-  eventResponseHeaders,
+  eventResponseHeaderTargets,
   type ConvexServerEvent,
   type EventResponseHeaders,
 } from './event'
@@ -84,10 +84,11 @@ export function applyConvexAuthSsrHeaders(
 ): void {
   // Headers are already on the wire (SSE, streaming): setting one would throw.
   if (eventHeadersSent(event)) return
-  const headers = eventResponseHeaders(event)
-  headers.set('Vary', mergeVaryCookie(headers.get('Vary')))
-  if (options.hasBetterAuthCookie || options.rendersUser) {
-    removeSharedCacheOverrides(headers)
-    headers.set('Cache-Control', 'private, no-store')
+  for (const headers of eventResponseHeaderTargets(event)) {
+    headers.set('Vary', mergeVaryCookie(headers.get('Vary')))
+    if (options.hasBetterAuthCookie || options.rendersUser) {
+      removeSharedCacheOverrides(headers)
+      headers.set('Cache-Control', 'private, no-store')
+    }
   }
 }
