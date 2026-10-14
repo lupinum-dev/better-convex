@@ -1,11 +1,13 @@
 /**
  * Build-time check for route rules that cache pages which resolve the session during SSR.
  *
- * On Nuxt 5 a route rule's `headers`, a cache it turns on (`cache`, `swr`, `isr`) or server
- * middleware wins over the `Vary: Cookie` / `Cache-Control: private, no-store` headers that
- * SSR auth sets on signed-in pages. The module only warns, and only about route rules; it
- * enforces nothing at runtime (D41 in internals/decisions.md). The cacheable-public-pages docs
- * quote `authCachedRoutesWarning`: change both together.
+ * A cache that a route rule turns on (`cache`, `swr`, `isr`) replaces the `Vary: Cookie` /
+ * `Cache-Control: private, no-store` headers that SSR auth sets on signed-in pages, on Nuxt 4
+ * and Nuxt 5. On Nuxt 5 a route rule's `headers` and server middleware win over them too (on
+ * Nuxt 4 they share one Node response with SSR auth, which corrects them). The module only
+ * warns, and only about route rules; it enforces nothing at runtime (D41 in
+ * internals/decisions.md). The cacheable-public-pages docs quote `authCachedRoutesWarning`:
+ * change both together.
  */
 
 import { isSharedCacheOverrideHeader } from './runtime/utils/ssr-auth'
@@ -90,8 +92,9 @@ export function findAuthCachedRoutePatterns(
 export function authCachedRoutesWarning(patterns: readonly string[]): string {
   return (
     `Route rules ${patterns.map((pattern) => `"${pattern}"`).join(', ')} cache pages that ` +
-    'resolve the Convex session during SSR. On Nuxt 5 these headers and caches override the ' +
-    '`Vary: Cookie` and `Cache-Control: private, no-store` headers the module sets on ' +
-    'signed-in pages. Set `convex: { ssrAuth: false }` on cached routes or drop the cache rule.'
+    'resolve the Convex session during SSR. A cache rule replaces the `Vary: Cookie` and ' +
+    '`Cache-Control: private, no-store` headers the module sets on signed-in pages, and on ' +
+    'Nuxt 5 a `headers` rule with cache headers does too. Set `convex: { ssrAuth: false }` on ' +
+    'cached routes or drop the cache rule.'
   )
 }
