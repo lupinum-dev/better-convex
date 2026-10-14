@@ -1,3 +1,4 @@
+import { isSharedCacheOverrideHeader } from '../../utils/ssr-auth'
 import {
   eventHeadersSent,
   eventResponseHeaderTargets,
@@ -5,20 +6,10 @@ import {
   type EventResponseHeaders,
 } from './event'
 
-const SHARED_CACHE_CONTROL_HEADERS = new Set([
-  'cdn-cache-control',
-  'edge-control',
-  'surrogate-control',
-  'x-accel-expires',
-])
-
 function removeSharedCacheOverrides(headers: EventResponseHeaders): void {
   // A copy of the names: deleting while iterating a live `Headers` skips entries.
   for (const name of new Set(headers.keys())) {
-    const lower = name.toLowerCase()
-    if (SHARED_CACHE_CONTROL_HEADERS.has(lower) || lower.endsWith('-cdn-cache-control')) {
-      headers.delete(name)
-    }
+    if (isSharedCacheOverrideHeader(name)) headers.delete(name)
   }
 }
 

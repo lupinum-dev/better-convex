@@ -8,14 +8,7 @@
  * quote `authCachedRoutesWarning`: change both together.
  */
 
-const CACHE_HEADER_NAMES = new Set([
-  'cache-control',
-  'vary',
-  'cdn-cache-control',
-  'surrogate-control',
-  'edge-control',
-  'x-accel-expires',
-])
+import { isSharedCacheOverrideHeader } from './runtime/utils/ssr-auth'
 
 /** `/api/**`, `/_nuxt/**` and `/__*` never render a page. */
 const NON_PAGE_PATTERN = /^\/(?:api(?:\/|$)|_nuxt(?:\/|$)|__)/u
@@ -28,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isCacheHeader(name: string): boolean {
   const lower = name.toLowerCase()
-  return CACHE_HEADER_NAMES.has(lower) || lower.endsWith('-cdn-cache-control')
+  return lower === 'cache-control' || lower === 'vary' || isSharedCacheOverrideHeader(lower)
 }
 
 function setsCache(rule: Record<string, unknown>): boolean {

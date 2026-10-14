@@ -9,6 +9,24 @@ export interface ConvexRouteRules {
 
 const SSR_AUTH_CONTEXT_KEY = 'betterConvexSsrAuth'
 
+const SHARED_CACHE_OVERRIDE_HEADERS = new Set([
+  'cdn-cache-control',
+  'edge-control',
+  'surrogate-control',
+  'x-accel-expires',
+])
+
+/**
+ * A response header that tells a CDN or reverse proxy to cache regardless of
+ * `Cache-Control` (`CDN-Cache-Control`, `Vercel-CDN-Cache-Control`, ...). SSR
+ * auth removes these from signed-in pages, and the build warns about route
+ * rules that set them on pages with SSR auth.
+ */
+export function isSharedCacheOverrideHeader(name: string): boolean {
+  const lower = name.toLowerCase()
+  return SHARED_CACHE_OVERRIDE_HEADERS.has(lower) || lower.endsWith('-cdn-cache-control')
+}
+
 /**
  * Record how to read the request's route rules (Nitro plugin, `request` hook).
  * The rules are read when rendering, not in the hook: Nuxt 5 runs that hook
