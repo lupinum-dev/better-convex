@@ -1,3 +1,5 @@
+import { defineEventHandler } from 'nuxt/server'
+
 import { api } from '#convex/api'
 import { getConvexUser, requireConvexUser, serverConvex, toConvexH3Error } from '#convex/server'
 
@@ -60,7 +62,7 @@ function _serverOptionContracts(event: Parameters<typeof serverConvex>[0]) {
 }
 
 /**
- * Request-identity helpers and the H3 error mapping. Never invoked.
+ * Request-identity helpers and the HTTP error mapping. Never invoked.
  */
 async function _serverUserContracts(event: Parameters<typeof serverConvex>[0]) {
   const maybeUser = await getConvexUser(event)
@@ -71,8 +73,8 @@ async function _serverUserContracts(event: Parameters<typeof serverConvex>[0]) {
   const requiredId: string = user.id
 
   const h3Error = toConvexH3Error(new Error('failed'))
-  const statusCode: number = h3Error.statusCode
+  const status: number | undefined = h3Error.status
   const kind: 'authentication' | 'transport' | 'server' | 'unknown' | undefined = h3Error.data?.kind
   const functionName: string | undefined = h3Error.data?.functionName
-  return [optionalId, requiredId, statusCode, kind, functionName]
+  return [optionalId, requiredId, status, kind, functionName]
 }
