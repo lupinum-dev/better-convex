@@ -2,7 +2,12 @@ import type { IncomingMessage } from 'node:http'
 
 import { bodyChunkBytes, readStreamWithByteLimit } from '../../../shared/bounded-stream'
 import { CONVEX_MODULE_DEFAULTS } from '../../../utils/config-defaults'
-import { eventNodeRequest, eventWebRequest, type ConvexServerEvent } from '../../utils/event'
+import {
+  eventNodeRequest,
+  eventRequestHeaders,
+  eventWebRequest,
+  type ConvexServerEvent,
+} from '../../utils/event'
 
 export const DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES =
   CONVEX_MODULE_DEFAULTS.authProxy.maxRequestBodyBytes
@@ -40,6 +45,35 @@ class ProxyBodySizeLimitError extends Error implements ProxyBodySizeErrorShape {
       contentLengthBytes: shape.contentLengthBytes,
       maxBytes: shape.maxBytes,
     }
+  }
+}
+
+/**
+ * Thrown when server code that ran before the proxy (for example a server
+ * middleware that read the body) drained the request body and kept no copy.
+ * Forwarding the empty rest would send Better Auth a body-less sign-in.
+ */
+class ProxyRequestBodyConsumedError extends Error {
+  readonly status = 500
+  readonly data = { code: 'BCN_AUTH_PROXY_REQUEST_BODY_CONSUMED' } as const
+
+  constructor() {
+    super(
+      'Auth proxy request body was already read by earlier server code, such as a server middleware that reads the body of /api/auth requests',
+    )
+    this.name = 'ProxyRequestBodyConsumedError'
+  }
+}
+
+/** Whether the request headers announce a body: any transfer-encoding, or a content-length other than 0. */
+export function hasDeclaredRequestBody(headers: Headers): boolean {
+  if (headers.has('transfer-encoding')) return true
+  const contentLength = headers.get('content-length')
+  if (contentLength === null) return false
+  try {
+    return BigInt(contentLength.trim()) !== 0n
+  } catch {
+    return true
   }
 }
 
@@ -276,23 +310,41 @@ function concatBytes(chunks: readonly Uint8Array[]): Uint8Array {
 }
 
 /**
+ * Nuxt 5's `nuxt/server` `defineEventHandler` replaces `event.req` with a proxy
+ * that keeps one buffered copy of the body and marks itself with this key.
+ */
+const NUXT_BUFFERED_REQUEST_BODY = Symbol.for('nuxt.bufferedRequestBody')
+
+/**
  * The request body as a stream, from exactly one source:
  *
  * 1. a Nuxt 4 in-process request (see {@link inProcessRequestBodyStream});
  * 2. a Node network request (a Node request with a socket): the live
  *    `IncomingMessage`, read directly so a limit or deadline can detach this
- *    handler's listeners before the error response is written;
+ *    handler's listeners before the error response is written. When earlier
+ *    server code already read it (Nuxt 5: srvx reads the `IncomingMessage`
+ *    and keeps no copy), the copy a `nuxt/server` handler buffered, or an
+ *    error when there is none: the rest of the stream is empty;
  * 3. everything else (a web-shaped event without Node, for example Nitro 3
  *    `serverFetch` or an edge preset): the web `Request` body.
  */
 function requestBodyStream(event: ConvexServerEvent): ReadableStream<unknown> | null | undefined {
+  const webRequest = eventWebRequest(event)
   const nodeRequest = eventNodeRequest(event)
   if (nodeRequest) {
     const inProcess = inProcessRequestBodyStream(event, nodeRequest)
     if (inProcess) return inProcess
-    if (nodeRequest.socket) return createNodeRequestBodyStream(nodeRequest)
+    if (nodeRequest.socket) {
+      if (nodeRequest.readableEnded || webRequest?.bodyUsed === true) {
+        if (webRequest && NUXT_BUFFERED_REQUEST_BODY in webRequest) return webRequest.body
+        if (hasDeclaredRequestBody(eventRequestHeaders(event))) {
+          throw new ProxyRequestBodyConsumedError()
+        }
+      }
+      return createNodeRequestBodyStream(nodeRequest)
+    }
   }
-  return eventWebRequest(event)?.body
+  return webRequest?.body
 }
 
 export async function readRequestBodyWithLimit(

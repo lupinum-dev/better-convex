@@ -36,6 +36,7 @@ import {
   DEFAULT_MAX_PROXY_RESPONSE_BODY_BYTES,
   getRequestBodySizeError,
   getResponseBodySizeError,
+  hasDeclaredRequestBody,
   readRequestBodyWithLimit,
   readResponseBodyWithLimit,
 } from './body-size'
@@ -63,6 +64,7 @@ const SAFE_CAUGHT_PROXY_FAILURES = new Map<string, number>([
   ['BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED', 502],
   ['BCN_AUTH_PROXY_COOKIE_NAME_UNSUPPORTED', 502],
   ['BCN_AUTH_PROXY_METADATA_COOKIE_REJECTED', 502],
+  ['BCN_AUTH_PROXY_REQUEST_BODY_CONSUMED', 500],
   ['BCN_AUTH_PROXY_REQUEST_BODY_TOO_LARGE', 413],
   ['BCN_AUTH_PROXY_TOKEN_COOKIE_REJECTED', 502],
   ['BCN_AUTH_PROXY_UPSTREAM_BODY_TOO_LARGE', 502],
@@ -119,17 +121,6 @@ function closeRequestConnection(event: ConvexServerEvent): void {
   const nodeResponse = eventNodeResponse(event)
   if (nodeResponse) nodeResponse.shouldKeepAlive = false
   eventResponseHeaders(event).set('connection', 'close')
-}
-
-function hasFramedGetBody(headers: Headers): boolean {
-  if (headers.has('transfer-encoding')) return true
-  const contentLength = headers.get('content-length')
-  if (contentLength === null) return false
-  try {
-    return BigInt(contentLength.trim()) !== 0n
-  } catch {
-    return true
-  }
 }
 
 function hasUnsupportedRequestContentEncoding(headers: Headers): boolean {
@@ -352,7 +343,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         data: { code: 'BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED' },
       })
     }
-    if ((method === 'GET' || method === 'HEAD') && hasFramedGetBody(requestHeaders)) {
+    if ((method === 'GET' || method === 'HEAD') && hasDeclaredRequestBody(requestHeaders)) {
       closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_GET_BODY_REJECTED', 400)
       throw createError({

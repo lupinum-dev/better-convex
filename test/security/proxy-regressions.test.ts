@@ -1,3 +1,4 @@
+import { once } from 'node:events'
 import { Socket } from 'node:net'
 import { inspect } from 'node:util'
 
@@ -76,6 +77,22 @@ function withCompatNodeBridge<T extends { req: Request }>(event: T): T {
       }),
   })
   return event
+}
+
+/**
+ * The `event.req` of Nuxt 5's `nuxt/server` `defineEventHandler`: a proxy that
+ * serves every body read from one buffered copy (here, the Request's own body).
+ */
+function nuxtBufferedRequest(request: Request): Request {
+  const buffered = Symbol.for('nuxt.bufferedRequestBody')
+  return new Proxy(request, {
+    has: (target, property) => property === buffered || Reflect.has(target, property),
+    get(target, property) {
+      if (property === 'bodyUsed') return false
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
 }
 
 function stubFetch<T extends (...args: never[]) => unknown>(fetchMock: T): T {
@@ -1181,6 +1198,55 @@ describe('auth proxy security regressions', () => {
 
       await result
       expect(upstreamSignal?.reason).toMatchObject({ message: 'client went away' })
+    },
+  )
+
+  // Catches the Nuxt 5 proxy forwarding an empty body after a server
+  // middleware read it: srvx reads the IncomingMessage and keeps no copy, so
+  // sign-in would reach Better Auth without credentials and fail with no clear
+  // cause. A `nuxt/server` handler keeps a buffered copy on `event.req`.
+  it.each([
+    { shape: 'a nuxt/server middleware buffered it', buffered: true },
+    { shape: 'other code drained it', buffered: false },
+  ])(
+    'handles a POST body that earlier server code read on Nuxt 5 ($shape)',
+    async ({ buffered }) => {
+      let forwarded: RequestInit | undefined
+      const fetchMock = stubFetch(
+        vi.fn(async (_target: string, init?: RequestInit) => {
+          forwarded = init
+          return new Response('{}')
+        }),
+      )
+      const handler = await loadHandler()
+      const body = new TextEncoder().encode('{"email":"a@example.test"}')
+      const request = {
+        method: 'POST',
+        path: '/api/auth/sign-in/email',
+        headers: { 'content-type': 'application/json', 'content-length': String(body.byteLength) },
+      }
+      const node = rawProxyEvent({
+        ...request,
+        headers: { ...DEFAULT_HEADERS, ...request.headers },
+        body,
+      })
+      node.req.resume()
+      await once(node.req, 'end')
+      const web = webEvent({ ...request, body })
+      // srvx on Node: the drained IncomingMessage stays on `req.runtime.node`.
+      Object.assign(web.req, { runtime: { node: { req: node.req, res: node.res } } })
+      const event = buffered ? { ...web, req: nuxtBufferedRequest(web.req) } : web
+
+      if (buffered) {
+        expect((await handler(event)).status).toBe(200)
+        expect(new Uint8Array(forwarded?.body as ArrayBuffer)).toEqual(body)
+      } else {
+        await expect(handler(event)).rejects.toMatchObject({
+          status: 500,
+          data: { code: 'BCN_AUTH_PROXY_REQUEST_BODY_CONSUMED' },
+        })
+        expect(fetchMock).not.toHaveBeenCalled()
+      }
     },
   )
 
