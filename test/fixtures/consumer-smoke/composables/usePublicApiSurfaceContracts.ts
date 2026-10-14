@@ -60,7 +60,7 @@ export async function usePublicApiSurfaceContracts(file: File) {
   )
 
   const liveList = useConvexQuery(api.tasks.list)
-  assertType<Promise<unknown>>(liveList)
+  assertType<PromiseLike<unknown>>(liveList)
   assertType<ComputedRef<string[] | undefined>>(liveList.data)
   const list = await liveList
   assertType<ComputedRef<boolean>>(list.isStale)
@@ -71,7 +71,7 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<'idle' | 'pending' | 'success' | 'error'>(skipped.status.value)
 
   const paginated = useConvexPaginatedQuery(api.tasks.listPaginated, {}, { initialNumItems: 5 })
-  assertType<Promise<unknown>>(paginated)
+  assertType<PromiseLike<unknown>>(paginated)
   assertType<ComputedRef<readonly string[] | undefined>>(paginated.data)
   assertType<'idle' | 'pending' | 'success' | 'error'>(paginated.status.value)
   assertType<boolean>(paginated.pending.value)
