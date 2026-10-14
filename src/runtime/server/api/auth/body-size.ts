@@ -316,6 +316,31 @@ function concatBytes(chunks: readonly Uint8Array[]): Uint8Array {
 const NUXT_BUFFERED_REQUEST_BODY = Symbol.for('nuxt.bufferedRequestBody')
 
 /**
+ * The buffered copy of a request whose Node body already ended. Nuxt fills
+ * the copy lazily from the underlying request on the first read, so when the
+ * code that drained the body was not a `nuxt/server` handler, there is no copy
+ * and the read fails: report that as a consumed body, not as a proxy failure.
+ */
+function bufferedRequestBodyStream(request: Request): ReadableStream<unknown> | null {
+  const source = request.body
+  if (!source) return null
+  const reader = source.getReader()
+  return new ReadableStream({
+    async pull(controller) {
+      let result: ReadableStreamReadResult<unknown>
+      try {
+        result = await reader.read()
+      } catch {
+        throw new ProxyRequestBodyConsumedError()
+      }
+      if (result.done) controller.close()
+      else controller.enqueue(result.value)
+    },
+    cancel: async (reason) => await reader.cancel(reason),
+  })
+}
+
+/**
  * The request body as a stream, from exactly one source:
  *
  * 1. a Nuxt 4 in-process request (see {@link inProcessRequestBodyStream});
@@ -324,7 +349,8 @@ const NUXT_BUFFERED_REQUEST_BODY = Symbol.for('nuxt.bufferedRequestBody')
  *    handler's listeners before the error response is written. When earlier
  *    server code already read it (Nuxt 5: srvx reads the `IncomingMessage`
  *    and keeps no copy), the copy a `nuxt/server` handler buffered, or an
- *    error when there is none: the rest of the stream is empty;
+ *    error when there is none (also when that copy fails to fill): the rest
+ *    of the stream is empty;
  * 3. everything else (a web-shaped event without Node, for example Nitro 3
  *    `serverFetch` or an edge preset): the web `Request` body.
  */
@@ -336,7 +362,9 @@ function requestBodyStream(event: ConvexServerEvent): ReadableStream<unknown> | 
     if (inProcess) return inProcess
     if (nodeRequest.socket) {
       if (nodeRequest.readableEnded || webRequest?.bodyUsed === true) {
-        if (webRequest && NUXT_BUFFERED_REQUEST_BODY in webRequest) return webRequest.body
+        if (webRequest && NUXT_BUFFERED_REQUEST_BODY in webRequest) {
+          return bufferedRequestBodyStream(webRequest)
+        }
         if (hasDeclaredRequestBody(eventRequestHeaders(event))) {
           throw new ProxyRequestBodyConsumedError()
         }

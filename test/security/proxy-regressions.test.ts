@@ -81,14 +81,25 @@ function withCompatNodeBridge<T extends { req: Request }>(event: T): T {
 
 /**
  * The `event.req` of Nuxt 5's `nuxt/server` `defineEventHandler`: a proxy that
- * serves every body read from one buffered copy (here, the Request's own body).
+ * serves every body read from one copy, filled lazily from the Request's own
+ * body on the first read (as in `@nuxt/nitro-server` `bufferRequestBody`).
  */
 function nuxtBufferedRequest(request: Request): Request {
   const buffered = Symbol.for('nuxt.bufferedRequestBody')
+  let copy: Promise<ArrayBuffer> | undefined
+  const read = () => (copy ??= request.arrayBuffer())
   return new Proxy(request, {
     has: (target, property) => property === buffered || Reflect.has(target, property),
     get(target, property) {
       if (property === 'bodyUsed') return false
+      if (property === 'body') {
+        return new ReadableStream({
+          async pull(controller) {
+            controller.enqueue(new Uint8Array(await read()))
+            controller.close()
+          },
+        })
+      }
       const value: unknown = Reflect.get(target, property, target)
       return typeof value === 'function' ? value.bind(target) : value
     },
@@ -1207,12 +1218,16 @@ describe('auth proxy security regressions', () => {
   // middleware read it: srvx reads the IncomingMessage and keeps no copy, so
   // sign-in would reach Better Auth without credentials and fail with no clear
   // cause. A `nuxt/server` handler keeps a buffered copy on `event.req`.
+  // The third row catches a buffered-body marker whose copy cannot fill: a
+  // `nuxt/server` handler installed it without reading, after other code drained
+  // the body, so the lazy read fails and must not be blamed on Convex (502).
   it.each([
-    { shape: 'a nuxt/server middleware buffered it', buffered: true },
-    { shape: 'other code drained it', buffered: false },
+    { shape: 'a nuxt/server middleware buffered it', buffered: true, drained: false },
+    { shape: 'other code drained it', buffered: false, drained: true },
+    { shape: 'other code drained it under a buffered marker', buffered: true, drained: true },
   ])(
     'handles a POST body that earlier server code read on Nuxt 5 ($shape)',
-    async ({ buffered }) => {
+    async ({ buffered, drained }) => {
       let forwarded: RequestInit | undefined
       const fetchMock = stubFetch(
         vi.fn(async (_target: string, init?: RequestInit) => {
@@ -1237,9 +1252,10 @@ describe('auth proxy security regressions', () => {
       const web = webEvent({ ...request, body })
       // srvx on Node: the drained IncomingMessage stays on `req.runtime.node`.
       Object.assign(web.req, { runtime: { node: { req: node.req, res: node.res } } })
+      if (drained) await web.req.arrayBuffer()
       const event = buffered ? { ...web, req: nuxtBufferedRequest(web.req) } : web
 
-      if (buffered) {
+      if (!drained) {
         expect((await handler(event)).status).toBe(200)
         expect(new Uint8Array(forwarded?.body as ArrayBuffer)).toEqual(body)
       } else {
