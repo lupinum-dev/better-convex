@@ -510,14 +510,14 @@ const RULES = [
   {
     name: 'nitro-chain-no-app-imports',
     description:
-      'No file reachable from the Nitro entries (auth proxy routes, src/runtime/server/index.ts, Nitro plugins, devtools server) may import #app, #imports, h3 or nitropack (type-only included): Nitro code reads config through nuxt/server or from its caller.',
+      'No file reachable from the Nitro entries (auth proxy routes, src/runtime/server/index.ts, Nitro plugins, devtools server) may import #app, nuxt or a nuxt/* entry other than nuxt/server, #imports, h3, nitro or nitropack (type-only included): Nitro code reaches Nuxt only through nuxt/server or its caller.',
     from: isNitroChainFile,
     disallow: (edge) =>
       !edge.isRelative &&
-      (/^#app\b/u.test(edge.specifier) ||
-        edge.specifier === '#imports' ||
-        isH3Specifier(edge.specifier) ||
-        isNitropackSpecifier(edge.specifier)),
+      (isLegacyServerSpecifier(edge.specifier) ||
+        /^#app\b/u.test(edge.specifier) ||
+        edge.specifier === 'nuxt' ||
+        (edge.specifier.startsWith('nuxt/') && edge.specifier !== 'nuxt/server')),
     typeOnlyExempt: false,
   },
 ]

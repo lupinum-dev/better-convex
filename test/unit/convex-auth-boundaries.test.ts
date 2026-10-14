@@ -234,7 +234,7 @@ describe('Nuxt 4.6 and Nuxt 5 server boundaries', () => {
 
   // Catches app-only imports in code Nitro loads: `#app` and `#imports` do not exist in the
   // Nitro build, and a shared util reached from a Nitro entry would break the server bundle.
-  it('keeps #app, #imports, h3 and nitropack out of everything the Nitro entries reach', () => {
+  it('keeps #app, nuxt/app, #imports, h3, Nitro and nitropack out of everything the Nitro entries reach', () => {
     const boundary = rule('nitro-chain-no-app-imports')
     for (const file of [
       'src/runtime/server/index.ts',
@@ -250,7 +250,17 @@ describe('Nuxt 4.6 and Nuxt 5 server boundaries', () => {
     expect(boundary.from(resolve('src/runtime/plugin.server.ts'))).toBe(false)
     expect(boundary.from(resolve('src/runtime/composables/useConvexQuery.ts'))).toBe(false)
 
-    for (const specifier of ['#app', '#app/nuxt', '#imports', 'h3', 'nitropack/runtime']) {
+    for (const specifier of [
+      '#app',
+      '#app/nuxt',
+      'nuxt/app',
+      '#imports',
+      'h3',
+      'nitropack/runtime',
+      // Nuxt 5 treats #internal/nitro as Nitro v2 code; nitro/* does not exist on Nuxt 4.
+      '#internal/nitro/config',
+      'nitro/runtime-config',
+    ]) {
       expect(boundary.disallow(bare(specifier)), specifier).toBe(true)
       expect(boundary.disallow(typeOnly(bare(specifier))), `type ${specifier}`).toBe(true)
     }
