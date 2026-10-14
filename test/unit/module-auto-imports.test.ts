@@ -56,28 +56,12 @@ describe('module auto-import surface', () => {
     ])
   })
 
-  it('registers the #convex runtime and type aliases', () => {
-    let prepareTypes:
-      | ((options: {
-          references: Array<{ path: string }>
-          tsConfig: { compilerOptions?: { paths?: Record<string, string[]> } }
-        }) => void)
-      | undefined
-    const nuxt = {
-      options: {
-        alias: {},
-      },
-      hook: (name: 'prepare:types', callback: NonNullable<typeof prepareTypes>) => {
-        expect(name).toBe('prepare:types')
-        prepareTypes = callback
-      },
-    }
+  // Catches a moved or renamed alias target: consumer imports of `#convex/api` and
+  // `#convex/server` would stop resolving (Nuxt derives the tsconfig paths from these aliases).
+  it('registers the #convex runtime aliases', () => {
+    const nuxt = { options: { alias: {} } }
     const resolver = {
       resolve: (...parts: string[]) => parts.join('/'),
-    }
-    const tsConfigOptions = {
-      references: [] as Array<{ path: string }>,
-      tsConfig: {},
     }
 
     registerConvexAliases({
@@ -85,27 +69,10 @@ describe('module auto-import surface', () => {
       resolver,
       convexApiAlias: '/app/convex/_generated/api',
     })
-    if (!prepareTypes) {
-      throw new Error('Expected prepare:types hook to be registered')
-    }
-    prepareTypes(tsConfigOptions)
 
     expect(nuxt.options.alias).toEqual({
       '#convex/api': '/app/convex/_generated/api',
       '#convex/server': './runtime/server/index',
-    })
-    // Aliases add no type reference: every generated declaration is registered
-    // (and referenced) by `addTypeTemplate` in the module setup.
-    expect(tsConfigOptions).toEqual({
-      references: [],
-      tsConfig: {
-        compilerOptions: {
-          paths: {
-            '#convex/api': ['/app/convex/_generated/api'],
-            '#convex/server': ['./runtime/server/index'],
-          },
-        },
-      },
     })
     expect(getMissingConvexApiTemplateContents()).toContain('createMissingConvexApiProxy')
     const typeAugmentationTemplate = getTypeAugmentationTemplateContents(

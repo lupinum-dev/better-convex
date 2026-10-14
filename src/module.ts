@@ -418,6 +418,8 @@ export default defineNuxtModule<ModuleOptions>({
         write: true,
         getContents: () => `export { default } from ${JSON.stringify(authClientDefinitionPath)}\n`,
       })
+      // Nuxt writes every `nuxt.options.alias` entry into the generated tsconfig `paths`, so the
+      // auth-enabled client plugin's import also typechecks in consumer projects.
       nuxt.options.alias['#convex/auth-client'] = authClientTemplate.dst
 
       // Register a declaration that augments the auth-client registry with the
@@ -440,14 +442,6 @@ export default defineNuxtModule<ModuleOptions>({
             `}`,
             ``,
           ].join('\n'),
-      })
-
-      // Make `#convex/auth-client` resolvable for the TypeScript program too, so
-      // the auth-enabled client plugin's import typechecks in consumer projects.
-      nuxt.hook('prepare:types', (opts) => {
-        opts.tsConfig.compilerOptions ??= {}
-        opts.tsConfig.compilerOptions.paths ??= {}
-        opts.tsConfig.compilerOptions.paths['#convex/auth-client'] = [authClientTemplate.dst]
       })
 
       // Auth-enabled-only server plugin resolves SSR identity.
