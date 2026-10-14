@@ -1,7 +1,7 @@
 import { getFunctionName, type FunctionArgs, type FunctionReference } from 'convex/server'
 import { hash } from 'ohash'
 import { describe, expect, it } from 'vitest'
-import { onBeforeMount, onMounted, reactive, ref } from 'vue'
+import { isReactive, onBeforeMount, onMounted, reactive, ref } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
 
 import { useNuxtApp, useState } from '#imports'
@@ -454,7 +454,7 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(notes.data).toEqual(['second'])
   })
 
-  it('returns Nuxt-compatible immediate state on one native initial-settlement Promise', async () => {
+  it('returns immediate state that reactive() accepts and await settles once', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:blocking-default')
 
@@ -462,16 +462,15 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
       convex,
     })
 
-    expect(result).toBeInstanceOf(Promise)
-    expect(Promise.resolve(result)).toBe(result)
+    // A Promise would make reactive() return the raw object without unwrapping refs.
+    expect(result).not.toBeInstanceOf(Promise)
+    expect(isReactive(reactive(result))).toBe(true)
     expect(result.status.value).toBe('pending')
     expect(result.pending.value).toBe(true)
     expect(result.data.value).toBeUndefined()
 
     const spread = { ...result }
     expect(typeof spread.then).toBe('function')
-    expect(typeof spread.catch).toBe('function')
-    expect(typeof spread.finally).toBe('function')
 
     let settled = false
     const blockingResult = result.then((value) => {

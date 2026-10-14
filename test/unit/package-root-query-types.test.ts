@@ -15,11 +15,11 @@ import { describe, expectTypeOf, it } from 'vitest'
 import type {
   ConvexCallError,
   ConvexCallErrorCode,
+  ConvexPaginatedQuery,
+  ConvexQuery,
   ConvexQueryArgs,
   ConvexRuntimeConfig,
   ConvexUser,
-  NuxtConvexPaginatedQuery,
-  NuxtConvexQuery,
   PaginatedQueryArgs,
   PaginatedQueryItem,
   UseConvexActionReturn,
@@ -124,12 +124,12 @@ describe('Nuxt package-root query type contract', () => {
     expectTypeOf<'UNAUTHENTICATED'>().toMatchTypeOf<ConvexCallErrorCode>()
     expectTypeOf<ConvexUser['id']>().toEqualTypeOf<string>()
 
-    expectTypeOf<NuxtConvexQuery<string>>().toMatchTypeOf<Promise<UseConvexQueryState<string>>>()
-    expectTypeOf<NuxtConvexQuery<string>>().toMatchTypeOf<UseConvexQueryState<string>>()
-    expectTypeOf<NuxtConvexPaginatedQuery<string>>().toMatchTypeOf<
-      Promise<UseConvexPaginatedQueryState<string>>
+    expectTypeOf<ConvexQuery<string>>().toMatchTypeOf<PromiseLike<UseConvexQueryState<string>>>()
+    expectTypeOf<ConvexQuery<string>>().toMatchTypeOf<UseConvexQueryState<string>>()
+    expectTypeOf<ConvexPaginatedQuery<string>>().toMatchTypeOf<
+      PromiseLike<UseConvexPaginatedQueryState<string>>
     >()
-    expectTypeOf<NuxtConvexPaginatedQuery<string>>().toMatchTypeOf<
+    expectTypeOf<ConvexPaginatedQuery<string>>().toMatchTypeOf<
       UseConvexPaginatedQueryState<string>
     >()
     expectTypeOf(readonlyContracts).toBeFunction()

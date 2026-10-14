@@ -26,6 +26,7 @@ import {
   useConvexQueryInternal,
 } from '../../packages/vue/src/internal'
 import type { ClientIdentitySnapshot } from '../../packages/vue/src/internal/identity-port'
+import { PRELOAD_HOLD_MS, preloadConvexQuery } from '../../packages/vue/src/preload-query'
 import { useConvexActionInternal } from '../../packages/vue/src/use-callable'
 
 type Paginated<Args, Item> = FunctionReference<
@@ -233,6 +234,83 @@ describe('better-convex-vue package runtime', () => {
     expect(query.data.value).toBe('ready')
     expect(query.status.value).toBe('success')
     stop()
+  })
+
+  it('awaits the first query result and first page, and never waits for an idle query', async () => {
+    const host = attachedRuntime('alice')
+    const { state, stop } = mount(host, () => ({
+      query: useConvexQuery(queryRef('notes:list'), {}),
+      list: useConvexPaginatedQuery(paginatedRef('notes:page'), {}, { initialNumItems: 1 }),
+      skipped: useConvexQuery(queryRef('notes:skipped'), 'skip'),
+      deferred: useConvexQuery(queryRef('notes:deferred'), {}, { immediate: false }),
+    }))
+    const settled: string[] = []
+    void Promise.resolve(state.query).then(() => settled.push('query'))
+    void Promise.resolve(state.list).then(() => settled.push('list'))
+
+    await expect(Promise.all([state.skipped, state.deferred])).resolves.toHaveLength(2)
+    expect(settled).toEqual([])
+
+    host.subscriptions[0]!.emit(['first'])
+    host.subscriptions[1]!.emit({ page: [{ id: 'a' }], isDone: true, continueCursor: 'end' })
+    const [query, list] = await Promise.all([state.query, state.list])
+    expect(settled).toEqual(['query', 'list'])
+    expect(query.data.value).toEqual(['first'])
+    expect(list.data.value).toEqual([{ id: 'a' }])
+    expect(query).not.toHaveProperty('then')
+    stop()
+  })
+
+  it('preloads from a router guard context and holds the subscription for the page', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = attachedRuntime('alice')
+      const app = createApp({})
+      app.use(createBetterConvex({ attachment: host.attachment }))
+      let settled = false
+      // Vue Router runs guards inside app.runWithContext(), with no component.
+      const preload = app
+        .runWithContext(() =>
+          preloadConvexQuery(queryRef<{ id: string }>('notes:get'), { id: 'a' }),
+        )
+        .then(() => (settled = true))
+
+      expect(host.active()).toHaveLength(1)
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      host.subscriptions[0]!.emit({ id: 'a' })
+      await preload
+
+      vi.advanceTimersByTime(PRELOAD_HOLD_MS - 1)
+      expect(host.subscriptions[0]!.active).toBe(true)
+      vi.advanceTimersByTime(1)
+      expect(host.subscriptions[0]!.active).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops waiting for a preload that gets no result, and names a missing app context', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = attachedRuntime('alice')
+      const app = createApp({})
+      app.use(createBetterConvex({ attachment: host.attachment }))
+      const preload = app.runWithContext(() => preloadConvexQuery(queryRef('notes:offline'), {}))
+
+      await vi.advanceTimersByTimeAsync(PRELOAD_HOLD_MS)
+      await expect(preload).resolves.toBeUndefined()
+      expect(host.subscriptions[0]!.active).toBe(true)
+      await vi.advanceTimersByTimeAsync(PRELOAD_HOLD_MS)
+      expect(host.subscriptions[0]!.active).toBe(false)
+
+      // After a guard's first await, Vue Router no longer provides the app context.
+      await expect(preloadConvexQuery(queryRef('notes:late'), {})).rejects.toThrow(
+        'before the first await of a router guard',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reactively enters and leaves the explicit query skip state', () => {
@@ -688,11 +766,37 @@ describe('better-convex-vue package runtime', () => {
       'pending',
       'restart',
       'status',
+      'then',
     ])
     expect(query.data.value).toBeUndefined()
     expect(query.status.value).toBe('pending')
     stop()
   })
+
+  it.each([
+    ['fails', { error: normalizeConvexError(new Error('auth down')) }],
+    ['settles signed out', { identityKey: 'anonymous' }],
+  ] as const)(
+    'resolves an awaited required query and list when waiting auth %s',
+    async (_case, settled) => {
+      const host = attachedRuntime('alice')
+      host.emit({ settled: false })
+      const { state, stop } = mount(host, () => ({
+        query: useConvexQuery(queryRef('notes:private'), {}, { auth: 'required' }),
+        list: useConvexPaginatedQuery(
+          paginatedRef('notes:privatePage'),
+          {},
+          { auth: 'required', initialNumItems: 1 },
+        ),
+      }))
+      expect(state.list.pending.value).toBe(true)
+
+      host.emit({ settled: true, ...settled } as Partial<ClientIdentitySnapshot>)
+      await expect(Promise.all([state.query, state.list])).resolves.toHaveLength(2)
+      expect(host.subscriptions).toHaveLength(0)
+      stop()
+    },
+  )
 
   it('resolves execute only after pending auth settles and the first value arrives', async () => {
     const host = attachedRuntime('alice')

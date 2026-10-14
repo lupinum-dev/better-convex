@@ -11,6 +11,7 @@ import {
 } from 'vue'
 
 import { normalizeConvexError, type ConvexCallError } from './errors'
+import { createAwaitableState, type AwaitableState } from './internal/awaitable-state'
 import type { ClientCallStatus } from './internal/call-state'
 import {
   createConvexArgsState,
@@ -58,6 +59,9 @@ export interface UseConvexQueryState<Data> {
   execute(): Promise<void>
 }
 
+/** The query state; `await` it to wait for the first result or error. */
+export type ConvexQuery<Data> = AwaitableState<UseConvexQueryState<Data>>
+
 type EmptyConvexArgs = Record<string, never>
 type StrictEmptyConvexArgs = Record<PropertyKey, never>
 type TightenEmptyConvexArgs<Args> = Args extends unknown
@@ -92,12 +96,20 @@ export interface UseConvexQueryInternalInput<Query extends FunctionReference<'qu
 export function useConvexQuery<Query extends FunctionReference<'query'>>(
   query: Query,
   ...parameters: UseConvexQueryParameters<Query>
-): UseConvexQueryState<FunctionReturnType<Query>> {
+): ConvexQuery<FunctionReturnType<Query>> {
   const [providedArgs, options] = parameters
   const args = (parameters.length === 0 ? {} : providedArgs) as MaybeRefOrGetter<
     ConvexQueryArgs<FunctionArgs<Query>>
   >
-  return useConvexQueryInternal({ query, args: createConvexArgsState(args), options })
+  const state = useConvexQueryInternal({ query, args: createConvexArgsState(args), options })
+  // Skipped, deferred, signed-out and failed queries are not pending, so they
+  // resolve at once; a query that waits for authentication is pending.
+  const settlement = createSettlementWaiters()
+  onScopeDispose(settlement.dispose)
+  return createAwaitableState(
+    state,
+    settlement.until(() => !state.pending.value),
+  )
 }
 
 /**

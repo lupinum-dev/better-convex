@@ -31,14 +31,18 @@ export type { ConvexFormSubmitResult, UseConvexFormReturn } from './use-form'
 export { useConvexQuery } from './use-query'
 export type {
   ConvexAuthMode,
+  ConvexQuery,
   ConvexQueryArgs,
   ConvexQueryBlockedBy,
   UseConvexQueryOptions,
   UseConvexQueryParameters,
   UseConvexQueryState,
 } from './use-query'
+export { preloadConvexQuery } from './preload-query'
+export type { PreloadConvexQueryOptions } from './preload-query'
 export { useConvexPaginatedQuery } from './use-paginated-query'
 export type {
+  ConvexPaginatedQuery,
   PaginatedQueryArgs,
   PaginatedQueryItem,
   PaginatedQueryReference,

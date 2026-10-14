@@ -17,6 +17,7 @@ import {
 } from 'vue'
 
 import { normalizeConvexError, type ConvexCallError } from './errors'
+import { createAwaitableState, type AwaitableState } from './internal/awaitable-state'
 import { createPaginationController } from './internal/pagination-controller'
 import { assertLoadMoreNumItems } from './internal/pagination-state'
 import {
@@ -110,6 +111,9 @@ export interface UseConvexPaginatedQueryInternalInput<Query extends PaginatedQue
   readonly bridge?: ConvexPaginationBridge<PaginatedQueryItem<Query>>
 }
 
+/** The list state; `await` it to wait for the first page or its error. */
+export type ConvexPaginatedQuery<Item> = AwaitableState<UseConvexPaginatedQueryState<Item>>
+
 export interface ConvexPaginatedQueryInternal<Item> {
   readonly state: UseConvexPaginatedQueryState<Item>
   /** Settles once the current first page is terminal, without starting a deferred query. */
@@ -138,11 +142,12 @@ export function useConvexPaginatedQuery<Query extends PaginatedQueryReference>(
   query: Query,
   args: MaybeRefOrGetter<ConvexArgsInput<PaginatedQueryArgs<Query>> | 'skip'>,
   options: UseConvexPaginatedQueryOptions,
-): UseConvexPaginatedQueryState<PaginatedQueryItem<Query>> {
+): ConvexPaginatedQuery<PaginatedQueryItem<Query>> {
   const argsState = createConvexArgsState(
     args as MaybeRefOrGetter<PaginatedQueryArgs<Query> | 'skip'>,
   )
-  return useConvexPaginatedQueryInternal({ query, args: argsState, options }).state
+  const list = useConvexPaginatedQueryInternal({ query, args: argsState, options })
+  return createAwaitableState(list.state, list.firstPageSettled())
 }
 
 /**
