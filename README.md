@@ -38,7 +38,7 @@ Better Convex does not decide who may read or change data. Check the user, owner
 
 ## Requirements
 
-- Node.js `^22.22.3 || ^24.15.0 || >=26.0.0` for the Nuxt package (`^22.19.0 || ^24.11.0` for the Vue, Functions and Agents packages)
+- Node.js `^22.22.3 || ^24.15.0 || >=26.0.0` for the Nuxt package, `^22.19.0 || ^24.11.0 || >=26.0.0` for the Vue package, and `^22.19.0 || ^24.11.0` for the Functions and Agents packages
 - Nuxt `^4.6.0 || ^5.0.0-0`, tested on 4.6.1 and the Nuxt 5 nightly (pre-release until Nuxt 5 ships)
 - Convex `>=1.42.2 <2`
 - Vue `>=3.5 <4`

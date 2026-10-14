@@ -21,7 +21,7 @@ Use [`@lupinum/better-convex-nuxt`](https://www.npmjs.com/package/@lupinum/bette
 
 ## Requirements
 
-- Node.js `^22.19.0 || ^24.11.0`
+- Node.js `^22.19.0 || ^24.11.0 || >=26.0.0`
 - Vue `>=3.5 <4`
 - Convex `>=1.42.2 <2`
 
