@@ -59,6 +59,15 @@ try {
       .flatMap((manifest) => Object.entries(manifest.peerDependencies ?? {}))
       .filter(([, version]) => /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(version)),
   )
+  // A starter pins the last published module and the Nuxt toolchain that release supports. The
+  // packed module is the next release, so every app runs on the toolchain the module is developed
+  // against (the root manifest); the starters move their own pins when they adopt that release.
+  const rootDevDependencies = JSON.parse(
+    readFileSync(join(root, 'package.json'), 'utf8'),
+  ).devDependencies
+  const toolchain = Object.fromEntries(
+    ['nuxt', '@nuxt/schema', 'vite'].map((name) => [name, rootDevDependencies[name]]),
+  )
 
   const apps = nuxt5
     ? ['starters/public']
@@ -81,6 +90,7 @@ try {
     for (const section of [manifest.dependencies, manifest.devDependencies]) {
       for (const dependency of Object.keys(section ?? {})) {
         if (exactPeers[dependency]) section[dependency] = exactPeers[dependency]
+        if (toolchain[dependency]) section[dependency] = toolchain[dependency]
         for (const [id, manifestOfPackage] of Object.entries(packed)) {
           if (manifestOfPackage.name !== dependency) continue
           copyFileSync(tarballs[id], join(app, `${id}.tgz`))

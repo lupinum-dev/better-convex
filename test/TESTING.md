@@ -44,6 +44,9 @@ pnpm test:mutants       # each security guard broken in memory; `--only <id>[,<i
 pnpm test:live          # by hand: the starter on a Convex preview deployment (see "Cloud smoke")
 ```
 
+`test:starters` installs every app on the root's `nuxt`, `@nuxt/schema` and `vite` versions. A starter
+pins the last published module and the Nuxt that release supports until it adopts the next release.
+
 `pnpm test:live` is outside `pnpm test` and `pnpm verify`. A plain
 `vitest run` without `--project` also runs `live`, which fails without its
 environment.
