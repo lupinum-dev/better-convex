@@ -24,6 +24,7 @@ import {
   serverAutoImports,
   type ModuleImportRegistration,
 } from './module-api-surface'
+import { authCachedRoutesWarning, findAuthCachedRoutePatterns } from './module-route-rules'
 import {
   getClientActivationTemplateContents,
   getClientActivationTypeTemplateContents,
@@ -503,6 +504,15 @@ export default defineNuxtModule<ModuleOptions>({
     // 5. Nuxt DevTools integration (dev mode only).
     if (nuxt.options.dev) {
       setupDevTools(nuxt, resolver)
+    }
+
+    // 6. Warn about route rules that cache signed-in SSR pages (no runtime enforcement).
+    if (isConvexAuthEnabled(normalizedAuthConfig)) {
+      const cachedPatterns = findAuthCachedRoutePatterns(
+        [nuxt.options.routeRules, nuxt.options.nitro?.routeRules],
+        normalizedAuthConfig.ssr,
+      )
+      if (cachedPatterns.length > 0) logger.warn(authCachedRoutesWarning(cachedPatterns))
     }
   },
 })

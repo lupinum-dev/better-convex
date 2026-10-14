@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ModuleOptions } from '../../src/module'
+import { findAuthCachedRoutePatterns } from '../../src/module-route-rules'
 import { normalizeConvexRuntimeConfig } from '../../src/runtime/utils/runtime-config-normalize'
 
 interface RegisteredTemplate {
@@ -69,6 +70,8 @@ interface TestNuxt {
     alias: Record<string, string>
     build: { transpile: string[] }
     runtimeConfig: { public: Record<string, unknown>; convex?: Record<string, unknown> }
+    routeRules: Record<string, unknown>
+    nitro: { routeRules?: Record<string, unknown> }
   }
   hook: (name: string, callback: (payload: never) => unknown) => void
   prepareTypes: () => { references: Array<{ path?: string }> }
@@ -85,6 +88,8 @@ function createNuxt(dev = false): TestNuxt {
       alias: {},
       build: { transpile: [] },
       runtimeConfig: { public: {} },
+      routeRules: {},
+      nitro: {},
     },
     hook(name, callback) {
       if (name === 'prepare:types') prepareTypeHooks.push(callback)
@@ -101,9 +106,11 @@ async function setup(
   options: ModuleOptions,
   publicRuntimeConfig: Record<string, unknown> = {},
   dev = false,
+  routeRules: Record<string, unknown> = {},
 ): Promise<TestNuxt> {
   const nuxt = createNuxt(dev)
   Object.assign(nuxt.options.runtimeConfig.public, publicRuntimeConfig)
+  Object.assign(nuxt.options.routeRules, routeRules)
   const definition = convexModule as unknown as {
     setup: (options: ModuleOptions, nuxt: TestNuxt) => Promise<void>
   }
@@ -371,5 +378,102 @@ describe('module server registrations', () => {
     expect(vi.mocked(addNitroPlugin).mock.calls).toEqual([
       ['./runtime/server/plugins/ssr-auth-route'],
     ])
+  })
+})
+
+describe('module cached auth route warning', () => {
+  // Catches a cache rule on a signed-in SSR page going unreported (on Nuxt 5 it overrides the
+  // private/Vary headers), and false alarms for API, asset and anonymous routes.
+  it.each([
+    [
+      'swr, cache and isr on pages',
+      { '/blog/**': { swr: 60 }, '/': { cache: { maxAge: 60 } }, '/docs/**': { isr: true } },
+      undefined,
+      true,
+      ['/blog/**', '/', '/docs/**'],
+    ],
+    [
+      'disabled caches',
+      { '/a': { isr: false }, '/b': { cache: false }, '/c': { swr: 0 } },
+      undefined,
+      true,
+      [],
+    ],
+    [
+      'cache headers in any case',
+      {
+        '/h1': { headers: { 'Cache-Control': 's-maxage=60' } },
+        '/h2': { headers: { 'Vercel-CDN-Cache-Control': 'max-age=60' } },
+        '/h3': { headers: { vary: 'accept-language' } },
+        '/h4': { headers: { 'CDN-Cache-Control': 'max-age=60' } },
+        '/h5': { headers: { 'Surrogate-Control': 'max-age=60' } },
+        '/h6': { headers: { 'Edge-Control': 'cache-maxage=60' } },
+        '/h7': { headers: { 'X-Accel-Expires': '60' } },
+        '/h8': { headers: { 'x-frame-options': 'DENY' } },
+      },
+      undefined,
+      true,
+      ['/h1', '/h2', '/h3', '/h4', '/h5', '/h6', '/h7'],
+    ],
+    [
+      'API, build asset and internal routes',
+      {
+        '/api/**': { swr: 60 },
+        '/api': { cache: {} },
+        '/_nuxt/**': { headers: { 'cache-control': 'immutable' } },
+        '/__og/**': { swr: true },
+        '/apidocs/**': { swr: 60 },
+      },
+      undefined,
+      true,
+      ['/apidocs/**'],
+    ],
+    [
+      'a rule that turns SSR auth off',
+      { '/blog/**': { swr: 60, convex: { ssrAuth: false } } },
+      undefined,
+      true,
+      [],
+    ],
+    ['SSR auth off by default', { '/blog/**': { swr: 60 } }, undefined, false, []],
+    [
+      'a rule that turns SSR auth on',
+      { '/blog/**': { swr: 60, convex: { ssrAuth: true } } },
+      undefined,
+      false,
+      ['/blog/**'],
+    ],
+    ['Nitro route rules', {}, { '/n/**': { swr: 60 } }, true, ['/n/**']],
+    [
+      'ssrAuth off in nuxt rules, cache in Nitro rules',
+      { '/m/**': { convex: { ssrAuth: false } } },
+      { '/m/**': { swr: 60 } },
+      true,
+      [],
+    ],
+  ] as const)('%s', (_, routeRules, nitroRouteRules, ssrDefault, expected) => {
+    expect(findAuthCachedRoutePatterns([routeRules, nitroRouteRules], ssrDefault)).toEqual(expected)
+  })
+
+  it('logs one warning that lists every pattern, and none without auth', async () => {
+    const cacheWarnings = () =>
+      kit.warn.mock.calls
+        .map(([message]) => String(message))
+        .filter((message) => message.includes('convex: { ssrAuth: false }'))
+    const routeRules = { '/blog/**': { swr: 60 }, '/**': { headers: { vary: 'accept-language' } } }
+
+    kit.warn.mockClear()
+    await setup(
+      { auth: { origin: 'https://app.example.test', trustedClientIpHeader: 'cf-connecting-ip' } },
+      {},
+      false,
+      routeRules,
+    )
+    expect(cacheWarnings()).toHaveLength(1)
+    expect(cacheWarnings()[0]).toContain('Route rules "/blog/**", "/**" cache pages')
+
+    kit.warn.mockClear()
+    await setup({}, {}, false, routeRules)
+    expect(cacheWarnings()).toEqual([])
   })
 })
