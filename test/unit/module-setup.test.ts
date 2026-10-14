@@ -449,6 +449,13 @@ describe('module cached auth route warning', () => {
       { '/m/**': { convex: { ssrAuth: false } } },
       { '/m/**': { swr: 60 } },
       true,
+      ['/m/**'],
+    ],
+    [
+      'cache in nuxt rules, ssrAuth off in Nitro rules',
+      { '/k/**': { swr: 60 } },
+      { '/k/**': { convex: { ssrAuth: false } } },
+      true,
       [],
     ],
   ] as const)('%s', (_, routeRules, nitroRouteRules, ssrDefault, expected) => {

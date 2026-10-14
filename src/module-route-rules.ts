@@ -47,9 +47,11 @@ function ruleSsrAuth(rule: Record<string, unknown>): boolean | undefined {
 /**
  * Patterns whose rule can cover SSR pages, keeps SSR auth on (its own `convex.ssrAuth`, else
  * the build-wide `auth.ssr` default) and sets a cache or a cache header. `sources` are
- * `nuxt.options.routeRules` and `nuxt.options.nitro.routeRules`; when both set
- * `convex.ssrAuth` for one pattern, the first listed source wins. Only a warning, so rules of
- * overlapping patterns are not combined.
+ * `nuxt.options.routeRules` and `nuxt.options.nitro.routeRules`, in that order. For one pattern
+ * the last source that lists it wins completely: `@nuxt/schema` resolves
+ * `nitro.routeRules` as `{ ...routeRules, ...nitro.routeRules }`, so a Nitro entry replaces the
+ * Nuxt entry and the runtime (`getRouteRules`) never sees the replaced one. Only a warning, so
+ * rules of overlapping patterns are not combined.
  */
 export function findAuthCachedRoutePatterns(
   sources: readonly RouteRuleSource[],
@@ -58,9 +60,9 @@ export function findAuthCachedRoutePatterns(
   const patterns = new Set(sources.flatMap((source) => (source ? Object.keys(source) : [])))
   return [...patterns].filter((pattern) => {
     if (NON_PAGE_PATTERN.test(pattern)) return false
-    const rules = sources.map((source) => source?.[pattern]).filter(isRecord)
-    const ssrAuth = rules.map(ruleSsrAuth).find((value) => value !== undefined)
-    return (ssrAuth ?? ssrAuthDefault) && rules.some(setsCache)
+    const rule = sources.map((source) => source?.[pattern]).findLast(isRecord)
+    if (!rule) return false
+    return (ruleSsrAuth(rule) ?? ssrAuthDefault) && setsCache(rule)
   })
 }
 
