@@ -239,6 +239,9 @@ describe('Nuxt 4.6 and Nuxt 5 server boundaries', () => {
       'src/runtime/server/api/auth/jwks.ts',
       'src/runtime/devtools/server.ts',
       'src/runtime/server/utils/event.ts',
+      // Outside the server dir and reached only through server/plugins/ssr-auth-route.ts: proves
+      // the rule follows the Nitro chain and that the Nitro plugins are entries.
+      'src/runtime/utils/ssr-auth.ts',
     ]) {
       expect(boundary.from(resolve(file)), file).toBe(true)
     }

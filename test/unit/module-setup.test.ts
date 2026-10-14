@@ -480,7 +480,8 @@ describe('module cached auth route warning', () => {
     expect(cacheWarnings()[0]).toContain('Route rules "/blog/**", "/**" cache pages')
 
     kit.warn.mockClear()
-    await setup({}, {}, false, routeRules)
+    // A rule that turns SSR auth on explicitly: without the auth guard it would warn.
+    await setup({}, {}, false, { ...routeRules, '/x': { swr: 60, convex: { ssrAuth: true } } })
     expect(cacheWarnings()).toEqual([])
   })
 })
