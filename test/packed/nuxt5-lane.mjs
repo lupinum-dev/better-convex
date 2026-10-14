@@ -130,6 +130,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   step('pnpm', ['--filter', './packages/*', 'build'])
   step('pnpm', ['exec', 'nuxt-module-build', 'prepare'])
   step('pnpm', ['typecheck:prepared'])
+  // The server helpers inside a `nuxt/server` handler, typed against the nightly's RequestEvent
+  // and NuxtError (the fixture reads the built dist, like test:packed does on Nuxt 4).
+  step('pnpm', ['exec', 'nuxi', 'prepare', '--cwd', 'test/fixtures/consumer-smoke'])
+  step('pnpm', ['exec', 'nuxi', 'typecheck', '--cwd', 'test/fixtures/consumer-smoke'])
   step('pnpm', ['exec', 'vitest', 'run', '--project', 'nuxt'])
   buildPlayground()
   step(process.execPath, ['test/packed/check-auth-disabled-build-graph.mjs'])

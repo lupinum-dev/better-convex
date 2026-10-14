@@ -149,7 +149,8 @@ cd - && git worktree remove --force ../better-convex-nuxt5-lane
   the nightly aliases and adds overrides. It also allows the
   `@nuxt/schema` 5 peer that `@nuxt/cli` does not declare yet (only in the
   lane; the committed files keep strict peers). Then it installs and runs
-  `typecheck:prepared` and the `nuxt` project. It builds the playground and
+  `typecheck:prepared`, type-checks the consumer-smoke fixture (the server
+  helpers inside a `nuxt/server` handler) and runs the `nuxt` project. It builds the playground and
   fails on `NUXT_B8013` (module disabled), `NUXT_B9003` or `NUXT_B9005`
   (Nitro v2 code). At the end it runs `check-auth-disabled-build-graph.mjs`
   and the default `test:e2e` set.
