@@ -592,7 +592,9 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
           proxyHeaders.set(key, value)
         }
       }
-      const hasBody = !NULL_BODY_STATUSES.has(response.status)
+      // A HEAD response carries no body, and a content-length of 0 would
+      // misstate the GET length (RFC 9110 8.6), so it gets neither.
+      const hasBody = method !== 'HEAD' && !NULL_BODY_STATUSES.has(response.status)
       if (hasBody) proxyHeaders.set('content-length', String(responseBody.byteLength))
       await recordAuthProxyRequestInDev({
         id: requestId,

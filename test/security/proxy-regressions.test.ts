@@ -361,6 +361,38 @@ describe('auth proxy security regressions', () => {
     expect(await response.text()).toBe('{}')
   })
 
+  it.each([
+    { name: '204 with cookies', method: 'GET', status: 204, body: null, length: null },
+    { name: '304', method: 'GET', status: 304, body: null, length: null },
+    { name: 'empty 200', method: 'GET', status: 200, body: '', length: '0' },
+    { name: 'HEAD on JWKS', method: 'HEAD', status: 200, body: null, length: null },
+  ])('frames a $name upstream response by its status and method', async (row) => {
+    // JWKS is public metadata and rejects upstream cookies, so only the main
+    // proxy rows carry them.
+    const jwks = row.method === 'HEAD'
+    const upstreamHeaders = new Headers({ 'content-length': '42' })
+    if (!jwks) {
+      upstreamHeaders.append('set-cookie', 'better-auth.session_token=one; Path=/; HttpOnly')
+      upstreamHeaders.append('set-cookie', 'better-auth.callback=two; Path=/; HttpOnly')
+    }
+    stubFetch(
+      vi.fn(async () => new Response(row.body, { status: row.status, headers: upstreamHeaders })),
+    )
+    const handler = await loadHandler(jwks ? 'jwks' : 'proxy')
+    const response = await handler(
+      event(row.method, undefined, {}, jwks ? '/api/auth/jwks' : '/api/auth/get-session'),
+    )
+    expect(response.status).toBe(row.status)
+    expect(response.headers.get('content-length')).toBe(row.length)
+    expect(response.body === null).toBe(row.length === null)
+    if (!jwks) {
+      expect(response.headers.getSetCookie()).toEqual([
+        'better-auth.session_token=one; Path=/; HttpOnly',
+        'better-auth.callback=two; Path=/; HttpOnly',
+      ])
+    }
+  })
+
   it('rejects Domain-scoped Better Auth cookies and cancels the upstream body', async () => {
     const cancel = vi.fn()
     const responseHeaders = new Headers()
