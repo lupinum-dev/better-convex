@@ -4,7 +4,7 @@ import { Socket } from 'node:net'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { createEvent, type H3Event } from 'h3'
+import { createEvent, getRequestURL, type H3Event } from 'h3'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -213,6 +213,28 @@ describe.each(shapes)('server event adapter: $name', (shape) => {
     const { event } = shape.create()
 
     expect(eventWebRequest(event)?.url).toBe(shape.webRequestUrl)
+  })
+})
+
+// Catches a rebuilt h3 1.x URL that drifts from h3's own `getRequestURL`: one
+// that reads `event.path` instead of the original URL (a mount prefix h3 strips
+// from the path would vanish), or that lets a leading `//` name another host.
+describe('server event adapter: raw h3 v1 request URL', () => {
+  it.each([
+    {
+      name: 'an original URL with a prefix h3 strips from the path',
+      url: '/api/auth/get-session',
+      originalUrl: '/base/api/auth/get-session',
+    },
+    { name: 'a path that starts with //', url: '//evil.test/api/auth/get-session' },
+  ])('matches h3 1.x getRequestURL: $name', ({ url, originalUrl }) => {
+    const { req, res } = nodeRequestResponse()
+    req.url = url
+    if (originalUrl) Object.assign(req, { originalUrl })
+    const event = createEvent(req, res)
+
+    expect(eventRequestUrl(event).href).toBe(getRequestURL(event).href)
+    expect(eventRequestUrl(event).host).toBe('example.test')
   })
 })
 
