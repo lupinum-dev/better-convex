@@ -351,7 +351,9 @@ export default defineNuxtModule<ModuleOptions>({
     registerConvexAliases({ nuxt, resolver, convexApiAlias })
     // Nuxt 4.6.0/4.6.1 (nuxt/nuxt#36309 with nitropack 2.13.4) inline `convex/browser` into the
     // server build with a broken import path, so SSR pages that load Convex answer 500. Remove
-    // this when the lowest supported Nuxt bundles `convex` correctly without it.
+    // this when the lowest supported Nuxt bundles `convex` correctly without it. It must be a
+    // string: Nitro reads only string entries into `externals.inline`. Side effect: in dev the
+    // browser loads convex unbundled (Vite leaves transpiled packages out of `optimizeDeps`).
     if (!nuxt.options.build.transpile.includes('convex'))
       nuxt.options.build.transpile.push('convex')
     addServerPlugin(resolver.resolve('./runtime/server/plugins/runtime-config'))
