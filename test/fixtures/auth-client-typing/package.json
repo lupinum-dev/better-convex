@@ -12,7 +12,7 @@
     "@lupinum/better-convex-nuxt": "file:./better-convex-nuxt.tgz",
     "better-auth": "1.7.7",
     "convex": "1.42.2",
-    "nuxt": "4.5.2",
+    "nuxt": "4.6.1",
     "typescript": "5.9.3",
     "vue-tsc": "3.3.13"
   }
