@@ -38,6 +38,8 @@ export type {
   UseConvexQueryParameters,
   UseConvexQueryState,
 } from './use-query'
+export { preloadConvexQuery } from './preload-query'
+export type { PreloadConvexQueryOptions } from './preload-query'
 export { useConvexPaginatedQuery } from './use-paginated-query'
 export type {
   ConvexPaginatedQuery,
