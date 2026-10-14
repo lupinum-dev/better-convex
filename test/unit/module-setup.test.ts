@@ -48,14 +48,14 @@ vi.mock('@nuxt/kit', () => ({
   addImports: vi.fn(),
   addServerHandler: vi.fn(),
   addServerImports: vi.fn(),
-  addServerPlugin: vi.fn(),
+  addNitroPlugin: vi.fn(),
   addRouteMiddleware: vi.fn(),
   resolvePath: vi.fn(async (path: string) => path),
   useLogger: () => ({ warn: kit.warn, info: vi.fn() }),
 }))
 
 // eslint-disable-next-line import/first
-import { addPlugin } from '@nuxt/kit'
+import { addNitroPlugin, addPlugin, addServerHandler } from '@nuxt/kit'
 
 // eslint-disable-next-line import/first
 import convexModule from '../../src/module'
@@ -351,5 +351,25 @@ describe('module client.connect', () => {
     await expect(setup({ client: { connect: 'lazy' as never } })).rejects.toThrow(
       "client.connect must be 'eager' or 'on-demand'",
     )
+  })
+})
+
+describe('module server registrations', () => {
+  // Catches a lost auth proxy route or a registration of a deleted server plugin (the Nitro
+  // build fails on a missing file). The bare base paths come from the `/**` routes.
+  it('registers the auth proxy routes, the devtools route and the route-rule Nitro plugin', async () => {
+    vi.mocked(addServerHandler).mockClear()
+    vi.mocked(addNitroPlugin).mockClear()
+    await setup({ auth: { origin: 'http://localhost:3000' } }, {}, true)
+
+    expect(vi.mocked(addServerHandler).mock.calls.map(([handler]) => handler.route)).toEqual([
+      '/api/auth/jwks',
+      '/api/auth/**',
+      '/.well-known/oauth-authorization-server/api/auth',
+      '/__convex_devtools__/**',
+    ])
+    expect(vi.mocked(addNitroPlugin).mock.calls).toEqual([
+      ['./runtime/server/plugins/ssr-auth-route'],
+    ])
   })
 })

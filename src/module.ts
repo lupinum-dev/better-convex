@@ -9,7 +9,7 @@ import {
   addImports,
   addServerHandler,
   addServerImports,
-  addServerPlugin,
+  addNitroPlugin,
   addRouteMiddleware,
   resolvePath,
   useLogger,
@@ -359,7 +359,6 @@ export default defineNuxtModule<ModuleOptions>({
     // browser loads convex unbundled (Vite leaves transpiled packages out of `optimizeDeps`).
     if (!nuxt.options.build.transpile.includes('convex'))
       nuxt.options.build.transpile.push('convex')
-    addServerPlugin(resolver.resolve('./runtime/server/plugins/runtime-config'))
 
     // Exactly one browser-runtime entry exists. The auth-disabled entry has no
     // Better Auth imports; the auth-enabled entry constructs the same Vue-owned
@@ -450,7 +449,7 @@ export default defineNuxtModule<ModuleOptions>({
         mode: 'server',
       })
       // Copies the `convex: { ssrAuth }` route rule onto each request.
-      addServerPlugin(resolver.resolve('./runtime/server/plugins/ssr-auth-route'))
+      addNitroPlugin(resolver.resolve('./runtime/server/plugins/ssr-auth-route'))
       addTypeTemplate(
         {
           filename: ROUTE_RULES_TYPES_FILENAME,
@@ -466,12 +465,8 @@ export default defineNuxtModule<ModuleOptions>({
         global: true,
       })
 
-      // Auth proxy: register both exact and wildcard routes so requests without a
-      // trailing slash are not missed by the /** glob in Nitro.
-      addServerHandler({
-        route: '/api/auth',
-        handler: resolver.resolve('./runtime/server/api/auth/[...]'),
-      })
+      // Auth proxy. `/api/auth/**` also answers the bare `/api/auth` path: rou3 (Nitro 3) matches
+      // it, and kit >=4.6.1 registers the base route itself on nitropack 2.
       addServerHandler({
         route: '/api/auth/jwks',
         handler: resolver.resolve('./runtime/server/api/auth/jwks'),
@@ -540,10 +535,6 @@ function setupDevTools(nuxt: Nuxt, resolver: ReturnType<typeof createResolver>):
     })
   })
 
-  addServerHandler({
-    route: '/__convex_devtools__',
-    handler: resolver.resolve('./runtime/devtools/server'),
-  })
   addServerHandler({
     route: '/__convex_devtools__/**',
     handler: resolver.resolve('./runtime/devtools/server'),
