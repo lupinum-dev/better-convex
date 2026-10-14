@@ -25,11 +25,6 @@ vi.mock('#app', () => ({
   useState: (_key: string, init: () => unknown) => ({ value: init() }),
 }))
 
-vi.mock('#imports', () => ({
-  useRuntimeConfig: () => kit.runtimeConfig,
-  useState: (_key: string, init: () => unknown) => ({ value: init() }),
-}))
-
 vi.mock('@lupinum/better-convex-vue', () => ({
   createBetterConvex: kit.createBetterConvex,
 }))
