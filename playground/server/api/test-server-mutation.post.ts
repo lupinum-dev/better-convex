@@ -9,6 +9,11 @@ function closeConnection(event: RequestEvent) {
   event.res.headers.set('connection', 'close')
 }
 
+// On Nuxt 4 the portable `event.req.body` buffers the whole request before its
+// first chunk (Nuxt's `toBufferedBodyStream` over h3 1.x `readRawBody`), so there
+// only the content-length precheck bounds memory; the streaming check below does
+// that only on Nuxt 5. Drop this note with the "Raw h3 v1 events (Nuxt 4)" entry
+// in internals/migrations.md.
 async function readBoundedJsonBody(event: RequestEvent) {
   const contentLength = Number(event.req.headers.get('content-length'))
   if (Number.isFinite(contentLength) && contentLength > maxRequestBodyBytes) {
