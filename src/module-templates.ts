@@ -76,26 +76,28 @@ export function getClientActivationTemplateContents(connect: 'eager' | 'on-deman
   ].join('\n')
 }
 
-/** Types for the `convex: { ssrAuth }` Nitro route rule (auth builds only). */
+/**
+ * Types for the `convex: { ssrAuth }` route rule (auth builds only). Nuxt's own extension
+ * points: `RouteRuleConfigExtensions` types `routeRules` in `nuxt.config` (bridged into Nitro's
+ * route config on either Nitro major) and `AppRouteRulesExtensions` types the matched rules
+ * that `getRouteRules(event)` returns. Both module names are declared, as Nuxt does for its own
+ * rules, so the augmentation applies however the schema is imported.
+ */
 export function getRouteRulesTypeTemplateContents(ssrAuthTypeImport: string): string {
   const specifier = JSON.stringify(ssrAuthTypeImport)
-  const augmentation = [
-    `  interface NitroRouteConfig {`,
-    `    convex?: ConvexRouteRules`,
-    `  }`,
-    `  interface NitroRouteRules {`,
-    `    convex?: ConvexRouteRules`,
-    `  }`,
-  ].join('\n')
   return [
     `import type { ConvexRouteRules } from ${specifier}`,
     ``,
-    `declare module 'nitropack' {`,
-    augmentation,
-    `}`,
-    `declare module 'nitropack/types' {`,
-    augmentation,
-    `}`,
+    ...['@nuxt/schema', 'nuxt/schema'].flatMap((moduleName) => [
+      `declare module '${moduleName}' {`,
+      `  interface RouteRuleConfigExtensions {`,
+      `    convex?: ConvexRouteRules`,
+      `  }`,
+      `  interface AppRouteRulesExtensions {`,
+      `    convex?: ConvexRouteRules`,
+      `  }`,
+      `}`,
+    ]),
     ``,
     `export {}`,
     ``,

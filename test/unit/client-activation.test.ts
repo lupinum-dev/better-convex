@@ -60,10 +60,24 @@ describe('SSR auth route rule', () => {
     expect(isSsrAuthEnabled(context, true)).toBe(true)
   })
 
-  it('types the route rule for Nitro', () => {
+  // Catches an augmentation of a module Nuxt 5 no longer reads (`nitropack`): `routeRules`
+  // with `convex` would stop typechecking, and `getRouteRules(event).convex` would be untyped.
+  it('types the route rule through Nuxt schema extension points', () => {
     const contents = getRouteRulesTypeTemplateContents('/runtime/utils/ssr-auth')
-    expect(contents).toContain("declare module 'nitropack'")
-    expect(contents).toContain("declare module 'nitropack/types'")
-    expect(contents).toContain('convex?: ConvexRouteRules')
+    for (const moduleName of ['@nuxt/schema', 'nuxt/schema']) {
+      expect(contents).toContain(
+        [
+          `declare module '${moduleName}' {`,
+          `  interface RouteRuleConfigExtensions {`,
+          `    convex?: ConvexRouteRules`,
+          `  }`,
+          `  interface AppRouteRulesExtensions {`,
+          `    convex?: ConvexRouteRules`,
+          `  }`,
+          `}`,
+        ].join('\n'),
+      )
+    }
+    expect(contents).not.toContain('nitropack')
   })
 })
