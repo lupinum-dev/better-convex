@@ -63,7 +63,8 @@
         <h2>Usage in API Routes</h2>
         <div class="code-example">
           <h3>Server Query (GET /api/test-server-query)</h3>
-          <pre><code>import { serverConvex } from '#convex/server'
+          <pre><code>import { defineEventHandler } from 'nuxt/server'
+import { serverConvex } from '#convex/server'
 import { api } from '#convex/api'
 
 export default defineEventHandler(async (event) => {
@@ -74,7 +75,8 @@ export default defineEventHandler(async (event) => {
 
         <div class="code-example">
           <h3>Server Mutation (POST /api/test-server-mutation)</h3>
-          <pre><code>import { serverConvex } from '#convex/server'
+          <pre><code>import { defineEventHandler, readBody } from 'nuxt/server'
+import { serverConvex } from '#convex/server'
 import { api } from '#convex/api'
 
 export default defineEventHandler(async (event) => {

@@ -115,14 +115,17 @@ describe('Server caller smoke (serverConvex query/mutation)', async () => {
       const body = (await response.json()) as {
         message?: string
         statusMessage?: string
+        statusText?: string
         url?: string
       }
-      expect(body.statusMessage, query).toBe('limit must be an integer from 1 to 50')
+      // Nuxt 4 (h3 v1) names the reason `statusMessage`; Nuxt 5 names it `statusText`.
+      const statusText = body.statusMessage ?? body.statusText
+      expect(statusText, query).toBe('limit must be an integer from 1 to 50')
       expect(body.message, query).toBe('limit must be an integer from 1 to 50')
-      // H3's standard error envelope includes the request URL. The two
-      // diagnostic fields must stay constant instead of reflecting input or a
+      // The error envelope may include the request URL. The two diagnostic
+      // fields must stay constant instead of reflecting input or a
       // Convex/backend error.
-      expect(body.statusMessage, query).not.toContain(query)
+      expect(statusText, query).not.toContain(query)
       expect(body.message, query).not.toContain(query)
     }
   })
