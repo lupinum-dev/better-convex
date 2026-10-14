@@ -14,6 +14,7 @@ import {
 } from '../../src/runtime/server/utils/event'
 import { resolveRequestAuthSnapshot } from '../../src/runtime/server/utils/request-auth'
 import { serverConvex } from '../../src/runtime/server/utils/server-convex-caller'
+import { signPublicOrigin } from '../../src/runtime/shared/client-ip'
 
 // The `./server` helpers read the server's runtime config (`nuxt/server`
 // `useRuntimeConfig()`); each test selects the public Convex config here.
@@ -127,6 +128,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe.each(shapes)('getConvexUser and requireConvexUser ($name)', (shape) => {
@@ -197,6 +199,25 @@ describe.each(shapes)('getConvexUser and requireConvexUser ($name)', (shape) => 
     expect(init?.redirect).toBe('error')
     // The resolved user is display identity; the Convex token never leaves the snapshot.
     expect(JSON.stringify(first)).not.toContain(USER_JWT)
+  })
+
+  // Catches a caller that passes another origin than the configured
+  // `auth.origin` (for example the request host): Convex would then build its
+  // auth URLs and cookies for a site the operator never configured.
+  it('sign the configured auth origin into the exchange', async () => {
+    const origin = 'http://127.0.0.1:3100'
+    const secret = 'server-convex-user-proxy-secret-32-bytes'
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', secret)
+    exchangeResponds(200, { token: USER_JWT })
+    const event = createEvent(SESSION_COOKIE, { ...AUTH_CONVEX, auth: { origin } })
+
+    await getConvexUser(event)
+
+    const headers = new Headers(fetchMock.mock.calls[0]![1]?.headers)
+    expect(headers.get('x-bcn-public-origin')).toBe(origin)
+    expect(headers.get('x-bcn-public-origin-signature')).toBe(
+      await signPublicOrigin(origin, secret),
+    )
   })
 
   it('share one exchange, and one identity, with serverConvex on the same request', async () => {

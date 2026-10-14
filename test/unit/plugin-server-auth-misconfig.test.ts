@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { NuxtApp } from '#app'
 
+import { signPublicOrigin } from '../../src/runtime/shared/client-ip'
 import { readServerConvexToken } from '../../src/runtime/utils/auth-identity-state'
 
 const {
@@ -87,6 +88,9 @@ function answerTokenExchange(status: number, body: unknown) {
 
 describe('plugin.server token exchange failure policy', () => {
   const stateStore = new Map<string, { value: unknown }>()
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     useNuxtAppMock.mockReturnValue(nuxtApp)
@@ -211,6 +215,30 @@ describe('plugin.server token exchange failure policy', () => {
     expect(JSON.stringify([...stateStore.values()])).not.toContain('jwt-1')
     expect(readServerConvexToken(nuxtApp)).toBe('jwt-1')
     expect(responseHeaders().get('cache-control')).toBe('private, no-store')
+  })
+
+  // Catches the SSR plugin passing another origin than the configured
+  // `auth.origin` (for example the request host) to the token exchange.
+  it('signs the configured auth origin into the token exchange', async () => {
+    const origin = 'http://127.0.0.1:3100'
+    const secret = 'plugin-server-proxy-ip-secret-32-bytes'
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', secret)
+    const runtimeConfig = getConvexRuntimeConfigMock()
+    getConvexRuntimeConfigMock.mockReturnValue({
+      ...runtimeConfig,
+      auth: { ...runtimeConfig.auth, origin },
+    })
+    answerTokenExchange(401, { error: 'unauthorized' })
+
+    await runServerPlugin()
+
+    const [url, init] = fetchWithTimeoutMock.mock.calls[0]!
+    expect(url).toBe('https://demo.convex.site/api/auth/convex/token')
+    const headers = new Headers(init.headers)
+    expect(headers.get('x-bcn-public-origin')).toBe(origin)
+    expect(headers.get('x-bcn-public-origin-signature')).toBe(
+      await signPublicOrigin(origin, secret),
+    )
   })
 
   it('emits correlated server traces without logging the incoming cookie or exchanged JWT', async () => {
