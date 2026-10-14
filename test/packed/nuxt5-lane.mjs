@@ -77,9 +77,24 @@ function step(command, args) {
   execFileSync(command, args, { cwd: root, stdio: 'inherit' })
 }
 
+function git(args) {
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8' })
+}
+
 function rewriteRoot() {
+  // Refuse a primary checkout outside CI: a linked worktree has its own git dir.
+  const gitDir = git(['rev-parse', '--path-format=absolute', '--git-dir']).trim()
+  const commonDir = git(['rev-parse', '--path-format=absolute', '--git-common-dir']).trim()
+  if (gitDir === commonDir && process.env.CI !== 'true') {
+    throw new Error(
+      'The Nuxt 5 lane rewrites package.json, pnpm-workspace.yaml and pnpm-lock.yaml and ' +
+        'reinstalls node_modules; run it in a throwaway worktree (test/TESTING.md):\n' +
+        '  git worktree add --detach ../better-convex-nuxt5-lane HEAD && cd ../better-convex-nuxt5-lane\n' +
+        '  pnpm install --frozen-lockfile && pnpm build && node test/packed/nuxt5-lane.mjs',
+    )
+  }
   // Refuse a checkout with other local changes: the lane leaves it on the nightly.
-  const changed = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' })
+  const changed = git(['status', '--porcelain'])
     .split('\n')
     .filter(Boolean)
     .map((line) => line.slice(3))
