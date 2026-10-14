@@ -59,7 +59,7 @@ function nodeRequestResponse(cookie: string | undefined) {
 // Every helper runs on both event shapes a supported Nuxt passes: the raw h3
 // v1 event (Nuxt 4 routes and SSR; headers live on the Node response) and the
 // web-shaped event (Nuxt 5, Nuxt 4.6 `nuxt/server` handlers; headers live on
-// `event.res.headers`, the Node pair stays on `event.node`).
+// `event.res.headers`, and on Nuxt 5 the Node pair is on `event.req.runtime.node`).
 const shapes = [
   {
     name: 'raw h3 v1 event',
@@ -71,13 +71,14 @@ const shapes = [
   {
     name: 'web-shaped event',
     create(cookie: string | undefined): ConvexServerEvent {
+      // Nuxt 5 on Node: srvx keeps the Node pair on `req.runtime.node`.
       const node = nodeRequestResponse(cookie)
       return {
-        req: new Request('http://localhost:3000/api/me', {
-          headers: cookie ? { cookie } : {},
-        }),
+        req: Object.assign(
+          new Request('http://localhost:3000/api/me', { headers: cookie ? { cookie } : {} }),
+          { runtime: { node } },
+        ),
         res: { headers: new Headers() },
-        node,
         context: {},
       }
     },
@@ -352,9 +353,11 @@ describe('one auth snapshot per request', () => {
     const { req, res } = nodeRequestResponse(SESSION_COOKIE)
     const raw = createH3V1Event(req, res)
     const web: ConvexServerEvent = {
-      req: new Request('http://localhost:3000/api/me', { headers: { cookie: SESSION_COOKIE } }),
+      req: Object.assign(
+        new Request('http://localhost:3000/api/me', { headers: { cookie: SESSION_COOKIE } }),
+        { runtime: { node: { req, res } } },
+      ),
       res: { headers: new Headers() },
-      node: { req, res },
       context: raw.context,
     }
 

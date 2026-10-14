@@ -60,6 +60,24 @@ function webEvent(init: RequestInit & { path?: string } = {}) {
   }
 }
 
+/**
+ * The `event.node` that Nuxt 5's Nitro v2 compatibility layer defines when
+ * h3 has no Node objects (edge presets, in-process requests): plain objects
+ * that forward a few fields, with no stream methods.
+ */
+function withCompatNodeBridge<T extends { req: Request }>(event: T): T {
+  let bridge: object | undefined
+  Object.defineProperty(event, 'node', {
+    configurable: true,
+    get: () =>
+      (bridge ??= {
+        req: { url: new URL(event.req.url).pathname, method: event.req.method, headers: {} },
+        res: { statusCode: 200, headersSent: false, setHeader() {}, getHeader() {} },
+      }),
+  })
+  return event
+}
+
 function stubFetch<T extends (...args: never[]) => unknown>(fetchMock: T): T {
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -1102,56 +1120,69 @@ describe('auth proxy security regressions', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  // Catches the Nuxt 5 path off Node (no `event.node`): reading a body that
-  // is not there, or ignoring the request's abort signal.
-  it('proxies a web-shaped event without Node objects and follows its abort signal', async () => {
-    let forwarded: RequestInit | undefined
-    stubFetch(
-      vi.fn(async (_target: string, init?: RequestInit) => {
-        forwarded = init
-        return new Response('{}', { status: 201, statusText: 'Created' })
-      }),
-    )
-    const handler = await loadHandler()
-    const body = new TextEncoder().encode('{"email":"a@example.test"}')
-    const posted = webEvent({
-      method: 'POST',
-      body,
-      headers: { 'content-type': 'application/json' },
-      path: '/api/auth/sign-in/email',
-    })
+  // Catches the Nuxt 5 path off Node: reading a body that is not there, or
+  // ignoring the request's abort signal. Nuxt 5's Nitro v2 compatibility layer
+  // (on as soon as any module imports h3) gives such an event an `event.node`
+  // bridge of plain objects; treated as Node streams, every sign-in and
+  // session request answers 500 before reaching Convex.
+  it.each([
+    { shape: 'no event.node', decorate: <T extends object>(event: T) => event },
+    { shape: 'the Nuxt 5 compat event.node bridge', decorate: withCompatNodeBridge },
+  ])(
+    'proxies a web-shaped event without Node objects and follows its abort signal ($shape)',
+    async ({ decorate }) => {
+      let forwarded: RequestInit | undefined
+      stubFetch(
+        vi.fn(async (_target: string, init?: RequestInit) => {
+          forwarded = init
+          return new Response('{}', { status: 201, statusText: 'Created' })
+        }),
+      )
+      const handler = await loadHandler()
+      const body = new TextEncoder().encode('{"email":"a@example.test"}')
+      const posted = decorate(
+        webEvent({
+          method: 'POST',
+          body,
+          headers: { 'content-type': 'application/json' },
+          path: '/api/auth/sign-in/email',
+        }),
+      )
 
-    const response = await handler(posted)
+      const response = await handler(posted)
 
-    expect(new Uint8Array(forwarded?.body as ArrayBuffer)).toEqual(body)
-    expect(response.status).toBe(201)
-    expect(response.statusText).toBe('Created')
-    expect(response.headers.get('cache-control')).toBe('private, no-store')
-    expect(posted.res.headers.get('cache-control')).toBe('private, no-store')
+      expect(new Uint8Array(forwarded?.body as ArrayBuffer)).toEqual(body)
+      expect(response.status).toBe(201)
+      expect(response.statusText).toBe('Created')
+      expect(response.headers.get('cache-control')).toBe('private, no-store')
+      expect(posted.res.headers.get('cache-control')).toBe('private, no-store')
 
-    let upstreamSignal: AbortSignal | undefined
-    stubFetch(
-      vi.fn(
-        async (_target: string, init?: RequestInit) =>
-          await new Promise<Response>((_resolve, reject) => {
-            upstreamSignal = init?.signal ?? undefined
-            upstreamSignal?.addEventListener('abort', () => reject(upstreamSignal?.reason), {
-              once: true,
-            })
-          }),
-      ),
-    )
-    const client = new AbortController()
-    const result = expect(handler(webEvent({ signal: client.signal }))).rejects.toMatchObject({
-      status: 502,
-      data: { code: 'BCN_AUTH_PROXY_UNREACHABLE' },
-    })
-    await vi.waitFor(() => expect(upstreamSignal).toBeDefined())
-    client.abort(new Error('client went away'))
+      let upstreamSignal: AbortSignal | undefined
+      stubFetch(
+        vi.fn(
+          async (_target: string, init?: RequestInit) =>
+            await new Promise<Response>((_resolve, reject) => {
+              upstreamSignal = init?.signal ?? undefined
+              upstreamSignal?.addEventListener('abort', () => reject(upstreamSignal?.reason), {
+                once: true,
+              })
+            }),
+        ),
+      )
+      const client = new AbortController()
+      const result = expect(
+        handler(decorate(webEvent({ signal: client.signal }))),
+      ).rejects.toMatchObject({
+        status: 502,
+        data: { code: 'BCN_AUTH_PROXY_UNREACHABLE' },
+      })
+      await vi.waitFor(() => expect(upstreamSignal).toBeDefined())
+      client.abort(new Error('client went away'))
 
-    await result
-    expect(upstreamSignal?.reason).toMatchObject({ message: 'client went away' })
-  })
+      await result
+      expect(upstreamSignal?.reason).toMatchObject({ message: 'client went away' })
+    },
+  )
 
   it('drops upstream failure message, cause, and stack from proxy responses', async () => {
     const sentinels = {

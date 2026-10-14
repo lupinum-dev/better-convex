@@ -88,6 +88,34 @@ function isRawH3V1(event: ConvexServerEvent): event is ConvexServerEvent & H3V1E
   return hasNodeContext(event) && 'headers' in event
 }
 
+/** Nuxt 4.6 marks the event it hands `nuxt/server` handlers `~portable`. */
+function isPortable(event: ConvexServerEvent): boolean {
+  return (event as { readonly '~portable'?: unknown })['~portable'] === true
+}
+
+/**
+ * The real Node request and response, or `undefined` off Node.
+ *
+ * On a web-shaped event they come only from `event.req.runtime.node`, which srvx sets only
+ * when the request arrived over Node's HTTP server. `event.node` is not read there: Nuxt 5's
+ * Nitro v2 compatibility layer (switched on by any installed module that imports h3 or
+ * nitropack) defines it as a plain bridge object without stream methods on edge runtimes and
+ * for in-process requests. The raw h3 v1 event and the Nuxt 4.6 portable event carry the real
+ * pair on `event.node`.
+ */
+function nodeContext(event: ConvexServerEvent): H3V1Event['node'] | undefined {
+  if (isWebShaped(event) && !isPortable(event)) {
+    const node = (
+      event.req as {
+        readonly runtime?: { readonly node?: Partial<H3V1Event['node']> }
+      }
+    ).runtime?.node
+    return node?.req && node.res ? { req: node.req, res: node.res } : undefined
+  }
+  // TEMPORARY (Nuxt 4, internals/migrations.md): the raw h3 v1 and Nuxt 4.6 portable events.
+  return hasNodeContext(event) ? event.node : undefined
+}
+
 /** The raw h3 v1 event; anything else is not a supported server event. */
 function rawH3V1(event: ConvexServerEvent): H3V1Event {
   if (isRawH3V1(event)) return event
@@ -131,8 +159,8 @@ export function eventRequestMethod(event: ConvexServerEvent): string {
  */
 export function eventAbortSignal(event: ConvexServerEvent): AbortSignal | undefined {
   if (!isWebShaped(event)) return rawH3V1(event).web?.request?.signal
-  // TEMPORARY (Nuxt 4.6, internals/migrations.md): the portable event marks itself `~portable`.
-  if ((event as { readonly '~portable'?: unknown })['~portable'] === true) return undefined
+  // TEMPORARY (Nuxt 4.6, internals/migrations.md): the portable event's signal never aborts.
+  if (isPortable(event)) return undefined
   return event.req.signal
 }
 
@@ -191,10 +219,10 @@ export function eventHeadersSent(event: ConvexServerEvent): boolean {
 
 /** The Node request, or `undefined` off Node (for example edge presets). */
 export function eventNodeRequest(event: ConvexServerEvent): IncomingMessage | undefined {
-  return hasNodeContext(event) ? event.node.req : undefined
+  return nodeContext(event)?.req
 }
 
 /** The Node response, or `undefined` off Node (for example edge presets). */
 export function eventNodeResponse(event: ConvexServerEvent): ServerResponse | undefined {
-  return hasNodeContext(event) ? event.node.res : undefined
+  return nodeContext(event)?.res
 }

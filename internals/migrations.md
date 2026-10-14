@@ -7,9 +7,9 @@ code and its entry together when the removal condition is met.
 
 - **Code:** the raw h3 v1 branch of each accessor in
   `src/runtime/server/utils/event.ts` (`H3V1Event`, `rawH3V1`, the Node
-  response-header wrapper, the h3 1.x URL rebuild), and the `~portable` check
+  response-header wrapper, the h3 1.x URL rebuild), and the `~portable` checks
   in `eventAbortSignal` (a Nuxt 4.6 `nuxt/server` event has a `Request` whose
-  signal never aborts). The Nuxt 4 in-process request body source in
+  signal never aborts) and `nodeContext` (its Node pair is on `event.node`). The Nuxt 4 in-process request body source in
   `src/runtime/server/api/auth/body-size.ts` (`inProcessRequestBodyStream`
   and its helpers `inProcessBodyBytes`, `isNodeReadable`, `readNodeReadable`):
   it reads a body that Nitro 2's unenv mock request or h3 1.x already holds.

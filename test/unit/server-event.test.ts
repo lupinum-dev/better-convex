@@ -132,6 +132,35 @@ const shapes: Shape[] = [
     signalAfterDisconnect: true,
     webRequestUrl: URL_STRING,
   },
+  {
+    // Nuxt 5 on Node: srvx puts the Node pair on `req.runtime.node`, and the
+    // auth proxy's stall guard listens there. `event.node` is ignored: Nuxt 5's
+    // Nitro v2 compatibility layer may define it as a plain bridge object.
+    name: 'web-shaped event on Node (srvx)',
+    create() {
+      const controller = new AbortController()
+      const { req: nodeReq, res: nodeRes } = nodeRequestResponse()
+      const req = Object.assign(
+        new Request(URL_STRING, {
+          method: 'POST',
+          headers: REQUEST_HEADERS,
+          signal: controller.signal,
+        }),
+        { runtime: { name: 'node', node: { req: nodeReq, res: nodeRes } } },
+      )
+      const res = { headers: new Headers() }
+      return {
+        event: { req, res, context: {}, node: { req: {}, res: {} } },
+        disconnect: () => controller.abort(),
+        sentSetCookies: () => res.headers.getSetCookie(),
+        nodeReq,
+        nodeRes,
+      }
+    },
+    signalBeforeDisconnect: false,
+    signalAfterDisconnect: true,
+    webRequestUrl: URL_STRING,
+  },
 ]
 
 describe.each(shapes)('server event adapter: $name', (shape) => {

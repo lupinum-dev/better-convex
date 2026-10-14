@@ -169,12 +169,15 @@ describe('exchangeConvexToken — session renewal', () => {
     },
     {
       shape: 'web-shaped event',
+      // Nuxt 5 on Node: srvx keeps the Node pair on `req.runtime.node`.
       create: (): ConvexServerEvent => ({
-        req: new Request('https://app.example.test/', {
-          headers: { 'cf-connecting-ip': '203.0.113.20' },
-        }),
+        req: Object.assign(
+          new Request('https://app.example.test/', {
+            headers: { 'cf-connecting-ip': '203.0.113.20' },
+          }),
+          { runtime: { node: nodePair() } },
+        ),
         res: { headers: new Headers() },
-        node: nodePair(),
         context: {},
       }),
       unsentStore: (event: ConvexServerEvent): string[] =>
