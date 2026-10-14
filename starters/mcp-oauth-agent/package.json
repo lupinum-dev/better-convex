@@ -20,14 +20,14 @@
     "@modelcontextprotocol/server": "2.3.1",
     "better-auth": "1.7.7",
     "convex": "1.42.2",
-    "nuxt": "4.5.2",
+    "nuxt": "4.6.1",
     "vue": "3.5.43"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
     "convex-test": "^0.0.54",
     "typescript": "~5.9.3",
-    "vite": "8.1.5",
+    "vite": "8.3.4",
     "vitest": "^4.1.11",
     "vue-tsc": "^3.3.13"
   },
