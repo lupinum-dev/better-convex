@@ -21,9 +21,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function isCacheHeader(name: string): boolean {
+/** A `cache-control` value that forbids storing the response does not cache it. */
+const NON_STORING_CACHE_CONTROL = /\b(?:no-store|private|no-cache)\b|\bmax-age=0\b/iu
+
+function headerSetsCache(name: string, value: unknown): boolean {
   const lower = name.toLowerCase()
-  return lower === 'cache-control' || lower === 'vary' || isSharedCacheOverrideHeader(lower)
+  if (lower === 'cache-control') {
+    return typeof value !== 'string' || !NON_STORING_CACHE_CONTROL.test(value)
+  }
+  return lower === 'vary' || isSharedCacheOverrideHeader(lower)
 }
 
 function setsCache(rule: Record<string, unknown>): boolean {
@@ -31,7 +37,8 @@ function setsCache(rule: Record<string, unknown>): boolean {
     Boolean(rule.cache) ||
     Boolean(rule.swr) ||
     Boolean(rule.isr) ||
-    (isRecord(rule.headers) && Object.keys(rule.headers).some(isCacheHeader))
+    (isRecord(rule.headers) &&
+      Object.entries(rule.headers).some(([name, value]) => headerSetsCache(name, value)))
   )
 }
 

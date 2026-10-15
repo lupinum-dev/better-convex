@@ -412,6 +412,19 @@ describe('module cached auth route warning', () => {
       ['/h1', '/h2', '/h3', '/h4', '/h5', '/h6', '/h7'],
     ],
     [
+      'cache-control headers that forbid storing are not cache rules',
+      {
+        '/oauth/login': { headers: { 'cache-control': 'no-store' } },
+        '/oauth/consent': { headers: { 'Cache-Control': 'private, max-age=60' } },
+        '/oauth/a': { headers: { 'cache-control': 'no-cache' } },
+        '/oauth/b': { headers: { 'cache-control': 'max-age=0, must-revalidate' } },
+        '/blog': { swr: 60 },
+      },
+      undefined,
+      true,
+      ['/blog'],
+    ],
+    [
       'API, build asset and internal routes',
       {
         '/api/**': { swr: 60 },
