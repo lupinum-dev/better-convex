@@ -131,13 +131,17 @@ export function mcpTransportFailureResponse(error: McpTransportFailure): Respons
   )
 }
 
-/** Reads a refused upload to its end, up to `maximumMcpRefusedUploadBytes`, and drops it. */
-async function discard(reader: ReadableStreamDefaultReader<Uint8Array>, signal?: AbortSignal) {
+/** Reads a refused upload to its end, up to `limit` bytes, and drops it. */
+export async function discard(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal?: AbortSignal,
+  limit = maximumMcpRefusedUploadBytes,
+) {
   const cancel = () => void reader.cancel(signal?.reason).catch(() => undefined)
   signal?.addEventListener('abort', cancel, { once: true })
   try {
     let total = 0
-    while (total <= maximumMcpRefusedUploadBytes && !signal?.aborted) {
+    while (total <= limit && !signal?.aborted) {
       const { done, value } = await reader.read()
       if (done) return
       total += value.byteLength

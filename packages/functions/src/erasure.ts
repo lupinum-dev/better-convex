@@ -6,7 +6,7 @@ import {
   type SchemaDefinition,
   type TableDefinition,
 } from 'convex/server'
-import { v } from 'convex/values'
+import { v, type GenericId } from 'convex/values'
 
 import { readBudget, within, type Budget } from './budget'
 import { guarded, markErasureStep } from './guard'
@@ -44,7 +44,9 @@ interface Db {
 type AnySchema = SchemaDefinition<any, boolean>
 
 /** One table of the plan: a step reads at most a budget of its rows and reports whether rows may remain. */
-type Job = (db: Db, userId: string, budget: Budget) => Promise<boolean>
+/** File storage, for jobs that delete a person's unclaimed uploads. */
+type Storage = { delete: (id: GenericId<'_storage'>) => Promise<void> }
+type Job = (db: Db, userId: string, budget: Budget, storage: Storage) => Promise<boolean>
 
 const libraryTableNames = new Set(Object.keys(libraryTables))
 const entryKinds = ['delete', 'anonymize', 'keep'] as const
@@ -213,6 +215,20 @@ function planLibrary(schema: AnySchema): Job[] {
         for (const row of rows) await db.patch(row._id, { actor: withoutPerson(row.actor) })
         return more
       })
+  if (has('uploads'))
+    jobs.push(async (db, userId, budget, storage) => {
+      // A file nobody claimed goes with its row; a claimed file belongs to an app row, whose own
+      // erasure entry decides about it.
+      const { rows, more } = await within(
+        db.query('uploads').withIndex('by_user', (q) => q.eq('owner.userId', userId)),
+        budget,
+      )
+      for (const row of rows) {
+        if (row.status === 'stored' && row.storageId) await storage.delete(row.storageId)
+        await db.delete(row._id)
+      }
+      return more
+    })
   if (has('rateLimits'))
     jobs.push(async (db, userId, budget) => {
       let left = false
@@ -259,7 +275,7 @@ export function defineErasure(schema: AnySchema | undefined, map: ErasureMap) {
               more = true
               break
             }
-            if (await job(db, userId, budget)) more = true
+            if (await job(db, userId, budget, ctx.storage)) more = true
           }
           // Rows that are gone are not found again, so the next step starts at the top.
           if (more)

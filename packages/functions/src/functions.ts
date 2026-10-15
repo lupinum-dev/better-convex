@@ -685,6 +685,7 @@ export function defineFunctions<
       return value
     }
     rawDbs.set(db, ctx.db as object)
+    callActors.set(db, actor)
     return {
       decision,
       tenant,
@@ -1363,6 +1364,22 @@ const auditRows = 50
 
 /** The unchecked db behind a call's `ctx.db`, so `auditTrail` can read the library's table. */
 const rawDbs = new WeakMap<object, object>()
+/**
+ * The actor the library resolved for a call, by the call's `ctx.db`. A helper that grants by
+ * actor (`claimUpload`) reads it here, not from `ctx.actor`, which app code can replace.
+ */
+const callActors = new WeakMap<object, Actor<{ _id: string }> | Visitor | SystemActor>()
+
+/**
+ * The unchecked db and the actor of an operation's call, from its `ctx.db`; `undefined` outside an
+ * operation. For library helpers that app code calls inside a handler.
+ */
+export function callOf(db: unknown) {
+  const raw = rawDbs.get(db as object)
+  const actor = callActors.get(db as object)
+  if (!raw || !actor) return undefined
+  return { db: raw as GenericMutationCtx<LibraryDataModel>['db'], actor }
+}
 
 /**
  * The audit log of a tenant, newest first, one page at a time. Call it from an

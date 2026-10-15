@@ -259,6 +259,45 @@ test('library tables: own rows go or lose the ID, other people keep theirs', asy
   ])
 })
 
+// Catches: a person's upload links and unclaimed files staying after erasure, or erasure deleting
+// a claimed file, which belongs to the app row that claimed it.
+test('uploads: own rows go with the files nobody claimed, claimed files and other people stay', async () => {
+  const { t, ann, bob } = await setup()
+  const ids = await t.run(async (ctx) => {
+    const blob = () => ctx.storage.store(new Blob(['%PDF-1.7']))
+    const upload = (owner: string, status: 'open' | 'stored' | 'claimed', storageId?: string) =>
+      ctx.db.insert('uploads', {
+        tokenHash: `${owner}-${status}`,
+        owner: { key: `mcp:${owner}:client`, kind: 'agent', door: 'mcp', userId: owner },
+        status,
+        expiresAt: Date.now() + 60_000,
+        maxBytes: 1024,
+        types: ['application/pdf'],
+        ...(storageId && {
+          storageId: storageId as never,
+          type: 'application/pdf',
+          size: 8,
+          sha256: 'x',
+        }),
+      })
+    const annStored = await blob()
+    const annClaimed = await blob()
+    const bobStored = await blob()
+    await upload(ann, 'open')
+    await upload(ann, 'stored', annStored)
+    await upload(ann, 'claimed', annClaimed)
+    await upload(bob, 'stored', bobStored)
+    return { annStored, annClaimed, bobStored }
+  })
+  await erase(t, ann)
+  const after = await t.run(async (ctx) => ({
+    uploads: await ctx.db.query('uploads').collect(),
+    files: (await ctx.db.system.query('_storage').collect()).map((file) => file._id),
+  }))
+  expect(after.uploads.map((row) => row.owner.userId)).toEqual([bob])
+  expect(after.files.sort()).toEqual([ids.annClaimed, ids.bobStored].sort())
+})
+
 // Catches (saas:1, saas:4, rf:3): every table over the batch size at once, other people's rows
 // indexed first, and a few documents near the 1 MiB limit. A table that used up the whole step's
 // read budget, a scan that stopped at one batch, or a step that repeated without progress shows

@@ -103,7 +103,7 @@ try {
   const installedRoot = join(scratchRoot, 'node_modules/@lupinum/better-convex-agents')
   candidate.assertInstalled(installedRoot)
   const entries = {
-    'dist/index.mjs': 'defineTools',
+    'dist/index.mjs': 'defineTools,uploadRoute',
     'dist/mcp.mjs':
       'McpUnsupportedCapabilityError,createMcpServer,handleMcpRequest,listMcpCatalog,projectMcpToolError',
   }

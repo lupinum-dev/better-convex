@@ -1,4 +1,4 @@
-import { fail } from '@lupinum/better-convex-functions'
+import { claimUpload, fail } from '@lupinum/better-convex-functions'
 import { paginationOptsValidator, paginationResultValidator } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
 
@@ -96,6 +96,79 @@ export const attach = mutation({
   returns: v.string(),
   tool: { name: 'attach_file', description: 'Attach a file, or none.' },
   handler: async (_ctx, { file }) => (file === null ? 'none' : 'file'),
+})
+
+/** Takes an uploaded file: a PDF or CSV of up to 1 KiB, or only a PDF. */
+export const takeUpload = mutation({
+  action: 'projects.create',
+  args: { orgId: v.id('orgs'), uploadId: v.string(), pdfOnly: v.optional(v.boolean()) },
+  returns: v.object({ type: v.string(), size: v.number(), sha256: v.string() }),
+  tool: { name: 'take_upload', description: 'Take an uploaded file.' },
+  handler: async (ctx, { uploadId, pdfOnly }) => {
+    const { type, size, sha256 } = await claimUpload(ctx, uploadId, {
+      types: pdfOnly ? ['application/pdf'] : ['application/pdf', 'text/csv'],
+      maxBytes: 1024,
+    })
+    return { type, size, sha256 }
+  },
+})
+
+/** Takes an uploaded file in work a person approves first. */
+export const takeUploadApproved = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects'), uploadId: v.string() },
+  returns: v.string(),
+  tool: { name: 'take_upload_approved', description: 'Archive a project with a file.' },
+  plan: async () => ({ summary: 'Archive a project with a file.' }),
+  handler: async (ctx, { projectId, uploadId }) => {
+    const { type } = await claimUpload(ctx, uploadId, {
+      types: ['application/pdf'],
+      maxBytes: 1024,
+    })
+    await ctx.db.patch(projectId, { status: 'archived' })
+    return type
+  },
+})
+
+/** App code that claims one upload twice at once, as a tool that takes a list of IDs might. */
+export const takeUploadTwice = mutation({
+  action: 'projects.create',
+  args: { orgId: v.id('orgs'), uploadId: v.string(), wrongTypeFirst: v.optional(v.boolean()) },
+  returns: v.number(),
+  tool: {
+    name: 'take_upload_twice',
+    description: 'Take one upload twice at once, or first as a type it is not and then again.',
+  },
+  handler: async (ctx, { uploadId, wrongTypeFirst }) => {
+    if (wrongTypeFirst) {
+      await claimUpload(ctx, uploadId, { types: ['image/png'], maxBytes: 1024 }).catch(() => null)
+      await claimUpload(ctx, uploadId, { types: ['application/pdf'], maxBytes: 1024 })
+      return 1
+    }
+    const claims = await Promise.allSettled(
+      [uploadId, uploadId].map((id) =>
+        claimUpload(ctx, id, { types: ['application/pdf'], maxBytes: 1024 }),
+      ),
+    )
+    return claims.filter((claim) => claim.status === 'fulfilled').length
+  },
+})
+
+/** App code that hands `claimUpload` another actor than the call's own. */
+export const takeUploadAs = mutation({
+  action: 'projects.create',
+  args: { orgId: v.id('orgs'), uploadId: v.string(), ownerKey: v.string() },
+  returns: v.string(),
+  tool: { name: 'take_upload_as', description: 'Take an upload as someone else.' },
+  handler: async (ctx, { uploadId, ownerKey }) => {
+    const [, userId, clientId] = ownerKey.split(':')
+    const forged = { ...ctx, actor: { ...ctx.actor, user: { _id: userId }, clientId } }
+    const { type } = await claimUpload(forged as never, uploadId, {
+      types: ['application/pdf'],
+      maxBytes: 1024,
+    })
+    return type
+  },
 })
 
 /** Convex reports an invalid cursor as this `ConvexError`. */
