@@ -386,6 +386,30 @@ describe('auth proxy security regressions', () => {
     expect(await response.text()).toBe('{}')
   })
 
+  it('lets the upstream sign-out cookie win over a renewal staged on the event', async () => {
+    const upstreamHeaders = new Headers()
+    upstreamHeaders.append('set-cookie', 'better-auth.session_token=; Max-Age=0; Path=/; HttpOnly')
+    stubFetch(vi.fn(async () => new Response('{}', { headers: upstreamHeaders })))
+    const handler = await loadHandler()
+    const web = webEvent({ path: '/api/auth/sign-out', method: 'POST', body: '{}' })
+    const errHeaders = new Headers()
+    Object.assign(web.res, { errHeaders })
+    for (const headers of [web.res.headers, errHeaders]) {
+      headers.append('set-cookie', 'better-auth.session_token=renewed; Path=/; HttpOnly')
+      headers.append('set-cookie', 'better-auth.other=kept; Path=/; HttpOnly')
+    }
+
+    const response = await handler(web)
+
+    // h3 2.x appends the event's queued headers after the returned Response's.
+    for (const staged of [web.res.headers, errHeaders]) {
+      const sent = [...response.headers.getSetCookie(), ...staged.getSetCookie()]
+      const sessionLines = sent.filter((line) => line.startsWith('better-auth.session_token='))
+      expect(sessionLines.at(-1)).toBe('better-auth.session_token=; Max-Age=0; Path=/; HttpOnly')
+      expect(sent).toContain('better-auth.other=kept; Path=/; HttpOnly')
+    }
+  })
+
   it.each([
     { name: '204 with cookies', method: 'GET', status: 204, body: null, length: null },
     { name: '304', method: 'GET', status: 304, body: null, length: null },

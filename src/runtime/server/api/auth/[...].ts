@@ -26,6 +26,7 @@ import {
   eventRequestMethod,
   eventRequestUrl,
   eventResponseHeaders,
+  eventResponseHeaderTargets,
   type ConvexServerEvent,
 } from '../../utils/event'
 import { DEFAULT_SERVER_FETCH_TIMEOUT_MS } from '../../utils/http'
@@ -574,9 +575,11 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       if (publicMetadataCors || isPublicTokenCorsPost) {
         proxyHeaders.set('access-control-allow-origin', '*')
       }
-      for (const cookie of deduplicateSetCookies(responseCookies)) {
+      const upstreamCookies = deduplicateSetCookies(responseCookies)
+      for (const cookie of upstreamCookies) {
         proxyHeaders.append('set-cookie', cookie)
       }
+      dropStagedCookiesSetUpstream(event, upstreamCookies)
       const responseConnection = response.headers.get('connection')
       for (const [key, value] of response.headers.entries()) {
         if (!shouldSkipProxyResponseHeader(key, responseConnection)) {
@@ -649,3 +652,24 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
 }
 
 export default createAuthProxyHandler()
+
+/**
+ * The upstream auth response decides every cookie it sets. A cookie staged on
+ * the event earlier in this request (a session renewal from a user helper)
+ * would otherwise be merged after the returned Response on h3 2.x (Nuxt 5) and
+ * undo a sign-out or an account switch.
+ */
+function dropStagedCookiesSetUpstream(
+  event: ConvexServerEvent,
+  upstreamCookies: readonly string[],
+): void {
+  const upstreamNames = new Set(upstreamCookies.map((cookie) => getSetCookieName(cookie)))
+  if (upstreamNames.size === 0) return
+  for (const headers of eventResponseHeaderTargets(event)) {
+    const staged = headers.getSetCookie()
+    const kept = staged.filter((cookie) => !upstreamNames.has(getSetCookieName(cookie)))
+    if (kept.length === staged.length) continue
+    headers.delete('set-cookie')
+    for (const cookie of kept) headers.append('set-cookie', cookie)
+  }
+}
