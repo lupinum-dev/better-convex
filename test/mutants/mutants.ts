@@ -222,9 +222,9 @@ export const mutants: Mutant[] = [
     id: 'C8-declarations-internals',
     guards: 'C8',
     file: 'packages/agents/src/tools.ts',
-    find: 'return { functions, catalog, approvals, activity, disconnected }',
+    find: 'return { functions, catalog, approvals, activity, disconnected, uploads }',
     replace:
-      'return { functions, catalog, approvals, activity, disconnected, kit: internalsOf(fns) as Internals }',
+      'return { functions, catalog, approvals, activity, disconnected, uploads, kit: internalsOf(fns) as Internals }',
     kills: [`${A}/types.test.ts > the app type-checks and emits declarations`],
     projects: ['agents'],
   },
@@ -3655,7 +3655,7 @@ export const mutants: Mutant[] = [
   },
   {
     id: 'U-sweep-keeps-claimed',
-    guards: 'uploads',
+    guards: 'S19',
     file: 'packages/agents/src/uploads.ts',
     find: "      if (row.status === 'stored' && row.storageId) await storage.delete(row.storageId)",
     replace: '      if (row.storageId) await storage.delete(row.storageId)',
@@ -3666,7 +3666,7 @@ export const mutants: Mutant[] = [
   },
   {
     id: 'U-erasure-keeps-claimed',
-    guards: 'uploads',
+    guards: 'S19',
     file: 'packages/functions/src/erasure.ts',
     find: "        if (row.status === 'stored' && row.storageId) await storage.delete(row.storageId)",
     replace: '        if (row.storageId) await storage.delete(row.storageId)',
@@ -3695,7 +3695,7 @@ export const mutants: Mutant[] = [
   },
   {
     id: 'U-route-race-keeps-nothing',
-    guards: 'uploads',
+    guards: 'S19',
     file: 'packages/agents/src/uploads.ts',
     find: '        await ctx.storage.delete(storageId)\n        return refused(401',
     replace: '        return refused(401',
@@ -3704,7 +3704,7 @@ export const mutants: Mutant[] = [
   },
   {
     id: 'U-path-same-host',
-    guards: 'uploads',
+    guards: 'S19',
     file: 'packages/agents/src/uploads.ts',
     find: '!/^(?:\\/[\\w.~-]+)+$/.test(path)',
     replace: "!path.startsWith('/')",
