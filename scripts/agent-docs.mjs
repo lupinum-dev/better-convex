@@ -131,7 +131,7 @@ const focus = {
         ],
       ],
       [
-        'Run follow-up work, outside calls and crons',
+        'Run follow-up work, outside calls, public actions and crons',
         ['/docs/build/functions/internal-operations'],
       ],
       [
@@ -142,7 +142,7 @@ const focus = {
       ['Handle an error code', ['/docs/reference/operation-error-codes']],
     ],
     rules: [
-      'Build every Convex function with `query`, `mutation`, `internalQuery`, `internalMutation`, `internalAction` or `job` from `defineFunctions`, never from `./_generated/server`. Wrap a function that must skip the library in `trusted(reason, fn)`, and keep the `unguardedFunctions` test green.',
+      'Build every Convex function with `query`, `mutation`, `action`, `internalQuery`, `internalMutation`, `internalAction` or `job` from `defineFunctions`, never from `./_generated/server`. Create `action` once with `fns.action(internal.functions.authorizeAction)` and export `authorizeAction` from `fns`. Wrap a function that must skip the library in `trusted(reason, fn)`, and keep the `unguardedFunctions` test green.',
       'Add an action to `policy.actions` before an operation uses it. Give every table a row rule; do not check membership in the handler.',
       'Read rows by an index that starts with the field the table rule checks (the tenant or owner field, or the `publicRead` condition). A query that returns a row the caller may not read fails.',
       'An operation on an `anyOf` table names its tenant in its own arguments (`organizationId`).',
