@@ -316,6 +316,52 @@ export const mutants: Mutant[] = [
     kills: [`${F}/rules.test.ts > a visitor reads published pages; drafts and edits need a member`],
   },
   {
+    id: 'S6-action-check',
+    guards: 'S6',
+    file: 'packages/functions/src/functions.ts',
+    find: '        const who = await caller(ctx, action)\n',
+    replace: "        const who = { kind: 'system' as const, job: 'mutant' }\n",
+    kills: [
+      `${F}/actions.test.ts > a role without the action is refused before the handler runs`,
+      `${F}/actions.test.ts > a visitor, for an action that is not public is refused before the handler runs`,
+      `${F}/actions.test.ts > an allowed person runs the action, and its internal operations see the same person`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'C14-action-hands-over',
+    guards: 'C14',
+    file: 'packages/functions/src/functions.ts',
+    find: '            handOver(actor),\n            () => {},',
+    replace: "            { kind: 'system', job: 'mutant' },\n            () => {},",
+    kills: [
+      `${F}/actions.test.ts > an allowed person runs the action, and its internal operations see the same person`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'C14-action-token',
+    guards: 'C14',
+    file: 'packages/functions/src/functions.ts',
+    find: "op.kind === 'mutation' || op.kind === 'action' || op.writes",
+    replace: "op.kind === 'mutation' || op.writes",
+    kills: [
+      `${F}/actions.test.ts > a visitor runs an action whose name is public, until its limit`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'C14-action-one-token',
+    guards: 'C14',
+    file: 'packages/functions/src/functions.ts',
+    find: '            { spent: paid },',
+    replace: '            { spent: [] },',
+    kills: [
+      `${F}/doors.test.ts > limit on internal mutation run by a public action: 2 calls pass, the 3rd is RATE_LIMITED`,
+    ],
+    projects: ['functions'],
+  },
+  {
     id: 'S7-reached-raw',
     guards: 'S7',
     file: 'packages/functions/src/functions.ts',

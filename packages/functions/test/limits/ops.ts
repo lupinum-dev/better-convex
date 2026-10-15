@@ -2,7 +2,16 @@ import { auditTrail } from '@lupinum/better-convex-functions'
 import { makeFunctionReference, paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
 
-import { internalAction, internalMutation, job, mutation, query } from './fns'
+import {
+  action,
+  fns,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  job,
+  mutation,
+  query,
+} from './fns'
 
 /** Limited: 3 a minute per user. */
 export const rename = mutation({
@@ -344,6 +353,17 @@ export const guardUnderSame = mutation({
   },
 })
 
+/** Door 7: a public action of the same limited, audited action runs the internal mutation. */
+export const guardViaPublicAction = action({
+  action: 'projects.guard',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:guardInternal'), args as never)
+    return null
+  },
+})
+
 /** A job that runs the internal mutation as the system. */
 export const guardJob = job({
   name: 'guardJob',
@@ -351,4 +371,42 @@ export const guardJob = job({
   handler: async (ctx, args) => {
     await ctx.runMutation(ref('ops:guardInternal'), args as never)
   },
+})
+
+// Public actions (../actions.test.ts).
+
+/** Owner only. Stores a file before anything else, so a call that reached the handler leaves one. */
+export const snapshot = action({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects') },
+  returns: v.object({ actor: v.any(), nested: v.any() }),
+  handler: async (ctx, { projectId }) => {
+    await ctx.storage.store(new Blob([projectId]))
+    const nested = await ctx.runQuery(ref('ops:actorOf'), { projectId } as never)
+    return { actor: ctx.actor, nested }
+  },
+})
+
+/** Who an internal operation sees as its actor. */
+export const actorOf = internalQuery({
+  action: 'projects.read',
+  args: { projectId: v.id('projects') },
+  returns: v.any(),
+  handler: async (ctx) => ctx.actor,
+})
+
+/** A public action of a public action name: a visitor may run it. */
+export const contactAction = action({
+  action: 'contact.send',
+  args: {},
+  returns: v.string(),
+  handler: async (ctx) => ctx.actor.kind,
+})
+
+/** Built with a check that no module exports. */
+export const unwired = fns.action(ref('fns:notExported'))({
+  action: 'contact.send',
+  args: {},
+  returns: v.null(),
+  handler: async () => null,
 })

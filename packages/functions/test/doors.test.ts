@@ -11,7 +11,10 @@ import schema from './rules/schema'
 const modules = import.meta.glob(['./limits/*.ts', './limits/_generated/*.ts'])
 const fn = (name: string) => makeFunctionReference<any>(`ops:${name}`)
 
-/** The ways in. `scheduled`: the outer call only schedules, the guarded mutation runs later. */
+/**
+ * The ways in. `scheduled`: the outer call only schedules, the guarded mutation runs later.
+ * `action`: the outer call is a public action, which has no transaction.
+ */
 const doors = [
   { door: 'public mutation', outer: 'guard', scheduled: false },
   { door: 'internal mutation run by an action', outer: 'scheduleGuardViaAction', scheduled: true },
@@ -22,6 +25,12 @@ const doors = [
     door: 'nested under a limited outer of the same action',
     outer: 'guardUnderSame',
     scheduled: false,
+  },
+  {
+    door: 'internal mutation run by a public action',
+    outer: 'guardViaPublicAction',
+    scheduled: false,
+    action: true,
   },
 ] as const
 type Door = (typeof doors)[number]
@@ -80,16 +89,17 @@ async function setup() {
 async function attempt(
   t: Awaited<ReturnType<typeof setup>>['t'],
   as: Awaited<ReturnType<typeof setup>>['ann'],
-  { outer, scheduled }: Door,
+  door: Door,
   args: { projectId: string; name: string; elsewhere?: string; quiet?: boolean },
 ) {
   const before = failures.length
   try {
-    await as.mutation(fn(outer), args)
+    if ('action' in door) await as.action(fn(door.outer), args)
+    else await as.mutation(fn(door.outer), args)
   } catch (error) {
     return (error as { data?: { code?: string } }).data?.code ?? `ERROR ${String(error)}`
   }
-  if (scheduled) await t.finishAllScheduledFunctions(vi.runAllTimers)
+  if (door.scheduled) await t.finishAllScheduledFunctions(vi.runAllTimers)
   return failures.length > before ? failures.at(-1)! : 'ok'
 }
 
@@ -111,6 +121,7 @@ test.each(forDoors)('policy deny on %s: FORBIDDEN, nothing written', async (_nam
 })
 
 // Catches: the row rules checked on the public door only (an internal door writing another place's row).
+// A public action has no transaction: the token its check took stays spent (8.limits-and-audit.md).
 test.each(forDoors)(
   'row rules on %s: a foreign row is refused, the call rolls back',
   async (_name, door) => {
@@ -122,7 +133,7 @@ test.each(forDoors)(
     expect(await name(pb)).toBe('B one')
     expect(await locks()).toEqual([])
     expect(await audit()).toEqual([])
-    expect(await buckets()).toEqual([])
+    expect((await buckets()).map((row) => row.tokens)).toEqual('action' in door ? [1] : [])
     // Control: the same call without the foreign row passes.
     expect(await attempt(t, ann, door, { projectId: pa, name: 'ok' })).toBe('ok')
     expect(await name(pa)).toBe('ok')
