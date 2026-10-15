@@ -4,6 +4,7 @@ import { watch, type Ref } from 'vue'
 import type { ConvexUser } from '../utils/types'
 import {
   fetchConvexToken,
+  retryDelayMs,
   TOKEN_EXPIRY_SAFETY_BUFFER_MS,
   usableTokenLifetimeMs,
   type ConvexTokenSource,
@@ -28,6 +29,9 @@ interface BetterAuthBrowserSource extends ConvexTokenSource {
 
 const UNAVAILABLE = 'Authentication is temporarily unavailable'
 const SESSION_SETTLEMENT_TIMEOUT_MS = 5_000
+/** Backoff after a rate-limited token exchange: 1 s, 2 s, 4 s ... up to 30 s, plus jitter. */
+const RATE_LIMIT_RETRY_BASE_DELAY_MS = 1_000
+const RATE_LIMIT_RETRY_MAX_DELAY_MS = 30_000
 
 function isUnauthorized(error: unknown): boolean {
   return Boolean(
@@ -63,7 +67,7 @@ export function createBetterAuthBrowserAdapter(
 } {
   const session = source.useSession()
   const listeners = new Set<() => void>()
-  const cancelSessionSettlement = new Set<() => void>()
+  const cancelPendingWaits = new Set<() => void>()
   let disposed = false
   let sessionGeneration = 0
   let observedSessionToken: string | null | undefined
@@ -219,13 +223,13 @@ export function createBetterAuthBrowserAdapter(
         settled = true
         stopPending()
         clearTimeout(timer)
-        cancelSessionSettlement.delete(cancel)
+        cancelPendingWaits.delete(cancel)
         if (error) reject(error)
         else resolve()
       }
       const cancel = () => finish(new Error(UNAVAILABLE))
 
-      cancelSessionSettlement.add(cancel)
+      cancelPendingWaits.add(cancel)
       stopPending = watch(
         isUnsettled,
         (unsettled) => {
@@ -241,6 +245,18 @@ export function createBetterAuthBrowserAdapter(
     })
   }
 
+  // Resolves after `delayMs`, or at once on dispose. Never rejects.
+  const pause = (delayMs: number) =>
+    new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timer)
+        cancelPendingWaits.delete(finish)
+        resolve()
+      }
+      const timer = setTimeout(finish, delayMs)
+      cancelPendingWaits.add(finish)
+    })
+
   // Refetch the provider session and wait for it to settle, bounded by the
   // settlement timeout and cancelled on dispose: a hanging request must not
   // hold a token fetch open. Never rejects.
@@ -251,11 +267,11 @@ export function createBetterAuthBrowserAdapter(
         if (done) return
         done = true
         clearTimeout(timer)
-        cancelSessionSettlement.delete(finish)
+        cancelPendingWaits.delete(finish)
         resolve()
       }
       const timer = setTimeout(finish, SESSION_SETTLEMENT_TIMEOUT_MS)
-      cancelSessionSettlement.add(finish)
+      cancelPendingWaits.add(finish)
       const unsettled = session.value.isPending === true || session.value.isRefetching === true
       void (async () => {
         if (!unsettled) await session.value.refetch?.()
@@ -274,7 +290,27 @@ export function createBetterAuthBrowserAdapter(
       if (disposed || snapshot.status !== 'authenticated') return null
       const expectedKey = snapshot.identityKey
       const expectedGeneration = sessionGeneration
-      const outcome = await fetchConvexToken(source)
+      const isCurrent = () =>
+        !disposed &&
+        snapshot.status === 'authenticated' &&
+        snapshot.identityKey === expectedKey &&
+        sessionGeneration === expectedGeneration
+      let outcome = await fetchConvexToken(source)
+      // A 429 says nothing about the session. While the provider still reports
+      // it signed in, wait as the server asks and try again instead of reporting
+      // the user as signed out. A usable cached token stands in below instead.
+      for (let attempt = 0; outcome.retryAfterMs !== undefined; attempt += 1) {
+        if (!isCurrent() || (cachedToken && performance.now() < cachedTokenUsableUntil)) break
+        await pause(
+          retryDelayMs(attempt, {
+            baseMs: RATE_LIMIT_RETRY_BASE_DELAY_MS,
+            maxMs: RATE_LIMIT_RETRY_MAX_DELAY_MS,
+            retryAfterMs: outcome.retryAfterMs,
+          }),
+        )
+        if (!isCurrent()) return null
+        outcome = await fetchConvexToken(source)
+      }
       if (outcome.sessionRejected && !disposed) {
         // The session ended on the server (sign-out, revocation, expiry) before
         // the provider published it. Let the provider settle first: a session
@@ -282,14 +318,7 @@ export function createBetterAuthBrowserAdapter(
         // and the generation check below drops this result.
         await settleProviderSession()
       }
-      if (
-        disposed ||
-        snapshot.status !== 'authenticated' ||
-        snapshot.identityKey !== expectedKey ||
-        sessionGeneration !== expectedGeneration
-      ) {
-        return null
-      }
+      if (!isCurrent()) return null
       if (outcome.identity) {
         const fetchedKey = outcome.identity.user.id
         if (fetchedKey !== expectedKey) {
@@ -344,8 +373,8 @@ export function createBetterAuthBrowserAdapter(
       if (disposed) return
       disposed = true
       stop()
-      for (const cancel of [...cancelSessionSettlement]) cancel()
-      cancelSessionSettlement.clear()
+      for (const cancel of [...cancelPendingWaits]) cancel()
+      cancelPendingWaits.clear()
       listeners.clear()
       cachedToken = null
       observedSessionToken = null

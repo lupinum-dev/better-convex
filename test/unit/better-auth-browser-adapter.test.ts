@@ -73,6 +73,39 @@ describe('Better Auth browser adapter', () => {
     }
   })
 
+  it('waits out a 429 and keeps the signed-in session instead of reporting it as signed out', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const fixture = source(signedIn(), [{ data: { token: jwt('alice') } }])
+    // Better Fetch hands the raw response to `onError` before it resolves the error envelope.
+    fixture.token.mockImplementationOnce(async (options?: unknown) => {
+      const { onError } = (options as { fetchOptions: { onError(context: unknown): void } })
+        .fetchOptions
+      onError({ response: new Response(null, { status: 429, headers: { 'retry-after': '2' } }) })
+      return { data: null, error: { status: 429 } }
+    })
+    const callbacks = { authenticated: vi.fn(), anonymous: vi.fn() }
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, callbacks)
+    try {
+      let settled = false
+      const fetching = adapter.fetchToken({ forceRefreshToken: false }).finally(() => {
+        settled = true
+      })
+
+      await vi.advanceTimersByTimeAsync(1_999)
+      expect(fixture.token).toHaveBeenCalledOnce()
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1_001)
+      await expect(fetching).resolves.toBeTypeOf('string')
+      expect(fixture.token).toHaveBeenCalledTimes(2)
+      expect(callbacks.anonymous).not.toHaveBeenCalled()
+      expect(adapter.snapshot()).toMatchObject({ status: 'authenticated', identityKey: 'alice' })
+    } finally {
+      adapter.dispose()
+      vi.useRealTimers()
+    }
+  })
+
   it.each([
     // Sign-out: the server revokes the session before Better Auth publishes it.
     ['the provider reports the session gone', null, []],
@@ -347,16 +380,23 @@ describe('Better Auth browser adapter', () => {
     ])
     let monotonicMs = 1_000
     vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    // Runs the fetcher's backoff between its transient attempts (at most 1050 ms).
+    const fetchToken = async () => {
+      const fetching = adapter.fetchToken({ forceRefreshToken: true })
+      await vi.advanceTimersByTimeAsync(1_050)
+      return fetching
+    }
     const adapter = createBetterAuthBrowserAdapter(fixture.client)
-    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+    await expect(fetchToken()).resolves.toBe(token)
 
     monotonicMs += 60_000
-    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+    await expect(fetchToken()).resolves.toBe(token)
 
     // The system clock moves back an hour, but 15 minutes really passed.
     vi.setSystemTime(Date.now() - 3_600_000)
     monotonicMs += 15 * 60_000
-    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBeNull()
+    await expect(fetchToken()).resolves.toBeNull()
     adapter.dispose()
     vi.useRealTimers()
     vi.restoreAllMocks()
