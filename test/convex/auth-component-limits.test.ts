@@ -49,6 +49,25 @@ describe('auth component limits', () => {
     ).rejects.toThrow('AUTH_RATE_LIMIT_ROW_INVALID')
   })
 
+  it('admits steady traffic below the nominal rate for longer than one full allowance', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_700_000_000_000)
+    const test = convexTest(schema, authModules)
+    // Five token exchanges a second against 300 per 10 s (30 a second), for 80 seconds.
+    for (let request = 1; request <= 400; request++) {
+      expect(
+        await test.mutation(api.adapter.consumeRateLimit, {
+          key: '192.0.2.10|/convex/token',
+          max: 300,
+          window: 10,
+          retentionWindow: 60,
+        }),
+        `request ${request}`,
+      ).toEqual({ allowed: true, retryAfter: null })
+      vi.advanceTimersByTime(200)
+    }
+  })
+
   it('A01 removes 300 stale rate limits and one-time keys after a burst', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_700_000_000_000)

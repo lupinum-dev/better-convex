@@ -577,8 +577,12 @@ describe('auth adapter on the pinned backend', () => {
 
   it('counts rate limits exactly per signed client IP and resets after the window', async () => {
     const statuses = (responses: Response[]) => responses.map((response) => response.status)
-    // /ok has the default limit; session reads are exempt from the database counter.
+    // /ok has the default limit (100 per 10 s); session reads are exempt from the database counter.
     const where = [{ field: 'key', value: '192.0.2.20|/ok' }]
+    // The bucket drains one request every 100 ms, so each count may be lower by
+    // what drained since the first request, and never higher.
+    const startedAt = Date.now()
+    const drainedSinceStart = () => Math.ceil((Date.now() - startedAt) / 100)
 
     const cold = await Promise.all(
       Array.from({ length: 40 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
@@ -588,26 +592,32 @@ describe('auth adapter on the pinned backend', () => {
       await client.function(adapter.count, componentPath, { model: 'rateLimit', where }),
       'AUTH_RATE_LIMIT_COLD_START_DUPLICATE_ROWS',
     ).toBe(1)
-    expect(
-      await client.function(adapter.findOne, componentPath, { model: 'rateLimit', where }),
-      'AUTH_RATE_LIMIT_COLD_START_COUNT',
-    ).toMatchObject({ count: 40 })
+    const coldCount = (await client.function(adapter.findOne, componentPath, {
+      model: 'rateLimit',
+      where,
+    })) as { count: number }
+    expect(coldCount.count, 'AUTH_RATE_LIMIT_COLD_START_COUNT').toBeLessThanOrEqual(40)
+    expect(coldCount.count, 'AUTH_RATE_LIMIT_COLD_START_COUNT').toBeGreaterThanOrEqual(
+      40 - drainedSinceStart(),
+    )
 
     const warm = await Promise.all(
       Array.from({ length: 40 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
     )
     expect(statuses(warm), 'AUTH_RATE_LIMIT_WARM_FAILURE').toEqual(Array(40).fill(200))
+    // More than the bucket can hold even after a slow run drains part of it.
     const limit = await Promise.all(
-      Array.from({ length: 21 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
+      Array.from({ length: 100 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
     )
+    const admitted = statuses(limit).filter((status) => status === 200).length
     expect(
-      statuses(limit).filter((status) => status === 200),
+      statuses(limit).filter((status) => status !== 200 && status !== 429),
       'AUTH_RATE_LIMIT_EXACT_LIMIT_FAILURE',
-    ).toHaveLength(20)
-    expect(
-      statuses(limit).filter((status) => status === 429),
-      'AUTH_RATE_LIMIT_EXACT_LIMIT_FAILURE',
-    ).toHaveLength(1)
+    ).toEqual([])
+    expect(admitted, 'AUTH_RATE_LIMIT_EXACT_LIMIT_FAILURE').toBeGreaterThanOrEqual(20)
+    expect(admitted, 'AUTH_RATE_LIMIT_EXACT_LIMIT_FAILURE').toBeLessThanOrEqual(
+      Math.min(99, 20 + drainedSinceStart()),
+    )
     const retryAfter = Number(
       limit.find((response) => response.status === 429)?.headers.get('x-retry-after'),
     )
@@ -615,10 +625,14 @@ describe('auth adapter on the pinned backend', () => {
       Number.isSafeInteger(retryAfter) && retryAfter > 0 && retryAfter <= 10,
       'AUTH_RATE_LIMIT_RETRY_AFTER_INVALID',
     ).toBe(true)
-    expect(
-      await client.function(adapter.findOne, componentPath, { model: 'rateLimit', where }),
-      'AUTH_RATE_LIMIT_EXACT_FINAL_COUNT',
-    ).toMatchObject({ count: 100 })
+    const finalCount = (await client.function(adapter.findOne, componentPath, {
+      model: 'rateLimit',
+      where,
+    })) as { count: number }
+    expect(finalCount.count, 'AUTH_RATE_LIMIT_EXACT_FINAL_COUNT').toBeLessThanOrEqual(100)
+    expect(finalCount.count, 'AUTH_RATE_LIMIT_EXACT_FINAL_COUNT').toBeGreaterThanOrEqual(
+      100 - drainedSinceStart(),
+    )
     expect(
       (await authGet(siteUrl, '192.0.2.21', '/ok')).status,
       'AUTH_RATE_LIMIT_INDEPENDENT_KEY_FAILURE',
