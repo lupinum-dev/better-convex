@@ -5,4 +5,4 @@
  * package, so an app without MCP hosts does not load the MCP SDK.
  */
 export { defineTools, type CatalogEntry } from './tools'
-export { uploadRoute, type UploadsOption } from './uploads'
+export { uploadRoute, type Uploads, type UploadsOption } from './uploads'
