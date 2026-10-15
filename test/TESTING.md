@@ -131,9 +131,10 @@ them. `CONVEX_SITE_URL` is a Convex built-in; do not set it with `convex env set
 
 ## Nuxt 5 lane
 
-The `nuxt5` CI job runs the Nuxt checks on the Nuxt 5 nightly pinned in
-`test/packed/nuxt5.json`. Move that pin by hand, and only to a nightly that is
-at least 24 hours old (the quarantine applies; Renovate does not track it).
+The `nuxt5` CI job runs the Nuxt checks on the Nuxt 5 nightly and the
+`@nuxt/cli-nightly` version pinned in `test/packed/nuxt5.json` (`nightly` and
+`cli`). Move those pins by hand, and only to versions that are at least 24 hours
+old (the quarantine applies; Renovate does not track them).
 
 The lane rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`
 in place, so run it only in a throwaway worktree. The script refuses a checkout

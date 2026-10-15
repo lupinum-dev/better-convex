@@ -12,9 +12,12 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(import.meta.dirname, '../..')
-const { nightly } = JSON.parse(readFileSync(join(import.meta.dirname, 'nuxt5.json'), 'utf8'))
+const { nightly, cli } = JSON.parse(readFileSync(join(import.meta.dirname, 'nuxt5.json'), 'utf8'))
 if (!/^5\.0\.0-\d{10}-[0-9a-f]{7}$/.test(nightly)) {
   throw new Error(`test/packed/nuxt5.json: unexpected nightly version ${JSON.stringify(nightly)}`)
+}
+if (!/^4\.\d+\.\d+-\d{10}-[0-9a-f]{7}$/.test(cli)) {
+  throw new Error(`test/packed/nuxt5.json: unexpected cli version ${JSON.stringify(cli)}`)
 }
 
 /** The nightly packages, as pnpm aliases. */
@@ -60,7 +63,11 @@ export function toNuxt5Workspace(text, names) {
   if (/^peerDependencyRules:/m.test(text)) {
     throw new Error('pnpm-workspace.yaml already has peerDependencyRules; merge them by hand')
   }
-  const overrides = names.map((name) => `  '${name}': '${nuxt5Aliases[name]}'\n`).join('')
+  // `nuxt-nightly` depends on `@nuxt/cli: npm:@nuxt/cli-nightly@latest`; pin it so the CLI that
+  // runs prepare, typecheck and build does not float. Only a parent-scoped override matches it.
+  const overrides =
+    names.map((name) => `  '${name}': '${nuxt5Aliases[name]}'\n`).join('') +
+    `  'nuxt-nightly>@nuxt/cli': 'npm:@nuxt/cli-nightly@${cli}'\n`
   const next = /^overrides:\n/m.test(text)
     ? text.replace(/^overrides:\n/m, `overrides:\n${overrides}`)
     : `${text.replace(/\n*$/, '\n')}overrides:\n${overrides}`
