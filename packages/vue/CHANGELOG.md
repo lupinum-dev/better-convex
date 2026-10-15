@@ -1,5 +1,39 @@
 # @lupinum/better-convex-vue
 
+## 1.0.0-rc.4
+
+### Minor Changes
+
+- [#260](https://github.com/lupinum-dev/better-convex/pull/260) [`7ade54f`](https://github.com/lupinum-dev/better-convex/commit/7ade54f8cde931056fe983c9d536c7619a91cfd1) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `await` support to `useConvexQuery` and `useConvexPaginatedQuery` in plain Vue
+  
+  A page inside `<Suspense>` now waits for the first result or error of each awaited query.
+  Both packages return the same awaitable state, typed `ConvexQuery` and `ConvexPaginatedQuery`.
+  It is no longer a Promise, so `reactive(useConvexQuery(...))` also works in Nuxt.
+  Migration: rename `NuxtConvexQuery` to `ConvexQuery` and `NuxtConvexPaginatedQuery` to `ConvexPaginatedQuery`. Replace `.catch()` or `.finally()` on a query with `await` and read `error`. A Nuxt query stored inside `reactive()`, `ref()` or a Pinia store now unwraps its refs: read `data` there without `.value`.
+
+- [#265](https://github.com/lupinum-dev/better-convex/pull/265) [`555e89a`](https://github.com/lupinum-dev/better-convex/commit/555e89ac1ed0f8a669d7e04c8e2b6d6e7fec9296) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add Nuxt 5 support: the module runs on Nuxt `^4.6.0 || ^5.0.0-0` with one server code path, tested on Nuxt 4.6.1 and the Nuxt 5 nightly (pre-release)
+  
+  Server code uses `nuxt/server` and web `Request`/`Response`. Remove the `h3` dependency: the server helpers take `event: ConvexServerEvent`, which accepts every Nuxt 4.6 and Nuxt 5 server event.
+  `toConvexH3Error` returns, and `getConvexUser` and `requireConvexUser` throw, an HTTP error (`NuxtError`); check it with `isNuxtError` from `nuxt/server` and read `error.status`.
+  Server helpers (`serverConvex`, `getConvexUser`, `requireConvexUser`) read the server's runtime config, not a per-request copy; on Nuxt 4 with per-request env (Cloudflare module workers) set the Convex config at build or boot time.
+  On Nuxt 5, a `routeRules` cache or `headers` rule, or server middleware that sets cache headers, overrides the private cache headers on signed-in pages; the module warns at build about such route rules. Install `@nuxt/devtools` on Nuxt 5 to see the Convex tab.
+  Migration: update Nuxt to 4.6 or newer and Node to `^22.22.3 || ^24.15.0 || >=26`, import `defineEventHandler`/`createError`/`readBody`/`useRuntimeConfig` from `nuxt/server`, read `error.status` (not `statusCode`) on `toConvexH3Error` results, and type helper events as `ConvexServerEvent` or let them infer.
+
+- [#261](https://github.com/lupinum-dev/better-convex/pull/261) [`1b164ac`](https://github.com/lupinum-dev/better-convex/commit/1b164acacad4ddcc03cbbb9bc9431c9f2a3425b9) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `preloadConvexQuery` to load a query's data in a Vue Router guard before the page renders
+  
+  A `useConvexQuery` with the same function, arguments and `auth` then starts with the result instead of `pending`.
+
+### Patch Changes
+
+- [#265](https://github.com/lupinum-dev/better-convex/pull/265) [`555e89a`](https://github.com/lupinum-dev/better-convex/commit/555e89ac1ed0f8a669d7e04c8e2b6d6e7fec9296) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix server-rendered pages that answer 500 "Cannot find module .../convex/dist/esm/index.js" on Nuxt 4.6.0 and 4.6.1
+  
+  The module now adds `convex` to `build.transpile`, so Nitro no longer copies a broken import path into the server bundle. Remove any `nitro.externals` workaround you added for this.
+  `@nuxt/kit` moves to 4.6.1.
+
+- [#265](https://github.com/lupinum-dev/better-convex/pull/265) [`555e89a`](https://github.com/lupinum-dev/better-convex/commit/555e89ac1ed0f8a669d7e04c8e2b6d6e7fec9296) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add Node.js 26 to the supported Node versions of the Vue package
+  
+  The Vue package now declares `^22.19.0 || ^24.11.0 || >=26.0.0`, so installing the Nuxt package on Node 26 no longer warns, or fails with `engine-strict`, about the Vue package.
+
 ## 1.0.0-rc.3
 
 ### Minor Changes

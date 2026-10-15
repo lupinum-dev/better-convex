@@ -1,5 +1,16 @@
 # @lupinum/better-convex-functions
 
+## 0.1.0-rc.3
+
+### Minor Changes
+
+- [#267](https://github.com/lupinum-dev/better-convex/pull/267) [`cd427dc`](https://github.com/lupinum-dev/better-convex/commit/cd427dcfb8e124f6d55bd20492c06c44e599618f) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add upload links for agents: `request_upload`, `uploadRoute` and `claimUpload`
+  
+  Turn them on with `defineTools(fns, modules, { functions, uploads: { scopes, types, maxBytes } })` and `http.route(uploadRoute(agents))`.
+  An agent sends a file's bytes outside MCP with a one-time token; the route checks size and type from the first bytes.
+  `claimUpload(ctx, uploadId, { types, maxBytes })` inside a mutation operation hands over the file only to the actor that sent it, once.
+  `libraryTables` gains the `uploads` table; `housekeeping` and account deletion clean it up.
+
 ## 0.1.0-rc.2
 
 No changes in this release.
