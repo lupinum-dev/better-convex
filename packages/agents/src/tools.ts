@@ -36,6 +36,8 @@ import {
   type Plan,
   type ToolSpec,
   readOnly,
+  uploadClaimMs,
+  uploadLinkMs,
 } from '@lupinum/better-convex-functions/internal'
 import {
   internalMutationGeneric,
@@ -52,6 +54,17 @@ import { getConvexSize, v, type GenericId, type Value } from 'convex/values'
 import type { McpPrincipal } from './access'
 import { readBudget, sweep, within, type Budget } from './budget'
 import { cancelOpen, cancelRequests, finish, shownStatus, stallAfter, wake } from './runs'
+import {
+  checkUploads,
+  deleteExpiredUploads,
+  newToken,
+  sha256Hex,
+  unclaimedPerActor,
+  uploadFunctionNames,
+  uploadsPerRequest,
+  type Uploads,
+  type UploadsOption,
+} from './uploads'
 
 type Ctx = GenericQueryCtx<any>
 type MCtx = GenericMutationCtx<any>
@@ -145,7 +158,7 @@ function boundedFailure(
 
 /** A result too large to keep for replay. */
 const truncated = v.object({ truncated: v.literal(true), bytes: v.number() })
-const reserved = new Set(['check_approval', 'housekeeping'])
+const reserved = new Set<string>(['check_approval', 'housekeeping', ...uploadFunctionNames])
 /**
  * Days kept, then deleted by housekeeping: the activity log is the audit record (a year), a
  * decided request is covered by its activity row, and a finished run's messages were working
@@ -257,6 +270,11 @@ export function defineTools(
   options: {
     /** `internal.<module>` of the module that calls this and exports the tool functions. */
     functions: Record<string, FunctionReference<'query' | 'mutation', 'internal'>>
+    /**
+     * Upload links, so an agent can send files: adds the tool `request_upload` and the two
+     * functions `uploadRoute` calls. A write takes a file with `claimUpload`.
+     */
+    uploads?: UploadsOption
   },
 ) {
   const { policy } = fns
@@ -696,6 +714,148 @@ export function defineTools(
     [...operations].map(([name, op]) => [name, toolFunction(op)]),
   )
 
+  const uploads: Uploads | undefined = options.uploads && {
+    ...checkUploads(options.uploads, Object.keys(policy.scopes ?? {})),
+    ticket: ownRef('upload_ticket'),
+    stored: ownRef('upload_stored'),
+  }
+  const requestUploadArgs = { count: v.optional(v.number()) }
+  /**
+   * Built-in tool: one-time upload links for the calling connection. The tokens are returned
+   * once and stored only as hashes; no activity row keeps them. A retry makes new links, and the
+   * unused ones expire.
+   */
+  const request_upload = guarded(
+    internalMutationGeneric({
+      args: { caller: agentCallerValidator, input: v.any(), requestId: v.optional(v.string()) },
+      handler: async (
+        ctx: MCtx,
+        { caller, input: raw }: { caller: AgentCaller; input: unknown },
+      ) => {
+        if (!uploads) return fail('FORBIDDEN', 'This app takes no uploads.')
+        const actor = await agent(ctx, caller)
+        // The catalog shows the tool only to these scopes; the function checks them for every door.
+        if (actor.door !== 'mcp' || !uploads.scopes.some((scope) => actor.scopes.includes(scope)))
+          fail('FORBIDDEN', 'This connection may not upload files.')
+        const { count = 1 } = inputOf(ctx, { args: requestUploadArgs }, raw) as { count?: number }
+        if (!Number.isSafeInteger(count) || count < 1 || count > uploadsPerRequest)
+          fail('INVALID_INPUT', `count: a whole number from 1 to ${uploadsPerRequest}.`)
+        const owner = actorRecord(actor)
+        await rateLimit(ctx, `${owner.key}|writes`, agentWritesPerMinute)
+        let waiting = 0
+        const now = Date.now()
+        for (const status of ['open', 'stored'] as const) {
+          // Expired rows wait for housekeeping, but no longer count.
+          const rows = await lib(ctx)
+            .query('uploads')
+            .withIndex('by_owner_status_expires', (q) =>
+              q.eq('owner.key', owner.key).eq('status', status).gt('expiresAt', now),
+            )
+            .take(unclaimedPerActor + 1)
+          waiting += rows.length
+        }
+        if (waiting + count > unclaimedPerActor)
+          fail(
+            'RATE_LIMITED',
+            `${waiting} upload links or files of this connection wait for a claim; at most ${unclaimedPerActor} may. Use them, or wait until they expire.`,
+          )
+        const site = process.env.CONVEX_SITE_URL
+        if (!site) throw new Error('CONVEX_SITE_URL is not set, so no upload link can be made.')
+        const expiresAt = now + uploadLinkMs
+        const tokens: string[] = []
+        for (let index = 0; index < count; index++) {
+          const token = newToken()
+          tokens.push(token)
+          await lib(ctx).insert('uploads', {
+            tokenHash: await sha256Hex(new TextEncoder().encode(token)),
+            owner,
+            status: 'open',
+            expiresAt,
+            maxBytes: uploads.maxBytes,
+            types: [...uploads.types],
+          })
+        }
+        return {
+          status: 'done' as const,
+          result: {
+            url: new URL(uploads.path, site).toString(),
+            method: 'POST',
+            tokens,
+            expiresAt: new Date(expiresAt).toISOString(),
+            maxBytes: uploads.maxBytes,
+            types: uploads.types,
+            howTo:
+              'Send each file as the raw request body, one token per file, with the header ' +
+              '"Authorization: Bearer <token>" (curl -X POST --data-binary @file -H "Authorization: Bearer <token>" <url>). ' +
+              'The answer has an uploadId; pass it to the tool that takes the file within 24 hours. ' +
+              'A 401 means the token expired or was used: ask for a new one.',
+          },
+        }
+      },
+    }),
+  )
+  /** For `uploadRoute`: the limits of an open link, or `null` for a token that is not one. */
+  const upload_ticket = guarded(
+    internalQueryGeneric({
+      args: { tokenHash: v.string() },
+      handler: async (ctx: Ctx, { tokenHash }: { tokenHash: string }) => {
+        const row = await lib(ctx)
+          .query('uploads')
+          .withIndex('by_token', (q) => q.eq('tokenHash', tokenHash))
+          .unique()
+        if (!row || row.status !== 'open' || row.expiresAt <= Date.now()) return null
+        return { maxBytes: row.maxBytes, types: row.types }
+      },
+    }),
+  )
+  /**
+   * For `uploadRoute`: the bytes arrived. Only an open link that is still valid turns into a
+   * stored file, once; `null` tells the route to delete what it stored.
+   */
+  const upload_stored = guarded(
+    internalMutationGeneric({
+      args: {
+        tokenHash: v.string(),
+        storageId: v.id('_storage'),
+        type: v.string(),
+        size: v.number(),
+        sha256: v.string(),
+      },
+      handler: async (
+        ctx: MCtx,
+        args: {
+          tokenHash: string
+          storageId: GenericId<'_storage'>
+          type: string
+          size: number
+          sha256: string
+        },
+      ) => {
+        const row = await lib(ctx)
+          .query('uploads')
+          .withIndex('by_token', (q) => q.eq('tokenHash', args.tokenHash))
+          .unique()
+        if (
+          !row ||
+          row.status !== 'open' ||
+          row.expiresAt <= Date.now() ||
+          args.size > row.maxBytes ||
+          !row.types.includes(args.type)
+        )
+          return null
+        await lib(ctx).patch(row._id, {
+          status: 'stored',
+          storageId: args.storageId,
+          type: args.type,
+          size: args.size,
+          sha256: args.sha256,
+          expiresAt: Date.now() + uploadClaimMs,
+        })
+        return row._id
+      },
+    }),
+  )
+
   /** The tool list a door publishes. Input schemas come from the same Convex validators. */
   const catalog: CatalogEntry[] = [
     ...[...operations.values()].map((op) => {
@@ -737,6 +897,24 @@ export function defineTools(
       approval: 'never' as const,
       scopes: [],
     },
+    ...(uploads
+      ? [
+          {
+            name: 'request_upload',
+            description:
+              'Get one-time links to send files (such as PDFs or CSV files) to this app. ' +
+              `Each link takes one file of up to ${uploads.maxBytes} bytes (${uploads.types.join(', ')}) within 15 minutes. ` +
+              'Pass the uploadId each upload returns to the tool that takes the file.',
+            kind: 'mutation' as const,
+            ref: options.functions.request_upload!,
+            inputSchema: describe(toJsonSchema(jsonOf(v.object(requestUploadArgs))), {
+              count: `How many files you will send, 1 to ${uploadsPerRequest}. Default 1.`,
+            }),
+            approval: 'never' as const,
+            scopes: [...uploads.scopes],
+          },
+        ]
+      : []),
   ]
 
   /**
@@ -1127,7 +1305,7 @@ export function defineTools(
           const next = (more: HousekeepingStep) =>
             ctx.scheduler.runAfter(0, ownRef('housekeeping'), more)
           if (args.cleanup) {
-            if (!(await deleteRetained(db, now))) await next({ cleanup: true })
+            if (!(await deleteRetained(db, ctx.storage, now))) await next({ cleanup: true })
           } else if (args.cancel) {
             const left: string[] = []
             for (const runId of args.cancel) {
@@ -1188,10 +1366,12 @@ export function defineTools(
     ),
   )
 
-  const functions = { ...toolFunctions, check_approval, housekeeping } as Record<
-    string,
-    ReturnType<typeof toolFunction>
-  > & {
+  const functions = {
+    ...toolFunctions,
+    check_approval,
+    housekeeping,
+    ...(uploads && { request_upload, upload_ticket, upload_stored }),
+  } as Record<string, ReturnType<typeof toolFunction>> & {
     check_approval: typeof check_approval
     housekeeping: typeof housekeeping
   }
@@ -1206,7 +1386,7 @@ export function defineTools(
     await cancelRequests(lib(ctx), `mcp:${userId}:${clientId}`)
   }
 
-  return { functions, catalog, approvals, activity, disconnected }
+  return { functions, catalog, approvals, activity, disconnected, uploads }
 }
 
 /**
@@ -1315,7 +1495,11 @@ async function endStalled(db: Lib, run: LibraryDataModel['agentRuns']['document'
  * whose children did not fit stays for the next batch. True when nothing is
  * left.
  */
-async function deleteRetained(db: Lib, now: number) {
+async function deleteRetained(
+  db: Lib,
+  storage: { delete: (id: GenericId<'_storage'>) => Promise<void> },
+  now: number,
+) {
   const budget = readBudget()
   /** Deletes what `query` holds; false when the budget ran out first. */
   const deleteAll = async (query: AsyncIterable<{ _id: LibId }>) => {
@@ -1376,7 +1560,8 @@ async function deleteRetained(db: Lib, now: number) {
   }
   // A bucket idle for a day is full again, so deleting it changes nothing for its key.
   const idle = db.query('rateLimits').withIndex('by_at', (q) => q.lt('at', now - day))
-  return await deleteAll(idle)
+  if (!(await deleteAll(idle))) return false
+  return await deleteExpiredUploads(db, storage, now, budget)
 }
 
 /**

@@ -1,3 +1,4 @@
+import { uploadRoute } from '@lupinum/better-convex-agents'
 import { createMcpServer } from '@lupinum/better-convex-agents/mcp'
 import { httpRouter } from 'convex/server'
 
@@ -8,4 +9,5 @@ const http = httpRouter()
 const mcp = createMcpServer(doorAuth, { name: 'Stress', agents })
 for (const method of ['POST', 'GET', 'DELETE'] as const)
   http.route({ path: '/mcp', method, handler: mcp })
+http.route(uploadRoute(agents))
 export default http

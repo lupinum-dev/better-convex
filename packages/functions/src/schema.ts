@@ -159,6 +159,34 @@ export const libraryTables = {
     .index('by_at', ['at']),
 
   /**
+   * A file an actor sends through a one-time upload link, until one write of
+   * the app takes it with `claimUpload`. `expiresAt` is when the row ends in
+   * its status: an `open` link stops taking a file, a `stored` file nobody
+   * claimed is deleted with its bytes, and a `claimed` row is deleted while the
+   * file stays with the app.
+   */
+  uploads: defineTable({
+    /** SHA-256 of the one-time token, hex. The token itself is never stored. */
+    tokenHash: v.string(),
+    /** Who asked for the link. Only this actor can claim the file. */
+    owner: actorRecordValidator,
+    status: v.union(v.literal('open'), v.literal('stored'), v.literal('claimed')),
+    expiresAt: v.number(),
+    /** Limits the link was issued with, checked when the bytes arrive. */
+    maxBytes: v.number(),
+    types: v.array(v.string()),
+    /** Set when the bytes arrived: the stored file, its type from its first bytes, size, SHA-256. */
+    storageId: v.optional(v.id('_storage')),
+    type: v.optional(v.string()),
+    size: v.optional(v.number()),
+    sha256: v.optional(v.string()),
+  })
+    .index('by_token', ['tokenHash'])
+    .index('by_owner_status_expires', ['owner.key', 'status', 'expiresAt'])
+    .index('by_status_expires', ['status', 'expiresAt'])
+    .index('by_user', ['owner.userId']),
+
+  /**
    * Who did what, for the actions the policy lists in `audit`. Written with
    * the call, kept until the app deletes it. Holds ids only, never values.
    */

@@ -42,7 +42,12 @@ test('the door lists the tools of a read and write grant', async () => {
     'list_broken',
     'list_projects',
     'quoted_report',
+    'request_upload',
     'rows_report',
+    'take_upload',
+    'take_upload_approved',
+    'take_upload_as',
+    'take_upload_twice',
   ])
   // Round 1 review: a write without an approve rule was published as non-destructive.
   const annotations = Object.fromEntries(

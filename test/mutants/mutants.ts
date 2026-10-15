@@ -47,6 +47,7 @@ export interface Equivalent {
 
 const F = 'packages/functions/test'
 const A = 'packages/agents/test'
+const UP = `${A}/door/uploads.test.ts`
 const fuzz = `${F}/query-fuzz.test.ts > a random query chain hands out exactly the raw rows, or fails on a foreign one`
 const starter = 'starters/mcp-oauth-agent/convex'
 const leaks = `${starter}/leaks.test.ts > no call reaches another organization’s project`
@@ -3568,6 +3569,148 @@ export const mutants: Mutant[] = [
     ],
     projects: ['agents'],
   },
+  {
+    id: 'U-claim-owner',
+    guards: 'C1',
+    file: 'packages/functions/src/uploads.ts',
+    find: "    row.owner.key !== actorRecord(actor as Exclude<typeof actor, { kind: 'visitor' }>).key ||\n",
+    replace: '',
+    kills: [
+      `${UP} > a handler cannot claim for another actor by changing ctx.actor`,
+      `${UP} > a person cannot claim an agent's file; work a person approved can`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-claim-once',
+    guards: 'C1',
+    file: 'packages/functions/src/uploads.ts',
+    find: "    row.status !== 'stored' ||\n",
+    replace: '',
+    kills: [`${UP} > an agent sends a file through a link and a write takes it once`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-claim-window',
+    guards: 'C1',
+    file: 'packages/functions/src/uploads.ts',
+    find: '    row.expiresAt <= Date.now() ||\n',
+    replace: '',
+    kills: [`${UP} > a file waits for an allowed type and its claim window`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-claim-type',
+    guards: 'C4',
+    file: 'packages/functions/src/uploads.ts',
+    find: '  if (!(allowed.types as readonly string[]).includes(row.type)) {',
+    replace: '  if (false) {',
+    kills: [`${UP} > a file waits for an allowed type and its claim window`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-claim-call-actor',
+    guards: 'C10',
+    file: 'packages/functions/src/uploads.ts',
+    find: '  const { db, actor } = call\n',
+    replace: '  const { db } = call\n  const actor = (ctx as any).actor\n',
+    kills: [`${UP} > a handler cannot claim for another actor by changing ctx.actor`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-route-type',
+    guards: 'C4',
+    file: 'packages/agents/src/uploads.ts',
+    find: '      if (!type || !ticket.types.includes(type))',
+    replace: '      if (!type)',
+    kills: [`${UP} > the route refuses a PNG named like a PDF and stores nothing`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-stored-once',
+    guards: 'C11',
+    file: 'packages/agents/src/tools.ts',
+    find: "          row.status !== 'open' ||\n",
+    replace: '',
+    kills: [`${UP} > a link turns into a stored file once, even when two files race`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-request-scope',
+    guards: 'C14',
+    file: 'packages/agents/src/tools.ts',
+    find: "if (actor.door !== 'mcp' || !uploads.scopes.some((scope) => actor.scopes.includes(scope)))",
+    replace: "if (actor.door !== 'mcp')",
+    kills: [`${UP} > only a connection with an upload scope gets the tool`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-request-cap',
+    guards: 'C5',
+    file: 'packages/agents/src/tools.ts',
+    find: '        if (waiting + count > unclaimedPerActor)',
+    replace: '        if (false)',
+    kills: [`${UP} > a connection may leave at most 100 links and files unclaimed`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-sweep-keeps-claimed',
+    guards: 'uploads',
+    file: 'packages/agents/src/uploads.ts',
+    find: "      if (row.status === 'stored' && row.storageId) await storage.delete(row.storageId)",
+    replace: '      if (row.storageId) await storage.delete(row.storageId)',
+    kills: [
+      `${UP} > housekeeping deletes expired links and unclaimed files, and keeps claimed files`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-erasure-keeps-claimed',
+    guards: 'uploads',
+    file: 'packages/functions/src/erasure.ts',
+    find: "        if (row.status === 'stored' && row.storageId) await storage.delete(row.storageId)",
+    replace: '        if (row.storageId) await storage.delete(row.storageId)',
+    kills: [
+      `${F}/erasure.test.ts > uploads: own rows go with the files nobody claimed, claimed files and other people stay`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'U-claim-same-call',
+    guards: 'C1',
+    file: 'packages/functions/src/uploads.ts',
+    find: '  if (claiming.has(id)) return notFound()\n',
+    replace: '',
+    kills: [`${UP} > one upload is claimed once, even by two claims in one transaction`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-request-cap-live',
+    guards: 'C5',
+    file: 'packages/agents/src/tools.ts',
+    find: "q.eq('owner.key', owner.key).eq('status', status).gt('expiresAt', now),",
+    replace: "q.eq('owner.key', owner.key).eq('status', status),",
+    kills: [`${UP} > a connection may leave at most 100 links and files unclaimed`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-route-race-keeps-nothing',
+    guards: 'uploads',
+    file: 'packages/agents/src/uploads.ts',
+    find: '        await ctx.storage.delete(storageId)\n        return refused(401',
+    replace: '        return refused(401',
+    kills: [`${UP} > the route keeps no file when its link was used while the bytes arrived`],
+    projects: ['agents'],
+  },
+  {
+    id: 'U-path-same-host',
+    guards: 'uploads',
+    file: 'packages/agents/src/uploads.ts',
+    find: '!/^(?:\\/[\\w.~-]+)+$/.test(path)',
+    replace: "!path.startsWith('/')",
+    kills: [`${UP} > the uploads option refuses the path //other.example/upload`],
+    projects: ['agents'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [
@@ -3602,5 +3745,13 @@ export const equivalents: Equivalent[] = [
     replace: "table !== 'users'",
     reason:
       "No library table holds v.id('users') (they store the user ID as a string), so the exemption cannot change a result today: it keeps the check right if a library table ever gains such a field.",
+  },
+  {
+    id: 'U-ticket-open',
+    file: 'packages/agents/src/tools.ts',
+    find: "if (!row || row.status !== 'open' || row.expiresAt <= Date.now()) return null",
+    replace: 'if (!row) return null',
+    reason:
+      'upload_stored refuses a used or expired link in the same way, and the route then deletes the bytes it stored: this check only saves the read and the write of a file that would be refused.',
   },
 ]

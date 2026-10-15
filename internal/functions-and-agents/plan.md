@@ -283,6 +283,7 @@ Which lane owns which invariant: `testing-strategy.md` A2.
 | S16 | A retried request with the same `request_id` runs once                                                                                                                                     | agents                           |
 | S17 | A state condition in a row rule (`allOf`) holds for every operation, including one without its own check                                                                                   | functions                        |
 | S18 | Only the requester's person, or an approver role in the call's tenant, or (with `sharedRows`) in a tenant that every input row the agent may change belongs to, sees and decides a request | agents                           |
+| S19 | An uploaded file reaches an app row only through `claimUpload`, by the actor that asked for its link, once, as a type and size the write allows (rows U-* in `test/mutants`)               | functions, agents                |
 
 Cost budgets (D6): `packages/functions/test/cost.test.ts` and
 `packages/agents/test/door/cost.test.ts`, with `countDocuments` from
