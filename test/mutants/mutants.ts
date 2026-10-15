@@ -1498,7 +1498,7 @@ export const mutants: Mutant[] = [
     id: 'S12-refused-upload-cap',
     guards: 'S12',
     file: 'packages/agents/src/transport.ts',
-    find: 'while (total <= maximumMcpRefusedUploadBytes && ',
+    find: 'while (total <= limit && ',
     replace: 'while (',
     kills: [
       `${A}/mcp/transport.test.ts > MCP transport bounds > reads a refused upload to its end only up to 4 MiB: 'streamed, 5 MiB'`,
@@ -1870,8 +1870,8 @@ export const mutants: Mutant[] = [
     id: 'T-t2-housekeeping-cleanup-progress',
     guards: 'housekeeping',
     file: 'packages/agents/src/tools.ts',
-    find: 'if (!(await deleteRetained(db, now))) await next({ cleanup: true })',
-    replace: 'await deleteRetained(db, now); await next({ cleanup: true })',
+    find: 'if (!(await deleteRetained(db, ctx.storage, now))) await next({ cleanup: true })',
+    replace: 'await deleteRetained(db, ctx.storage, now); await next({ cleanup: true })',
     kills: [
       `${A}/approvals/approvals.test.ts > housekeeping deletes every table past retention in a bounded number of steps and keeps the rest`,
     ],
