@@ -5,13 +5,13 @@ import {
   type FunctionReturnType,
   type OptionalRestArgs,
 } from 'convex/server'
-import type { H3Event } from 'h3'
 
 import { ConvexCallError, normalizeConvexError } from '../../errors'
 import { createBoundedConvexFetch } from '../../utils/bounded-convex-fetch'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
-import { readEventConvexConfig, readEventCookieHeader } from './event-context'
+import { eventAbortSignal, eventRequestHeaders, type ConvexServerEvent } from './event'
 import { resolveRequestAuthSnapshot } from './request-auth'
+import { readServerConvexConfig } from './server-config'
 import {
   validateServerConvexOptions,
   type NormalizedServerConvexOptions,
@@ -84,7 +84,7 @@ function throwExchangeFailure(result: ConvexTokenExchangeResult): never {
 }
 
 async function resolveServerToken(
-  event: H3Event,
+  event: ConvexServerEvent,
   normalized: NormalizedServerConvexOptions,
 ): Promise<string | null> {
   // Explicit opaque token: the caller's chosen snapshot. No exchange.
@@ -92,7 +92,7 @@ async function resolveServerToken(
     return normalized.authToken
   }
 
-  const config = readEventConvexConfig(event)
+  const config = readServerConvexConfig()
   const required = normalized.auth === 'required'
 
   if (config.auth === false) {
@@ -107,6 +107,7 @@ async function resolveServerToken(
     const result = await exchangeConvexToken({
       event,
       siteUrl: config.siteUrl,
+      publicOrigin: config.auth.origin,
       credential: normalized.credential,
       trustedClientIpHeader: config.auth.trustedClientIpHeader,
     })
@@ -117,7 +118,7 @@ async function resolveServerToken(
   // Cookie-based event resolution.
   if (normalized.auth === 'none') return null
 
-  const cookieHeader = readEventCookieHeader(event)
+  const cookieHeader = eventRequestHeaders(event).get('cookie')
   const sessionToken = getBetterAuthSessionToken(cookieHeader)
   const authCookieHeader = filterBetterAuthCookies(cookieHeader)
   // The response now depends on the request cookie: keep shared caches from
@@ -142,6 +143,7 @@ async function resolveServerToken(
   // Convex authorizes is the one getConvexUser/requireConvexUser display.
   const snapshot = await resolveRequestAuthSnapshot(event, {
     siteUrl: config.siteUrl,
+    publicOrigin: config.auth.origin,
     trustedClientIpHeader: config.auth.trustedClientIpHeader,
     cookieHeader,
   })
@@ -183,7 +185,7 @@ async function resolveServerToken(
  * display. Failures are `ConvexCallError`s that carry the function name.
  */
 export function serverConvex(
-  event: H3Event,
+  event: ConvexServerEvent,
   options: ServerConvexOptions = {},
 ): ServerConvexCaller {
   const normalized = validateServerConvexOptions(options)
@@ -197,10 +199,10 @@ export function serverConvex(
 
   const getClient = (): Promise<ConvexHttpClient> => {
     clientPromise ??= (async () => {
-      const config = readEventConvexConfig(event)
+      const config = readServerConvexConfig()
       const client = new ConvexHttpClient(readRequiredConvexUrl(config.url), {
         fetch: createBoundedConvexFetch({
-          signal: event.web?.request?.signal,
+          signal: eventAbortSignal(event),
           maxResponseBytes: config.server.maxResponseBytes,
           queryTimeoutMs: config.server.queryTimeoutMs,
         }),

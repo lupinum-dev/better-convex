@@ -1,26 +1,27 @@
-import type { H3Event } from 'h3'
-import { createError, defineEventHandler, getRequestWebStream, setHeaders } from 'h3'
+import { createError, defineEventHandler, type RequestEvent } from 'nuxt/server'
 
 import { api } from '#convex/api'
 import { serverConvex } from '#convex/server'
 
 const maxRequestBodyBytes = 8 * 1024
 
-function closeConnection(event: H3Event) {
-  if (event.node.res.headersSent) return
-  event.node.res.shouldKeepAlive = false
-  event.node.req.pause()
-  setHeaders(event, { connection: 'close' })
+function closeConnection(event: RequestEvent) {
+  event.res.headers.set('connection', 'close')
 }
 
-async function readBoundedJsonBody(event: H3Event) {
-  const contentLength = Number(event.headers.get('content-length'))
+// On Nuxt 4 the portable `event.req.body` buffers the whole request before its
+// first chunk (Nuxt's `toBufferedBodyStream` over h3 1.x `readRawBody`), so there
+// only the content-length precheck bounds memory; the streaming check below does
+// that only on Nuxt 5. Drop this note with the "Raw h3 v1 events (Nuxt 4)" entry
+// in internals/migrations.md.
+async function readBoundedJsonBody(event: RequestEvent) {
+  const contentLength = Number(event.req.headers.get('content-length'))
   if (Number.isFinite(contentLength) && contentLength > maxRequestBodyBytes) {
     closeConnection(event)
-    throw createError({ statusCode: 413, statusMessage: 'Request body too large' })
+    throw createError({ status: 413, statusText: 'Request body too large' })
   }
 
-  const stream = getRequestWebStream(event)
+  const stream = event.req.body
   if (!stream) return {}
   const reader = stream.getReader()
   const chunks: Uint8Array[] = []
@@ -33,7 +34,7 @@ async function readBoundedJsonBody(event: H3Event) {
       totalBytes += chunk.byteLength
       if (totalBytes > maxRequestBodyBytes) {
         closeConnection(event)
-        throw createError({ statusCode: 413, statusMessage: 'Request body too large' })
+        throw createError({ status: 413, statusText: 'Request body too large' })
       }
       chunks.push(chunk)
     }
@@ -58,7 +59,7 @@ async function readBoundedJsonBody(event: H3Event) {
   try {
     return JSON.parse(new TextDecoder().decode(body)) as unknown
   } catch {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid JSON body' })
+    throw createError({ status: 400, statusText: 'Invalid JSON body' })
   }
 }
 
@@ -68,7 +69,7 @@ async function readBoundedJsonBody(event: H3Event) {
  * This endpoint creates a new note using the Convex mutation from the server.
  * It shows how you can use serverConvex in API routes, webhooks, or background jobs.
  */
-export default defineEventHandler(async (event: H3Event) => {
+export default defineEventHandler(async (event) => {
   const rawBody = await readBoundedJsonBody(event)
   const body =
     rawBody && typeof rawBody === 'object'
@@ -106,8 +107,8 @@ export default defineEventHandler(async (event: H3Event) => {
       error instanceof Error &&
       error.message.includes('Convex URL is not configured')
     ) {
-      throw createError({ statusCode: 500, message: error.message })
+      throw createError({ status: 500, message: error.message })
     }
-    throw createError({ statusCode: 500, statusMessage: 'Failed to create note' })
+    throw createError({ status: 500, statusText: 'Failed to create note' })
   }
 })

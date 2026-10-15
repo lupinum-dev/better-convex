@@ -1,6 +1,5 @@
-import type { H3Event } from 'h3'
-
 import { filterBetterAuthCookies } from '../../../utils/shared-helpers'
+import { eventRequestHeaders, type ConvexServerEvent } from '../../utils/event'
 import {
   buildSignedClientIpHeaders,
   buildSignedPublicOriginHeaders,
@@ -115,13 +114,13 @@ export interface AuthProxyForwardHeadersOptions extends SignedClientIpHeadersOpt
 }
 
 export async function buildAuthProxyForwardHeaders(
-  event: H3Event,
+  event: ConvexServerEvent,
   options: AuthProxyForwardHeadersOptions,
 ): Promise<Record<string, string>> {
   const trustedHeader = options.trustedClientIpHeader
   const signedClientIpHeaders = await buildSignedClientIpHeaders(event, options)
   const signedOriginHeaders = await buildSignedPublicOriginHeaders(options.publicOrigin)
-  const headers = stripUnsafeRequestHeaders(event.headers)
+  const headers = stripUnsafeRequestHeaders(eventRequestHeaders(event))
   if (trustedHeader) headers.delete(trustedHeader)
   const authCookieHeader = filterBetterAuthCookies(headers.get('cookie'))
   if (authCookieHeader) {

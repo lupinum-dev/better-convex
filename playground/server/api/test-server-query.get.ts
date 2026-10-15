@@ -1,5 +1,4 @@
-import type { H3Event } from 'h3'
-import { defineEventHandler, createError, getQuery } from 'h3'
+import { createError, defineEventHandler, getQuery } from 'nuxt/server'
 
 import { api } from '#convex/api'
 import { serverConvex } from '#convex/server'
@@ -7,12 +6,12 @@ import { serverConvex } from '#convex/server'
 function readLimit(value: unknown): number {
   if (value === undefined) return 5
   if (typeof value !== 'string') {
-    throw createError({ statusCode: 400, statusMessage: 'limit must be an integer from 1 to 50' })
+    throw createError({ status: 400, statusText: 'limit must be an integer from 1 to 50' })
   }
 
   const limit = Number(value)
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || String(limit) !== value) {
-    throw createError({ statusCode: 400, statusMessage: 'limit must be an integer from 1 to 50' })
+    throw createError({ status: 400, statusText: 'limit must be an integer from 1 to 50' })
   }
   return limit
 }
@@ -23,7 +22,7 @@ function readLimit(value: unknown): number {
  * This endpoint fetches notes using the Convex query from the server.
  * It shows how you can use serverConvex in API routes or server middleware.
  */
-export default defineEventHandler(async (event: H3Event) => {
+export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const limit = readLimit(query.limit)
 
@@ -44,6 +43,6 @@ export default defineEventHandler(async (event: H3Event) => {
       timestamp: new Date().toISOString(),
     }
   } catch {
-    throw createError({ statusCode: 502, statusMessage: 'Failed to fetch notes' })
+    throw createError({ status: 502, statusText: 'Failed to fetch notes' })
   }
 })

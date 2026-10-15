@@ -1,74 +1,109 @@
-import { EventEmitter } from 'node:events'
+import { once } from 'node:events'
+import { Socket } from 'node:net'
 import { inspect } from 'node:util'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ConvexServerEvent } from '../../src/runtime/server/utils/event'
+import { inDevelopment } from '../helpers/dev-mode'
+import { rawH3V1Event } from '../helpers/server-event'
+
 const mocks = vi.hoisted(() => ({
   config: vi.fn(),
-  requestUrl: vi.fn(),
-  responseStatus: vi.fn(),
-  responseHeaders: vi.fn(),
-  responseCookie: vi.fn(),
-  send: vi.fn((_event: unknown, body: Uint8Array) => body),
-  storage: vi.fn(),
+  recordAuthProxyRequest: vi.fn(),
 }))
 
-vi.mock('h3', () => ({
-  appendResponseHeader: mocks.responseCookie,
-  createError(input: { statusCode: number; message: string; data?: unknown }) {
-    return Object.assign(new Error(input.message), input)
-  },
-  defineEventHandler: (handler: unknown) => handler,
-  getRequestURL: mocks.requestUrl,
-  getRequestWebStream(event: { body?: Uint8Array | ReadableStream<Uint8Array> }) {
-    if (!event.body) return undefined
-    if (event.body instanceof ReadableStream) return event.body
-    return new ReadableStream({
-      start(controller) {
-        controller.enqueue(event.body)
-        controller.close()
-      },
-    })
-  },
-  send: mocks.send,
-  setHeaders: mocks.responseHeaders,
-  setResponseStatus: mocks.responseStatus,
+vi.mock('../../src/runtime/server/utils/server-config', () => ({
+  readServerConvexConfig: mocks.config,
+}))
+vi.mock('../../src/runtime/devtools/auth-proxy-registry', () => ({
+  recordAuthProxyRequest: mocks.recordAuthProxyRequest,
 }))
 
-vi.mock('../../src/runtime/utils/runtime-config', () => ({ getConvexRuntimeConfig: mocks.config }))
+const DEFAULT_HEADERS = {
+  'cf-connecting-ip': '203.0.113.10',
+  origin: 'https://app.example.test',
+}
 
-vi.mock('nitropack/runtime', () => ({ useStorage: mocks.storage }))
-
+/**
+ * The raw h3 v1 event of a Nuxt 4 request. A Uint8Array body is the live
+ * Node request body; a ReadableStream body is the body h3 1.x already holds
+ * (`event._requestBody`, its web adapter).
+ */
 function event(
   method = 'GET',
   body?: Uint8Array | ReadableStream<Uint8Array>,
   headers: Record<string, string> = {},
+  path = '/api/auth/get-session',
 ) {
-  return {
+  const raw = rawH3V1Event({
     method,
-    body,
-    headers: new Headers({
-      'cf-connecting-ip': '203.0.113.10',
-      origin: 'https://app.example.test',
-      ...headers,
-    }),
-    node: {
-      req: Object.assign(new EventEmitter(), {
-        complete: true,
-        pause: vi.fn(),
-        resume: vi.fn(),
-        socket: undefined,
-      }),
-      res: Object.assign(new EventEmitter(), {
-        destroy: vi.fn(),
-        end: vi.fn(),
-        headersSent: false,
-        shouldKeepAlive: true,
-        socket: undefined,
-        writableFinished: false,
-      }),
-    },
+    path,
+    headers: { ...DEFAULT_HEADERS, ...headers },
+    body: body instanceof Uint8Array ? body : undefined,
+    open: body instanceof ReadableStream,
+  })
+  if (body instanceof ReadableStream) Object.assign(raw.event, { _requestBody: body })
+  return raw
+}
+
+/** A Nuxt 5 (h3 v2) event: web Request and response headers, no Node objects. */
+function webEvent(init: RequestInit & { path?: string } = {}) {
+  const { path = '/api/auth/get-session', headers, ...requestInit } = init
+  return {
+    req: new Request(`https://app.example.test${path}`, {
+      ...requestInit,
+      headers: { ...DEFAULT_HEADERS, ...Object.fromEntries(new Headers(headers)) },
+      ...(requestInit.body ? { duplex: 'half' } : {}),
+    } as RequestInit),
+    res: { headers: new Headers() },
+    context: {},
   }
+}
+
+/**
+ * The `event.node` that Nuxt 5's Nitro v2 compatibility layer defines when
+ * h3 has no Node objects (edge presets, in-process requests): plain objects
+ * that forward a few fields, with no stream methods.
+ */
+function withCompatNodeBridge<T extends { req: Request }>(event: T): T {
+  let bridge: object | undefined
+  Object.defineProperty(event, 'node', {
+    configurable: true,
+    get: () =>
+      (bridge ??= {
+        req: { url: new URL(event.req.url).pathname, method: event.req.method, headers: {} },
+        res: { statusCode: 200, headersSent: false, setHeader() {}, getHeader() {} },
+      }),
+  })
+  return event
+}
+
+/**
+ * The `event.req` of Nuxt 5's `nuxt/server` `defineEventHandler`: a proxy that
+ * serves every body read from one copy, filled lazily from the Request's own
+ * body on the first read (as in `@nuxt/nitro-server` `bufferRequestBody`).
+ */
+function nuxtBufferedRequest(request: Request): Request {
+  const buffered = Symbol.for('nuxt.bufferedRequestBody')
+  let copy: Promise<ArrayBuffer> | undefined
+  const read = () => (copy ??= request.arrayBuffer())
+  return new Proxy(request, {
+    has: (target, property) => property === buffered || Reflect.has(target, property),
+    get(target, property) {
+      if (property === 'bodyUsed') return false
+      if (property === 'body') {
+        return new ReadableStream({
+          async pull(controller) {
+            controller.enqueue(new Uint8Array(await read()))
+            controller.close()
+          },
+        })
+      }
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
 }
 
 function stubFetch<T extends (...args: never[]) => unknown>(fetchMock: T): T {
@@ -83,16 +118,15 @@ const handlers = {
 }
 
 async function loadHandler(name: keyof typeof handlers = 'proxy') {
-  return (await handlers[name]()).default as unknown as (
-    input: ReturnType<typeof event>,
-  ) => Promise<Uint8Array>
+  const handler = (await handlers[name]()).default
+  return (input: ConvexServerEvent | { event: ConvexServerEvent }) =>
+    handler('event' in input ? input.event : input)
 }
 
 describe('auth proxy security regressions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', 'proxy-ip-test-secret-with-32-bytes')
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/get-session'))
     mocks.config.mockReturnValue({
       url: 'https://demo.convex.cloud',
       siteUrl: 'https://demo.convex.site',
@@ -102,12 +136,12 @@ describe('auth proxy security regressions', () => {
         redirectTo: '/auth/signin',
       },
     })
-    mocks.storage.mockReturnValue({
-      getItem: vi.fn().mockResolvedValue([]),
-      setItem: vi.fn().mockResolvedValue(undefined),
-    })
+    mocks.recordAuthProxyRequest.mockResolvedValue(undefined)
   })
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
 
   it('makes exactly one manual request and never follows an upstream redirect', async () => {
     const fetchMock = stubFetch(
@@ -120,16 +154,16 @@ describe('auth proxy security regressions', () => {
       ),
     )
     const handler = await loadHandler()
-    await handler(event())
+    const response = await handler(event())
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock).toHaveBeenCalledWith(
       'https://demo.convex.site/api/auth/get-session',
       expect.objectContaining({ redirect: 'manual' }),
     )
-    expect(mocks.responseStatus).toHaveBeenCalledWith(expect.anything(), 302, '')
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(expect.anything(), {
-      'cache-control': 'private, no-store',
-    })
+    expect(response.status).toBe(302)
+    expect(response.statusText).toBe('')
+    expect(response.headers.get('location')).toBe('http://127.0.0.1/api/auth/get-session')
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
   })
 
   it('preserves Better Auth navigation versus browser-fetch redirect semantics', async () => {
@@ -159,7 +193,6 @@ describe('auth proxy security regressions', () => {
 
   it('denies a poisoned Host with a matching attacker Origin before upstream delivery', async () => {
     const fetchMock = stubFetch(vi.fn(async () => new Response('{}')))
-    mocks.requestUrl.mockReturnValue(new URL('https://attacker.example.test/api/auth/get-session'))
 
     const handler = await loadHandler()
 
@@ -173,7 +206,7 @@ describe('auth proxy security regressions', () => {
         }),
       ),
     ).rejects.toMatchObject({
-      statusCode: 403,
+      status: 403,
       data: { code: 'BCN_AUTH_PROXY_ORIGIN_BLOCKED' },
     })
     expect(fetchMock).not.toHaveBeenCalled()
@@ -189,7 +222,7 @@ describe('auth proxy security regressions', () => {
 
     const handler = await loadHandler()
     await expect(handler(event())).rejects.toMatchObject({
-      statusCode: 500,
+      status: 500,
       data: { code: 'BCN_AUTH_PROXY_PUBLIC_ORIGIN_MISSING' },
     })
     expect(fetchMock).not.toHaveBeenCalled()
@@ -210,7 +243,7 @@ describe('auth proxy security regressions', () => {
 
       const handler = await loadHandler()
       await expect(handler(event('GET', undefined, headers))).rejects.toMatchObject({
-        statusCode: 400,
+        status: 400,
         data: { code: 'BCN_AUTH_PROXY_CLIENT_IP_INVALID' },
       })
       expect(fetchMock).not.toHaveBeenCalled()
@@ -225,25 +258,25 @@ describe('auth proxy security regressions', () => {
 
       const handler = await loadHandler()
       await expect(handler(event())).rejects.toMatchObject({
-        statusCode: 500,
+        status: 500,
         data: { code: 'BCN_AUTH_PROXY_IP_SECRET_INVALID' },
       })
       expect(fetchMock).not.toHaveBeenCalled()
     },
   )
 
+  // Catches a development diagnostics failure (devtools registry unavailable)
+  // turning a successful sign-in response into a 502.
   it('keeps successful auth responses independent from development diagnostics storage', async () => {
-    mocks.storage.mockImplementation(() => {
-      throw new Error('diagnostics storage unavailable')
-    })
+    mocks.recordAuthProxyRequest.mockRejectedValue(new Error('diagnostics unavailable'))
     stubFetch(vi.fn(async () => new Response('{}')))
 
     const handler = await loadHandler()
-    const proxyEvent = event()
+    const response = await inDevelopment(() => handler(event()))
 
-    await expect(handler(proxyEvent)).resolves.toBeUndefined()
-    expect(mocks.send).toHaveBeenCalledWith(proxyEvent, new TextEncoder().encode('{}'))
-    expect(mocks.responseStatus).toHaveBeenCalledWith(expect.anything(), 200, '')
+    expect(mocks.recordAuthProxyRequest).toHaveBeenCalledOnce()
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('{}')
   })
 
   it('traces proxy state transitions without request or response credentials', async () => {
@@ -257,15 +290,19 @@ describe('auth proxy security regressions', () => {
     const requestBody = new TextEncoder().encode(`password=${requestSentinel}`)
     stubFetch(vi.fn(async () => new Response(JSON.stringify({ token: responseSentinel }))))
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/sign-in/email'))
 
     try {
       const handler = await loadHandler()
       await handler(
-        event('POST', requestBody, {
-          'content-length': String(requestBody.byteLength),
-          'content-type': 'application/x-www-form-urlencoded',
-        }),
+        event(
+          'POST',
+          requestBody,
+          {
+            'content-length': String(requestBody.byteLength),
+            'content-type': 'application/x-www-form-urlencoded',
+          },
+          '/api/auth/sign-in/email',
+        ),
       )
 
       const output = JSON.stringify(log.mock.calls)
@@ -290,15 +327,19 @@ describe('auth proxy security regressions', () => {
         return new Response('{}')
       }),
     )
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/plugin/binary'))
     const handler = await loadHandler()
     await handler(
-      event('POST', bytes, {
-        'content-length': '3',
-        'content-type': 'application/octet-stream',
-        'x-forwarded-for': '10.0.0.1',
-        'x-better-auth-forwarded-host': 'evil.test',
-      }),
+      event(
+        'POST',
+        bytes,
+        {
+          'content-length': '3',
+          'content-type': 'application/octet-stream',
+          'x-forwarded-for': '10.0.0.1',
+          'x-better-auth-forwarded-host': 'evil.test',
+        },
+        '/api/auth/plugin/binary',
+      ),
     )
     expect(new Uint8Array(forwarded?.body as ArrayBuffer)).toEqual(bytes)
     const headers = forwarded?.headers as Record<string, string>
@@ -310,6 +351,7 @@ describe('auth proxy security regressions', () => {
 
   it('forwards independent cookies, removes unsafe response framing, and forces no-store', async () => {
     const responseHeaders = new Headers({
+      'cache-control': 'public, max-age=86400',
       'cdn-cache-control': 'public, s-maxage=86400',
       'content-length': '999',
       'content-encoding': 'gzip',
@@ -323,39 +365,81 @@ describe('auth proxy security regressions', () => {
     responseHeaders.append('set-cookie', 'better-auth.callback=two; Path=/; HttpOnly')
     stubFetch(vi.fn(async () => new Response('{}', { headers: responseHeaders })))
     const handler = await loadHandler()
-    await handler(event())
-    expect(mocks.responseCookie).toHaveBeenCalledTimes(2)
-    expect(mocks.responseCookie).toHaveBeenNthCalledWith(
-      1,
-      expect.anything(),
-      'set-cookie',
+    const response = await handler(event())
+    expect(response.headers.getSetCookie()).toEqual([
       'better-auth.session_token=one; Path=/; HttpOnly',
-    )
-    expect(mocks.responseCookie).toHaveBeenNthCalledWith(
-      2,
-      expect.anything(),
-      'set-cookie',
       'better-auth.callback=two; Path=/; HttpOnly',
-    )
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'content-length': expect.anything(),
-    })
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'content-encoding': expect.anything(),
-    })
+    ])
+    // The framing describes the bytes the proxy sends, not the upstream's.
+    expect(response.headers.get('content-length')).toBe('2')
+    expect(response.headers.get('content-encoding')).toBeNull()
     for (const header of [
       'cdn-cache-control',
       'surrogate-control',
       'vercel-cdn-cache-control',
       'x-hop',
     ]) {
-      expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-        [header]: expect.anything(),
-      })
+      expect(response.headers.get(header), header).toBeNull()
     }
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(expect.anything(), {
-      'cache-control': 'private, no-store',
-    })
+    expect(response.headers.get('content-type')).toBe('application/json')
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(await response.text()).toBe('{}')
+  })
+
+  it('lets the upstream sign-out cookie win over a renewal staged on the event', async () => {
+    const upstreamHeaders = new Headers()
+    upstreamHeaders.append('set-cookie', 'better-auth.session_token=; Max-Age=0; Path=/; HttpOnly')
+    stubFetch(vi.fn(async () => new Response('{}', { headers: upstreamHeaders })))
+    const handler = await loadHandler()
+    const web = webEvent({ path: '/api/auth/sign-out', method: 'POST', body: '{}' })
+    const errHeaders = new Headers()
+    Object.assign(web.res, { errHeaders })
+    for (const headers of [web.res.headers, errHeaders]) {
+      headers.append('set-cookie', 'better-auth.session_token=renewed; Path=/; HttpOnly')
+      headers.append('set-cookie', 'better-auth.other=kept; Path=/; HttpOnly')
+    }
+
+    const response = await handler(web)
+
+    // h3 2.x appends the event's queued headers after the returned Response's.
+    for (const staged of [web.res.headers, errHeaders]) {
+      const sent = [...response.headers.getSetCookie(), ...staged.getSetCookie()]
+      const sessionLines = sent.filter((line) => line.startsWith('better-auth.session_token='))
+      expect(sessionLines.at(-1)).toBe('better-auth.session_token=; Max-Age=0; Path=/; HttpOnly')
+      expect(sent).toContain('better-auth.other=kept; Path=/; HttpOnly')
+    }
+  })
+
+  it.each([
+    { name: '204 with cookies', method: 'GET', status: 204, body: null, length: null },
+    { name: '304', method: 'GET', status: 304, body: null, length: null },
+    { name: 'empty 200', method: 'GET', status: 200, body: '', length: '0' },
+    { name: 'HEAD on JWKS', method: 'HEAD', status: 200, body: null, length: null },
+  ])('frames a $name upstream response by its status and method', async (row) => {
+    // JWKS is public metadata and rejects upstream cookies, so only the main
+    // proxy rows carry them.
+    const jwks = row.method === 'HEAD'
+    const upstreamHeaders = new Headers({ 'content-length': '42' })
+    if (!jwks) {
+      upstreamHeaders.append('set-cookie', 'better-auth.session_token=one; Path=/; HttpOnly')
+      upstreamHeaders.append('set-cookie', 'better-auth.callback=two; Path=/; HttpOnly')
+    }
+    stubFetch(
+      vi.fn(async () => new Response(row.body, { status: row.status, headers: upstreamHeaders })),
+    )
+    const handler = await loadHandler(jwks ? 'jwks' : 'proxy')
+    const response = await handler(
+      event(row.method, undefined, {}, jwks ? '/api/auth/jwks' : '/api/auth/get-session'),
+    )
+    expect(response.status).toBe(row.status)
+    expect(response.headers.get('content-length')).toBe(row.length)
+    expect(response.body === null).toBe(row.length === null)
+    if (!jwks) {
+      expect(response.headers.getSetCookie()).toEqual([
+        'better-auth.session_token=one; Path=/; HttpOnly',
+        'better-auth.callback=two; Path=/; HttpOnly',
+      ])
+    }
   })
 
   it('rejects Domain-scoped Better Auth cookies and cancels the upstream body', async () => {
@@ -372,13 +456,14 @@ describe('auth proxy security regressions', () => {
       ),
     )
     const handler = await loadHandler()
+    const proxyEvent = event()
 
-    await expect(handler(event())).rejects.toMatchObject({
-      statusCode: 502,
+    await expect(handler(proxyEvent)).rejects.toMatchObject({
+      status: 502,
       data: { code: 'BCN_AUTH_PROXY_COOKIE_DOMAIN_UNSUPPORTED' },
     })
     expect(cancel).toHaveBeenCalledOnce()
-    expect(mocks.responseCookie).not.toHaveBeenCalled()
+    expect(proxyEvent.res.getHeader('set-cookie')).toBeUndefined()
   })
 
   it('rejects unsupported upstream cookie names and cancels the upstream body', async () => {
@@ -392,13 +477,14 @@ describe('auth proxy security regressions', () => {
       ),
     )
     const handler = await loadHandler()
+    const proxyEvent = event()
 
-    await expect(handler(event())).rejects.toMatchObject({
-      statusCode: 502,
+    await expect(handler(proxyEvent)).rejects.toMatchObject({
+      status: 502,
       data: { code: 'BCN_AUTH_PROXY_COOKIE_NAME_UNSUPPORTED' },
     })
     expect(cancel).toHaveBeenCalledOnce()
-    expect(mocks.responseCookie).not.toHaveBeenCalled()
+    expect(proxyEvent.res.getHeader('set-cookie')).toBeUndefined()
   })
 
   it('rejects weak session-cookie flags and cancels the upstream body', async () => {
@@ -415,13 +501,14 @@ describe('auth proxy security regressions', () => {
       ),
     )
     const handler = await loadHandler()
+    const proxyEvent = event()
 
-    await expect(handler(event())).rejects.toMatchObject({
-      statusCode: 502,
+    await expect(handler(proxyEvent)).rejects.toMatchObject({
+      status: 502,
       data: { code: 'BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED', violation: 'secure-missing' },
     })
     expect(cancel).toHaveBeenCalledOnce()
-    expect(mocks.responseCookie).not.toHaveBeenCalled()
+    expect(proxyEvent.res.getHeader('set-cookie')).toBeUndefined()
   })
 
   it('forwards only the final upstream value for a duplicate cookie name', async () => {
@@ -437,47 +524,40 @@ describe('auth proxy security regressions', () => {
     stubFetch(vi.fn(async () => new Response('{}', { headers: responseHeaders })))
     const handler = await loadHandler()
 
-    await handler(event())
+    const response = await handler(event())
 
-    expect(mocks.responseCookie).toHaveBeenCalledOnce()
-    expect(mocks.responseCookie).toHaveBeenCalledWith(
-      expect.anything(),
-      'set-cookie',
+    expect(response.headers.getSetCookie()).toEqual([
       'better-auth.session_token=new; Path=/; HttpOnly; SameSite=Lax',
-    )
+    ])
   })
 
   it('rejects cross-origin and non-GET/POST requests before fetch', async () => {
     const fetchMock = stubFetch(vi.fn())
     const handler = await loadHandler()
-    await expect(handler(event('OPTIONS'))).rejects.toMatchObject({ statusCode: 405 })
+    await expect(handler(event('OPTIONS'))).rejects.toMatchObject({ status: 405 })
     await expect(
       handler(event('GET', undefined, { origin: 'https://evil.example' })),
-    ).rejects.toMatchObject({ statusCode: 403 })
-    const hostileReferer = event('POST')
-    hostileReferer.headers.delete('origin')
-    hostileReferer.headers.set('referer', 'https://evil.example/form')
-    await expect(handler(hostileReferer)).rejects.toMatchObject({ statusCode: 403 })
-    expect(hostileReferer.node.res.shouldKeepAlive).toBe(false)
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(hostileReferer, {
-      connection: 'close',
+    ).rejects.toMatchObject({ status: 403 })
+    const hostileReferer = rawH3V1Event({
+      method: 'POST',
+      headers: {
+        'cf-connecting-ip': DEFAULT_HEADERS['cf-connecting-ip'],
+        referer: 'https://evil.example/form',
+      },
     })
-    await expect(
-      handler(
-        event('POST', undefined, {
-          origin: 'https://app.example.test',
-          'sec-fetch-site': 'same-site',
-        }),
-      ),
-    ).rejects.toMatchObject({ statusCode: 403 })
+    await expect(handler(hostileReferer)).rejects.toMatchObject({ status: 403 })
+    expect(hostileReferer.res.shouldKeepAlive).toBe(false)
+    expect(hostileReferer.res.getHeader('connection')).toBe('close')
+    const sameSite = event('POST', undefined, {
+      origin: 'https://app.example.test',
+      'sec-fetch-site': 'same-site',
+    })
+    await expect(handler(sameSite)).rejects.toMatchObject({ status: 403 })
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(expect.anything(), {
-      'cache-control': 'private, no-store',
-    })
+    expect(sameSite.res.getHeader('cache-control')).toBe('private, no-store')
   })
 
   it('proxies only a credential-free cross-origin public-client token form', async () => {
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
     let forwardedInit: RequestInit | undefined
     const fetchMock = stubFetch(
       vi.fn(async (_target: string, init?: RequestInit) => {
@@ -496,15 +576,20 @@ describe('auth proxy security regressions', () => {
     const body = new TextEncoder().encode(
       'grant_type=authorization_code&client_id=public-client&code=opaque',
     )
-    const tokenRequest = event('POST', body, {
-      'content-length': String(body.byteLength),
-      'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
-      origin: 'http://127.0.0.1:6274',
-      referer: 'http://127.0.0.1:6274/oauth/callback',
-      'sec-fetch-site': 'cross-site',
-    })
+    const tokenRequest = event(
+      'POST',
+      body,
+      {
+        'content-length': String(body.byteLength),
+        'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        origin: 'http://127.0.0.1:6274',
+        referer: 'http://127.0.0.1:6274/oauth/callback',
+        'sec-fetch-site': 'cross-site',
+      },
+      '/api/auth/oauth2/token',
+    )
 
-    await handler(tokenRequest)
+    const response = await handler(tokenRequest)
 
     expect(fetchMock).toHaveBeenCalledOnce()
     if (!forwardedInit) throw new Error('Expected the public token request to be forwarded')
@@ -515,42 +600,41 @@ describe('auth proxy security regressions', () => {
     expect(forwarded['sec-fetch-site']).toBeUndefined()
     expect(forwarded.cookie).toBeUndefined()
     expect(forwarded.authorization).toBeUndefined()
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(tokenRequest, {
-      'access-control-allow-origin': '*',
-    })
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'access-control-allow-credentials': expect.anything(),
-    })
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'access-control-allow-origin': 'https://upstream.example.test',
-    })
-    expect(mocks.responseCookie).not.toHaveBeenCalled()
+    expect(response.status).toBe(400)
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    expect(response.headers.get('access-control-allow-credentials')).toBeNull()
+    expect(response.headers.getSetCookie()).toEqual([])
+    // An error the server renders after this point keeps the public CORS header.
+    expect(tokenRequest.res.getHeader('access-control-allow-origin')).toBe('*')
+    expect(tokenRequest.res.getHeader('access-control-allow-credentials')).toBeUndefined()
   })
 
   it('answers only the exact public-client token preflight without upstream traffic', async () => {
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
     const fetchMock = stubFetch(vi.fn())
     const handler = await loadHandler()
-    const preflight = event('OPTIONS', undefined, {
-      'access-control-request-headers': 'content-type',
-      'access-control-request-method': 'POST',
-      origin: 'http://127.0.0.1:6274',
-    })
+    const preflight = event(
+      'OPTIONS',
+      undefined,
+      {
+        'access-control-request-headers': 'content-type',
+        'access-control-request-method': 'POST',
+        origin: 'http://127.0.0.1:6274',
+      },
+      '/api/auth/oauth2/token',
+    )
 
-    await handler(preflight)
+    const response = await handler(preflight)
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(mocks.responseStatus).toHaveBeenCalledWith(preflight, 204)
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(preflight, {
+    expect(response.status).toBe(204)
+    expect(response.body).toBeNull()
+    expect(Object.fromEntries(response.headers)).toEqual({
       'access-control-allow-headers': 'content-type',
       'access-control-allow-methods': 'POST',
       'access-control-allow-origin': '*',
-      'access-control-max-age': 300,
+      'access-control-max-age': '300',
+      'cache-control': 'private, no-store',
     })
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'access-control-allow-credentials': expect.anything(),
-    })
-    expect(mocks.send).toHaveBeenCalledWith(preflight, '')
   })
 
   it('rejects credential, media, header, method, path, query, and preflight expansion', async () => {
@@ -567,66 +651,66 @@ describe('auth proxy security regressions', () => {
       { ...base, dpop: 'proof' },
       { ...base, 'content-type': 'application/json' },
     ]) {
-      mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
-      await expect(handler(event('POST', undefined, headers))).rejects.toMatchObject({
-        statusCode: 403,
-      })
+      await expect(
+        handler(event('POST', undefined, headers, '/api/auth/oauth2/token')),
+      ).rejects.toMatchObject({ status: 403 })
     }
 
-    for (const requestUrl of [
-      'https://app.example.test/api/auth/oauth2/token?tenant=attacker',
-      'https://app.example.test/api/auth/oauth2/revoke',
-      'https://app.example.test/api/auth/oauth2/authorize',
-      'https://app.example.test/api/auth/get-session',
-      'https://app.example.test/api/auth/mcp/admin/provision',
+    for (const path of [
+      '/api/auth/oauth2/token?tenant=attacker',
+      '/api/auth/oauth2/revoke',
+      '/api/auth/oauth2/authorize',
+      '/api/auth/get-session',
+      '/api/auth/mcp/admin/provision',
     ]) {
-      mocks.requestUrl.mockReturnValue(new URL(requestUrl))
-      await expect(handler(event('POST', undefined, base))).rejects.toMatchObject({
-        statusCode: 403,
+      await expect(handler(event('POST', undefined, base, path))).rejects.toMatchObject({
+        status: 403,
       })
     }
 
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
-    await expect(handler(event('GET', undefined, { origin: base.origin }))).rejects.toMatchObject({
-      statusCode: 403,
-    })
+    await expect(
+      handler(event('GET', undefined, { origin: base.origin }, '/api/auth/oauth2/token')),
+    ).rejects.toMatchObject({ status: 403 })
     await expect(
       handler(
-        event('OPTIONS', undefined, {
-          'access-control-request-headers': 'content-type, authorization',
-          'access-control-request-method': 'POST',
-          origin: base.origin,
-        }),
+        event(
+          'OPTIONS',
+          undefined,
+          {
+            'access-control-request-headers': 'content-type, authorization',
+            'access-control-request-method': 'POST',
+            origin: base.origin,
+          },
+          '/api/auth/oauth2/token',
+        ),
       ),
-    ).rejects.toMatchObject({ statusCode: 405 })
+    ).rejects.toMatchObject({ status: 405 })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('rejects cookies from the public token upstream instead of exposing them cross-origin', async () => {
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/token'))
     const responseHeaders = new Headers()
     responseHeaders.append('set-cookie', 'better-auth.session_token=secret; Path=/; HttpOnly')
     stubFetch(vi.fn(async () => new Response('{}', { headers: responseHeaders })))
     const handler = await loadHandler()
+    const tokenRequest = event(
+      'POST',
+      new TextEncoder().encode('grant_type=authorization_code'),
+      {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'http://127.0.0.1:6274',
+      },
+      '/api/auth/oauth2/token',
+    )
 
-    await expect(
-      handler(
-        event('POST', new TextEncoder().encode('grant_type=authorization_code'), {
-          'content-type': 'application/x-www-form-urlencoded',
-          origin: 'http://127.0.0.1:6274',
-        }),
-      ),
-    ).rejects.toMatchObject({
-      statusCode: 502,
+    await expect(handler(tokenRequest)).rejects.toMatchObject({
+      status: 502,
       data: { code: 'BCN_AUTH_PROXY_TOKEN_COOKIE_REJECTED' },
     })
-    expect(mocks.responseCookie).not.toHaveBeenCalled()
+    expect(tokenRequest.res.getHeader('set-cookie')).toBeUndefined()
   })
 
   it('serves authorization-server metadata cross-origin without credentialed CORS', async () => {
-    mocks.requestUrl.mockReturnValue(
-      new URL('https://app.example.test/.well-known/oauth-authorization-server/api/auth'),
-    )
     const fetchMock = stubFetch(
       vi.fn(
         async () =>
@@ -640,35 +724,35 @@ describe('auth proxy security regressions', () => {
       ),
     )
     const handler = await loadHandler('metadata')
-    const metadataRequest = event('GET', undefined, { origin: 'http://127.0.0.1:6274' })
+    const metadataRequest = event(
+      'GET',
+      undefined,
+      { origin: 'http://127.0.0.1:6274' },
+      '/.well-known/oauth-authorization-server/api/auth',
+    )
 
-    await handler(metadataRequest)
+    const response = await handler(metadataRequest)
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://demo.convex.site/api/auth/.well-known/oauth-authorization-server',
       expect.anything(),
     )
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(metadataRequest, {
-      'access-control-allow-origin': '*',
-    })
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'access-control-allow-credentials': expect.anything(),
-    })
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'access-control-allow-origin': 'https://upstream.example.test',
-    })
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    expect(response.headers.get('access-control-allow-credentials')).toBeNull()
+    expect(metadataRequest.res.getHeader('access-control-allow-origin')).toBe('*')
   })
 
   it('serves credential-free JWKS to server verifiers without browser ingress metadata', async () => {
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/jwks'))
     const fetchMock = stubFetch(vi.fn(async () => new Response('{"keys":[]}')))
     const handler = await loadHandler('jwks')
-    const jwksRequest = event('GET', undefined, {
-      'cf-connecting-ip': '',
-      origin: '',
-    })
+    const jwksRequest = event(
+      'GET',
+      undefined,
+      { 'cf-connecting-ip': '', origin: '' },
+      '/api/auth/jwks',
+    )
 
-    await handler(jwksRequest)
+    const response = await handler(jwksRequest)
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://demo.convex.site/api/auth/jwks',
@@ -679,22 +763,25 @@ describe('auth proxy security regressions', () => {
         }),
       }),
     )
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(jwksRequest, {
-      'access-control-allow-origin': '*',
-    })
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    expect(jwksRequest.res.getHeader('access-control-allow-origin')).toBe('*')
   })
 
   it('serves public JWKS to a browser with cookies and never forwards them', async () => {
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/jwks'))
     const fetchMock = stubFetch(vi.fn(async () => new Response('{"keys":[]}')))
     const handler = await loadHandler('jwks')
 
     await handler(
-      event('GET', undefined, {
-        'cf-connecting-ip': '',
-        // A signed-in developer opening the URL, on a platform that sets its own cookie.
-        cookie: 'better-auth.session_token=secret; __vdpl=dpl_123',
-      }),
+      event(
+        'GET',
+        undefined,
+        {
+          'cf-connecting-ip': '',
+          // A signed-in developer opening the URL, on a platform that sets its own cookie.
+          cookie: 'better-auth.session_token=secret; __vdpl=dpl_123',
+        },
+        '/api/auth/jwks',
+      ),
     )
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -706,9 +793,7 @@ describe('auth proxy security regressions', () => {
   })
 
   it('rejects credentials entering or leaving public authorization-server metadata', async () => {
-    mocks.requestUrl.mockReturnValue(
-      new URL('https://app.example.test/.well-known/oauth-authorization-server/api/auth'),
-    )
+    const metadataPath = '/.well-known/oauth-authorization-server/api/auth'
     const fetchMock = stubFetch(vi.fn(async () => new Response('{}')))
     const handler = await loadHandler('metadata')
 
@@ -718,8 +803,8 @@ describe('auth proxy security regressions', () => {
       { 'proxy-authorization': 'Basic secret', origin: 'http://127.0.0.1:6274' },
     ]
     for (const headers of credentialHeaders) {
-      await expect(handler(event('GET', undefined, headers))).rejects.toMatchObject({
-        statusCode: 403,
+      await expect(handler(event('GET', undefined, headers, metadataPath))).rejects.toMatchObject({
+        status: 403,
         data: { code: 'BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED' },
       })
     }
@@ -731,49 +816,75 @@ describe('auth proxy security regressions', () => {
     })
     responseHeaders.append('set-cookie', 'better-auth.session_token=secret; Path=/; HttpOnly')
     fetchMock.mockResolvedValueOnce(new Response('{}', { headers: responseHeaders }))
-    const metadataRequest = event('GET', undefined, { origin: 'http://127.0.0.1:6274' })
+    const metadataRequest = event(
+      'GET',
+      undefined,
+      { origin: 'http://127.0.0.1:6274' },
+      metadataPath,
+    )
     await expect(handler(metadataRequest)).rejects.toMatchObject({
-      statusCode: 502,
+      status: 502,
       data: { code: 'BCN_AUTH_PROXY_METADATA_COOKIE_REJECTED' },
     })
-    expect(mocks.responseCookie).not.toHaveBeenCalled()
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(metadataRequest, {
-      'access-control-allow-origin': '*',
-    })
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'access-control-allow-credentials': expect.anything(),
-    })
-    expect(mocks.responseHeaders).not.toHaveBeenCalledWith(expect.anything(), {
-      'access-control-allow-origin': 'https://upstream.example.test',
-    })
+    expect(metadataRequest.res.getHeader('set-cookie')).toBeUndefined()
+    expect(metadataRequest.res.getHeader('access-control-allow-origin')).toBe('*')
+    expect(metadataRequest.res.getHeader('access-control-allow-credentials')).toBeUndefined()
   })
 
   it('rejects framed GET and encoded POST bodies before fetch and closes the connection', async () => {
     const fetchMock = stubFetch(vi.fn())
     const handler = await loadHandler()
 
-    const framedGet = event('GET', undefined, { 'content-length': '1' })
-    framedGet.node.req.complete = false
+    const framedGet = rawH3V1Event({
+      headers: { ...DEFAULT_HEADERS, 'content-length': '1' },
+      open: true,
+      complete: false,
+    })
     await expect(handler(framedGet)).rejects.toMatchObject({
-      statusCode: 400,
+      status: 400,
       data: { code: 'BCN_AUTH_PROXY_GET_BODY_REJECTED' },
     })
-    expect(framedGet.node.res.shouldKeepAlive).toBe(false)
+    expect(framedGet.res.shouldKeepAlive).toBe(false)
+    expect(framedGet.res.getHeader('connection')).toBe('close')
 
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/plugin/action'))
-    const encodedPost = event('POST', new Uint8Array([1]), { 'content-encoding': 'gzip' })
+    const encodedPost = event(
+      'POST',
+      new Uint8Array([1]),
+      { 'content-encoding': 'gzip' },
+      '/api/auth/plugin/action',
+    )
     await expect(handler(encodedPost)).rejects.toMatchObject({
-      statusCode: 415,
+      status: 415,
       data: { code: 'BCN_AUTH_PROXY_REQUEST_ENCODING_UNSUPPORTED' },
     })
-    expect(encodedPost.node.res.shouldKeepAlive).toBe(false)
+    expect(encodedPost.res.shouldKeepAlive).toBe(false)
+    expect(encodedPost.res.getHeader('connection')).toBe('close')
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(framedGet, {
-      'cache-control': 'private, no-store',
+    expect(framedGet.res.getHeader('cache-control')).toBe('private, no-store')
+    expect(encodedPost.res.getHeader('cache-control')).toBe('private, no-store')
+  })
+
+  // Catches the size error and the proxy's catch block disagreeing on the
+  // status field: a chunked oversize upload (no content-length to reject
+  // early) would then answer 502 BCN_AUTH_PROXY_UNREACHABLE and keep the
+  // connection open with unread bytes, instead of 413 and `Connection: close`.
+  it('answers a chunked POST over the limit with 413 and closes the connection', async () => {
+    const fetchMock = stubFetch(vi.fn())
+    const handler = await loadHandler()
+    const oversize = event(
+      'POST',
+      new Uint8Array(1_048_577),
+      { 'content-type': 'application/octet-stream', 'transfer-encoding': 'chunked' },
+      '/api/auth/plugin/upload',
+    )
+
+    await expect(handler(oversize)).rejects.toMatchObject({
+      status: 413,
+      data: { code: 'BCN_AUTH_PROXY_REQUEST_BODY_TOO_LARGE' },
     })
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(encodedPost, {
-      'cache-control': 'private, no-store',
-    })
+    expect(oversize.res.getHeader('connection')).toBe('close')
+    expect(oversize.res.shouldKeepAlive).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('cancels an upstream response with an unsupported content encoding', async () => {
@@ -793,27 +904,27 @@ describe('auth proxy security regressions', () => {
       ),
     )
     const handler = await loadHandler()
+    const proxyEvent = event()
 
-    await expect(handler(event())).rejects.toMatchObject({
-      statusCode: 502,
+    await expect(handler(proxyEvent)).rejects.toMatchObject({
+      status: 502,
       data: { code: 'BCN_AUTH_PROXY_UPSTREAM_ENCODING_UNSUPPORTED' },
     })
     await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
-    expect(mocks.responseHeaders).toHaveBeenCalledWith(expect.anything(), {
-      'cache-control': 'private, no-store',
-    })
+    expect(proxyEvent.res.getHeader('cache-control')).toBe('private, no-store')
   })
 
   it('preserves missing-origin GET callback semantics', async () => {
     const fetchMock = stubFetch(vi.fn(async () => new Response('', { status: 302 })))
-    mocks.requestUrl.mockReturnValue(
-      new URL('https://app.example.test/api/auth/callback/github?code=opaque&state=opaque'),
-    )
     const handler = await loadHandler()
-    const callback = event('GET')
-    callback.headers.delete('origin')
-    callback.headers.set('referer', 'https://github.com/')
-    callback.headers.set('sec-fetch-site', 'cross-site')
+    const callback = rawH3V1Event({
+      path: '/api/auth/callback/github?code=opaque&state=opaque',
+      headers: {
+        'cf-connecting-ip': DEFAULT_HEADERS['cf-connecting-ip'],
+        referer: 'https://github.com/',
+        'sec-fetch-site': 'cross-site',
+      },
+    })
 
     await handler(callback)
 
@@ -826,7 +937,6 @@ describe('auth proxy security regressions', () => {
 
   it('forwards only the exact core Apple-style form_post callback shape', async () => {
     const fetchMock = stubFetch(vi.fn(async () => new Response('', { status: 302 })))
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/callback/apple'))
     const handler = await loadHandler()
     const body = new TextEncoder().encode('code=opaque&state=opaque')
     const callbackHeaders = {
@@ -836,7 +946,7 @@ describe('auth proxy security regressions', () => {
       'sec-fetch-site': 'cross-site',
     }
 
-    await handler(event('POST', body, callbackHeaders))
+    await handler(event('POST', body, callbackHeaders, '/api/auth/callback/apple'))
 
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock).toHaveBeenCalledWith(
@@ -848,76 +958,65 @@ describe('auth proxy security regressions', () => {
     )
 
     fetchMock.mockClear()
-    mocks.requestUrl.mockReturnValue(
-      new URL('https://app.example.test/api/auth/callback/apple/extra'),
-    )
-    await expect(handler(event('POST', body, callbackHeaders))).rejects.toMatchObject({
-      statusCode: 403,
-    })
+    await expect(
+      handler(event('POST', body, callbackHeaders, '/api/auth/callback/apple/extra')),
+    ).rejects.toMatchObject({ status: 403 })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('keeps the deadline active while the upstream body is stalled', async () => {
     vi.useFakeTimers()
-    try {
-      const cancel = vi.fn()
-      stubFetch(
-        vi.fn(
-          async () =>
-            new Response(
-              new ReadableStream({
-                start() {
-                  // Headers resolve, but the body intentionally never completes.
-                },
-                cancel,
-              }),
-            ),
-        ),
-      )
-      const handler = await loadHandler()
-      const response = expect(handler(event())).rejects.toMatchObject({ statusCode: 502 })
-      await vi.advanceTimersByTimeAsync(8_001)
-      await response
-      expect(cancel).toHaveBeenCalledOnce()
-    } finally {
-      vi.useRealTimers()
-    }
+    const cancel = vi.fn()
+    stubFetch(
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start() {
+                // Headers resolve, but the body intentionally never completes.
+              },
+              cancel,
+            }),
+          ),
+      ),
+    )
+    const handler = await loadHandler()
+    const response = expect(handler(event())).rejects.toMatchObject({ status: 502 })
+    await vi.advanceTimersByTimeAsync(8_001)
+    await response
+    expect(cancel).toHaveBeenCalledOnce()
   })
 
   it('does not let continuous response chunks extend the wall-clock deadline', async () => {
     vi.useFakeTimers()
-    try {
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const cancel = vi.fn(() => {
-        if (timer) clearTimeout(timer)
-      })
-      stubFetch(
-        vi.fn(
-          async () =>
-            new Response(
-              new ReadableStream({
-                start(controller) {
-                  const emit = () => {
-                    controller.enqueue(new Uint8Array([1]))
-                    timer = setTimeout(emit, 1_000)
-                  }
-                  emit()
-                },
-                cancel,
-              }),
-            ),
-        ),
-      )
-      const handler = await loadHandler()
-      const response = expect(handler(event())).rejects.toMatchObject({ statusCode: 502 })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cancel = vi.fn(() => {
+      if (timer) clearTimeout(timer)
+    })
+    stubFetch(
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                const emit = () => {
+                  controller.enqueue(new Uint8Array([1]))
+                  timer = setTimeout(emit, 1_000)
+                }
+                emit()
+              },
+              cancel,
+            }),
+          ),
+      ),
+    )
+    const handler = await loadHandler()
+    const response = expect(handler(event())).rejects.toMatchObject({ status: 502 })
 
-      await vi.advanceTimersByTimeAsync(8_001)
+    await vi.advanceTimersByTimeAsync(8_001)
 
-      await response
-      expect(cancel).toHaveBeenCalledOnce()
-    } finally {
-      vi.useRealTimers()
-    }
+    await response
+    expect(cancel).toHaveBeenCalledOnce()
   })
 
   it('cancels unread critical-error and declared-oversize upstream bodies', async () => {
@@ -933,7 +1032,7 @@ describe('auth proxy security regressions', () => {
     const handler = await loadHandler()
 
     await expect(handler(event())).rejects.toMatchObject({
-      statusCode: 502,
+      status: 502,
       data: { code: 'BCN_AUTH_PROXY_UPSTREAM_STATUS' },
     })
     expect(criticalCancel).toHaveBeenCalledOnce()
@@ -948,7 +1047,7 @@ describe('auth proxy security regressions', () => {
       ),
     )
     await expect(handler(event())).rejects.toMatchObject({
-      statusCode: 502,
+      status: 502,
       data: { code: 'BCN_AUTH_PROXY_UPSTREAM_BODY_TOO_LARGE' },
     })
     expect(oversizeCancel).toHaveBeenCalledOnce()
@@ -956,28 +1055,33 @@ describe('auth proxy security regressions', () => {
 
   it('propagates browser disconnects during upload and fetch with deterministic cleanup', async () => {
     const uploadCancel = vi.fn()
-    const upload = event(
-      'POST',
-      new ReadableStream({
+    const upload = rawH3V1Event({
+      method: 'POST',
+      headers: DEFAULT_HEADERS,
+      open: true,
+      complete: false,
+    })
+    Object.assign(upload.event, {
+      _requestBody: new ReadableStream({
         pull() {
           // Keep the upload pending until the browser disconnects.
         },
         cancel: uploadCancel,
       }),
-    )
-    upload.node.req.complete = false
+    })
     const fetchMock = stubFetch(vi.fn())
     const handler = await loadHandler()
-    const uploadResult = expect(handler(upload)).rejects.toMatchObject({ statusCode: 502 })
+    const uploadResult = expect(handler(upload)).rejects.toMatchObject({ status: 502 })
 
     await Promise.resolve()
-    upload.node.req.emit('aborted')
+    upload.req.emit('aborted')
     await uploadResult
     expect(uploadCancel).toHaveBeenCalledOnce()
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(upload.node.res.shouldKeepAlive).toBe(false)
-    expect(upload.node.req.listenerCount('aborted')).toBe(0)
-    expect(upload.node.res.listenerCount('close')).toBe(0)
+    expect(upload.res.shouldKeepAlive).toBe(false)
+    expect(upload.res.getHeader('connection')).toBe('close')
+    expect(upload.req.listenerCount('aborted')).toBe(0)
+    expect(upload.res.listenerCount('close')).toBe(0)
 
     let upstreamSignal: AbortSignal | undefined
     stubFetch(
@@ -992,41 +1096,201 @@ describe('auth proxy security regressions', () => {
       ),
     )
     const duringFetch = event()
-    const fetchResult = expect(handler(duringFetch)).rejects.toMatchObject({ statusCode: 502 })
+    const fetchResult = expect(handler(duringFetch)).rejects.toMatchObject({ status: 502 })
     await vi.waitFor(() => expect(upstreamSignal).toBeDefined())
-    duringFetch.node.res.emit('close')
+    duringFetch.res.emit('close')
 
     await fetchResult
     expect(upstreamSignal?.aborted).toBe(true)
-    expect(duringFetch.node.req.listenerCount('aborted')).toBe(0)
-    expect(duringFetch.node.res.listenerCount('close')).toBe(0)
+    expect(duringFetch.req.listenerCount('aborted')).toBe(0)
+    expect(duringFetch.res.listenerCount('close')).toBe(0)
   })
 
-  it('keeps the deadline and disconnect signal active until the Node response finishes', async () => {
-    let upstreamSignal: AbortSignal | undefined
-    stubFetch(
-      vi.fn(async (_target: string, init?: RequestInit) => {
-        upstreamSignal = init?.signal ?? undefined
-        return new Response('bounded')
-      }),
-    )
-    const download = event()
-    download.node.res.socket = {} as never
-    download.node.res.end = vi.fn()
-    download.node.res.destroy = vi.fn()
+  // Catches a stalled download holding the socket past the deadline, and
+  // leaked listeners or timers once the Node response is done. The handler
+  // returns its Response before the server writes it, so the guard must
+  // outlive the handler on a network response.
+  it.each([
+    { name: 'the client disconnects mid-download', end: 'close', destroyed: true },
+    { name: 'the deadline passes mid-download', end: 'deadline', destroyed: true },
+    { name: 'the response finishes', end: 'finish', destroyed: false },
+  ] as const)(
+    'keeps the deadline and disconnect signal active until the Node response finishes: $name',
+    async ({ end, destroyed }) => {
+      vi.useFakeTimers()
+      let upstreamSignal: AbortSignal | undefined
+      stubFetch(
+        vi.fn(async (_target: string, init?: RequestInit) => {
+          upstreamSignal = init?.signal ?? undefined
+          return new Response('bounded')
+        }),
+      )
+      const download = event()
+      Object.defineProperty(download.res, 'socket', { value: new Socket() })
+      const destroy = vi.spyOn(download.res, 'destroy').mockImplementation(() => download.res)
+      const handler = await loadHandler()
+
+      const response = await handler(download)
+
+      expect(response.status).toBe(200)
+      expect(upstreamSignal?.aborted).toBe(false)
+      expect(download.res.listenerCount('close')).toBeGreaterThan(0)
+      expect(vi.getTimerCount()).toBe(1)
+
+      if (end === 'deadline') {
+        await vi.advanceTimersByTimeAsync(8_001)
+      } else {
+        if (end === 'finish')
+          Object.defineProperty(download.res, 'writableFinished', { value: true })
+        download.res.emit(end)
+        if (end === 'finish') download.res.emit('close')
+      }
+
+      expect(upstreamSignal?.aborted).toBe(destroyed)
+      expect(destroy).toHaveBeenCalledTimes(destroyed ? 1 : 0)
+      expect(download.req.listenerCount('aborted')).toBe(0)
+      expect(download.res.listenerCount('close')).toBe(0)
+      expect(download.res.listenerCount('finish')).toBe(0)
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
+  // Catches the deferred guard applied to a Nuxt 4 in-process request (a
+  // Node response without a socket never emits close): the listeners and
+  // the deadline timer would then leak once per `$fetch` from the server.
+  it('releases the deadline and listeners of an in-process request when the handler returns', async () => {
+    vi.useFakeTimers()
+    stubFetch(vi.fn(async () => new Response('{}')))
     const handler = await loadHandler()
-    const result = expect(handler(download)).rejects.toMatchObject({ statusCode: 502 })
+    const inProcess = event()
 
-    await vi.waitFor(() => expect(download.node.res.end).toHaveBeenCalledOnce())
-    expect(upstreamSignal?.aborted).toBe(false)
-    download.node.res.emit('close')
+    const response = await handler(inProcess)
 
-    await result
-    expect(upstreamSignal?.aborted).toBe(true)
-    expect(download.node.res.destroy).toHaveBeenCalledOnce()
-    expect(download.node.req.listenerCount('aborted')).toBe(0)
-    expect(download.node.res.listenerCount('close')).toBe(0)
+    expect(response.status).toBe(200)
+    expect(inProcess.res.socket).toBeNull()
+    expect(inProcess.req.listenerCount('aborted')).toBe(0)
+    expect(inProcess.req.listenerCount('close')).toBe(0)
+    expect(inProcess.res.listenerCount('close')).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
+
+  // Catches the Nuxt 5 path off Node: reading a body that is not there, or
+  // ignoring the request's abort signal. Nuxt 5's Nitro v2 compatibility layer
+  // (on as soon as any module imports h3) gives such an event an `event.node`
+  // bridge of plain objects; treated as Node streams, every sign-in and
+  // session request answers 500 before reaching Convex.
+  it.each([
+    { shape: 'no event.node', decorate: <T extends object>(event: T) => event },
+    { shape: 'the Nuxt 5 compat event.node bridge', decorate: withCompatNodeBridge },
+  ])(
+    'proxies a web-shaped event without Node objects and follows its abort signal ($shape)',
+    async ({ decorate }) => {
+      let forwarded: RequestInit | undefined
+      stubFetch(
+        vi.fn(async (_target: string, init?: RequestInit) => {
+          forwarded = init
+          return new Response('{}', { status: 201, statusText: 'Created' })
+        }),
+      )
+      const handler = await loadHandler()
+      const body = new TextEncoder().encode('{"email":"a@example.test"}')
+      const posted = decorate(
+        webEvent({
+          method: 'POST',
+          body,
+          headers: { 'content-type': 'application/json' },
+          path: '/api/auth/sign-in/email',
+        }),
+      )
+
+      const response = await handler(posted)
+
+      expect(new Uint8Array(forwarded?.body as ArrayBuffer)).toEqual(body)
+      expect(response.status).toBe(201)
+      expect(response.statusText).toBe('Created')
+      expect(response.headers.get('cache-control')).toBe('private, no-store')
+      expect(posted.res.headers.get('cache-control')).toBe('private, no-store')
+
+      let upstreamSignal: AbortSignal | undefined
+      stubFetch(
+        vi.fn(
+          async (_target: string, init?: RequestInit) =>
+            await new Promise<Response>((_resolve, reject) => {
+              upstreamSignal = init?.signal ?? undefined
+              upstreamSignal?.addEventListener('abort', () => reject(upstreamSignal?.reason), {
+                once: true,
+              })
+            }),
+        ),
+      )
+      const client = new AbortController()
+      const result = expect(
+        handler(decorate(webEvent({ signal: client.signal }))),
+      ).rejects.toMatchObject({
+        status: 502,
+        data: { code: 'BCN_AUTH_PROXY_UNREACHABLE' },
+      })
+      await vi.waitFor(() => expect(upstreamSignal).toBeDefined())
+      client.abort(new Error('client went away'))
+
+      await result
+      expect(upstreamSignal?.reason).toMatchObject({ message: 'client went away' })
+    },
+  )
+
+  // Catches the Nuxt 5 proxy forwarding an empty body after a server
+  // middleware read it: srvx reads the IncomingMessage and keeps no copy, so
+  // sign-in would reach Better Auth without credentials and fail with no clear
+  // cause. A `nuxt/server` handler keeps a buffered copy on `event.req`.
+  // The third row catches a buffered-body marker whose copy cannot fill: a
+  // `nuxt/server` handler installed it without reading, after other code drained
+  // the body, so the lazy read fails and must not be blamed on Convex (502).
+  it.each([
+    { shape: 'a nuxt/server middleware buffered it', buffered: true, drained: false },
+    { shape: 'other code drained it', buffered: false, drained: true },
+    { shape: 'other code drained it under a buffered marker', buffered: true, drained: true },
+  ])(
+    'handles a POST body that earlier server code read on Nuxt 5 ($shape)',
+    async ({ buffered, drained }) => {
+      let forwarded: RequestInit | undefined
+      const fetchMock = stubFetch(
+        vi.fn(async (_target: string, init?: RequestInit) => {
+          forwarded = init
+          return new Response('{}')
+        }),
+      )
+      const handler = await loadHandler()
+      const body = new TextEncoder().encode('{"email":"a@example.test"}')
+      const request = {
+        method: 'POST',
+        path: '/api/auth/sign-in/email',
+        headers: { 'content-type': 'application/json', 'content-length': String(body.byteLength) },
+      }
+      const node = rawH3V1Event({
+        ...request,
+        headers: { ...DEFAULT_HEADERS, ...request.headers },
+        body,
+      })
+      node.req.resume()
+      await once(node.req, 'end')
+      const web = webEvent({ ...request, body })
+      // srvx on Node: the drained IncomingMessage stays on `req.runtime.node`.
+      Object.assign(web.req, { runtime: { node: { req: node.req, res: node.res } } })
+      if (drained) await web.req.arrayBuffer()
+      const event = buffered ? { ...web, req: nuxtBufferedRequest(web.req) } : web
+
+      if (!drained) {
+        expect((await handler(event)).status).toBe(200)
+        expect(new Uint8Array(forwarded?.body as ArrayBuffer)).toEqual(body)
+      } else {
+        await expect(handler(event)).rejects.toMatchObject({
+          status: 500,
+          data: { code: 'BCN_AUTH_PROXY_REQUEST_BODY_CONSUMED' },
+        })
+        expect(fetchMock).not.toHaveBeenCalled()
+      }
+    },
+  )
 
   it('drops upstream failure message, cause, and stack from proxy responses', async () => {
     const sentinels = {
@@ -1050,7 +1314,7 @@ describe('auth proxy security regressions', () => {
     }
 
     expect(rejection).toMatchObject({
-      statusCode: 502,
+      status: 502,
       message: expect.stringContaining('configured Convex auth server'),
       data: { code: 'BCN_AUTH_PROXY_UNREACHABLE' },
     })

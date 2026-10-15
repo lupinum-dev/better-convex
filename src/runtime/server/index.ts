@@ -1,4 +1,5 @@
 export { getConvexUser, requireConvexUser } from './utils/convex-user'
+export type { ConvexServerEvent } from './utils/event'
 export { toConvexH3Error } from './utils/h3-error'
 export {
   serverConvex,

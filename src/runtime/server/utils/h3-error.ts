@@ -1,4 +1,4 @@
-import { H3Error } from 'h3'
+import { createError, type NuxtError } from 'nuxt/server'
 
 import {
   normalizeConvexError,
@@ -29,7 +29,8 @@ function httpStatusFor(error: ConvexCallError): number {
 }
 
 /**
- * Map any thrown value to an H3 error for a Nitro handler response.
+ * Map any thrown value to an HTTP error (`NuxtError`) for a Nitro handler
+ * response.
  *
  * The value is first normalized to a `ConvexCallError`. The HTTP status follows
  * its kind: `authentication` is 401 (403 when the error carries 403),
@@ -38,10 +39,13 @@ function httpStatusFor(error: ConvexCallError): number {
  * error's `toJSON()` without `functionName`, so the browser revives the same
  * `ConvexCallError` with `normalizeConvexError` but never learns which Convex
  * function the route called. Log `functionName` from the original error on the
- * server. No raw cause, stack source, or credential is attached.
+ * server. No raw cause, stack source, or credential is attached. Check a caught
+ * value with `isNuxtError(error)` and read `error.status`.
  *
  * @example
  * ```ts
+ * import { defineEventHandler, readBody } from 'nuxt/server'
+ *
  * export default defineEventHandler(async (event) => {
  *   try {
  *     return await serverConvex(event).mutation(api.notes.create, await readBody(event))
@@ -51,11 +55,12 @@ function httpStatusFor(error: ConvexCallError): number {
  * })
  * ```
  */
-export function toConvexH3Error(error: unknown): H3Error<SerializedConvexCallError> {
+export function toConvexH3Error(error: unknown): NuxtError<SerializedConvexCallError> {
   const normalized = normalizeConvexError(error)
-  const h3Error = new H3Error<SerializedConvexCallError>(normalized.message)
-  h3Error.statusCode = httpStatusFor(normalized)
-  // Function paths expose application topology; keep them server-side.
-  h3Error.data = { ...normalized.toJSON(), functionName: undefined }
-  return h3Error
+  return createError<SerializedConvexCallError>({
+    status: httpStatusFor(normalized),
+    message: normalized.message,
+    // Function paths expose application topology; keep them server-side.
+    data: { ...normalized.toJSON(), functionName: undefined },
+  })
 }

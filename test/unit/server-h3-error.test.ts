@@ -1,7 +1,7 @@
 import { inspect } from 'node:util'
 
 import { ConvexError } from 'convex/values'
-import { H3Error } from 'h3'
+import { isNuxtError } from 'nuxt/server'
 import { describe, expect, it } from 'vitest'
 
 import { ConvexCallError, normalizeConvexError } from '../../src/runtime/errors'
@@ -22,11 +22,12 @@ describe('toConvexH3Error', () => {
     [new ConvexCallError({ kind: 'server', message: 'Upstream', status: 503 }), 400],
     [new ConvexCallError({ kind: 'server', message: 'Redirect', status: 302 }), 400],
     [new ConvexCallError({ kind: 'unknown', message: 'Unknown' }), 500],
-  ])('maps %o to HTTP %i', (error, statusCode) => {
+  ])('maps %o to HTTP %i', (error, status) => {
     const h3Error = toConvexH3Error(error)
 
-    expect(h3Error).toBeInstanceOf(H3Error)
-    expect(h3Error.statusCode).toBe(statusCode)
+    // An error Nuxt does not recognize is rendered as a 500 without our data.
+    expect(isNuxtError(h3Error)).toBe(true)
+    expect(h3Error.status).toBe(status)
     expect(h3Error.message).toBe(error.message)
     expect(h3Error.data).toEqual(error.toJSON())
   })
@@ -36,7 +37,7 @@ describe('toConvexH3Error', () => {
       new ConvexError({ code: 'NOTE_LOCKED', status: 423, message: 'The note is locked' }),
     )
 
-    expect(h3Error.statusCode).toBe(423)
+    expect(h3Error.status).toBe(423)
     expect(h3Error.data).toMatchObject({
       name: 'ConvexCallError',
       kind: 'server',
@@ -46,13 +47,19 @@ describe('toConvexH3Error', () => {
     })
   })
 
-  it('never copies a raw cause, message, or stack into the H3 error', () => {
+  it('never copies a raw cause, message, or stack into the HTTP error', () => {
     const raw = new Error(`upstream failed with ${SECRET}`)
     raw.stack = `Error: ${SECRET}\n    at secret-frame`
     const h3Error = toConvexH3Error(raw)
 
-    expect(h3Error.statusCode).toBe(500)
-    expect(h3Error.cause).toBeUndefined()
+    expect(h3Error.status).toBe(500)
+    // The raw error is never the cause. Nuxt 4.6 (h3 v1 `createError`) stores
+    // the sanitized input as the cause; Nuxt 5 leaves it undefined.
+    expect(h3Error.cause).not.toBe(raw)
+    expect([
+      undefined,
+      { status: 500, message: h3Error.message, data: h3Error.data },
+    ]).toContainEqual(h3Error.cause)
     expect(h3Error.data).toEqual(
       new ConvexCallError({ kind: 'unknown', message: h3Error.message }).toJSON(),
     )
@@ -68,7 +75,7 @@ describe('toConvexH3Error', () => {
     }
   })
 
-  it('round-trips through the H3 error, its JSON body, and an ofetch FetchError', () => {
+  it('round-trips through the HTTP error, its JSON body, and an ofetch FetchError', () => {
     const original = new ConvexCallError({
       kind: 'authentication',
       code: 'UNAUTHENTICATED',

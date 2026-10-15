@@ -112,6 +112,14 @@ const rules = [
 // The functions and agents packages open with their own tasks and rules; the full page index
 // follows on every entry page.
 const focus = {
+  // The Vue package gets the default rules; only the Nuxt package has server routes.
+  '@lupinum/better-convex-nuxt': {
+    startHere,
+    rules: [
+      ...rules,
+      'In Nuxt server routes, import `defineEventHandler`, `createError`, `readBody`, `readValidatedBody`, `getRequestHeader` and `useRuntimeConfig` from `nuxt/server`, never from `h3`, and import `serverConvex`, `getConvexUser`, `requireConvexUser` and `toConvexH3Error` from `#convex/server`. Call `useRuntimeConfig()` without an event, set response headers with `event.res.headers.set()`, read a raw body with `await event.req.text()`, and check errors with `isNuxtError(error)` and `error.status`.',
+    ],
+  },
   '@lupinum/better-convex-functions': {
     startHere: [
       [

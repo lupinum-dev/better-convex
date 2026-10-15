@@ -6,6 +6,7 @@ import {
 } from '../../src/runtime/server/api/auth/headers'
 import { isCrossOriginAuthRequest, isSameOrigin } from '../../src/runtime/server/api/auth/security'
 import { normalizeConvexSiteUrl } from '../../src/runtime/utils/site-url'
+import { webServerEvent } from '../helpers/server-event'
 import { HOSTILE_CALLBACK_PATHS, HOSTILE_ORIGINS, PROXY_CONTROL_HEADERS } from './regression-corpus'
 import { runSeededAuthCorpus } from './seeded'
 
@@ -92,7 +93,7 @@ describe('seeded auth proxy HTTP input corpus', () => {
   it('strips generated proxy controls, hop-by-hop nominations, and response controls', async () => {
     for (const name of PROXY_CONTROL_HEADERS) {
       const forwarded = await buildAuthProxyForwardHeaders(
-        { headers: new Headers({ [name]: 'attacker-value' }) } as never,
+        webServerEvent({ [name]: 'attacker-value' }),
         { publicOrigin: 'https://app.example.test' },
       )
       expect(forwarded[name], name).toBeUndefined()
@@ -111,7 +112,7 @@ describe('seeded auth proxy HTTP input corpus', () => {
       ]
       const input = new Headers({ connection: `keep-alive, ${hop}`, [hop]: 'attacker-value' })
       for (const name of names) input.set(name, 'attacker-value')
-      const forwarded = await buildAuthProxyForwardHeaders({ headers: input } as never, {
+      const forwarded = await buildAuthProxyForwardHeaders(webServerEvent(input), {
         publicOrigin: 'https://app.example.test',
       })
 
@@ -127,7 +128,7 @@ describe('seeded auth proxy HTTP input corpus', () => {
     await runSeededAuthCorpus('trusted-client-ip', 250, async (random) => {
       const octets = Array.from({ length: 4 }, () => random.integer(400))
       const candidate = octets.join('.')
-      const event = { headers: new Headers({ 'cf-connecting-ip': candidate }) } as never
+      const event = webServerEvent({ 'cf-connecting-ip': candidate })
       const options = {
         publicOrigin: 'https://app.example.test',
         trustedClientIpHeader: 'cf-connecting-ip',

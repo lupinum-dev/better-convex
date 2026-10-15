@@ -1,11 +1,26 @@
 import { inspect } from 'node:util'
 
-import { H3Error, type H3Event } from 'h3'
+import { isNuxtError, type NuxtError } from 'nuxt/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getConvexUser, requireConvexUser } from '../../src/runtime/server/utils/convex-user'
+import {
+  eventNodeResponse,
+  eventResponseHeaders,
+  type ConvexServerEvent,
+} from '../../src/runtime/server/utils/event'
 import { resolveRequestAuthSnapshot } from '../../src/runtime/server/utils/request-auth'
 import { serverConvex } from '../../src/runtime/server/utils/server-convex-caller'
+import { signPublicOrigin } from '../../src/runtime/shared/client-ip'
+import { rawH3V1Event } from '../helpers/server-event'
+
+// The `./server` helpers read the server's runtime config (`nuxt/server`
+// `useRuntimeConfig()`); each test selects the public Convex config here.
+const runtime = vi.hoisted(() => ({ publicConvex: undefined as unknown }))
+vi.mock('nuxt/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('nuxt/server')>()),
+  useRuntimeConfig: () => ({ app: {}, public: { convex: runtime.publicConvex }, convex: {} }),
+}))
 
 const SESSION_COOKIE = 'better-auth.session_token=server-user-session-secret'
 const PRIVATE_COOKIE = 'private_app_cookie=private-app-secret'
@@ -31,24 +46,44 @@ const USER_JWT = makeJwt({
   exp: Math.floor(Date.now() / 1000) + 3600,
 })
 
-function createEvent(cookie?: string, convex: Record<string, unknown> = AUTH_CONVEX): H3Event {
-  const responseHeaders = new Map<string, string>()
-  return {
-    context: { nitro: { runtimeConfig: { public: { convex } } } },
-    headers: new Headers(cookie ? { cookie } : {}),
-    node: {
-      res: {
-        getHeader: (name: string) => responseHeaders.get(name),
-        getHeaders: () => Object.fromEntries(responseHeaders),
-        removeHeader: (name: string) => responseHeaders.delete(name),
-        setHeader: (name: string, value: string) => responseHeaders.set(name, value),
-      },
-    },
-  } as unknown as H3Event
+function rawEvent(cookie: string | undefined) {
+  return rawH3V1Event({
+    path: '/api/me',
+    headers: { host: 'localhost:3000', ...(cookie ? { cookie } : {}) },
+  })
 }
 
-function responseHeaders(event: H3Event): Record<string, string> {
-  return (event.node.res as unknown as { getHeaders: () => Record<string, string> }).getHeaders()
+// Every helper runs on both event shapes a supported Nuxt passes: the raw h3
+// v1 event (Nuxt 4 routes and SSR; headers live on the Node response) and the
+// web-shaped event (Nuxt 5, Nuxt 4.6 `nuxt/server` handlers; headers live on
+// `event.res.headers`, and on Nuxt 5 the Node pair is on `event.req.runtime.node`).
+const shapes = [
+  {
+    name: 'raw h3 v1 event',
+    create(cookie: string | undefined): ConvexServerEvent {
+      return rawEvent(cookie).event
+    },
+  },
+  {
+    name: 'web-shaped event',
+    create(cookie: string | undefined): ConvexServerEvent {
+      // Nuxt 5 on Node: srvx keeps the Node pair on `req.runtime.node`.
+      const { req, res } = rawEvent(cookie)
+      return {
+        req: Object.assign(
+          new Request('http://localhost:3000/api/me', { headers: cookie ? { cookie } : {} }),
+          { runtime: { node: { req, res } } },
+        ),
+        res: { headers: new Headers() },
+        context: {},
+      }
+    },
+  },
+]
+
+function responseHeaders(event: ConvexServerEvent): Record<string, string | null> {
+  const headers = eventResponseHeaders(event)
+  return Object.fromEntries([...new Set(headers.keys())].map((name) => [name, headers.get(name)]))
 }
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -57,18 +92,18 @@ function exchangeResponds(status: number, body: unknown = {}) {
   fetchMock.mockImplementation(async () => new Response(JSON.stringify(body), { status }))
 }
 
-async function rejection(promise: Promise<unknown>): Promise<H3Error> {
+async function rejection(promise: Promise<unknown>): Promise<NuxtError> {
   try {
     await promise
   } catch (error) {
-    expect(error).toBeInstanceOf(H3Error)
-    return error as H3Error
+    expect(isNuxtError(error)).toBe(true)
+    return error as NuxtError
   }
   throw new Error('expected the helper to reject')
 }
 
 /** Every rendering of a thrown error must stay free of request credentials. */
-function expectNoCredentials(error: H3Error): void {
+function expectNoCredentials(error: NuxtError): void {
   for (const rendered of [
     JSON.stringify(error),
     JSON.stringify(error.data),
@@ -90,9 +125,15 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
-describe('getConvexUser and requireConvexUser', () => {
+describe.each(shapes)('getConvexUser and requireConvexUser ($name)', (shape) => {
+  function createEvent(cookie?: string, convex: unknown = AUTH_CONVEX): ConvexServerEvent {
+    runtime.publicConvex = convex
+    return shape.create(cookie)
+  }
+
   it('resolve an anonymous request without a token exchange', async () => {
     const event = createEvent(PRIVATE_COOKIE)
 
@@ -100,7 +141,7 @@ describe('getConvexUser and requireConvexUser', () => {
     const error = await rejection(requireConvexUser(event))
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(error.statusCode).toBe(401)
+    expect(error.status).toBe(401)
     expect(error.data).toMatchObject({
       name: 'ConvexCallError',
       kind: 'authentication',
@@ -115,25 +156,21 @@ describe('getConvexUser and requireConvexUser', () => {
     const signedIn = createEvent(SESSION_COOKIE)
     await getConvexUser(signedIn)
     expect(responseHeaders(signedIn)).toEqual({
-      Vary: 'Cookie',
-      'Cache-Control': 'private, no-store',
+      vary: 'Cookie',
+      'cache-control': 'private, no-store',
     })
 
     // No auth cookie: the answer is anonymous, but still depends on the cookie header.
     const anonymous = createEvent(PRIVATE_COOKIE)
     await getConvexUser(anonymous)
-    expect(responseHeaders(anonymous)).toEqual({ Vary: 'Cookie' })
+    expect(responseHeaders(anonymous)).toEqual({ vary: 'Cookie' })
   })
 
   it('leave the response alone once its headers are sent (SSE, streaming)', async () => {
     exchangeResponds(200, { token: USER_JWT })
     const event = createEvent(SESSION_COOKIE)
-    const res = event.node.res as unknown as Record<string, unknown>
-    res.headersSent = true
-    // Node throws ERR_HTTP_HEADERS_SENT when a header is set after the flush.
-    res.setHeader = () => {
-      throw Object.assign(new Error('headers sent'), { code: 'ERR_HTTP_HEADERS_SENT' })
-    }
+    // After the flush Node throws ERR_HTTP_HEADERS_SENT on any header write.
+    eventNodeResponse(event)!.writeHead(200)
 
     await expect(getConvexUser(event)).resolves.toMatchObject({ id: 'user-1' })
     expect(responseHeaders(event)).toEqual({})
@@ -159,6 +196,25 @@ describe('getConvexUser and requireConvexUser', () => {
     expect(init?.redirect).toBe('error')
     // The resolved user is display identity; the Convex token never leaves the snapshot.
     expect(JSON.stringify(first)).not.toContain(USER_JWT)
+  })
+
+  // Catches a caller that passes another origin than the configured
+  // `auth.origin` (for example the request host): Convex would then build its
+  // auth URLs and cookies for a site the operator never configured.
+  it('sign the configured auth origin into the exchange', async () => {
+    const origin = 'http://127.0.0.1:3100'
+    const secret = 'server-convex-user-proxy-secret-32-bytes'
+    vi.stubEnv('BCN_AUTH_PROXY_IP_SECRET', secret)
+    exchangeResponds(200, { token: USER_JWT })
+    const event = createEvent(SESSION_COOKIE, { ...AUTH_CONVEX, auth: { origin } })
+
+    await getConvexUser(event)
+
+    const headers = new Headers(fetchMock.mock.calls[0]![1]?.headers)
+    expect(headers.get('x-bcn-public-origin')).toBe(origin)
+    expect(headers.get('x-bcn-public-origin-signature')).toBe(
+      await signPublicOrigin(origin, secret),
+    )
   })
 
   it('share one exchange, and one identity, with serverConvex on the same request', async () => {
@@ -203,6 +259,7 @@ describe('getConvexUser and requireConvexUser', () => {
 
     await resolveRequestAuthSnapshot(event, {
       siteUrl: SITE_URL,
+      publicOrigin: 'http://localhost:3000',
       trustedClientIpHeader: '',
       cookieHeader: SESSION_COOKIE,
     })
@@ -215,6 +272,33 @@ describe('getConvexUser and requireConvexUser', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('give a cookie-less caller on a shared context an anonymous snapshot', async () => {
+    // Nitro 2's route cache renders on a new, cookie-less event that shares the request's
+    // `context` with the event that already resolved the signed-in snapshot.
+    exchangeResponds(200, { token: USER_JWT })
+    const signedIn = createEvent(SESSION_COOKIE)
+    const cacheRender = createEvent(undefined)
+    Object.assign(cacheRender, { context: signedIn.context })
+    const input = {
+      siteUrl: SITE_URL,
+      publicOrigin: 'http://localhost:3000',
+      trustedClientIpHeader: '',
+    }
+
+    await resolveRequestAuthSnapshot(signedIn, { ...input, cookieHeader: SESSION_COOKIE })
+    const anonymous = await resolveRequestAuthSnapshot(cacheRender, {
+      ...input,
+      cookieHeader: null,
+    })
+
+    expect(anonymous.token).toBeNull()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    await expect(
+      resolveRequestAuthSnapshot(signedIn, { ...input, cookieHeader: SESSION_COOKIE }),
+    ).resolves.toMatchObject({ token: USER_JWT })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it.each([401, 403])('treat an exchange %i as an invalid session', async (status) => {
     exchangeResponds(status, { message: 'invalid session' })
     const event = createEvent(SESSION_COOKIE)
@@ -223,7 +307,7 @@ describe('getConvexUser and requireConvexUser', () => {
     const error = await rejection(requireConvexUser(event))
 
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(error.statusCode).toBe(401)
+    expect(error.status).toBe(401)
     expect(error.data).toMatchObject({ kind: 'authentication', code: 'UNAUTHENTICATED' })
     expectNoCredentials(error)
   })
@@ -235,7 +319,7 @@ describe('getConvexUser and requireConvexUser', () => {
     const error = await rejection(requireConvexUser(event))
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(error.statusCode).toBe(401)
+    expect(error.status).toBe(401)
     expect(error.data).toMatchObject({ code: 'UNAUTHENTICATED' })
   })
 
@@ -259,7 +343,7 @@ describe('getConvexUser and requireConvexUser', () => {
 
     expect(fetchMock).toHaveBeenCalledOnce()
     for (const error of [optional, required]) {
-      expect(error.statusCode).toBe(502)
+      expect(error.status).toBe(502)
       expect(error.data).toMatchObject({
         name: 'ConvexCallError',
         kind: 'transport',
@@ -275,8 +359,32 @@ describe('getConvexUser and requireConvexUser', () => {
     const error = await rejection(getConvexUser(event))
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(error.statusCode).toBe(500)
+    expect(error.status).toBe(500)
     expect(error.data).toMatchObject({ kind: 'unknown', code: 'SITE_URL_MISSING' })
     expectNoCredentials(error)
+  })
+})
+
+describe('one auth snapshot per request', () => {
+  // Catches a snapshot keyed by the event object: Nuxt 4.6 hands SSR the raw
+  // h3 v1 event and `nuxt/server` handlers a portable Proxy over it, and Nuxt 5
+  // gives SSR a new event; only `context` is shared. Keyed by event, one page
+  // request would exchange (and renew) the session twice.
+  it('exchange once for a raw h3 v1 event and a web-shaped event that share one context', async () => {
+    exchangeResponds(200, { token: USER_JWT })
+    runtime.publicConvex = AUTH_CONVEX
+    const { event: raw, req, res } = rawEvent(SESSION_COOKIE)
+    const web: ConvexServerEvent = {
+      req: Object.assign(
+        new Request('http://localhost:3000/api/me', { headers: { cookie: SESSION_COOKIE } }),
+        { runtime: { node: { req, res } } },
+      ),
+      res: { headers: new Headers() },
+      context: raw.context,
+    }
+
+    await expect(getConvexUser(raw)).resolves.toMatchObject({ id: 'user-1' })
+    await expect(serverConvex(web, { auth: 'required' }).getToken()).resolves.toBe(USER_JWT)
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 })

@@ -1,4 +1,3 @@
-import type { H3Event } from 'h3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveServerAuthSnapshot } from '../../src/runtime/server/utils/auth-snapshot'
@@ -7,6 +6,7 @@ import {
   decodeUserFromJwt,
   isJwtUsable,
 } from '../../src/runtime/utils/convex-shared'
+import { webServerEvent } from '../helpers/server-event'
 
 function toBase64Url(value: string | Uint8Array): string {
   return Buffer.from(value).toString('base64url')
@@ -163,8 +163,9 @@ describe('server JWT hydration boundary', () => {
       new Response(JSON.stringify({ token }), { status: 200 }),
     )
     return resolveServerAuthSnapshot({
-      event: { headers: new Headers() } as unknown as H3Event,
+      event: webServerEvent(),
       siteUrl: 'https://demo.convex.site',
+      publicOrigin: 'https://app.example.test',
       cookieHeader: 'better-auth.session_token=session-secret',
       requestId: 'jwt-hydration-test',
       trackWaterfall: true,

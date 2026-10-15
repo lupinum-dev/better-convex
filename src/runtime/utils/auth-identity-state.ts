@@ -1,7 +1,6 @@
 import type { Ref } from 'vue'
 
-import type { NuxtApp } from '#app'
-import { useState } from '#imports'
+import { useState, type NuxtApp } from '#app'
 
 import { ANONYMOUS_IDENTITY, PENDING_IDENTITY, type AuthIdentity } from '../auth/auth-identity'
 

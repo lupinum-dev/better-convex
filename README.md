@@ -32,14 +32,14 @@ Better Convex is a set of composables and helpers, not a framework. It does not 
 
 ## When to use it
 
-Use `@lupinum/better-convex-nuxt` in a Nuxt 4 application. Use `@lupinum/better-convex-vue` in a Vue application without Nuxt, for example a Vite single-page application. Use `@lupinum/better-convex-agents` to let MCP hosts and agents call your Convex functions.
+Use `@lupinum/better-convex-nuxt` in a Nuxt 4.6+ application (Nuxt 5 is tested on its nightly while it is a pre-release). Use `@lupinum/better-convex-vue` in a Vue application without Nuxt, for example a Vite single-page application. Use `@lupinum/better-convex-agents` to let MCP hosts and agents call your Convex functions.
 
 Better Convex does not decide who may read or change data. Check the user, ownership, membership, and roles in every Convex function. Route middleware and hidden buttons do not protect data.
 
 ## Requirements
 
-- Node.js `^22.19.0 || ^24.11.0`
-- Nuxt `>=4.5.2 <5`
+- Node.js `^22.22.3 || ^24.15.0 || >=26.0.0` for the Nuxt package, `^22.19.0 || ^24.11.0 || >=26.0.0` for the Vue package, and `^22.19.0 || ^24.11.0` for the Functions and Agents packages
+- Nuxt `^4.6.0 || ^5.0.0-0`, tested on 4.6.1 and the Nuxt 5 nightly (pre-release until Nuxt 5 ships)
 - Convex `>=1.42.2 <2`
 - Vue `>=3.5 <4`
 - For authentication: `better-auth`, `@better-auth/core`, and `@better-auth/oauth-provider`, each at exactly `1.7.7`
@@ -198,7 +198,9 @@ await createTask({ text: 'Review the release' })
 Call Convex from a Nitro route with `serverConvex`. Create one caller in each request:
 
 ```ts [server/api/tasks.get.ts]
+import { defineEventHandler } from 'nuxt/server'
 import { api } from '#convex/api'
+import { serverConvex } from '#convex/server'
 
 export default defineEventHandler(async (event) => {
   const convex = serverConvex(event)
@@ -206,7 +208,7 @@ export default defineEventHandler(async (event) => {
 })
 ```
 
-Do not keep a caller between requests. `requireConvexUser(event)` returns the signed-in user or throws a 401 error. `toConvexH3Error(error)` turns any error into an H3 error with a matching HTTP status.
+Do not keep a caller between requests. `requireConvexUser(event)` returns the signed-in user or throws a 401 error. `toConvexH3Error(error)` turns any error into an HTTP error (`NuxtError`) with a matching HTTP status. Import `defineEventHandler` and other server utilities from `nuxt/server`.
 
 ## Authentication
 

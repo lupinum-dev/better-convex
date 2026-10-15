@@ -157,7 +157,9 @@ proxy, sessions, tokens, keys, secrets, or authorization.
 - Keep server-only code out of browser bundles. `scripts/check-boundaries.mjs`
   (part of `pnpm lint`) enforces the import layering: framework-free errors,
   no Nuxt in the Vue package, only functions, Convex and (in `./mcp`) the MCP SDK in the agents package, no Node or
-  Nuxt code in the Convex auth component, no server code in browser runtime.
+  Nuxt code in the Convex auth component, no server code in browser runtime,
+  server runtime reaches Nuxt only through `nuxt/server` (no h3, Nitro, `#app`
+  or `#imports`), and nothing `plugin.server.ts` reaches imports `nuxt/server`.
 - Never let a caller choose an origin, issuer, upstream URL, function, or
   principal.
 - Check authorization in Convex, in the same transaction as the protected

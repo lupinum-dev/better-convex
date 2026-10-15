@@ -2,27 +2,11 @@ import { agentDiagnosticOutcome } from './auth-proxy-outcome'
 import type { AuthProxyRequest, AuthProxyStats } from './types'
 
 const MAX_REQUESTS = 20
-const STORAGE_NAMESPACE = 'devtools:convex:auth-proxy'
-const STORAGE_KEY = 'requests'
-
-async function getStorage() {
-  const { useStorage } = await import('nitropack/runtime')
-  return useStorage(STORAGE_NAMESPACE)
-}
-
-async function getRequests(): Promise<AuthProxyRequest[]> {
-  const storage = await getStorage()
-  const requests = await storage.getItem<AuthProxyRequest[]>(STORAGE_KEY)
-  return Array.isArray(requests) ? requests : []
-}
-
-async function setRequests(requests: AuthProxyRequest[]): Promise<void> {
-  const storage = await getStorage()
-  await storage.setItem(STORAGE_KEY, requests)
-}
+// Development diagnostics only: kept in module memory, newest first. It resets
+// on a dev-server reload, which is fine for a list of the last few requests.
+const requests: AuthProxyRequest[] = []
 
 export async function recordAuthProxyRequest(request: AuthProxyRequest): Promise<void> {
-  const requests = await getRequests()
   // Persist only the reviewed fixed-shape fields. Development diagnostics are
   // not an escape hatch for raw Error objects or caller-added properties.
   requests.unshift({
@@ -37,11 +21,9 @@ export async function recordAuthProxyRequest(request: AuthProxyRequest): Promise
   if (requests.length > MAX_REQUESTS) {
     requests.length = MAX_REQUESTS
   }
-  await setRequests(requests)
 }
 
 export async function getAuthProxyStats(): Promise<AuthProxyStats> {
-  const requests = await getRequests()
   const successful = requests.filter((r) => agentDiagnosticOutcome(r).badge === 'success')
   const durations = successful.filter((r) => r.duration !== undefined).map((r) => r.duration!)
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ModuleOptions } from '../../src/module'
+import { findAuthCachedRoutePatterns } from '../../src/module-route-rules'
 import { normalizeConvexRuntimeConfig } from '../../src/runtime/utils/runtime-config-normalize'
 
 interface RegisteredTemplate {
@@ -24,11 +25,6 @@ vi.mock('#app', () => ({
   useState: (_key: string, init: () => unknown) => ({ value: init() }),
 }))
 
-vi.mock('#imports', () => ({
-  useRuntimeConfig: () => kit.runtimeConfig,
-  useState: (_key: string, init: () => unknown) => ({ value: init() }),
-}))
-
 vi.mock('@lupinum/better-convex-vue', () => ({
   createBetterConvex: kit.createBetterConvex,
 }))
@@ -48,14 +44,14 @@ vi.mock('@nuxt/kit', () => ({
   addImports: vi.fn(),
   addServerHandler: vi.fn(),
   addServerImports: vi.fn(),
-  addServerPlugin: vi.fn(),
+  addNitroPlugin: vi.fn(),
   addRouteMiddleware: vi.fn(),
   resolvePath: vi.fn(async (path: string) => path),
   useLogger: () => ({ warn: kit.warn, info: vi.fn() }),
 }))
 
 // eslint-disable-next-line import/first
-import { addPlugin } from '@nuxt/kit'
+import { addNitroPlugin, addPlugin, addServerHandler } from '@nuxt/kit'
 
 // eslint-disable-next-line import/first
 import convexModule from '../../src/module'
@@ -67,7 +63,10 @@ interface TestNuxt {
     buildDir: string
     dev: boolean
     alias: Record<string, string>
+    build: { transpile: string[] }
     runtimeConfig: { public: Record<string, unknown>; convex?: Record<string, unknown> }
+    routeRules: Record<string, unknown>
+    nitro: { routeRules?: Record<string, unknown> }
   }
   hook: (name: string, callback: (payload: never) => unknown) => void
   prepareTypes: () => { references: Array<{ path?: string }> }
@@ -82,7 +81,10 @@ function createNuxt(dev = false): TestNuxt {
       buildDir: '/app/.nuxt',
       dev,
       alias: {},
+      build: { transpile: [] },
       runtimeConfig: { public: {} },
+      routeRules: {},
+      nitro: {},
     },
     hook(name, callback) {
       if (name === 'prepare:types') prepareTypeHooks.push(callback)
@@ -99,9 +101,11 @@ async function setup(
   options: ModuleOptions,
   publicRuntimeConfig: Record<string, unknown> = {},
   dev = false,
+  routeRules: Record<string, unknown> = {},
 ): Promise<TestNuxt> {
   const nuxt = createNuxt(dev)
   Object.assign(nuxt.options.runtimeConfig.public, publicRuntimeConfig)
+  Object.assign(nuxt.options.routeRules, routeRules)
   const definition = convexModule as unknown as {
     setup: (options: ModuleOptions, nuxt: TestNuxt) => Promise<void>
   }
@@ -349,5 +353,197 @@ describe('module client.connect', () => {
     await expect(setup({ client: { connect: 'lazy' as never } })).rejects.toThrow(
       "client.connect must be 'eager' or 'on-demand'",
     )
+  })
+})
+
+describe('module server registrations', () => {
+  // Catches a lost auth proxy route or a registration of a deleted server plugin (the Nitro
+  // build fails on a missing file). The bare base paths come from the `/**` routes.
+  it('registers the auth proxy routes, the devtools route and the route-rule Nitro plugin', async () => {
+    vi.mocked(addServerHandler).mockClear()
+    vi.mocked(addNitroPlugin).mockClear()
+    await setup({ auth: { origin: 'http://localhost:3000' } }, {}, true)
+
+    expect(vi.mocked(addServerHandler).mock.calls.map(([handler]) => handler.route)).toEqual([
+      '/api/auth/jwks',
+      '/api/auth/**',
+      '/.well-known/oauth-authorization-server/api/auth',
+      '/__convex_devtools__/**',
+    ])
+    expect(vi.mocked(addNitroPlugin).mock.calls).toEqual([
+      ['./runtime/server/plugins/ssr-auth-route'],
+    ])
+  })
+})
+
+describe('module cached auth route warning', () => {
+  // Catches a cache rule on a signed-in SSR page going unreported (it overrides the private/Vary
+  // headers), and false alarms for API, asset and anonymous routes, including routes that a
+  // broader `convex: { ssrAuth: false }` pattern covers.
+  it.each([
+    [
+      'swr, cache and isr on pages',
+      { '/blog/**': { swr: 60 }, '/': { cache: { maxAge: 60 } }, '/docs/**': { isr: true } },
+      undefined,
+      true,
+      ['/blog/**', '/', '/docs/**'],
+    ],
+    [
+      'disabled caches',
+      { '/a': { isr: false }, '/b': { cache: false }, '/c': { swr: 0 } },
+      undefined,
+      true,
+      [],
+    ],
+    [
+      'cache headers in any case',
+      {
+        '/h1': { headers: { 'Cache-Control': 's-maxage=60' } },
+        '/h2': { headers: { 'Vercel-CDN-Cache-Control': 'max-age=60' } },
+        '/h3': { headers: { vary: 'accept-language' } },
+        '/h4': { headers: { 'CDN-Cache-Control': 'max-age=60' } },
+        '/h5': { headers: { 'Surrogate-Control': 'max-age=60' } },
+        '/h6': { headers: { 'Edge-Control': 'cache-maxage=60' } },
+        '/h7': { headers: { 'X-Accel-Expires': '60' } },
+        '/h8': { headers: { 'x-frame-options': 'DENY' } },
+      },
+      undefined,
+      true,
+      ['/h1', '/h2', '/h3', '/h4', '/h5', '/h6', '/h7'],
+    ],
+    [
+      'cache-control headers that forbid storing are not cache rules',
+      {
+        '/oauth/login': { headers: { 'cache-control': 'no-store' } },
+        '/oauth/consent': { headers: { 'Cache-Control': 'private, max-age=60' } },
+        '/oauth/a': { headers: { 'cache-control': 'no-cache' } },
+        '/oauth/b': { headers: { 'cache-control': 'max-age=0, must-revalidate' } },
+        '/blog': { swr: 60 },
+      },
+      undefined,
+      true,
+      ['/blog'],
+    ],
+    [
+      'API, build asset and internal routes',
+      {
+        '/api/**': { swr: 60 },
+        '/api': { cache: {} },
+        '/_nuxt/**': { headers: { 'cache-control': 'immutable' } },
+        '/__og/**': { swr: true },
+        '/apidocs/**': { swr: 60 },
+      },
+      undefined,
+      true,
+      ['/apidocs/**'],
+    ],
+    [
+      'a rule that turns SSR auth off',
+      { '/blog/**': { swr: 60, convex: { ssrAuth: false } } },
+      undefined,
+      true,
+      [],
+    ],
+    ['SSR auth off by default', { '/blog/**': { swr: 60 } }, undefined, false, []],
+    [
+      'a rule that turns SSR auth on',
+      { '/blog/**': { swr: 60, convex: { ssrAuth: true } } },
+      undefined,
+      false,
+      ['/blog/**'],
+    ],
+    ['Nitro route rules', {}, { '/n/**': { swr: 60 } }, true, ['/n/**']],
+    [
+      'ssrAuth off in nuxt rules, cache in Nitro rules',
+      { '/m/**': { convex: { ssrAuth: false } } },
+      { '/m/**': { swr: 60 } },
+      true,
+      ['/m/**'],
+    ],
+    [
+      'cache in nuxt rules, ssrAuth off in Nitro rules',
+      { '/k/**': { swr: 60 } },
+      { '/k/**': { convex: { ssrAuth: false } } },
+      true,
+      [],
+    ],
+    [
+      'covered by /** with SSR auth off',
+      { '/**': { convex: { ssrAuth: false } }, '/blog/**': { swr: 60 }, '/about': { isr: 60 } },
+      undefined,
+      true,
+      [],
+    ],
+    [
+      'covered by /blog/** with SSR auth off',
+      { '/blog/**': { convex: { ssrAuth: false } }, '/blog/x': { swr: 60 } },
+      undefined,
+      true,
+      [],
+    ],
+    [
+      'own SSR auth on under /** with SSR auth off',
+      {
+        '/**': { convex: { ssrAuth: false } },
+        '/admin/**': { swr: 60, convex: { ssrAuth: true } },
+      },
+      undefined,
+      true,
+      ['/admin/**'],
+    ],
+    [
+      'a narrower pattern turns SSR auth back on under a cached pattern',
+      {
+        '/**': { convex: { ssrAuth: false } },
+        '/blog/**': { swr: 60 },
+        '/blog/members/**': { convex: { ssrAuth: true } },
+        '/api/**': { convex: { ssrAuth: true } },
+      },
+      undefined,
+      true,
+      ['/blog/**'],
+    ],
+    [
+      'a cached pattern with SSR auth off covers a page that turns it on',
+      {
+        '/docs/**': { isr: 60, convex: { ssrAuth: false } },
+        '/docs/me': { convex: { ssrAuth: true } },
+      },
+      undefined,
+      false,
+      ['/docs/**'],
+    ],
+    [
+      'not covered by a rule with SSR auth off',
+      { '/blog/**': { convex: { ssrAuth: false } }, '/blogs': { swr: 60 }, '/docs': { isr: 60 } },
+      undefined,
+      true,
+      ['/blogs', '/docs'],
+    ],
+  ] as const)('%s', (_, routeRules, nitroRouteRules, ssrDefault, expected) => {
+    expect(findAuthCachedRoutePatterns([routeRules, nitroRouteRules], ssrDefault)).toEqual(expected)
+  })
+
+  it('logs one warning that lists every pattern, and none without auth', async () => {
+    const cacheWarnings = () =>
+      kit.warn.mock.calls
+        .map(([message]) => String(message))
+        .filter((message) => message.includes('convex: { ssrAuth: false }'))
+    const routeRules = { '/blog/**': { swr: 60 }, '/**': { headers: { vary: 'accept-language' } } }
+
+    kit.warn.mockClear()
+    await setup(
+      { auth: { origin: 'https://app.example.test', trustedClientIpHeader: 'cf-connecting-ip' } },
+      {},
+      false,
+      routeRules,
+    )
+    expect(cacheWarnings()).toHaveLength(1)
+    expect(cacheWarnings()[0]).toContain('Route rules "/blog/**", "/**" cache pages')
+
+    kit.warn.mockClear()
+    // A rule that turns SSR auth on explicitly: without the auth guard it would warn.
+    await setup({}, {}, false, { ...routeRules, '/x': { swr: 60, convex: { ssrAuth: true } } })
+    expect(cacheWarnings()).toEqual([])
   })
 })

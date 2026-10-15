@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
 
-import { useState } from '#imports'
+import { useState } from '#app'
 
 /**
  * Single source for the `convex:pending` auth-readiness state.

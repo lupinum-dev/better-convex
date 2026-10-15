@@ -19,7 +19,7 @@ describe('auth proxy stream cleanup regressions', () => {
 
     await expect(readResponseBodyWithLimit(new Response(stream), 4)).rejects.toMatchObject({
       code: 'BCN_AUTH_PROXY_UPSTREAM_BODY_TOO_LARGE',
-      statusCode: 502,
+      status: 502,
     })
     expect(cancel).toHaveBeenCalledOnce()
   })
@@ -35,7 +35,15 @@ describe('auth proxy stream cleanup regressions', () => {
     const controller = new AbortController()
     const reason = new Error('test proxy deadline')
     const result = readRequestBodyWithLimit(
-      { web: { request: { body: stream } }, node: { req: {} } } as never,
+      {
+        req: new Request('https://app.example.test/api/auth/test', {
+          method: 'POST',
+          body: stream,
+          duplex: 'half',
+        } as RequestInit),
+        res: { headers: new Headers() },
+        context: {},
+      },
       4,
       controller.signal,
     )

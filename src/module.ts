@@ -9,7 +9,7 @@ import {
   addImports,
   addServerHandler,
   addServerImports,
-  addServerPlugin,
+  addNitroPlugin,
   addRouteMiddleware,
   resolvePath,
   useLogger,
@@ -24,6 +24,7 @@ import {
   serverAutoImports,
   type ModuleImportRegistration,
 } from './module-api-surface'
+import { authCachedRoutesWarning, findAuthCachedRoutePatterns } from './module-route-rules'
 import {
   getClientActivationTemplateContents,
   getClientActivationTypeTemplateContents,
@@ -254,7 +255,10 @@ export default defineNuxtModule<ModuleOptions>({
     name: '@lupinum/better-convex-nuxt',
     configKey: 'convex',
     compatibility: {
-      nuxt: '>=4.5.2 <5',
+      nuxt: '^4.6.0 || ^5.0.0-0',
+      // Our runtime is written against `nuxt/server` and web Request/Response, so Nuxt 5 must not
+      // run it through its Nitro v2 compatibility layer. Nuxt 4.6 types this field and ignores it.
+      server: 'nuxt',
     },
   },
   defaults: {
@@ -346,7 +350,13 @@ export default defineNuxtModule<ModuleOptions>({
     // A deploy can still supply NUXT_PUBLIC_CONVEX_URL at runtime, so warn, not fail.
     if (!convexConfig.url) logger.warn(MISSING_CONVEX_URL_MESSAGE)
     registerConvexAliases({ nuxt, resolver, convexApiAlias })
-    addServerPlugin(resolver.resolve('./runtime/server/plugins/runtime-config'))
+    // Nuxt 4.6.0/4.6.1 (nuxt/nuxt#36309 with nitropack 2.13.4) inline `convex/browser` into the
+    // server build with a broken import path, so SSR pages that load Convex answer 500. Remove
+    // this when the lowest supported Nuxt bundles `convex` correctly without it. It must be a
+    // string: Nitro reads only string entries into `externals.inline`. Side effect: in dev the
+    // browser loads convex unbundled (Vite leaves transpiled packages out of `optimizeDeps`).
+    if (!nuxt.options.build.transpile.includes('convex'))
+      nuxt.options.build.transpile.push('convex')
 
     // Exactly one browser-runtime entry exists. The auth-disabled entry has no
     // Better Auth imports; the auth-enabled entry constructs the same Vue-owned
@@ -405,6 +415,8 @@ export default defineNuxtModule<ModuleOptions>({
         write: true,
         getContents: () => `export { default } from ${JSON.stringify(authClientDefinitionPath)}\n`,
       })
+      // Nuxt writes every `nuxt.options.alias` entry into the generated tsconfig `paths`, so the
+      // auth-enabled client plugin's import also typechecks in consumer projects.
       nuxt.options.alias['#convex/auth-client'] = authClientTemplate.dst
 
       // Register a declaration that augments the auth-client registry with the
@@ -429,21 +441,13 @@ export default defineNuxtModule<ModuleOptions>({
           ].join('\n'),
       })
 
-      // Make `#convex/auth-client` resolvable for the TypeScript program too, so
-      // the auth-enabled client plugin's import typechecks in consumer projects.
-      nuxt.hook('prepare:types', (opts) => {
-        opts.tsConfig.compilerOptions ??= {}
-        opts.tsConfig.compilerOptions.paths ??= {}
-        opts.tsConfig.compilerOptions.paths['#convex/auth-client'] = [authClientTemplate.dst]
-      })
-
       // Auth-enabled-only server plugin resolves SSR identity.
       addPlugin({
         src: resolver.resolve('./runtime/plugin.server'),
         mode: 'server',
       })
       // Copies the `convex: { ssrAuth }` route rule onto each request.
-      addServerPlugin(resolver.resolve('./runtime/server/plugins/ssr-auth-route'))
+      addNitroPlugin(resolver.resolve('./runtime/server/plugins/ssr-auth-route'))
       addTypeTemplate(
         {
           filename: ROUTE_RULES_TYPES_FILENAME,
@@ -459,12 +463,8 @@ export default defineNuxtModule<ModuleOptions>({
         global: true,
       })
 
-      // Auth proxy: register both exact and wildcard routes so requests without a
-      // trailing slash are not missed by the /** glob in Nitro.
-      addServerHandler({
-        route: '/api/auth',
-        handler: resolver.resolve('./runtime/server/api/auth/[...]'),
-      })
+      // Auth proxy. `/api/auth/**` also answers the bare `/api/auth` path: rou3 (Nitro 3) matches
+      // it, and kit >=4.6.1 registers the base route itself on nitropack 2.
       addServerHandler({
         route: '/api/auth/jwks',
         handler: resolver.resolve('./runtime/server/api/auth/jwks'),
@@ -502,6 +502,15 @@ export default defineNuxtModule<ModuleOptions>({
     if (nuxt.options.dev) {
       setupDevTools(nuxt, resolver)
     }
+
+    // 6. Warn about route rules that cache signed-in SSR pages (no runtime enforcement).
+    if (isConvexAuthEnabled(normalizedAuthConfig)) {
+      const cachedPatterns = findAuthCachedRoutePatterns(
+        [nuxt.options.routeRules, nuxt.options.nitro?.routeRules],
+        normalizedAuthConfig.ssr,
+      )
+      if (cachedPatterns.length > 0) logger.warn(authCachedRoutesWarning(cachedPatterns))
+    }
   },
 })
 
@@ -533,10 +542,6 @@ function setupDevTools(nuxt: Nuxt, resolver: ReturnType<typeof createResolver>):
     })
   })
 
-  addServerHandler({
-    route: '/__convex_devtools__',
-    handler: resolver.resolve('./runtime/devtools/server'),
-  })
   addServerHandler({
     route: '/__convex_devtools__/**',
     handler: resolver.resolve('./runtime/devtools/server'),

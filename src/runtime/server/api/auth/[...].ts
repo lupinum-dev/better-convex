@@ -1,13 +1,4 @@
-import type { H3Event } from 'h3'
-import {
-  appendResponseHeader,
-  createError,
-  defineEventHandler,
-  getRequestURL,
-  send,
-  setHeaders,
-  setResponseStatus,
-} from 'h3'
+import { createError } from 'nuxt/server'
 
 import type { AuthProxyRequest } from '../../../devtools/types'
 import { getSessionCookieFlagViolation } from '../../../shared/auth-cookie'
@@ -20,20 +11,33 @@ import {
   buildMissingSiteUrlMessage,
 } from '../../../utils/auth-errors'
 import { createLogger, type AuthEvent } from '../../../utils/logger'
-import { getConvexRuntimeConfig } from '../../../utils/runtime-config'
 import {
   deduplicateSetCookies,
   getSetCookieName,
   hasSetCookieDomainAttribute,
   isBetterAuthSetCookie,
 } from '../../../utils/shared-helpers'
+import {
+  eventAbortSignal,
+  eventHeadersSent,
+  eventNodeRequest,
+  eventNodeResponse,
+  eventRequestHeaders,
+  eventRequestMethod,
+  eventRequestUrl,
+  eventResponseHeaders,
+  eventResponseHeaderTargets,
+  type ConvexServerEvent,
+} from '../../utils/event'
 import { DEFAULT_SERVER_FETCH_TIMEOUT_MS } from '../../utils/http'
+import { readServerConvexConfig } from '../../utils/server-config'
 import {
   cancelResponseBody,
   DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES,
   DEFAULT_MAX_PROXY_RESPONSE_BODY_BYTES,
   getRequestBodySizeError,
   getResponseBodySizeError,
+  hasDeclaredRequestBody,
   readRequestBodyWithLimit,
   readResponseBodyWithLimit,
 } from './body-size'
@@ -53,11 +57,15 @@ import {
 
 const AUTH_ROUTE = '/api/auth'
 const ALLOWED_METHODS = new Set(['GET', 'POST'])
+const PRIVATE_NO_STORE = 'private, no-store'
+/** Statuses whose Response must have a null body. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304])
 const SAFE_CAUGHT_PROXY_FAILURES = new Map<string, number>([
   ['BCN_AUTH_PROXY_COOKIE_DOMAIN_UNSUPPORTED', 502],
   ['BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED', 502],
   ['BCN_AUTH_PROXY_COOKIE_NAME_UNSUPPORTED', 502],
   ['BCN_AUTH_PROXY_METADATA_COOKIE_REJECTED', 502],
+  ['BCN_AUTH_PROXY_REQUEST_BODY_CONSUMED', 500],
   ['BCN_AUTH_PROXY_REQUEST_BODY_TOO_LARGE', 413],
   ['BCN_AUTH_PROXY_TOKEN_COOKIE_REJECTED', 502],
   ['BCN_AUTH_PROXY_UPSTREAM_BODY_TOO_LARGE', 502],
@@ -73,15 +81,23 @@ export interface AuthProxyHandlerOptions {
   publicMetadataCors?: boolean
 }
 
+/**
+ * Every error the proxy catches carries `status`: `nuxt/server` errors and the
+ * body size errors alike.
+ */
+function caughtStatus(error: unknown): unknown {
+  return error && typeof error === 'object' && 'status' in error ? error.status : undefined
+}
+
 function safeCaughtProxyFailure(
   error: unknown,
-): { code: string; statusCode: number; data: Record<string, unknown> } | null {
+): { code: string; status: number; data: Record<string, unknown> } | null {
   if (!error || typeof error !== 'object') return null
-  const statusCode = 'statusCode' in error ? error.statusCode : undefined
+  const status = caughtStatus(error)
   const data = 'data' in error ? error.data : undefined
   if (!data || typeof data !== 'object') return null
   const code = 'code' in data && typeof data.code === 'string' ? data.code : undefined
-  if (!code || SAFE_CAUGHT_PROXY_FAILURES.get(code) !== statusCode) return null
+  if (!code || SAFE_CAUGHT_PROXY_FAILURES.get(code) !== status) return null
   const violation = 'violation' in data ? data.violation : undefined
   const safeViolation =
     code === 'BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED' &&
@@ -93,7 +109,7 @@ function safeCaughtProxyFailure(
   return {
     code,
     data: { code, ...(safeViolation === undefined ? {} : { violation: safeViolation }) },
-    statusCode: statusCode as number,
+    status: status as number,
   }
 }
 
@@ -101,21 +117,11 @@ function toError(reason: unknown, fallback: string): Error {
   return reason instanceof Error ? reason : new Error(fallback)
 }
 
-function closeRequestConnection(event: H3Event): void {
-  if (event.node.res.headersSent) return
-  event.node.res.shouldKeepAlive = false
-  setHeaders(event, { connection: 'close' })
-}
-
-function hasFramedGetBody(headers: Headers): boolean {
-  if (headers.has('transfer-encoding')) return true
-  const contentLength = headers.get('content-length')
-  if (contentLength === null) return false
-  try {
-    return BigInt(contentLength.trim()) !== 0n
-  } catch {
-    return true
-  }
+function closeRequestConnection(event: ConvexServerEvent): void {
+  if (eventHeadersSent(event)) return
+  const nodeResponse = eventNodeResponse(event)
+  if (nodeResponse) nodeResponse.shouldKeepAlive = false
+  eventResponseHeaders(event).set('connection', 'close')
 }
 
 function hasUnsupportedRequestContentEncoding(headers: Headers): boolean {
@@ -123,102 +129,97 @@ function hasUnsupportedRequestContentEncoding(headers: Headers): boolean {
   return value !== null && value.trim().toLowerCase() !== 'identity'
 }
 
-function createAuthProxyLifecycle(event: H3Event, startedAt: number) {
+/**
+ * The request-wide deadline and the client-disconnect signal of one proxied
+ * request. Both abort `controller`, which the body reads and the upstream
+ * fetch observe.
+ *
+ * Disconnects come from the Node request and response whenever the event has
+ * them (Node), plus the event's abort signal whenever it has one: a raw h3 v1
+ * event and a Nuxt 4.6 portable event have no usable signal, and an edge
+ * runtime has no Node objects.
+ */
+function createAuthProxyLifecycle(event: ConvexServerEvent, startedAt: number) {
   const controller = new AbortController()
   const abort = (reason: Error) => {
     if (!controller.signal.aborted) controller.abort(reason)
   }
+  const nodeRequest = eventNodeRequest(event)
+  const nodeResponse = eventNodeResponse(event)
+  const clientSignal = eventAbortSignal(event)
   const onRequestAborted = () => abort(new Error('Auth proxy client disconnected'))
   const onRequestClose = () => {
-    if (!event.node.req.complete) onRequestAborted()
+    if (!nodeRequest?.complete) onRequestAborted()
   }
   const onRequestError = (error: Error) => abort(error)
   const onResponseClose = () => {
-    if (!event.node.res.writableFinished) onRequestAborted()
+    if (!nodeResponse?.writableFinished) onRequestAborted()
   }
-  const onWebAbort = () =>
-    abort(toError(event.web?.request?.signal.reason, 'Auth proxy client disconnected'))
+  const onClientAbort = () => abort(toError(clientSignal?.reason, 'Auth proxy client disconnected'))
 
-  event.node.req.once('aborted', onRequestAborted)
-  event.node.req.once('close', onRequestClose)
-  event.node.req.once('error', onRequestError)
-  event.node.res.once('close', onResponseClose)
-  event.web?.request?.signal.addEventListener('abort', onWebAbort, { once: true })
+  if (nodeRequest) {
+    nodeRequest.once('aborted', onRequestAborted)
+    nodeRequest.once('close', onRequestClose)
+    nodeRequest.once('error', onRequestError)
+  }
+  nodeResponse?.once('close', onResponseClose)
+  clientSignal?.addEventListener('abort', onClientAbort, { once: true })
 
   const remainingMs = Math.max(0, DEFAULT_SERVER_FETCH_TIMEOUT_MS - (Date.now() - startedAt))
   const timeout = setTimeout(() => abort(new Error('Auth proxy deadline exceeded')), remainingMs)
   timeout.unref?.()
 
+  let released = false
+  const onDeliveryAbort = () => {
+    nodeResponse?.destroy(toError(controller.signal.reason, 'Auth proxy response was aborted'))
+    cleanup()
+  }
+  const onDeliverySettled = () => cleanup()
+  function cleanup(): void {
+    if (released) return
+    released = true
+    clearTimeout(timeout)
+    if (nodeRequest) {
+      nodeRequest.off('aborted', onRequestAborted)
+      nodeRequest.off('close', onRequestClose)
+      nodeRequest.off('error', onRequestError)
+    }
+    if (nodeResponse) {
+      nodeResponse.off('close', onResponseClose)
+      nodeResponse.off('close', onDeliverySettled)
+      nodeResponse.off('finish', onDeliverySettled)
+    }
+    clientSignal?.removeEventListener('abort', onClientAbort)
+    controller.signal.removeEventListener('abort', onDeliveryAbort)
+  }
+
   return {
     controller,
-    cleanup() {
-      clearTimeout(timeout)
-      event.node.req.off('aborted', onRequestAborted)
-      event.node.req.off('close', onRequestClose)
-      event.node.req.off('error', onRequestError)
-      event.node.res.off('close', onResponseClose)
-      event.web?.request?.signal.removeEventListener('abort', onWebAbort)
+    cleanup,
+    /**
+     * The handler returned a Response that the server has not written yet.
+     * On a Node network response, keep the deadline and the disconnect
+     * listeners until the response finishes or closes, so a client that
+     * stalls the download is cut off at the deadline: then the response is
+     * destroyed. An in-process request (Nuxt 4 `$fetch` inside the server:
+     * a Node response without a socket) and a runtime without Node objects
+     * release everything now; off Node the platform's own timeouts bound
+     * the download.
+     */
+    releaseAfterDelivery(): void {
+      if (!nodeResponse?.socket || nodeResponse.writableFinished || nodeResponse.destroyed) {
+        cleanup()
+        return
+      }
+      if (controller.signal.aborted) {
+        onDeliveryAbort()
+        return
+      }
+      controller.signal.addEventListener('abort', onDeliveryAbort, { once: true })
+      nodeResponse.once('finish', onDeliverySettled)
+      nodeResponse.once('close', onDeliverySettled)
     },
   }
-}
-
-async function sendAuthProxyBody(
-  event: H3Event,
-  body: Uint8Array,
-  signal: AbortSignal,
-): Promise<void> {
-  if (!event.node.res.socket) {
-    await send(event, body)
-    return
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    let settled = false
-    const cleanup = () => {
-      signal.removeEventListener('abort', onAbort)
-      event.node.res.off('finish', onFinish)
-      event.node.res.off('close', onClose)
-      event.node.res.off('error', onError)
-    }
-    const succeed = () => {
-      if (settled) return
-      settled = true
-      cleanup()
-      resolve()
-    }
-    const fail = (error: unknown) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      reject(toError(error, 'Auth proxy response failed'))
-    }
-    const onFinish = () => succeed()
-    const onClose = () => {
-      if (event.node.res.writableFinished) succeed()
-      else fail(new Error('Auth proxy client disconnected during download'))
-    }
-    const onError = (error: Error) => fail(error)
-    const onAbort = () => {
-      const error = toError(signal.reason, 'Auth proxy response was aborted')
-      fail(error)
-      event.node.res.destroy(error)
-    }
-
-    event.node.res.once('finish', onFinish)
-    event.node.res.once('close', onClose)
-    event.node.res.once('error', onError)
-    signal.addEventListener('abort', onAbort, { once: true })
-
-    if (signal.aborted) {
-      onAbort()
-      return
-    }
-    try {
-      event.node.res.end(body)
-    } catch (error) {
-      fail(error)
-    }
-  })
 }
 
 async function recordAuthProxyRequestInDev(request: AuthProxyRequest): Promise<void> {
@@ -231,6 +232,21 @@ async function recordAuthProxyRequestInDev(request: AuthProxyRequest): Promise<v
   }
 }
 
+/**
+ * Whether the server has read the whole request. Only a Node request can
+ * tell; elsewhere the runtime owns the connection, so it counts as complete.
+ */
+function requestComplete(event: ConvexServerEvent): boolean {
+  return eventNodeRequest(event)?.complete ?? true
+}
+
+/**
+ * The auth proxy handler. A plain function, not `defineEventHandler`: Nuxt 5's
+ * `nuxt/server` wrapper buffers the whole request body before the handler
+ * runs, which defeats the body limit. h3 1.x (Nuxt 4) and Nitro 3 (Nuxt 5)
+ * both accept a plain function; it receives the raw h3 v1 event on Nuxt 4
+ * and the h3 v2 event on Nuxt 5.
+ */
 export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
   const allowedMethods = new Set(options.allowedMethods ?? ALLOWED_METHODS)
   const fixedAuthPath = options.fixedAuthPath
@@ -242,17 +258,22 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
     throw new TypeError('Auth proxy fixed path must be one absolute path without a query')
   }
 
-  return defineEventHandler(async (event: H3Event) => {
-    setHeaders(event, { 'cache-control': 'private, no-store' })
-    if (publicMetadataCors) setHeaders(event, { 'access-control-allow-origin': '*' })
+  return async (event: ConvexServerEvent): Promise<Response> => {
+    // Errors are thrown, and the server renders them with the event's headers,
+    // so the privacy headers go on the event before any check.
+    const eventHeaders = eventResponseHeaders(event)
+    eventHeaders.set('cache-control', PRIVATE_NO_STORE)
+    if (publicMetadataCors) eventHeaders.set('access-control-allow-origin', '*')
     const startedAt = Date.now()
-    const requestUrl = getRequestURL(event)
-    const config = getConvexRuntimeConfig()
+    const method = eventRequestMethod(event)
+    const requestHeaders = eventRequestHeaders(event)
+    const requestUrl = eventRequestUrl(event)
+    const config = readServerConvexConfig()
     const auth = config.auth
 
     if (auth === false) {
-      if (event.method !== 'GET' || !event.node.req.complete) closeRequestConnection(event)
-      throw createError({ statusCode: 404, message: 'Authentication is disabled' })
+      if (method !== 'GET' || !requestComplete(event)) closeRequestConnection(event)
+      throw createError({ status: 404, message: 'Authentication is disabled' })
     }
     const traceEnabled = config.logging === 'debug'
     const requestId = import.meta.dev || traceEnabled ? crypto.randomUUID() : ''
@@ -266,7 +287,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       logger.auth({
         phase,
         outcome,
-        details: { component: 'auth-proxy', requestId, method: event.method, ...details },
+        details: { component: 'auth-proxy', requestId, method, ...details },
       })
     }
     const rejected = (code: string, status: number) =>
@@ -278,10 +299,10 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
     trace('auth-proxy.request.started', 'success')
     const publicOrigin = auth.origin
     if (!publicOrigin) {
-      if (event.method === 'POST') closeRequestConnection(event)
+      if (method === 'POST') closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_PUBLIC_ORIGIN_MISSING', 500)
       throw createError({
-        statusCode: 500,
+        status: 500,
         message: buildMissingPublicOriginMessage(),
         data: { code: 'BCN_AUTH_PROXY_PUBLIC_ORIGIN_MISSING' },
       })
@@ -291,11 +312,11 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
     // address to sign. Every credentialed/session route keeps the strict IP
     // requirement below.
     const trustedClientIpHeader = publicMetadataCors ? null : auth.trustedClientIpHeader
-    if (trustedClientIpHeader && !normalizeClientIp(event.headers.get(trustedClientIpHeader))) {
-      if (event.method === 'POST') closeRequestConnection(event)
+    if (trustedClientIpHeader && !normalizeClientIp(requestHeaders.get(trustedClientIpHeader))) {
+      if (method === 'POST') closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_CLIENT_IP_INVALID', 400)
       throw createError({
-        statusCode: 400,
+        status: 400,
         message: 'Auth proxy request is missing a valid ingress-owned client IP',
         data: { code: 'BCN_AUTH_PROXY_CLIENT_IP_INVALID' },
       })
@@ -306,28 +327,28 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       try {
         requireProxyIpSecret(process.env.BCN_AUTH_PROXY_IP_SECRET)
       } catch {
-        if (event.method === 'POST') closeRequestConnection(event)
+        if (method === 'POST') closeRequestConnection(event)
         rejected('BCN_AUTH_PROXY_IP_SECRET_INVALID', 500)
         throw createError({
-          statusCode: 500,
+          status: 500,
           message: 'Auth proxy client IP signing is not configured',
           data: { code: 'BCN_AUTH_PROXY_IP_SECRET_INVALID' },
         })
       }
     }
-    if (publicMetadataCors && hasPublicMetadataCredentials(event.headers)) {
+    if (publicMetadataCors && hasPublicMetadataCredentials(requestHeaders)) {
       rejected('BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED', 403)
       throw createError({
-        statusCode: 403,
+        status: 403,
         message: 'Public auth metadata does not accept credentials',
         data: { code: 'BCN_AUTH_PROXY_METADATA_CREDENTIAL_REJECTED' },
       })
     }
-    if ((event.method === 'GET' || event.method === 'HEAD') && hasFramedGetBody(event.headers)) {
+    if ((method === 'GET' || method === 'HEAD') && hasDeclaredRequestBody(requestHeaders)) {
       closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_GET_BODY_REJECTED', 400)
       throw createError({
-        statusCode: 400,
+        status: 400,
         message: 'Auth proxy GET requests must not contain a body',
         data: { code: 'BCN_AUTH_PROXY_GET_BODY_REJECTED' },
       })
@@ -335,7 +356,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
 
     if (fixedAuthPath !== undefined && (requestUrl.search || requestUrl.hash)) {
       rejected('BCN_AUTH_PROXY_METADATA_QUERY_REJECTED', 400)
-      throw createError({ statusCode: 400, message: 'Auth metadata does not accept a query' })
+      throw createError({ status: 400, message: 'Auth metadata does not accept a query' })
     }
     const path =
       fixedAuthPath ??
@@ -345,36 +366,37 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`
     const hasQuery = Boolean(requestUrl.search || requestUrl.hash)
     const isPublicTokenCorsPreflight = isAllowedPublicOAuthTokenCorsPreflight(
-      event.headers,
-      event.method,
+      requestHeaders,
+      method,
       publicOrigin,
       normalizedPath,
       hasQuery,
     )
     if (isPublicTokenCorsPreflight) {
-      setResponseStatus(event, 204)
-      setHeaders(event, {
-        'access-control-allow-headers': 'content-type',
-        'access-control-allow-methods': 'POST',
-        'access-control-allow-origin': '*',
-        'access-control-max-age': 300,
-      })
       trace('auth-proxy.request.completed', 'success', {
         durationMs: Date.now() - startedAt,
         status: 204,
       })
-      await send(event, '')
-      return
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'access-control-allow-headers': 'content-type',
+          'access-control-allow-methods': 'POST',
+          'access-control-allow-origin': '*',
+          'access-control-max-age': '300',
+          'cache-control': PRIVATE_NO_STORE,
+        },
+      })
     }
-    if (!allowedMethods.has(event.method)) {
+    if (!allowedMethods.has(method)) {
       closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_METHOD_REJECTED', 405)
-      throw createError({ statusCode: 405, message: 'Auth proxy method is not permitted' })
+      throw createError({ status: 405, message: 'Auth proxy method is not permitted' })
     }
 
     const isPublicTokenCorsPost = isAllowedPublicOAuthTokenCorsPost(
-      event.headers,
-      event.method,
+      requestHeaders,
+      method,
       publicOrigin,
       normalizedPath,
       hasQuery,
@@ -382,43 +404,44 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
     if (
       !isPublicTokenCorsPost &&
       !publicMetadataCors &&
-      isCrossOriginAuthRequest(event.headers, event.method, publicOrigin, normalizedPath)
+      isCrossOriginAuthRequest(requestHeaders, method, publicOrigin, normalizedPath)
     ) {
-      if (event.method === 'POST') closeRequestConnection(event)
+      if (method === 'POST') closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_ORIGIN_BLOCKED', 403)
       throw createError({
-        statusCode: 403,
+        status: 403,
         message: buildBlockedOriginMessage(),
         data: { code: 'BCN_AUTH_PROXY_ORIGIN_BLOCKED' },
       })
     }
-    if (isPublicTokenCorsPost) setHeaders(event, { 'access-control-allow-origin': '*' })
-    if (event.method === 'POST' && hasUnsupportedRequestContentEncoding(event.headers)) {
+    if (isPublicTokenCorsPost) eventHeaders.set('access-control-allow-origin', '*')
+    if (method === 'POST' && hasUnsupportedRequestContentEncoding(requestHeaders)) {
       closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_REQUEST_ENCODING_UNSUPPORTED', 415)
       throw createError({
-        statusCode: 415,
+        status: 415,
         message: 'Auth proxy accepts only identity-encoded request bodies',
         data: { code: 'BCN_AUTH_PROXY_REQUEST_ENCODING_UNSUPPORTED' },
       })
     }
 
     if (!config.siteUrl) {
-      if (event.method === 'POST') closeRequestConnection(event)
+      if (method === 'POST') closeRequestConnection(event)
       rejected('BCN_AUTH_PROXY_SITE_URL_MISSING', 500)
       throw createError({
-        statusCode: 500,
+        status: 500,
         message: buildMissingSiteUrlMessage(),
         data: { code: 'BCN_AUTH_PROXY_SITE_URL_MISSING' },
       })
     }
 
-    // getConvexRuntimeConfig() already normalized and validated the site URL.
+    // readServerConvexConfig() already normalized and validated the site URL.
     const siteUrl = config.siteUrl
     const target = `${siteUrl}${AUTH_ROUTE}${normalizedPath}${fixedAuthPath ? '' : requestUrl.search}`
     const lifecycle = createAuthProxyLifecycle(event, startedAt)
     const { controller } = lifecycle
     let response: Response | undefined
+    let proxyResponse: Response | undefined
     let requestBodyBytes = 0
 
     try {
@@ -436,16 +459,16 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         delete forwardHeaders['sec-fetch-site']
       }
       let body: Uint8Array | undefined
-      if (event.method === 'POST') {
+      if (method === 'POST') {
         const requestBodyLimit = isPublicTokenCorsPost
           ? Math.min(DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES, OAUTH_TOKEN_CORS_MAX_BODY_BYTES)
           : DEFAULT_MAX_PROXY_REQUEST_BODY_BYTES
         const sizeError = getRequestBodySizeError(
-          event.headers.get('content-length'),
+          requestHeaders.get('content-length'),
           requestBodyLimit,
         )
         if (sizeError)
-          throw createError({ statusCode: 413, message: sizeError.message, data: sizeError })
+          throw createError({ status: 413, message: sizeError.message, data: sizeError })
         const requestBody = await readRequestBodyWithLimit(
           event,
           requestBodyLimit,
@@ -456,12 +479,12 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       }
 
       response = await fetch(target, {
-        method: event.method,
+        method,
         // Node fetch synthesizes `sec-fetch-mode: cors` from RequestInit.mode and
         // overwrites the forwarded browser header. Better Auth uses that header
         // to distinguish fetch calls (JSON redirects) from navigations (HTTP
         // redirects), so preserve the only classification it consumes.
-        mode: authProxyFetchMode(event.method, normalizedPath, event.headers),
+        mode: authProxyFetchMode(method, normalizedPath, requestHeaders),
         headers: forwardHeaders,
         body: body
           ? (body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer)
@@ -473,14 +496,14 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       const responseCookies = response.headers.getSetCookie?.() ?? []
       if (publicMetadataCors && responseCookies.length > 0) {
         throw createError({
-          statusCode: 502,
+          status: 502,
           message: 'Public auth metadata responses must not set cookies',
           data: { code: 'BCN_AUTH_PROXY_METADATA_COOKIE_REJECTED' },
         })
       }
       if (isPublicTokenCorsPost && responseCookies.length > 0) {
         throw createError({
-          statusCode: 502,
+          status: 502,
           message: 'Public OAuth token responses must not set cookies',
           data: { code: 'BCN_AUTH_PROXY_TOKEN_COOKIE_REJECTED' },
         })
@@ -488,14 +511,14 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       for (const cookie of responseCookies) {
         if (!isBetterAuthSetCookie(cookie)) {
           throw createError({
-            statusCode: 502,
+            status: 502,
             message: 'Auth proxy upstream returned a cookie outside the supported namespace',
             data: { code: 'BCN_AUTH_PROXY_COOKIE_NAME_UNSUPPORTED' },
           })
         }
         if (hasSetCookieDomainAttribute(cookie)) {
           throw createError({
-            statusCode: 502,
+            status: 502,
             message: 'Auth proxy does not support Domain-scoped Better Auth cookies',
             data: { code: 'BCN_AUTH_PROXY_COOKIE_DOMAIN_UNSUPPORTED' },
           })
@@ -503,7 +526,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         const violation = getSessionCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '')
         if (violation) {
           throw createError({
-            statusCode: 502,
+            status: 502,
             message: 'Auth proxy upstream returned a cookie with unsupported security flags',
             data: { code: 'BCN_AUTH_PROXY_COOKIE_FLAGS_UNSUPPORTED', violation },
           })
@@ -512,7 +535,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
 
       if (!isSupportedProxyResponseContentEncoding(response.headers.get('content-encoding'))) {
         throw createError({
-          statusCode: 502,
+          status: 502,
           message: 'Auth proxy upstream returned an unsupported content encoding',
           data: { code: 'BCN_AUTH_PROXY_UPSTREAM_ENCODING_UNSUPPORTED' },
         })
@@ -521,7 +544,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       const critical = normalizedPath === '/convex/token' || normalizedPath === '/get-session'
       if (critical && (response.status === 404 || response.status >= 500)) {
         throw createError({
-          statusCode: 502,
+          status: 502,
           message: buildAuthProxyUpstreamStatusMessage(response.status),
           data: { code: 'BCN_AUTH_PROXY_UPSTREAM_STATUS', upstreamStatus: response.status },
         })
@@ -533,7 +556,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       )
       if (responseSizeError) {
         throw createError({
-          statusCode: 502,
+          status: 502,
           message: responseSizeError.message,
           data: responseSizeError,
         })
@@ -544,20 +567,33 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         controller.signal,
       )
 
-      setResponseStatus(event, response.status, response.statusText)
-      for (const cookie of deduplicateSetCookies(responseCookies)) {
-        appendResponseHeader(event, 'set-cookie', cookie)
+      // Every header goes on the returned Response itself: h3 2.x (Nuxt 5)
+      // merges event-level headers into a returned error-status Response only
+      // through `event.res.errHeaders`, and writing to the Node response would
+      // skip the headers h3 2.x keeps on `event.res`.
+      const proxyHeaders = new Headers({ 'cache-control': PRIVATE_NO_STORE })
+      if (publicMetadataCors || isPublicTokenCorsPost) {
+        proxyHeaders.set('access-control-allow-origin', '*')
       }
+      const upstreamCookies = deduplicateSetCookies(responseCookies)
+      for (const cookie of upstreamCookies) {
+        proxyHeaders.append('set-cookie', cookie)
+      }
+      dropStagedCookiesSetUpstream(event, upstreamCookies)
       const responseConnection = response.headers.get('connection')
       for (const [key, value] of response.headers.entries()) {
         if (!shouldSkipProxyResponseHeader(key, responseConnection)) {
-          setHeaders(event, { [key]: value })
+          proxyHeaders.set(key, value)
         }
       }
+      // A HEAD response carries no body, and a content-length of 0 would
+      // misstate the GET length (RFC 9110 8.6), so it gets neither.
+      const hasBody = method !== 'HEAD' && !NULL_BODY_STATUSES.has(response.status)
+      if (hasBody) proxyHeaders.set('content-length', String(responseBody.byteLength))
       await recordAuthProxyRequestInDev({
         id: requestId,
         path: normalizedPath,
-        method: event.method,
+        method,
         timestamp: startedAt,
         status: response.status,
         duration: Date.now() - startedAt,
@@ -569,18 +605,15 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         responseBodyBytes: responseBody.byteLength,
         status: response.status,
       })
-      await sendAuthProxyBody(event, responseBody, controller.signal)
+      proxyResponse = new Response(hasBody ? new Uint8Array(responseBody) : null, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: proxyHeaders,
+      })
+      return proxyResponse
     } catch (error) {
       cancelResponseBody(response, error)
-      if (
-        event.method === 'POST' &&
-        (!event.node.req.complete ||
-          (error &&
-            typeof error === 'object' &&
-            'statusCode' in error &&
-            error.statusCode === 413)) &&
-        !event.node.res.headersSent
-      ) {
+      if (method === 'POST' && (!requestComplete(event) || caughtStatus(error) === 413)) {
         closeRequestConnection(event)
       }
       const safeFailure = safeCaughtProxyFailure(error)
@@ -588,11 +621,11 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
         code: safeFailure?.code ?? 'BCN_AUTH_PROXY_UNREACHABLE',
         durationMs: Date.now() - startedAt,
         requestBodyBytes,
-        status: safeFailure?.statusCode ?? 502,
+        status: safeFailure?.status ?? 502,
       })
       if (safeFailure) {
         throw createError({
-          statusCode: safeFailure.statusCode,
+          status: safeFailure.status,
           message: 'Auth proxy request failed',
           data: safeFailure.data,
         })
@@ -600,21 +633,43 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
       await recordAuthProxyRequestInDev({
         id: requestId,
         path: normalizedPath,
-        method: event.method,
+        method,
         timestamp: startedAt,
         status: 502,
         duration: Date.now() - startedAt,
         success: false,
       })
       throw createError({
-        statusCode: 502,
+        status: 502,
         message: buildAuthProxyUnreachableMessage(),
         data: { code: 'BCN_AUTH_PROXY_UNREACHABLE' },
       })
     } finally {
-      lifecycle.cleanup()
+      if (proxyResponse) lifecycle.releaseAfterDelivery()
+      else lifecycle.cleanup()
     }
-  })
+  }
 }
 
 export default createAuthProxyHandler()
+
+/**
+ * The upstream auth response decides every cookie it sets. A cookie staged on
+ * the event earlier in this request (a session renewal from a user helper)
+ * would otherwise be merged after the returned Response on h3 2.x (Nuxt 5) and
+ * undo a sign-out or an account switch.
+ */
+function dropStagedCookiesSetUpstream(
+  event: ConvexServerEvent,
+  upstreamCookies: readonly string[],
+): void {
+  const upstreamNames = new Set(upstreamCookies.map((cookie) => getSetCookieName(cookie)))
+  if (upstreamNames.size === 0) return
+  for (const headers of eventResponseHeaderTargets(event)) {
+    const staged = headers.getSetCookie()
+    const kept = staged.filter((cookie) => !upstreamNames.has(getSetCookieName(cookie)))
+    if (kept.length === staged.length) continue
+    headers.delete('set-cookie')
+    for (const cookie of kept) headers.append('set-cookie', cookie)
+  }
+}

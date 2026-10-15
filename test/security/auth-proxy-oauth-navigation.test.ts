@@ -1,77 +1,38 @@
-import { EventEmitter } from 'node:events'
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({
-  config: vi.fn(),
-  requestUrl: vi.fn(),
-  responseHeaders: vi.fn(),
-  responseStatus: vi.fn(),
-  storage: vi.fn(),
+import { rawH3V1Event } from '../helpers/server-event'
+
+const mocks = vi.hoisted(() => ({ config: vi.fn() }))
+
+vi.mock('../../src/runtime/server/utils/server-config', () => ({
+  readServerConvexConfig: mocks.config,
 }))
 
-vi.mock('h3', () => ({
-  appendResponseHeader: vi.fn(),
-  createError(input: { statusCode: number; message: string; data?: unknown }) {
-    return Object.assign(new Error(input.message), input)
-  },
-  defineEventHandler: (handler: unknown) => handler,
-  getRequestURL: mocks.requestUrl,
-  getRequestWebStream: () => undefined,
-  send: (_event: unknown, body: Uint8Array) => body,
-  setHeaders: mocks.responseHeaders,
-  setResponseStatus: mocks.responseStatus,
-}))
-vi.mock('../../src/runtime/utils/runtime-config', () => ({
-  getConvexRuntimeConfig: mocks.config,
-}))
-vi.mock('nitropack/runtime', () => ({ useStorage: mocks.storage }))
-
-function event(method = 'GET', headers: Record<string, string> = {}) {
-  return {
+function event(method = 'GET', headers: Record<string, string> = {}, path = '/oauth2/authorize') {
+  return rawH3V1Event({
     method,
-    headers: new Headers({
+    path: `/api/auth${path}`,
+    headers: {
       origin: 'https://app.example.test',
       'sec-fetch-mode': 'cors',
       'sec-fetch-dest': 'document',
       accept: 'text/html,application/xhtml+xml',
       ...headers,
-    }),
-    node: {
-      req: Object.assign(new EventEmitter(), {
-        complete: true,
-        pause: vi.fn(),
-        resume: vi.fn(),
-      }),
-      res: Object.assign(new EventEmitter(), {
-        destroy: vi.fn(),
-        end: vi.fn(),
-        headersSent: false,
-        shouldKeepAlive: true,
-        writableFinished: false,
-      }),
     },
-  }
+  }).event
 }
 
 async function proxy(input: ReturnType<typeof event>) {
-  const handler = (await import('../../src/runtime/server/api/auth/[...]')).default as unknown as (
-    input: ReturnType<typeof event>,
-  ) => Promise<unknown>
+  const handler = (await import('../../src/runtime/server/api/auth/[...]')).default
   return handler(input)
 }
 
 describe('hosted OAuth navigation response negotiation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.requestUrl.mockReturnValue(new URL('https://app.example.test/api/auth/oauth2/authorize'))
     mocks.config.mockReturnValue({
       siteUrl: 'https://demo.convex.site',
       auth: { origin: 'https://app.example.test', trustedClientIpHeader: null },
-    })
-    mocks.storage.mockReturnValue({
-      getItem: vi.fn().mockResolvedValue([]),
-      setItem: vi.fn(),
     })
   })
   afterEach(() => vi.unstubAllGlobals())
@@ -94,17 +55,16 @@ describe('hosted OAuth navigation response negotiation', () => {
       const request = event('GET', { 'sec-fetch-dest': destination })
       const originalHeaders = [...request.headers]
 
-      await proxy(request)
+      const response = await proxy(request)
 
       expect(upstream).toHaveBeenCalledOnce()
       expect(upstream.mock.calls[0]?.[1]).toMatchObject({
         mode: 'same-origin',
         redirect: 'manual',
       })
-      expect(mocks.responseStatus).toHaveBeenCalledWith(request, 302, '')
-      expect(mocks.responseHeaders).toHaveBeenCalledWith(request, {
-        location: 'https://app.example.test/oauth/login',
-      })
+      expect(response.status).toBe(302)
+      expect(response.statusText).toBe('')
+      expect(response.headers.get('location')).toBe('https://app.example.test/oauth/login')
       expect([...request.headers]).toEqual(originalHeaders)
     },
   )
@@ -121,10 +81,9 @@ describe('hosted OAuth navigation response negotiation', () => {
     ['POST', '/oauth2/consent', {}],
     ['GET', '/get-session', {}],
   ])('keeps fetch negotiation for %s %s %j', async (method, path, headers) => {
-    mocks.requestUrl.mockReturnValue(new URL(`https://app.example.test/api/auth${path}`))
     const upstream = vi.fn(async () => Response.json({ redirect: true }))
     vi.stubGlobal('fetch', upstream)
-    await proxy(event(method, headers))
+    await proxy(event(method, headers, path))
     expect(upstream).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ mode: 'cors', redirect: 'manual' }),
@@ -139,13 +98,12 @@ describe('hosted OAuth navigation response negotiation', () => {
   ])(
     'rejects untrusted Origin on %s %s before fetch despite document headers',
     async (method, path) => {
-      mocks.requestUrl.mockReturnValue(new URL(`https://app.example.test/api/auth${path}`))
       const upstream = vi.fn()
       vi.stubGlobal('fetch', upstream)
       await expect(
-        proxy(event(method, { origin: 'https://evil.example.test' })),
+        proxy(event(method, { origin: 'https://evil.example.test' }, path)),
       ).rejects.toMatchObject({
-        statusCode: 403,
+        status: 403,
         data: { code: 'BCN_AUTH_PROXY_ORIGIN_BLOCKED' },
       })
       expect(upstream).not.toHaveBeenCalled()
@@ -159,20 +117,15 @@ describe('hosted OAuth navigation response negotiation', () => {
     'scope=unregistered',
     'resource=https%3A%2F%2Fevil.example.test',
   ])('preserves provider denial for %s', async (query) => {
-    mocks.requestUrl.mockReturnValue(
-      new URL(`https://app.example.test/api/auth/oauth2/authorize?${query}`),
-    )
     const upstream = vi.fn(async () => Response.json({ error: 'invalid_request' }, { status: 400 }))
     vi.stubGlobal('fetch', upstream)
-    const request = event()
-    await proxy(request)
+    const response = await proxy(event('GET', {}, `/oauth2/authorize?${query}`))
     expect(upstream).toHaveBeenCalledWith(
       `https://demo.convex.site/api/auth/oauth2/authorize?${query}`,
       expect.objectContaining({ mode: 'same-origin', redirect: 'manual' }),
     )
-    expect(mocks.responseStatus).toHaveBeenCalledWith(request, 400, '')
-    expect(mocks.responseHeaders.mock.calls.some(([, headers]) => 'location' in headers)).toBe(
-      false,
-    )
+    expect(response.status).toBe(400)
+    expect(response.statusText).toBe('')
+    expect(response.headers.has('location')).toBe(false)
   })
 })

@@ -9,13 +9,35 @@ export interface ConvexRouteRules {
 
 const SSR_AUTH_CONTEXT_KEY = 'betterConvexSsrAuth'
 
-/** Record the matched route rule on the request (Nitro plugin, before rendering). */
+const SHARED_CACHE_OVERRIDE_HEADERS = new Set([
+  'cdn-cache-control',
+  'edge-control',
+  'surrogate-control',
+  'x-accel-expires',
+])
+
+/**
+ * A response header that tells a CDN or reverse proxy to cache regardless of
+ * `Cache-Control` (`CDN-Cache-Control`, `Vercel-CDN-Cache-Control`, ...). SSR
+ * auth removes these from signed-in pages, and the build warns about route
+ * rules that set them on pages with SSR auth.
+ */
+export function isSharedCacheOverrideHeader(name: string): boolean {
+  const lower = name.toLowerCase()
+  return SHARED_CACHE_OVERRIDE_HEADERS.has(lower) || lower.endsWith('-cdn-cache-control')
+}
+
+/**
+ * Record how to read the request's route rules (Nitro plugin, `request` hook).
+ * The rules are read when rendering, not in the hook: Nuxt 5 runs that hook
+ * before Nitro routes the request, and its fallback lookup there misses every
+ * rule but `/**` when `app.baseURL` is not `/`.
+ */
 export function recordSsrAuthRouteRule(
   context: Record<string, unknown>,
-  routeRules: object | undefined,
+  readRouteRules: () => object | undefined,
 ): void {
-  const convex = (routeRules as { convex?: ConvexRouteRules } | undefined)?.convex
-  if (typeof convex?.ssrAuth === 'boolean') context[SSR_AUTH_CONTEXT_KEY] = convex.ssrAuth
+  context[SSR_AUTH_CONTEXT_KEY] = readRouteRules
 }
 
 /**
@@ -26,6 +48,9 @@ export function isSsrAuthEnabled(
   context: Record<string, unknown> | undefined,
   buildDefault: boolean,
 ): boolean {
-  const routeRule = context?.[SSR_AUTH_CONTEXT_KEY]
-  return typeof routeRule === 'boolean' ? routeRule : buildDefault
+  const readRouteRules = context?.[SSR_AUTH_CONTEXT_KEY]
+  if (typeof readRouteRules !== 'function') return buildDefault
+  const routeRules: unknown = readRouteRules()
+  const convex = (routeRules as { convex?: ConvexRouteRules } | undefined)?.convex
+  return typeof convex?.ssrAuth === 'boolean' ? convex.ssrAuth : buildDefault
 }

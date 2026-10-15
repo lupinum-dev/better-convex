@@ -4,9 +4,7 @@ import { readFileSync, existsSync } from 'node:fs'
  * Server handler for DevTools UI.
  * Serves the built Vue devtools application and API endpoints.
  */
-import { defineEventHandler, setHeader, getRequestURL, createError, type H3Event } from 'h3'
-
-import { useRuntimeConfig } from '#imports'
+import { createError, defineEventHandler, getRequestURL, useRuntimeConfig } from 'nuxt/server'
 
 import { getAuthProxyStats } from './auth-proxy-registry'
 import { isPathInsideDirectory, resolveDevtoolsFilePath } from './path-utils'
@@ -30,9 +28,9 @@ function getMimeType(path: string): string {
   return mimeTypes[ext] || 'application/octet-stream'
 }
 
-export default defineEventHandler(async (event: H3Event) => {
+export default defineEventHandler(async (event) => {
   if (!import.meta.dev) {
-    throw createError({ statusCode: 404, statusMessage: 'Not Found' })
+    throw createError({ status: 404, statusText: 'Not Found' })
   }
 
   // Get the devtools output path from runtime config
@@ -45,8 +43,8 @@ export default defineEventHandler(async (event: H3Event) => {
 
   // API endpoint: Auth proxy stats
   if (pathname === '/proxy-stats') {
-    setHeader(event, 'Content-Type', 'application/json')
-    setHeader(event, 'Cache-Control', 'no-cache')
+    event.res.headers.set('Content-Type', 'application/json')
+    event.res.headers.set('Cache-Control', 'no-cache')
     return JSON.stringify(await getAuthProxyStats())
   }
 
@@ -58,32 +56,32 @@ export default defineEventHandler(async (event: H3Event) => {
   // If no output directory configured or doesn't exist, show fallback
   if (!outputDir || !existsSync(outputDir)) {
     if (pathname === '/index.html') {
-      setHeader(event, 'Content-Type', 'text/html')
+      event.res.headers.set('Content-Type', 'text/html')
       return getFallbackHtml()
     }
-    throw createError({ statusCode: 404, statusMessage: 'Not Found' })
+    throw createError({ status: 404, statusText: 'Not Found' })
   }
 
   const filePath = resolveDevtoolsFilePath(outputDir, pathname)
 
   // Security: prevent path traversal
   if (!isPathInsideDirectory(outputDir, filePath)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
+    throw createError({ status: 403, statusText: 'Forbidden' })
   }
 
   // Check if file exists
   if (!existsSync(filePath)) {
     if (pathname === '/index.html') {
-      setHeader(event, 'Content-Type', 'text/html')
+      event.res.headers.set('Content-Type', 'text/html')
       return getFallbackHtml()
     }
-    throw createError({ statusCode: 404, statusMessage: 'Not Found' })
+    throw createError({ status: 404, statusText: 'Not Found' })
   }
 
   // Read and serve the file
   const content = readFileSync(filePath)
-  setHeader(event, 'Content-Type', getMimeType(pathname))
-  setHeader(event, 'Cache-Control', 'no-cache')
+  event.res.headers.set('Content-Type', getMimeType(pathname))
+  event.res.headers.set('Cache-Control', 'no-cache')
 
   return content
 })

@@ -10,7 +10,7 @@
     "@lupinum/better-convex-nuxt": "file:./better-convex-nuxt.tgz",
     "@lupinum/better-convex-vue": "file:./better-convex-vue.tgz",
     "convex": "1.42.2",
-    "nuxt": "4.5.2",
+    "nuxt": "4.6.1",
     "vue": "3.5.43"
   },
   "devDependencies": {
@@ -20,7 +20,7 @@
     "vue-tsc": "3.3.13"
   },
   "engines": {
-    "node": "^22.19.0 || ^24.11.0"
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },
   "packageManager": "pnpm@10.30.3+sha512.c961d1e0a2d8e354ecaa5166b822516668b7f44cb5bd95122d590dd81922f606f5473b6d23ec4a5be05e7fcd18e8488d47d978bbe981872f1145d06e9a740017"
 }

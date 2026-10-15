@@ -1,15 +1,32 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { readServerConvexConfig } from '../../src/runtime/server/utils/server-config'
 import {
   normalizeConvexRuntimeConfig,
   toPublicConvexRuntimeConfig,
 } from '../../src/runtime/utils/runtime-config'
 
-vi.mock('#imports', () => ({
+vi.mock('#app', () => ({
   useRuntimeConfig: vi.fn(() => ({ public: { convex: {} } })),
 }))
 
+vi.mock('nuxt/server', () => ({
+  useRuntimeConfig: vi.fn(() => ({
+    public: { convex: { auth: { origin: 'https://app.example.test' } } },
+    convex: { trustedClientIpHeader: 'cf-connecting-ip' },
+  })),
+}))
+
 describe('runtime config normalization', () => {
+  // Reading only the public part would drop the server-only trusted client IP
+  // header, so Nitro would stop signing the client IP for Convex rate limits.
+  it('reads the server-only part in Nitro code', () => {
+    const config = readServerConvexConfig()
+    if (config.auth === false) throw new Error('expected auth enabled')
+    expect(config.auth.origin).toBe('https://app.example.test')
+    expect(config.auth.trustedClientIpHeader).toBe('cf-connecting-ip')
+  })
+
   it.each([[{}], [{ auth: false }]])('keeps auth disabled for %j', (input) => {
     expect(normalizeConvexRuntimeConfig(input).auth).toBe(false)
   })

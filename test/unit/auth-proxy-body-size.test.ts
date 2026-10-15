@@ -22,29 +22,61 @@ describe('auth proxy body size guards', () => {
     expect(getRequestBodySizeError('1048576')).toBeNull()
     expect(getResponseBodySizeError('1048576')).toBeNull()
     expect(getRequestBodySizeError('1048577')).toMatchObject({
-      statusCode: 413,
+      status: 413,
       code: 'BCN_AUTH_PROXY_REQUEST_BODY_TOO_LARGE',
     })
     expect(getResponseBodySizeError('1048577')).toMatchObject({
-      statusCode: 502,
+      status: 502,
       code: 'BCN_AUTH_PROXY_UPSTREAM_BODY_TOO_LARGE',
     })
   })
 
-  it('uses an H3-cached raw body before the live Node request stream', async () => {
-    const cached = new TextEncoder().encode('cached')
-    const event = {
-      method: 'POST',
-      node: {
-        req: {
-          [Symbol.for('h3RawBody')]: Promise.resolve(cached),
-          socket: {},
-        },
+  // Nuxt 4 in-process requests (`$fetch` inside the server) hand h3 an unenv
+  // mock request whose socket never emits data, and h3 1.x may already hold
+  // the body. Catches the proxy forwarding an empty body, or waiting on the
+  // mock stream until the deadline, instead of reading the held bytes.
+  const text = (value: string) => new TextEncoder().encode(value)
+  it.each([
+    ['an unenv string body', { __unenv__: {}, body: 'a=1' }, {}, text('a=1')],
+    ['an unenv byte body', { __unenv__: {}, body: text('bytes') }, {}, text('bytes')],
+    ['an unenv JSON object body', { __unenv__: {}, body: { a: 1 } }, {}, text('{"a":1}')],
+    [
+      'an unenv form body',
+      { __unenv__: {}, body: new URLSearchParams({ a: '1' }) },
+      {},
+      text('a=1'),
+    ],
+    ['an unenv request without a body', { __unenv__: {}, body: null }, {}, new Uint8Array()],
+    [
+      'an h3-cached raw body',
+      { [Symbol.for('h3RawBody')]: Promise.resolve(text('cached')) },
+      {},
+      text('cached'),
+    ],
+    [
+      'a body h3 1.x took from a web Request',
+      {},
+      {
+        _requestBody: new ReadableStream({
+          start(controller) {
+            controller.enqueue(text('web'))
+            controller.close()
+          },
+        }),
       },
-    } as never
+      text('web'),
+    ],
+  ])('reads %s before the live Node request stream', async (_name, fields, eventFields, body) => {
+    const request = Object.assign(new EventEmitter(), { socket: {} }, fields)
+    const event = { context: {}, node: { req: request, res: {} }, ...eventFields }
 
-    await expect(readRequestBodyWithLimit(event, cached.byteLength)).resolves.toEqual(cached)
+    await expect(readRequestBodyWithLimit(event, 64)).resolves.toEqual(body)
+    expect(request.listenerCount('data')).toBe(0)
   })
+
+  // The web-shaped source (no Node request: Nitro 3 `serverFetch`, edge
+  // presets) is pinned by the seeded `proxy-body-size` corpus in
+  // test/auth-fuzz/body-timeout-boundaries.test.ts.
 
   function liveRequest() {
     const request = Object.assign(new EventEmitter(), {
@@ -55,7 +87,7 @@ describe('auth proxy body size guards', () => {
     })
     const controller = new AbortController()
     const result = readRequestBodyWithLimit(
-      { node: { req: request } } as never,
+      { context: {}, node: { req: request, res: {} } },
       4,
       controller.signal,
     )
@@ -76,7 +108,7 @@ describe('auth proxy body size guards', () => {
 
     await expect(result).rejects.toMatchObject({
       code: 'BCN_AUTH_PROXY_REQUEST_BODY_TOO_LARGE',
-      statusCode: 413,
+      status: 413,
     })
     expectReleased()
   })

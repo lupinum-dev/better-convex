@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildEdges,
+  collectReachableFiles,
   discoverWorkspacePackages,
   findWorkspaceDependencyCycles,
   findWorkspaceDependencyViolations,
@@ -36,7 +37,7 @@ function bare(specifier: string): BoundaryEdge {
   }
 }
 
-function relativeEdge(specifier: string, resolvedAbsPath: string): BoundaryEdge {
+function relativeEdge(specifier: string, resolvedAbsPath: string | null): BoundaryEdge {
   return {
     fromAbsPath: resolve('test/unit/convex-auth-boundaries.test.ts'),
     isRelative: true,
@@ -63,6 +64,9 @@ describe('Convex auth dependency boundaries', () => {
       'vue',
       'nuxt',
       'nitropack/runtime',
+      'nitro',
+      'nitro/runtime',
+      'nuxt/server',
       'h3',
       '#app',
       '~/runtime/server',
@@ -142,6 +146,143 @@ describe('Convex auth dependency boundaries', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
+  })
+})
+
+describe('Nuxt 4.6 and Nuxt 5 server boundaries', () => {
+  const typeOnly = (edge: BoundaryEdge): BoundaryEdge => ({ ...edge, isTypeOnly: true })
+  const sibling = relativeEdge('./event', resolve('src/runtime/server/utils/event.ts'))
+
+  // Catches a Nuxt or Nitro import in the auth-client definition, which ships to the browser and
+  // to consumer type programs that have no server runtime.
+  it('keeps the auth-client definition free of Nuxt and Nitro runtime imports', () => {
+    const boundary = rule('auth-client-no-runtime-deps')
+    expect(boundary.from(resolve('src/runtime/auth-client/index.ts'))).toBe(true)
+    for (const specifier of [
+      'nitropack/runtime',
+      'nitro',
+      'nitro/runtime',
+      'nuxt',
+      'nuxt/server',
+    ]) {
+      expect(boundary.disallow(bare(specifier)), specifier).toBe(true)
+    }
+    expect(boundary.disallow(bare('better-auth/client'))).toBe(false)
+  })
+
+  // Catches server code that imports h3, nitropack, nitro or #imports, even type-only: Nuxt 5
+  // skips its Nitro v2 compatibility layer for this module (compatibility.server 'nuxt'), so
+  // that file breaks there; type-only h3 imports also keep h3 in our public types.
+  it('lets Nitro runtime files reach the server only through nuxt/server', () => {
+    const boundary = rule('nitro-runtime-no-legacy-server-imports')
+    for (const file of [
+      'src/runtime/server/utils/event.ts',
+      'src/runtime/server/api/auth/[...].ts',
+      'src/runtime/devtools/server.ts',
+      'src/runtime/devtools/auth-proxy-registry.ts',
+    ]) {
+      expect(boundary.from(resolve(file)), file).toBe(true)
+    }
+    expect(boundary.from(resolve('src/runtime/composables/useConvexQuery.ts'))).toBe(false)
+
+    for (const specifier of [
+      'h3',
+      'h3/utils',
+      'nitropack',
+      'nitropack/runtime',
+      'nitro',
+      'nitro/runtime',
+      '#internal/nitro',
+      '#imports',
+    ]) {
+      expect(boundary.disallow(bare(specifier)), specifier).toBe(true)
+      expect(boundary.disallow(typeOnly(bare(specifier))), `type ${specifier}`).toBe(true)
+    }
+    expect(boundary.disallow(bare('nuxt/server'))).toBe(false)
+    expect(boundary.disallow(sibling)).toBe(false)
+    expect(boundary.typeOnlyExempt).toBe(false)
+  })
+
+  // Catches a server import anywhere in the SSR render chain: Nuxt's import protection fails
+  // the app build when app code (plugin.server.ts and what it imports) imports nuxt/server.
+  it('keeps nuxt/server, Nitro and h3 out of everything plugin.server.ts reaches', () => {
+    const boundary = rule('ssr-chain-no-server-framework-imports')
+    expect(boundary.from(resolve('src/runtime/plugin.server.ts'))).toBe(true)
+    // Reached through the SSR auth helpers, two relative hops from the entry.
+    expect(boundary.from(resolve('src/runtime/server/utils/event.ts'))).toBe(true)
+    expect(boundary.from(resolve('src/runtime/server/utils/server-config.ts'))).toBe(false)
+    expect(boundary.from(resolve('src/runtime/server/api/auth/[...].ts'))).toBe(false)
+
+    for (const specifier of [
+      'nuxt/server',
+      // The module's alias for src/runtime/server/index.ts, which imports nuxt/server.
+      '#convex/server',
+      'nitro',
+      'nitro/runtime',
+      'h3',
+      'nitropack',
+      'nitropack/runtime',
+    ]) {
+      expect(boundary.disallow(bare(specifier)), specifier).toBe(true)
+      expect(boundary.disallow(typeOnly(bare(specifier))), `type ${specifier}`).toBe(true)
+    }
+    for (const specifier of ['#app', 'vue', 'convex/browser']) {
+      expect(boundary.disallow(bare(specifier)), specifier).toBe(false)
+    }
+    expect(boundary.typeOnlyExempt).toBe(false)
+  })
+
+  // Catches app-only imports in code Nitro loads: `#app` and `#imports` do not exist in the
+  // Nitro build, and a shared util reached from a Nitro entry would break the server bundle.
+  it('keeps #app, nuxt/app, #imports, h3, Nitro and nitropack out of everything the Nitro entries reach', () => {
+    const boundary = rule('nitro-chain-no-app-imports')
+    for (const file of [
+      'src/runtime/server/index.ts',
+      'src/runtime/server/api/auth/jwks.ts',
+      'src/runtime/devtools/server.ts',
+      'src/runtime/server/utils/event.ts',
+      // Outside the server dir and reached only through server/plugins/ssr-auth-route.ts: proves
+      // the rule follows the Nitro chain and that the Nitro plugins are entries.
+      'src/runtime/utils/ssr-auth.ts',
+    ]) {
+      expect(boundary.from(resolve(file)), file).toBe(true)
+    }
+    expect(boundary.from(resolve('src/runtime/plugin.server.ts'))).toBe(false)
+    expect(boundary.from(resolve('src/runtime/composables/useConvexQuery.ts'))).toBe(false)
+
+    for (const specifier of [
+      '#app',
+      '#app/nuxt',
+      'nuxt/app',
+      '#imports',
+      'h3',
+      'nitropack/runtime',
+      // Nuxt 5 treats #internal/nitro as Nitro v2 code; nitro/* does not exist on Nuxt 4.
+      '#internal/nitro/config',
+      'nitro/runtime-config',
+    ]) {
+      expect(boundary.disallow(bare(specifier)), specifier).toBe(true)
+      expect(boundary.disallow(typeOnly(bare(specifier))), `type ${specifier}`).toBe(true)
+    }
+    expect(boundary.disallow(bare('nuxt/server'))).toBe(false)
+    expect(boundary.typeOnlyExempt).toBe(false)
+  })
+
+  // Catches a reachability walk that stops after one hop (a forbidden import two files away goes
+  // unreported) or follows type-only edges (files that never reach the bundle get flagged).
+  it('walks relative value edges transitively and skips type-only and bare edges', () => {
+    const graph: Record<string, BoundaryEdge[]> = {
+      '/entry.ts': [
+        relativeEdge('./a', '/a.ts'),
+        typeOnly(relativeEdge('./types', '/types.ts')),
+        bare('nuxt/server'),
+      ],
+      '/a.ts': [relativeEdge('./b', '/b.ts'), relativeEdge('./entry', '/entry.ts')],
+      '/b.ts': [relativeEdge('./missing', null)],
+      '/types.ts': [relativeEdge('./c', '/c.ts')],
+    }
+    const reachable = collectReachableFiles(['/entry.ts'], (file: string) => graph[file] ?? [])
+    expect([...reachable].sort()).toEqual(['/a.ts', '/b.ts', '/entry.ts'])
   })
 })
 

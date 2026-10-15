@@ -1,24 +1,15 @@
+import { isSharedCacheOverrideHeader } from '../../utils/ssr-auth'
 import {
-  getResponseHeader,
-  getResponseHeaders,
-  removeResponseHeader,
-  setResponseHeader,
-  type H3Event,
-} from 'h3'
+  eventHeadersSent,
+  eventResponseHeaderTargets,
+  type ConvexServerEvent,
+  type EventResponseHeaders,
+} from './event'
 
-const SHARED_CACHE_CONTROL_HEADERS = new Set([
-  'cdn-cache-control',
-  'edge-control',
-  'surrogate-control',
-  'x-accel-expires',
-])
-
-function removeSharedCacheOverrides(event: H3Event): void {
-  for (const name of Object.keys(getResponseHeaders(event))) {
-    const lower = name.toLowerCase()
-    if (SHARED_CACHE_CONTROL_HEADERS.has(lower) || lower.endsWith('-cdn-cache-control')) {
-      removeResponseHeader(event, name)
-    }
+function removeSharedCacheOverrides(headers: EventResponseHeaders): void {
+  // A copy of the names: deleting while iterating a live `Headers` skips entries.
+  for (const name of new Set(headers.keys())) {
+    if (isSharedCacheOverrideHeader(name)) headers.delete(name)
   }
 }
 
@@ -64,18 +55,31 @@ export function mergeVaryCookie(existing: string | number | string[] | undefined
  *   renders a signed-in user, additionally gets `Cache-Control: private, no-store`.
  *   Invalid/revoked sessions remain request-specific even when no token is
  *   produced, and a per-user page is never cacheable without a cookie signal.
- *   Shared-cache override headers already present on the response are removed;
- *   an operator/CDN rule that rewrites headers after this point remains external.
+ *   Shared-cache override headers already present on this event's response are
+ *   removed; an operator/CDN rule that rewrites headers after this point remains
+ *   external.
+ *
+ * Nuxt 5 renders a page on its own event, which shares only `context` with the
+ * routed request event. Nitro then merges every header written on the routed
+ * event (a route rule `headers` entry, server middleware) over the rendered
+ * response. Those headers win: a `Vary` or `Cache-Control` set there replaces
+ * the value set here, and a shared-cache override set there (for example
+ * `CDN-Cache-Control`) is not removed. The module warns at build time only
+ * about route rules that set cache headers on pages with SSR auth; middleware
+ * is not checked. On Nuxt 4 both share one Node response, so this function
+ * sees and corrects those headers.
  */
 export function applyConvexAuthSsrHeaders(
-  event: H3Event,
+  event: ConvexServerEvent,
   options: { hasBetterAuthCookie: boolean; rendersUser: boolean },
 ): void {
   // Headers are already on the wire (SSE, streaming): setting one would throw.
-  if (event.node.res.headersSent) return
-  setResponseHeader(event, 'Vary', mergeVaryCookie(getResponseHeader(event, 'Vary')))
-  if (options.hasBetterAuthCookie || options.rendersUser) {
-    removeSharedCacheOverrides(event)
-    setResponseHeader(event, 'Cache-Control', 'private, no-store')
+  if (eventHeadersSent(event)) return
+  for (const headers of eventResponseHeaderTargets(event)) {
+    headers.set('Vary', mergeVaryCookie(headers.get('Vary')))
+    if (options.hasBetterAuthCookie || options.rendersUser) {
+      removeSharedCacheOverrides(headers)
+      headers.set('Cache-Control', 'private, no-store')
+    }
   }
 }

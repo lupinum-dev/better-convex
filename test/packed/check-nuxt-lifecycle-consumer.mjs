@@ -1,13 +1,22 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn } from 'node:child_process'
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { chromium } from 'playwright'
 
+import { toNuxt5Manifest, toNuxt5Workspace } from './nuxt5-lane.mjs'
 import { inspectConsumerCandidate } from './package-consumer-candidate.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../..')
@@ -16,11 +25,17 @@ const browserRuntimeFixture = join(repositoryRoot, 'test/fixtures/browser-runtim
 
 function parseArguments(args) {
   const values = new Map()
+  let nuxt5 = false
   for (let index = 0; index < args.length; index += 1) {
     const name = args[index]
+    // Installs the consumer on the Nuxt 5 nightly pinned in test/packed/nuxt5.json.
+    if (name === '--nuxt5' && !nuxt5) {
+      nuxt5 = true
+      continue
+    }
     if (!['--nuxt-tarball', '--vue-tarball'].includes(name) || values.has(name)) {
       throw new Error(
-        'Usage: check-nuxt-lifecycle-consumer.mjs --nuxt-tarball <path> --vue-tarball <path>',
+        'Usage: check-nuxt-lifecycle-consumer.mjs --nuxt-tarball <path> --vue-tarball <path> [--nuxt5]',
       )
     }
     const value = args[index + 1]
@@ -30,10 +45,11 @@ function parseArguments(args) {
   }
   if (!values.has('--nuxt-tarball') || !values.has('--vue-tarball')) {
     throw new Error(
-      'Usage: check-nuxt-lifecycle-consumer.mjs --nuxt-tarball <path> --vue-tarball <path>',
+      'Usage: check-nuxt-lifecycle-consumer.mjs --nuxt-tarball <path> --vue-tarball <path> [--nuxt5]',
     )
   }
   return Object.freeze({
+    nuxt5,
     nuxtTarball: values.get('--nuxt-tarball'),
     vueTarball: values.get('--vue-tarball'),
   })
@@ -148,6 +164,13 @@ try {
   })
   cpSync(options.nuxtTarball, join(consumerRoot, 'better-convex-nuxt.tgz'))
   cpSync(options.vueTarball, join(consumerRoot, 'better-convex-vue.tgz'))
+  if (options.nuxt5) {
+    const manifestPath = join(consumerRoot, 'package.json')
+    const manifest = toNuxt5Manifest(JSON.parse(readFileSync(manifestPath, 'utf8')))
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    const workspacePath = join(consumerRoot, 'pnpm-workspace.yaml')
+    writeFileSync(workspacePath, toNuxt5Workspace(readFileSync(workspacePath, 'utf8'), ['nuxt']))
+  }
   run(
     'pnpm',
     ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],

@@ -1,10 +1,9 @@
-import type { H3Event } from 'h3'
-
 import type { AuthWaterfall, AuthWaterfallPhase } from '../../devtools/types'
 import { decodeUserFromJwt, isJwtUsable } from '../../utils/convex-shared'
 import type { AuthEvent } from '../../utils/logger'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
 import type { ConvexUser } from '../../utils/types'
+import type { ConvexServerEvent } from './event'
 import { exchangeConvexToken } from './token-exchange'
 
 const GENERIC_AUTH_ERROR_MESSAGE = 'Authentication is temporarily unavailable'
@@ -17,8 +16,10 @@ export interface ServerAuthLogEvent {
 }
 
 export interface ResolveServerAuthSnapshotOptions {
-  event: H3Event
+  event: ConvexServerEvent
   siteUrl: string
+  /** The normalized public application origin (`auth.origin`). */
+  publicOrigin: string
   cookieHeader: string | null
   requestId: string
   trackWaterfall: boolean
@@ -56,7 +57,15 @@ function buildPhase(
 export async function resolveServerAuthSnapshot(
   options: ResolveServerAuthSnapshotOptions,
 ): Promise<ServerAuthSnapshot> {
-  const { event, siteUrl, cookieHeader, requestId, trackWaterfall, trustedClientIpHeader } = options
+  const {
+    event,
+    siteUrl,
+    publicOrigin,
+    cookieHeader,
+    requestId,
+    trackWaterfall,
+    trustedClientIpHeader,
+  } = options
   const waterfallStart = trackWaterfall ? Date.now() : 0
   const phases: AuthWaterfallPhase[] = []
   const logEvents: ServerAuthLogEvent[] = []
@@ -116,6 +125,7 @@ export async function resolveServerAuthSnapshot(
     const exchange = await exchangeConvexToken({
       event,
       siteUrl,
+      publicOrigin,
       credential: { type: 'cookie', value: authCookieHeader },
       trustedClientIpHeader,
       timeoutMs: 5_000,

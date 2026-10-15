@@ -1,5 +1,3 @@
-import { appendResponseHeader, type H3Event } from 'h3'
-
 import { ConvexCallError } from '../../errors'
 import { getSessionCookieFlagViolation } from '../../shared/auth-cookie'
 import {
@@ -11,7 +9,7 @@ import {
   isBetterAuthSetCookie,
 } from '../../utils/shared-helpers'
 import { normalizeConvexSiteUrl } from '../../utils/site-url'
-import { readEventConvexConfig } from './event-context'
+import { eventHeadersSent, eventResponseHeaderTargets, type ConvexServerEvent } from './event'
 import { fetchWithTimeout, MAX_SERVER_AUTH_RESPONSE_BODY_BYTES, readBoundedJson } from './http'
 import type { ConvexCredential } from './server-convex-options'
 import {
@@ -44,8 +42,13 @@ export interface ConvexTokenExchangeResult {
 }
 
 interface RequestBoundTokenExchangeInput {
-  event: H3Event
+  event: ConvexServerEvent
   siteUrl: string
+  /**
+   * The normalized public application origin (`auth.origin`), signed for
+   * Convex so one deployment can serve several site origins.
+   */
+  publicOrigin: string
   credential: ConvexCredential
   trustedClientIpHeader: string
   timeoutMs?: number
@@ -112,8 +115,7 @@ export function exchangeConvexToken(
       const clientIpHeaders = await buildSignedClientIpHeaders(input.event, {
         trustedClientIpHeader: input.trustedClientIpHeader,
       })
-      const auth = readEventConvexConfig(input.event).auth
-      const originHeaders = auth ? await buildSignedPublicOriginHeaders(auth.origin) : {}
+      const originHeaders = await buildSignedPublicOriginHeaders(input.publicOrigin)
       return await runTokenExchange(
         input,
         { ...clientIpHeaders, ...originHeaders, Cookie: cookieHeader },
@@ -149,15 +151,17 @@ function tokenExchangeTransportFailure(): ConvexTokenExchangeResult {
  * drops it unless a rule varies on Cookie, so neither runs an exchange; a cache
  * that varies on Cookie replays the renewal only to the same cookie holder.
  */
-function forwardSessionRenewal(event: H3Event, setCookies: readonly string[]): void {
+function forwardSessionRenewal(event: ConvexServerEvent, setCookies: readonly string[]): void {
   const cookies = deduplicateSetCookies(setCookies).filter(
     (cookie) =>
       isBetterAuthSetCookie(cookie) &&
       !hasSetCookieDomainAttribute(cookie) &&
       getSessionCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '') === null,
   )
-  if (cookies.length === 0 || event.node.res.headersSent) return
-  for (const cookie of cookies) appendResponseHeader(event, 'set-cookie', cookie)
+  if (cookies.length === 0 || eventHeadersSent(event)) return
+  for (const headers of eventResponseHeaderTargets(event)) {
+    for (const cookie of cookies) headers.append('set-cookie', cookie)
+  }
   applyConvexAuthSsrHeaders(event, { hasBetterAuthCookie: true, rendersUser: false })
 }
 

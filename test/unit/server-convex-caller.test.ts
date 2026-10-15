@@ -1,14 +1,15 @@
 import { inspect } from 'node:util'
 
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
-import type { H3Event } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConvexCallError } from '../../src/runtime/errors'
+import { eventResponseHeaders, type ConvexServerEvent } from '../../src/runtime/server/utils/event'
 import {
   applyConvexAuthSsrHeaders,
   mergeVaryCookie,
 } from '../../src/runtime/server/utils/ssr-auth-headers'
+import { rawH3V1Event, webServerEvent } from '../helpers/server-event'
 
 // ---------------------------------------------------------------------------
 // Mocks for the caller's collaborators. ConvexHttpClient, the exchange
@@ -55,7 +56,8 @@ vi.mock('../../src/runtime/server/utils/token-exchange', () => ({
   exchangeConvexToken: mocks.exchangeMock,
 }))
 
-vi.mock('#imports', () => ({
+vi.mock('nuxt/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('nuxt/server')>()),
   useRuntimeConfig: mocks.useRuntimeConfigMock,
 }))
 
@@ -79,25 +81,10 @@ function setConfig(convex: Record<string, unknown>) {
   mocks.useRuntimeConfigMock.mockReturnValue({ public: { convex } })
 }
 
-function createEvent(
-  cookie?: string,
-  headers: Record<string, string> = {},
-  signal?: AbortSignal,
-): H3Event {
-  const responseHeaders = new Map<string, string>()
-  return {
-    context: { nitro: { runtimeConfig: mocks.useRuntimeConfigMock() } },
-    node: {
-      req: { headers: { ...headers, ...(cookie ? { cookie } : {}) } },
-      res: {
-        getHeader: (name: string) => responseHeaders.get(name),
-        getHeaders: () => Object.fromEntries(responseHeaders),
-        removeHeader: (name: string) => responseHeaders.delete(name),
-        setHeader: (name: string, value: string) => responseHeaders.set(name, value),
-      },
-    },
-    ...(signal ? { web: { request: new Request('https://app.example.com', { signal }) } } : {}),
-  } as unknown as H3Event
+/** The response headers as lower-case name -> value. */
+function responseHeaders(event: ConvexServerEvent): Record<string, string | null> {
+  const headers = eventResponseHeaders(event)
+  return Object.fromEntries([...new Set(headers.keys())].map((name) => [name, headers.get(name)]))
 }
 
 const AUTH_COOKIE = 'better-auth.session_token=session123'
@@ -168,7 +155,7 @@ describe('serverConvex caller-scoped invariants', () => {
     mocks.queryMock.mockResolvedValue(['a'])
     mocks.mutationMock.mockResolvedValue('id_1')
 
-    const caller = serverConvex(createEvent(AUTH_COOKIE))
+    const caller = serverConvex(webServerEvent({ cookie: AUTH_COOKIE }))
     await caller.query(queryRef, {})
     await caller.mutation(mutationRef, {})
     await caller.query(queryRef, {})
@@ -198,10 +185,9 @@ describe('serverConvex caller-scoped invariants', () => {
     )
     mocks.queryMock.mockResolvedValue(null)
 
-    await serverConvex(createEvent(undefined, {}, request.signal), { auth: 'none' }).query(
-      queryRef,
-      {},
-    )
+    await serverConvex(webServerEvent({}, undefined, { signal: request.signal }), {
+      auth: 'none',
+    }).query(queryRef, {})
     const boundedFetch = (mocks.ctorCalls[0]?.options as { fetch: typeof fetch }).fetch
     const response = await boundedFetch(`${CONVEX_URL}/api/query`)
     expect(upstreamSignal).toBeInstanceOf(AbortSignal)
@@ -223,12 +209,13 @@ describe('serverConvex caller-scoped invariants', () => {
     })
     mocks.exchangeMock.mockResolvedValue({ token: USER_JWT, status: 200, error: null })
 
-    const event = createEvent(AUTH_COOKIE, { 'cf-connecting-ip': '198.51.100.10' })
+    const event = webServerEvent({ 'cf-connecting-ip': '198.51.100.10', cookie: AUTH_COOKIE })
     await serverConvex(event).getToken()
 
     expect(mocks.exchangeMock).toHaveBeenCalledWith({
       event,
       siteUrl: SITE_URL,
+      publicOrigin: 'http://localhost:3000',
       credential: { type: 'cookie', value: AUTH_COOKIE },
       trustedClientIpHeader: 'cf-connecting-ip',
       timeoutMs: 5_000,
@@ -241,10 +228,13 @@ describe('serverConvex caller-scoped invariants', () => {
     mocks.queryMock.mockResolvedValue('anonymous')
 
     await expect(
-      serverConvex(createEvent(AUTH_COOKIE), { auth: 'optional' }).query(queryRef, {}),
+      serverConvex(webServerEvent({ cookie: AUTH_COOKIE }), { auth: 'optional' }).query(
+        queryRef,
+        {},
+      ),
     ).resolves.toBe('anonymous')
     await expect(
-      serverConvex(createEvent(AUTH_COOKIE), { auth: 'required' }).getToken(),
+      serverConvex(webServerEvent({ cookie: AUTH_COOKIE }), { auth: 'required' }).getToken(),
     ).rejects.toMatchObject({ kind: 'authentication', status: 401 })
     expect(mocks.exchangeMock).not.toHaveBeenCalled()
   })
@@ -260,12 +250,12 @@ describe('serverConvex caller-scoped invariants', () => {
       }),
     })
 
-    const caller = serverConvex(createEvent(AUTH_COOKIE), { auth: 'required' })
+    const caller = serverConvex(webServerEvent({ cookie: AUTH_COOKIE }), { auth: 'required' })
     await expect(caller.query(queryRef, {})).rejects.toBeInstanceOf(ConvexCallError)
     await expect(caller.getToken()).rejects.toBeInstanceOf(ConvexCallError)
     expect(mocks.exchangeMock).toHaveBeenCalledTimes(1)
 
-    const retryCaller = serverConvex(createEvent(AUTH_COOKIE), {
+    const retryCaller = serverConvex(webServerEvent({ cookie: AUTH_COOKIE }), {
       auth: 'required',
     })
     await expect(retryCaller.getToken()).rejects.toBeInstanceOf(ConvexCallError)
@@ -275,7 +265,7 @@ describe('serverConvex caller-scoped invariants', () => {
   it('explicit token bypasses exchange and is applied via setAuth', async () => {
     mocks.queryMock.mockResolvedValue('ok')
 
-    await serverConvex(createEvent(), { authToken: 'explicit.jwt' }).query(queryRef, {})
+    await serverConvex(webServerEvent(), { authToken: 'explicit.jwt' }).query(queryRef, {})
 
     expect(mocks.exchangeMock).not.toHaveBeenCalled()
     expect(mocks.setAuthCalls).toEqual(['explicit.jwt'])
@@ -285,7 +275,7 @@ describe('serverConvex caller-scoped invariants', () => {
   it('validates options before any network access', () => {
     expect(() =>
       // @ts-expect-error explicit tokens already imply required auth
-      serverConvex(createEvent(), { authToken: 'x', auth: 'none' }),
+      serverConvex(webServerEvent(), { authToken: 'x', auth: 'none' }),
     ).toThrow(ServerConvexValidationError)
     expect(mocks.exchangeMock).not.toHaveBeenCalled()
     expect(mocks.ctorCalls).toHaveLength(0)
@@ -296,7 +286,7 @@ describe('serverConvex caller-scoped invariants', () => {
     mocks.mutationMock.mockResolvedValue('mutation')
     mocks.actionMock.mockResolvedValue('action')
 
-    const caller = serverConvex(createEvent(), { auth: 'none' })
+    const caller = serverConvex(webServerEvent(), { auth: 'none' })
     await caller.query(queryRef)
     await caller.mutation(mutationRef)
     await caller.action(actionRef)
@@ -312,12 +302,12 @@ describe('serverConvex auth-mode resolution', () => {
   it.each(serverOperations)(
     'required anonymous %s throws authentication 401 without calling the client',
     async (_name, getMock, invoke) => {
-      await expect(invoke(serverConvex(createEvent(), { auth: 'required' }))).rejects.toMatchObject(
-        {
-          kind: 'authentication',
-          status: 401,
-        },
-      )
+      await expect(
+        invoke(serverConvex(webServerEvent(), { auth: 'required' })),
+      ).rejects.toMatchObject({
+        kind: 'authentication',
+        status: 401,
+      })
       expect(getMock()).not.toHaveBeenCalled()
       expect(mocks.exchangeMock).not.toHaveBeenCalled()
     },
@@ -326,7 +316,7 @@ describe('serverConvex auth-mode resolution', () => {
   it('optional anonymous caller executes without auth', async () => {
     mocks.queryMock.mockResolvedValue('anon')
 
-    const result = await serverConvex(createEvent(), {
+    const result = await serverConvex(webServerEvent(), {
       auth: 'optional',
     }).query(queryRef, {})
 
@@ -349,7 +339,7 @@ describe('serverConvex auth-mode resolution', () => {
       })
       mocks.queryMock.mockResolvedValue('anon')
 
-      const result = await serverConvex(createEvent(AUTH_COOKIE), {
+      const result = await serverConvex(webServerEvent({ cookie: AUTH_COOKIE }), {
         auth: 'optional',
       }).query(queryRef, {})
       expect(result).toBe('anon')
@@ -369,7 +359,10 @@ describe('serverConvex auth-mode resolution', () => {
         }),
       })
       await expect(
-        serverConvex(createEvent(AUTH_COOKIE), { auth: 'optional' }).query(queryRef, {}),
+        serverConvex(webServerEvent({ cookie: AUTH_COOKIE }), { auth: 'optional' }).query(
+          queryRef,
+          {},
+        ),
       ).rejects.toMatchObject({ kind: 'transport' })
     }
 
@@ -384,7 +377,10 @@ describe('serverConvex auth-mode resolution', () => {
       }),
     })
     await expect(
-      serverConvex(createEvent(AUTH_COOKIE), { auth: 'optional' }).query(queryRef, {}),
+      serverConvex(webServerEvent({ cookie: AUTH_COOKIE }), { auth: 'optional' }).query(
+        queryRef,
+        {},
+      ),
     ).rejects.toMatchObject({ kind: 'transport' })
   })
 
@@ -399,13 +395,20 @@ describe('serverConvex auth-mode resolution', () => {
       }),
     })
 
-    const caller = serverConvex(createEvent(), {
+    const caller = serverConvex(webServerEvent(), {
       credential: { type: 'cookie', value: AUTH_COOKIE },
     })
     await expect(caller.query(queryRef, {})).rejects.toMatchObject({
       kind: 'authentication',
     })
     expect(mocks.queryMock).not.toHaveBeenCalled()
+    // Catches a wrong or empty signed public origin on the explicit-credential exchange.
+    expect(mocks.exchangeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publicOrigin: AUTH_CONFIG.origin,
+        credential: { type: 'cookie', value: AUTH_COOKIE },
+      }),
+    )
   })
 })
 
@@ -420,7 +423,7 @@ describe('serverConvex boundary error sanitization', () => {
 
       let caught: unknown
       try {
-        await invoke(serverConvex(createEvent(), { auth: 'none' }))
+        await invoke(serverConvex(webServerEvent(), { auth: 'none' }))
       } catch (error) {
         caught = error
       }
@@ -443,7 +446,7 @@ describe('serverConvex boundary error sanitization', () => {
       })
       getMock().mockRejectedValue(appError)
 
-      await expect(invoke(serverConvex(createEvent(), { auth: 'none' }))).rejects.toMatchObject({
+      await expect(invoke(serverConvex(webServerEvent(), { auth: 'none' }))).rejects.toMatchObject({
         kind: 'server',
         message: 'Convex application error',
         code: 'UNAUTHORIZED',
@@ -462,37 +465,34 @@ describe('serverConvex boundary error sanitization', () => {
       })
       getMock().mockRejectedValue(transport)
 
-      await expect(invoke(serverConvex(createEvent(), { auth: 'none' }))).rejects.toBe(transport)
+      await expect(invoke(serverConvex(webServerEvent(), { auth: 'none' }))).rejects.toBe(transport)
     },
   )
 })
 
 describe('serverConvex response cache headers', () => {
-  const responseHeaders = (event: H3Event) =>
-    (event.node.res as unknown as { getHeaders: () => Record<string, string> }).getHeaders()
-
   it('marks a response that read the session cookie as Vary: Cookie and private, no-store', async () => {
     mocks.exchangeMock.mockResolvedValue({ token: USER_JWT, status: 200, error: null })
-    const event = createEvent(AUTH_COOKIE)
+    const event = webServerEvent({ cookie: AUTH_COOKIE })
 
     await serverConvex(event).getToken()
 
-    expect(responseHeaders(event)).toEqual({ Vary: 'Cookie', 'Cache-Control': 'private, no-store' })
+    expect(responseHeaders(event)).toEqual({ vary: 'Cookie', 'cache-control': 'private, no-store' })
   })
 
   it('still varies by cookie, without private, when the request carries no auth cookie', async () => {
-    const event = createEvent()
+    const event = webServerEvent()
 
     await expect(serverConvex(event, { auth: 'optional' }).getToken()).resolves.toBeNull()
 
-    expect(responseHeaders(event)).toEqual({ Vary: 'Cookie' })
+    expect(responseHeaders(event)).toEqual({ vary: 'Cookie' })
   })
 
   it.each([
     ['auth: none', { auth: 'none' as const }],
     ['an explicit token', { authToken: 'explicit.jwt' }],
   ])('leaves the response cacheable when the cookie is never read (%s)', async (_, options) => {
-    const event = createEvent(AUTH_COOKIE)
+    const event = webServerEvent({ cookie: AUTH_COOKIE })
 
     await serverConvex(event, options).getToken()
 
@@ -500,26 +500,7 @@ describe('serverConvex response cache headers', () => {
   })
 })
 
-describe('SSR auth response headers (Vary/Cache-Control)', () => {
-  function applyHeaders(
-    initial: Array<[string, string]>,
-    options: Parameters<typeof applyConvexAuthSsrHeaders>[1],
-  ) {
-    const headers = new Map(initial)
-    const event = {
-      node: {
-        res: {
-          getHeader: (name: string) => headers.get(name),
-          getHeaders: () => Object.fromEntries(headers),
-          removeHeader: (name: string) => headers.delete(name),
-          setHeader: (name: string, value: string) => headers.set(name, value),
-        },
-      },
-    } as unknown as H3Event
-    applyConvexAuthSsrHeaders(event, options)
-    return Object.fromEntries(headers)
-  }
-
+describe('mergeVaryCookie', () => {
   it('merges Cookie into Vary while preserving existing values', () => {
     expect(mergeVaryCookie(undefined)).toBe('Cookie')
     expect(mergeVaryCookie('Accept-Encoding')).toBe('Accept-Encoding, Cookie')
@@ -529,12 +510,42 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
     expect(mergeVaryCookie('*')).toBe('*')
     expect(mergeVaryCookie('Accept-Encoding, *')).toBe('*')
   })
+})
+
+// Both event shapes: the raw h3 v1 event keeps its headers on the Node
+// response, the web-shaped event (Nuxt 5, Nuxt 4.6 `nuxt/server`) on a live
+// web `Headers`, where deleting while iterating would skip entries.
+describe.each([
+  {
+    shape: 'raw h3 v1 event',
+    create: (): ConvexServerEvent => {
+      return rawH3V1Event().event
+    },
+  },
+  {
+    shape: 'web-shaped event',
+    create: (): ConvexServerEvent => ({
+      req: new Request('https://app.example.com'),
+      res: { headers: new Headers() },
+      context: {},
+    }),
+  },
+])('SSR auth response headers (Vary/Cache-Control) on a $shape', ({ create }) => {
+  function applyHeaders(
+    initial: Array<[string, string]>,
+    options: Parameters<typeof applyConvexAuthSsrHeaders>[1],
+  ) {
+    const event = create()
+    for (const [name, value] of initial) eventResponseHeaders(event).set(name, value)
+    applyConvexAuthSsrHeaders(event, options)
+    return responseHeaders(event)
+  }
 
   it.each([
-    [true, true, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
-    [true, false, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
-    [false, true, { Vary: 'Accept-Encoding, Cookie', 'Cache-Control': 'private, no-store' }],
-    [false, false, { Vary: 'Accept-Encoding, Cookie' }],
+    [true, true, { vary: 'Accept-Encoding, Cookie', 'cache-control': 'private, no-store' }],
+    [true, false, { vary: 'Accept-Encoding, Cookie', 'cache-control': 'private, no-store' }],
+    [false, true, { vary: 'Accept-Encoding, Cookie', 'cache-control': 'private, no-store' }],
+    [false, false, { vary: 'Accept-Encoding, Cookie' }],
   ])(
     'cookie=%s rendersUser=%s appends Vary: Cookie and is private only with an auth signal',
     (hasBetterAuthCookie, rendersUser, expected) => {
@@ -560,9 +571,9 @@ describe('SSR auth response headers (Vary/Cache-Control)', () => {
         { hasBetterAuthCookie: true, rendersUser: false },
       ),
     ).toEqual({
-      'Content-Language': 'en',
-      Vary: 'Cookie',
-      'Cache-Control': 'private, no-store',
+      'content-language': 'en',
+      vary: 'Cookie',
+      'cache-control': 'private, no-store',
     })
   })
 })
@@ -580,7 +591,7 @@ describe('serverConvex configured bounds and error context', () => {
       vi.fn((_input: RequestInfo | URL, init?: RequestInit) => respond(init)),
     )
     mocks.queryMock.mockResolvedValue(null)
-    await serverConvex(createEvent(), { auth: 'none' }).query(queryRef, {})
+    await serverConvex(webServerEvent(), { auth: 'none' }).query(queryRef, {})
     const boundedFetch = (mocks.ctorCalls[0]?.options as { fetch: typeof fetch }).fetch
 
     respond = async () => new Response('x'.repeat(32), { headers: { 'content-length': '32' } })
@@ -606,10 +617,10 @@ describe('serverConvex configured bounds and error context', () => {
     mocks.queryMock.mockRejectedValue(new Error('upstream'))
 
     await expect(
-      serverConvex(createEvent(), { auth: 'none' }).query(notesList),
+      serverConvex(webServerEvent(), { auth: 'none' }).query(notesList),
     ).rejects.toMatchObject({ kind: 'unknown', functionName: 'notes:list' })
     await expect(
-      serverConvex(createEvent(), { auth: 'required' }).query(notesList),
+      serverConvex(webServerEvent(), { auth: 'required' }).query(notesList),
     ).rejects.toMatchObject({
       kind: 'authentication',
       code: 'UNAUTHENTICATED',
@@ -621,7 +632,7 @@ describe('serverConvex configured bounds and error context', () => {
   it('codes library-raised write failures', async () => {
     setConfig({ auth: false })
     await expect(
-      serverConvex(createEvent(), { auth: 'none' }).mutation(mutationRef, {}),
+      serverConvex(webServerEvent(), { auth: 'none' }).mutation(mutationRef, {}),
     ).rejects.toMatchObject({ kind: 'unknown', code: 'CONVEX_URL_MISSING' })
 
     setConfig({ url: CONVEX_URL, auth: false })
@@ -631,7 +642,7 @@ describe('serverConvex configured bounds and error context', () => {
       vi.fn(() => respond()),
     )
     mocks.mutationMock.mockResolvedValue(null)
-    await serverConvex(createEvent(), { auth: 'none' }).mutation(mutationRef, {})
+    await serverConvex(webServerEvent(), { auth: 'none' }).mutation(mutationRef, {})
     const boundedFetch = (mocks.ctorCalls.at(-1)?.options as { fetch: typeof fetch }).fetch
 
     await expect(boundedFetch(`${CONVEX_URL}/api/mutation`)).rejects.toMatchObject({
@@ -655,7 +666,7 @@ describe('serverConvex configured bounds and error context', () => {
     mocks.exchangeMock.mockImplementation(() => {
       throw violation
     })
-    const caller = serverConvex(createEvent(), {
+    const caller = serverConvex(webServerEvent(), {
       credential: { type: 'cookie', value: 'unrelated_cookie=value' },
     })
 

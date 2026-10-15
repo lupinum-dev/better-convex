@@ -122,6 +122,30 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:starters
 
+  # The pinned Nuxt 5 nightly (test/packed/nuxt5.json). First the lifecycle consumer and the
+  # public starter from tarballs built on Nuxt 4, like a release; then the root lane, which
+  # rewrites package.json and the lockfile in this throwaway checkout. See test/TESTING.md.
+  nuxt5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm build
+      - run: node test/packed/check-starters.mjs --nuxt5
+      - run: node test/packed/nuxt5-lane.mjs
+        env:
+          CONVEX_E2E_AUTO_START: 'true'
+          BCN_E2E_REQUIRE_LOCAL: 'true'
+
   # Breaks each security guard in memory (test/mutants/mutants.ts) and checks that
   # the tests named for it fail. No path filter: a test change can weaken a guard too.
   # The approval page rows run the starter on the pinned local backend in Chromium.
@@ -149,7 +173,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [check, build, integration, e2e, starters, mutants]
+    needs: [check, build, integration, e2e, starters, nuxt5, mutants]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
