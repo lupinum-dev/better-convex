@@ -158,6 +158,17 @@ test('one upload is claimed once, even by two claims in one transaction', async 
   expect(body.result.structuredContent).toEqual({ status: 'done', result: 1 })
 })
 
+test('a claim refused for its type leaves the upload claimable in the same transaction', async () => {
+  const s = await setup()
+  const sent = await upload(s, 'ann:write', pdf)
+  const { body } = await s.call('ann:write', 'take_upload_twice', {
+    orgId: s.a,
+    uploadId: sent.uploadId,
+    wrongTypeFirst: true,
+  })
+  expect(body.result.structuredContent).toEqual({ status: 'done', result: 1 })
+})
+
 test.each([
   '//other.example/upload',
   '/mcp/../upload',

@@ -133,10 +133,18 @@ export const takeUploadApproved = mutation({
 /** App code that claims one upload twice at once, as a tool that takes a list of IDs might. */
 export const takeUploadTwice = mutation({
   action: 'projects.create',
-  args: { orgId: v.id('orgs'), uploadId: v.string() },
+  args: { orgId: v.id('orgs'), uploadId: v.string(), wrongTypeFirst: v.optional(v.boolean()) },
   returns: v.number(),
-  tool: { name: 'take_upload_twice', description: 'Take one upload twice at once.' },
-  handler: async (ctx, { uploadId }) => {
+  tool: {
+    name: 'take_upload_twice',
+    description: 'Take one upload twice at once, or first as a type it is not and then again.',
+  },
+  handler: async (ctx, { uploadId, wrongTypeFirst }) => {
+    if (wrongTypeFirst) {
+      await claimUpload(ctx, uploadId, { types: ['image/png'], maxBytes: 1024 }).catch(() => null)
+      await claimUpload(ctx, uploadId, { types: ['application/pdf'], maxBytes: 1024 })
+      return 1
+    }
     const claims = await Promise.allSettled(
       [uploadId, uploadId].map((id) =>
         claimUpload(ctx, id, { types: ['application/pdf'], maxBytes: 1024 }),

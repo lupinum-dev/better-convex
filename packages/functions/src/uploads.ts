@@ -96,17 +96,17 @@ export async function claimUpload(
   ) {
     return notFound()
   }
+  // A refused type or size leaves the upload claimable, also for another call
+  // in this transaction, so the mark goes. Every other refusal keeps it.
+  const refuse = (message: string): never => {
+    claiming.delete(id)
+    return fail('INVALID_INPUT', message)
+  }
   if (!(allowed.types as readonly string[]).includes(row.type)) {
-    fail(
-      'INVALID_INPUT',
-      `This file is ${row.type}; this action takes ${allowed.types.join(', ')}.`,
-    )
+    refuse(`This file is ${row.type}; this action takes ${allowed.types.join(', ')}.`)
   }
   if (row.size > allowed.maxBytes) {
-    fail(
-      'INVALID_INPUT',
-      `This file has ${row.size} bytes; this action takes at most ${allowed.maxBytes}.`,
-    )
+    refuse(`This file has ${row.size} bytes; this action takes at most ${allowed.maxBytes}.`)
   }
   await db.patch(row._id, { status: 'claimed', expiresAt: Date.now() + uploadRecordMs })
   return {
