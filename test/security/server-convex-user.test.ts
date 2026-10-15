@@ -272,6 +272,33 @@ describe.each(shapes)('getConvexUser and requireConvexUser ($name)', (shape) => 
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('give a cookie-less caller on a shared context an anonymous snapshot', async () => {
+    // Nitro 2's route cache renders on a new, cookie-less event that shares the request's
+    // `context` with the event that already resolved the signed-in snapshot.
+    exchangeResponds(200, { token: USER_JWT })
+    const signedIn = createEvent(SESSION_COOKIE)
+    const cacheRender = createEvent(undefined)
+    Object.assign(cacheRender, { context: signedIn.context })
+    const input = {
+      siteUrl: SITE_URL,
+      publicOrigin: 'http://localhost:3000',
+      trustedClientIpHeader: '',
+    }
+
+    await resolveRequestAuthSnapshot(signedIn, { ...input, cookieHeader: SESSION_COOKIE })
+    const anonymous = await resolveRequestAuthSnapshot(cacheRender, {
+      ...input,
+      cookieHeader: null,
+    })
+
+    expect(anonymous.token).toBeNull()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    await expect(
+      resolveRequestAuthSnapshot(signedIn, { ...input, cookieHeader: SESSION_COOKIE }),
+    ).resolves.toMatchObject({ token: USER_JWT })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it.each([401, 403])('treat an exchange %i as an invalid session', async (status) => {
     exchangeResponds(status, { message: 'invalid session' })
     const event = createEvent(SESSION_COOKIE)
