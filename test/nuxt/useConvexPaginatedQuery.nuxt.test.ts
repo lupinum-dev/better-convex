@@ -186,6 +186,51 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
+  it('drops a page loaded during a first-page split when live inserts moved the boundary', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:hydrated-split-drift')
+    const key = pageKey(query, {})
+    const bounds = (args: unknown) =>
+      (args as { paginationOpts: { cursor: string | null; endCursor?: string } }).paginationOpts
+    const { result, wrapper } = await captureInNuxt(
+      () =>
+        hydrating(() => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 })),
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: { value: page(['a', 'b', 'c'], false, 'server-end') } },
+      },
+    )
+    await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
+
+    // A row inserted after server render shifts the live boundary to 'live-end'.
+    primary.emitQueryResult(query, primary.calls.onUpdate[0]!.args, {
+      ...page(['x', 'a', 'b'], false, 'live-end'),
+      splitCursor: 'mid',
+      pageStatus: 'SplitRequired',
+    })
+    expect(result.data.value).toEqual(['a', 'b', 'c'])
+    void result.loadMore(2)
+    expect(primary.calls.onUpdate.some(({ args }) => bounds(args).cursor === 'server-end')).toBe(
+      true,
+    )
+    primary.emitQueryResultWhere(
+      ({ args }) => bounds(args).cursor === 'server-end',
+      page(['d', 'e'], false, 'later-end'),
+    )
+
+    primary.emitQueryResultWhere(
+      ({ args }) => bounds(args).endCursor === 'mid',
+      page(['x', 'a'], false, 'mid'),
+    )
+    primary.emitQueryResultWhere(
+      ({ args }) => bounds(args).cursor === 'mid',
+      page(['b', 'c'], false, 'live-end'),
+    )
+    expect(result.data.value).toEqual(['x', 'a', 'b', 'c'])
+    expect(new Set(result.data.value).size).toBe(result.data.value?.length)
+    wrapper.unmount()
+  })
+
   it('keeps an SSR error through hydration and clears it on the first live value', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:ssr-error-hydration')

@@ -93,7 +93,14 @@ export function createPaginationSplitController<Item>(
       input.firstPageOptions.value = promoted[0].paginationOpts
       input.firstPageRealtime.value = promoted[0].result ?? null
       input.firstPageWithheld.value = promoted[0].result === undefined
-      input.pages.value = [promoted[1], ...input.pages.value]
+      // Rows inserted since the visible page was rendered move the live
+      // boundary; pages loaded from the old cursor would overlap or skip rows.
+      const later = input.pages.value
+      const stale =
+        later.length > 0 &&
+        later[0]!.paginationOpts.cursor !== split.parts[1].received!.continueCursor
+      if (stale) for (const page of later) page.unsubscribe?.()
+      input.pages.value = [promoted[1], ...(stale ? [] : later)]
       input.retireBoundaryFirstPage()
       input.setBoundaryError(undefined, split.operation.boundaryKey)
     } else {
