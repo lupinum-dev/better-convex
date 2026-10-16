@@ -68,6 +68,29 @@ describe('auth component limits', () => {
     }
   })
 
+  it('admits a burst of exactly max, then one more per drained interval', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_700_000_000_000)
+    const test = convexTest(schema, authModules)
+    const consume = () =>
+      test.mutation(api.adapter.consumeRateLimit, {
+        key: '192.0.2.11|/convex/token',
+        max: 300,
+        window: 10,
+        retentionWindow: 60,
+      })
+    for (let request = 1; request <= 300; request++) {
+      expect(await consume(), `request ${request}`).toEqual({ allowed: true, retryAfter: null })
+    }
+    expect(await consume()).toEqual({ allowed: false, retryAfter: 1 })
+    // One request drains every 10 000 / 300 ≈ 33.3 ms.
+    vi.advanceTimersByTime(33)
+    expect(await consume()).toEqual({ allowed: false, retryAfter: 1 })
+    vi.advanceTimersByTime(1)
+    expect(await consume()).toEqual({ allowed: true, retryAfter: null })
+    expect(await consume()).toEqual({ allowed: false, retryAfter: 1 })
+  })
+
   it('A01 removes 300 stale rate limits and one-time keys after a burst', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_700_000_000_000)
