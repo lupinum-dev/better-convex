@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { useConvexPaginatedQuery } from '../../src/runtime/composables/useConvexPaginatedQuery'
+import { useConvexQuery } from '../../src/runtime/composables/useConvexQuery'
 
 interface Entry {
   data: { value: unknown }
@@ -69,6 +70,7 @@ vi.mock('#app', () => ({
     return Object.assign(initial, { data: current.data, status: current.status, execute: fetch })
   },
 }))
+vi.mock('#imports', () => ({ useNuxtApp: () => nuxt.app }))
 vi.mock('../../src/runtime/utils/runtime-config', () => ({
   getConvexRuntimeConfig: () => ({ url: 'https://demo.convex.cloud', server: {}, auth: false }),
 }))
@@ -80,6 +82,7 @@ vi.mock('../../src/runtime/utils/query-execution', () => ({
 }))
 
 const list = makeFunctionReference<'query'>('changes:list') as never
+const meta = makeFunctionReference<'query', { site: string }, { name: string }>('sites:meta')
 
 beforeEach(() => {
   nuxt.state.clear()
@@ -144,5 +147,19 @@ describe('server render of a first page that Convex marks SplitRequired', () => 
     expect(listState.error.value).toBeUndefined()
     expect(listState.data.value).toBeUndefined()
     expect(http.calls).toHaveLength(3)
+  })
+})
+
+describe('server render of one query in a layout and its page', () => {
+  it('calls Convex once and keeps the layout entry settled', async () => {
+    http.answer = () => ({ name: 'Site' })
+
+    // Vue finishes the layout's prefetch before the page's setup runs.
+    const layout = await render(() => useConvexQuery(meta, { site: 's1' }, { auth: 'none' }))
+    const pageQuery = render(() => useConvexQuery(meta, { site: 's1' }, { auth: 'none' }))
+
+    expect(layout.status.value).toBe('success')
+    expect((await pageQuery).data.value).toEqual({ name: 'Site' })
+    expect(http.calls).toHaveLength(1)
   })
 })
