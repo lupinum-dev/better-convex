@@ -208,4 +208,35 @@ describe('Better Auth token lifecycle with the Convex client', () => {
     await vi.advanceTimersByTimeAsync(SESSION_JWT_SECONDS * 1_000)
     expect(provider.token.mock.calls.length).toBeGreaterThan(lastRequest)
   })
+
+  it('reports a long outage as temporarily unavailable and recovers on its own', async () => {
+    const { provider, port } = signedInPage((elapsedMs) =>
+      elapsedMs < 90_000 ? failing(503) : ok(),
+    )
+    // The retry budget is 30 seconds.
+    for (let second = 0; second < 40 && port.snapshot().identityKey !== 'anonymous'; second++) {
+      await vi.advanceTimersByTimeAsync(1_000)
+    }
+    expect(port.snapshot()).toMatchObject({
+      identityKey: 'anonymous',
+      settled: true,
+      error: { code: 'AUTH_UNAVAILABLE', message: 'Authentication is temporarily unavailable' },
+    })
+
+    // Better Auth re-reads the unchanged session on focus, on reconnect and for
+    // other tabs, each time as a new object.
+    const generation = port.snapshot().identityGeneration
+    const requests = provider.token.mock.calls.length
+    for (let refetch = 0; refetch < 3; refetch += 1) {
+      provider.session.value = {
+        ...provider.session.value,
+        data: { session: { token: 'session-a' }, user: { id: 'alice' } },
+      }
+    }
+    expect(port.snapshot().identityGeneration).toBe(generation)
+    expect(provider.token.mock.calls.length).toBe(requests)
+
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(port.snapshot()).toMatchObject({ identityKey: 'user:alice', settled: true, error: null })
+  })
 })
