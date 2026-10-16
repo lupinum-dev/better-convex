@@ -111,6 +111,12 @@ const pruneRateLimitsReference = makeFunctionReference<'mutation', Record<string
   'adapter:pruneRateLimits',
 )
 
+const expireVerificationReference = makeFunctionReference<
+  'mutation',
+  { storageId: GenericId<'verification'> },
+  null
+>('adapter:expireVerification')
+
 export interface DefineAuthAdapterFunctionsOptions<Schema extends SchemaDefinition<any, any>> {
   schema: Schema
   metadata: AuthSchemaMetadata
@@ -406,6 +412,33 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         return null
       },
     }),
+    // Scheduled at creation, like expireSession. Better Auth's own sweep of
+    // expired rows is off (verification.disableCleanup), so this job is the
+    // only cleanup. It also removes other expired rows, in batches of 128
+    // through the expiresAt index, so rows from before this job existed go too.
+    // Reads one row and at most 128 index entries; writes at most 128 deletes.
+    expireVerification: internalMutationGeneric({
+      args: { storageId: v.id('verification') },
+      returns: v.null(),
+      handler: async (ctx, args) => {
+        const now = Date.now()
+        const row = await ctx.db.get('verification', args.storageId)
+        const expiresAt = row?.expiresAt
+        if (typeof expiresAt === 'number' && Number.isSafeInteger(expiresAt) && expiresAt > now) {
+          await ctx.scheduler.runAt(expiresAt, expireVerificationReference, args)
+          return null
+        }
+        const expired = await ctx.db
+          .query('verification')
+          .withIndex('expiresAt', (q) => q.lte('expiresAt', now))
+          .take(AUTH_BULK_OPERATION_LIMIT)
+        for (const stale of expired) await ctx.db.delete('verification', stale._id)
+        if (expired.length === AUTH_BULK_OPERATION_LIMIT) {
+          await ctx.scheduler.runAfter(0, expireVerificationReference, args)
+        }
+        return null
+      },
+    }),
     // Component API only: Convex exposes this to the parent as an internal
     // reference, never as a client-callable app query. Do not re-export it
     // from an application's public API; the result contains session material.
@@ -484,6 +517,15 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           }
           await ctx.scheduler.runAt(finalRow.expiresAt, expireSessionReference, {
             storageId: sessionId,
+          })
+        }
+        if (args.model === 'verification') {
+          const verificationId = ctx.db.normalizeId('verification', storageId)
+          if (typeof finalRow.expiresAt !== 'number' || !verificationId) {
+            throw new Error('AUTH_VERIFICATION_INVALID')
+          }
+          await ctx.scheduler.runAt(finalRow.expiresAt, expireVerificationReference, {
+            storageId: verificationId,
           })
         }
         return document(args.model, finalRow as never)
@@ -729,6 +771,39 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           await revokeOAuthRefreshConsent(ctx, rows)
           await relationships.applyDeletion(ctx, rows, args.model, args)
           return rows.length
+        }
+        // Verification rows are one-time codes and tokens. Their two bulk deletes
+        // (Better Auth's expired sweep and consuming every code of one address)
+        // must never fail a sign-in because many rows match: delete one bounded
+        // batch through an index and leave the rest to expireVerification.
+        const verificationSelector = args.model === 'verification' ? args.where[0] : undefined
+        if (
+          verificationSelector &&
+          args.where.length === 1 &&
+          (verificationSelector.connector === undefined ||
+            verificationSelector.connector === 'AND') &&
+          (verificationSelector.mode === undefined || verificationSelector.mode === 'sensitive')
+        ) {
+          const { field, operator, value } = verificationSelector
+          const rows =
+            field === 'expiresAt' && operator === 'lt' && typeof value === 'number'
+              ? await ctx.db
+                  .query('verification')
+                  .withIndex('expiresAt', (q) => q.lt('expiresAt', value))
+                  .take(AUTH_BULK_OPERATION_LIMIT)
+              : field === 'identifier' &&
+                  (operator === undefined || operator === 'eq') &&
+                  typeof value === 'string'
+                ? await ctx.db
+                    .query('verification')
+                    .withIndex('identifier', (q) => q.eq('identifier', value))
+                    .order('desc')
+                    .take(AUTH_BULK_OPERATION_LIMIT)
+                : null
+          if (rows) {
+            await relationships.applyDeletion(ctx, rows, args.model, args)
+            return rows.length
+          }
         }
         const invalidated = generationAuthority
           ? await invalidateSessionCollection(ctx, args.model, args.where, generationAuthority)
