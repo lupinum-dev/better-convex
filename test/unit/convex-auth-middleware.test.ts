@@ -4,7 +4,8 @@ import { computed, ref } from 'vue'
 import type { ConvexAuthPageMeta } from '../../src/runtime/utils/auth-route-protection'
 import type { ConvexAuthStatus } from '../../src/runtime/utils/auth-status'
 
-const { navigateToMock, runtimeConfig, authState } = vi.hoisted(() => ({
+const { navigateToMock, runtimeConfig, authState, serverRender } = vi.hoisted(() => ({
+  serverRender: { event: undefined as { context: object } | undefined },
   navigateToMock: vi.fn((target: unknown) => ({ navigatedTo: target })),
   runtimeConfig: { public: { convex: {} as Record<string, unknown> } },
   authState: {
@@ -17,7 +18,7 @@ const { navigateToMock, runtimeConfig, authState } = vi.hoisted(() => ({
 vi.mock('#app', () => ({
   defineNuxtRouteMiddleware: (middleware: unknown) => middleware,
   navigateTo: navigateToMock,
-  useRequestEvent: () => undefined,
+  useRequestEvent: () => serverRender.event,
   useRuntimeConfig: () => runtimeConfig,
 }))
 
@@ -80,6 +81,26 @@ describe('convex-auth route middleware', () => {
     navigateToMock.mockClear()
     configure({})
     signedIn('anonymous')
+    serverRender.event = undefined
+  })
+
+  // A signed-in person whose server-side token exchange failed temporarily
+  // arrives as status 'error'. A definitive miss (no cookie, 401) arrives as
+  // 'anonymous' and still redirects.
+  it('does not send a signed-in person to sign-in when the server exchange failed temporarily', async () => {
+    serverRender.event = { context: {} }
+    signedIn('error')
+    const middleware = await loadMiddleware()
+    await expect(middleware(route('/dashboard', true))).resolves.toBeUndefined()
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('still sends a definitively signed-out visitor to sign-in during server rendering', async () => {
+    serverRender.event = { context: {} }
+    signedIn('anonymous')
+    const middleware = await loadMiddleware()
+    await middleware(route('/dashboard', true))
+    expect(navigateToMock).toHaveBeenCalledWith('/auth/signin?redirect=%2Fdashboard')
   })
 
   it('leaves unannotated pages public by default', async () => {

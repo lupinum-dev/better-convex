@@ -21,7 +21,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const policy = resolveRoutePolicy(meta, authConfig.routes)
   if (policy === 'public') return
   // Without SSR auth the server does not know the visitor, so the browser decides.
-  if (import.meta.server && !isSsrAuthEnabled(useRequestEvent()?.context, authConfig.ssr)) return
+  const requestEvent = useRequestEvent()
+  if (import.meta.server && !isSsrAuthEnabled(requestEvent?.context, authConfig.ssr)) return
 
   // An on-demand build starts the browser runtime for the first page that
   // needs to know who is signed in.
@@ -56,6 +57,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
     currentFullPath: to.fullPath,
   })
   if (!decision) return
+
+  // The server could not ask Better Auth for a person who presented a session
+  // cookie (a 429, 5xx, timeout or network error; a 401 is not an error here).
+  // That is "unknown", not "signed out": render the page with `status: 'error'`
+  // and let the browser, which waits out temporary failures, decide on hydration.
+  if (requestEvent && status.value === 'error') return
 
   // A still-pending server state falls through to the secure default below.
   if ((await settledStatus()) === 'authenticated' || status.value === 'authenticated') return
