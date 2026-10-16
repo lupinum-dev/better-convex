@@ -430,15 +430,6 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
       handler: async (ctx, args) => {
         const session = await ctx.db.get('session', args.storageId)
         if (!session) return null
-        const expiresAt = session.expiresAt
-        if (
-          typeof expiresAt !== 'number' ||
-          !Number.isSafeInteger(expiresAt) ||
-          expiresAt <= Date.now()
-        ) {
-          await ctx.db.delete('session', args.storageId)
-          return null
-        }
         const userId = session.userId
         const user =
           typeof userId === 'string'
@@ -447,8 +438,19 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
                 .withIndex('id', (q) => q.eq('id', userId))
                 .unique()
             : null
+        // The owner check comes first: a deleted user's sweep may start from a
+        // session that has already expired and must still reach the others.
         if (user) {
-          await ctx.scheduler.runAt(expiresAt, expireSessionReference, args)
+          const expiresAt = session.expiresAt
+          if (
+            typeof expiresAt !== 'number' ||
+            !Number.isSafeInteger(expiresAt) ||
+            expiresAt <= Date.now()
+          ) {
+            await ctx.db.delete('session', args.storageId)
+          } else {
+            await ctx.scheduler.runAt(expiresAt, expireSessionReference, args)
+          }
           return null
         }
         const orphans = await ctx.db
