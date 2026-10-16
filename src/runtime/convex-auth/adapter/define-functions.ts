@@ -111,6 +111,10 @@ const pruneRateLimitsReference = makeFunctionReference<'mutation', Record<string
   'adapter:pruneRateLimits',
 )
 
+// A user delete removes at most this many sessions with the user; more go through
+// expireSession, so the rest of the cascade keeps room within the bulk limit.
+const SESSION_CASCADE_LIMIT = AUTH_BULK_OPERATION_LIMIT / 2
+
 const expireVerificationReference = makeFunctionReference<
   'mutation',
   { storageId: GenericId<'verification'> },
@@ -306,7 +310,32 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
 }: DefineAuthAdapterFunctionsOptions<Schema>) {
   assertAuthSchemaMatchesMetadata(schema, metadata)
   const generationAuthority = sessionGenerationAuthority(metadata)
-  const relationships = createAuthRelationshipEngine({ schema, metadata, runTrigger })
+  const relationships = createAuthRelationshipEngine({
+    schema,
+    metadata,
+    runTrigger,
+    // A user with more sessions than one delete can hold keeps them out of the
+    // cascade. They are inert at once, because every session check reads the
+    // user, and expireSession deletes them in batches right after.
+    deferCascade: async (ctx, childModel, parentModel, parent) => {
+      if (
+        !generationAuthority ||
+        childModel !== generationAuthority.sessionModel ||
+        parentModel !== generationAuthority.userModel ||
+        typeof parent.id !== 'string'
+      ) {
+        return false
+      }
+      const userId = parent.id
+      const sessions = await ctx.db
+        .query('session')
+        .withIndex('userId', (q: any) => q.eq('userId', userId))
+        .take(SESSION_CASCADE_LIMIT + 1)
+      if (sessions.length <= SESSION_CASCADE_LIMIT) return false
+      await ctx.scheduler.runAfter(0, expireSessionReference, { storageId: sessions[0]._id })
+      return true
+    },
+  })
   const readSelect = (model: string, select: readonly string[] | undefined) =>
     generationAuthority ? withSessionGenerationSelect(model, select, generationAuthority) : select
   const currentRow = async (
@@ -393,6 +422,8 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
     }),
 
     // Scheduled at creation; follows extended expiry and deletes the row once it lapses.
+    // A session whose user is gone has ended too: it deletes that user's sessions,
+    // at most 128 per run, and schedules itself again until none is left.
     expireSession: internalMutationGeneric({
       args: { storageId: v.id('session') },
       returns: v.null(),
@@ -401,14 +432,35 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         if (!session) return null
         const expiresAt = session.expiresAt
         if (
-          typeof expiresAt === 'number' &&
-          Number.isSafeInteger(expiresAt) &&
-          expiresAt > Date.now()
+          typeof expiresAt !== 'number' ||
+          !Number.isSafeInteger(expiresAt) ||
+          expiresAt <= Date.now()
         ) {
+          await ctx.db.delete('session', args.storageId)
+          return null
+        }
+        const userId = session.userId
+        const user =
+          typeof userId === 'string'
+            ? await ctx.db
+                .query('user')
+                .withIndex('id', (q) => q.eq('id', userId))
+                .unique()
+            : null
+        if (user) {
           await ctx.scheduler.runAt(expiresAt, expireSessionReference, args)
           return null
         }
-        await ctx.db.delete('session', args.storageId)
+        const orphans = await ctx.db
+          .query('session')
+          .withIndex('userId', (q) => q.eq('userId', userId))
+          .take(AUTH_BULK_OPERATION_LIMIT)
+        for (const orphan of orphans) await ctx.db.delete('session', orphan._id)
+        const next = await ctx.db
+          .query('session')
+          .withIndex('userId', (q) => q.eq('userId', userId))
+          .first()
+        if (next) await ctx.scheduler.runAfter(0, expireSessionReference, { storageId: next._id })
         return null
       },
     }),

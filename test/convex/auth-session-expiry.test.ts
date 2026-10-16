@@ -145,4 +145,26 @@ describe('component session expiry scheduler', () => {
     await advance(test, 10 * minute)
     expect(await session(test)).toBeNull()
   })
+
+  // Catches: a user with more sessions than one delete holds (for example a test
+  // account that signs in often) failing every delete with AUTH_BULK_OPERATION_LIMIT_EXCEEDED.
+  it('deletes a user with 129 sessions, ends them at once, and removes them in batches', async () => {
+    const test = await init()
+    for (let index = 0; index < 129; index++) {
+      await test.mutation(auth.create, {
+        model: 'session',
+        data: { ...data, id: `session-${index}`, token: `synthetic-session-${index}` },
+      })
+    }
+    await test.mutation(auth.deleteOne, {
+      model: 'user',
+      where: [{ field: 'id', value: data.userId }],
+    })
+    expect(
+      await test.query(auth.sessionAdmission, { sessionId: 'session-0', userId: data.userId }),
+    ).toBeNull()
+    await advance(test, 0)
+    await advance(test, 0)
+    expect(await test.run((ctx) => ctx.db.query('session').take(200))).toEqual([])
+  })
 })
