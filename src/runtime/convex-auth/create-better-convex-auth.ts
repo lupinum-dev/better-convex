@@ -1250,8 +1250,16 @@ export function createBetterConvexAuthOwned<
           : emailOTP({
               storeOTP: 'hashed',
               ...emailOtpOptions,
-              sendVerificationOTP: async ({ email, otp, type }) =>
-                deliver({ type: 'email-otp', to: email, otp, purpose: type }),
+              sendVerificationOTP: async ({ email, otp, type }, endpoint) => {
+                // Mail only a code that something can still use. A reset code
+                // needs the reset routes, and a verified address needs no proof.
+                if (type === 'forget-password' && !passwordReset) return
+                if (type === 'email-verification') {
+                  const found = await endpoint?.context.internalAdapter.findUserByEmail(email)
+                  if (found?.user.emailVerified === true) return
+                }
+                await deliver({ type: 'email-otp', to: email, otp, purpose: type })
+              },
             }),
         emailOtpOptions === false || emailOtpOptions === undefined
           ? null

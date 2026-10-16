@@ -42,7 +42,7 @@ const password = 'synthetic-password-for-email-tests'
 
 function setup(
   capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization',
-  { withEmailHook = true } = {},
+  { withEmailHook = true, passwordReset = withEmailHook } = {},
 ) {
   const test = convexTest(defineSchema({}), rootModules)
   if (capability === 'twoFactor') {
@@ -55,7 +55,7 @@ function setup(
   const email = vi.fn<BetterConvexAuthEmailSender>(async () => {})
   const auth = createBetterConvexAuth(components.sessionAuth, {
     ...(withEmailHook ? { email } : {}),
-    emailAndPassword: { passwordReset: withEmailHook, requireEmailVerification: false },
+    emailAndPassword: { passwordReset, requireEmailVerification: false },
     emailVerification: { expiresIn: 300, sendOnSignUp: false },
     ...(capability === 'emailOTP' ? { emailOTP: { expiresIn: 300 } } : {}),
     ...(capability === 'twoFactor'
@@ -338,6 +338,25 @@ describe('typed email delivery with real Better Auth', () => {
     expect(email).toHaveBeenCalledTimes(3)
     await send('other@example.test', 200, '198.51.100.4')
   })
+
+  // Catches: mailing a code nothing can use, for example a reset code with the
+  // reset routes closed, or a verification code for an address already proved.
+  it.each(['forget-password', 'email-verification'] as const)(
+    'sends no %s code that nothing can use',
+    async (type) => {
+      const { request, email } = setup('emailOTP', { passwordReset: false })
+      await request('/email-otp/send-verification-otp', {
+        email: 'person@example.test',
+        type: 'sign-in',
+      })
+      const sent = email.mock.calls[0]![1]
+      if (sent.type !== 'email-otp') throw new Error('Expected an email code')
+      await request('/sign-in/email-otp', { email: 'person@example.test', otp: sent.otp })
+      email.mockClear()
+      await request('/email-otp/send-verification-otp', { email: 'person@example.test', type })
+      expect(email).not.toHaveBeenCalled()
+    },
+  )
 
   it('delivers a two-factor OTP with the signed-in user', async () => {
     const { request, signUp, delivered } = setup('twoFactor')
