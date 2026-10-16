@@ -72,13 +72,17 @@ export interface ConvexQueryBoundaryInput {
 
 export interface ConvexSsrQueryInput<T> extends ConvexQueryBoundaryInput {
   readonly lazy: boolean
-  /** `bounds` are the configured `convex.server` limits for this request. */
+  /**
+   * `bounds` are the configured `convex.server` limits for this request.
+   * `undefined` (never a Convex value) leaves the query not fetched on the
+   * server, like a missing token, so the browser loads it.
+   */
   fetch(
     convexUrl: string,
     token: string | undefined,
     signal: AbortSignal | undefined,
     bounds: ConvexServerConfig,
-  ): Promise<T>
+  ): Promise<T | undefined>
 }
 
 export interface ConvexSsrQuery<T> {
@@ -123,14 +127,13 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
           cachedToken: { value: readServerConvexToken(nuxtApp) },
         })
         if (auth !== 'none' && decision.identity !== 'anonymous' && !token) return null
-        return {
-          value: await input.fetch(
-            convexUrl,
-            token,
-            event ? eventAbortSignal(event) : undefined,
-            bounds,
-          ),
-        }
+        const value = await input.fetch(
+          convexUrl,
+          token,
+          event ? eventAbortSignal(event) : undefined,
+          bounds,
+        )
+        return value === undefined ? null : { value }
       } catch (error) {
         return {
           error: normalizeConvexError(error, {

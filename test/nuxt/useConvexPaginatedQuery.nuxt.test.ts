@@ -148,6 +148,44 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
+  it('keeps the SSR first page visible while the live list splits it', async () => {
+    const primary = new MockConvexClient()
+    const query = mockFnRef<'query'>('feed:hydrated-split')
+    const key = pageKey(query, {})
+    const bounds = (args: unknown) =>
+      (args as { paginationOpts: { cursor: string | null; endCursor?: string } }).paginationOpts
+    const { result, wrapper } = await captureInNuxt(
+      () =>
+        hydrating(() => useConvexPaginatedQuery(query, {}, { auth: 'none', initialNumItems: 2 })),
+      {
+        owner: makeMockOwner(primary),
+        payloadData: { [key]: { value: page(['a', 'b', 'c'], false, 'end') } },
+      },
+    )
+    await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
+
+    primary.emitQueryResult(query, primary.calls.onUpdate[0]!.args, {
+      ...page(['a'], false, 'end'),
+      splitCursor: 'mid',
+      pageStatus: 'SplitRequired',
+    })
+    expect(primary.calls.onUpdate).toHaveLength(3)
+    expect(result.status.value).toBe('success')
+    expect(result.data.value).toEqual(['a', 'b', 'c'])
+
+    primary.emitQueryResultWhere(
+      ({ args }) => bounds(args).endCursor === 'mid',
+      page(['a', 'b'], false, 'mid'),
+    )
+    primary.emitQueryResultWhere(
+      ({ args }) => bounds(args).cursor === 'mid',
+      page(['c', 'd'], false, 'end'),
+    )
+    expect(result.status.value).toBe('success')
+    expect(result.data.value).toEqual(['a', 'b', 'c', 'd'])
+    wrapper.unmount()
+  })
+
   it('keeps an SSR error through hydration and clears it on the first live value', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:ssr-error-hydration')

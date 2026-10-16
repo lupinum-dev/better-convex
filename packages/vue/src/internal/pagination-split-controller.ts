@@ -35,6 +35,7 @@ export interface PaginationSplitControllerInput<Item> {
   getClient(): QuerySubscriptionClient | null
   getArgs(): Record<string, unknown> | 'skip'
   setBoundaryError(error: ConvexCallError | undefined, key: string): void
+  retireBoundaryFirstPage(): void
   captureOperation(): PaginationOperationContext
   isOperationCurrent(operation: PaginationOperationContext): boolean
   settleFirstPageIfTerminal(): void
@@ -93,6 +94,7 @@ export function createPaginationSplitController<Item>(
       input.firstPageRealtime.value = promoted[0].result ?? null
       input.firstPageWithheld.value = promoted[0].result === undefined
       input.pages.value = [promoted[1], ...input.pages.value]
+      input.retireBoundaryFirstPage()
       input.setBoundaryError(undefined, split.operation.boundaryKey)
     } else {
       const index = input.pages.value.findIndex(

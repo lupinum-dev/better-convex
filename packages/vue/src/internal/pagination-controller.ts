@@ -146,6 +146,7 @@ export function createPaginationController<Item>(
     getClient: input.getClient,
     getArgs: input.getArgs,
     setBoundaryError: input.setBoundaryError,
+    retireBoundaryFirstPage: input.retireBoundaryFirstPage,
     captureOperation: fence.capture,
     isOperationCurrent: fence.isCurrent,
     settleFirstPageIfTerminal,
@@ -204,9 +205,10 @@ export function createPaginationController<Item>(
     operation: PaginationOperationContext,
   ): void {
     if (result.pageStatus === 'SplitRequired') {
-      firstPageWithheld.value = true
+      // A server-rendered first page stays visible until the split's bounded
+      // pages replace it; live data that may be incomplete is withheld.
+      firstPageWithheld.value = input.getBoundaryFirstPage() === null
       firstPageRealtime.value = null
-      input.retireBoundaryFirstPage()
       splitController.begin('first', result)
       return
     }
