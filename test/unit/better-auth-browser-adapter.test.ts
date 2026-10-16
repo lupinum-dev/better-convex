@@ -504,6 +504,34 @@ describe('Better Auth browser adapter', () => {
     adapter.dispose()
   })
 
+  it('keeps a server-rendered session when the first session read fails temporarily, not on 401', () => {
+    const fixture = source({ isPending: true, data: null, error: null }, [])
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, undefined, {
+      initialIdentityKey: 'alice',
+    })
+
+    fixture.session.value = {
+      isPending: false,
+      data: null,
+      error: { status: 503, message: 'raw-upstream-sentinel' },
+      refetch: fixture.refetch,
+    }
+    expect(adapter.snapshot()).toMatchObject({
+      status: 'authenticated',
+      identityKey: 'alice',
+      sessionGeneration: 0,
+    })
+
+    fixture.session.value = {
+      isPending: false,
+      data: null,
+      error: { status: 401, message: 'raw-unauthorized-sentinel' },
+      refetch: fixture.refetch,
+    }
+    expect(adapter.snapshot()).toMatchObject({ status: 'error', identityKey: null })
+    adapter.dispose()
+  })
+
   it('retains an established session on a transient refetch failure but retires it on 401', async () => {
     const { data } = signedIn()
     const fixture = source({ isPending: false, data, error: null }, [])

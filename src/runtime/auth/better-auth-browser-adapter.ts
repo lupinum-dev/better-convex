@@ -173,12 +173,16 @@ export function createBetterAuthBrowserAdapter(
     const malformed =
       (value.data?.session !== undefined && sessionToken === null) ||
       (sessionToken !== null && key === null)
+    // On a failure other than 401, Better Auth keeps its previous session data.
+    // Before its first success (a server-rendered signed-in page) that data is
+    // empty, which says nothing about the person, so it must not end the session.
+    const errorNamesNoIdentity = sessionToken === null && key === null
     const retainsEstablishedSession =
       Boolean(value.error) &&
       !isUnauthorized(value.error) &&
       (snapshot.status === 'authenticated' || recoveryTimer !== null) &&
-      observedSessionToken === sessionToken &&
-      observedIdentityKey === key
+      (errorNamesNoIdentity ||
+        (observedSessionToken === sessionToken && observedIdentityKey === key))
     if (retainsEstablishedSession) return
 
     if (value.error || malformed) {
