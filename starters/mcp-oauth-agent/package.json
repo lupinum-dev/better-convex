@@ -16,12 +16,12 @@
     "@better-auth/oauth-provider": "1.7.7",
     "@lupinum/better-convex-agents": "0.0.0",
     "@lupinum/better-convex-functions": "0.0.0",
-    "@lupinum/better-convex-nuxt": "1.0.0-rc.1",
+    "@lupinum/better-convex-nuxt": "1.0.0-rc.4",
     "@modelcontextprotocol/server": "2.3.1",
     "better-auth": "1.7.7",
     "convex": "1.42.2",
     "nuxt": "4.6.1",
-    "vue": "3.5.43"
+    "vue": "3.5.44"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

@@ -21,11 +21,11 @@
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.7",
     "@convex-dev/rate-limiter": "^0.3.2",
-    "@lupinum/better-convex-nuxt": "1.0.0-rc.1",
+    "@lupinum/better-convex-nuxt": "1.0.0-rc.4",
     "better-auth": "1.7.7",
     "convex": "1.42.2",
     "nuxt": "4.6.1",
-    "vue": "3.5.43",
+    "vue": "3.5.44",
     "zod": "4.4.3"
   },
   "devDependencies": {
