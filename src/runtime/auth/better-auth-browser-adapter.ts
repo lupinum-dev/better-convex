@@ -1,6 +1,7 @@
 import type { BetterConvexAuthAdapter } from '@lupinum/better-convex-vue'
 import { watch, type Ref } from 'vue'
 
+import { ConvexCallError } from '../errors'
 import type { ConvexUser } from '../utils/types'
 import {
   fetchConvexToken,
@@ -29,9 +30,32 @@ interface BetterAuthBrowserSource extends ConvexTokenSource {
 
 const UNAVAILABLE = 'Authentication is temporarily unavailable'
 const SESSION_SETTLEMENT_TIMEOUT_MS = 5_000
-/** Backoff after a rate-limited token exchange: 1 s, 2 s, 4 s ... up to 30 s, plus jitter. */
-const RATE_LIMIT_RETRY_BASE_DELAY_MS = 1_000
-const RATE_LIMIT_RETRY_MAX_DELAY_MS = 30_000
+/**
+ * Backoff after a token exchange that failed for a temporary reason (429, 5xx,
+ * network, timeout): 1 s, 2 s, 4 s ... up to 30 s, plus jitter, never shorter
+ * than the server's Retry-After.
+ */
+const TRANSIENT_RETRY_BASE_DELAY_MS = 1_000
+const TRANSIENT_RETRY_MAX_DELAY_MS = 30_000
+/**
+ * How long one run of temporary token failures may last before the adapter
+ * reports authentication as temporarily unavailable.
+ */
+const TRANSIENT_FAILURE_BUDGET_MS = 30_000
+/**
+ * Convex asks for a new token this many seconds before the current one expires
+ * (its default is 10). Session tokens live 15 minutes, so a refresh that has to
+ * wait out a temporary failure still runs while the current token works.
+ */
+const TOKEN_REFRESH_LEEWAY_SECONDS = 60
+
+function temporarilyUnavailable(): ConvexCallError {
+  return new ConvexCallError({
+    kind: 'authentication',
+    code: 'AUTH_UNAVAILABLE',
+    message: UNAVAILABLE,
+  })
+}
 
 function isUnauthorized(error: unknown): boolean {
   return Boolean(
@@ -73,10 +97,11 @@ export function createBetterAuthBrowserAdapter(
   let observedSessionToken: string | null | undefined
   let observedIdentityKey: string | null | undefined = options.initialIdentityKey
   let cachedToken: string | null = null
-  // Monotonic time until which `cachedToken` may stand in after a transient
-  // failure: receipt plus the token's own lifetime. `performance.now()` is
-  // immune to a wrong or corrected system clock.
-  let cachedTokenUsableUntil = 0
+  // Monotonic expiry of `cachedToken`: receipt plus the token's own lifetime.
+  // `performance.now()` is immune to a wrong or corrected system clock.
+  let cachedTokenExpiresAt = 0
+  // Monotonic start of the current run of temporary token failures, or null.
+  let transientSince: number | null = null
   let snapshot: BrowserAuthSnapshot = options.initialIdentityKey
     ? {
         status: 'authenticated',
@@ -279,14 +304,33 @@ export function createBetterAuthBrowserAdapter(
       })().then(finish, finish)
     })
 
+  // The temporary failures outlasted their budget: report authentication as
+  // temporarily unavailable. The provider still reports the session, so the
+  // observed session stays; only the token generation is retired.
+  const failTransiently = () => {
+    cachedToken = null
+    transientSince = null
+    sessionGeneration += 1
+    snapshot = {
+      status: 'error',
+      identityKey: null,
+      sessionGeneration,
+      error: temporarilyUnavailable(),
+    }
+    callbacks.anonymous(UNAVAILABLE)
+    callbacks.sessionChanged?.(observedSessionToken ?? null, null, sessionGeneration)
+    notify()
+  }
+
   return Object.freeze({
+    tokenRefreshLeewaySeconds: TOKEN_REFRESH_LEEWAY_SECONDS,
     snapshot: () => snapshot,
     subscribe(listener: () => void) {
       if (disposed) return () => {}
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    async fetchToken() {
+    async fetchToken({ forceRefreshToken }) {
       if (disposed || snapshot.status !== 'authenticated') return null
       const expectedKey = snapshot.identityKey
       const expectedGeneration = sessionGeneration
@@ -296,21 +340,43 @@ export function createBetterAuthBrowserAdapter(
         snapshot.identityKey === expectedKey &&
         sessionGeneration === expectedGeneration
       let outcome = await fetchConvexToken(source)
-      // A 429 says nothing about the session. While the provider still reports
-      // it signed in, wait as the server asks and try again instead of reporting
-      // the user as signed out. A usable cached token stands in below instead.
-      for (let attempt = 0; outcome.retryAfterMs !== undefined; attempt += 1) {
-        if (!isCurrent() || (cachedToken && performance.now() < cachedTokenUsableUntil)) break
-        await pause(
-          retryDelayMs(attempt, {
-            baseMs: RATE_LIMIT_RETRY_BASE_DELAY_MS,
-            maxMs: RATE_LIMIT_RETRY_MAX_DELAY_MS,
-            retryAfterMs: outcome.retryAfterMs,
-          }),
+      // A 429, a 5xx, a network error or a timeout says nothing about the
+      // session. While the provider still reports it, wait and ask again
+      // instead of answering null, which Convex reports as signed out.
+      for (let attempt = 0; !outcome.identity && !outcome.definitive; attempt += 1) {
+        if (!isCurrent()) return null
+        // A new client asks first without forcing a refresh: a usable cached
+        // token stands in, and Convex schedules its next refresh from it. A
+        // forced refresh never gets the same token back, because Convex then
+        // stops refreshing (its `notRefetching` state).
+        if (
+          !forceRefreshToken &&
+          cachedToken &&
+          performance.now() < cachedTokenExpiresAt - TOKEN_EXPIRY_SAFETY_BUFFER_MS
+        ) {
+          return cachedToken
+        }
+        transientSince ??= performance.now()
+        const delayMs = retryDelayMs(attempt, {
+          baseMs: TRANSIENT_RETRY_BASE_DELAY_MS,
+          maxMs: TRANSIENT_RETRY_MAX_DELAY_MS,
+          retryAfterMs: outcome.retryAfterMs,
+        })
+        // Keep trying for the budget, and at least while the current token
+        // still works: Convex keeps using it until a new one arrives.
+        const deadline = Math.max(
+          transientSince + TRANSIENT_FAILURE_BUDGET_MS,
+          cachedToken ? cachedTokenExpiresAt : 0,
         )
+        if (performance.now() + delayMs > deadline) {
+          failTransiently()
+          return null
+        }
+        await pause(delayMs)
         if (!isCurrent()) return null
         outcome = await fetchConvexToken(source)
       }
+      transientSince = null
       if (outcome.sessionRejected && !disposed) {
         // The session ended on the server (sign-out, revocation, expiry) before
         // the provider published it. Let the provider settle first: a session
@@ -327,14 +393,8 @@ export function createBetterAuthBrowserAdapter(
         }
         cachedToken = outcome.identity.token
         // The fetcher admitted only tokens with a usable lifetime; 0 fails closed.
-        cachedTokenUsableUntil =
-          performance.now() +
-          (usableTokenLifetimeMs(cachedToken) ?? 0) -
-          TOKEN_EXPIRY_SAFETY_BUFFER_MS
+        cachedTokenExpiresAt = performance.now() + (usableTokenLifetimeMs(cachedToken) ?? 0)
         callbacks.authenticated(outcome.identity.token, outcome.identity.user)
-        return cachedToken
-      }
-      if (!outcome.definitive && cachedToken && performance.now() < cachedTokenUsableUntil) {
         return cachedToken
       }
       cachedToken = null

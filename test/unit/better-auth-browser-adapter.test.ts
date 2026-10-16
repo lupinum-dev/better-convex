@@ -371,35 +371,59 @@ describe('Better Auth browser adapter', () => {
     },
   )
 
-  it('stands in with the cached token after a transient failure only for its lifetime', async () => {
+  it('stands in with the cached token for a new client while it is usable, never for a forced refresh', async () => {
     const token = jwt('alice', 900)
-    const unavailable = { error: { status: 503 } }
-    const fixture = source(signedIn(), [
-      { data: { token }, error: null },
-      ...Array.from({ length: 8 }, () => unavailable),
-    ])
+    const nextToken = jwt('alice', 900)
+    let outage = true
+    const fixture = source(signedIn(), [])
+    fixture.token
+      .mockImplementation(async () =>
+        outage
+          ? { data: null, error: { status: 503 } }
+          : { data: { token: nextToken }, error: null },
+      )
+      .mockImplementationOnce(async () => ({ data: { token }, error: null }))
     let monotonicMs = 1_000
     vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs)
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-    // Runs the fetcher's backoff between its transient attempts (at most 1050 ms).
-    const fetchToken = async () => {
-      const fetching = adapter.fetchToken({ forceRefreshToken: true })
-      await vi.advanceTimersByTimeAsync(1_050)
-      return fetching
-    }
     const adapter = createBetterAuthBrowserAdapter(fixture.client)
-    await expect(fetchToken()).resolves.toBe(token)
+    const answer = (forceRefreshToken: boolean) => {
+      let settled = false
+      const fetching = adapter.fetchToken({ forceRefreshToken }).finally(() => {
+        settled = true
+      })
+      return { fetching, settled: () => settled }
+    }
+    try {
+      await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBe(token)
 
-    monotonicMs += 60_000
-    await expect(fetchToken()).resolves.toBe(token)
+      // A new client asks without forcing: during the outage the cached token stands in.
+      monotonicMs += 60_000
+      const newClient = answer(false)
+      await vi.advanceTimersByTimeAsync(1_050)
+      await expect(newClient.fetching).resolves.toBe(token)
 
-    // The system clock moves back an hour, but 15 minutes really passed.
-    vi.setSystemTime(Date.now() - 3_600_000)
-    monotonicMs += 15 * 60_000
-    await expect(fetchToken()).resolves.toBeNull()
-    adapter.dispose()
-    vi.useRealTimers()
-    vi.restoreAllMocks()
+      // Convex's scheduled refresh forces: it keeps asking until a new token arrives.
+      const refresh = answer(true)
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(refresh.settled()).toBe(false)
+      outage = false
+      await vi.advanceTimersByTimeAsync(30_000)
+      await expect(refresh.fetching).resolves.toBe(nextToken)
+
+      // The system clock moves back an hour, but 15 minutes really passed: the
+      // cached token is past its lifetime and never stands in.
+      outage = true
+      vi.setSystemTime(Date.now() - 3_600_000)
+      monotonicMs += 15 * 60_000
+      const late = answer(false)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(late.settled()).toBe(false)
+    } finally {
+      adapter.dispose()
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    }
   })
 
   it.each([
