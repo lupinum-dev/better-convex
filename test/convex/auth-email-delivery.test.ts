@@ -66,7 +66,12 @@ function setup(
   const http = httpRouter()
   auth.registerRoutes(http)
   let cookie = ''
-  async function request(path: string, body: Record<string, unknown>, expectedStatus = 200) {
+  async function request(
+    path: string,
+    body: Record<string, unknown>,
+    expectedStatus = 200,
+    ip = '198.51.100.7',
+  ) {
     const response = await test.action(async (ctx) => {
       const route = http.lookup(`/api/auth${path}`, 'POST')
       if (!route) throw new Error('Auth route was not registered')
@@ -74,7 +79,7 @@ function setup(
         _handler: (ctx: unknown, request: Request) => Promise<Response>
       }
       const response = await handler._handler(
-        { ...ctx, meta: { getRequestMetadata: async () => ({ ip: '198.51.100.7' }) } },
+        { ...ctx, meta: { getRequestMetadata: async () => ({ ip }) } },
         new Request(`https://deployment.convex.site/api/auth${path}`, {
           method: 'POST',
           headers: {
@@ -319,6 +324,19 @@ describe('typed email delivery with real Better Auth', () => {
       otp: expect.stringMatching(/^\d{6}$/),
       purpose: 'sign-in',
     })
+  })
+
+  // Catches: many client IPs flooding one inbox, because Better Auth limits codes per IP only.
+  it('limits codes for one address across client IPs', async () => {
+    const { request, email } = setup('emailOTP')
+    const send = (to: string, status: number, ip: string) =>
+      request('/email-otp/send-verification-otp', { email: to, type: 'sign-in' }, status, ip)
+    for (const ip of ['198.51.100.1', '198.51.100.2', '198.51.100.3']) {
+      await send('person@example.test', 200, ip)
+    }
+    await send('Person@Example.test', 429, '198.51.100.4')
+    expect(email).toHaveBeenCalledTimes(3)
+    await send('other@example.test', 200, '198.51.100.4')
   })
 
   it('delivers a two-factor OTP with the signed-in user', async () => {

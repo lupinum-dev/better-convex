@@ -27,6 +27,7 @@ import {
   sanitizeAuthCause,
   type AuthConfigSubCode,
 } from './diagnostics'
+import { createEmailCodeAddressLimitPlugin } from './email-code-limit'
 import {
   assertVerifiedUnlessPasswordSignUp,
   createIdentityGuardsPlugin,
@@ -1252,6 +1253,15 @@ export function createBetterConvexAuthOwned<
               sendVerificationOTP: async ({ email, otp, type }) =>
                 deliver({ type: 'email-otp', to: email, otp, purpose: type }),
             }),
+        emailOtpOptions === false || emailOtpOptions === undefined
+          ? null
+          : createEmailCodeAddressLimitPlugin(
+              {
+                window: emailOtpOptions.rateLimit?.window || 60,
+                max: emailOtpOptions.rateLimit?.max || 3,
+              },
+              () => rateLimitStorage.consume,
+            ),
       ].filter((plugin) => plugin !== null)
       const jwtPlugin = createAuthJwtPlugin(authIssuer)
       const convexPlugin = convexAuth({
