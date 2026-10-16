@@ -177,4 +177,29 @@ describe('component session expiry scheduler', () => {
       expect(await test.run((ctx) => ctx.db.query('session').take(200))).toEqual([])
     },
   )
+
+  // Convex refuses a job more than 5 years ahead, so a far expiry must not fail the write.
+  it.each(['session', 'verification'] as const)(
+    'schedules the expiry of a %s that lives for decades within one year',
+    async (model) => {
+      const test = await init()
+      const expiresAt = Date.UTC(2100, 0, 1)
+      const row =
+        model === 'session'
+          ? { ...data, id: 'long-session', token: 'synthetic-long-session', expiresAt }
+          : {
+              id: 'long-code',
+              identifier: 'long',
+              value: 'hash',
+              expiresAt,
+              createdAt: now,
+              updatedAt: now,
+            }
+      await test.mutation(auth.create, { model, data: row })
+      const jobs = await test.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+      expect(jobs.length).toBeGreaterThan(0)
+      for (const job of jobs)
+        expect(job.scheduledTime).toBeLessThanOrEqual(now + 366 * 24 * 60 * minute)
+    },
+  )
 })

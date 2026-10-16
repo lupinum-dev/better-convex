@@ -114,6 +114,12 @@ const pruneRateLimitsReference = makeFunctionReference<'mutation', Record<string
 // A user delete removes at most this many sessions with the user; more go through
 // expireSession, so the rest of the cascade keeps room within the bulk limit.
 const SESSION_CASCADE_LIMIT = AUTH_BULK_OPERATION_LIMIT / 2
+// Convex refuses to schedule more than 5 years ahead. An expiry job for a
+// longer-lived row runs at this horizon instead, finds the row unexpired, and
+// schedules itself again.
+const EXPIRY_SCHEDULE_HORIZON_MS = 365 * 24 * 60 * 60 * 1000
+const expiryRunAt = (expiresAt: number) =>
+  Math.min(expiresAt, Date.now() + EXPIRY_SCHEDULE_HORIZON_MS)
 
 const expireVerificationReference = makeFunctionReference<
   'mutation',
@@ -449,7 +455,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           ) {
             await ctx.db.delete('session', args.storageId)
           } else {
-            await ctx.scheduler.runAt(expiresAt, expireSessionReference, args)
+            await ctx.scheduler.runAt(expiryRunAt(expiresAt), expireSessionReference, args)
           }
           return null
         }
@@ -479,7 +485,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         const row = await ctx.db.get('verification', args.storageId)
         const expiresAt = row?.expiresAt
         if (typeof expiresAt === 'number' && Number.isSafeInteger(expiresAt) && expiresAt > now) {
-          await ctx.scheduler.runAt(expiresAt, expireVerificationReference, args)
+          await ctx.scheduler.runAt(expiryRunAt(expiresAt), expireVerificationReference, args)
           return null
         }
         const expired = await ctx.db
@@ -569,7 +575,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           if (typeof finalRow.expiresAt !== 'number' || !sessionId) {
             throw new Error('AUTH_SESSION_INVALID')
           }
-          await ctx.scheduler.runAt(finalRow.expiresAt, expireSessionReference, {
+          await ctx.scheduler.runAt(expiryRunAt(finalRow.expiresAt), expireSessionReference, {
             storageId: sessionId,
           })
         }
@@ -578,7 +584,7 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           if (typeof finalRow.expiresAt !== 'number' || !verificationId) {
             throw new Error('AUTH_VERIFICATION_INVALID')
           }
-          await ctx.scheduler.runAt(finalRow.expiresAt, expireVerificationReference, {
+          await ctx.scheduler.runAt(expiryRunAt(finalRow.expiresAt), expireVerificationReference, {
             storageId: verificationId,
           })
         }
