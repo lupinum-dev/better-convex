@@ -42,7 +42,10 @@ const password = 'synthetic-password-for-email-tests'
 
 function setup(
   capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization',
-  { withEmailHook = true, passwordReset = withEmailHook } = {},
+  {
+    withEmailHook = true,
+    passwordReset = withEmailHook,
+  }: { withEmailHook?: boolean; passwordReset?: boolean } = {},
 ) {
   const test = convexTest(defineSchema({}), rootModules)
   if (capability === 'twoFactor') {
