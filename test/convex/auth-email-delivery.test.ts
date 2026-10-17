@@ -42,7 +42,10 @@ const password = 'synthetic-password-for-email-tests'
 
 function setup(
   capability: 'links' | 'emailOTP' | 'twoFactor' | 'organization',
-  { withEmailHook = true } = {},
+  {
+    withEmailHook = true,
+    passwordReset = withEmailHook,
+  }: { withEmailHook?: boolean; passwordReset?: boolean } = {},
 ) {
   const test = convexTest(defineSchema({}), rootModules)
   if (capability === 'twoFactor') {
@@ -55,7 +58,7 @@ function setup(
   const email = vi.fn<BetterConvexAuthEmailSender>(async () => {})
   const auth = createBetterConvexAuth(components.sessionAuth, {
     ...(withEmailHook ? { email } : {}),
-    emailAndPassword: { passwordReset: withEmailHook, requireEmailVerification: false },
+    emailAndPassword: { passwordReset, requireEmailVerification: false },
     emailVerification: { expiresIn: 300, sendOnSignUp: false },
     ...(capability === 'emailOTP' ? { emailOTP: { expiresIn: 300 } } : {}),
     ...(capability === 'twoFactor'
@@ -66,7 +69,12 @@ function setup(
   const http = httpRouter()
   auth.registerRoutes(http)
   let cookie = ''
-  async function request(path: string, body: Record<string, unknown>, expectedStatus = 200) {
+  async function request(
+    path: string,
+    body: Record<string, unknown>,
+    expectedStatus = 200,
+    ip = '198.51.100.7',
+  ) {
     const response = await test.action(async (ctx) => {
       const route = http.lookup(`/api/auth${path}`, 'POST')
       if (!route) throw new Error('Auth route was not registered')
@@ -74,7 +82,7 @@ function setup(
         _handler: (ctx: unknown, request: Request) => Promise<Response>
       }
       const response = await handler._handler(
-        { ...ctx, meta: { getRequestMetadata: async () => ({ ip: '198.51.100.7' }) } },
+        { ...ctx, meta: { getRequestMetadata: async () => ({ ip }) } },
         new Request(`https://deployment.convex.site/api/auth${path}`, {
           method: 'POST',
           headers: {
@@ -320,6 +328,38 @@ describe('typed email delivery with real Better Auth', () => {
       purpose: 'sign-in',
     })
   })
+
+  // Catches: many client IPs flooding one inbox, because Better Auth limits codes per IP only.
+  it('limits codes for one address across client IPs', async () => {
+    const { request, email } = setup('emailOTP')
+    const send = (to: string, status: number, ip: string) =>
+      request('/email-otp/send-verification-otp', { email: to, type: 'sign-in' }, status, ip)
+    for (const ip of ['198.51.100.1', '198.51.100.2', '198.51.100.3']) {
+      await send('person@example.test', 200, ip)
+    }
+    await send('Person@Example.test', 429, '198.51.100.4')
+    expect(email).toHaveBeenCalledTimes(3)
+    await send('other@example.test', 200, '198.51.100.4')
+  })
+
+  // Catches: mailing a code nothing can use, for example a reset code with the
+  // reset routes closed, or a verification code for an address already proved.
+  it.each(['forget-password', 'email-verification'] as const)(
+    'sends no %s code that nothing can use',
+    async (type) => {
+      const { request, email } = setup('emailOTP', { passwordReset: false })
+      await request('/email-otp/send-verification-otp', {
+        email: 'person@example.test',
+        type: 'sign-in',
+      })
+      const sent = email.mock.calls[0]![1]
+      if (sent.type !== 'email-otp') throw new Error('Expected an email code')
+      await request('/sign-in/email-otp', { email: 'person@example.test', otp: sent.otp })
+      email.mockClear()
+      await request('/email-otp/send-verification-otp', { email: 'person@example.test', type })
+      expect(email).not.toHaveBeenCalled()
+    },
+  )
 
   it('delivers a two-factor OTP with the signed-in user', async () => {
     const { request, signUp, delivered } = setup('twoFactor')

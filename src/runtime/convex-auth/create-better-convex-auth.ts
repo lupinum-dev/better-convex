@@ -27,6 +27,7 @@ import {
   sanitizeAuthCause,
   type AuthConfigSubCode,
 } from './diagnostics'
+import { createEmailCodeAddressLimitPlugin } from './email-code-limit'
 import {
   assertVerifiedUnlessPasswordSignUp,
   createIdentityGuardsPlugin,
@@ -1035,7 +1036,8 @@ function assertOwnedInvariants(options: BetterAuthOptions, socialProviderNames: 
     options.session.updateAge > options.session.expiresIn ||
     !cookieCacheWithinBounds(options.session.cookieCache) ||
     // freshAge 0 would let a stale session delete the account.
-    (options.user?.deleteUser?.enabled === true && options.session.freshAge === 0)
+    (options.user?.deleteUser?.enabled === true && options.session.freshAge === 0) ||
+    options.verification?.disableCleanup !== true
   ) {
     throw new Error('AUTH_OWNED_INVARIANT_VIOLATED')
   }
@@ -1248,9 +1250,26 @@ export function createBetterConvexAuthOwned<
           : emailOTP({
               storeOTP: 'hashed',
               ...emailOtpOptions,
-              sendVerificationOTP: async ({ email, otp, type }) =>
-                deliver({ type: 'email-otp', to: email, otp, purpose: type }),
+              sendVerificationOTP: async ({ email, otp, type }, endpoint) => {
+                // Mail only a code that something can still use. A reset code
+                // needs the reset routes, and a verified address needs no proof.
+                if (type === 'forget-password' && !passwordReset) return
+                if (type === 'email-verification') {
+                  const found = await endpoint?.context.internalAdapter.findUserByEmail(email)
+                  if (found?.user.emailVerified === true) return
+                }
+                await deliver({ type: 'email-otp', to: email, otp, purpose: type })
+              },
             }),
+        emailOtpOptions === false || emailOtpOptions === undefined
+          ? null
+          : createEmailCodeAddressLimitPlugin(
+              {
+                window: emailOtpOptions.rateLimit?.window || 60,
+                max: emailOtpOptions.rateLimit?.max || 3,
+              },
+              () => rateLimitStorage.consume,
+            ),
       ].filter((plugin) => plugin !== null)
       const jwtPlugin = createAuthJwtPlugin(authIssuer)
       const convexPlugin = convexAuth({
@@ -1410,7 +1429,9 @@ export function createBetterConvexAuthOwned<
               },
             }
           : undefined,
-        verification: { storeIdentifier: 'hashed' },
+        // Better Auth would otherwise delete every expired row on each code check,
+        // in one mutation. The component's expireVerification job does it instead.
+        verification: { storeIdentifier: 'hashed', disableCleanup: true },
       } satisfies BetterAuthOptions
       const socialProviderNames = new Set(Object.keys(socialProviders ?? {}))
       assertOwnedInvariants(authOptions, socialProviderNames)
