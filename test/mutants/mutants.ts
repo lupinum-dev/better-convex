@@ -387,7 +387,8 @@ export const mutants: Mutant[] = [
     guards: 'S7',
     file: 'packages/functions/src/functions.ts',
     find: "if (reached) {\n            console.error(\n              'Raw function reached from an internal action",
-    replace: "if (false) {\n            console.error(\n              'Raw function reached from an internal action",
+    replace:
+      "if (false) {\n            console.error(\n              'Raw function reached from an internal action",
     kills: [`${F}/rules.test.ts > an internal action that reached a raw function fails`],
   },
   {
