@@ -21,21 +21,21 @@
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.7",
     "@convex-dev/rate-limiter": "^0.3.2",
-    "@lupinum/better-convex-nuxt": "1.0.0-rc.1",
+    "@lupinum/better-convex-nuxt": "1.0.0-rc.4",
     "better-auth": "1.7.7",
     "convex": "1.42.2",
-    "nuxt": "4.5.2",
-    "vue": "3.5.43",
+    "nuxt": "4.6.1",
+    "vue": "3.5.44",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
-    "@nuxt/schema": "4.5.2",
+    "@nuxt/schema": "4.6.1",
     "@types/node": "^25.0.0",
     "convex-test": "^0.0.41",
     "playwright": "^1.64.0",
     "typescript": "~5.9.3",
-    "vite": "8.1.5",
+    "vite": "8.3.4",
     "vitest": "^4.0.18",
     "vue-router": "^5.1.0",
     "vue-tsc": "^3.3.13"

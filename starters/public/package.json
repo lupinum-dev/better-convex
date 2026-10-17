@@ -13,16 +13,16 @@
     "typecheck": "nuxt typecheck --dotenv .env.local && tsc -p convex --noEmit"
   },
   "dependencies": {
-    "@lupinum/better-convex-nuxt": "1.0.0-rc.1",
+    "@lupinum/better-convex-nuxt": "1.0.0-rc.4",
     "convex": "1.42.2",
-    "nuxt": "4.5.2",
-    "vue": "3.5.43"
+    "nuxt": "4.6.1",
+    "vue": "3.5.44"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",
     "convex-test": "^0.0.41",
     "typescript": "~5.9.3",
-    "vite": "8.1.5",
+    "vite": "8.3.4",
     "vitest": "^4.0.18",
     "vue-tsc": "^3.3.13"
   },
