@@ -384,6 +384,9 @@ export function createPaginationController<Item>(
       if (options.endCursor === endCursor) return
       firstPageUnsubscribe?.()
       firstPageUnsubscribe = null
+      // The bounded first page and the page after it are the truth now; the old
+      // split would replace the first page and drop what loadMore loaded.
+      splitController.cancel('first')
       const bounded = { ...options, endCursor }
       if (input.isLive()) subscribeFirstPage(bounded)
       else firstPageOptions.value = bounded

@@ -783,6 +783,57 @@ describe('pagination controller', () => {
     expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b'])
   })
 
+  it.each([
+    { order: 'loaded page first', splitFirst: false, lastIsDone: false },
+    { order: 'split first', splitFirst: true, lastIsDone: true },
+  ])(
+    'keeps rows loaded by loadMore while the hydrated first page splits ($order)',
+    async ({ splitFirst, lastIsDone }) => {
+      const { controller, state } = makeHarness()
+      // Server rendered a,b,c,d ending at S; a row inserted before hydration
+      // moved the live boundary to L and the first page needs a split.
+      state.setBoundaryFirstPage(page(['a', 'b', 'c', 'd'], 'S'))
+      state.subscriptions[0]?.value(
+        page(['x', 'a', 'b', 'c', 'd'], 'L', false, { cursor: 'M', status: 'SplitRequired' }),
+      )
+      expect(controller.data.value?.map((row) => row.id)).toEqual(['a', 'b', 'c', 'd'])
+      expect(controller.canLoadMore.value).toBe(true)
+
+      let loaded = false
+      const loading = controller.loadMore(2).then(() => {
+        loaded = true
+      })
+      // [first sub, split half 1, split half 2, bounded first, page from S]
+      expect(state.subscriptions[3]?.args.paginationOpts).toMatchObject({ endCursor: 'S' })
+      expect(state.subscriptions[4]?.args.paginationOpts).toMatchObject({ cursor: 'S' })
+
+      const answerSplit = () => {
+        state.subscriptions[1]?.value(page(['x', 'a'], 'M'))
+        state.subscriptions[2]?.value(page(['b', 'c', 'd'], 'L'))
+      }
+      const answerLoadMore = () => {
+        state.subscriptions[3]?.value(page(['x', 'a', 'b', 'c', 'd'], 'S'))
+        state.subscriptions[4]?.value(page(['e', 'f'], 'T', lastIsDone))
+      }
+      if (splitFirst) answerSplit()
+      answerLoadMore()
+      if (!splitFirst) answerSplit()
+      await loading
+
+      expect(loaded).toBe(true)
+      expect(controller.data.value?.map((row) => row.id)).toEqual([
+        'x',
+        'a',
+        'b',
+        'c',
+        'd',
+        'e',
+        'f',
+      ])
+      expect(controller.canLoadMore.value).toBe(!lastIsDone)
+    },
+  )
+
   it('settles loadMore only after nested bounded split replacements commit', async () => {
     const { controller, state } = makeHarness()
     state.subscriptions[0]?.value(page(['a'], 'cursor-1'))

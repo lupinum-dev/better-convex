@@ -49,6 +49,8 @@ export interface PaginationSplitControllerInput<Item> {
 export interface PaginationSplitController<Item> {
   /** Starts a bounded split when Convex's split rule asks for one; callers withhold `SplitRequired` pages. */
   begin(target: PaginationSplitTarget, result: PaginationResult<Item>): void
+  /** Drops a pending split of `target`; the caller re-subscribed that page with new bounds. */
+  cancel(target: PaginationSplitTarget): void
   teardown(): void
 }
 
@@ -211,11 +213,18 @@ export function createPaginationSplitController<Item>(
     subscribe(split, 1)
   }
 
+  function cancel(target: PaginationSplitTarget): void {
+    const split = pendingSplits.find((candidate) => candidate.target === target)
+    if (!split) return
+    remove(split)
+    for (const part of split.parts) part.page.unsubscribe?.()
+  }
+
   function teardown(): void {
     for (const split of pendingSplits.splice(0)) {
       for (const part of split.parts) part.page.unsubscribe?.()
     }
   }
 
-  return { begin, teardown }
+  return { begin, cancel, teardown }
 }
