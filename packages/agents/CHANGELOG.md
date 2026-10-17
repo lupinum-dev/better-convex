@@ -1,5 +1,12 @@
 # @lupinum/better-convex-agents
 
+## 0.1.0-rc.4
+
+### Patch Changes
+
+- Updated dependencies [[`249710c`](https://github.com/lupinum-dev/better-convex/commit/249710c71cfbfd1b60e8948ce25e3fb69ba5d17a), [`249710c`](https://github.com/lupinum-dev/better-convex/commit/249710c71cfbfd1b60e8948ce25e3fb69ba5d17a)]:
+  - @lupinum/better-convex-functions@0.1.0-rc.4
+
 ## 0.1.0-rc.3
 
 ### Minor Changes

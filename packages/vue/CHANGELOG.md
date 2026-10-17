@@ -1,5 +1,11 @@
 # @lupinum/better-convex-vue
 
+## 1.0.0-rc.6
+
+### Patch Changes
+
+- [#275](https://github.com/lupinum-dev/better-convex/pull/275) [`99cbe1a`](https://github.com/lupinum-dev/better-convex/commit/99cbe1a32fafd8c4bdafa3874980075856e36293) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix rows loaded with `loadMore()` disappearing while a hydrated first page was still being split.
+
 ## 1.0.0-rc.5
 
 ### Patch Changes
