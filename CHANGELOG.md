@@ -1,5 +1,72 @@
 # Changelog
 
+## 1.0.0-rc.5
+
+### Patch Changes
+
+- [#270](https://github.com/lupinum-dev/better-convex/pull/270) [`65e0c48`](https://github.com/lupinum-dev/better-convex/commit/65e0c481964db3c18675c3120017de5733d9ea53) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a signed-in, server-rendered page showing the person as signed out when the first session read in the browser fails temporarily
+  
+  A 5xx, timeout or network error on that read keeps the server-rendered session; a 401 still signs out.
+
+- [#270](https://github.com/lupinum-dev/better-convex/pull/270) [`65e0c48`](https://github.com/lupinum-dev/better-convex/commit/65e0c481964db3c18675c3120017de5733d9ea53) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix signed-in people being shown as signed out when the token exchange fails for a moment
+  
+  A 429, a 5xx, a network error or a timeout from `/api/auth/convex/token` no longer ends in a sign-out: the browser waits and asks again (1 s up to 30 s, with jitter) for at least 30 seconds, and at a scheduled refresh for as long as the current token still works.
+  After that it reports `AUTH_UNAVAILABLE` ("Authentication is temporarily unavailable") instead of "Convex rejected the authentication token".
+  Convex now refreshes Better Auth tokens 60 seconds before they expire, and its 10-second confirmation deadline starts only after a token is fetched.
+  Add the optional `tokenRefreshLeewaySeconds` to `BetterConvexAuthAdapter` for the same choice in a custom adapter.
+
+- [#270](https://github.com/lupinum-dev/better-convex/pull/270) [`65e0c48`](https://github.com/lupinum-dev/better-convex/commit/65e0c481964db3c18675c3120017de5733d9ea53) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the browser retrying the token exchange on every focus and tab event after an auth outage
+  
+  When authentication is reported temporarily unavailable, the browser now tries again on its own, after 2 s and then up to 60 s apart (never sooner than Retry-After), until it gets a token.
+  Better Auth's re-reads of the unchanged session (window focus, reconnect, other tabs) no longer start another full token attempt in every tab; a changed session still applies at once.
+
+- [#271](https://github.com/lupinum-dev/better-convex/pull/271) [`696b338`](https://github.com/lupinum-dev/better-convex/commit/696b3380de0d63179a101789bcdbffe020697122) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix deleting a user with 128 or more sessions failing with `AUTH_BULK_OPERATION_LIMIT_EXCEEDED`
+  
+  A user with more than 64 sessions is now deleted without its sessions. They stop working at once, because every session check reads the user, and the scheduled `expireSession` function deletes them right after, 128 per run. Session `onDelete` triggers do not run for those sessions, as for expired ones.
+
+- [#271](https://github.com/lupinum-dev/better-convex/pull/271) [`696b338`](https://github.com/lupinum-dev/better-convex/commit/696b3380de0d63179a101789bcdbffe020697122) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add a limit per email address for email codes, so requests from many IP addresses cannot flood one inbox
+  
+  Each address gets the same limit as each client IP (`emailOTP.rateLimit`, three per minute by default), counted across `/email-otp/send-verification-otp` and the code-based password reset routes. A blocked request returns `429` with `X-Retry-After`. The counter stores a hash of the address.
+
+- [#271](https://github.com/lupinum-dev/better-convex/pull/271) [`696b338`](https://github.com/lupinum-dev/better-convex/commit/696b3380de0d63179a101789bcdbffe020697122) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix creating a session or verification row that expires more than 5 years ahead
+  
+  Convex refuses to schedule a job that far ahead, so the write failed. The expiry job now runs within a year and schedules itself again until the row expires.
+
+- [#270](https://github.com/lupinum-dev/better-convex/pull/270) [`65e0c48`](https://github.com/lupinum-dev/better-convex/commit/65e0c481964db3c18675c3120017de5733d9ea53) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix signed-in people being sent to the sign-in page when the token exchange fails for a moment
+  
+  A 429, a 5xx, a network error or a timeout from `/api/auth/convex/token` now renders the protected page with `useConvexAuth().status === 'error'` ("Authentication is temporarily unavailable") instead of redirecting, on the server, on hydration and on later navigation.
+  The browser waits out the failure and recovers on its own.
+  No session cookie, a 401 or 403 answer, or any other auth error still redirects as before.
+
+- [#269](https://github.com/lupinum-dev/better-convex/pull/269) [`ebfd233`](https://github.com/lupinum-dev/better-convex/commit/ebfd233ecaaf7bae665c148adf718f46bb1c6163) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix server rendering of a paginated first page that Convex marks `SplitRequired`
+  
+  The server splits the page once into two bounded pages and renders their rows instead of a `PAGINATION_SPLIT_REQUIRED` error.
+  When a half still needs a split, the list renders as not fetched and the browser loads it.
+  After hydration the rows stay on screen while the live list splits the page.
+  After hydration, a `loadMore()` issued while the first page splits no longer drifts: if live inserts moved the first page's boundary, the page loaded from the server cursor is dropped when the split finishes, so rows are neither duplicated nor skipped.
+
+- [#269](https://github.com/lupinum-dev/better-convex/pull/269) [`ebfd233`](https://github.com/lupinum-dev/better-convex/commit/ebfd233ecaaf7bae665c148adf718f46bb1c6163) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a query that a layout and its page both use calling Convex again during one server render
+  
+  The page reads the layout's result, so the payload matches the rendered HTML and the layout's status no longer turns `pending`.
+
+- [#270](https://github.com/lupinum-dev/better-convex/pull/270) [`65e0c48`](https://github.com/lupinum-dev/better-convex/commit/65e0c481964db3c18675c3120017de5733d9ea53) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix signed-in clients being sent to the sign-in page by the `/convex/token` rate limit
+  
+  The auth rate limit now drains steadily (a leaky bucket with the same long-run rate per rule), so steady traffic below the limit is never refused. A full burst of `max` is admitted at once, then one request every `window / max`.
+  The browser no longer treats a 429 from the token exchange as a sign-out: it waits for Retry-After, with exponential backoff and jitter, while the session is still valid.
+  Retries after other transient token failures now back off instead of repeating at once.
+
+- [#271](https://github.com/lupinum-dev/better-convex/pull/271) [`696b338`](https://github.com/lupinum-dev/better-convex/commit/696b3380de0d63179a101789bcdbffe020697122) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix email codes being mailed when nothing can use them
+  
+  A `forget-password` code is mailed only when `emailAndPassword.passwordReset` is `true`, and an `email-verification` code only to an address that is not verified yet. Before, anyone could make the app mail such codes to any existing user. The request still answers with success, so it does not show whether an account exists.
+
+- [#271](https://github.com/lupinum-dev/better-convex/pull/271) [`696b338`](https://github.com/lupinum-dev/better-convex/commit/696b3380de0d63179a101789bcdbffe020697122) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix email-code sign-in failing with a 500 for everyone once more than 128 expired codes exist
+  
+  Anyone could cause this without an account by asking for 129 codes, and it stayed until an operator deleted rows. Better Auth no longer deletes expired rows during a request (`verification.disableCleanup`). The auth component deletes each code, link and OAuth state at its expiry with a new scheduled function, `expireVerification`, which also deletes older expired rows in batches of 128, so a blocked deployment recovers after the upgrade.
+  Using a code no longer fails when one address has more than 128 codes.
+  Migration: with a local auth component, export `expireVerification` from `convex/betterAuth/adapter.ts`. The schema and its indexes do not change.
+- Updated dependencies [[`65e0c48`](https://github.com/lupinum-dev/better-convex/commit/65e0c481964db3c18675c3120017de5733d9ea53), [`ebfd233`](https://github.com/lupinum-dev/better-convex/commit/ebfd233ecaaf7bae665c148adf718f46bb1c6163)]:
+  - @lupinum/better-convex-vue@1.0.0-rc.5
+
 ## 1.0.0-rc.4
 
 ### Minor Changes
