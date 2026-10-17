@@ -38,8 +38,18 @@ export function createAuthRelationshipEngine(input: {
   schema: SchemaDefinition<any, any>
   metadata: AuthSchemaMetadata
   runTrigger: TriggerRunner
+  /**
+   * Return true to leave the `childModel` rows of a deleted parent out of the
+   * cascade. The caller then owns their removal; it must make them inert.
+   */
+  deferCascade?: (
+    ctx: any,
+    childModel: string,
+    parentModel: string,
+    parent: Record<string, unknown>,
+  ) => Promise<boolean>
 }) {
-  const { schema, metadata, runTrigger } = input
+  const { schema, metadata, runTrigger, deferCascade } = input
   const inboundByModel = new Map<string, Array<{ model: string; field: AuthFieldMetadata }>>()
   for (const model of Object.values(metadata.models)) {
     for (const field of Object.values(model.fields)) {
@@ -136,6 +146,7 @@ export function createAuthRelationshipEngine(input: {
       visited.add(candidate.key)
       for (const inbound of inboundByModel.get(candidate.model) ?? []) {
         if (inbound.field.reference!.onDelete !== 'cascade') continue
+        if (await deferCascade?.(ctx, inbound.model, candidate.model, candidate.row)) continue
         const children = await findReferencingRows(ctx, candidate, inbound.model, inbound.field)
         for (const child of children) await collectCascade(plannedRow(inbound.model, child))
       }

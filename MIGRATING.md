@@ -25,6 +25,7 @@ If you already run the release candidate, check only these:
       `oauthProvider`). Remove `BETTER_AUTH_TRUSTED_ORIGINS`.
 - [ ] Component tests: a mutation that passes `optimisticUpdate` now fails.
 - [ ] Local auth component: regenerate the schema and export `pruneRateLimits`.
+- [ ] Local auth component: export `expireVerification` (no schema change).
 - [ ] MCP: `@lupinum/better-convex-mcp` is now `@lupinum/better-convex-agents`.
       Install `@lupinum/better-convex-agents@next` and
       `@lupinum/better-convex-functions@next` (a peer), remove
@@ -120,7 +121,8 @@ If you already run the release candidate, check only these:
 ## Auth
 
 - [ ] The local `convex/betterAuth/adapter.ts` exports `expireSession`,
-      `oauthLiveAccess`, `pruneRateLimits`, and `pruneSigningKeys`, and no longer exports
+      `expireVerification`, `oauthLiveAccess`, `pruneRateLimits`, and
+      `pruneSigningKeys`, and no longer exports
       `assertProfile` or the workforce functions.
 - [ ] Export `pruneSigningKeys` from `auth.jwksOperatorFunctions()` and
       schedule it.

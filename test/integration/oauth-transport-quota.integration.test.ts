@@ -175,6 +175,11 @@ describe('OAuth transport quotas on the MCP starter', () => {
     'shares one $name quota across both transports per signed client IP',
     async (profile) => {
       const ip = primaryIp[profile.name]
+      // The bucket drains one request every `window / limit`, so the two transports
+      // together may admit what drained since the first request, and never more.
+      const startedAt = Date.now()
+      const drained = () =>
+        Math.ceil((Date.now() - startedAt) / ((windowSeconds * 1_000) / profile.limit))
       // Alternate transports up to one below the limit: every request reaches the endpoint's own guard.
       for (let index = 0; index < profile.limit - 1; index += 1) {
         expect(
@@ -182,17 +187,26 @@ describe('OAuth transport quotas on the MCP starter', () => {
           'OAUTH_QUOTA_LIMIT_TOO_LOW',
         ).toEqual(guarded(profile))
       }
-      // Race the last slot from both transports at once: exactly one is admitted.
-      const boundary = await Promise.all([send(profile, 'nuxt', ip), send(profile, 'direct', ip)])
+      // Race far past the last slot from both transports at once: both are throttled,
+      // and together they admit the last slot plus at most what drained meanwhile.
+      const transports = Array.from({ length: 2 * profile.limit }, (_, index) =>
+        index % 2 === 0 ? ('nuxt' as const) : ('direct' as const),
+      )
+      const boundary = await Promise.all(
+        transports.map((transport) => send(profile, transport, ip)),
+      )
       const admitted = boundary.filter(
         (result) => result.status === profile.guardStatus && result.retryAfter === null,
       )
-      expect(admitted, 'OAUTH_QUOTA_BOUNDARY_EXCEEDED').toHaveLength(1)
-      expect(boundary.filter(isThrottled), 'OAUTH_QUOTA_BOUNDARY_RESULT_INVALID').toHaveLength(1)
-
+      expect(admitted.length, 'OAUTH_QUOTA_BOUNDARY_EXCEEDED').toBeGreaterThanOrEqual(1)
+      expect(admitted.length, 'OAUTH_QUOTA_BOUNDARY_EXCEEDED').toBeLessThanOrEqual(1 + drained())
+      expect(
+        boundary.filter((result) => !admitted.includes(result) && !isThrottled(result)),
+        'OAUTH_QUOTA_BOUNDARY_RESULT_INVALID',
+      ).toEqual([])
       for (const transport of ['nuxt', 'direct'] as const) {
         expect(
-          isThrottled(await send(profile, transport, ip)),
+          boundary.some((result, index) => transports[index] === transport && isThrottled(result)),
           'OAUTH_QUOTA_TRANSPORT_BYPASS',
         ).toBe(true)
       }
@@ -228,12 +242,17 @@ describe('OAuth transport quotas on the MCP starter', () => {
         'OAUTH_QUOTA_FORGED_PROXY_HEADER_ESCAPE',
       ).toEqual(guarded(token))
     }
-    const overflow = await quotaRequest(token, fixture.origin, fixture.origin, {
-      [TRUSTED_IP_HEADER]: '198.51.100.88',
-      'x-bcn-client-ip': '10.88.0.202',
-      'x-bcn-client-ip-signature': forged,
-    })
-    expect(isThrottled(overflow), 'OAUTH_QUOTA_FORGED_PROXY_HEADER_ESCAPE').toBe(true)
+    // A burst of a full allowance, so a slow run that drained part of the bucket still overflows.
+    const overflow = await Promise.all(
+      Array.from({ length: token.limit }, (_, index) =>
+        quotaRequest(token, fixture.origin, fixture.origin, {
+          [TRUSTED_IP_HEADER]: '198.51.100.88',
+          'x-bcn-client-ip': `10.88.1.${index + 1}`,
+          'x-bcn-client-ip-signature': forged,
+        }),
+      ),
+    )
+    expect(overflow.some(isThrottled), 'OAUTH_QUOTA_FORGED_PROXY_HEADER_ESCAPE').toBe(true)
     expect(
       await quotaRequest(
         token,

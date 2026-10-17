@@ -145,4 +145,61 @@ describe('component session expiry scheduler', () => {
     await advance(test, 10 * minute)
     expect(await session(test)).toBeNull()
   })
+
+  // Catches: a user with more sessions than one delete holds (for example a test
+  // account that signs in often) failing every delete with AUTH_BULK_OPERATION_LIMIT_EXCEEDED.
+  // The sweep starts from the user's first session; when that one has already
+  // expired (its own job not yet run), the sweep must still reach the others.
+  it.each([
+    ['all sessions live', false],
+    ['the first session already expired', true],
+  ])(
+    'deletes a user with 129 sessions (%s), ends them at once, and removes them in batches',
+    async (_, firstExpired) => {
+      const test = await init()
+      for (let index = 0; index < 129; index++) {
+        const expiresAt = firstExpired && index === 0 ? now + minute : data.expiresAt
+        await test.mutation(auth.create, {
+          model: 'session',
+          data: { ...data, id: `session-${index}`, token: `synthetic-session-${index}`, expiresAt },
+        })
+      }
+      if (firstExpired) vi.setSystemTime(now + 2 * minute)
+      await test.mutation(auth.deleteOne, {
+        model: 'user',
+        where: [{ field: 'id', value: data.userId }],
+      })
+      expect(
+        await test.query(auth.sessionAdmission, { sessionId: 'session-0', userId: data.userId }),
+      ).toBeNull()
+      await advance(test, 0)
+      await advance(test, 0)
+      expect(await test.run((ctx) => ctx.db.query('session').take(200))).toEqual([])
+    },
+  )
+
+  // Convex refuses a job more than 5 years ahead, so a far expiry must not fail the write.
+  it.each(['session', 'verification'] as const)(
+    'schedules the expiry of a %s that lives for decades within one year',
+    async (model) => {
+      const test = await init()
+      const expiresAt = Date.UTC(2100, 0, 1)
+      const row =
+        model === 'session'
+          ? { ...data, id: 'long-session', token: 'synthetic-long-session', expiresAt }
+          : {
+              id: 'long-code',
+              identifier: 'long',
+              value: 'hash',
+              expiresAt,
+              createdAt: now,
+              updatedAt: now,
+            }
+      await test.mutation(auth.create, { model, data: row })
+      const jobs = await test.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+      expect(jobs.length).toBeGreaterThan(0)
+      for (const job of jobs)
+        expect(job.scheduledTime).toBeLessThanOrEqual(now + 366 * 24 * 60 * minute)
+    },
+  )
 })

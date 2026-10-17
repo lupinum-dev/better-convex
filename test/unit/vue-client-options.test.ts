@@ -58,6 +58,26 @@ describe('createBetterConvex clientOptions', () => {
     ])
   })
 
+  it('asks Convex for the next token as early as the auth adapter asks', () => {
+    install({
+      convexUrl: CONVEX_URL,
+      auth: {
+        snapshot: () => ({
+          status: 'anonymous',
+          identityKey: null,
+          sessionGeneration: 0,
+          error: null,
+        }),
+        subscribe: () => () => {},
+        fetchToken: async () => null,
+        refreshSession: async () => {},
+        tokenRefreshLeewaySeconds: 60,
+      },
+    })
+
+    expect(clients[0]?.options).toMatchObject({ authRefreshTokenLeewaySeconds: 60 })
+  })
+
   it('passes exactly the supported ConvexClient options through', () => {
     const TestWebSocket = function TestWebSocket() {}
     install({

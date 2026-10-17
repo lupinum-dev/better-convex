@@ -16,7 +16,6 @@ import {
 import { getFunctionName, type PaginationResult } from 'convex/server'
 import { computed, shallowRef, type MaybeRefOrGetter } from 'vue'
 
-import { ConvexCallError, type ConvexCallErrorCode } from '../errors'
 import { paginatedPayloadHash } from '../utils/convex-cache'
 import { resolveDefaultQueryAuth } from '../utils/default-query-auth'
 import { executeQueryHttp } from '../utils/query-execution'
@@ -26,7 +25,7 @@ import {
   type ConvexQueryBoundaryInput,
 } from '../utils/query-foundation'
 import { projectConvexSsrPagination } from '../utils/query-ssr'
-import { isIncompletePaginationPage } from '../utils/ssr-pagination-state'
+import { fetchSsrFirstPage } from '../utils/ssr-pagination-state'
 import { resolveQueryLifecycleOptions } from './query-lifecycle-options'
 
 export type {
@@ -164,31 +163,19 @@ function createServerConvexPaginatedQueryState<Query extends PaginatedQueryRefer
   const ssr = useConvexSsrQuery<PaginationResult<Item>>({
     ...boundary,
     lazy: options.lazy,
-    async fetch(convexUrl, token, signal, bounds) {
-      const page = await executeQueryHttp<PaginationResult<Item>>(
-        convexUrl,
-        boundary.functionName,
-        {
-          ...(args.args.value as PaginatedQueryArgs<Query>),
-          paginationOpts: {
-            numItems: options.initialNumItems,
-            cursor: startCursor.value,
-          },
-        },
-        token,
-        signal,
-        bounds,
-      )
-      if (isIncompletePaginationPage(page)) {
-        throw new ConvexCallError({
-          kind: 'unknown',
-          code: 'PAGINATION_SPLIT_REQUIRED' satisfies ConvexCallErrorCode,
-          message: 'Convex pagination page requires a bounded live split',
-          functionName: boundary.functionName,
-        })
-      }
-      return page
-    },
+    fetch: (convexUrl, token, signal, bounds) =>
+      fetchSsrFirstPage<Item>(
+        { numItems: options.initialNumItems, cursor: startCursor.value },
+        (paginationOpts) =>
+          executeQueryHttp<PaginationResult<Item>>(
+            convexUrl,
+            boundary.functionName,
+            { ...(args.args.value as PaginatedQueryArgs<Query>), paginationOpts },
+            token,
+            signal,
+            bounds,
+          ),
+      ),
   })
   const view = computed(() => projectConvexSsrPagination(ssr.view.value))
   const status = computed(() => view.value.status)

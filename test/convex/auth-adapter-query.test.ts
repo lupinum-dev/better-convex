@@ -224,7 +224,8 @@ describe('Convex auth adapter ordered queries', () => {
     ).rejects.toThrow('AUTH_IN_FANOUT_LIMIT_EXCEEDED')
   })
 
-  it('rejects oversized bulk updates and deletes before effects', async () => {
+  // Verification deletes are bounded instead (D43): Better Auth's sweep must never fail a sign-in.
+  it('rejects oversized bulk updates before effects and deletes verification rows in one bounded batch', async () => {
     const test = initAuthQueryTest()
     for (let index = 0; index < 129; index += 1) {
       await createVerification(test, `bulk-${index}`, 'bulk-operation')
@@ -245,14 +246,6 @@ describe('Convex auth adapter ordered queries', () => {
       }),
     ).resolves.toMatchObject({ value: 'value-bulk-0' })
 
-    await expect(
-      test.mutation(auth.deleteMany, {
-        model: 'verification',
-        where,
-      }),
-    ).rejects.toThrow('AUTH_BULK_OPERATION_LIMIT_EXCEEDED')
-    await expect(test.query(auth.count, { model: 'verification', where })).resolves.toBe(129)
-
     await test.mutation(auth.deleteOne, {
       model: 'verification',
       where: [{ field: 'id', value: 'bulk-128' }],
@@ -264,11 +257,14 @@ describe('Convex auth adapter ordered queries', () => {
         where,
       }),
     ).resolves.toBe(128)
+
+    await createVerification(test, 'bulk-128', 'bulk-operation')
     await expect(
       test.mutation(auth.deleteMany, {
         model: 'verification',
         where,
       }),
     ).resolves.toBe(128)
+    await expect(test.query(auth.count, { model: 'verification', where })).resolves.toBe(1)
   })
 })

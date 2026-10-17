@@ -135,13 +135,29 @@ function normalizeClientOptions(
   return Object.freeze(normalized)
 }
 
-function makeClient(convexUrl: string, clientOptions: BetterConvexClientOptions) {
+function normalizeTokenRefreshLeeway(auth: BrowserAuthAdapter | undefined): number | undefined {
+  const leeway = auth?.tokenRefreshLeewaySeconds
+  if (leeway === undefined) return undefined
+  if (typeof leeway !== 'number' || !Number.isFinite(leeway) || leeway < 0) {
+    throw new TypeError(
+      '[better-convex-vue] auth.tokenRefreshLeewaySeconds must be a non-negative number',
+    )
+  }
+  return leeway
+}
+
+function makeClient(
+  convexUrl: string,
+  clientOptions: BetterConvexClientOptions,
+  authRefreshTokenLeewaySeconds: number | undefined,
+) {
   return new ConvexClient(convexUrl, {
     unsavedChangesWarning: false,
     // Keep the confirmed first token until its scheduled refresh. Without it,
     // Convex fetches a second token at once, and because every session token
     // is unique, re-authenticates and re-runs every authenticated query.
     initialAuthTokenReuse: true,
+    ...(authRefreshTokenLeewaySeconds === undefined ? {} : { authRefreshTokenLeewaySeconds }),
     ...clientOptions,
   })
 }
@@ -155,6 +171,8 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
   const clientOptions =
     options.attachment !== undefined ? {} : normalizeClientOptions(options.clientOptions)
   const defaultQueryAuth = normalizeDefaultQueryAuth(options.defaultQueryAuth)
+  const tokenRefreshLeeway =
+    options.attachment !== undefined ? undefined : normalizeTokenRefreshLeeway(options.auth)
   let installed = false
   let dispose: (() => Promise<void> | void) | null = null
   let installedAttachment: BetterConvexAttachment | null = null
@@ -168,7 +186,7 @@ export function createBetterConvex(options: CreateBetterConvexOptions): BetterCo
       const browser = attached
         ? null
         : createBetterConvexBrowserRuntime({
-            clientFactory: () => makeClient(options.convexUrl!, clientOptions),
+            clientFactory: () => makeClient(options.convexUrl!, clientOptions, tokenRefreshLeeway),
             auth: options.auth,
             keepAlive: options.experimental?.keepAlive,
           })
