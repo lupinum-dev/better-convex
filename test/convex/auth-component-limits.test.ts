@@ -80,7 +80,10 @@ describe('auth component limits', () => {
         retentionWindow: 60,
       })
     for (let request = 1; request <= 300; request++) {
-      expect(await consume(), `request ${request}`).toEqual({ allowed: true, retryAfter: null })
+      expect(await consume(), `request ${request}`).toEqual({
+        allowed: true,
+        retryAfter: null,
+      })
     }
     expect(await consume()).toEqual({ allowed: false, retryAfter: 1 })
     // One request drains every 10 000 / 300 ≈ 33.3 ms.
@@ -91,6 +94,29 @@ describe('auth component limits', () => {
     expect(await consume()).toEqual({ allowed: false, retryAfter: 1 })
   })
 
+  // Catches: a float anchor (3333.33 ms per request) that made a client waiting exactly retryAfter get refused again.
+  it('admits a request after exactly retryAfter when the drain interval is not a whole ms', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_700_000_000_000)
+    const test = convexTest(schema, authModules)
+    const consume = () =>
+      test.mutation(api.adapter.consumeRateLimit, {
+        key: '192.0.2.12|/email-otp',
+        max: 3,
+        window: 10,
+        retentionWindow: 60,
+      })
+    for (let request = 1; request <= 3; request++) await consume()
+    vi.advanceTimersByTime(7_000)
+    // Two requests drained by now, so the bucket holds one and admits two more.
+    expect(await consume()).toEqual({ allowed: true, retryAfter: null })
+    expect(await consume()).toEqual({ allowed: true, retryAfter: null })
+    const refused = await consume()
+    expect(refused.allowed).toBe(false)
+    vi.advanceTimersByTime((refused.retryAfter ?? 0) * 1_000)
+    expect(await consume()).toEqual({ allowed: true, retryAfter: null })
+  })
+
   it('A01 removes 300 stale rate limits and one-time keys after a burst', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_700_000_000_000)
@@ -98,7 +124,12 @@ describe('auth component limits', () => {
     for (let index = 0; index < 300; index++) {
       await test.mutation(adapter.create, {
         model: 'rateLimit',
-        data: { id: `stale-${index}`, key: `stale-${index}`, count: 1, lastRequest: 1 },
+        data: {
+          id: `stale-${index}`,
+          key: `stale-${index}`,
+          count: 1,
+          lastRequest: 1,
+        },
       })
     }
     for (let index = 0; index < 10; index++) {
@@ -158,7 +189,9 @@ describe('auth component limits', () => {
     })
     const second = await signInAs(test, 'alice', { componentName: 'limits' })
     expect((await second.query((ctx) => ctx.auth.getUserIdentity()))?.sid).not.toBe(before?.sid)
-    expect(await second.query((ctx) => auth.requireUser(ctx))).toMatchObject({ id: 'alice' })
+    expect(await second.query((ctx) => auth.requireUser(ctx))).toMatchObject({
+      id: 'alice',
+    })
     expect(await first.query((ctx) => auth.getUser(ctx))).toBeNull()
   })
 
@@ -172,7 +205,9 @@ describe('auth component limits', () => {
       test.run(async (ctx) => (await requireMcpPrincipal(ctx, component, principal)).user.id)
 
     const web = await signInAs(test, 'alice', { componentName: 'limits' })
-    const alice = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    const alice = await grantMcp(test, 'alice', ['notes:read'], {
+      componentName: 'limits',
+    })
     expect(alice).toMatchObject({
       userId: 'alice',
       sessionId: (await web.query((ctx) => ctx.auth.getUserIdentity()))?.sid,
@@ -186,7 +221,9 @@ describe('auth component limits', () => {
     })
     await expect(admitted(wider)).resolves.toBe('alice')
 
-    const bob = await grantMcp(test, 'bob', ['notes:read'], { componentName: 'limits' })
+    const bob = await grantMcp(test, 'bob', ['notes:read'], {
+      componentName: 'limits',
+    })
     const bobOnWeb = await signInAs(test, 'bob', { componentName: 'limits' })
     expect((await bobOnWeb.query((ctx) => ctx.auth.getUserIdentity()))?.sid).toBe(bob.sessionId)
     await expect(admitted(bob)).resolves.toBe('bob')
@@ -211,7 +248,9 @@ describe('auth component limits', () => {
       where: [{ field: 'userId', value: 'alice' }],
     })
     const web = await signInAs(test, 'alice', { componentName: 'limits' })
-    const mcp = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    const mcp = await grantMcp(test, 'alice', ['notes:read'], {
+      componentName: 'limits',
+    })
     expect((await web.query((ctx) => ctx.auth.getUserIdentity()))?.sid).toBe(mcp.sessionId)
     await test.mutation(adapter.deleteOne, {
       model: 'session',
@@ -248,7 +287,9 @@ describe('auth component limits', () => {
       where: [{ field: 'id', value: 'alice-session' }],
     })
     const web = await signInAs(test, 'alice', { componentName: 'limits' })
-    const mcp = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    const mcp = await grantMcp(test, 'alice', ['notes:read'], {
+      componentName: 'limits',
+    })
     expect((await web.query((ctx) => ctx.auth.getUserIdentity()))?.sid).toBe(mcp.sessionId)
   })
 
@@ -260,12 +301,16 @@ describe('auth component limits', () => {
     const test = init()
     const admitted = (principal: Awaited<ReturnType<typeof grantMcp>>) =>
       test.run(async (ctx) => (await requireMcpPrincipal(ctx, component, principal)).user.id)
-    const before = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    const before = await grantMcp(test, 'alice', ['notes:read'], {
+      componentName: 'limits',
+    })
     await test.mutation(adapter.deleteMany, {
       model: 'oauthConsent',
       where: [{ field: 'userId', value: 'alice' }],
     })
-    const after = await grantMcp(test, 'alice', ['notes:read'], { componentName: 'limits' })
+    const after = await grantMcp(test, 'alice', ['notes:read'], {
+      componentName: 'limits',
+    })
     await expect(admitted(after)).resolves.toBe('alice')
     await expect(admitted(before)).rejects.toThrow('MCP access denied')
   })
@@ -275,7 +320,10 @@ describe('auth component limits', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const test = init()
     const auth = createBetterConvexAuth(component)
-    await signInAs(test, 'alice', { componentName: 'limits', expiresInMs: 60_000 })
+    await signInAs(test, 'alice', {
+      componentName: 'limits',
+      expiresInMs: 60_000,
+    })
     vi.advanceTimersByTime(61_000)
     const again = await signInAs(test, 'alice', { componentName: 'limits' })
     expect((await again.query((ctx) => auth.getUser(ctx)))?.id).toBe('alice')
