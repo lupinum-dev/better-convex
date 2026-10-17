@@ -1235,7 +1235,7 @@ export function defineFunctions<
    */
   const authorizeAction = guarded(
     internalMutationGeneric({
-      args: { action: v.string(), shape: v.string(), input: v.any() },
+      args: { action: v.string(), shape: v.string(), input: v.any(), tenantless: v.boolean() },
       returns: v.object({
         checked: v.literal(actionCheckMark),
         actor: v.any(),
@@ -1243,11 +1243,16 @@ export function defineFunctions<
       }),
       handler: async (
         ctx: MCtx,
-        { action, shape, input }: { action: string; shape: string; input: Record<string, unknown> },
+        {
+          action,
+          shape,
+          input,
+          tenantless,
+        }: { action: string; shape: string; input: Record<string, unknown>; tenantless: boolean },
       ) => {
         assertAction({ action })
         const who = await caller(ctx, action)
-        const { decision, paid } = await authorize(
+        const { decision, paid, tenant } = await authorize(
           ctx,
           { kind: 'action', action, shape: JSON.parse(shape) as ValidatorJson },
           who,
@@ -1257,12 +1262,17 @@ export function defineFunctions<
         // Should an agent ever arrive here, an action cannot wait for a person's approval.
         if (decision !== 'allow')
           fail('FORBIDDEN', `${action} needs a person's approval, and an action cannot wait.`)
+        // Without a tenant the policy finds no role, and a mutation is then still held by the
+        // row rules of ctx.db. An action has no ctx.db: this check is its only gate, so it fails
+        // closed unless the action says that any signed-in person may run it.
+        if (!tenant && !tenantless && !isPublic(action))
+          fail('FORBIDDEN', `${action} names no tenant, so no role allows it.`)
         return { checked: actionCheckMark, actor: shown(who), paid: [...paid] }
       },
     }),
   ) as unknown as RegisteredMutation<
     'internal',
-    { action: string; shape: string; input: unknown },
+    { action: string; shape: string; input: unknown; tenantless: boolean },
     Promise<{ checked: typeof actionCheckMark; actor: unknown; paid: string[] }>
   >
 
@@ -1296,8 +1306,17 @@ export function defineFunctions<
       Returns extends AnyValidator,
     >(spec: {
       action: A
-      /** IDs of tables with a `tenant` rule name the call's tenant, as in an operation. */
+      /**
+       * IDs of tables with a `tenant` rule name the call's tenant, as in an operation. The role
+       * in that tenant decides. A call that names no tenant gets `FORBIDDEN`, unless the action
+       * is in `policy.public` or sets `tenantless`.
+       */
       args: Args
+      /**
+       * The action has no tenant: every signed-in person may run it, whatever their role. Check
+       * what the person may do in the handler, or through the internal operations it runs.
+       */
+      tenantless?: true
       returns: Returns
       handler: (
         ctx: ActionCtx & { actor: ActorFor<A> },
@@ -1310,6 +1329,11 @@ export function defineFunctions<
       const withIds = Object.keys(spec.args).filter((name) =>
         JSON.stringify(jsonOf(spec.args[name])).includes('"type":"id"'),
       )
+      if (withIds.length === 0 && !spec.tenantless && !isPublic(spec.action))
+        throw new Error(
+          `${spec.action}: its arguments hold no ID, so no tenant and no role can allow a call. ` +
+            'Add the ID of a row in the tenant, or set `tenantless: true` if every signed-in person may run it.',
+        )
       const shape = JSON.stringify(
         jsonOf(v.object(Object.fromEntries(withIds.map((name) => [name, spec.args[name]!])))),
       )
@@ -1324,6 +1348,7 @@ export function defineFunctions<
               action: spec.action,
               shape,
               input: Object.fromEntries(named.map((name) => [name, values[name]])),
+              tenantless: spec.tenantless === true,
             })
             .catch((error: unknown) => {
               // Convex: "Could not find public function for 'x:y'"; convex-test: "... there is no such export".

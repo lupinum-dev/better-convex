@@ -316,6 +316,17 @@ export const mutants: Mutant[] = [
     kills: [`${F}/rules.test.ts > a visitor reads published pages; drafts and edits need a member`],
   },
   {
+    id: 'S6-action-tenantless',
+    guards: 'S6',
+    file: 'packages/functions/src/functions.ts',
+    find: '        if (!tenant && !tenantless && !isPublic(action))\n',
+    replace: '        if (false)\n',
+    kills: [
+      `${F}/actions.test.ts > a viewer calling an owner-only action without a tenant is refused before it runs`,
+      `${F}/actions.test.ts > the owner calling an owner-only action without a tenant is refused before it runs`,
+    ],
+  },
+  {
     id: 'S6-action-check',
     guards: 'S6',
     file: 'packages/functions/src/functions.ts',

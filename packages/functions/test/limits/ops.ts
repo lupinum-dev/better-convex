@@ -387,6 +387,29 @@ export const snapshot = action({
   },
 })
 
+/** Owner-only, but its one ID is optional: a call without it names no tenant. */
+export const archiveMaybe = action({
+  action: 'projects.archive',
+  args: { projectId: v.optional(v.id('projects')) },
+  returns: v.null(),
+  handler: async (ctx) => {
+    await ctx.storage.store(new Blob(['ran']))
+    return null
+  },
+})
+
+/** Owner-only, declared as having no tenant: every signed-in person runs it. */
+export const archiveTenantless = action({
+  action: 'projects.archive',
+  args: {},
+  tenantless: true,
+  returns: v.null(),
+  handler: async (ctx) => {
+    await ctx.storage.store(new Blob(['ran']))
+    return null
+  },
+})
+
 /** Who an internal operation sees as its actor. */
 export const actorOf = internalQuery({
   action: 'projects.read',
