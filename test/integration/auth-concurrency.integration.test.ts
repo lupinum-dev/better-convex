@@ -605,9 +605,10 @@ describe('auth adapter on the pinned backend', () => {
       Array.from({ length: 40 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
     )
     expect(statuses(warm), 'AUTH_RATE_LIMIT_WARM_FAILURE').toEqual(Array(40).fill(200))
-    // More than the bucket can hold even after a slow run drains part of it.
+    // More than the bucket can hold even after a slow run drains part of it:
+    // 20 places are left, and a run would have to take 18 s to drain 180 more.
     const limit = await Promise.all(
-      Array.from({ length: 100 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
+      Array.from({ length: 200 }, () => authGet(siteUrl, '192.0.2.20', '/ok')),
     )
     const admitted = statuses(limit).filter((status) => status === 200).length
     expect(
@@ -616,7 +617,7 @@ describe('auth adapter on the pinned backend', () => {
     ).toEqual([])
     expect(admitted, 'AUTH_RATE_LIMIT_EXACT_LIMIT_FAILURE').toBeGreaterThanOrEqual(20)
     expect(admitted, 'AUTH_RATE_LIMIT_EXACT_LIMIT_FAILURE').toBeLessThanOrEqual(
-      Math.min(99, 20 + drainedSinceStart()),
+      Math.min(199, 20 + drainedSinceStart()),
     )
     const retryAfter = Number(
       limit.find((response) => response.status === 429)?.headers.get('x-retry-after'),
