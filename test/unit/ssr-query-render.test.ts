@@ -12,7 +12,13 @@ interface Entry {
 }
 
 const nuxt = vi.hoisted(() => ({
-  app: { payload: { data: {} as Record<string, unknown> }, static: { data: {} } },
+  app: {
+    payload: { data: {} as Record<string, unknown> },
+    static: { data: {} },
+    // Set only on the server. A test of a browser navigation removes it.
+    ssrContext: {} as object | undefined,
+    isHydrating: false,
+  },
   state: new Map<string, { value: unknown }>(),
   entries: new Map<string, Entry>(),
 }))
@@ -88,6 +94,7 @@ beforeEach(() => {
   nuxt.state.clear()
   nuxt.entries.clear()
   nuxt.app.payload.data = {}
+  nuxt.app.ssrContext = {}
   http.calls = []
 })
 
@@ -161,5 +168,22 @@ describe('server render of one query in a layout and its page', () => {
     expect(layout.status.value).toBe('success')
     expect((await pageQuery).data.value).toEqual({ name: 'Site' })
     expect(http.calls).toHaveLength(1)
+  })
+})
+
+describe('browser navigation to a page that an earlier render showed', () => {
+  it('fetches the current value instead of the one left in the payload', async () => {
+    http.answer = () => ({ name: 'Site' })
+    const first = await render(() => useConvexQuery(meta, { site: 's1' }, { auth: 'none' }))
+    expect(first.data.value).toEqual({ name: 'Site' })
+
+    // Hydration is over. The site was renamed, and the person comes back to the page.
+    nuxt.app.ssrContext = undefined
+    nuxt.entries.clear()
+    http.answer = () => ({ name: 'Renamed' })
+    const again = await render(() => useConvexQuery(meta, { site: 's1' }, { auth: 'none' }))
+
+    expect(again.data.value).toEqual({ name: 'Renamed' })
+    expect(http.calls).toHaveLength(2)
   })
 })

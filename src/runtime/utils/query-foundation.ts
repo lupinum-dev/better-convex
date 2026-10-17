@@ -110,13 +110,19 @@ const ignore = () => {}
  * runs the handler again: one more Convex call, and the shared entry turns
  * `pending` and may change after the layout rendered it. A later initial
  * caller in the same render reads the entry instead; a reload still fetches.
+ * In the browser the payload keeps entries of earlier pages, so outside
+ * hydration it is Nuxt's default: a page opened again fetches current data.
  */
 function renderedEntry<T>(
   key: string,
   nuxtApp: NuxtApp,
   context: { cause: string },
 ): ConvexQueryPayload<T> | null | undefined {
-  return context.cause === 'initial' ? nuxtApp.payload.data[key] : undefined
+  if (nuxtApp.ssrContext) return context.cause === 'initial' ? nuxtApp.payload.data[key] : undefined
+  if (nuxtApp.isHydrating) return nuxtApp.payload.data[key]
+  return context.cause === 'refresh:manual' || context.cause === 'refresh:hook'
+    ? undefined
+    : nuxtApp.static.data[key]
 }
 
 /** The SSR half of a query: one Nuxt async-data entry per identity-partitioned key. */
