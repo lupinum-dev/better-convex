@@ -12,11 +12,13 @@ import { createBetterAuthBrowserAdapter } from '../../src/runtime/auth/better-au
 
 // The installed Convex client's own token state machine: when it fetches,
 // refreshes, and reports a session as signed out. It is not a public entry
-// point, so it is loaded from the package build by path.
+// point, so it is loaded next to the resolved `convex/browser` entry. If a
+// Convex release moves the file, this import fails loudly instead of testing
+// a copy.
 const { AuthenticationManager } = (await import(
   /* @vite-ignore */ new URL(
-    '../../node_modules/convex/dist/esm/browser/sync/authentication_manager.js',
-    import.meta.url,
+    './sync/authentication_manager.js',
+    import.meta.resolve('convex/browser'),
   ).href
 )) as { AuthenticationManager: typeof ConvexAuthenticationManager }
 
