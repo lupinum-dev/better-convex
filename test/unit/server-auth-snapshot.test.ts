@@ -17,7 +17,8 @@ vi.mock('../../src/runtime/server/utils/http', async (importOriginal) => ({
   fetchWithTimeout: fetchWithTimeoutMock,
 }))
 
-vi.mock('../../src/runtime/utils/convex-shared', () => ({
+vi.mock('../../src/runtime/utils/convex-shared', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/runtime/utils/convex-shared')>()),
   decodeUserFromJwt: decodeUserFromJwtMock,
   isJwtUsable: isJwtUsableMock,
 }))

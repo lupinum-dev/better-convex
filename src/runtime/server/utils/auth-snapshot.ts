@@ -1,12 +1,12 @@
 import type { AuthWaterfall, AuthWaterfallPhase } from '../../devtools/types'
-import { decodeUserFromJwt, isJwtUsable } from '../../utils/convex-shared'
+import { AUTH_UNAVAILABLE_MESSAGE, decodeUserFromJwt, isJwtUsable } from '../../utils/convex-shared'
 import type { AuthEvent } from '../../utils/logger'
 import { filterBetterAuthCookies, getBetterAuthSessionToken } from '../../utils/shared-helpers'
 import type { ConvexUser } from '../../utils/types'
 import type { ConvexServerEvent } from './event'
 import { exchangeConvexToken } from './token-exchange'
 
-const GENERIC_AUTH_ERROR_MESSAGE = 'Authentication is temporarily unavailable'
+const GENERIC_AUTH_ERROR_MESSAGE = AUTH_UNAVAILABLE_MESSAGE
 const AUTH_TOKEN_EXCHANGE_FAILED = 'AUTH_TOKEN_EXCHANGE_FAILED'
 
 export interface ServerAuthLogEvent {

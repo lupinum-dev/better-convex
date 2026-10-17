@@ -966,21 +966,27 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
           throw new Error('AUTH_RATE_LIMIT_ROW_INVALID')
         }
         await scheduleRateLimitCleanup(ctx, retentionWindowInMs)
-        if (now - current.lastRequest >= windowInMs) {
-          await ctx.db.patch(current._id as never, { count: 1, lastRequest: now } as never)
-          return { allowed: true, retryAfter: null }
-        }
-        if (current.count >= args.max) {
+        // Leaky bucket: `count` is the number of admitted requests still in the
+        // bucket at `lastRequest`, and one drains every `window / max`. A burst
+        // of `max` is admitted, and steady traffic below `max` per `window` is
+        // never refused. Better Auth's own rule instead keeps counting until the
+        // key has been idle for a full window, so steady traffic reaches `max`.
+        const drainIntervalMs = windowInMs / args.max
+        const drained = Math.floor(Math.max(0, now - current.lastRequest) / drainIntervalMs)
+        const level = Math.max(0, current.count - drained)
+        // Only whole drained requests move the anchor, so the count stays an integer.
+        const anchor = level === 0 ? now : current.lastRequest + drained * drainIntervalMs
+        if (level >= args.max) {
           return {
             allowed: false,
-            retryAfter: Math.max(1, Math.ceil((current.lastRequest + windowInMs - now) / 1_000)),
+            retryAfter: Math.max(1, Math.ceil((anchor + drainIntervalMs - now) / 1_000)),
           }
         }
         await ctx.db.patch(
           current._id as never,
           {
-            count: current.count + 1,
-            lastRequest: now,
+            count: level + 1,
+            lastRequest: anchor,
           } as never,
         )
         return { allowed: true, retryAfter: null }
