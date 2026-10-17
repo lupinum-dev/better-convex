@@ -43,6 +43,14 @@ export const report = mutation({
   handler: async () => null,
 })
 
+/** Owner-only, names no tenant and touches no row (like making an upload URL). */
+export const archiveNoRows = mutation({
+  action: 'projects.archive',
+  args: {},
+  returns: v.string(),
+  handler: async () => 'ran',
+})
+
 /** Public and limited: 2 a minute for everyone. */
 export const contact = mutation({
   action: 'contact.send',

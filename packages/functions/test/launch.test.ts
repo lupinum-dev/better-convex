@@ -370,9 +370,7 @@ test('a public function that no role allows is refused when it is built', () => 
   })
   expect(() =>
     fns.mutation({ action: 'notes.purge', args: {}, returns: v.null(), handler: async () => null }),
-  ).toThrow(
-    'notes.purge: no role allows it, and it is not in public or signedIn, so nobody can call it.',
-  )
+  ).toThrow('notes.purge: no role allows it, and it is not public, so nobody can call it.')
   expect(() =>
     fns.internalMutation({
       action: 'notes.purge',

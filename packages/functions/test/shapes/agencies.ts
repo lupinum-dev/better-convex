@@ -19,7 +19,7 @@ const policy = definePolicy({
     'clients.update',
     'clientProjects.list',
   ],
-  roles: { owner: ['*'], contact: ['clientProjects.list'] },
+  roles: { signedIn: ['agencies.create'], owner: ['*'], contact: ['clientProjects.list'] },
   scopes: {},
 })
 
@@ -29,6 +29,8 @@ const { query, mutation } = defineFunctions({
   user,
   // A client inherits its agency's roles; contacts are members of the client itself.
   roleOf: async (ctx, user, tenant) => {
+    // Outside an organization every signed-in person has the signedIn role.
+    if (tenant === null) return 'signedIn'
     let agencyId
     if (tenant.table === 'clients') {
       const contact = await ctx.db

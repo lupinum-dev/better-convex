@@ -11,6 +11,7 @@ export const policy = definePolicy({
     'clients.create',
   ],
   roles: {
+    signedIn: [],
     owner: ['*'],
     member: ['organizations.list', 'projects.search', 'projects.create', 'projects.rename'],
     viewer: ['organizations.list', 'projects.search'],

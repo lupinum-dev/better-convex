@@ -9,27 +9,31 @@ import { v } from 'convex/values'
 
 import { auth, notUsed, user } from './common'
 
-// K7: one workspace and no tenant tables, like a small business app. The role is app-wide
-// (`appRoleOf`), so the library checks it on every call, and no handler or wrapper has to.
+// K7: one workspace and no tenant tables, like a small business app. roleOf answers a call
+// without a tenant with the member's role, so the library checks it on every call and no handler
+// or wrapper has to. A signed-in person without a membership gets signedIn.
 const policy = definePolicy({
   actions: ['projects.read', 'projects.rename', 'profile.read'],
-  roles: { owner: ['*'], viewer: ['projects.read'] },
+  roles: {
+    signedIn: ['profile.read'],
+    owner: ['*'],
+    viewer: ['projects.read', 'profile.read'],
+  },
   scopes: {},
-  signedIn: ['profile.read'],
 })
 
 const { query, mutation } = defineFunctions({
   auth,
   policy,
   user,
-  roleOf: async () => null,
-  appRoleOf: async (ctx, user) => {
-    // The workspace's one membership list; the person's row is their role.
+  roleOf: async (ctx, user, tenant) => {
+    // No tenant tables: a tenant this app does not handle gets no role.
+    if (tenant !== null) return null
     const membership = await ctx.db
       .query('memberships')
       .filter((q) => q.eq(q.field('userId'), user._id))
       .first()
-    return (membership?.role ?? null) as RoleOf<typeof policy> | null
+    return (membership?.role ?? 'signedIn') as RoleOf<typeof policy>
   },
   rules: {
     users: owner('_id'),

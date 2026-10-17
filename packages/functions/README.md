@@ -88,6 +88,9 @@ export const fns = defineFunctions({
       .withIndex('by_auth_id', (q) => q.eq('authId', authId))
       .unique(),
   roleOf: async (ctx, user, tenant) => {
+    // A call that names no organization gets no role. What every signed-in person may do is a
+    // role too (see Policy and roles: signedIn).
+    if (tenant === null) return null
     if (tenant.table !== 'organizations') return null
     const membership = await ctx.db
       .query('memberships')

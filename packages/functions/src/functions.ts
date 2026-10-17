@@ -48,7 +48,6 @@ import { rateLimited, takeToken } from './limits'
 import {
   decide,
   isAudited,
-  isOpenAction,
   isPublicAction,
   limitOf,
   roleAllows,
@@ -258,16 +257,20 @@ export function defineFunctions<
   policy: P
   /** The app user for a Better Auth user ID, or `null` when they may not act (suspended, no profile yet). */
   user: (ctx: GenericQueryCtx<DM>, authId: string) => Promise<NoInfer<User> | null>
-  /** The person's role in a tenant, or `null` without a membership. A child tenant may inherit its parent's roles here. */
-  roleOf: (ctx: GenericQueryCtx<DM>, user: User, tenant: TenantOf<DM>) => Promise<RoleOf<P> | null>
   /**
-   * The person's role in the whole app, for an app with one workspace and no tenant tables. When
-   * set, every call whose input names no tenant needs this role to allow its action (`null`: no
-   * role, so `FORBIDDEN`), unless the action is in `public` or `signedIn`. Without it, the row
-   * rules of such a query or mutation check the role on each row it touches, and such an action
-   * is refused unless it is in `public` or `signedIn`: an action has no rows.
+   * The person's role where a call acts, or `null` for no role. `tenant` is the tenant the call's
+   * input names; a child tenant may inherit its parent's roles here. `tenant` is `null` for a call
+   * that names none: return the role this person has outside any tenant. A multi-tenant app returns
+   * a role such as `signedIn` that lists what every signed-in person may do; an app with one
+   * workspace and no tenant tables returns the member's role. `null` refuses the call, unless its
+   * action is public. Answer `null` for a tenant you do not handle, so a tenant table added later
+   * cannot inherit a role it was never given.
    */
-  appRoleOf?: (ctx: GenericQueryCtx<DM>, user: User) => Promise<RoleOf<P> | null>
+  roleOf: (
+    ctx: GenericQueryCtx<DM>,
+    user: User,
+    tenant: TenantOf<DM> | null,
+  ) => Promise<RoleOf<P> | null>
   /** One rule per app table: who may read and write its rows. See `rules.ts`. */
   rules: NoInfer<{
     [T in AppTables<DM>]: Rule<DocumentByName<DM, T>, User, DM, ActionOf<P>>
@@ -338,16 +341,17 @@ export function defineFunctions<
   const isPublic = (action: string) => isPublicAction(policy, action)
 
   /**
-   * A public function whose action no role allows, and that is not in `public` or `signedIn`,
-   * refuses every caller. Fail when it is built, not at its first call.
+   * A public function whose action no role allows, and that is not public, refuses every caller.
+   * Fail when it is built, not at its first call.
    */
   function assertReachable(action: string) {
-    if (isOpenAction(policy, action)) return
+    if (isPublic(action)) return
     const roles = Object.keys(policy.roles as Record<string, unknown>)
     if (roles.some((role) => roleAllows(policy, role, action))) return
     throw new Error(
-      `${action}: no role allows it, and it is not in public or signedIn, so nobody can call it. ` +
-        'Give a role this action, or add it to signedIn if every signed-in person may call it.',
+      `${action}: no role allows it, and it is not public, so nobody can call it. Give a role ` +
+        'this action; if every signed-in person may call it, give it to the role roleOf returns ' +
+        'for a call without a tenant (for example signedIn).',
     )
   }
 
@@ -568,9 +572,9 @@ export function defineFunctions<
         rows.set(id, (await ctx.db.get(id as never)) as Record<string, unknown> | null)
       return rows.get(id)!
     }
-    const roleOf = (ref: TenantRef) =>
+    const roleOf = (ref: TenantRef | null) =>
       actor.kind === 'person' || actor.kind === 'agent'
-        ? config.roleOf(readOnly(ctx), actor.user, ref as TenantOf<DM>)
+        ? config.roleOf(readOnly(ctx), actor.user, ref as TenantOf<DM> | null)
         : Promise.resolve(null)
 
     const named = await tenantsOf(
@@ -581,7 +585,7 @@ export function defineFunctions<
     )
     const chains = await Promise.all(named.map((ref) => tenants.chain(load, ctx.db, ref)))
     for (const ref of named) roles.set(ref.id, await roleOf(ref))
-    const open = isOpenAction(policy, op.action) || actor.kind === 'system'
+    const open = isPublic(op.action) || actor.kind === 'system'
     // Without any role there, the tenant's resources do not exist for this actor:
     // FORBIDDEN would tell an agent that a foreign ID is real.
     if (!open && named.some((ref) => roles.get(ref.id) === null))
@@ -601,30 +605,24 @@ export function defineFunctions<
       }
     }
     const tenant = op.crossTenant ? undefined : deepest?.[0]
-    // A call that names no tenant acts in the whole app. An open action needs no role, so it
-    // costs no read.
-    const appWide = !tenant && !(op.crossTenant && named.length > 0)
-    const appRoleOf = config.appRoleOf
+    // The role where the call acts: in its tenant; across places, the role every place already
+    // allowed above; for a call that names no tenant, the role outside any tenant. There is no
+    // fallback: no role refuses the call. A public action needs none, so it costs no read.
     const role = open
       ? null
-      : !appWide
-        ? // In its tenant, or, across places, the role every place already allowed above.
-          (roles.get((tenant ?? named[0])!.id) ?? null)
-        : appRoleOf && (actor.kind === 'person' || actor.kind === 'agent')
-          ? await appRoleOf(readOnly(ctx), actor.user)
-          : null
+      : tenant
+        ? (roles.get(tenant.id) ?? null)
+        : op.crossTenant && named.length > 0
+          ? (roles.get(named[0]!.id) ?? null)
+          : await roleOf(null)
     const asker =
       actor.kind === 'agent'
         ? { kind: 'agent' as const, scopes: actor.scopes }
         : { kind: actor.kind }
-    // No tenant and no app-wide roles: a query's or mutation's row rules check the role on every
-    // row it touches. An action has no rows, so it needs a role, or an open action.
-    const rowsDecide = !open && appWide && !appRoleOf && op.kind !== 'action'
     const decision: Decision = decide(policy, {
       action: op.action as ActionOf<P>,
       asker,
       role: role as RoleOf<P> | null,
-      rowsDecide,
       input,
     })
     if (decision === 'deny') {
@@ -1340,8 +1338,8 @@ export function defineFunctions<
       action: A
       /**
        * IDs of tables with a `tenant` rule name the call's tenant, as in an operation. The role
-       * there decides. A call that names no tenant needs the app-wide role (`appRoleOf`), or an
-       * action in `public` or `signedIn`: an action has no rows for row rules to check.
+       * there decides; a call that names no tenant needs the role outside any tenant
+       * (`roleOf(ctx, user, null)`), unless its action is public.
        */
       args: Args
       returns: Returns

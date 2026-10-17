@@ -5,6 +5,7 @@ import { can, decide, definePolicy, type Asker } from '../src/policy'
 const policy = definePolicy({
   actions: ['organizations.list', 'projects.search', 'projects.create', 'projects.archive'],
   roles: {
+    signedIn: ['organizations.list'],
     owner: ['*'],
     member: ['projects.search', 'projects.create'],
     viewer: ['projects.search'],
@@ -14,7 +15,6 @@ const policy = definePolicy({
     'projects:write': { label: 'Write', actions: ['projects.create', 'projects.archive'] },
   },
   agents: { 'projects.archive': 'approve' },
-  signedIn: ['organizations.list'],
 })
 
 const person: Asker = { kind: 'person' }
@@ -40,36 +40,16 @@ test.each([
   },
 )
 
-// Catches: an action every signed-in person may call that still needs a role, or that lets an
-// agent past its grant or a visitor in.
+// Catches: what every signed-in person may do (the role roleOf gives outside a tenant) letting an
+// agent past its grant or a visitor in, or no role at all passing.
 test.each([
-  [person, 'allow'],
-  [reader, 'allow'],
-  [{ kind: 'agent', scopes: [] }, 'deny'],
-  [{ kind: 'visitor' }, 'deny'],
-] as const)('a signedIn action needs no role: %j is %s', (asker, expected) => {
-  expect(decide(policy, { asker, role: null, action: 'organizations.list' })).toBe(expected)
-})
-
-// Catches: a policy whose lists contradict each other or name an action that does not exist.
-test.each([
-  [
-    { signedIn: ['projects.gone'] },
-    'signedIn names "projects.gone", which is not in the policy\'s actions.',
-  ],
-  [
-    { signedIn: ['projects.search'], public: ['projects.search'] },
-    'projects.search is in public and signedIn. public already includes signed-in people; keep it in one list.',
-  ],
-] as const)('definePolicy refuses %j', (lists, message) => {
-  expect(() =>
-    definePolicy({
-      actions: ['projects.search'],
-      roles: {},
-      scopes: {},
-      ...(lists as object),
-    } as never),
-  ).toThrow(message)
+  [person, 'signedIn', 'allow'],
+  [reader, 'signedIn', 'allow'],
+  [{ kind: 'agent', scopes: [] }, 'signedIn', 'deny'],
+  [{ kind: 'visitor' }, 'signedIn', 'deny'],
+  [person, null, 'deny'],
+] as const)('organizations.list for %j with role %s is %s', (asker, role, expected) => {
+  expect(decide(policy, { asker, role, action: 'organizations.list' })).toBe(expected)
 })
 
 // K1: a role named like a prototype key threw a TypeError instead of denying.

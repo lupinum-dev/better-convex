@@ -27,7 +27,12 @@ export const policy = definePolicy({
     'members.list',
     'members.edit',
   ],
-  roles: { owner: ['*'], viewer: ['projects.read', 'pages.read', 'members.list'] },
+  roles: {
+    // Calls whose IDs name no tenant (plain strings, memberships): the row rules decide.
+    signedIn: ['projects.read', 'projects.archive', 'notes.read', 'members.list', 'members.edit'],
+    owner: ['*'],
+    viewer: ['projects.read', 'pages.read', 'members.list'],
+  },
   scopes: { all: { label: 'Everything', actions: ['*'] } },
   public: ['pages.read'],
 })
@@ -47,6 +52,8 @@ export const { query, mutation, internalQuery, internalMutation, internalAction,
       return user?.active === false ? null : user
     },
     roleOf: async (ctx, user, tenant) => {
+      // Outside an organization every signed-in person has the signedIn role.
+      if (tenant === null) return 'signedIn'
       if (tenant.table !== 'orgs') return null
       const membership = await ctx.db
         .query('memberships')

@@ -25,6 +25,8 @@ export const fns = defineFunctions({
   },
   // A client inherits the roles of its organization.
   roleOf: async (ctx, user, tenant) => {
+    // Outside an organization every signed-in person has the signedIn role.
+    if (tenant === null) return 'signedIn'
     const organizationId =
       tenant.table === 'organizations'
         ? tenant.id

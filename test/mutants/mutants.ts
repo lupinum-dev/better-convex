@@ -316,23 +316,14 @@ export const mutants: Mutant[] = [
     kills: [`${F}/rules.test.ts > a visitor reads published pages; drafts and edits need a member`],
   },
   {
-    id: 'S6-action-no-tenant',
+    id: 'S6-no-tenant-role',
     guards: 'S6',
     file: 'packages/functions/src/functions.ts',
-    find: " && op.kind !== 'action'\n",
-    replace: '\n',
+    find: '          : await roleOf(null)\n',
+    replace: "          : ('owner' as never)\n",
     kills: [
+      `${F}/limits-audit.test.ts > a mutation that names no tenant and reads no row needs a role outside any tenant`,
       `${F}/actions.test.ts > a viewer calling an owner-only action without a tenant is refused before it runs`,
-      `${F}/actions.test.ts > the owner calling an owner-only action without a tenant is refused before it runs`,
-    ],
-  },
-  {
-    id: 'S6-app-role',
-    guards: 'S6',
-    file: 'packages/functions/src/functions.ts',
-    find: '!open && appWide && !appRoleOf && ',
-    replace: '!open && appWide && ',
-    kills: [
       `${F}/shapes.test.ts > K7 one workspace: the app-wide role decides calls that name no tenant`,
     ],
   },
@@ -495,7 +486,7 @@ export const mutants: Mutant[] = [
     replace: '',
     kills: [
       `${F}/policy.test.ts > decide intersects role, grant and agent rule: {"kind":"agent","scopes":["projects:read"]} as owner for projects.create is deny`,
-      `${F}/policy.test.ts > a signedIn action needs no role: {"kind":"agent","scopes":[]} is deny`,
+      `${F}/policy.test.ts > organizations.list for {"kind":"agent","scopes":[]} with role signedIn is deny`,
     ],
   },
   {

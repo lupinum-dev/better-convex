@@ -14,7 +14,7 @@ import schema from './schema'
 // K2: organizations and personal workspaces, one `roleOf`, one role namespace.
 const policy = definePolicy({
   actions: ['projects.read', 'docs.move'],
-  roles: { owner: ['*'], viewer: ['projects.read'] },
+  roles: { signedIn: [], owner: ['*'], viewer: ['projects.read'] },
   scopes: {},
 })
 
@@ -23,6 +23,8 @@ const { query, mutation } = defineFunctions({
   policy,
   user,
   roleOf: async (ctx, user, tenant) => {
+    // Outside an organization every signed-in person has the signedIn role.
+    if (tenant === null) return 'signedIn'
     if (tenant.table === 'orgs')
       return (await orgRole(ctx, user._id, tenant.id)) as RoleOf<typeof policy> | null
     if (tenant.table === 'workspaces') {

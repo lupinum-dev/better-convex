@@ -61,7 +61,7 @@ test.each([
 })
 
 // Catches: an action whose arguments name no tenant running for anyone signed in. With no tenant
-// the role is the app-wide one (`roleOf` with null); this app has none, so nobody may.
+// the role is roleOf's answer for null (signedIn in this app), which does not allow archiving.
 test.each([
   ['a viewer', 'vic'],
   ['the owner', 'ann'],

@@ -210,8 +210,9 @@ test('E10: docValidator accepts the document as stored', async () => {
 
 // K7: a single-workspace app with no tenant tables. Before the app-wide role, such a call named no
 // tenant and skipped the role layer: a viewer renamed a project (Luis wrapped every builder to
-// stop that). Now `appRoleOf` gives the workspace role, and the library checks it; a person
-// without a membership gets no role, so the open row rule does not let them in.
+// stop that). Now roleOf answers a call without a tenant with the workspace role, and the library
+// checks it; a person without a membership gets only signedIn, so the open row rule does not let
+// them in.
 test('K7 one workspace: the app-wide role decides calls that name no tenant', async () => {
   const { t, ann, vic, pa } = await setup()
   const project = makeFunctionReference<'query'>('single:project')
