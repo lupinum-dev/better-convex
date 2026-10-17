@@ -157,7 +157,7 @@ test('wrong limit or audit definitions fail when the policy is defined', () => {
 test('a query cannot use a limited action', () => {
   const limited = definePolicy({
     actions: ['x.read'],
-    roles: {},
+    roles: { owner: ['x.read'] },
     scopes: {},
     limits: { 'x.read': { max: 1, every: 'minute' } },
   })

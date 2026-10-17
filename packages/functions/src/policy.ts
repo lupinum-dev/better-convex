@@ -50,8 +50,18 @@ export function isAudited(policy: Policy, action: string): boolean {
 interface PolicyConfig<A extends string, R extends string, S extends string> {
   /** Every action the app has. Only this list defines the action names; typos elsewhere are type errors. */
   actions: readonly A[]
-  /** What each role may do. Roles come from the app (`roleOf`). */
+  /**
+   * What each role may do. Roles come from the app: `roleOf` gives the role in
+   * the tenant a call's input names, and `appRoleOf` (single-workspace apps)
+   * the role for a call that names none.
+   */
   roles: Record<R, readonly Pattern<NoInfer<A>>[]>
+  /**
+   * Actions any signed-in person may call, whatever their role: create an
+   * organization, read their own profile. Row rules still decide which rows
+   * they see. Agents still need a scope for them.
+   */
+  signedIn?: readonly NoInfer<A>[]
   /** OAuth scopes a person grants to an outside agent, with the consent text. */
   scopes: Record<S, { label: string; actions: readonly Pattern<NoInfer<A>>[] }>
   /** What agents may do on their own. Missing actions are `'allow'`. */
@@ -131,6 +141,18 @@ export function definePolicy<
     if (limit.per !== undefined && !['user', 'tenant', 'everyone'].includes(limit.per))
       throw new Error(`The limit of ${action} needs per to be 'user', 'tenant' or 'everyone'.`)
   }
+  const publicActions = ((config as { public?: readonly string[] }).public ??
+    []) as readonly string[]
+  for (const action of (config.signedIn ?? []) as readonly string[]) {
+    if (!actions.includes(action))
+      throw new Error(
+        `signedIn names ${JSON.stringify(action)}, which is not in the policy's actions.`,
+      )
+    if (publicActions.includes(action))
+      throw new Error(
+        `${action} is in public and signedIn. public already includes signed-in people; keep it in one list.`,
+      )
+  }
   for (const pattern of (config.audit ?? []) as readonly string[]) {
     if (!actions.some((action) => matches([pattern], action)))
       throw new Error(
@@ -164,10 +186,12 @@ export type Asker =
 export type Decision = 'allow' | 'approve' | 'deny'
 
 /**
- * The one decision function. `role` is the asker's role in the call's tenant,
- * `null` without a membership; a call without a tenant (`tenantless`) skips
- * the role layer, and the row rules check each row in its own tenant.
- * `input` feeds agent rules that read it.
+ * The one decision function. `role` is the asker's role where the call acts:
+ * in the tenant its input names, or app-wide (`appRoleOf`) when it names
+ * none. `null` means no role, and a call needs one unless the action is in
+ * `public` or `signedIn`, or `rowsDecide` is set: a query or mutation that
+ * names no tenant in an app without app-wide roles, whose row rules check the
+ * role on each row it touches. `input` feeds agent rules that read it.
  */
 export function decide<P extends Policy>(
   policy: P,
@@ -175,15 +199,14 @@ export function decide<P extends Policy>(
     action: ActionOf<P>
     asker: Asker
     role: RoleOf<P> | null
-    tenantless?: boolean
+    rowsDecide?: boolean
     input?: Record<string, unknown>
   },
 ): Decision {
   const { action, asker, role } = call
   if (asker.kind === 'system') return 'allow'
-  const isPublic = (policy.public as readonly string[] | undefined)?.includes(action) ?? false
-  if (asker.kind === 'visitor') return isPublic ? 'allow' : 'deny'
-  if (!isPublic && !call.tenantless) {
+  if (asker.kind === 'visitor') return isPublicAction(policy, action) ? 'allow' : 'deny'
+  if (!isOpenAction(policy, action) && !call.rowsDecide) {
     if (role === null || !roleAllows(policy, role, action)) return 'deny'
   }
   if (asker.kind === 'person') return 'allow'
@@ -217,6 +240,19 @@ function agentRule(policy: Policy, action: string, input: Record<string, unknown
     }
   }
   return decisions.includes(decision) ? (decision as Decision) : 'approve'
+}
+
+/** May anyone call this action, signed in or not? */
+export function isPublicAction(policy: Policy, action: string): boolean {
+  return (policy.public as readonly string[] | undefined)?.includes(action) ?? false
+}
+
+/** Does this action need no role: is it in `public` or in `signedIn`? */
+export function isOpenAction(policy: Policy, action: string): boolean {
+  return (
+    isPublicAction(policy, action) ||
+    ((policy.signedIn as readonly string[] | undefined)?.includes(action) ?? false)
+  )
 }
 
 /** May this role do this action? The role layer of `decide`, also used for each row a call touches. */

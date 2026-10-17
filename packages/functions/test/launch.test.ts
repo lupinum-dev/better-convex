@@ -343,3 +343,42 @@ test.each([
   Reflect.deleteProperty(app.modules, path)
   expect(await launchProblems(app)).toEqual([])
 })
+
+// Catches: a public function that nobody can call (no role allows its action, and it is not in
+// public or signedIn) deploying fine and refusing every caller.
+test('a public function that no role allows is refused when it is built', () => {
+  const policy = definePolicy({
+    actions: ['notes.add', 'notes.purge'],
+    roles: { owner: ['notes.add'] },
+    scopes: {},
+  })
+  const fns = defineFunctions({
+    auth: people<DataModel>(),
+    policy,
+    schema,
+    user: async () => null,
+    roleOf: async () => null,
+    rules: {
+      users: unchecked('Test table.'),
+      notes: unchecked('Test table.'),
+      teams: unchecked('Test table.'),
+      invites: unchecked('Test table.'),
+      shares: unchecked('Test table.'),
+      scores: unchecked('Test table.'),
+      tags: unchecked('Test table.'),
+    },
+  })
+  expect(() =>
+    fns.mutation({ action: 'notes.purge', args: {}, returns: v.null(), handler: async () => null }),
+  ).toThrow(
+    'notes.purge: no role allows it, and it is not in public or signedIn, so nobody can call it.',
+  )
+  expect(() =>
+    fns.internalMutation({
+      action: 'notes.purge',
+      args: {},
+      returns: v.null(),
+      handler: async () => null,
+    }),
+  ).not.toThrow()
+})

@@ -311,19 +311,29 @@ export const mutants: Mutant[] = [
     id: 'S6-decide-visitor',
     guards: 'S6',
     file: 'packages/functions/src/policy.ts',
-    find: "if (asker.kind === 'visitor') return isPublic ? 'allow' : 'deny'",
+    find: "if (asker.kind === 'visitor') return isPublicAction(policy, action) ? 'allow' : 'deny'",
     replace: "if (asker.kind === 'visitor') return 'allow'",
     kills: [`${F}/rules.test.ts > a visitor reads published pages; drafts and edits need a member`],
   },
   {
-    id: 'S6-action-tenantless',
+    id: 'S6-action-no-tenant',
     guards: 'S6',
     file: 'packages/functions/src/functions.ts',
-    find: '        if (!tenant && !tenantless && !isPublic(action))\n',
-    replace: '        if (false)\n',
+    find: " && op.kind !== 'action'\n",
+    replace: '\n',
     kills: [
       `${F}/actions.test.ts > a viewer calling an owner-only action without a tenant is refused before it runs`,
       `${F}/actions.test.ts > the owner calling an owner-only action without a tenant is refused before it runs`,
+    ],
+  },
+  {
+    id: 'S6-app-role',
+    guards: 'S6',
+    file: 'packages/functions/src/functions.ts',
+    find: '!open && appWide && !appRoleOf && ',
+    replace: '!open && appWide && ',
+    kills: [
+      `${F}/shapes.test.ts > K7 one workspace: the app-wide role decides calls that name no tenant`,
     ],
   },
   {
@@ -485,7 +495,7 @@ export const mutants: Mutant[] = [
     replace: '',
     kills: [
       `${F}/policy.test.ts > decide intersects role, grant and agent rule: {"kind":"agent","scopes":["projects:read"]} as owner for projects.create is deny`,
-      `${F}/policy.test.ts > tenantless actions skip the role but keep the grant`,
+      `${F}/policy.test.ts > a signedIn action needs no role: {"kind":"agent","scopes":[]} is deny`,
     ],
   },
   {

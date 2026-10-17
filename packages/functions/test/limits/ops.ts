@@ -387,7 +387,7 @@ export const snapshot = action({
   },
 })
 
-/** Owner-only, but its one ID is optional: a call without it names no tenant. */
+/** Owner-only, but its one ID is optional: a call without it names no tenant, so no role allows it. */
 export const archiveMaybe = action({
   action: 'projects.archive',
   args: { projectId: v.optional(v.id('projects')) },
@@ -398,11 +398,10 @@ export const archiveMaybe = action({
   },
 })
 
-/** Owner-only, declared as having no tenant: every signed-in person runs it. */
-export const archiveTenantless = action({
-  action: 'projects.archive',
+/** Names no tenant, and every signed-in person may run it (policy.signedIn). */
+export const myReport = action({
+  action: 'reports.mine',
   args: {},
-  tenantless: true,
   returns: v.null(),
   handler: async (ctx) => {
     await ctx.storage.store(new Blob(['ran']))

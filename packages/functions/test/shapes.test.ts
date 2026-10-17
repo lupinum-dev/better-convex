@@ -207,3 +207,47 @@ test('E10: docValidator accepts the document as stored', async () => {
     name: 'A one',
   })
 })
+
+// K7: a single-workspace app with no tenant tables. Before the app-wide role, such a call named no
+// tenant and skipped the role layer: a viewer renamed a project (Luis wrapped every builder to
+// stop that). Now `appRoleOf` gives the workspace role, and the library checks it; a person
+// without a membership gets no role, so the open row rule does not let them in.
+test('K7 one workspace: the app-wide role decides calls that name no tenant', async () => {
+  const { t, ann, vic, pa } = await setup()
+  const project = makeFunctionReference<'query'>('single:project')
+  const rename = makeFunctionReference<'mutation'>('single:rename')
+  const profile = makeFunctionReference<'query'>('single:profile')
+  expect(await vic.query(project, { projectId: pa })).toBe('A one')
+  await expect(vic.mutation(rename, { projectId: pa, name: 'Renamed' })).rejects.toThrow(
+    /FORBIDDEN/,
+  )
+  await ann.mutation(rename, { projectId: pa, name: 'Renamed' })
+  expect(await ann.query(project, { projectId: pa })).toBe('Renamed')
+  // signedIn needs no role: a signed-in person without a membership still gets in.
+  const nobody = t.withIdentity({ subject: 'nobody' })
+  await t.run((ctx) => ctx.db.insert('users', { authId: 'nobody' }))
+  expect(await nobody.query(profile, {})).toBe('person')
+  await expect(nobody.query(project, { projectId: pa })).rejects.toThrow(/FORBIDDEN/)
+})
+
+// Catches: a deleted ID and an ID from a place the caller has no role in giving different
+// answers, which tells a caller that the foreign row exists.
+test('a foreign ID and a deleted ID get the same NOT_FOUND answer', async () => {
+  const { t, bob, pa } = await setup()
+  const project = makeFunctionReference<'query'>('workspaces:project')
+  const gone = await t.run(async (ctx) => {
+    const id = await ctx.db.insert('projects', { orgId: (await ctx.db.get(pa))!.orgId, name: 'x' })
+    await ctx.db.delete(id)
+    return id
+  })
+  const answer = (call: Promise<unknown>) =>
+    call.then(
+      () => 'ok',
+      (error: { data?: unknown }) => JSON.stringify(error.data),
+    )
+  const foreign = await answer(bob.query(project, { projectId: pa }))
+  expect(foreign).toBe(
+    JSON.stringify({ code: 'NOT_FOUND', message: 'Nothing with these IDs was found.' }),
+  )
+  expect(await answer(bob.query(project, { projectId: gone }))).toBe(foreign)
+})

@@ -14,6 +14,7 @@ const policy = definePolicy({
     'projects:write': { label: 'Write', actions: ['projects.create', 'projects.archive'] },
   },
   agents: { 'projects.archive': 'approve' },
+  signedIn: ['organizations.list'],
 })
 
 const person: Asker = { kind: 'person' }
@@ -39,18 +40,36 @@ test.each([
   },
 )
 
-test('tenantless actions skip the role but keep the grant', () => {
-  expect(
-    decide(policy, { asker: reader, role: null, action: 'organizations.list', tenantless: true }),
-  ).toBe('allow')
-  expect(
-    decide(policy, {
-      asker: { kind: 'agent', scopes: [] },
-      role: null,
-      action: 'organizations.list',
-      tenantless: true,
-    }),
-  ).toBe('deny')
+// Catches: an action every signed-in person may call that still needs a role, or that lets an
+// agent past its grant or a visitor in.
+test.each([
+  [person, 'allow'],
+  [reader, 'allow'],
+  [{ kind: 'agent', scopes: [] }, 'deny'],
+  [{ kind: 'visitor' }, 'deny'],
+] as const)('a signedIn action needs no role: %j is %s', (asker, expected) => {
+  expect(decide(policy, { asker, role: null, action: 'organizations.list' })).toBe(expected)
+})
+
+// Catches: a policy whose lists contradict each other or name an action that does not exist.
+test.each([
+  [
+    { signedIn: ['projects.gone'] },
+    'signedIn names "projects.gone", which is not in the policy\'s actions.',
+  ],
+  [
+    { signedIn: ['projects.search'], public: ['projects.search'] },
+    'projects.search is in public and signedIn. public already includes signed-in people; keep it in one list.',
+  ],
+] as const)('definePolicy refuses %j', (lists, message) => {
+  expect(() =>
+    definePolicy({
+      actions: ['projects.search'],
+      roles: {},
+      scopes: {},
+      ...(lists as object),
+    } as never),
+  ).toThrow(message)
 })
 
 // K1: a role named like a prototype key threw a TypeError instead of denying.

@@ -27,6 +27,7 @@ export const policy = definePolicy({
     'tasks.run',
     'projects.guard',
     'projects.peek',
+    'reports.mine',
   ],
   roles: {
     owner: ['*'],
@@ -34,6 +35,7 @@ export const policy = definePolicy({
   },
   scopes: { all: { label: 'Everything', actions: ['*'] } },
   public: ['contact.send', 'feedback.send'],
+  signedIn: ['reports.mine'],
   limits: {
     'projects.rename': { max: 3, every: 'minute' },
     'reports.generate': { max: 2, every: 'hour', per: 'tenant' },

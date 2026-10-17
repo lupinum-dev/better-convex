@@ -1,6 +1,5 @@
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
-import { v } from 'convex/values'
 import { expect, test } from 'vitest'
 
 import schema from './rules/schema'
@@ -62,7 +61,7 @@ test.each([
 })
 
 // Catches: an action whose arguments name no tenant running for anyone signed in. With no tenant
-// the policy finds no role, and an action has no ctx.db whose row rules would still hold it.
+// the role is the app-wide one (`roleOf` with null); this app has none, so nobody may.
 test.each([
   ['a viewer', 'vic'],
   ['the owner', 'ann'],
@@ -77,23 +76,12 @@ test.each([
   },
 )
 
-// Keep: an action that says it has no tenant runs for every signed-in person.
-test('an action set as tenantless runs for a viewer', async () => {
+// Keep: an action the policy lists in `signedIn` runs for every signed-in person, without a tenant.
+test('an action in signedIn runs for a viewer', async () => {
   const { t, files } = await setup()
-  expect(await codeOf(t.withIdentity({ subject: 'vic' }).action(fn('archiveTenantless'), {}))).toBe(
-    'ok',
-  )
+  expect(await codeOf(t.withIdentity({ subject: 'vic' }).action(fn('myReport'), {}))).toBe('ok')
+  expect(await codeOf(t.action(fn('myReport'), {}))).toBe('NOT_SIGNED_IN')
   expect(await files()).toBe(1)
-})
-
-// Catches: an action without any ID argument that is built anyway and fails only for its callers.
-test('an action whose arguments hold no ID is refused when it is built', async () => {
-  const { action } = await import('./limits/fns')
-  expect(() =>
-    action({ action: 'projects.archive', args: {}, returns: v.null(), handler: async () => null }),
-  ).toThrow(
-    'projects.archive: its arguments hold no ID, so no tenant and no role can allow a call.',
-  )
 })
 
 // Keep: a visitor still reaches an action the policy lists in `public`.
