@@ -536,7 +536,11 @@ describe('Better Auth browser adapter', () => {
 
   it.each([
     { status: 503, unavailable: true },
+    { status: 429, unavailable: true },
+    { status: 0, unavailable: true },
     { status: 401, unavailable: false },
+    { status: 403, unavailable: false },
+    { status: 404, unavailable: false },
   ])(
     'publishes a first session read failing with $status as unavailable only when temporary',
     ({ status, unavailable }) => {
