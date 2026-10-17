@@ -186,7 +186,7 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
-  it('drops a page loaded during a first-page split when live inserts moved the boundary', async () => {
+  it('keeps a page loaded during a first-page split by re-bounding the first page to the server cursor', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:hydrated-split-drift')
     const key = pageKey(query, {})
@@ -210,14 +210,16 @@ describe('useConvexPaginatedQuery controller', () => {
     })
     expect(result.data.value).toEqual(['a', 'b', 'c'])
     void result.loadMore(2)
-    expect(primary.calls.onUpdate.some(({ args }) => bounds(args).cursor === 'server-end')).toBe(
-      true,
+    primary.emitQueryResultWhere(
+      ({ args }) => bounds(args).cursor === null && bounds(args).endCursor === 'server-end',
+      page(['x', 'a', 'b', 'c'], false, 'server-end'),
     )
     primary.emitQueryResultWhere(
       ({ args }) => bounds(args).cursor === 'server-end',
       page(['d', 'e'], false, 'later-end'),
     )
 
+    // The cancelled split's halves answer late and change nothing.
     primary.emitQueryResultWhere(
       ({ args }) => bounds(args).endCursor === 'mid',
       page(['x', 'a'], false, 'mid'),
@@ -226,8 +228,7 @@ describe('useConvexPaginatedQuery controller', () => {
       ({ args }) => bounds(args).cursor === 'mid',
       page(['b', 'c'], false, 'live-end'),
     )
-    expect(result.data.value).toEqual(['x', 'a', 'b', 'c'])
-    expect(new Set(result.data.value).size).toBe(result.data.value?.length)
+    expect(result.data.value).toEqual(['x', 'a', 'b', 'c', 'd', 'e'])
     wrapper.unmount()
   })
 

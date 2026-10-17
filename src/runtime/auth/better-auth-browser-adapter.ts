@@ -64,6 +64,20 @@ function temporarilyUnavailable(): ConvexCallError {
   })
 }
 
+/**
+ * A failure that says nothing about the person: no answer (network), a timeout,
+ * a rate limit or a server error. Any other status, 403 or 404 included, is an
+ * answer about this session or this setup and stays a definitive failure.
+ */
+function isTemporaryFailure(error: unknown): boolean {
+  const status =
+    error && typeof error === 'object' && 'status' in error
+      ? (error as { status?: unknown }).status
+      : undefined
+  if (typeof status !== 'number' || status === 0) return true
+  return status === 408 || status === 429 || status >= 500
+}
+
 function isUnauthorized(error: unknown): boolean {
   return Boolean(
     error &&
@@ -199,7 +213,18 @@ export function createBetterAuthBrowserAdapter(
         status: 'error',
         identityKey: null,
         sessionGeneration,
-        error: new Error(UNAVAILABLE),
+        // A temporary failure (network, timeout, 429, 5xx) with no malformed
+        // session says nothing about the person: publish the library error the
+        // token path uses, so the route middleware does not send them to
+        // sign-in. Any other status (401, 403, 404) or a malformed session stays
+        // a generic failure.
+        // No recovery timer: there is no identity to restore, and Better Auth
+        // re-reads the session on focus, on reconnect and on its own polling;
+        // a good read then takes the normal path below and signs the person in.
+        error:
+          value.error && isTemporaryFailure(value.error) && !malformed
+            ? temporarilyUnavailable()
+            : new Error(UNAVAILABLE),
       }
       callbacks.anonymous(UNAVAILABLE)
       callbacks.sessionChanged?.(null, UNAVAILABLE, sessionGeneration)

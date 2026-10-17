@@ -971,16 +971,19 @@ export function defineAuthAdapterFunctions<Schema extends SchemaDefinition<any, 
         // of `max` is admitted, and steady traffic below `max` per `window` is
         // never refused. Better Auth's own rule instead keeps counting until the
         // key has been idle for a full window, so steady traffic reaches `max`.
-        const drainIntervalMs = windowInMs / args.max
-        const drained = Math.floor(Math.max(0, now - current.lastRequest) / drainIntervalMs)
+        // Integer arithmetic only: `window / max` is often not a whole number of
+        // ms, and a float anchor made a client that waited exactly `retryAfter`
+        // seconds get refused again. Drained requests are floor(elapsed * max /
+        // window); the anchor moves by the rounded-up time of those requests, so
+        // the stored value stays an integer and never runs ahead of them.
+        const elapsedMs = Math.max(0, now - current.lastRequest)
+        const drained = Math.floor((elapsedMs * args.max) / windowInMs)
         const level = Math.max(0, current.count - drained)
-        // Only whole drained requests move the anchor, so the count stays an integer.
-        const anchor = level === 0 ? now : current.lastRequest + drained * drainIntervalMs
+        const anchor =
+          level === 0 ? now : current.lastRequest + Math.ceil((drained * windowInMs) / args.max)
         if (level >= args.max) {
-          return {
-            allowed: false,
-            retryAfter: Math.max(1, Math.ceil((anchor + drainIntervalMs - now) / 1_000)),
-          }
+          const waitMs = Math.ceil(((drained + 1) * windowInMs) / args.max) - elapsedMs
+          return { allowed: false, retryAfter: Math.max(1, Math.ceil(waitMs / 1_000)) }
         }
         await ctx.db.patch(
           current._id as never,

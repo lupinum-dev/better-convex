@@ -94,7 +94,11 @@ function setup(
         }),
       )
       const result: unknown = await response.json()
-      return { status: response.status, body: result, cookies: response.headers.getSetCookie() }
+      return {
+        status: response.status,
+        body: result,
+        cookies: response.headers.getSetCookie(),
+      }
     })
     if (response.cookies.length)
       cookie = response.cookies.map((value) => value.split(';')[0]).join('; ')
@@ -107,7 +111,9 @@ function setup(
       email: 'person@example.test',
       password,
     })
-    expect(result).toMatchObject({ user: { email: 'person@example.test', name: 'Person' } })
+    expect(result).toMatchObject({
+      user: { email: 'person@example.test', name: 'Person' },
+    })
     const users = await test.query(components.sessionAuth.adapter.findMany, {
       model: 'user',
       paginationOpts: { cursor: null, numItems: 10 },
@@ -147,7 +153,10 @@ describe('typed email delivery with real Better Auth', () => {
       expect(instance).toBeDefined()
       await expect(
         instance.api.sendVerificationEmail({
-          body: { email: 'person@example.test', callbackURL: 'https://app.example.test/verified' },
+          body: {
+            email: 'person@example.test',
+            callbackURL: 'https://app.example.test/verified',
+          },
         }),
       ).rejects.toThrow(/^AUTH_EMAIL_REQUIRES_WRITABLE_CONTEXT$/)
     })
@@ -189,13 +198,20 @@ describe('typed email delivery with real Better Auth', () => {
     expect(consoleError).not.toHaveBeenCalled()
 
     email.mockRejectedValueOnce(new Error('submission failed token=synthetic-private-token'))
-    expect(await request('/request-password-reset', { email: 'person@example.test' })).toEqual({
+    expect(
+      await request('/request-password-reset', {
+        email: 'person@example.test',
+      }),
+    ).toEqual({
       status: true,
       message: 'If this email exists in our system, check your email for the reset link',
     })
     expect(consoleError.mock.calls[0]).toEqual([
       '[better-convex] AUTH_EMAIL_DELIVERY_FAILED',
-      { type: 'reset-password', cause: 'Error: submission failed token [redacted]' },
+      {
+        type: 'reset-password',
+        cause: 'Error: submission failed token [redacted]',
+      },
     ])
     const logged = consoleError.mock.calls.flat().map(String).join(' ')
     expect(logged).toContain('Failed to run background task:')
@@ -342,6 +358,38 @@ describe('typed email delivery with real Better Auth', () => {
     await send('other@example.test', 200, '198.51.100.4')
   })
 
+  // Catches: requests that mail nothing (verification for a verified address) using up
+  // the limit of a person's real sign-in code.
+  it('keeps a separate limit per code purpose', async () => {
+    const { request, email } = setup('emailOTP')
+    const to = 'person@example.test'
+    await request('/email-otp/send-verification-otp', {
+      email: to,
+      type: 'sign-in',
+    })
+    const sent = email.mock.calls[0]![1]
+    if (sent.type !== 'email-otp') throw new Error('Expected an email code')
+    await request('/sign-in/email-otp', { email: to, otp: sent.otp })
+    email.mockClear()
+    // Other client IPs, so only the per-address limit is in play.
+    for (const ip of ['198.51.100.1', '198.51.100.2', '198.51.100.3']) {
+      await request(
+        '/email-otp/send-verification-otp',
+        { email: to, type: 'email-verification' },
+        200,
+        ip,
+      )
+    }
+    expect(email).not.toHaveBeenCalled()
+    await request(
+      '/email-otp/send-verification-otp',
+      { email: to, type: 'sign-in' },
+      200,
+      '198.51.100.4',
+    )
+    expect(email).toHaveBeenCalledTimes(1)
+  })
+
   // Catches: mailing a code nothing can use, for example a reset code with the
   // reset routes closed, or a verification code for an address already proved.
   it.each(['forget-password', 'email-verification'] as const)(
@@ -354,9 +402,15 @@ describe('typed email delivery with real Better Auth', () => {
       })
       const sent = email.mock.calls[0]![1]
       if (sent.type !== 'email-otp') throw new Error('Expected an email code')
-      await request('/sign-in/email-otp', { email: 'person@example.test', otp: sent.otp })
+      await request('/sign-in/email-otp', {
+        email: 'person@example.test',
+        otp: sent.otp,
+      })
       email.mockClear()
-      await request('/email-otp/send-verification-otp', { email: 'person@example.test', type })
+      await request('/email-otp/send-verification-otp', {
+        email: 'person@example.test',
+        type,
+      })
       expect(email).not.toHaveBeenCalled()
     },
   )
@@ -389,7 +443,10 @@ describe('typed email delivery with real Better Auth', () => {
     const { request, signUp, delivered } = setup('organization')
     const id = await signUp()
     await request('/sign-in/email', { email: 'person@example.test', password })
-    const organization = await request('/organization/create', { name: 'Org', slug: 'org' })
+    const organization = await request('/organization/create', {
+      name: 'Org',
+      slug: 'org',
+    })
     expect(organization).toMatchObject({ id: expect.any(String) })
     if (
       !organization ||

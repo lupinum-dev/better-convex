@@ -13,18 +13,32 @@ const EMAIL_CODE_PATHS = new Set([
   '/forget-password/email-otp',
 ])
 
-async function addressKey(email: string): Promise<string> {
+// Better Auth's OTP types (email-otp/routes: `types`). An unknown one fails its validation.
+const CODE_PURPOSES = new Set(['sign-in', 'email-verification', 'forget-password', 'change-email'])
+
+/**
+ * The purpose of the code a request mails, or null for an unknown type. The
+ * purpose is part of the key because the send hook mails nothing for some
+ * purposes (a verified address, closed reset routes): one shared bucket would
+ * let those requests use up the limit for codes a person really waits for.
+ */
+function codePurpose(path: string, body: { type?: unknown } | undefined): string | null {
+  if (path !== '/email-otp/send-verification-otp') return 'forget-password'
+  return typeof body?.type === 'string' && CODE_PURPOSES.has(body.type) ? body.type : null
+}
+
+async function addressKey(email: string, purpose: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(email.trim().toLowerCase()),
   )
   const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0'))
-  return `email-code-address:${hex.join('')}`
+  return `email-code-address:${purpose}:${hex.join('')}`
 }
 
 /**
  * Better Auth limits email-code requests per client IP only, so many IPs can
- * flood one inbox. This applies the same rule to each address as well, before
+ * flood one inbox. This applies the same rule to each address and code purpose as well, before
  * Better Auth stores a code. Like Better Auth's own limits, it covers HTTP
  * requests, not `auth.api` calls from server code. The key is a hash, so the
  * rateLimit table stores no address.
@@ -40,9 +54,13 @@ export function createEmailCodeAddressLimitPlugin(
         {
           matcher: (context) => EMAIL_CODE_PATHS.has(context.path ?? ''),
           handler: createAuthMiddleware(async (context) => {
-            const email = (context.body as { email?: unknown } | undefined)?.email
+            const body = context.body as { email?: unknown; type?: unknown } | undefined
+            const email = body?.email
             if (!context.request || typeof email !== 'string' || email.length === 0) return
-            const decision = await consume()(await addressKey(email), rule)
+            // An unknown type is left for Better Auth to reject without using the limit.
+            const purpose = codePurpose(context.path ?? '', body)
+            if (purpose === null) return
+            const decision = await consume()(await addressKey(email, purpose), rule)
             if (decision.allowed) return
             const retryAfter = String(Math.max(1, decision.retryAfter ?? rule.window))
             throw new APIError(
