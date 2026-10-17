@@ -1,5 +1,11 @@
 import { defineFunctions, owner, tenant } from '@lupinum/better-convex-functions'
-import type { DataModelFromSchemaDefinition } from 'convex/server'
+import {
+  anyApi,
+  type ApiFromModules,
+  type DataModelFromSchemaDefinition,
+  type FilterApi,
+  type FunctionReference,
+} from 'convex/server'
 
 import { people } from './people'
 import { policy } from './policy'
@@ -19,6 +25,8 @@ export const fns = defineFunctions({
   },
   // A client inherits the roles of its organization.
   roleOf: async (ctx, user, tenant) => {
+    // Outside an organization every signed-in person has the signedIn role.
+    if (tenant === null) return 'signedIn'
     const organizationId =
       tenant.table === 'organizations'
         ? tenant.id
@@ -43,4 +51,22 @@ export const fns = defineFunctions({
   },
 })
 
-export const { query, mutation, internalQuery, internalMutation, internalAction, job } = fns
+export const {
+  query,
+  mutation,
+  internalQuery,
+  internalMutation,
+  internalAction,
+  job,
+  authorizeAction,
+} = fns
+
+// What codegen's `internal` gives an app; the fixture has no codegen. Like codegen, it names this
+// module's own exports, so a type loop through `fns.action` would show here.
+const internal = anyApi as unknown as FilterApi<
+  ApiFromModules<{ functions: typeof import('./functions') }>,
+  FunctionReference<any, 'internal'>
+>
+
+/** Public actions: each call runs `authorizeAction` first. */
+export const action = fns.action(internal.functions.authorizeAction)

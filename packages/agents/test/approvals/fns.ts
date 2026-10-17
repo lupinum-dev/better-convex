@@ -28,7 +28,11 @@ export const policy = definePolicy({
     'projects.leak',
     'projects.leakApproved',
   ],
-  roles: { owner: ['*'], viewer: ['projects.list', 'projects.read'] },
+  roles: {
+    signedIn: ['projects.read', 'projects.archive', 'notes.edit', 'notes.clear'],
+    owner: ['*'],
+    viewer: ['projects.list', 'projects.read'],
+  },
   audit: ['projects.rename', 'projects.touch', 'projects.archive'],
   // One archive and one export a minute for everyone; a person's approval does not take them.
   limits: {
@@ -86,6 +90,8 @@ export const fns = defineFunctions({
     return user?.active ? user : null
   },
   roleOf: async (ctx, user, tenant) => {
+    // Outside an organization every signed-in person has the signedIn role.
+    if (tenant === null) return 'signedIn'
     if (tenant.table !== 'orgs') return null
     const membership = await ctx.db
       .query('memberships')

@@ -5,6 +5,7 @@ import { can, decide, definePolicy, type Asker } from '../src/policy'
 const policy = definePolicy({
   actions: ['organizations.list', 'projects.search', 'projects.create', 'projects.archive'],
   roles: {
+    signedIn: ['organizations.list'],
     owner: ['*'],
     member: ['projects.search', 'projects.create'],
     viewer: ['projects.search'],
@@ -39,18 +40,16 @@ test.each([
   },
 )
 
-test('tenantless actions skip the role but keep the grant', () => {
-  expect(
-    decide(policy, { asker: reader, role: null, action: 'organizations.list', tenantless: true }),
-  ).toBe('allow')
-  expect(
-    decide(policy, {
-      asker: { kind: 'agent', scopes: [] },
-      role: null,
-      action: 'organizations.list',
-      tenantless: true,
-    }),
-  ).toBe('deny')
+// Catches: what every signed-in person may do (the role roleOf gives outside a tenant) letting an
+// agent past its grant or a visitor in, or no role at all passing.
+test.each([
+  [person, 'signedIn', 'allow'],
+  [reader, 'signedIn', 'allow'],
+  [{ kind: 'agent', scopes: [] }, 'signedIn', 'deny'],
+  [{ kind: 'visitor' }, 'signedIn', 'deny'],
+  [person, null, 'deny'],
+] as const)('organizations.list for %j with role %s is %s', (asker, role, expected) => {
+  expect(decide(policy, { asker, role, action: 'organizations.list' })).toBe(expected)
 })
 
 // K1: a role named like a prototype key threw a TypeError instead of denying.

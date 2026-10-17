@@ -96,7 +96,8 @@ export const storeFile = internalAction({
 
 /** A nullable file argument, the common `v.union(v.id('_storage'), v.null())`, through an operation. */
 export const withFile = fns.internalQuery({
-  action: 'projects.search',
+  // The input names no tenant, so the call has the signedIn role, which allows this action.
+  action: 'organizations.list',
   args: { file: v.union(v.id('_storage'), v.null()) },
   returns: v.string(),
   handler: async () => 'ok',

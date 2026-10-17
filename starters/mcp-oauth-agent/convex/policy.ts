@@ -10,6 +10,8 @@ export const policy = definePolicy({
     'projects.archive',
   ],
   roles: {
+    // Every signed-in person, outside any organization: roleOf returns it for a call that names none.
+    signedIn: ['organizations.list'],
     owner: ['*'],
     admin: ['organizations.list', 'projects.*'],
     member: ['organizations.list', 'projects.search', 'projects.create', 'projects.rename'],

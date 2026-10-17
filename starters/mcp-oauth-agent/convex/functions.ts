@@ -17,6 +17,8 @@ export const fns = defineFunctions({
     return user?.active ? user : null
   },
   roleOf: async (ctx, user, tenant) => {
+    // A call that names no organization (listing your organizations): what every signed-in person may do.
+    if (tenant === null) return 'signedIn'
     if (tenant.table !== 'organizations') return null
     const membership = await ctx.db
       .query('memberships')

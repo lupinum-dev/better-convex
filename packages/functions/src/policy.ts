@@ -50,7 +50,12 @@ export function isAudited(policy: Policy, action: string): boolean {
 interface PolicyConfig<A extends string, R extends string, S extends string> {
   /** Every action the app has. Only this list defines the action names; typos elsewhere are type errors. */
   actions: readonly A[]
-  /** What each role may do. Roles come from the app (`roleOf`). */
+  /**
+   * What each role may do. Roles come from the app (`roleOf`): the role in the
+   * tenant a call's input names, or, for a call that names none, the role
+   * outside any tenant (`roleOf(ctx, user, null)`). What every signed-in
+   * person may do is a role too, for example `signedIn`.
+   */
   roles: Record<R, readonly Pattern<NoInfer<A>>[]>
   /** OAuth scopes a person grants to an outside agent, with the consent text. */
   scopes: Record<S, { label: string; actions: readonly Pattern<NoInfer<A>>[] }>
@@ -71,9 +76,10 @@ interface PolicyConfig<A extends string, R extends string, S extends string> {
   approvers?: Partial<Record<NoInfer<A>, Approvers<NoInfer<R>>>>
   /**
    * How often each action may run. A call over the limit fails with
-   * `RATE_LIMITED`. A call the policy denies never takes a token, and a call
-   * that fails gives its token back. Only mutations and actions are limited,
-   * and jobs (the system) never are.
+   * `RATE_LIMITED`. A call the policy denies never takes a token. A mutation
+   * that fails gives its token back; a public action takes its token in its
+   * check, before the handler runs, and keeps it when the handler fails. Only
+   * mutations and actions are limited, and jobs (the system) never are.
    */
   limits?: Partial<Record<NoInfer<A>, Limit>>
   /**
@@ -164,9 +170,9 @@ export type Asker =
 export type Decision = 'allow' | 'approve' | 'deny'
 
 /**
- * The one decision function. `role` is the asker's role in the call's tenant,
- * `null` without a membership; a call without a tenant (`tenantless`) skips
- * the role layer, and the row rules check each row in its own tenant.
+ * The one decision function. `role` is the asker's role where the call acts:
+ * in the tenant its input names, or outside any tenant when it names none.
+ * `null` means no role, and a call needs one unless its action is public.
  * `input` feeds agent rules that read it.
  */
 export function decide<P extends Policy>(
@@ -175,15 +181,13 @@ export function decide<P extends Policy>(
     action: ActionOf<P>
     asker: Asker
     role: RoleOf<P> | null
-    tenantless?: boolean
     input?: Record<string, unknown>
   },
 ): Decision {
   const { action, asker, role } = call
   if (asker.kind === 'system') return 'allow'
-  const isPublic = (policy.public as readonly string[] | undefined)?.includes(action) ?? false
-  if (asker.kind === 'visitor') return isPublic ? 'allow' : 'deny'
-  if (!isPublic && !call.tenantless) {
+  if (asker.kind === 'visitor') return isPublicAction(policy, action) ? 'allow' : 'deny'
+  if (!isPublicAction(policy, action)) {
     if (role === null || !roleAllows(policy, role, action)) return 'deny'
   }
   if (asker.kind === 'person') return 'allow'
@@ -217,6 +221,11 @@ function agentRule(policy: Policy, action: string, input: Record<string, unknown
     }
   }
   return decisions.includes(decision) ? (decision as Decision) : 'approve'
+}
+
+/** May anyone call this action, signed in or not? */
+export function isPublicAction(policy: Policy, action: string): boolean {
+  return (policy.public as readonly string[] | undefined)?.includes(action) ?? false
 }
 
 /** May this role do this action? The role layer of `decide`, also used for each row a call touches. */

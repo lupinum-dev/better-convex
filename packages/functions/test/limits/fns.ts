@@ -5,7 +5,7 @@ import {
   tenant,
   unchecked,
 } from '@lupinum/better-convex-functions'
-import type { DataModelFromSchemaDefinition } from 'convex/server'
+import { makeFunctionReference, type DataModelFromSchemaDefinition } from 'convex/server'
 
 import { people } from '../app/people'
 import type schema from '../rules/schema'
@@ -27,8 +27,10 @@ export const policy = definePolicy({
     'tasks.run',
     'projects.guard',
     'projects.peek',
+    'reports.mine',
   ],
   roles: {
+    signedIn: ['reports.mine', 'reports.generate', 'notes.add'],
     owner: ['*'],
     viewer: ['projects.read', 'projects.peek'],
   },
@@ -52,32 +54,44 @@ export const policy = definePolicy({
   ],
 })
 
-export const { query, mutation, internalQuery, internalMutation, internalAction, job } =
-  defineFunctions({
-    auth: people<DataModel>(),
-    policy,
-    user: async (ctx, authId) =>
-      ctx.db
-        .query('users')
-        .withIndex('by_auth_id', (q) => q.eq('authId', authId))
-        .unique(),
-    roleOf: async (ctx, user, tenant) => {
-      if (tenant.table !== 'orgs') return null
-      const membership = await ctx.db
-        .query('memberships')
-        .withIndex('by_org_user', (q) => q.eq('orgId', tenant.id).eq('userId', user._id))
-        .unique()
-      return membership?.role ?? null
-    },
-    rules: {
-      users: owner('_id'),
-      orgs: tenant('_id'),
-      memberships: unchecked('Not touched by these tests.'),
-      projects: tenant('orgId'),
-      notes: unchecked('Rows a call writes without a tenant.'),
-      locks: unchecked('Unused here.'),
-      oddLone: unchecked('Unused here.'),
-      oddPart: unchecked('Unused here.'),
-      pages: unchecked('Unused here.'),
-    },
-  })
+export const fns = defineFunctions({
+  auth: people<DataModel>(),
+  policy,
+  user: async (ctx, authId) =>
+    ctx.db
+      .query('users')
+      .withIndex('by_auth_id', (q) => q.eq('authId', authId))
+      .unique(),
+  roleOf: async (ctx, user, tenant) => {
+    // Outside an organization every signed-in person has the signedIn role.
+    if (tenant === null) return 'signedIn'
+    if (tenant.table !== 'orgs') return null
+    const membership = await ctx.db
+      .query('memberships')
+      .withIndex('by_org_user', (q) => q.eq('orgId', tenant.id).eq('userId', user._id))
+      .unique()
+    return membership?.role ?? null
+  },
+  rules: {
+    users: owner('_id'),
+    orgs: tenant('_id'),
+    memberships: unchecked('Not touched by these tests.'),
+    projects: tenant('orgId'),
+    notes: unchecked('Rows a call writes without a tenant.'),
+    locks: unchecked('Unused here.'),
+    oddLone: unchecked('Unused here.'),
+    oddPart: unchecked('Unused here.'),
+    pages: unchecked('Unused here.'),
+  },
+})
+
+export const {
+  query,
+  mutation,
+  internalQuery,
+  internalMutation,
+  internalAction,
+  job,
+  authorizeAction,
+} = fns
+export const action = fns.action(makeFunctionReference<'mutation'>('fns:authorizeAction') as never)

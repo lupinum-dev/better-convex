@@ -33,6 +33,7 @@ export const fns = defineFunctions({
       .withIndex('by_auth_id', (q) => q.eq('authId', authId))
       .unique(),
   roleOf: async (ctx, user, tenant) => {
+    if (tenant === null) return 'signedIn'
     if (tenant.table !== 'orgs') return null
     const membership = await ctx.db
       .query('memberships')

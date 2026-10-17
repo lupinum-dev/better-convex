@@ -41,6 +41,8 @@ export const fns = defineFunctions({
       .unique(),
   // Two levels: a project inherits its client's roles, a client its agency's.
   roleOf: async (ctx, user, ref) => {
+    // No role outside an agency, client or project.
+    if (ref === null) return null
     switch (ref.table) {
       case 'agencies':
         return agencyRole(ctx, user._id, ref.id)

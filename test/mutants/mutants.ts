@@ -311,9 +311,67 @@ export const mutants: Mutant[] = [
     id: 'S6-decide-visitor',
     guards: 'S6',
     file: 'packages/functions/src/policy.ts',
-    find: "if (asker.kind === 'visitor') return isPublic ? 'allow' : 'deny'",
+    find: "if (asker.kind === 'visitor') return isPublicAction(policy, action) ? 'allow' : 'deny'",
     replace: "if (asker.kind === 'visitor') return 'allow'",
     kills: [`${F}/rules.test.ts > a visitor reads published pages; drafts and edits need a member`],
+  },
+  {
+    id: 'S6-no-tenant-role',
+    guards: 'S6',
+    file: 'packages/functions/src/functions.ts',
+    find: '          : await roleOf(null)\n',
+    replace: "          : ('owner' as never)\n",
+    kills: [
+      `${F}/limits-audit.test.ts > a mutation that names no tenant and reads no row needs a role outside any tenant`,
+      `${F}/actions.test.ts > a viewer calling an owner-only action without a tenant is refused before it runs`,
+      `${F}/shapes.test.ts > K7 one workspace: the app-wide role decides calls that name no tenant`,
+    ],
+  },
+  {
+    id: 'S6-action-check',
+    guards: 'S6',
+    file: 'packages/functions/src/functions.ts',
+    find: '        const who = await caller(ctx, action)\n',
+    replace: "        const who = { kind: 'system' as const, job: 'mutant' }\n",
+    kills: [
+      `${F}/actions.test.ts > a role without the action is refused before the handler runs`,
+      `${F}/actions.test.ts > a visitor, for an action that is not public is refused before the handler runs`,
+      `${F}/actions.test.ts > an allowed person runs the action, and its internal operations see the same person`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'C14-action-hands-over',
+    guards: 'C14',
+    file: 'packages/functions/src/functions.ts',
+    find: '            handOver(actor),\n            () => {},',
+    replace: "            { kind: 'system', job: 'mutant' },\n            () => {},",
+    kills: [
+      `${F}/actions.test.ts > an allowed person runs the action, and its internal operations see the same person`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'C14-action-token',
+    guards: 'C14',
+    file: 'packages/functions/src/functions.ts',
+    find: "op.kind === 'mutation' || op.kind === 'action' || op.writes",
+    replace: "op.kind === 'mutation' || op.writes",
+    kills: [
+      `${F}/actions.test.ts > a visitor runs an action whose name is public, until its limit`,
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'C14-action-one-token',
+    guards: 'C14',
+    file: 'packages/functions/src/functions.ts',
+    find: '            { spent: paid },',
+    replace: '            { spent: [] },',
+    kills: [
+      `${F}/doors.test.ts > limit on internal mutation run by a public action: 2 calls pass, the 3rd is RATE_LIMITED`,
+    ],
+    projects: ['functions'],
   },
   {
     id: 'S7-reached-raw',
@@ -340,8 +398,9 @@ export const mutants: Mutant[] = [
     id: 'S7-internal-action',
     guards: 'S7',
     file: 'packages/functions/src/functions.ts',
-    find: 'if (reached) {',
-    replace: 'if (false) {',
+    find: "if (reached) {\n            console.error(\n              'Raw function reached from an internal action",
+    replace:
+      "if (false) {\n            console.error(\n              'Raw function reached from an internal action",
     kills: [`${F}/rules.test.ts > an internal action that reached a raw function fails`],
   },
   {
@@ -427,7 +486,7 @@ export const mutants: Mutant[] = [
     replace: '',
     kills: [
       `${F}/policy.test.ts > decide intersects role, grant and agent rule: {"kind":"agent","scopes":["projects:read"]} as owner for projects.create is deny`,
-      `${F}/policy.test.ts > tenantless actions skip the role but keep the grant`,
+      `${F}/policy.test.ts > organizations.list for {"kind":"agent","scopes":[]} with role signedIn is deny`,
     ],
   },
   {
@@ -2358,8 +2417,8 @@ export const mutants: Mutant[] = [
     id: 'S-A-mutations-only',
     guards: 'saas-a',
     file: 'packages/functions/src/functions.ts',
-    find: "op.kind === 'mutation' || op.writes ? limitOf",
-    replace: "op.kind === 'none' || op.writes ? limitOf",
+    find: "op.kind === 'mutation' || op.kind === 'action' || op.writes\n",
+    replace: "op.kind === 'none' || op.kind === 'action' || op.writes\n",
     kills: [
       `${F}/limits-audit.test.ts > a call over the limit fails with RATE_LIMITED and the seconds to wait`,
     ],
@@ -2550,8 +2609,8 @@ export const mutants: Mutant[] = [
     id: 'S-F1-internal-limit',
     guards: 'saas-f1',
     file: 'packages/functions/src/functions.ts',
-    find: "op.kind === 'mutation' || op.writes ? limitOf",
-    replace: "op.kind === 'mutation' ? limitOf",
+    find: "op.kind === 'mutation' || op.kind === 'action' || op.writes\n",
+    replace: "op.kind === 'mutation' || op.kind === 'action'\n",
     kills: [
       `${F}/limits-audit.test.ts > an unlimited public mutation that runs a limited internal action is limited`,
       `${F}/limits-audit.test.ts > a scheduled internal mutation on a limited action is limited`,
@@ -2602,8 +2661,8 @@ export const mutants: Mutant[] = [
     id: 'S-F1-spent-pass',
     guards: 'saas-f1',
     file: 'packages/functions/src/functions.ts',
-    find: 'spent: bucket ? [...spent, bucket] : spent,',
-    replace: 'spent: [],',
+    find: 'const paid = bucket ? [...spent, bucket] : spent',
+    replace: 'const paid: string[] = []',
     kills: [
       `${F}/limits-audit.test.ts > a limited public mutation that runs the same limited internal action takes one token`,
     ],

@@ -7,7 +7,7 @@ import { auth, notUsed, orgRole, user } from './common'
 // `tenant('_id')` rule. It type-checks, so the first row it meets must say what is wrong.
 const policy = definePolicy({
   actions: ['notes.create'],
-  roles: { owner: ['*'] },
+  roles: { signedIn: ['notes.create'], owner: ['*'] },
   scopes: {},
 })
 
@@ -16,7 +16,11 @@ const { mutation } = defineFunctions({
   policy,
   user,
   roleOf: async (ctx, user, tenant) =>
-    tenant.table === 'orgs' ? ((await orgRole(ctx, user._id, tenant.id)) as 'owner' | null) : null,
+    tenant === null
+      ? 'signedIn'
+      : tenant.table === 'orgs'
+        ? ((await orgRole(ctx, user._id, tenant.id)) as 'owner' | null)
+        : null,
   rules: {
     users: owner('_id'),
     orgs: tenant('_id'),

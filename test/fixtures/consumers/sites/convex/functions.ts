@@ -13,7 +13,7 @@ export const fns = defineFunctions({
       .withIndex('by_auth_id', (q) => q.eq('authId', authId))
       .unique(),
   roleOf: async (ctx, user, tenant) => {
-    if (tenant.table !== 'organizations') return null
+    if (tenant === null || tenant.table !== 'organizations') return null
     const membership = await ctx.db
       .query('memberships')
       .withIndex('by_org_user', (q) => q.eq('organizationId', tenant.id).eq('userId', user._id))

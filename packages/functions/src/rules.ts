@@ -43,7 +43,7 @@ export interface RuleCtx<User = any, DM extends GenericDataModel = GenericDataMo
   mode: 'read' | 'write'
   /**
    * The call's tenant: the deepest tenant its input names, `undefined` for a
-   * tenantless call. A rule for a row two parties share uses it to require
+   * call that names no tenant. A rule for a row two parties share uses it to require
    * that the party acting is the one the call names (marketplace slice).
    */
   tenant: TenantRef | undefined
@@ -114,9 +114,10 @@ export function publicRead(where?: (row: Record<string, unknown>) => boolean) {
  *
  * An ID of an `anyOf` table does not name the call's tenant, as its rows may
  * be private, public or shared by two tenants. An operation on such rows
- * names its tenant in its own arguments (`siteId`, `orgId`); without one the
- * call is tenantless: no role layer, approvals without a tenant, and agent
- * work in no tenant's activity feed.
+ * names its tenant in its own arguments (`siteId`, `orgId`). Without one the
+ * call names no tenant: it needs the role outside any tenant
+ * (`roleOf(ctx, user, null)`), its approvals have no tenant, and its agent
+ * work is in no tenant's activity feed.
  */
 export function anyOf<const R extends readonly [unknown, ...unknown[]]>(...rules: R) {
   return { kind: 'anyOf' as const, rules: atLeastOne('anyOf', rules) }

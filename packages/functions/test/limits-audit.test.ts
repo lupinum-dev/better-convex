@@ -157,7 +157,7 @@ test('wrong limit or audit definitions fail when the policy is defined', () => {
 test('a query cannot use a limited action', () => {
   const limited = definePolicy({
     actions: ['x.read'],
-    roles: {},
+    roles: { owner: ['x.read'] },
     scopes: {},
     limits: { 'x.read': { max: 1, every: 'minute' } },
   })
@@ -363,4 +363,24 @@ test.each([
       limits: { 'a.write': { max: 1, every: 'day', per: undefined } },
     } as never),
   ).not.toThrow()
+})
+
+// Catches: a query or mutation that names no tenant and touches no row (no row rule ever runs)
+// running for anyone signed in. Outside a tenant the role is roleOf's for null (signedIn here),
+// and it does not allow archiving: owner of an org is not owner of everything.
+test('a mutation that names no tenant and reads no row needs a role outside any tenant', async () => {
+  const { ann, vic } = await setup()
+  for (const caller of [ann, vic])
+    await expect(caller.mutation(fn('archiveNoRows'), {})).rejects.toThrow(/FORBIDDEN/)
+})
+
+// Catches: an action every signed-in person may use letting a stranger name a foreign org, which
+// spends that org's per-tenant token and puts its ID on the call. The NOT_FOUND gate still holds.
+test('a stranger naming a foreign org gets NOT_FOUND and spends none of its tokens', async () => {
+  const { a, ann, bob } = await setup()
+  await expect(bob.mutation(fn('report'), { orgId: a })).rejects.toThrow(/NOT_FOUND/)
+  await expect(bob.mutation(fn('report'), { orgId: a })).rejects.toThrow(/NOT_FOUND/)
+  // The org's limit is 2 an hour: both still free for its own owner.
+  await ann.mutation(fn('report'), { orgId: a })
+  await ann.mutation(fn('report'), { orgId: a })
 })

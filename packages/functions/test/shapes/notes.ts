@@ -16,7 +16,7 @@ import { auth, type DataModel, notUsed, orgRole, user } from './common'
 // shared notes but not edit them.
 const policy = definePolicy({
   actions: ['notes.read', 'notes.edit'],
-  roles: { owner: ['*'], viewer: ['notes.read'] },
+  roles: { signedIn: ['notes.read', 'notes.edit'], owner: ['*'], viewer: ['notes.read'] },
   scopes: {},
 })
 
@@ -24,10 +24,12 @@ const shared = {
   auth,
   policy,
   user,
-  roleOf: async (ctx: any, user: { _id: any }, tenant: { table: string; id: any }) =>
-    tenant.table === 'orgs'
-      ? ((await orgRole(ctx, user._id, tenant.id)) as RoleOf<typeof policy> | null)
-      : null,
+  roleOf: async (ctx: any, user: { _id: any }, tenant: { table: string; id: any } | null) =>
+    tenant === null
+      ? ('signedIn' as const)
+      : tenant.table === 'orgs'
+        ? ((await orgRole(ctx, user._id, tenant.id)) as RoleOf<typeof policy> | null)
+        : null,
 }
 
 const others = {

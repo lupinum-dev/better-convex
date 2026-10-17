@@ -12,7 +12,10 @@ export const policy = definePolicy({
     'shapes.echo',
     'projects.unscoped',
   ],
-  roles: { owner: ['*'] },
+  roles: {
+    signedIn: ['projects.search', 'projects.create', 'projects.archive', 'shapes.echo'],
+    owner: ['*'],
+  },
   scopes: {
     read: { label: 'Read', actions: ['projects.search', 'shapes.echo'] },
     write: { label: 'Write', actions: ['projects.create', 'projects.archive'] },
@@ -32,6 +35,8 @@ export const fns = defineFunctions({
       .withIndex('by_auth_id', (q) => q.eq('authId', authId))
       .unique(),
   roleOf: async (ctx, user, tenant) => {
+    // Outside an organization every signed-in person has the signedIn role.
+    if (tenant === null) return 'signedIn'
     if (tenant.table !== 'orgs') return null
     const membership = await ctx.db
       .query('memberships')

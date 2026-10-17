@@ -60,7 +60,7 @@ export const seen = new Map<string, unknown>()
 
 export const policy = definePolicy({
   actions: ['probe.read', 'probe.edit', 'probe.public', 'probe.ask', 'probe.rule'],
-  roles: { owner: ['*'] },
+  roles: { signedIn: ['probe.read', 'probe.edit', 'probe.ask', 'probe.rule'], owner: ['*'] },
   scopes: { all: { label: 'Everything.', actions: ['*'] } },
   public: ['probe.public'],
   agents: {
@@ -95,6 +95,8 @@ export const fns = defineFunctions({
     return user?.active ? user : null
   },
   roleOf: async (ctx, user, tenant) => {
+    // Outside an organization every signed-in person has the signedIn role.
+    if (tenant === null) return 'signedIn'
     seen.set('roleOf', { ...snapshot(ctx), user: keys(user), tenant: keys(tenant) })
     if (tenant.table !== 'orgs') return null
     const membership = await ctx.db

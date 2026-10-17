@@ -1,5 +1,7 @@
 import {
+  actionGeneric,
   getFunctionAddress,
+  getFunctionName,
   internalActionGeneric,
   internalMutationGeneric,
   internalQueryGeneric,
@@ -14,6 +16,7 @@ import {
   type GenericMutationCtx,
   type GenericQueryCtx,
   type PaginationOptions,
+  type RegisteredAction,
   type RegisteredMutation,
   type RegisteredQuery,
   type SchemaDefinition,
@@ -45,6 +48,7 @@ import { rateLimited, takeToken } from './limits'
 import {
   decide,
   isAudited,
+  isPublicAction,
   limitOf,
   roleAllows,
   type ActionOf,
@@ -253,8 +257,20 @@ export function defineFunctions<
   policy: P
   /** The app user for a Better Auth user ID, or `null` when they may not act (suspended, no profile yet). */
   user: (ctx: GenericQueryCtx<DM>, authId: string) => Promise<NoInfer<User> | null>
-  /** The person's role in a tenant, or `null` without a membership. A child tenant may inherit its parent's roles here. */
-  roleOf: (ctx: GenericQueryCtx<DM>, user: User, tenant: TenantOf<DM>) => Promise<RoleOf<P> | null>
+  /**
+   * The person's role where a call acts, or `null` for no role. `tenant` is the tenant the call's
+   * input names; a child tenant may inherit its parent's roles here. `tenant` is `null` for a call
+   * that names none: return the role this person has outside any tenant. A multi-tenant app returns
+   * a role such as `signedIn` that lists what every signed-in person may do; an app with one
+   * workspace and no tenant tables returns the member's role. `null` refuses the call, unless its
+   * action is public. Answer `null` for a tenant you do not handle, so a tenant table added later
+   * cannot inherit a role it was never given.
+   */
+  roleOf: (
+    ctx: GenericQueryCtx<DM>,
+    user: User,
+    tenant: TenantOf<DM> | null,
+  ) => Promise<RoleOf<P> | null>
   /** One rule per app table: who may read and write its rows. See `rules.ts`. */
   rules: NoInfer<{
     [T in AppTables<DM>]: Rule<DocumentByName<DM, T>, User, DM, ActionOf<P>>
@@ -322,8 +338,22 @@ export function defineFunctions<
       )
   }
 
-  const isPublic = (action: string) =>
-    (policy.public as readonly string[] | undefined)?.includes(action) ?? false
+  const isPublic = (action: string) => isPublicAction(policy, action)
+
+  /**
+   * A public function whose action no role allows, and that is not public, refuses every caller.
+   * Fail when it is built, not at its first call.
+   */
+  function assertReachable(action: string) {
+    if (isPublic(action)) return
+    const roles = Object.keys(policy.roles as Record<string, unknown>)
+    if (roles.some((role) => roleAllows(policy, role, action))) return
+    throw new Error(
+      `${action}: no role allows it, and it is not public, so nobody can call it. Give a role ` +
+        'this action; if every signed-in person may call it, give it to the role roleOf returns ' +
+        'for a call without a tenant (for example signedIn).',
+    )
+  }
 
   async function signedIn(ctx: QCtx): Promise<Person | null> {
     const authUser = await auth.getUser(ctx)
@@ -456,7 +486,7 @@ export function defineFunctions<
    */
   async function tenantsOf(
     ctx: QCtx,
-    op: Pick<Operation, 'args'>,
+    shape: ValidatorJson,
     input: Record<string, unknown>,
     rows: Map<string, Record<string, unknown> | null>,
   ) {
@@ -476,7 +506,9 @@ export function defineFunctions<
           if (!rows.has(value))
             rows.set(value, id && ((await ctx.db.get(id)) as Record<string, unknown> | null))
           const row = rows.get(value)
-          if (!row) fail('NOT_FOUND', `No ${json.tableName} with this ID.`)
+          // The same answer as for a row in a place without a role (below), so a caller cannot
+          // tell a deleted ID from a foreign one.
+          if (!row) fail('NOT_FOUND', 'Nothing with these IDs was found.')
           const ref = tenants.rowTenant(ctx.db, json.tableName, row)
           if (ref) found.set(ref.id, ref)
           return
@@ -506,8 +538,7 @@ export function defineFunctions<
           return
       }
     }
-    for (const [name, validator] of Object.entries(op.args))
-      await visit(jsonOf(validator), input[name], false)
+    await visit(shape, input, false)
     return [...found.values()]
   }
 
@@ -519,15 +550,18 @@ export function defineFunctions<
    */
   async function authorize<Ctx extends QCtx>(
     ctx: Ctx,
-    op: Pick<Operation, 'action' | 'args' | 'crossTenant'> & {
-      kind?: Operation['kind']
-      /** An internal mutation: it writes, so it is limited and audited like a public one. */
-      writes?: boolean
-      /** Buckets an outer operation in this call chain already took a token from. */
-      spent?: readonly string[]
-      /** Run by an outer operation's `ctx.runMutation` whose audit row takes this call's ids. */
-      nested?: boolean
-    },
+    op: Pick<Operation, 'action' | 'crossTenant'> &
+      // A public action's check gets the action's arguments as validator JSON: it runs in a mutation of its own.
+      ({ args: PropertyValidators } | { shape: ValidatorJson }) & {
+        /** `action`: the check of a public action, which takes the action's token. */
+        kind?: Operation['kind'] | 'action'
+        /** An internal mutation: it writes, so it is limited and audited like a public one. */
+        writes?: boolean
+        /** Buckets an outer operation in this call chain already took a token from. */
+        spent?: readonly string[]
+        /** Run by an outer operation's `ctx.runMutation` whose audit row takes this call's ids. */
+        nested?: boolean
+      },
     actor: Actor<User> | Visitor | SystemActor,
     input: Record<string, unknown>,
   ) {
@@ -538,12 +572,17 @@ export function defineFunctions<
         rows.set(id, (await ctx.db.get(id as never)) as Record<string, unknown> | null)
       return rows.get(id)!
     }
-    const roleOf = (ref: TenantRef) =>
+    const roleOf = (ref: TenantRef | null) =>
       actor.kind === 'person' || actor.kind === 'agent'
-        ? config.roleOf(readOnly(ctx), actor.user, ref as TenantOf<DM>)
+        ? config.roleOf(readOnly(ctx), actor.user, ref as TenantOf<DM> | null)
         : Promise.resolve(null)
 
-    const named = await tenantsOf(ctx, op, input, rows)
+    const named = await tenantsOf(
+      ctx,
+      'shape' in op ? op.shape : jsonOf(v.object(op.args)),
+      input,
+      rows,
+    )
     const chains = await Promise.all(named.map((ref) => tenants.chain(load, ctx.db, ref)))
     for (const ref of named) roles.set(ref.id, await roleOf(ref))
     const open = isPublic(op.action) || actor.kind === 'system'
@@ -566,6 +605,16 @@ export function defineFunctions<
       }
     }
     const tenant = op.crossTenant ? undefined : deepest?.[0]
+    // The role where the call acts: in its tenant; across places, the role every place already
+    // allowed above; for a call that names no tenant, the role outside any tenant. There is no
+    // fallback: no role refuses the call. A public action needs none, so it costs no read.
+    const role = open
+      ? null
+      : tenant
+        ? (roles.get(tenant.id) ?? null)
+        : op.crossTenant && named.length > 0
+          ? (roles.get(named[0]!.id) ?? null)
+          : await roleOf(null)
     const asker =
       actor.kind === 'agent'
         ? { kind: 'agent' as const, scopes: actor.scopes }
@@ -573,8 +622,7 @@ export function defineFunctions<
     const decision: Decision = decide(policy, {
       action: op.action as ActionOf<P>,
       asker,
-      role: (tenant ? roles.get(tenant.id) : null) as RoleOf<P> | null,
-      tenantless: tenant === undefined,
+      role: role as RoleOf<P> | null,
       input,
     })
     if (decision === 'deny') {
@@ -587,7 +635,11 @@ export function defineFunctions<
     // Public or internal, every mutation takes one, unless an outer operation in this call chain
     // already took one from the same bucket. Work under a person's approval takes none: the person
     // is the gate, and the agent's request already spent its write budget.
-    const limit = op.kind === 'mutation' || op.writes ? limitOf(policy, op.action) : undefined
+    // A public action takes its token in its check, before its handler runs.
+    const limit =
+      op.kind === 'mutation' || op.kind === 'action' || op.writes
+        ? limitOf(policy, op.action)
+        : undefined
     const spent = op.spent ?? []
     const bucket =
       limit &&
@@ -598,6 +650,8 @@ export function defineFunctions<
         : undefined
     // The same bucket, not only the same action: a nested call for another tenant pays its own.
     if (bucket && limit && !spent.includes(bucket)) await spend(ctx, bucket, limit)
+    /** Buckets this call chain took a token from, for the calls this one runs. */
+    const paid = bucket ? [...spent, bucket] : spent
     // A system actor's db has no rules: it may change any row.
     let checks = {
       forget: () => {},
@@ -660,7 +714,7 @@ export function defineFunctions<
         // Operations this call runs in its own transaction add their ids to the audit row of the
         // outermost audited call. Under an unaudited call they write their own row.
         collect: audits || op.nested ? (ids) => ids.forEach((id) => written.add(id)) : undefined,
-        spent: bucket ? [...spent, bucket] : spent,
+        spent: paid,
       },
     )
     /**
@@ -689,6 +743,7 @@ export function defineFunctions<
     return {
       decision,
       tenant,
+      paid,
       rows,
       written,
       record,
@@ -947,6 +1002,7 @@ export function defineFunctions<
     const Name extends string,
   >(spec: Spec<QueryCtx, A, Args, Returns, Name>) {
     assertAction(spec)
+    assertReachable(spec.action as string)
     assertUnlimited(spec)
     const rule = policy.agents?.[spec.action]
     if (rule === 'approve' || typeof rule === 'function') {
@@ -1003,6 +1059,7 @@ export function defineFunctions<
     },
   ) {
     assertAction(spec)
+    assertReachable(spec.action as string)
     const op = { kind: 'mutation', ...spec } as unknown as Operation
     const registered = mutationGeneric({
       args: spec.args,
@@ -1211,6 +1268,158 @@ export function defineFunctions<
   }
 
   /**
+   * The check every public action runs before its handler, in a transaction of its own: an action
+   * has no database. It finds the caller as a public mutation does, decides with the caller's role
+   * in the tenant the input names, and takes the action's rate-limit token. Built here, exported by
+   * the app (`export const { authorizeAction } = fns`) and named once in `fns.action(…)`.
+   */
+  const authorizeAction = guarded(
+    internalMutationGeneric({
+      args: { action: v.string(), shape: v.string(), input: v.any() },
+      returns: v.object({
+        checked: v.literal(actionCheckMark),
+        actor: v.any(),
+        paid: v.array(v.string()),
+      }),
+      handler: async (
+        ctx: MCtx,
+        { action, shape, input }: { action: string; shape: string; input: Record<string, unknown> },
+      ) => {
+        assertAction({ action })
+        const who = await caller(ctx, action)
+        const { decision, paid } = await authorize(
+          ctx,
+          { kind: 'action', action, shape: JSON.parse(shape) as ValidatorJson },
+          who,
+          input,
+        )
+        // Only people and visitors call a public action, and the policy asks no person about them.
+        // Should an agent ever arrive here, an action cannot wait for a person's approval.
+        if (decision !== 'allow')
+          fail('FORBIDDEN', `${action} needs a person's approval, and an action cannot wait.`)
+        return { checked: actionCheckMark, actor: shown(who), paid: [...paid] }
+      },
+    }),
+  ) as unknown as RegisteredMutation<
+    'internal',
+    { action: string; shape: string; input: unknown },
+    Promise<{ checked: typeof actionCheckMark; actor: unknown; paid: string[] }>
+  >
+
+  /**
+   * The builder for public actions: work outside the database that a person starts, such as
+   * rendering a PDF, reading an uploaded file or calling a service. Pass the reference of the
+   * exported check once: `export const action = fns.action(internal.functions.authorizeAction)`.
+   * Non-generic on purpose: TypeScript resolves `internal.<this module>` without a type loop only
+   * for a plain signature.
+   */
+  function action(authorizeRef: FunctionReference<'mutation', 'internal'>) {
+    let checkName: string
+    try {
+      checkName = getFunctionName(authorizeRef)
+    } catch {
+      throw new Error(
+        'fns.action takes the reference of the exported check, not an action: ' +
+          '`export const action = fns.action(internal.functions.authorizeAction)`, then `action({ action, args, returns, handler })`.',
+      )
+    }
+    /**
+     * A public action. Before the handler runs, the call checks the caller, the policy and the
+     * tenant the arguments name, like a public mutation, and takes the action's rate-limit token.
+     * The handler has no `ctx.db`: `ctx.runQuery`, `runMutation`, `runAction` and `scheduler`
+     * reach internal operations as the same actor, and each checks it again. An action is not a
+     * tool: agents reach the app through tools only.
+     */
+    return function action<
+      const A extends ActionOf<P>,
+      Args extends PropertyValidators,
+      Returns extends AnyValidator,
+    >(spec: {
+      action: A
+      /**
+       * IDs of tables with a `tenant` rule name the call's tenant, as in an operation. The role
+       * there decides; a call that names no tenant needs the role outside any tenant
+       * (`roleOf(ctx, user, null)`), unless its action is public.
+       */
+      args: Args
+      returns: Returns
+      handler: (
+        ctx: ActionCtx & { actor: ActorFor<A> },
+        args: ObjectType<Args>,
+      ) => Promise<Infer<Returns>>
+    }) {
+      assertAction(spec)
+      assertReachable(spec.action as string)
+      // The check reads tenants from IDs only: it gets the arguments that can hold one, not a
+      // file's text that an import sends along.
+      const withIds = Object.keys(spec.args).filter((name) =>
+        JSON.stringify(jsonOf(spec.args[name])).includes('"type":"id"'),
+      )
+      const shape = JSON.stringify(
+        jsonOf(v.object(Object.fromEntries(withIds.map((name) => [name, spec.args[name]!])))),
+      )
+      const registered = actionGeneric({
+        args: spec.args,
+        returns: spec.returns,
+        handler: async (ctx: ACtx, input: ObjectType<Args>) => {
+          const values: Record<string, unknown> = input
+          const named = withIds.filter((name) => name in values)
+          const checked = (await ctx
+            .runMutation(authorizeRef, {
+              action: spec.action,
+              shape,
+              input: Object.fromEntries(named.map((name) => [name, values[name]])),
+            })
+            .catch((error: unknown) => {
+              // Convex: "Could not find public function for 'x:y'"; convex-test: "... there is no such export".
+              const message = error instanceof Error ? error.message : ''
+              if (!/Could not find (?:public )?function|there is no such export/i.test(message))
+                throw error
+              throw new Error(
+                `${spec.action}: fns.action names ${checkName} as its check, but no module exports it there. ` +
+                  'Add `authorizeAction` to `export const { … } = fns` in that module.',
+              )
+            })) as { checked?: unknown; actor: Actor<User> | Visitor; paid: string[] }
+          if (checked?.checked !== actionCheckMark)
+            throw new Error(
+              `${checkName} is not the check of defineFunctions. Pass internal.<module>.authorizeAction to fns.action.`,
+            )
+          const { actor, paid } = checked
+          // No transaction: a raw function the handler reached has already committed. The call
+          // fails loudly, as an internal action does; the no-bypass test is what prevents it.
+          let reached: unknown = null
+          const nested = nestedCalls(
+            ctx,
+            handOver(actor),
+            () => {},
+            () =>
+              (reached ??= new Error(
+                'This action reached a function that is not an internal operation.',
+              )),
+            // Its mutations take no second token from the bucket the check took one from.
+            { spent: paid },
+          )
+          const result = await spec.handler({ ...ctx, ...nested, actor } as never, input)
+          if (reached) {
+            console.error(
+              'Raw function reached from a public action; its writes are committed. Make it an internal operation.',
+              reached,
+            )
+            throw reached
+          }
+          return result
+        },
+      })
+      // Not an operation for `defineTools`: an action is never a tool.
+      return guarded(registered) as RegisteredAction<
+        'public',
+        ObjectType<Args>,
+        Promise<Infer<Returns>>
+      >
+    }
+  }
+
+  /**
    * Internal code run by the system: crons and scheduled work. Recorded as one
    * activity row, with the result (a Convex value; a large one is kept as
    * `{ truncated, bytes }`). `ctx.runQuery`, `runMutation`, `runAction` and
@@ -1304,6 +1513,8 @@ export function defineFunctions<
     internalMutation,
     internalAction,
     job,
+    action,
+    authorizeAction,
   }
   kits.set(fns, { auth, person, agent, authorize, lib, tenants, roleOf: config.roleOf })
   type Result = typeof fns &
@@ -1400,3 +1611,6 @@ export async function auditTrail(
 
 /** Marks an internal operation's result, so a call can tell it from a raw function's. */
 const operationMark = 'better-convex/operation' as const
+
+/** Marks the result of a public action's check, so an action can tell it from another function's. */
+const actionCheckMark = 'better-convex/action-check' as const

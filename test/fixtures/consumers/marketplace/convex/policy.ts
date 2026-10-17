@@ -4,6 +4,8 @@ import { definePolicy } from '@lupinum/better-convex-functions/policy'
 export const policy = definePolicy({
   actions: ['listings.browse', 'orders.list', 'orders.place', 'orders.ship', 'orders.cancel'],
   roles: {
+    // Every signed-in person, outside any org: browsing what sellers offer.
+    signedIn: ['listings.browse'],
     owner: ['*'],
     member: ['listings.browse', 'orders.*'],
     viewer: ['listings.browse', 'orders.list'],
