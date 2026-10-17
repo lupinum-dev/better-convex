@@ -13,7 +13,8 @@ const EMAIL_CODE_PATHS = new Set([
   '/forget-password/email-otp',
 ])
 
-const CODE_PURPOSES = new Set(['sign-in', 'email-verification', 'forget-password'])
+// Better Auth's OTP types (email-otp/routes: `types`). An unknown one fails its validation.
+const CODE_PURPOSES = new Set(['sign-in', 'email-verification', 'forget-password', 'change-email'])
 
 /**
  * The purpose of the code a request mails, or null for an unknown type. The
