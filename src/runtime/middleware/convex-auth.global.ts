@@ -8,6 +8,7 @@ import {
   resolveRouteProtectionDecision,
   type ConvexAuthPageMeta,
 } from '../utils/auth-route-protection'
+import { AUTH_UNAVAILABLE_MESSAGE } from '../utils/convex-shared'
 import { normalizeConvexRuntimeConfig } from '../utils/runtime-config'
 import { isSsrAuthEnabled } from '../utils/ssr-auth'
 
@@ -21,13 +22,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const policy = resolveRoutePolicy(meta, authConfig.routes)
   if (policy === 'public') return
   // Without SSR auth the server does not know the visitor, so the browser decides.
-  const requestEvent = useRequestEvent()
-  if (import.meta.server && !isSsrAuthEnabled(requestEvent?.context, authConfig.ssr)) return
+  if (import.meta.server && !isSsrAuthEnabled(useRequestEvent()?.context, authConfig.ssr)) return
 
   // An on-demand build starts the browser runtime for the first page that
   // needs to know who is signed in.
   if (import.meta.client) await useConvexActivation().activate()
-  const { status, pending, ready } = useConvexAuth()
+  const { status, pending, error, ready } = useConvexAuth()
 
   // Wait for auth to settle in the browser so neither a protected page nor a
   // guest page flashes for the wrong visitor. The server never waits: SSR
@@ -58,13 +58,19 @@ export default defineNuxtRouteMiddleware(async (to) => {
   })
   if (!decision) return
 
-  // The server could not ask Better Auth for a person who presented a session
-  // cookie (a 429, 5xx, timeout or network error; a 401 is not an error here).
-  // That is "unknown", not "signed out": render the page with `status: 'error'`
-  // and let the browser, which waits out temporary failures, decide on hydration.
-  if (requestEvent && status.value === 'error') return
-
-  // A still-pending server state falls through to the secure default below.
   if ((await settledStatus()) === 'authenticated' || status.value === 'authenticated') return
+  // The server or the browser could not ask Better Auth for this person (a 429,
+  // 5xx, timeout or network error; a 401 is not an error here). That is
+  // "unknown", not "signed out": render the page with `status: 'error'`, or
+  // still `'pending'` while the browser waits out the failure after a server
+  // render that hit it. The browser keeps retrying and recovers on its own;
+  // Convex still refuses data the person may not read.
+  if (
+    error.value?.message === AUTH_UNAVAILABLE_MESSAGE &&
+    (status.value === 'error' || status.value === 'pending')
+  ) {
+    return
+  }
+  // Any other pending or failed state falls through to the secure default.
   return navigateTo(decision.redirectTo)
 })

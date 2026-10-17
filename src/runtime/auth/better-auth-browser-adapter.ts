@@ -2,6 +2,7 @@ import type { BetterConvexAuthAdapter } from '@lupinum/better-convex-vue'
 import { watch, type Ref } from 'vue'
 
 import { ConvexCallError } from '../errors'
+import { AUTH_UNAVAILABLE_MESSAGE } from '../utils/convex-shared'
 import type { ConvexUser } from '../utils/types'
 import {
   fetchConvexToken,
@@ -28,7 +29,7 @@ interface BetterAuthBrowserSource extends ConvexTokenSource {
   useSession(): Readonly<Ref<BetterAuthSessionState>>
 }
 
-const UNAVAILABLE = 'Authentication is temporarily unavailable'
+const UNAVAILABLE = AUTH_UNAVAILABLE_MESSAGE
 const SESSION_SETTLEMENT_TIMEOUT_MS = 5_000
 /**
  * Backoff after a token exchange that failed for a temporary reason (429, 5xx,

@@ -1,4 +1,5 @@
 import {
+  AUTH_UNAVAILABLE_MESSAGE,
   decodeUserFromJwt,
   getJwtLifetimeMs,
   TOKEN_EXPIRY_SAFETY_BUFFER_MS,
@@ -42,7 +43,7 @@ const TOKEN_EXCHANGE_TIMED_OUT = Symbol('TOKEN_EXCHANGE_TIMED_OUT')
 const TOKEN_EXCHANGE_CANCELLED = Symbol('TOKEN_EXCHANGE_CANCELLED')
 const TOKEN_EXCHANGE_TIMEOUT_MESSAGE = 'Convex authentication token exchange timed out'
 const TOKEN_EXCHANGE_CANCELLED_MESSAGE = 'Convex authentication token exchange was cancelled'
-const TOKEN_EXCHANGE_FAILURE_MESSAGE = 'Authentication is temporarily unavailable'
+const TOKEN_EXCHANGE_FAILURE_MESSAGE = AUTH_UNAVAILABLE_MESSAGE
 
 /**
  * A fetched token's lifetime, read from its own `iat` and `exp`. The browser

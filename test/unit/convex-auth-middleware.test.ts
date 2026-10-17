@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import type { ConvexAuthPageMeta } from '../../src/runtime/utils/auth-route-protection'
 import type { ConvexAuthStatus } from '../../src/runtime/utils/auth-status'
+import { AUTH_UNAVAILABLE_MESSAGE } from '../../src/runtime/utils/convex-shared'
 
 const { navigateToMock, runtimeConfig, authState, serverRender } = vi.hoisted(() => ({
   serverRender: { event: undefined as { context: object } | undefined },
@@ -12,6 +13,7 @@ const { navigateToMock, runtimeConfig, authState, serverRender } = vi.hoisted(()
     status: 'anonymous' as string,
     pending: false,
     readyStatus: 'anonymous' as string,
+    errorMessage: null as string | null,
   },
 }))
 
@@ -34,6 +36,9 @@ vi.mock('../../src/runtime/composables/useConvexAuth', () => ({
   useConvexAuth: () => ({
     status: computed(() => authState.status),
     pending: ref(authState.pending),
+    error: computed(() =>
+      authState.errorMessage ? { message: authState.errorMessage } : undefined,
+    ),
     ready: vi.fn(async () => authState.readyStatus),
   }),
 }))
@@ -74,6 +79,7 @@ function signedIn(status: ConvexAuthStatus) {
   authState.status = status
   authState.readyStatus = status
   authState.pending = false
+  authState.errorMessage = null
 }
 
 describe('convex-auth route middleware', () => {
@@ -90,9 +96,19 @@ describe('convex-auth route middleware', () => {
   it('does not send a signed-in person to sign-in when the server exchange failed temporarily', async () => {
     serverRender.event = { context: {} }
     signedIn('error')
+    authState.errorMessage = AUTH_UNAVAILABLE_MESSAGE
     const middleware = await loadMiddleware()
     await expect(middleware(route('/dashboard', true))).resolves.toBeUndefined()
     expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('still sends a visitor to sign-in when server auth failed for another reason', async () => {
+    serverRender.event = { context: {} }
+    signedIn('error')
+    authState.errorMessage = 'Convex site URL is missing'
+    const middleware = await loadMiddleware()
+    await middleware(route('/dashboard', true))
+    expect(navigateToMock).toHaveBeenCalledWith('/auth/signin?redirect=%2Fdashboard')
   })
 
   it('still sends a definitively signed-out visitor to sign-in during server rendering', async () => {
