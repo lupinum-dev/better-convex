@@ -6,6 +6,8 @@ import { ref } from 'vue'
 
 import { createAuthAdapterIdentityPort } from '../../packages/vue/src/internal/auth-adapter'
 import { createBetterAuthBrowserAdapter } from '../../src/runtime/auth/better-auth-browser-adapter'
+import { ConvexCallError } from '../../src/runtime/errors'
+import { AUTH_UNAVAILABLE_MESSAGE } from '../../src/runtime/utils/convex-shared'
 
 interface SessionState {
   data?: {
@@ -531,6 +533,34 @@ describe('Better Auth browser adapter', () => {
     expect(adapter.snapshot()).toMatchObject({ status: 'error', identityKey: null })
     adapter.dispose()
   })
+
+  it.each([
+    { status: 503, unavailable: true },
+    { status: 401, unavailable: false },
+  ])(
+    'publishes a first session read failing with $status as unavailable only when temporary',
+    ({ status, unavailable }) => {
+      const fixture = source({ isPending: true, data: null, error: null }, [])
+      const adapter = createBetterAuthBrowserAdapter(fixture.client)
+      const port = createAuthAdapterIdentityPort(adapter)
+      expect(adapter.snapshot().status).toBe('pending')
+
+      fixture.session.value = {
+        isPending: false,
+        data: null,
+        error: { status },
+        refetch: fixture.refetch,
+      }
+      expect(adapter.snapshot().status).toBe('error')
+      const published = port.snapshot().error
+      expect(published).toBeInstanceOf(ConvexCallError)
+      expect(published?.message).toBe(
+        unavailable ? AUTH_UNAVAILABLE_MESSAGE : 'Authentication failed',
+      )
+      port.dispose()
+      adapter.dispose()
+    },
+  )
 
   it('retains an established session on a transient refetch failure but retires it on 401', async () => {
     const { data } = signedIn()

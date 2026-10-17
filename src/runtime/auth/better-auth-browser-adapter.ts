@@ -199,7 +199,17 @@ export function createBetterAuthBrowserAdapter(
         status: 'error',
         identityKey: null,
         sessionGeneration,
-        error: new Error(UNAVAILABLE),
+        // A failed read that is not a 401 and returned no malformed session says
+        // nothing about the person (outage, 429, timeout): publish the library
+        // error the token path uses, so the route middleware does not send them
+        // to sign-in. A 401 or a malformed session stays a generic failure.
+        // No recovery timer: there is no identity to restore, and Better Auth
+        // re-reads the session on focus, on reconnect and on its own polling;
+        // a good read then takes the normal path below and signs the person in.
+        error:
+          value.error && !isUnauthorized(value.error) && !malformed
+            ? temporarilyUnavailable()
+            : new Error(UNAVAILABLE),
       }
       callbacks.anonymous(UNAVAILABLE)
       callbacks.sessionChanged?.(null, UNAVAILABLE, sessionGeneration)
