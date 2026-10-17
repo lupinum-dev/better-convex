@@ -1,9 +1,12 @@
 import type { BetterConvexAuthAdapter } from '@lupinum/better-convex-vue'
 import { watch, type Ref } from 'vue'
 
+import { ConvexCallError } from '../errors'
+import { AUTH_UNAVAILABLE_MESSAGE } from '../utils/convex-shared'
 import type { ConvexUser } from '../utils/types'
 import {
   fetchConvexToken,
+  retryDelayMs,
   TOKEN_EXPIRY_SAFETY_BUFFER_MS,
   usableTokenLifetimeMs,
   type ConvexTokenSource,
@@ -26,8 +29,40 @@ interface BetterAuthBrowserSource extends ConvexTokenSource {
   useSession(): Readonly<Ref<BetterAuthSessionState>>
 }
 
-const UNAVAILABLE = 'Authentication is temporarily unavailable'
+const UNAVAILABLE = AUTH_UNAVAILABLE_MESSAGE
 const SESSION_SETTLEMENT_TIMEOUT_MS = 5_000
+/**
+ * Backoff after a token exchange that failed for a temporary reason (429, 5xx,
+ * network, timeout): 1 s, 2 s, 4 s ... up to 30 s, plus jitter, never shorter
+ * than the server's Retry-After.
+ */
+const TRANSIENT_RETRY_BASE_DELAY_MS = 1_000
+const TRANSIENT_RETRY_MAX_DELAY_MS = 30_000
+/**
+ * How long one run of temporary token failures may last before the adapter
+ * reports authentication as temporarily unavailable.
+ */
+const TRANSIENT_FAILURE_BUDGET_MS = 30_000
+/**
+ * Backoff before the adapter asks again after it reported authentication as
+ * temporarily unavailable: 2 s, 4 s ... up to 60 s, plus jitter.
+ */
+const RECOVERY_BASE_DELAY_MS = 2_000
+const RECOVERY_MAX_DELAY_MS = 60_000
+/**
+ * Convex asks for a new token this many seconds before the current one expires
+ * (its default is 10). Session tokens live 15 minutes, so a refresh that has to
+ * wait out a temporary failure still runs while the current token works.
+ */
+const TOKEN_REFRESH_LEEWAY_SECONDS = 60
+
+function temporarilyUnavailable(): ConvexCallError {
+  return new ConvexCallError({
+    kind: 'authentication',
+    code: 'AUTH_UNAVAILABLE',
+    message: UNAVAILABLE,
+  })
+}
 
 function isUnauthorized(error: unknown): boolean {
   return Boolean(
@@ -63,16 +98,25 @@ export function createBetterAuthBrowserAdapter(
 } {
   const session = source.useSession()
   const listeners = new Set<() => void>()
-  const cancelSessionSettlement = new Set<() => void>()
+  const cancelPendingWaits = new Set<() => void>()
   let disposed = false
   let sessionGeneration = 0
   let observedSessionToken: string | null | undefined
   let observedIdentityKey: string | null | undefined = options.initialIdentityKey
   let cachedToken: string | null = null
-  // Monotonic time until which `cachedToken` may stand in after a transient
-  // failure: receipt plus the token's own lifetime. `performance.now()` is
-  // immune to a wrong or corrected system clock.
-  let cachedTokenUsableUntil = 0
+  // Monotonic expiry of `cachedToken`: receipt plus the token's own lifetime.
+  // `performance.now()` is immune to a wrong or corrected system clock.
+  let cachedTokenExpiresAt = 0
+  // Monotonic start of the current run of temporary token failures, or null.
+  let transientSince: number | null = null
+  // Set while authentication is reported temporarily unavailable and a new
+  // attempt is scheduled.
+  let recoveryTimer: ReturnType<typeof setTimeout> | null = null
+  let recoveryAttempt = 0
+  const cancelRecovery = () => {
+    if (recoveryTimer !== null) clearTimeout(recoveryTimer)
+    recoveryTimer = null
+  }
   let snapshot: BrowserAuthSnapshot = options.initialIdentityKey
     ? {
         status: 'authenticated',
@@ -130,15 +174,20 @@ export function createBetterAuthBrowserAdapter(
     const malformed =
       (value.data?.session !== undefined && sessionToken === null) ||
       (sessionToken !== null && key === null)
+    // On a failure other than 401, Better Auth keeps its previous session data.
+    // Before its first success (a server-rendered signed-in page) that data is
+    // empty, which says nothing about the person, so it must not end the session.
+    const errorNamesNoIdentity = sessionToken === null && key === null
     const retainsEstablishedSession =
       Boolean(value.error) &&
       !isUnauthorized(value.error) &&
-      snapshot.status === 'authenticated' &&
-      observedSessionToken === sessionToken &&
-      observedIdentityKey === key
+      (snapshot.status === 'authenticated' || recoveryTimer !== null) &&
+      (errorNamesNoIdentity ||
+        (observedSessionToken === sessionToken && observedIdentityKey === key))
     if (retainsEstablishedSession) return
 
     if (value.error || malformed) {
+      cancelRecovery()
       cachedToken = null
       sessionGeneration += 1
       // The published failed state is the null provider identity. Reset the
@@ -165,6 +214,15 @@ export function createBetterAuthBrowserAdapter(
     const changed =
       !establishesMatchingProvisionalIdentity &&
       (observedSessionToken !== sessionToken || observedIdentityKey !== key)
+    if (!changed && recoveryTimer !== null) {
+      // Better Auth re-reads the session on focus, on reconnect and for every
+      // other tab, each time as a new object. The same session does not start
+      // a new attempt early; the scheduled one does.
+      observedSessionToken = sessionToken
+      observedIdentityKey = key
+      return
+    }
+    cancelRecovery()
     if (changed) {
       sessionGeneration += 1
       cachedToken = null
@@ -219,13 +277,13 @@ export function createBetterAuthBrowserAdapter(
         settled = true
         stopPending()
         clearTimeout(timer)
-        cancelSessionSettlement.delete(cancel)
+        cancelPendingWaits.delete(cancel)
         if (error) reject(error)
         else resolve()
       }
       const cancel = () => finish(new Error(UNAVAILABLE))
 
-      cancelSessionSettlement.add(cancel)
+      cancelPendingWaits.add(cancel)
       stopPending = watch(
         isUnsettled,
         (unsettled) => {
@@ -241,6 +299,18 @@ export function createBetterAuthBrowserAdapter(
     })
   }
 
+  // Resolves after `delayMs`, or at once on dispose. Never rejects.
+  const pause = (delayMs: number) =>
+    new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timer)
+        cancelPendingWaits.delete(finish)
+        resolve()
+      }
+      const timer = setTimeout(finish, delayMs)
+      cancelPendingWaits.add(finish)
+    })
+
   // Refetch the provider session and wait for it to settle, bounded by the
   // settlement timeout and cancelled on dispose: a hanging request must not
   // hold a token fetch open. Never rejects.
@@ -251,11 +321,11 @@ export function createBetterAuthBrowserAdapter(
         if (done) return
         done = true
         clearTimeout(timer)
-        cancelSessionSettlement.delete(finish)
+        cancelPendingWaits.delete(finish)
         resolve()
       }
       const timer = setTimeout(finish, SESSION_SETTLEMENT_TIMEOUT_MS)
-      cancelSessionSettlement.add(finish)
+      cancelPendingWaits.add(finish)
       const unsettled = session.value.isPending === true || session.value.isRefetching === true
       void (async () => {
         if (!unsettled) await session.value.refetch?.()
@@ -263,18 +333,102 @@ export function createBetterAuthBrowserAdapter(
       })().then(finish, finish)
     })
 
+  // The temporary failures outlasted their budget: report authentication as
+  // temporarily unavailable. The provider still reports the session, so the
+  // observed session stays; only the token generation is retired, and a new
+  // generation for the same session is scheduled with backoff.
+  const failTransiently = (retryAfterMs: number) => {
+    cachedToken = null
+    transientSince = null
+    sessionGeneration += 1
+    const failedGeneration = sessionGeneration
+    snapshot = {
+      status: 'error',
+      identityKey: null,
+      sessionGeneration,
+      error: temporarilyUnavailable(),
+    }
+    cancelRecovery()
+    recoveryTimer = setTimeout(
+      () => {
+        recoveryTimer = null
+        if (disposed || sessionGeneration !== failedGeneration || !observedIdentityKey) return
+        sessionGeneration += 1
+        snapshot = {
+          status: 'authenticated',
+          identityKey: observedIdentityKey,
+          sessionGeneration,
+          error: null,
+        }
+        callbacks.sessionChanged?.(observedSessionToken ?? null, null, sessionGeneration)
+        notify()
+      },
+      retryDelayMs(recoveryAttempt++, {
+        baseMs: RECOVERY_BASE_DELAY_MS,
+        maxMs: RECOVERY_MAX_DELAY_MS,
+        retryAfterMs,
+      }),
+    )
+    callbacks.anonymous(UNAVAILABLE)
+    callbacks.sessionChanged?.(observedSessionToken ?? null, null, sessionGeneration)
+    notify()
+  }
+
   return Object.freeze({
+    tokenRefreshLeewaySeconds: TOKEN_REFRESH_LEEWAY_SECONDS,
     snapshot: () => snapshot,
     subscribe(listener: () => void) {
       if (disposed) return () => {}
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    async fetchToken() {
+    async fetchToken({ forceRefreshToken }: Parameters<BetterConvexAuthAdapter['fetchToken']>[0]) {
       if (disposed || snapshot.status !== 'authenticated') return null
       const expectedKey = snapshot.identityKey
       const expectedGeneration = sessionGeneration
-      const outcome = await fetchConvexToken(source)
+      const isCurrent = () =>
+        !disposed &&
+        snapshot.status === 'authenticated' &&
+        snapshot.identityKey === expectedKey &&
+        sessionGeneration === expectedGeneration
+      let outcome = await fetchConvexToken(source)
+      // A 429, a 5xx, a network error or a timeout says nothing about the
+      // session. While the provider still reports it, wait and ask again
+      // instead of answering null, which Convex reports as signed out.
+      for (let attempt = 0; !outcome.identity && !outcome.definitive; attempt += 1) {
+        if (!isCurrent()) return null
+        // A new client asks first without forcing a refresh: a usable cached
+        // token stands in, and Convex schedules its next refresh from it. A
+        // forced refresh never gets the same token back, because Convex then
+        // stops refreshing (its `notRefetching` state).
+        if (
+          !forceRefreshToken &&
+          cachedToken &&
+          performance.now() < cachedTokenExpiresAt - TOKEN_EXPIRY_SAFETY_BUFFER_MS
+        ) {
+          return cachedToken
+        }
+        transientSince ??= performance.now()
+        const delayMs = retryDelayMs(attempt, {
+          baseMs: TRANSIENT_RETRY_BASE_DELAY_MS,
+          maxMs: TRANSIENT_RETRY_MAX_DELAY_MS,
+          retryAfterMs: outcome.retryAfterMs,
+        })
+        // Keep trying for the budget, and at least while the current token
+        // still works: Convex keeps using it until a new one arrives.
+        const deadline = Math.max(
+          transientSince + TRANSIENT_FAILURE_BUDGET_MS,
+          cachedToken ? cachedTokenExpiresAt : 0,
+        )
+        if (performance.now() + delayMs > deadline) {
+          failTransiently(outcome.retryAfterMs ?? 0)
+          return null
+        }
+        await pause(delayMs)
+        if (!isCurrent()) return null
+        outcome = await fetchConvexToken(source)
+      }
+      transientSince = null
       if (outcome.sessionRejected && !disposed) {
         // The session ended on the server (sign-out, revocation, expiry) before
         // the provider published it. Let the provider settle first: a session
@@ -282,30 +436,18 @@ export function createBetterAuthBrowserAdapter(
         // and the generation check below drops this result.
         await settleProviderSession()
       }
-      if (
-        disposed ||
-        snapshot.status !== 'authenticated' ||
-        snapshot.identityKey !== expectedKey ||
-        sessionGeneration !== expectedGeneration
-      ) {
-        return null
-      }
+      if (!isCurrent()) return null
       if (outcome.identity) {
         const fetchedKey = outcome.identity.user.id
         if (fetchedKey !== expectedKey) {
           cachedToken = null
           return null
         }
+        recoveryAttempt = 0
         cachedToken = outcome.identity.token
         // The fetcher admitted only tokens with a usable lifetime; 0 fails closed.
-        cachedTokenUsableUntil =
-          performance.now() +
-          (usableTokenLifetimeMs(cachedToken) ?? 0) -
-          TOKEN_EXPIRY_SAFETY_BUFFER_MS
+        cachedTokenExpiresAt = performance.now() + (usableTokenLifetimeMs(cachedToken) ?? 0)
         callbacks.authenticated(outcome.identity.token, outcome.identity.user)
-        return cachedToken
-      }
-      if (!outcome.definitive && cachedToken && performance.now() < cachedTokenUsableUntil) {
         return cachedToken
       }
       cachedToken = null
@@ -326,6 +468,7 @@ export function createBetterAuthBrowserAdapter(
     },
     failClosed(message: string) {
       if (disposed) return
+      cancelRecovery()
       cachedToken = null
       sessionGeneration += 1
       snapshot = {
@@ -343,9 +486,10 @@ export function createBetterAuthBrowserAdapter(
     dispose() {
       if (disposed) return
       disposed = true
+      cancelRecovery()
       stop()
-      for (const cancel of [...cancelSessionSettlement]) cancel()
-      cancelSessionSettlement.clear()
+      for (const cancel of [...cancelPendingWaits]) cancel()
+      cancelPendingWaits.clear()
       listeners.clear()
       cachedToken = null
       observedSessionToken = null
