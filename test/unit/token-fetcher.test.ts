@@ -1,7 +1,9 @@
 import { inspect } from 'node:util'
 
+import { createAuthClient } from 'better-auth/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { convexClientPlugin } from '../../src/runtime/auth-client/convex-client-plugin'
 import {
   fetchConvexToken,
   MAX_FETCH_ATTEMPTS,
@@ -102,7 +104,10 @@ describe('client Convex token exchange deadline', () => {
       },
     } satisfies ConvexTokenSource
 
-    await expect(fetchConvexToken(source)).resolves.toEqual({
+    const fetching = fetchConvexToken(source)
+    // Backoff waits at most 150 + 300 + 600 ms between the attempts.
+    await vi.advanceTimersByTimeAsync(1_050)
+    await expect(fetching).resolves.toEqual({
       identity: null,
       authError: 'Authentication is temporarily unavailable',
       definitive: false,
@@ -155,6 +160,29 @@ describe('client Convex token exchange outcomes', () => {
       authError: null,
       definitive: true,
     })
+  })
+
+  it('stops at a 429 and reports its Retry-After instead of asking again at once', async () => {
+    const requests = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: 'Too many requests. Please try again later.' }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'x-retry-after': '3' },
+        }),
+    )
+    const client = createAuthClient({
+      baseURL: 'https://auth.example.test/api/auth',
+      plugins: [convexClientPlugin()],
+      fetchOptions: { customFetchImpl: requests },
+    })
+
+    await expect(fetchConvexToken(client)).resolves.toEqual({
+      identity: null,
+      authError: 'Authentication is temporarily unavailable',
+      definitive: false,
+      retryAfterMs: 3_000,
+    })
+    expect(requests).toHaveBeenCalledOnce()
   })
 
   it.each([401, 403])('reports rejected credentials from HTTP %s', async (status) => {

@@ -11,6 +11,7 @@ export const {
   deleteMany,
   deleteOne,
   expireSession,
+  expireVerification,
   findMany,
   findOne,
   incrementOne,

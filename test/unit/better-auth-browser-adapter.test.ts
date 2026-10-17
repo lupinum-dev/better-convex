@@ -73,6 +73,39 @@ describe('Better Auth browser adapter', () => {
     }
   })
 
+  it('waits out a 429 and keeps the signed-in session instead of reporting it as signed out', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const fixture = source(signedIn(), [{ data: { token: jwt('alice') } }])
+    // Better Fetch hands the raw response to `onError` before it resolves the error envelope.
+    fixture.token.mockImplementationOnce(async (options?: unknown) => {
+      const { onError } = (options as { fetchOptions: { onError(context: unknown): void } })
+        .fetchOptions
+      onError({ response: new Response(null, { status: 429, headers: { 'retry-after': '2' } }) })
+      return { data: null, error: { status: 429 } }
+    })
+    const callbacks = { authenticated: vi.fn(), anonymous: vi.fn() }
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, callbacks)
+    try {
+      let settled = false
+      const fetching = adapter.fetchToken({ forceRefreshToken: false }).finally(() => {
+        settled = true
+      })
+
+      await vi.advanceTimersByTimeAsync(1_999)
+      expect(fixture.token).toHaveBeenCalledOnce()
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1_001)
+      await expect(fetching).resolves.toBeTypeOf('string')
+      expect(fixture.token).toHaveBeenCalledTimes(2)
+      expect(callbacks.anonymous).not.toHaveBeenCalled()
+      expect(adapter.snapshot()).toMatchObject({ status: 'authenticated', identityKey: 'alice' })
+    } finally {
+      adapter.dispose()
+      vi.useRealTimers()
+    }
+  })
+
   it.each([
     // Sign-out: the server revokes the session before Better Auth publishes it.
     ['the provider reports the session gone', null, []],
@@ -338,28 +371,59 @@ describe('Better Auth browser adapter', () => {
     },
   )
 
-  it('stands in with the cached token after a transient failure only for its lifetime', async () => {
+  it('stands in with the cached token for a new client while it is usable, never for a forced refresh', async () => {
     const token = jwt('alice', 900)
-    const unavailable = { error: { status: 503 } }
-    const fixture = source(signedIn(), [
-      { data: { token }, error: null },
-      ...Array.from({ length: 8 }, () => unavailable),
-    ])
+    const nextToken = jwt('alice', 900)
+    let outage = true
+    const fixture = source(signedIn(), [])
+    fixture.token
+      .mockImplementation(async () =>
+        outage
+          ? { data: null, error: { status: 503 } }
+          : { data: { token: nextToken }, error: null },
+      )
+      .mockImplementationOnce(async () => ({ data: { token }, error: null }))
     let monotonicMs = 1_000
     vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     const adapter = createBetterAuthBrowserAdapter(fixture.client)
-    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+    const answer = (forceRefreshToken: boolean) => {
+      let settled = false
+      const fetching = adapter.fetchToken({ forceRefreshToken }).finally(() => {
+        settled = true
+      })
+      return { fetching, settled: () => settled }
+    }
+    try {
+      await expect(adapter.fetchToken({ forceRefreshToken: false })).resolves.toBe(token)
 
-    monotonicMs += 60_000
-    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
+      // A new client asks without forcing: during the outage the cached token stands in.
+      monotonicMs += 60_000
+      const newClient = answer(false)
+      await vi.advanceTimersByTimeAsync(1_050)
+      await expect(newClient.fetching).resolves.toBe(token)
 
-    // The system clock moves back an hour, but 15 minutes really passed.
-    vi.setSystemTime(Date.now() - 3_600_000)
-    monotonicMs += 15 * 60_000
-    await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBeNull()
-    adapter.dispose()
-    vi.useRealTimers()
-    vi.restoreAllMocks()
+      // Convex's scheduled refresh forces: it keeps asking until a new token arrives.
+      const refresh = answer(true)
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(refresh.settled()).toBe(false)
+      outage = false
+      await vi.advanceTimersByTimeAsync(30_000)
+      await expect(refresh.fetching).resolves.toBe(nextToken)
+
+      // The system clock moves back an hour, but 15 minutes really passed: the
+      // cached token is past its lifetime and never stands in.
+      outage = true
+      vi.setSystemTime(Date.now() - 3_600_000)
+      monotonicMs += 15 * 60_000
+      const late = answer(false)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(late.settled()).toBe(false)
+    } finally {
+      adapter.dispose()
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    }
   })
 
   it.each([
@@ -437,6 +501,34 @@ describe('Better Auth browser adapter', () => {
     )
     const rendered = inspect(sessionChanged.mock.calls, { depth: null })
     for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
+    adapter.dispose()
+  })
+
+  it('keeps a server-rendered session when the first session read fails temporarily, not on 401', () => {
+    const fixture = source({ isPending: true, data: null, error: null }, [])
+    const adapter = createBetterAuthBrowserAdapter(fixture.client, undefined, {
+      initialIdentityKey: 'alice',
+    })
+
+    fixture.session.value = {
+      isPending: false,
+      data: null,
+      error: { status: 503, message: 'raw-upstream-sentinel' },
+      refetch: fixture.refetch,
+    }
+    expect(adapter.snapshot()).toMatchObject({
+      status: 'authenticated',
+      identityKey: 'alice',
+      sessionGeneration: 0,
+    })
+
+    fixture.session.value = {
+      isPending: false,
+      data: null,
+      error: { status: 401, message: 'raw-unauthorized-sentinel' },
+      refetch: fixture.refetch,
+    }
+    expect(adapter.snapshot()).toMatchObject({ status: 'error', identityKey: null })
     adapter.dispose()
   })
 

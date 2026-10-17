@@ -9,6 +9,14 @@ import type { ConvexUser } from './types'
 const MAX_LOCAL_JWT_LENGTH = 65_536
 const MAX_DISPLAY_STRING_LENGTH = 4_096
 
+/**
+ * The auth error text for "the identity is unknown for now": the auth backend
+ * failed or limited the request (429, 5xx, timeout, network). The server and
+ * the browser publish it in `convex:authError`, and the route middleware reads
+ * it to render instead of redirecting, so all of them must use this constant.
+ */
+export const AUTH_UNAVAILABLE_MESSAGE = 'Authentication is temporarily unavailable'
+
 /** Milliseconds before `exp` at which a locally retained token is unusable. */
 export const TOKEN_EXPIRY_SAFETY_BUFFER_MS = 30_000
 

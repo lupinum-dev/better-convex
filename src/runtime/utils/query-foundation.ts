@@ -6,7 +6,14 @@ import {
 } from '@lupinum/better-convex-vue/internal'
 import { computed, onScopeDispose, shallowRef, watch, type ComputedRef } from 'vue'
 
-import { onNuxtReady, useAsyncData, useNuxtApp, useRequestEvent, useState } from '#app'
+import {
+  onNuxtReady,
+  useAsyncData,
+  useNuxtApp,
+  useRequestEvent,
+  useState,
+  type NuxtApp,
+} from '#app'
 
 import { identityKeyOf } from '../auth/auth-identity'
 import { ConvexCallError, normalizeConvexError } from '../errors'
@@ -72,13 +79,17 @@ export interface ConvexQueryBoundaryInput {
 
 export interface ConvexSsrQueryInput<T> extends ConvexQueryBoundaryInput {
   readonly lazy: boolean
-  /** `bounds` are the configured `convex.server` limits for this request. */
+  /**
+   * `bounds` are the configured `convex.server` limits for this request.
+   * `undefined` (never a Convex value) leaves the query not fetched on the
+   * server, like a missing token, so the browser loads it.
+   */
   fetch(
     convexUrl: string,
     token: string | undefined,
     signal: AbortSignal | undefined,
     bounds: ConvexServerConfig,
-  ): Promise<T>
+  ): Promise<T | undefined>
 }
 
 export interface ConvexSsrQuery<T> {
@@ -91,6 +102,22 @@ export interface ConvexSsrQuery<T> {
 }
 
 const ignore = () => {}
+
+/**
+ * Vue renders a parent's server prefetch to the end before a child's setup
+ * runs, so a page that repeats its layout's query finds the entry settled.
+ * Nuxt's default `getCachedData` reads only prerendered data on the server and
+ * runs the handler again: one more Convex call, and the shared entry turns
+ * `pending` and may change after the layout rendered it. A later initial
+ * caller in the same render reads the entry instead; a reload still fetches.
+ */
+function renderedEntry<T>(
+  key: string,
+  nuxtApp: NuxtApp,
+  context: { cause: string },
+): ConvexQueryPayload<T> | null | undefined {
+  return context.cause === 'initial' ? nuxtApp.payload.data[key] : undefined
+}
 
 /** The SSR half of a query: one Nuxt async-data entry per identity-partitioned key. */
 export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQuery<T> {
@@ -123,14 +150,13 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
           cachedToken: { value: readServerConvexToken(nuxtApp) },
         })
         if (auth !== 'none' && decision.identity !== 'anonymous' && !token) return null
-        return {
-          value: await input.fetch(
-            convexUrl,
-            token,
-            event ? eventAbortSignal(event) : undefined,
-            bounds,
-          ),
-        }
+        const value = await input.fetch(
+          convexUrl,
+          token,
+          event ? eventAbortSignal(event) : undefined,
+          bounds,
+        )
+        return value === undefined ? null : { value }
       } catch (error) {
         return {
           error: normalizeConvexError(error, {
@@ -141,8 +167,17 @@ export function useConvexSsrQuery<T>(input: ConvexSsrQueryInput<T>): ConvexSsrQu
     },
     // Components that render the same query and arguments share one entry.
     // Nuxt's default `cancel` would restart the fetch for each of them, so
-    // each would call Convex again; `defer` joins the fetch in flight.
-    { server, immediate, lazy, deep: false, default: () => null, dedupe: 'defer' },
+    // each would call Convex again; `defer` joins the fetch in flight, and
+    // `getCachedData` hands a later caller the settled entry.
+    {
+      server,
+      immediate,
+      lazy,
+      deep: false,
+      default: () => null,
+      dedupe: 'defer',
+      getCachedData: renderedEntry<T>,
+    },
   )
   const view = computed(() =>
     projectConvexSsrQuery({

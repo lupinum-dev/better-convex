@@ -50,8 +50,9 @@ export type ConvexCallErrorKind = 'authentication' | 'transport' | 'server' | 'u
  *   it returned no string and no `url` option selected one.
  * - `CONVEX_URL_MISSING`, `SITE_URL_MISSING`: the Convex URL or site URL is
  *   not configured.
- * - `AUTH_UNAVAILABLE`: the request identity could not be resolved because
- *   the auth backend failed.
+ * - `AUTH_UNAVAILABLE`: the identity could not be resolved for now because the
+ *   auth backend failed or limited the request (on the server, and in the
+ *   browser after its retries).
  * - `AUTH_CONFIRMATION_TIMEOUT`: Convex did not confirm a new auth token in time.
  * - `PAGINATION_SPLIT_REQUIRED`: a page must be split before it can be shown.
  */

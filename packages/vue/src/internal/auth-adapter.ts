@@ -20,8 +20,21 @@ export interface BrowserAuthSnapshot {
 export interface BrowserAuthAdapter {
   snapshot(): BrowserAuthSnapshot
   subscribe(listener: () => void): () => void
+  /**
+   * Convex's token fetcher. It may wait out a temporary failure before it
+   * answers, but it must settle: the runtime fails the identity closed when a
+   * fetch takes longer than 60 seconds, and when Convex does not confirm a
+   * returned token within 10 seconds.
+   */
   fetchToken: AuthTokenFetcher
   refreshSession(): Promise<void>
+  /**
+   * Seconds before a token expires at which Convex asks for the next one
+   * (Convex's `authRefreshTokenLeewaySeconds`, default 10). A longer leeway lets
+   * `fetchToken` wait out a temporary failure while the current token still
+   * works. It must stay well below the token lifetime.
+   */
+  readonly tokenRefreshLeewaySeconds?: number
 }
 
 export interface AuthAdapterIdentityPort extends ClientIdentityPort {
@@ -29,7 +42,10 @@ export interface AuthAdapterIdentityPort extends ClientIdentityPort {
   dispose(): void
 }
 
+/** How long Convex may take to confirm a token after the adapter returned it. */
 const CONFIRMATION_TIMEOUT_MS = 10_000
+/** How long the adapter's `fetchToken` may take; it may wait out temporary failures. */
+const TOKEN_FETCH_TIMEOUT_MS = 60_000
 
 function validateSnapshot(snapshot: BrowserAuthSnapshot): BrowserAuthSnapshot {
   if (!Number.isSafeInteger(snapshot.sessionGeneration) || snapshot.sessionGeneration < 0) {
@@ -227,7 +243,7 @@ export function createAuthAdapterIdentityPort(
       else resolvePromise()
     }
     activeConfirmation = confirmation
-    timer = setTimeout(() => {
+    const onTimeout = () => {
       const timeout = new ConvexCallError({
         kind: 'authentication',
         code: 'AUTH_CONFIRMATION_TIMEOUT' satisfies ConvexCallErrorCode,
@@ -235,9 +251,28 @@ export function createAuthAdapterIdentityPort(
       })
       failClosed(expectedGeneration, timeout)
       finish(timeout)
-    }, CONFIRMATION_TIMEOUT_MS)
+    }
+    const arm = (delayMs: number) => {
+      if (done) return
+      if (timer !== null) clearTimeout(timer)
+      timer = setTimeout(onTimeout, delayMs)
+    }
+    // The adapter may wait out a temporary failure inside `fetchToken`, so the
+    // confirmation deadline starts only when it has answered.
+    let fetching = 0
+    const fetchToken: AuthTokenFetcher = async (args) => {
+      fetching += 1
+      arm(TOKEN_FETCH_TIMEOUT_MS)
+      try {
+        return await adapter.fetchToken(args)
+      } finally {
+        fetching -= 1
+        if (fetching === 0) arm(CONFIRMATION_TIMEOUT_MS)
+      }
+    }
+    arm(CONFIRMATION_TIMEOUT_MS)
     try {
-      client.setAuth(adapter.fetchToken, (authenticated) => {
+      client.setAuth(fetchToken, (authenticated) => {
         if (
           disposed ||
           expectedGeneration !== identityGeneration ||
