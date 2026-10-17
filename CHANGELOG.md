@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.0-rc.6
+
+### Patch Changes
+
+- [#275](https://github.com/lupinum-dev/better-convex/pull/275) [`99cbe1a`](https://github.com/lupinum-dev/better-convex/commit/99cbe1a32fafd8c4bdafa3874980075856e36293) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a person being sent to the sign-in page when the first session read in the browser fails for a moment
+  
+  When the server could not tell who the person is and the browser's first session read then fails with a 5xx, a timeout or a network error, the browser now reports `AUTH_UNAVAILABLE` ("Authentication is temporarily unavailable"), so the route middleware leaves the page alone. A 401 still counts as signed out.
+
+- [#275](https://github.com/lupinum-dev/better-convex/pull/275) [`99cbe1a`](https://github.com/lupinum-dev/better-convex/commit/99cbe1a32fafd8c4bdafa3874980075856e36293) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix email-code and auth rate limits that refused too much
+  
+  Count email-code requests per address and code purpose, so verification requests for a verified address no longer block sign-in codes.
+  Fix the leaky-bucket limit so a client that waits exactly `retryAfter` seconds is admitted, also when the window does not divide evenly by `max`.
+
+- [#275](https://github.com/lupinum-dev/better-convex/pull/275) [`99cbe1a`](https://github.com/lupinum-dev/better-convex/commit/99cbe1a32fafd8c4bdafa3874980075856e36293) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix rows loaded with `loadMore()` disappearing while a hydrated first page was still being split.
+- Updated dependencies [[`99cbe1a`](https://github.com/lupinum-dev/better-convex/commit/99cbe1a32fafd8c4bdafa3874980075856e36293)]:
+  - @lupinum/better-convex-vue@1.0.0-rc.6
+
 ## 1.0.0-rc.5
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@lupinum/better-convex-agents",
-  "version": "0.1.0-rc.3",
+  "version": "0.1.0-rc.4",
   "description": "Tools, approvals and the MCP door for Convex functions built with @lupinum/better-convex-functions",
   "homepage": "https://better-convex.lupinum.com",
   "bugs": {
