@@ -48,8 +48,8 @@ What changed from the design, and why:
 - Type tests read files, so they apply a mutant to a copy of `src`
   (`activeMutant` and `applyMutant` in `test/mutants/plugin.ts`). S2 and the C8
   rows run this way.
-- The approval page rows (`projects: ['integration']`) run the starter with
-  `nuxt dev` on the local backend. The harness applies the row to its starter
+- The approval page rows (`projects: ['integration']`) run a build of the
+  starter on the local backend. The harness applies the row to its starter
   copy. A row in `packages/*/src` cannot run there: the integration lane uses
   the build. Each page row takes about 80 seconds, and a full
   `pnpm test:mutants` (117 rows) took about 13 minutes on a laptop, not 5–6. The
