@@ -256,8 +256,8 @@ invariant in `internal/functions-and-agents/plan.md` section 6 has no row. A
 break that no test can see goes into `equivalents`, with the reason. Never edit
 a source file on disk to try a mutant.
 
-The four `integration` rows (the approval link page) start the starter with
-`nuxt dev` on the local backend, so each one takes about 80 seconds.
+The four `integration` rows (the approval link page) build the starter and
+serve the build on the local backend, so each one takes more than a minute.
 
 ## Cloud smoke
 

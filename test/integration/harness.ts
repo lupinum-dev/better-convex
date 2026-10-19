@@ -2,7 +2,7 @@
 //
 // Every suite runs against the pinned local Convex backend (test/helpers/local-backend.mjs).
 // `startMcpFixture` copies the MCP OAuth starter into a temporary directory, installs
-// the freshly built packages, starts `convex dev` and `nuxt dev`, and creates one user.
+// the freshly built packages, starts `convex dev` and a built Nuxt server, and creates one user.
 // Everything it creates lives below one temporary root that `release()` removes.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes, randomInt } from 'node:crypto'
@@ -90,6 +90,22 @@ export async function runCommand(
     )
   }
   return log().trim()
+}
+
+/**
+ * Builds the app and serves `.output`, as production does. `nuxt dev` puts two
+ * proxies in front of the server handlers (the CLI process and Nitro's dev
+ * worker proxy). On some CI runners they left a request of a concurrent burst
+ * unanswered, a request no handler of the app ever received.
+ */
+async function startBuiltNuxt(cwd: string, env: NodeJS.ProcessEnv, secrets: readonly string[]) {
+  await runCommand(process.execPath, [nuxtCli, 'build'], { cwd, env, secrets })
+  return spawn(process.execPath, [join(cwd, '.output/server/index.mjs')], {
+    cwd,
+    detached: true,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
 }
 
 async function stopProcess(child: ChildProcess | undefined): Promise<void> {
@@ -237,10 +253,9 @@ export async function startNuxtServer(
   secrets: readonly string[],
 ) {
   const { hostname, port } = new URL(origin)
-  const child = spawn(process.execPath, [nuxtCli, 'dev'], {
+  const child = await startBuiltNuxt(
     cwd,
-    detached: true,
-    env: {
+    {
       ...env,
       HOST: hostname,
       NITRO_HOST: hostname,
@@ -250,8 +265,8 @@ export async function startNuxtServer(
       PORT: port,
       SITE_URL: origin,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+    secrets,
+  )
   const log = capture(child)
   try {
     await waitUntil(async () => {
@@ -280,7 +295,7 @@ export async function prepareStarterCopy(cwd: string) {
     filter: (source) => source === starter || !skipped.has(basename(source)),
     recursive: true,
   })
-  // `pnpm test:mutants`: a row in a starter file applies to this copy, which `nuxt dev` serves.
+  // `pnpm test:mutants`: a row in a starter file applies to this copy, which the Nuxt build includes.
   const row = activeMutant()
   if (row?.file.startsWith('starters/mcp-oauth-agent/')) {
     const file = join(cwd, relative('starters/mcp-oauth-agent', row.file))
@@ -387,10 +402,9 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
     await runCli(['run', 'auth:rotateSigningKey', '{}'])
 
     const trusted = options.trustedClientIpHeader
-    nuxt = spawn(process.execPath, [nuxtCli, 'dev'], {
+    nuxt = await startBuiltNuxt(
       cwd,
-      detached: true,
-      env: {
+      {
         ...baseEnv,
         BCN_AUTH_PROXY_IP_SECRET: proxyIpSecret,
         ...(trusted ? { BCN_AUTH_TRUSTED_CLIENT_IP_HEADER: trusted } : {}),
@@ -406,8 +420,8 @@ export async function startMcpFixture(options: McpFixtureOptions = {}): Promise<
         PORT: String(appPort),
         SITE_URL: origin,
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+      secrets,
+    )
     nuxtLog = capture(nuxt)
     await waitUntil(async () => {
       if (nuxt?.exitCode !== null) throw new Error(`Nuxt exited: ${redact(nuxtLog(), secrets)}`)
