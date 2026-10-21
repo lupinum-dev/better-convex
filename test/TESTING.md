@@ -58,6 +58,30 @@ pnpm exec vitest run --project=convex
 pnpm exec vitest run --project=integration test/integration/oauth-code.integration.test.ts
 ```
 
+### Keycloak suite
+
+`test/convex/oidc-keycloak.test.ts` signs in, signs out, runs back-channel logout and refreshes upstream tokens
+against a real Keycloak 26.4 (pinned by digest in `test/fixtures/keycloak/docker-compose.yml`). It needs Docker
+and skips without `BCN_TEST_KEYCLOAK_URL`. The test listens on port 18081 for Keycloak's back-channel calls.
+
+```bash
+docker compose -f test/fixtures/keycloak/docker-compose.yml up -d --wait
+BCN_TEST_KEYCLOAK_URL=http://127.0.0.1:18080 pnpm exec vitest run --project=convex test/convex/oidc-keycloak.test.ts
+docker compose -f test/fixtures/keycloak/docker-compose.yml down -v
+```
+
+The CI `integration` job runs the same commands. The realm and client use test-only credentials.
+
+`test/integration/oidc-keycloak.integration.test.ts` runs sign-in, back-channel logout and sign-out
+through the built Nuxt auth proxy and the real local Convex backend (fixture app
+`test/fixtures/oidc-keycloak`). It uses the same container and also skips without
+`BCN_TEST_KEYCLOAK_URL`. It adds its own Keycloak client and user for its random origin and removes
+them afterwards. A relay on a random port passes Keycloak's back-channel call to Nuxt.
+
+```bash
+BCN_TEST_KEYCLOAK_URL=http://127.0.0.1:18080 pnpm exec vitest run --project=integration test/integration/oidc-keycloak.integration.test.ts
+```
+
 ## The pinned local backend
 
 E2E and integration suites run against one reviewed Convex local backend
