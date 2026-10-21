@@ -14,7 +14,13 @@ import {
   type TeamEndpoints,
   type TwoFactorOptions,
 } from 'better-auth/plugins'
-import type { GenericDataModel, HttpRouter, PublicHttpAction } from 'convex/server'
+import type {
+  GenericActionCtx,
+  GenericDataModel,
+  HttpRouter,
+  PublicHttpAction,
+} from 'convex/server'
+import { ConvexError } from 'convex/values'
 
 import { createAuthJwtPlugin } from './auth-jwt'
 import { isWritableAuthCtx, type AuthCtx, type WritableAuthCtx } from './context'
@@ -24,6 +30,7 @@ import {
   AUTH_EMAIL_DELIVERY_FAILED,
   authConfigFailure,
   logAuthEmailFailure,
+  logOidcFailure,
   sanitizeAuthCause,
   type AuthConfigSubCode,
 } from './diagnostics'
@@ -49,6 +56,16 @@ import {
   type BetterConvexMcpAccessVerifier,
 } from './oauth-resource'
 import type { PinnedOAuthProviderProfile } from './oauth-security'
+import {
+  OIDC_PROVIDER_ID,
+  resolveOidcConfig,
+  type BetterConvexOidcAccessToken,
+  type BetterConvexOidcOptions,
+  type ResolvedOidcConfig,
+} from './oidc-options'
+import { createOidcPlugin, type OidcRuntime } from './oidc-plugin'
+import { isOwnedOidcProvider } from './oidc-provider'
+import type { OidcRefreshOutcome } from './oidc-upstream'
 import { normalizeAuthOrigin, requireAuthOrigin } from './origin'
 import { convexAuth, LIBRARY_RATE_LIMIT_RULES } from './plugin'
 import { getConvexAuthProvider } from './provider'
@@ -364,6 +381,12 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
     | ((ctx: AuthCtx<DataModel>) => readonly string[] | Promise<readonly string[]>)
   readonly socialProviders?: SocialProviders | (() => SocialProviders)
   /**
+   * Sign-in through your company's OpenID Connect provider (Keycloak, or any compliant IdP).
+   * Pass a function to read environment variables when Convex calls it, not when the module loads.
+   * A user who signs in through it, or links it, then signs in only through it.
+   */
+  readonly oidc?: BetterConvexOidcOptions | (() => BetterConvexOidcOptions)
+  /**
    * Add claims to the Convex session token. By default the token carries only
    * the library claims (`sub`, `sid`, `token_use` and the registered JWT
    * claims); profile fields such as `name`, `email`, `emailVerified` or
@@ -452,6 +475,24 @@ export interface BetterConvexAuth<
   }>
   /** List and revoke a user's OAuth grants. The app passes the authenticated user's id. */
   readonly oauthConnections: BetterConvexOAuthConnections<DataModel>
+  /**
+   * Action only. A current access token from the `oidc` provider for the calling user, for calls
+   * to your own services. The token has more than 60 seconds left; the helper refreshes it
+   * otherwise. Never return it to the browser, log it, or pass it to a scheduled function.
+   *
+   * Throws `ConvexError` with `data.code`:
+   * - `UNAUTHENTICATED`: no live session.
+   * - `OIDC_ACCOUNT_REQUIRED`: the user has no `oidc` account.
+   * - `OIDC_SIGN_IN_REQUIRED`: the IdP grant ended or no refresh token is stored.
+   * - `OIDC_UNAVAILABLE`: the IdP did not answer in time, or the stored tokens cannot be used.
+   *
+   * Throws `TypeError` (a programming error) with message:
+   * - `AUTH_OIDC_ACCESS_TOKEN_REQUIRES_ACTION`: called from a query or mutation.
+   * - `AUTH_OIDC_NOT_CONFIGURED`: the factory has no `oidc` option.
+   */
+  readonly getOidcAccessToken: (
+    ctx: GenericActionCtx<DataModel>,
+  ) => Promise<BetterConvexOidcAccessToken>
 }
 
 /** What `auth.mcpAuthorization(ctx)` returns: the `resource` and `authorization` options of the MCP door. */
@@ -519,6 +560,7 @@ const REVIEWED_TOP_LEVEL_OPTIONS = new Set([
   'experimental',
   'oauth',
   'oauthProvider',
+  'oidc',
   'organization',
   'session',
   'siteOrigins',
@@ -530,6 +572,9 @@ const REVIEWED_TOP_LEVEL_OPTIONS = new Set([
 function configError(message: string): Error {
   return new Error(`[better-convex] createBetterConvexAuth ${message}`)
 }
+
+const OIDC_TRUSTED_PROVIDER_MESSAGE =
+  'does not support "oidc" in "account.accountLinking.trustedProviders"; linking needs email_verified from the identity provider'
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -643,6 +688,7 @@ function resolveTrustedProviders(
       .map(([name]) => name),
   )
   for (const name of trusted) {
+    if (name === OIDC_PROVIDER_ID) throw configError(OIDC_TRUSTED_PROVIDER_MESSAGE)
     if (!configured.has(name)) {
       throw configError(
         `admits only configured social providers in "account.accountLinking.trustedProviders"; "${name}" is not configured`,
@@ -668,7 +714,35 @@ function assertNoOverrideUserInfo(socialProviders: SocialProviders | undefined):
   }
 }
 
-function rejectUnsupportedOptions(options: object): void {
+/** The `oidc` provider id belongs to the `oidc` option. */
+function assertNoSocialOidc(socialProviders: SocialProviders | undefined): void {
+  if (socialProviders && Object.hasOwn(socialProviders, OIDC_PROVIDER_ID)) {
+    throw configError('does not support "socialProviders.oidc"; use the "oidc" option')
+  }
+}
+
+/**
+ * With `oidc`: exactly one `oidc` provider, the one this factory built.
+ * Without: none. Another plugin cannot add or replace it.
+ */
+function oidcProviderInvariantHolds(
+  context: unknown,
+  oidcConfig: ResolvedOidcConfig | undefined,
+): boolean {
+  const providers = isPlainRecord(context) ? context.socialProviders : undefined
+  if (!Array.isArray(providers)) return false
+  const named = providers.filter(
+    (provider: unknown) => isPlainRecord(provider) && provider.id === OIDC_PROVIDER_ID,
+  )
+  if (oidcConfig === undefined) return named.length === 0
+  return named.length === 1 && isOwnedOidcProvider(named[0])
+}
+
+/** The Better Auth instance of each construction, with its OIDC runtime. */
+const oidcRuntimes = new WeakMap<BetterConvexAuthInstance, OidcRuntime>()
+
+/** Returns the validated static `oidc` option; a function form is validated at construction. */
+function rejectUnsupportedOptions(options: object): ResolvedOidcConfig | undefined {
   for (const key of OWNED_TOP_LEVEL_OPTIONS) {
     if (Object.hasOwn(options, key)) {
       throw configError(`owns "${key}"; arbitrary Better Auth configuration is not supported`)
@@ -791,9 +865,10 @@ function rejectUnsupportedOptions(options: object): void {
     const social = record.socialProviders
     const hasSocial =
       typeof social === 'function' || (isPlainRecord(social) && Object.keys(social).length > 0)
-    if ((record.emailOTP !== undefined && record.emailOTP !== false) || hasSocial) {
+    // prettier-ignore
+    if ((record.emailOTP !== undefined && record.emailOTP !== false) || hasSocial || record.oidc !== undefined) {
       throw configError(
-        'does not support "twoFactor" together with "emailOTP" or "socialProviders"; those sign-ins skip the second factor, so remove one of them',
+        'does not support "twoFactor" together with "emailOTP", "socialProviders" or "oidc"; those sign-ins skip the second factor, so remove one of them',
       )
     }
   }
@@ -815,12 +890,15 @@ function rejectUnsupportedOptions(options: object): void {
   assertTrustedProviderShape(record.account as BetterConvexAccountPolicy | undefined)
   // A lazy provider factory is re-validated for every auth construction.
   if (typeof record.socialProviders !== 'function') {
+    assertNoSocialOidc(record.socialProviders as SocialProviders | undefined)
     assertNoOverrideUserInfo(record.socialProviders as SocialProviders | undefined)
     resolveTrustedProviders(
       record.account as BetterConvexAccountPolicy | undefined,
       record.socialProviders as SocialProviders,
     )
   }
+  if (record.oidc === undefined || typeof record.oidc === 'function') return undefined
+  return resolveOidcConfig(record.oidc)
 }
 
 /**
@@ -1129,7 +1207,7 @@ export function createBetterConvexAuthOwned<
   extraPlugins: readonly BetterAuthPlugin[] = [],
   assertExtraPluginsAllowed: () => void = () => {},
 ): BetterConvexAuth<DataModel> {
-  rejectUnsupportedOptions(options)
+  const staticOidcConfig = rejectUnsupportedOptions(options)
   // Read once, when the app module loads: a loopback SITE_URL is local development.
   const localDevelopment = usesDevOutbox(options)
   const sessionPolicy = resolveSessionPolicy(options.session)
@@ -1189,8 +1267,16 @@ export function createBetterConvexAuthOwned<
         typeof options.socialProviders === 'function'
           ? options.socialProviders()
           : options.socialProviders
+      assertNoSocialOidc(socialProviders)
       assertNoOverrideUserInfo(socialProviders)
       const trustedProviders = resolveTrustedProviders(options.account, socialProviders)
+      stage = 'AUTH_CONFIG_OIDC_INVALID'
+      const oidcConfig =
+        typeof options.oidc === 'function' ? resolveOidcConfig(options.oidc()) : staticOidcConfig
+      const oidc = oidcConfig
+        ? createOidcPlugin({ config: oidcConfig, consume: () => rateLimitStorage.consume })
+        : undefined
+      stage = 'AUTH_CONFIG_OPTIONS_INVALID'
       // The app's hook; else the dev outbox on a loopback SITE_URL; else a delivery that fails with a clear error.
       const appDeliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
       const deliver = appDeliver ?? (localDevelopment ? devOutbox : missingEmailHook)
@@ -1282,10 +1368,13 @@ export function createBetterConvexAuthOwned<
           issuer: convexSiteUrl,
           definePayload: defineSessionClaims,
         },
+        // The IdP liveness check (4.6): a refused refresh token ends the sessions and the mint.
+        ...(oidc ? { beforeMint: ({ user }) => oidc.runtime.upstream().isGrantLive(user.id) } : {}),
       })
       const plugins: BetterAuthPlugin[] = [
         ...featurePlugins,
         createIdentityGuardsPlugin(),
+        ...(oidc ? [oidc.plugin] : []),
         ...extraPlugins,
         jwtPlugin,
         convexPlugin,
@@ -1441,6 +1530,9 @@ export function createBetterConvexAuthOwned<
       const context = (await auth.$context) as { options?: BetterAuthOptions } | undefined
       // Plugin init may merge options; the final graph must keep every invariant.
       if (context?.options) assertOwnedInvariants(context.options, socialProviderNames)
+      // prettier-ignore
+      if (!oidcProviderInvariantHolds(context, oidcConfig)) throw new Error('AUTH_OWNED_INVARIANT_VIOLATED')
+      if (oidc) oidcRuntimes.set(auth, oidc.runtime)
       return auth
     } catch (error) {
       throw authConfigFailure(stage, error)
@@ -1459,6 +1551,47 @@ export function createBetterConvexAuthOwned<
     createAuth: createAuthWithProfile,
     resolveProfile: resolveOAuthProfile,
   })
+
+  const { getUser, requireUser } = authComponent
+
+  const getOidcAccessToken = async (
+    ctx: GenericActionCtx<DataModel>,
+  ): Promise<BetterConvexOidcAccessToken> => {
+    // prettier-ignore
+    if ('db' in ctx || typeof ctx.runAction !== 'function') throw new TypeError('AUTH_OIDC_ACCESS_TOKEN_REQUIRES_ACTION')
+    const oidcUser = await requireUser(ctx)
+    const runtime = oidcRuntimes.get(await createAuth(ctx))
+    if (!runtime) throw new TypeError('AUTH_OIDC_NOT_CONFIGURED')
+    let outcome: OidcRefreshOutcome
+    try {
+      outcome = await runtime.upstream().accessToken(oidcUser.id)
+    } catch (error) {
+      // A store, seal or decryption failure is an outage for the caller, not a raw error.
+      logOidcFailure('AUTH_OIDC_REFRESH_FAILED:helper', { cause: error })
+      outcome = { kind: 'unavailable' }
+    }
+    switch (outcome.kind) {
+      case 'fresh':
+        return { accessToken: outcome.accessToken, expiresAt: outcome.expiresAt }
+      case 'no-account':
+        throw new ConvexError({
+          code: 'OIDC_ACCOUNT_REQUIRED',
+          message: 'Sign in through the identity provider or link it first',
+        })
+      case 'no-refresh-token':
+      case 'ended':
+        throw new ConvexError({
+          code: 'OIDC_SIGN_IN_REQUIRED',
+          message: 'Sign in through the identity provider again',
+        })
+      case 'busy':
+      case 'unavailable':
+        throw new ConvexError({
+          code: 'OIDC_UNAVAILABLE',
+          message: 'The identity provider is not available. Try again later',
+        })
+    }
+  }
 
   const requireMcp = (): ResolvedMcpProfile => {
     if (!mcpProfile) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
@@ -1495,8 +1628,8 @@ export function createBetterConvexAuthOwned<
       return authComponent.jwksOperatorFunctions(createAuth)
     },
     oauthOperator,
-    getUser: authComponent.getUser,
-    requireUser: authComponent.requireUser,
+    getUser,
+    requireUser,
     getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
     createMcpAccessVerifier,
     mcpAuthorization(ctx: AuthCtx<DataModel>): BetterConvexMcpAuthorization {
@@ -1524,5 +1657,6 @@ export function createBetterConvexAuthOwned<
         ...(mcpProfile ? { resource: () => resolveMcpResource(mcpProfile) } : {}),
       }),
     oauthConnections: createOAuthConnections<DataModel>(component),
+    getOidcAccessToken,
   })
 }

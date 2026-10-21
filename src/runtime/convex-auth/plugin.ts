@@ -1,3 +1,4 @@
+import type { AuthContext } from '@better-auth/core'
 import { getCurrentAuthContext } from '@better-auth/core/context'
 import { oauthAuthorizationServerMetadata } from '@better-auth/oauth-provider'
 import type { BetterAuthPlugin, Session, User } from 'better-auth'
@@ -72,6 +73,15 @@ export interface ConvexAuthOptions {
    * `baseURL`, which is the same for a single-origin deployment.
    */
   authIssuer?: string
+  /**
+   * Runs at `/convex/token` after the session and user are re-read. `false`
+   * refuses the mint with 401. The `oidc` option uses it for the IdP liveness check.
+   */
+  readonly beforeMint?: (input: {
+    readonly context: AuthContext
+    readonly session: Session
+    readonly user: User
+  }) => Promise<boolean>
 }
 
 /** Serialized size bound for all non-registered session claims. */
@@ -958,6 +968,8 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
             where: [{ field: 'id', value: persistedSession.userId }],
           })
           if (!persistedUser || persistedUser.id !== authenticated.user.id) unauthorized()
+          // prettier-ignore
+          if (options.beforeMint && !(await options.beforeMint({ context: ctx.context, session: persistedSession, user: persistedUser }))) unauthorized()
 
           const definedClaims = await options.sessionJwt.definePayload?.({
             session: persistedSession,

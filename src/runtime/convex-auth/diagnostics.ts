@@ -19,6 +19,7 @@ export type AuthConfigSubCode =
   | 'AUTH_CONFIG_SITE_ORIGINS_INVALID'
   | 'AUTH_CONFIG_SITE_ORIGIN_NOT_ALLOWED'
   | 'AUTH_CONFIG_ROUTE_CONSTRUCTION_FAILED'
+  | 'AUTH_CONFIG_OIDC_INVALID'
 
 export type AuthFailureCode = typeof AUTH_CONFIG_INVALID | 'AUTH_HANDLER_FAILED'
 
@@ -79,6 +80,34 @@ export function logAuthFailure(
   console.error(`[better-convex] ${code}`, {
     subCode,
     ...(cause === undefined ? {} : { cause: sanitizeAuthCause(cause) }),
+  })
+}
+
+const MAX_ISSUER_LOG_LENGTH = 2048
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/gu
+
+function issuerForLog(value: string | undefined): string | undefined {
+  return value === undefined
+    ? undefined
+    : value.slice(0, MAX_ISSUER_LOG_LENGTH).replace(CONTROL_CHARACTERS, '')
+}
+
+/**
+ * Log one OIDC failure code. `expected` and `received` are issuer strings only
+ * (the issuer mismatch): they skip the cause sanitizer, which would redact a
+ * long URL path, but are bounded and stripped of control characters. Callers
+ * never pass the client secret, a token or a request.
+ */
+export function logOidcFailure(
+  code: string,
+  details?: { readonly cause?: unknown; readonly expected?: string; readonly received?: string },
+): void {
+  console.error('[better-convex] AUTH_OIDC_FAILURE', {
+    code,
+    cause: details?.cause === undefined ? undefined : sanitizeAuthCause(details.cause),
+    expected: issuerForLog(details?.expected),
+    received: issuerForLog(details?.received),
   })
 }
 
