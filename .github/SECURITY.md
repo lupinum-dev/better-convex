@@ -67,6 +67,12 @@ explains the trust boundaries in detail. In short:
   that decide access by email use email codes.
   Deployments still own a breached/common-password blocklist, account
   recovery, and abuse controls.
+- **Company sign-in.** With the `oidc` option, these checks are always on:
+  state, PKCE S256, a nonce, a verified ID token, account keys bound to the
+  issuer, users managed by the identity provider (IdP), and back-channel
+  logout. A user who signed in through the IdP, or linked it, then signs in
+  only through it. The liveness check ends app sessions when the IdP refuses
+  the refresh token.
 
 ### MCP and delegated OAuth
 
@@ -141,6 +147,7 @@ If a secret or credential leaks, contain it first:
 | A confidential OAuth client secret | Disable the client with `auth.oauthOperator.setClientDisabled`. Delete its consents. Rotate its secret through the OAuth Provider admin API before you enable it again.                                                                |
 | An OAuth consent or access token   | Revoke the grant with `auth.oauthConnections.revoke`. The next MCP call fails the live check. If you cannot trust the live check, close `/mcp` for at least 10 minutes.                                                                |
 | A signing key                      | Close token issuance. Run the internal `auth:rotateSigningKey` action. Rotation keeps old public keys for a grace period, so keep affected routes closed until the old key is gone from the public key set.                            |
+| The OIDC client secret             | Rotate it at the IdP and keep the old one disabled. Set it with `pnpm exec better-convex convex env set OIDC_CLIENT_SECRET`. For an IdP signing key, rotate it at the IdP; logout tokens get 503 for up to 30 s.                       |
 | A published package version        | Publish a fixed version through the protected release workflow. Deprecate the affected range on npm. Never reuse or unpublish a version.                                                                                               |
 
 Record each step in a private incident record. Never put credentials, tokens,

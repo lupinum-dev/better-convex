@@ -70,6 +70,10 @@ const startHere = [
     ],
   ],
   [
+    'Sign in through a company identity provider (Keycloak, OIDC)',
+    ['/docs/build/authentication/company-sign-in'],
+  ],
+  [
     'Query with changing inputs',
     ['/docs/build/queries/reactive-arguments', '/docs/build/queries/loading-and-stale-data'],
   ],
