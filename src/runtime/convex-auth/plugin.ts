@@ -968,8 +968,15 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
             where: [{ field: 'id', value: persistedSession.userId }],
           })
           if (!persistedUser || persistedUser.id !== authenticated.user.id) unauthorized()
-          // prettier-ignore
-          if (options.beforeMint && !(await options.beforeMint({ context: ctx.context, session: persistedSession, user: persistedUser }))) unauthorized()
+          if (
+            options.beforeMint &&
+            !(await options.beforeMint({
+              context: ctx.context,
+              session: persistedSession,
+              user: persistedUser,
+            }))
+          )
+            unauthorized()
 
           const definedClaims = await options.sessionJwt.definePayload?.({
             session: persistedSession,

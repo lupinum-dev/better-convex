@@ -137,8 +137,9 @@ export function createOidcPlugin(input: {
         client,
         consume: (key, rule) => input.consume()(key, rule),
         findAccountForUser: async (userId): Promise<OidcAccountRecord | null | 'conflict'> => {
-          // prettier-ignore
-          const accounts = (await internalAdapter().findAccounts(userId)).filter((account) => account.providerId === OIDC_PROVIDER_ID)
+          const accounts = (await internalAdapter().findAccounts(userId)).filter(
+            (account) => account.providerId === OIDC_PROVIDER_ID,
+          )
           if (accounts.length > 1) return 'conflict'
           const account = accounts[0]
           if (!account) return null
@@ -152,16 +153,28 @@ export function createOidcPlugin(input: {
             accessTokenExpiresAt: account.accessTokenExpiresAt ?? null,
           }
         },
-        // prettier-ignore
-        swapTokens: async (id, expectedRefreshToken, patch) => (await ctx.adapter.update({ model: 'account', where: [{ field: 'id', value: id }, { field: 'refreshToken', value: expectedRefreshToken }], update: patch })) !== null,
+        swapTokens: async (id, expectedRefreshToken, patch) =>
+          (await ctx.adapter.update({
+            model: 'account',
+            where: [
+              { field: 'id', value: id },
+              { field: 'refreshToken', value: expectedRefreshToken },
+            ],
+            update: patch,
+          })) !== null,
         endGrant,
         seal,
         open,
       })
       logoutDeps = {
         client,
-        // prettier-ignore
-        findUserIdBySubject: async (sub) => (await internalAdapter().findAccountByKey({ providerId: OIDC_PROVIDER_ID, accountId: await client.accountKey(sub) }))?.userId ?? null,
+        findUserIdBySubject: async (sub) =>
+          (
+            await internalAdapter().findAccountByKey({
+              providerId: OIDC_PROVIDER_ID,
+              accountId: await client.accountKey(sub),
+            })
+          )?.userId ?? null,
         endGrant,
         consume: input.consume(),
       }
@@ -170,16 +183,16 @@ export function createOidcPlugin(input: {
         session: {
           create: {
             before: async (session, context) => {
-              // prettier-ignore
-              if (!isOidcCallback(context) && (await hasOidcAccount(session.userId))) throw oidcSignInRequired()
+              if (!isOidcCallback(context) && (await hasOidcAccount(session.userId)))
+                throw oidcSignInRequired()
             },
           },
         },
         account: {
           create: {
             before: async (account) => {
-              // prettier-ignore
-              if (account.providerId === OIDC_PROVIDER_ID && (await hasOidcAccount(account.userId))) throw oidcAccountConflict()
+              if (account.providerId === OIDC_PROVIDER_ID && (await hasOidcAccount(account.userId)))
+                throw oidcAccountConflict()
             },
           },
           // Without its `oidc` row a user leaves the door guard, back-channel logout and the mint

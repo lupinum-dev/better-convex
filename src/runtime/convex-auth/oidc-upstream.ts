@@ -132,8 +132,8 @@ export function createOidcUpstream(deps: OidcUpstreamDeps): OidcUpstream {
   // Only an unchanged refresh token proves that the IdP refused *our* grant.
   async function endGrantIfUnchanged(current: RefreshableAccount): Promise<OidcRefreshOutcome> {
     const latest = await deps.findAccountForUser(current.userId)
-    // prettier-ignore
-    if (latest === 'conflict' || latest?.refreshToken !== current.refreshToken) return { kind: 'busy' }
+    if (latest === 'conflict' || latest?.refreshToken !== current.refreshToken)
+      return { kind: 'busy' }
     await deps.endGrant(current.userId)
     logOidcFailure('AUTH_OIDC_GRANT_ENDED')
     return { kind: 'ended' }
@@ -227,8 +227,11 @@ export function createOidcUpstream(deps: OidcUpstreamDeps): OidcUpstream {
       },
       deadline,
     )
-    // prettier-ignore
-    if (verified.ok && (await client.accountKey(String(verified.payload.sub))) !== current.accountId) return unavailable('subject')
+    if (
+      verified.ok &&
+      (await client.accountKey(String(verified.payload.sub))) !== current.accountId
+    )
+      return unavailable('subject')
     if (!verified.ok) logOidcFailure(`AUTH_OIDC_ID_TOKEN_INVALID:${verified.reason}`)
     const idToken = verified.ok ? tokens.idToken : current.idToken
     return await store(current, { ...tokens, accessToken }, idToken)

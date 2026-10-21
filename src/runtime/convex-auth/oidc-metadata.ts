@@ -442,10 +442,19 @@ async function verifyJwt(
   }
   if (typeof result === 'string') return { ok: false, reason: result }
   const payload = result.payload
-  // prettier-ignore
-  if (check.typ === 'id_token' && Array.isArray(payload.aud) && payload.aud.length > 1 && payload.azp === undefined) return { ok: false, reason: 'azp' }
-  // prettier-ignore
-  if (check.typ === 'id_token' && payload.azp !== undefined && payload.azp !== client.config.clientId) return { ok: false, reason: 'azp' }
+  if (
+    check.typ === 'id_token' &&
+    Array.isArray(payload.aud) &&
+    payload.aud.length > 1 &&
+    payload.azp === undefined
+  )
+    return { ok: false, reason: 'azp' }
+  if (
+    check.typ === 'id_token' &&
+    payload.azp !== undefined &&
+    payload.azp !== client.config.clientId
+  )
+    return { ok: false, reason: 'azp' }
   return { ok: true, payload, header: result.protectedHeader }
 }
 

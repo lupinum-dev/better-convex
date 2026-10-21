@@ -112,8 +112,8 @@ async function send(
   } catch {
     throw new OidcError('AUTH_OIDC_TRANSPORT', 'network')
   }
-  // prettier-ignore
-  if (response.type === 'opaqueredirect' || REDIRECT_STATUSES.has(response.status)) throw new OidcError('AUTH_OIDC_TRANSPORT', 'redirect')
+  if (response.type === 'opaqueredirect' || REDIRECT_STATUSES.has(response.status))
+    throw new OidcError('AUTH_OIDC_TRANSPORT', 'redirect')
   const length = declaredLength(response.headers)
   if (length !== null && length > limits.maxBytes) {
     response.body?.cancel().catch(() => {})
@@ -152,8 +152,10 @@ export async function idpFetch(
     }
   })
   // The timer races the fetch, so the deadline holds even if the runtime ignores `signal`.
-  // prettier-ignore
-  const timer = setTimeout(() => fail(new OidcError('AUTH_OIDC_TRANSPORT', 'timeout')), Math.max(0, limits.deadline - Date.now()))
+  const timer = setTimeout(
+    () => fail(new OidcError('AUTH_OIDC_TRANSPORT', 'timeout')),
+    Math.max(0, limits.deadline - Date.now()),
+  )
   const sent = send(url, init, limits, controller.signal)
   // A request that loses the race rejects later; nobody waits for it.
   sent.catch(() => {})

@@ -88,8 +88,8 @@ export async function handleOidcBackchannelLogout(
   const payload = verified.payload
 
   const events = payload.events
-  // prettier-ignore
-  if (!isPlainRecord(events) || !isPlainRecord(events[BACKCHANNEL_LOGOUT_EVENT])) return invalid('events')
+  if (!isPlainRecord(events) || !isPlainRecord(events[BACKCHANNEL_LOGOUT_EVENT]))
+    return invalid('events')
   if ('nonce' in payload) return invalid('nonce')
   // A sid-only token is refused: sessions are not mapped to IdP session ids.
   if (typeof payload.sub !== 'string' || payload.sub.length === 0) return invalid('sub')

@@ -865,8 +865,11 @@ function rejectUnsupportedOptions(options: object): ResolvedOidcConfig | undefin
     const social = record.socialProviders
     const hasSocial =
       typeof social === 'function' || (isPlainRecord(social) && Object.keys(social).length > 0)
-    // prettier-ignore
-    if ((record.emailOTP !== undefined && record.emailOTP !== false) || hasSocial || record.oidc !== undefined) {
+    if (
+      (record.emailOTP !== undefined && record.emailOTP !== false) ||
+      hasSocial ||
+      record.oidc !== undefined
+    ) {
       throw configError(
         'does not support "twoFactor" together with "emailOTP", "socialProviders" or "oidc"; those sign-ins skip the second factor, so remove one of them',
       )
@@ -1530,8 +1533,8 @@ export function createBetterConvexAuthOwned<
       const context = (await auth.$context) as { options?: BetterAuthOptions } | undefined
       // Plugin init may merge options; the final graph must keep every invariant.
       if (context?.options) assertOwnedInvariants(context.options, socialProviderNames)
-      // prettier-ignore
-      if (!oidcProviderInvariantHolds(context, oidcConfig)) throw new Error('AUTH_OWNED_INVARIANT_VIOLATED')
+      if (!oidcProviderInvariantHolds(context, oidcConfig))
+        throw new Error('AUTH_OWNED_INVARIANT_VIOLATED')
       if (oidc) oidcRuntimes.set(auth, oidc.runtime)
       return auth
     } catch (error) {
@@ -1557,8 +1560,8 @@ export function createBetterConvexAuthOwned<
   const getOidcAccessToken = async (
     ctx: GenericActionCtx<DataModel>,
   ): Promise<BetterConvexOidcAccessToken> => {
-    // prettier-ignore
-    if ('db' in ctx || typeof ctx.runAction !== 'function') throw new TypeError('AUTH_OIDC_ACCESS_TOKEN_REQUIRES_ACTION')
+    if ('db' in ctx || typeof ctx.runAction !== 'function')
+      throw new TypeError('AUTH_OIDC_ACCESS_TOKEN_REQUIRES_ACTION')
     const oidcUser = await requireUser(ctx)
     const runtime = oidcRuntimes.get(await createAuth(ctx))
     if (!runtime) throw new TypeError('AUTH_OIDC_NOT_CONFIGURED')

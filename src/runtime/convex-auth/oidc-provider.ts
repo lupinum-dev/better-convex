@@ -128,8 +128,8 @@ export function createOidcProvider(client: OidcClient): OAuthProvider<OidcIdToke
       }
       if (!result.ok) return reject(result.reason)
       const claims = result.payload
-      // prettier-ignore
-      if (typeof claims.nonce !== 'string' || claims.nonce !== tokens.expectedIdTokenNonce) return reject('nonce')
+      if (typeof claims.nonce !== 'string' || claims.nonce !== tokens.expectedIdTokenNonce)
+        return reject('nonce')
       if (
         typeof claims.sub !== 'string' ||
         claims.sub.length === 0 ||
@@ -150,8 +150,9 @@ export function createOidcProvider(client: OidcClient): OAuthProvider<OidcIdToke
       }
     },
     // One refresh owner: the upstream helper. BA's own refresh paths always fail here.
-    // prettier-ignore
-    refreshAccessToken: async () => { throw new OidcError('AUTH_OIDC_REFRESH_DELEGATED') },
+    refreshAccessToken: async () => {
+      throw new OidcError('AUTH_OIDC_REFRESH_DELEGATED')
+    },
     createEndSessionURL: async ({ idToken, postLogoutRedirectURI, state }) => {
       let endSessionEndpoint: string | null
       try {
