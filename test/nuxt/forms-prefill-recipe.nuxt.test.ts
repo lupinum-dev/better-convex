@@ -55,4 +55,27 @@ describe('forms recipe: prefill a form from a query', () => {
     expect(notify.element.checked).toBe(false)
     wrapper.unmount()
   })
+
+  it('seeds the fields from an existing record', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const convex = setupBetterConvexTest()
+    convex
+      .query(getProjectSettings, { projectId: 'p1' })
+      .resolve({ _id: 's1', projectId: 'p1', name: 'Saved settings', notifyByEmail: false })
+
+    const wrapper = await mountSuspended(ProjectSettingsForm, {
+      props: { projectId: 'p1' },
+      global: { plugins: [convex.plugin] },
+    })
+    await vi.runAllTimersAsync()
+    await nextTick()
+
+    expect(wrapper.find<HTMLInputElement>('input[name="name"]').element.value).toBe(
+      'Saved settings',
+    )
+    expect(wrapper.find<HTMLInputElement>('input[name="notifyByEmail"]').element.checked).toBe(
+      false,
+    )
+    wrapper.unmount()
+  })
 })
