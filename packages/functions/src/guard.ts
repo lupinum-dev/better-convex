@@ -13,6 +13,9 @@ export const ERASURE_STEP = Symbol.for('better-convex.erasure-step')
 /** Marks a public function that checks its caller itself: the library's own, or one the app vouches for. */
 const GUARDED = Symbol.for('better-convex.guarded')
 
+/** Marks the result of `defineTools` with the operations it collected, so `launchProblems` can name a tool left out. */
+export const TOOLS = Symbol.for('better-convex.tools')
+
 /** Marks a registered function as the library's housekeeping job: a cron must call it. Not enumerable, so it stays out of the function's JSON. */
 export function markHousekeeping<F>(registered: F): F {
   Object.defineProperty(registered as object, HOUSEKEEPING, { value: true, enumerable: false })
@@ -23,6 +26,12 @@ export function markHousekeeping<F>(registered: F): F {
 export function markErasureStep<F>(registered: F): F {
   Object.defineProperty(registered as object, ERASURE_STEP, { value: true, enumerable: false })
   return registered
+}
+
+/** Marks the result of `defineTools` with the operations in its catalog. Not enumerable, like the marks above. */
+export function markTools<T>(tools: T, operations: readonly Operation[]): T {
+  Object.defineProperty(tools as object, TOOLS, { value: operations, enumerable: false })
+  return tools
 }
 
 export function guarded<F>(registered: F, reason = 'library'): F {

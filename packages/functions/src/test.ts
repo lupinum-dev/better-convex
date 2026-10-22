@@ -8,8 +8,15 @@
  */
 import type { SchemaDefinition } from 'convex/server'
 
-import { erasureOf } from './functions'
-import { OPERATION, HOUSEKEEPING, ERASURE_STEP, scanModules, unguardedFunctions } from './guard'
+import { erasureOf, type Operation } from './functions'
+import {
+  OPERATION,
+  HOUSEKEEPING,
+  ERASURE_STEP,
+  TOOLS,
+  scanModules,
+  unguardedFunctions,
+} from './guard'
 import { limitOf, type Policy } from './policy'
 import { libraryTables } from './schema'
 
@@ -101,14 +108,16 @@ function tally(count: Count, op: string, out: string) {
  * sentence for each, or an empty list. Run it as a test:
  * `expect(await launchProblems({ modules, schema, crons, fns })).toEqual([])`.
  *
- * It checks four things and nothing else:
+ * It checks five things and nothing else:
  * 1. a function built with Convex's own builders (see `unguardedFunctions`;
  *    `trustedRoutes` is passed on);
  * 2. a user ID (`v.id('users')`, nested, optional or a record key) in a table
  *    whose `erasure` entries do not cover its field, or no module exporting
  *    `fns.erasure.eraseStep`, so deleting an account would leave the data behind;
  * 3. the agents housekeeping function with no cron that calls it;
- * 4. a public mutation of a public action with no entry in `limits`.
+ * 4. a public mutation of a public action with no entry in `limits`;
+ * 5. an operation with a `tool` that no exported `defineTools` result
+ *    (`export const tools = defineTools(...)`) collected, so no agent sees it.
  *
  * `crons` is the default export of `convex/crons.ts`. `fns` is the result of
  * `defineFunctions`. The escape hatches are the ones that exist already:
@@ -195,6 +204,23 @@ export async function launchProblems(options: {
     seen.add(op.action)
     problems.push(
       `${id} is a public mutation (action ${op.action}) with no limit, so one visitor can fill your database. Add limits: { '${op.action}': { max: 60, every: 'minute', per: 'everyone' } } to definePolicy.`,
+    )
+  }
+
+  // 5. Every tool operation must be in a catalog. Matched by operation, not by name: a second
+  // operation that reuses a tool name in a module defineTools never saw is still left out.
+  const collected = new Set(
+    scan.exports.flatMap(
+      ({ value }) => (value as { [TOOLS]?: readonly Operation[] } | null)?.[TOOLS] ?? [],
+    ),
+  )
+  const named = new Set<Operation>()
+  for (const [id, fn] of scan.functions) {
+    const op = fn[OPERATION]
+    if (!op?.tool || collected.has(op) || named.has(op)) continue
+    named.add(op)
+    problems.push(
+      `${id} declares tool ${op.tool.name}, but no defineTools call includes its module, so agents never see the tool. Add the module to the second argument of defineTools, and add ${op.tool.name} to \`export const { ... } = tools.functions\`.`,
     )
   }
   return problems
