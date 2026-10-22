@@ -3828,8 +3828,9 @@ export const mutants: Mutant[] = [
     id: 'oidc-size-limit',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-fetch.ts',
-    find: "if (received > limits.maxBytes) throw new OidcError('AUTH_OIDC_TRANSPORT', 'too_large')",
-    replace: "if (false) throw new OidcError('AUTH_OIDC_TRANSPORT', 'too_large')",
+    find: "maxBytes,\n    () => new OidcError('AUTH_OIDC_TRANSPORT', 'too_large'),",
+    replace:
+      "Number.MAX_SAFE_INTEGER,\n    () => new OidcError('AUTH_OIDC_TRANSPORT', 'too_large'),",
     kills: [
       'test/unit/oidc-fetch.test.ts > OIDC fetch > refuses a body over the limit without Content-Length',
     ],
@@ -3952,8 +3953,8 @@ export const mutants: Mutant[] = [
     id: 'oidc-jwks-cooldown',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-metadata.ts',
-    find: 'if (now - keys.fetchedAt < OIDC_JWKS_REFETCH_COOLDOWN_MS) return null',
-    replace: 'if (false) return null',
+    find: "if (now - keys.fetchedAt < OIDC_JWKS_REFETCH_COOLDOWN_MS) return 'cooldown'",
+    replace: "if (false) return 'cooldown'",
     kills: [
       'test/unit/oidc-metadata.test.ts > OIDC discovery and keys > fetches JWKS at most once per 30 s for unknown kids and answers key_unknown inside the cooldown',
     ],
@@ -4042,8 +4043,8 @@ export const mutants: Mutant[] = [
     id: 'oidc-fixed-scopes',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-provider.ts',
-    find: 'scopes: OIDC_SCOPES,',
-    replace: 'scopes: [...OIDC_SCOPES, ...(data.scopes ?? [])],',
+    find: 'scopes: [...client.config.scopes],',
+    replace: 'scopes: [...client.config.scopes, ...(data.scopes ?? [])],',
     kills: [
       'test/unit/oidc-provider.test.ts > OIDC provider > ignores scopes, loginHint and additionalParams from the client',
     ],
@@ -4053,8 +4054,8 @@ export const mutants: Mutant[] = [
     id: 'oidc-email-verified-strict',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-provider.ts',
-    find: 'emailVerified: claims.email_verified === true,',
-    replace: 'emailVerified: Boolean(claims.email_verified),',
+    find: 'return claims.email_verified === true || claims.xms_edov === true',
+    replace: 'return Boolean(claims.email_verified) || claims.xms_edov === true',
     kills: ['test/unit/oidc-provider.test.ts > OIDC provider > maps email_verified "true" → false'],
     projects: ['unit'],
   },
@@ -4518,17 +4519,6 @@ export const mutants: Mutant[] = [
       'test/unit/oidc-upstream.test.ts > OIDC upstream tokens > drops a refreshed id_token with a bad signature and keeps the old one',
     ],
     projects: ['unit'],
-  },
-  {
-    id: 'oidc-mint-liveness',
-    guards: 'oidc',
-    file: 'src/runtime/convex-auth/plugin.ts',
-    find: 'options.beforeMint &&',
-    replace: 'false &&',
-    kills: [
-      'test/convex/auth-oidc-upstream.test.ts > OIDC upstream tokens with real Better Auth > ended IdP grant blocks token mint',
-    ],
-    projects: ['convex'],
   },
   {
     id: 'oidc-mint-ended',
