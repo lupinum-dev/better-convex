@@ -13,7 +13,10 @@ import {
   identityUser,
   toAuthenticatedIdentity,
 } from './auth/auth-identity'
-import { createBetterAuthBrowserAdapter } from './auth/better-auth-browser-adapter'
+import {
+  createBetterAuthBrowserAdapter,
+  SESSION_RECONCILIATION_TIMEOUT_MS,
+} from './auth/better-auth-browser-adapter'
 import type { AuthClientWithConvex } from './auth/client-engine-types'
 import { createIntegratedAuthClient } from './auth/integrated-client'
 import {
@@ -29,16 +32,16 @@ import {
   readConvexRuntimeContext,
   type NuxtConvexAuthController,
 } from './runtime-context'
+import { useConvexAuthErrorState } from './utils/auth-error-state'
 import { useConvexIdentityState } from './utils/auth-identity-state'
 import { useConvexAuthPendingState } from './utils/auth-pending-state'
 import { publishedConvexAuthStatus } from './utils/auth-status'
 import { purgeConvexIdentityPayloadKeys, readAuthMode } from './utils/convex-cache'
 import { MISSING_CONVEX_URL_MESSAGE } from './utils/convex-config'
+import { toAuthErrorState, type AuthErrorState } from './utils/convex-shared'
 import { createLogger, getLogLevel } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
 import type { ConvexUser } from './utils/types'
-
-const SESSION_RECONCILIATION_TIMEOUT_MS = 5_000
 
 /**
  * Start the auth-enabled browser runtime: Better Auth is an adapter around the
@@ -78,7 +81,7 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
   }) as unknown as AuthClientWithConvex
 
   const identity = useConvexIdentityState()
-  const authError = useState<string | null>('convex:authError', () => null)
+  const authError = useConvexAuthErrorState()
   const pendingState = useConvexAuthPendingState()
   // DevTools shows token expiry. The token stays out of the identity state,
   // which the server serializes into the page payload.
@@ -98,8 +101,10 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
   // new identity only after the Vue runtime confirms that Convex accepted the
   // token, so `useConvexAuth()` and `ready()` never disagree. Profile fields of
   // the identity already shown may update before a refreshed token is confirmed.
-  let staged: { user: ConvexUser; token: string } | { user: null; error: string | null } | null =
-    null
+  let staged:
+    | { user: ConvexUser; token: string }
+    | { user: null; error: AuthErrorState | null }
+    | null = null
   const adapter = createBetterAuthBrowserAdapter(
     authClient,
     {
@@ -108,7 +113,7 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
         publishAcceptedIdentity()
       },
       anonymous(error) {
-        staged = { user: null, error }
+        staged = { user: null, error: error && toAuthErrorState(error) }
         publishAcceptedIdentity()
       },
       sessionChanged(sessionToken, errorMessage, revision) {
@@ -162,7 +167,7 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
       latestProviderSession &&
       latestProviderSession.revision === runtimeProviderRevision
     ) {
-      synchronization?.observeAccepted(latestProviderSession, Boolean(snapshot.error))
+      synchronization?.observeAccepted(latestProviderSession, snapshot.error)
     }
   }
   const reconcileProtectedPayload = () => {
@@ -196,7 +201,7 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
     if (snapshot.error) {
       identity.value = ANONYMOUS_IDENTITY
       devtoolsToken.value = null
-      authError.value = snapshot.error.message
+      authError.value = toAuthErrorState(snapshot.error)
     } else if (snapshot.identityKey === 'anonymous') {
       identity.value = ANONYMOUS_IDENTITY
       devtoolsToken.value = null
@@ -225,7 +230,7 @@ export function setupConvexBrowserRuntime(nuxtApp: NuxtApp): void {
     timeoutMs: SESSION_RECONCILIATION_TIMEOUT_MS,
     refetchCanonicalSession: () => refreshBetterConvexAuth(vuePlugin),
     failClosed(failure) {
-      adapter.failClosed(failure.message)
+      adapter.failClosed(toAuthErrorState(failure))
     },
     // Without an observable signal every Promise operation reconciles.
     sessionSignalDelayMs: sessionSignal ? BETTER_AUTH_SESSION_SIGNAL_DELAY_MS : null,

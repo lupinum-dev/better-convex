@@ -8,7 +8,6 @@ import {
   resolveRouteProtectionDecision,
   type ConvexAuthPageMeta,
 } from '../utils/auth-route-protection'
-import { AUTH_UNAVAILABLE_MESSAGE } from '../utils/convex-shared'
 import { normalizeConvexRuntimeConfig } from '../utils/runtime-config'
 import { isSsrAuthEnabled } from '../utils/ssr-auth'
 
@@ -59,18 +58,19 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!decision) return
 
   if ((await settledStatus()) === 'authenticated' || status.value === 'authenticated') return
-  // The server or the browser could not ask Better Auth for this person (a 429,
-  // 5xx, timeout or network error; a 401 is not an error here). That is
-  // "unknown", not "signed out": render the page with `status: 'error'`, or
-  // still `'pending'` while the browser waits out the failure after a server
-  // render that hit it. The browser keeps retrying and recovers on its own;
-  // Convex still refuses data the person may not read.
+  // A temporary auth failure (`classifyAuthFailure`: no answer, timeout, 408,
+  // 429, 5xx) means the server or the browser could not ask Better Auth for
+  // this person. That is "unknown", not "signed out": render the page with
+  // `status: 'error'`, or still `'pending'` while the browser waits out the
+  // failure after a server render that hit it. The browser keeps retrying and
+  // recovers on its own; Convex still refuses data the person may not read.
   if (
-    error.value?.message === AUTH_UNAVAILABLE_MESSAGE &&
+    error.value?.code === 'AUTH_UNAVAILABLE' &&
     (status.value === 'error' || status.value === 'pending')
   ) {
     return
   }
-  // Any other pending or failed state falls through to the secure default.
+  // Any other pending or failed state, a setup error (`AUTH_MISCONFIGURED`)
+  // included, falls through to the secure default.
   return navigateTo(decision.redirectTo)
 })

@@ -152,16 +152,17 @@ async function resolveServerToken(
 
   // No token and no failure is a definitive miss (no usable session, or an
   // exchange 401/403): anonymous for optional, authentication for required.
-  // Every other failure (transport, 5xx, oversized, malformed, unusable token)
-  // throws transport in both modes.
+  // Every other failure throws transport in both modes: `AUTH_UNAVAILABLE` for
+  // a temporary one (network, timeout, 408, 429, 5xx), `AUTH_MISCONFIGURED` for
+  // a setup one (another status, or a token without a lifetime or `sub`).
   if (snapshot.authError === null) {
     if (required) throw authenticationRequiredError(snapshot.exchangeStatus === 403 ? 403 : 401)
     return null
   }
   throw new ConvexCallError({
     kind: 'transport',
-    code: 'AUTH_UNAVAILABLE',
-    message: 'Convex authentication is temporarily unavailable',
+    code: snapshot.authError.code,
+    message: snapshot.authError.message,
   })
 }
 

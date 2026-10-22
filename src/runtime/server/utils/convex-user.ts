@@ -53,8 +53,8 @@ export async function getConvexUser(event: ConvexServerEvent): Promise<ConvexUse
     throw toConvexH3Error(
       new ConvexCallError({
         kind: 'transport',
-        code: 'AUTH_UNAVAILABLE',
-        message: 'Convex authentication is temporarily unavailable',
+        code: snapshot.authError.code,
+        message: snapshot.authError.message,
       }),
     )
   }

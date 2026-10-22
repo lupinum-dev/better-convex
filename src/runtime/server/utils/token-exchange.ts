@@ -85,10 +85,11 @@ function readToken(body: unknown): string | null {
  * are caller-contract violations, not exchange outcomes. The guards use
  * {@link ServerConvexValidationError}.
  *
- * `redirect: 'error'` guarantees the credential is never delivered to a redirect
- * target: the fetch rejects before following, and that rejection surfaces through
- * the generic catch as `kind: 'transport'`. The security property is
- * zero-delivery, not the error label — the catch never inspects message text.
+ * `redirect: 'manual'` guarantees the credential is never delivered to a
+ * redirect target: the fetch returns the 3xx answer without following it, and
+ * that answer is a failure with its status (`kind: 'transport'`), which the auth
+ * failure rule reports as a setup error. The security property is
+ * zero-delivery, not the error label.
  */
 function validateTokenExchangeCredential(credential: ConvexCredential): string {
   // Synchronous, pre-network validation. A control-character or empty credential
@@ -176,7 +177,7 @@ async function runTokenExchange(
       {
         method: 'GET',
         headers,
-        redirect: 'error',
+        redirect: 'manual',
         timeoutMs: input.timeoutMs ?? DEFAULT_TOKEN_EXCHANGE_TIMEOUT_MS,
       },
     )

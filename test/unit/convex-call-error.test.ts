@@ -260,10 +260,11 @@ describe('isConvexCallError', () => {
       CONVEX_URL_MISSING: true,
       SITE_URL_MISSING: true,
       AUTH_UNAVAILABLE: true,
+      AUTH_MISCONFIGURED: true,
       AUTH_CONFIRMATION_TIMEOUT: true,
       PAGINATION_SPLIT_REQUIRED: true,
     } satisfies Record<ConvexCallErrorCode, true>
-    expect(Object.keys(codes)).toHaveLength(19)
+    expect(Object.keys(codes)).toHaveLength(20)
   })
 })
 

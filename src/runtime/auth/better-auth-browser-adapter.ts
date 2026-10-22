@@ -2,11 +2,18 @@ import type { BetterConvexAuthAdapter } from '@lupinum/better-convex-vue'
 import { watch, type Ref } from 'vue'
 
 import { ConvexCallError } from '../errors'
-import { AUTH_UNAVAILABLE_MESSAGE } from '../utils/convex-shared'
+import {
+  AUTH_UNAVAILABLE_MESSAGE,
+  authFailureOf,
+  classifyAuthFailure,
+  type AuthErrorState,
+  type ClassifiedAuthFailure,
+} from '../utils/convex-shared'
 import type { ConvexUser } from '../utils/types'
 import {
   fetchConvexToken,
   retryDelayMs,
+  TOKEN_EXCHANGE_TIMEOUT_MS,
   TOKEN_EXPIRY_SAFETY_BUFFER_MS,
   usableTokenLifetimeMs,
   type ConvexTokenSource,
@@ -44,8 +51,18 @@ const TRANSIENT_RETRY_MAX_DELAY_MS = 30_000
  */
 const TRANSIENT_FAILURE_BUDGET_MS = 30_000
 /**
- * Backoff before the adapter asks again after it reported authentication as
- * temporarily unavailable: 2 s, 4 s ... up to 60 s, plus jitter.
+ * How long a session-changing auth operation may wait for Convex to accept the
+ * new session: one session read, then a token exchange that may wait out the
+ * whole temporary-failure budget, plus its last attempt. A shorter deadline
+ * could expire while the adapter is still retrying and end a session that a
+ * short outage says nothing about.
+ */
+export const SESSION_RECONCILIATION_TIMEOUT_MS =
+  SESSION_SETTLEMENT_TIMEOUT_MS + TOKEN_EXCHANGE_TIMEOUT_MS * 2 + TRANSIENT_FAILURE_BUDGET_MS
+/**
+ * Backoff before the adapter asks again after a temporary failure it reported
+ * (a token exchange that outlasted its budget, or a session read): 2 s, 4 s ...
+ * up to 60 s, plus jitter.
  */
 const RECOVERY_BASE_DELAY_MS = 2_000
 const RECOVERY_MAX_DELAY_MS = 60_000
@@ -56,35 +73,22 @@ const RECOVERY_MAX_DELAY_MS = 60_000
  */
 const TOKEN_REFRESH_LEEWAY_SECONDS = 60
 
-function temporarilyUnavailable(): ConvexCallError {
+const TEMPORARY = classifyAuthFailure({ status: undefined })
+
+function authFailureError(failure: ClassifiedAuthFailure): ConvexCallError {
   return new ConvexCallError({
     kind: 'authentication',
-    code: 'AUTH_UNAVAILABLE',
-    message: UNAVAILABLE,
+    code: failure.code,
+    message: failure.message,
   })
 }
 
-/**
- * A failure that says nothing about the person: no answer (network), a timeout,
- * a rate limit or a server error. Any other status, 403 or 404 included, is an
- * answer about this session or this setup and stays a definitive failure.
- */
-function isTemporaryFailure(error: unknown): boolean {
-  const status =
-    error && typeof error === 'object' && 'status' in error
-      ? (error as { status?: unknown }).status
-      : undefined
-  if (typeof status !== 'number' || status === 0) return true
-  return status === 408 || status === 429 || status >= 500
+function temporarilyUnavailable(): ConvexCallError {
+  return authFailureError(TEMPORARY)
 }
 
-function isUnauthorized(error: unknown): boolean {
-  return Boolean(
-    error &&
-    typeof error === 'object' &&
-    'status' in error &&
-    (error as { status?: unknown }).status === 401,
-  )
+function isTemporarilyUnavailable(snapshot: BrowserAuthSnapshot): boolean {
+  return snapshot.error instanceof ConvexCallError && snapshot.error.code === TEMPORARY.code
 }
 
 /** Private first-party Better Auth browser adapter used by Nuxt. */
@@ -92,7 +96,7 @@ export function createBetterAuthBrowserAdapter(
   source: BetterAuthBrowserSource,
   callbacks: {
     authenticated(token: string, user: ConvexUser): void
-    anonymous(error: string | null): void
+    anonymous(error: AuthErrorState | null): void
     sessionChanged?(
       sessionToken: string | null,
       error: string | null,
@@ -107,7 +111,7 @@ export function createBetterAuthBrowserAdapter(
    */
   options: { initialIdentityKey?: string | null } = {},
 ): BetterConvexAuthAdapter & {
-  failClosed(message: string): void
+  failClosed(error: AuthErrorState): void
   dispose(): void
 } {
   const session = source.useSession()
@@ -130,6 +134,40 @@ export function createBetterAuthBrowserAdapter(
   const cancelRecovery = () => {
     if (recoveryTimer !== null) clearTimeout(recoveryTimer)
     recoveryTimer = null
+  }
+  // Set while a session read failed for a temporary reason and a new read is
+  // scheduled. Better Auth itself reads again only on focus or reconnect.
+  let sessionReadTimer: ReturnType<typeof setTimeout> | null = null
+  let sessionReadAttempt = 0
+  const cancelSessionRead = () => {
+    if (sessionReadTimer !== null) clearTimeout(sessionReadTimer)
+    sessionReadTimer = null
+  }
+  const isTemporarySessionError = () =>
+    Boolean(session.value.error) &&
+    classifyAuthFailure(authFailureOf(session.value.error)).class === 'temporary'
+  const scheduleSessionRead = () => {
+    if (disposed || sessionReadTimer !== null) return
+    sessionReadTimer = setTimeout(
+      () => {
+        sessionReadTimer = null
+        if (disposed) return
+        void Promise.resolve()
+          .then(() => session.value.refetch?.())
+          .catch(() => {})
+          .then(() => {
+            // A read that failed again with the same error object publishes
+            // nothing new, so schedule the next one here.
+            if (!disposed && sessionReadTimer === null && isTemporarySessionError()) {
+              scheduleSessionRead()
+            }
+          })
+      },
+      retryDelayMs(sessionReadAttempt++, {
+        baseMs: RECOVERY_BASE_DELAY_MS,
+        maxMs: RECOVERY_MAX_DELAY_MS,
+      }),
+    )
   }
   let snapshot: BrowserAuthSnapshot = options.initialIdentityKey
     ? {
@@ -188,20 +226,29 @@ export function createBetterAuthBrowserAdapter(
     const malformed =
       (value.data?.session !== undefined && sessionToken === null) ||
       (sessionToken !== null && key === null)
-    // On a failure other than 401, Better Auth keeps its previous session data.
-    // Before its first success (a server-rendered signed-in page) that data is
-    // empty, which says nothing about the person, so it must not end the session.
+    const failure = value.error ? classifyAuthFailure(authFailureOf(value.error)) : null
+    // A temporary failure (no answer, timeout, 408, 429, 5xx) says nothing about
+    // the person: keep the state already known (signed in, anonymous, or
+    // temporarily unavailable) and read the session again with backoff. Better Auth keeps its previous session
+    // data on such a failure; before its first success (a server-rendered page)
+    // that data is empty, which says nothing either.
     const errorNamesNoIdentity = sessionToken === null && key === null
-    const retainsEstablishedSession =
-      Boolean(value.error) &&
-      !isUnauthorized(value.error) &&
-      (snapshot.status === 'authenticated' || recoveryTimer !== null) &&
+    const keepsKnownSession =
+      failure?.class === 'temporary' &&
+      (snapshot.status === 'authenticated' ||
+        snapshot.status === 'anonymous' ||
+        isTemporarilyUnavailable(snapshot) ||
+        recoveryTimer !== null) &&
       (errorNamesNoIdentity ||
         (observedSessionToken === sessionToken && observedIdentityKey === key))
-    if (retainsEstablishedSession) return
+    if (keepsKnownSession) {
+      scheduleSessionRead()
+      return
+    }
 
-    if (value.error || malformed) {
+    if (failure || malformed) {
       cancelRecovery()
+      cancelSessionRead()
       cachedToken = null
       sessionGeneration += 1
       // The published failed state is the null provider identity. Reset the
@@ -209,28 +256,27 @@ export function createBetterAuthBrowserAdapter(
       // different token/key pair.
       observedSessionToken = null
       observedIdentityKey = null
+      // A temporary failure before any identity is known publishes the
+      // library error the token path uses, so the route middleware does not
+      // send the person to sign-in, and reads the session again; a good read
+      // then takes the normal path below. A setup failure carries its own
+      // code. A rejection (401, 403) or a malformed session stays a generic
+      // failure.
+      const published = failure && !malformed && failure.class !== 'rejected' ? failure : null
       snapshot = {
         status: 'error',
         identityKey: null,
         sessionGeneration,
-        // A temporary failure (network, timeout, 429, 5xx) with no malformed
-        // session says nothing about the person: publish the library error the
-        // token path uses, so the route middleware does not send them to
-        // sign-in. Any other status (401, 403, 404) or a malformed session stays
-        // a generic failure.
-        // No recovery timer: there is no identity to restore, and Better Auth
-        // re-reads the session on focus, on reconnect and on its own polling;
-        // a good read then takes the normal path below and signs the person in.
-        error:
-          value.error && isTemporaryFailure(value.error) && !malformed
-            ? temporarilyUnavailable()
-            : new Error(UNAVAILABLE),
+        error: published ? authFailureError(published) : new Error(UNAVAILABLE),
       }
-      callbacks.anonymous(UNAVAILABLE)
+      if (published?.class === 'temporary') scheduleSessionRead()
+      callbacks.anonymous(published ?? { code: null, message: UNAVAILABLE })
       callbacks.sessionChanged?.(null, UNAVAILABLE, sessionGeneration)
       notify()
       return
     }
+    cancelSessionRead()
+    sessionReadAttempt = 0
 
     const establishesMatchingProvisionalIdentity =
       observedSessionToken === undefined &&
@@ -394,7 +440,26 @@ export function createBetterAuthBrowserAdapter(
         retryAfterMs,
       }),
     )
-    callbacks.anonymous(UNAVAILABLE)
+    callbacks.anonymous(TEMPORARY)
+    callbacks.sessionChanged?.(observedSessionToken ?? null, null, sessionGeneration)
+    notify()
+  }
+
+  // The token exchange answered in a way only a wrong setup explains. Report
+  // the setup error; the provider still reports the session, so the observed
+  // session stays and its next read tries again.
+  const failSetup = (failure: ClassifiedAuthFailure) => {
+    cancelRecovery()
+    cachedToken = null
+    transientSince = null
+    sessionGeneration += 1
+    snapshot = {
+      status: 'error',
+      identityKey: null,
+      sessionGeneration,
+      error: authFailureError(failure),
+    }
+    callbacks.anonymous(failure)
     callbacks.sessionChanged?.(observedSessionToken ?? null, null, sessionGeneration)
     notify()
   }
@@ -420,7 +485,7 @@ export function createBetterAuthBrowserAdapter(
       // A 429, a 5xx, a network error or a timeout says nothing about the
       // session. While the provider still reports it, wait and ask again
       // instead of answering null, which Convex reports as signed out.
-      for (let attempt = 0; !outcome.identity && !outcome.definitive; attempt += 1) {
+      for (let attempt = 0; outcome.failure?.class === 'temporary'; attempt += 1) {
         if (!isCurrent()) return null
         // A new client asks first without forcing a refresh: a usable cached
         // token stands in, and Convex schedules its next refresh from it. A
@@ -454,7 +519,8 @@ export function createBetterAuthBrowserAdapter(
         outcome = await fetchConvexToken(source)
       }
       transientSince = null
-      if (outcome.sessionRejected && !disposed) {
+      const failure = outcome.failure
+      if (failure?.class === 'rejected' && !disposed) {
         // The session ended on the server (sign-out, revocation, expiry) before
         // the provider published it. Let the provider settle first: a session
         // it now reports as gone is a sign-out, not an authentication error,
@@ -476,7 +542,8 @@ export function createBetterAuthBrowserAdapter(
         return cachedToken
       }
       cachedToken = null
-      callbacks.anonymous(outcome.authError)
+      if (failure?.class === 'setup') failSetup(failure)
+      else callbacks.anonymous(failure)
       return null
     },
     async refreshSession() {
@@ -487,11 +554,17 @@ export function createBetterAuthBrowserAdapter(
         await refetch()
         await waitForSessionSettlement()
       } catch {
-        throw new Error(UNAVAILABLE)
+        // No answer, or no settled answer in time.
+        throw temporarilyUnavailable()
       }
-      if (disposed || session.value.error) throw new Error(UNAVAILABLE)
+      if (disposed) throw new Error(UNAVAILABLE)
+      // A temporary failure keeps the session (see `publishFromSession`): the
+      // operation fails with AUTH_UNAVAILABLE and the adapter keeps retrying.
+      if (session.value.error) {
+        throw isTemporarySessionError() ? temporarilyUnavailable() : new Error(UNAVAILABLE)
+      }
     },
-    failClosed(message: string) {
+    failClosed(error: AuthErrorState) {
       if (disposed) return
       cancelRecovery()
       cachedToken = null
@@ -504,7 +577,7 @@ export function createBetterAuthBrowserAdapter(
       }
       observedSessionToken = null
       observedIdentityKey = null
-      callbacks.anonymous(message)
+      callbacks.anonymous(error)
       callbacks.sessionChanged?.(null, UNAVAILABLE, sessionGeneration)
       notify()
     },
@@ -512,6 +585,7 @@ export function createBetterAuthBrowserAdapter(
       if (disposed) return
       disposed = true
       cancelRecovery()
+      cancelSessionRead()
       stop()
       for (const cancel of [...cancelPendingWaits]) cancel()
       cancelPendingWaits.clear()

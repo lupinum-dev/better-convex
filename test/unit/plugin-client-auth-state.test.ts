@@ -10,6 +10,7 @@ import {
   type AuthIdentity,
 } from '../../src/runtime/auth/auth-identity'
 import type { ConvexRuntimeContext } from '../../src/runtime/runtime-context'
+import type { AuthErrorState } from '../../src/runtime/utils/convex-shared'
 
 const { clearNuxtDataMock, createAuthClientMock, state, wire } = vi.hoisted(() => ({
   clearNuxtDataMock: vi.fn(),
@@ -17,7 +18,7 @@ const { clearNuxtDataMock, createAuthClientMock, state, wire } = vi.hoisted(() =
   state: {
     identity: undefined as unknown as { value: AuthIdentity },
     pending: undefined as unknown as { value: boolean },
-    error: undefined as unknown as { value: string | null },
+    error: undefined as unknown as { value: AuthErrorState | null },
   },
   // The external Convex server decides when authentication is accepted.
   wire: { autoConfirm: true, confirmations: [] as Array<() => void> },
@@ -197,14 +198,60 @@ describe('auth client app-facing state projection', () => {
     )
   })
 
-  it('fails closed when the canonical refresh rejects', async () => {
+  it('fails closed when the canonical refresh answers 401', async () => {
     await setupPlugin()
-    source.session.value.refetch.mockRejectedValueOnce(new Error('network unavailable'))
+    source.session.value.refetch.mockImplementationOnce(async () => {
+      source.session.value = { ...source.session.value, data: null, error: { status: 401 } }
+    })
     await expect(controller().client.twoFactor.enable()).rejects.toMatchObject({
       kind: 'authentication',
     })
     expect(state.identity.value).toBe(ANONYMOUS_IDENTITY)
-    expect(state.error.value).toBe('Authentication failed')
+    expect(state.error.value).toEqual({ code: null, message: 'Authentication failed' })
+  })
+
+  // A short auth outage during an auth operation says nothing about the person (#279).
+  it('keeps the session when the session read after an operation fails temporarily', async () => {
+    await setupPlugin()
+    vi.useFakeTimers()
+    try {
+      source.session.value.refetch.mockImplementationOnce(async () => {
+        // Better Auth keeps its previous session data on a 5xx.
+        source.session.value = { ...source.session.value, error: { status: 503 } }
+      })
+      const rejected = expect(controller().client.updateUser()).rejects.toMatchObject({
+        code: 'AUTH_UNAVAILABLE',
+      })
+      await vi.advanceTimersByTimeAsync(20)
+      await rejected
+
+      expect(await controller().ready()).toBe('authenticated')
+      expect(state.identity.value.status).toBe('authenticated')
+      expect(state.error.value).toBeNull()
+      // The adapter reads the session again with backoff.
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(source.session.value.refetch).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // The code survives from the server render into the browser state (#282).
+  it('keeps the AUTH_UNAVAILABLE code when the browser also cannot read the session', async () => {
+    state.identity.value = ANONYMOUS_IDENTITY
+    state.error.value = {
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is temporarily unavailable',
+    }
+    source.session.value = { ...source.session.value, data: null, error: { status: 503 } }
+
+    await setupPlugin()
+
+    expect(state.error.value).toEqual({
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is temporarily unavailable',
+    })
+    expect(await controller().ready()).toBe('error')
   })
 
   it('projects a later canonical identity failure into Nuxt auth state and recovers', async () => {
@@ -213,7 +260,7 @@ describe('auth client app-facing state projection', () => {
     source.session.value = { ...source.session.value, error: { status: 401 }, data: null }
     await drainMicrotasks()
     expect(state.identity.value).toBe(ANONYMOUS_IDENTITY)
-    expect(state.error.value).toBe('Authentication failed')
+    expect(state.error.value).toEqual({ code: null, message: 'Authentication failed' })
     expect(state.pending.value).toBe(false)
     expect(clearNuxtDataMock).toHaveBeenCalledTimes(1)
     source.session.value = {

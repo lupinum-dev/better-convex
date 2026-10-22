@@ -1,14 +1,16 @@
-import { computed, readonly, useNuxtApp, useState } from '#imports'
+import { computed, readonly, useNuxtApp } from '#imports'
 
 import type { InferRegisteredConvexAuthClient } from '../auth-client'
 import { identityKeyOf, identityUser } from '../auth/auth-identity'
-import { ConvexCallError } from '../errors'
+import type { ConvexCallError } from '../errors'
 import { readConvexRuntimeContext } from '../runtime-context'
 import type { UseConvexAuthReturn } from '../utils/auth-contract'
+import { useConvexAuthErrorState } from '../utils/auth-error-state'
 import { useConvexIdentityState } from '../utils/auth-identity-state'
 import { useConvexAuthPendingState } from '../utils/auth-pending-state'
 import { publishedConvexAuthStatus, type ConvexAuthStatus } from '../utils/auth-status'
 import { UNAVAILABLE_AUTH_CLIENT } from '../utils/client-unavailable'
+import { authErrorFromState } from '../utils/convex-shared'
 import type { IntegratedAuthClient } from '../utils/integrated-auth-client'
 
 export type { UseConvexAuthReturn } from '../utils/auth-contract'
@@ -30,7 +32,7 @@ export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthCl
   const nuxtApp = useNuxtApp()
   const identity = useConvexIdentityState()
   const user = computed(() => identityUser(identity.value))
-  const authError = useState<string | null>('convex:authError', () => null)
+  const authError = useConvexAuthErrorState()
   const pending = useConvexAuthPendingState()
   const coordinator = readConvexRuntimeContext(nuxtApp)?.getAuthController() ?? undefined
 
@@ -41,10 +43,8 @@ export function useConvexAuth(): UseConvexAuthReturn<InferRegisteredConvexAuthCl
       authError: authError.value,
     }),
   )
-  const error = computed<ConvexCallError | undefined>(() =>
-    authError.value
-      ? new ConvexCallError({ kind: 'authentication', message: authError.value })
-      : undefined,
+  const error = computed<ConvexCallError | undefined>(
+    () => authErrorFromState(authError.value) ?? undefined,
   )
 
   return {

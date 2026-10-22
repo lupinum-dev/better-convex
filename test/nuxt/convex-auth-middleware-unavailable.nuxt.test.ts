@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useRuntimeConfig, useState } from '#imports'
 
-import { AUTH_UNAVAILABLE_MESSAGE } from '../../src/runtime/utils/convex-shared'
-
 const { navigateToMock } = vi.hoisted(() => ({
   navigateToMock: vi.fn((target: unknown) => ({ navigatedTo: target })),
 }))
@@ -18,6 +16,11 @@ vi.mock('../../src/runtime/composables/useConvexActivation', () => ({
 }))
 
 type Middleware = (to: object) => Promise<unknown>
+
+const UNAVAILABLE = {
+  code: 'AUTH_UNAVAILABLE',
+  message: 'Authentication is temporarily unavailable',
+}
 
 // The real useConvexAuth reads the published auth state, as after hydration:
 // `convex:authError` comes from the server render or the browser runtime, and
@@ -34,25 +37,37 @@ describe('convex-auth route middleware in the browser while auth is temporarily 
     {
       case: 'hydrating after a server render that hit a temporary failure, browser still waiting',
       pending: true,
-      authError: AUTH_UNAVAILABLE_MESSAGE,
+      authError: UNAVAILABLE,
       redirects: false,
     },
     {
       case: 'browser retries ran out, auth reported temporarily unavailable',
       pending: false,
-      authError: AUTH_UNAVAILABLE_MESSAGE,
+      authError: UNAVAILABLE,
       redirects: false,
     },
     { case: 'definitively signed out', pending: false, authError: null, redirects: true },
     {
       case: 'Convex rejected the token',
       pending: false,
-      authError: 'Convex rejected the authentication token',
+      authError: { code: null, message: 'Convex rejected the authentication token' },
+      redirects: true,
+    },
+    {
+      case: 'the auth backend answered in a way only a wrong setup explains',
+      pending: false,
+      authError: { code: 'AUTH_MISCONFIGURED', message: 'Authentication is not set up correctly' },
+      redirects: true,
+    },
+    {
+      case: 'the unavailable message without its code',
+      pending: false,
+      authError: { code: null, message: UNAVAILABLE.message },
       redirects: true,
     },
   ])('$case: redirects to sign-in = $redirects', async ({ pending, authError, redirects }) => {
     useState<boolean>('convex:pending').value = pending
-    useState<string | null>('convex:authError').value = authError
+    useState<typeof authError>('convex:authError').value = authError
     const middleware = (await import('../../src/runtime/middleware/convex-auth.global'))
       .default as unknown as Middleware
 

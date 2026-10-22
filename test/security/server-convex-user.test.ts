@@ -193,7 +193,8 @@ describe.each(shapes)('getConvexUser and requireConvexUser ($name)', (shape) => 
     const [url, init] = fetchMock.mock.calls[0]!
     expect(String(url)).toBe(`${SITE_URL}/api/auth/convex/token`)
     expect(new Headers(init?.headers).get('cookie')).toBe(SESSION_COOKIE)
-    expect(init?.redirect).toBe('error')
+    // A redirect is never followed, so the credential reaches no other target.
+    expect(init?.redirect).toBe('manual')
     // The resolved user is display identity; the Convex token never leaves the snapshot.
     expect(JSON.stringify(first)).not.toContain(USER_JWT)
   })
@@ -324,17 +325,27 @@ describe.each(shapes)('getConvexUser and requireConvexUser ($name)', (shape) => 
   })
 
   it.each([
-    ['an upstream 500', () => exchangeResponds(500, { detail: SESSION_COOKIE })],
-    ['a malformed body', () => exchangeResponds(200, { notToken: SESSION_COOKIE })],
+    [
+      'an upstream 500',
+      'AUTH_UNAVAILABLE',
+      () => exchangeResponds(500, { detail: SESSION_COOKIE }),
+    ],
+    [
+      'a malformed body',
+      'AUTH_MISCONFIGURED',
+      () => exchangeResponds(200, { notToken: SESSION_COOKIE }),
+    ],
     [
       'an expired token',
+      'AUTH_MISCONFIGURED',
       () => exchangeResponds(200, { token: makeJwt({ sub: 'user-1', exp: 1 }) }),
     ],
     [
       'a network failure',
+      'AUTH_UNAVAILABLE',
       () => fetchMock.mockRejectedValue(new Error(`connect failed ${SESSION_COOKIE}`)),
     ],
-  ])('reject with a credential-free 502 on %s', async (_label, arrange) => {
+  ])('reject with a credential-free 502 on %s', async (_label, code, arrange) => {
     arrange()
     const event = createEvent(SESSION_COOKIE)
 
@@ -347,7 +358,7 @@ describe.each(shapes)('getConvexUser and requireConvexUser ($name)', (shape) => 
       expect(error.data).toMatchObject({
         name: 'ConvexCallError',
         kind: 'transport',
-        code: 'AUTH_UNAVAILABLE',
+        code,
       })
       expectNoCredentials(error)
     }

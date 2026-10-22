@@ -53,6 +53,9 @@ export type ConvexCallErrorKind = 'authentication' | 'transport' | 'server' | 'u
  * - `AUTH_UNAVAILABLE`: the identity could not be resolved for now because the
  *   auth backend failed or limited the request (on the server, and in the
  *   browser after its retries).
+ * - `AUTH_MISCONFIGURED`: the auth backend answered in a way only a wrong setup
+ *   explains, for example a redirect, a 404, or a token without a usable
+ *   lifetime or `sub`.
  * - `AUTH_CONFIRMATION_TIMEOUT`: Convex did not confirm a new auth token in time.
  * - `PAGINATION_SPLIT_REQUIRED`: a page must be split before it can be shown.
  */
@@ -74,6 +77,7 @@ export type ConvexCallErrorCode =
   | 'CONVEX_URL_MISSING'
   | 'SITE_URL_MISSING'
   | 'AUTH_UNAVAILABLE'
+  | 'AUTH_MISCONFIGURED'
   | 'AUTH_CONFIRMATION_TIMEOUT'
   | 'PAGINATION_SPLIT_REQUIRED'
 

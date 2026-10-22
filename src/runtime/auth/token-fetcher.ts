@@ -1,8 +1,10 @@
 import {
-  AUTH_UNAVAILABLE_MESSAGE,
+  authFailureOf,
+  classifyAuthFailure,
   decodeUserFromJwt,
   getJwtLifetimeMs,
   TOKEN_EXPIRY_SAFETY_BUFFER_MS,
+  type ClassifiedAuthFailure,
 } from '../utils/convex-shared'
 import type { ConvexUser } from '../utils/types'
 
@@ -38,12 +40,12 @@ const TRANSIENT_RETRY_BASE_DELAY_MS = 100
 const MAX_RETRY_AFTER_MS = 60_000
 
 /** Total browser budget for one Better Auth -> Convex token exchange cycle. */
-const TOKEN_EXCHANGE_TIMEOUT_MS = 5_000
+export const TOKEN_EXCHANGE_TIMEOUT_MS = 5_000
 const TOKEN_EXCHANGE_TIMED_OUT = Symbol('TOKEN_EXCHANGE_TIMED_OUT')
 const TOKEN_EXCHANGE_CANCELLED = Symbol('TOKEN_EXCHANGE_CANCELLED')
-const TOKEN_EXCHANGE_TIMEOUT_MESSAGE = 'Convex authentication token exchange timed out'
-const TOKEN_EXCHANGE_CANCELLED_MESSAGE = 'Convex authentication token exchange was cancelled'
-const TOKEN_EXCHANGE_FAILURE_MESSAGE = AUTH_UNAVAILABLE_MESSAGE
+/** No answer: a network error, the deadline, or a cancelled exchange. */
+const NO_ANSWER = classifyAuthFailure({ status: undefined })
+const INVALID_TOKEN = classifyAuthFailure({ invalidToken: true })
 
 /**
  * A fetched token's lifetime, read from its own `iat` and `exp`. The browser
@@ -69,25 +71,21 @@ export function decodeFetchedIdentity(token: string): FetchedIdentity | null {
 }
 
 /**
- * The outcome of one total token fetch. `identity: null` with `authError: null`
- * is a clean anonymous result when the exchange succeeds with no token. A
- * definitive 401/403 means presented credentials were rejected and is reported
- * as an authentication error. `authError` is also set when a token has no
- * usable lifetime or decodes without a stable user id, or a transient transport
- * failure exhausts the retry loop. `definitive` distinguishes such a transient
- * (non-definitive) failure — over which a usable identity is retained — from
- * the definitive verdicts above. Never rejects.
+ * The outcome of one total token fetch. Never rejects.
+ *
+ * - `identity` set: the exchange returned a usable token for a user.
+ * - `failure` set: why not, classified by `classifyAuthFailure`. A `temporary`
+ *   failure (every attempt failed for no answer, a timeout, 408, 429 or 5xx)
+ *   says nothing about the session, so the caller may wait and ask again. A
+ *   `rejected` one (401/403) means the server no longer accepts the session. A
+ *   `setup` one is any other answer, including a 2xx without a usable token.
  */
 export interface FetchOutcome {
   identity: FetchedIdentity | null
-  authError: string | null
-  definitive: boolean
-  /** The exchange answered 401/403: the server no longer accepts the session. */
-  sessionRejected?: true
+  failure: ClassifiedAuthFailure | null
   /**
    * The exchange answered 429: how long to wait before asking again, from the
-   * response's Retry-After (0 when it sent none). A rate limit says nothing
-   * about the session, so the caller decides when to retry.
+   * response's Retry-After (0 when it sent none).
    */
   retryAfterMs?: number
 }
@@ -121,26 +119,17 @@ function readRetryAfterMs(headers: Headers): number {
  *
  * Runs a bounded transient-retry loop, with exponential backoff and jitter,
  * over the Better Auth exchange within one fixed browser deadline, validating
- * each returned token's `exp`. Returns a decoded identity on success, a clean
- * anonymous outcome when the exchange reports no session, a definitive error
- * outcome when the server rejects the session or its token, and a transient
- * error outcome when every attempt fails. A 429 ends the loop at once with the
- * server's Retry-After. A rejecting or never-settling exchange is totalized for
- * the Convex caller.
+ * each returned token's lifetime and `sub`. Returns a decoded identity on
+ * success and a classified failure otherwise. A 429 ends the loop at once with
+ * the server's Retry-After. A rejecting or never-settling exchange is
+ * totalized for the Convex caller.
  */
 export async function fetchConvexToken(
   source: ConvexTokenSource,
   options: { maxAttempts?: number; signal?: AbortSignal } = {},
 ): Promise<FetchOutcome> {
-  if (options.signal?.aborted) {
-    return {
-      identity: null,
-      authError: TOKEN_EXCHANGE_CANCELLED_MESSAGE,
-      definitive: false,
-    }
-  }
+  if (options.signal?.aborted) return { identity: null, failure: NO_ANSWER }
   const maxAttempts = options.maxAttempts ?? MAX_FETCH_ATTEMPTS
-  let lastError: string | null = null
   const controller = new AbortController()
   let timedOut = false
   let externallyCancelled = false
@@ -178,10 +167,7 @@ export async function fetchConvexToken(
 
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      if (externallyCancelled) {
-        lastError = TOKEN_EXCHANGE_CANCELLED_MESSAGE
-        break
-      }
+      if (externallyCancelled) break
       if (attempt > 1) {
         const paused = await pause(
           retryDelayMs(attempt - 2, {
@@ -189,14 +175,7 @@ export async function fetchConvexToken(
             maxMs: TOKEN_EXCHANGE_TIMEOUT_MS,
           }),
         )
-        if (paused === TOKEN_EXCHANGE_CANCELLED) {
-          lastError = TOKEN_EXCHANGE_CANCELLED_MESSAGE
-          break
-        }
-        if (paused === TOKEN_EXCHANGE_TIMED_OUT) {
-          lastError = TOKEN_EXCHANGE_TIMEOUT_MESSAGE
-          break
-        }
+        if (paused === TOKEN_EXCHANGE_CANCELLED || paused === TOKEN_EXCHANGE_TIMED_OUT) break
       }
       try {
         let retryAfterMs = 0
@@ -214,69 +193,26 @@ export async function fetchConvexToken(
           },
         })
         const response = await Promise.race([exchange, deadline, cancellation])
-        if (response === TOKEN_EXCHANGE_CANCELLED) {
-          lastError = TOKEN_EXCHANGE_CANCELLED_MESSAGE
-          break
-        }
-        if (response === TOKEN_EXCHANGE_TIMED_OUT) {
-          lastError = TOKEN_EXCHANGE_TIMEOUT_MESSAGE
-          break
-        }
+        if (response === TOKEN_EXCHANGE_CANCELLED || response === TOKEN_EXCHANGE_TIMED_OUT) break
         if (response.error) {
-          if (isDefinitiveAuthStatus(response.error)) {
-            return {
-              identity: null,
-              authError: 'Authentication credentials are invalid or expired',
-              definitive: true,
-              sessionRejected: true,
-            }
+          const reported = authFailureOf(response.error)
+          const failure = classifyAuthFailure(reported)
+          if (failure.class !== 'temporary') return { identity: null, failure }
+          // Asking again before Retry-After only refills the limiter's bucket.
+          if (reported.status === 429) {
+            return { identity: null, failure, retryAfterMs }
           }
-          if (errorStatus(response.error) === 429) {
-            // Asking again before Retry-After only refills the limiter's bucket.
-            return {
-              identity: null,
-              authError: TOKEN_EXCHANGE_FAILURE_MESSAGE,
-              definitive: false,
-              retryAfterMs,
-            }
-          }
-          lastError = TOKEN_EXCHANGE_FAILURE_MESSAGE
           continue
         }
+        // The server answered. A token that is missing, short-lived or names no
+        // user breaks the token contract: no earlier token may stand in for it.
         const token = response.data?.token
-        if (!token) {
-          // Clean anonymous outcome: the exchange reported no session.
-          return { identity: null, authError: null, definitive: true }
-        }
-        if (usableTokenLifetimeMs(token) === null) {
-          // The server answered; a token without a usable lifetime is its verdict,
-          // not an outage, so no earlier token may stand in for it.
-          return {
-            identity: null,
-            authError: 'Convex authentication token is expired or missing a valid expiry',
-            definitive: true,
-          }
-        }
-        const identity = decodeFetchedIdentity(token)
-        if (!identity) {
-          // Token without a usable user id is an authentication error; discard it.
-          return {
-            identity: null,
-            authError: 'Convex authentication token is missing a stable user id',
-            definitive: true,
-          }
-        }
-        return { identity, authError: null, definitive: false }
+        const identity =
+          token && usableTokenLifetimeMs(token) !== null ? decodeFetchedIdentity(token) : null
+        if (!identity) return { identity: null, failure: INVALID_TOKEN }
+        return { identity, failure: null }
       } catch {
-        if (externallyCancelled) {
-          lastError = TOKEN_EXCHANGE_CANCELLED_MESSAGE
-          break
-        }
-        if (timedOut) {
-          lastError = TOKEN_EXCHANGE_TIMEOUT_MESSAGE
-          break
-        }
-        lastError = TOKEN_EXCHANGE_FAILURE_MESSAGE
+        if (externallyCancelled || timedOut) break
       }
     }
   } finally {
@@ -285,20 +221,6 @@ export async function fetchConvexToken(
     if (backoff !== null) clearTimeout(backoff)
   }
 
-  // Exhausted transient retries: a still-usable identity may be retained.
-  return {
-    identity: null,
-    authError: lastError ?? TOKEN_EXCHANGE_FAILURE_MESSAGE,
-    definitive: false,
-  }
-}
-
-function errorStatus(error: unknown): unknown {
-  return error && typeof error === 'object' ? (error as { status?: unknown }).status : undefined
-}
-
-/** True when a Better Auth error envelope reports HTTP 401/403. */
-function isDefinitiveAuthStatus(error: unknown): boolean {
-  const status = errorStatus(error)
-  return status === 401 || status === 403
+  // Every attempt failed without an answer about the session.
+  return { identity: null, failure: NO_ANSWER }
 }
