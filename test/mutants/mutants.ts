@@ -222,9 +222,9 @@ export const mutants: Mutant[] = [
     id: 'C8-declarations-internals',
     guards: 'C8',
     file: 'packages/agents/src/tools.ts',
-    find: 'return { functions, catalog, approvals, activity, disconnected, uploads }',
+    find: 'markTools({ functions, catalog, approvals, activity, disconnected, uploads }',
     replace:
-      'return { functions, catalog, approvals, activity, disconnected, uploads, kit: internalsOf(fns) as Internals }',
+      'markTools({ functions, catalog, approvals, activity, disconnected, uploads, kit: internalsOf(fns) as Internals }',
     kills: [`${A}/types.test.ts > the app type-checks and emits declarations`],
     projects: ['agents'],
   },
