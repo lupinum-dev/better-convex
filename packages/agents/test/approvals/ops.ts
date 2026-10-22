@@ -156,6 +156,37 @@ export const recordActor = internalAction({
   },
 })
 
+/**
+ * Allowed for agents: it schedules an internal action (an outside call would sit there), which
+ * saves the result later. The doors table (../doors.test.ts) runs the save after the turn moved on.
+ */
+export const renameLater = mutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string(), after: v.number() },
+  returns: v.null(),
+  tool: { name: 'rename_later', description: 'Rename a project in the background.' },
+  handler: async (ctx, { projectId, name, after }) => {
+    await ctx.scheduler.runAfter(
+      after,
+      makeFunctionReference<'action'>('ops:renameViaAction') as never,
+      { projectId, name } as never,
+    )
+    return null
+  },
+})
+
+/** The follow-up of rename_later: it saves through an internal mutation. */
+export const renameViaAction = internalAction({
+  args: { projectId: v.id('projects'), name: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(
+      makeFunctionReference<'mutation'>('ops:renameRow') as never,
+      args as never,
+    )
+    return null
+  },
+})
+
 /** A tool whose own action is allowed, reaching for one that needs approval. */
 export const sneakyTidy = mutation({
   action: 'projects.rename',

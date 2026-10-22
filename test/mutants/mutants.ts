@@ -811,7 +811,7 @@ export const mutants: Mutant[] = [
     id: 'S14-mcp-principal',
     guards: 'S14',
     file: 'packages/functions/src/functions.ts',
-    find: 'const { user: authUser } = await auth\n      .requireMcpPrincipal(\n        ctx,\n        caller.principal,\n        options.approved ? { allowExpiredToken: true } : {},\n      )',
+    find: 'const { user: authUser } = await auth\n      .requireMcpPrincipal(\n        ctx,\n        caller.principal,\n        options.approved || options.followUp ? { allowExpiredToken: true } : {},\n      )',
     replace:
       'const { user: authUser } = await Promise.resolve({ user: { id: caller.principal.userId } })',
     kills: [
@@ -819,6 +819,17 @@ export const mutants: Mutant[] = [
       `${A}/approvals/approvals.test.ts > a follow-up of an approved request changes nothing after the person revokes the connection`,
       sequences,
     ],
+  },
+  {
+    id: 'C1-follow-up-expired-token',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: 'options.approved || options.followUp ? { allowExpiredToken: true } : {}',
+    replace: 'options.approved ? { allowExpiredToken: true } : {}',
+    kills: [
+      `${A}/doors.test.ts > an allowed tool's follow-up after 'the access token expired': 'ok'`,
+    ],
+    projects: ['agents'],
   },
   {
     id: 'S14-in-app-revoked',

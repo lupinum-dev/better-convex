@@ -23,7 +23,8 @@ work is entitled to it, leaks to other work.
   while the request runs gets a token recorded on the approval
   (`approvals.followUps`); only work that carries it continues.
 - R20: in-app tool calls from a stale turn ran. Fixed: the current turn is
-  required, only approved work is exempt.
+  required. Exempt: approved work, and work that a current call scheduled
+  (`actingAs.scheduled`, set only by the scheduler wrapper; #278, D56).
 
 Ask: who can produce this ID or flag, and does matching it prove that this
 exact call is entitled? A requester key, a status or a time window alone does

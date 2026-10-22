@@ -353,6 +353,55 @@ test('audit on the approved path: the request writes no row, the approved run wr
   ])
 })
 
+// Catches (#278): work an allowed tool scheduled refused once the turn moved on, the run ended or
+// the MCP access token expired. It is part of the call that scheduled it, so only who acts is
+// checked again: a revoked grant still stops it. 8.functions/4.internal-operations.md: "What
+// travels with a call". `rename_later` schedules an internal action that saves 10 minutes later.
+const followUps = [
+  { when: 'the turn moved on', door: 'app', change: { run: { turn: 3 } }, outcome: 'ok' },
+  { when: 'the run ended', door: 'app', change: { run: { status: 'done' } }, outcome: 'ok' },
+  { when: 'the access token expired', door: 'mcp', change: {}, outcome: 'ok' },
+  {
+    when: 'the grant was revoked',
+    door: 'app',
+    change: { grant: { revokedAt: 1 } },
+    outcome: 'AGENT_DISABLED',
+  },
+] as const
+test.each(followUps)(
+  "an allowed tool's follow-up after $when: $outcome",
+  async ({ door, change, outcome }) => {
+    const s = await setup()
+    const input = { projectId: s.p[0], name: 'later', after: 10 * 60_000 }
+    if (door === 'mcp') {
+      // A token that expires before the follow-up runs; the session behind it lives on.
+      const principal = { ...s.principal, expiresAt: Math.floor((Date.now() + 60_000) / 1000) }
+      await s.tool('rename_later', input, principal)
+    } else {
+      const runId = await inAppRun(s)
+      await s.t.mutation(api.tools.rename_later, {
+        caller: { door: 'app', runId, turn: 2 },
+        input,
+      })
+      await s.t.run(async (ctx) => {
+        const run = (await ctx.db.get(runId))!
+        if ('run' in change) await ctx.db.patch(runId, change.run)
+        if ('grant' in change) await ctx.db.patch(run.grantId, change.grant)
+      })
+    }
+    // Only the follow-up's 10 minutes: other timers lie past the grant's expiry.
+    vi.advanceTimersByTime(11 * 60_000)
+    await s.t.finishInProgressScheduledFunctions()
+    const logged = vi
+      .mocked(console.error)
+      .mock.calls.flat()
+      .map((arg) => (arg as { data?: { code?: string } } | null)?.data?.code)
+      .find(Boolean)
+    expect(logged ?? 'ok').toBe(outcome)
+    expect(await nameOf(s, s.p[0]!)).toBe(outcome === 'ok' ? 'later' : 'alpha')
+  },
+)
+
 // A hand-written server (`handleMcpRequest`), on both transports. 4.mcp.md: "These helpers cover
 // only the callbacks that use them. They do not change the SDK's own input and output validation
 // errors, resources, or callbacks that do not use them." So: a tool that goes through
