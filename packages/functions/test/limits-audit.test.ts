@@ -321,12 +321,22 @@ test.each(['guardLater', 'guardLaterViaAction'])(
 
 // Catches: a follow-up that skips its own limit because the request paid another bucket.
 test('a scheduled follow-up of another limited action pays its own token', async () => {
-  const { t, ann, pa } = await setup()
+  const { t, ann, pa, buckets } = await setup()
+  // convex-test logs a failed scheduled function and keeps no error: read the code from the log.
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
   await ann.mutation(fn('guardThenTask'), { projectId: pa, name: 'first' })
   await ann.mutation(fn('guardThenTask'), { projectId: pa, name: 'second' })
   await t.finishAllScheduledFunctions(vi.runAllTimers)
   // `tasks.run` allows one a minute: the second task is refused.
   expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name: 'first' })
+  expect(
+    logged.mock.calls.flat().map((arg) => (arg as { data?: { code?: string } } | null)?.data?.code),
+  ).toContain('RATE_LIMITED')
+  expect((await buckets()).map((row) => [row.key.split('|')[1], row.tokens])).toEqual([
+    ['limit:projects.guard', 0],
+    ['limit:tasks.run', 0],
+  ])
+  logged.mockRestore()
 })
 
 // Catches: a nested call of the same action taking a second token, so max 1 could never be used.
