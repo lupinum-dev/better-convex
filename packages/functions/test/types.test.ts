@@ -147,8 +147,8 @@ test.concurrent(
     const errors = await typeErrors('W5', [
       [
         'policy.ts',
-        "agents: { 'projects.archive': 'approve' },",
-        "agents: { 'projects.archive': 'approve' },\n  public: ['organizations.list'],",
+        "'projects.archive': 'approve' },",
+        "'projects.archive': 'approve' },\n  public: ['organizations.list'],",
       ],
     ])
     expect(errors.join('\n')).toMatch(
@@ -164,8 +164,8 @@ test.concurrent('three-part patterns and input rules type-check', { timeout: 60_
     ['policy.ts', "owner: ['*'],", "owner: ['*'],\n    accountant: ['billing.invoices.*'],"],
     [
       'policy.ts',
-      "agents: { 'projects.archive': 'approve' },",
-      "agents: { 'projects.archive': 'approve', 'billing.invoices.create': (input) => (input.total > 1000 ? 'approve' : 'allow') },",
+      "'projects.archive': 'approve' },",
+      "'projects.archive': 'approve', 'billing.invoices.create': (input) => (input.total > 1000 ? 'approve' : 'allow') },",
     ],
   ])
   expect(errors).toEqual([])

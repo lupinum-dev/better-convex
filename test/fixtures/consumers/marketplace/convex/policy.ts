@@ -17,7 +17,7 @@ export const policy = definePolicy({
       actions: ['orders.place', 'orders.ship', 'orders.cancel'],
     },
   },
-  agents: { 'orders.cancel': 'approve' },
+  agents: { 'orders.place': 'allow', 'orders.ship': 'allow', 'orders.cancel': 'approve' },
   // The order is the seller's too: its owners may decide a buyer agent's cancel.
   approvers: { 'orders.cancel': { roles: ['owner'], sharedRows: true } },
 })

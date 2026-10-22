@@ -7,6 +7,7 @@ import {
 } from '@lupinum/better-convex-functions'
 import { convexTest } from 'convex-test'
 import { makeFunctionReference } from 'convex/server'
+import type { GenericId } from 'convex/values'
 import { expect, test, vi } from 'vitest'
 
 import { people } from './app/people'
@@ -226,6 +227,25 @@ test.each(['now', 'later', 'action'] as const)(
     vi.useRealTimers()
   },
 )
+
+// A signed-in person could cancel a job someone else scheduled, given its ID: another person's
+// reminder or follow-up never ran. A job of someone else now answers like a missing one.
+test('a person cancels only the jobs they scheduled', async () => {
+  vi.useFakeTimers()
+  const { t, ann, bob, a, b, pa } = await setup()
+  const jobId = await ann.mutation(fn('archiveInAnHour'), { projectId: pa })
+  await expect(bob.mutation(fn('cancelJob'), { orgId: b, jobId })).rejects.toThrow(/NOT_FOUND/)
+  await t.finishAllScheduledFunctions(vi.runAllTimers)
+  expect((await t.run((ctx) => ctx.db.get(pa)))?.archived).toBe(true)
+
+  // Control: the person who scheduled a job may cancel it in a later call.
+  const own = await ann.mutation(fn('archiveInAnHour'), { projectId: pa })
+  await ann.mutation(fn('cancelJob'), { orgId: a, jobId: own })
+  expect(
+    (await t.run((ctx) => ctx.db.system.get(own as GenericId<'_scheduled_functions'>)))?.state.kind,
+  ).toBe('canceled')
+  vi.useRealTimers()
+})
 
 // X4: a follow-up scheduled for later must stop when the person may no longer act.
 test('a scheduled follow-up checks the actor again when it runs', async () => {

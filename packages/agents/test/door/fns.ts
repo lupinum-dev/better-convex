@@ -20,7 +20,7 @@ export const policy = definePolicy({
     read: { label: 'Read', actions: ['projects.search', 'shapes.echo'] },
     write: { label: 'Write', actions: ['projects.create', 'projects.archive'] },
   },
-  agents: { 'projects.archive': 'approve' },
+  agents: { 'projects.create': 'allow', 'projects.archive': 'approve' },
 })
 
 /** The real Better Auth component, registered in setup: people, sessions and MCP grants. */

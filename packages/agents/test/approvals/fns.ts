@@ -27,6 +27,7 @@ export const policy = definePolicy({
     'projects.touch',
     'projects.leak',
     'projects.leakApproved',
+    'projects.retitle',
   ],
   roles: {
     signedIn: ['projects.read', 'projects.archive', 'notes.edit', 'notes.clear'],
@@ -55,11 +56,15 @@ export const policy = definePolicy({
         'projects.touch',
         'projects.leak',
         'projects.leakApproved',
+        'projects.retitle',
       ],
     },
   },
   // Small exports run on their own; large ones wait for a person.
   agents: {
+    'projects.rename': 'allow',
+    'projects.touch': 'allow',
+    'projects.leak': 'allow',
     'notes.edit': 'approve',
     'projects.archive': 'approve',
     'projects.export': ({ size }) => (size > 100 ? 'approve' : 'allow'),

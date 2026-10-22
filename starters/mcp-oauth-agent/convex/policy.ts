@@ -32,7 +32,8 @@ export const policy = definePolicy({
   limits: { 'projects.create': { max: 30, every: 'minute' } },
   // Who archived what, and which rows the call changed. No values are stored.
   audit: ['projects.archive'],
-  agents: { 'projects.archive': 'approve' },
+  // Every action an agent may change data with needs a rule; a missing one asks a person.
+  agents: { 'projects.create': 'allow', 'projects.rename': 'allow', 'projects.archive': 'approve' },
   // An owner or admin of the organization may decide a teammate's agent request too.
   approvers: { 'projects.archive': ['owner', 'admin'] },
 })

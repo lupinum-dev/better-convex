@@ -64,6 +64,7 @@ export const policy = definePolicy({
   scopes: { all: { label: 'Everything.', actions: ['*'] } },
   public: ['probe.public'],
   agents: {
+    'probe.edit': 'allow',
     'probe.ask': 'approve',
     'probe.rule': (...args) => {
       seen.set('agent rule', { arguments: args.length, input: keys(args[0]) })

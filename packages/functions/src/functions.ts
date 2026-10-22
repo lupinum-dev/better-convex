@@ -637,11 +637,14 @@ export function defineFunctions<
       actor.kind === 'agent'
         ? { kind: 'agent' as const, scopes: actor.scopes }
         : { kind: actor.kind }
+    /** The call can change data: it is limited, and an agent's missing rule asks a person. */
+    const writes = op.kind === 'mutation' || op.kind === 'action' || op.writes === true
     const decision: Decision = decide(policy, {
       action: op.action as ActionOf<P>,
       asker,
       role: role as RoleOf<P> | null,
       input,
+      writes,
     })
     if (decision === 'deny') {
       fail(
@@ -654,10 +657,7 @@ export function defineFunctions<
     // already took one from the same bucket. Work under a person's approval takes none: the person
     // is the gate, and the agent's request already spent its write budget.
     // A public action takes its token in its check, before its handler runs.
-    const limit =
-      op.kind === 'mutation' || op.kind === 'action' || op.writes
-        ? limitOf(policy, op.action)
-        : undefined
+    const limit = writes ? limitOf(policy, op.action) : undefined
     const spent = op.spent ?? []
     const bucket =
       limit &&
@@ -875,17 +875,44 @@ export function defineFunctions<
           runAt: async (time: number | Date, ref: unknown, args?: unknown) =>
             own(await c.scheduler.runAt(time, ref, wrapArgs(ref, args, await scheduledAs()))),
           cancel: async (id: unknown) => {
+            if (scheduledHere.has(String(id)) || acting.kind === 'system')
+              return c.scheduler.cancel(id)
             // Work under a person's approval cancels only jobs it scheduled itself (release review 5).
-            if (approved && !scheduledHere.has(String(id)))
+            if (approved)
               fail(
                 'FORBIDDEN',
                 'This work cancels a job it did not schedule. The person did not approve that.',
               )
+            // Anyone else cancels only the jobs they scheduled. A job of someone else answers like a
+            // missing one, so the check tells nothing about it. An action has no `db`: it cancels
+            // only jobs it scheduled in this call.
+            const owner = jobOwner(acting)
+            const jobId =
+              owner && typeof id === 'string' && c.db
+                ? c.db.system.normalizeId('_scheduled_functions', id)
+                : null
+            const job = jobId ? await c.db.system.get(jobId) : null
+            if (!job || jobOwner(job.args?.[0]?.actingAs) !== owner)
+              fail('NOT_FOUND', 'No scheduled job with this ID was found.')
             return c.scheduler.cancel(id)
           },
         },
       }),
     }
+  }
+
+  /**
+   * Who owns a job, from the actor it was scheduled as: a person, or one agent
+   * (an MCP client of a person, or one in-app run). Visitors and anything
+   * else own no job, so they cancel only what they scheduled in the same call.
+   */
+  function jobOwner(as: unknown): string | null {
+    const who = as as Partial<ActingAs> | undefined
+    if (who?.kind === 'person' && typeof who.authId === 'string') return `person:${who.authId}`
+    if (who?.kind !== 'agent' || !who.caller) return null
+    if (who.caller.door === 'mcp')
+      return `mcp:${who.caller.principal.userId}:${who.caller.principal.clientId}`
+    return `app:${who.caller.runId}`
   }
 
   /** A raw internal function rejects the actor the call hands over: say what to do instead. */

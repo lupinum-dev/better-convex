@@ -17,7 +17,7 @@ export { guarded, markHousekeeping, markTools, OPERATION } from './guard'
 export { rateLimited, takeToken } from './limits'
 export { readOnly } from './rules'
 export { actorRecord, agentCallerValidator, failureOf, type AgentCaller } from './actor'
-export { approversFor, scopesFor } from './policy'
+export { approversFor, scopesFor, statedAgentRule } from './policy'
 export {
   callKey,
   checkInput,

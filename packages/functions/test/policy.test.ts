@@ -11,14 +11,23 @@ const policy = definePolicy({
     viewer: ['projects.search'],
   },
   scopes: {
-    'projects:read': { label: 'Read', actions: ['organizations.list', 'projects.search'] },
-    'projects:write': { label: 'Write', actions: ['projects.create', 'projects.archive'] },
+    'projects:read': {
+      label: 'Read',
+      actions: ['organizations.list', 'projects.search'],
+    },
+    'projects:write': {
+      label: 'Write',
+      actions: ['projects.create', 'projects.archive'],
+    },
   },
   agents: { 'projects.archive': 'approve' },
 })
 
 const person: Asker = { kind: 'person' }
-const writer: Asker = { kind: 'agent', scopes: ['projects:read', 'projects:write'] }
+const writer: Asker = {
+  kind: 'agent',
+  scopes: ['projects:read', 'projects:write'],
+}
 const reader: Asker = { kind: 'agent', scopes: ['projects:read'] }
 
 // Catches: an agent getting more than its person, its grant, or its rule allows.
@@ -29,16 +38,38 @@ test.each([
   [person, null, 'projects.search', 'deny'],
   [writer, 'owner', 'projects.archive', 'approve'],
   [writer, 'member', 'projects.archive', 'deny'],
-  [writer, 'member', 'projects.create', 'allow'],
+  [writer, 'member', 'projects.create', 'approve'],
   [reader, 'owner', 'projects.create', 'deny'],
   [reader, 'viewer', 'projects.search', 'allow'],
   [{ kind: 'system' }, null, 'projects.archive', 'allow'],
 ] as const)(
   'decide intersects role, grant and agent rule: %j as %s for %s is %s',
   (asker, role, action, expected) => {
-    expect(decide(policy, { asker, role, action })).toBe(expected)
+    expect(
+      decide(policy, {
+        asker,
+        role,
+        action,
+        writes: action !== 'projects.search',
+      }),
+    ).toBe(expected)
   },
 )
+
+// A forgotten agent rule let an agent change data with no person asked: a new write action under an
+// existing scope ran on its own. A missing rule asks a person for a write and allows a read.
+test.each([
+  ['invoices.void', true, 'approve'],
+  ['invoices.list', false, 'allow'],
+] as const)('an agent action without a rule (%s, writes %s) is %s', (action, writes, expected) => {
+  const invoices = definePolicy({
+    actions: ['invoices.list', 'invoices.void'],
+    roles: { owner: ['*'] },
+    scopes: { invoices: { label: 'Invoices', actions: ['invoices.*'] } },
+  })
+  const asker: Asker = { kind: 'agent', scopes: ['invoices'] }
+  expect(decide(invoices, { action, asker, role: 'owner', writes })).toBe(expected)
+})
 
 // Catches: what every signed-in person may do (the role roleOf gives outside a tenant) letting an
 // agent past its grant or a visitor in, or no role at all passing.
@@ -49,7 +80,14 @@ test.each([
   [{ kind: 'visitor' }, 'signedIn', 'deny'],
   [person, null, 'deny'],
 ] as const)('organizations.list for %j with role %s is %s', (asker, role, expected) => {
-  expect(decide(policy, { asker, role, action: 'organizations.list' })).toBe(expected)
+  expect(
+    decide(policy, {
+      asker,
+      role,
+      action: 'organizations.list',
+      writes: false,
+    }),
+  ).toBe(expected)
 })
 
 // K1: a role named like a prototype key threw a TypeError instead of denying.
@@ -62,6 +100,7 @@ test.each(['superuser', 'toString', 'constructor', '__proto__'])(
         asker: { kind: 'agent', scopes: [name] },
         role: 'owner',
         action: 'projects.search',
+        writes: false,
       }),
     ).toBe('deny')
   },
@@ -91,7 +130,13 @@ const withAgentRule = (rule: unknown) =>
     agents: { 'projects.archive': rule as 'allow' },
   })
 const archiveAsAgent = (policy: ReturnType<typeof withAgentRule>) =>
-  decide(policy, { action: 'projects.archive', asker: agent, role: 'owner', input: { mode: 'x' } })
+  decide(policy, {
+    action: 'projects.archive',
+    asker: agent,
+    role: 'owner',
+    input: { mode: 'x' },
+    writes: true,
+  })
 
 test.each([
   ['undefined', undefined, 'approve'],
@@ -126,9 +171,18 @@ test.each([
   expect(archiveAsAgent(withAgentRule(value))).toBe('approve')
 })
 
-// Callback table, 2026-10-07: `?? 'allow'` treated an explicit null like a missing rule.
+// Callback table, 2026-10-07: `?? 'allow'` treated an explicit null like a missing rule. A read
+// without a rule is allowed, so the read shows the difference.
 test('an agent rule that is null asks a person', () => {
   expect(archiveAsAgent(withAgentRule(null))).toBe('approve')
+  expect(
+    decide(withAgentRule(null), {
+      action: 'projects.archive',
+      asker: agent,
+      role: 'owner',
+      writes: false,
+    }),
+  ).toBe('approve')
 })
 
 // A role's patterns that are not a list of action patterns grant nothing: a list that is missing
@@ -153,7 +207,13 @@ test.each([
     roles: { owner: patterns as never },
     scopes: {},
   })
-  const decided = () => decide(odd, { action: 'projects.archive', asker: person, role: 'owner' })
+  const decided = () =>
+    decide(odd, {
+      action: 'projects.archive',
+      asker: person,
+      role: 'owner',
+      writes: true,
+    })
   if (expected === 'throws') expect(decided).toThrow(TypeError)
   else expect(decided()).toBe(expected)
 })
@@ -164,8 +224,13 @@ test.each([
 const listed = ['a.read', 'a.write']
 const decideFor = (extra: object, asker: Asker, role: 'owner' | null = 'owner') =>
   decide(
-    definePolicy({ actions: listed, roles: { owner: ['a.read'] }, scopes: {}, ...extra } as never),
-    { action: 'a.read', asker, role } as never,
+    definePolicy({
+      actions: listed,
+      roles: { owner: ['a.read'] },
+      scopes: {},
+      ...extra,
+    } as never),
+    { action: 'a.read', asker, role, writes: false } as never,
   )
 const scoped = (scope: string): Asker => ({ kind: 'agent', scopes: [scope] })
 

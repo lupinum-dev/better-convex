@@ -26,5 +26,5 @@ export const policy = definePolicy({
       actions: ['projects.create', 'projects.rename', 'projects.archive'],
     },
   },
-  agents: { 'projects.archive': 'approve' },
+  agents: { 'projects.create': 'allow', 'projects.rename': 'allow', 'projects.archive': 'approve' },
 })

@@ -59,7 +59,12 @@ interface PolicyConfig<A extends string, R extends string, S extends string> {
   roles: Record<R, readonly Pattern<NoInfer<A>>[]>
   /** OAuth scopes a person grants to an outside agent, with the consent text. */
   scopes: Record<S, { label: string; actions: readonly Pattern<NoInfer<A>>[] }>
-  /** What agents may do on their own. Missing actions are `'allow'`. */
+  /**
+   * What agents may do on their own. An action without an entry is `'allow'`
+   * for a query and `'approve'` for a call that changes data (a mutation, an
+   * action or an internal mutation): a forgotten rule asks a person, it never
+   * lets an agent write on its own.
+   */
   agents?: Partial<Record<NoInfer<A>, AgentRule>>
   /**
    * Who else may decide an agent's request, by role in the request's tenant.
@@ -182,6 +187,8 @@ export function decide<P extends Policy>(
     asker: Asker
     role: RoleOf<P> | null
     input?: Record<string, unknown>
+    /** The call can change data: an agent's missing rule then asks a person. */
+    writes: boolean
   },
 ): Decision {
   const { action, asker, role } = call
@@ -198,7 +205,7 @@ export function decide<P extends Policy>(
     })
     if (!granted) return 'deny'
   }
-  return agentRule(policy, action, call.input ?? {})
+  return agentRule(policy, action, call.writes, call.input ?? {})
 }
 
 const decisions: readonly unknown[] = ['allow', 'approve', 'deny']
@@ -208,10 +215,13 @@ const decisions: readonly unknown[] = ['allow', 'approve', 'deny']
  * returns something that is not a decision (`decisions[mode]` for an unknown
  * mode is `undefined`), asks a person: it never fails open.
  */
-function agentRule(policy: Policy, action: string, input: Record<string, unknown>): Decision {
-  // No rule allows; an explicit null is not a decision and asks a person like any other.
-  const stated = own(policy.agents as Record<string, AgentRule> | undefined, action)
-  const rule = stated === undefined ? 'allow' : stated
+function agentRule(
+  policy: Policy,
+  action: string,
+  writes: boolean,
+  input: Record<string, unknown>,
+): Decision {
+  const rule = statedAgentRule(policy, action, writes)
   let decision: unknown = rule
   if (typeof rule === 'function') {
     try {
@@ -221,6 +231,17 @@ function agentRule(policy: Policy, action: string, input: Record<string, unknown
     }
   }
   return decisions.includes(decision) ? (decision as Decision) : 'approve'
+}
+
+/**
+ * The agent rule of an action as the policy states it, or its default: a
+ * missing rule allows a read and asks a person for a call that changes data.
+ * An explicit `null` is not a decision and asks a person like any other.
+ */
+export function statedAgentRule(policy: Policy, action: string, writes: boolean): unknown {
+  const stated = own(policy.agents as Record<string, AgentRule> | undefined, action)
+  if (stated !== undefined) return stated
+  return writes ? 'approve' : 'allow'
 }
 
 /** May anyone call this action, signed in or not? */
@@ -246,7 +267,10 @@ export function can<P extends Policy>(
   action: ActionOf<P>,
   role: RoleOf<P> | null | undefined,
 ): boolean {
-  return decide(policy, { action, asker: { kind: 'person' }, role: role ?? null }) === 'allow'
+  return (
+    decide(policy, { action, asker: { kind: 'person' }, role: role ?? null, writes: false }) ===
+    'allow'
+  )
 }
 
 /** The scope list and consent text in the shape the OAuth profile expects. */
