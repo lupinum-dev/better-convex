@@ -1,6 +1,6 @@
-# Local Keycloak for test/convex/oidc-keycloak.test.ts. Test-only credentials; never expose this.
+# Local Keycloak for test/integration/oidc-keycloak.integration.test.ts. Test-only credentials; never expose this.
 #   docker compose -f test/fixtures/keycloak/docker-compose.yml up -d --wait
-#   BCN_TEST_KEYCLOAK_URL=http://127.0.0.1:18080 pnpm exec vitest run --project=convex test/convex/oidc-keycloak.test.ts
+#   BCN_TEST_KEYCLOAK_URL=http://127.0.0.1:18080 pnpm exec vitest run --project=integration test/integration/oidc-keycloak.integration.test.ts
 #   docker compose -f test/fixtures/keycloak/docker-compose.yml down -v
 # The image is pinned by digest. To update it, read the new digest with
 # `docker buildx imagetools inspect quay.io/keycloak/keycloak:<tag>`.

@@ -1,5 +1,5 @@
-// Sign-in, back-channel logout and sign-out through a real Keycloak, the built Nuxt auth proxy and
-// the real local Convex backend. Needs the container from test/fixtures/keycloak/docker-compose.yml
+// Sign-in, back-channel logout, sign-out and upstream tokens through a real Keycloak, the built Nuxt
+// auth proxy and the real local Convex backend. Needs the container from test/fixtures/keycloak/docker-compose.yml
 // and BCN_TEST_KEYCLOAK_URL; skips without it. The suite adds its own Keycloak client and user
 // (both removed afterwards), because the realm's client registers only the convex-test origin.
 import { randomBytes } from 'node:crypto'
@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { decodeJwt, decodeProtectedHeader } from 'jose'
 import { request, type APIRequestContext } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -28,6 +29,7 @@ const KEYCLOAK = process.env.BCN_TEST_KEYCLOAK_URL
 const REALM = 'better-convex-test'
 const ISSUER = `${KEYCLOAK}/realms/${REALM}`
 const BACKCHANNEL_PATH = '/api/auth/oidc/backchannel-logout'
+const LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout'
 
 // ---------- Keycloak: admin API and a browser login ----------
 async function admin(path: string, init: RequestInit = {}) {
@@ -234,15 +236,41 @@ describe.skipIf(!KEYCLOAK)('OIDC through the Nuxt auth proxy and the local backe
   const keycloakSessions = async () =>
     ((await (await admin(`/users/${userUuid}/sessions`)).json()) as unknown[]).length
 
+  /** The access token lifespan of the suite's client, in seconds. */
+  const setAccessTokenLifespan = async (seconds: number) => {
+    const current = (await (await admin(`/clients/${clientUuid}`)).json()) as {
+      attributes: Record<string, string>
+    }
+    const response = await admin(`/clients/${clientUuid}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...current,
+        attributes: { ...current.attributes, 'access.token.lifespan': String(seconds) },
+      }),
+    })
+    expect(response.status).toBe(204)
+  }
+  const setEnabled = async (enabled: boolean) => {
+    const response = await admin(`/users/${userUuid}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    })
+    expect(response.status).toBe(204)
+  }
+
   /** Start at the proxy, log in at Keycloak, return to the proxy's callback. */
-  async function signIn() {
+  async function signIn(
+    login: { username: string; password: string } = { username, password },
+    mutate?: (query: URLSearchParams) => void,
+  ) {
     const start = await site!.post('/api/auth/sign-in/social', {
       data: { provider: 'oidc', callbackURL: `${origin}/app`, errorCallbackURL: `${origin}/error` },
     })
     expect(start.status()).toBe(200)
     const authorizeUrl = ((await start.json()) as { url: string }).url
-    const { location, jar } = await keycloakLogin(authorizeUrl, username, password)
+    const { location, jar } = await keycloakLogin(authorizeUrl, login.username, login.password)
     expect(`${location.origin}${location.pathname}`).toBe(`${origin}/api/auth/callback/oidc`)
+    mutate?.(location.searchParams)
     const callback = await site!.get(`${location.pathname}${location.search}`, { maxRedirects: 0 })
     return { authorizeUrl: new URL(authorizeUrl), callback, keycloakJar: jar }
   }
@@ -255,6 +283,8 @@ describe.skipIf(!KEYCLOAK)('OIDC through the Nuxt auth proxy and the local backe
 
     expect(authorizeUrl.searchParams.get('redirect_uri')).toBe(`${origin}/api/auth/callback/oidc`)
     expect(authorizeUrl.searchParams.get('client_id')).toBe(clientId)
+    expect(authorizeUrl.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(authorizeUrl.searchParams.get('scope')).toBe('openid email profile')
     expect({ status: callback.status(), location: callback.headers().location }).toEqual({
       status: 302,
       location: `${origin}/app`,
@@ -274,9 +304,29 @@ describe.skipIf(!KEYCLOAK)('OIDC through the Nuxt auth proxy and the local backe
     await waitUntil(async () => deliveries.length > 0, 'Keycloak back-channel logout')
 
     expect(deliveries.map(({ status }) => status)).toEqual([200])
+    const logoutToken = new URLSearchParams(deliveries[0]!.form).get('logout_token')!
+    const claims = decodeJwt(logoutToken)
+    expect(claims.sub).toBe(userUuid)
+    expect(Object.keys(claims.events as object)).toEqual([LOGOUT_EVENT])
+    expect('nonce' in claims).toBe(false)
+    expect(claims.iss).toBe(ISSUER)
+    expect(claims.aud).toBe(clientId)
+    expect(typeof claims.jti).toBe('string')
+    expect(typeof claims.sid).toBe('string')
+    expect(decodeProtectedHeader(logoutToken)).toMatchObject({ alg: 'RS256', typ: 'logout+jwt' })
     // Mint first: reading the session clears the dead session cookie.
     expect(await mintStatus()).toBe(401)
     expect(await sessionEmail()).toBeNull()
+
+    // Catches: a replay cache that Keycloak's real jti does not fit, so a captured logout token
+    // could be sent again.
+    const replay = await fetch(`${origin}${BACKCHANNEL_PATH}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: deliveries[0]!.form,
+    })
+    expect(replay.status).toBe(400)
+    expect(await replay.json()).toEqual({ error: 'invalid_request' })
   })
 
   // Catches: a sign-out through the proxy that returns no end-session URL, or one that Keycloak
@@ -305,5 +355,92 @@ describe.skipIf(!KEYCLOAK)('OIDC through the Nuxt auth proxy and the local backe
     expect(followed.status).toBe(302)
     expect(new URL(followed.headers.get('location')!).pathname).toBe('/signed-out')
     expect(await keycloakSessions()).toBe(0)
+  })
+
+  // Catches: a callback whose `iss` is never compared, so a mix-up attack passes.
+  it('refuses a callback whose iss differs from the configured issuer', async () => {
+    const { callback } = await signIn({ username, password }, (query) =>
+      query.set('iss', 'https://evil.example.test/realms/x'),
+    )
+
+    expect(callback.status()).toBe(302)
+    expect(new URL(callback.headers().location!, origin).searchParams.get('error')).toBe(
+      'issuer_mismatch',
+    )
+    expect(await sessionEmail()).toBeNull()
+  })
+
+  // Catches: an unverified Keycloak address that still gets a user and a session.
+  it('refuses bob (unverified)', async () => {
+    const { callback } = await signIn({ username: 'bob', password: 'bob-test-password' })
+
+    expect(callback.status()).toBe(302)
+    expect(new URL(callback.headers().location!, origin).searchParams.get('error')).toBe(
+      'AUTH_USER_CREATE_UNVERIFIED_EMAIL',
+    )
+    expect(await sessionEmail()).toBeNull()
+  })
+
+  /**
+   * Signs in with an access token that lives 30 s (inside the 60 s refresh margin), mints once, and
+   * returns to the 300 s lifespan. The next use of the stored token therefore refreshes it.
+   */
+  async function signInWithExpiringAccessToken() {
+    await setAccessTokenLifespan(30)
+    try {
+      await signIn()
+      expect(await mintStatus()).toBe(200)
+    } finally {
+      await setAccessTokenLifespan(300)
+    }
+  }
+
+  // Catches: a refresh without the lease. Keycloak rotates the refresh token (the realm sets
+  // revokeRefreshToken with no reuse), so a second refresh with the old one is invalid_grant
+  // and would end the user's session.
+  it('getOidcAccessToken refreshes under refresh-token rotation for two concurrent actions', async () => {
+    await signInWithExpiringAccessToken()
+    const { token } = (await (await site!.get('/api/auth/convex/token')).json()) as {
+      token: string
+    }
+    const callAction = async () => {
+      const response = await fetch(`${backend!.url}/api/action`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ path: 'upstream:accessToken', args: {}, format: 'json' }),
+      })
+      return (await response.json()) as {
+        status: string
+        value?: { accessToken: string; expiresAt: number }
+        errorMessage?: string
+      }
+    }
+
+    const [first, second] = await Promise.all([callAction(), callAction()])
+
+    expect(first).toMatchObject({ status: 'success' })
+    expect(second).toEqual(first)
+    expect(first.value!.expiresAt).toBeGreaterThan(Date.now() + 60_000)
+    const userinfo = await fetch(`${ISSUER}/protocol/openid-connect/userinfo`, {
+      headers: { authorization: `Bearer ${first.value!.accessToken}` },
+    })
+    expect(userinfo.status).toBe(200)
+    expect(await sessionEmail()).toBe(email)
+  })
+
+  // Catches: a Keycloak user who is disabled but keeps a working app session, because the mint
+  // never asks the IdP. Back-channel delivery does not run for a disabled user, so only the
+  // liveness check at the mint can end the session.
+  it('disabled user at Keycloak ends the app session at the next token mint', async () => {
+    await signInWithExpiringAccessToken()
+
+    await setEnabled(false)
+    try {
+      expect(await mintStatus()).toBe(401)
+    } finally {
+      await setEnabled(true)
+    }
+
+    expect(await sessionEmail()).toBeNull()
   })
 })

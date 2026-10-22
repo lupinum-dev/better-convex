@@ -82,15 +82,12 @@ jobs:
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      # Keycloak first: the OIDC suites skip without BCN_TEST_KEYCLOAK_URL.
+      # Keycloak first: the OIDC suite skips without BCN_TEST_KEYCLOAK_URL.
       - run: docker compose -f test/fixtures/keycloak/docker-compose.yml up -d --wait
       - run: pnpm test:integration
         env:
           BCN_TEST_KEYCLOAK_URL: http://127.0.0.1:18080
       - run: pnpm exec nuxt-module-build prepare
-      - run: pnpm exec vitest run --project=convex test/convex/oidc-keycloak.test.ts
-        env:
-          BCN_TEST_KEYCLOAK_URL: http://127.0.0.1:18080
 
   # Full-stack playground journeys, including test/e2e/extended, on the local backend.
   e2e:
