@@ -1893,7 +1893,7 @@ export const mutants: Mutant[] = [
     guards: 'S10',
     file: `${sites}/policy.ts`,
     find: "agents: { 'sites.check': 'approve' },",
-    replace: 'agents: {},',
+    replace: "agents: { 'sites.check': 'allow' },",
     kills: [`${sites}/sites.test.ts > an agent's check waits for approval, then the job runs it`],
     projects: ['mcp'],
   },
