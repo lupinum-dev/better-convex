@@ -263,9 +263,21 @@ describe.skipIf(!KEYCLOAK)('OIDC through the Nuxt auth proxy and the local backe
     login: { username: string; password: string } = { username, password },
     mutate?: (query: URLSearchParams) => void,
   ) {
-    const start = await site!.post('/api/auth/sign-in/social', {
-      data: { provider: 'oidc', callbackURL: `${origin}/app`, errorCallbackURL: `${origin}/error` },
-    })
+    const startSignIn = () =>
+      site!.post('/api/auth/sign-in/social', {
+        data: {
+          provider: 'oidc',
+          callbackURL: `${origin}/app`,
+          errorCallbackURL: `${origin}/error`,
+        },
+      })
+    let start = await startSignIn()
+    // Better Auth allows few sign-in starts per IP in 10 s, and every sign-in here comes from one IP.
+    if (start.status() === 429) {
+      const seconds = Number(start.headers()['x-retry-after'] ?? '10')
+      await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000))
+      start = await startSignIn()
+    }
     expect(start.status()).toBe(200)
     const authorizeUrl = ((await start.json()) as { url: string }).url
     const { location, jar } = await keycloakLogin(authorizeUrl, login.username, login.password)
@@ -382,27 +394,30 @@ describe.skipIf(!KEYCLOAK)('OIDC through the Nuxt auth proxy and the local backe
   })
 
   /**
-   * Signs in with an access token that lives 30 s (inside the 60 s refresh margin), mints once, and
-   * returns to the 300 s lifespan. The next use of the stored token therefore refreshes it.
+   * Signs in with a 70 s access token and mints a Convex token, which needs no refresh yet. After
+   * 11 s the stored access token is inside the 60 s refresh margin, so its next use refreshes it
+   * (with the 300 s lifespan restored). No refresh runs before, so no refresh lease is held.
    */
-  async function signInWithExpiringAccessToken() {
-    await setAccessTokenLifespan(30)
+  async function signInNearAccessTokenExpiry(): Promise<string> {
+    let token: string
+    await setAccessTokenLifespan(70)
     try {
       await signIn()
-      expect(await mintStatus()).toBe(200)
+      const minted = await site!.get('/api/auth/convex/token')
+      expect(minted.status()).toBe(200)
+      token = ((await minted.json()) as { token: string }).token
     } finally {
       await setAccessTokenLifespan(300)
     }
+    await new Promise((resolve) => setTimeout(resolve, 11_000))
+    return token
   }
 
   // Catches: a refresh without the lease. Keycloak rotates the refresh token (the realm sets
   // revokeRefreshToken with no reuse), so a second refresh with the old one is invalid_grant
   // and would end the user's session.
   it('getOidcAccessToken refreshes under refresh-token rotation for two concurrent actions', async () => {
-    await signInWithExpiringAccessToken()
-    const { token } = (await (await site!.get('/api/auth/convex/token')).json()) as {
-      token: string
-    }
+    const token = await signInNearAccessTokenExpiry()
     const callAction = async () => {
       const response = await fetch(`${backend!.url}/api/action`, {
         method: 'POST',
@@ -426,21 +441,28 @@ describe.skipIf(!KEYCLOAK)('OIDC through the Nuxt auth proxy and the local backe
     })
     expect(userinfo.status).toBe(200)
     expect(await sessionEmail()).toBe(email)
-  })
+  }, 60_000)
 
   // Catches: a Keycloak user who is disabled but keeps a working app session, because the mint
   // never asks the IdP. Back-channel delivery does not run for a disabled user, so only the
   // liveness check at the mint can end the session.
   it('disabled user at Keycloak ends the app session at the next token mint', async () => {
-    await signInWithExpiringAccessToken()
+    await signInNearAccessTokenExpiry()
 
     await setEnabled(false)
     try {
-      expect(await mintStatus()).toBe(401)
+      // A refresh in the last 30 s (an earlier test, same account) holds the refresh lease, and the
+      // mint then trusts that recent answer. The first mint after the lease asks Keycloak.
+      let status = await mintStatus()
+      for (let attempt = 0; status === 200 && attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000))
+        status = await mintStatus()
+      }
+      expect(status).toBe(401)
     } finally {
       await setEnabled(true)
     }
 
     expect(await sessionEmail()).toBeNull()
-  })
+  }, 90_000)
 })
