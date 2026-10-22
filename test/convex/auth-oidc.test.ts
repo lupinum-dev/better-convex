@@ -15,7 +15,10 @@ import type {
 } from '../../src/runtime/convex-auth/create-better-convex-auth'
 import { rotateSigningKeyWithOfficialJwt } from '../../src/runtime/convex-auth/jwks-rotation'
 import { getOidcClient } from '../../src/runtime/convex-auth/oidc-metadata'
-import { resolveOidcConfig } from '../../src/runtime/convex-auth/oidc-options'
+import {
+  resolveOidcConfig,
+  type BetterConvexOidcSignIn,
+} from '../../src/runtime/convex-auth/oidc-options'
 import {
   PUBLIC_ORIGIN_HEADER,
   PUBLIC_ORIGIN_SIGNATURE_HEADER,
@@ -54,7 +57,13 @@ const EMAIL = 'ada@example.test'
 const PASSWORD = 'ada-chosen-password-123'
 const BACKCHANNEL_PATH = '/oidc/backchannel-logout'
 
-type Options = Omit<CreateBetterConvexAuthOptions<never>, 'email' | 'oidc'>
+type Options = Omit<CreateBetterConvexAuthOptions<never>, 'email' | 'oidc'> & {
+  /** Added to the fake IdP's `issuer`, `clientId` and `clientSecret`. */
+  oidc?: {
+    scopes?: string[]
+    onSignIn?: (input: BetterConvexOidcSignIn) => void | Promise<void>
+  }
+}
 type Client = ReturnType<ReturnType<ReturnType<typeof createEnvironment>['app']>['client']>
 
 let ipCounter = 0
@@ -78,14 +87,15 @@ function createEnvironment() {
     options: Options = {},
     extraPlugins: readonly BetterAuthPlugin[] = [],
   ) {
+    const { oidc: oidcExtra, ...rest } = options
     const auth = createBetterConvexAuthOwned(
       components.sessionAuth,
       {
         email: async (_ctx: unknown, message: BetterConvexAuthEmail) => {
           mails.push(message)
         },
-        ...(idp ? { oidc: oidcOf(idp) } : {}),
-        ...options,
+        ...(idp ? { oidc: { ...oidcOf(idp), ...oidcExtra } } : {}),
+        ...rest,
       } as never,
       extraPlugins,
     )
@@ -628,6 +638,45 @@ describe('OIDC sign-in with real Better Auth', () => {
     const logout = new URL((signOut.body as { url: string }).url)
     expect(logout.searchParams.get('post_logout_redirect_uri')).toBe(`${SITE_B}/signed-out`)
   })
+
+  // Catches: configured extra scopes that never reach the IdP, or a default that is not exactly the three.
+  it('requests openid email profile, plus the configured extra scopes', async () => {
+    const idp = await installIdp()
+    const env = createEnvironment()
+    const plain = await startAt(env.app(idp).client(), '/sign-in/social')
+    const extended = await startAt(
+      env.app(idp, { oidc: { scopes: ['offline_access', 'api://app/access'] } }).client(),
+      '/sign-in/social',
+    )
+
+    expect(plain.url.searchParams.get('scope')).toBe('openid email profile')
+    expect(extended.url.searchParams.get('scope')).toBe(
+      'openid email profile offline_access api://app/access',
+    )
+  })
+
+  // Catches: Microsoft Entra ID users (no `email_verified`, only `xms_edov`) refused, or a missing claim read as verified.
+  it('treats xms_edov as a verified email and still refuses a token with neither claim', async () => {
+    const idp = await installIdp()
+    const env = createEnvironment()
+    const app = env.app(idp)
+
+    const neither = await signIn(app.client(), idp, { email_verified: undefined })
+    const unproven = await signIn(app.client(), idp, {
+      email_verified: undefined,
+      xms_edov: false,
+    })
+    expect(neither.location).toContain('error=AUTH_USER_CREATE_UNVERIFIED_EMAIL')
+    expect(unproven.location).toContain('error=AUTH_USER_CREATE_UNVERIFIED_EMAIL')
+    expect(await env.rows('user')).toEqual([])
+
+    const entra = app.client()
+    const callback = await signIn(entra, idp, { email_verified: undefined, xms_edov: true })
+
+    expect(callback.location).toBe(`${SITE}/app`)
+    expect(await entra.hasSession()).toBe(true)
+    expect(await env.rows('user')).toMatchObject([{ email: EMAIL, emailVerified: true }])
+  })
 })
 
 describe('OIDC doors and linking with real Better Auth', () => {
@@ -811,6 +860,223 @@ describe('OIDC doors and linking with real Better Auth', () => {
     const accounts = await env.oidcAccounts()
     expect(accounts).toHaveLength(1)
     expect(String(accounts[0]!.accountId)).toMatch(/:user-1$/u)
+  })
+
+  /** The password hash of the only credential account. */
+  const credentialHash = async (env: ReturnType<typeof createEnvironment>) =>
+    (await env.rows('account')).find((account) => account.providerId === 'credential')?.password
+
+  // Catches: `oidc.onSignIn` that never runs, gets another user's id, or loses a custom claim.
+  it('runs onSignIn with the verified claims, the user id and a usable action context', async () => {
+    const idp = await installIdp()
+    const env = createEnvironment()
+    const calls: { userId: string; claims: Record<string, unknown> }[] = []
+    let seen: { users: Record<string, unknown>[]; accounts: Record<string, unknown>[] } | undefined
+    const app = env.app(idp, {
+      oidc: {
+        onSignIn: async ({ ctx, userId, claims }) => {
+          calls.push({ userId, claims })
+          const page = (model: 'user' | 'account') =>
+            ctx
+              .runQuery(components.sessionAuth.adapter.findMany, {
+                model,
+                paginationOpts: { cursor: null, numItems: 50 },
+              })
+              .then((result) => result.page as Record<string, unknown>[])
+          seen = { users: await page('user'), accounts: await page('account') }
+          await ctx.runMutation(components.sessionAuth.adapter.updateOne, {
+            model: 'user',
+            where: [{ field: 'email', value: EMAIL }],
+            update: { name: 'Renamed by hook' },
+          })
+        },
+      },
+    })
+    const browser = app.client()
+
+    const callback = await signIn(browser, idp, { groups: ['admins'] })
+
+    expect(callback.location).toBe(`${SITE}/app`)
+    expect(await browser.hasSession()).toBe(true)
+    const [user] = await env.rows('user')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      userId: user!.id,
+      claims: { iss: idp.issuer, sub: 'user-1', email: EMAIL, groups: ['admins'] },
+    })
+    // The user and its `oidc` account exist when the hook runs; a write from the hook persists.
+    expect(seen?.users).toMatchObject([{ id: user!.id }])
+    expect(seen?.accounts).toMatchObject([{ providerId: 'oidc', userId: user!.id }])
+    expect(user).toMatchObject({ name: 'Renamed by hook' })
+  })
+
+  // Catches: a throwing `oidc.onSignIn` that still lets the user in (a revoked group, a closed tenant).
+  it('refuses the sign-in and creates no session when onSignIn throws', async () => {
+    const idp = await installIdp()
+    const env = createEnvironment()
+    const failure = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const app = env.app(idp, {
+      oidc: {
+        onSignIn: ({ claims }) => {
+          if (!Array.isArray(claims.groups) || !claims.groups.includes('admins'))
+            throw new Error('not in group admins')
+        },
+      },
+    })
+    const denied = app.client()
+
+    const callback = await signIn(denied, idp, { groups: ['guests'] })
+
+    expect(errorOf(callback.location)).toBe('OIDC_SIGN_IN_REFUSED')
+    expect(await denied.hasSession()).toBe(false)
+    expect(await env.rows('session')).toEqual([])
+    expect(failure).toHaveBeenCalledWith(
+      '[better-convex] AUTH_OIDC_FAILURE',
+      expect.objectContaining({ code: 'AUTH_OIDC_SIGN_IN_HOOK_REFUSED' }),
+    )
+    const allowed = app.client()
+    expect((await signIn(allowed, idp, { groups: ['admins'] })).location).toBe(`${SITE}/app`)
+    expect(await allowed.hasSession()).toBe(true)
+  })
+
+  // Catches: `oidc.onSignIn` that runs when a signed-in user only links the IdP (not a sign-in).
+  it('does not run onSignIn when a signed-in user links the identity provider', async () => {
+    const idp = await installIdp()
+    const onSignIn = vi.fn()
+    const { env, app } = await linkedPasswordUser(idp, { oidc: { onSignIn } })
+
+    expect(onSignIn).not.toHaveBeenCalled()
+    expect(await env.oidcAccounts()).toHaveLength(1)
+
+    await signIn(app.client(), idp)
+    expect(onSignIn).toHaveBeenCalledTimes(1)
+  })
+
+  // Catches: a session from before the link that keeps minting Convex tokens after the user moved under the IdP.
+  it('linking the identity provider ends the sessions from before the link', async () => {
+    const idp = await installIdp()
+    const env = createEnvironment()
+    const app = env.app(idp, { emailAndPassword: { requireEmailVerification: false } })
+    await app.provision()
+    const owner = app.client()
+    await owner.post('/sign-up/email', { email: EMAIL, password: PASSWORD, name: 'Ada' })
+    await owner.post('/sign-in/email', { email: EMAIL, password: PASSWORD })
+    expect((await owner.mint()).status).toBe(200)
+    expect(await env.rows('session')).toHaveLength(1)
+
+    await finish(owner, idp, await startAt(owner, '/link-social', `${SITE}/settings`))
+
+    expect(await env.oidcAccounts()).toHaveLength(1)
+    expect(await env.rows('session')).toEqual([])
+    expect((await owner.mint()).status).toBe(401)
+    expect(await owner.hasSession()).toBe(false)
+  })
+
+  // Catches: /change-password that writes a hash an IdP-managed user can never use, or ends sessions first.
+  it('refuses /change-password for an identity-provider user before writing anything', async () => {
+    const idp = await installIdp()
+    const { env, app } = await linkedPasswordUser(idp)
+    const browser = app.client()
+    await signIn(browser, idp)
+    const hash = await credentialHash(env)
+    expect(hash).toEqual(expect.any(String))
+    const sessions = await env.rows('session')
+    expect(sessions).toHaveLength(1)
+
+    const response = await browser.post('/change-password', {
+      currentPassword: PASSWORD,
+      newPassword: 'another-chosen-password-456',
+      revokeOtherSessions: true,
+    })
+
+    expect(response.status).toBe(403)
+    expect(response.body).toMatchObject({
+      code: 'OIDC_SIGN_IN_REQUIRED',
+      message: 'OIDC_SIGN_IN_REQUIRED',
+    })
+    expect(await credentialHash(env)).toBe(hash)
+    expect(await env.rows('session')).toEqual(sessions)
+    expect(await browser.hasSession()).toBe(true)
+  })
+
+  // Catches: a reset mail (link or code) for a user who signs in only through the IdP, while a normal user stops getting one.
+  it('mails no password reset to an identity-provider user but still mails a password user', async () => {
+    const idp = await installIdp()
+    const env = createEnvironment()
+    const app = env.app(idp, {
+      emailAndPassword: { requireEmailVerification: false, passwordReset: true },
+      emailOTP: {},
+    })
+    const grace = 'grace@example.test'
+    const owner = app.client()
+    await owner.post('/sign-up/email', { email: EMAIL, password: PASSWORD, name: 'Ada' })
+    await owner.post('/sign-in/email', { email: EMAIL, password: PASSWORD })
+    await finish(owner, idp, await startAt(owner, '/link-social', `${SITE}/settings`))
+    expect(await env.oidcAccounts()).toHaveLength(1)
+    await app.client().post('/sign-up/email', { email: grace, password: PASSWORD, name: 'Grace' })
+    const resetMails = (to: string) =>
+      env.mails.filter(
+        (mail) =>
+          mail.to === to &&
+          (mail.type === 'reset-password' ||
+            (mail.type === 'email-otp' && mail.purpose === 'forget-password')),
+      )
+
+    for (const email of [grace, EMAIL]) {
+      const browser = app.client()
+      await browser.post('/request-password-reset', { email, redirectTo: `${SITE}/reset` })
+      await browser.post('/email-otp/request-password-reset', { email })
+    }
+
+    expect(resetMails(EMAIL)).toEqual([])
+    expect(resetMails(grace).map((mail) => mail.type)).toEqual(['reset-password', 'email-otp'])
+  })
+
+  // Catches: a direct server call that deletes the `oidc` row (no route, so no endpoint context) and frees the password door.
+  it('refuses to delete the identity-provider account without an endpoint context', async () => {
+    const idp = await installIdp()
+    const { env, app } = await linkedPasswordUser(idp)
+    const [account] = await env.oidcAccounts()
+    const userId = String(account!.userId)
+    const direct = (
+      run: (adapter: {
+        deleteAccount(id: string): Promise<void>
+        deleteAccounts(userId: string): Promise<void>
+      }) => Promise<void>,
+    ) =>
+      env.test.mutation(async (ctx) => {
+        const context = await (await app.auth.createAuth(ctx)).$context
+        await run(context.internalAdapter)
+      })
+
+    await expect(direct((adapter) => adapter.deleteAccount(String(account!.id)))).rejects.toThrow(
+      'OIDC_UNLINK_REFUSED',
+    )
+    await expect(direct((adapter) => adapter.deleteAccounts(userId))).rejects.toThrow(
+      'OIDC_UNLINK_REFUSED',
+    )
+
+    expect(await env.oidcAccounts()).toHaveLength(1)
+    expect(await credentialHash(env)).toEqual(expect.any(String))
+  })
+
+  // Catches: a delete guard so strict that an IdP-managed user can no longer delete their own account.
+  it('/delete-user still deletes an identity-provider user completely', async () => {
+    const idp = await installIdp()
+    const env = createEnvironment()
+    const app = env.app(idp, { deleteUser: { enabled: true } })
+    const browser = app.client()
+    await signIn(browser, idp)
+    expect(await env.oidcAccounts()).toHaveLength(1)
+
+    expect((await browser.post('/delete-user', {})).status).toBe(200)
+    const message = env.mails.find((mail) => mail.type === 'delete-account')
+    const confirmed = await browser.get(`/delete-user/callback?token=${message!.token}`)
+
+    expect(confirmed.status).toBe(200)
+    expect(await env.rows('user')).toEqual([])
+    expect(await env.rows('account')).toEqual([])
+    expect(await env.rows('session')).toEqual([])
   })
 })
 
