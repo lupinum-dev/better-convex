@@ -36,8 +36,12 @@ async function rememberSignInClaims(claims: OidcIdTokenClaims): Promise<void> {
 }
 
 /** The claims `getUserInfo` verified in this request, or `undefined`. */
-export function signInClaimsFor(context: object): OidcIdTokenClaims | undefined {
-  return signInClaims.get(context)
+export async function currentSignInClaims(): Promise<OidcIdTokenClaims | undefined> {
+  try {
+    return signInClaims.get(await getCurrentAuthContext())
+  } catch {
+    return undefined
+  }
 }
 
 /**

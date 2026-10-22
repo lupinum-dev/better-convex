@@ -17,7 +17,7 @@ import {
   OIDC_PROVIDER_ID,
   type ResolvedOidcConfig,
 } from './oidc-options'
-import { createOidcProvider, signInClaimsFor } from './oidc-provider'
+import { createOidcProvider, currentSignInClaims } from './oidc-provider'
 import {
   createOidcUpstream,
   type OidcAccountRecord,
@@ -210,9 +210,9 @@ export function createOidcPlugin(input: {
         consume: input.consume(),
       }
 
-      const runSignInHook = async (userId: string, context: GenericEndpointContext) => {
+      const runSignInHook = async (userId: string) => {
         if (!input.onSignIn) return
-        const claims = signInClaimsFor(context)
+        const claims = await currentSignInClaims()
         // The callback verified an ID token in this request, so its claims are here.
         if (!claims) throw oidcSignInRefused(new Error('AUTH_OIDC_SIGN_IN_CLAIMS_MISSING'))
         try {
@@ -227,7 +227,7 @@ export function createOidcPlugin(input: {
           create: {
             before: async (session, context) => {
               if (isOidcCallback(context)) {
-                await runSignInHook(session.userId, context!)
+                await runSignInHook(session.userId)
                 return
               }
               if (await hasOidcAccount(session.userId)) throw oidcSignInRequired()
