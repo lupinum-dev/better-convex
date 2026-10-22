@@ -4129,8 +4129,8 @@ export const mutants: Mutant[] = [
     id: 'oidc-idp-managed-user-door',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-plugin.ts',
-    find: '!isOidcCallback(context) && (await hasOidcAccount(session.userId))',
-    replace: 'false',
+    find: 'if (await hasOidcAccount(session.userId)) throw oidcSignInRequired()',
+    replace: 'if (false) throw oidcSignInRequired()',
     kills: [
       'test/convex/auth-oidc.test.ts > OIDC doors and linking with real Better Auth > a linked user cannot sign in with a password',
       'test/convex/auth-oidc.test.ts > OIDC doors and linking with real Better Auth > a linked user cannot sign in with an email code',
@@ -4152,8 +4152,8 @@ export const mutants: Mutant[] = [
     id: 'oidc-unlink-refused',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-plugin.ts',
-    find: 'if (!OIDC_ACCOUNT_DELETE_PATHS.has(context.path)) throw oidcUnlinkRefused()',
-    replace: 'if (false) throw oidcUnlinkRefused()',
+    find: '!context || !OIDC_ACCOUNT_DELETE_PATHS.has(context.path)',
+    replace: 'false',
     kills: [
       'test/convex/auth-oidc.test.ts > OIDC doors and linking with real Better Auth > a linked user cannot unlink the identity-provider account',
       'test/convex/auth-oidc.test.ts > OIDC doors and linking with real Better Auth > an email code does not remove the identity-provider account of an unverified user',
@@ -4209,8 +4209,8 @@ export const mutants: Mutant[] = [
     id: 'oidc-account-provider-filter',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-plugin.ts',
-    find: '(account) => account.providerId === OIDC_PROVIDER_ID,\n          )\n          if (accounts.length',
-    replace: '(account) => true,\n          )\n          if (accounts.length',
+    find: '(account) => account.providerId === OIDC_PROVIDER_ID,\n        )\n      const hasOidcAccount',
+    replace: '(account) => true,\n        )\n      const hasOidcAccount',
     kills: [
       "test/convex/auth-oidc-upstream.test.ts > OIDC upstream tokens with real Better Auth > never returns another provider's token",
     ],
