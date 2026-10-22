@@ -60,6 +60,7 @@ import {
   OIDC_PROVIDER_ID,
   resolveOidcConfig,
   type BetterConvexOidcAccessToken,
+  type BetterConvexOidcClaims,
   type BetterConvexOidcOptions,
   type ResolvedOidcConfig,
 } from './oidc-options'
@@ -385,7 +386,7 @@ export interface CreateBetterConvexAuthOptions<DataModel extends GenericDataMode
    * Pass a function to read environment variables when Convex calls it, not when the module loads.
    * A user who signs in through it, or links it, then signs in only through it.
    */
-  readonly oidc?: BetterConvexOidcOptions | (() => BetterConvexOidcOptions)
+  readonly oidc?: BetterConvexOidcOptions<DataModel> | (() => BetterConvexOidcOptions<DataModel>)
   /**
    * Add claims to the Convex session token. By default the token carries only
    * the library claims (`sub`, `sid`, `token_use` and the registered JWT
@@ -957,6 +958,24 @@ function requiredIdentityValue(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.trim() === value
 }
 
+/** `oidc.onSignIn` bound to this auth construction's context. Sign-in runs in the auth HTTP action. */
+function oidcSignInHook<DataModel extends GenericDataModel>(
+  ctx: AuthCtx<DataModel>,
+  config: ResolvedOidcConfig,
+): ((userId: string, claims: object) => Promise<void>) | undefined {
+  const callback = config.onSignIn
+  if (!callback) return undefined
+  return async (userId, claims) => {
+    if ('db' in ctx || typeof ctx.runMutation !== 'function')
+      throw new TypeError('AUTH_OIDC_SIGN_IN_REQUIRES_ACTION')
+    await callback({
+      ctx: ctx as unknown as GenericActionCtx<GenericDataModel>,
+      userId,
+      claims: claims as BetterConvexOidcClaims,
+    })
+  }
+}
+
 function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
   ctx: AuthCtx<DataModel>,
   callback: NonNullable<CreateBetterConvexAuthOptions<DataModel>['beforeUserCreate']>,
@@ -1277,7 +1296,11 @@ export function createBetterConvexAuthOwned<
       const oidcConfig =
         typeof options.oidc === 'function' ? resolveOidcConfig(options.oidc()) : staticOidcConfig
       const oidc = oidcConfig
-        ? createOidcPlugin({ config: oidcConfig, consume: () => rateLimitStorage.consume })
+        ? createOidcPlugin({
+            config: oidcConfig,
+            consume: () => rateLimitStorage.consume,
+            onSignIn: oidcSignInHook(ctx, oidcConfig),
+          })
         : undefined
       stage = 'AUTH_CONFIG_OPTIONS_INVALID'
       // The app's hook; else the dev outbox on a loopback SITE_URL; else a delivery that fails with a clear error.
@@ -1343,6 +1366,11 @@ export function createBetterConvexAuthOwned<
                 // Mail only a code that something can still use. A reset code
                 // needs the reset routes, and a verified address needs no proof.
                 if (type === 'forget-password' && !passwordReset) return
+                // An IdP-managed user signs in only through the IdP: no reset code to mail.
+                if (type === 'forget-password' && oidc) {
+                  const found = await endpoint?.context.internalAdapter.findUserByEmail(email)
+                  if (!found || (await oidc.runtime.isIdpManaged(found.user.id))) return
+                }
                 if (type === 'email-verification') {
                   const found = await endpoint?.context.internalAdapter.findUserByEmail(email)
                   if (found?.user.emailVerified === true) return
@@ -1371,8 +1399,6 @@ export function createBetterConvexAuthOwned<
           issuer: convexSiteUrl,
           definePayload: defineSessionClaims,
         },
-        // The IdP liveness check (4.6): a refused refresh token ends the sessions and the mint.
-        ...(oidc ? { beforeMint: ({ user }) => oidc.runtime.upstream().isGrantLive(user.id) } : {}),
       })
       const plugins: BetterAuthPlugin[] = [
         ...featurePlugins,
@@ -1462,14 +1488,17 @@ export function createBetterConvexAuthOwned<
                   passwordOptions.revokeSessionsOnPasswordReset ?? true,
                 ...(passwordReset
                   ? {
-                      sendResetPassword: async ({ user, url, token }) =>
-                        deliver({
+                      sendResetPassword: async ({ user, url, token }) => {
+                        // An IdP-managed user signs in only through the IdP: no reset link to mail.
+                        if (oidc && (await oidc.runtime.isIdpManaged(user.id))) return
+                        await deliver({
                           type: 'reset-password',
                           to: user.email,
                           url,
                           token,
                           user: emailUser(user),
-                        }),
+                        })
+                      },
                     }
                   : {}),
                 autoSignIn: false,
@@ -1560,6 +1589,7 @@ export function createBetterConvexAuthOwned<
   const getOidcAccessToken = async (
     ctx: GenericActionCtx<DataModel>,
   ): Promise<BetterConvexOidcAccessToken> => {
+    if (options.oidc === undefined) throw new TypeError('AUTH_OIDC_NOT_CONFIGURED')
     if ('db' in ctx || typeof ctx.runAction !== 'function')
       throw new TypeError('AUTH_OIDC_ACCESS_TOKEN_REQUIRES_ACTION')
     const oidcUser = await requireUser(ctx)

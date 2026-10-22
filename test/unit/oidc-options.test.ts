@@ -6,6 +6,8 @@ const PREFIX = '[better-convex] createBetterConvexAuth '
 const SECRET = 's3cret-value'
 const ISSUER_MESSAGE =
   'requires "oidc.issuer" to be an https URL without credentials, query or fragment (http only for localhost, 127.0.0.1 or [::1])'
+const SCOPES_MESSAGE =
+  'requires "oidc.scopes" to be at most 20 scope names without spaces or quotes'
 const valid = {
   issuer: 'https://sso.example.com/realms/acme',
   clientId: 'app',
@@ -50,9 +52,24 @@ describe('OIDC options', () => {
       message: 'does not support "oidc.discoveryUrl"',
     },
     {
-      name: 'scopes key',
-      value: { ...valid, scopes: ['groups'] },
-      message: 'does not support "oidc.scopes"',
+      name: 'a scope with a space',
+      value: { ...valid, scopes: ['groups openid'] },
+      message: SCOPES_MESSAGE,
+    },
+    {
+      name: 'scopes that are not a list',
+      value: { ...valid, scopes: 'offline_access' },
+      message: SCOPES_MESSAGE,
+    },
+    {
+      name: 'more than 20 scopes',
+      value: { ...valid, scopes: Array.from({ length: 21 }, (_, index) => `s${index}`) },
+      message: SCOPES_MESSAGE,
+    },
+    {
+      name: 'onSignIn that is not a function',
+      value: { ...valid, onSignIn: 'sync' },
+      message: 'requires "oidc.onSignIn" to be a function',
     },
   ]) {
     it(`rejects ${testCase.name}`, () => {
@@ -81,8 +98,16 @@ describe('OIDC options', () => {
         issuer,
         clientId: 'app',
         clientSecret: SECRET,
+        scopes: ['openid', 'email', 'profile'],
         loopbackHttp,
       })
     })
   }
+
+  it('requests the base scopes first and drops duplicates', () => {
+    expect(
+      resolveOidcConfig({ ...valid, scopes: ['offline_access', 'openid', 'api://app/access'] })
+        .scopes,
+    ).toEqual(['openid', 'email', 'profile', 'offline_access', 'api://app/access'])
+  })
 })

@@ -261,7 +261,7 @@ describe('OIDC upstream tokens', () => {
     }
 
     expect(await upstream.accessToken('user-1')).toEqual({ kind: 'ended' })
-    expect(await upstream.isGrantLive('user-2')).toBe(false)
+    expect(await upstream.checkGrant('user-2')).toBe('ended')
 
     expect(ended).toEqual(['user-1', 'user-2'])
     expect(logCodes()).toEqual(['AUTH_OIDC_GRANT_ENDED', 'AUTH_OIDC_GRANT_ENDED'])
@@ -349,7 +349,7 @@ describe('OIDC upstream tokens', () => {
       const logCodes = captureLogCodes()
       idp.respond.token = testCase.answer
 
-      expect(await run(upstream.isGrantLive('user-1'))).toBe(true)
+      expect(await run(upstream.checkGrant('user-1'))).toBe('live')
 
       expect(ended).toEqual([])
       expect(accounts.get('account-1')).toEqual(before)
@@ -429,11 +429,49 @@ describe('OIDC upstream tokens', () => {
     idp.respond.token = () => json({ error: 'invalid_client' }, 401)
 
     expect(await upstream.accessToken('user-1')).toEqual({ kind: 'unavailable' })
-    expect(await upstream.isGrantLive('user-1')).toBe(true)
+    expect(await upstream.checkGrant('user-1')).toBe('live')
 
     expect(ended).toEqual([])
     expect(accounts.get('account-1')).toEqual(before)
     expect(logCodes()).toEqual(['AUTH_OIDC_CLIENT_REJECTED'])
+  })
+
+  it.each([
+    { expiredFor: 59 * 60_000, state: 'live', logs: [] },
+    { expiredFor: 61 * 60_000, state: 'unchecked', logs: ['AUTH_OIDC_GRANT_UNCHECKED'] },
+  ])(
+    'checkGrant trusts an unanswered IdP only for an hour after expiry ($state)',
+    async ({ expiredFor, state, logs }) => {
+      const { upstream, accounts, idp, ended, signIn } = await setup()
+      const before = await signIn({ accessTokenExpiresAt: new Date(NOW - expiredFor) })
+      const logCodes = captureLogCodes()
+      idp.respond.token = () => json({ error: 'invalid_client' }, 401)
+
+      expect(await upstream.checkGrant('user-1')).toBe(state)
+
+      // Refused, not ended: the sessions and tokens stay for when the IdP answers again.
+      expect(ended).toEqual([])
+      expect(accounts.get('account-1')).toEqual(before)
+      expect(logCodes()).toEqual(['AUTH_OIDC_CLIENT_REJECTED', ...logs])
+    },
+  )
+
+  it('stores a long-lived access token with at most 15 minutes left, so the IdP is asked again', async () => {
+    const { upstream, accounts, idp, signIn } = await setup()
+    await signIn()
+    idp.respond.token = () =>
+      json({
+        access_token: 'eight-hours',
+        refresh_token: 'rotated',
+        token_type: 'Bearer',
+        expires_in: 8 * 3600,
+      })
+
+    expect(await upstream.accessToken('user-1')).toMatchObject({
+      kind: 'fresh',
+      expiresAt: NOW + 15 * 60_000,
+    })
+    expect(accounts.get('account-1')?.accessTokenExpiresAt).toEqual(new Date(NOW + 15 * 60_000))
   })
 
   it('refuses a refreshed id_token for another subject', async () => {
@@ -488,33 +526,33 @@ describe('OIDC upstream tokens', () => {
     expect(logCodes()).toEqual(['AUTH_OIDC_ACCOUNT_CONFLICT'])
   })
 
-  it('isGrantLive skips the IdP while the token has more than 60 s left', async () => {
+  it('checkGrant skips the IdP while the token has more than 60 s left', async () => {
     const { upstream, signIn, tokenRequests } = await setup()
     await signIn({ accessTokenExpiresAt: new Date('2026-10-21T10:01:01.000Z') })
 
-    expect(await upstream.isGrantLive('user-1')).toBe(true)
+    expect(await upstream.checkGrant('user-1')).toBe('live')
     expect(tokenRequests()).toBe(0)
 
     vi.setSystemTime(NOW + 2_000)
-    expect(await upstream.isGrantLive('user-1')).toBe(true)
+    expect(await upstream.checkGrant('user-1')).toBe('live')
     expect(tokenRequests()).toBe(1)
   })
 
-  it('isGrantLive does not wait for a busy lease', async () => {
+  it('checkGrant does not wait for a busy lease', async () => {
     const { upstream, leases, idp, signIn } = await setup()
     await signIn()
     leases.set(LEASE_KEY, NOW + 30_000)
 
     // No fake time passes: a caller that polls for the lease holder never settles here.
-    const live = track(upstream.isGrantLive('user-1'))
+    const live = track(upstream.checkGrant('user-1'))
     await realTurns()
 
     expect(live.settled).toBe(true)
-    expect(await live.promise).toBe(true)
+    expect(await live.promise).toBe('live')
     expect(idp.requests).toEqual([])
   })
 
-  it('isGrantLive fails open when the lease store throws', async () => {
+  it('checkGrant fails open when the lease store throws', async () => {
     const { deps, signIn } = await setup()
     await signIn()
     const logCodes = captureLogCodes()
@@ -525,7 +563,7 @@ describe('OIDC upstream tokens', () => {
       },
     })
 
-    expect(await upstream.isGrantLive('user-1')).toBe(true)
+    expect(await upstream.checkGrant('user-1')).toBe('live')
     expect(logCodes()).toEqual(['AUTH_OIDC_REFRESH_FAILED:liveness'])
   })
 

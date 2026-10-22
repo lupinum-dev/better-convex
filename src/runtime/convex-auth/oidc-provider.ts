@@ -5,6 +5,7 @@
  * per-isolate cache of the client. Profile fields come only from the verified
  * ID token, never from the userinfo endpoint.
  */
+import { getCurrentAuthContext } from '@better-auth/core/context'
 import { APIError } from 'better-auth/api'
 import { createAuthorizationURL, type OAuthProvider } from 'better-auth/oauth2'
 import type { JWTPayload } from 'jose'
@@ -17,12 +18,35 @@ import { OIDC_PROVIDER_ID } from './oidc-options'
 /** The verified ID-token claims that `getUserInfo` returns as `data`. */
 export type OidcIdTokenClaims = JWTPayload & { readonly sub: string }
 
-// Fixed: the client's `scopes` never reach the IdP.
-const OIDC_SCOPES = ['openid', 'email', 'profile']
 const ID_TOKEN_CLAIMS = ['iss', 'sub', 'aud', 'exp', 'iat', 'nonce']
 const MAX_SUBJECT_LENGTH = 255
 
 const ownedProviders = new WeakSet<object>()
+
+// The verified claims of this request's sign-in, for `oidc.onSignIn` in the session hook.
+// Request-local: keyed by the endpoint context, which ends with the request.
+const signInClaims = new WeakMap<object, OidcIdTokenClaims>()
+
+async function rememberSignInClaims(claims: OidcIdTokenClaims): Promise<void> {
+  try {
+    signInClaims.set(await getCurrentAuthContext(), claims)
+  } catch {
+    // No endpoint context (a direct server call): there is no session to create either.
+  }
+}
+
+/** The claims `getUserInfo` verified in this request, or `undefined`. */
+export function signInClaimsFor(context: object): OidcIdTokenClaims | undefined {
+  return signInClaims.get(context)
+}
+
+/**
+ * Microsoft Entra ID sends no `email_verified`; its optional `xms_edov` claim says the
+ * email domain's owner verified the address.
+ */
+function emailVerified(claims: JWTPayload): boolean {
+  return claims.email_verified === true || claims.xms_edov === true
+}
 
 function oidcCode(error: unknown): string {
   return error instanceof OidcError ? error.code : 'AUTH_OIDC_TRANSPORT'
@@ -64,7 +88,7 @@ export function createOidcProvider(client: OidcClient): OAuthProvider<OidcIdToke
     requiresIdTokenNonce: true,
     options,
     accountSubject: async ({ profile }) => client.accountKey(profile.sub),
-    // Ignores the client's `scopes`, `loginHint`, `display` and `additionalParams`.
+    // Only the configured scopes: ignores the client's `scopes`, `loginHint`, `display` and `additionalParams`.
     createAuthorizationURL: async (data) => {
       if (!data.codeVerifier || !data.idTokenNonce) {
         throw new OidcError('AUTH_OIDC_DISCOVERY_INVALID', 'request')
@@ -86,7 +110,7 @@ export function createOidcProvider(client: OidcClient): OAuthProvider<OidcIdToke
         state: data.state,
         codeVerifier: data.codeVerifier,
         redirectURI: data.redirectURI,
-        scopes: OIDC_SCOPES,
+        scopes: [...client.config.scopes],
         nonce: data.idTokenNonce,
       })
     },
@@ -137,12 +161,16 @@ export function createOidcProvider(client: OidcClient): OAuthProvider<OidcIdToke
       ) {
         return reject('subject')
       }
+      const verifiedClaims: OidcIdTokenClaims = Object.freeze(
+        structuredClone({ ...claims, sub: claims.sub }),
+      )
+      await rememberSignInClaims(verifiedClaims)
       // Only these four keys, so no ID-token claim reaches an additional user field.
       return {
         user: {
           email:
             typeof claims.email === 'string' && claims.email.length > 0 ? claims.email : undefined,
-          emailVerified: claims.email_verified === true,
+          emailVerified: emailVerified(claims),
           name: displayName(claims),
           image: httpsUrlOrUndefined(claims.picture),
         },

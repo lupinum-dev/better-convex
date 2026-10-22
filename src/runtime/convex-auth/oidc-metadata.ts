@@ -25,7 +25,7 @@ import {
 
 import { logOidcFailure } from './diagnostics'
 import { OIDC_MAX_RESPONSE_BYTES, OidcError, idpFetch } from './oidc-fetch'
-import { isAllowedIdpUrl, type ResolvedOidcConfig } from './oidc-options'
+import { isAllowedIdpUrl, type OidcClientConfig } from './oidc-options'
 
 export const OIDC_ID_TOKEN_MAX_AGE_SECONDS = 600
 
@@ -99,7 +99,7 @@ export type OidcTokenResult =
   | { readonly ok: false; readonly status: number; readonly error: string | null }
 
 export interface OidcClient {
-  readonly config: ResolvedOidcConfig
+  readonly config: OidcClientConfig
   metadata(deadline: number): Promise<OidcMetadata>
   verifyJwt(token: string, check: OidcJwtCheck, deadline: number): Promise<OidcJwtResult>
   requestTokens(grant: OidcGrant, deadline: number): Promise<OidcTokenResult>
@@ -175,7 +175,7 @@ function logIssuerMismatch(expected: string, received: unknown): void {
   })
 }
 
-function parseDiscovery(config: ResolvedOidcConfig, document: Record<string, unknown>) {
+function parseDiscovery(config: OidcClientConfig, document: Record<string, unknown>) {
   if (document.issuer !== config.issuer) logIssuerMismatch(config.issuer, document.issuer)
   if (document.issuer !== config.issuer) throw new OidcError('AUTH_OIDC_ISSUER_MISMATCH')
   const endpoint = (field: string): string => {
@@ -232,7 +232,7 @@ function discoveryUrl(issuer: string): string {
     : `${issuer}/.well-known/openid-configuration`
 }
 
-async function fetchDiscovery(config: ResolvedOidcConfig, deadline: number) {
+async function fetchDiscovery(config: OidcClientConfig, deadline: number) {
   let response: Awaited<ReturnType<typeof idpFetch>>
   try {
     response = await idpFetch(
@@ -250,7 +250,7 @@ async function fetchDiscovery(config: ResolvedOidcConfig, deadline: number) {
   return parseDiscovery(config, response.json)
 }
 
-async function loadMetadata(config: ResolvedOidcConfig, deadline: number): Promise<OidcMetadata> {
+async function loadMetadata(config: OidcClientConfig, deadline: number): Promise<OidcMetadata> {
   const cached = discoveryCache.get(config.issuer)
   if (cached && Date.now() < cached.expiresAt) return cached.promise
   const state = issuerState(config.issuer)
@@ -458,6 +458,20 @@ async function verifyJwt(
   return { ok: true, payload, header: result.protectedHeader }
 }
 
+/**
+ * The liveness check asks the IdP when the stored access token is about to expire. With a
+ * refresh token, the stored expiry is capped, so a long access-token lifetime at the IdP
+ * cannot stretch the time between two checks.
+ */
+const OIDC_LIVENESS_INTERVAL_MS = 15 * 60_000
+
+function capForLiveness(tokens: OAuth2Tokens, refreshable: boolean): OAuth2Tokens {
+  const expiresAt = tokens.accessTokenExpiresAt
+  const cap = Date.now() + OIDC_LIVENESS_INTERVAL_MS
+  if (!refreshable || !expiresAt || expiresAt.getTime() <= cap) return tokens
+  return { ...tokens, accessTokenExpiresAt: new Date(cap) }
+}
+
 function acceptedTokens(json: Record<string, unknown> | null): OAuth2Tokens {
   const valid =
     json !== null &&
@@ -513,7 +527,11 @@ async function requestTokens(
     const error = response.json?.error
     return { ok: false, status: response.status, error: typeof error === 'string' ? error : null }
   }
-  return { ok: true, tokens: acceptedTokens(response.json) }
+  const tokens = acceptedTokens(response.json)
+  return {
+    ok: true,
+    tokens: capForLiveness(tokens, grant.type === 'refresh_token' || !!tokens.refreshToken),
+  }
 }
 
 async function computeIssuerTag(issuer: string): Promise<string> {
@@ -523,7 +541,7 @@ async function computeIssuerTag(issuer: string): Promise<string> {
   return btoa(binary).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '').slice(0, 16)
 }
 
-function createOidcClient(config: ResolvedOidcConfig): OidcClient {
+function createOidcClient(config: OidcClientConfig): OidcClient {
   let issuerTag: Promise<string> | undefined
   const client: OidcClient = Object.freeze({
     config,
@@ -541,8 +559,16 @@ function createOidcClient(config: ResolvedOidcConfig): OidcClient {
 }
 
 /** One client per issuer, client id and secret per isolate, so the caches survive auth constructions. */
-export function getOidcClient(config: ResolvedOidcConfig): OidcClient {
-  const key = JSON.stringify([config.issuer, config.clientId, config.clientSecret])
+export function getOidcClient(input: OidcClientConfig): OidcClient {
+  // Only the values that identify the client: an `onSignIn` function never reaches the cache.
+  const config: OidcClientConfig = Object.freeze({
+    issuer: input.issuer,
+    clientId: input.clientId,
+    clientSecret: input.clientSecret,
+    scopes: input.scopes,
+    loopbackHttp: input.loopbackHttp,
+  })
+  const key = JSON.stringify([config.issuer, config.clientId, config.clientSecret, config.scopes])
   let client = clients.get(key)
   if (!client) {
     client = createOidcClient(config)

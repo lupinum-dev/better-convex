@@ -2,7 +2,7 @@
  * The one owner of the upstream `oidc` tokens: refresh with a lease across
  * isolates, a compare-and-swap write, and `invalid_grant` as the only signal
  * that the IdP grant ended. `auth.getOidcAccessToken(ctx)` and the liveness
- * check at Convex token mint both use it.
+ * check before the app issues a Convex or MCP token both use it.
  */
 import type { OAuth2Tokens } from 'better-auth/oauth2'
 
@@ -17,6 +17,12 @@ import {
 const OIDC_REFRESH_LEASE_SECONDS = 30
 /** One margin for the helper and the mint. */
 const OIDC_REFRESH_MARGIN_MS = 60_000
+/**
+ * How long after the stored access token expired the app keeps trusting a grant it could
+ * not check (IdP down, client rejected, unreadable token). After that the mint and MCP
+ * token requests are refused until the IdP answers again; no session is deleted.
+ */
+const OIDC_UNCHECKED_GRACE_MS = 60 * 60_000
 const OIDC_BUSY_POLL_INTERVAL_MS = 500
 /** A waiter outlasts the lease holder's own deadline by this much. */
 const BUSY_WAIT_GRACE_MS = 1_000
@@ -75,11 +81,21 @@ export type OidcRefreshOutcome =
   | { readonly kind: 'no-account' }
   | { readonly kind: 'no-refresh-token' }
 
+/**
+ * `live`: the IdP confirmed the grant recently, or the user has no refresh token to check.
+ * `ended`: the IdP refused the grant; the sessions have ended.
+ * `unchecked`: the IdP could not be asked for longer than the grace time.
+ */
+export type OidcGrantState = 'live' | 'ended' | 'unchecked'
+
 export interface OidcUpstream {
   /** The helper path: waits while another call holds the refresh lease. */
   accessToken(userId: string): Promise<OidcRefreshOutcome>
-  /** The mint path: `false` only when the IdP refused the grant now. Never waits, fails open. */
-  isGrantLive(userId: string): Promise<boolean>
+  /**
+   * Before the app issues a credential (Convex token, MCP access token). Never waits for
+   * another refresh; an IdP failure counts as `live` until the grace time is over.
+   */
+  checkGrant(userId: string): Promise<OidcGrantState>
 }
 
 type FreshAccount = OidcAccountRecord & {
@@ -112,6 +128,11 @@ function conflict(): OidcRefreshOutcome {
   return UNAVAILABLE
 }
 
+function uncheckedTooLong(account: OidcAccountRecord): boolean {
+  const expiresAt = account.accessTokenExpiresAt
+  return expiresAt !== null && Date.now() - expiresAt.getTime() > OIDC_UNCHECKED_GRACE_MS
+}
+
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
@@ -135,7 +156,7 @@ export function createOidcUpstream(deps: OidcUpstreamDeps): OidcUpstream {
     if (latest === 'conflict' || latest?.refreshToken !== current.refreshToken)
       return { kind: 'busy' }
     await deps.endGrant(current.userId)
-    logOidcFailure('AUTH_OIDC_GRANT_ENDED')
+    logOidcFailure('AUTH_OIDC_GRANT_ENDED', { userId: current.userId })
     return { kind: 'ended' }
   }
 
@@ -258,21 +279,35 @@ export function createOidcUpstream(deps: OidcUpstreamDeps): OidcUpstream {
       return unavailable('busy')
     },
 
-    async isGrantLive(userId) {
+    async checkGrant(userId) {
+      let account: OidcAccountRecord | null | 'conflict'
       try {
-        const account = await deps.findAccountForUser(userId)
-        if (account === null) return true
-        if (account === 'conflict') {
-          conflict()
-          return true
-        }
-        if (account.refreshToken === null || isFresh(account)) return true
-        return (await refresh(account, oidcDeadline())).kind !== 'ended'
+        account = await deps.findAccountForUser(userId)
       } catch (error) {
-        // Fail open: an IdP or store failure must not sign anyone out.
-        logOidcFailure('AUTH_OIDC_REFRESH_FAILED:liveness', { cause: error })
-        return true
+        // The store failed: the credential request fails on its own, nothing to decide here.
+        logOidcFailure('AUTH_OIDC_REFRESH_FAILED:liveness', { cause: error, userId })
+        return 'live'
       }
+      if (account === null) return 'live'
+      if (account === 'conflict') {
+        conflict()
+        return 'live'
+      }
+      if (account.refreshToken === null || isFresh(account)) return 'live'
+      let outcome: OidcRefreshOutcome
+      try {
+        outcome = await refresh(account, oidcDeadline())
+      } catch (error) {
+        logOidcFailure('AUTH_OIDC_REFRESH_FAILED:liveness', { cause: error, userId })
+        outcome = UNAVAILABLE
+      }
+      if (outcome.kind === 'ended') return 'ended'
+      // An outage never ends sessions, but it may not switch the check off for good.
+      if (outcome.kind === 'unavailable' && uncheckedTooLong(account)) {
+        logOidcFailure('AUTH_OIDC_GRANT_UNCHECKED', { userId })
+        return 'unchecked'
+      }
+      return 'live'
     },
   }
 }

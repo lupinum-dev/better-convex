@@ -2,6 +2,8 @@ import { getCurrentAuthContext } from '@better-auth/core/context'
 import { APIError } from 'better-auth/api'
 import { decodeBasicCredentials } from 'better-auth/oauth2'
 
+import { readOidcGrantCheck } from './oidc-plugin'
+
 const rotatedParents = new WeakMap<object, string>()
 const presentedGrants = new WeakMap<object, string>()
 
@@ -83,6 +85,23 @@ export async function oauthGrantClaim(info: unknown): Promise<{ bcn_grant_id: st
   )
     throw new Error('AUTH_OAUTH_GRANT_INVALID')
   const context = await getCurrentAuthContext()
+  // Every OAuth access token passes here (code exchange and refresh), so the IdP check of
+  // the `oidc` option covers MCP clients as it covers the Convex token mint.
+  const grant = await readOidcGrantCheck(context.context)?.(info.user.id)
+  if (grant === 'ended')
+    throw new APIError('BAD_REQUEST', {
+      error: 'invalid_grant',
+      error_description: 'The identity provider ended this grant.',
+    })
+  if (grant === 'unchecked')
+    throw new APIError(
+      'SERVICE_UNAVAILABLE',
+      {
+        error: 'temporarily_unavailable',
+        error_description: 'The identity provider is not available.',
+      },
+      { 'Retry-After': '30' },
+    )
   const clientId = await oauthRequestClientId()
   if (!clientId) throw new Error('AUTH_OAUTH_GRANT_INVALID')
   const consent = await context.context.adapter.findOne<{ id: string }>({

@@ -1,4 +1,3 @@
-import type { AuthContext } from '@better-auth/core'
 import { getCurrentAuthContext } from '@better-auth/core/context'
 import { oauthAuthorizationServerMetadata } from '@better-auth/oauth-provider'
 import type { BetterAuthPlugin, Session, User } from 'better-auth'
@@ -47,6 +46,7 @@ import {
   type OAuthClientResourceRecord,
   type OAuthResourceRecord,
 } from './oauth-security'
+import { readOidcGrantCheck } from './oidc-plugin'
 import { normalizeAuthOrigin } from './origin'
 import { isConvexAuthRateLimitStorage } from './rate-limit-storage'
 
@@ -73,15 +73,6 @@ export interface ConvexAuthOptions {
    * `baseURL`, which is the same for a single-origin deployment.
    */
   authIssuer?: string
-  /**
-   * Runs at `/convex/token` after the session and user are re-read. `false`
-   * refuses the mint with 401. The `oidc` option uses it for the IdP liveness check.
-   */
-  readonly beforeMint?: (input: {
-    readonly context: AuthContext
-    readonly session: Session
-    readonly user: User
-  }) => Promise<boolean>
 }
 
 /** Serialized size bound for all non-registered session claims. */
@@ -968,15 +959,18 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
             where: [{ field: 'id', value: persistedSession.userId }],
           })
           if (!persistedUser || persistedUser.id !== authenticated.user.id) unauthorized()
-          if (
-            options.beforeMint &&
-            !(await options.beforeMint({
-              context: ctx.context,
-              session: persistedSession,
-              user: persistedUser,
-            }))
-          )
-            unauthorized()
+          // The `oidc` option's IdP check. 401 ends the client's session; 503 keeps it for a retry.
+          const grant = await readOidcGrantCheck(ctx.context)?.(persistedUser.id)
+          if (grant === 'ended')
+            throw new APIError('UNAUTHORIZED', {
+              code: 'OIDC_SIGN_IN_REQUIRED',
+              message: INVALID_SESSION_MESSAGE,
+            })
+          if (grant === 'unchecked')
+            throw new APIError('SERVICE_UNAVAILABLE', {
+              code: 'OIDC_UNAVAILABLE',
+              message: 'OIDC_UNAVAILABLE',
+            })
 
           const definedClaims = await options.sessionJwt.definePayload?.({
             session: persistedSession,

@@ -101,10 +101,17 @@ function issuerForLog(value: string | undefined): string | undefined {
  */
 export function logOidcFailure(
   code: string,
-  details?: { readonly cause?: unknown; readonly expected?: string; readonly received?: string },
+  details?: {
+    readonly cause?: unknown
+    readonly expected?: string
+    readonly received?: string
+    /** The Better Auth user id, so an operator can tell whose access changed. */
+    readonly userId?: string
+  },
 ): void {
   console.error('[better-convex] AUTH_OIDC_FAILURE', {
     code,
+    userId: details?.userId,
     cause: details?.cause === undefined ? undefined : sanitizeAuthCause(details.cause),
     expected: issuerForLog(details?.expected),
     received: issuerForLog(details?.received),
