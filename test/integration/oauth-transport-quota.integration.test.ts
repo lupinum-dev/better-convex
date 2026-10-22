@@ -113,7 +113,7 @@ describe('OAuth transport quotas on the MCP starter', () => {
   })
 
   const send = async (profile: QuotaProfile, transport: 'nuxt' | 'direct', ip: string) =>
-    transport === 'nuxt'
+    (transport === 'nuxt'
       ? quotaRequest(profile, fixture.origin, fixture.origin, { [TRUSTED_IP_HEADER]: ip })
       : quotaRequest(
           profile,
@@ -121,6 +121,12 @@ describe('OAuth transport quotas on the MCP starter', () => {
           fixture.origin,
           await fixture.signedClientIpHeaders(ip),
         )
+    ).catch((error: unknown) => {
+      // Name the transport, so a hung request shows which hop lost it.
+      throw new Error(`OAUTH_QUOTA_REQUEST_FAILED ${profile.name} via ${transport}`, {
+        cause: error,
+      })
+    })
 
   it('serves no disabled OAuth route on either transport', async () => {
     for (const baseUrl of [fixture.origin, fixture.convexSiteUrl]) {
@@ -187,29 +193,30 @@ describe('OAuth transport quotas on the MCP starter', () => {
           'OAUTH_QUOTA_LIMIT_TOO_LOW',
         ).toEqual(guarded(profile))
       }
-      // Race far past the last slot from both transports at once: both are throttled,
-      // and together they admit the last slot plus at most what drained meanwhile.
-      const transports = Array.from({ length: 2 * profile.limit }, (_, index) =>
+      // Race past the last slot from both transports at once, in small bursts until
+      // both are throttled. Across all bursts they admit the last slot plus at most
+      // what drained meanwhile; a quota per transport would admit about one more limit.
+      // A burst of 2 * limit kept a loaded backend busy past the Nuxt proxy's 8 s
+      // deadline (502); small bursts stay well below it.
+      const transports = Array.from({ length: 10 }, (_, index) =>
         index % 2 === 0 ? ('nuxt' as const) : ('direct' as const),
       )
-      const boundary = await Promise.all(
-        transports.map((transport) => send(profile, transport, ip)),
-      )
-      const admitted = boundary.filter(
-        (result) => result.status === profile.guardStatus && result.retryAfter === null,
-      )
-      expect(admitted.length, 'OAUTH_QUOTA_BOUNDARY_EXCEEDED').toBeGreaterThanOrEqual(1)
-      expect(admitted.length, 'OAUTH_QUOTA_BOUNDARY_EXCEEDED').toBeLessThanOrEqual(1 + drained())
-      expect(
-        boundary.filter((result) => !admitted.includes(result) && !isThrottled(result)),
-        'OAUTH_QUOTA_BOUNDARY_RESULT_INVALID',
-      ).toEqual([])
-      for (const transport of ['nuxt', 'direct'] as const) {
-        expect(
-          boundary.some((result, index) => transports[index] === transport && isThrottled(result)),
-          'OAUTH_QUOTA_TRANSPORT_BYPASS',
-        ).toBe(true)
+      let admitted = 0
+      const throttled = new Set<'nuxt' | 'direct'>()
+      for (let burst = 0; burst < 6 && throttled.size < 2; burst += 1) {
+        const results = await Promise.all(
+          transports.map((transport) => send(profile, transport, ip)),
+        )
+        for (const [index, result] of results.entries()) {
+          if (isThrottled(result)) throttled.add(transports[index]!)
+          else if (result.status === profile.guardStatus && result.retryAfter === null)
+            admitted += 1
+          else expect.fail(`OAUTH_QUOTA_BOUNDARY_RESULT_INVALID ${JSON.stringify(result)}`)
+        }
+        expect(admitted, 'OAUTH_QUOTA_BOUNDARY_EXCEEDED').toBeLessThanOrEqual(1 + drained())
       }
+      expect(admitted, 'OAUTH_QUOTA_BOUNDARY_EXCEEDED').toBeGreaterThanOrEqual(1)
+      expect([...throttled].sort(), 'OAUTH_QUOTA_TRANSPORT_BYPASS').toEqual(['direct', 'nuxt'])
       for (const transport of ['nuxt', 'direct'] as const) {
         expect(
           await send(profile, transport, secondaryIp[profile.name]),
