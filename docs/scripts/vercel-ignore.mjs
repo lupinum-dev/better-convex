@@ -15,22 +15,21 @@ const previousSha = process.env.VERCEL_GIT_PREVIOUS_SHA
 
 // Production: compare with the last deployed commit on main.
 // Preview: compare with main, so the first push of a branch is judged too.
-let base
+let range
 if (branch === 'main') {
   if (!previousSha) process.exit(1)
   if (!hasCommit(previousSha)) git('fetch', '--no-tags', '--depth=1', 'origin', previousSha)
-  base = previousSha
+  if (!hasCommit(previousSha)) process.exit(1)
+  range = [previousSha, 'HEAD']
 } else {
   git('fetch', '--no-tags', '--depth=200', 'origin', '+refs/heads/main:refs/remotes/origin/main')
-  base = 'origin/main'
   // Three-dot diff (only the branch's own changes) needs the fork point in the clone.
   git('fetch', '--no-tags', '--deepen=200', 'origin', branch)
-  if (git('merge-base', 'origin/main', 'HEAD') === 0) base = 'origin/main...HEAD'
+  // Without the fork point, comparing the two tips could hide a docs change, so build.
+  if (git('merge-base', 'origin/main', 'HEAD') !== 0) process.exit(1)
+  range = ['origin/main...HEAD']
 }
 
-if (!hasCommit(base.split('...')[0])) process.exit(1)
-
-const range = base.includes('...') ? [base] : [base, 'HEAD']
 const status = git('diff', '--quiet', ...range, '--', 'docs')
 // git diff --quiet: 0 = no changes (skip), 1 = changes (build), other = error (build).
 process.exit(status === 0 ? 0 : 1)
