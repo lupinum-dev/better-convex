@@ -70,6 +70,10 @@ const startHere = [
     ],
   ],
   [
+    'Sign in through a company identity provider (Keycloak, OIDC)',
+    ['/docs/build/authentication/company-sign-in'],
+  ],
+  [
     'Query with changing inputs',
     ['/docs/build/queries/reactive-arguments', '/docs/build/queries/loading-and-stale-data'],
   ],
@@ -100,6 +104,7 @@ const rules = [
   'Convex functions decide what a user may read or change. Check the user and the resource inside every protected query and mutation. The `auth` option of a composable and route middleware only control what the page shows.',
   'Every public Convex function is callable by anyone. In each one that reads or changes protected data, check the caller and that the caller owns the document or is a member of its team or organization. This includes functions that create upload URLs, attach files, and return file URLs. A function that is public on purpose (for example a shared demo list) needs no owner check, but say so in a comment.',
   "Never decide access from an email address that the person has not proven. Password sign-in is off unless you pass `emailAndPassword`. With it, a stranger can still start a sign-up for someone else's address. For access by email (invitations, allow lists, domains), sign people in with email codes (`emailOTP`) and check `user.emailVerified`.",
+  'With `oidc`, the IdP access token from `auth.getOidcAccessToken(ctx)` stays inside the action: never return it, log it, pass it to a scheduled function, or give it to an MCP client. Copy IdP roles or groups in `oidc.onSignIn` through an internal mutation, never from client arguments.',
   'A storage ID from the client is only a claim. Before you use it, check that the file exists, meets your size and type rules, and is not attached to another record. Resolve file URLs from a document the caller owns, never from a bare storage ID.',
   'A server route or page that reads auth must not be cached. Keep `/api/**` and every page with user data out of ISR and CDN caching.',
   'Destructure the composables: `const { mutate: createTodo, pending } = useConvexMutation(api.todos.create)`. The 1.0 betas returned a callable handle; that API no longer exists.',

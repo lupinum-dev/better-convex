@@ -1,0 +1,32 @@
+# Local Keycloak for test/integration/oidc-keycloak.integration.test.ts. Test-only credentials; never expose this.
+#   docker compose -f test/fixtures/keycloak/docker-compose.yml up -d --wait
+#   BCN_TEST_KEYCLOAK_URL=http://127.0.0.1:18080 pnpm exec vitest run --project=integration test/integration/oidc-keycloak.integration.test.ts
+#   docker compose -f test/fixtures/keycloak/docker-compose.yml down -v
+# The image is pinned by digest. To update it, read the new digest with
+# `docker buildx imagetools inspect quay.io/keycloak/keycloak:<tag>`.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
+    command: ['start-dev', '--import-realm', '--health-enabled=true']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: '8080'
+      # Fixes the issuer, so it does not depend on the request host.
+      KC_HOSTNAME: http://127.0.0.1:18080
+    # Keycloak sends back-channel logout to the test's listener on the host.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '127.0.0.1:18080:8080'
+    volumes:
+      - ./realm.json:/opt/keycloak/data/import/realm.json:ro
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && grep -q "UP" <&3',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30

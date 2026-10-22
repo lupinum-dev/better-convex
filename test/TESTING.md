@@ -58,6 +58,23 @@ pnpm exec vitest run --project=convex
 pnpm exec vitest run --project=integration test/integration/oauth-code.integration.test.ts
 ```
 
+### Keycloak suite
+
+`test/integration/oidc-keycloak.integration.test.ts` is the one suite that runs against a real Keycloak 26.4
+(pinned by digest in `test/fixtures/keycloak/docker-compose.yml`). It signs in, runs back-channel logout (including
+a replayed logout token), signs out, and refreshes upstream tokens through the built Nuxt auth proxy and the real
+local Convex backend (fixture app `test/fixtures/oidc-keycloak`). It needs Docker and skips without
+`BCN_TEST_KEYCLOAK_URL`. It adds its own Keycloak client for its random origin and removes it afterward. A relay on
+a random port passes Keycloak's back-channel call to Nuxt. The realm and client use test-only credentials.
+
+```bash
+docker compose -f test/fixtures/keycloak/docker-compose.yml up -d --wait
+BCN_TEST_KEYCLOAK_URL=http://127.0.0.1:18080 pnpm exec vitest run --project=integration test/integration/oidc-keycloak.integration.test.ts
+docker compose -f test/fixtures/keycloak/docker-compose.yml down -v
+```
+
+The CI `integration` job runs it with `pnpm test:integration`.
+
 ## The pinned local backend
 
 E2E and integration suites run against one reviewed Convex local backend
@@ -240,6 +257,20 @@ both checks. See `test/convex/auth-site-origins.test.ts`.
 4. Keep both tests.
 5. For a security guard, add a row to `test/mutants/mutants.ts` whose `kills`
    names the test, and prove it with `pnpm test:mutants --only <id>`.
+
+## Better Auth upgrade guard
+
+`test/unit/better-auth-door-inventory.test.ts` fails after a Better Auth upgrade that adds a way to
+create a session, link or delete an account, or change a password or email. It pins the installed
+versions, the reachable endpoint paths (all `auth.api` paths minus `disabledPaths`, with every
+reviewed option on) and the count of door calls (`createSession(`, `deleteUser(`, `linkAccount(`
+and similar) per file in the `better-auth`, `@better-auth/core` and `@better-auth/oauth-provider`
+dist. It needs no Docker or network.
+
+When it fails: read the diff, classify each new route or call site (can it create a session,
+link/delete an account, change a password or email?), check the guards in
+`src/runtime/convex-auth/oidc-plugin.ts` and `disabledPaths`, then update the literals in the test.
+Never update the literals to make it pass without that review.
 
 ## Mutation check
 

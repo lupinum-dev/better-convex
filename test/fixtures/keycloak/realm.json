@@ -1,0 +1,63 @@
+{
+  "realm": "better-convex-test",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "clients": [
+    {
+      "clientId": "better-convex",
+      "name": "Better Convex test app",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "test-client-secret-not-for-production",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "frontchannelLogout": false,
+      "redirectUris": ["https://app.example.test/api/auth/callback/oidc"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://app.example.test/signed-out",
+        "backchannel.logout.url": "http://host.docker.internal:18081/api/auth/oidc/backchannel-logout",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false",
+        "use.refresh.tokens": "true",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "oidc.ciba.grant.enabled": "false"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"],
+      "optionalClientScopes": []
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.test",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Verified",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "alice-test-password", "temporary": false }]
+    },
+    {
+      "username": "bob",
+      "email": "bob@example.test",
+      "emailVerified": false,
+      "firstName": "Bob",
+      "lastName": "Unverified",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "bob-test-password", "temporary": false }]
+    }
+  ]
+}

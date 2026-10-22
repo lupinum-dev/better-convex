@@ -46,6 +46,7 @@ import {
   type OAuthClientResourceRecord,
   type OAuthResourceRecord,
 } from './oauth-security'
+import { readOidcGrantCheck } from './oidc-plugin'
 import { normalizeAuthOrigin } from './origin'
 import { isConvexAuthRateLimitStorage } from './rate-limit-storage'
 
@@ -958,6 +959,18 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
             where: [{ field: 'id', value: persistedSession.userId }],
           })
           if (!persistedUser || persistedUser.id !== authenticated.user.id) unauthorized()
+          // The `oidc` option's IdP check. 401 ends the client's session; 503 keeps it for a retry.
+          const grant = await readOidcGrantCheck(ctx.context)?.(persistedUser.id)
+          if (grant === 'ended')
+            throw new APIError('UNAUTHORIZED', {
+              code: 'OIDC_SIGN_IN_REQUIRED',
+              message: INVALID_SESSION_MESSAGE,
+            })
+          if (grant === 'unchecked')
+            throw new APIError('SERVICE_UNAVAILABLE', {
+              code: 'OIDC_UNAVAILABLE',
+              message: 'OIDC_UNAVAILABLE',
+            })
 
           const definedClaims = await options.sessionJwt.definePayload?.({
             session: persistedSession,

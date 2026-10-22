@@ -16,6 +16,12 @@ export type {
   CreateBetterConvexAuthOptions,
 } from './create-better-convex-auth'
 export type {
+  BetterConvexOidcAccessToken,
+  BetterConvexOidcClaims,
+  BetterConvexOidcOptions,
+  BetterConvexOidcSignIn,
+} from './oidc-options'
+export type {
   BetterConvexOAuthOperator,
   BetterConvexPublicOAuthClientInput,
 } from './oauth-operator'
