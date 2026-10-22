@@ -265,6 +265,20 @@ both checks. See `test/convex/auth-site-origins.test.ts`.
 5. For a security guard, add a row to `test/mutants/mutants.ts` whose `kills`
    names the test, and prove it with `pnpm test:mutants --only <id>`.
 
+## Better Auth upgrade guard
+
+`test/unit/better-auth-door-inventory.test.ts` fails after a Better Auth upgrade that adds a way to
+create a session, link or delete an account, or change a password or email. It pins the installed
+versions, the reachable endpoint paths (all `auth.api` paths minus `disabledPaths`, with every
+reviewed option on) and the count of door calls (`createSession(`, `deleteUser(`, `linkAccount(`
+and similar) per file in the `better-auth`, `@better-auth/core` and `@better-auth/oauth-provider`
+dist. It needs no Docker or network.
+
+When it fails: read the diff, classify each new route or call site (can it create a session,
+link/delete an account, change a password or email?), check the guards in
+`src/runtime/convex-auth/oidc-plugin.ts` and `disabledPaths`, then update the literals in the test.
+Never update the literals to make it pass without that review.
+
 ## Mutation check
 
 `test/mutants/mutants.ts` has one row per security guard: the file, a one-line
