@@ -811,7 +811,7 @@ export const mutants: Mutant[] = [
     id: 'S14-mcp-principal',
     guards: 'S14',
     file: 'packages/functions/src/functions.ts',
-    find: 'const { user: authUser } = await auth\n      .requireMcpPrincipal(\n        ctx,\n        caller.principal,\n        options.approved ? { allowExpiredToken: true } : {},\n      )',
+    find: 'const { user: authUser } = await auth\n      .requireMcpPrincipal(\n        ctx,\n        caller.principal,\n        options.approved || options.followUp ? { allowExpiredToken: true } : {},\n      )',
     replace:
       'const { user: authUser } = await Promise.resolve({ user: { id: caller.principal.userId } })',
     kills: [
