@@ -2,6 +2,7 @@
  * The one fetch path for every call to the OIDC identity provider: one
  * deadline per operation, no redirects, a response size limit, JSON only.
  */
+import { readStreamWithByteLimit } from '../shared/bounded-stream'
 
 export type OidcErrorCode =
   | 'AUTH_OIDC_TRANSPORT'
@@ -40,33 +41,17 @@ export function oidcDeadline(): number {
   return Date.now() + OIDC_DEADLINE_MS
 }
 
+/** Read a body as text. The shared reader stops at `maxBytes` and cancels the stream. */
 async function readCapped(
   stream: ReadableStream<Uint8Array> | null,
-  limits: { readonly maxBytes: number },
+  maxBytes: number,
 ): Promise<string> {
-  if (stream === null) return ''
-  const reader = stream.getReader()
-  const chunks: Uint8Array[] = []
-  let received = 0
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      received += value.byteLength
-      if (received > limits.maxBytes) throw new OidcError('AUTH_OIDC_TRANSPORT', 'too_large')
-      chunks.push(value)
-    }
-  } catch (error) {
-    reader.cancel().catch(() => {})
-    throw error
-  }
-  const bytes = new Uint8Array(received)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return new TextDecoder().decode(bytes)
+  const bytes = await readStreamWithByteLimit(
+    stream,
+    maxBytes,
+    () => new OidcError('AUTH_OIDC_TRANSPORT', 'too_large'),
+  )
+  return bytes === undefined ? '' : new TextDecoder().decode(bytes)
 }
 
 function declaredLength(headers: Headers): number | null {
@@ -121,7 +106,7 @@ async function send(
   }
   let text: string
   try {
-    text = await readCapped(response.body, limits)
+    text = await readCapped(response.body, limits.maxBytes)
   } catch (error) {
     if (error instanceof OidcError) throw error
     throw new OidcError('AUTH_OIDC_TRANSPORT', 'network')
@@ -174,7 +159,7 @@ export async function readBodyCapped(request: Request, maxBytes: number): Promis
   const length = declaredLength(request.headers)
   if (length !== null && length > maxBytes) return null
   try {
-    return await readCapped(request.body, { maxBytes })
+    return await readCapped(request.body, maxBytes)
   } catch (error) {
     if (error instanceof OidcError && error.detail === 'too_large') return null
     throw error
