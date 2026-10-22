@@ -17,6 +17,7 @@ import {
   frozen,
   guarded,
   markHousekeeping,
+  markTools,
   idsIn,
   inertMarkdown,
   isIdOf,
@@ -1386,7 +1387,9 @@ export function defineTools(
     await cancelRequests(lib(ctx), `mcp:${userId}:${clientId}`)
   }
 
-  return { functions, catalog, approvals, activity, disconnected, uploads }
+  return markTools({ functions, catalog, approvals, activity, disconnected, uploads }, [
+    ...operations.values(),
+  ])
 }
 
 /**

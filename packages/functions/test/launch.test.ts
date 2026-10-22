@@ -5,7 +5,12 @@ import {
   trusted,
   unchecked,
 } from '@lupinum/better-convex-functions'
-import { guarded, markHousekeeping } from '@lupinum/better-convex-functions/internal'
+import {
+  guarded,
+  markHousekeeping,
+  markTools,
+  OPERATION,
+} from '@lupinum/better-convex-functions/internal'
 import { launchProblems } from '@lupinum/better-convex-functions/test'
 import {
   cronJobs,
@@ -70,6 +75,8 @@ function build({
   cron = false,
   query = false,
   step = true,
+  tool = false,
+  catalog = true,
 }: {
   erasure?: Record<string, unknown> | null
   limit?: boolean
@@ -78,6 +85,8 @@ function build({
   cron?: boolean
   query?: boolean
   step?: boolean
+  tool?: boolean
+  catalog?: boolean
 } = {}) {
   const policy = definePolicy({
     actions: ['notes.add', 'contact.send', 'contact.read'],
@@ -123,6 +132,15 @@ function build({
       }),
     }),
   }
+  const addNote = fns.mutation({
+    action: 'notes.add',
+    args: {},
+    returns: v.null(),
+    tool: { name: 'add_note', description: 'Add a note.' },
+    handler: async () => null,
+  })
+  // What `export const tools = defineTools(fns, { notes }, ...)` exports, as the agents package marks it.
+  const tools = markTools({}, [(addNote as any)[OPERATION]])
   const job = () =>
     markHousekeeping(guarded(internalMutationGeneric({ args: {}, handler: async () => null })))
   const modules: Record<string, () => Promise<unknown>> = {
@@ -134,6 +152,8 @@ function build({
     ...(step &&
       erasure && { './erasure.ts': load({ eraseStep: (fns as any).erasure?.eraseStep }) }),
     ...(housekeeping && { './agents.ts': load({ housekeeping: job() }) }),
+    ...(tool && { './notes.ts': load({ add: addNote }) }),
+    ...(tool && catalog && { './tools.ts': load({ tools }) }),
   }
   const crons = cronJobs()
   if (cron)
@@ -248,7 +268,7 @@ test('check 4: a public mutation without a limit is named, with the limit to add
 // Catches: a launch check that passes for the wrong reason. Every row changes the valid app in one
 // place and must name exactly that problem, in these words; undoing the change must empty the list,
 // so a check that always complains, or never does, fails the table.
-const valid = { housekeeping: true, cron: true, query: true } as const
+const valid = { housekeeping: true, cron: true, query: true, tool: true } as const
 const { notes, teams, invites, shares, scores } = fullErasure
 test.each([
   [
@@ -312,6 +332,13 @@ test.each([
     { limit: false },
     [
       "./contact.ts:send is a public mutation (action contact.send) with no limit, so one visitor can fill your database. Add limits: { 'contact.send': { max: 60, every: 'minute', per: 'everyone' } } to definePolicy.",
+    ],
+  ],
+  [
+    'a tool in no catalog',
+    { catalog: false },
+    [
+      './notes.ts:add declares tool add_note, but no defineTools call includes its module, so agents never see the tool. Add the module to the second argument of defineTools, and add add_note to `export const { ... } = tools.functions`.',
     ],
   ],
 ] as const)(

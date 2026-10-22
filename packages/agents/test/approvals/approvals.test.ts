@@ -8,13 +8,14 @@ import {
   type DataModelFromSchemaDefinition,
   type GenericMutationCtx,
 } from 'convex/server'
-import type { GenericId } from 'convex/values'
+import { v, type GenericId } from 'convex/values'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { drain as drainSteps } from '../../../../test/helpers/drain'
 import { sweep } from '../../src/budget'
-import { auth, fns, policy } from './fns'
+import { auth, fns, mutation, policy } from './fns'
 import { api, modules, setup } from './harness'
+import * as ops from './ops'
 import schema from './schema'
 import { tools } from './tools'
 
@@ -1697,6 +1698,35 @@ test('launchProblems finds the housekeeping function this package builds', async
     makeFunctionReference<'mutation', any, any>('tools:housekeeping') as never,
   )
   expect(await housekeeping(scheduled)).toEqual([])
+})
+
+// Catches: a tool whose module is not passed to defineTools, left out of every catalog while
+// deploys and the door's export check pass (#284).
+test('launchProblems names a tool operation that no defineTools call includes', async () => {
+  const unlisted = (extra: Record<string, unknown>) =>
+    launchProblems({
+      modules: { ...modules, './extra.ts': async () => extra },
+      schema,
+      crons: cronJobs(),
+      fns,
+    }).then((found) => found.filter((problem) => problem.includes('defineTools')))
+  const tooled = (name: string) =>
+    mutation({
+      action: 'projects.rename',
+      args: {},
+      returns: v.null(),
+      tool: { name, description: 'Rename nothing.' },
+      handler: async () => null,
+    })
+  // Keep: an operation that tools.ts collects counts wherever it is exported from.
+  expect(await unlisted({ rename: ops.rename })).toEqual([])
+  expect(await unlisted({ rename: tooled('stray_rename') })).toEqual([
+    './extra.ts:rename declares tool stray_rename, but no defineTools call includes its module, so agents never see the tool. Add the module to the second argument of defineTools, and add stray_rename to `export const { ... } = tools.functions`.',
+  ])
+  // A tool name that the catalog has does not cover a second operation that uses it.
+  expect(await unlisted({ rename: tooled('rename_project') })).toEqual([
+    expect.stringContaining('./extra.ts:rename declares tool rename_project'),
+  ])
 })
 
 // Catches: an approved request on a limited action failing for good with RATE_LIMITED when the bucket is empty at approval time.

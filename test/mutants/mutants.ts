@@ -3174,6 +3174,39 @@ export const mutants: Mutant[] = [
     ],
   },
   {
+    id: 'S-F2-launch-tools',
+    guards: 'the launch check names a tool operation that no defineTools call collected',
+    file: 'packages/functions/src/test.ts',
+    find: '!op?.tool || collected.has(op) ||',
+    replace: '!op?.tool || true ||',
+    kills: [
+      `${F}/launch.test.ts > launch variant: a tool in no catalog is named, and undoing it clears the list`,
+      `${A}/approvals/approvals.test.ts > launchProblems names a tool operation that no defineTools call includes`,
+    ],
+  },
+  {
+    id: 'S-F2-launch-tool-identity',
+    guards: 'C16: a tool name in a catalog does not cover a second operation with that name',
+    file: 'packages/functions/src/test.ts',
+    find: 'collected.has(op)',
+    replace: '[...collected].some((other) => other.tool?.name === op.tool!.name)',
+    kills: [
+      `${A}/approvals/approvals.test.ts > launchProblems names a tool operation that no defineTools call includes`,
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S-F2-tools-marker',
+    guards: 'the defineTools result carries the operations the launch check looks for',
+    file: 'packages/agents/src/tools.ts',
+    find: 'return markTools({ functions,',
+    replace: 'return ((tools: object, _ops: unknown) => tools)({ functions,',
+    kills: [
+      `${A}/approvals/approvals.test.ts > launchProblems names a tool operation that no defineTools call includes`,
+    ],
+    projects: ['agents'],
+  },
+  {
     id: 'S-F2-step-marker',
     guards: 'the erasure step carries the marker the launch check looks for',
     file: 'packages/functions/src/guard.ts',
