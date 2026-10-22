@@ -1832,8 +1832,8 @@ export const mutants: Mutant[] = [
     id: 'consumer-content-live-approval',
     guards: 'S10',
     file: `${content}/policy.ts`,
-    find: "agents: { 'pages.editLive': 'approve' },",
-    replace: 'agents: {},',
+    find: "'pages.editLive': 'approve' },",
+    replace: "'pages.editLive': 'allow' },",
     kills: [
       `${content}/content.test.ts > an agent edits a draft at once; its edit of the live page waits for the owner's yes`,
     ],
