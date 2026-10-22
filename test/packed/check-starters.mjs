@@ -101,19 +101,25 @@ try {
     if (nuxt5) toNuxt5Manifest(manifest)
     writeFileSync(join(app, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
     copyFileSync(tarballs.vue, join(app, 'vue.tgz'))
-    const workspace =
-      "minimumReleaseAge: 1440\noverrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n"
-    writeFileSync(
-      join(app, 'pnpm-workspace.yaml'),
-      nuxt5 ? toNuxt5Workspace(workspace, ['nuxt']) : workspace,
-    )
+    // Keep the app's own settings (a starter's build approvals) and add the packed-release ones.
+    const workspacePath = join(app, 'pnpm-workspace.yaml')
+    const own = existsSync(workspacePath) ? readFileSync(workspacePath, 'utf8') : ''
+    const workspace = `${own}minimumReleaseAge: 1440\noverrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n`
+    writeFileSync(workspacePath, nuxt5 ? toNuxt5Workspace(workspace, ['nuxt']) : workspace)
 
     console.log(
       `\n=== ${path} with ${packed.nuxt.name}@${packed.nuxt.version}${nuxt5 ? ' on Nuxt 5' : ''} ===`,
     )
+    // A starter installs with build scripts on, as a user's copy does: pnpm 11 then fails on any
+    // dependency build its pnpm-workspace.yaml does not approve.
     run(
       'pnpm',
-      ['install', '--no-frozen-lockfile', '--ignore-scripts', '--strict-peer-dependencies'],
+      [
+        'install',
+        '--no-frozen-lockfile',
+        ...(starter ? [] : ['--ignore-scripts']),
+        '--strict-peer-dependencies',
+      ],
       app,
     )
     run('pnpm', ['run', 'typecheck'], app)
