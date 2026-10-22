@@ -130,6 +130,18 @@ test('an expired request blocks nothing, and housekeeping marks it expired', asy
   expect((await s.approvalRows()).map((row) => row.status)).toEqual(['expired', 'pending'])
 })
 
+// A forgotten agent rule let an agent change data with no person asked: a new write tool under an
+// existing scope ran at once. A write without a rule now waits for a person, and the catalog says so.
+test('a write tool without an agent rule waits for a person', async () => {
+  const s = await setup()
+  expect(tools.catalog.find((entry) => entry.name === 'retitle_project')?.approval).toBe('always')
+  const asked = await s.ask('retitle_project', { projectId: s.p[0], name: 'By agent' })
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'alpha' })
+
+  await s.ann.mutation(api.tools.approve, { approvalId: asked.approvalId })
+  expect(await s.t.run((ctx) => ctx.db.get(s.p[0]!))).toMatchObject({ name: 'By agent' })
+})
+
 // I5: a large result made the approval row too big; the write committed and the request said "failed".
 test('an approved request with a large result is approved, the result marked too large to keep', async () => {
   const s = await setup()

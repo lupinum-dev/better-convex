@@ -26,6 +26,7 @@ import {
   OPERATION,
   planOf,
   scopesFor,
+  statedAgentRule,
   storable,
   takeToken,
   toJsonSchema,
@@ -867,7 +868,7 @@ export function defineTools(
           `Tool ${op.tool.name}: its action ${op.action} is in no scope. Give it at least one scope in definePolicy.`,
         )
       }
-      const rule = (policy.agents as Record<string, unknown> | undefined)?.[op.action]
+      const rule = statedAgentRule(policy, op.action, op.kind !== 'query')
       return {
         name: op.tool.name,
         description: op.tool.description,
@@ -880,9 +881,9 @@ export function defineTools(
         approval:
           typeof rule === 'function'
             ? ('maybe' as const)
-            : rule === 'approve'
-              ? ('always' as const)
-              : ('never' as const),
+            : rule === 'allow' || rule === 'deny'
+              ? ('never' as const)
+              : ('always' as const),
         scopes,
       }
     }),

@@ -17,6 +17,18 @@ export const rename = mutation({
   },
 })
 
+/** A write with no agent rule in the policy: an agent's call waits for a person. */
+export const retitle = mutation({
+  action: 'projects.retitle',
+  args: { projectId: v.id('projects'), name: v.string() },
+  returns: project,
+  tool: { name: 'retitle_project', description: 'Give a project a new title.' },
+  handler: async (ctx, { projectId, name }) => {
+    await ctx.db.patch(projectId, { name })
+    return { id: projectId, name }
+  },
+})
+
 export const archive = mutation({
   action: 'projects.archive',
   args: { projectId: v.id('projects') },

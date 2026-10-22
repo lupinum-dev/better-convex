@@ -16,5 +16,5 @@ export const policy = definePolicy({
     read: { label: 'Read pages and drafts', actions: ['pages.read', 'pages.preview'] },
     write: { label: 'Edit pages', actions: ['pages.edit', 'pages.editLive'] },
   },
-  agents: { 'pages.editLive': 'approve' },
+  agents: { 'pages.edit': 'allow', 'pages.editLive': 'approve' },
 })

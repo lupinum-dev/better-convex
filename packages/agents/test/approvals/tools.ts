@@ -38,6 +38,7 @@ export const {
   check_approval,
   housekeeping,
   rename_later,
+  retitle_project,
 } = tools.functions
 
 export const { pending, get, approve, decline } = tools.approvals

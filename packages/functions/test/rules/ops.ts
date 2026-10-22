@@ -351,6 +351,30 @@ export const archiveVia = mutation({
   },
 })
 
+/** Archives in an hour and returns the job, so the person who scheduled it may cancel it. */
+export const archiveInAnHour = mutation({
+  action: 'projects.archive',
+  args: { projectId: v.id('projects') },
+  returns: v.string(),
+  handler: async (ctx, { projectId }) =>
+    await ctx.scheduler.runAfter(
+      60 * 60_000,
+      makeFunctionReference<'mutation'>('ops:archiveFor') as never,
+      { projectId } as never,
+    ),
+})
+
+/** Cancels the job a caller names, as a "cancel my reminder" button does. */
+export const cancelJob = mutation({
+  action: 'projects.archive',
+  args: { orgId: v.id('orgs'), jobId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { jobId }) => {
+    await ctx.scheduler.cancel(jobId as never)
+    return null
+  },
+})
+
 /** Takes many IDs at once. */
 export const many = query({
   action: 'projects.read',
