@@ -4313,7 +4313,7 @@ export const mutants: Mutant[] = [
     find: "if (!sealed.startsWith('$ba$')) throw new OidcError('AUTH_OIDC_REFRESH_FAILED', 'decrypt')",
     replace: "if (false) throw new OidcError('AUTH_OIDC_REFRESH_FAILED', 'decrypt')",
     kills: [
-      'test/convex/auth-oidc-upstream.test.ts > OIDC upstream tokens with real Better Auth > refuses a refresh token stored without encryption',
+      'test/convex/auth-oidc-upstream.test.ts > OIDC upstream tokens with real Better Auth > never sends a refresh token stored without encryption, and ends the grant',
     ],
     projects: ['convex'],
   },
@@ -4504,7 +4504,7 @@ export const mutants: Mutant[] = [
     find: '(await client.accountKey(String(verified.payload.sub))) !== current.accountId',
     replace: 'false',
     kills: [
-      'test/unit/oidc-upstream.test.ts > OIDC upstream tokens > refuses a refreshed id_token for another subject',
+      'test/unit/oidc-upstream.test.ts > OIDC upstream tokens > ends the grant when a refreshed id_token names another subject',
     ],
     projects: ['unit'],
   },
@@ -4586,6 +4586,17 @@ export const mutants: Mutant[] = [
       'test/convex/auth-oidc-upstream.test.ts > OIDC upstream tokens with real Better Auth > IdP down with the access token expired 59 minutes ago: mint answers 200',
     ],
     projects: ['convex'],
+  },
+  {
+    id: 'oidc-grace-waits-for-lease-holder',
+    guards: 'oidc',
+    file: 'src/runtime/convex-auth/oidc-upstream.ts',
+    find: "if (outcome.kind === 'busy' && uncheckedTooLong(account))",
+    replace: 'if (false)',
+    kills: [
+      'test/unit/oidc-upstream.test.ts > OIDC upstream tokens > past the grace time, a parallel check waits for the lease holder instead of trusting it',
+    ],
+    projects: ['unit'],
   },
   {
     id: 'oidc-check-without-account',

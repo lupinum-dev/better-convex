@@ -209,7 +209,10 @@ export function createOidcUpstream(deps: OidcUpstreamDeps): OidcUpstream {
     try {
       refreshToken = await deps.open(current.refreshToken)
     } catch {
-      return unavailable('decrypt')
+      // The stored grant can never be used again (for example a rotated auth secret without the
+      // old one). Asking again cannot help, so the grant ends and the user signs in again.
+      logOidcFailure('AUTH_OIDC_REFRESH_FAILED:decrypt', { userId: current.userId })
+      return await endGrantIfUnchanged(current)
     }
 
     let result: OidcTokenResult
@@ -251,11 +254,29 @@ export function createOidcUpstream(deps: OidcUpstreamDeps): OidcUpstream {
     if (
       verified.ok &&
       (await client.accountKey(String(verified.payload.sub))) !== current.accountId
-    )
-      return unavailable('subject')
+    ) {
+      // The IdP answered for another user: this grant cannot be trusted any more.
+      logOidcFailure('AUTH_OIDC_REFRESH_FAILED:subject', { userId: current.userId })
+      return await endGrantIfUnchanged(current)
+    }
     if (!verified.ok) logOidcFailure(`AUTH_OIDC_ID_TOKEN_INVALID:${verified.reason}`)
     const idToken = verified.ok ? tokens.idToken : current.idToken
     return await store(current, { ...tokens, accessToken }, idToken)
+  }
+
+  /** Another call holds the refresh lease: wait for what it stores. */
+  async function waitForLeaseHolder(userId: string, deadline: number) {
+    // The lease holder's deadline is at most ours, so this outlasts it.
+    while (Date.now() < deadline + BUSY_WAIT_GRACE_MS) {
+      await wait(OIDC_BUSY_POLL_INTERVAL_MS)
+      const latest = await deps.findAccountForUser(userId)
+      if (latest === null) return { kind: 'no-account' } as const
+      if (latest === 'conflict') return conflict()
+      if (isFresh(latest)) return await freshOutcome(latest)
+      // `refresh` saw a refresh token before it returned busy, so the holder ended the grant.
+      if (latest.refreshToken === null) return { kind: 'ended' } as const
+    }
+    return unavailable('busy')
   }
 
   return {
@@ -266,17 +287,7 @@ export function createOidcUpstream(deps: OidcUpstreamDeps): OidcUpstream {
       const deadline = oidcDeadline()
       const outcome = await refresh(account, deadline)
       if (outcome.kind !== 'busy') return outcome
-      // The lease holder's deadline is at most ours, so this outlasts it.
-      while (Date.now() < deadline + BUSY_WAIT_GRACE_MS) {
-        await wait(OIDC_BUSY_POLL_INTERVAL_MS)
-        const latest = await deps.findAccountForUser(userId)
-        if (latest === null) return { kind: 'no-account' }
-        if (latest === 'conflict') return conflict()
-        if (isFresh(latest)) return await freshOutcome(latest)
-        // `refresh` saw a refresh token before it returned busy, so the holder ended the grant.
-        if (latest.refreshToken === null) return { kind: 'ended' }
-      }
-      return unavailable('busy')
+      return await waitForLeaseHolder(userId, deadline)
     },
 
     async checkGrant(userId) {
@@ -294,16 +305,21 @@ export function createOidcUpstream(deps: OidcUpstreamDeps): OidcUpstream {
         return 'live'
       }
       if (account.refreshToken === null || isFresh(account)) return 'live'
+      const deadline = oidcDeadline()
       let outcome: OidcRefreshOutcome
       try {
-        outcome = await refresh(account, oidcDeadline())
+        outcome = await refresh(account, deadline)
+        // A recent answer is trusted without waiting. Past the grace time, a parallel request
+        // waits for the lease holder's answer instead of counting as checked.
+        if (outcome.kind === 'busy' && uncheckedTooLong(account))
+          outcome = await waitForLeaseHolder(userId, deadline)
       } catch (error) {
         logOidcFailure('AUTH_OIDC_REFRESH_FAILED:liveness', { cause: error, userId })
         outcome = UNAVAILABLE
       }
       if (outcome.kind === 'ended') return 'ended'
       // An outage never ends sessions, but it may not switch the check off for good.
-      if (outcome.kind === 'unavailable' && uncheckedTooLong(account)) {
+      if (outcome.kind !== 'fresh' && outcome.kind !== 'busy' && uncheckedTooLong(account)) {
         logOidcFailure('AUTH_OIDC_GRANT_UNCHECKED', { userId })
         return 'unchecked'
       }

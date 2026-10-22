@@ -1038,14 +1038,17 @@ describe('OIDC doors and linking with real Better Auth', () => {
     const { env, app } = await linkedPasswordUser(idp)
     const [account] = await env.oidcAccounts()
     const userId = String(account!.userId)
-    const direct = (
-      run: (adapter: {
-        deleteAccount(id: string): Promise<void>
-        deleteAccounts(userId: string): Promise<void>
-      }) => Promise<void>,
-    ) =>
+    type DirectAdapter = {
+      deleteAccount(id: string): Promise<void>
+      deleteAccounts(userId: string): Promise<void>
+    }
+    const direct = (run: (adapter: DirectAdapter) => Promise<void>) =>
       env.test.mutation(async (ctx) => {
-        const context = await (await app.auth.createAuth(ctx)).$context
+        const context = (await (
+          await app.auth.createAuth(ctx)
+        ).$context) as {
+          internalAdapter: DirectAdapter
+        }
         await run(context.internalAdapter)
       })
 

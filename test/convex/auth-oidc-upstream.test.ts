@@ -509,7 +509,7 @@ describe('OIDC upstream tokens with real Better Auth', () => {
   })
 
   // Catches: a plaintext refresh token (old or injected data) that is accepted and sent to the IdP.
-  it('refuses a refresh token stored without encryption', async () => {
+  it('never sends a refresh token stored without encryption, and ends the grant', async () => {
     const { idp, tokenRequests } = await installIdp()
     const env = createEnvironment()
     const app = env.app(idp)
@@ -522,14 +522,9 @@ describe('OIDC upstream tokens with real Better Auth', () => {
 
     await expect(
       env.test.withIdentity(identity).action((ctx) => app.auth.getOidcAccessToken(ctx)),
-    ).rejects.toMatchObject({
-      data: {
-        code: 'OIDC_UNAVAILABLE',
-        message: 'The identity provider is not available. Try again later',
-      },
-    })
+    ).rejects.toMatchObject({ data: { code: 'OIDC_SIGN_IN_REQUIRED' } })
     expect(tokenRequests('refresh_token')).toBe(0)
-    expect((await env.oidcAccount()).refreshToken).toBe('plain-refresh-token')
+    expect((await env.oidcAccount()).refreshToken).toBeNull()
   })
 
   // Catches: a user without an `oidc` account who gets a raw error or "sign in again" in place of

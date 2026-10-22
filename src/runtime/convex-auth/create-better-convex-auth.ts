@@ -64,7 +64,7 @@ import {
   type BetterConvexOidcOptions,
   type ResolvedOidcConfig,
 } from './oidc-options'
-import { createOidcPlugin, type OidcRuntime } from './oidc-plugin'
+import { createOidcPlugin, readOidcGrantCheck, type OidcRuntime } from './oidc-plugin'
 import { isOwnedOidcProvider } from './oidc-provider'
 import type { OidcRefreshOutcome } from './oidc-upstream'
 import { normalizeAuthOrigin, requireAuthOrigin } from './origin'
@@ -723,7 +723,7 @@ function assertNoSocialOidc(socialProviders: SocialProviders | undefined): void 
 }
 
 /**
- * With `oidc`: exactly one `oidc` provider, the one this factory built.
+ * With `oidc`: exactly one `oidc` provider, the one this factory built, and its grant check.
  * Without: none. Another plugin cannot add or replace it.
  */
 function oidcProviderInvariantHolds(
@@ -736,7 +736,12 @@ function oidcProviderInvariantHolds(
     (provider: unknown) => isPlainRecord(provider) && provider.id === OIDC_PROVIDER_ID,
   )
   if (oidcConfig === undefined) return named.length === 0
-  return named.length === 1 && isOwnedOidcProvider(named[0])
+  // The Convex token mint and the MCP token endpoint skip the IdP check when it is missing.
+  return (
+    named.length === 1 &&
+    isOwnedOidcProvider(named[0]) &&
+    readOidcGrantCheck(context as object) !== undefined
+  )
 }
 
 /** The Better Auth instance of each construction, with its OIDC runtime. */

@@ -1364,7 +1364,7 @@ New files go under `src/runtime/convex-auth/` unless a path says otherwise.
 | `plugin.ts`                                                                      | changed        | S5b           | `beforeMint` option and line                                                                                                     |
 | `test/mutants/mutants.ts`                                                        | changed        | S5b           | all rows from section 7 (one writer)                                                                                             |
 | `.changeset/oidc-sign-in.md`                                                     | new            | S5b           | section 8.4                                                                                                                      |
-| `test/integration/oidc-keycloak.integration.test.ts`                                              | new            | S6a           | real Keycloak suite                                                                                                              |
+| `test/integration/oidc-keycloak.integration.test.ts`                             | new            | S6a           | real Keycloak suite                                                                                                              |
 | `test/fixtures/keycloak/docker-compose.yml`, `test/fixtures/keycloak/realm.json` | new            | S6a           | Keycloak pinned by digest, test realm with the client from 8.1                                                                   |
 | `.github/workflows/ci.yml`                                                       | changed        | S6a           | Keycloak steps in the `integration` job                                                                                          |
 | `test/TESTING.md`                                                                | changed        | S6a           | how to run the Keycloak suite                                                                                                    |
@@ -2214,26 +2214,26 @@ Six independent reviews of the built PR (protocol attacker, Better Auth doors,
 MCP, enterprise IdPs, sessions and operations, developer and maintainer).
 Scores 8, 8, 6, 6, 7, 7. Every finding and what happened to it:
 
-| Finding | Outcome |
-|---|---|
-| The IdP check ran only at the Convex token mint; MCP clients kept access after a refused refresh (reproduced) | Fixed: one check on the Better Auth context, read by the mint and by every OAuth access-token issue (D54) |
-| Fail-open without a limit (rejected client secret, outage) | Fixed: one hour after the stored access token expired, new tokens get 503 until the IdP answers |
-| The IdP's `expires_in` decided the check interval | Fixed: stored expiry capped at 15 minutes when a refresh token exists |
-| No refresh token off Keycloak (no `offline_access`); no API audience scope | Fixed: `oidc.scopes` |
-| Entra ID refused (no `email_verified`) | Fixed: `xms_edov: true` counts; multi-tenant Entra stays unsupported (issuer per tenant) |
-| No way to read IdP claims for roles; no way to refuse by claim | Fixed: `oidc.onSignIn({ ctx, userId, claims })`, a throw refuses the sign-in |
-| A session from before the link kept minting (reproduced) | Fixed: linking ends the user's other sessions |
-| `/change-password` wrote, then refused; reset mail went to IdP users | Fixed: refused before any write; no reset mail or code |
-| The account-delete guard allowed calls without a route | Fixed: refused |
-| Email-code cleanup deletes the credential row before the guard throws | Accepted: the credential is dead for an IdP-managed user, and the `oidc` row stays |
-| A back-channel logout lost when ending the sessions failed (reproduced) | Fixed: a three-slot replay bucket, filled only after success |
-| Forged unknown `kid` caused 503 and a false keys alert | Fixed: 400 with `AUTH_OIDC_KEY_UNKNOWN` inside the refetch cooldown |
-| No user id in logs; no success line; mint refusal looked like any 401 | Fixed: `userId` on grant-end lines, `AUTH_OIDC_LOGOUT_ENDED`, mint codes `OIDC_SIGN_IN_REQUIRED` (401) and `OIDC_UNAVAILABLE` (503) |
-| `OIDC_SIGN_IN_REQUIRED` with two meanings, undocumented codes, migration advice in conflict with the limitations page | Fixed in the docs: one action (start the IdP sign-in), all codes listed, migration with `disableSignUp` |
-| No test catches a new Better Auth door after an upgrade | Fixed: `test/unit/better-auth-door-inventory.test.ts` (endpoints, call sites, versions) |
-| Two overlapping Keycloak suites; a second bounded reader | Fixed: one integration suite; the shared reader |
-| Token and key endpoints may point at any host | Not done: the issuer is the trust root, and Google's endpoints are on other hosts |
-| Require `typ: logout+jwt` | Not done: older IdPs omit it |
-| `private_key_jwt`, PAR, per-IdP-session logout, SCIM, SAML, several IdPs | Not done; listed as limits |
-| Replace the key cache with jose's remote key set | Not done: it lacks the failure backoff and size limits that have mutant rows |
-| `endGrant` keeps MCP consents | Kept: tokens and sessions end; consent is the user's choice for that client |
+| Finding                                                                                                               | Outcome                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| The IdP check ran only at the Convex token mint; MCP clients kept access after a refused refresh (reproduced)         | Fixed: one check on the Better Auth context, read by the mint and by every OAuth access-token issue (D54)                           |
+| Fail-open without a limit (rejected client secret, outage)                                                            | Fixed: one hour after the stored access token expired, new tokens get 503 until the IdP answers                                     |
+| The IdP's `expires_in` decided the check interval                                                                     | Fixed: stored expiry capped at 15 minutes when a refresh token exists                                                               |
+| No refresh token off Keycloak (no `offline_access`); no API audience scope                                            | Fixed: `oidc.scopes`                                                                                                                |
+| Entra ID refused (no `email_verified`)                                                                                | Fixed: `xms_edov: true` counts; multi-tenant Entra stays unsupported (issuer per tenant)                                            |
+| No way to read IdP claims for roles; no way to refuse by claim                                                        | Fixed: `oidc.onSignIn({ ctx, userId, claims })`, a throw refuses the sign-in                                                        |
+| A session from before the link kept minting (reproduced)                                                              | Fixed: linking ends the user's other sessions                                                                                       |
+| `/change-password` wrote, then refused; reset mail went to IdP users                                                  | Fixed: refused before any write; no reset mail or code                                                                              |
+| The account-delete guard allowed calls without a route                                                                | Fixed: refused                                                                                                                      |
+| Email-code cleanup deletes the credential row before the guard throws                                                 | Accepted: the credential is dead for an IdP-managed user, and the `oidc` row stays                                                  |
+| A back-channel logout lost when ending the sessions failed (reproduced)                                               | Fixed: a three-slot replay bucket, filled only after success                                                                        |
+| Forged unknown `kid` caused 503 and a false keys alert                                                                | Fixed: 400 with `AUTH_OIDC_KEY_UNKNOWN` inside the refetch cooldown                                                                 |
+| No user id in logs; no success line; mint refusal looked like any 401                                                 | Fixed: `userId` on grant-end lines, `AUTH_OIDC_LOGOUT_ENDED`, mint codes `OIDC_SIGN_IN_REQUIRED` (401) and `OIDC_UNAVAILABLE` (503) |
+| `OIDC_SIGN_IN_REQUIRED` with two meanings, undocumented codes, migration advice in conflict with the limitations page | Fixed in the docs: one action (start the IdP sign-in), all codes listed, migration with `disableSignUp`                             |
+| No test catches a new Better Auth door after an upgrade                                                               | Fixed: `test/unit/better-auth-door-inventory.test.ts` (endpoints, call sites, versions)                                             |
+| Two overlapping Keycloak suites; a second bounded reader                                                              | Fixed: one integration suite; the shared reader                                                                                     |
+| Token and key endpoints may point at any host                                                                         | Not done: the issuer is the trust root, and Google's endpoints are on other hosts                                                   |
+| Require `typ: logout+jwt`                                                                                             | Not done: older IdPs omit it                                                                                                        |
+| `private_key_jwt`, PAR, per-IdP-session logout, SCIM, SAML, several IdPs                                              | Not done; listed as limits                                                                                                          |
+| Replace the key cache with jose's remote key set                                                                      | Not done: it lacks the failure backoff and size limits that have mutant rows                                                        |
+| `endGrant` keeps MCP consents                                                                                         | Kept: tokens and sessions end; consent is the user's choice for that client                                                         |

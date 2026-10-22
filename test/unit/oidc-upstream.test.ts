@@ -474,15 +474,17 @@ describe('OIDC upstream tokens', () => {
     expect(accounts.get('account-1')?.accessTokenExpiresAt).toEqual(new Date(NOW + 15 * 60_000))
   })
 
-  it('refuses a refreshed id_token for another subject', async () => {
-    const { upstream, accounts, client, signIn } = await setup()
+  it('ends the grant when a refreshed id_token names another subject', async () => {
+    const { upstream, accounts, client, ended, signIn } = await setup()
     // The fake IdP answers the refresh with an ID token for `user-1`.
-    const before = await signIn({ accountId: await client.accountKey('user-2') })
+    await signIn({ accountId: await client.accountKey('user-2') })
     const logCodes = captureLogCodes()
 
-    expect(await upstream.accessToken('user-1')).toEqual({ kind: 'unavailable' })
-    expect(accounts.get('account-1')).toEqual(before)
-    expect(logCodes()).toEqual(['AUTH_OIDC_REFRESH_FAILED:subject'])
+    expect(await upstream.accessToken('user-1')).toEqual({ kind: 'ended' })
+    // Neither the other subject's tokens are stored nor the old ones kept.
+    expect(accounts.get('account-1')).toMatchObject({ accessToken: null, refreshToken: null })
+    expect(ended).toEqual(['user-1'])
+    expect(logCodes()).toEqual(['AUTH_OIDC_REFRESH_FAILED:subject', 'AUTH_OIDC_GRANT_ENDED'])
   })
 
   it('drops a refreshed id_token with a bad signature and keeps the old one', async () => {
@@ -504,14 +506,29 @@ describe('OIDC upstream tokens', () => {
     expect(logCodes()).toEqual(['AUTH_OIDC_ID_TOKEN_INVALID:signature'])
   })
 
-  it('refuses a refresh token stored without encryption', async () => {
-    const { upstream, idp, signIn } = await setup()
+  it('ends the grant instead of sending a refresh token stored without encryption', async () => {
+    const { upstream, idp, ended, signIn } = await setup()
     await signIn({ refreshToken: 'plaintext-refresh-token' })
     const logCodes = captureLogCodes()
 
-    expect(await upstream.accessToken('user-1')).toEqual({ kind: 'unavailable' })
+    // An unreadable grant never works again: asking later cannot help, so the user signs in again.
+    expect(await upstream.accessToken('user-1')).toEqual({ kind: 'ended' })
     expect(idp.requests).toEqual([])
-    expect(logCodes()).toEqual(['AUTH_OIDC_REFRESH_FAILED:decrypt'])
+    expect(ended).toEqual(['user-1'])
+    expect(logCodes()).toEqual(['AUTH_OIDC_REFRESH_FAILED:decrypt', 'AUTH_OIDC_GRANT_ENDED'])
+  })
+
+  it('past the grace time, a parallel check waits for the lease holder instead of trusting it', async () => {
+    const { upstream, leases, accounts, signIn } = await setup()
+    const account = await signIn({ accessTokenExpiresAt: new Date(NOW - 61 * 60_000) })
+    leases.set(LEASE_KEY, NOW + 30_000)
+
+    const check = track(upstream.checkGrant('user-1'))
+    // The lease holder's IdP answer: the grant ended.
+    accounts.set(account.id, { ...account, accessToken: null, refreshToken: null })
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await check.promise).toBe('ended')
   })
 
   it('fails closed with two oidc accounts', async () => {
