@@ -82,6 +82,8 @@ export type OidcJwtFailure =
   | 'claim_missing'
   | 'azp'
   | 'keys_unavailable'
+  // The kid is unknown and the key set was not refetched (cooldown): a signature failure, not an IdP outage.
+  | 'key_unknown'
 export type OidcJwtResult =
   | { readonly ok: true; readonly payload: JWTPayload; readonly header: JWTHeaderParameters }
   | { readonly ok: false; readonly reason: OidcJwtFailure }
@@ -344,15 +346,16 @@ function currentKeys(
 }
 
 // A token with an unknown `kid` may follow a key rotation. One refetch per
-// cooldown bounds the IdP load from forged `kid` values.
+// cooldown bounds the IdP load from forged `kid` values. `'cooldown'` means no
+// fetch was attempted; `null` means a fetch was attempted and failed.
 async function refetchKeys(
   state: IssuerState,
   keys: KeySet,
   metadata: OidcMetadata,
   deadline: number,
-): Promise<KeySet | null> {
+): Promise<KeySet | 'cooldown' | null> {
   const now = Date.now()
-  if (now - keys.fetchedAt < OIDC_JWKS_REFETCH_COOLDOWN_MS) return null
+  if (now - keys.fetchedAt < OIDC_JWKS_REFETCH_COOLDOWN_MS) return 'cooldown'
   try {
     return await loadKeys(state, metadata, deadline)
   } catch {
@@ -435,6 +438,7 @@ async function verifyJwt(
   let result = await verify(keys.resolver)
   if (result === NO_MATCHING_KEY) {
     const refreshed = await refetchKeys(state, keys, metadata, deadline)
+    if (refreshed === 'cooldown') return { ok: false, reason: 'key_unknown' }
     if (!refreshed) return { ok: false, reason: 'keys_unavailable' }
     result = await verify(refreshed.resolver)
     // A fresh key set still has no key for this `kid`: the token is not signed by the IdP.

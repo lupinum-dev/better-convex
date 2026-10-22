@@ -294,7 +294,7 @@ describe('OIDC discovery and keys', () => {
     expect(requestsTo(idp, '/certs')).toBe(2)
   })
 
-  it('fetches JWKS at most once per 30 s for unknown kids and answers keys_unavailable', async () => {
+  it('fetches JWKS at most once per 30 s for unknown kids and answers key_unknown inside the cooldown', async () => {
     vi.useFakeTimers()
     const client = clientOf(idp)
     const valid = await idp.signIdToken({ nonce: 'n' })
@@ -303,7 +303,7 @@ describe('OIDC discovery and keys', () => {
 
     expect(await client.verifyJwt(await forged('unknown-1'), ID_TOKEN, oidcDeadline())).toEqual({
       ok: false,
-      reason: 'keys_unavailable',
+      reason: 'key_unknown',
     })
     expect(requestsTo(idp, '/certs')).toBe(1)
 
@@ -314,7 +314,7 @@ describe('OIDC discovery and keys', () => {
     })
     expect(await client.verifyJwt(await forged('unknown-3'), ID_TOKEN, oidcDeadline())).toEqual({
       ok: false,
-      reason: 'keys_unavailable',
+      reason: 'key_unknown',
     })
     expect(requestsTo(idp, '/certs')).toBe(2)
   })

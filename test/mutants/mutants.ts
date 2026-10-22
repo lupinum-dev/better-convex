@@ -3955,7 +3955,7 @@ export const mutants: Mutant[] = [
     find: 'if (now - keys.fetchedAt < OIDC_JWKS_REFETCH_COOLDOWN_MS) return null',
     replace: 'if (false) return null',
     kills: [
-      'test/unit/oidc-metadata.test.ts > OIDC discovery and keys > fetches JWKS at most once per 30 s for unknown kids and answers keys_unavailable',
+      'test/unit/oidc-metadata.test.ts > OIDC discovery and keys > fetches JWKS at most once per 30 s for unknown kids and answers key_unknown inside the cooldown',
     ],
     projects: ['unit'],
   },
@@ -3963,10 +3963,11 @@ export const mutants: Mutant[] = [
     id: 'oidc-jwks-cooldown-unavailable',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-metadata.ts',
-    find: "if (!refreshed) return { ok: false, reason: 'keys_unavailable' }",
-    replace: "if (!refreshed) return { ok: false, reason: 'signature' }",
+    find: "if (refreshed === 'cooldown') return { ok: false, reason: 'key_unknown' }",
+    replace: "if (refreshed === 'cooldown') return { ok: false, reason: 'keys_unavailable' }",
     kills: [
-      'test/unit/oidc-backchannel-logout.test.ts > OIDC back-channel logout > answers 503 for an unknown kid inside the key cooldown',
+      'test/unit/oidc-backchannel-logout.test.ts > OIDC back-channel logout > answers 400 for an unknown kid inside the key cooldown, without a keys-failing alert',
+      'test/unit/oidc-metadata.test.ts > OIDC discovery and keys > fetches JWKS at most once per 30 s for unknown kids and answers key_unknown inside the cooldown',
     ],
     projects: ['unit'],
   },
@@ -4314,6 +4315,28 @@ export const mutants: Mutant[] = [
       'test/convex/auth-oidc.test.ts > OIDC back-channel logout with real Better Auth > rejects a replayed logout token across requests',
     ],
     projects: ['unit', 'convex'],
+  },
+  {
+    id: 'oidc-logout-retry-after-failed-end',
+    guards: 'oidc',
+    file: 'src/runtime/convex-auth/oidc-backchannel-logout.ts',
+    find: 'const OIDC_LOGOUT_MAX_ATTEMPTS = 3',
+    replace: 'const OIDC_LOGOUT_MAX_ATTEMPTS = 1',
+    kills: [
+      'test/unit/oidc-backchannel-logout.test.ts > OIDC back-channel logout > ends the grant on the IdP retry after endGrant failed, and refuses a replay after that',
+    ],
+    projects: ['unit'],
+  },
+  {
+    id: 'oidc-logout-replay-after-success',
+    guards: 'oidc',
+    file: 'src/runtime/convex-auth/oidc-backchannel-logout.ts',
+    find: '  await markDone()\n  return respond(200, null)',
+    replace: '  return respond(200, null)',
+    kills: [
+      'test/unit/oidc-backchannel-logout.test.ts > OIDC back-channel logout > ends the grant on the IdP retry after endGrant failed, and refuses a replay after that',
+    ],
+    projects: ['unit'],
   },
   {
     id: 'oidc-logout-body-limit',

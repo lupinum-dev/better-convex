@@ -25,9 +25,11 @@ interface Harness {
  */
 function harness(
   idp: FakeIdp,
-  options: { decisions?: boolean[]; endGrantError?: Error } = {},
+  options: { decisions?: boolean[]; endGrantError?: Error; endGrantFailures?: number } = {},
 ): Harness {
   const decisions = [...(options.decisions ?? [])]
+  const counts = new Map<string, number>()
+  let failures = options.endGrantFailures ?? 0
   const consumed: Harness['consumed'] = []
   const lookedUp: string[] = []
   const ended: string[] = []
@@ -41,7 +43,13 @@ function harness(
     ),
     consume: async (key, rule) => {
       consumed.push({ key, rule })
-      return { allowed: decisions.shift() ?? true, retryAfter: null }
+      const scripted = decisions.shift()
+      if (scripted !== undefined) return { allowed: scripted, retryAfter: null }
+      // Like the rate-limit table within one window: `max` slots per key.
+      const count = counts.get(key) ?? 0
+      if (count >= rule.max) return { allowed: false, retryAfter: 1 }
+      counts.set(key, count + 1)
+      return { allowed: true, retryAfter: null }
     },
     findUserIdBySubject: async (sub) => {
       lookedUp.push(sub)
@@ -49,6 +57,10 @@ function harness(
     },
     endGrant: async (userId) => {
       if (options.endGrantError) throw options.endGrantError
+      if (failures > 0) {
+        failures -= 1
+        throw new Error('backend down')
+      }
       ended.push(userId)
     },
   }
@@ -101,7 +113,8 @@ describe('OIDC back-channel logout', () => {
     expect(response.status).toBe(200)
     expect(await response.text()).toBe('')
     expect(response.headers.get('cache-control')).toBe('no-store')
-    expect(h.consumed).toEqual([{ key: 'oidc-logout-jti:jti-1', rule: { window: 600, max: 1 } }])
+    const rule = { window: 1800, max: 3 }
+    expect(h.consumed).toEqual(Array(3).fill({ key: 'oidc-logout-jti:jti-1', rule }))
     expect(h.lookedUp).toEqual(['user-1'])
     expect(h.ended).toEqual(['u1'])
   })
@@ -313,7 +326,8 @@ describe('OIDC back-channel logout', () => {
     expect(h.ended).toEqual([])
   })
 
-  it('answers 503 for an unknown kid inside the key cooldown', async () => {
+  // Catches: an unknown kid inside the cooldown reported as an IdP outage.
+  it('answers 400 for an unknown kid inside the key cooldown, without a keys-failing alert', async () => {
     const h = harness(idp)
     const first = await handleOidcBackchannelLogout(post(form(await idp.signLogoutToken())), h.deps)
     expect(first.status).toBe(200)
@@ -324,11 +338,30 @@ describe('OIDC back-channel logout', () => {
       h.deps,
     )
 
-    expect(response.status).toBe(503)
-    expect(await response.text()).toBe('{"error":"temporarily_unavailable"}')
-    expect(response.headers.get('retry-after')).toBe('30')
+    expect(response.status).toBe(400)
+    expect(await response.text()).toBe('{"error":"invalid_request"}')
+    expect(loggedCodes(errors)).toEqual(['AUTH_OIDC_KEY_UNKNOWN'])
     expect(h.ended).toEqual(['u1'])
-    expect(h.consumed).toHaveLength(1)
+    expect(h.consumed).toHaveLength(3)
+  })
+
+  // Catches: the jti recorded before endGrant, so the IdP's retry after a 500 is refused.
+  it('ends the grant on the IdP retry after endGrant failed, and refuses a replay after that', async () => {
+    const h = harness(idp, { endGrantFailures: 1 })
+    const request = async () =>
+      handleOidcBackchannelLogout(
+        post(form(await idp.signLogoutToken({ jti: 'jti-retry' }))),
+        h.deps,
+      )
+
+    expect((await request()).status).toBe(500)
+    expect(h.ended).toEqual([])
+    expect((await request()).status).toBe(200)
+    expect(h.ended).toEqual(['u1'])
+
+    const replay = await request()
+    expect(replay.status).toBe(400)
+    expect(h.ended).toEqual(['u1'])
   })
 
   it('answers 500 when ending the grant fails', async () => {

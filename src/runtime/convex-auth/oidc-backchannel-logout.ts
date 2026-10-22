@@ -23,6 +23,9 @@ const OIDC_LOGOUT_TOKEN_MAX_AGE_SECONDS = 300
 // Longer than the acceptance window (iat + 300 s + 2 × 60 s tolerance), so a
 // replayed token is either still in the cache or too old.
 const OIDC_LOGOUT_JTI_WINDOW_SECONDS = 600
+// One token may fail to end the grant a few times and still be retried by the
+// IdP. The replay key is a leaky bucket of this many slots (see below).
+const OIDC_LOGOUT_MAX_ATTEMPTS = 3
 const OIDC_LOGOUT_MAX_BODY_BYTES = 16_384
 const BACKCHANNEL_LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout'
 const MAX_JTI_LENGTH = 256
@@ -41,7 +44,11 @@ function respond(status: number, body: string | null, headers: Record<string, st
 /** 400. The body never names the failed check; the log does. */
 function invalid(reason: string): Response {
   logOidcFailure(
-    reason === 'replay' ? 'AUTH_OIDC_LOGOUT_REPLAYED' : `AUTH_OIDC_LOGOUT_TOKEN_INVALID:${reason}`,
+    reason === 'replay'
+      ? 'AUTH_OIDC_LOGOUT_REPLAYED'
+      : reason === 'key_unknown'
+        ? 'AUTH_OIDC_KEY_UNKNOWN'
+        : `AUTH_OIDC_LOGOUT_TOKEN_INVALID:${reason}`,
   )
   return respond(400, '{"error":"invalid_request"}')
 }
@@ -99,20 +106,36 @@ export async function handleOidcBackchannelLogout(
     return invalid('jti')
   }
 
-  const replay = await deps.consume(`oidc-logout-jti:${jti}`, {
-    window: OIDC_LOGOUT_JTI_WINDOW_SECONDS,
-    max: 1,
-  })
+  // The rate limit has no "release", so the replay key is a bucket of
+  // `MAX_ATTEMPTS` slots that drains one slot per JTI window. Each request takes
+  // one slot before `endGrant`; a failed `endGrant` leaves the others for the
+  // IdP's retry. After a success the remaining slots are filled, so a replay is
+  // refused before `endGrant` runs.
+  const replayKey = `oidc-logout-jti:${jti}`
+  const replayRule = {
+    window: OIDC_LOGOUT_JTI_WINDOW_SECONDS * OIDC_LOGOUT_MAX_ATTEMPTS,
+    max: OIDC_LOGOUT_MAX_ATTEMPTS,
+  }
+  const replay = await deps.consume(replayKey, replayRule)
   if (!replay.allowed) return invalid('replay')
+  const markDone = async () => {
+    for (let slot = 1; slot < OIDC_LOGOUT_MAX_ATTEMPTS; slot += 1) {
+      if (!(await deps.consume(replayKey, replayRule)).allowed) return
+    }
+  }
 
   const userId = await deps.findUserIdBySubject(payload.sub)
   // Nothing to end; the answer is the same for every retry.
-  if (userId === null) return respond(200, null)
+  if (userId === null) {
+    await markDone()
+    return respond(200, null)
+  }
   try {
     await deps.endGrant(userId)
   } catch (error) {
     logOidcFailure('AUTH_OIDC_LOGOUT_REVOKE_FAILED', { cause: error })
     return respond(500, null)
   }
+  await markDone()
   return respond(200, null)
 }
