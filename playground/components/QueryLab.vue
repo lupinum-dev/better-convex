@@ -22,7 +22,7 @@ const queryResult = await useConvexQuery(
     server: props.serverOption,
   },
 )
-const { data, pending, status, error } = queryResult
+const { data, pending, status, error, blockedBy } = queryResult
 
 if (import.meta.client) {
   const fmtMs = (value: number) => `${Math.round(value)}ms`
@@ -104,6 +104,10 @@ const capturedAtRender = {
         <div class="state-item">
           <span class="label">status:</span>
           <span data-testid="current-status" class="value">{{ status }}</span>
+        </div>
+        <div class="state-item">
+          <span class="label">blockedBy:</span>
+          <span data-testid="current-blocked-by" class="value">{{ String(blockedBy) }}</span>
         </div>
         <div class="state-item">
           <span class="label">hasData:</span>

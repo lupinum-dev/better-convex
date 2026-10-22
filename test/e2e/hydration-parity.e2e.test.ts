@@ -64,6 +64,10 @@ function renderedServerPreview(html: string): string {
   return /<pre[^>]*data-testid="data-preview"[^>]*>([\s\S]*?)<\/pre>/.exec(html)?.[1] ?? ''
 }
 
+function renderedServerBlockedBy(html: string): string | undefined {
+  return /<span[^>]*data-testid="current-blocked-by"[^>]*>([^<]*)<\/span>/.exec(html)?.[1]
+}
+
 async function waitForSettledText(
   page: NuxtPage,
   text: string,
@@ -141,11 +145,15 @@ describe('SSR hydration parity (full stack)', async () => {
         const html = (await response?.text()) ?? ''
         if (testCase.rendersOnServer) {
           expect(renderedServerPreview(html)).toContain(seededTitle)
+          expect(renderedServerBlockedBy(html)).toBe('null')
         } else {
           expect(html).not.toContain(seededTitle)
+          // Not loaded yet: the query starts in the browser.
+          expect(renderedServerBlockedBy(html)).toBe('server')
         }
 
         await waitForSettledText(page, seededTitle, diagnostics)
+        expect(await page.textContent('[data-testid="current-blocked-by"]')).toBe('null')
 
         await createNote(liveTitle)
         await waitForSettledText(page, liveTitle, diagnostics)

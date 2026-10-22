@@ -1008,32 +1008,34 @@ describe('useConvexPaginatedQuery controller', () => {
     wrapper.unmount()
   })
 
-  it('renders server:false as idle while hydrating, as the server did', async () => {
+  it('renders server:false as idle and blocked by the server while hydrating, then starts unblocked', async () => {
     const primary = new MockConvexClient()
     const query = mockFnRef<'query'>('feed:server-false-hydration')
     const { result, wrapper } = await captureInNuxt(
       () =>
         hydrating(() => {
-          const statusBeforeMount = ref('unknown')
-          const pendingBeforeMount = ref<boolean | undefined>(undefined)
+          const renderedBeforeMount = ref<unknown[]>()
           const state = useConvexPaginatedQuery(
             query,
             {},
             { auth: 'none', initialNumItems: 2, server: false },
           )
           onBeforeMount(() => {
-            statusBeforeMount.value = state.status.value
-            pendingBeforeMount.value = state.pending.value
+            renderedBeforeMount.value = [
+              state.status.value,
+              state.pending.value,
+              state.blockedBy.value,
+            ]
           })
-          return { state, statusBeforeMount, pendingBeforeMount }
+          return { state, renderedBeforeMount }
         }),
       { owner: makeMockOwner(primary), payloadData: {} },
     )
 
-    expect(result.statusBeforeMount.value).toBe('idle')
-    expect(result.pendingBeforeMount.value).toBe(false)
+    expect(result.renderedBeforeMount.value).toEqual(['idle', false, 'server'])
     await vi.waitFor(() => expect(primary.calls.onUpdate).toHaveLength(1))
     expect(result.state.status.value).toBe('pending')
+    expect(result.state.blockedBy.value).toBeNull()
     wrapper.unmount()
   })
 })

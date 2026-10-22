@@ -1,7 +1,7 @@
 import { getFunctionName, type FunctionArgs, type FunctionReference } from 'convex/server'
 import { hash } from 'ohash'
 import { describe, expect, it } from 'vitest'
-import { isReactive, onBeforeMount, onMounted, reactive, ref } from 'vue'
+import { isReactive, onBeforeMount, onMounted, reactive, ref, watch } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
 
 import { useNuxtApp, useState } from '#imports'
@@ -282,30 +282,36 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     expect(result.data.value).toEqual([{ _id: 'live-note' }])
   })
 
-  it('renders server:false as idle while hydrating, as the server did', async () => {
+  it('renders server:false as idle and blocked by the server while hydrating, then starts unblocked', async () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:list:server-false-hydration')
     const { result } = await captureInNuxt(
       () =>
         hydrating(() => {
-          const statusBeforeMount = ref('unknown')
           const pendingBeforeMount = ref<boolean | undefined>(undefined)
-          const state = useConvexQueryState(query, {}, { server: false })
+          const state = useConvexQuery(query, {}, { auth: 'none', server: false })
+          // Every state the query passes through, not only the rendered ones.
+          const states: string[] = []
+          watch(
+            () => `${state.status.value}:${String(state.blockedBy.value)}`,
+            (next) => states.push(next),
+            { immediate: true, flush: 'sync' },
+          )
           onBeforeMount(() => {
-            statusBeforeMount.value = state.status.value
             pendingBeforeMount.value = state.pending.value
           })
-          return { state, statusBeforeMount, pendingBeforeMount }
+          return { state, states, pendingBeforeMount }
         }),
       { convex, payloadData: {} },
     )
 
-    expect(result.statusBeforeMount.value).toBe('idle')
     expect(result.pendingBeforeMount.value).toBe(false)
     await waitFor(() => convex.calls.onUpdate.length === 1)
-    expect(result.state.status.value).toBe('pending')
     convex.emitQueryResult(query, {}, [{ _id: 'browser-only' }])
     await waitFor(() => result.state.status.value === 'success')
+    // The server rendered `idle` + `'server'`; the browser goes straight to
+    // loading. `idle` + `null` would render an empty list for one frame.
+    expect(result.states).toEqual(['idle:server', 'pending:null', 'success:null'])
   })
 
   it('renders the SSR auth-error gate while hydrating, as the server did', async () => {
@@ -348,11 +354,12 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     const convex = new MockConvexClient()
     const query = mockFnRef<'query'>('notes:mine:ssr-blocked-by')
     const key = payloadKey(query, {}, 'required', 'user:A')
+    // The auth adapter seeds the unsettled first generation with the SSR principal.
     const browserIdentity = {
       snapshot: () => ({
         authEnabled: true,
         settled: false,
-        identityKey: null,
+        identityKey: 'user:A' as const,
         identityGeneration: 0,
         error: null,
       }),

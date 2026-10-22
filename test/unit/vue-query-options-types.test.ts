@@ -144,7 +144,7 @@ describe('better-convex-vue query type contracts', () => {
     expectTypeOf<UseConvexQueryState<string>>().not.toHaveProperty('clear')
     expectTypeOf<UseConvexQueryState<string>>().not.toHaveProperty('refresh')
     expectTypeOf<UseConvexQueryState<string>['blockedBy']>().toEqualTypeOf<
-      ComputedRef<'skip' | 'auth' | 'manual' | null>
+      ComputedRef<'skip' | 'auth' | 'manual' | 'server' | null>
     >()
     expectTypeOf<keyof UseConvexPaginatedQueryOptions>().toEqualTypeOf<
       'auth' | 'initialCursor' | 'initialNumItems' | 'keepPreviousData' | 'immediate'

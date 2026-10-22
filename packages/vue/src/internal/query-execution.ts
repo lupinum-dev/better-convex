@@ -5,15 +5,18 @@ export type QueryExecutionOutcome = 'execute' | 'idle' | 'wait' | 'error'
 
 /**
  * Why a query is not running: `'skip'` arguments, a missing or unsettled
- * `'auth'` identity, or a `'manual'` query that has not been executed yet.
+ * `'auth'` identity, a `'manual'` query that has not been executed yet, or
+ * `'server'`: the server render did not load it (Nuxt `server: false`, or no
+ * token or URL on the server), so it starts in the browser after hydration.
  * `null` once the query may run.
  */
-export type ConvexQueryBlockedBy = 'skip' | 'auth' | 'manual' | null
+export type ConvexQueryBlockedBy = 'skip' | 'auth' | 'manual' | 'server' | null
 
 /** The gate of one query lifecycle: whether it runs, and what blocks it otherwise. */
 export interface QueryGateDecision {
   readonly outcome: QueryExecutionOutcome
-  readonly blockedBy: ConvexQueryBlockedBy
+  /** Only the server render can report `'server'`; the gate never does. */
+  readonly blockedBy: Exclude<ConvexQueryBlockedBy, 'server'>
 }
 
 /**

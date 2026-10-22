@@ -51,9 +51,11 @@ export interface UseConvexQueryState<Data> {
   readonly isStale: ComputedRef<boolean>
   /**
    * Why the query is not running: `'skip'` arguments, an `'auth'` gate that
-   * waits for or lacks the required identity, or a `'manual'` query
-   * (`immediate: false`) that was not executed yet. `null` once it may run.
-   * The server render and a hydrating browser report the same value.
+   * waits for or lacks the required identity, a `'manual'` query
+   * (`immediate: false`) that was not executed yet, or `'server'` when the
+   * server render did not load it and it starts in the browser (Nuxt).
+   * `null` once it may run. The server render and a hydrating browser report
+   * the same value.
    */
   readonly blockedBy: ComputedRef<ConvexQueryBlockedBy>
   execute(): Promise<void>
