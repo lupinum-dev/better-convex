@@ -1,5 +1,21 @@
 # @lupinum/better-convex-agents
 
+## 0.1.0-rc.5
+
+### Patch Changes
+
+- [#306](https://github.com/lupinum-dev/better-convex/pull/306) [`e7c9f87`](https://github.com/lupinum-dev/better-convex/commit/e7c9f87510dc41d27dd665e738cfea18e6102e31) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change an agent's call that changes data and has no agent rule to wait for a person, and let `ctx.scheduler.cancel` cancel only the caller's own jobs.
+  
+  Before, a mutation, action or internal mutation without an entry in `definePolicy({ agents })` ran for an agent on its own. A query without an entry still runs. The tool catalog shows such a write tool with `approval: 'always'`.
+  `ctx.scheduler.cancel` fails with `NOT_FOUND` for a job that another person or agent scheduled. An action cancels only the jobs it scheduled in the same call.
+  Migration: give `'allow'` to each write action that agents may run on their own, also to an internal mutation that an allowed tool runs.
+
+- [#303](https://github.com/lupinum-dev/better-convex/pull/303) [`1aef2f1`](https://github.com/lupinum-dev/better-convex/commit/1aef2f1dc39a40d4b2da48e5449350f5f769536a) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a tool whose module is not passed to `defineTools` being left out of the tool list without a word.
+  
+  `launchProblems` now names each operation with a `tool` that no exported `defineTools` result collected, with the module, the export, the tool name and the fix.
+- Updated dependencies [[`1970336`](https://github.com/lupinum-dev/better-convex/commit/19703362092e79e75e4f54a38be1b2187cfa715c), [`e7c9f87`](https://github.com/lupinum-dev/better-convex/commit/e7c9f87510dc41d27dd665e738cfea18e6102e31), [`1970336`](https://github.com/lupinum-dev/better-convex/commit/19703362092e79e75e4f54a38be1b2187cfa715c), [`1aef2f1`](https://github.com/lupinum-dev/better-convex/commit/1aef2f1dc39a40d4b2da48e5449350f5f769536a)]:
+  - @lupinum/better-convex-functions@0.1.0-rc.5
+
 ## 0.1.0-rc.4
 
 ### Patch Changes
