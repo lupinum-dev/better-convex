@@ -821,6 +821,17 @@ export const mutants: Mutant[] = [
     ],
   },
   {
+    id: 'C1-follow-up-expired-token',
+    guards: 'C1',
+    file: 'packages/functions/src/functions.ts',
+    find: 'options.approved || options.followUp ? { allowExpiredToken: true } : {}',
+    replace: 'options.approved ? { allowExpiredToken: true } : {}',
+    kills: [
+      `${A}/doors.test.ts > an allowed tool's follow-up after 'the access token expired': 'ok'`,
+    ],
+    projects: ['agents'],
+  },
+  {
     id: 'S14-in-app-revoked',
     guards: 'S14',
     file: 'packages/functions/src/functions.ts',
