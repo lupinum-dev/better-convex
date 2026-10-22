@@ -1,6 +1,6 @@
 import type { GenericDataModel } from 'convex/server'
 
-import type { AuthCtx, WritableAuthCtx } from './context'
+import { requireWritableAuthCtx, type AuthCtx, type WritableAuthCtx } from './context'
 import { authConfigFailure } from './diagnostics'
 import {
   resolveMcpHostRedirectUri,
@@ -13,6 +13,7 @@ import {
   validateOAuthProviderProfile,
   type PinnedOAuthProviderProfile,
 } from './oauth-security'
+import { isExactLoopbackHost } from './origin'
 import type { AuthAdapterComponentApi } from './types'
 
 export interface BetterConvexPublicOAuthClientInput {
@@ -28,13 +29,17 @@ export interface BetterConvexPublicOAuthClientInput {
   readonly scopes: readonly [string, ...string[]]
 }
 
+/**
+ * Every call writes OAuth records, so each takes a mutation or action ctx and throws
+ * `AUTH_WRITE_REQUIRES_MUTATION_OR_ACTION` at entry when it gets a query ctx.
+ */
 export interface BetterConvexOAuthOperator<DataModel extends GenericDataModel> {
   readonly createPublicClient: (
-    ctx: AuthCtx<DataModel>,
+    ctx: WritableAuthCtx<DataModel>,
     input: BetterConvexPublicOAuthClientInput,
   ) => Promise<{ readonly clientId: string }>
   readonly deleteClient: (
-    ctx: AuthCtx<DataModel>,
+    ctx: WritableAuthCtx<DataModel>,
     input: { readonly clientId: string },
   ) => Promise<void>
   /**
@@ -108,12 +113,12 @@ function requireResourceUrl(value: string): string {
   } catch {
     throw new Error(`AUTH_OAUTH_CLIENT_${name}_INVALID`)
   }
-  const loopback = ['127.0.0.1', '::1', 'localhost'].includes(url.hostname)
   if (
     url.username ||
     url.password ||
     url.hash ||
-    (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
+    (url.protocol !== 'https:' &&
+      !(url.protocol === 'http:' && isExactLoopbackHost(url.hostname))) ||
     url.search ||
     url.pathname === '/'
   ) {
@@ -233,9 +238,10 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
   }
   const operator: BetterConvexOAuthOperator<DataModel> = Object.freeze({
     async createPublicClient(
-      ctx: AuthCtx<DataModel>,
+      ctx: WritableAuthCtx<DataModel>,
       clientInput: BetterConvexPublicOAuthClientInput,
     ) {
+      requireWritableAuthCtx(ctx)
       const name = requireString(clientInput.name, 'NAME')
       const profile = requireString(clientInput.profile, 'PROFILE')
       const redirectUris = requireValues(clientInput.redirectUris, 'REDIRECT_URI')
@@ -362,7 +368,11 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
       }
       return { clientId }
     },
-    async deleteClient(ctx: AuthCtx<DataModel>, clientInput: { readonly clientId: string }) {
+    async deleteClient(
+      ctx: WritableAuthCtx<DataModel>,
+      clientInput: { readonly clientId: string },
+    ) {
+      requireWritableAuthCtx(ctx)
       const clientId = requireString(clientInput.clientId, 'ID')
       const oauthProfile = await input.resolveProfile(ctx)
       if (!oauthProfile) throw new TypeError('AUTH_OAUTH_PROVIDER_REQUIRED')
@@ -383,6 +393,7 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
         readonly scopes?: readonly [string, ...string[]]
       },
     ) {
+      requireWritableAuthCtx(ctx)
       const mcp = input.mcp
       if (!mcp) throw new TypeError('AUTH_OAUTH_MCP_PROFILE_REQUIRED')
       if (!mcp.hosts.includes(clientInput?.host)) {
@@ -402,6 +413,7 @@ export function createOAuthOperator<DataModel extends GenericDataModel>(input: {
       ctx: WritableAuthCtx<DataModel>,
       clientInput: { readonly clientId: string; readonly disabled: boolean },
     ) {
+      requireWritableAuthCtx(ctx)
       const clientId = requireString(clientInput?.clientId ?? '', 'ID')
       if (typeof clientInput.disabled !== 'boolean') {
         throw new TypeError('AUTH_OAUTH_CLIENT_DISABLED_INVALID')

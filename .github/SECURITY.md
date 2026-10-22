@@ -99,7 +99,8 @@ public query, mutation, or action: a public function would let any caller name
 another user's identifiers.
 
 The OAuth provider accepts only operator-created clients, the authorization
-code flow with PKCE S256, explicit consent, exact redirect URIs, and one
+code flow with PKCE S256, explicit consent, exact redirect URIs (an HTTP
+loopback callback may change only its port at authorization), and one
 resource per token. Dynamic client registration, client credentials, implicit
 flow, and password grant are off. Refresh tokens exist only when renewal is on,
 and they end with the Better Auth session that granted consent. The

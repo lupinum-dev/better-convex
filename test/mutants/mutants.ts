@@ -3808,7 +3808,7 @@ export const mutants: Mutant[] = [
     id: 'oidc-https-only',
     guards: 'oidc',
     file: 'src/runtime/convex-auth/oidc-options.ts',
-    find: "return allowLoopbackHttp && url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname)",
+    find: "return allowLoopbackHttp && url.protocol === 'http:' && isExactLoopbackHost(url.hostname)",
     replace: "return url.protocol === 'http:'",
     kills: [
       'test/unit/oidc-options.test.ts > OIDC options > rejects http issuer on a public host',
@@ -4640,6 +4640,42 @@ export const mutants: Mutant[] = [
     replace: 'const oidcUser = (await getUser(ctx)) as BetterConvexAuthUser',
     kills: [
       'test/convex/auth-oidc-upstream.test.ts > OIDC upstream tokens with real Better Auth > getOidcAccessToken without a session throws UNAUTHENTICATED',
+    ],
+    projects: ['convex'],
+  },
+  // The OAuth operator writes only from a mutation or action, and checks that at entry.
+  {
+    id: 'oauth-operator-create-write-ctx',
+    guards: 'oauth',
+    file: 'src/runtime/convex-auth/oauth-operator.ts',
+    find: "requireWritableAuthCtx(ctx)\n      const name = requireString(clientInput.name, 'NAME')",
+    replace: "const name = requireString(clientInput.name, 'NAME')",
+    kills: [
+      'test/convex/auth-oauth-operator.test.ts > OAuth operators with real Better Auth > refuses a query ctx in createPublicClient before it checks the input',
+    ],
+    projects: ['convex'],
+  },
+  {
+    id: 'oauth-operator-delete-write-ctx',
+    guards: 'oauth',
+    file: 'src/runtime/convex-auth/oauth-operator.ts',
+    find: "requireWritableAuthCtx(ctx)\n      const clientId = requireString(clientInput.clientId, 'ID')",
+    replace: "const clientId = requireString(clientInput.clientId, 'ID')",
+    kills: [
+      'test/convex/auth-oauth-operator.test.ts > OAuth operators with real Better Auth > refuses a query ctx in deleteClient before it checks the input',
+    ],
+    projects: ['convex'],
+  },
+  // An operator resource uses HTTP only on an exact loopback host.
+  {
+    id: 'oauth-operator-resource-https',
+    guards: 'oauth',
+    file: 'src/runtime/convex-auth/oauth-operator.ts',
+    find: "!(url.protocol === 'http:' && isExactLoopbackHost(url.hostname))",
+    replace: "!(url.protocol === 'http:')",
+    kills: [
+      'test/convex/auth-oauth-operator.test.ts > OAuth operators with real Better Auth > rejects OAuth operator input with resource identifier http://deployment.convex.site/mcp before provisioning',
+      'test/convex/auth-oauth-operator.test.ts > OAuth operators with real Better Auth > rejects OAuth operator input with resource identifier http://127.0.0.2:3210/mcp before provisioning',
     ],
     projects: ['convex'],
   },

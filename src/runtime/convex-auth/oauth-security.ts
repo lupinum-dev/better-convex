@@ -2,6 +2,7 @@ import type { OAuthOptions, Scope } from '@better-auth/oauth-provider'
 
 import { readStreamWithByteLimit } from '../shared/bounded-stream'
 import { oauthGrantClaim } from './oauth-refresh-transport'
+import { isExactLoopbackHost } from './origin'
 
 const OAUTH_CONFIG_ERROR = 'AUTH_OAUTH_CONFIG_INVALID'
 const OAUTH_REQUEST_ERROR = 'AUTH_OAUTH_REQUEST_INVALID'
@@ -427,10 +428,6 @@ export function validateResourceIdentifier(identifier: string): void {
   }
 }
 
-export function isLoopbackRedirectHost(hostname: string): boolean {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
-}
-
 export function validateOAuthRedirectUris(value: unknown): asserts value is readonly string[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 32) invalidConfig()
   const seen = new Set<string>()
@@ -449,7 +446,7 @@ export function validateOAuthRedirectUris(value: unknown): asserts value is read
     } catch {
       invalidConfig()
     }
-    const loopbackHost = isLoopbackRedirectHost(url.hostname)
+    const loopbackHost = isExactLoopbackHost(url.hostname)
     const fixedLoopback =
       url.protocol === 'http:' &&
       loopbackHost &&

@@ -22,6 +22,7 @@ import {
 } from './create-better-convex-auth'
 import type { BetterConvexMcpPrincipal } from './mcp-principal'
 import { canonicalAuthIssuer, resolveMcpResource } from './mcp-profile'
+import { isExactLoopbackHost } from './origin'
 import type { AuthAdapterComponentApi } from './types'
 
 type ComponentModules = Record<string, () => Promise<unknown>>
@@ -51,7 +52,7 @@ function requireLoopbackOrigin(name: 'CONVEX_SITE_URL' | 'SITE_URL'): void {
     const url = new URL(value)
     if (
       url.protocol !== 'http:' ||
-      !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+      !isExactLoopbackHost(url.hostname) ||
       url.username ||
       url.password ||
       url.pathname !== '/' ||
