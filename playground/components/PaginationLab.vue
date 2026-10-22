@@ -24,7 +24,7 @@ const paginatedResult = await useConvexPaginatedQuery(
     server: props.serverOption,
   },
 )
-const { data, status, pending, canLoadMore, loadMore, error } = paginatedResult
+const { data, status, pending, canLoadMore, loadMore, error, blockedBy } = paginatedResult
 const items = computed(() => data.value ?? [])
 
 if (import.meta.client) {
@@ -101,6 +101,10 @@ const capturedAtRender = {
         <div class="state-item">
           <span class="label">status:</span>
           <span data-testid="current-status" class="value">{{ status }}</span>
+        </div>
+        <div class="state-item">
+          <span class="label">blockedBy:</span>
+          <span data-testid="current-blocked-by" class="value">{{ String(blockedBy) }}</span>
         </div>
         <div class="state-item">
           <span class="label">pending:</span>

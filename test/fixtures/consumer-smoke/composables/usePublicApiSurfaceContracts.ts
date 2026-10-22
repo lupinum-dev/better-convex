@@ -64,7 +64,7 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<ComputedRef<string[] | undefined>>(liveList.data)
   const list = await liveList
   assertType<ComputedRef<boolean>>(list.isStale)
-  assertType<'skip' | 'auth' | 'manual' | null>(list.blockedBy.value)
+  assertType<'skip' | 'auth' | 'manual' | 'server' | null>(list.blockedBy.value)
   assertType<string[]>(list.data.value ?? [])
 
   const skipped = await useConvexQuery(api.tasks.list, 'skip')
@@ -80,7 +80,7 @@ export async function usePublicApiSurfaceContracts(file: File) {
   assertType<boolean>(paginated.isStale.value)
   assertType<boolean>(paginated.isLoadingMore.value)
   assertType<boolean>(paginated.isExhausted.value)
-  assertType<'skip' | 'auth' | 'manual' | null>(paginated.blockedBy.value)
+  assertType<'skip' | 'auth' | 'manual' | 'server' | null>(paginated.blockedBy.value)
   assertType<Promise<void>>(paginated.loadMore(5))
   assertType<(cursor?: string | null) => void>(paginated.restart)
   // @ts-expect-error pagination restarts subscriptions instead of clearing local state

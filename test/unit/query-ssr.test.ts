@@ -194,12 +194,12 @@ describe('SSR view shared by the server render and the hydrating browser', () =>
     expect(view({ entry: { value: null as never } }).status).toBe('success')
   })
 
-  it('renders server: false as idle, like Nuxt useAsyncData, never as pending', () => {
+  it('renders server: false as idle and blocked by the server, like Nuxt useAsyncData, never as pending', () => {
     expect(view({ server: false })).toEqual({
       status: 'idle',
       value: undefined,
       error: undefined,
-      blockedBy: null,
+      blockedBy: 'server',
     })
     // A stale entry under the same key must not leak into a browser-only query.
     expect(view({ server: false, entry: { value: 'stale' } }).status).toBe('idle')
@@ -210,12 +210,14 @@ describe('SSR view shared by the server render and the hydrating browser', () =>
       status: 'idle',
       value: undefined,
       error: undefined,
-      blockedBy: null,
+      blockedBy: 'server',
     })
   })
 
   it('is pending only while fetching or waiting for auth', () => {
     expect(view({ fetching: true }).status).toBe('pending')
+    // A query the server is still loading is not blocked.
+    expect(view({ fetching: true }).blockedBy).toBeNull()
     expect(view({ gate: 'wait' }).status).toBe('pending')
     expect(view({ gate: 'idle', fetching: true }).status).toBe('idle')
   })
@@ -262,6 +264,7 @@ describe('SSR view shared by the server render and the hydrating browser', () =>
     expect(project(undefined, false)).toMatchObject({
       status: 'idle',
       data: undefined,
+      blockedBy: 'server',
       canLoadMore: false,
       isExhausted: false,
     })

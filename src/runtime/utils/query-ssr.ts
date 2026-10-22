@@ -119,7 +119,8 @@ export interface ConvexSsrQueryView<T> {
 /**
  * The one SSR projection, called with the same inputs by the server render and
  * by the hydrating browser. Like Nuxt's `useAsyncData`, a query that was not
- * fetched on the server (`server: false`, no URL, no token) renders `idle`.
+ * fetched on the server (`server: false`, no URL, no token) renders `idle`;
+ * it reports `blockedBy: 'server'`, because it may run and starts in the browser.
  */
 export function projectConvexSsrQuery<T>(input: {
   readonly gate: Pick<ConvexQueryGate, 'outcome' | 'blockedBy'>
@@ -142,15 +143,16 @@ export function projectConvexSsrQuery<T>(input: {
       : entry !== null && entry !== undefined && 'error' in entry
         ? entry.error
         : undefined
+  const status = deriveQueryStatus({
+    pending: outcome === 'wait' || (fetched && input.fetching),
+    error: error !== undefined,
+    hasData: hasValue,
+  })
   return {
-    status: deriveQueryStatus({
-      pending: outcome === 'wait' || (fetched && input.fetching),
-      error: error !== undefined,
-      hasData: hasValue,
-    }),
+    status,
     value: hasValue ? entry.value : undefined,
     error,
-    blockedBy,
+    blockedBy: outcome === 'execute' && status === 'idle' ? 'server' : blockedBy,
   }
 }
 

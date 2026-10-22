@@ -154,14 +154,15 @@ describe('blockedBy hydration parity', () => {
           for (const skipped of [false, true]) {
             const label = `${name}/${auth}/${started ? 'immediate' : 'deferred'}/${skipped}`
             // The server render and the hydrating browser call the same
-            // projection with the same payload and SSR auth state.
+            // projection with the same payload and SSR auth state. The server
+            // loaded the query, so the live lifecycle starts unblocked too.
             const gate = resolveConvexQueryGate({ auth, started, skipped, identity })
             const server = projectConvexSsrQuery<string>({
               gate,
               server: true,
               functionName: 'notes:list',
               authError: identity.error,
-              entry: undefined,
+              entry: { value: 'ssr' },
               fetching: false,
             })
             const hydrating = projectConvexSsrQuery<string>({
@@ -169,7 +170,7 @@ describe('blockedBy hydration parity', () => {
               server: true,
               functionName: 'notes:list',
               authError: identity.error,
-              entry: undefined,
+              entry: { value: 'ssr' },
               fetching: false,
             })
             expect(hydrating.blockedBy, label).toBe(server.blockedBy)
