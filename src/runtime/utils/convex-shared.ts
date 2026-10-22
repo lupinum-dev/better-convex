@@ -1,3 +1,4 @@
+import { ConvexCallError } from '../errors'
 import type { ConvexUser } from './types'
 
 /**
@@ -11,11 +12,104 @@ const MAX_DISPLAY_STRING_LENGTH = 4_096
 
 /**
  * The auth error text for "the identity is unknown for now": the auth backend
- * failed or limited the request (429, 5xx, timeout, network). The server and
- * the browser publish it in `convex:authError`, and the route middleware reads
- * it to render instead of redirecting, so all of them must use this constant.
+ * failed or limited the request (429, 5xx, timeout, network). Its code is
+ * `AUTH_UNAVAILABLE`; code reads the code, never this text.
  */
 export const AUTH_UNAVAILABLE_MESSAGE = 'Authentication is temporarily unavailable'
+
+/**
+ * How the library handles a failed attempt to learn who is signed in:
+ *
+ * - `rejected`: the auth backend answered 401 or 403. The session is over.
+ * - `temporary`: no answer (network error, timeout), 408, 429 or 5xx. This says
+ *   nothing about the person: keep the session and try again later.
+ * - `setup`: any other answer, for example a redirect, a 404, or a token that
+ *   cannot be used. Only a wrong configuration or a broken contract explains
+ *   it, so it is reported as a setup error, not as an outage.
+ */
+export type AuthFailureClass = 'rejected' | 'temporary' | 'setup'
+
+/**
+ * What failed: the HTTP status the auth backend answered with (`undefined` or
+ * `0` when no answer came), or a token in a successful answer that is missing,
+ * has no usable lifetime, or has no `sub`.
+ */
+export type AuthFailure = { readonly status: number | undefined } | { readonly invalidToken: true }
+
+/**
+ * An auth error as Nuxt stores it in the `convex:authError` state. It is
+ * serialized into the page payload, so it holds two plain fields. `code` is a
+ * `ConvexCallErrorCode`, or null for a failure without one.
+ */
+export interface AuthErrorState {
+  readonly code: string | null
+  readonly message: string
+}
+
+/** The stored form of an auth error: its code and message, nothing else. */
+export function toAuthErrorState(error: {
+  readonly code?: string | null
+  readonly message: string
+}): AuthErrorState {
+  return { code: error.code ?? null, message: error.message }
+}
+
+/** The `ConvexCallError` that `useConvexAuth().error` and the query gate show. */
+export function authErrorFromState(state: AuthErrorState | null): ConvexCallError | null {
+  if (!state) return null
+  return new ConvexCallError({
+    kind: 'authentication',
+    message: state.message,
+    ...(state.code ? { code: state.code } : {}),
+  })
+}
+
+export interface ClassifiedAuthFailure {
+  readonly class: AuthFailureClass
+  readonly code: 'UNAUTHENTICATED' | 'AUTH_UNAVAILABLE' | 'AUTH_MISCONFIGURED'
+  readonly message: string
+}
+
+const REJECTED_AUTH_FAILURE: ClassifiedAuthFailure = Object.freeze({
+  class: 'rejected',
+  code: 'UNAUTHENTICATED',
+  message: 'Authentication credentials are invalid or expired',
+})
+const TEMPORARY_AUTH_FAILURE: ClassifiedAuthFailure = Object.freeze({
+  class: 'temporary',
+  code: 'AUTH_UNAVAILABLE',
+  message: AUTH_UNAVAILABLE_MESSAGE,
+})
+const SETUP_AUTH_FAILURE: ClassifiedAuthFailure = Object.freeze({
+  class: 'setup',
+  code: 'AUTH_MISCONFIGURED',
+  message: 'Authentication is not set up correctly',
+})
+
+/**
+ * The one rule for auth failures. The server render, the browser token path,
+ * the browser session read and the route middleware all decide with it, so the
+ * same failure gets the same treatment everywhere.
+ */
+export function classifyAuthFailure(failure: AuthFailure): ClassifiedAuthFailure {
+  if ('invalidToken' in failure) return SETUP_AUTH_FAILURE
+  const { status } = failure
+  if (status === undefined || status === 0) return TEMPORARY_AUTH_FAILURE
+  if (status === 401 || status === 403) return REJECTED_AUTH_FAILURE
+  if (status === 408 || status === 429 || status >= 500) return TEMPORARY_AUTH_FAILURE
+  return SETUP_AUTH_FAILURE
+}
+
+/**
+ * The failure a Better Auth / Better Fetch error envelope (`{ status }`)
+ * reports. An error without a numeric status (a thrown network error) is no
+ * answer.
+ */
+export function authFailureOf(error: unknown): { readonly status: number | undefined } {
+  const status =
+    error && typeof error === 'object' ? (error as { status?: unknown }).status : undefined
+  return { status: typeof status === 'number' ? status : undefined }
+}
 
 /** Milliseconds before `exp` at which a locally retained token is unusable. */
 export const TOKEN_EXPIRY_SAFETY_BUFFER_MS = 30_000

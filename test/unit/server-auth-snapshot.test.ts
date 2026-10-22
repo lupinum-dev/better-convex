@@ -103,13 +103,13 @@ describe('resolveServerAuthSnapshot', () => {
     expect(snapshot).toMatchObject({
       token: null,
       user: null,
-      authError: 'Authentication is temporarily unavailable',
+      authError: { code: 'AUTH_UNAVAILABLE' },
     })
     expect(snapshot.waterfall?.outcome).toBe('error')
     expect(snapshot.logEvents.at(-1)).toEqual({
       phase: 'ssr.jwt.exchange',
       outcome: 'error',
-      details: { code: 'AUTH_TOKEN_EXCHANGE_FAILED' },
+      details: { code: 'AUTH_TOKEN_EXCHANGE_FAILED', reason: 'AUTH_UNAVAILABLE' },
     })
   })
 
@@ -149,17 +149,33 @@ describe('resolveServerAuthSnapshot', () => {
   })
 
   it.each([
-    { status: 200, body: {}, label: 'a successful response without a token' },
-    { status: 429, body: { error: 'rate limited' }, label: 'an upstream rate limit' },
-    { status: 500, body: {}, label: 'an upstream server error' },
-  ])('fails closed on $label', async ({ status, body }) => {
+    {
+      status: 200,
+      body: {},
+      code: 'AUTH_MISCONFIGURED',
+      label: 'a successful response without a token',
+    },
+    {
+      status: 302,
+      body: {},
+      code: 'AUTH_MISCONFIGURED',
+      label: 'a redirect',
+    },
+    {
+      status: 429,
+      body: { error: 'rate limited' },
+      code: 'AUTH_UNAVAILABLE',
+      label: 'an upstream rate limit',
+    },
+    { status: 500, body: {}, code: 'AUTH_UNAVAILABLE', label: 'an upstream server error' },
+  ])('fails closed on $label', async ({ status, body, code }) => {
     fetchWithTimeoutMock.mockResolvedValue(createResponse(status, body))
 
     const snapshot = await snapshotFor('better-auth.session_token=session-protocol-failure')
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
-    expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
+    expect(snapshot.authError).toMatchObject({ code })
     expect(snapshot.waterfall?.outcome).toBe('error')
     expect(snapshot.logEvents.at(-1)).toMatchObject({
       phase: 'ssr.jwt.exchange',
@@ -177,7 +193,7 @@ describe('resolveServerAuthSnapshot', () => {
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
-    expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
+    expect(snapshot.authError).toMatchObject({ code: 'AUTH_MISCONFIGURED' })
     expect(snapshot.waterfall?.outcome).toBe('error')
     expect(decodeUserFromJwtMock).not.toHaveBeenCalled()
     expect(fetchWithTimeoutMock).toHaveBeenCalledOnce()
@@ -190,12 +206,19 @@ describe('resolveServerAuthSnapshot', () => {
     const snapshot = await snapshotFor('better-auth.session_token=session-prod')
 
     expect(snapshot.token).toBeNull()
-    expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
-    expect(snapshot.authError).not.toMatch(/BETTER_AUTH_SECRET|convex\/http\.ts|convex\/token/i)
+    expect(snapshot.authError).toEqual({
+      class: 'temporary',
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is temporarily unavailable',
+    })
     const exchangeLog = snapshot.logEvents.find(
       (event) => event.phase === 'ssr.jwt.exchange' && event.outcome === 'error',
     )
-    expect(exchangeLog?.details).toEqual({ code: 'AUTH_TOKEN_EXCHANGE_FAILED', status: 500 })
+    expect(exchangeLog?.details).toEqual({
+      code: 'AUTH_TOKEN_EXCHANGE_FAILED',
+      reason: 'AUTH_UNAVAILABLE',
+      status: 500,
+    })
     expect(snapshot.waterfall?.error).toBe('AUTH_TOKEN_EXCHANGE_FAILED')
   })
 
@@ -213,11 +236,11 @@ describe('resolveServerAuthSnapshot', () => {
     const snapshot = await snapshotFor('better-auth.session_token=session-error-sentinel')
     const rendered = inspect(snapshot, { depth: null })
 
-    expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
+    expect(snapshot.authError).toMatchObject({ code: 'AUTH_UNAVAILABLE' })
     expect(snapshot.logEvents.at(-1)).toEqual({
       phase: 'ssr.jwt.exchange',
       outcome: 'error',
-      details: { code: 'AUTH_TOKEN_EXCHANGE_FAILED' },
+      details: { code: 'AUTH_TOKEN_EXCHANGE_FAILED', reason: 'AUTH_UNAVAILABLE' },
     })
     for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
   })

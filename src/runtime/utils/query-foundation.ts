@@ -6,18 +6,12 @@ import {
 } from '@lupinum/better-convex-vue/internal'
 import { computed, onScopeDispose, shallowRef, watch, type ComputedRef } from 'vue'
 
-import {
-  onNuxtReady,
-  useAsyncData,
-  useNuxtApp,
-  useRequestEvent,
-  useState,
-  type NuxtApp,
-} from '#app'
+import { onNuxtReady, useAsyncData, useNuxtApp, useRequestEvent, type NuxtApp } from '#app'
 
 import { identityKeyOf } from '../auth/auth-identity'
-import { ConvexCallError, normalizeConvexError } from '../errors'
+import { normalizeConvexError, type ConvexCallError } from '../errors'
 import { eventAbortSignal, eventRequestHeaders } from '../server/utils/event'
+import { useConvexAuthErrorState } from './auth-error-state'
 import { readServerConvexToken, useConvexIdentityState } from './auth-identity-state'
 import { useConvexAuthPendingState } from './auth-pending-state'
 import type { ConvexAuthMode } from './auth-status'
@@ -26,6 +20,7 @@ import {
   matchesConvexHydrationIdentity,
   type ConvexPayloadNamespace,
 } from './convex-cache'
+import { authErrorFromState } from './convex-shared'
 import {
   convexQueryAsyncDataKey,
   projectConvexSsrQuery,
@@ -49,18 +44,13 @@ export function useConvexQueryIdentity(): ComputedRef<ClientIdentitySnapshot> {
   const authEnabled = getConvexRuntimeConfig().auth !== false
   const identity = useConvexIdentityState()
   const pending = useConvexAuthPendingState()
-  const authError = useState<string | null>('convex:authError', () => null)
+  const authError = useConvexAuthErrorState()
   return computed(() =>
     projectNuxtQueryIdentity({
       authEnabled,
       pending: pending.value,
       identityKey: identityKeyOf(identity.value),
-      error: authError.value
-        ? new ConvexCallError({
-            kind: 'authentication',
-            message: authError.value,
-          })
-        : null,
+      error: authErrorFromState(authError.value),
     }),
   )
 }

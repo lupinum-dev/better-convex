@@ -130,13 +130,18 @@ describe('plugin.server token exchange failure policy', () => {
     isJwtUsableMock.mockReturnValue(true)
   })
 
-  it('settles token-exchange failures with the same fixed error in every environment', async () => {
-    answerTokenExchange(500, {})
+  // The state carries the code into the page payload (#282), and the auth
+  // failure rule picks it (#281).
+  it.each([
+    [500, 'AUTH_UNAVAILABLE', 'Authentication is temporarily unavailable', {}],
+    [404, 'AUTH_MISCONFIGURED', 'Authentication is not set up correctly', {}],
+    [200, 'AUTH_MISCONFIGURED', 'Authentication is not set up correctly', { token: 'no-sub' }],
+  ])('settles a token exchange answering %s with code %s', async (status, code, message, body) => {
+    answerTokenExchange(status, body)
 
     await runServerPlugin()
-    expect(stateStore.get('convex:authError')?.value).toBe(
-      'Authentication is temporarily unavailable',
-    )
+    expect(stateStore.get('convex:authError')?.value).toEqual({ code, message })
+    expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
   })
 
   it.each([
@@ -161,9 +166,10 @@ describe('plugin.server token exchange failure policy', () => {
     await runServerPlugin()
 
     expect(fetchWithTimeoutMock).not.toHaveBeenCalled()
-    expect(stateStore.get('convex:authError')?.value).toBe(
-      'Authentication is temporarily unavailable',
-    )
+    expect(stateStore.get('convex:authError')?.value).toEqual({
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is temporarily unavailable',
+    })
     expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
   })
 
@@ -182,6 +188,21 @@ describe('plugin.server token exchange failure policy', () => {
     expect(stateStore.get('convex:identity')?.value).toEqual({ status: 'anonymous' })
     expect(responseHeaders().get('vary')).toBe('Cookie')
     expect(responseHeaders().get('cache-control')).toBe('private, no-store')
+  })
+
+  it('stores the missing site URL as an auth error with its own code', async () => {
+    getConvexRuntimeConfigMock.mockReturnValue({
+      ...getConvexRuntimeConfigMock(),
+      siteUrl: undefined,
+    })
+
+    await runServerPlugin()
+
+    expect(fetchWithTimeoutMock).not.toHaveBeenCalled()
+    expect(stateStore.get('convex:authError')?.value).toEqual({
+      code: 'SITE_URL_MISSING',
+      message: expect.stringContaining('`convex.siteUrl`'),
+    })
   })
 
   it('keeps 401 token exchange as graceful unauthenticated (no throw)', async () => {

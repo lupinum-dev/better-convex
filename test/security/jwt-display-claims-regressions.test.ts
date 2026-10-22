@@ -185,7 +185,8 @@ describe('server JWT hydration boundary', () => {
 
     expect(snapshot.token).toBeNull()
     expect(snapshot.user).toBeNull()
-    expect(snapshot.authError).toBe('Authentication is temporarily unavailable')
+    // The auth backend answered, so an unusable token is a setup error, not an outage.
+    expect(snapshot.authError).toMatchObject({ class: 'setup', code: 'AUTH_MISCONFIGURED' })
     expect(snapshot.waterfall?.error).toBe('AUTH_TOKEN_EXCHANGE_FAILED')
     expect(globalThis.fetch).toHaveBeenCalledOnce()
     expect(globalThis.fetch).toHaveBeenCalledWith(

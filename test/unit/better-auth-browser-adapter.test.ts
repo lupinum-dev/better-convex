@@ -66,9 +66,11 @@ describe('Better Auth browser adapter', () => {
       const refreshed = adapter.fetchToken({ forceRefreshToken: true })
       await vi.advanceTimersByTimeAsync(5_000)
       await expect(refreshed).resolves.toBeNull()
-      expect(anonymous).toHaveBeenLastCalledWith(
-        'Authentication credentials are invalid or expired',
-      )
+      expect(anonymous).toHaveBeenLastCalledWith({
+        class: 'rejected',
+        code: 'UNAUTHENTICATED',
+        message: 'Authentication credentials are invalid or expired',
+      })
     } finally {
       adapter.dispose()
       vi.useRealTimers()
@@ -128,7 +130,7 @@ describe('Better Auth browser adapter', () => {
       const adapter = createBetterAuthBrowserAdapter(fixture.client, {
         authenticated: vi.fn(),
         anonymous(error) {
-          if (error) visibleErrors.push(error)
+          if (error) visibleErrors.push(error.message)
         },
       })
       const port = createAuthAdapterIdentityPort(adapter)
@@ -335,7 +337,7 @@ describe('Better Auth browser adapter', () => {
     })
     expect(sessionChanged).toHaveBeenLastCalledWith('session-a', null, 1)
 
-    adapter.failClosed('static failure')
+    adapter.failClosed({ code: null, message: 'static failure' })
     expect(sessionChanged).toHaveBeenLastCalledWith(
       null,
       'Authentication is temporarily unavailable',
@@ -447,9 +449,17 @@ describe('Better Auth browser adapter', () => {
       await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBe(token)
 
       await expect(adapter.fetchToken({ forceRefreshToken: true })).resolves.toBeNull()
-      // Definitive: no retry spends the exchange budget on an answer that cannot change.
+      // A setup error: no retry spends the exchange budget on an answer that cannot change.
       expect(fixture.token).toHaveBeenCalledTimes(2)
-      expect(anonymous).toHaveBeenCalledWith(expect.any(String))
+      expect(anonymous).toHaveBeenCalledWith({
+        class: 'setup',
+        code: 'AUTH_MISCONFIGURED',
+        message: 'Authentication is not set up correctly',
+      })
+      expect(adapter.snapshot()).toMatchObject({
+        status: 'error',
+        error: { code: 'AUTH_MISCONFIGURED' },
+      })
       adapter.dispose()
     },
   )
@@ -535,15 +545,19 @@ describe('Better Auth browser adapter', () => {
   })
 
   it.each([
-    { status: 503, unavailable: true },
-    { status: 429, unavailable: true },
-    { status: 0, unavailable: true },
-    { status: 401, unavailable: false },
-    { status: 403, unavailable: false },
-    { status: 404, unavailable: false },
+    { status: 503, code: 'AUTH_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE },
+    { status: 429, code: 'AUTH_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE },
+    { status: 0, code: 'AUTH_UNAVAILABLE', message: AUTH_UNAVAILABLE_MESSAGE },
+    { status: 401, code: undefined, message: 'Authentication failed' },
+    { status: 403, code: undefined, message: 'Authentication failed' },
+    {
+      status: 404,
+      code: 'AUTH_MISCONFIGURED',
+      message: 'Authentication is not set up correctly',
+    },
   ])(
-    'publishes a first session read failing with $status as unavailable only when temporary',
-    ({ status, unavailable }) => {
+    'publishes a first session read failing with $status as $code',
+    ({ status, code, message }) => {
       const fixture = source({ isPending: true, data: null, error: null }, [])
       const adapter = createBetterAuthBrowserAdapter(fixture.client)
       const port = createAuthAdapterIdentityPort(adapter)
@@ -558,11 +572,51 @@ describe('Better Auth browser adapter', () => {
       expect(adapter.snapshot().status).toBe('error')
       const published = port.snapshot().error
       expect(published).toBeInstanceOf(ConvexCallError)
-      expect(published?.message).toBe(
-        unavailable ? AUTH_UNAVAILABLE_MESSAGE : 'Authentication failed',
-      )
+      expect(published).toMatchObject({ code, message })
       port.dispose()
       adapter.dispose()
+    },
+  )
+
+  // Better Auth reads the session again only on focus or reconnect; the tab
+  // here stays visible and online (#280).
+  it.each([
+    { initialIdentityKey: undefined, shown: 'error' },
+    { initialIdentityKey: null, shown: 'anonymous' },
+  ] as const)(
+    'reads the session again after a temporary first-read failure (server render: $initialIdentityKey)',
+    async ({ initialIdentityKey, shown }) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      vi.spyOn(Math, 'random').mockReturnValue(0)
+      const fixture = source({ isPending: true, data: null, error: null }, [])
+      const adapter = createBetterAuthBrowserAdapter(
+        fixture.client,
+        { authenticated: vi.fn(), anonymous: vi.fn() },
+        { initialIdentityKey },
+      )
+      try {
+        fixture.session.value = {
+          isPending: false,
+          data: null,
+          error: { status: 503 },
+          refetch: fixture.refetch,
+        }
+        expect(adapter.snapshot().status).toBe(shown)
+
+        // The backend recovers; the next read finds the session.
+        fixture.refetch.mockImplementationOnce(async () => {
+          fixture.session.value = { ...signedIn(), refetch: fixture.refetch }
+        })
+        await vi.advanceTimersByTimeAsync(1_999)
+        expect(fixture.refetch).not.toHaveBeenCalled()
+        await vi.advanceTimersByTimeAsync(1)
+        expect(fixture.refetch).toHaveBeenCalledOnce()
+        expect(adapter.snapshot()).toMatchObject({ status: 'authenticated', identityKey: 'alice' })
+      } finally {
+        adapter.dispose()
+        vi.useRealTimers()
+        vi.restoreAllMocks()
+      }
     },
   )
 

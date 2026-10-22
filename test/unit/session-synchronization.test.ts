@@ -4,6 +4,7 @@ import {
   createSessionSynchronization,
   type ProviderSessionRevision,
 } from '../../src/runtime/auth/session-synchronization'
+import { ConvexCallError } from '../../src/runtime/errors'
 
 const session = (
   sessionToken: string | null,
@@ -42,13 +43,13 @@ describe('canonical session synchronization', () => {
       })
 
     await Promise.resolve()
-    synchronization.observeAccepted(session('session-a', 2), false)
+    synchronization.observeAccepted(session('session-a', 2), null)
     await Promise.resolve()
     expect(settled).toBe(false)
-    synchronization.observeAccepted(session('session-b', 3), false)
+    synchronization.observeAccepted(session('session-b', 3), null)
     await Promise.resolve()
     expect(settled).toBe(false)
-    synchronization.observeAccepted(session('session-a', 3), false)
+    synchronization.observeAccepted(session('session-a', 3), null)
 
     await waiting
     expect(settled).toBe(true)
@@ -64,7 +65,7 @@ describe('canonical session synchronization', () => {
       sessionRequests: 0,
     })
     await Promise.resolve()
-    synchronization.observeAccepted(session(null, 4), false)
+    synchronization.observeAccepted(session(null, 4), null)
     await expect(waiting).resolves.toBeUndefined()
   })
 
@@ -82,10 +83,10 @@ describe('canonical session synchronization', () => {
 
     synchronization.observeProvider(session('session-carol', 6))
     await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledTimes(2))
-    synchronization.observeAccepted(session('session-bob', 5), false)
+    synchronization.observeAccepted(session('session-bob', 5), null)
     await Promise.resolve()
     expect(settled).toBe(false)
-    synchronization.observeAccepted(session('session-carol', 6), false)
+    synchronization.observeAccepted(session('session-carol', 6), null)
 
     await waiting
     expect(settled).toBe(true)
@@ -109,11 +110,11 @@ describe('canonical session synchronization', () => {
     await Promise.resolve()
 
     synchronization.observeProvider(session('session-carol', 8))
-    synchronization.observeAccepted(session('session-bob', 7), false)
+    synchronization.observeAccepted(session('session-bob', 7), null)
     await Promise.resolve()
     expect(bobSettled).toBe(false)
     expect(carolSettled).toBe(false)
-    synchronization.observeAccepted(session('session-carol', 8), false)
+    synchronization.observeAccepted(session('session-carol', 8), null)
 
     await Promise.all([bob, carol])
     expect(bobSettled).toBe(true)
@@ -160,12 +161,45 @@ describe('canonical session synchronization', () => {
       sessionRequests: 0,
     })
     await Promise.resolve()
-    synchronization.observeAccepted(session('session-a', 1), true)
+    synchronization.observeAccepted(
+      session('session-a', 1),
+      new ConvexCallError({ kind: 'authentication', message: 'Convex rejected the token' }),
+    )
 
     await expect(waiting).rejects.toMatchObject({
       code: 'SESSION_RECONCILIATION_RUNTIME_FAILED',
     })
     expect(failClosed).toHaveBeenCalledOnce()
+  })
+
+  // A temporary auth failure says nothing about the person (#279).
+  it.each([
+    ['the session read fails for a temporary reason', 'refetch'],
+    ['the runtime settles on a temporary token failure', 'runtime'],
+  ] as const)('keeps the session when %s', async (_name, where) => {
+    const unavailable = new ConvexCallError({
+      kind: 'authentication',
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is temporarily unavailable',
+    })
+    const { synchronization, failClosed } = fixture({
+      refetchCanonicalSession: vi.fn(async () => {
+        if (where === 'refetch') throw unavailable
+      }),
+    })
+    synchronization.observeProvider(session('session-a', 1))
+    const waiting = synchronization.reconcile({
+      revision: 0,
+      sessionSignals: 0,
+      sessionRequests: 0,
+    })
+    if (where === 'runtime') {
+      await Promise.resolve()
+      synchronization.observeAccepted(session('session-a', 1), unavailable)
+    }
+
+    await expect(waiting).rejects.toBe(unavailable)
+    expect(failClosed).not.toHaveBeenCalled()
   })
 
   it('fails closed once when acceptance exceeds the bounded retry window', async () => {
@@ -223,7 +257,7 @@ describe('canonical session synchronization', () => {
 
       const waiting = synchronization.settle(checkpoint)
       await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
-      synchronization.observeAccepted(session('session-a', 1), false)
+      synchronization.observeAccepted(session('session-a', 1), null)
       await expect(waiting).resolves.toBeUndefined()
     })
 
@@ -236,7 +270,7 @@ describe('canonical session synchronization', () => {
 
       const waiting = synchronization.settle(checkpoint)
       await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
-      synchronization.observeAccepted(session(null, 1), false)
+      synchronization.observeAccepted(session(null, 1), null)
       await waiting
     })
 
@@ -257,7 +291,7 @@ describe('canonical session synchronization', () => {
 
       const waiting = synchronization.settle(checkpoint)
       await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
-      synchronization.observeAccepted(session('session-a', 1), false)
+      synchronization.observeAccepted(session('session-a', 1), null)
       await waiting
     })
 
@@ -280,7 +314,7 @@ describe('canonical session synchronization', () => {
 
       const waiting = synchronization.settle(checkpoint)
       await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
-      synchronization.observeAccepted(session('session-b', 2), false)
+      synchronization.observeAccepted(session('session-b', 2), null)
       await waiting
     })
 
@@ -306,7 +340,7 @@ describe('canonical session synchronization', () => {
       synchronization.observeProvider(session('session-a', 1))
       const waiting = synchronization.settle(synchronization.checkpoint())
       await vi.waitFor(() => expect(refetchCanonicalSession).toHaveBeenCalledOnce())
-      synchronization.observeAccepted(session('session-a', 1), false)
+      synchronization.observeAccepted(session('session-a', 1), null)
       await waiting
     })
 

@@ -10,6 +10,12 @@ import {
   type ConvexTokenSource,
 } from '../../src/runtime/auth/token-fetcher'
 
+const TEMPORARY = {
+  class: 'temporary',
+  code: 'AUTH_UNAVAILABLE',
+  message: 'Authentication is temporarily unavailable',
+}
+
 function signalOf(options: unknown): AbortSignal | undefined {
   return (options as { fetchOptions?: { signal?: AbortSignal } } | undefined)?.fetchOptions?.signal
 }
@@ -41,11 +47,7 @@ describe('client Convex token exchange deadline', () => {
     const fetching = fetchConvexToken(source, { signal: controller.signal })
     controller.abort()
 
-    await expect(fetching).resolves.toEqual({
-      identity: null,
-      authError: 'Convex authentication token exchange was cancelled',
-      definitive: false,
-    })
+    await expect(fetching).resolves.toEqual({ identity: null, failure: TEMPORARY })
     expect(calls).toBe(1)
     expect(capturedSignal?.aborted).toBe(true)
     expect(vi.getTimerCount()).toBe(0)
@@ -78,11 +80,7 @@ describe('client Convex token exchange deadline', () => {
     expect(capturedSignal?.aborted).toBe(false)
 
     await vi.advanceTimersByTimeAsync(1)
-    await expect(fetching).resolves.toEqual({
-      identity: null,
-      authError: 'Convex authentication token exchange timed out',
-      definitive: false,
-    })
+    await expect(fetching).resolves.toEqual({ identity: null, failure: TEMPORARY })
     expect(calls).toBe(1)
     expect(capturedSignal?.aborted).toBe(true)
     expect(vi.getTimerCount()).toBe(0)
@@ -107,11 +105,7 @@ describe('client Convex token exchange deadline', () => {
     const fetching = fetchConvexToken(source)
     // Backoff waits at most 150 + 300 + 600 ms between the attempts.
     await vi.advanceTimersByTimeAsync(1_050)
-    await expect(fetching).resolves.toEqual({
-      identity: null,
-      authError: 'Authentication is temporarily unavailable',
-      definitive: false,
-    })
+    await expect(fetching).resolves.toEqual({ identity: null, failure: TEMPORARY })
     expect(signals).toHaveLength(MAX_FETCH_ATTEMPTS)
     expect(signals.every((signal) => !signal.aborted)).toBe(true)
     expect(vi.getTimerCount()).toBe(0)
@@ -139,29 +133,13 @@ describe('client Convex token exchange deadline', () => {
       const outcome = await fetchConvexToken(source, { maxAttempts: 1 })
       const rendered = inspect(outcome, { depth: null })
 
-      expect(outcome).toEqual({
-        identity: null,
-        authError: 'Authentication is temporarily unavailable',
-        definitive: false,
-      })
+      expect(outcome).toEqual({ identity: null, failure: TEMPORARY })
       for (const sentinel of Object.values(sentinels)) expect(rendered).not.toContain(sentinel)
     },
   )
 })
 
 describe('client Convex token exchange outcomes', () => {
-  it('settles a nullable successful response as clean anonymous state', async () => {
-    const source = {
-      convex: { token: async () => ({ data: { token: null }, error: null }) },
-    } satisfies ConvexTokenSource
-
-    await expect(fetchConvexToken(source)).resolves.toEqual({
-      identity: null,
-      authError: null,
-      definitive: true,
-    })
-  })
-
   it('stops at a 429 and reports its Retry-After instead of asking again at once', async () => {
     const requests = vi.fn(
       async () =>
@@ -178,23 +156,9 @@ describe('client Convex token exchange outcomes', () => {
 
     await expect(fetchConvexToken(client)).resolves.toEqual({
       identity: null,
-      authError: 'Authentication is temporarily unavailable',
-      definitive: false,
+      failure: TEMPORARY,
       retryAfterMs: 3_000,
     })
     expect(requests).toHaveBeenCalledOnce()
-  })
-
-  it.each([401, 403])('reports rejected credentials from HTTP %s', async (status) => {
-    const source = {
-      convex: { token: async () => ({ data: null, error: { status } }) },
-    } satisfies ConvexTokenSource
-
-    await expect(fetchConvexToken(source)).resolves.toEqual({
-      identity: null,
-      authError: 'Authentication credentials are invalid or expired',
-      definitive: true,
-      sessionRejected: true,
-    })
   })
 })

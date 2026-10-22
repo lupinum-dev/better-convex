@@ -30,7 +30,9 @@ describe('useConvexAuth Nuxt facade', () => {
     const { result } = await captureInNuxt(() => {
       const identity = useState<AuthIdentity>('convex:identity')
       const pending = useState<boolean>('convex:pending')
-      const authError = useState<string | null>('convex:authError')
+      const authError = useState<{ code: string | null; message: string } | null>(
+        'convex:authError',
+      )
       identity.value = PENDING_IDENTITY
       pending.value = true
       authError.value = null
@@ -46,9 +48,17 @@ describe('useConvexAuth Nuxt facade', () => {
 
     result.identity.value = ANONYMOUS_IDENTITY
     expect(result.auth.status.value).toBe('anonymous')
-    result.authError.value = 'Authentication is temporarily unavailable'
+    result.authError.value = {
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is temporarily unavailable',
+    }
     expect(result.auth.status.value).toBe('error')
-    expect(result.auth.error.value).toMatchObject({ kind: 'authentication' })
+    // Apps branch on the code, not the display text (#282).
+    expect(result.auth.error.value).toMatchObject({
+      kind: 'authentication',
+      code: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is temporarily unavailable',
+    })
     expect(Object.keys(result.auth)).not.toContain('token')
     expect(Object.keys(result.auth)).not.toContain('isAuthenticated')
   })

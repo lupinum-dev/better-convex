@@ -364,9 +364,11 @@ describe('exchangeConvexToken — redirect safety (zero credential delivery)', (
         credential: { type: 'cookie', value: COOKIE },
       })
 
-      // Exchange did not throw; it returned a transport error.
+      // Exchange did not throw; it returned a transport error with the 3xx
+      // status, which the auth failure rule reports as a setup error.
       expect(result.token).toBeNull()
       expect(result.error!.kind).toBe('transport')
+      expect(result.status).toBe(status)
       // The legit first hop happened exactly once.
       expect(upstream.requests).toHaveLength(1)
       // The redirect target received ZERO requests — the credential never left
@@ -400,7 +402,7 @@ describe('exchangeConvexToken — redirect safety (zero credential delivery)', (
 
     expect(result.error!.kind).toBe('transport')
     // Only the token endpoint was hit; the /recorder path never received the
-    // credential (redirect:'error' rejects before following).
+    // credential (redirect: 'manual' never follows).
     expect(sawCredentialOnRecorder).toBe(false)
     expect(server.requests.filter((r) => (r.url ?? '').startsWith('/recorder'))).toHaveLength(0)
   })

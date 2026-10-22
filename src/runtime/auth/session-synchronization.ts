@@ -14,8 +14,11 @@ export interface SessionSynchronization extends CanonicalSessionReconciler {
   observeSessionSignal(): void
   /** Published for every request the Better Auth client starts (route path, no origin). */
   observeRequest(routePath: string): void
-  /** Published only after the one Convex runtime has settled this generation. */
-  observeAccepted(session: ProviderSessionRevision, failed: boolean): void
+  /**
+   * Published only after the one Convex runtime has settled this generation,
+   * with the runtime's error when it settled on one.
+   */
+  observeAccepted(session: ProviderSessionRevision, error: ConvexCallError | null): void
   dispose(): void
 }
 
@@ -91,6 +94,7 @@ const REFRESH_FAILED_CODE = 'SESSION_RECONCILIATION_REFRESH_FAILED'
 const RUNTIME_FAILED_CODE = 'SESSION_RECONCILIATION_RUNTIME_FAILED'
 const SYNC_CHANGE_CODE = 'SYNCHRONOUS_SESSION_CHANGE'
 const TIMEOUT_CODE = 'SESSION_RECONCILIATION_TIMEOUT'
+const UNAVAILABLE_CODE = 'AUTH_UNAVAILABLE'
 
 function failure(code: string, message: string): ConvexCallError {
   return new ConvexCallError({ kind: 'authentication', code, message })
@@ -121,7 +125,9 @@ export function createSessionSynchronization(input: {
   let sessionSignals = 0
   let sessionRequests = 0
   let provider: ProviderSessionRevision | undefined
-  let accepted: { readonly session: ProviderSessionRevision; readonly failed: boolean } | undefined
+  let accepted:
+    | { readonly session: ProviderSessionRevision; readonly error: ConvexCallError | null }
+    | undefined
   const listeners = new Set<() => void>()
 
   const notify = () => {
@@ -221,7 +227,8 @@ export function createSessionSynchronization(input: {
       assertActive()
       if (provider && !sameSession(provider, expected)) return 'changed'
       if (accepted && sameSession(accepted.session, expected)) {
-        if (accepted.failed) {
+        if (accepted.error?.code === UNAVAILABLE_CODE) throw accepted.error
+        if (accepted.error) {
           throw failure(RUNTIME_FAILED_CODE, 'Convex rejected the refreshed Better Auth session')
         }
         return 'accepted'
@@ -247,10 +254,16 @@ export function createSessionSynchronization(input: {
         if (outcome === 'accepted') return
       }
     } catch (error) {
-      if (error instanceof ConvexCallError) {
-        if (error.code === DISPOSED_CODE) throw error
-        failClosed(error)
-      }
+      if (error instanceof ConvexCallError && error.code === DISPOSED_CODE) throw error
+      // A temporary auth failure says nothing about the person: keep the
+      // session and reject this operation with AUTH_UNAVAILABLE while the
+      // adapter keeps retrying. It may reach here directly, or as the error
+      // the runtime settled on for the current provider session, which then
+      // retires the confirmation this operation waited for.
+      if (error instanceof ConvexCallError && error.code === UNAVAILABLE_CODE) throw error
+      const settled = accepted && provider && sameSession(accepted.session, provider)
+      if (settled && accepted?.error?.code === UNAVAILABLE_CODE) throw accepted.error
+      if (error instanceof ConvexCallError) failClosed(error)
       failClosed(failure(REFRESH_FAILED_CODE, 'The canonical Better Auth session refresh failed'))
     }
   }
@@ -269,9 +282,9 @@ export function createSessionSynchronization(input: {
       if (disposed) return
       if (!READ_ONLY_AUTH_ROUTES.has(authRoutePath(routePath))) sessionRequests += 1
     },
-    observeAccepted(session, runtimeFailed) {
+    observeAccepted(session, error) {
       if (disposed) return
-      accepted = { session, failed: runtimeFailed }
+      accepted = { session, error }
       notify()
     },
     checkpoint(): SessionCheckpoint {

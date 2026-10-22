@@ -314,7 +314,10 @@ describe('useConvexQuery composables (Nuxt runtime)', () => {
     const { result } = await captureInNuxt(
       () =>
         hydrating(() => {
-          useState<string | null>('convex:authError').value = 'Session exchange failed'
+          useState<{ code: string | null; message: string } | null>('convex:authError').value = {
+            code: null,
+            message: 'Session exchange failed',
+          }
           useState<boolean>('convex:pending').value = false
           const state = useConvexQueryState(query, {}, { auth: 'optional' })
           const rendered = ref<{ status: string; pending: boolean; message?: string }>()

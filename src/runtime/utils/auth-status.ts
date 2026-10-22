@@ -1,6 +1,7 @@
 import { isAuthenticatedIdentityKey } from '@lupinum/better-convex-vue/internal'
 
-import { ConvexCallError } from '../errors'
+import type { ConvexCallError } from '../errors'
+import { authErrorFromState, type AuthErrorState } from './convex-shared'
 import type { ConvexIdentityKey } from './identity-key'
 
 /**
@@ -60,13 +61,11 @@ export function deriveConvexAuthStatus(input: ConvexAuthStatusInput): ConvexAuth
 export function publishedConvexAuthStatus(state: {
   pending: boolean
   identityKey: ConvexIdentityKey | null
-  authError: string | null
+  authError: AuthErrorState | null
 }): ConvexAuthStatus {
   return deriveConvexAuthStatus({
     settled: !state.pending,
     identityKey: state.identityKey,
-    error: state.authError
-      ? new ConvexCallError({ kind: 'authentication', message: state.authError })
-      : null,
+    error: authErrorFromState(state.authError),
   })
 }

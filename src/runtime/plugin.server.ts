@@ -20,8 +20,10 @@ import type { AuthWaterfall } from './devtools/types'
 import { eventRequestHeaders, eventRequestMethod } from './server/utils/event'
 import { resolveRequestAuthSnapshot } from './server/utils/request-auth'
 import { applyConvexAuthSsrHeaders } from './server/utils/ssr-auth-headers'
+import { useConvexAuthErrorState } from './utils/auth-error-state'
 import { buildMissingSiteUrlMessage } from './utils/auth-errors'
 import { setServerConvexToken, useConvexIdentityState } from './utils/auth-identity-state'
+import { toAuthErrorState } from './utils/convex-shared'
 import { createLogger, getLogLevel, type AuthEvent } from './utils/logger'
 import { getConvexRuntimeConfig } from './utils/runtime-config'
 import { filterBetterAuthCookies } from './utils/shared-helpers'
@@ -72,9 +74,10 @@ export default defineNuxtPlugin(async () => {
       hasBetterAuthCookie: hasSupportedBetterAuthCookie,
       rendersUser: false,
     })
-    const message = buildMissingSiteUrlMessage()
-    const convexAuthError = useState<string | null>('convex:authError', () => null)
-    convexAuthError.value = message
+    useConvexAuthErrorState().value = {
+      code: 'SITE_URL_MISSING',
+      message: buildMissingSiteUrlMessage(),
+    }
     endInit()
     logger.auth({
       phase: 'init',
@@ -103,7 +106,7 @@ export default defineNuxtPlugin(async () => {
   }
 
   // Initialize useState for hydration (must be done even if unauthenticated).
-  const convexAuthError = useState<string | null>('convex:authError', () => null)
+  const convexAuthError = useConvexAuthErrorState()
   const convexAuthWaterfall = useState<AuthWaterfall | null>('convex:authWaterfall', () => null)
 
   const snapshotStartedAt = Date.now()
@@ -122,7 +125,7 @@ export default defineNuxtPlugin(async () => {
     useNuxtApp(),
     convexIdentity.value.status === 'authenticated' ? snapshot.token : null,
   )
-  convexAuthError.value = snapshot.authError
+  convexAuthError.value = snapshot.authError && toAuthErrorState(snapshot.authError)
   convexAuthWaterfall.value = snapshot.waterfall
 
   // This is an auth-enabled SSR response, so it always varies by cookie. A

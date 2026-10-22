@@ -2105,12 +2105,23 @@ export const mutants: Mutant[] = [
     id: 'P-session-unusable-token-definitive',
     guards: 'session',
     file: 'src/runtime/auth/token-fetcher.ts',
-    find: "authError: 'Convex authentication token is expired or missing a valid expiry',\n            definitive: true,",
-    replace:
-      "authError: 'Convex authentication token is expired or missing a valid expiry',\n            definitive: false,",
+    find: 'if (!identity) return { identity: null, failure: INVALID_TOKEN }',
+    replace: 'if (!identity) return { identity: null, failure: NO_ANSWER }',
     kills: [
       'test/unit/better-auth-browser-adapter.test.ts > Better Auth browser adapter > drops the cached token when every refresh returns an unusable (malformed) token',
       'test/unit/better-auth-browser-adapter.test.ts > Better Auth browser adapter > drops the cached token when every refresh returns an unusable (expired) token',
+    ],
+    projects: ['unit'],
+  },
+  // A 403 from the auth backend ends the session on the server and in the browser.
+  {
+    id: 'P-session-forbidden-rejected',
+    guards: 'session',
+    file: 'src/runtime/utils/convex-shared.ts',
+    find: 'if (status === 401 || status === 403) return REJECTED_AUTH_FAILURE',
+    replace: 'if (status === 401) return REJECTED_AUTH_FAILURE',
+    kills: [
+      'test/unit/auth-failure-rule.test.ts > auth failure rule > HTTP 403 is rejected on the server and in the browser',
     ],
     projects: ['unit'],
   },

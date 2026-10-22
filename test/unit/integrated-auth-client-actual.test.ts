@@ -120,7 +120,7 @@ function createHarness() {
       }
       synchronization.observeProvider(provider)
       // Stand-in for the Convex runtime accepting this exact generation.
-      synchronization.observeAccepted(provider, false)
+      synchronization.observeAccepted(provider, null)
     },
     { flush: 'sync', immediate: true },
   )
