@@ -69,7 +69,12 @@ function createEnvironment() {
     function client() {
       let cookie = ''
 
-      async function call(method: 'GET' | 'POST', path: string, json?: Record<string, unknown>) {
+      async function call(
+        method: 'GET' | 'POST',
+        path: string,
+        json?: Record<string, unknown>,
+        form?: Record<string, string>,
+      ) {
         const ip = freshIp()
         const response = await test.action(async (ctx) => {
           const url = new URL(`https://deployment.convex.site/api/auth${path}`)
@@ -85,9 +90,17 @@ function createEnvironment() {
               headers: {
                 Origin: SITE,
                 cookie,
-                ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
+                ...(form
+                  ? { 'content-type': 'application/x-www-form-urlencoded' }
+                  : method === 'POST'
+                    ? { 'content-type': 'application/json' }
+                    : {}),
               },
-              ...(method === 'POST' ? { body: JSON.stringify(json ?? {}) } : {}),
+              ...(form
+                ? { body: new URLSearchParams(form) }
+                : method === 'POST'
+                  ? { body: JSON.stringify(json ?? {}) }
+                  : {}),
               redirect: 'manual',
             }),
           )
@@ -98,7 +111,13 @@ function createEnvironment() {
           } catch {
             // not JSON: keep the text
           }
-          return { status: res.status, body, cookies: res.headers.getSetCookie() }
+          return {
+            status: res.status,
+            body,
+            cookies: res.headers.getSetCookie(),
+            location: res.headers.get('location'),
+            retryAfter: res.headers.get('retry-after'),
+          }
         })
         for (const raw of response.cookies) {
           const [pair] = raw.split(';')
@@ -119,6 +138,8 @@ function createEnvironment() {
       return {
         post: (path: string, json: Record<string, unknown> = {}) => call('POST', path, json),
         get: (path: string) => call('GET', path),
+        form: (path: string, fields: Record<string, string>) =>
+          call('POST', path, undefined, fields),
         hasSession: async () => {
           const res = await call('GET', '/get-session')
           return typeof res.body === 'object' && res.body !== null && 'user' in res.body
@@ -182,8 +203,119 @@ function createEnvironment() {
   /** Within the 60 s refresh margin, so the next use refreshes. */
   const expireAccessToken = () => patchOidcAccount({ accessTokenExpiresAt: Date.now() - 1_000 })
 
-  return { test, app, rows, oidcAccount, tokensOf, patchOidcAccount, expireAccessToken }
+  const createRow = (model: string, data: Record<string, unknown>) =>
+    test.mutation(components.sessionAuth.adapter.create, { model, data })
+
+  /** The operator-provisioned MCP client and resource (what `oauthOperator` writes), plus the user's consent. */
+  async function seedMcpClient(userId: string | null) {
+    await createRow('oauthClient', {
+      id: 'mcp-client-row',
+      clientId: MCP_CLIENT,
+      disabled: false,
+      subjectType: 'public',
+      applicationType: 'native',
+      tokenEndpointAuthMethod: 'none',
+      grantTypes: ['authorization_code', 'refresh_token'],
+      responseTypes: ['code'],
+      requirePKCE: true,
+      skipConsent: false,
+      enableEndSession: false,
+      dpopBoundAccessTokens: false,
+      scopes: MCP_SCOPES,
+      redirectUris: [MCP_REDIRECT],
+    })
+    await createRow('oauthResource', {
+      id: 'mcp-resource-row',
+      identifier: MCP_RESOURCE,
+      name: 'MCP',
+      disabled: false,
+      allowedScopes: MCP_SCOPES,
+      accessTokenTtl: 600,
+      signingAlgorithm: 'RS256',
+      dpopBoundAccessTokensRequired: false,
+    })
+    await createRow('oauthClientResource', {
+      id: 'mcp-link',
+      clientId: MCP_CLIENT,
+      resourceId: MCP_RESOURCE,
+    })
+    if (userId !== null) {
+      await createRow('oauthConsent', {
+        id: 'mcp-consent',
+        clientId: MCP_CLIENT,
+        userId,
+        resources: [MCP_RESOURCE],
+        scopes: MCP_SCOPES,
+      })
+    }
+  }
+  const userIdOf = async (email?: string) => {
+    const users = await rows('user')
+    const user = email ? users.find((row) => row.email === email) : users[0]
+    return String(user!.id)
+  }
+
+  return {
+    test,
+    app,
+    rows,
+    oidcAccount,
+    tokensOf,
+    patchOidcAccount,
+    expireAccessToken,
+    seedMcpClient,
+    userIdOf,
+  }
 }
+
+const MCP_CLIENT = 'mcp-client'
+const MCP_REDIRECT = 'https://chatgpt.com/connector_platform_oauth_redirect'
+const MCP_RESOURCE = 'https://deployment.convex.site/mcp'
+const MCP_SCOPES = ['mcp:read', 'offline_access']
+const MCP_OPTIONS = { oauth: { mcp: { scopes: { 'mcp:read': 'Read' } } } }
+
+/** Authorization-code flow for the signed-in `browser` against the seeded MCP client; returns the first token response. */
+async function connectMcpClient(browser: Client, mcpClient: Client) {
+  const verifier = 'A'.repeat(64)
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+  const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '')
+  const authorization = await browser.get(
+    `/oauth2/authorize?${new URLSearchParams({
+      client_id: MCP_CLIENT,
+      redirect_uri: MCP_REDIRECT,
+      response_type: 'code',
+      scope: MCP_SCOPES.join(' '),
+      resource: MCP_RESOURCE,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      state: 'state',
+    })}`,
+  )
+  expect(authorization.status).toBe(302)
+  const code = new URL(authorization.location!).searchParams.get('code')
+  expect(code).toBeTypeOf('string')
+  const exchange = await mcpClient.form('/oauth2/token', {
+    client_id: MCP_CLIENT,
+    grant_type: 'authorization_code',
+    code: code!,
+    redirect_uri: MCP_REDIRECT,
+    code_verifier: verifier,
+    resource: MCP_RESOURCE,
+  })
+  expect(exchange.status).toBe(200)
+  return exchange.body as { access_token: string; refresh_token: string }
+}
+
+const refreshGrant = (mcpClient: Client, refreshToken: string) =>
+  mcpClient.form('/oauth2/token', {
+    client_id: MCP_CLIENT,
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    resource: MCP_RESOURCE,
+  })
 
 /** A fake IdP at `fetch` that also records every access token its token endpoint hands out. */
 async function installIdp() {
@@ -512,7 +644,9 @@ describe('OIDC upstream tokens with real Better Auth', () => {
     await env.expireAccessToken()
     idp.respond.token = () => json({ error: 'invalid_grant' }, 400)
 
-    expect((await browser.mint()).status).toBe(401)
+    const minted = await browser.get('/convex/token')
+    expect(minted.status).toBe(401)
+    expect(minted.body).toMatchObject({ code: 'OIDC_SIGN_IN_REQUIRED' })
     expect(tokenRequests('refresh_token')).toBe(1)
     expect(await browser.hasSession()).toBe(false)
     expect(env.tokensOf(await env.oidcAccount())).toEqual({
@@ -523,6 +657,32 @@ describe('OIDC upstream tokens with real Better Auth', () => {
       refreshTokenExpiresAt: null,
     })
   })
+
+  // Catches: a grace limit that is off by direction or missing: an IdP that stays down must block the
+  // Convex token once the stored access token is over an hour old, and never end the session.
+  it.each([
+    { minutes: 61, status: 503, code: 'OIDC_UNAVAILABLE' },
+    { minutes: 59, status: 200, code: undefined },
+  ])(
+    'IdP down with the access token expired $minutes minutes ago: mint answers $status',
+    async ({ minutes, status, code }) => {
+      const { idp } = await installIdp()
+      const env = createEnvironment()
+      const app = env.app(idp)
+      await app.provision()
+      const browser = app.client()
+      await app.signInAndMint(browser)
+      await env.patchOidcAccount({ accessTokenExpiresAt: Date.now() - minutes * 60_000 })
+      idp.respond.token = () => {
+        throw new TypeError('fetch failed')
+      }
+
+      const minted = await browser.get('/convex/token')
+      expect(minted.status).toBe(status)
+      if (code) expect(minted.body).toMatchObject({ code })
+      expect(await browser.hasSession()).toBe(true)
+    },
+  )
 
   // Catches: an unreachable IdP that signs people out or blocks their Convex token.
   it('IdP outage does not block token mint', async () => {
@@ -542,5 +702,75 @@ describe('OIDC upstream tokens with real Better Auth', () => {
     expect(tokenRequests('refresh_token')).toBe(1)
     expect(await browser.hasSession()).toBe(true)
     expect(env.tokensOf(await env.oidcAccount())).toEqual(before)
+  })
+
+  describe('MCP access tokens', () => {
+    async function connected() {
+      const { idp, tokenRequests } = await installIdp()
+      const env = createEnvironment()
+      const app = env.app(idp, MCP_OPTIONS)
+      await app.provision()
+      const browser = app.client()
+      await app.signInAndMint(browser)
+      await env.seedMcpClient(await env.userIdOf())
+      const mcpClient = app.client()
+      const tokens = await connectMcpClient(browser, mcpClient)
+      return { idp, tokenRequests, env, app, browser, mcpClient, tokens }
+    }
+
+    // Catches: MCP clients that keep refreshing for days after the IdP ended the user's grant (reviewer's reproduced bug).
+    it('IdP ended the grant: the MCP refresh grant fails with invalid_grant and the user is signed out', async () => {
+      const { idp, env, browser, mcpClient, tokens } = await connected()
+      await env.expireAccessToken()
+      idp.respond.token = () => json({ error: 'invalid_grant' }, 400)
+
+      const refreshed = await refreshGrant(mcpClient, tokens.refresh_token)
+
+      expect(refreshed.status).toBe(400)
+      expect(refreshed.body).toMatchObject({ error: 'invalid_grant' })
+      expect(await browser.hasSession()).toBe(false)
+    })
+
+    // Catches: a long IdP outage that leaves MCP tokens flowing unchecked, or one that signs the user out.
+    it('IdP down and its token expired over an hour ago: the MCP refresh grant answers 503 and the session stays', async () => {
+      const { idp, env, browser, mcpClient, tokens } = await connected()
+      await env.patchOidcAccount({ accessTokenExpiresAt: Date.now() - 61 * 60_000 })
+      idp.respond.token = () => {
+        throw new TypeError('fetch failed')
+      }
+
+      const refreshed = await refreshGrant(mcpClient, tokens.refresh_token)
+
+      expect(refreshed.status).toBe(503)
+      expect(refreshed.body).toMatchObject({ error: 'temporarily_unavailable' })
+      expect(refreshed.retryAfter).toBe('30')
+      expect(await browser.hasSession()).toBe(true)
+    })
+
+    // Catches: the check applied to every OAuth user, which refuses MCP tokens for people who never signed in through the IdP.
+    it('a user without an oidc account still gets MCP tokens while the IdP is down', async () => {
+      const { idp } = await installIdp()
+      const env = createEnvironment()
+      const app = env.app(idp, {
+        ...MCP_OPTIONS,
+        emailAndPassword: { requireEmailVerification: false },
+      })
+      await app.provision()
+      const browser = app.client()
+      const credentials = { email: 'plain@example.test', password: 'Synthetic password 2026' }
+      await browser.post('/sign-up/email', { ...credentials, name: 'Plain' })
+      await browser.post('/sign-in/email', credentials)
+      await env.seedMcpClient(await env.userIdOf('plain@example.test'))
+      idp.respond.token = () => {
+        throw new TypeError('fetch failed')
+      }
+      const mcpClient = app.client()
+
+      const tokens = await connectMcpClient(browser, mcpClient)
+      const refreshed = await refreshGrant(mcpClient, tokens.refresh_token)
+
+      expect(refreshed.status).toBe(200)
+      expect(await browser.hasSession()).toBe(true)
+    })
   })
 })
