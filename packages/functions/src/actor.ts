@@ -16,6 +16,7 @@ export type Actor<User> =
       caller: AgentCaller
       approvalId?: string
       followUp?: string
+      scheduled?: true
     }
   | {
       kind: 'agent'
@@ -27,6 +28,7 @@ export type Actor<User> =
       caller: AgentCaller
       approvalId?: string
       followUp?: string
+      scheduled?: true
     }
 
 export type Visitor = { kind: 'visitor' }
@@ -63,11 +65,14 @@ export const actingAsValidator = v.union(
   v.object({ kind: v.literal('person'), authId: v.string() }),
   // `approvalId`: the person's approval this work runs under, so its internal operations may run too.
   // `followUp`: the token that work the approved request scheduled carries (see `approvals.followUp`).
+  // `scheduled`: work that an agent's call scheduled. It is part of that call, so it runs after the
+  // turn moves on, the run ends or the access token expires. Only the scheduler wrapper sets it.
   v.object({
     kind: v.literal('agent'),
     caller: agentCallerValidator,
     approvalId: v.optional(v.string()),
     followUp: v.optional(v.string()),
+    scheduled: v.optional(v.literal(true)),
   }),
   v.object({ kind: v.literal('visitor') }),
   v.object({ kind: v.literal('system'), job: v.string() }),

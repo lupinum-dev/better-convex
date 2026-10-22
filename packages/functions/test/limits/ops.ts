@@ -372,6 +372,42 @@ export const guardViaPublicAction = action({
   },
 })
 
+// Follow-ups (../limits-audit.test.ts): a limited request that schedules its save. The save is part
+// of the request, so it takes no second token from the same bucket; another bucket still pays.
+
+/** A request of `projects.guard` that schedules the save of the same action. */
+export const guardLater = mutation({
+  action: 'projects.guard',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, ref('ops:guardInternal'), args as never)
+    return null
+  },
+})
+
+/** The same request, with an internal action (an outside call) before the save. */
+export const guardLaterViaAction = mutation({
+  action: 'projects.guard',
+  args: guardArgs,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, ref('ops:guardViaAction'), args as never)
+    return null
+  },
+})
+
+/** A request of `projects.guard` that schedules work of another limited action (`tasks.run`). */
+export const guardThenTask = mutation({
+  action: 'projects.guard',
+  args: { projectId: v.id('projects'), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, ref('ops:task'), args as never)
+    return null
+  },
+})
+
 /** A job that runs the internal mutation as the system. */
 export const guardJob = job({
   name: 'guardJob',

@@ -159,17 +159,20 @@ export type JobDone = { readonly 'better-convex/job': true }
 /**
  * The actor as a handler sees it: without the approval it runs under. The approval ID and the
  * follow-up token are credentials that only the library's call wrappers pass on; an app that
- * stores or sends `ctx.actor` must not carry them (Codex round 4).
+ * stores or sends `ctx.actor` must not carry them (Codex round 4). The `scheduled` mark is the
+ * wrappers' business too.
  */
 function shown<T extends object>(actor: T): T {
-  if (!('approvalId' in actor) && !('followUp' in actor)) return actor
+  if (!('approvalId' in actor) && !('followUp' in actor) && !('scheduled' in actor)) return actor
   const {
     approvalId: _approval,
     followUp: _followUp,
+    scheduled: _scheduled,
     ...rest
   } = actor as T & {
     approvalId?: unknown
     followUp?: unknown
+    scheduled?: unknown
   }
   return rest as T
 }
@@ -367,6 +370,12 @@ export function defineFunctions<
     return (await signedIn(ctx)) ?? fail('NOT_SIGNED_IN', 'Sign in first.')
   }
 
+  /**
+   * The agent behind a call, checked now. `approved`: work a person approved, bound to its request
+   * instead of the turn. `followUp`: work an earlier call of the agent scheduled. It is part of
+   * that call, which was checked when it ran, so the run may have ended, the turn moved on and the
+   * access token expired since. The grant, the person and their role are checked again.
+   */
   async function agent(
     ctx: QCtx,
     caller: AgentCaller,
@@ -381,13 +390,17 @@ export function defineFunctions<
       if (!run || !grant || grant.revokedAt !== undefined || grant.expiresAt <= Date.now()) {
         fail('AGENT_DISABLED', 'This agent is turned off.')
       }
-      // Work an approved request scheduled is bound to that approval, not to the run: the run may
-      // end before it runs. Turning the agent off still stops it (the grant check above).
+      // Scheduled work may run after the run ended. Turning the agent off still stops it (the
+      // grant check above).
       if (!options.followUp && (run.status === 'done' || run.status === 'failed'))
         fail('AGENT_DISABLED', 'This run has ended.')
       // A step acts only in its own turn while the run runs. Work a person approved is bound to
-      // its request instead (checked by the caller).
-      if (!options.approved && (run.status !== 'running' || caller.turn !== run.turn)) {
+      // its request instead (checked by the caller); scheduled work to the call that scheduled it.
+      if (
+        !options.approved &&
+        !options.followUp &&
+        (run.status !== 'running' || caller.turn !== run.turn)
+      ) {
         fail('AGENT_DISABLED', 'This step of the run is no longer current.')
       }
       const user = await config.user(readOnly(ctx), grant.authId)
@@ -402,13 +415,13 @@ export function defineFunctions<
         caller,
       }
     }
-    // Work a person approved may run up to 30 minutes after the request, past the
-    // access token's 10 minutes; the grant behind it must still be live.
+    // Work a person approved, and work a call scheduled, may run after the access token
+    // expired; the grant behind it must still be live.
     const { user: authUser } = await auth
       .requireMcpPrincipal(
         ctx,
         caller.principal,
-        options.approved ? { allowExpiredToken: true } : {},
+        options.approved || options.followUp ? { allowExpiredToken: true } : {},
       )
       .catch((error: unknown) => {
         // The auth component's answer for a revoked or expired grant: agents meet one code at both doors.
@@ -430,11 +443,14 @@ export function defineFunctions<
       case 'visitor':
         return who
       case 'agent': {
+        // Scheduled work carries the mark; work an approved request scheduled also carries the
+        // approval's token, which only scheduled work gets.
+        const scheduled = who.scheduled === true || who.followUp !== undefined
         const actor = await agent(ctx, who.caller, {
           approved: who.approvalId !== undefined,
-          followUp: who.approvalId !== undefined && who.followUp !== undefined,
+          followUp: scheduled,
         })
-        if (who.approvalId === undefined) return actor
+        if (who.approvalId === undefined) return scheduled ? { ...actor, scheduled: true } : actor
         // Work done under a person's approval: the approval must be this agent's, and still stand.
         const id = lib(ctx).normalizeId('approvals', who.approvalId)
         const row = id && (await lib(ctx).get(id))
@@ -457,6 +473,7 @@ export function defineFunctions<
           ...actor,
           approvalId: who.approvalId,
           ...(who.followUp === undefined ? {} : { followUp: who.followUp }),
+          ...(scheduled && { scheduled: true as const }),
         }
       }
       case 'person': {
@@ -476,6 +493,7 @@ export function defineFunctions<
       caller: actor.caller,
       ...(actor.approvalId === undefined ? {} : { approvalId: actor.approvalId }),
       ...(actor.followUp === undefined ? {} : { followUp: actor.followUp }),
+      ...(actor.scheduled && { scheduled: true as const }),
     }
   }
 
@@ -785,6 +803,8 @@ export function defineFunctions<
       (getFunctionAddress(ref as never) as { reference?: string }).reference?.startsWith(
         '_reference/childComponent/',
       ) ?? false
+    // Every call to an operation, run now or scheduled, carries the buckets this call chain paid:
+    // work a call schedules is part of that call, so the same bucket does not pay twice (#283).
     const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting, mutation = false) =>
       isComponent(ref)
         ? args
@@ -792,18 +812,20 @@ export function defineFunctions<
             actingAs: as,
             input: args ?? {},
             ...(mutation && collect && { nested: true }),
-            ...(mutation && chain && chain.spent.length > 0 && { spent: [...chain.spent] }),
+            ...(chain && chain.spent.length > 0 && { spent: [...chain.spent] }),
           }
-    // Work an approved request schedules while it runs carries the request's follow-up token
-    // (minted by `approve`): only that work continues under the approval after `approve` returns.
+    // Work an agent's call schedules is part of that call: it carries the `scheduled` mark, so it
+    // runs after the turn moves on (#278). Work an approved request schedules while it runs also
+    // carries the request's follow-up token (minted by `approve`): only that work continues under
+    // the approval after `approve` returns.
     const scheduledAs = async (): Promise<ActingAs> => {
-      if (acting.kind !== 'agent' || acting.approvalId === undefined || acting.followUp)
-        return acting
-      if (!c.db) return acting
+      if (acting.kind !== 'agent') return acting
+      const scheduled = { ...acting, scheduled: true as const }
+      if (acting.approvalId === undefined || acting.followUp || !c.db) return scheduled
       const id = lib(c as { db: unknown }).normalizeId('approvals', acting.approvalId)
       const row = id && (await lib(c as { db: unknown }).get(id))
-      if (!row || row.status !== 'executing' || row.followUp === undefined) return acting
-      return { ...acting, followUp: row.followUp }
+      if (!row || row.status !== 'executing' || row.followUp === undefined) return scheduled
+      return { ...scheduled, followUp: row.followUp }
     }
     const approved = acting.kind === 'agent' && acting.approvalId !== undefined
     const scheduledHere = new Set<string>()
@@ -1099,7 +1121,7 @@ export function defineFunctions<
     input: v.object(args),
     /** Set by `ctx.runMutation` of an operation: the caller writes the audit row and takes this call's ids. */
     nested: v.optional(v.boolean()),
-    /** Set by `ctx.runMutation`: the buckets an outer operation already took a token from. */
+    /** Set by `ctx.run*` and `ctx.scheduler`: the buckets an outer operation already took a token from. */
     spent: v.optional(v.array(v.string())),
   })
 
@@ -1228,7 +1250,11 @@ export function defineFunctions<
         }),
         handler: async (
           ctx: ACtx,
-          { actingAs: who, input }: { actingAs: ActingAs; input: ObjectType<Args> },
+          {
+            actingAs: who,
+            input,
+            spent,
+          }: { actingAs: ActingAs; input: ObjectType<Args>; spent?: string[] },
         ) => {
           // An action has no transaction: a raw function it reached has already committed. It fails loudly
           // instead, and the no-bypass check (raw internal functions must not exist) is what prevents it.
@@ -1241,6 +1267,8 @@ export function defineFunctions<
               (reached ??= new Error(
                 'This action reached a function that is not an internal operation.',
               )),
+            // The call that scheduled or ran this action paid these buckets: its saves do not pay again.
+            { spent: spent ?? [] },
           )
           // An action cannot read the approved plan: under an approval, it deletes files through
           // an internal mutation, which can (release review 5).

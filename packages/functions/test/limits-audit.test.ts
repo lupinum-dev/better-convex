@@ -297,6 +297,38 @@ test('a scheduled internal mutation on a limited action is limited', async () =>
   ])
 })
 
+// Catches (#283): a scheduled follow-up of the same action taking a second token, so with max 2 the
+// second request (or its save, after the outside call) is RATE_LIMITED. 8.limits-and-audit.md: work
+// a call schedules is part of that call.
+test.each(['guardLater', 'guardLaterViaAction'])(
+  '%s: a scheduled save of the same action takes no second token',
+  async (outer) => {
+    const { t, ann, pa, buckets } = await setup()
+    for (const name of ['n1', 'n2']) {
+      await ann.mutation(fn(outer), { projectId: pa, name })
+      await t.finishAllScheduledFunctions(vi.runAllTimers)
+      expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name })
+    }
+    expect((await buckets()).map((row) => [row.key.split('|')[1], row.tokens])).toEqual([
+      ['limit:projects.guard', 0],
+    ])
+    // The request itself still pays: the third is refused.
+    await expect(ann.mutation(fn(outer), { projectId: pa, name: 'n3' })).rejects.toThrow(
+      /RATE_LIMITED/,
+    )
+  },
+)
+
+// Catches: a follow-up that skips its own limit because the request paid another bucket.
+test('a scheduled follow-up of another limited action pays its own token', async () => {
+  const { t, ann, pa } = await setup()
+  await ann.mutation(fn('guardThenTask'), { projectId: pa, name: 'first' })
+  await ann.mutation(fn('guardThenTask'), { projectId: pa, name: 'second' })
+  await t.finishAllScheduledFunctions(vi.runAllTimers)
+  // `tasks.run` allows one a minute: the second task is refused.
+  expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name: 'first' })
+})
+
 // Catches: a nested call of the same action taking a second token, so max 1 could never be used.
 test('a limited public mutation that runs the same limited internal action takes one token', async () => {
   const { t, ann, pa } = await setup()

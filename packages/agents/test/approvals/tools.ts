@@ -37,6 +37,7 @@ export const {
   archive_edited,
   check_approval,
   housekeeping,
+  rename_later,
 } = tools.functions
 
 export const { pending, get, approve, decline } = tools.approvals
