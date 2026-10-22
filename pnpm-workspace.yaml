@@ -29,7 +29,7 @@ overrides:
   # retain vulnerable lockfile selections. Remove when a clean resolution
   # selects svgo >=4.1.0 and hono >=4.13.5 without overrides.
   svgo: 4.1.0
-  hono: 4.13.7
+  hono: 4.13.11
 
 # Only these dependencies may run install scripts.
 allowBuilds:
@@ -47,3 +47,6 @@ auditConfig:
   ignoreGhsas:
     - GHSA-vfj7-8cjw-p6xm # braces <=3.0.3
     - GHSA-86w9-cpqp-85rv # node-forge <=1.4.0
+minimumReleaseAgeExclude:
+  # Renovate security update: hono@4.13.11
+  - hono@4.13.11
