@@ -340,7 +340,7 @@ describe('OIDC back-channel logout', () => {
 
     expect(response.status).toBe(400)
     expect(await response.text()).toBe('{"error":"invalid_request"}')
-    expect(loggedCodes(errors)).toEqual(['AUTH_OIDC_KEY_UNKNOWN'])
+    expect(loggedCodes(errors)).toEqual(['AUTH_OIDC_LOGOUT_ENDED', 'AUTH_OIDC_KEY_UNKNOWN'])
     expect(h.ended).toEqual(['u1'])
     expect(h.consumed).toHaveLength(3)
   })

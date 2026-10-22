@@ -133,9 +133,11 @@ export async function handleOidcBackchannelLogout(
   try {
     await deps.endGrant(userId)
   } catch (error) {
-    logOidcFailure('AUTH_OIDC_LOGOUT_REVOKE_FAILED', { cause: error })
+    logOidcFailure('AUTH_OIDC_LOGOUT_REVOKE_FAILED', { cause: error, userId })
     return respond(500, null)
   }
+  // Same log line as the failures, so an operator finds every grant end of a user in one search.
+  logOidcFailure('AUTH_OIDC_LOGOUT_ENDED', { userId })
   await markDone()
   return respond(200, null)
 }
