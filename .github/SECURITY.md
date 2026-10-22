@@ -72,7 +72,8 @@ explains the trust boundaries in detail. In short:
   issuer, users managed by the identity provider (IdP), and back-channel
   logout. A user who signed in through the IdP, or linked it, then signs in
   only through it. The liveness check ends app sessions when the IdP refuses
-  the refresh token.
+  the refresh token. An IdP that keeps the refresh token after a sign-out, or
+  issues none, gets no liveness check after a missed back-channel logout.
 
 ### MCP and delegated OAuth
 
@@ -147,7 +148,7 @@ If a secret or credential leaks, contain it first:
 | A confidential OAuth client secret | Disable the client with `auth.oauthOperator.setClientDisabled`. Delete its consents. Rotate its secret through the OAuth Provider admin API before you enable it again.                                                                                                                                                                             |
 | An OAuth consent or access token   | Revoke the grant with `auth.oauthConnections.revoke`. The next MCP call fails the live check. If you cannot trust the live check, close `/mcp` for at least 10 minutes.                                                                                                                                                                             |
 | A signing key                      | Close token issuance. Run the internal `auth:rotateSigningKey` action. Rotation keeps old public keys for a grace period, so keep affected routes closed until the old key is gone from the public key set.                                                                                                                                         |
-| The OIDC client secret             | Rotate it at the IdP and keep the old one disabled. Set it with `pnpm exec better-convex convex env set OIDC_CLIENT_SECRET`. For an IdP signing key, publish the new key before the IdP signs with it. A logout token signed with a key the app has not loaded within the last 30 s is refused, and the liveness check ends those sessions instead. |
+| The OIDC client secret             | Rotate it at the IdP and keep the old one disabled. Set it with `pnpm exec better-convex convex env set OIDC_CLIENT_SECRET`. For a planned IdP signing-key rollover, publish the new key before the IdP signs with it. If an IdP signing key leaked, publish a new key and remove the leaked key from the IdP at once: the app trusts every key the IdP publishes. A logout token signed with a key the app has not loaded within the last 30 s is refused. Then only the liveness check can end those sessions, and only if the IdP refuses the refresh token. |
 | A published package version        | Publish a fixed version through the protected release workflow. Deprecate the affected range on npm. Never reuse or unpublish a version.                                                                                                                                                                                                            |
 
 Record each step in a private incident record. Never put credentials, tokens,

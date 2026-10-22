@@ -64,7 +64,7 @@ pnpm exec vitest run --project=integration test/integration/oauth-code.integrati
 (pinned by digest in `test/fixtures/keycloak/docker-compose.yml`). It signs in, runs back-channel logout (including
 a replayed logout token), signs out, and refreshes upstream tokens through the built Nuxt auth proxy and the real
 local Convex backend (fixture app `test/fixtures/oidc-keycloak`). It needs Docker and skips without
-`BCN_TEST_KEYCLOAK_URL`. It adds its own Keycloak client for its random origin and removes it afterwards. A relay on
+`BCN_TEST_KEYCLOAK_URL`. It adds its own Keycloak client for its random origin and removes it afterward. A relay on
 a random port passes Keycloak's back-channel call to Nuxt. The realm and client use test-only credentials.
 
 ```bash
