@@ -7,7 +7,9 @@ export type AuthOriginName =
 
 /**
  * Return whether a URL parser hostname is one of the three exact development
- * loopback forms supported by the auth boundary.
+ * loopback forms supported by the auth boundary. This is the one loopback rule
+ * for origins, OAuth redirects, resources and issuers: `URL.hostname` keeps
+ * the brackets of an IPv6 literal, so compare with `[::1]`, never `::1`.
  *
  * This intentionally does not accept `*.localhost`, the rest of 127/8, IPv4
  * aliases, or expanded/mapped IPv6 forms. Callers must first prove that the

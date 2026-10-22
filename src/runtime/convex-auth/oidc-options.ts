@@ -1,5 +1,7 @@
 import type { GenericActionCtx, GenericDataModel } from 'convex/server'
 
+import { isExactLoopbackHost } from './origin'
+
 /** The verified ID-token claims of one sign-in, frozen. Any other claim the IdP adds (`groups`, `roles`, `hd`, `tid`) is there too. */
 export type BetterConvexOidcClaims = Readonly<Record<string, unknown>> & {
   readonly iss: string
@@ -74,7 +76,6 @@ export const OIDC_PROVIDER_ID = 'oidc'
 export const OIDC_BACKCHANNEL_LOGOUT_PATH = '/oidc/backchannel-logout'
 const OIDC_BASE_SCOPES = ['openid', 'email', 'profile']
 
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const ALLOWED_KEYS = new Set(['issuer', 'clientId', 'clientSecret', 'scopes', 'onSignIn'])
 const MAX_EXTRA_SCOPES = 20
 const MAX_SCOPE_LENGTH = 256
@@ -114,7 +115,7 @@ export function isAllowedIdpUrl(value: string, allowLoopbackHttp: boolean): bool
   }
   if (url.username !== '' || url.password !== '' || url.hash !== '') return false
   if (url.protocol === 'https:') return true
-  return allowLoopbackHttp && url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname)
+  return allowLoopbackHttp && url.protocol === 'http:' && isExactLoopbackHost(url.hostname)
 }
 
 function isValidIssuer(value: unknown): value is string {

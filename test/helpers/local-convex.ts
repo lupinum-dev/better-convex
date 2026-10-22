@@ -5,6 +5,7 @@ import net from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
+import { isExactLoopbackHost } from '../../src/runtime/shared/auth-origin'
 import { ensureLocalBackend } from './local-backend.mjs'
 
 interface LocalConvexHandle {
@@ -410,9 +411,7 @@ function deriveSiteUrlFromConvexUrl(urlString: string): string | null {
 function localPortFromUrl(urlString: string): number | null {
   try {
     const url = new URL(urlString)
-    const isLoopback =
-      url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]'
-    if (!isLoopback || !url.port) return null
+    if (!isExactLoopbackHost(url.hostname) || !url.port) return null
 
     const port = Number.parseInt(url.port, 10)
     return Number.isNaN(port) ? null : port
@@ -433,7 +432,7 @@ function isLoopbackUrl(urlString: string): boolean {
       url.pathname === '/' &&
       !url.search &&
       !url.hash &&
-      (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]')
+      isExactLoopbackHost(url.hostname)
     )
   } catch {
     return false

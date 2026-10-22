@@ -1,7 +1,13 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from 'convex-test'
-import { componentsGeneric, defineSchema, getFunctionAddress } from 'convex/server'
+import {
+  componentsGeneric,
+  defineSchema,
+  getFunctionAddress,
+  type GenericDataModel,
+  type GenericQueryCtx,
+} from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
@@ -169,17 +175,56 @@ describe('OAuth operators with real Better Auth', () => {
     expect(await rows('oauthResource')).toEqual(resources)
   })
 
-  it('provisions a bracketed IPv6 loopback redirect', async () => {
-    const { test, auth, rows } = setup()
-    const { clientId } = await test.action(async (ctx) =>
-      auth.oauthOperator.createPublicClient(ctx, {
-        ...clientInput,
-        redirectUris: ['http://[::1]:3000/callback'],
-      }),
+  it.each(['localhost', '127.0.0.1', '[::1]'])(
+    'provisions an HTTP loopback redirect and resource on %s',
+    async (host) => {
+      const { test, auth, rows } = setup()
+      const redirectUri = `http://${host}:3000/callback`
+      const identifier = `http://${host}:3210/mcp`
+      const { clientId } = await test.action(async (ctx) =>
+        auth.oauthOperator.createPublicClient(ctx, {
+          ...clientInput,
+          redirectUris: [redirectUri],
+          resource: { ...clientInput.resource!, identifier },
+        }),
+      )
+      expect(await rows('oauthClient')).toMatchObject([{ clientId, redirectUris: [redirectUri] }])
+      expect(await rows('oauthResource')).toMatchObject([{ identifier }])
+      expect(await rows('oauthClientResource')).toMatchObject([
+        { clientId, resourceId: identifier },
+      ])
+    },
+  )
+
+  // Every input below is invalid, so the context check must come first to produce this code.
+  type Operator = ReturnType<typeof setup>['auth']['oauthOperator']
+  type QueryCtx = GenericQueryCtx<GenericDataModel>
+  it.each<[string, (operator: Operator, ctx: QueryCtx) => Promise<unknown>]>([
+    [
+      'createPublicClient',
+      // @ts-expect-error A query ctx cannot write OAuth records.
+      (operator, ctx) => operator.createPublicClient(ctx, { ...clientInput, name: ' ' }),
+    ],
+    [
+      'deleteClient',
+      // @ts-expect-error A query ctx cannot write OAuth records.
+      (operator, ctx) => operator.deleteClient(ctx, { clientId: ' ' }),
+    ],
+    [
+      'createHostClient',
+      // @ts-expect-error A query ctx cannot write OAuth records.
+      (operator, ctx) => operator.createHostClient(ctx, { host: 'claude' }),
+    ],
+    [
+      'setClientDisabled',
+      // @ts-expect-error A query ctx cannot write OAuth records.
+      (operator, ctx) => operator.setClientDisabled(ctx, { clientId: ' ', disabled: true }),
+    ],
+  ])('refuses a query ctx in %s before it checks the input', async (_name, call) => {
+    const { test, auth } = setup()
+    await expect(test.query(async (ctx) => call(auth.oauthOperator, ctx))).rejects.toThrow(
+      /^AUTH_WRITE_REQUIRES_MUTATION_OR_ACTION$/u,
     )
-    const clients = await rows('oauthClient')
-    expect(clients).toHaveLength(1)
-    expect(clients[0]).toMatchObject({ clientId, redirectUris: ['http://[::1]:3000/callback'] })
   })
 
   it.each([
@@ -199,6 +244,8 @@ describe('OAuth operators with real Better Auth', () => {
     ...[
       'ftp://deployment.convex.site/mcp',
       'http://deployment.convex.site/mcp',
+      'http://[::ffff:127.0.0.1]:3210/mcp',
+      'http://127.0.0.2:3210/mcp',
       'https://user:password@deployment.convex.site/mcp',
       'https://deployment.convex.site/mcp?tenant=private',
       'https://deployment.convex.site/mcp#token',

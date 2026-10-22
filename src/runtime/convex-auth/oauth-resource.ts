@@ -16,6 +16,7 @@ import {
   type OAuthAccessTokenExpectations,
   type OAuthPrincipal,
 } from './oauth-security'
+import { isExactLoopbackHost } from './origin'
 import type { AuthAdapterComponentApi } from './types'
 
 export interface BetterAuthMcpAccessVerifierOptions {
@@ -119,10 +120,7 @@ function tokenKeyId(token: string): string {
 function isSecureOAuthEndpoint(value: URL): boolean {
   return (
     value.protocol === 'https:' ||
-    (value.protocol === 'http:' &&
-      (value.hostname === '127.0.0.1' ||
-        value.hostname === 'localhost' ||
-        value.hostname === '[::1]'))
+    (value.protocol === 'http:' && isExactLoopbackHost(value.hostname))
   )
 }
 

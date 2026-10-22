@@ -174,6 +174,8 @@ export function canonicalMcpResource(value: URL): string {
   return value.href
 }
 
+// The loopback hosts are the rule of `isExactLoopbackHost` in the Nuxt package. The agents
+// package must not import from it (scripts/check-boundaries.mjs), so it keeps this one copy.
 function isSecureResource(value: URL): boolean {
   return (
     value.protocol === 'https:' ||

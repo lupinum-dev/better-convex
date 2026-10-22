@@ -24,6 +24,8 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
+// The operator writes, so it needs a mutation or action context.
+const mutationCtx = { runMutation: vi.fn() } as never
 describe('MCP OAuth profile', () => {
   it('builds the reviewed pinned provider profile with session-bound renewal by default', () => {
     const profile = resolveMcpProfile({ scopes })
@@ -210,7 +212,7 @@ describe('MCP host redirect presets', () => {
       mcp,
       resolveProfile: () => mcp.provider,
     })
-    await expect(operator.createHostClient({} as never, { host: 'claude' })).resolves.toEqual({
+    await expect(operator.createHostClient(mutationCtx, { host: 'claude' })).resolves.toEqual({
       clientId: expect.any(String),
     })
     expect(created.find((row) => row.model === 'oauthClient')).toMatchObject({
@@ -226,13 +228,13 @@ describe('MCP host redirect presets', () => {
       resourceId: 'https://deployment.example.test/mcp',
     })
     await expect(
-      operator.createHostClient({} as never, {
+      operator.createHostClient(mutationCtx, {
         host: 'chatgpt',
         redirectUri: 'https://chatgpt.com/connector_platform_oauth_redirect',
       }),
     ).rejects.toThrow('AUTH_OAUTH_CLIENT_HOST_NOT_ENABLED')
     await expect(
-      operator.createHostClient({} as never, { host: 'claude', scopes: ['admin'] }),
+      operator.createHostClient(mutationCtx, { host: 'claude', scopes: ['admin'] }),
     ).rejects.toThrow('AUTH_OAUTH_CLIENT_SCOPE_NOT_ADMITTED')
   })
 
@@ -242,11 +244,11 @@ describe('MCP host redirect presets', () => {
       createAuth: async () => ({ $context: Promise.resolve({}) }),
       resolveProfile: () => undefined,
     })
-    await expect(operator.createHostClient({} as never, { host: 'claude' })).rejects.toThrow(
+    await expect(operator.createHostClient(mutationCtx, { host: 'claude' })).rejects.toThrow(
       'AUTH_OAUTH_MCP_PROFILE_REQUIRED',
     )
     await expect(
-      operator.createPublicClient({} as never, {
+      operator.createPublicClient(mutationCtx, {
         name: 'Inspector',
         profile: 'inspector',
         redirectUris: ['http://localhost:6274/oauth/callback'],

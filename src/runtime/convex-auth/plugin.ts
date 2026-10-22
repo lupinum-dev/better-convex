@@ -35,7 +35,6 @@ import {
   hardenOAuthProviderCallbacks,
   hasOAuthRenewal,
   installUrlCanParseCompatibility,
-  isLoopbackRedirectHost,
   parseBoundedFormBody,
   parseBoundedFormRequest,
   projectOAuthAuthorizationServerMetadata,
@@ -47,7 +46,7 @@ import {
   type OAuthResourceRecord,
 } from './oauth-security'
 import { readOidcGrantCheck } from './oidc-plugin'
-import { normalizeAuthOrigin } from './origin'
+import { isExactLoopbackHost, normalizeAuthOrigin } from './origin'
 import { isConvexAuthRateLimitStorage } from './rate-limit-storage'
 
 type SessionJwtOptions = Pick<
@@ -444,7 +443,7 @@ function canonicalRedirectUrl(value: string): URL | null {
 }
 
 function loopbackRedirectWithoutPort(url: URL): string | null {
-  if (url.protocol !== 'http:' || !isLoopbackRedirectHost(url.hostname)) return null
+  if (url.protocol !== 'http:' || !isExactLoopbackHost(url.hostname)) return null
   return `${url.protocol}//${url.hostname}${url.pathname}${url.search}`
 }
 

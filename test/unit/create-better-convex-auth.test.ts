@@ -268,7 +268,9 @@ describe('createBetterConvexAuth', () => {
     })
 
     const failure = await auth.oauthOperator
-      .deleteClient(queryContext() as never, { clientId: 'public-client' })
+      .deleteClient({ ...queryContext(), runMutation: vi.fn() } as never, {
+        clientId: 'public-client',
+      })
       .catch((error: unknown) => error)
 
     expect(failure).toEqual(new Error('AUTH_CONFIG_INVALID'))

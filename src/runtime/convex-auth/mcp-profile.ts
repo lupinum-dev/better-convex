@@ -1,5 +1,5 @@
 import { validateOAuthScopes, type PinnedOAuthProviderProfile } from './oauth-security'
-import { requireAuthOrigin } from './origin'
+import { isExactLoopbackHost, requireAuthOrigin } from './origin'
 
 /** MCP hosts with a reviewed redirect URI preset. */
 export type BetterConvexMcpHost = 'chatgpt' | 'claude'
@@ -83,9 +83,9 @@ function validateAbsoluteResource(value: string): URL {
   } catch {
     throw configError('requires "oauth.mcp.resource" to be a path or an absolute URL')
   }
-  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
   if (
-    (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
+    (url.protocol !== 'https:' &&
+      !(url.protocol === 'http:' && isExactLoopbackHost(url.hostname))) ||
     url.username ||
     url.password ||
     url.search ||
