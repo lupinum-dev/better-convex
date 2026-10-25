@@ -84,7 +84,9 @@ interface PolicyConfig<A extends string, R extends string, S extends string> {
    * `RATE_LIMITED`. A call the policy denies never takes a token. A mutation
    * that fails gives its token back; a public action takes its token in its
    * check, before the handler runs, and keeps it when the handler fails. Only
-   * mutations and actions are limited, and jobs (the system) never are.
+   * mutations and actions are limited, and jobs (the system) never are. Work
+   * an agent runs under a person's approval takes no token: the person is the
+   * limit there.
    */
   limits?: Partial<Record<NoInfer<A>, Limit>>
   /**

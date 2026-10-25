@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { parseEnv } from 'node:util'
@@ -290,6 +290,8 @@ async function ensureLocalEnvironmentValue(
   const value = createValue()
   const separator = contents === '' || contents.endsWith('\n') ? '' : '\n'
   await appendFile(path, `${separator}${name}=${value}\n`, { encoding: 'utf8', mode: 0o600 })
+  // The mode above applies only to a new file; the Convex CLI usually created this one first.
+  await chmod(path, 0o600)
   dependencies.log(`Wrote ${name} to ${LOCAL_ENV_FILE}.`)
   return value
 }

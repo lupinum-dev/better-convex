@@ -33,16 +33,20 @@ export type CookieFlagViolation =
   | 'httponly-missing'
   | 'samesite-none-unsupported'
 
-export function getSessionCookieFlagViolation(
+/**
+ * The flags every Better Auth cookie must carry at the Nuxt boundary. Better
+ * Auth sets all of its cookies HttpOnly and SameSite=Lax under this factory, so
+ * a cookie without them is an upstream fault, not a choice. A deletion (empty
+ * value or `Max-Age=0`) carries no secret and is checked only for `Secure`.
+ */
+export function getAuthCookieFlagViolation(
   cookie: string,
   name: string,
 ): CookieFlagViolation | null {
-  const isSession =
-    name === BETTER_AUTH_SESSION_COOKIE_NAME || name === BETTER_AUTH_SECURE_SESSION_COOKIE_NAME
   if (name.startsWith('__Secure-') && !hasSetCookieAttribute(cookie, 'secure')) {
     return 'secure-missing'
   }
-  if (!isSession) return null
+  if (isCookieDeletion(cookie)) return null
   if (!hasSetCookieAttribute(cookie, 'httponly')) return 'httponly-missing'
   for (const segment of cookie.split(';').slice(1)) {
     const [rawName, ...rest] = segment.split('=')
@@ -52,6 +56,19 @@ export function getSessionCookieFlagViolation(
     }
   }
   return null
+}
+
+function isCookieDeletion(cookie: string): boolean {
+  const [pair = '', ...attributes] = cookie.split(';')
+  const separator = pair.indexOf('=')
+  if (separator !== -1 && trimOptionalWhitespace(pair.slice(separator + 1)) === '') return true
+  return attributes.some((segment) => {
+    const [rawName, ...rest] = segment.split('=')
+    return (
+      trimOptionalWhitespace(rawName ?? '').toLowerCase() === 'max-age' &&
+      Number(trimOptionalWhitespace(rest.join('='))) <= 0
+    )
+  })
 }
 
 /** The only cookie namespace supported by the Nuxt auth boundary. */

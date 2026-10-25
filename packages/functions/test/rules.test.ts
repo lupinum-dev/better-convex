@@ -174,6 +174,23 @@ test('a membership change applies to the rest of the mutation', async () => {
   expect(((await t.run((ctx) => ctx.db.get(pa))) as { archived: boolean }).archived).toBe(false)
 })
 
+// Catches: a call in one organization changing a membership of another organization where the
+// caller has the same role (the documented memberships rule checks ctx.tenant like tenant() does).
+test('a call in one organization cannot change a membership of another', async () => {
+  const { t, ann, pa, b } = await setup()
+  const bobB = await t.run(async (ctx) => {
+    const annId = (await ctx.db.query('users').collect()).find((u) => u.authId === 'ann')!._id
+    await ctx.db.insert('memberships', { orgId: b, userId: annId, role: 'owner' })
+    return (await ctx.db.query('memberships').collect()).find(
+      (m) => m.orgId === b && m.role === 'owner' && m.userId !== annId,
+    )!._id
+  })
+  await expect(
+    ann.mutation(fn('demoteThenArchive'), { projectId: pa, membershipId: bobB }),
+  ).rejects.toThrow(/NOT_FOUND/)
+  expect(await t.run((ctx) => ctx.db.get(bobB))).toMatchObject({ role: 'owner' })
+})
+
 // Rules v2: a query method the library does not check must not hand out rows.
 test('a query method the library does not know fails instead of passing rows through', async () => {
   const { ann, a } = await setup()

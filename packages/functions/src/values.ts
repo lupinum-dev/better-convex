@@ -189,10 +189,15 @@ export function oneLine(text: string, max = 300): string {
 /**
  * The same text for a model or a host that may render markdown: link, image,
  * HTML and emphasis syntax is escaped, so a project named
- * `[Approve here](https://…)` shows as text, not as a link.
+ * `[Approve here](https://…)` shows as text, not as a link. GFM also links a
+ * bare `www.` address and an email address, so `@` and the dot after `www` are
+ * escaped too.
  */
 export function inertMarkdown(text: string): string {
-  return text.replace(/[\\`*_[\]()<>!#|~]/g, '\\$&').replace(/:\/\//g, ':\\/\\/')
+  return text
+    .replace(/[\\`*_[\]()<>!#|~@]/g, '\\$&')
+    .replace(/:\/\//g, ':\\/\\/')
+    .replace(/\b(www)\./giu, '$1\\.')
 }
 
 /** Tool names every host accepts (OpenAI's rule is the strictest). */
@@ -279,9 +284,15 @@ export function unsendable(input: unknown): { code: 'INVALID_INPUT'; message: st
 
 type Checked = { ok: true; value: unknown } | { ok: false; message: string }
 
+/** Whether a validator takes `null` as a value, so a `null` for it is meant, not "left out". */
+function acceptsNull(json: ValidatorJson): boolean {
+  return json.type === 'null' || (json.type === 'union' && json.value.some(acceptsNull))
+}
+
 /**
  * Checks tool input against the operation's validators and normalises what
- * models commonly send: `null` for an optional field means "left out".
+ * models commonly send: `null` for an optional field that does not take `null`
+means "left out".
  * Messages name the field and the expected type, never the value (it may be
  * long, or someone else's data the model pasted). `isId(table, value)` checks
  * an ID belongs to its table.
@@ -354,7 +365,7 @@ export function checkInput(
         const name = path ? `${path}.${key}` : key
         if (
           item === undefined ||
-          (item === null && field.optional && field.fieldType.type !== 'null')
+          (item === null && field.optional && !acceptsNull(field.fieldType))
         ) {
           if (!field.optional) return { ok: false, message: `${name}: required.` }
           continue

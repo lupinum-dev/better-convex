@@ -176,17 +176,20 @@ describe('fixed OAuth provider profile', () => {
     ).toThrow('AUTH_OAUTH_CONFIG_INVALID')
   })
 
-  it.each(['https://evil.example/login', '//evil.example/login', '/login?next=/admin', '/login#x'])(
-    'rejects unsafe login and consent page target %s',
-    (page) => {
-      expect(() => validateOAuthProviderProfile(oauthOptions({ loginPage: page }))).toThrow(
-        'AUTH_OAUTH_CONFIG_INVALID',
-      )
-      expect(() => validateOAuthProviderProfile(oauthOptions({ consentPage: page }))).toThrow(
-        'AUTH_OAUTH_CONFIG_INVALID',
-      )
-    },
-  )
+  it.each([
+    'https://evil.example/login',
+    '//evil.example/login',
+    '/\\evil.example/login',
+    '/login?next=/admin',
+    '/login#x',
+  ])('rejects unsafe login and consent page target %s', (page) => {
+    expect(() => validateOAuthProviderProfile(oauthOptions({ loginPage: page }))).toThrow(
+      'AUTH_OAUTH_CONFIG_INVALID',
+    )
+    expect(() => validateOAuthProviderProfile(oauthOptions({ consentPage: page }))).toThrow(
+      'AUTH_OAUTH_CONFIG_INVALID',
+    )
+  })
 
   it.each([
     { grantTypes: ['client_credentials'] },

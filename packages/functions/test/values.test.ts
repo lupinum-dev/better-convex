@@ -1,7 +1,7 @@
 import { v } from 'convex/values'
 import { expect, test } from 'vitest'
 
-import { fingerprint, inertMarkdown, jsonOf, matches, oneLine } from '../src/values'
+import { checkInput, fingerprint, inertMarkdown, jsonOf, matches, oneLine } from '../src/values'
 
 // Codex review: bytes hashed as `{}` (a change went unnoticed) and int64 fields threw.
 test('a fingerprint sees bytes and int64 fields', async () => {
@@ -26,10 +26,28 @@ test.each([
   expect(oneLine(input)).toBe(expected)
 })
 
-test('inert markdown shows links and HTML as text', () => {
-  expect(inertMarkdown('[a](https://b) <img src=x>')).toBe(
-    '\\[a\\]\\(https:\\/\\/b\\) \\<img src=x\\>',
+// Catches: a summary that a markdown host shows as a link a person might click while deciding.
+// GFM also links a bare `www.` address and an email address, with no brackets at all.
+test.each([
+  ['[a](https://b) <img src=x>', '\\[a\\]\\(https:\\/\\/b\\) \\<img src=x\\>'],
+  ['Visit www.evil.example.', 'Visit www\\.evil.example.'],
+  ['Mail ceo@evil.example', 'Mail ceo\\@evil.example'],
+])('inert markdown shows %j as text', (input, expected) => {
+  expect(inertMarkdown(input)).toBe(expected)
+})
+
+// Catches: a model unable to clear a field (send `null`) that the operation declares nullable,
+// while a `null` for a field that cannot be null still means "left out".
+test.each([
+  [{ note: null }, { note: null }],
+  [{ note: 'x' }, { note: 'x' }],
+  [{ title: null }, {}],
+  [{}, {}],
+])('checkInput(%j) is %j', (input, expected) => {
+  const json = jsonOf(
+    v.object({ note: v.optional(v.union(v.string(), v.null())), title: v.optional(v.string()) }),
   )
+  expect(checkInput(json, input, () => false)).toEqual({ ok: true, value: expected })
 })
 
 // Catches: a literal compared with its encoded JSON, so bigint and non-finite float members never matched.

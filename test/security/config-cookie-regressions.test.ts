@@ -5,7 +5,7 @@ import {
 } from 'better-auth/cookies'
 import { describe, expect, it, vi } from 'vitest'
 
-import { getSessionCookieFlagViolation } from '../../src/runtime/shared/auth-cookie'
+import { getAuthCookieFlagViolation } from '../../src/runtime/shared/auth-cookie'
 import {
   BETTER_AUTH_SECURE_SESSION_COOKIE_NAME,
   BETTER_AUTH_SESSION_COOKIE_NAME,
@@ -280,27 +280,51 @@ describe('configuration and cookie security regressions', () => {
 
   it('enforces session cookie flags and keeps only the final value per cookie name', () => {
     expect(
-      getSessionCookieFlagViolation(
+      getAuthCookieFlagViolation(
         '__Secure-better-auth.session_token=value; Path=/; HttpOnly',
         '__Secure-better-auth.session_token',
       ),
     ).toBe('secure-missing')
     expect(
-      getSessionCookieFlagViolation(
+      getAuthCookieFlagViolation(
         'better-auth.session_token=value; Path=/; SameSite=Lax',
         'better-auth.session_token',
       ),
     ).toBe('httponly-missing')
     expect(
-      getSessionCookieFlagViolation(
+      getAuthCookieFlagViolation(
         'better-auth.session_token=value; Path=/; HttpOnly; SameSite=None',
         'better-auth.session_token',
       ),
     ).toBe('samesite-none-unsupported')
     expect(
-      getSessionCookieFlagViolation(
+      getAuthCookieFlagViolation(
         '__Secure-better-auth.session_token=value; Path=/; Secure; HttpOnly; SameSite=Lax',
         '__Secure-better-auth.session_token',
+      ),
+    ).toBeNull()
+    // Catches: a session copy outside the session_token name (the cookie cache) reaching the
+    // browser readable by scripts or sent cross-site.
+    expect(
+      getAuthCookieFlagViolation(
+        'better-auth.session_data=x; Path=/; SameSite=Lax',
+        'better-auth.session_data',
+      ),
+    ).toBe('httponly-missing')
+    expect(
+      getAuthCookieFlagViolation(
+        'better-auth.session_data=x; Path=/; HttpOnly; SameSite=None',
+        'better-auth.session_data',
+      ),
+    ).toBe('samesite-none-unsupported')
+    // A deletion carries no secret, whatever its other flags.
+    expect(
+      getAuthCookieFlagViolation('better-auth.session_data=; Path=/', 'better-auth.session_data'),
+    ).toBeNull()
+    expect(
+      getAuthCookieFlagViolation(
+        'better-auth.dont_remember=x; Max-Age=0; Path=/',
+        'better-auth.dont_remember',
       ),
     ).toBeNull()
 

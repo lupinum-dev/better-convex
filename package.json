@@ -137,10 +137,10 @@
     "@lupinum/better-convex-vue": "workspace:*",
     "@nuxt/kit": "4.6.1",
     "convex-helpers": "0.1.120",
-    "defu": "^6.1.5",
+    "defu": "6.1.7",
     "jiti": "2.7.0",
     "jose": "6.2.3",
-    "ohash": "^2.0.12"
+    "ohash": "2.0.12"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
@@ -180,7 +180,7 @@
     "vitest": "^4.1.12",
     "vitest-browser-vue": "^2.1.0",
     "vue-tsc": "^3.3.13",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "@better-auth/core": "1.7.7",
